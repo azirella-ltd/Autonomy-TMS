@@ -24,11 +24,11 @@ from .base import Base
 
 class TRMType(str, Enum):
     """TRM role types - each has different decision scope"""
-    ATP_EXECUTOR = "atp_executor"  # Allocated ATP consumption decisions
-    REBALANCING = "rebalancing"  # Cross-location inventory transfer
-    PO_CREATION = "po_creation"  # Purchase order timing and quantity
-    ORDER_TRACKING = "order_tracking"  # Exception detection and resolution
-    SAFETY_STOCK = "safety_stock"  # Safety stock adjustment decisions
+    ATP_EXECUTOR = "ATP_EXECUTOR"  # Allocated ATP consumption decisions
+    REBALANCING = "REBALANCING"  # Cross-location inventory transfer
+    PO_CREATION = "PO_CREATION"  # Purchase order timing and quantity
+    ORDER_TRACKING = "ORDER_TRACKING"  # Exception detection and resolution
+    SAFETY_STOCK = "safety_stock"  # Safety stock adjustment decisions (legacy lowercase)
 
 
 class TrainingStatus(str, Enum):

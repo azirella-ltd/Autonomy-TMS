@@ -24,7 +24,13 @@ import {
   SelectValue,
   SelectContent,
   SelectItem,
+  ToggleGroup,
+  ToggleGroupItem,
 } from '../../components/common';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip as RechartsTooltip, Legend, ResponsiveContainer,
+} from 'recharts';
 import {
   Brain,
   Activity,
@@ -146,6 +152,7 @@ const DecisionCard = ({ decision, index }) => (
 const PowellDashboard = () => {
   const [currentTab, setCurrentTab] = useState('overview');
   const [selectedSite, setSelectedSite] = useState('DC001');
+  const [pipelineViewMode, setPipelineViewMode] = useState('value');
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState(null);
   const [cdcStatus, setCdcStatus] = useState(null);
@@ -506,9 +513,9 @@ const PowellDashboard = () => {
                     <div className="text-xs text-muted-foreground">arriving in 4 buckets</div>
                   </div>
                   <div className="p-3 border rounded-lg">
-                    <div className="text-sm text-muted-foreground">Backlog</div>
-                    <div className="text-2xl font-bold text-red-500">50</div>
-                    <div className="text-xs text-muted-foreground">unfulfilled orders</div>
+                    <div className="text-sm text-muted-foreground">Revenue-at-Risk</div>
+                    <div className="text-2xl font-bold text-red-500">$127,400</div>
+                    <div className="text-xs text-muted-foreground">in 50 unfulfilled orders</div>
                   </div>
                   <div className="p-3 border rounded-lg">
                     <div className="text-sm text-muted-foreground">Inventory Position</div>
@@ -518,15 +525,45 @@ const PowellDashboard = () => {
                 </div>
 
                 <div>
-                  <h4 className="font-medium mb-2">Pipeline by Lead Time Bucket</h4>
-                  <div className="flex gap-2">
-                    {[120, 150, 100, 80].map((qty, idx) => (
-                      <div key={idx} className="flex-1 p-2 border rounded text-center">
-                        <div className="text-xs text-muted-foreground">Week {idx + 1}</div>
-                        <div className="font-medium">{qty}</div>
-                      </div>
-                    ))}
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="font-medium">Pipeline & Backlog by Week</h4>
+                    <ToggleGroup
+                      type="single"
+                      value={pipelineViewMode}
+                      onValueChange={(v) => v && setPipelineViewMode(v)}
+                      size="sm"
+                      variant="outline"
+                    >
+                      <ToggleGroupItem value="value" className="text-xs px-2 h-7">Value</ToggleGroupItem>
+                      <ToggleGroupItem value="count" className="text-xs px-2 h-7">Count</ToggleGroupItem>
+                    </ToggleGroup>
                   </div>
+                  <ResponsiveContainer width="100%" height={160}>
+                    <BarChart data={[
+                      { week: 'Week 1', pipeline: pipelineViewMode === 'value' ? 293400 : 120, backlog: pipelineViewMode === 'value' ? 48200 : 19 },
+                      { week: 'Week 2', pipeline: pipelineViewMode === 'value' ? 366750 : 150, backlog: pipelineViewMode === 'value' ? 39400 : 16 },
+                      { week: 'Week 3', pipeline: pipelineViewMode === 'value' ? 244500 : 100, backlog: pipelineViewMode === 'value' ? 27300 : 11 },
+                      { week: 'Week 4', pipeline: pipelineViewMode === 'value' ? 195600 : 80,  backlog: pipelineViewMode === 'value' ? 12500 : 4 },
+                    ]} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                      <XAxis dataKey="week" tick={{ fontSize: 11 }} />
+                      <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => pipelineViewMode === 'value' ? `$${(v / 1000).toFixed(0)}k` : v} />
+                      <RechartsTooltip
+                        formatter={(value, name) => [
+                          pipelineViewMode === 'value'
+                            ? `$${value.toLocaleString()}`
+                            : `${value} ${name === 'pipeline' ? 'units' : 'orders'}`,
+                          name === 'pipeline' ? 'Pipeline' : 'Backlog'
+                        ]}
+                      />
+                      <Legend
+                        formatter={(value) => value === 'pipeline' ? 'Pipeline' : 'Backlog'}
+                        wrapperStyle={{ fontSize: 11 }}
+                      />
+                      <Bar dataKey="pipeline" fill="#3b82f6" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="backlog" fill="#ef4444" radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
               </CardContent>
             </Card>
@@ -540,8 +577,12 @@ const PowellDashboard = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Demand Forecast */}
                 <div className="p-3 border rounded-lg">
-                  <div className="text-sm text-muted-foreground mb-2">Demand Forecast (Conformal)</div>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="text-sm font-medium">Demand Forecast</div>
+                    <Badge variant="outline" className="text-xs">Conformal</Badge>
+                  </div>
                   <div className="flex items-baseline gap-2">
                     <span className="text-2xl font-bold">80</span>
                     <span className="text-muted-foreground">units/day</span>
@@ -549,11 +590,7 @@ const PowellDashboard = () => {
                   <div className="text-sm text-muted-foreground mt-1">
                     90% CI: [65, 95] · Coverage: 91%
                   </div>
-                </div>
-
-                <div>
-                  <h4 className="font-medium mb-2">Demand History (12 periods)</h4>
-                  <div className="flex items-end gap-1 h-20">
+                  <div className="flex items-end gap-1 h-12 mt-2">
                     {[72, 85, 78, 90, 82, 75, 88, 92, 80, 77, 83, 79].map((val, idx) => (
                       <div
                         key={idx}
@@ -569,16 +606,60 @@ const PowellDashboard = () => {
                   </div>
                 </div>
 
+                {/* Lead Time */}
+                <div className="p-3 border rounded-lg">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="text-sm font-medium">Lead Time</div>
+                    <Badge variant="outline" className="text-xs">Conformal</Badge>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-bold">5.2</span>
+                    <span className="text-muted-foreground">days</span>
+                  </div>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    90% CI: [3.8, 7.1] · Coverage: 89% · OTD: 94%
+                  </div>
+                </div>
+
+                {/* Yield */}
+                <div className="p-3 border rounded-lg">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="text-sm font-medium">Manufacturing Yield</div>
+                    <Badge variant="outline" className="text-xs">Conformal</Badge>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-bold">94.8%</span>
+                  </div>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    95% CI: [91.2%, 97.6%] · Coverage: 96%
+                  </div>
+                </div>
+
+                {/* Price & Service Level row */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="p-3 border rounded-lg">
-                    <div className="text-sm text-muted-foreground">Lead Time (mean)</div>
-                    <div className="text-xl font-bold">5.2 days</div>
-                    <div className="text-xs text-muted-foreground">σ = 1.1 days</div>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="text-sm font-medium">Unit Price</div>
+                      <Badge variant="outline" className="text-xs">Conformal</Badge>
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-xl font-bold">$24.50</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      90% CI: [$22.80, $26.30]
+                    </div>
                   </div>
                   <div className="p-3 border rounded-lg">
-                    <div className="text-sm text-muted-foreground">Supplier OTD</div>
-                    <div className="text-xl font-bold">94%</div>
-                    <div className="text-xs text-muted-foreground">Last 30 days</div>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="text-sm font-medium">Service Level</div>
+                      <Badge variant="outline" className="text-xs">Conformal</Badge>
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-xl font-bold">96.2%</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      90% CI: [93.5%, 98.1%]
+                    </div>
                   </div>
                 </div>
               </CardContent>
@@ -1193,7 +1274,7 @@ const PowellDashboard = () => {
                     ) : (
                       <>
                         <Play className="h-4 w-4 mr-2" />
-                        Calibrate Demo Data
+                        Calibrate History
                       </>
                     )}
                   </Button>

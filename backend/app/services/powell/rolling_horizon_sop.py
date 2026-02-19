@@ -68,12 +68,16 @@ class SOPPlanningCycle:
         return {
             "cycle_id": self.cycle_id,
             "planning_date": self.planning_date.isoformat(),
+            "status": "complete" if self.realized_cost is not None else "pending",
             "expected_cost": self.solution.expected_cost,
             "var_95": self.solution.var_95,
             "cvar_95": self.solution.cvar_95,
             "conformal_coverage": self.conformal_coverage,
+            "coverage_guarantee": self.conformal_coverage,  # frontend alias
             "n_scenarios_generated": self.n_scenarios_generated,
             "n_scenarios_after_reduction": self.n_scenarios_after_reduction,
+            "n_scenarios_reduced": self.n_scenarios_after_reduction,  # frontend alias
+            "solve_time_seconds": self.solution.solve_time,
             "calibration_updates": self.calibration_updates,
             "first_stage_decisions": self.first_stage_decisions,
             "realized_cost": self.realized_cost,

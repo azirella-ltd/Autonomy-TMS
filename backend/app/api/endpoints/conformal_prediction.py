@@ -1073,3 +1073,130 @@ def reset_sop_planner(
         _sop_planners[group_id].reset()
         return {"status": "reset", "group_id": group_id}
     return {"status": "not_found", "group_id": group_id}
+
+
+# ============================================================================
+# Demo Calibration Endpoint
+# ============================================================================
+
+@router.post("/demo/calibrate")
+def calibrate_demo_data(
+    group_id: int = 1,
+    db: Session = Depends(get_db),
+):
+    """
+    Calibrate conformal predictors with historical data and seed 2 past S&OP cycles.
+
+    Uses realistic supply chain data consistent with the Default System Config
+    (DC001/DC002, PROD001/PROD002, SUP001) to populate the Belief State tab.
+    """
+    from datetime import date, timedelta
+    from ...services.conformal_prediction import get_conformal_suite
+    from ...services.powell.rolling_horizon_sop import (
+        SOPPlanningCycle,
+        RollingHorizonSOP,
+        RollingHorizonSOPConfig,
+    )
+    from ...services.powell.stochastic_program import StochasticSolution
+
+    rng = np.random.default_rng(42)
+
+    # ── 1. Calibrate conformal suite with historical forecast vs actual ──
+    suite = get_conformal_suite()
+    n_points = 30
+
+    # Demand: 2 products × 2 sites with seasonal bias
+    demand_items = [
+        ("PROD001", 1, 100.0),  # DC001 primary
+        ("PROD001", 2, 80.0),   # DC002 secondary
+        ("PROD002", 1, 60.0),
+        ("PROD002", 2, 40.0),
+    ]
+    for prod, site, base in demand_items:
+        # Forecasts have slight bias + noise; actuals have more variance
+        forecasts = (base + rng.normal(0, base * 0.05, n_points)).tolist()
+        actuals = [
+            f * (1.0 + rng.normal(0.02, 0.08))  # slight positive bias
+            for f in forecasts
+        ]
+        suite.calibrate_demand(
+            product_id=prod,
+            site_id=site,
+            historical_forecasts=forecasts,
+            historical_actuals=actuals,
+        )
+
+    # Lead times: SUP001 (promised ~5 days, actual 4-7)
+    promised = (5.0 + rng.normal(0, 0.3, n_points)).tolist()
+    actual_lt = [p * (1.0 + rng.normal(0.05, 0.12)) for p in promised]
+    suite.calibrate_lead_time(
+        supplier_id="SUP001",
+        predicted_lead_times=promised,
+        actual_lead_times=actual_lt,
+    )
+
+    # Yields: PROD001 manufacturing (expected 0.95, actual 0.90-0.98)
+    expected_yields = (0.95 + rng.normal(0, 0.005, n_points)).tolist()
+    actual_yields = [y * (1.0 + rng.normal(-0.01, 0.02)) for y in expected_yields]
+    suite.calibrate_yield(
+        product_id="PROD001",
+        process_id=None,
+        expected_yields=expected_yields,
+        actual_yields=actual_yields,
+    )
+
+    suite_summary = suite.get_calibration_summary()
+    joint_coverage = suite.compute_joint_coverage()
+
+    # ── 2. Seed 2 past S&OP cycles ──────────────────────────────────────
+    planner = _get_sop_planner(group_id)
+    planner.cycle_history.clear()
+
+    today = date.today()
+    cycles_spec = [
+        # (months_ago, expected_cost, realized_cost, service_level, n_gen, n_red, coverage, solve_s)
+        (2, 48520.0, 51340.0, 0.91, 100, 30, 0.77, 1.8),
+        (1, 45890.0, 46720.0, 0.94, 100, 30, 0.82, 2.1),
+    ]
+
+    for months_ago, exp_cost, real_cost, svc, n_gen, n_red, cov, solve_t in cycles_spec:
+        planning_date = today - timedelta(days=30 * months_ago)
+
+        solution = StochasticSolution(
+            first_stage_decisions={
+                "capacity_MACHINE1": round(rng.uniform(140, 170), 1),
+                "safety_stock_PROD001": round(rng.uniform(25, 40), 1),
+                "safety_stock_PROD002": round(rng.uniform(15, 25), 1),
+            },
+            recourse_decisions={},
+            expected_cost=exp_cost,
+            cost_distribution=sorted(
+                (exp_cost + rng.normal(0, exp_cost * 0.08, 30)).tolist()
+            ),
+            var_95=round(exp_cost * 1.15, 2),
+            cvar_95=round(exp_cost * 1.22, 2),
+            solve_status="optimal",
+            solve_time=solve_t,
+        )
+
+        cycle = SOPPlanningCycle(
+            cycle_id=len(planner.cycle_history),
+            planning_date=planning_date,
+            solution=solution,
+            conformal_coverage=cov,
+            n_scenarios_generated=n_gen,
+            n_scenarios_after_reduction=n_red,
+            calibration_updates={},
+            first_stage_decisions=solution.first_stage_decisions,
+            realized_cost=real_cost,
+            service_level_achieved=svc,
+            coverage_met=svc >= cov,
+        )
+        planner.cycle_history.append(cycle)
+
+    return {
+        "status": "calibrated",
+        "suite_summary": suite_summary,
+        "joint_coverage_guarantee": joint_coverage,
+        "sop_cycles_seeded": len(planner.cycle_history),
+    }
