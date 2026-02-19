@@ -1,0 +1,310 @@
+/**
+ * Autonomy Prototype - Global Styles & CSS Variables
+ *
+ * This file defines the core design tokens as CSS custom properties (variables).
+ * These variables are referenced by Tailwind configuration for runtime theme switching.
+ *
+ * Structure:
+ * 1. Tailwind directives
+ * 2. Light mode variables (:root)
+ * 3. Dark mode variables (.dark)
+ * 4. Custom keyframe animations
+ * 5. Base styles
+ * 6. Component-specific styles
+ */
+
+/* Tailwind directives - required for Tailwind CSS */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================================
+   LIGHT MODE (Default Theme)
+   ============================================================================ */
+@layer base {
+  :root {
+    /* Base Colors */
+    --background: hsl(0 0% 100%);  /* Pure white */
+    --foreground: hsl(0 0% 9%);     /* Near black text */
+
+    /* Card Colors */
+    --card: hsl(0 0% 100%);
+    --card-foreground: hsl(0 0% 9%);
+
+    /* Popover/Dropdown Colors */
+    --popover: hsl(0 0% 100%);
+    --popover-foreground: hsl(0 0% 9%);
+
+    /* Primary Brand Color - Emerald Green */
+    --primary: 138 91% 26%;          /* Deep emerald green (HSL notation without hsl()) */
+    --primary-hover: 133 100% 20%;   /* Slightly darker emerald for hover */
+    --primary-foreground: 0 0% 100%; /* White text on primary */
+
+    /* Secondary Colors - Light Gray */
+    --secondary: hsl(0 0% 96%);
+    --secondary-foreground: hsl(0 0% 9%);
+
+    /* Muted Colors - For subtle/disabled elements */
+    --muted: hsl(0 0% 96%);              /* Light gray */
+    --muted-foreground: hsl(0 0% 45%);   /* Medium gray for secondary text */
+
+    /* Accent Colors */
+    --accent: hsl(0 0% 96%);
+    --accent-foreground: hsl(0 0% 9%);
+
+    /* Status Colors */
+    --destructive: hsl(0 84% 60%);       /* Red for errors/destructive actions */
+    --destructive-foreground: hsl(0 0% 100%);
+
+    --warning: hsl(45 93% 47%);          /* Amber/gold for warnings */
+    --warning-foreground: hsl(0 0% 9%);
+
+    --info: hsl(221 83% 53%);            /* Blue for informational messages */
+    --info-foreground: hsl(0 0% 97%);
+
+    /* Border & Input Colors */
+    --border: hsl(0 0% 90%);   /* Subtle borders */
+    --input: hsl(0 0% 96%);    /* Input field backgrounds */
+    --ring: 138 91% 26%;       /* Focus ring (matches primary) */
+
+    /* Sidebar-Specific Colors */
+    --sidebar-background: hsl(0 0% 100%);
+    --sidebar-foreground: hsl(0 0% 9%);
+    --sidebar-active: hsl(0 0% 96%);          /* Light gray for active state */
+    --sidebar-active-foreground: 138 91% 26%; /* Emerald for active text */
+    --sidebar-primary: 138 91% 26%;           /* Emerald primary */
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: hsl(0 0% 96%);
+    --sidebar-accent-foreground: hsl(0 0% 9%);
+    --sidebar-border: hsl(0 0% 90%);
+    --sidebar-ring: hsl(0 0% 55%);
+
+    /* Chart Colors - Blue scale for data visualization */
+    --chart-1: hsl(220 70% 75%); /* Light blue */
+    --chart-2: hsl(230 70% 55%); /* Medium blue */
+    --chart-3: hsl(240 70% 50%); /* Bright blue */
+    --chart-4: hsl(245 70% 45%); /* Deep blue */
+    --chart-5: hsl(250 60% 40%); /* Very deep blue */
+
+    /* Border Radius - Consistent rounded corners */
+    --radius: 0.625rem; /* 10px */
+  }
+
+  /* ============================================================================
+     DARK MODE
+     ============================================================================ */
+  .dark {
+    /* Base Colors - Dark backgrounds with light text */
+    --background: hsl(0 0% 4%);   /* Very dark gray, almost black */
+    --foreground: hsl(0 0% 97%);  /* Off-white text */
+
+    /* Card Colors */
+    --card: hsl(0 0% 9%);
+    --card-foreground: hsl(0 0% 97%);
+
+    /* Popover/Dropdown Colors */
+    --popover: hsl(0 0% 9%);
+    --popover-foreground: hsl(0 0% 97%);
+
+    /* Primary Brand Color - Same emerald in dark mode */
+    --primary: 138 91% 26%;
+    --primary-hover: 133 100% 20%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary Colors - Darker gray */
+    --secondary: hsl(0 0% 15%);
+    --secondary-foreground: hsl(0 0% 97%);
+
+    /* Muted Colors */
+    --muted: hsl(0 0% 15%);
+    --muted-foreground: hsl(0 0% 55%); /* Lighter gray for better contrast */
+
+    /* Accent Colors */
+    --accent: hsl(0 0% 22%);
+    --accent-foreground: hsl(0 0% 97%);
+
+    /* Status Colors - Adjusted for dark background */
+    --destructive: hsl(0 63% 31%);  /* Darker red */
+    --destructive-foreground: hsl(0 0% 97%);
+
+    --warning: hsl(45 93% 47%);      /* Same amber/gold */
+    --warning-foreground: hsl(0 0% 97%);
+
+    --info: hsl(221 50% 60%);        /* Slightly lighter blue */
+    --info-foreground: hsl(0 0% 97%);
+
+    /* Border & Input Colors */
+    --border: hsl(0 0% 15%); /* Dark border */
+    --input: hsl(0 0% 18%);  /* Slightly lighter for inputs */
+    --ring: 138 91% 26%;     /* Same emerald focus ring */
+
+    /* Sidebar-Specific Colors */
+    --sidebar-background: hsl(0 0% 9%);
+    --sidebar-foreground: hsl(0 0% 97%);
+    --sidebar-active: hsl(0 0% 15%);
+    --sidebar-active-foreground: 138 91% 26%;
+    --sidebar-primary: 138 91% 26%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: hsl(0 0% 15%);
+    --sidebar-accent-foreground: hsl(0 0% 97%);
+    --sidebar-border: hsl(0 0% 15%);
+    --sidebar-ring: hsl(0 0% 27%);
+
+    /* Chart Colors - Same in dark mode */
+    --chart-1: hsl(220 70% 75%);
+    --chart-2: hsl(230 70% 55%);
+    --chart-3: hsl(240 70% 50%);
+    --chart-4: hsl(245 70% 45%);
+    --chart-5: hsl(250 60% 40%);
+  }
+}
+
+/* ============================================================================
+   CUSTOM KEYFRAME ANIMATIONS
+   ============================================================================ */
+
+/* Subtle pulse animation for agent setup page */
+@keyframes pulse-subtle {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.02);
+  }
+}
+
+/* Utility class for subtle pulse */
+.animate-pulse-subtle {
+  animation: pulse-subtle 2.5s ease-in-out infinite;
+}
+
+/* ============================================================================
+   BASE STYLES
+   ============================================================================ */
+@layer base {
+  /* Apply border color to all elements */
+  * {
+    @apply border-border;
+  }
+
+  /* Body defaults */
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  /* Hide Lovable badge (if hosted on Lovable.dev) */
+  #lovable-badge {
+    display: none !important;
+  }
+
+  /* ============================================================================
+     SCROLLBAR STYLING - For Command dropdowns
+     ============================================================================ */
+  .command-scroll-container {
+    scrollbar-width: thin !important;
+    scrollbar-color: rgb(156 163 175) rgb(243 244 246) !important;
+    scrollbar-gutter: stable;
+  }
+
+  /* Webkit browsers (Chrome, Safari, Edge) */
+  .command-scroll-container::-webkit-scrollbar {
+    -webkit-appearance: none;
+    width: 10px !important;
+    height: 10px !important;
+  }
+
+  .command-scroll-container::-webkit-scrollbar-track {
+    background: rgb(243 244 246) !important;
+    border-radius: 4px;
+  }
+
+  .command-scroll-container::-webkit-scrollbar-thumb {
+    background: rgb(156 163 175) !important;
+    border-radius: 4px;
+    border: 2px solid rgb(243 244 246);
+  }
+
+  .command-scroll-container::-webkit-scrollbar-thumb:hover {
+    background: rgb(107 114 128) !important;
+  }
+}
+
+/* ============================================================================
+   COMPONENT STYLES - Wave Animation (Agent Setup Page)
+   ============================================================================ */
+@layer components {
+  /* Wave mask container */
+  .wave-mask {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  /* Wave fill animation */
+  .wave-fill {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    transform: translateY(96%);
+    animation: wave-rise 2.4s cubic-bezier(0.4, 0, 0.2, 1) 0.6s forwards;
+  }
+
+  .wave-fill > img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  /* Wave element styling */
+  .wave {
+    position: absolute;
+    top: -20%;
+    left: 50%;
+    width: 160%;
+    height: 160%;
+    border-radius: 45%;
+    background: radial-gradient(
+      circle at 50% 40%,
+      rgba(255, 255, 255, 0.45) 0%,
+      rgba(255, 255, 255, 0.15) 55%,
+      rgba(255, 255, 255, 0)
+    );
+    opacity: 0.55;
+    mix-blend-mode: screen;
+    transform: translate(-50%, 0) rotate(0deg);
+    animation: wave-sway 3.2s ease-in-out infinite;
+  }
+
+  /* Wave variants */
+  .wave-front {
+    opacity: 0.6;
+  }
+
+  .wave-back {
+    opacity: 0.35;
+    animation-duration: 4.2s;
+    animation-delay: -1.2s;
+  }
+}
+
+/* Wave rise animation */
+@keyframes wave-rise {
+  0%   { transform: translateY(98%); }
+  55%  { transform: translateY(-6%); }
+  72%  { transform: translateY(3%); }
+  100% { transform: translateY(0%); }
+}
+
+/* Wave sway animation */
+@keyframes wave-sway {
+  0%   { transform: translate(-50%, 0) rotate(0deg); }
+  50%  { transform: translate(calc(-50% + 4px), -6%) rotate(2deg); }
+  100% { transform: translate(-50%, 0) rotate(0deg); }
+}

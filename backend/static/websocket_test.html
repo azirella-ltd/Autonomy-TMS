@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Test - Beer Game</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .panel {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+            flex: 1;
+            min-width: 300px;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+            margin-top: 0;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px 0;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        .message-log {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .message {
+            margin: 5px 0;
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        .message.system {
+            color: #6c757d;
+        }
+        .message.sent {
+            color: #0d6efd;
+        }
+        .message.received {
+            color: #198754;
+        }
+        .message.error {
+            color: #dc3545;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <h1>Beer Game - WebSocket Test</h1>
+    
+    <div class="container">
+        <div class="panel">
+            <h2>Connection</h2>
+            <div class="form-group">
+                <label for="serverUrl">WebSocket Server URL:</label>
+                <input type="text" id="serverUrl" value="ws://localhost:8000/ws/test">
+            </div>
+            <div class="form-group">
+                <button id="connectBtn">Connect</button>
+                <button id="disconnectBtn" disabled>Disconnect</button>
+            </div>
+            <div id="connectionStatus" class="status disconnected">Disconnected</div>
+            
+            <h3>Send Message</h3>
+            <div class="form-group">
+                <label for="messageType">Message Type:</label>
+                <select id="messageType">
+                    <option value="echo">Echo</option>
+                    <option value="game_state">Request Game State</option>
+                    <option value="order">Submit Order</option>
+                    <option value="chat">Chat Message</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="messageContent">Message Content (JSON):</label>
+                <textarea id="messageContent" rows="4" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;">{"text": "Hello, WebSocket!"}</textarea>
+            </div>
+            <button id="sendBtn" disabled>Send Message</button>
+            
+            <h3>Game Actions</h3>
+            <div class="form-group">
+                <button id="startGameBtn" disabled>Start Game</button>
+                <button id="nextRoundBtn" disabled>Next Round</button>
+                <button id="endGameBtn" disabled>End Game</button>
+            </div>
+        </div>
+        
+        <div class="panel">
+            <h2>Message Log</h2>
+            <div id="messageLog" class="message-log"></div>
+            <div class="form-group" style="margin-top: 10px;">
+                <button id="clearLogBtn">Clear Log</button>
+                <button id="exportLogBtn">Export Log</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="panel">
+        <h2>Game State</h2>
+        <div id="gameState" class="message-log">No game state received yet.</div>
+    </div>
+    
+    <div class="panel">
+        <h2>Performance Metrics</h2>
+        <div class="chart-container">
+            <canvas id="latencyChart"></canvas>
+        </div>
+        <div id="metrics">
+            <p>Messages Sent: <span id="sentCount">0</span></p>
+            <p>Messages Received: <span id="receivedCount">0</span></p>
+            <p>Average Latency: <span id="avgLatency">0</span>ms</p>
+        </div>
+    </div>
+    
+    <script>
+        // DOM Elements
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const sendBtn = document.getElementById('sendBtn');
+        const clearLogBtn = document.getElementById('clearLogBtn');
+        const exportLogBtn = document.getElementById('exportLogBtn');
+        const startGameBtn = document.getElementById('startGameBtn');
+        const nextRoundBtn = document.getElementById('nextRoundBtn');
+        const endGameBtn = document.getElementById('endGameBtn');
+        const serverUrlInput = document.getElementById('serverUrl');
+        const messageTypeSelect = document.getElementById('messageType');
+        const messageContentInput = document.getElementById('messageContent');
+        const messageLog = document.getElementById('messageLog');
+        const gameStateDiv = document.getElementById('gameState');
+        const connectionStatus = document.getElementById('connectionStatus');
+        
+        // Metrics
+        let messagesSent = 0;
+        let messagesReceived = 0;
+        let totalLatency = 0;
+        let latencyData = [];
+        let latencyTimestamps = [];
+        
+        // WebSocket connection
+        let socket = null;
+        let isConnected = false;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 5;
+        let reconnectTimeout = null;
+        
+        // Chart
+        const latencyCtx = document.getElementById('latencyChart').getContext('2d');
+        const latencyChart = new Chart(latencyCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Latency (ms)',
+                    data: [],
+                    borderColor: 'rgb(75, 192, 192)',
+                    tension: 0.1,
+                    fill: false
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Latency (ms)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Time'
+                        }
+                    }
+                }
+            }
+        });
+        
+        // Update chart with new data point
+        function updateChart(timestamp, latency) {
+            latencyData.push(latency);
+            latencyTimestamps.push(new Date(timestamp).toLocaleTimeString());
+            
+            // Keep only the last 50 data points
+            if (latencyData.length > 50) {
+                latencyData.shift();
+                latencyTimestamps.shift();
+            }
+            
+            latencyChart.data.labels = latencyTimestamps;
+            latencyChart.data.datasets[0].data = latencyData;
+            latencyChart.update();
+        }
+        
+        // Update metrics display
+        function updateMetrics() {
+            document.getElementById('sentCount').textContent = messagesSent;
+            document.getElementById('receivedCount').textContent = messagesReceived;
+            const avgLatency = messagesReceived > 0 ? Math.round(totalLatency / messagesReceived) : 0;
+            document.getElementById('avgLatency').textContent = avgLatency;
+        }
+        
+        // Log a message to the message log
+        function logMessage(type, message) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = `[${new Date().toISOString()}] ${message}`;
+            messageLog.appendChild(messageDiv);
+            messageLog.scrollTop = messageLog.scrollHeight;
+        }
+        
+        // Connect to WebSocket server
+        function connect() {
+            if (isConnected) return;
+            
+            const url = serverUrlInput.value.trim();
+            if (!url) {
+                logMessage('error', 'Please enter a WebSocket server URL');
+                return;
+            }
+            
+            logMessage('system', `Connecting to ${url}...`);
+            
+            try {
+                socket = new WebSocket(url);
+                
+                socket.onopen = () => {
+                    isConnected = true;
+                    reconnectAttempts = 0;
+                    updateConnectionStatus(true);
+                    logMessage('system', 'Connected to WebSocket server');
+                    
+                    // Update UI
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = false;
+                    sendBtn.disabled = false;
+                    startGameBtn.disabled = false;
+                    nextRoundBtn.disabled = false;
+                    endGameBtn.disabled = false;
+                    
+                    // Send initial message to test connection
+                    const message = {
+                        type: 'connect',
+                        client: 'test-client',
+                        timestamp: new Date().toISOString()
+                    };
+                    sendMessage(message);
+                };
+                
+                socket.onmessage = (event) => {
+                    const receivedTime = new Date().getTime();
+                    let message;
+                    
+                    try {
+                        message = JSON.parse(event.data);
+                        const sentTime = message.timestamp ? new Date(message.timestamp).getTime() : receivedTime;
+                        const latency = receivedTime - sentTime;
+                        
+                        // Update metrics
+                        messagesReceived++;
+                        totalLatency += latency;
+                        updateMetrics();
+                        
+                        // Update chart
+                        updateChart(receivedTime, latency);
+                        
+                        // Handle different message types
+                        if (message.type === 'game_state') {
+                            gameStateDiv.textContent = JSON.stringify(message.state, null, 2);
+                            logMessage('received', `Game state updated at ${new Date().toLocaleTimeString()}`);
+                        } else if (message.type === 'error') {
+                            logMessage('error', `Error: ${message.message || 'Unknown error'}`);
+                        } else {
+                            logMessage('received', `Received: ${event.data}`);
+                        }
+                    } catch (e) {
+                        logMessage('error', `Error parsing message: ${e.message}`);
+                        logMessage('received', `Raw: ${event.data}`);
+                    }
+                };
+                
+                socket.onclose = (event) => {
+                    isConnected = false;
+                    updateConnectionStatus(false);
+                    logMessage('system', `Disconnected: ${event.code} ${event.reason || 'No reason provided'}`);
+                    
+                    // Update UI
+                    connectBtn.disabled = false;
+                    disconnectBtn.disabled = true;
+                    sendBtn.disabled = true;
+                    startGameBtn.disabled = true;
+                    nextRoundBtn.disabled = true;
+                    endGameBtn.disabled = true;
+                    
+                    // Attempt to reconnect
+                    if (reconnectAttempts < maxReconnectAttempts) {
+                        reconnectAttempts++;
+                        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000); // Exponential backoff, max 30s
+                        logMessage('system', `Attempting to reconnect in ${delay/1000} seconds (${reconnectAttempts}/${maxReconnectAttempts})...`);
+                        
+                        clearTimeout(reconnectTimeout);
+                        reconnectTimeout = setTimeout(connect, delay);
+                    } else {
+                        logMessage('system', 'Max reconnection attempts reached. Please check the server and try again.');
+                    }
+                };
+                
+                socket.onerror = (error) => {
+                    logMessage('error', `WebSocket error: ${error.message || 'Unknown error'}`);
+                };
+                
+            } catch (error) {
+                logMessage('error', `Error connecting to WebSocket: ${error.message}`);
+                updateConnectionStatus(false);
+            }
+        }
+        
+        // Disconnect from WebSocket server
+        function disconnect() {
+            if (socket) {
+                logMessage('system', 'Disconnecting...');
+                socket.close();
+                socket = null;
+                isConnected = false;
+                
+                // Clear any pending reconnection attempts
+                clearTimeout(reconnectTimeout);
+                
+                // Update UI
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                sendBtn.disabled = true;
+                startGameBtn.disabled = true;
+                nextRoundBtn.disabled = true;
+                endGameBtn.disabled = true;
+            }
+        }
+        
+        // Update connection status display
+        function updateConnectionStatus(connected) {
+            if (connected) {
+                connectionStatus.textContent = 'Connected';
+                connectionStatus.className = 'status connected';
+            } else {
+                connectionStatus.textContent = 'Disconnected';
+                connectionStatus.className = 'status disconnected';
+            }
+        }
+        
+        // Send a message through the WebSocket
+        function sendMessage(message) {
+            if (!isConnected || !socket) {
+                logMessage('error', 'Not connected to WebSocket server');
+                return false;
+            }
+            
+            try {
+                // Add timestamp to the message
+                const messageWithTimestamp = {
+                    ...message,
+                    timestamp: new Date().toISOString()
+                };
+                
+                const messageStr = JSON.stringify(messageWithTimestamp);
+                socket.send(messageStr);
+                
+                // Update metrics
+                messagesSent++;
+                updateMetrics();
+                
+                // Log the sent message
+                logMessage('sent', `Sent: ${messageStr}`);
+                
+                return true;
+            } catch (error) {
+                logMessage('error', `Error sending message: ${error.message}`);
+                return false;
+            }
+        }
+        
+        // Event Listeners
+        connectBtn.addEventListener('click', connect);
+        disconnectBtn.addEventListener('click', disconnect);
+        
+        sendBtn.addEventListener('click', () => {
+            const messageType = messageTypeSelect.value;
+            let messageContent;
+            
+            try {
+                messageContent = JSON.parse(messageContentInput.value);
+            } catch (e) {
+                logMessage('error', 'Invalid JSON in message content');
+                return;
+            }
+            
+            const message = {
+                type: messageType,
+                ...messageContent
+            };
+            
+            sendMessage(message);
+        });
+        
+        clearLogBtn.addEventListener('click', () => {
+            messageLog.innerHTML = '';
+        });
+        
+        exportLogBtn.addEventListener('click', () => {
+            const logContent = Array.from(messageLog.children)
+                .map(div => div.textContent)
+                .join('\n');
+            
+            const blob = new Blob([logContent], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `beer-game-websocket-log-${new Date().toISOString().replace(/[:.]/g, '-')}.log`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+        
+        startGameBtn.addEventListener('click', () => {
+            sendMessage({
+                type: 'start_game',
+                game_id: 'test-game-123'
+            });
+        });
+        
+        nextRoundBtn.addEventListener('click', () => {
+            sendMessage({
+                type: 'next_round',
+                game_id: 'test-game-123'
+            });
+        });
+        
+        endGameBtn.addEventListener('click', () => {
+            if (confirm('Are you sure you want to end the game?')) {
+                sendMessage({
+                    type: 'end_game',
+                    game_id: 'test-game-123',
+                    reason: 'Manually ended by user'
+                });
+            }
+        });
+        
+        // Handle window close
+        window.addEventListener('beforeunload', () => {
+            if (isConnected && socket) {
+                socket.close();
+            }
+        });
+        
+        // Initialize the UI
+        updateConnectionStatus(false);
+        logMessage('system', 'WebSocket test page loaded. Click Connect to begin.');
+    </script>
+</body>
+</html>

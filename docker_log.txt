@@ -1,0 +1,13 @@
+Using MySQL database at: db:3306/beer_game
+Using MySQL database at: db:3306/beer_game
+Using MySQL database at: db:3306/beer_game
+Using MySQL database at: db:3306/beer_game
+Using MySQL database at: db:3306/beer_game
+Using MySQL database at: db:3306/beer_game
+Using MySQL database at: db:3306/beer_game
+Using MySQL database at: db:3306/beer_game
+Using MySQL database at: db:3306/beer_game
+Using MySQL database at: db:3306/beer_game
+Using MySQL database at: db:3306/beer_game
+Using MySQL database at: db:3306/beer_game
+Using MySQL database at: db:3306/beer_game

@@ -1,0 +1,721 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Button,
+  Alert,
+  Badge,
+  Input,
+  Label,
+  Progress,
+  Modal,
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+  Textarea,
+} from '../../components/common';
+import { Switch } from '../../components/ui/switch';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '../../components/ui/tooltip';
+import {
+  RefreshCw,
+  ArrowLeftRight,
+  TrendingUp,
+  TrendingDown,
+  Pencil,
+  Save,
+  X,
+  Undo,
+} from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
+import { api } from '../../services/api';
+
+const DemandPlanView = () => {
+  const [forecasts, setForecasts] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [productFilter, setProductFilter] = useState('');
+  const [siteFilter, setSiteFilter] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+  const [compareDialogOpen, setCompareDialogOpen] = useState(false);
+  const [deltaData, setDeltaData] = useState([]);
+  const [chartData, setChartData] = useState([]);
+
+  // Edit mode state
+  const [editMode, setEditMode] = useState(false);
+  const [editedForecasts, setEditedForecasts] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [selectedForecastForEdit, setSelectedForecastForEdit] = useState(null);
+  const [editValues, setEditValues] = useState({ p10: 0, p50: 0, p90: 0, reason: '' });
+
+  // Fetch demand plan summary
+  const fetchSummary = async () => {
+    try {
+      const response = await api.get('/demand-plan/summary');
+      setSummary(response.data);
+    } catch (error) {
+      console.error('Failed to fetch summary:', error);
+    }
+  };
+
+  // Fetch current demand plan
+  const fetchDemandPlan = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = {
+        product_id: productFilter || undefined,
+        site_id: siteFilter || undefined,
+        start_date: startDate || undefined,
+        end_date: endDate || undefined,
+        limit: 1000,
+      };
+      const response = await api.get('/demand-plan/current', { params });
+      setForecasts(response.data);
+
+      // Prepare chart data (aggregate by date)
+      const chartMap = new Map();
+      response.data.forEach(f => {
+        const date = new Date(f.forecast_date).toISOString().split('T')[0];
+        if (!chartMap.has(date)) {
+          chartMap.set(date, { date, p10: 0, p50: 0, median: 0, p90: 0 });
+        }
+        const entry = chartMap.get(date);
+        entry.p10 += f.forecast_p10 || 0;
+        entry.p50 += f.forecast_p50 || 0;
+        entry.median += (f.forecast_median ?? f.forecast_p50 ?? 0);
+        entry.p90 += f.forecast_p90 || 0;
+      });
+      setChartData(Array.from(chartMap.values()).sort((a, b) => a.date.localeCompare(b.date)));
+
+      setSuccess(`Loaded ${response.data.length} forecasts`);
+    } catch (error) {
+      console.error('Failed to fetch demand plan:', error);
+      setError('Failed to load demand plan. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Compare versions (delta analysis)
+  const comparePlanVersions = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await api.get('/demand-plan/delta', {
+        params: {
+          version1: 'previous',
+          version2: 'current',
+          min_delta_pct: 5.0, // Only show changes > 5%
+        }
+      });
+      setDeltaData(response.data);
+      setCompareDialogOpen(true);
+    } catch (error) {
+      console.error('Failed to compare versions:', error);
+      setError('Failed to compare plan versions.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSummary();
+    fetchDemandPlan();
+  }, []);
+
+  // Open edit dialog for a forecast
+  const handleEditClick = (forecast, index) => {
+    setSelectedForecastForEdit({ ...forecast, index });
+    setEditValues({
+      p10: forecast.forecast_p10 || 0,
+      p50: forecast.forecast_p50 || 0,
+      p90: forecast.forecast_p90 || 0,
+      reason: '',
+    });
+    setEditDialogOpen(true);
+  };
+
+  // Save edit for a single forecast
+  const handleSaveEdit = () => {
+    if (!selectedForecastForEdit) return;
+
+    const key = `${selectedForecastForEdit.product_id}-${selectedForecastForEdit.site_id}-${selectedForecastForEdit.forecast_date}`;
+    setEditedForecasts(prev => ({
+      ...prev,
+      [key]: {
+        ...selectedForecastForEdit,
+        forecast_p10: editValues.p10,
+        forecast_p50: editValues.p50,
+        forecast_median: editValues.p50,
+        forecast_p90: editValues.p90,
+        edit_reason: editValues.reason,
+        original: {
+          p10: selectedForecastForEdit.forecast_p10,
+          p50: selectedForecastForEdit.forecast_p50,
+          p90: selectedForecastForEdit.forecast_p90,
+        },
+      },
+    }));
+
+    // Update local forecasts display
+    setForecasts(prev => prev.map((f, i) =>
+      i === selectedForecastForEdit.index
+        ? { ...f, forecast_p10: editValues.p10, forecast_p50: editValues.p50, forecast_p90: editValues.p90, edited: true }
+        : f
+    ));
+
+    setEditDialogOpen(false);
+    setSelectedForecastForEdit(null);
+  };
+
+  // Undo a single edit
+  const handleUndoEdit = (forecast, index) => {
+    const key = `${forecast.product_id}-${forecast.site_id}-${forecast.forecast_date}`;
+    const original = editedForecasts[key]?.original;
+    if (original) {
+      setForecasts(prev => prev.map((f, i) =>
+        i === index
+          ? { ...f, forecast_p10: original.p10, forecast_p50: original.p50, forecast_p90: original.p90, edited: false }
+          : f
+      ));
+      setEditedForecasts(prev => {
+        const { [key]: _, ...rest } = prev;
+        return rest;
+      });
+    }
+  };
+
+  // Save all edits
+  const handleSaveAllEdits = async () => {
+    const edits = Object.values(editedForecasts);
+    if (edits.length === 0) {
+      setError('No changes to save');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      await api.post('/demand-plan/override', {
+        overrides: edits.map(e => ({
+          product_id: e.product_id,
+          site_id: e.site_id,
+          forecast_date: e.forecast_date,
+          forecast_p10: e.forecast_p10,
+          forecast_p50: e.forecast_p50,
+          forecast_median: e.forecast_median ?? e.forecast_p50,
+          forecast_p90: e.forecast_p90,
+          reason: e.edit_reason,
+        })),
+      });
+      setSuccess(`Saved ${edits.length} forecast overrides`);
+      setEditedForecasts({});
+      setEditMode(false);
+      fetchDemandPlan(); // Refresh
+    } catch (error) {
+      console.error('Failed to save edits:', error);
+      setError('Failed to save forecast overrides');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Cancel all edits
+  const handleCancelEdits = () => {
+    setEditedForecasts({});
+    setEditMode(false);
+    fetchDemandPlan(); // Reload original data
+  };
+
+  const formatNumber = (num) => {
+    if (!num) return '0';
+    return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  };
+
+  const editCount = Object.keys(editedForecasts).length;
+
+  return (
+    <div className="p-6">
+      <div className="flex justify-between items-start mb-4">
+        <div>
+          <h1 className="text-2xl font-bold">
+            Demand Plan {editMode ? 'Editing' : 'Viewing'}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {editMode
+              ? 'Click on any forecast row to edit P10/P50/P90 values'
+              : 'View demand forecasts with confidence intervals (P10/P50/P90)'}
+          </p>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={editMode}
+              onCheckedChange={(checked) => {
+                if (!checked && editCount > 0) {
+                  if (window.confirm('You have unsaved changes. Discard them?')) {
+                    handleCancelEdits();
+                  }
+                } else {
+                  setEditMode(checked);
+                }
+              }}
+              id="edit-mode"
+            />
+            <Label htmlFor="edit-mode" className="flex items-center gap-1">
+              <Pencil className="h-4 w-4" />
+              Edit Mode
+            </Label>
+          </div>
+          {editMode && editCount > 0 && (
+            <>
+              <div className="relative">
+                <Button
+                  onClick={handleSaveAllEdits}
+                  disabled={saving}
+                  leftIcon={<Save className="h-4 w-4" />}
+                >
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </Button>
+                <Badge variant="default" className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0 text-xs">
+                  {editCount}
+                </Badge>
+              </div>
+              <Button
+                variant="outline"
+                onClick={handleCancelEdits}
+                disabled={saving}
+                leftIcon={<X className="h-4 w-4" />}
+              >
+                Discard
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Success/Error Messages */}
+      {error && (
+        <Alert variant="error" className="mb-4" onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+      {success && (
+        <Alert variant="success" className="mb-4" onClose={() => setSuccess(null)}>
+          {success}
+        </Alert>
+      )}
+
+      {/* Summary Cards */}
+      {summary && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <Card>
+            <CardContent className="pt-4">
+              <p className="text-sm text-muted-foreground">Total Forecasts</p>
+              <p className="text-3xl font-bold">{summary.total_forecasts}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4">
+              <p className="text-sm text-muted-foreground">Products</p>
+              <p className="text-3xl font-bold">{summary.product_count}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4">
+              <p className="text-sm text-muted-foreground">Sites</p>
+              <p className="text-3xl font-bold">{summary.site_count}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4">
+              <p className="text-sm text-muted-foreground">Total Demand (P50 / Median)</p>
+              <p className="text-xl font-bold">{formatNumber(summary.total_demand_p50)}</p>
+              <p className="text-sm text-muted-foreground">
+                Median: {formatNumber(summary.total_demand_median ?? summary.total_demand_p50)}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Filters */}
+      <Card className="mb-6">
+        <CardContent className="pt-4">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-4 items-end">
+            <div>
+              <Label>Product ID</Label>
+              <Input
+                value={productFilter}
+                onChange={(e) => setProductFilter(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>Site ID</Label>
+              <Input
+                value={siteFilter}
+                onChange={(e) => setSiteFilter(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>Start Date</Label>
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>End Date</Label>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <Button
+              onClick={fetchDemandPlan}
+              disabled={loading}
+              leftIcon={<RefreshCw className="h-4 w-4" />}
+            >
+              Refresh
+            </Button>
+            <Button
+              variant="outline"
+              onClick={comparePlanVersions}
+              disabled={loading}
+              leftIcon={<ArrowLeftRight className="h-4 w-4" />}
+            >
+              Compare
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {loading && <Progress className="mb-4" />}
+
+      {/* Forecast Chart */}
+      {chartData.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Demand Forecast Trend (P10/P50/Median/P90)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" />
+                <YAxis />
+                <RechartsTooltip />
+                <Legend />
+                <Line type="monotone" dataKey="p10" stroke="#82ca9d" name="P10 (Low)" />
+                <Line type="monotone" dataKey="p50" stroke="#8884d8" name="P50 (Most Likely)" strokeWidth={2} />
+                <Line type="monotone" dataKey="median" stroke="#1f77b4" name="Forecast Median" strokeDasharray="4 3" />
+                <Line type="monotone" dataKey="p90" stroke="#ffc658" name="P90 (High)" />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Forecast Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Forecast Details</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Product ID</TableHead>
+                <TableHead>Site ID</TableHead>
+                <TableHead>Forecast Date</TableHead>
+                <TableHead className="text-right">P10 (Low)</TableHead>
+                <TableHead className="text-right">P50 (Most Likely)</TableHead>
+                <TableHead className="text-right">Forecast Median</TableHead>
+                <TableHead className="text-right">P90 (High)</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Source</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {forecasts.length === 0 && !loading && (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center py-8">
+                    <p className="text-muted-foreground">
+                      No forecasts found. Adjust filters and try again.
+                    </p>
+                  </TableCell>
+                </TableRow>
+              )}
+              {forecasts.slice(0, 100).map((forecast, index) => (
+                <TableRow
+                  key={index}
+                  className={`${editMode ? 'cursor-pointer hover:bg-muted/50' : ''} ${forecast.edited ? 'bg-amber-50 dark:bg-amber-950/20' : ''}`}
+                  onClick={() => editMode && handleEditClick(forecast, index)}
+                >
+                  <TableCell>{forecast.product_id}</TableCell>
+                  <TableCell>{forecast.site_id}</TableCell>
+                  <TableCell>
+                    {new Date(forecast.forecast_date).toLocaleDateString()}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      {forecast.edited && <Badge variant="warning" className="text-xs">edited</Badge>}
+                      {formatNumber(forecast.forecast_p10)}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <span className="font-bold">{formatNumber(forecast.forecast_p50)}</span>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {formatNumber(forecast.forecast_median ?? forecast.forecast_p50)}
+                  </TableCell>
+                  <TableCell className="text-right">{formatNumber(forecast.forecast_p90)}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <Badge variant="secondary">{forecast.forecast_type || 'statistical'}</Badge>
+                      {editMode && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => { e.stopPropagation(); handleEditClick(forecast, index); }}
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Edit forecast</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
+                      {forecast.edited && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => { e.stopPropagation(); handleUndoEdit(forecast, index); }}
+                              >
+                                <Undo className="h-3 w-3" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Undo edit</TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-1">
+                      <Badge variant="outline">{forecast.forecast_source || 'legacy'}</Badge>
+                      {forecast.forecast_run_id && (
+                        <span className="text-xs text-muted-foreground">run {forecast.forecast_run_id}</span>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          {forecasts.length > 100 && (
+            <p className="text-sm text-muted-foreground mt-2">
+              Showing first 100 of {forecasts.length} forecasts
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Delta Comparison Dialog */}
+      <Modal
+        open={compareDialogOpen}
+        onClose={() => setCompareDialogOpen(false)}
+        title="Demand Plan Delta Analysis"
+        size="lg"
+      >
+        {deltaData.length === 0 ? (
+          <Alert variant="info">
+            No significant changes detected (delta threshold: 5%)
+          </Alert>
+        ) : (
+          <>
+            <p className="text-sm text-muted-foreground mb-4">
+              Showing changes greater than 5% between versions
+            </p>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Product</TableHead>
+                  <TableHead>Site</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead className="text-right">Previous (P50)</TableHead>
+                  <TableHead className="text-right">Current (P50)</TableHead>
+                  <TableHead className="text-right">Previous (Median)</TableHead>
+                  <TableHead className="text-right">Current (Median)</TableHead>
+                  <TableHead className="text-right">Delta</TableHead>
+                  <TableHead className="text-right">% Change</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {deltaData.slice(0, 50).map((delta, index) => (
+                  <TableRow key={index}>
+                    <TableCell>{delta.product_id}</TableCell>
+                    <TableCell>{delta.site_id}</TableCell>
+                    <TableCell>
+                      {new Date(delta.forecast_date).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className="text-right">{formatNumber(delta.version1_p50)}</TableCell>
+                    <TableCell className="text-right">{formatNumber(delta.version2_p50)}</TableCell>
+                    <TableCell className="text-right">{formatNumber(delta.version1_median ?? delta.version1_p50)}</TableCell>
+                    <TableCell className="text-right">{formatNumber(delta.version2_median ?? delta.version2_p50)}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {delta.delta_p50 > 0 ? (
+                          <TrendingUp className="h-4 w-4 text-emerald-600" />
+                        ) : (
+                          <TrendingDown className="h-4 w-4 text-red-600" />
+                        )}
+                        {formatNumber(Math.abs(delta.delta_p50))}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Badge variant={delta.delta_pct > 0 ? 'success' : 'destructive'}>
+                        {delta.delta_pct >= 0 ? '+' : ''}{delta.delta_pct.toFixed(1)}%
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            {deltaData.length > 50 && (
+              <p className="text-sm text-muted-foreground mt-2">
+                Showing first 50 of {deltaData.length} changes
+              </p>
+            )}
+          </>
+        )}
+        <div className="flex justify-end mt-4">
+          <Button variant="outline" onClick={() => setCompareDialogOpen(false)}>Close</Button>
+        </div>
+      </Modal>
+
+      {/* Edit Forecast Dialog */}
+      <Modal
+        open={editDialogOpen}
+        onClose={() => setEditDialogOpen(false)}
+        title="Edit Forecast"
+        size="md"
+      >
+        {selectedForecastForEdit && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Product</p>
+                <p className="font-medium">{selectedForecastForEdit.product_id}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Site</p>
+                <p className="font-medium">{selectedForecastForEdit.site_id}</p>
+              </div>
+              <div className="col-span-2">
+                <p className="text-sm text-muted-foreground">Forecast Date</p>
+                <p className="font-medium">
+                  {new Date(selectedForecastForEdit.forecast_date).toLocaleDateString()}
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <h4 className="font-medium mb-2">Adjust Forecast Values</h4>
+              <Alert variant="info" className="mb-4">
+                P10 &lt; P50 &lt; P90 (Low &lt; Most Likely &lt; High)
+              </Alert>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <Label>P10 (Low)</Label>
+                  <Input
+                    type="number"
+                    value={editValues.p10}
+                    onChange={(e) => setEditValues(prev => ({ ...prev, p10: Number(e.target.value) }))}
+                    min={0}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label>P50 (Most Likely)</Label>
+                  <Input
+                    type="number"
+                    value={editValues.p50}
+                    onChange={(e) => setEditValues(prev => ({ ...prev, p50: Number(e.target.value) }))}
+                    min={0}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label>P90 (High)</Label>
+                  <Input
+                    type="number"
+                    value={editValues.p90}
+                    onChange={(e) => setEditValues(prev => ({ ...prev, p90: Number(e.target.value) }))}
+                    min={0}
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+              <div className="mt-4">
+                <Label>Reason for Override (optional)</Label>
+                <Textarea
+                  value={editValues.reason}
+                  onChange={(e) => setEditValues(prev => ({ ...prev, reason: e.target.value }))}
+                  placeholder="e.g., Promotional event, Market insight, Customer feedback..."
+                  rows={2}
+                  className="mt-1"
+                />
+              </div>
+
+              {(editValues.p10 > editValues.p50 || editValues.p50 > editValues.p90) && (
+                <Alert variant="warning" className="mt-4">
+                  Warning: P10 should be less than P50, and P50 should be less than P90
+                </Alert>
+              )}
+            </div>
+          </div>
+        )}
+        <div className="flex justify-end gap-2 mt-6">
+          <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={handleSaveEdit}
+            disabled={editValues.p10 > editValues.p50 || editValues.p50 > editValues.p90}
+            leftIcon={<Save className="h-4 w-4" />}
+          >
+            Apply Change
+          </Button>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
+export default DemandPlanView;

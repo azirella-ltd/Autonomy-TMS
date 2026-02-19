@@ -1,0 +1,8 @@
+[submodule "external/tiny-recursive-model"]
+	path = external/tiny-recursive-model
+	url = https://github.com/lucidrains/tiny-recursive-model
+	branch = main
+[submodule "external/trm_integration"]
+	path = external/trm_integration
+	url = https://github.com/MilesAheadToo/TRM_integration
+	branch = main

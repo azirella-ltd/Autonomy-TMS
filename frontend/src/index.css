@@ -1,0 +1,367 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================================
+   Autonomy UI Kit - CSS Variables (Design Tokens)
+   ============================================================================ */
+@layer base {
+  :root {
+    /* Base Colors */
+    --background: hsl(0 0% 100%);
+    --foreground: hsl(0 0% 9%);
+
+    /* Card Colors */
+    --card: hsl(0 0% 100%);
+    --card-foreground: hsl(0 0% 9%);
+
+    /* Popover/Dropdown Colors */
+    --popover: hsl(0 0% 100%);
+    --popover-foreground: hsl(0 0% 9%);
+
+    /* Primary Brand Color - Blue */
+    --primary: 221 83% 53%;
+    --primary-hover: 224 76% 48%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary Colors - Light Gray */
+    --secondary: hsl(0 0% 96%);
+    --secondary-foreground: hsl(0 0% 9%);
+
+    /* Muted Colors */
+    --muted: hsl(0 0% 96%);
+    --muted-foreground: hsl(0 0% 45%);
+
+    /* Accent Colors */
+    --accent: hsl(0 0% 96%);
+    --accent-foreground: hsl(0 0% 9%);
+
+    /* Status Colors */
+    --destructive: hsl(0 84% 60%);
+    --destructive-foreground: hsl(0 0% 100%);
+    --warning: hsl(45 93% 47%);
+    --warning-foreground: hsl(0 0% 9%);
+    --info: hsl(221 83% 53%);
+    --info-foreground: hsl(0 0% 97%);
+
+    /* Border & Input Colors */
+    --border: hsl(0 0% 90%);
+    --input: hsl(0 0% 96%);
+    --ring: 221 83% 53%;
+
+    /* Sidebar Colors */
+    --sidebar-background: hsl(0 0% 100%);
+    --sidebar-foreground: hsl(0 0% 9%);
+    --sidebar-active: hsl(0 0% 96%);
+    --sidebar-active-foreground: 221 83% 53%;
+    --sidebar-primary: 221 83% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: hsl(0 0% 96%);
+    --sidebar-accent-foreground: hsl(0 0% 9%);
+    --sidebar-border: hsl(0 0% 90%);
+    --sidebar-ring: hsl(0 0% 55%);
+
+    /* Chart Colors */
+    --chart-1: hsl(220 70% 75%);
+    --chart-2: hsl(230 70% 55%);
+    --chart-3: hsl(240 70% 50%);
+    --chart-4: hsl(245 70% 45%);
+    --chart-5: hsl(250 60% 40%);
+
+    /* Border Radius */
+    --radius: 0.625rem;
+
+    /* Legacy Autonomy Variables (preserved for compatibility) */
+    --db-font: 'Trebuchet MS', 'TrebuchetMS', 'Lucida Sans Unicode', 'Lucida Grande', sans-serif;
+    --surface: #F0F4FF;
+    --surface-2: #DBEAFE;
+    --bg: #f7f9fc;
+    --text: #0f172a;
+    --muted-legacy: #4a5568;
+    --border-legacy: rgba(30, 64, 175, 0.18);
+    --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --space-12: 48px;
+  }
+
+  /* Dark Mode */
+  .dark {
+    --background: hsl(0 0% 4%);
+    --foreground: hsl(0 0% 97%);
+    --card: hsl(0 0% 9%);
+    --card-foreground: hsl(0 0% 97%);
+    --popover: hsl(0 0% 9%);
+    --popover-foreground: hsl(0 0% 97%);
+    --primary: 221 83% 53%;
+    --primary-hover: 224 76% 48%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: hsl(0 0% 15%);
+    --secondary-foreground: hsl(0 0% 97%);
+    --muted: hsl(0 0% 15%);
+    --muted-foreground: hsl(0 0% 55%);
+    --accent: hsl(0 0% 22%);
+    --accent-foreground: hsl(0 0% 97%);
+    --destructive: hsl(0 63% 31%);
+    --destructive-foreground: hsl(0 0% 97%);
+    --warning: hsl(45 93% 47%);
+    --warning-foreground: hsl(0 0% 97%);
+    --info: hsl(221 50% 60%);
+    --info-foreground: hsl(0 0% 97%);
+    --border: hsl(0 0% 15%);
+    --input: hsl(0 0% 18%);
+    --ring: 221 83% 53%;
+    --sidebar-background: hsl(0 0% 9%);
+    --sidebar-foreground: hsl(0 0% 97%);
+    --sidebar-active: hsl(0 0% 15%);
+    --sidebar-active-foreground: 221 83% 53%;
+    --sidebar-primary: 221 83% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: hsl(0 0% 15%);
+    --sidebar-accent-foreground: hsl(0 0% 97%);
+    --sidebar-border: hsl(0 0% 15%);
+    --sidebar-ring: hsl(0 0% 27%);
+  }
+
+  /* Apply border color to all elements */
+  * {
+    @apply border-border;
+  }
+
+  /* Body defaults */
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* ============================================================================
+   LEGACY STYLES (Preserved for backward compatibility)
+   ============================================================================ */
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--db-font);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+}
+
+/* Tables: keep each row to a single line and allow horizontal scroll */
+.chakra-table td,
+.chakra-table th,
+table td,
+table th {
+  white-space: nowrap;
+}
+
+.truncate-cell {
+  display: inline-block;
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Unified table look across Chakra, MUI and plain tables */
+.chakra-table thead th,
+.MuiTableCell-head,
+table thead th {
+  background-color: var(--surface-2) !important;
+  color: var(--muted-legacy) !important;
+  font-weight: 600 !important;
+  font-size: 0.75rem !important;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  border-color: var(--border-legacy) !important;
+}
+
+.chakra-table td,
+.MuiTableCell-root,
+table tbody td {
+  color: var(--text);
+  font-size: 0.875rem;
+  border-color: var(--border-legacy) !important;
+}
+
+.chakra-table tbody tr:hover,
+.MuiTableRow-hover:hover,
+table tbody tr:hover {
+  background-color: #F9FAFB !important;
+}
+
+.table-surface {
+  background: var(--surface);
+  border: 1px solid var(--border-legacy);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.card-surface {
+  background: var(--surface);
+  border: 1px solid var(--border-legacy);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Chakra button styling */
+.chakra-button:not(.chakra-numberincrementstepper):not(.chakra-numberdecrementstepper):not(.chakra-icon-button),
+button.db-btn {
+  border-radius: 9999px !important;
+  background-color: rgba(37,99,235,0.12) !important;
+  color: #0F172A !important;
+  border: 1px solid rgba(37,99,235,0.35) !important;
+  padding: 10px 18px !important;
+  min-width: 110px !important;
+}
+
+.chakra-button:not(.chakra-numberincrementstepper):not(.chakra-numberdecrementstepper):not(.chakra-icon-button):hover,
+button.db-btn:hover {
+  background-color: rgba(37,99,235,0.2) !important;
+}
+
+.chakra-numberincrementstepper,
+.chakra-numberdecrementstepper {
+  min-width: auto !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  border: none !important;
+  background-color: transparent !important;
+  color: inherit !important;
+}
+
+.chakra-card {
+  background: var(--surface);
+  border: 1px solid var(--border-legacy);
+  border-radius: 12px !important;
+  box-shadow: var(--shadow-sm);
+}
+
+.chakra-form__label {
+  font-family: var(--db-font);
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.chakra-form__helper-text {
+  font-family: var(--db-font);
+  font-size: 0.75rem;
+  color: #4a5568;
+  margin-top: 4px;
+}
+
+.chakra-alert__icon {
+  width: 1em;
+  height: 1em;
+}
+
+.chakra-alert__title {
+  font-family: var(--db-font);
+  font-weight: 600;
+}
+
+.chakra-alert__desc,
+.chakra-text,
+.chakra-input,
+.chakra-select,
+.chakra-textarea,
+.chakra-button {
+  font-family: var(--db-font);
+}
+
+.MuiTypography-root,
+.MuiButton-root,
+.MuiInputBase-root,
+.MuiFormLabel-root,
+.MuiFormHelperText-root,
+.MuiPaper-root,
+.MuiAlert-root {
+  font-family: var(--db-font) !important;
+}
+
+.MuiFormLabel-root {
+  font-weight: 600 !important;
+  font-size: 1rem !important;
+  color: var(--text) !important;
+}
+
+.MuiFormHelperText-root {
+  font-size: 0.75rem !important;
+  color: #4a5568 !important;
+}
+
+.MuiPaper-root.MuiCard-root,
+.MuiCard-root {
+  background: var(--surface) !important;
+  border-radius: 16px !important;
+  border: 1px solid var(--border-legacy) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+.MuiAlert-icon {
+  font-size: 1em !important;
+}
+
+/* Utility classes for spacing */
+.pad-4 { padding: var(--space-4); }
+.pad-6 { padding: var(--space-6); }
+.pad-8 { padding: var(--space-8); }
+
+/* ============================================================================
+   Autonomy UI Kit - Custom Animations & Components
+   ============================================================================ */
+
+@keyframes pulse-subtle {
+  0%, 100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.02);
+  }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2.5s ease-in-out infinite;
+}
+
+/* Command dropdown scrollbar styling */
+.command-scroll-container {
+  scrollbar-width: thin !important;
+  scrollbar-color: rgb(156 163 175) rgb(243 244 246) !important;
+  scrollbar-gutter: stable;
+}
+
+.command-scroll-container::-webkit-scrollbar {
+  -webkit-appearance: none;
+  width: 10px !important;
+  height: 10px !important;
+}
+
+.command-scroll-container::-webkit-scrollbar-track {
+  background: rgb(243 244 246) !important;
+  border-radius: 4px;
+}
+
+.command-scroll-container::-webkit-scrollbar-thumb {
+  background: rgb(156 163 175) !important;
+  border-radius: 4px;
+  border: 2px solid rgb(243 244 246);
+}
+
+.command-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: rgb(107 114 128) !important;
+}

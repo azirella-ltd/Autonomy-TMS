@@ -1,0 +1,28 @@
+# Production configuration
+
+# Model parameters
+model:
+  hidden_dim: 64
+  num_layers: 3
+  num_heads: 4
+  dropout: 0.2
+
+# Training parameters
+training:
+  batch_size: 16
+  num_epochs: 100
+  learning_rate: 0.0005
+  weight_decay: 0.0001
+  patience: 20
+
+# Logging and saving
+logging:
+  log_dir: "/var/log/autonomy/training"
+  checkpoint_dir: "/var/lib/autonomy/checkpoints"
+  tensorboard: True
+
+# Hardware
+hardware:
+  device: "cuda"
+  num_workers: 8
+  pin_memory: True

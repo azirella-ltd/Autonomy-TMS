@@ -1,0 +1,36 @@
+<svg width="400" height="300" viewBox="0 0 400 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="400" height="300" rx="12" fill="#1E3A8A" />
+  
+  <!-- Title -->
+  <text x="200" y="40" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="white" text-anchor="middle">Supply Chain Simulation</text>
+  
+  <!-- Manufacturer -->
+  <rect x="200" y="80" width="80" height="60" rx="4" fill="#3B82F6" stroke="#2563EB" stroke-width="2" />
+  <text x="240" y="115" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="white" text-anchor="middle">Manufacturer</text>
+  
+  <!-- Distributor -->
+  <rect x="100" y="160" width="80" height="60" rx="4" fill="#60A5FA" stroke="#3B82F6" stroke-width="2" />
+  <text x="140" y="195" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="1F2937" text-anchor="middle">Distributor</text>
+  
+  <!-- Wholesaler -->
+  <rect x="300" y="160" width="80" height="60" rx="4" fill="#60A5FA" stroke="#3B82F6" stroke-width="2" />
+  <text x="340" y="195" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="1F2937" text-anchor="middle">Wholesaler</text>
+  
+  <!-- Retailer -->
+  <rect x="200" y="240" width="80" height="60" rx="4" fill="#93C5FD" stroke="#60A5FA" stroke-width="2" />
+  <text x="240" y="275" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="1F2937" text-anchor="middle">Retailer</text>
+  
+  <!-- Arrows -->
+  <path d="M240 140L240 160" stroke="white" stroke-width="2" stroke-linecap="round" marker-end="url(#arrowhead)" />
+  <path d="M140 190L120 190L120 150L100 150" stroke="white" stroke-width="2" stroke-linecap="round" marker-end="url(#arrowhead)" />
+  <path d="M340 190L360 190L360 150L380 150" stroke="white" stroke-width="2" stroke-linecap="round" marker-end="url(#arrowhead)" />
+  <path d="M240 300L240 280" stroke="white" stroke-width="2" stroke-linecap="round" marker-end="url(#arrowhead)" />
+  
+  <!-- Arrowhead marker -->
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="white" />
+    </marker>
+  </defs>
+</svg>

@@ -1,0 +1,53 @@
+# Makefile for GPU support
+
+.PHONY: build up down clean
+
+DOCKER ?= docker
+DOCKER_COMPOSE ?= $(shell if command -v $(DOCKER) >/dev/null 2>&1 && $(DOCKER) compose version >/dev/null 2>&1; then echo "$(DOCKER) compose"; elif command -v docker-compose >/dev/null 2>&1; then echo "docker-compose"; else echo "$(DOCKER) compose"; fi)
+
+COMPOSE_VERSION := $(shell $(DOCKER_COMPOSE) version --short 2>/dev/null)
+COMPOSE_VERSION_NORMALIZED := $(patsubst v%,%,$(COMPOSE_VERSION))
+COMPOSE_IS_V1 := 0
+ifeq ($(firstword $(DOCKER_COMPOSE)),docker-compose)
+    COMPOSE_IS_V1 := 1
+else ifneq ($(COMPOSE_VERSION_NORMALIZED),)
+    ifneq (,$(filter 1.%,$(COMPOSE_VERSION_NORMALIZED)))
+        COMPOSE_IS_V1 := 1
+    endif
+endif
+
+COMPOSE_ENV :=
+ifeq ($(COMPOSE_IS_V1),1)
+    COMPOSE_ENV := COMPOSE_API_VERSION=1.44 DOCKER_API_VERSION=1.44
+endif
+
+DOCKER_COMPOSE_CMD = $(strip $(COMPOSE_ENV) $(DOCKER_COMPOSE))
+
+# Build and start the application with GPU support
+up:
+	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+
+# Stop and remove containers, networks, and volumes
+down:
+	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.gpu.yml down -v
+
+# Build the application
+build:
+	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.gpu.yml build
+
+# Clean up all Docker resources
+clean:
+	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.gpu.yml down -v --rmi all --remove-orphans
+	docker system prune -a --volumes -f
+
+# View logs
+logs:
+	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.gpu.yml logs -f
+
+# Check GPU status
+gpu-status:
+	docker run --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi
+
+# Test PyTorch GPU support
+test-gpu:
+	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.gpu.yml exec backend python3 -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA device count: {torch.cuda.device_count()}'); [torch.cuda.is_available()] and [print(f'Device {i}: {torch.cuda.get_device_properties(i)}') for i in range(torch.cuda.device_count())]"

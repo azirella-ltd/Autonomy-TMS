@@ -1,0 +1,516 @@
+"""
+Convert Beer Game Supply Chain Config to AWS SC Format
+
+This script converts an existing Beer Game SupplyChainConfig to AWS SC entities:
+- InvPolicy (inventory policies for each node)
+- SourcingRules (sourcing relationships between nodes)
+- ProductionProcess (manufacturing processes for factory nodes)
+- Forecast (demand forecast for 52 weeks)
+
+Usage:
+    docker compose exec backend python scripts/convert_simulation_to_aws_sc.py
+
+Options:
+    --config-name "Default Beer Game"  (default: "Default Beer Game")
+    --group-name "Default Group" (default: "Default Group")
+    --horizon 52                 (default: 52 weeks)
+"""
+
+import asyncio
+import sys
+from datetime import date, timedelta
+from typing import Optional
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+
+from app.db.session import SessionLocal, async_session_factory
+from app.models.supply_chain_config import SupplyChainConfig, Node, Lane, Item
+from app.models.group import Group
+from app.models.aws_sc_planning import (
+    InvPolicy,
+    SourcingRules,
+    ProductionProcess,
+    Forecast
+)
+
+
+async def convert_config_to_aws_sc(
+    config_name: str = "Default Beer Game",
+    group_name: str = "Default Group",
+    horizon: int = 52
+):
+    """
+    Convert a Beer Game config to AWS SC format
+
+    Args:
+        config_name: Name of the SupplyChainConfig to convert
+        group_name: Name of the Group to use
+        horizon: Number of weeks to forecast
+    """
+    print("=" * 80)
+    print("Beer Game Config → AWS SC Conversion")
+    print("=" * 80)
+    print()
+
+    async with async_session_factory() as db:
+        # ================================================================
+        # 1. Load Configuration and Group
+        # ================================================================
+        print(f"1. Loading configuration: {config_name}")
+
+        result = await db.execute(
+            select(SupplyChainConfig)
+            .options(
+                selectinload(SupplyChainConfig.nodes),
+                selectinload(SupplyChainConfig.lanes),
+                selectinload(SupplyChainConfig.items)
+            )
+            .filter(SupplyChainConfig.name == config_name)
+        )
+        config = result.scalar_one_or_none()
+
+        if not config:
+            print(f"❌ Config '{config_name}' not found")
+            return False
+
+        print(f"   ✓ Config ID: {config.id}")
+        print(f"   ✓ Nodes: {len(config.nodes)}")
+        print(f"   ✓ Lanes: {len(config.lanes)}")
+        print(f"   ✓ Items: {len(config.items)}")
+        print()
+
+        # Load group
+        result = await db.execute(select(Group).filter(Group.name == group_name))
+        group = result.scalar_one_or_none()
+
+        if not group:
+            print(f"❌ Group '{group_name}' not found")
+            return False
+
+        print(f"   ✓ Group ID: {group.id}")
+        print()
+
+        # ================================================================
+        # 2. Create InvPolicy Records
+        # ================================================================
+        print("2. Creating InvPolicy records (inventory policies)...")
+
+        inv_policies_created = 0
+
+        # Get the primary item (Beer Game typically has one item: "Cases")
+        if not config.items:
+            print("   ❌ No items defined in config")
+            return False
+
+        item = config.items[0]
+        print(f"   Using item: {item.name} (ID: {item.id})")
+        print()
+
+        for node in config.nodes:
+            # Skip market nodes (they don't have inventory policies)
+            if node.type in ['market_supply', 'market_demand', 'Market Supply', 'Market Demand']:
+                print(f"   ⊗ Skipping {node.name} (market node)")
+                continue
+
+            # Get target inventory from node attributes or default to 12 (Beer Game standard)
+            attributes = node.attributes or {}
+            target_qty = attributes.get('initial_inventory', 12)
+            safety_stock = attributes.get('safety_stock', 0)
+            reorder_point = attributes.get('reorder_point', 0)
+
+            inv_policy = InvPolicy(
+                group_id=group.id,
+                config_id=config.id,
+                product_id=item.id,
+                site_id=node.id,
+                policy_type='abs_level',  # Absolute level policy (target inventory)
+                target_qty=float(target_qty),
+                safety_stock_qty=float(safety_stock),
+                reorder_point_qty=float(reorder_point),
+                min_qty=0.0,
+                max_qty=9999.0,  # Unlimited for Beer Game
+                review_period_days=7,  # Weekly review
+                is_active='true'
+            )
+
+            db.add(inv_policy)
+            inv_policies_created += 1
+
+            print(f"   ✓ {node.name}: target={target_qty}, safety_stock={safety_stock}")
+
+        await db.flush()
+        print()
+        print(f"   ✅ Created {inv_policies_created} InvPolicy records")
+        print()
+
+        # ================================================================
+        # 3. Create SourcingRules Records
+        # ================================================================
+        print("3. Creating SourcingRules records (sourcing relationships)...")
+
+        sourcing_rules_created = 0
+
+        for lane in config.lanes:
+            # Get from and to nodes
+            from_node = next((n for n in config.nodes if n.id == lane.from_node_id), None)
+            to_node = next((n for n in config.nodes if n.id == lane.to_node_id), None)
+
+            if not from_node or not to_node:
+                print(f"   ⚠️  Lane missing nodes: from={lane.from_node_id}, to={lane.to_node_id}")
+                continue
+
+            # Determine sourcing type based on from_node master_type
+            if from_node.master_type == 'manufacturer':
+                sourcing_type = 'manufacture'
+            elif from_node.master_type == 'market_supply':
+                sourcing_type = 'purchase'
+            else:
+                sourcing_type = 'transfer'
+
+            # Get lead time (Beer Game uses weeks, AWS SC uses days)
+            lead_time_weeks = lane.lead_time or 2
+            lead_time_days = lead_time_weeks * 7
+
+            sourcing_rule = SourcingRules(
+                group_id=group.id,
+                config_id=config.id,
+                product_id=item.id,
+                site_id=to_node.id,  # Destination
+                supplier_site_id=from_node.id,  # Source
+                sourcing_type=sourcing_type,
+                allocation_percentage=100.0,  # Beer Game has single sourcing
+                lead_time_days=lead_time_days,
+                transit_time_days=lead_time_days,
+                min_order_qty=0.0,
+                max_order_qty=9999.0,  # Unlimited
+                is_active='true',
+                priority=1
+            )
+
+            db.add(sourcing_rule)
+            sourcing_rules_created += 1
+
+            print(f"   ✓ {from_node.name} → {to_node.name}: {sourcing_type}, lead_time={lead_time_weeks}w")
+
+        await db.flush()
+        print()
+        print(f"   ✅ Created {sourcing_rules_created} SourcingRules records")
+        print()
+
+        # ================================================================
+        # 4. Create ProductionProcess Records
+        # ================================================================
+        print("4. Creating ProductionProcess records (manufacturing processes)...")
+
+        production_processes_created = 0
+
+        for node in config.nodes:
+            # Only for manufacturer nodes
+            if node.master_type != 'manufacturer':
+                continue
+
+            attributes = node.attributes or {}
+
+            # Get manufacturing lead time
+            mfg_leadtime = attributes.get('manufacturing_leadtime', 2)
+            if isinstance(mfg_leadtime, dict):
+                # Handle case where it's per-product
+                mfg_leadtime = mfg_leadtime.get(item.name, 2)
+
+            # Get capacity (Beer Game typically has unlimited capacity)
+            capacity_hours = attributes.get('capacity_hours', 9999)
+
+            production_process = ProductionProcess(
+                group_id=group.id,
+                config_id=config.id,
+                product_id=item.id,
+                site_id=node.id,
+                manufacturing_leadtime=int(mfg_leadtime),
+                capacity_hours=int(capacity_hours),
+                capacity_utilization_pct=100.0,
+                yield_pct=100.0,
+                setup_time_hours=0,
+                is_active='true'
+            )
+
+            db.add(production_process)
+            production_processes_created += 1
+
+            print(f"   ✓ {node.name}: leadtime={mfg_leadtime}w, capacity={capacity_hours}h")
+
+        await db.flush()
+        print()
+        print(f"   ✅ Created {production_processes_created} ProductionProcess records")
+        print()
+
+        # ================================================================
+        # 5. Create Forecast Records
+        # ================================================================
+        print(f"5. Creating Forecast records ({horizon} weeks)...")
+
+        # Find the retailer node (where demand hits)
+        retailer_node = next(
+            (n for n in config.nodes if n.type in ['retailer', 'Retailer']),
+            None
+        )
+
+        if not retailer_node:
+            print("   ⚠️  No retailer node found, skipping forecast")
+        else:
+            print(f"   Using node: {retailer_node.name} (ID: {retailer_node.id})")
+
+            # Get demand pattern from config
+            demand_pattern = config.demand_pattern or {"type": "constant", "value": 4}
+            print(f"   Demand pattern: {demand_pattern}")
+            print()
+
+            forecasts_created = 0
+            start_date = date.today()
+
+            for week in range(horizon):
+                forecast_date = start_date + timedelta(weeks=week)
+
+                # Calculate demand for this week
+                demand_qty = _get_demand_for_week(demand_pattern, week)
+
+                forecast = Forecast(
+                    group_id=group.id,
+                    config_id=config.id,
+                    product_id=item.id,
+                    site_id=retailer_node.id,
+                    forecast_date=forecast_date,
+                    forecast_quantity=demand_qty,
+                    forecast_p50=demand_qty,  # Median
+                    forecast_p10=demand_qty * 0.8,  # Pessimistic
+                    forecast_p90=demand_qty * 1.2,  # Optimistic
+                    user_override_quantity=None,
+                    is_active='true'
+                )
+
+                db.add(forecast)
+                forecasts_created += 1
+
+                if week < 5 or week >= horizon - 2:
+                    print(f"   Week {week:2d}: {demand_qty:5.1f} units (date: {forecast_date})")
+                elif week == 5:
+                    print(f"   ... ({horizon - 7} more weeks)")
+
+            await db.flush()
+            print()
+            print(f"   ✅ Created {forecasts_created} Forecast records")
+            print()
+
+        # ================================================================
+        # 6. Commit All Changes
+        # ================================================================
+        print("6. Committing changes to database...")
+        await db.commit()
+        print("   ✅ All changes committed")
+        print()
+
+        # ================================================================
+        # Summary
+        # ================================================================
+        print("=" * 80)
+        print("Conversion Summary")
+        print("=" * 80)
+        print(f"Config:              {config.name} (ID: {config.id})")
+        print(f"Group:               {group.name} (ID: {group.id})")
+        print(f"InvPolicy:           {inv_policies_created} records")
+        print(f"SourcingRules:       {sourcing_rules_created} records")
+        print(f"ProductionProcess:   {production_processes_created} records")
+        print(f"Forecast:            {forecasts_created} records")
+        print()
+        print("✅ Conversion complete! Config is now ready for AWS SC planning.")
+        print()
+        print("Next steps:")
+        print("1. Create a scenario with use_aws_sc_planning=True")
+        print("2. Set scenario.supply_chain_config_id = {config.id}")
+        print("3. Set scenario.group_id = {group.id}")
+        print("4. Start the scenario and observe AWS SC planning in action!")
+        print("=" * 80)
+
+        return True
+
+
+def _get_demand_for_week(demand_pattern: dict, week: int) -> float:
+    """
+    Calculate demand for a specific week based on demand pattern
+
+    Args:
+        demand_pattern: Demand pattern dict
+        week: Week number (0-indexed)
+
+    Returns:
+        Demand quantity for this week
+    """
+    pattern_type = demand_pattern.get('type', 'constant')
+
+    if pattern_type == 'step':
+        initial = demand_pattern.get('initial', 4)
+        step_week = demand_pattern.get('step_week', 5)
+        step_value = demand_pattern.get('step_value', 8)
+
+        if week < step_week:
+            return float(initial)
+        else:
+            return float(step_value)
+
+    elif pattern_type == 'constant':
+        return float(demand_pattern.get('value', 4))
+
+    elif 'weeks' in demand_pattern:
+        weeks = demand_pattern['weeks']
+        if week < len(weeks):
+            return float(weeks[week])
+        else:
+            # Repeat last value
+            return float(weeks[-1]) if weeks else 4.0
+
+    else:
+        # Default to standard demand
+        return 4.0
+
+
+async def verify_conversion(config_name: str, group_name: str):
+    """
+    Verify that the conversion was successful
+
+    Args:
+        config_name: Name of the config
+        group_name: Name of the group
+    """
+    print()
+    print("=" * 80)
+    print("Verification")
+    print("=" * 80)
+    print()
+
+    async with async_session_factory() as db:
+        # Get config and group
+        result = await db.execute(
+            select(SupplyChainConfig).filter(SupplyChainConfig.name == config_name)
+        )
+        config = result.scalar_one_or_none()
+
+        result = await db.execute(select(Group).filter(Group.name == group_name))
+        group = result.scalar_one_or_none()
+
+        if not config or not group:
+            print("❌ Config or group not found")
+            return False
+
+        # Count records
+        inv_policy_count = await db.execute(
+            select(InvPolicy).filter(
+                InvPolicy.group_id == group.id,
+                InvPolicy.config_id == config.id
+            )
+        )
+        inv_policy_count = len(inv_policy_count.scalars().all())
+
+        sourcing_rules_count = await db.execute(
+            select(SourcingRules).filter(
+                SourcingRules.group_id == group.id,
+                SourcingRules.config_id == config.id
+            )
+        )
+        sourcing_rules_count = len(sourcing_rules_count.scalars().all())
+
+        production_process_count = await db.execute(
+            select(ProductionProcess).filter(
+                ProductionProcess.group_id == group.id,
+                ProductionProcess.config_id == config.id
+            )
+        )
+        production_process_count = len(production_process_count.scalars().all())
+
+        forecast_count = await db.execute(
+            select(Forecast).filter(
+                Forecast.group_id == group.id,
+                Forecast.config_id == config.id
+            )
+        )
+        forecast_count = len(forecast_count.scalars().all())
+
+        print(f"Config: {config.name} (ID: {config.id})")
+        print(f"Group:  {group.name} (ID: {group.id})")
+        print()
+        print(f"InvPolicy:         {inv_policy_count:3d} records")
+        print(f"SourcingRules:     {sourcing_rules_count:3d} records")
+        print(f"ProductionProcess: {production_process_count:3d} records")
+        print(f"Forecast:          {forecast_count:3d} records")
+        print()
+
+        all_present = all([
+            inv_policy_count > 0,
+            sourcing_rules_count > 0,
+            forecast_count > 0
+        ])
+
+        if all_present:
+            print("✅ All required AWS SC entities are present")
+            print("✅ Config is ready for AWS SC planning mode")
+        else:
+            print("⚠️  Some entities are missing")
+            if inv_policy_count == 0:
+                print("   ❌ No InvPolicy records")
+            if sourcing_rules_count == 0:
+                print("   ❌ No SourcingRules records")
+            if forecast_count == 0:
+                print("   ❌ No Forecast records")
+
+        print("=" * 80)
+        print()
+
+        return all_present
+
+
+async def main():
+    """Main entry point"""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Convert Beer Game config to AWS SC format"
+    )
+    parser.add_argument(
+        '--config-name',
+        default='Default Beer Game',
+        help='Name of the SupplyChainConfig to convert'
+    )
+    parser.add_argument(
+        '--group-name',
+        default='Default Group',
+        help='Name of the Group to use'
+    )
+    parser.add_argument(
+        '--horizon',
+        type=int,
+        default=52,
+        help='Number of weeks to forecast'
+    )
+    parser.add_argument(
+        '--verify-only',
+        action='store_true',
+        help='Only verify existing conversion'
+    )
+
+    args = parser.parse_args()
+
+    if args.verify_only:
+        success = await verify_conversion(args.config_name, args.group_name)
+    else:
+        success = await convert_config_to_aws_sc(
+            config_name=args.config_name,
+            group_name=args.group_name,
+            horizon=args.horizon
+        )
+
+        if success:
+            await verify_conversion(args.config_name, args.group_name)
+
+    sys.exit(0 if success else 1)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

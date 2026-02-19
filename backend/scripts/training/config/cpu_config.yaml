@@ -1,0 +1,88 @@
+# Model configuration
+model:
+  in_channels: 10                # Number of input features per node
+  hidden_channels: 32            # Reduced hidden dimension size for CPU
+  out_channels: 2                # Number of output features per node
+  num_layers: 2                  # Reduced number of GNN layers
+  dropout: 0.1                   # Reduced dropout rate
+  num_heads: 2                   # Reduced number of attention heads
+
+# Training configuration
+training:
+  batch_size: 8                  # Reduced batch size for CPU
+  learning_rate: 0.0005          # Slightly lower learning rate
+  weight_decay: 1e-5
+  epochs: 10                     # Reduced number of epochs for initial testing
+  lr_step_size: 5
+  lr_gamma: 0.5
+  clip_grad_norm: 1.0
+  patience: 5
+  save_interval: 2
+  validate_every: 1
+  seed: 42
+
+# Data configuration
+data:
+  train_ratio: 0.8
+  val_ratio: 0.1
+  test_ratio: 0.1
+  num_workers: 0                 # Set to 0 for CPU training
+  pin_memory: false              # Disable pin memory for CPU
+  shuffle: true
+
+# Logging configuration
+logging:
+  log_dir: "logs_cpu"
+  log_level: "INFO"
+  use_tensorboard: true
+  save_checkpoints: true
+  checkpoint_dir: "checkpoints_cpu"
+  log_interval: 5
+
+# Distributed training
+distributed:
+  use_ddp: false
+  num_gpus: 0                    # Force CPU usage
+  backend: "gloo"
+  init_method: "env://"
+
+# Dataset parameters
+dataset:
+  name: "supply_chain"
+  num_nodes: 4
+  seq_len: 10
+  pred_len: 1
+  feature_dim: 10
+  target_dim: 2
+
+# Architecture details
+architecture:
+  use_batch_norm: true
+  use_layer_norm: false
+  residual_connections: true
+  activation: "relu"
+  norm: "batch"
+  aggregation: "mean"
+
+# Optimizer configuration
+optimizer:
+  type: "adam"
+  weight_decay: 0.0
+
+# Learning rate scheduler
+scheduler:
+  type: "step"
+  mode: "min"
+  factor: 0.5
+  patience: 3
+  min_lr: 1e-6
+
+# Debugging settings
+debug:
+  overfit_batches: 0
+  fast_dev_run: false
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
+  limit_test_batches: 1.0
+  deterministic: false
+  benchmark: false

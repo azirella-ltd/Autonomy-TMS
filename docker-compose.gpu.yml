@@ -1,0 +1,134 @@
+services:
+  proxy:
+    image: nginx:alpine
+    container_name: autonomy-proxy
+    restart: unless-stopped
+    ports:
+      - "8088:8088"
+    volumes:
+      - ./config/dev-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_healthy
+    networks:
+      - autonomy-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8088/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: autonomy-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - NODE_ENV=production
+      - REACT_APP_API_BASE_URL=${REACT_APP_API_BASE_URL:-/api}
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-/api}
+    networks:
+      - autonomy-network
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.gpu
+      args:
+        - FORCE_GPU=1
+    container_name: autonomy-backend-gpu
+    gpus: all
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Database configuration - PostgreSQL
+      - DATABASE_TYPE=${DATABASE_TYPE:-postgresql}
+      - POSTGRESQL_HOST=${POSTGRESQL_HOST:-db}
+      - POSTGRESQL_PORT=${POSTGRESQL_PORT:-5432}
+      - POSTGRESQL_DATABASE=${POSTGRESQL_DATABASE:-autonomy}
+      - POSTGRESQL_USER=${POSTGRESQL_USER:-autonomy_user}
+      - POSTGRESQL_PASSWORD=${POSTGRESQL_PASSWORD:-autonomy_password}
+      - DATABASE_URL=${DATABASE_URL:-postgresql+psycopg2://autonomy_user:autonomy_password@db:5432/autonomy}
+      - ASYNC_DATABASE_URL=${ASYNC_DATABASE_URL:-postgresql+asyncpg://autonomy_user:autonomy_password@db:5432/autonomy}
+      - DOCKER_COMPOSE=true
+
+      # Application settings
+      - SECRET_KEY=${SECRET_KEY:-dev-secret}
+      - ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - PYTHONUNBUFFERED=1
+      - TZ=UTC
+      - DB_CONNECTION_RETRIES=60
+      - INIT_DB=true
+      - DB_WAIT_TIMEOUT=30
+      - DB_CONNECTION_TIMEOUT=30
+      - PYTHONPATH=/app
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_PROJECT=${OPENAI_PROJECT:-}
+      - AUTONOMY_LLM_MODEL=${AUTONOMY_LLM_MODEL:-gpt-5-mini}
+
+      # GPU settings
+      - GPU_ENABLED=true
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    networks:
+      autonomy-network:
+        aliases:
+          - backend
+    depends_on:
+      db:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    runtime: nvidia
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  create-users:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.gpu
+      args:
+        - FORCE_GPU=1
+    command: ["python3", "scripts/create_users.py"]
+    gpus: all
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - GPU_ENABLED=true
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+networks:
+  autonomy-network:
+    driver: bridge

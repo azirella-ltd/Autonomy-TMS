@@ -1,0 +1,38 @@
+services:
+  # Override frontend env so it talks to the proxy via relative /api
+  frontend:
+    environment:
+      - REACT_APP_API_BASE_URL=/api/v1
+      - VITE_API_BASE_URL=/api/v1
+
+  # Optional TLS proxy for local HTTPS on 8443 (use with `--profile tls`)
+  proxy-tls:
+    image: nginx:alpine
+    container_name: autonomy-proxy-tls
+    profiles: ["tls"]
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./config/dev-proxy/nginx.tls.conf:/etc/nginx/nginx.conf:ro
+      - ./config/nginx/ssl/cert.pem:/etc/nginx/ssl/cert.pem:ro
+      - ./config/nginx/ssl/key.pem:/etc/nginx/ssl/key.pem:ro
+    depends_on:
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_healthy
+    networks:
+      - autonomy-network
+
+  # GPU-specific runtime configuration (only used when FORCE_GPU=1)
+  backend:
+    runtime: ${GPU_RUNTIME:-}
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - FORCE_GPU=${FORCE_GPU:-0}
+
+networks:
+  autonomy-network:
+    external: false
+

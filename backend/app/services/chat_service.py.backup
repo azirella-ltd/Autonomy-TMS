@@ -1,0 +1,456 @@
+"""
+Chat and A2A Collaboration Service
+Phase 7 Sprint 2
+"""
+
+import logging
+from typing import List, Optional, Dict, Any
+from datetime import datetime
+from sqlalchemy.orm import Session
+from sqlalchemy import desc, select, update
+
+from app.models.chat import ChatMessage, AgentSuggestion, WhatIfAnalysis, MessageType, SenderType
+from app.models.game import Game
+from app.models.player import Player
+from app.schemas.chat import (
+    ChatMessageCreate,
+    AgentSuggestionRequest,
+    AgentSuggestionContext,
+    WhatIfAnalysisRequest,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class ChatService:
+    """Service for handling A2A chat and collaboration."""
+
+    def __init__(self, db: Session):
+        self.db = db
+
+    # ===== Chat Messages =====
+
+    async def get_messages(
+        self,
+        game_id: int,
+        since: Optional[datetime] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[List[ChatMessage], int, bool]:
+        """
+        Get chat messages for a game.
+
+        Args:
+            game_id: Game ID
+            since: Only return messages after this timestamp
+            limit: Maximum number of messages to return
+            offset: Offset for pagination
+
+        Returns:
+            Tuple of (messages, total_count, has_more)
+        """
+        stmt = select(ChatMessage).filter(ChatMessage.game_id == game_id)
+
+        if since:
+            stmt = stmt.filter(ChatMessage.created_at > since)
+
+        # Get total count
+        count_result = await self.db.execute(select(ChatMessage).filter(ChatMessage.game_id == game_id))
+        total_count = len(count_result.scalars().all())
+
+        # Get messages
+        stmt = stmt.order_by(ChatMessage.created_at.desc()).offset(offset).limit(limit)
+        result = await self.db.execute(stmt)
+        messages = list(result.scalars().all())
+
+        # Reverse to chronological order
+        messages.reverse()
+
+        has_more = (offset + limit) < total_count
+
+        return messages, total_count, has_more
+
+    async def create_message(
+        self,
+        game_id: int,
+        message_data: ChatMessageCreate,
+    ) -> ChatMessage:
+        """
+        Create a new chat message.
+
+        Args:
+            game_id: Game ID
+            message_data: Message data
+
+        Returns:
+            Created message
+        """
+        message = ChatMessage(
+            game_id=game_id,
+            sender_id=message_data.sender_id,
+            sender_name=message_data.sender_name,
+            sender_type=message_data.sender_type,
+            recipient_id=message_data.recipient_id,
+            content=message_data.content,
+            type=message_data.type,
+            message_metadata=message_data.message_metadata,
+            delivered=True,
+        )
+
+        self.db.add(message)
+        await self.db.commit()
+        await self.db.refresh(message)
+
+        logger.info(
+            f"Created chat message {message.id} in game {game_id} from {message.sender_name}"
+        )
+
+        return message
+
+    async def mark_messages_read(
+        self,
+        game_id: int,
+        message_ids: List[int],
+    ) -> int:
+        """
+        Mark messages as read.
+
+        Args:
+            game_id: Game ID
+            message_ids: List of message IDs to mark as read
+
+        Returns:
+            Number of messages marked as read
+        """
+        stmt = (
+            update(ChatMessage)
+            .where(
+                ChatMessage.game_id == game_id,
+                ChatMessage.id.in_(message_ids),
+                ChatMessage.read == False,  # noqa: E712
+            )
+            .values(read=True, read_at=datetime.utcnow())
+        )
+
+        result = await self.db.execute(stmt)
+        await self.db.commit()
+
+        count = result.rowcount
+
+        logger.info(f"Marked {count} messages as read in game {game_id}")
+
+        return count
+
+    # ===== Agent Suggestions =====
+
+    def get_suggestions(
+        self,
+        game_id: int,
+        agent_name: Optional[str] = None,
+        pending_only: bool = False,
+    ) -> List[AgentSuggestion]:
+        """
+        Get agent suggestions for a game.
+
+        Args:
+            game_id: Game ID
+            agent_name: Filter by agent name
+            pending_only: Only return pending (not accepted/declined) suggestions
+
+        Returns:
+            List of suggestions
+        """
+        query = self.db.query(AgentSuggestion).filter(
+            AgentSuggestion.game_id == game_id
+        )
+
+        if agent_name:
+            query = query.filter(AgentSuggestion.agent_name == agent_name)
+
+        if pending_only:
+            query = query.filter(AgentSuggestion.accepted == None)  # noqa: E711
+
+        suggestions = query.order_by(desc(AgentSuggestion.created_at)).all()
+
+        return suggestions
+
+    def request_suggestion(
+        self,
+        game_id: int,
+        agent_name: str,
+        request_data: Optional[AgentSuggestionRequest] = None,
+    ) -> AgentSuggestion:
+        """
+        Request an agent suggestion.
+
+        This triggers the LLM agent to generate an order recommendation.
+
+        Args:
+            game_id: Game ID
+            agent_name: Agent name (retailer, wholesaler, etc.)
+            request_data: Optional additional context
+
+        Returns:
+            Created suggestion
+        """
+        # Get game and current state
+        game = self.db.query(Game).filter(Game.id == game_id).first()
+        if not game:
+            raise ValueError(f"Game {game_id} not found")
+
+        # Get player for this agent role
+        player = (
+            self.db.query(Player)
+            .filter(Player.game_id == game_id, Player.role == agent_name.upper())
+            .first()
+        )
+
+        if not player:
+            raise ValueError(f"No player found for agent {agent_name} in game {game_id}")
+
+        # Get context from PlayerRound (most recent round)
+        from app.models.supply_chain import PlayerRound
+
+        player_round = (
+            self.db.query(PlayerRound)
+            .filter(PlayerRound.player_id == player.id)
+            .order_by(desc(PlayerRound.round))
+            .first()
+        )
+
+        # Build context
+        context = {
+            "current_inventory": player_round.current_inventory if player_round else 0,
+            "current_backlog": player_round.current_backlog if player_round else 0,
+            "recent_demand": [],  # TODO: Calculate from recent rounds
+            "forecast_demand": 0,  # TODO: Get from demand forecast
+        }
+
+        # TODO: Call LLM agent to generate suggestion
+        # For now, generate a simple heuristic suggestion
+        order_quantity = self._generate_heuristic_suggestion(context)
+        confidence = 0.7  # Placeholder
+        rationale = f"Based on current inventory ({context['current_inventory']}) and backlog ({context['current_backlog']}), recommend ordering {order_quantity} units."
+
+        # Create suggestion
+        suggestion = AgentSuggestion(
+            game_id=game_id,
+            round=game.current_round,
+            agent_name=agent_name,
+            order_quantity=order_quantity,
+            confidence=confidence,
+            rationale=rationale,
+            context=context,
+        )
+
+        self.db.add(suggestion)
+        self.db.commit()
+        self.db.refresh(suggestion)
+
+        logger.info(
+            f"Created suggestion {suggestion.id} from {agent_name} in game {game_id}: {order_quantity} units ({confidence:.0%} confidence)"
+        )
+
+        return suggestion
+
+    def accept_suggestion(
+        self,
+        game_id: int,
+        suggestion_id: int,
+        player_id: int,
+    ) -> AgentSuggestion:
+        """
+        Accept an agent suggestion.
+
+        Args:
+            game_id: Game ID
+            suggestion_id: Suggestion ID
+            player_id: Player accepting the suggestion
+
+        Returns:
+            Updated suggestion
+        """
+        suggestion = (
+            self.db.query(AgentSuggestion)
+            .filter(
+                AgentSuggestion.id == suggestion_id,
+                AgentSuggestion.game_id == game_id,
+            )
+            .first()
+        )
+
+        if not suggestion:
+            raise ValueError(f"Suggestion {suggestion_id} not found in game {game_id}")
+
+        suggestion.accepted = True
+        suggestion.player_id = player_id
+        suggestion.decided_at = datetime.utcnow()
+
+        self.db.commit()
+        self.db.refresh(suggestion)
+
+        logger.info(
+            f"Player {player_id} accepted suggestion {suggestion_id} in game {game_id}"
+        )
+
+        return suggestion
+
+    def decline_suggestion(
+        self,
+        game_id: int,
+        suggestion_id: int,
+        player_id: int,
+    ) -> AgentSuggestion:
+        """
+        Decline an agent suggestion.
+
+        Args:
+            game_id: Game ID
+            suggestion_id: Suggestion ID
+            player_id: Player declining the suggestion
+
+        Returns:
+            Updated suggestion
+        """
+        suggestion = (
+            self.db.query(AgentSuggestion)
+            .filter(
+                AgentSuggestion.id == suggestion_id,
+                AgentSuggestion.game_id == game_id,
+            )
+            .first()
+        )
+
+        if not suggestion:
+            raise ValueError(f"Suggestion {suggestion_id} not found in game {game_id}")
+
+        suggestion.accepted = False
+        suggestion.player_id = player_id
+        suggestion.decided_at = datetime.utcnow()
+
+        self.db.commit()
+        self.db.refresh(suggestion)
+
+        logger.info(
+            f"Player {player_id} declined suggestion {suggestion_id} in game {game_id}"
+        )
+
+        return suggestion
+
+    # ===== What-If Analysis =====
+
+    def create_what_if_analysis(
+        self,
+        game_id: int,
+        analysis_data: WhatIfAnalysisRequest,
+    ) -> WhatIfAnalysis:
+        """
+        Create a what-if analysis request.
+
+        Args:
+            game_id: Game ID
+            analysis_data: Analysis request data
+
+        Returns:
+            Created analysis
+        """
+        game = self.db.query(Game).filter(Game.id == game_id).first()
+        if not game:
+            raise ValueError(f"Game {game_id} not found")
+
+        analysis = WhatIfAnalysis(
+            game_id=game_id,
+            round=game.current_round,
+            player_id=analysis_data.player_id,
+            question=analysis_data.question,
+            scenario=analysis_data.scenario,
+        )
+
+        self.db.add(analysis)
+        self.db.commit()
+        self.db.refresh(analysis)
+
+        logger.info(
+            f"Created what-if analysis {analysis.id} for player {analysis_data.player_id} in game {game_id}"
+        )
+
+        # TODO: Trigger async analysis processing
+        # For now, mark as pending
+
+        return analysis
+
+    def get_what_if_analysis(
+        self,
+        game_id: int,
+        analysis_id: int,
+    ) -> Optional[WhatIfAnalysis]:
+        """
+        Get a what-if analysis.
+
+        Args:
+            game_id: Game ID
+            analysis_id: Analysis ID
+
+        Returns:
+            Analysis or None if not found
+        """
+        analysis = (
+            self.db.query(WhatIfAnalysis)
+            .filter(
+                WhatIfAnalysis.id == analysis_id,
+                WhatIfAnalysis.game_id == game_id,
+            )
+            .first()
+        )
+
+        return analysis
+
+    # ===== Helper Methods =====
+
+    def _generate_heuristic_suggestion(self, context: Dict[str, Any]) -> int:
+        """
+        Generate a simple heuristic suggestion.
+
+        This is a placeholder until LLM integration is complete.
+
+        Args:
+            context: Game state context
+
+        Returns:
+            Suggested order quantity
+        """
+        inventory = context.get("current_inventory", 0)
+        backlog = context.get("current_backlog", 0)
+
+        # Simple base stock policy
+        target_stock = 50
+        order_quantity = max(0, target_stock - inventory + backlog)
+
+        return order_quantity
+
+    def get_unread_count(
+        self,
+        game_id: int,
+        user_id: str,
+    ) -> int:
+        """
+        Get unread message count for a user in a game.
+
+        Args:
+            game_id: Game ID
+            user_id: User ID (player:1)
+
+        Returns:
+            Number of unread messages
+        """
+        count = (
+            self.db.query(ChatMessage)
+            .filter(
+                ChatMessage.game_id == game_id,
+                ChatMessage.recipient_id == user_id,
+                ChatMessage.read == False,  # noqa: E712
+            )
+            .count()
+        )
+
+        return count

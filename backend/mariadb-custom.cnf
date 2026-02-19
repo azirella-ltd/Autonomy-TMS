@@ -1,0 +1,65 @@
+[mysqld]
+# Disable SSL
+skip_ssl
+skip-ssl
+ssl=0
+
+# Authentication
+default_authentication_plugin=mysql_native_password
+
+# General settings
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+
+# Performance settings
+performance-schema=ON
+
+# Connection settings
+max_connections = 200
+max_connect_errors = 1000000
+connect_timeout = 60
+wait_timeout = 28800
+interactive_timeout = 28800
+
+# Logging
+general_log = 1
+general_log_file = /var/log/mysql/mysql-general.log
+slow_query_log = 1
+slow_query_log_file = /var/log/mysql/mysql-slow.log
+long_query_time = 1
+log_queries_not_using_indexes = 1
+
+# Network
+bind-address = 0.0.0.0
+wait_timeout = 28800
+interactive_timeout = 28800
+max_connections = 200
+max_allowed_packet = 256M
+
+# SSL/TLS settings
+skip_ssl
+
+# Authentication
+[mysqld]
+skip_ssl
+skip-name-resolve
+
+# Disable strict mode
+sql_mode=NO_ENGINE_SUBSTITUTION
+
+# Allow all hosts to connect
+bind-address=0.0.0.0
+
+# InnoDB settings
+innodb_buffer_pool_size = 256M
+innodb_log_file_size = 128M
+innodb_log_buffer_size = 8M
+innodb_flush_log_at_trx_commit = 1
+innodb_flush_method = O_DIRECT
+
+# Character set and collation
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+
+# SQL mode - More permissive for development
+sql_mode = 'NO_ENGINE_SUBSTITUTION'

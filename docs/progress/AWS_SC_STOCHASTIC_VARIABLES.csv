@@ -1,0 +1,53 @@
+Table,Column,Variable_Name,Current_Type,Can_Be_Stochastic,Variable_Category,Impact_Area,Typical_Distributions,Justification
+lanes,supply_lead_time,Material Flow Lead Time,JSON (partially stochastic),YES,Operational,Delivery timing,Normal|Lognormal|Uniform|Empirical|Deterministic,Transportation delays vary due to traffic/weather/carrier performance
+lanes,demand_lead_time,Information Flow Lead Time,JSON (partially stochastic),YES,Operational,Order processing,Normal|Lognormal|Uniform|Deterministic,Order processing time varies by system load and complexity
+lanes,capacity,Lane Capacity,Integer,YES,Operational,Throughput,Normal|Uniform|Triangular|Deterministic,Daily capacity varies due to operational conditions/staffing
+production_process,manufacturing_leadtime,Manufacturing Lead Time,Integer,YES,Operational,Production timing,Lognormal|Gamma|Weibull|Deterministic,Production time varies by complexity/tooling/crew experience
+production_process,cycle_time,Production Cycle Time,Integer,YES,Operational,Production speed,Normal|Gamma|Exponential|Deterministic,Cycle time varies by machine condition and operator skill
+production_process,yield_percentage,Manufacturing Yield,Double,YES,Operational,Quality/quantity,Beta|Triangular|Normal|Deterministic,Yield varies due to material quality/process stability/operator skill
+production_process,capacity_units,Production Capacity,Double,YES,Operational,Throughput,Normal|Triangular|Uniform|Deterministic,Capacity varies by equipment uptime/maintenance/staffing
+production_process,setup_time,Setup Time,Integer,YES,Operational,Changeover timing,Lognormal|Gamma|Triangular|Deterministic,Setup time varies by product complexity and crew experience
+production_process,changeover_time,Changeover Time,Integer,YES,Operational,Changeover timing,Lognormal|Gamma|Deterministic,Changeover duration varies by product similarity and crew skill
+product_bom,scrap_percentage,Component Scrap Rate,Double,YES,Operational,Material consumption,Beta|Triangular|Deterministic,Scrap varies by material quality and process stability
+product_bom,component_quantity,BOM Component Quantity,Double,MAYBE,Operational,Material consumption,Normal|Deterministic,Component usage may vary slightly in practice but usually fixed by design
+sourcing_rules,lead_time,Sourcing Lead Time,Integer,YES,Operational,Procurement timing,Lognormal|Gamma|Weibull|Deterministic,Supplier lead time varies by order size/priority/supplier load
+vendor_product,lead_time_days,Vendor Lead Time,Integer,YES,Operational,Procurement timing,Lognormal|Gamma|Weibull|Deterministic,Vendor delivery time varies by order characteristics and vendor capacity
+vendor_lead_time,lead_time_days,Hierarchical Vendor Lead Time,Integer,YES,Operational,Procurement timing,Lognormal|Gamma|Deterministic,Geographic/product-specific lead time variations
+market_demands,demand_pattern,Market Demand,JSON,YES,Operational,Demand realization,Poisson|Normal|Gamma|Empirical|Deterministic,Customer demand inherently stochastic around forecast
+nodes,order_aging,Order Aging/Spoilage,Integer,YES,Operational,Inventory deterioration,Exponential|Weibull|Deterministic,Product shelf life and deterioration rates vary
+forecast,forecast_quantity,Demand Forecast,Double,YES,Operational,Demand prediction,Normal|LogNormal|Empirical|Deterministic,Forecasts have inherent error and uncertainty
+forecast,forecast_p10,Forecast P10 (pessimistic),Double,NO,Statistical,Demand prediction,N/A - derived from distribution,This IS the 10th percentile of the stochastic forecast distribution
+forecast,forecast_p50,Forecast P50 (median),Double,NO,Statistical,Demand prediction,N/A - derived from distribution,This IS the 50th percentile of the stochastic forecast distribution
+forecast,forecast_p90,Forecast P90 (optimistic),Double,NO,Statistical,Demand prediction,N/A - derived from distribution,This IS the 90th percentile of the stochastic forecast distribution
+lanes,lead_time_days,Legacy Lead Time Range,JSON (deprecated),YES,Operational,Legacy support,Normal|Uniform|Deterministic,Deprecated field - superseded by supply_lead_time
+inv_policy,target_qty,Inventory Target,Decimal,NO,Control,Inventory policy,N/A,Control variable - set by planner to govern SC behavior
+inv_policy,min_qty,Inventory Minimum,Decimal,NO,Control,Inventory policy,N/A,Control variable - safety stock target
+inv_policy,max_qty,Inventory Maximum,Decimal,NO,Control,Inventory policy,N/A,Control variable - maximum inventory constraint
+inv_policy,reorder_point,Reorder Point,Decimal,NO,Control,Inventory policy,N/A,Control variable - when to order
+inv_policy,order_qty,Order Quantity,Decimal,NO,Control,Inventory policy,N/A,Control variable - how much to order
+inv_policy,order_up_to_level,Order Up To Level,Decimal,NO,Control,Inventory policy,N/A,Control variable - periodic review target
+inv_policy,service_level,Service Level Target,Decimal,NO,Control,Inventory policy,N/A,Control variable - desired fill rate
+inv_policy,holding_cost,Holding Cost,Decimal,NO,Control,Cost accounting,N/A,Financial parameter - not operational variation
+inv_policy,backlog_cost,Backlog Cost,Decimal,NO,Control,Cost accounting,N/A,Financial parameter - not operational variation
+inv_policy,selling_price,Selling Price,Decimal,NO,Control,Revenue,N/A,Financial parameter - set by pricing strategy
+sourcing_rules,unit_cost,Sourcing Unit Cost,Decimal,NO,Control,Cost accounting,N/A,Financial parameter - negotiated/contracted price
+sourcing_rules,min_qty,Sourcing Min Quantity,Decimal,NO,Control,Procurement policy,N/A,Control variable - MOQ constraint
+sourcing_rules,max_qty,Sourcing Max Quantity,Decimal,NO,Control,Procurement policy,N/A,Control variable - capacity constraint
+sourcing_rules,qty_multiple,Sourcing Quantity Multiple,Decimal,NO,Control,Procurement policy,N/A,Control variable - order multiple constraint
+sourcing_rules,allocation_percent,Allocation Percentage,Decimal,NO,Control,Sourcing policy,N/A,Control variable - how to split orders across suppliers
+vendor_product,unit_cost,Vendor Unit Cost,Decimal,NO,Control,Cost accounting,N/A,Financial parameter - contracted/negotiated price
+vendor_product,min_order_qty,Vendor MOQ,Decimal,NO,Control,Procurement policy,N/A,Control variable - vendor minimum order
+vendor_product,order_multiple,Vendor Order Multiple,Decimal,NO,Control,Procurement policy,N/A,Control variable - vendor order increment
+vendor_product,max_order_qty,Vendor Max Order,Decimal,NO,Control,Procurement policy,N/A,Control variable - vendor capacity limit
+production_process,changeover_cost,Changeover Cost,Decimal,NO,Control,Cost accounting,N/A,Financial parameter - not operational stochasticity
+production_process,min_batch_size,Min Batch Size,Decimal,NO,Control,Production policy,N/A,Control variable - process constraint
+production_process,max_batch_size,Max Batch Size,Decimal,NO,Control,Production policy,N/A,Control variable - equipment constraint
+production_process,frozen_horizon_days,Frozen Horizon,Integer,NO,Control,Planning policy,N/A,Control variable - planning stability window
+item_node_configs,inventory_target_range,Inventory Target Range,JSON,NO,Training,Training data gen,N/A,Used for ML training data generation only
+item_node_configs,initial_inventory_range,Initial Inventory Range,JSON,NO,Training,Training data gen,N/A,Used for ML training data generation only
+item_node_configs,holding_cost_range,Holding Cost Range,JSON,NO,Training,Training data gen,N/A,Used for ML training data generation only
+item_node_configs,backlog_cost_range,Backlog Cost Range,JSON,NO,Training,Training data gen,N/A,Used for ML training data generation only
+item_node_configs,selling_price_range,Selling Price Range,JSON,NO,Training,Training data gen,N/A,Used for ML training data generation only
+supply_planning_parameters,planning_time_fence,Planning Time Fence,Integer,NO,Control,Planning policy,N/A,Control variable - planning horizon
+supply_planning_parameters,lot_size_rule,Lot Sizing Rule,String,NO,Control,Planning policy,N/A,Control variable - how to calculate order quantities
+supply_planning_parameters,lot_size_value,Lot Size Value,Double,NO,Control,Planning policy,N/A,Control variable - lot size parameter

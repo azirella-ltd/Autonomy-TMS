@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  db:
+    image: mariadb:10.11.14
+    container_name: autonomy-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: autonomy
+      MYSQL_USER: autonomy_user
+      MYSQL_PASSWORD: autonomy_password
+      MYSQL_INITDB_SKIP_TZINFO: 1
+    ports:
+      - "3307:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./config/mysql/conf.d:/etc/mysql/conf.d
+    command: [
+        '--character-set-server=utf8mb4',
+        '--collation-server=utf8mb4_unicode_ci',
+        '--innodb-buffer-pool-size=2G',
+        '--innodb-log-file-size=256M',
+        '--innodb-flush-log-at-trx-commit=1',
+        '--innodb-flush-method=O_DIRECT',
+        '--skip-name-resolve'
+    ]
+    networks:
+      - autonomy-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u$${MYSQL_USER}", "-p$${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  autonomy-network:
+    driver: bridge
+
+volumes:
+  db_data:

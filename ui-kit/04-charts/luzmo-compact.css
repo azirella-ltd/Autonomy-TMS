@@ -1,0 +1,508 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --autonomy-primary: #2ea43b;
+  --autonomy-primary-hover: #009933;
+  --autonomy-gray-50: #fafafa;
+  --autonomy-gray-100: #f9fafb;
+  --autonomy-gray-200: #e5e7eb;
+  --autonomy-gray-300: #d1d5db;
+  --autonomy-gray-600: #4b5563;
+  --autonomy-gray-700: #374151;
+  --autonomy-gray-800: #1f2937;
+  --autonomy-gray-850: #2d3748;
+  --autonomy-gray-900: #1a202c;
+  --autonomy-gray-1000: #0f1419;
+
+  --autonomy-blue-700: #1e40af;
+  --autonomy-blue-800: #1e3a8a;
+  --autonomy-blue-900: #1e3a70;
+
+  --autonomy-green-700: #15803d;
+  --autonomy-green-800: #166534;
+  --autonomy-green-900: #14532d;
+
+  --autonomy-purple-700: #7c3aed;
+  --autonomy-purple-800: #6d28d9;
+  --autonomy-purple-900: #5b21b6;
+
+  --autonomy-orange-700: #ea580c;
+  --autonomy-orange-800: #c2410c;
+  --autonomy-orange-900: #9a3412;
+
+  --autonomy-red-700: #dc2626;
+  --autonomy-red-800: #b91c1c;
+  --autonomy-red-900: #991b1b;
+
+  --autonomy-yellow-500: #fbbf24;
+  --autonomy-yellow-600: #f59e0b;
+  --autonomy-yellow-700: #d97706;
+}
+
+body {
+  font-family: 'Inter', sans-serif !important;
+}
+
+/* Typography Hierarchy */
+h1 {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 24px !important;
+  font-weight: 700 !important;
+  color: var(--autonomy-gray-800) !important;
+}
+
+h2 {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 20px !important;
+  font-weight: 600 !important;
+  color: var(--autonomy-gray-800) !important;
+}
+
+h3 {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: var(--autonomy-gray-800) !important;
+}
+
+h4 {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  color: var(--autonomy-gray-700) !important;
+}
+
+h5 {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: var(--autonomy-gray-700) !important;
+}
+
+h6 {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  color: var(--autonomy-gray-700) !important;
+}
+
+/* Normal/Body Text */
+p, div:not([class*="recharts"]):not([class*="definitions"]) span {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+}
+
+/* Only apply overflow hidden to actual form inputs, NOT contenteditable divs */
+input[type="text"]:not([contenteditable]),
+input[type="number"]:not([contenteditable]),
+input[type="email"]:not([contenteditable]) {
+  overflow: hidden !important;
+  overflow-y: hidden !important;
+  overflow-x: hidden !important;
+  white-space: nowrap !important;
+  text-overflow: ellipsis !important;
+}
+
+textarea {
+  white-space: normal !important;
+  overflow-y: auto !important;
+  resize: vertical !important;
+}
+
+table th {
+  font-family: 'Inter', sans-serif !important;
+  font-weight: 600 !important;
+  font-size: 11px !important;
+  color: var(--autonomy-gray-700) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  background-color: var(--autonomy-gray-100) !important;
+}
+
+table td {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+}
+
+tbody tr:nth-child(even) {
+  background-color: var(--autonomy-gray-50) !important;
+}
+
+tbody tr:hover {
+  background-color: var(--autonomy-gray-100) !important;
+}
+
+.cumul-widget-title,
+[data-test="widget-title"] {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: var(--autonomy-gray-800) !important;
+}
+
+select:focus,
+input:focus {
+  border-color: var(--autonomy-primary) !important;
+  outline: none !important;
+}
+
+select:hover {
+  border-color: var(--autonomy-primary) !important;
+}
+
+button[class*="primary"]:not([class*="edit"]):not([class*="save"]) {
+  background-color: var(--autonomy-primary) !important;
+  border-color: var(--autonomy-primary) !important;
+}
+
+button[class*="primary"]:hover:not([class*="edit"]):not([class*="save"]) {
+  background-color: var(--autonomy-primary-hover) !important;
+}
+
+svg text {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 11px !important;
+  fill: var(--autonomy-gray-600) !important;
+}
+
+.recharts-area,
+.recharts-area-area {
+  fill: none !important;
+  fill-opacity: 0 !important;
+  opacity: 0 !important;
+}
+
+path[class*="recharts-area"] {
+  fill: none !important;
+  display: none !important;
+}
+
+.recharts-line {
+  stroke-width: 2.5px !important;
+  fill: none !important;
+}
+
+.recharts-line-dots circle {
+  r: 3 !important;
+}
+
+/* Actuals - Black to Light Gray (dotted) */
+.recharts-line:nth-child(1),
+.recharts-bar:nth-child(1),
+[data-key="actuals"] .recharts-line,
+[data-key="Actuals"] .recharts-line,
+[data-name="Actuals"] path {
+  stroke: #000000 !important;
+  fill: none !important;
+  stroke-width: 2.5px !important;
+  stroke-dasharray: 5, 5 !important;
+}
+
+[data-key="actuals-alt1"] .recharts-line,
+[data-name="Actuals Alt 1"] path {
+  stroke: #4b5563 !important;
+  stroke-dasharray: 5, 5 !important;
+}
+
+[data-key="actuals-alt2"] .recharts-line,
+[data-name="Actuals Alt 2"] path {
+  stroke: #9ca3af !important;
+  stroke-dasharray: 5, 5 !important;
+}
+
+/* AI/ML Base Forecast - Dark to Light Blue */
+.recharts-line:nth-child(2),
+.recharts-bar:nth-child(2),
+[data-key="ai_ml_base"] .recharts-line,
+[data-key="AI/ML Base Forecast"] .recharts-line,
+[data-name="AI/ML Base Forecast"] path {
+  stroke: #1e3a8a !important;
+  fill: none !important;
+  stroke-width: 2.5px !important;
+}
+
+[data-key="ai_ml_base-alt1"] .recharts-line,
+[data-name="AI/ML Base Alt 1"] path {
+  stroke: #3b82f6 !important;
+}
+
+[data-key="ai_ml_base-alt2"] .recharts-line,
+[data-name="AI/ML Base Alt 2"] path {
+  stroke: #60a5fa !important;
+}
+
+/* AI/ML Unconstrained Forecast - Dark to Light Green */
+.recharts-line:nth-child(3),
+.recharts-bar:nth-child(3),
+[data-key="ai_ml_unconstrained"] .recharts-line,
+[data-key="AI/ML Unconstrained Forecast"] .recharts-line,
+[data-name="AI/ML Unconstrained Forecast"] path {
+  stroke: #15803d !important;
+  fill: none !important;
+  stroke-width: 2.5px !important;
+}
+
+[data-key="ai_ml_unconstrained-alt1"] .recharts-line,
+[data-name="AI/ML Unconstrained Alt 1"] path {
+  stroke: #22c55e !important;
+}
+
+[data-key="ai_ml_unconstrained-alt2"] .recharts-line,
+[data-name="AI/ML Unconstrained Alt 2"] path {
+  stroke: #4ade80 !important;
+}
+
+/* Final CDP - Dark to Light Purple */
+.recharts-line:nth-child(4),
+.recharts-bar:nth-child(4),
+[data-key="final_cdp"] .recharts-line,
+[data-key="Final CDP"] .recharts-line,
+[data-name="Final CDP"] path {
+  stroke: #6d28d9 !important;
+  fill: none !important;
+  stroke-width: 2.5px !important;
+}
+
+[data-key="final_cdp-alt1"] .recharts-line,
+[data-name="Final CDP Alt 1"] path {
+  stroke: #a855f7 !important;
+}
+
+[data-key="final_cdp-alt2"] .recharts-line,
+[data-name="Final CDP Alt 2"] path {
+  stroke: #c084fc !important;
+}
+
+/* Kinaxis Statistical - Dark to Light Orange */
+.recharts-line:nth-child(5),
+.recharts-bar:nth-child(5),
+[data-key="kinaxis"] .recharts-line,
+[data-key="Kinaxis Statistical"] .recharts-line,
+[data-name="Kinaxis Statistical"] path {
+  stroke: #c2410c !important;
+  fill: none !important;
+  stroke-width: 2.5px !important;
+}
+
+[data-key="kinaxis-alt1"] .recharts-line,
+[data-name="Kinaxis Alt 1"] path {
+  stroke: #f97316 !important;
+}
+
+[data-key="kinaxis-alt2"] .recharts-line,
+[data-name="Kinaxis Alt 2"] path {
+  stroke: #fb923c !important;
+}
+
+/* Proposed Unconstrained Demand Plan - Dark to Light Red */
+.recharts-line:nth-child(6),
+.recharts-bar:nth-child(6),
+[data-key="proposed_unconstrained"] .recharts-line,
+[data-key="Proposed Unconstrained Demand Plan"] .recharts-line,
+[data-name="Proposed Unconstrained Demand Plan"] path {
+  stroke: #b91c1c !important;
+  fill: none !important;
+  stroke-width: 2.5px !important;
+}
+
+[data-key="proposed_unconstrained-alt1"] .recharts-line,
+[data-name="Proposed Unconstrained Alt 1"] path {
+  stroke: #ef4444 !important;
+}
+
+[data-key="proposed_unconstrained-alt2"] .recharts-line,
+[data-name="Proposed Unconstrained Alt 2"] path {
+  stroke: #f87171 !important;
+}
+
+/* Seasonal Naive - Dark to Light Yellow/Gold */
+.recharts-line:nth-child(7),
+.recharts-bar:nth-child(7),
+[data-key="seasonal_naive"] .recharts-line,
+[data-key="Seasonal Naive"] .recharts-line,
+[data-name="Seasonal Naive"] path {
+  stroke: #ca8a04 !important;
+  fill: none !important;
+  stroke-width: 2.5px !important;
+}
+
+[data-key="seasonal_naive-alt1"] .recharts-line,
+[data-name="Seasonal Naive Alt 1"] path {
+  stroke: #eab308 !important;
+}
+
+[data-key="seasonal_naive-alt2"] .recharts-line,
+[data-name="Seasonal Naive Alt 2"] path {
+  stroke: #facc15 !important;
+}
+
+.recharts-default-tooltip {
+  background-color: rgba(0, 0, 0, 0.9) !important;
+  border: none !important;
+  border-radius: 6px !important;
+}
+
+.recharts-tooltip-label {
+  color: white !important;
+  font-weight: 600 !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2) !important;
+  padding-bottom: 6px !important;
+  margin-bottom: 6px !important;
+}
+
+.recharts-tooltip-item {
+  color: white !important;
+}
+
+.recharts-tooltip-item-value {
+  font-weight: 600 !important;
+}
+
+/* KPI Cards - ONLY target .ql-editor with h3+h4 pattern to avoid breaking other text boxes */
+
+/* Only target h3 followed by h4 within .ql-editor (KPI pattern) */
+.ql-editor h3:has(+ h4) {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: #4b5563 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  margin: 0 0 8px 0 !important;
+  padding: 0 !important;
+  border: none !important;
+}
+
+.ql-editor h3:has(+ h4) span {
+  color: #4b5563 !important;
+  font-size: 13px !important;
+  text-transform: uppercase !important;
+}
+
+/* Separator line - only for KPI h3 within .ql-editor */
+.ql-editor h3:has(+ h4)::after {
+  content: '' !important;
+  display: block !important;
+  width: 100% !important;
+  height: 2px !important;
+  background-color: #d1d5db !important;
+  margin-top: 8px !important;
+  margin-bottom: 12px !important;
+}
+
+/* Only target h4 after h3 within .ql-editor (metric value) */
+.ql-editor h3 + h4 {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 28px !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  margin: 0 0 8px 0 !important;
+  padding: 0 !important;
+}
+
+/* First span = main value (+22.9%) - big and bold */
+.ql-editor h3 + h4 span:first-child {
+  font-size: 28px !important;
+  font-weight: 700 !important;
+}
+
+/* Second span = separator (|) - small, not bold */
+.ql-editor h3 + h4 span:nth-child(2) {
+  font-size: 13px !important;
+  font-weight: 400 !important;
+}
+
+/* Third span = comparison (↑ vs last period) - small, not bold */
+.ql-editor h3 + h4 span:nth-child(3) {
+  font-size: 13px !important;
+  font-weight: 400 !important;
+}
+
+/* Only target p after h4 within .ql-editor (KPI helper text) */
+.ql-editor h3 + h4 + p {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 400 !important;
+  line-height: 1.3 !important;
+  margin: 0 0 4px 0 !important;
+  padding: 0 !important;
+}
+
+.ql-editor h3 + h4 + p span {
+  font-size: 11px !important;
+}
+
+/* Second paragraph after h4 in KPI cards */
+.ql-editor h3 + h4 + p + p {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 400 !important;
+  line-height: 1.3 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.ql-editor h3 + h4 + p + p span {
+  font-size: 11px !important;
+}
+
+[class*="change-positive"],
+[class*="increase"] {
+  color: #15803d !important;
+}
+
+[class*="change-negative"],
+[class*="decrease"] {
+  color: #dc2626 !important;
+}
+
+.definitions-section {
+  margin-top: 32px !important;
+  padding: 20px !important;
+  background-color: var(--autonomy-gray-50) !important;
+  border-top: 3px solid var(--autonomy-primary) !important;
+  border-radius: 6px !important;
+}
+
+.definitions-section h2 {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 20px !important;
+  font-weight: 700 !important;
+  color: var(--autonomy-gray-800) !important;
+  margin-bottom: 16px !important;
+}
+
+.definitions-section h3 {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: var(--autonomy-gray-800) !important;
+  margin-top: 16px !important;
+  margin-bottom: 8px !important;
+  border-bottom: 1px solid var(--autonomy-gray-300) !important;
+  padding-bottom: 6px !important;
+}
+
+.definitions-section p {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  line-height: 1.5 !important;
+  color: var(--autonomy-gray-700) !important;
+  margin-bottom: 10px !important;
+}
+
+.definition-link {
+  color: var(--autonomy-primary) !important;
+  text-decoration: none !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  border-bottom: 1px dotted var(--autonomy-primary) !important;
+}
+
+.definition-link:hover {
+  color: var(--autonomy-primary-hover) !important;
+  border-bottom-style: solid !important;
+}

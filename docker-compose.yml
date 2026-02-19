@@ -1,0 +1,174 @@
+services:
+  proxy:
+    image: nginx:alpine
+    container_name: autonomy-proxy
+    restart: unless-stopped
+    ports:
+      - "8088:8088"
+    volumes:
+      - ./config/dev-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_healthy
+    networks:
+      - autonomy-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8088/healthz | grep -q ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 10s
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: autonomy-frontend
+    ports:
+      - "3000:80"  # Expose frontend directly for testing
+    environment:
+      - NODE_ENV=production
+      - REACT_APP_API_BASE_URL=${REACT_APP_API_BASE_URL:-/api/v1}
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-/api/v1}
+    networks:
+      - autonomy-network
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.cpu
+    container_name: autonomy-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Database configuration - PostgreSQL
+      - DATABASE_TYPE=${DATABASE_TYPE:-postgresql}
+      - POSTGRESQL_HOST=${POSTGRESQL_HOST:-db}
+      - POSTGRESQL_PORT=${POSTGRESQL_PORT:-5432}
+      - POSTGRESQL_DATABASE=${POSTGRESQL_DATABASE:-autonomy}
+      - POSTGRESQL_USER=${POSTGRESQL_USER:-autonomy_user}
+      - POSTGRESQL_PASSWORD=${POSTGRESQL_PASSWORD:-autonomy_password}
+      - DATABASE_URL=${DATABASE_URL:-postgresql+psycopg2://autonomy_user:autonomy_password@db:5432/autonomy}
+      - ASYNC_DATABASE_URL=${ASYNC_DATABASE_URL:-postgresql+asyncpg://autonomy_user:autonomy_password@db:5432/autonomy}
+      - DOCKER_COMPOSE=true
+
+      # Application settings
+      - SECRET_KEY=${SECRET_KEY:-dev-secret}
+      - ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - PYTHONUNBUFFERED=1
+      - TZ=UTC
+      - DB_CONNECTION_RETRIES=60
+      - INIT_DB=true
+      - DB_WAIT_TIMEOUT=30
+      - DB_CONNECTION_TIMEOUT=30
+      - PYTHONPATH=/app
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_PROJECT=${OPENAI_PROJECT:-}
+      - AUTONOMY_LLM_MODEL=${AUTONOMY_LLM_MODEL:-gpt-5-mini}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    networks:
+      autonomy-network:
+        aliases:
+          - backend
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import http.client; conn = http.client.HTTPConnection('localhost', 8000); conn.request('GET', '/api/health'); r = conn.getresponse(); exit(0 if r.status == 200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    security_opt:
+      - seccomp:unconfined
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
+  db:
+    image: postgres:16-alpine
+    container_name: autonomy-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRESQL_DATABASE:-autonomy}
+      POSTGRES_USER: ${POSTGRESQL_USER:-autonomy_user}
+      POSTGRES_PASSWORD: ${POSTGRESQL_PASSWORD:-autonomy_password}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    expose:
+      - "5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./init_db_postgres.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRESQL_USER:-autonomy_user} -d ${POSTGRESQL_DATABASE:-autonomy}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - autonomy-network
+    security_opt:
+      - seccomp:unconfined
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: autonomy-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@autonomy.ai}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+    networks:
+      - autonomy-network
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+  create-users:
+    build:
+      context: ./backend
+      dockerfile: scripts/Dockerfile
+    container_name: create-users
+    environment:
+      - DATABASE_TYPE=postgresql
+      - POSTGRESQL_HOST=db
+      - POSTGRESQL_PORT=5432
+      - POSTGRESQL_USER=autonomy_user
+      - POSTGRESQL_PASSWORD=${POSTGRESQL_PASSWORD:-autonomy_password}
+      - POSTGRESQL_DATABASE=autonomy
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - autonomy-network
+
+networks:
+  autonomy-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local

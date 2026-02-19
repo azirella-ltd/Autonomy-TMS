@@ -1,0 +1,207 @@
+"""
+Supply Plan Database Models
+
+Models for storing supply plan generation requests, results, and comparisons.
+"""
+
+from sqlalchemy import Column, Integer, String, DateTime, Float, JSON, Boolean, ForeignKey, Enum, Text
+from sqlalchemy.orm import relationship
+from datetime import datetime
+import enum
+
+from .base import Base
+
+
+class PlanStatus(str, enum.Enum):
+    """Status of supply plan generation task."""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class SupplyPlanRequest(Base):
+    """
+    Supply plan generation request.
+
+    Captures the input parameters for a Monte Carlo supply planning run.
+    """
+    __tablename__ = "supply_plan_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # User and configuration
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False, index=True)
+    config_name = Column(String(200))
+
+    # Planning parameters
+    agent_strategy = Column(String(50), default="trm", index=True)
+    num_scenarios = Column(Integer, default=1000)
+    planning_horizon = Column(Integer, default=52)  # weeks
+
+    # Stochastic parameters
+    stochastic_params = Column(JSON, nullable=False)
+    # {
+    #     "demand_model": "normal",
+    #     "demand_variability": 0.15,
+    #     "lead_time_model": "normal",
+    #     "lead_time_variability": 0.10,
+    #     "supplier_reliability": 0.95,
+    #     "random_seed": 42
+    # }
+
+    # Business objectives
+    objectives = Column(JSON, nullable=False)
+    # {
+    #     "primary_objective": "minimize_cost",
+    #     "service_level_target": 0.95,
+    #     "service_level_confidence": 0.90,
+    #     "budget_limit": 500000.0,
+    #     "inventory_dos_min": 10,
+    #     "inventory_dos_max": 30
+    # }
+
+    # Execution status
+    status = Column(Enum(PlanStatus, name="plan_status"), default=PlanStatus.PENDING, index=True)
+    progress = Column(Float, default=0.0)  # 0.0 to 1.0
+    error_message = Column(Text, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    user = relationship("User", back_populates="supply_plan_requests")
+    config = relationship("SupplyChainConfig")
+    result = relationship("SupplyPlanResult", back_populates="request", uselist=False)
+
+    def __repr__(self):
+        return f"<SupplyPlanRequest id={self.id} status={self.status} config={self.config_name}>"
+
+
+class SupplyPlanResult(Base):
+    """
+    Supply plan generation result.
+
+    Stores the balanced scorecard and recommendations from Monte Carlo simulation.
+    """
+    __tablename__ = "supply_plan_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    request_id = Column(Integer, ForeignKey("supply_plan_requests.id"), nullable=False, unique=True, index=True)
+
+    # Balanced scorecard
+    scorecard = Column(JSON, nullable=False)
+    # {
+    #     "financial": {...},
+    #     "customer": {...},
+    #     "operational": {...},
+    #     "strategic": {...}
+    # }
+
+    # Recommendations
+    recommendations = Column(JSON, nullable=False)
+    # [
+    #     {
+    #         "type": "service_level_risk",
+    #         "severity": "high",
+    #         "metric": "OTIF",
+    #         "message": "...",
+    #         "recommendation": "..."
+    #     }
+    # ]
+
+    # Summary statistics
+    total_cost_expected = Column(Float, index=True)
+    total_cost_p10 = Column(Float)
+    total_cost_p90 = Column(Float)
+
+    otif_expected = Column(Float, index=True)
+    otif_probability_above_target = Column(Float)
+
+    fill_rate_expected = Column(Float, index=True)
+    inventory_turns_expected = Column(Float)
+    bullwhip_ratio_expected = Column(Float)
+
+    # Raw scenario results (optional, for detailed analysis)
+    scenario_results = Column(JSON, nullable=True)  # Can be large, may want to store separately
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    # Relationships
+    request = relationship("SupplyPlanRequest", back_populates="result")
+
+    def __repr__(self):
+        return f"<SupplyPlanResult id={self.id} request_id={self.request_id}>"
+
+
+class SupplyPlanComparison(Base):
+    """
+    Comparison of multiple supply plans.
+
+    Allows users to compare different agent strategies, parameter sets, or configurations.
+    """
+    __tablename__ = "supply_plan_comparisons"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # User and metadata
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+
+    # Plan IDs being compared
+    plan_ids = Column(JSON, nullable=False)  # List of SupplyPlanRequest IDs
+
+    # Comparison results
+    comparison_data = Column(JSON, nullable=False)
+    # {
+    #     "winner": "trm",
+    #     "metrics": {
+    #         "total_cost": {"naive": 12000, "pid": 10500, "trm": 9700},
+    #         "otif": {"naive": 0.85, "pid": 0.91, "trm": 0.935}
+    #     }
+    # }
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    # Relationships
+    user = relationship("User", back_populates="supply_plan_comparisons")
+
+    def __repr__(self):
+        return f"<SupplyPlanComparison id={self.id} name={self.name}>"
+
+
+class SupplyPlanExport(Base):
+    """
+    Export records for supply plans.
+
+    Tracks when users export plans to CSV, Excel, PDF, etc.
+    """
+    __tablename__ = "supply_plan_exports"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # User and plan
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    plan_id = Column(Integer, ForeignKey("supply_plan_requests.id"), nullable=False, index=True)
+
+    # Export details
+    format = Column(String(20), nullable=False)  # csv, excel, pdf, json
+    file_path = Column(String(500), nullable=True)
+    file_size_bytes = Column(Integer, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    # Relationships
+    user = relationship("User", back_populates="supply_plan_exports")
+    plan = relationship("SupplyPlanRequest")
+
+    def __repr__(self):
+        return f"<SupplyPlanExport id={self.id} plan_id={self.plan_id} format={self.format}>"

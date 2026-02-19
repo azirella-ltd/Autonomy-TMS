@@ -1,0 +1,23 @@
+# Development stage
+FROM node:18-alpine AS development
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apk add --no-cache python3 make g++
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install --legacy-peer-deps
+
+# Copy application files
+COPY . .
+
+# Expose the development server port
+EXPOSE 3002
+
+# Start the development server
+CMD ["npm", "start"]

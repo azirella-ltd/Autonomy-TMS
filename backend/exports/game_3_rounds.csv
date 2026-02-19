@@ -1,0 +1,165 @@
+Round,Node,Starting Inventory,Demand,Supply,Ending Inventory,Backlog Cost,Holding Cost,Comment
+0,retailer,0,0,0,0,0,0,
+0,wholesaler,0,0,0,0,0,0,
+0,distributor,0,0,0,0,0,0,
+0,manufacturer,4,0,0,4,0,0,
+1,retailer,0,4,0,-4,0.0,0.0,
+1,wholesaler,0,0,0,0,0.0,0.0,
+1,distributor,0,0,0,0,0.0,0.0,
+1,manufacturer,4,0,0,4,0.0,2.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+2,retailer,-4,4,0,-8,20.0,0.0,
+2,wholesaler,0,0,0,0,0.0,0.0,
+2,distributor,0,0,0,0,0.0,0.0,
+2,manufacturer,4,0,0,4,0.0,2.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+3,retailer,-8,4,0,-12,40.0,0.0,
+3,wholesaler,0,0,0,0,0.0,0.0,
+3,distributor,0,0,0,0,0.0,0.0,
+3,manufacturer,4,0,6,10,0.0,2.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+4,retailer,-12,4,0,-16,60.0,0.0,
+4,wholesaler,0,0,0,0,0.0,0.0,
+4,distributor,0,0,0,0,0.0,0.0,
+4,manufacturer,10,0,6,16,0.0,5.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+5,retailer,-16,4,0,-20,80.0,0.0,
+5,wholesaler,0,0,0,0,0.0,0.0,
+5,distributor,0,0,0,0,0.0,0.0,
+5,manufacturer,16,0,6,22,0.0,8.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+6,retailer,-20,4,0,-24,100.0,0.0,
+6,wholesaler,0,0,0,0,0.0,0.0,
+6,distributor,0,0,0,0,0.0,0.0,
+6,manufacturer,22,0,6,28,0.0,11.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+7,retailer,-24,4,0,-28,120.0,0.0,
+7,wholesaler,0,0,0,0,0.0,0.0,
+7,distributor,0,0,0,0,0.0,0.0,
+7,manufacturer,28,0,6,34,0.0,14.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+8,retailer,-28,4,0,-32,140.0,0.0,
+8,wholesaler,0,0,0,0,0.0,0.0,
+8,distributor,0,0,0,0,0.0,0.0,
+8,manufacturer,34,0,6,40,0.0,17.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+9,retailer,-32,4,0,-36,160.0,0.0,
+9,wholesaler,0,0,0,0,0.0,0.0,
+9,distributor,0,0,0,0,0.0,0.0,
+9,manufacturer,40,0,6,46,0.0,20.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+10,retailer,-36,4,0,-40,180.0,0.0,
+10,wholesaler,0,0,0,0,0.0,0.0,
+10,distributor,0,0,0,0,0.0,0.0,
+10,manufacturer,46,0,6,52,0.0,23.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+11,retailer,-40,4,0,-44,200.0,0.0,
+11,wholesaler,0,0,0,0,0.0,0.0,
+11,distributor,0,0,0,0,0.0,0.0,
+11,manufacturer,52,0,6,58,0.0,26.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+12,retailer,-44,4,0,-48,220.0,0.0,
+12,wholesaler,0,0,0,0,0.0,0.0,
+12,distributor,0,0,0,0,0.0,0.0,
+12,manufacturer,58,0,6,64,0.0,29.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+13,retailer,-48,4,0,-52,240.0,0.0,
+13,wholesaler,0,0,0,0,0.0,0.0,
+13,distributor,0,0,0,0,0.0,0.0,
+13,manufacturer,64,0,6,70,0.0,32.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+14,retailer,-52,4,0,-56,260.0,0.0,
+14,wholesaler,0,0,0,0,0.0,0.0,
+14,distributor,0,0,0,0,0.0,0.0,
+14,manufacturer,70,0,6,76,0.0,35.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+15,retailer,-56,12,0,-68,280.0,0.0,
+15,wholesaler,0,0,0,0,0.0,0.0,
+15,distributor,0,0,0,0,0.0,0.0,
+15,manufacturer,76,0,6,82,0.0,38.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+16,retailer,-68,12,0,-80,340.0,0.0,
+16,wholesaler,0,0,0,0,0.0,0.0,
+16,distributor,0,0,0,0,0.0,0.0,
+16,manufacturer,82,0,6,88,0.0,41.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+17,retailer,-80,12,0,-92,400.0,0.0,
+17,wholesaler,0,0,0,0,0.0,0.0,
+17,distributor,0,0,0,0,0.0,0.0,
+17,manufacturer,88,0,6,94,0.0,44.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+18,retailer,-92,12,0,-104,460.0,0.0,
+18,wholesaler,0,0,0,0,0.0,0.0,
+18,distributor,0,0,0,0,0.0,0.0,
+18,manufacturer,94,0,6,100,0.0,47.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+19,retailer,-104,12,0,-116,520.0,0.0,
+19,wholesaler,0,0,0,0,0.0,0.0,
+19,distributor,0,0,0,0,0.0,0.0,
+19,manufacturer,100,0,6,106,0.0,50.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+20,retailer,-116,12,0,-128,580.0,0.0,
+20,wholesaler,0,0,0,0,0.0,0.0,
+20,distributor,0,0,0,0,0.0,0.0,
+20,manufacturer,106,0,6,112,0.0,53.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+21,retailer,-128,12,0,-140,640.0,0.0,
+21,wholesaler,0,0,0,0,0.0,0.0,
+21,distributor,0,0,0,0,0.0,0.0,
+21,manufacturer,112,0,6,118,0.0,56.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+22,retailer,-140,12,0,-152,700.0,0.0,
+22,wholesaler,0,0,0,0,0.0,0.0,
+22,distributor,0,0,0,0,0.0,0.0,
+22,manufacturer,118,0,6,124,0.0,59.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+23,retailer,-152,12,0,-164,760.0,0.0,
+23,wholesaler,0,0,0,0,0.0,0.0,
+23,distributor,0,0,0,0,0.0,0.0,
+23,manufacturer,124,0,6,130,0.0,62.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+24,retailer,-164,12,0,-176,820.0,0.0,
+24,wholesaler,0,0,0,0,0.0,0.0,
+24,distributor,0,0,0,0,0.0,0.0,
+24,manufacturer,130,0,6,136,0.0,65.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+25,retailer,-176,12,0,-188,880.0,0.0,
+25,wholesaler,0,0,0,0,0.0,0.0,
+25,distributor,0,0,0,0,0.0,0.0,
+25,manufacturer,136,0,6,142,0.0,68.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+26,retailer,-188,12,0,-200,940.0,0.0,
+26,wholesaler,0,0,0,0,0.0,0.0,
+26,distributor,0,0,0,0,0.0,0.0,
+26,manufacturer,142,0,6,148,0.0,71.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+27,retailer,-200,12,0,-212,1000.0,0.0,
+27,wholesaler,0,0,0,0,0.0,0.0,
+27,distributor,0,0,0,0,0.0,0.0,
+27,manufacturer,148,0,6,154,0.0,74.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+28,retailer,-212,12,0,-224,1060.0,0.0,
+28,wholesaler,0,0,0,0,0.0,0.0,
+28,distributor,0,0,0,0,0.0,0.0,
+28,manufacturer,154,0,6,160,0.0,77.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+29,retailer,-224,12,0,-236,1120.0,0.0,
+29,wholesaler,0,0,0,0,0.0,0.0,
+29,distributor,0,0,0,0,0.0,0.0,
+29,manufacturer,160,0,6,166,0.0,80.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+30,retailer,-236,12,0,-248,1180.0,0.0,
+30,wholesaler,0,0,0,0,0.0,0.0,
+30,distributor,0,0,0,0,0.0,0.0,
+30,manufacturer,166,0,6,172,0.0,83.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+31,retailer,-248,12,0,-260,1240.0,0.0,
+31,wholesaler,0,0,0,0,0.0,0.0,
+31,distributor,0,0,0,0,0.0,0.0,
+31,manufacturer,172,0,6,178,0.0,86.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+32,retailer,-260,12,0,-272,1300.0,0.0,
+32,wholesaler,0,0,0,0,0.0,0.0,
+32,distributor,0,0,0,0,0.0,0.0,
+32,manufacturer,178,0,6,184,0.0,89.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+33,retailer,-272,12,0,-284,1360.0,0.0,
+33,wholesaler,0,0,0,0,0.0,0.0,
+33,distributor,0,0,0,0,0.0,0.0,
+33,manufacturer,184,0,6,190,0.0,92.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+34,retailer,-284,12,0,-296,1420.0,0.0,
+34,wholesaler,0,0,0,0,0.0,0.0,
+34,distributor,0,0,0,0,0.0,0.0,
+34,manufacturer,190,0,6,196,0.0,95.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+35,retailer,-296,12,0,-308,1480.0,0.0,
+35,wholesaler,0,0,0,0,0.0,0.0,
+35,distributor,0,0,0,0,0.0,0.0,
+35,manufacturer,196,0,6,202,0.0,98.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+36,retailer,-308,12,0,-320,1540.0,0.0,
+36,wholesaler,0,0,0,0,0.0,0.0,
+36,distributor,0,0,0,0,0.0,0.0,
+36,manufacturer,202,0,6,208,0.0,101.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+37,retailer,-320,12,0,-332,1600.0,0.0,
+37,wholesaler,0,0,0,0,0.0,0.0,
+37,distributor,0,0,0,0,0.0,0.0,
+37,manufacturer,208,0,6,214,0.0,104.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+38,retailer,-332,12,0,-344,1660.0,0.0,
+38,wholesaler,0,0,0,0,0.0,0.0,
+38,distributor,0,0,0,0,0.0,0.0,
+38,manufacturer,214,0,6,220,0.0,107.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+39,retailer,-344,12,0,-356,1720.0,0.0,
+39,wholesaler,0,0,0,0,0.0,0.0,
+39,distributor,0,0,0,0,0.0,0.0,
+39,manufacturer,220,0,6,226,0.0,110.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0
+40,retailer,-356,12,0,-368,1780.0,0.0,
+40,wholesaler,0,0,0,0,0.0,0.0,
+40,distributor,0,0,0,0,0.0,0.0,
+40,manufacturer,226,0,6,232,0.0,113.0,[Manufacturer] PID heuristic | demand_avg=0.0 error=12.0 integral=12.0 derivative=0.0 | demand_anchor=1.0 inventory=4 backlog=0 inbound=0.0

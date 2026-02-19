@@ -1,0 +1,15 @@
+/**
+ * Collapsible Component - Autonomy UI Kit Wrapper
+ *
+ * Radix UI Collapsible wrapper.
+ */
+
+import * as CollapsiblePrimitive from '@radix-ui/react-collapsible';
+
+export const Collapsible = CollapsiblePrimitive.Root;
+
+export const CollapsibleTrigger = CollapsiblePrimitive.CollapsibleTrigger;
+
+export const CollapsibleContent = CollapsiblePrimitive.CollapsibleContent;
+
+export default Collapsible;

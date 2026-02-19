@@ -1,0 +1,571 @@
+"""
+AWS Supply Chain Planning Models
+
+Simplified models that match the actual database schema created by migrations.
+These models are specifically for the planning logic and align with the tables
+created in 20260110_planning_tables.py migration.
+"""
+
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Double,
+    ForeignKey,
+    DateTime,
+    Date,
+    Index,
+    text,
+)
+from sqlalchemy.dialects.mysql import DECIMAL
+from datetime import datetime
+from .base import Base
+
+
+class Forecast(Base):
+    """Demand forecasts"""
+    __tablename__ = "forecast"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    product_id = Column(Integer, ForeignKey("items.id"), nullable=False)
+    site_id = Column(Integer, ForeignKey("nodes.id"), nullable=False)
+    forecast_date = Column(Date, nullable=False)
+    forecast_quantity = Column(Double)
+    forecast_p50 = Column(Double)
+    forecast_p10 = Column(Double)
+    forecast_p90 = Column(Double)
+    user_override_quantity = Column(Double)
+    is_active = Column(String(10))
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+
+
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+
+
+
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+
+
+
+
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+
+
+
+
+
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+
+
+
+
+
+
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+
+
+
+
+
+
+
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+
+
+
+
+
+
+
+
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+
+
+
+
+
+
+
+
+
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+
+
+
+
+
+
+
+
+
+
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+
+
+
+
+
+
+
+
+
+
+
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+
+
+
+
+
+
+
+
+
+
+
+
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+
+
+
+
+
+
+
+
+
+
+
+
+
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    game_id = Column(Integer, ForeignKey("games.id"))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    __table_args__ = (
+        Index('idx_forecast_lookup', 'product_id', 'site_id', 'forecast_date'),
+        Index('idx_forecast_group_config', 'group_id', 'config_id'),
+        Index('idx_forecast_config', 'config_id'),
+        Index('idx_forecast_game', 'game_id'),
+    )
+
+
+class SupplyPlan(Base):
+    """Supply plan recommendations (PO/TO/MO requests)"""
+    __tablename__ = "supply_plan"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    plan_type = Column(String(20), nullable=False)  # po_request, to_request, mo_request
+    product_id = Column(Integer, ForeignKey("items.id"), nullable=False)
+    destination_site_id = Column(Integer, ForeignKey("nodes.id"), nullable=False)
+    source_site_id = Column(Integer, ForeignKey("nodes.id"))
+    vendor_id = Column(String(100))
+    production_process_id = Column(String(100), ForeignKey("production_process.id"))
+    planned_order_quantity = Column(Double, nullable=False)
+    planned_order_date = Column(Date, nullable=False)
+    planned_receipt_date = Column(Date, nullable=False)
+    lead_time_days = Column(Integer)
+    unit_cost = Column(Double)
+    planning_run_id = Column(String(100))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    game_id = Column(Integer, ForeignKey("games.id"))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    __table_args__ = (
+        Index('idx_supply_plan_lookup', 'product_id', 'destination_site_id', 'planned_order_date'),
+        Index('idx_supply_plan_group_config', 'group_id', 'config_id'),
+        Index('idx_supply_plan_config', 'config_id'),
+        Index('idx_supply_plan_game', 'game_id'),
+    )
+
+
+class ProductBom(Base):
+    """Bill of materials"""
+    __tablename__ = "product_bom"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    product_id = Column(Integer, ForeignKey("items.id"), nullable=False)
+    component_product_id = Column(Integer, ForeignKey("items.id"), nullable=False)
+    component_quantity = Column(Double, nullable=False)
+    production_process_id = Column(String(100), ForeignKey("production_process.id"))
+    alternate_group = Column(Integer, server_default='0')
+    priority = Column(Integer, server_default='1')
+    scrap_percentage = Column(Double, server_default='0.0')
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+
+    __table_args__ = (
+        Index('idx_bom_product', 'product_id'),
+        Index('idx_bom_component', 'component_product_id'),
+        Index('idx_bom_config', 'config_id'),
+    )
+
+
+class ProductionProcess(Base):
+    """Manufacturing process definitions with AWS SC advanced features"""
+    __tablename__ = "production_process"
+
+    id = Column(String(100), primary_key=True)
+    description = Column(String(500))
+    site_id = Column(Integer, ForeignKey("nodes.id"))
+    manufacturing_leadtime = Column(Integer)
+    cycle_time = Column(Integer)
+    yield_percentage = Column(Double, server_default='100.0')
+    capacity_units = Column(Double)
+    capacity_period = Column(String(20))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+
+    # AWS SC Advanced Features
+    frozen_horizon_days = Column(Integer)  # Lock production orders within this horizon
+    setup_time = Column(Integer)  # Setup time in minutes/hours before production
+    changeover_time = Column(Integer)  # Time to switch between products
+    changeover_cost = Column(DECIMAL(10, 2))  # Cost per changeover
+    min_batch_size = Column(DECIMAL(10, 2))  # Minimum production quantity
+    max_batch_size = Column(DECIMAL(10, 2))  # Maximum production quantity
+
+    __table_args__ = (
+        Index('idx_prod_process_site', 'site_id'),
+        Index('idx_prod_process_config', 'config_id'),
+    )
+
+
+class SourcingRules(Base):
+    """Sourcing rules with priority and allocation
+
+    AWS SC standard sourcing rules with support for buy/transfer/manufacture.
+    Includes FK references to trading partners, lanes, and production processes.
+    """
+    __tablename__ = "sourcing_rules"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    product_id = Column(Integer, ForeignKey("items.id"), nullable=False)
+    site_id = Column(Integer, ForeignKey("nodes.id"), nullable=False)
+    supplier_site_id = Column(Integer, ForeignKey("nodes.id"), nullable=False)
+    priority = Column(Integer, nullable=False)
+    sourcing_rule_type = Column(String(50), nullable=False)  # transfer, buy, manufacture
+    allocation_percent = Column(DECIMAL(5, 2), nullable=False)
+    min_qty = Column(DECIMAL(10, 2))
+    max_qty = Column(DECIMAL(10, 2))
+    qty_multiple = Column(DECIMAL(10, 2))
+    lead_time = Column(Integer)
+    unit_cost = Column(DECIMAL(10, 2))
+    eff_start_date = Column(DateTime, nullable=False, server_default='1900-01-01 00:00:00')
+    eff_end_date = Column(DateTime, nullable=False, server_default='9999-12-31 23:59:59')
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+
+    # AWS SC Foreign Key References
+    tpartner_id = Column(Integer, ForeignKey("trading_partner.id"))  # For 'buy' type rules (INT to match trading_partner.id)
+    transportation_lane_id = Column(String(100))  # For 'transfer' type rules
+    production_process_id = Column(String(100), ForeignKey("production_process.id"))  # For 'manufacture' type rules
+
+    # AWS SC Hierarchical override fields (3-level hierarchy)
+    product_group_id = Column(String(100))  # Level 2 - Product group
+    company_id = Column(String(100))  # Level 3 - Company (lowest priority)
+
+
+class InvPolicy(Base):
+    """Inventory policy configuration with AWS SC standard fields"""
+    __tablename__ = "inv_policy"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    product_id = Column(Integer, ForeignKey("items.id"), nullable=False)
+    site_id = Column(Integer, ForeignKey("nodes.id"), nullable=False)
+    policy_type = Column(String(50), nullable=False, server_default='base_stock')
+    target_qty = Column(DECIMAL(10, 2))
+    min_qty = Column(DECIMAL(10, 2))
+    max_qty = Column(DECIMAL(10, 2))
+    reorder_point = Column(DECIMAL(10, 2))
+    order_qty = Column(DECIMAL(10, 2))
+    review_period = Column(Integer)
+    service_level = Column(DECIMAL(5, 2))
+    holding_cost = Column(DECIMAL(10, 2))
+    backlog_cost = Column(DECIMAL(10, 2))
+    selling_price = Column(DECIMAL(10, 2))
+    eff_start_date = Column(DateTime, nullable=False, server_default='1900-01-01 00:00:00')
+    eff_end_date = Column(DateTime, nullable=False, server_default='9999-12-31 23:59:59')
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+
+    # AWS SC Hierarchical override fields (6-level hierarchy)
+    product_group_id = Column(String(100))  # Level 2 - Product group
+    dest_geo_id = Column(String(100))  # Level 4 - Destination geography
+    segment_id = Column(String(100))  # Level 5 - Market segment
+    company_id = Column(String(100))  # Level 6 - Company (lowest priority)
+
+    # AWS SC Safety Stock Policy Type fields
+    # Reference: https://docs.aws.amazon.com/aws-supply-chain/latest/userguide/non-transactional.html
+    ss_policy = Column(String(20))  # Safety stock policy: abs_level, doc_dem, doc_fcst, sl
+    ss_days = Column(Integer)  # Days of coverage for doc_dem/doc_fcst policies
+    ss_quantity = Column(Double)  # Absolute quantity for abs_level policy
+    policy_value = Column(Double)  # Generic policy value field
+
+    # AWS SC Periodic Review Policy Field
+    # Used with sourcing schedules for order-up-to systems
+    # Formula: order_qty = order_up_to_level - (on_hand + on_order)
+    order_up_to_level = Column(DECIMAL(10, 2))  # Target inventory level for periodic review
+
+
+class InvLevel(Base):
+    """Inventory level snapshots"""
+    __tablename__ = "inv_level"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    product_id = Column(Integer, ForeignKey("items.id"), nullable=False)
+    site_id = Column(Integer, ForeignKey("nodes.id"), nullable=False)
+    on_hand_qty = Column(DECIMAL(10, 2), server_default='0')
+    available_qty = Column(DECIMAL(10, 2), server_default='0')
+    reserved_qty = Column(DECIMAL(10, 2), server_default='0')
+    in_transit_qty = Column(DECIMAL(10, 2), server_default='0')
+    backorder_qty = Column(DECIMAL(10, 2), server_default='0')
+    safety_stock_qty = Column(DECIMAL(10, 2))
+    reorder_point_qty = Column(DECIMAL(10, 2))
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    snapshot_date = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"))
+
+
+class Reservation(Base):
+    """Inventory reservations"""
+    __tablename__ = "reservation"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    product_id = Column(Integer, ForeignKey("items.id"), nullable=False)
+    site_id = Column(Integer, ForeignKey("nodes.id"), nullable=False)
+    reservation_date = Column(Date, nullable=False)
+    reserved_quantity = Column(Double, nullable=False)
+    reservation_type = Column(String(50))
+    reference_id = Column(String(100))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    game_id = Column(Integer, ForeignKey("games.id"))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    __table_args__ = (
+        Index('idx_reservation_lookup', 'product_id', 'site_id', 'reservation_date'),
+        Index('idx_reservation_group_config', 'group_id', 'config_id'),
+        Index('idx_reservation_config', 'config_id'),
+    )
+
+
+class OutboundOrderLine(Base):
+    """Customer orders (actual demand)"""
+    __tablename__ = "outbound_order_line"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_id = Column(String(100), nullable=False)
+    line_number = Column(Integer, nullable=False)
+    product_id = Column(Integer, ForeignKey("items.id"), nullable=False)
+    site_id = Column(Integer, ForeignKey("nodes.id"), nullable=False)
+    ordered_quantity = Column(Double, nullable=False)
+    requested_delivery_date = Column(Date, nullable=False)
+    order_date = Column(Date)
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    game_id = Column(Integer, ForeignKey("games.id"))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    __table_args__ = (
+        Index('idx_outbound_order_lookup', 'product_id', 'site_id', 'requested_delivery_date'),
+        Index('idx_outbound_order_config', 'config_id'),
+    )
+
+
+class VendorLeadTime(Base):
+    """Vendor lead times with hierarchical override"""
+    __tablename__ = "vendor_lead_time"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    vendor_id = Column(String(100), nullable=False)
+    product_id = Column(Integer, ForeignKey("items.id"))
+    product_group_id = Column(String(100))
+    site_id = Column(Integer, ForeignKey("nodes.id"))
+    geo_id = Column(String(100))
+    segment_id = Column(String(100))  # Added for full 5-level hierarchy
+    company_id = Column(String(100))
+    lead_time_days = Column(Integer, nullable=False)
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+
+    __table_args__ = (
+        Index('idx_vendor_lt_override', 'product_id', 'product_group_id', 'site_id', 'geo_id', 'company_id'),
+        Index('idx_vendor_lt_config', 'config_id'),
+    )
+
+
+class SupplyPlanningParameters(Base):
+    """Supply planning configuration parameters"""
+    __tablename__ = "supply_planning_parameters"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    product_id = Column(Integer, ForeignKey("items.id"))
+    site_id = Column(Integer, ForeignKey("nodes.id"))
+    planning_time_fence = Column(Integer)
+    lot_size_rule = Column(String(50))
+    lot_size_value = Column(Double)
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+
+    __table_args__ = (
+        Index('idx_spp_lookup', 'product_id', 'site_id'),
+    )
+
+
+class TradingPartner(Base):
+    """Trading partners (vendors/suppliers) in the supply chain
+
+    AWS SC standard entity for managing external suppliers and vendors.
+    Used in sourcing_rules and vendor_product relationships.
+
+    Note: This table already exists from 20260107_aws_standard_entities.py migration.
+    Model definition matches existing schema.
+
+    Reference: https://docs.aws.amazon.com/aws-supply-chain/latest/userguide/non-transactional.html
+    """
+    __tablename__ = "trading_partner"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)  # Trading partner ID
+    description = Column(String(255))  # Partner name
+    country = Column(String(100))
+    eff_start_date = Column(DateTime, server_default='1900-01-01 00:00:00')
+    eff_end_date = Column(DateTime, server_default='9999-12-31 23:59:59')
+    time_zone = Column(String(50))
+    is_active = Column(Integer)  # tinyint(1) in MySQL
+    tpartner_type = Column(String(50), server_default='SCN_RESERVED_NO_VALUE_PROVIDED')
+    geo_id = Column(Integer, ForeignKey("geography.id"))
+    address_1 = Column(String(255))
+    address_2 = Column(String(255))
+    city = Column(String(100))
+    state_prov = Column(String(100))
+    postal_code = Column(String(20))
+    phone_number = Column(String(50))
+    email = Column(String(255))
+    website = Column(String(255))
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"))
+
+    __table_args__ = (
+        Index('ix_trading_partner_id', 'id'),
+        Index('ix_trading_partner_geo_id', 'geo_id'),
+        Index('ix_trading_partner_type', 'tpartner_type'),
+        Index('ix_trading_partner_is_active', 'is_active'),
+        Index('idx_trading_partner_group_config', 'group_id', 'config_id'),
+    )
+
+
+class VendorProduct(Base):
+    """Vendor-specific product information (pricing, lead times, MOQ)
+
+    AWS SC standard entity for vendor-product relationships.
+    Stores unit costs, lead times, and ordering constraints per vendor.
+
+    Reference: https://docs.aws.amazon.com/aws-supply-chain/latest/userguide/non-transactional.html
+    """
+    __tablename__ = "vendor_product"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tpartner_id = Column(Integer, ForeignKey("trading_partner.id"), nullable=False)  # INT to match trading_partner.id
+    product_id = Column(Integer, ForeignKey("items.id"), nullable=False)
+    vendor_product_id = Column(String(100))  # Vendor's SKU/part number
+    unit_cost = Column(DECIMAL(10, 2))  # Cost per unit from this vendor
+    currency_code = Column(String(10))
+    lead_time_days = Column(Integer)  # Vendor-specific lead time
+    min_order_qty = Column(DECIMAL(10, 2))  # Minimum order quantity
+    order_multiple = Column(DECIMAL(10, 2))  # Must order in multiples of this
+    max_order_qty = Column(DECIMAL(10, 2))  # Maximum order quantity
+    is_preferred = Column(String(10), server_default='false')
+    is_active = Column(String(10), server_default='true')
+    eff_start_date = Column(DateTime, server_default='1900-01-01 00:00:00')
+    eff_end_date = Column(DateTime, server_default='9999-12-31 23:59:59')
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"))
+
+    __table_args__ = (
+        Index('idx_vendor_product_lookup', 'tpartner_id', 'product_id'),
+        Index('idx_vendor_product_group_config', 'group_id', 'config_id'),
+        Index('idx_vendor_product_config', 'config_id'),
+    )
+
+
+class SourcingSchedule(Base):
+    """Sourcing schedule configuration for periodic ordering
+
+    AWS SC standard entity for defining when orders can be placed.
+    Supports periodic review inventory systems where orders are only
+    placed on specific days (e.g., weekly on Mondays, monthly on 1st).
+
+    Periodic ordering reduces ordering frequency and can consolidate
+    shipments for cost savings. Often paired with order_up_to_level
+    inventory policies.
+
+    Reference: https://docs.aws.amazon.com/aws-supply-chain/latest/userguide/non-transactional.html
+    """
+    __tablename__ = "sourcing_schedule"
+
+    id = Column(String(100), primary_key=True)  # sourcing_schedule_id
+    description = Column(String(255))
+    to_site_id = Column(Integer, ForeignKey("nodes.id"), nullable=False)  # Destination site
+    tpartner_id = Column(Integer, ForeignKey("trading_partner.id"))  # For 'buy' type schedules
+    from_site_id = Column(Integer, ForeignKey("nodes.id"))  # For 'transfer' type schedules
+    schedule_type = Column(String(50))  # 'daily', 'weekly', 'monthly', 'custom'
+    is_active = Column(String(10), server_default='true')
+    eff_start_date = Column(DateTime, server_default='1900-01-01 00:00:00')
+    eff_end_date = Column(DateTime, server_default='9999-12-31 23:59:59')
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"))
+
+    __table_args__ = (
+        Index('idx_sourcing_schedule_site', 'to_site_id'),
+        Index('idx_sourcing_schedule_group_config', 'group_id', 'config_id'),
+        Index('idx_sourcing_schedule_config', 'config_id'),
+    )
+
+
+class SourcingScheduleDetails(Base):
+    """Sourcing schedule time details - defines specific ordering days
+
+    Specifies which days/times orders can be placed for a sourcing schedule.
+    Can define schedules at multiple levels of granularity:
+    - Daily: Every day
+    - Weekly: Specific day(s) of week (0=Sunday, 1=Monday, ..., 6=Saturday)
+    - Monthly: Specific week of month + day of week
+    - Custom: Specific dates
+
+    Examples:
+    - Weekly on Mondays: day_of_week=1
+    - Bi-weekly on Thursdays: day_of_week=4, week_of_month=1,3
+    - Monthly on 1st: schedule_date for each month's first day
+    """
+    __tablename__ = "sourcing_schedule_details"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    sourcing_schedule_id = Column(String(100), ForeignKey("sourcing_schedule.id"), nullable=False)
+
+    # Hierarchical override fields
+    company_id = Column(String(100))  # Company-level schedule
+    product_group_id = Column(String(100))  # Product group schedule
+    product_id = Column(Integer, ForeignKey("items.id"))  # Product-specific schedule
+
+    # Scheduling fields
+    schedule_date = Column(Date)  # Specific date (for custom schedules)
+    day_of_week = Column(Integer)  # 0=Sun, 1=Mon, ..., 6=Sat (for weekly schedules)
+    week_of_month = Column(Integer)  # 1-5 (for monthly schedules)
+
+    is_active = Column(String(10), server_default='true')
+    eff_start_date = Column(DateTime, server_default='1900-01-01 00:00:00')
+    eff_end_date = Column(DateTime, server_default='9999-12-31 23:59:59')
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"))
+
+    __table_args__ = (
+        Index('idx_sourcing_schedule_details_schedule', 'sourcing_schedule_id'),
+        Index('idx_sourcing_schedule_details_product', 'product_id'),
+        Index('idx_sourcing_schedule_details_group_config', 'group_id', 'config_id'),
+        Index('idx_sourcing_schedule_details_config', 'config_id'),
+    )

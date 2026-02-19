@@ -1,0 +1,1530 @@
+# Integration Guide
+
+**Last Updated**: 2026-01-22
+
+---
+
+## Overview
+
+Autonomy provides comprehensive integration capabilities for both reading data from external systems (import) and writing data to external systems (export). This guide covers data import/export, API usage, authentication, and integration patterns.
+
+---
+
+## Table of Contents
+
+1. [Data Import (Read Capabilities)](#data-import-read-capabilities)
+2. [Data Export (Write Capabilities)](#data-export-write-capabilities)
+3. [REST API Integration](#rest-api-integration)
+4. [WebSocket API](#websocket-api)
+5. [Authentication & Authorization](#authentication--authorization)
+6. [Integration Patterns](#integration-patterns)
+7. [Code Examples](#code-examples)
+
+---
+
+## Data Import (Read Capabilities)
+
+### Supported Formats
+
+**1. CSV/Excel (Bulk Upload)**
+- **Use Case**: Import master data (items, sites, BOMs, forecasts)
+- **Format**: CSV (UTF-8) or Excel (.xlsx)
+- **Size Limit**: 10,000 rows per file (configurable)
+- **Validation**: Schema validation, duplicate detection, referential integrity
+
+**2. JSON (REST API)**
+- **Use Case**: Real-time data integration, API-to-API
+- **Format**: JSON
+- **Batch Size**: 1,000 records per request (configurable)
+- **Validation**: Pydantic schema validation
+
+**3. Database Direct Connection**
+- **Use Case**: ETL pipelines, scheduled imports
+- **Supported DBs**: PostgreSQL, MySQL, MariaDB, SQL Server
+- **Method**: SQLAlchemy connections
+- **Frequency**: Configurable (hourly, daily, on-demand)
+
+**4. AWS S3 Integration** (Planned)
+- **Use Case**: Large file imports, data lake integration
+- **Format**: CSV, Parquet, JSON
+- **Trigger**: S3 event notifications
+- **Processing**: Async batch processing
+
+### Import Entities
+
+**Supply Chain Network**:
+- **Sites**: Distribution centers, factories, warehouses, retailers
+- **Transportation Lanes**: Routes between sites
+- **Products**: SKUs, finished goods, components, raw materials
+- **Markets**: Market demand/supply sites
+
+**Demand & Forecasts**:
+- **Forecasts**: Statistical forecasts with P10/P50/P90 percentiles
+- **Historical Demand**: Actual demand history for training
+- **Supplementary Time Series**: Promotional events, economic indicators
+
+**Inventory**:
+- **Inventory Levels**: Current on-hand, available, reserved quantities
+- **Inventory Policies**: Safety stock rules (4 policy types)
+- **Lot Tracking**: Batch/lot information for traceability
+
+**Bill of Materials**:
+- **ProductBom**: Component requirements for manufactured items
+- **Scrap Rates**: Expected waste/yield loss
+- **Substitutions**: Alternate components
+
+**Vendor Data**:
+- **Vendors**: Supplier information
+- **VendorProduct**: Supplier-specific product attributes
+- **VendorLeadTime**: Lead times by vendor and product
+
+**Capacity**:
+- **CapacityResource**: Available capacity by site and resource
+- **ProductionProcess**: Manufacturing process definitions
+
+**Sourcing Rules**:
+- **SourcingRules**: Buy/transfer/manufacture rules with priorities
+- **Multi-sourcing**: Multiple sources with allocation logic
+
+### Import Process
+
+**Step 1: Data Preparation**
+
+Example CSV format for **Items** (Products):
+```csv
+item_name,item_type,unit_cost,unit_price,lead_time_days,min_order_qty,lot_size
+Beer Case,finished_good,10.00,15.00,7,50,100
+Wine Case,finished_good,20.00,30.00,14,25,50
+Component A,component,2.50,0,5,100,500
+```
+
+Example CSV format for **Nodes** (Sites):
+```csv
+node_name,sc_node_type,master_type,address,city,state,country
+DC East,DC,INVENTORY,123 Main St,Boston,MA,USA
+DC West,DC,INVENTORY,456 Oak Ave,Seattle,WA,USA
+Factory Central,Factory,MANUFACTURER,789 Industrial Pkwy,Chicago,IL,USA
+```
+
+Example CSV format for **Forecasts**:
+```csv
+product_name,site_name,forecast_date,forecast_quantity,forecast_p50,forecast_p10,forecast_p90
+Beer Case,DC East,2026-01-22,1000,1000,800,1200
+Beer Case,DC East,2026-01-29,1050,1050,840,1260
+Wine Case,DC West,2026-01-22,500,500,400,600
+```
+
+**Step 2: Upload via UI**
+
+1. Navigate to http://localhost:8088/admin/import
+2. Select entity type (Items, Nodes, Forecasts, etc.)
+3. Upload CSV/Excel file
+4. Preview data (first 10 rows)
+5. Map columns to fields (if headers don't match exactly)
+6. Validate:
+   - Schema validation
+   - Duplicate detection
+   - Foreign key checks
+7. Review errors (if any)
+8. Commit or cancel
+
+**Step 3: Upload via API**
+
+```bash
+# Upload items
+POST /api/v1/import/items
+Content-Type: multipart/form-data
+
+# Form data:
+# - file: items.csv
+# - config_id: 1
+# - overwrite_existing: false
+
+# Response
+{
+  "task_id": "import-abc-123",
+  "status": "PENDING",
+  "total_rows": 150
+}
+
+# Check status
+GET /api/v1/import/status/import-abc-123
+
+# Response
+{
+  "task_id": "import-abc-123",
+  "status": "COMPLETED",
+  "total_rows": 150,
+  "success_rows": 148,
+  "error_rows": 2,
+  "errors": [
+    {
+      "row": 5,
+      "field": "unit_cost",
+      "error": "Must be positive"
+    },
+    {
+      "row": 12,
+      "field": "item_name",
+      "error": "Duplicate item name"
+    }
+  ]
+}
+```
+
+### Validation & Mapping
+
+**Automatic Validations**:
+- **Type Validation**: Ensure fields match expected types (int, float, date, enum)
+- **Required Fields**: Check that mandatory fields are present
+- **Foreign Keys**: Verify referenced entities exist (e.g., product_id exists in items table)
+- **Duplicates**: Detect duplicate primary keys or unique constraints
+- **Range Checks**: Ensure values are within reasonable ranges (e.g., unit_cost > 0)
+
+**Field Mapping** (if CSV headers don't match):
+```python
+# Example: User CSV has "Product Name" but system expects "item_name"
+field_mapping = {
+    "Product Name": "item_name",
+    "SKU": "item_id",
+    "Cost ($)": "unit_cost"
+}
+
+# Apply mapping during import
+POST /api/v1/import/items
+{
+  "file": "items.csv",
+  "field_mapping": field_mapping
+}
+```
+
+**Preview Before Commit**:
+```bash
+# Preview import (does not commit to database)
+POST /api/v1/import/items/preview
+{
+  "file": "items.csv"
+}
+
+# Response: First 10 rows with validation results
+{
+  "preview_rows": [
+    {"item_name": "Beer Case", "unit_cost": 10.0, "status": "valid"},
+    {"item_name": "Wine Case", "unit_cost": -5.0, "status": "error", "error": "unit_cost must be positive"},
+    ...
+  ],
+  "summary": {
+    "total_rows": 150,
+    "valid_rows": 148,
+    "error_rows": 2
+  }
+}
+```
+
+---
+
+## Data Export (Write Capabilities)
+
+### Supported Formats
+
+**1. CSV/Excel (Formatted Reports)**
+- **Use Case**: Export data for analysis in Excel/Google Sheets
+- **Format**: CSV (UTF-8) or Excel (.xlsx)
+- **Customization**: Select columns, apply filters, sort order
+
+**2. JSON (API Responses)**
+- **Use Case**: API-to-API integration, programmatic access
+- **Format**: JSON
+- **Pagination**: Limit/offset or cursor-based
+- **Filtering**: Query parameters for field filtering
+
+**3. PDF (Executive Summaries)**
+- **Use Case**: Reports for non-technical stakeholders
+- **Format**: PDF with charts and tables
+- **Templates**: Customizable report templates
+
+**4. Database Views** (Planned)
+- **Use Case**: Read-only access for BI tools (Tableau, Power BI)
+- **Method**: SQL views or REST API
+- **Refresh**: Real-time or scheduled
+
+### Export Entities
+
+**Supply Plans**:
+- **Supply Plan Recommendations**: PO/TO/MO requests from planning engine
+- **Sourcing Schedules**: When to order, from whom, how much
+- **Exception Alerts**: Stockout warnings, overstock alerts
+
+**Inventory Projections**:
+- **Multi-Period Projections**: Week-by-week inventory forecast (52 weeks)
+- **Target vs. Actual**: Compare projected inventory to targets
+- **ATP Projections**: Available-to-Promise over time
+
+**Capacity Requirements**:
+- **Resource Utilization**: Capacity consumption by period
+- **Bottleneck Analysis**: Resources at risk of over-capacity
+- **Capacity Gaps**: Shortfall vs. requirements
+
+**KPI Dashboards**:
+- **Financial Metrics**: Total cost, cost breakdown, budget variance
+- **Customer Metrics**: OTIF, fill rate, service level
+- **Operational Metrics**: Inventory turns, days of supply, bullwhip ratio
+- **Strategic Metrics**: CO2 emissions, supplier reliability
+
+**Probabilistic Balanced Scorecards** (Stochastic Planning):
+- **Distribution Metrics**: P10/P50/P90 for all KPIs
+- **Risk Metrics**: P(Cost < Budget), P(Service Level > Target)
+- **Scenario Outcomes**: Monte Carlo simulation results
+
+**Game Analytics**:
+- **Leaderboards**: Player rankings by total cost
+- **Round History**: Round-by-round game state
+- **Bullwhip Analysis**: Order variance by echelon
+- **Performance Benchmarks**: Human vs. AI comparisons
+
+### Export Process
+
+**Method 1: UI Export**
+
+1. Navigate to report page (e.g., Supply Plan, Inventory Projection)
+2. Apply filters (date range, sites, items, etc.)
+3. Click "Export" button
+4. Select format (CSV, Excel, PDF)
+5. Download file
+
+**Method 2: API Export**
+
+```bash
+# Export supply plan to CSV
+GET /api/v1/supply-plan/{task_id}/export?format=csv
+
+# Response: CSV file download
+# Content-Type: text/csv
+# Content-Disposition: attachment; filename="supply_plan_abc-123.csv"
+
+# Export to JSON
+GET /api/v1/supply-plan/{task_id}/export?format=json
+
+# Response: JSON payload
+{
+  "supply_plan_id": "abc-123",
+  "config_id": 1,
+  "generated_date": "2026-01-22",
+  "recommendations": [
+    {
+      "type": "purchase_order",
+      "vendor_id": 10,
+      "product_id": 5,
+      "quantity": 1000,
+      "requested_delivery_date": "2026-02-05",
+      "estimated_cost": 10000
+    },
+    {
+      "type": "transfer_order",
+      "origin_site_id": 2,
+      "destination_site_id": 5,
+      "product_id": 5,
+      "quantity": 500,
+      "expected_arrival_date": "2026-02-01"
+    },
+    ...
+  ]
+}
+```
+
+### Automation
+
+**Scheduled Exports**:
+```python
+# Configure scheduled export (via API or admin UI)
+POST /api/v1/export/schedule
+{
+  "name": "Weekly Supply Plan Export",
+  "entity_type": "supply_plan",
+  "format": "excel",
+  "schedule": "0 8 * * 1",  # Cron: Every Monday at 8am
+  "filters": {
+    "config_id": 1,
+    "planning_horizon": 52
+  },
+  "delivery": {
+    "method": "email",
+    "recipients": ["planner@company.com", "manager@company.com"],
+    "subject": "Weekly Supply Plan - {date}"
+  }
+}
+```
+
+**Event-Triggered Exports**:
+```python
+# Export when supply plan is approved
+POST /api/v1/export/trigger
+{
+  "trigger_event": "supply_plan_approved",
+  "entity_type": "supply_plan",
+  "format": "pdf",
+  "delivery": {
+    "method": "webhook",
+    "url": "https://external-system.com/api/receive-supply-plan"
+  }
+}
+```
+
+**Webhook Integration**:
+```python
+# Autonomy sends HTTP POST to external system when export is ready
+POST https://external-system.com/api/receive-supply-plan
+Content-Type: application/json
+
+{
+  "event": "supply_plan_exported",
+  "export_id": "export-xyz-789",
+  "download_url": "https://autonomy.ai/api/v1/exports/export-xyz-789/download",
+  "expires_at": "2026-01-29T00:00:00Z"
+}
+```
+
+---
+
+## REST API Integration
+
+### Base URL
+
+**Local Development**: `http://localhost:8088/api`
+**Production**: `https://your-domain.com/api`
+
+**API Version**: `/api/v1/`
+
+### Authentication
+
+**Method**: JWT tokens via HTTP-only cookies + CSRF tokens
+
+**Login**:
+```bash
+POST /api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "user@company.com",
+  "password": "SecurePassword123!"
+}
+
+# Response
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "user": {
+    "id": 5,
+    "email": "user@company.com",
+    "role": "GROUP_ADMIN",
+    "group_id": 1
+  }
+}
+
+# Token is also set as HTTP-only cookie (automatic for browser clients)
+# Set-Cookie: access_token=eyJhbG...; HttpOnly; Secure; SameSite=Lax
+```
+
+**Using Token** (for non-browser clients):
+```bash
+# Include token in Authorization header
+GET /api/v1/supply-chain-configs
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+**CSRF Protection** (for browser clients):
+```bash
+# Get CSRF token
+GET /api/v1/auth/csrf-token
+
+# Response
+{
+  "csrf_token": "abc123xyz..."
+}
+
+# Include CSRF token in requests
+POST /api/v1/supply-plan/generate
+X-CSRF-Token: abc123xyz...
+Content-Type: application/json
+
+{...}
+```
+
+### Common Endpoints
+
+**Supply Chain Configuration**:
+```bash
+# List all configs
+GET /api/v1/supply-chain-configs
+
+# Get specific config
+GET /api/v1/supply-chain-configs/{config_id}
+
+# Create config
+POST /api/v1/supply-chain-configs
+{
+  "config_name": "My Network",
+  "group_id": 1,
+  "sites": [...],
+  "transportation_lanes": [...],
+  "products": [...]
+}
+
+# Update config
+PUT /api/v1/supply-chain-configs/{config_id}
+
+# Delete config
+DELETE /api/v1/supply-chain-configs/{config_id}
+```
+
+**Supply Planning**:
+```bash
+# Generate supply plan
+POST /api/v1/supply-plan/generate
+{
+  "config_id": 1,
+  "planning_horizon": 52,
+  "start_date": "2026-01-22",
+  "stochastic_params": {...},
+  "objectives": {...}
+}
+
+# Response
+{
+  "task_id": "plan-abc-123",
+  "status": "PENDING"
+}
+
+# Check status
+GET /api/v1/supply-plan/status/plan-abc-123
+
+# Get results
+GET /api/v1/supply-plan/result/plan-abc-123
+
+# Approve plan
+POST /api/v1/supply-plan/approve/plan-abc-123
+{
+  "approved_by": "user@company.com",
+  "comments": "Approved for execution"
+}
+```
+
+**Inventory Management**:
+```bash
+# Get inventory levels
+GET /api/v1/inventory/levels?site_id=5&product_id=10
+
+# Adjust inventory
+POST /api/v1/inventory/adjust
+{
+  "site_id": 5,
+  "product_id": 10,
+  "adjustment_qty": 100,
+  "reason": "cycle_count_correction"
+}
+
+# Get inventory projection
+GET /api/v1/inventory/projection?site_id=5&product_id=10&horizon_weeks=12
+```
+
+**Order Promising**:
+```bash
+# Calculate ATP
+POST /api/v1/order-promising/atp
+{
+  "site_id": 5,
+  "item_id": 10,
+  "requested_quantity": 100,
+  "requested_date": "2026-01-25"
+}
+
+# Response
+{
+  "available_quantity": 100,
+  "promise_date": "2026-01-25",
+  "source_sites": [5],
+  "split_required": false
+}
+```
+
+**Transfer Orders**:
+```bash
+# Create transfer order
+POST /api/v1/transfer-orders
+{
+  "origin_site_id": 2,
+  "destination_site_id": 5,
+  "config_id": 1,
+  "expected_arrival_date": "2026-02-01",
+  "lines": [
+    {"product_id": 10, "ordered_quantity": 500}
+  ]
+}
+
+# Ship transfer order
+POST /api/v1/transfer-orders/{id}/ship
+{
+  "ship_date": "2026-01-25",
+  "shipped_quantities": {"1": 500}
+}
+
+# Receive transfer order
+POST /api/v1/transfer-orders/{id}/receive
+{
+  "receive_date": "2026-02-01",
+  "received_quantities": {"1": 495}
+}
+```
+
+**Beer Game**:
+```bash
+# Create mixed game
+POST /api/v1/mixed-games
+{
+  "name": "Training Game",
+  "config_id": 1,
+  "max_rounds": 52,
+  "players": [...]
+}
+
+# Start game
+POST /api/v1/mixed-games/{game_id}/start
+
+# Play round (human decision)
+POST /api/v1/mixed-games/{game_id}/play-round
+{
+  "player_id": 5,
+  "order_quantity": 120
+}
+
+# Get game state
+GET /api/v1/mixed-games/{game_id}/state
+
+# Get analytics
+GET /api/v1/mixed-games/{game_id}/analytics
+```
+
+### Pagination
+
+**Method**: Limit/Offset
+
+```bash
+# Get first page (50 items)
+GET /api/v1/supply-chain-configs?limit=50&offset=0
+
+# Get second page
+GET /api/v1/supply-chain-configs?limit=50&offset=50
+
+# Response includes pagination metadata
+{
+  "items": [...],
+  "pagination": {
+    "total": 237,
+    "limit": 50,
+    "offset": 0,
+    "has_next": true,
+    "has_prev": false
+  }
+}
+```
+
+### Filtering & Sorting
+
+**Filtering**:
+```bash
+# Filter by field values
+GET /api/v1/items?item_type=finished_good&unit_cost__gte=10.0
+
+# Filter operators:
+# - __eq: equal (default)
+# - __ne: not equal
+# - __gt: greater than
+# - __gte: greater than or equal
+# - __lt: less than
+# - __lte: less than or equal
+# - __in: in list
+# - __like: SQL LIKE (substring match)
+```
+
+**Sorting**:
+```bash
+# Sort by field (ascending)
+GET /api/v1/items?sort=unit_cost
+
+# Sort descending
+GET /api/v1/items?sort=-unit_cost
+
+# Multiple sort fields
+GET /api/v1/items?sort=item_type,-unit_cost
+```
+
+### Error Handling
+
+**HTTP Status Codes**:
+- `200 OK`: Success
+- `201 Created`: Resource created
+- `400 Bad Request`: Validation error
+- `401 Unauthorized`: Missing or invalid token
+- `403 Forbidden`: Insufficient permissions
+- `404 Not Found`: Resource not found
+- `422 Unprocessable Entity`: Business logic error
+- `429 Too Many Requests`: Rate limit exceeded
+- `500 Internal Server Error`: Server error
+
+**Error Response Format**:
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Invalid input data",
+    "details": [
+      {
+        "field": "unit_cost",
+        "message": "Must be a positive number"
+      }
+    ]
+  }
+}
+```
+
+### Rate Limiting
+
+**Limits**:
+- **Anonymous**: 100 requests/hour
+- **Authenticated**: 1000 requests/hour
+- **System Admin**: Unlimited
+
+**Headers**:
+```
+X-RateLimit-Limit: 1000
+X-RateLimit-Remaining: 995
+X-RateLimit-Reset: 1640000000
+```
+
+**Exceeded**:
+```
+HTTP/1.1 429 Too Many Requests
+Retry-After: 3600
+
+{
+  "error": {
+    "code": "RATE_LIMIT_EXCEEDED",
+    "message": "Too many requests. Please try again in 3600 seconds."
+  }
+}
+```
+
+---
+
+## WebSocket API
+
+### Connection
+
+**URL**: `ws://localhost:8088/api/ws` (or `wss://` for secure)
+
+**Authentication**: Include JWT token in connection query params
+```javascript
+const socket = io('http://localhost:8088/api/ws', {
+  query: { token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' }
+});
+```
+
+### Game Events
+
+**Join Game Room**:
+```javascript
+socket.emit('join_game', { game_id: 123 });
+```
+
+**Listen for Round Completion**:
+```javascript
+socket.on('round_completed', (data) => {
+  console.log('Round', data.round_number, 'completed');
+  console.log('Game state:', data.game_state);
+  updateUI(data);
+});
+```
+
+**Listen for Player Actions**:
+```javascript
+socket.on('player_action', (data) => {
+  console.log('Player', data.player_name, 'ordered', data.order_quantity);
+  updatePlayerStatus(data.player_id, 'ready');
+});
+```
+
+**Listen for Game Completion**:
+```javascript
+socket.on('game_completed', (data) => {
+  console.log('Game completed!');
+  console.log('Final results:', data.summary);
+  showFinalScorecard(data);
+});
+```
+
+### Planning Events (Planned)
+
+**Subscribe to Planning Updates**:
+```javascript
+socket.emit('subscribe_planning', { config_id: 1 });
+
+socket.on('supply_plan_update', (data) => {
+  console.log('Supply plan status:', data.status);
+  if (data.status === 'COMPLETED') {
+    console.log('Results:', data.result);
+  }
+});
+```
+
+---
+
+## Authentication & Authorization
+
+### User Roles
+
+**Role Hierarchy**:
+1. **SYSTEM_ADMIN**: Full access to all features and all groups
+2. **GROUP_ADMIN**: Admin access within their group
+3. **PLANNER**: Can create/approve supply plans within their group
+4. **PLAYER**: Can play games, view dashboards (read-only planning)
+
+### Permissions (RBAC)
+
+**Capability-Based Permissions**:
+- **view_mps**: View MPS plans
+- **manage_mps**: Create/edit MPS plans
+- **approve_mps**: Approve MPS plans for execution
+- **view_supply_plan**: View supply plans
+- **manage_supply_plan**: Generate supply plans
+- **approve_supply_plan**: Approve supply plans
+- **view_inventory**: View inventory levels
+- **manage_inventory**: Adjust inventory
+- **view_games**: View games
+- **manage_games**: Create/manage games
+- **view_analytics**: View dashboards
+- **manage_users**: User management (GROUP_ADMIN+)
+- **manage_configs**: Supply chain configuration (GROUP_ADMIN+)
+
+**Permission Checks**:
+```python
+# Backend permission decorator
+from app.core.rbac import require_permission
+
+@router.post("/supply-plan/approve/{task_id}")
+@require_permission("approve_supply_plan")
+async def approve_supply_plan(task_id: str, current_user: User = Depends(get_current_user)):
+    # Only users with approve_supply_plan permission can access
+    ...
+```
+
+### Multi-Tenancy (Groups)
+
+**Group Isolation**:
+- Each group represents a company/organization
+- Users belong to one group
+- Data is scoped to group (supply chain configs, games, plans)
+- GROUP_ADMIN can only see their group's data
+- SYSTEM_ADMIN can see all groups
+
+**API Scoping**:
+```bash
+# User in Group 1 can only see Group 1 configs
+GET /api/v1/supply-chain-configs
+# Returns configs where group_id = current_user.group_id
+
+# SYSTEM_ADMIN sees all
+GET /api/v1/supply-chain-configs?group_id=1  # Filter by group
+```
+
+---
+
+## Integration Patterns
+
+### Pattern 1: ERP Integration (Read & Write)
+
+**Scenario**: Sync master data from ERP (SAP, Oracle) to Autonomy, export supply plans back to ERP.
+
+**Architecture**:
+```
+ERP (SAP) ←→ ETL Layer ←→ Autonomy API
+```
+
+**Step 1: Import Master Data from ERP** (Daily)
+```python
+import requests
+
+# Extract from ERP (example: SAP)
+items = sap_client.get_items()
+sites = sap_client.get_sites()
+boms = sap_client.get_boms()
+
+# Transform to Autonomy format
+autonomy_items = [
+    {
+        "item_name": item["MATNR"],
+        "item_type": "finished_good",
+        "unit_cost": item["COST"],
+        ...
+    }
+    for item in items
+]
+
+# Load to Autonomy
+response = requests.post(
+    "http://autonomy.ai/api/v1/import/items",
+    headers={"Authorization": f"Bearer {token}"},
+    json={"items": autonomy_items}
+)
+```
+
+**Step 2: Generate Supply Plan in Autonomy**
+```python
+# Trigger planning
+response = requests.post(
+    "http://autonomy.ai/api/v1/supply-plan/generate",
+    headers={"Authorization": f"Bearer {token}"},
+    json={
+        "config_id": 1,
+        "planning_horizon": 52,
+        "stochastic_params": {...}
+    }
+)
+
+task_id = response.json()["task_id"]
+
+# Poll for completion
+while True:
+    status_response = requests.get(
+        f"http://autonomy.ai/api/v1/supply-plan/status/{task_id}",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    status = status_response.json()["status"]
+    if status == "COMPLETED":
+        break
+    time.sleep(5)
+
+# Get results
+result_response = requests.get(
+    f"http://autonomy.ai/api/v1/supply-plan/result/{task_id}",
+    headers={"Authorization": f"Bearer {token}"}
+)
+supply_plan = result_response.json()
+```
+
+**Step 3: Export Supply Plan to ERP** (Write Back)
+```python
+# Extract PO recommendations from Autonomy supply plan
+pos = [rec for rec in supply_plan["recommendations"] if rec["type"] == "purchase_order"]
+
+# Transform to ERP format
+sap_pos = [
+    {
+        "EBELN": None,  # Will be generated by SAP
+        "LIFNR": rec["vendor_id"],
+        "MATNR": rec["product_id"],
+        "MENGE": rec["quantity"],
+        "EINDT": rec["requested_delivery_date"],
+        ...
+    }
+    for rec in pos
+]
+
+# Load to ERP
+for po in sap_pos:
+    sap_client.create_purchase_order(po)
+```
+
+### Pattern 2: BI Tool Integration (Read-Only)
+
+**Scenario**: Connect Tableau/Power BI to Autonomy for dashboards.
+
+**Architecture**:
+```
+Autonomy Database ←→ SQL Views ←→ Tableau/Power BI
+```
+
+**Option A: Direct Database Connection**
+```sql
+-- Create read-only user
+CREATE USER 'tableau_user'@'%' IDENTIFIED BY 'secure_password';
+
+-- Grant SELECT on relevant views
+GRANT SELECT ON autonomy.v_inventory_levels TO 'tableau_user'@'%';
+GRANT SELECT ON autonomy.v_supply_plan_summary TO 'tableau_user'@'%';
+GRANT SELECT ON autonomy.v_game_analytics TO 'tableau_user'@'%';
+
+-- Create views for BI tools
+CREATE VIEW v_inventory_levels AS
+SELECT
+    s.site_name AS site_name,
+    p.product_name AS product_name,
+    inv.on_hand_quantity,
+    inv.available_quantity,
+    inv.reserved_quantity,
+    inv.in_transit_quantity,
+    inv.last_updated
+FROM inv_level inv
+JOIN site s ON inv.site_id = s.id
+JOIN product p ON inv.product_id = p.id;
+```
+
+**Option B: REST API Connection** (via Tableau Web Data Connector)
+```javascript
+// Tableau WDC to fetch data from Autonomy API
+const connector = tableau.makeConnector();
+
+connector.getSchema = function(schemaCallback) {
+  const schema = {
+    id: "inventory_levels",
+    columns: [
+      { id: "site_name", dataType: tableau.dataTypeEnum.string },
+      { id: "product_name", dataType: tableau.dataTypeEnum.string },
+      { id: "on_hand_quantity", dataType: tableau.dataTypeEnum.float },
+      ...
+    ]
+  };
+  schemaCallback([schema]);
+};
+
+connector.getData = function(table, doneCallback) {
+  fetch('http://autonomy.ai/api/v1/inventory/levels', {
+    headers: { 'Authorization': 'Bearer ' + token }
+  })
+  .then(response => response.json())
+  .then(data => {
+    table.appendRows(data.items);
+    doneCallback();
+  });
+};
+```
+
+### Pattern 3: Event-Driven Integration (Webhooks)
+
+**Scenario**: Notify external system when supply plan is approved.
+
+**Setup Webhook**:
+```bash
+POST /api/v1/webhooks
+{
+  "name": "Supply Plan Approved Notification",
+  "event": "supply_plan_approved",
+  "url": "https://external-system.com/api/webhooks/autonomy",
+  "secret": "shared_secret_for_signature",
+  "active": true
+}
+```
+
+**Autonomy Sends**:
+```bash
+POST https://external-system.com/api/webhooks/autonomy
+Content-Type: application/json
+X-Autonomy-Signature: sha256=abc123...
+
+{
+  "event": "supply_plan_approved",
+  "task_id": "plan-abc-123",
+  "config_id": 1,
+  "approved_by": "user@company.com",
+  "approved_at": "2026-01-22T14:30:00Z",
+  "download_url": "https://autonomy.ai/api/v1/supply-plan/result/plan-abc-123"
+}
+```
+
+**External System Receives**:
+```python
+from flask import Flask, request
+import hmac, hashlib
+
+app = Flask(__name__)
+
+@app.route('/api/webhooks/autonomy', methods=['POST'])
+def receive_autonomy_webhook():
+    # Verify signature
+    signature = request.headers.get('X-Autonomy-Signature')
+    expected_signature = 'sha256=' + hmac.new(
+        'shared_secret_for_signature'.encode(),
+        request.data,
+        hashlib.sha256
+    ).hexdigest()
+
+    if signature != expected_signature:
+        return 'Unauthorized', 401
+
+    # Process event
+    event_data = request.json
+    if event_data['event'] == 'supply_plan_approved':
+        # Download supply plan
+        plan = requests.get(
+            event_data['download_url'],
+            headers={'Authorization': f'Bearer {token}'}
+        ).json()
+
+        # Process plan (e.g., create POs in ERP)
+        process_supply_plan(plan)
+
+    return 'OK', 200
+```
+
+---
+
+## Code Examples
+
+### Python Client Example
+
+```python
+import requests
+from typing import Dict, List
+
+class AutonomyClient:
+    def __init__(self, base_url: str, email: str, password: str):
+        self.base_url = base_url
+        self.session = requests.Session()
+        self.login(email, password)
+
+    def login(self, email: str, password: str):
+        """Authenticate and store token."""
+        response = self.session.post(
+            f"{self.base_url}/auth/login",
+            json={"email": email, "password": password}
+        )
+        response.raise_for_status()
+        data = response.json()
+        self.session.headers.update({
+            "Authorization": f"Bearer {data['access_token']}"
+        })
+
+    def get_supply_chain_configs(self) -> List[Dict]:
+        """Get all supply chain configurations."""
+        response = self.session.get(f"{self.base_url}/supply-chain-configs")
+        response.raise_for_status()
+        return response.json()["items"]
+
+    def generate_supply_plan(self, config_id: int, horizon: int = 52) -> str:
+        """Generate supply plan and return task ID."""
+        response = self.session.post(
+            f"{self.base_url}/supply-plan/generate",
+            json={
+                "config_id": config_id,
+                "planning_horizon": horizon,
+                "start_date": "2026-01-22"
+            }
+        )
+        response.raise_for_status()
+        return response.json()["task_id"]
+
+    def get_supply_plan_status(self, task_id: str) -> Dict:
+        """Check supply plan generation status."""
+        response = self.session.get(
+            f"{self.base_url}/supply-plan/status/{task_id}"
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def get_supply_plan_result(self, task_id: str) -> Dict:
+        """Get completed supply plan results."""
+        response = self.session.get(
+            f"{self.base_url}/supply-plan/result/{task_id}"
+        )
+        response.raise_for_status()
+        return response.json()
+
+# Usage
+client = AutonomyClient(
+    base_url="http://localhost:8088/api/v1",
+    email="user@company.com",
+    password="SecurePassword123!"
+)
+
+# Get configs
+configs = client.get_supply_chain_configs()
+print(f"Found {len(configs)} configs")
+
+# Generate plan
+task_id = client.generate_supply_plan(config_id=1, horizon=52)
+print(f"Supply plan task ID: {task_id}")
+
+# Poll for completion
+import time
+while True:
+    status = client.get_supply_plan_status(task_id)
+    print(f"Status: {status['status']}")
+    if status["status"] == "COMPLETED":
+        break
+    time.sleep(5)
+
+# Get results
+result = client.get_supply_plan_result(task_id)
+print(f"Total cost: ${result['financial']['total_cost']['E']:,.0f}")
+print(f"Service level: {result['customer']['service_level']['E']:.1%}")
+```
+
+### JavaScript Client Example
+
+```javascript
+class AutonomyClient {
+  constructor(baseUrl) {
+    this.baseUrl = baseUrl;
+    this.token = null;
+  }
+
+  async login(email, password) {
+    const response = await fetch(`${this.baseUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+
+    if (!response.ok) throw new Error('Login failed');
+
+    const data = await response.json();
+    this.token = data.access_token;
+  }
+
+  async getSupplyChainConfigs() {
+    const response = await fetch(`${this.baseUrl}/supply-chain-configs`, {
+      headers: { 'Authorization': `Bearer ${this.token}` }
+    });
+
+    if (!response.ok) throw new Error('Failed to fetch configs');
+    return (await response.json()).items;
+  }
+
+  async generateSupplyPlan(configId, horizon = 52) {
+    const response = await fetch(`${this.baseUrl}/supply-plan/generate`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        config_id: configId,
+        planning_horizon: horizon,
+        start_date: '2026-01-22'
+      })
+    });
+
+    if (!response.ok) throw new Error('Failed to generate plan');
+    return (await response.json()).task_id;
+  }
+
+  async waitForSupplyPlan(taskId) {
+    while (true) {
+      const response = await fetch(
+        `${this.baseUrl}/supply-plan/status/${taskId}`,
+        { headers: { 'Authorization': `Bearer ${this.token}` } }
+      );
+
+      const status = await response.json();
+      if (status.status === 'COMPLETED') {
+        return this.getSupplyPlanResult(taskId);
+      } else if (status.status === 'FAILED') {
+        throw new Error('Supply plan generation failed');
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
+  }
+
+  async getSupplyPlanResult(taskId) {
+    const response = await fetch(
+      `${this.baseUrl}/supply-plan/result/${taskId}`,
+      { headers: { 'Authorization': `Bearer ${this.token}` } }
+    );
+
+    if (!response.ok) throw new Error('Failed to get result');
+    return response.json();
+  }
+}
+
+// Usage
+const client = new AutonomyClient('http://localhost:8088/api/v1');
+
+async function main() {
+  await client.login('user@company.com', 'SecurePassword123!');
+
+  const configs = await client.getSupplyChainConfigs();
+  console.log(`Found ${configs.length} configs`);
+
+  const taskId = await client.generateSupplyPlan(1, 52);
+  console.log(`Supply plan task ID: ${taskId}`);
+
+  const result = await client.waitForSupplyPlan(taskId);
+  console.log(`Total cost: $${result.financial.total_cost.E.toLocaleString()}`);
+  console.log(`Service level: ${(result.customer.service_level.E * 100).toFixed(1)}%`);
+}
+
+main().catch(console.error);
+```
+
+---
+
+## External Agent Runtimes (PicoClaw & OpenClaw)
+
+**Last Updated**: 2026-02-19
+
+Autonomy supports integration with external agent runtime frameworks that wrap the platform's REST APIs. These runtimes act as **thin orchestration layers** — they do not replace the core Powell computation (TRM, GNN, MRP engines) but provide alternative interfaces for edge monitoring, chat-based planning, and inter-agent communication.
+
+### Overview
+
+| Framework | Architecture | Best For | Resource Footprint |
+|-----------|-------------|----------|-------------------|
+| **PicoClaw** | Thin-agent runtime (Go binary) | Edge CDC monitoring, alerting, $10 hardware | <10MB RAM, 1s boot |
+| **OpenClaw** | Feature-rich autonomous agent (WebSocket control plane) | Chat-based planner interface, multi-agent authorization | ~200MB RAM, full OS |
+
+**Key Principle**: Both frameworks wrap the Autonomy REST API. At enterprise scale (50+ sites), PicoClaw operates as a **deterministic gateway** (no LLM for routine monitoring) and OpenClaw serves **human planners only** (not agent-to-agent communication). Agent-to-agent authorization uses the existing `ConditionMonitorService`. LLM is reserved for human interaction (<1% of decisions). See [PICOCLAW_OPENCLAW_IMPLEMENTATION.md](PICOCLAW_OPENCLAW_IMPLEMENTATION.md#enterprise-scale-analysis) for volume projections.
+
+### PicoClaw Integration
+
+**GitHub**: https://github.com/sipeed/picoclaw | **Docs**: https://picoclaw.ai/docs
+
+PicoClaw is an ultra-lightweight personal AI assistant — a single Go binary that runs on hardware as cheap as $10. It connects to remote LLM providers via API and exposes agent capabilities through workspace configuration files.
+
+**Use Case: Edge CDC Monitoring**
+
+Deploy PicoClaw instances at each supply chain site for distributed Change Data Capture monitoring. At enterprise scale (50+ sites), heartbeats execute as **deterministic scripts** — no LLM. LLM is invoked only when humans ask questions via the chat gateway.
+
+```
+┌──────────────┐      ┌──────────────┐      ┌──────────────┐
+│  PicoClaw    │      │  PicoClaw    │      │  PicoClaw    │
+│  Site: DC-1  │      │  Site: WH-2  │      │  Site: PLT-3 │
+│              │      │              │      │              │
+│  HEARTBEAT:  │      │  HEARTBEAT:  │      │  HEARTBEAT:  │
+│  Deterministic│     │  Deterministic│     │  Deterministic│
+│  (no LLM)   │      │  (no LLM)   │      │  (no LLM)   │
+└──────┬───────┘      └──────┬───────┘      └──────┬───────┘
+       │ REST                │ REST                │ REST
+       └────────────────────┼────────────────────┘
+                            ▼
+                   Autonomy Backend
+                   /api/v1/site-agent/cdc/status/{site_key}
+```
+
+**Dual-Mode Operation**:
+
+| Mode | Sites | Heartbeat | LLM Usage |
+|---|---|---|---|
+| **Deterministic** (default) | 50+ | Shell script (`HEARTBEAT.sh`) | Human questions only |
+| **LLM-Interpreted** (pilot) | <50 | LLM reads `HEARTBEAT.md` | Every heartbeat |
+
+**Deterministic Heartbeat** (enterprise mode): PicoClaw calls `GET /api/v1/site-agent/cdc/status/{site_key}`, the Autonomy backend returns severity + metrics already computed by `CDCMonitor`, and PicoClaw routes alerts via if/else logic and the gateway. Zero LLM calls.
+
+**Human Query Skill** (on-demand LLM): When a planner asks via Telegram "Why is DC-East critical?", PicoClaw invokes the LLM to reason over API context and reply with a natural language explanation. Volume: ~5-20 LLM calls/site/day.
+
+**Alert Routing**: PicoClaw's gateway system supports Telegram, Discord, Slack, DingTalk, and LINE — enabling CDC alerts without building custom notification infrastructure.
+
+**Security**: PicoClaw runs in sandbox mode by default (`restrict_to_workspace: true`). All file/command access is restricted to the workspace directory.
+
+### OpenClaw Integration
+
+**GitHub**: https://github.com/openclaw/openclaw | **Site**: https://openclaw.ai
+
+OpenClaw is a feature-rich autonomous agent platform with a WebSocket control plane and multi-channel messaging support (WhatsApp, Slack, Teams, Discord, Signal).
+
+**Use Case: AI-as-Labor Chat Interface**
+
+OpenClaw maps directly to the six UX Primitives defined in the AI-as-Labor strategy:
+
+| UX Primitive | OpenClaw Implementation |
+|---|---|
+| **Worklist** | Agent proactively sends exceptions via messaging |
+| **Ask Why** | Planner messages "Why?" → Agent calls Autonomy API for reasoning |
+| **Chat** | Native chat interface across WhatsApp/Slack/Teams |
+| **Task Log** | `sessions_history` provides full audit trail |
+| **Agent Config** | `AGENTS.md` + `SOUL.md` define agent behavior |
+| **Dashboards** | Periodic digest messages via `HEARTBEAT.md` |
+
+**Atomic Agent Skills** (installed to `~/.openclaw/workspace/skills/`):
+
+```markdown
+# SKILL.md: supply-plan-query
+
+## Description
+Query the current supply plan for a product-site combination.
+
+## Implementation
+1. Parse product and site from user message
+2. GET /api/v1/supply-plan?product={product}&site={site}
+3. Format as human-readable summary with key metrics
+```
+
+```markdown
+# SKILL.md: override-decision
+
+## Description
+Override an agent recommendation with human reasoning.
+
+## Implementation
+1. Parse decision_id and reason from user message
+2. POST /api/v1/site-agent/decisions/{decision_id}/override
+   Body: { "accepted": false, "reason": "<captured reason>" }
+3. Confirm override was recorded (feeds into RLHF training loop)
+```
+
+**Use Case: Human Escalation for Authorization Protocol**
+
+At enterprise scale (50+ sites), agent-to-agent authorization uses the existing `ConditionMonitorService` (pure Python, DB-backed, <500ms). OpenClaw is used ONLY for human escalation — formatting unresolvable authorization requests for planner review via chat:
+
+```
+Agent-to-Agent (no LLM, <500ms):
+  SiteAgent A → ConditionMonitor.create_supply_request()
+  SiteAgent B → respond_to_supply_request()
+  Volume: 500-2,000/day
+
+Human Escalation (OpenClaw + LLM, <5min):
+  Agent timeout/low-confidence → OpenClaw formats ranked options
+  Planner reviews via Slack/Teams → Override captured for RLHF
+  Volume: 50-200/day (10-15% escalation rate)
+```
+
+Authority boundaries are defined in Python dataclasses (deterministic enforcement), not LLM-interpreted `SOUL.md`. See [PICOCLAW_OPENCLAW_IMPLEMENTATION.md](PICOCLAW_OPENCLAW_IMPLEMENTATION.md#phase-3-multi-agent-authorization-protocol) for the `AuthorityBoundary` definition and `AuthorizationService` implementation.
+
+**Pilot mode (<50 sites)**: OpenClaw's `sessions_send` can handle agent-to-agent negotiation directly (LLM-interpreted authority boundaries), since the volume (~50-100 authorizations/day) is within single-GPU LLM capacity.
+
+### Security Considerations
+
+| Risk | Mitigation |
+|---|---|
+| OpenClaw requires broad permissions ([CrowdStrike advisory](https://www.crowdstrike.com/en-us/blog/what-security-teams-need-to-know-about-openclaw-ai-super-agent/)) | Restrict skills to read-only API calls in copilot mode; write operations require human confirmation |
+| PicoClaw not yet v1.0 | Use only for read-only monitoring/alerting, not execution decisions |
+| Business data sent to external LLMs | Self-host LLM (see next section) or use API key scoping |
+
+### Further Reading
+
+- [PICOCLAW_OPENCLAW_IMPLEMENTATION.md](PICOCLAW_OPENCLAW_IMPLEMENTATION.md) - Detailed implementation roadmap
+- [AGENTIC_AUTHORIZATION_PROTOCOL.md](docs/AGENTIC_AUTHORIZATION_PROTOCOL.md) - Authorization protocol specification
+- [POWELL_APPROACH.md](POWELL_APPROACH.md) - Powell framework (computation layer these runtimes wrap)
+
+---
+
+## Self-Hosted LLM Configuration
+
+**Last Updated**: 2026-02-19
+
+For data sovereignty and cost control, Autonomy supports self-hosted LLM inference as an alternative to OpenAI API calls. This is particularly relevant when using PicoClaw/OpenClaw agents that would otherwise send business data (orders, inventory levels, pricing) to external providers.
+
+### Recommended Model: Qwen 3 8B
+
+**Why Qwen 3**: Autonomy agents need tool calling (REST API calls), structured JSON output (order quantities, dates, priorities), and reasoning (authorization protocol, what-if evaluation). Qwen 3 leads on all three among self-hostable models.
+
+| Requirement | Qwen 3 8B | DeepSeek V3.2 | Llama 4 Maverick |
+|---|---|---|---|
+| **Tool calling accuracy** | **96.5%** | 81.5% | Good but not accuracy-first |
+| **Structured JSON** | Native via Qwen-Agent | Requires prompt engineering | Supported but less reliable |
+| **Reasoning** | Hybrid thinking/non-thinking in one pass | **Best** but needs multi-GPU | Adequate |
+| **VRAM required** | **~8GB** | 200GB+ (4-8x A100) | 100GB+ |
+| **OpenAI API compat** | Yes via vLLM | Yes via vLLM | Yes via vLLM |
+
+Qwen 3's architecture produces tool calls and chain-of-thought reasoning in a single inference pass with the reasoning block segregated — agents can reason about an authorization request while formatting the API call.
+
+### Sizing Guide
+
+With the tiered intelligence model (deterministic heartbeats, ConditionMonitor for agent-to-agent), LLM handles only human interaction — keeping call volumes low even at enterprise scale.
+
+| Scale | Sites | SKUs | LLM Calls/Day | Model | VRAM | Hardware |
+|---|---|---|---|---|---|---|
+| **Pilot** | 4-8 | 100-500 | 200-800 | Qwen 3 8B | 8GB | RTX 3070/4060 (shared) |
+| **Department** | 20-50 | 5K-20K | 800-3,000 | Qwen 3 8B | 8GB | RTX 3070/4060 (shared) |
+| **Division** | 50-100 | 50K-100K | 1,500-5,000 | Qwen 3 14B | 16GB | RTX 4080/A5000 (dedicated) |
+| **Enterprise** | 200+ | 300K+ | 2,000-7,000 | Qwen 3 14B | 16GB | RTX 4080/A5000 (dedicated) |
+| **Enterprise + disruption** | 200+ | 300K+ | 5,000-20,000 | Qwen 3 32B or 2x 14B | 24GB | RTX 4090/A6000 |
+
+**Key insight**: Even at 223 sites and 300K SKUs, the tiered model keeps LLM calls under 7K/day normal — well within a single dedicated GPU. The tiered architecture is what makes this tractable, not bigger hardware.
+
+**Upgrade Path**: Start with 8B → validate tool calling → upgrade to 14B/32B for production chat. If hardware allows (4x A100), DeepSeek V3.2 becomes the strongest option for complex reasoning.
+
+### Recommended Serving: vLLM
+
+**Why vLLM over Ollama**: Autonomy runs a multi-agent system, not a single chatbot.
+
+- **Concurrent serving**: Multiple OpenClaw sessions + PicoClaw heartbeats hitting the same endpoint
+- **Constrained JSON generation**: Define Pydantic schemas → vLLM guarantees valid JSON matching `ATPResponse`, `PORecommendation`, `AuthorizationRequest` schemas
+- **OpenAI-compatible API**: Both PicoClaw and OpenClaw expect `/v1/chat/completions` — vLLM provides this natively
+- **GPU memory efficiency**: PagedAttention reduces VRAM waste under concurrent load
+
+### Docker Compose Deployment
+
+Add a `docker-compose.llm.yml` overlay (layered like `docker-compose.gpu.yml`):
+
+```yaml
+services:
+  llm:
+    image: vllm/vllm-openai:latest
+    container_name: autonomy-llm
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+    command: >
+      --model Qwen/Qwen3-8B
+      --served-model-name qwen3-8b
+      --max-model-len 8192
+      --enable-auto-tool-choice
+      --tool-call-parser hermes
+      --gpu-memory-utilization 0.85
+    ports:
+      - "8100:8000"
+    networks:
+      - autonomy-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+```
+
+**Environment Variables** (`.env`):
+```bash
+# Replace external OpenAI with local vLLM
+AUTONOMY_LLM_MODEL=qwen3-8b
+AUTONOMY_LLM_BASE_URL=http://llm:8000/v1
+AUTONOMY_LLM_API_KEY=not-needed
+```
+
+**Usage**:
+```bash
+# Start with self-hosted LLM
+docker compose -f docker-compose.yml -f docker-compose.llm.yml up
+
+# Or with GPU backend + LLM
+docker compose -f docker-compose.gpu.yml -f docker-compose.llm.yml up
+```
+
+### GPU Sharing Strategy
+
+TRM inference uses <10ms bursts; vLLM serving is longer but intermittent. They can share a GPU:
+
+- **Single GPU**: vLLM at `--gpu-memory-utilization 0.60` (60%), TRM/GNN gets remaining 40%
+- **Dual GPU**: GPU 0 → vLLM (dedicated), GPU 1 → TRM/GNN training + inference
+
+### References
+
+- [Qwen 3 Tool Calling Documentation](https://qwen.readthedocs.io/en/latest/framework/function_call.html)
+- [Qwen-Agent Framework](https://github.com/QwenLM/Qwen-Agent)
+- [vLLM Structured Outputs](https://docs.vllm.ai/en/latest/features/structured_outputs/)
+- [vLLM Docker Deployment](https://docs.vllm.ai/en/stable/cli/serve/)
+
+---
+
+## Further Reading
+
+- [API_REFERENCE.md](API_REFERENCE.md) - Complete API documentation (coming soon)
+- [PLANNING_CAPABILITIES.md](PLANNING_CAPABILITIES.md) - Planning endpoints
+- [EXECUTION_CAPABILITIES.md](EXECUTION_CAPABILITIES.md) - Execution endpoints
+- [BEER_GAME_GUIDE.md](BEER_GAME_GUIDE.md) - Game API usage
+- [PICOCLAW_OPENCLAW_IMPLEMENTATION.md](PICOCLAW_OPENCLAW_IMPLEMENTATION.md) - PicoClaw/OpenClaw implementation roadmap
+- [AI_AGENTS.md](AI_AGENTS.md) - AI agent types and self-hosted LLM provider options
+
+---
+
+## Support
+
+**Issues**: GitHub Issues
+**Email**: support@autonomy.ai
+**Documentation**: https://docs.autonomy.ai

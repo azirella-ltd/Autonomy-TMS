@@ -1,0 +1,15 @@
+torch>=2.0.0
+torch-geometric>=2.3.0
+torch-scatter
+torch-sparse
+torch-cluster
+torch-spline-conv
+torchmetrics>=0.11.0
+numpy>=1.21.0
+pandas>=1.3.0
+matplotlib>=3.4.0
+tqdm>=4.62.0
+pyyaml>=5.4.1
+tensorboard>=2.6.0
+scikit-learn>=0.24.2
+psutil>=5.9.0

@@ -1,0 +1,45 @@
+# Base configuration for all environments
+
+# Model parameters
+model:
+  name: "supply_chain_gnn"
+  node_features: 10
+  hidden_dim: 32
+  num_layers: 2
+  num_heads: 2
+  dropout: 0.1
+  use_edge_attr: False
+
+# Training parameters
+training:
+  batch_size: 8
+  num_epochs: 50
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  patience: 10
+  min_delta: 0.001
+  clip_grad_norm: 1.0
+
+# Dataset parameters
+dataset:
+  seq_len: 10
+  pred_len: 1
+  num_nodes: 4
+  train_ratio: 0.8
+  val_ratio: 0.1
+  test_ratio: 0.1
+
+# Logging and saving
+logging:
+  log_dir: "logs"
+  checkpoint_dir: "checkpoints"
+  tensorboard: True
+  save_every: 5
+  eval_every: 1
+
+# Hardware
+hardware:
+  device: "auto"  # auto, cuda, or cpu
+  num_workers: 4
+  pin_memory: True
+  seed: 42

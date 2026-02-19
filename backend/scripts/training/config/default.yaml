@@ -1,0 +1,144 @@
+# Model configuration
+model:
+  in_channels: 10                # Number of input features per node
+  hidden_channels: 64            # Hidden dimension size
+  out_channels: 2                # Number of output features per node
+  num_layers: 3                  # Number of GNN layers
+  dropout: 0.2                   # Dropout rate
+  num_heads: 4                   # Number of attention heads for GAT layers
+  temporal_attention: true       # Whether to use temporal attention
+  use_gru: true                  # Whether to use GRU for temporal modeling
+
+# Training configuration
+training:
+  batch_size: 32                 # Batch size
+  learning_rate: 0.001           # Initial learning rate
+  weight_decay: 1e-5             # Weight decay (L2 penalty)
+  epochs: 100                    # Number of training epochs
+  lr_step_size: 10               # Step size for learning rate scheduler
+  lr_gamma: 0.1                 # Multiplicative factor for learning rate decay
+  clip_grad_norm: 1.0            # Gradient clipping
+  patience: 10                   # Patience for early stopping
+  save_interval: 5              # Save checkpoint every N epochs
+  validate_every: 1             # Validate every N epochs
+  seed: 42                      # Random seed for reproducibility
+
+# Data configuration
+data:
+  train_ratio: 0.8              # Training set ratio
+  val_ratio: 0.1                # Validation set ratio
+  test_ratio: 0.1               # Test set ratio
+  num_workers: 4                # Number of data loading workers
+  pin_memory: true              # Pin memory for faster data transfer to GPU
+  shuffle: true                 # Shuffle the data
+  normalize: true               # Whether to normalize features
+
+# Logging configuration
+logging:
+  log_dir: "logs"               # Base directory for logs
+  log_level: "INFO"             # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+  use_tensorboard: true         # Whether to use TensorBoard
+  save_checkpoints: true        # Whether to save model checkpoints
+  checkpoint_dir: "checkpoints" # Directory to save checkpoints
+  log_interval: 10              # Log training metrics every N batches
+
+# Early stopping configuration
+eval_metric: "val_loss"         # Metric to monitor for early stopping
+min_delta: 0.0001              # Minimum change to qualify as improvement
+restore_best_weights: true     # Whether to restore weights from best epoch
+
+# Distributed training (optional)
+distributed:
+  use_ddp: false                # Whether to use DistributedDataParallel
+  num_gpus: 1                   # Number of GPUs to use (0 for CPU)
+  backend: "nccl"               # Backend for distributed training
+  init_method: "env://"         # URL specifying how to initialize the process group
+
+# Dataset specific parameters (adjust based on your dataset)
+dataset:
+  name: "supply_chain"          # Name of the dataset
+  num_nodes: 4                  # Number of nodes in the graph
+  seq_len: 10                   # Sequence length for temporal data
+  pred_len: 1                   # Prediction length
+  feature_dim: 10               # Dimension of node features
+  target_dim: 2                 # Dimension of target variables
+
+# Model architecture details
+architecture:
+  use_batch_norm: true          # Whether to use batch normalization
+  use_layer_norm: false         # Whether to use layer normalization
+  residual_connections: true    # Whether to use residual connections
+  activation: "relu"            # Activation function (relu, leaky_relu, gelu, etc.)
+  norm: "batch"                 # Normalization method (batch, layer, instance, none)
+  aggregation: "mean"           # Graph aggregation method (mean, sum, max)
+
+# Optimizer specific parameters
+optimizer:
+  type: "adam"                  # Optimizer type (adam, sgd, rmsprop, etc.)
+  momentum: 0.9                 # Momentum for SGD
+  eps: 1e-8                     # Epsilon parameter for Adam
+  amsgrad: false                # Whether to use AMSGrad variant of Adam
+  weight_decay: 0.0             # Weight decay (L2 penalty)
+  nesterov: false               # Whether to use Nesterov momentum
+
+# Learning rate scheduler
+scheduler:
+  type: "step"                  # Scheduler type (step, plateau, cosine, etc.)
+  mode: "min"                   # Mode for ReduceLROnPlateau (min, max)
+  factor: 0.1                   # Factor for reducing learning rate
+  patience: 5                   # Patience for ReduceLROnPlateau
+  min_lr: 1e-6                  # Minimum learning rate
+  warmup_epochs: 0              # Number of warmup epochs
+
+# Loss function
+loss:
+  type: "mse"                   # Loss type (mse, mae, huber, etc.)
+  reduction: "mean"             # Reduction method (mean, sum, none)
+  label_smoothing: 0.0          # Label smoothing factor
+
+# Evaluation metrics
+metrics:
+  - "mse"                      # Mean Squared Error
+  - "mae"                      # Mean Absolute Error
+  - "rmse"                     # Root Mean Squared Error
+  - "mape"                     # Mean Absolute Percentage Error
+  - "r2"                       # R-squared
+
+# Checkpointing
+checkpoint:
+  save_top_k: 3                 # Save top-k checkpoints based on eval_metric
+  monitor: "val_loss"           # Metric to monitor for checkpointing
+  mode: "min"                   # Mode for checkpointing (min or max)
+  save_last: true               # Whether to always save the last checkpoint
+  every_n_epochs: 1             # Save checkpoint every N epochs
+
+# Callbacks
+callbacks:
+  early_stopping:
+    patience: 10                # Patience for early stopping
+    verbose: true               # Whether to print messages
+  model_checkpoint:
+    save_weights_only: false    # Whether to save only model weights
+    period: 1                   # Save checkpoint every N epochs
+  lr_monitor:
+    logging_interval: "epoch"   # Log learning rate interval (step or epoch)
+  progress_bar:
+    refresh_rate: 10            # Refresh rate for progress bar
+
+# Experiment tracking
+tracking:
+  use_wandb: false              # Whether to use Weights & Biases
+  wandb_project: "autonomy"     # W&B project name
+  wandb_entity: null            # W&B entity/team name
+  wandb_run_name: null          # W&B run name
+  log_model: false              # Whether to log model checkpoints to W&B
+
+# Debugging
+debug:
+  overfit_batches: 0            # Overfit on a small number of batches (0 = disable)
+  fast_dev_run: false           # Run a single batch through training and validation
+  limit_train_batches: 1.0      # Fraction of training data to use (1.0 = all)
+  limit_val_batches: 1.0        # Fraction of validation data to use
+  limit_test_batches: 1.0       # Fraction of test data to use
+  deterministic: false          # Make training deterministic at the cost of performance
+  benchmark: true               # Enable cudnn.benchmark for faster training (if input size is fixed)

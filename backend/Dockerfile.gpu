@@ -1,0 +1,84 @@
+# syntax=docker/dockerfile:1.6
+
+FROM pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    PYTHONPATH=/app \
+    PIP_NO_CACHE_DIR=1 \
+    FORCE_CUDA=1 \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu121
+
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+        git \
+        postgresql-client \
+        libpq-dev \
+        ca-certificates \
+        patchelf \
+        prelink; \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt ./
+
+RUN python -m pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir \
+        torch==2.2.0+cu121 \
+        torchvision==0.17.0+cu121 \
+        torchaudio==2.2.0+cu121 \
+        -f https://download.pytorch.org/whl/cu121 && \
+    pip install --no-cache-dir \
+        torch-geometric==2.5.0 \
+        -f https://data.pyg.org/whl/torch-2.2.0+cu121.html && \
+    python - <<'PY_SETUP_TORCH'
+import importlib.util
+import pathlib
+import subprocess
+
+targets = set()
+
+spec = importlib.util.find_spec("torch")
+if spec and spec.origin:
+    libtorch = pathlib.Path(spec.origin).resolve().parent / "lib" / "libtorch_cpu.so"
+    if libtorch.exists():
+        targets.add(libtorch)
+
+venv_root = pathlib.Path("/app/venv")
+if venv_root.exists():
+    targets.update(path.resolve() for path in venv_root.glob("**/libtorch_cpu.so"))
+
+if not targets:
+    raise SystemExit("No libtorch_cpu.so targets found while clearing execstack flags.")
+
+for path in sorted(targets):
+    try:
+        subprocess.run(["execstack", "-c", str(path)], check=True)
+        print(f"Cleared executable stack flag on {path} via execstack")
+    except FileNotFoundError:
+        subprocess.run(["patchelf", "--clear-execstack", str(path)], check=True)
+        print(f"Cleared executable stack flag on {path} via patchelf")
+
+import torch
+print(f"PyTorch {torch.__version__}")
+print(f"CUDA available: {torch.cuda.is_available()}")
+PY_SETUP_TORCH
+
+COPY . .
+
+RUN find /app -name "*.sh" -exec chmod 755 {} +
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8000/api/health || exit 1
+
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port 8000"]

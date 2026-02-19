@@ -1,0 +1,31 @@
+name: bump-submodules-weekly
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Update submodules
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive
+          git submodule update --remote --merge
+      - name: Commit changes
+        run: |
+          git add external/* || true
+          git commit -m "chore: bump submodules" || echo "No changes"
+      - uses: peter-evans/create-pull-request@v6
+        with:
+          title: "chore: bump submodules"
+          commit-message: "chore: bump submodules"
+          branch: chore/bump-submodules
+          delete-branch: true

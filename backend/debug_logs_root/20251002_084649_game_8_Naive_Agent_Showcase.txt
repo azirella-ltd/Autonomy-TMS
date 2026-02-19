@@ -1,0 +1,529 @@
+Game 8 Debug Log
+Name: Naive Agent Showcase
+Created: 2025-10-02T08:46:49.883187Z
+
+Round 40 @ 2025-10-02T08:46:50.238365Z
+  Node: market
+    Player: Market Demand (Human)
+    Info provided:
+      {
+        "current_round": 40,
+        "external_demand": 12
+      }
+    Reply:
+      {
+        "demand": 12,
+        "type": "market_demand"
+      }
+    Step trace:
+      - Starting state:
+        {
+          "demand": 12
+        }
+      - Demand issued:
+        {
+          "demand": 12
+        }
+      - Ending state:
+        {
+          "demand_sent": 12
+        }
+    Ending state:
+      {
+        "demand_transmitted": 12
+      }
+  Node: retailer
+    Player: Retailer (naive) (ID: 29, AI)
+    Info provided:
+      {
+        "current_demand": 12,
+        "current_round": 40,
+        "local_state": {
+          "backlog": 375,
+          "backlog_after_shipment": 387,
+          "incoming_arrivals": 0,
+          "incoming_shipments": [
+            0
+          ],
+          "inventory": 0,
+          "inventory_after_shipment": 0,
+          "shipments_planned": 0,
+          "total_demand": 387
+        },
+        "upstream_context": {
+          "downstream_orders": {
+            "market_demand": 0
+          },
+          "previous_orders": [
+            0
+          ],
+          "previous_orders_by_role": {
+            "market_demand": 0
+          }
+        }
+      }
+    Reply:
+      {
+        "comment": "[Retailer] Naive fill-rate | demand=12.0 backlog=375.0 inventory=0.0 | previous_order=0 shortfall=387.0 target=387.0 | ship_plan=0",
+        "order_quantity": 387,
+        "submitted_at": "2025-10-02T07:59:30Z",
+        "type": "agent_decision"
+      }
+    Step trace:
+      - Starting state:
+        {
+          "arrival_queue": [
+            0
+          ],
+          "backlog": 375,
+          "inventory": 0,
+          "order_detail_queue": [],
+          "order_queue": []
+        }
+      - Inbound shipment processed:
+        {
+          "arrival_queue_after_schedule": [],
+          "arrival_queue_before_schedule": [],
+          "arrivals": 0,
+          "inventory_after_arrival": 0,
+          "shipments_scheduled_to_arrive": []
+        }
+      - Incoming order observed:
+        {
+          "incoming_orders": 12,
+          "order_detail": {
+            "external_demand": 12
+          },
+          "order_detail_queue_after": [],
+          "order_detail_queue_before": [],
+          "order_queue_after_observation": [],
+          "order_queue_before_observation": []
+        }
+      - Shipment this step:
+        {
+          "available_inventory": 0,
+          "demand": 387,
+          "inventory_after_shipment": 0,
+          "shipment_breakdown": [],
+          "shipped": 0
+        }
+      - Order placement:
+        {
+          "order_detail_after_submission": [],
+          "order_quantity": 387,
+          "order_queue_after_submission": [],
+          "orders_sent": [
+            {
+              "immediate_demand": 387,
+              "order_quantity": 387,
+              "to": "wholesaler",
+              "upstream_queue_after": []
+            }
+          ]
+        }
+      - Ending state:
+        {
+          "arrival_queue": [],
+          "backlog": 387,
+          "inventory": 0,
+          "order_queue": []
+        }
+    Ending state:
+      {
+        "arrival_queue": [],
+        "arrivals": 0,
+        "backlog": 387,
+        "backlog_cost": 1935.0,
+        "holding_cost": 0.0,
+        "incoming_shipments": [
+          0
+        ],
+        "incoming_shipments_total": 0,
+        "inventory": 0,
+        "last_order": 387,
+        "observed_demand": 12,
+        "on_order": 6656,
+        "order_queue": [],
+        "orders_sent": [
+          {
+            "immediate_demand": 387,
+            "order_quantity": 387,
+            "to": "wholesaler",
+            "upstream_queue_after": []
+          }
+        ],
+        "shipment_breakdown": [],
+        "shipped": 0,
+        "total_cost_delta": 1935.0
+      }
+  Node: wholesaler
+    Player: Wholesaler (naive) (ID: 30, AI)
+    Info provided:
+      {
+        "current_demand": null,
+        "current_round": 40,
+        "local_state": {
+          "backlog": 6264,
+          "backlog_after_shipment": 6651,
+          "incoming_arrivals": 0,
+          "incoming_shipments": [
+            0
+          ],
+          "inventory": 0,
+          "inventory_after_shipment": 0,
+          "shipments_planned": 0,
+          "total_demand": 6651
+        },
+        "upstream_context": {
+          "downstream_orders": {
+            "retailer": 387
+          },
+          "previous_orders": [
+            375
+          ],
+          "previous_orders_by_role": {
+            "retailer": 375
+          }
+        }
+      }
+    Reply:
+      {
+        "comment": "[Wholesaler] Naive fill-rate | demand=387.0 backlog=6264.0 inventory=0.0 | previous_order=0 shortfall=6651.0 target=6651.0 | ship_plan=0",
+        "order_quantity": 6651,
+        "submitted_at": "2025-10-02T07:59:30Z",
+        "type": "agent_decision"
+      }
+    Step trace:
+      - Starting state:
+        {
+          "arrival_queue": [
+            0
+          ],
+          "backlog": 6264,
+          "inventory": 0,
+          "order_detail_queue": [],
+          "order_queue": []
+        }
+      - Inbound shipment processed:
+        {
+          "arrival_queue_after_schedule": [],
+          "arrival_queue_before_schedule": [],
+          "arrivals": 0,
+          "inventory_after_arrival": 0,
+          "shipments_scheduled_to_arrive": []
+        }
+      - Incoming order observed:
+        {
+          "incoming_orders": 387,
+          "order_detail": {},
+          "order_detail_queue_after": [],
+          "order_detail_queue_before": [],
+          "order_queue_after_observation": [],
+          "order_queue_before_observation": []
+        }
+      - Shipment this step:
+        {
+          "available_inventory": 0,
+          "demand": 6651,
+          "inventory_after_shipment": 0,
+          "shipment_breakdown": [],
+          "shipped": 0
+        }
+      - Order placement:
+        {
+          "order_detail_after_submission": [],
+          "order_quantity": 6651,
+          "order_queue_after_submission": [],
+          "orders_sent": [
+            {
+              "immediate_demand": 6651,
+              "order_quantity": 6651,
+              "to": "distributor",
+              "upstream_queue_after": []
+            }
+          ]
+        }
+      - Ending state:
+        {
+          "arrival_queue": [],
+          "backlog": 6651,
+          "inventory": 0,
+          "order_queue": []
+        }
+    Ending state:
+      {
+        "arrival_queue": [],
+        "arrivals": 0,
+        "backlog": 6651,
+        "backlog_cost": 33255.0,
+        "holding_cost": 0.0,
+        "incoming_shipments": [
+          0
+        ],
+        "incoming_shipments_total": 0,
+        "inventory": 0,
+        "last_order": 6651,
+        "observed_demand": 387,
+        "on_order": 80988,
+        "order_queue": [],
+        "orders_sent": [
+          {
+            "immediate_demand": 6651,
+            "order_quantity": 6651,
+            "to": "distributor",
+            "upstream_queue_after": []
+          }
+        ],
+        "shipment_breakdown": [],
+        "shipped": 0,
+        "total_cost_delta": 33255.0
+      }
+  Node: distributor
+    Player: Distributor (naive) (ID: 31, AI)
+    Info provided:
+      {
+        "current_demand": null,
+        "current_round": 40,
+        "local_state": {
+          "backlog": 74332,
+          "backlog_after_shipment": 80983,
+          "incoming_arrivals": 0,
+          "incoming_shipments": [
+            0
+          ],
+          "inventory": 0,
+          "inventory_after_shipment": 0,
+          "shipments_planned": 0,
+          "total_demand": 80983
+        },
+        "upstream_context": {
+          "downstream_orders": {
+            "wholesaler": 6651
+          },
+          "previous_orders": [
+            6264
+          ],
+          "previous_orders_by_role": {
+            "wholesaler": 6264
+          }
+        }
+      }
+    Reply:
+      {
+        "comment": "[Distributor] Naive fill-rate | demand=6651.0 backlog=74332.0 inventory=0.0 | previous_order=0 shortfall=80983.0 target=80983.0 | ship_plan=0",
+        "order_quantity": 80983,
+        "submitted_at": "2025-10-02T07:59:30Z",
+        "type": "agent_decision"
+      }
+    Step trace:
+      - Starting state:
+        {
+          "arrival_queue": [
+            0
+          ],
+          "backlog": 74332,
+          "inventory": 0,
+          "order_detail_queue": [],
+          "order_queue": []
+        }
+      - Inbound shipment processed:
+        {
+          "arrival_queue_after_schedule": [],
+          "arrival_queue_before_schedule": [],
+          "arrivals": 0,
+          "inventory_after_arrival": 0,
+          "shipments_scheduled_to_arrive": []
+        }
+      - Incoming order observed:
+        {
+          "incoming_orders": 6651,
+          "order_detail": {},
+          "order_detail_queue_after": [],
+          "order_detail_queue_before": [],
+          "order_queue_after_observation": [],
+          "order_queue_before_observation": []
+        }
+      - Shipment this step:
+        {
+          "available_inventory": 0,
+          "demand": 80983,
+          "inventory_after_shipment": 0,
+          "shipment_breakdown": [],
+          "shipped": 0
+        }
+      - Order placement:
+        {
+          "order_detail_after_submission": [],
+          "order_quantity": 80983,
+          "order_queue_after_submission": [],
+          "orders_sent": [
+            {
+              "immediate_demand": 80983,
+              "order_quantity": 80983,
+              "to": "manufacturer",
+              "upstream_queue_after": []
+            }
+          ]
+        }
+      - Ending state:
+        {
+          "arrival_queue": [],
+          "backlog": 80983,
+          "inventory": 0,
+          "order_queue": []
+        }
+    Ending state:
+      {
+        "arrival_queue": [],
+        "arrivals": 0,
+        "backlog": 80983,
+        "backlog_cost": 404915.0,
+        "holding_cost": 0.0,
+        "incoming_shipments": [
+          0
+        ],
+        "incoming_shipments_total": 0,
+        "inventory": 0,
+        "last_order": 80983,
+        "observed_demand": 6651,
+        "on_order": 782388,
+        "order_queue": [],
+        "orders_sent": [
+          {
+            "immediate_demand": 80983,
+            "order_quantity": 80983,
+            "to": "manufacturer",
+            "upstream_queue_after": []
+          }
+        ],
+        "shipment_breakdown": [],
+        "shipped": 0,
+        "total_cost_delta": 404915.0
+      }
+  Node: manufacturer
+    Player: Manufacturer (naive) (ID: 32, AI)
+    Info provided:
+      {
+        "current_demand": null,
+        "current_round": 40,
+        "local_state": {
+          "backlog": 701400,
+          "backlog_after_shipment": 782383,
+          "incoming_arrivals": 0,
+          "incoming_shipments": [
+            0
+          ],
+          "inventory": 0,
+          "inventory_after_shipment": 0,
+          "shipments_planned": 0,
+          "total_demand": 782383
+        },
+        "upstream_context": {
+          "downstream_orders": {
+            "distributor": 80983
+          },
+          "previous_orders": [
+            74332
+          ],
+          "previous_orders_by_role": {
+            "distributor": 74332
+          }
+        }
+      }
+    Reply:
+      {
+        "comment": "[Manufacturer] Naive fill-rate | demand=80983.0 backlog=701400.0 inventory=0.0 | previous_order=0 shortfall=782383.0 target=782383.0 | ship_plan=0",
+        "order_quantity": 782383,
+        "submitted_at": "2025-10-02T07:59:30Z",
+        "type": "agent_decision"
+      }
+    Step trace:
+      - Starting state:
+        {
+          "arrival_queue": [
+            0
+          ],
+          "backlog": 701400,
+          "inventory": 0,
+          "order_detail_queue": [],
+          "order_queue": []
+        }
+      - Inbound shipment processed:
+        {
+          "arrival_queue_after_schedule": [],
+          "arrival_queue_before_schedule": [],
+          "arrivals": 12,
+          "inventory_after_arrival": 0,
+          "shipments_scheduled_to_arrive": [
+            {
+              "from": "market_supply",
+              "quantity": 12
+            }
+          ]
+        }
+      - Incoming order observed:
+        {
+          "incoming_orders": 80983,
+          "order_detail": {},
+          "order_detail_queue_after": [],
+          "order_detail_queue_before": [],
+          "order_queue_after_observation": [],
+          "order_queue_before_observation": []
+        }
+      - Shipment this step:
+        {
+          "available_inventory": 0,
+          "demand": 782383,
+          "inventory_after_shipment": 0,
+          "shipment_breakdown": [],
+          "shipped": 0
+        }
+      - Order placement:
+        {
+          "order_detail_after_submission": [],
+          "order_quantity": 782383,
+          "order_queue_after_submission": [],
+          "orders_sent": [
+            {
+              "immediate_demand": 782383,
+              "order_quantity": 782383,
+              "to": "market_supply",
+              "upstream_queue_after": []
+            }
+          ]
+        }
+      - Ending state:
+        {
+          "arrival_queue": [],
+          "backlog": 782383,
+          "inventory": 0,
+          "order_queue": []
+        }
+    Ending state:
+      {
+        "arrival_queue": [],
+        "arrivals": 12,
+        "backlog": 782383,
+        "backlog_cost": 3911915.0,
+        "holding_cost": 0.0,
+        "incoming_shipments": [
+          0
+        ],
+        "incoming_shipments_total": 0,
+        "inventory": 0,
+        "last_order": 782383,
+        "observed_demand": 80983,
+        "on_order": 6362298,
+        "order_queue": [],
+        "orders_sent": [
+          {
+            "immediate_demand": 782383,
+            "order_quantity": 782383,
+            "to": "market_supply",
+            "upstream_queue_after": []
+          }
+        ],
+        "shipment_breakdown": [],
+        "shipped": 0,
+        "total_cost_delta": 3911915.0
+      }

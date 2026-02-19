@@ -1,0 +1,3 @@
+# Minimal dependencies required to run helper scripts without the full backend stack
+openai>=1.35.0
+python-dotenv>=0.21

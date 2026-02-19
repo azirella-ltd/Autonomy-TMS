@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: autonomy-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - NODE_ENV=production
+      - REACT_APP_API_URL=/api
+    networks:
+      - autonomy-network
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: autonomy-backend
+    restart: unless-stopped
+    environment:
+      - MYSQL_SERVER=db
+      - MYSQL_PORT=3306
+      - MYSQL_USER=autonomy_user
+      - MYSQL_PASSWORD=Autonomy@2025
+      - MYSQL_DB=autonomy
+      - SECRET_KEY=your-secret-key-here
+      - ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=30
+      - PYTHONUNBUFFERED=1
+      - TZ=UTC
+      - DB_CONNECTION_RETRIES=60
+      - INIT_DB=true
+      - DB_WAIT_TIMEOUT=30
+      - DB_CONNECTION_TIMEOUT=30
+      - PYTHONPATH=/app
+      - DATABASE_URL=mysql+aiomysql://autonomy_user:Autonomy%402025@autonomy_db:3306/autonomy?ssl_mode=DISABLED
+      - DB_HOST=autonomy_db
+      - DB_USER=autonomy_user
+      - DB_PASSWORD=Autonomy@2025
+      - DB_NAME=autonomy
+      - DB_PORT=3306
+      - DB_SSL_MODE=disable
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    networks:
+      - autonomy-network
+    # db is running separately
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    security_opt:
+      - seccomp:unconfined
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
+networks:
+  autonomy-network:
+    external: true

@@ -1,0 +1,59 @@
+# Use a single stage build for simplicity
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    PIP_NO_CACHE_DIR=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    postgresql-client \
+    libpq-dev \
+    libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --upgrade pip && \
+    pip install gunicorn uvicorn && \
+    pip install -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    GUNICORN_WORKERS=4 \
+    GUNICORN_THREADS=2 \
+    GUNICORN_TIMEOUT=120 \
+    GUNICORN_LOG_LEVEL=info \
+    PORT=8000
+
+# Expose port
+EXPOSE $PORT
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:$PORT/api/health || exit 1
+
+# Run Gunicorn
+CMD exec gunicorn \
+    --bind :$PORT \
+    --workers $GUNICORN_WORKERS \
+    --threads $GUNICORN_THREADS \
+    --timeout $GUNICORN_TIMEOUT \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --log-level $GUNICORN_LOG_LEVEL \
+    --chdir /app \
+    main:app
