@@ -353,7 +353,7 @@ POST /api/v1/suppliers/vendor-products
 POST /api/v1/suppliers/vendor-lead-times
 {
   "tpartner_id": "ACME-001",
-  "company_id": "DAYBREAK",
+  "company_id": "AUTONOMY",
   "lead_time_days": 14,
   "lead_time_variability_days": 2,
   "eff_start_date": "2026-01-01T00:00:00Z"
@@ -380,7 +380,7 @@ POST /api/v1/suppliers/vendor-lead-times/resolve
   "tpartner_id": "ACME-001",
   "product_id": 123,
   "site_id": 456,
-  "company_id": "DAYBREAK",
+  "company_id": "AUTONOMY",
   "as_of_date": "2026-01-20T00:00:00Z"
 }
 

@@ -28,19 +28,19 @@ functions as OpenAI tools without changing the agent prompts.
 
 #### Using a Custom GPT
 
-Set `DAYBREAK_CUSTOM_GPT` (or `BEER_GAME_CUSTOM_GPT`) to the model ID of your
-Custom GPT and it will be preferred over `DAYBREAK_LLM_MODEL`.  You can also pass
+Set `AUTONOMY_CUSTOM_GPT` (or `BEER_GAME_CUSTOM_GPT`) to the model ID of your
+Custom GPT and it will be preferred over `AUTONOMY_LLM_MODEL`.  You can also pass
 the `custom_gpt` argument to `call_beer_game_gpt` or directly to the
 `AutonomyStrategistSession` constructor.
 
 ```bash
-export DAYBREAK_CUSTOM_GPT="user:my-custom-gpt"
+export AUTONOMY_CUSTOM_GPT="user:my-custom-gpt"
 ```
 
 Supervisor and global planners default to on/off via environment toggles:
 
-- `DAYBREAK_ENABLE_SUPERVISOR` (default: `true`)
-- `DAYBREAK_ENABLE_GLOBAL_AGENT` (default: `false`)
+- `AUTONOMY_ENABLE_SUPERVISOR` (default: `true`)
+- `AUTONOMY_ENABLE_GLOBAL_AGENT` (default: `false`)
 
 Override them per-request by supplying `supervisor=` or `global_agent=` when you
 call `call_beer_game_gpt`.

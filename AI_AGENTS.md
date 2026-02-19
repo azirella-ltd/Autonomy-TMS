@@ -703,7 +703,7 @@ Output format (JSON):
 **Performance Impact**:
 - Adds ~1s latency per period (extra LLM call)
 - Improves performance by 5-10% in complex scenarios
-- Default: DISABLED (set `DAYBREAK_ENABLE_GLOBAL_AGENT=true` to enable)
+- Default: DISABLED (set `AUTONOMY_ENABLE_GLOBAL_AGENT=true` to enable)
 
 ### Orchestration Flow
 
@@ -774,15 +774,15 @@ OPENAI_API_KEY=sk-...
 OPENAI_PROJECT=proj_...
 
 # Model selection
-DAYBREAK_LLM_MODEL=gpt-4  # or gpt-5-mini, gpt-4o, etc.
+AUTONOMY_LLM_MODEL=gpt-4  # or gpt-5-mini, gpt-4o, etc.
 
 # Optional: Custom GPT
-DAYBREAK_CUSTOM_GPT=user:my-custom-gpt
+AUTONOMY_CUSTOM_GPT=user:my-custom-gpt
 GPT_ID=g-xxxxxxxxxxxxxxxxxxxxxxxx
 
 # Agent behavior
-DAYBREAK_ENABLE_SUPERVISOR=true  # Default: true
-DAYBREAK_ENABLE_GLOBAL_AGENT=false  # Default: false
+AUTONOMY_ENABLE_SUPERVISOR=true  # Default: true
+AUTONOMY_ENABLE_GLOBAL_AGENT=false  # Default: false
 ```
 
 **Check Configuration**:

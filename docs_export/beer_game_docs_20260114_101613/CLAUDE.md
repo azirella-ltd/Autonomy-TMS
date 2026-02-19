@@ -101,10 +101,10 @@ Required environment variables in `.env`:
 OPENAI_API_KEY=sk-your-api-key
 OPENAI_PROJECT=proj_your_project_id
 GPT_ID=g-xxxxxxxxxxxxxxxxxxxxxxxx
-DAYBREAK_LLM_MODEL=gpt-5-mini
-DAYBREAK_CUSTOM_GPT=user:my-custom-gpt  # Optional
-DAYBREAK_ENABLE_SUPERVISOR=true         # Default: true
-DAYBREAK_ENABLE_GLOBAL_AGENT=false      # Default: false
+AUTONOMY_LLM_MODEL=gpt-5-mini
+AUTONOMY_CUSTOM_GPT=user:my-custom-gpt  # Optional
+AUTONOMY_ENABLE_SUPERVISOR=true         # Default: true
+AUTONOMY_ENABLE_GLOBAL_AGENT=false      # Default: false
 ```
 
 ### Training & Dataset Generation

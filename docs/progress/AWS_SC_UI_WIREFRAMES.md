@@ -39,7 +39,7 @@ This document provides UI/UX wireframes and design specifications for the AWS Su
 │                                                                   │
 │  ┌─ Policy Details ─────────────────────────────────────────┐  │
 │  │                                                            │  │
-│  │  Company ID:     [DAYBREAK        ]                       │  │
+│  │  Company ID:     [AUTONOMY        ]                       │  │
 │  │  Segment:        [RETAIL          ]                       │  │
 │  │  Geography:      [WEST_COAST      ]                       │  │
 │  │                                                            │  │
@@ -301,7 +301,7 @@ This document provides UI/UX wireframes and design specifications for the AWS Su
 │  │  ○ Product group: [Beverages     ▼]                   │     │
 │  │  ● Specific product: [Beer Case   ▼]                  │     │
 │  │                                                          │     │
-│  │  Company ID:       [DAYBREAK]  (optional override)     │     │
+│  │  Company ID:       [AUTONOMY]  (optional override)     │     │
 │  │                                                          │     │
 │  └──────────────────────────────────────────────────────────┘   │
 │                                                                   │

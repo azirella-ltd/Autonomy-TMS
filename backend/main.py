@@ -308,7 +308,7 @@ _FAKE_USERS["groupadmin@autonomy.ai"] = {
     "email": "groupadmin@autonomy.ai",
     "name": "Group Administrator",
     "role": "groupadmin",
-    "passwords": {"Autonomy@2025", "DayBreak@2025"},
+    "passwords": {"Autonomy@2025"},
     "aliases": {"groupadmin", "defaultadmin"},
     "group_id": 1,
     "is_superuser": False,

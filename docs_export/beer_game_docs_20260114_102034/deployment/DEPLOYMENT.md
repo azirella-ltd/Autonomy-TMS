@@ -54,8 +54,8 @@ OPENAI_PROJECT=proj_...
 GPT_ID=g-...
 
 # Application
-CORS_ORIGINS=https://autonomy.daybreak.ai
-ALLOWED_HOSTS=autonomy.daybreak.ai
+CORS_ORIGINS=https://autonomy.com
+ALLOWED_HOSTS=autonomy.com
 ```
 
 ## Environment Configuration

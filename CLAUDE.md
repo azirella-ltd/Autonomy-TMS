@@ -281,10 +281,10 @@ Required environment variables in `.env`:
 OPENAI_API_KEY=sk-your-api-key
 OPENAI_PROJECT=proj_your_project_id
 GPT_ID=g-xxxxxxxxxxxxxxxxxxxxxxxx
-DAYBREAK_LLM_MODEL=gpt-5-mini
-DAYBREAK_CUSTOM_GPT=user:my-custom-gpt  # Optional
-DAYBREAK_ENABLE_SUPERVISOR=true         # Default: true
-DAYBREAK_ENABLE_GLOBAL_AGENT=false      # Default: false
+AUTONOMY_LLM_MODEL=gpt-5-mini
+AUTONOMY_CUSTOM_GPT=user:my-custom-gpt  # Optional
+AUTONOMY_ENABLE_SUPERVISOR=true         # Default: true
+AUTONOMY_ENABLE_GLOBAL_AGENT=false      # Default: false
 ```
 
 ### Training & Dataset Generation
@@ -982,7 +982,7 @@ These documents define the strategic vision and UX implementation for AI-as-Labo
   - **Decision Status Flow**: Suggested → Reviewed → Accepted/Overridden → Submitted (captured for performance feedback loop)
   - **Key Insight**: "Planners don't want to plan; they want plans that work"
 
-- `DAYBREAK 1 PAGE COMPANY STRATEGY MEMO .pdf` - **Company Strategy**: One-page strategic memo defining Autonomy's positioning. Key concepts:
+- `AUTONOMY 1 PAGE COMPANY STRATEGY MEMO .pdf` - **Company Strategy**: One-page strategic memo defining Autonomy's positioning. Key concepts:
   - **Core Belief**: AI-as-Labor operating model - agents own decisions by default, humans override with reasoning captured
   - **Compounding Loop**: More decisions → Better AI → Less human effort → More decisions handled
   - **Judgment Layer Moat**: Human expertise captured in override patterns becomes competitive advantage

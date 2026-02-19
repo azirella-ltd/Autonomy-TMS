@@ -158,7 +158,7 @@ secondary = {
 lead_times = [
     {
         "tpartner_id": "ACME-001",
-        "company_id": "DAYBREAK",  # Lowest priority
+        "company_id": "AUTONOMY",  # Lowest priority
         "lead_time_days": 14
     },
     {
@@ -178,7 +178,7 @@ resolve_request = {
     "tpartner_id": "ACME-001",
     "product_id": 123,
     "site_id": 456,
-    "company_id": "DAYBREAK"
+    "company_id": "AUTONOMY"
 }
 ```
 
@@ -224,7 +224,7 @@ Priority Order (most specific wins):
 2. product_group_id     → "Widgets" from "ACME"
 3. site_id              → "Factory 1" from "ACME"
 4. region_id            → "US-West" from "ACME"
-5. company_id           → "DAYBREAK" from "ACME"
+5. company_id           → "AUTONOMY" from "ACME"
 ```
 
 ### Multi-Sourcing Priority

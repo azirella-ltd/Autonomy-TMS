@@ -1,5 +1,5 @@
 #!/bin/bash
-# Restore autonomy DB from backup with daybreak.ai → autonomy.com email migration
+# Restore autonomy DB from backup with email migration to autonomy.com
 set -e
 
 BACKUP="/home/trevor/Documents/Autonomy/Autonomy/exports/autonomy_backup_clean.sql"

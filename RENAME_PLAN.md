@@ -34,7 +34,7 @@ The largest phase. Rename classes, functions, constants, then file names, then i
 - `sc_execution/beer_game_executor.py`: `BeerGameExecutor` -> `SimulationExecutor`
 - `sc_execution/site_id_mapper.py`: `BeerGameIdMapper` -> `SimulationIdMapper`
 - `llm_agent/beer_game_openai_agents.py`: `BeerGameNodeAgent` -> `SimulationNodeAgent`, `BeerGameSupervisorAgent` -> `SimulationSupervisorAgent`, `BeerGameGlobalAgent` -> `SimulationGlobalAgent`, `BeerGameAgentsOrchestrator` -> `SimulationAgentsOrchestrator`
-- `llm_agent/daybreak_tbg_agent.py`: `call_beer_game_gpt` -> `call_simulation_gpt`
+- `llm_agent/autonomy_tbg_agent.py`: `call_beer_game_gpt` -> `call_simulation_gpt`
 - `llm_agent/strategist_adapter.py`: `BeerGameClient` -> `SimulationClient`, `RunBeerGameSimRequest` -> `RunSimulationRequest`
 
 ### Constants & Config Defaults
@@ -56,7 +56,7 @@ The largest phase. Rename classes, functions, constants, then file names, then i
 | `services/sc_execution/beer_game_executor.py` | `services/sc_execution/simulation_executor.py` |
 | `api/endpoints/beer_game_execution.py` | `api/endpoints/simulation_execution.py` |
 | `llm_agent/beer_game_openai_agents.py` | `llm_agent/simulation_openai_agents.py` |
-| `llm_agent/daybreak_tbg_agent.py` | `llm_agent/daybreak_simulation_agent.py` |
+| `llm_agent/autonomy_tbg_agent.py` | `llm_agent/autonomy_simulation_agent.py` |
 | `scripts/seed_default_tbg.py` | `scripts/seed_default_beer_game.py` |
 | `scripts/seed_three_fg_tbg.py` | `scripts/seed_three_fg_beer_game.py` |
 | `scripts/seed_variable_tbg.py` | `scripts/seed_variable_beer_game.py` |

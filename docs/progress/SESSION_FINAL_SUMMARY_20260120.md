@@ -361,7 +361,7 @@ INSERT INTO trading_partners VALUES
 2. product_group_id → Product category (e.g., "Widgets")
 3. site_id → Specific site (e.g., "Factory 1")
 4. region_id → Geographic region (e.g., "US-West")
-5. company_id → Company-wide default (e.g., "DAYBREAK")
+5. company_id → Company-wide default (e.g., "AUTONOMY")
 
 **Algorithm**:
 ```python
