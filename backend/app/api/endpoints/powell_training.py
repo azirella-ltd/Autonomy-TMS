@@ -306,7 +306,7 @@ async def list_powell_training_configs(
             last_training_completed=config.last_training_completed,
             last_training_status=config.last_training_status,
             trm_configs=[{
-                "trm_type": tc.trm_type.value.lower(),
+                "trm_type": tc.trm_type.value,
                 "enabled": tc.enabled,
                 "state_dim": tc.state_dim,
                 "hidden_dim": tc.hidden_dim,

@@ -28,7 +28,7 @@ class TRMType(str, Enum):
     REBALANCING = "REBALANCING"  # Cross-location inventory transfer
     PO_CREATION = "PO_CREATION"  # Purchase order timing and quantity
     ORDER_TRACKING = "ORDER_TRACKING"  # Exception detection and resolution
-    SAFETY_STOCK = "safety_stock"  # Safety stock adjustment decisions (legacy lowercase)
+    SAFETY_STOCK = "SAFETY_STOCK"  # Safety stock adjustment decisions
 
 
 class TrainingStatus(str, Enum):
