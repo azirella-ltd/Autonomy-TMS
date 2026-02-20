@@ -5813,6 +5813,7 @@ from app.api.endpoints.sourcing_rules import router as sourcing_rules_router
 from app.api.endpoints.analytics import router as analytics_router
 from app.api.endpoints.risk_analysis import router as risk_analysis_router
 from app.api.endpoints.shipment_tracking import router as shipment_tracking_router
+from app.api.endpoints.inventory_visibility import router as inventory_visibility_router
 from app.api.endpoints.recommendations import router as recommendations_router
 from app.api.endpoints.demand_plan import router as demand_plan_router
 from app.api.endpoints.collaboration import router as collaboration_router
@@ -5826,6 +5827,7 @@ api.include_router(sourcing_rules_router, prefix="/sourcing-rules", tags=["sourc
 api.include_router(analytics_router, prefix="/analytics", tags=["analytics", "kpi"])
 api.include_router(risk_analysis_router, prefix="/risk-analysis", tags=["risk-analysis", "insights"])
 api.include_router(shipment_tracking_router, prefix="/shipment-tracking", tags=["shipment-tracking", "material-visibility"])
+api.include_router(inventory_visibility_router, prefix="/inventory-visibility", tags=["inventory-visibility", "material-visibility"])
 api.include_router(recommendations_router, prefix="/recommendations", tags=["recommendations", "planning"])
 api.include_router(demand_plan_router, prefix="/demand-plan", tags=["demand-plan", "planning"])
 api.include_router(collaboration_router, prefix="/collaboration", tags=["collaboration", "sprint5"])

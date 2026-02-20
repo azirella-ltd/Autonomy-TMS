@@ -82,9 +82,10 @@ const ROUTE_LABELS = {
   groups: 'Groups',
   users: 'User Management',
   'role-management': 'Role Management',
-  trm: 'TRM Training',
-  gnn: 'GNN Training',
-  rl: 'RL Training',
+  powell: 'Decision Cascade',
+  trm: 'Execution Agents',
+  gnn: 'S&OP Agent',
+  rl: 'Reinforcement Learning',
   'model-setup': 'Agent Configuration',
   'system-config': 'System Config',
 

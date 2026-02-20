@@ -24,6 +24,7 @@ import AdminTraining from "./pages/admin/Training.jsx";
 import ModelSetup from "./pages/admin/ModelSetup.jsx";
 import TRMDashboard from "./pages/admin/TRMDashboard.jsx";
 import GNNDashboard from "./pages/admin/GNNDashboard.jsx";
+import GraphSAGEDashboard from "./pages/admin/GraphSAGEDashboard.jsx";
 import RLDashboard from "./pages/admin/RLDashboard.jsx";
 import PowellDashboard from "./pages/admin/PowellDashboard.jsx";
 import Users from "./pages/Users";
@@ -83,6 +84,7 @@ import ProductionProcesses from "./pages/planning/ProductionProcesses.jsx";
 import ResourceCapacity from "./pages/planning/ResourceCapacity.jsx";
 import DemandCollaboration from "./pages/planning/DemandCollaboration.jsx";
 import ForecastExceptions from "./pages/planning/ForecastExceptions.jsx";
+import Forecasting from "./pages/planning/Forecasting.jsx";
 import ServiceOrders from "./pages/execution/ServiceOrders.jsx";
 import InventoryOptimizationAnalytics from "./pages/analytics/InventoryOptimizationAnalytics.jsx";
 import CapacityOptimizationAnalytics from "./pages/analytics/CapacityOptimizationAnalytics.jsx";
@@ -97,6 +99,7 @@ import OrderManagement from "./pages/planning/OrderManagement.jsx";
 import RecommendedActionsDashboard from "./pages/RecommendedActionsDashboard.jsx";
 import SalesOperationsPlanning from "./pages/planning/SalesOperationsPlanning.jsx";
 import InventoryOptimization from "./pages/planning/InventoryOptimization.jsx";
+import InventoryVisibility from "./pages/visibility/InventoryVisibility.jsx";
 import SOPPolicyPage from "./pages/planning/SOPPolicyPage.jsx";
 import MRSCandidatesPage from "./pages/planning/MRSCandidatesPage.jsx";
 import SupplyWorklistPage from "./pages/planning/SupplyWorklistPage.jsx";
@@ -329,6 +332,10 @@ const AppContent = () => {
             <Route
               path="/admin/gnn"
               element={<GNNDashboard />}
+            />
+            <Route
+              path="/admin/graphsage"
+              element={<GraphSAGEDashboard />}
             />
             <Route
               path="/admin/rl"
@@ -677,6 +684,15 @@ const AppContent = () => {
             />
 
             <Route
+              path="/planning/forecasting"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_forecasting">
+                  <Forecasting />
+                </CapabilityProtectedRoute>
+              }
+            />
+
+            <Route
               path="/planning/forecast-exceptions"
               element={
                 <CapabilityProtectedRoute requiredCapability="view_forecast_exceptions">
@@ -929,10 +945,7 @@ const AppContent = () => {
               path="/visibility/inventory"
               element={
                 <CapabilityProtectedRoute requiredCapability="view_inventory_visibility">
-                  <div className="p-8 text-center">
-                    <h2 className="text-xl font-semibold">Inventory Visibility</h2>
-                    <p className="mt-4 text-muted-foreground">Coming Soon</p>
-                  </div>
+                  <InventoryVisibility />
                 </CapabilityProtectedRoute>
               }
             />
