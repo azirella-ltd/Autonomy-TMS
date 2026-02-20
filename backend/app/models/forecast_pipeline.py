@@ -39,6 +39,34 @@ class ForecastPipelineConfig(Base):
     model_type = Column(String(50), nullable=False, default="clustered_naive")
     parameters = Column(JSON)
 
+    # --- Dataset & Column Mapping (nullable = use system default) ---
+    demand_item = Column(String(100), nullable=True)       # Product column override
+    demand_point = Column(String(100), nullable=True)      # Site column override
+    target_column = Column(String(100), nullable=True)     # Quantity column override
+    date_column = Column(String(100), nullable=True)       # Date column override
+
+    # --- Forecast Settings ---
+    number_of_items_analyzed = Column(Integer, nullable=True)  # Max items (None = all)
+
+    # --- Data Quality Thresholds ---
+    ignore_numeric_columns = Column(Text, nullable=True)       # Comma-separated columns to exclude
+    cv_sq_threshold = Column(Float, nullable=False, default=0.49)   # Demand variability cutoff
+    adi_threshold = Column(Float, nullable=False, default=1.32)     # Demand intermittency cutoff
+
+    # --- Clustering Configuration ---
+    min_cluster_size = Column(Integer, nullable=False, default=5)
+    min_cluster_size_uom = Column(String(20), nullable=False, default="items")  # items | percent
+    cluster_selection_method = Column(String(50), nullable=False, default="KMeans")
+    # Valid: KMeans, HDBSCAN, Agglomerative, OPTICS, Birch, GaussianMixture, MeanShift, Spectral, AffinityPropagation
+
+    # --- Feature Engineering ---
+    characteristics_creation_method = Column(String(30), nullable=False, default="tsfresh")  # tsfresh | classifier | both
+    feature_correlation_threshold = Column(Float, nullable=False, default=0.8)
+    feature_importance_method = Column(String(30), nullable=False, default="LassoCV")  # LassoCV | RandomForest | MutualInformation
+    feature_importance_threshold = Column(Float, nullable=False, default=0.01)
+    pca_variance_threshold = Column(Float, nullable=False, default=0.95)
+    pca_importance_threshold = Column(Float, nullable=False, default=0.01)
+
     is_active = Column(Boolean, nullable=False, default=True)
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

@@ -77,10 +77,14 @@ class ForecastPipelineService:
                 raise ValueError("No historical demand data available for selected config")
 
             history["unique_id"] = history["product_id"].astype(str) + "|" + history["site_id"].astype(str)
+            history = self._filter_by_quality(history, cfg)
+            if history.empty:
+                raise ValueError("All series filtered out by data quality thresholds")
+
             clusters = self._cluster_series(history, cfg)
             forecasts = self._predict_future(history, clusters, cfg)
             metrics = self._compute_metrics(history, clusters)
-            feature_scores = self._feature_scores(history)
+            feature_scores = self._feature_scores(history, cfg)
 
             self.db.query(ForecastPipelineCluster).filter(ForecastPipelineCluster.run_id == run.id).delete()
             self.db.query(ForecastPipelinePrediction).filter(ForecastPipelinePrediction.run_id == run.id).delete()
@@ -234,6 +238,8 @@ class ForecastPipelineService:
         return published_count
 
     def _load_history(self, cfg: ForecastPipelineConfig) -> pd.DataFrame:
+        # TODO: When demand_item/demand_point/target_column/date_column are set,
+        # use them as custom column mappings for the query source.
         query = (
             self.db.query(
                 OutboundOrderLine.product_id.label("product_id"),
@@ -255,24 +261,54 @@ class ForecastPipelineService:
         if rows:
             df = pd.DataFrame(rows, columns=["product_id", "site_id", "demand_date", "actual"])
             df["demand_date"] = pd.to_datetime(df["demand_date"])
-            return df
-
-        fallback = (
-            self.db.query(
-                Forecast.product_id.label("product_id"),
-                Forecast.site_id.label("site_id"),
-                Forecast.forecast_date.label("demand_date"),
-                Forecast.forecast_p50.label("actual"),
+        else:
+            fallback = (
+                self.db.query(
+                    Forecast.product_id.label("product_id"),
+                    Forecast.site_id.label("site_id"),
+                    Forecast.forecast_date.label("demand_date"),
+                    Forecast.forecast_p50.label("actual"),
+                )
+                .filter(Forecast.forecast_p50.isnot(None))
             )
-            .filter(Forecast.forecast_p50.isnot(None))
-        )
-        if cfg.config_id:
-            fallback = fallback.filter(Forecast.config_id == cfg.config_id)
-        rows = fallback.all()
-        df = pd.DataFrame(rows, columns=["product_id", "site_id", "demand_date", "actual"])
-        if not df.empty:
-            df["demand_date"] = pd.to_datetime(df["demand_date"])
+            if cfg.config_id:
+                fallback = fallback.filter(Forecast.config_id == cfg.config_id)
+            rows = fallback.all()
+            df = pd.DataFrame(rows, columns=["product_id", "site_id", "demand_date", "actual"])
+            if not df.empty:
+                df["demand_date"] = pd.to_datetime(df["demand_date"])
+
+        # Apply number_of_items_analyzed limit (cap unique product-site combos)
+        if not df.empty and cfg.number_of_items_analyzed:
+            unique_ids = df.groupby(["product_id", "site_id"]).size().reset_index(name="cnt")
+            unique_ids = unique_ids.sort_values("cnt", ascending=False).head(cfg.number_of_items_analyzed)
+            keep = set(zip(unique_ids["product_id"], unique_ids["site_id"]))
+            df = df[df.apply(lambda r: (r["product_id"], r["site_id"]) in keep, axis=1)]
+
         return df
+
+    def _filter_by_quality(self, history: pd.DataFrame, cfg: ForecastPipelineConfig) -> pd.DataFrame:
+        """Filter out series that don't meet data quality thresholds."""
+        if history.empty:
+            return history
+
+        stats = history.groupby("unique_id")["actual"].agg(["mean", "std", "count"])
+
+        # Filter by minimum observations
+        min_obs = int(cfg.min_observations or 12)
+        keep = stats[stats["count"] >= min_obs].index
+
+        # TODO: Apply cv_sq_threshold (coefficient of variation squared) and
+        # adi_threshold (average demand interval) for demand classification
+        # into smooth/erratic/intermittent/lumpy categories.
+        # cv_sq = (std/mean)**2; adi = 1/non_zero_fraction
+        # For now these thresholds are stored on the config for future use.
+
+        filtered = history[history["unique_id"].isin(keep)]
+        dropped = len(stats) - len(keep)
+        if dropped > 0:
+            logger.info("Filtered out %d series below min_observations=%d", dropped, min_obs)
+        return filtered
 
     def _cluster_series(self, history: pd.DataFrame, cfg: ForecastPipelineConfig) -> Dict[str, int]:
         series_stats = history.groupby("unique_id")["actual"].agg(["mean", "std", "count"]).fillna(0.0)
@@ -287,12 +323,38 @@ class ForecastPipelineService:
             k = 1
 
         features = series_stats[["mean", "std", "count"]].to_numpy()
+        method = cfg.cluster_selection_method or "KMeans"
+
         if k == 1:
             labels = np.zeros(n_series, dtype=int)
+        elif method == "KMeans":
+            labels = KMeans(n_clusters=k, n_init=10, random_state=42).fit_predict(features)
         else:
+            # TODO: Implement HDBSCAN, Agglomerative, OPTICS, Birch,
+            # GaussianMixture, MeanShift, Spectral, AffinityPropagation.
+            # These are available in the legacy scripts at
+            # backend/scripts/training/forecast_pipeline/
+            logger.warning(
+                "Clustering method '%s' not yet implemented; falling back to KMeans", method
+            )
             labels = KMeans(n_clusters=k, n_init=10, random_state=42).fit_predict(features)
 
-        return dict(zip(series_stats.index.tolist(), labels.tolist()))
+        clusters = dict(zip(series_stats.index.tolist(), labels.tolist()))
+
+        # Post-process: merge clusters smaller than min_cluster_size
+        min_size = int(cfg.min_cluster_size or 5)
+        if cfg.min_cluster_size_uom == "percent":
+            min_size = max(1, int(n_series * min_size / 100))
+        from collections import Counter
+        counts = Counter(clusters.values())
+        small = {c for c, cnt in counts.items() if cnt < min_size}
+        if small and len(counts) - len(small) > 0:
+            largest = max((c for c in counts if c not in small), key=lambda c: counts[c])
+            for uid, cid in clusters.items():
+                if cid in small:
+                    clusters[uid] = largest
+
+        return clusters
 
     def _predict_future(
         self,
@@ -376,7 +438,14 @@ class ForecastPipelineService:
             rows.extend(_metric_pack("cluster", str(cluster_id), frame))
         return rows
 
-    def _feature_scores(self, history: pd.DataFrame) -> List[Tuple[str, float]]:
+    def _feature_scores(self, history: pd.DataFrame, cfg: ForecastPipelineConfig) -> List[Tuple[str, float]]:
+        # TODO: When characteristics_creation_method == "tsfresh", integrate
+        # tsfresh feature extraction from legacy scripts. When "classifier",
+        # use sklearn classifiers for feature generation. "both" combines them.
+        # TODO: Apply feature_correlation_threshold for redundant feature removal.
+        # TODO: Dispatch on feature_importance_method (LassoCV/RandomForest/MutualInformation).
+        # TODO: Apply feature_importance_threshold, pca_variance_threshold,
+        # pca_importance_threshold from cfg.
         grouped = history.groupby("unique_id")["actual"]
         mean_series = grouped.mean().fillna(0.0)
         std_series = grouped.std().fillna(0.0)

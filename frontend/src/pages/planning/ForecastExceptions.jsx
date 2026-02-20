@@ -73,11 +73,12 @@ const ForecastExceptions = () => {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [total, setTotal] = useState(0);
 
-  // Filters
+  // Filters – use '__all__' sentinel instead of '' to avoid
+  // Radix Select issues with empty-string values.
   const [filters, setFilters] = useState({
-    status: '',
-    severity: '',
-    exception_type: '',
+    status: '__all__',
+    severity: '__all__',
+    exception_type: '__all__',
   });
 
   // Dialogs
@@ -117,7 +118,7 @@ const ForecastExceptions = () => {
 
   useEffect(() => {
     loadData();
-  }, [activeTab, page, rowsPerPage, filters]);
+  }, [activeTab, page, rowsPerPage, filters.status, filters.severity, filters.exception_type]);
 
   const loadData = async () => {
     if (activeTab === 'exceptions') {
@@ -133,11 +134,15 @@ const ForecastExceptions = () => {
       const params = {
         skip: page * rowsPerPage,
         limit: rowsPerPage,
-        ...filters,
       };
+      // Only send filter params that aren't the '__all__' sentinel
+      if (filters.status && filters.status !== '__all__') params.status = filters.status;
+      if (filters.severity && filters.severity !== '__all__') params.severity = filters.severity;
+      if (filters.exception_type && filters.exception_type !== '__all__') params.exception_type = filters.exception_type;
+
       const response = await api.get('/forecast-exceptions', { params });
-      setExceptions(response.data.items);
-      setTotal(response.data.total);
+      setExceptions(response.data.items || []);
+      setTotal(response.data.total || 0);
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to load exceptions');
     } finally {
@@ -403,6 +408,14 @@ const ForecastExceptions = () => {
           </TableRow>
         </TableHeader>
         <TableBody>
+          {exceptions.length === 0 && !loading && (
+            <TableRow>
+              <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                No forecast exceptions detected. Use the Detection Rules tab to configure automated exception detection,
+                or exceptions will appear when forecast variance exceeds configured thresholds.
+              </TableCell>
+            </TableRow>
+          )}
           {exceptions.map((exception) => (
             <TableRow
               key={exception.id}
@@ -683,7 +696,7 @@ const ForecastExceptions = () => {
                       <SelectValue placeholder="All" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All</SelectItem>
+                      <SelectItem value="__all__">All</SelectItem>
                       <SelectItem value="NEW">New</SelectItem>
                       <SelectItem value="ACKNOWLEDGED">Acknowledged</SelectItem>
                       <SelectItem value="INVESTIGATING">Investigating</SelectItem>
@@ -703,7 +716,7 @@ const ForecastExceptions = () => {
                       <SelectValue placeholder="All" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All</SelectItem>
+                      <SelectItem value="__all__">All</SelectItem>
                       <SelectItem value="LOW">Low</SelectItem>
                       <SelectItem value="MEDIUM">Medium</SelectItem>
                       <SelectItem value="HIGH">High</SelectItem>
@@ -721,7 +734,7 @@ const ForecastExceptions = () => {
                       <SelectValue placeholder="All" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All</SelectItem>
+                      <SelectItem value="__all__">All</SelectItem>
                       <SelectItem value="VARIANCE">Variance</SelectItem>
                       <SelectItem value="TREND_BREAK">Trend Break</SelectItem>
                       <SelectItem value="OUTLIER">Outlier</SelectItem>

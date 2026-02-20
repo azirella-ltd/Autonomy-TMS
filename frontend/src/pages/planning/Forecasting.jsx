@@ -1,34 +1,30 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
-  Button,
   Alert,
-  Badge,
   Select,
   SelectTrigger,
   SelectValue,
   SelectContent,
   SelectItem,
-  Progress,
 } from '../../components/common';
 import {
-  RefreshCw,
   TrendingUp,
-  Play,
   CheckCircle,
   Clock,
   BarChart3,
+  GitBranch,
 } from 'lucide-react';
 import ForecastPipelineManager from '../../components/demand-planning/ForecastPipelineManager';
 import { api } from '../../services/api';
 
+const BUCKET_LABELS = { D: 'Daily', W: 'Weekly', M: 'Monthly' };
+
 const Forecasting = () => {
   const [configs, setConfigs] = useState([]);
   const [selectedConfig, setSelectedConfig] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [pipelineConfigs, setPipelineConfigs] = useState([]);
   const [error, setError] = useState(null);
 
   const loadConfigs = useCallback(async () => {
@@ -37,7 +33,6 @@ const Forecasting = () => {
       const items = res.data.items || res.data || [];
       setConfigs(items);
       if (items.length > 0 && !selectedConfig) {
-        // Auto-select root baseline config (no parent, BASELINE type)
         const root = items.find(c => !c.parent_config_id && c.scenario_type === 'BASELINE')
           || items.find(c => c.is_active)
           || items[0];
@@ -50,6 +45,30 @@ const Forecasting = () => {
   }, [selectedConfig]);
 
   useEffect(() => { loadConfigs(); }, [loadConfigs]);
+
+  // Fetch pipeline configs for the selected SC config to populate overview cards
+  useEffect(() => {
+    if (!selectedConfig) { setPipelineConfigs([]); return; }
+    api.get('/forecast-pipeline/configs', { params: { config_id: Number(selectedConfig) } })
+      .then((res) => setPipelineConfigs(res.data || []))
+      .catch(() => setPipelineConfigs([]));
+  }, [selectedConfig]);
+
+  // Use the first active pipeline config for overview cards
+  const activePipeline = useMemo(() => {
+    if (pipelineConfigs.length === 0) return null;
+    return pipelineConfigs.find(c => c.is_active) || pipelineConfigs[0];
+  }, [pipelineConfigs]);
+
+  const selectedConfigObj = useMemo(
+    () => configs.find(c => c.id.toString() === selectedConfig),
+    [configs, selectedConfig]
+  );
+
+  const modelLabel = activePipeline?.model_type?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Not Configured';
+  const clusterLabel = activePipeline?.cluster_selection_method || '\u2014';
+  const cadenceLabel = activePipeline ? (BUCKET_LABELS[activePipeline.time_bucket] || activePipeline.time_bucket) : '\u2014';
+  const metricLabel = activePipeline ? (activePipeline.forecast_metric || 'wape').toUpperCase() : '\u2014';
 
   return (
     <div className="p-6">
@@ -83,14 +102,14 @@ const Forecasting = () => {
         </Alert>
       )}
 
-      {/* Overview cards */}
+      {/* Overview cards — driven by active pipeline config */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Pipeline</p>
-                <p className="text-lg font-bold">ML Forecast</p>
+                <p className="text-lg font-bold">{modelLabel}</p>
               </div>
               <TrendingUp className="h-8 w-8 text-primary" />
             </div>
@@ -100,10 +119,10 @@ const Forecasting = () => {
           <CardContent className="pt-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Method</p>
-                <p className="text-lg font-bold">Clustered Naive</p>
+                <p className="text-sm text-muted-foreground">Clustering</p>
+                <p className="text-lg font-bold">{clusterLabel}</p>
               </div>
-              <BarChart3 className="h-8 w-8 text-blue-500" />
+              <GitBranch className="h-8 w-8 text-purple-500" />
             </div>
           </CardContent>
         </Card>
@@ -112,7 +131,7 @@ const Forecasting = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Cadence</p>
-                <p className="text-lg font-bold">Weekly</p>
+                <p className="text-lg font-bold">{cadenceLabel}</p>
               </div>
               <Clock className="h-8 w-8 text-amber-500" />
             </div>
@@ -123,7 +142,7 @@ const Forecasting = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Metric</p>
-                <p className="text-lg font-bold">WAPE</p>
+                <p className="text-lg font-bold">{metricLabel}</p>
               </div>
               <CheckCircle className="h-8 w-8 text-green-500" />
             </div>
@@ -133,7 +152,10 @@ const Forecasting = () => {
 
       {/* Pipeline Manager */}
       {selectedConfig ? (
-        <ForecastPipelineManager configId={Number(selectedConfig)} />
+        <ForecastPipelineManager
+          configId={Number(selectedConfig)}
+          configName={selectedConfigObj?.name}
+        />
       ) : (
         <Card>
           <CardContent className="pt-4 text-center py-8">

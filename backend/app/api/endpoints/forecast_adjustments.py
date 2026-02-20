@@ -10,7 +10,7 @@ Provides CRUD operations for forecast adjustments:
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -149,6 +149,17 @@ def get_forecast_table(
     """
     from sqlalchemy import or_
 
+    # Default date range: 12 periods from today (prevents loading years of data)
+    if not start_date:
+        start_date = datetime.utcnow()
+    if not end_date:
+        if time_granularity == "day":
+            end_date = start_date + timedelta(days=12)
+        elif time_granularity == "month":
+            end_date = start_date + timedelta(days=365)
+        else:  # week
+            end_date = start_date + timedelta(weeks=12)
+
     # Build base query with joins for product/site names
     query = (
         db.query(Forecast, Product.description, Site.name)
@@ -160,6 +171,8 @@ def get_forecast_table(
                 Forecast.is_active.is_(None),
             )
         )
+        .filter(Forecast.forecast_date >= start_date.date() if hasattr(start_date, 'date') else Forecast.forecast_date >= start_date)
+        .filter(Forecast.forecast_date <= end_date.date() if hasattr(end_date, 'date') else Forecast.forecast_date <= end_date)
     )
 
     # Apply filters
@@ -173,12 +186,6 @@ def get_forecast_table(
     if site_ids:
         site_list = [s.strip() for s in site_ids.split(",")]
         query = query.filter(Forecast.site_id.in_(site_list))
-
-    if start_date:
-        query = query.filter(Forecast.forecast_date >= start_date)
-
-    if end_date:
-        query = query.filter(Forecast.forecast_date <= end_date)
 
     # Order and limit
     query = query.order_by(Forecast.product_id, Forecast.site_id, Forecast.forecast_date)
