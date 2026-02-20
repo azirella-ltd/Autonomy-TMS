@@ -45,7 +45,7 @@ const ScenarioTreeManager = () => {
   const loadConfig = async () => {
     try {
       setLoading(true);
-      const response = await api.get(`/supply-chain-configs/${configId}`);
+      const response = await api.get(`/supply-chain-config/${configId}`);
       setConfig(response.data);
     } catch (error) {
       console.error('Failed to load configuration:', error);
@@ -73,7 +73,7 @@ const ScenarioTreeManager = () => {
 
   const handleViewEffective = async () => {
     try {
-      const response = await api.get(`/supply-chain-configs/${configId}/effective`);
+      const response = await api.get(`/supply-chain-config/${configId}/effective`);
       console.log('Effective configuration:', response.data);
       alert('Effective configuration loaded. Check browser console for details.');
     } catch (error) {

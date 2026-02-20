@@ -40,6 +40,7 @@ import SupplyChainConfigForm from "./components/supply-chain-config/SupplyChainC
 import GroupSupplyChainConfigList from "./pages/admin/GroupSupplyChainConfigList.jsx";
 import GroupSupplyChainConfigForm from "./pages/admin/GroupSupplyChainConfigForm.jsx";
 import ScenarioTreeManager from "./pages/admin/ScenarioTreeManager.jsx";
+import { ScenarioComparison } from "./components/stochastic";
 import SyntheticDataWizard from "./pages/admin/SyntheticDataWizard.jsx";
 import PlanningHierarchyConfig from "./pages/admin/PlanningHierarchyConfig.jsx";
 import SAPDataManagement from "./pages/admin/SAPDataManagement.jsx";
@@ -210,6 +211,17 @@ const AppContent = () => {
               element={
                 <CapabilityProtectedRoute requiredCapability="create_game">
                   <CreateGameFromConfig />
+                </CapabilityProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/scenarios/compare"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_scenario_comparison">
+                  <div className="p-6">
+                    <ScenarioComparison />
+                  </div>
                 </CapabilityProtectedRoute>
               }
             />

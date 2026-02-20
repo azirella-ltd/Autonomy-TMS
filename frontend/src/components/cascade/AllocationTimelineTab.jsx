@@ -291,12 +291,12 @@ const AllocationTimelineTab = ({ configId, groupId }) => {
     const loadOptions = async () => {
       try {
         // Fetch products for this config
-        const prodRes = await api.get(`/supply-chain-configs/${configId}/products`);
+        const prodRes = await api.get(`/supply-chain-config/${configId}/products`);
         const prods = prodRes.data || [];
         setProducts(prods);
 
         // Fetch sites for this config (inventory type only)
-        const siteRes = await api.get(`/supply-chain-configs/${configId}/sites`);
+        const siteRes = await api.get(`/supply-chain-config/${configId}/sites`);
         const sites = (siteRes.data || []).filter(
           (s) => s.master_type === 'INVENTORY' || s.dag_type === 'INVENTORY'
         );

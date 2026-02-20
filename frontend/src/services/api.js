@@ -125,6 +125,24 @@ export const simulationApi = {
     const { data } = await http.get('/supply-chain-config/');
     return data;
   },
+  /**
+   * Get the root baseline config for the current user's group.
+   * Finds the config with parent_config_id=null and scenario_type=BASELINE.
+   * Falls back to the first active config, then the first config.
+   */
+  async getRootSupplyChainConfig() {
+    const { data } = await http.get('/supply-chain-config/');
+    const items = data.items || data || [];
+    if (items.length === 0) return null;
+    // Prefer BASELINE with no parent (root of the tree)
+    const root = items.find(c => !c.parent_config_id && c.scenario_type === 'BASELINE');
+    if (root) return root;
+    // Fallback: first active config
+    const active = items.find(c => c.is_active);
+    if (active) return active;
+    // Last resort: first config
+    return items[0];
+  },
 
   // Model configuration
   async getModelConfig() {
@@ -918,6 +936,26 @@ export const simulationApi = {
       `/mixed-scenarios/${scenarioId}/lead-time-conformal/${participantId}`,
       { params: { coverage } }
     );
+    return data;
+  },
+};
+
+// =============================================================================
+// Collaboration Scenarios (Agentic Authorization Protocol)
+// =============================================================================
+
+export const collaborationApi = {
+  async getScenarios(groupId, { level, status } = {}) {
+    const params = new URLSearchParams();
+    if (groupId) params.append('group_id', groupId);
+    if (level) params.append('level', level);
+    if (status) params.append('status', status);
+    const { data } = await http.get(`/v1/collaboration/scenarios?${params.toString()}`);
+    return data;
+  },
+
+  async getScenario(scenarioCode) {
+    const { data } = await http.get(`/v1/collaboration/scenarios/${scenarioCode}`);
     return data;
   },
 };

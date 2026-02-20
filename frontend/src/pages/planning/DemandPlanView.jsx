@@ -322,11 +322,12 @@ const DemandPlanView = () => {
 
       {/* Summary Cards */}
       {summary && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
           <Card>
             <CardContent className="pt-4">
-              <p className="text-sm text-muted-foreground">Total Forecasts</p>
-              <p className="text-3xl font-bold">{summary.total_forecasts}</p>
+              <p className="text-sm text-muted-foreground">Forecast Records</p>
+              <p className="text-3xl font-bold">{formatNumber(summary.total_forecasts)}</p>
+              <p className="text-xs text-muted-foreground">{summary.period_count || '—'} periods</p>
             </CardContent>
           </Card>
           <Card>
@@ -343,10 +344,21 @@ const DemandPlanView = () => {
           </Card>
           <Card>
             <CardContent className="pt-4">
-              <p className="text-sm text-muted-foreground">Total Demand (P50 / Median)</p>
-              <p className="text-xl font-bold">{formatNumber(summary.total_demand_p50)}</p>
-              <p className="text-sm text-muted-foreground">
-                Median: {formatNumber(summary.total_demand_median ?? summary.total_demand_p50)}
+              <p className="text-sm text-muted-foreground">Avg Demand / Period (units)</p>
+              <p className="text-2xl font-bold">{formatNumber(summary.avg_demand_p50)}</p>
+              <p className="text-xs text-muted-foreground">
+                Median: {formatNumber(summary.avg_demand_median ?? summary.avg_demand_p50)}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4">
+              <p className="text-sm text-muted-foreground">Date Range</p>
+              <p className="text-sm font-bold">
+                {summary.start_date ? new Date(summary.start_date).toLocaleDateString() : '—'}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                to {summary.end_date ? new Date(summary.end_date).toLocaleDateString() : '—'}
               </p>
             </CardContent>
           </Card>

@@ -163,8 +163,15 @@ export default function PlanningHierarchyConfig() {
 
   const fetchSupplyChainConfigs = useCallback(async () => {
     try {
-      const response = await api.get(`/supply-chain-configs?group_id=${groupId}`);
-      setSupplyChainConfigs(response.data);
+      const response = await api.get(`/supply-chain-config/?group_id=${groupId}`);
+      const items = response.data.items || response.data || [];
+      // Sort: root baseline configs first
+      items.sort((a, b) => {
+        const aRoot = !a.parent_config_id && a.scenario_type === 'BASELINE' ? 0 : 1;
+        const bRoot = !b.parent_config_id && b.scenario_type === 'BASELINE' ? 0 : 1;
+        return aRoot - bRoot;
+      });
+      setSupplyChainConfigs(items);
     } catch (err) {
       console.error('Failed to load supply chain configs:', err);
     }

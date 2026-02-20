@@ -57,7 +57,7 @@ const ScenarioTreeViewer = ({ configId, onConfigChange }) => {
   const loadScenarioTree = async () => {
     try {
       setLoading(true);
-      const response = await api.get(`/supply-chain-configs/${configId}/tree`);
+      const response = await api.get(`/supply-chain-config/${configId}/tree`);
       setTreeData(response.data);
     } catch (error) {
       console.error('Failed to load scenario tree:', error);
@@ -75,7 +75,7 @@ const ScenarioTreeViewer = ({ configId, onConfigChange }) => {
 
     try {
       setActionLoading(true);
-      const response = await api.post(`/supply-chain-configs/${configId}/branch`, {
+      const response = await api.post(`/supply-chain-config/${configId}/branch`, {
         name: branchName.trim(),
         description: branchDescription.trim(),
         scenario_type: branchType,
@@ -110,7 +110,7 @@ const ScenarioTreeViewer = ({ configId, onConfigChange }) => {
   const handleCommit = async (childConfigId) => {
     try {
       setActionLoading(true);
-      const response = await api.post(`/supply-chain-configs/${childConfigId}/commit`);
+      const response = await api.post(`/supply-chain-config/${childConfigId}/commit`);
 
       enqueueSnackbar(response.data.message || 'Scenario committed successfully', {
         variant: 'success',
@@ -135,7 +135,7 @@ const ScenarioTreeViewer = ({ configId, onConfigChange }) => {
 
     try {
       setActionLoading(true);
-      const response = await api.post(`/supply-chain-configs/${childConfigId}/rollback`);
+      const response = await api.post(`/supply-chain-config/${childConfigId}/rollback`);
 
       enqueueSnackbar(response.data.message || 'Scenario rolled back successfully', {
         variant: 'success',
@@ -155,7 +155,7 @@ const ScenarioTreeViewer = ({ configId, onConfigChange }) => {
 
   const handleViewEffective = async (childConfigId) => {
     try {
-      const response = await api.get(`/supply-chain-configs/${childConfigId}/effective`);
+      const response = await api.get(`/supply-chain-config/${childConfigId}/effective`);
       console.log('Effective configuration:', response.data);
 
       // TODO: Show in a dialog or navigate to visualization page

@@ -131,11 +131,15 @@ const GraphSAGEDashboard = () => {
 
   const loadScConfigs = useCallback(async () => {
     try {
-      const res = await api.get('/supply-chain-configs');
+      const res = await api.get('/supply-chain-config/');
       const items = res.data.items || res.data || [];
       setScConfigs(items);
       if (items.length > 0 && !selectedScConfig) {
-        setSelectedScConfig(items[0].id.toString());
+        // Auto-select root baseline config (no parent, BASELINE type)
+        const root = items.find(c => !c.parent_config_id && c.scenario_type === 'BASELINE')
+          || items.find(c => c.is_active)
+          || items[0];
+        setSelectedScConfig(root.id.toString());
       }
     } catch (err) {
       console.error('Failed to load SC configs:', err);

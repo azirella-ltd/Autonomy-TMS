@@ -83,7 +83,7 @@ const DecisionProposalManager = ({ configId, scenarioName, onProposalChange }) =
     try {
       setLoading(true);
       const params = statusFilter !== 'all' ? { status: statusFilter } : {};
-      const response = await api.get(`/supply-chain-configs/${configId}/proposals`, { params });
+      const response = await api.get(`/supply-chain-config/${configId}/proposals`, { params });
       setProposals(response.data.proposals);
     } catch (error) {
       console.error('Failed to load proposals:', error);
@@ -101,7 +101,7 @@ const DecisionProposalManager = ({ configId, scenarioName, onProposalChange }) =
 
     try {
       setActionLoading(true);
-      const response = await api.post(`/supply-chain-configs/${configId}/proposals`, {
+      const response = await api.post(`/supply-chain-config/${configId}/proposals`, {
         ...newProposal,
         proposed_by: 'current_user', // TODO: Get from auth context
         proposed_by_type: 'human',
@@ -136,7 +136,7 @@ const DecisionProposalManager = ({ configId, scenarioName, onProposalChange }) =
 
   const handleViewDetails = async (proposalId) => {
     try {
-      const response = await api.get(`/supply-chain-configs/proposals/${proposalId}`);
+      const response = await api.get(`/supply-chain-config/proposals/${proposalId}`);
       setSelectedProposal(response.data);
       setDetailsDialogOpen(true);
     } catch (error) {
@@ -149,7 +149,7 @@ const DecisionProposalManager = ({ configId, scenarioName, onProposalChange }) =
     try {
       setComputingImpact(true);
       const response = await api.post(
-        `/supply-chain-configs/proposals/${proposalId}/compute-impact`,
+        `/supply-chain-config/proposals/${proposalId}/compute-impact`,
         {
           planning_horizon: 52,
           simulation_runs: 1000,
@@ -175,7 +175,7 @@ const DecisionProposalManager = ({ configId, scenarioName, onProposalChange }) =
     try {
       setActionLoading(true);
       const response = await api.post(
-        `/supply-chain-configs/proposals/${proposalId}/approve`,
+        `/supply-chain-config/proposals/${proposalId}/approve`,
         {
           approved_by: 'current_user', // TODO: Get from auth context
           commit_to_parent: true,
@@ -203,7 +203,7 @@ const DecisionProposalManager = ({ configId, scenarioName, onProposalChange }) =
     try {
       setActionLoading(true);
       const response = await api.post(
-        `/supply-chain-configs/proposals/${proposalId}/reject`,
+        `/supply-chain-config/proposals/${proposalId}/reject`,
         {
           rejected_by: 'current_user', // TODO: Get from auth context
           reason: reason || 'No reason provided',

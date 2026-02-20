@@ -132,11 +132,15 @@ const InventoryOptimization = () => {
 
   const loadConfigs = async () => {
     try {
-      const response = await api.get('/supply-chain-configs');
-      setConfigs(response.data.items || response.data || []);
-      if (response.data.items?.length > 0 || response.data?.length > 0) {
-        const items = response.data.items || response.data;
-        setSelectedConfig(items[0].id.toString());
+      const response = await api.get('/supply-chain-config/');
+      const items = response.data.items || response.data || [];
+      setConfigs(items);
+      if (items.length > 0) {
+        // Auto-select root baseline config (no parent, BASELINE type)
+        const root = items.find(c => !c.parent_config_id && c.scenario_type === 'BASELINE')
+          || items.find(c => c.is_active)
+          || items[0];
+        setSelectedConfig(root.id.toString());
       }
     } catch (err) {
       console.error('Failed to load configs:', err);

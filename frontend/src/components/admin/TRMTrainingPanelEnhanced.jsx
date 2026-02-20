@@ -120,8 +120,8 @@ const TRMTrainingPanelEnhanced = () => {
         console.error('Failed to load Powell configs:', err);
         // Fallback: try loading supply chain configs directly
         try {
-          const fallbackResponse = await api.get('/supply-chain-configs');
-          const scConfigs = fallbackResponse.data || [];
+          const fallbackResponse = await api.get('/supply-chain-config/');
+          const scConfigs = fallbackResponse.data.items || fallbackResponse.data || [];
           // Convert to minimal powell config shape
           setPowellConfigs(scConfigs.map(sc => ({
             id: sc.id,
@@ -129,7 +129,11 @@ const TRMTrainingPanelEnhanced = () => {
             config_id: sc.id,
           })));
           if (scConfigs.length > 0) {
-            setSelectedConfigId(scConfigs[0].id);
+            // Auto-select root baseline config (no parent, BASELINE type)
+            const root = scConfigs.find(c => !c.parent_config_id && c.scenario_type === 'BASELINE')
+              || scConfigs.find(c => c.is_active)
+              || scConfigs[0];
+            setSelectedConfigId(root.id);
           }
         } catch {
           setError('Failed to load training configurations');

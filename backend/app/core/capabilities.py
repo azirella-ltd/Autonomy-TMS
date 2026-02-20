@@ -1251,45 +1251,71 @@ def require_capabilities(capabilities: List[str]):
     Raises:
         HTTPException: 403 if user doesn't have required capabilities
     """
+    def _check_capabilities(current_user, db):
+        """Shared capability check logic."""
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required"
+            )
+
+        # System admins have all capabilities
+        user_type = getattr(current_user, 'user_type', None)
+        user_type_str = user_type.value if hasattr(user_type, 'value') else str(user_type) if user_type else ''
+        if getattr(current_user, 'is_superuser', False) or user_type_str == 'SYSTEM_ADMIN':
+            return  # Allowed
+
+        # Load capabilities from capability service (uses RBAC + user_type fallback)
+        user_capabilities = getattr(current_user, '_cached_capabilities', None)
+        if user_capabilities is None:
+            try:
+                from app.services.capability_service import get_user_capabilities_list
+                if db is not None:
+                    user_capabilities = get_user_capabilities_list(current_user, db)
+                else:
+                    cap_set = get_capabilities_for_user_type(user_type_str)
+                    user_capabilities = [cap.value for cap in cap_set.capabilities]
+            except Exception:
+                cap_set = get_capabilities_for_user_type(user_type_str)
+                user_capabilities = [cap.value for cap in cap_set.capabilities]
+            current_user._cached_capabilities = user_capabilities
+
+        user_caps_set = set(user_capabilities)
+        required_caps_set = set(capabilities)
+
+        if not required_caps_set.issubset(user_caps_set):
+            missing_caps = required_caps_set - user_caps_set
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing required capabilities: {', '.join(missing_caps)}"
+            )
+
     def decorator(func: Callable):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            # Extract current_user from kwargs
-            current_user = kwargs.get('current_user')
-            if not current_user:
-                # Try to find it in args (less common)
-                for arg in args:
-                    if hasattr(arg, 'capabilities'):
-                        current_user = arg
-                        break
+        import asyncio
+        import inspect
 
-            if not current_user:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Authentication required"
-                )
-
-            # System admins have all capabilities
-            if current_user.is_superuser or getattr(current_user, 'user_type', None) == 'SYSTEM_ADMIN':
+        if inspect.iscoroutinefunction(func):
+            @wraps(func)
+            async def wrapper(*args, **kwargs):
+                current_user = kwargs.get('current_user')
+                if not current_user:
+                    for arg in args:
+                        if hasattr(arg, 'user_type'):
+                            current_user = arg
+                            break
+                _check_capabilities(current_user, kwargs.get('db'))
                 return await func(*args, **kwargs)
-
-            # Check if user has required capabilities
-            user_capabilities = getattr(current_user, 'capabilities', [])
-            if not user_capabilities:
-                user_capabilities = []
-
-            # Convert to set for efficient checking
-            user_caps_set = set(user_capabilities)
-            required_caps_set = set(capabilities)
-
-            # Check if user has all required capabilities
-            if not required_caps_set.issubset(user_caps_set):
-                missing_caps = required_caps_set - user_caps_set
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Missing required capabilities: {', '.join(missing_caps)}"
-                )
-
-            return await func(*args, **kwargs)
-        return wrapper
+            return wrapper
+        else:
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                current_user = kwargs.get('current_user')
+                if not current_user:
+                    for arg in args:
+                        if hasattr(arg, 'user_type'):
+                            current_user = arg
+                            break
+                _check_capabilities(current_user, kwargs.get('db'))
+                return func(*args, **kwargs)
+            return wrapper
     return decorator

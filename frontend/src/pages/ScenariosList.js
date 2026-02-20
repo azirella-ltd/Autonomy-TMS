@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { isGroupAdmin as isGroupAdminUser } from '../utils/authUtils';
-import simulationApi from '../services/api';
+import simulationApi, { collaborationApi } from '../services/api';
 import { getModelStatus } from '../services/modelService';
 import { emitStartupNotices } from '../utils/startupNotices';
 import {
@@ -35,6 +35,15 @@ import {
   RotateCcw,
   RefreshCw,
   Eye,
+  Shield,
+  ChevronDown,
+  ChevronRight,
+  Bot,
+  ArrowRight,
+  CheckCircle,
+  Clock,
+  AlertTriangle,
+  DollarSign,
 } from 'lucide-react';
 import { cn } from '../lib/utils/cn';
 
@@ -65,6 +74,9 @@ const ScenariosList = () => {
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [modelStatus, setModelStatus] = useState({ is_trained: false });
   const [loadingModelStatus, setLoadingModelStatus] = useState(true);
+  const [collabScenarios, setCollabScenarios] = useState([]);
+  const [collabLoading, setCollabLoading] = useState(true);
+  const [expandedCollab, setExpandedCollab] = useState(null);
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -136,6 +148,23 @@ const ScenariosList = () => {
   useEffect(() => {
     fetchScenarios();
   }, [fetchScenarios]);
+
+  useEffect(() => {
+    const fetchCollabScenarios = async () => {
+      try {
+        setCollabLoading(true);
+        const groupId = user?.group_id;
+        const data = await collaborationApi.getScenarios(groupId);
+        setCollabScenarios(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error('Failed to load collaboration scenarios:', err);
+        setCollabScenarios([]);
+      } finally {
+        setCollabLoading(false);
+      }
+    };
+    fetchCollabScenarios();
+  }, [user?.group_id]);
 
   useEffect(() => {
     if (location.state?.refresh) {
@@ -515,6 +544,229 @@ const ScenariosList = () => {
           </TableBody>
         </Table>
       </TableContainer>
+
+      {/* Collaboration Scenarios (Agentic Authorization Protocol) */}
+      <div className="mt-8">
+        <div className="flex items-center gap-2 mb-4">
+          <Shield className="h-5 w-5 text-blue-500" />
+          <h2 className="text-lg font-bold">Collaboration Scenarios</h2>
+          <Badge variant="info">{collabScenarios.length}</Badge>
+        </div>
+        <p className="text-sm text-muted-foreground mb-4">
+          Cross-functional agent authorization decisions via the Agentic Authorization Protocol (AAP).
+        </p>
+
+        {collabLoading ? (
+          <div className="flex justify-center py-8"><Spinner /></div>
+        ) : collabScenarios.length === 0 ? (
+          <Card>
+            <CardContent className="py-8 text-center text-muted-foreground">
+              No collaboration scenarios found for this group.
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {collabScenarios.map((cs) => {
+              const isExpanded = expandedCollab === cs.scenario_code;
+              const authRequests = cs.authorization_requests || [];
+              const timeline = cs.timeline || [];
+              const scorecard = cs.balanced_scorecard || {};
+
+              const priorityColors = {
+                critical: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+                high: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
+                medium: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
+                low: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
+              };
+              const levelColors = {
+                sop: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
+                tactical: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
+                execution: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300',
+              };
+
+              return (
+                <Card key={cs.scenario_code} className="overflow-hidden">
+                  <div
+                    className="flex items-center gap-3 p-4 cursor-pointer hover:bg-accent/50 transition-colors"
+                    onClick={() => setExpandedCollab(isExpanded ? null : cs.scenario_code)}
+                  >
+                    {isExpanded ? (
+                      <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-xs text-muted-foreground">{cs.scenario_code}</span>
+                        <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', levelColors[cs.level] || '')}>
+                          {cs.level?.toUpperCase()}
+                        </span>
+                        <span className={cn('px-2 py-0.5 rounded-full text-xs font-medium', priorityColors[cs.priority] || '')}>
+                          {cs.priority?.toUpperCase()}
+                        </span>
+                        <Badge variant={cs.status === 'resolved' ? 'success' : 'secondary'}>
+                          {cs.status?.toUpperCase()}
+                        </Badge>
+                      </div>
+                      <h3 className="font-semibold mt-1 truncate">{cs.title}</h3>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-sm font-semibold text-green-600 dark:text-green-400">
+                        +${cs.net_benefit?.toLocaleString()}
+                      </div>
+                      <div className="text-xs text-muted-foreground">net benefit</div>
+                    </div>
+                    <div className="text-right shrink-0 ml-2">
+                      <div className="text-sm font-medium">{authRequests.length}</div>
+                      <div className="text-xs text-muted-foreground">auth requests</div>
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="border-t px-4 pb-4">
+                      {/* Description */}
+                      <p className="text-sm text-muted-foreground mt-3 mb-4">{cs.description}</p>
+
+                      {/* Agent Flow */}
+                      <div className="flex items-center gap-2 mb-4 flex-wrap">
+                        <div className="flex items-center gap-1 bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded text-xs">
+                          <Bot className="h-3 w-3" />
+                          {cs.originating_agent}
+                        </div>
+                        <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                        {(cs.target_agents || []).map((a, i) => (
+                          <div key={i} className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded text-xs">
+                            <Bot className="h-3 w-3" />
+                            {a}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Authorization Requests */}
+                      <h4 className="font-semibold text-sm mb-2">Authorization Requests</h4>
+                      <div className="space-y-2 mb-4">
+                        {authRequests.map((ar, i) => (
+                          <div key={i} className="border rounded-lg p-3 bg-card">
+                            <div className="flex items-center justify-between mb-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-xs">{ar.id}</span>
+                                <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                                <span className="text-sm font-medium">{ar.target_agent}</span>
+                              </div>
+                              <Badge variant={ar.decision === 'AUTHORIZE' ? 'success' : 'destructive'}>
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                {ar.decision}
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground mb-2">{ar.proposed_action?.type?.replace(/_/g, ' ')}</p>
+                            <p className="text-sm">{ar.justification}</p>
+                            {ar.decision_reason && (
+                              <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                                {ar.decision_reason}
+                              </p>
+                            )}
+
+                            {/* Scorecard Impact */}
+                            {ar.scorecard_impact && (
+                              <div className="grid grid-cols-4 gap-2 mt-2">
+                                {Object.entries(ar.scorecard_impact).map(([quad, metrics]) => (
+                                  <div key={quad} className="bg-accent/30 rounded p-2">
+                                    <div className="text-xs font-medium capitalize mb-1">{quad}</div>
+                                    {Object.entries(metrics || {}).map(([k, v]) => (
+                                      <div key={k} className="text-xs flex justify-between">
+                                        <span className="text-muted-foreground truncate mr-1">{k.replace(/_/g, ' ')}</span>
+                                        <span className={cn(
+                                          'font-mono shrink-0',
+                                          v?.status === 'GREEN' ? 'text-green-600' :
+                                          v?.status === 'YELLOW' ? 'text-yellow-600' :
+                                          v?.status === 'RED' ? 'text-red-600' : ''
+                                        )}>
+                                          {v?.status || ''}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Timeline */}
+                      {timeline.length > 0 && (
+                        <>
+                          <h4 className="font-semibold text-sm mb-2">Timeline</h4>
+                          <div className="relative pl-4 border-l-2 border-blue-200 dark:border-blue-800 space-y-2 mb-4">
+                            {timeline.map((evt, i) => (
+                              <div key={i} className="relative">
+                                <div className="absolute -left-[21px] w-2.5 h-2.5 rounded-full bg-blue-500 mt-1.5" />
+                                <div className="flex items-baseline gap-2">
+                                  <span className="text-xs font-mono text-muted-foreground shrink-0">
+                                    {evt.timestamp?.split('T')[1]?.slice(0, 8) || evt.timestamp}
+                                  </span>
+                                  <span className="text-sm">{evt.description || evt.event}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+
+                      {/* Aggregate Balanced Scorecard */}
+                      {Object.keys(scorecard).length > 0 && (
+                        <>
+                          <h4 className="font-semibold text-sm mb-2">Balanced Scorecard (Aggregate)</h4>
+                          <div className="grid grid-cols-4 gap-3">
+                            {Object.entries(scorecard).map(([quad, metrics]) => (
+                              <Card key={quad} className="p-3">
+                                <div className="text-xs font-semibold capitalize mb-2">{quad}</div>
+                                {Object.entries(metrics || {}).map(([k, v]) => (
+                                  <div key={k} className="flex justify-between text-xs mb-1">
+                                    <span className="text-muted-foreground">{k.replace(/_/g, ' ')}</span>
+                                    <span className={cn(
+                                      'font-medium',
+                                      v?.status === 'GREEN' ? 'text-green-600' :
+                                      v?.status === 'YELLOW' ? 'text-yellow-600' :
+                                      v?.status === 'RED' ? 'text-red-600' : ''
+                                    )}>
+                                      {typeof v === 'object' ? v?.status || JSON.stringify(v) : String(v)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </Card>
+                            ))}
+                          </div>
+                        </>
+                      )}
+
+                      {/* Resolution */}
+                      {cs.resolution && (
+                        <div className="mt-3 p-3 bg-green-50 dark:bg-green-900/10 rounded-lg border border-green-200 dark:border-green-800">
+                          <div className="flex items-center gap-1 text-sm font-semibold text-green-700 dark:text-green-400 mb-1">
+                            <CheckCircle className="h-4 w-4" />
+                            Resolution: {cs.resolution.outcome}
+                          </div>
+                          <p className="text-sm">{cs.resolution.summary}</p>
+                          {cs.resolution.total_cost != null && (
+                            <div className="flex gap-4 mt-2 text-xs">
+                              <span>Total Cost: <strong>${cs.resolution.total_cost?.toLocaleString()}</strong></span>
+                              <span>Revenue Protected: <strong>${cs.resolution.revenue_protected?.toLocaleString()}</strong></span>
+                              <span className="text-green-600 dark:text-green-400 font-semibold">
+                                Net Benefit: +${cs.resolution.net_benefit?.toLocaleString()}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

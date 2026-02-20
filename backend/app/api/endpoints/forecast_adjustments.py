@@ -10,7 +10,7 @@ Provides CRUD operations for forecast adjustments:
 
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -22,7 +22,8 @@ from app.models.user import User
 from app.models.forecast_adjustment import (
     ForecastAdjustment, ForecastVersion, BulkAdjustmentTemplate
 )
-from app.models.sc_entities import Forecast
+from app.models.sc_entities import Forecast, Product
+from app.models.supply_chain_config import Site
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -136,116 +137,119 @@ def get_forecast_table(
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
     time_granularity: str = Query("week", pattern="^(day|week|month)$"),
+    limit: int = Query(500, ge=1, le=5000, description="Max forecast rows to return"),
     db: Session = Depends(get_sync_db),
     current_user: User = Depends(deps.get_current_active_user)
 ):
     """
-    Get editable forecast table data.
+    Get editable forecast table data from the database.
 
     Returns forecast data in a format suitable for table editing,
     with base forecasts, adjustments, and cell-level metadata.
     """
-    # Parse filters
-    product_list = product_ids.split(",") if product_ids else None
-    site_list = site_ids.split(",") if site_ids else None
+    from sqlalchemy import or_
 
-    # Default date range: next 12 weeks
-    if not start_date:
-        start_date = datetime.utcnow()
-    if not end_date:
-        end_date = start_date + timedelta(weeks=12)
-
-    # Generate periods based on granularity
-    periods = _generate_periods(start_date, end_date, time_granularity)
-
-    # Get forecasts (mock data for now)
-    # In production, query from forecast table with filters
-    cells, products, sites = _get_mock_forecast_cells(
-        periods, product_list, site_list, config_id
+    # Build base query with joins for product/site names
+    query = (
+        db.query(Forecast, Product.description, Site.name)
+        .outerjoin(Product, Forecast.product_id == Product.id)
+        .outerjoin(Site, Forecast.site_id == Site.id)
+        .filter(
+            or_(
+                Forecast.is_active.in_(["Y", "y", "true", "TRUE", "1"]),
+                Forecast.is_active.is_(None),
+            )
+        )
     )
+
+    # Apply filters
+    if config_id:
+        query = query.filter(Forecast.config_id == config_id)
+
+    if product_ids:
+        product_list = [p.strip() for p in product_ids.split(",")]
+        query = query.filter(Forecast.product_id.in_(product_list))
+
+    if site_ids:
+        site_list = [s.strip() for s in site_ids.split(",")]
+        query = query.filter(Forecast.site_id.in_(site_list))
+
+    if start_date:
+        query = query.filter(Forecast.forecast_date >= start_date)
+
+    if end_date:
+        query = query.filter(Forecast.forecast_date <= end_date)
+
+    # Order and limit
+    query = query.order_by(Forecast.product_id, Forecast.site_id, Forecast.forecast_date)
+    results = query.limit(limit).all()
+
+    if not results:
+        return ForecastTableResponse(
+            products=[], sites=[], periods=[], cells=[], total_rows=0
+        )
+
+    # Build cells and collect unique products/sites/periods
+    cells = []
+    products_map: Dict[str, str] = {}
+    sites_map: Dict[str, str] = {}
+    periods_set: set = set()
+
+    for forecast, product_desc, site_name in results:
+        pid = str(forecast.product_id) if forecast.product_id else "unknown"
+        sid = str(forecast.site_id) if forecast.site_id else "unknown"
+        p_name = product_desc or pid
+        s_name = site_name or f"Site {sid}"
+
+        products_map[pid] = p_name
+        sites_map[sid] = s_name
+
+        # Format period label based on granularity
+        if forecast.forecast_date:
+            if time_granularity == "day":
+                period = forecast.forecast_date.strftime("%Y-%m-%d")
+            elif time_granularity == "month":
+                period = forecast.forecast_date.strftime("%Y-%m")
+            else:  # week
+                d = forecast.forecast_date
+                period = f"{d.year}-W{d.isocalendar()[1]:02d}"
+        else:
+            period = "unknown"
+
+        periods_set.add(period)
+
+        base = float(forecast.forecast_p50 or forecast.forecast_quantity or 0)
+        override = float(forecast.user_override_quantity) if forecast.user_override_quantity else None
+        adjusted = override if override is not None else base
+        has_adj = override is not None
+
+        cells.append(ForecastCell(
+            forecast_id=forecast.id,
+            product_id=pid,
+            product_name=p_name,
+            site_id=sid,
+            site_name=s_name,
+            period=period,
+            base_forecast=base,
+            adjusted_forecast=adjusted,
+            user_override=override,
+            has_adjustments=has_adj,
+            adjustment_count=1 if has_adj else 0,
+        ))
+
+    # Sort periods chronologically
+    periods = sorted(periods_set)
+
+    products = [{"id": k, "name": v} for k, v in sorted(products_map.items())]
+    sites = [{"id": k, "name": v} for k, v in sorted(sites_map.items())]
 
     return ForecastTableResponse(
         products=products,
         sites=sites,
         periods=periods,
         cells=cells,
-        total_rows=len(cells)
+        total_rows=len(cells),
     )
-
-
-def _generate_periods(start: datetime, end: datetime, granularity: str) -> List[str]:
-    """Generate period labels based on granularity."""
-    periods = []
-    current = start
-
-    while current < end:
-        if granularity == "day":
-            periods.append(current.strftime("%Y-%m-%d"))
-            current += timedelta(days=1)
-        elif granularity == "week":
-            # ISO week format
-            periods.append(f"{current.year}-W{current.isocalendar()[1]:02d}")
-            current += timedelta(weeks=1)
-        elif granularity == "month":
-            periods.append(current.strftime("%Y-%m"))
-            # Move to next month
-            if current.month == 12:
-                current = current.replace(year=current.year + 1, month=1)
-            else:
-                current = current.replace(month=current.month + 1)
-
-    return periods[:12]  # Limit to 12 periods
-
-
-def _get_mock_forecast_cells(
-    periods: List[str],
-    product_ids: Optional[List[str]],
-    site_ids: Optional[List[str]],
-    config_id: Optional[int]
-) -> tuple:
-    """Generate mock forecast data for development."""
-    import random
-
-    # Mock products
-    products = [
-        {"id": "PROD-001", "name": "Brake Pads - Premium"},
-        {"id": "PROD-002", "name": "Oil Filter - Standard"},
-        {"id": "PROD-003", "name": "Air Filter - High Performance"},
-    ]
-
-    # Mock sites
-    sites = [
-        {"id": "SITE-ATL", "name": "Atlanta DC"},
-        {"id": "SITE-CHI", "name": "Chicago DC"},
-        {"id": "SITE-LAX", "name": "Los Angeles DC"},
-    ]
-
-    cells = []
-    forecast_id = 1
-
-    for product in products:
-        for site in sites:
-            for period in periods:
-                base_forecast = random.randint(80, 150)
-                adjustment = random.choice([0, 0, 0, random.randint(-20, 30)])
-                adjusted = base_forecast + adjustment
-
-                cells.append(ForecastCell(
-                    forecast_id=forecast_id,
-                    product_id=product["id"],
-                    product_name=product["name"],
-                    site_id=site["id"],
-                    site_name=site["name"],
-                    period=period,
-                    base_forecast=float(base_forecast),
-                    adjusted_forecast=float(adjusted),
-                    user_override=float(adjusted) if adjustment != 0 else None,
-                    has_adjustments=adjustment != 0,
-                    adjustment_count=1 if adjustment != 0 else 0
-                ))
-                forecast_id += 1
-
-    return cells, products, sites
 
 
 # ============================================================================
@@ -264,9 +268,10 @@ def create_adjustment(
     Applies the adjustment to the specified forecast and records
     the change in the adjustment history.
     """
-    # Get the forecast (mock for now)
-    # In production: forecast = db.get(Forecast, adjustment.forecast_id)
-    original_value = 100.0  # Mock original value
+    forecast = db.get(Forecast, adjustment.forecast_id)
+    if not forecast:
+        raise HTTPException(status_code=404, detail=f"Forecast {adjustment.forecast_id} not found")
+    original_value = float(forecast.forecast_p50 or forecast.forecast_quantity or 0)
 
     # Calculate new value based on adjustment type
     if adjustment.adjustment_type == "absolute":
@@ -333,8 +338,10 @@ def create_bulk_adjustment(
     results = []
 
     for forecast_id in bulk.forecast_ids:
-        # Get original value (mock for now)
-        original_value = 100.0
+        forecast = db.get(Forecast, forecast_id)
+        if not forecast:
+            continue
+        original_value = float(forecast.forecast_p50 or forecast.forecast_quantity or 0)
 
         # Calculate new value
         if bulk.adjustment_type == "delta":

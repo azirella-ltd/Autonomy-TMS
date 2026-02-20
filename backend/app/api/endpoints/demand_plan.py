@@ -333,19 +333,25 @@ def get_demand_plan_summary(
     product_count = db.query(func.count(distinct(Forecast.product_id))).filter(_active_filter()).scalar() or 0
     site_count = db.query(func.count(distinct(Forecast.site_id))).filter(_active_filter()).scalar() or 0
     start_date, end_date = db.query(func.min(Forecast.forecast_date), func.max(Forecast.forecast_date)).filter(_active_filter()).first()
-    total_demand = db.query(func.sum(Forecast.forecast_p50)).filter(_active_filter()).scalar() or 0.0
-    total_demand_median = db.query(func.sum(Forecast.forecast_median)).filter(_active_filter()).scalar() or 0.0
-    if total_demand_median == 0.0:
-        total_demand_median = total_demand
+
+    # Compute average demand per forecast period (meaningful metric)
+    avg_demand = db.query(func.avg(Forecast.forecast_p50)).filter(_active_filter()).scalar() or 0.0
+    avg_demand_median = db.query(func.avg(Forecast.forecast_median)).filter(_active_filter()).scalar()
+    if not avg_demand_median:
+        avg_demand_median = avg_demand
+
+    # Count distinct forecast periods (weeks) for context
+    period_count = db.query(func.count(distinct(Forecast.forecast_date))).filter(_active_filter()).scalar() or 0
 
     return {
         "total_forecasts": int(total_forecasts),
         "product_count": int(product_count),
         "site_count": int(site_count),
+        "period_count": int(period_count),
         "start_date": start_date,
         "end_date": end_date,
-        "total_demand_p50": float(total_demand),
-        "total_demand_median": float(total_demand_median),
+        "avg_demand_p50": round(float(avg_demand), 1),
+        "avg_demand_median": round(float(avg_demand_median), 1),
     }
 
 
