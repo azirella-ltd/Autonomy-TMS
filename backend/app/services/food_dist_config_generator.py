@@ -519,6 +519,7 @@ class FoodDistConfigGenerator:
         admin_email: str = "admin@distdemo.com",
         admin_name: str = "Food Dist Admin",
         random_seed: Optional[int] = 42,
+        existing_group_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Generate the complete Food Dist configuration.
@@ -528,6 +529,7 @@ class FoodDistConfigGenerator:
             admin_email: Email for the group admin
             admin_name: Name for the group admin
             random_seed: Seed for reproducible random generation
+            existing_group_id: If provided, skip group/admin creation and use this group
 
         Returns:
             Summary of created entities
@@ -537,8 +539,45 @@ class FoodDistConfigGenerator:
 
         logger.info(f"Generating Food Dist configuration: {group_name}")
 
-        # 1. Create admin user and group together (chicken-egg dependency)
-        admin, self.group = await self._create_admin_and_group(group_name, admin_email, admin_name)
+        # 1. Create or load group
+        admin = None
+        if existing_group_id:
+            # Use existing group — skip admin/group creation
+            result = await self.db.execute(
+                select(Group).where(Group.id == existing_group_id)
+            )
+            self.group = result.scalar_one_or_none()
+            if not self.group:
+                raise ValueError(f"Group with id={existing_group_id} not found")
+            logger.info(f"Using existing group: {self.group.name} (ID: {self.group.id})")
+        else:
+            admin, self.group = await self._create_admin_and_group(group_name, admin_email, admin_name)
+
+        # 2b. Check if config already exists for this group
+        existing_config = await self.db.execute(
+            select(SupplyChainConfig).where(
+                SupplyChainConfig.group_id == self.group.id,
+                SupplyChainConfig.name == "Food Dist Distribution Network",
+            )
+        )
+        existing_config = existing_config.scalar_one_or_none()
+        if existing_config:
+            logger.info(f"SC config already exists for group {self.group.id}: {existing_config.name} (ID: {existing_config.id})")
+            return {
+                "group_id": self.group.id,
+                "group_name": self.group.name,
+                "admin_user_id": admin.id if admin else None,
+                "config_id": existing_config.id,
+                "dc_node_id": None,
+                "suppliers_created": 0,
+                "customers_created": 0,
+                "products_created": 0,
+                "lanes_created": 0,
+                "vendor_products_created": 0,
+                "forecasts_created": 0,
+                "policies_created": 0,
+                "summary": {"status": "already_exists"},
+            }
 
         # 3. Create supply chain config
         self.sc_config = await self._create_sc_config()
@@ -580,7 +619,7 @@ class FoodDistConfigGenerator:
         return {
             "group_id": self.group.id,
             "group_name": group_name,
-            "admin_user_id": admin.id,
+            "admin_user_id": admin.id if admin else None,
             "config_id": self.sc_config.id,
             "dc_node_id": dc_node.id,
             "suppliers_created": len(supplier_nodes),
@@ -907,6 +946,9 @@ class FoodDistConfigGenerator:
                     unit_cost=product_def.unit_cost,
                     config_id=self.sc_config.id,
                     is_active="true",  # SC uses string 'true'/'false'
+                    category=group_def.category,
+                    family=group_def.name,
+                    product_group_name=group_def.code,
                 )
                 self.db.add(product)
                 products.append(product)
@@ -1374,6 +1416,7 @@ async def generate_food_dist_config(
     group_name: str = "Food Dist",
     admin_email: str = "admin@distdemo.com",
     admin_name: str = "Food Dist Admin",
+    existing_group_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Convenience function to generate Food Dist configuration.
@@ -1381,12 +1424,16 @@ async def generate_food_dist_config(
     Usage:
         from app.services.food_dist_config_generator import generate_food_dist_config
         result = await generate_food_dist_config(db)
+
+        # Or with existing group:
+        result = await generate_food_dist_config(db, existing_group_id=14)
     """
     generator = FoodDistConfigGenerator(db)
     return await generator.generate(
         group_name=group_name,
         admin_email=admin_email,
         admin_name=admin_name,
+        existing_group_id=existing_group_id,
     )
 
 

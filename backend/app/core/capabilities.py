@@ -72,13 +72,26 @@ class Capability(str, Enum):
     MANAGE_ORDER_PLANNING = "manage_order_planning"
     VIEW_DEMAND_PLANNING = "view_demand_planning"
     MANAGE_DEMAND_PLANNING = "manage_demand_planning"
+    VIEW_FORECASTING = "view_forecasting"  # ML-based statistical forecast generation
+    VIEW_DEMAND_COLLABORATION = "view_demand_collaboration"  # Demand collaboration workspace
     VIEW_FORECAST_EXCEPTIONS = "view_forecast_exceptions"  # View forecast exception alerts
     MANAGE_FORECAST_EXCEPTIONS = "manage_forecast_exceptions"  # Manage and resolve forecast exceptions
     VIEW_SUPPLY_PLANNING = "view_supply_planning"
     MANAGE_SUPPLY_PLANNING = "manage_supply_planning"
+    VIEW_SUPPLY_PLAN = "view_supply_plan"  # View supply plan results
     VIEW_MPS = "view_mps"  # Master Production Scheduling
     MANAGE_MPS = "manage_mps"  # Create and manage MPS
     APPROVE_MPS = "approve_mps"  # Approve MPS plans
+    VIEW_LOT_SIZING = "view_lot_sizing"  # Lot sizing within MPS
+    VIEW_CAPACITY_CHECK = "view_capacity_check"  # Rough-cut capacity check
+    VIEW_INVENTORY_OPTIMIZATION = "view_inventory_optimization"  # Safety stock and reorder optimization
+    VIEW_SOP = "view_sop"  # Sales & Operations Planning
+    VIEW_NETWORK_DESIGN = "view_network_design"  # Network design and optimization
+    VIEW_PRODUCTION_PROCESS = "view_production_process"  # Manufacturing process definitions
+    VIEW_SOURCING_ALLOCATION = "view_sourcing_allocation"  # Sourcing rules and allocation
+    VIEW_RESOURCE_CAPACITY = "view_resource_capacity"  # Resource capacity planning
+    VIEW_KPI_MONITORING = "view_kpi_monitoring"  # KPI monitoring dashboards
+    VIEW_MRP = "view_mrp"  # Material Requirements Planning
     VIEW_OPTIMIZATION = "view_optimization"
     RUN_OPTIMIZATION = "run_optimization"
 
@@ -90,6 +103,9 @@ class Capability(str, Enum):
     MANAGE_CAPACITY_PLANNING = "manage_capacity_planning"  # Create and manage capacity plans
     VIEW_SUPPLIERS = "view_suppliers"  # View supplier master data
     MANAGE_SUPPLIERS = "manage_suppliers"  # Create and manage suppliers
+    VIEW_SUPPLIER_MANAGEMENT = "view_supplier_management"  # Supplier management dashboard
+    VIEW_VENDOR_LEAD_TIMES = "view_vendor_lead_times"  # Vendor lead time management
+    VIEW_ORDER_MANAGEMENT = "view_order_management"  # Order management (PO/TO/MO)
     VIEW_INVENTORY_PROJECTION = "view_inventory_projection"  # View ATP/CTP projections
     VIEW_SALES_FORECAST = "view_sales_forecast"  # View sales forecasts
     MANAGE_SALES_FORECAST = "manage_sales_forecast"  # Create and manage sales forecasts
@@ -105,6 +121,8 @@ class Capability(str, Enum):
     MANAGE_BACKORDERS = "manage_backorders"  # Manage and prioritize backorders
 
     # Additional Order Types (Sprint 6 - Phase 3)
+    VIEW_SERVICE_ORDERS = "view_service_orders"  # View service orders
+    MANAGE_SERVICE_ORDERS = "manage_service_orders"  # Create and manage service orders
     VIEW_PROJECT_ORDERS = "view_project_orders"  # View project orders
     MANAGE_PROJECT_ORDERS = "manage_project_orders"  # Create and manage project orders
     APPROVE_PROJECT_ORDERS = "approve_project_orders"  # Approve project orders
@@ -116,6 +134,9 @@ class Capability(str, Enum):
     APPROVE_TURNAROUND_ORDERS = "approve_turnaround_orders"  # Approve turnaround orders
 
     # AI & ML Models
+    VIEW_AI_AGENTS = "view_ai_agents"  # View AI agents and assistant
+    MANAGE_AI_AGENTS = "manage_ai_agents"  # Configure and manage AI agents
+    VIEW_SCENARIO_COMPARISON = "view_scenario_comparison"  # Side-by-side scenario comparison
     USE_AI_ASSISTANT = "use_ai_assistant"
     VIEW_TRM_TRAINING = "view_trm_training"
     START_TRM_TRAINING = "start_trm_training"
@@ -189,6 +210,8 @@ class Capability(str, Enum):
     VIEW_GOVERNANCE = "view_governance"
     MANAGE_GOVERNANCE = "manage_governance"
     MANAGE_PERMISSIONS = "manage_permissions"
+    MANAGE_ROLES = "manage_roles"  # Configure roles and permissions
+    MANAGE_GROUP_USERS = "manage_group_users"  # Manage users within a group (SAP data mgmt access)
     MANAGE_APPROVAL_TEMPLATES = "manage_approval_templates"  # Configure multi-level approval workflows
 
     # System-level
@@ -262,11 +285,24 @@ GROUP_ADMIN_CAPABILITIES = CapabilitySet(
         Capability.MANAGE_ORDER_PLANNING,
         Capability.VIEW_DEMAND_PLANNING,
         Capability.MANAGE_DEMAND_PLANNING,
+        Capability.VIEW_FORECASTING,
+        Capability.VIEW_DEMAND_COLLABORATION,
         Capability.VIEW_SUPPLY_PLANNING,
         Capability.MANAGE_SUPPLY_PLANNING,
+        Capability.VIEW_SUPPLY_PLAN,
         Capability.VIEW_MPS,
         Capability.MANAGE_MPS,
         Capability.APPROVE_MPS,
+        Capability.VIEW_LOT_SIZING,
+        Capability.VIEW_CAPACITY_CHECK,
+        Capability.VIEW_INVENTORY_OPTIMIZATION,
+        Capability.VIEW_SOP,
+        Capability.VIEW_NETWORK_DESIGN,
+        Capability.VIEW_PRODUCTION_PROCESS,
+        Capability.VIEW_SOURCING_ALLOCATION,
+        Capability.VIEW_RESOURCE_CAPACITY,
+        Capability.VIEW_KPI_MONITORING,
+        Capability.VIEW_MRP,
         Capability.VIEW_OPTIMIZATION,
         Capability.RUN_OPTIMIZATION,
 
@@ -278,6 +314,9 @@ GROUP_ADMIN_CAPABILITIES = CapabilitySet(
         Capability.MANAGE_CAPACITY_PLANNING,
         Capability.VIEW_SUPPLIERS,
         Capability.MANAGE_SUPPLIERS,
+        Capability.VIEW_SUPPLIER_MANAGEMENT,
+        Capability.VIEW_VENDOR_LEAD_TIMES,
+        Capability.VIEW_ORDER_MANAGEMENT,
         Capability.VIEW_INVENTORY_PROJECTION,
         Capability.VIEW_SALES_FORECAST,
         Capability.MANAGE_SALES_FORECAST,
@@ -286,6 +325,7 @@ GROUP_ADMIN_CAPABILITIES = CapabilitySet(
         Capability.APPROVE_CONSENSUS_DEMAND,
         Capability.VIEW_SCENARIOS,
         Capability.MANAGE_SCENARIOS,
+        Capability.VIEW_SCENARIO_COMPARISON,
         Capability.RUN_MONTE_CARLO,
         Capability.VIEW_FULFILLMENT_ORDERS,
         Capability.MANAGE_FULFILLMENT_ORDERS,
@@ -293,6 +333,8 @@ GROUP_ADMIN_CAPABILITIES = CapabilitySet(
         Capability.MANAGE_BACKORDERS,
 
         # Additional Order Types (Sprint 6) - Full access
+        Capability.VIEW_SERVICE_ORDERS,
+        Capability.MANAGE_SERVICE_ORDERS,
         Capability.VIEW_PROJECT_ORDERS,
         Capability.MANAGE_PROJECT_ORDERS,
         Capability.APPROVE_PROJECT_ORDERS,
@@ -305,6 +347,8 @@ GROUP_ADMIN_CAPABILITIES = CapabilitySet(
 
         # AI/ML - View only + AI Assistant
         Capability.USE_AI_ASSISTANT,
+        Capability.VIEW_AI_AGENTS,
+        Capability.MANAGE_AI_AGENTS,
         Capability.VIEW_TRM_TRAINING,
         Capability.VIEW_GNN_TRAINING,
         Capability.VIEW_RL_TRAINING,
@@ -351,6 +395,8 @@ GROUP_ADMIN_CAPABILITIES = CapabilitySet(
         Capability.CREATE_USER,
         Capability.EDIT_USER,
         Capability.MANAGE_PERMISSIONS,
+        Capability.MANAGE_ROLES,
+        Capability.MANAGE_GROUP_USERS,
         Capability.MANAGE_APPROVAL_TEMPLATES,
 
         # Collaboration Hub (Sprint 5) - Full access
@@ -435,28 +481,41 @@ SC_VP_CAPABILITIES = CapabilitySet(
         Capability.VIEW_NTIER_VISIBILITY,
 
         # Strategic Planning - Full authority
+        Capability.VIEW_SOP,
+        Capability.VIEW_NETWORK_DESIGN,
         Capability.VIEW_DEMAND_PLANNING,
         Capability.MANAGE_DEMAND_PLANNING,
+        Capability.VIEW_FORECASTING,
+        Capability.VIEW_DEMAND_COLLABORATION,
         Capability.VIEW_SUPPLY_PLANNING,
         Capability.MANAGE_SUPPLY_PLANNING,
+        Capability.VIEW_SUPPLY_PLAN,
         Capability.VIEW_CONSENSUS_DEMAND,
         Capability.MANAGE_CONSENSUS_DEMAND,
         Capability.APPROVE_CONSENSUS_DEMAND,  # Strategic approval
         Capability.VIEW_SCENARIOS,
         Capability.MANAGE_SCENARIOS,
+        Capability.VIEW_SCENARIO_COMPARISON,
         Capability.RUN_MONTE_CARLO,
         Capability.VIEW_OPTIMIZATION,
         Capability.RUN_OPTIMIZATION,
+        Capability.VIEW_KPI_MONITORING,
+        Capability.VIEW_INVENTORY_OPTIMIZATION,
+        Capability.VIEW_SOURCING_ALLOCATION,
 
         # Tactical Planning - Approval authority
         Capability.VIEW_MPS,
         Capability.MANAGE_MPS,
         Capability.APPROVE_MPS,  # Strategic approval
+        Capability.VIEW_LOT_SIZING,
+        Capability.VIEW_CAPACITY_CHECK,
         Capability.VIEW_CAPACITY_PLANNING,
         Capability.MANAGE_CAPACITY_PLANNING,
+        Capability.VIEW_RESOURCE_CAPACITY,
 
         # AI Model Training - VIEW ONLY (training is GROUP_ADMIN responsibility)
         Capability.USE_AI_ASSISTANT,
+        Capability.VIEW_AI_AGENTS,
         Capability.VIEW_TRM_TRAINING,
         Capability.VIEW_GNN_TRAINING,
         Capability.VIEW_RL_TRAINING,
@@ -498,11 +557,17 @@ SC_VP_CAPABILITIES = CapabilitySet(
         # View operational items (visibility, not management)
         Capability.VIEW_ORDER_PLANNING,
         Capability.VIEW_PRODUCTION_ORDERS,
+        Capability.VIEW_PRODUCTION_PROCESS,
+        Capability.VIEW_MRP,
+        Capability.VIEW_ORDER_MANAGEMENT,
         Capability.VIEW_SUPPLIERS,
+        Capability.VIEW_SUPPLIER_MANAGEMENT,
+        Capability.VIEW_VENDOR_LEAD_TIMES,
         Capability.VIEW_INVENTORY_PROJECTION,
         Capability.VIEW_SALES_FORECAST,
         Capability.VIEW_FULFILLMENT_ORDERS,
         Capability.VIEW_BACKORDERS,
+        Capability.VIEW_SERVICE_ORDERS,
         Capability.VIEW_SHIPMENT_TRACKING,
         Capability.VIEW_INVENTORY_VISIBILITY,
     }
@@ -545,29 +610,43 @@ SOP_DIRECTOR_CAPABILITIES = CapabilitySet(
         Capability.VIEW_NTIER_VISIBILITY,
 
         # S&OP Planning - Full tactical authority
+        Capability.VIEW_SOP,
         Capability.VIEW_DEMAND_PLANNING,
         Capability.MANAGE_DEMAND_PLANNING,
+        Capability.VIEW_FORECASTING,
+        Capability.VIEW_DEMAND_COLLABORATION,
         Capability.VIEW_FORECAST_EXCEPTIONS,
         Capability.MANAGE_FORECAST_EXCEPTIONS,
         Capability.VIEW_SUPPLY_PLANNING,
         Capability.MANAGE_SUPPLY_PLANNING,
+        Capability.VIEW_SUPPLY_PLAN,
         Capability.VIEW_CONSENSUS_DEMAND,
         Capability.MANAGE_CONSENSUS_DEMAND,
         Capability.VIEW_SALES_FORECAST,
         Capability.MANAGE_SALES_FORECAST,
         Capability.VIEW_SCENARIOS,
         Capability.MANAGE_SCENARIOS,
+        Capability.VIEW_SCENARIO_COMPARISON,
         Capability.RUN_MONTE_CARLO,
         Capability.VIEW_OPTIMIZATION,
+        Capability.VIEW_INVENTORY_OPTIMIZATION,
+        Capability.VIEW_SOURCING_ALLOCATION,
+        Capability.VIEW_KPI_MONITORING,
+        Capability.VIEW_PRODUCTION_PROCESS,
+        Capability.VIEW_RESOURCE_CAPACITY,
 
         # MPS - Manage but not approve (approval goes to VP)
         Capability.VIEW_MPS,
         Capability.MANAGE_MPS,
+        Capability.VIEW_LOT_SIZING,
+        Capability.VIEW_CAPACITY_CHECK,
         Capability.VIEW_CAPACITY_PLANNING,
         Capability.MANAGE_CAPACITY_PLANNING,
+        Capability.VIEW_MRP,
 
         # AI Models - View only (cannot train, CFA is VP responsibility)
         Capability.USE_AI_ASSISTANT,
+        Capability.VIEW_AI_AGENTS,
         Capability.VIEW_TRM_TRAINING,
         Capability.VIEW_GNN_TRAINING,
         Capability.VIEW_RL_TRAINING,
@@ -603,13 +682,17 @@ SOP_DIRECTOR_CAPABILITIES = CapabilitySet(
         Capability.VIEW_ORDER_PLANNING,
         Capability.MANAGE_ORDER_PLANNING,
         Capability.VIEW_PRODUCTION_ORDERS,
+        Capability.VIEW_ORDER_MANAGEMENT,
         Capability.VIEW_SUPPLIERS,
         Capability.MANAGE_SUPPLIERS,
+        Capability.VIEW_SUPPLIER_MANAGEMENT,
+        Capability.VIEW_VENDOR_LEAD_TIMES,
         Capability.VIEW_INVENTORY_PROJECTION,
         Capability.VIEW_FULFILLMENT_ORDERS,
         Capability.MANAGE_FULFILLMENT_ORDERS,
         Capability.VIEW_BACKORDERS,
         Capability.MANAGE_BACKORDERS,
+        Capability.VIEW_SERVICE_ORDERS,
         Capability.VIEW_SHIPMENT_TRACKING,
         Capability.VIEW_INVENTORY_VISIBILITY,
 
@@ -701,17 +784,28 @@ MPS_MANAGER_CAPABILITIES = CapabilitySet(
 
         # Planning - Operational execution focus
         Capability.VIEW_DEMAND_PLANNING,
+        Capability.VIEW_FORECASTING,
+        Capability.VIEW_DEMAND_COLLABORATION,
         Capability.VIEW_FORECAST_EXCEPTIONS,
         Capability.VIEW_SUPPLY_PLANNING,
+        Capability.VIEW_SUPPLY_PLAN,
         Capability.VIEW_CONSENSUS_DEMAND,
         Capability.VIEW_SALES_FORECAST,
         Capability.VIEW_SCENARIOS,
         Capability.VIEW_OPTIMIZATION,
+        Capability.VIEW_SOURCING_ALLOCATION,
+        Capability.VIEW_KPI_MONITORING,
+        Capability.VIEW_PRODUCTION_PROCESS,
+        Capability.VIEW_RESOURCE_CAPACITY,
 
         # MPS - Core operational responsibility
         Capability.VIEW_MPS,
         Capability.MANAGE_MPS,  # Manage MPS execution
+        Capability.VIEW_LOT_SIZING,
+        Capability.VIEW_CAPACITY_CHECK,
         Capability.VIEW_CAPACITY_PLANNING,
+        Capability.VIEW_MRP,
+        Capability.VIEW_INVENTORY_OPTIMIZATION,
 
         # Production and Orders - Full operational control
         Capability.VIEW_ORDER_PLANNING,
@@ -719,12 +813,16 @@ MPS_MANAGER_CAPABILITIES = CapabilitySet(
         Capability.VIEW_PRODUCTION_ORDERS,
         Capability.MANAGE_PRODUCTION_ORDERS,
         Capability.RELEASE_PRODUCTION_ORDERS,
+        Capability.VIEW_ORDER_MANAGEMENT,
         Capability.VIEW_SUPPLIERS,
+        Capability.VIEW_SUPPLIER_MANAGEMENT,
+        Capability.VIEW_VENDOR_LEAD_TIMES,
         Capability.VIEW_INVENTORY_PROJECTION,
         Capability.VIEW_FULFILLMENT_ORDERS,
         Capability.MANAGE_FULFILLMENT_ORDERS,
         Capability.VIEW_BACKORDERS,
         Capability.MANAGE_BACKORDERS,
+        Capability.VIEW_SERVICE_ORDERS,
 
         # Material Visibility - Full operational access
         Capability.VIEW_SHIPMENT_TRACKING,
@@ -734,6 +832,7 @@ MPS_MANAGER_CAPABILITIES = CapabilitySet(
 
         # AI Models - View only (uses agents, doesn't configure them)
         Capability.USE_AI_ASSISTANT,
+        Capability.VIEW_AI_AGENTS,
         Capability.VIEW_TRM_TRAINING,
         Capability.VIEW_GNN_TRAINING,
         Capability.VIEW_MODEL_SETUP,
@@ -805,14 +904,21 @@ _TRM_SPECIALIST_BASE = {
     # Operational context (read-only)
     Capability.VIEW_ORDER_PLANNING,
     Capability.VIEW_SUPPLY_PLANNING,
+    Capability.VIEW_SUPPLY_PLAN,
     Capability.VIEW_DEMAND_PLANNING,
+    Capability.VIEW_FORECASTING,
+    Capability.VIEW_MRP,
+    Capability.VIEW_ORDER_MANAGEMENT,
     Capability.VIEW_INVENTORY_PROJECTION,
     Capability.VIEW_SHIPMENT_TRACKING,
     Capability.VIEW_INVENTORY_VISIBILITY,
     Capability.VIEW_FULFILLMENT_ORDERS,
     Capability.VIEW_PRODUCTION_ORDERS,
+    Capability.VIEW_PRODUCTION_PROCESS,
     Capability.VIEW_SUPPLIERS,
+    Capability.VIEW_SUPPLIER_MANAGEMENT,
     Capability.VIEW_BACKORDERS,
+    Capability.VIEW_SERVICE_ORDERS,
 
     # Collaboration - work with agents
     Capability.USE_AI_ASSISTANT,

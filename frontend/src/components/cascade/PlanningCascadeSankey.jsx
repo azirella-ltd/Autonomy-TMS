@@ -1,17 +1,20 @@
 /**
  * Supply Chain Sankey – Executive Dashboard (S&OP Aggregation Level)
  *
- * Shows the supply chain network at one level below the top of the
- * geography and product hierarchies — the same aggregation level used
- * by the GraphSAGE S&OP model.
+ * Shows the supply chain network with hierarchy navigation:
+ *   - Geography: Country / Region / State / Site drill-down
+ *   - Product: All / Category filter
+ *   - Time: Daily / Weekly / Monthly / Quarterly / Annual scaling
  *
- * Nodes = sites grouped by region × master type
- * Links = material flow between groups (sized by volume)
+ * Nodes = sites grouped by geography level × master type
+ * Links = material flow between groups (sized by volume × time multiplier)
  *
  * Features:
+ *   - Three hierarchy navigation dropdowns
  *   - Sankey Flow / Map View toggle
  *   - Auto-loads first available SC config when no configId prop
  *   - SankeyMetricLegend shown in Sankey mode
+ *   - All data sourced from DB (no hardcoded defaults)
  */
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
@@ -22,12 +25,22 @@ import {
   Spinner,
   ToggleGroup,
   ToggleGroupItem,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
 } from '../common';
 import { Network } from 'lucide-react';
 import SankeyDiagram from '../charts/SankeyDiagram';
 import SankeyMetricLegend from '../charts/SankeyMetricLegend';
 import GeospatialSupplyChain from '../visualization/GeospatialSupplyChain';
-import { getSupplyChainConfigs, getSites, getLanes } from '../../services/supplyChainConfigService';
+import {
+  getSupplyChainConfigs,
+  getSites,
+  getLanes,
+  getProducts,
+} from '../../services/supplyChainConfigService';
 
 // Column order: upstream (supply) → downstream (demand)
 const COLUMN_ORDER = [
@@ -51,42 +64,73 @@ const TYPE_COLORS = {
   MARKET_DEMAND: '#ef4444',   // red
 };
 
+// Geography hierarchy levels
+const GEO_LEVELS = [
+  { value: 'country', label: 'Country' },
+  { value: 'region', label: 'Region' },
+  { value: 'state', label: 'State' },
+  { value: 'site', label: 'Site' },
+];
+
+// Time bucket options with multiplier relative to daily capacity
+const TIME_BUCKETS = [
+  { value: 'daily', label: 'Daily', multiplier: 1 },
+  { value: 'weekly', label: 'Weekly', multiplier: 7 },
+  { value: 'monthly', label: 'Monthly', multiplier: 30 },
+  { value: 'quarterly', label: 'Quarterly', multiplier: 91 },
+  { value: 'annual', label: 'Annual', multiplier: 365 },
+];
+
+/**
+ * Extract the geography label for a site at the given hierarchy level.
+ */
+const getGeoLabel = (site, geoLevel) => {
+  const geo = site.geography;
+  switch (geoLevel) {
+    case 'country':
+      return geo?.country || 'Unknown';
+    case 'region':
+      return geo?.region || geo?.state_prov || 'Unknown';
+    case 'state':
+      return geo?.state_prov || 'Unknown';
+    case 'site':
+      return site.name || `Site ${site.id}`;
+    default:
+      return geo?.state_prov || site.name || `Site ${site.id}`;
+  }
+};
+
 /**
  * Build S&OP aggregated Sankey data from sites + lanes.
  *
- * Aggregation:
- *   - Geography: Group by region (one level below company root)
- *   - Master type: Group by MARKET_SUPPLY | MANUFACTURER | DISTRIBUTOR | RETAILER | MARKET_DEMAND
- *   - Each (region, master_type) becomes one Sankey node
- *   - Flow between node-groups is summed across individual lanes
+ * @param {Array} sites - Site objects with geography
+ * @param {Array} lanes - Transportation lane objects
+ * @param {string} geoLevel - Geography hierarchy level (country|region|state|site)
+ * @param {number} timeMultiplier - Multiplier for flow values (e.g. 30 for monthly)
  */
-const buildAggregatedSankeyData = (sites, lanes) => {
+const buildAggregatedSankeyData = (sites, lanes, geoLevel = 'state', timeMultiplier = 30) => {
   if (!sites?.length || !lanes?.length) return { nodes: [], links: [] };
 
   // ── 1. Build site ID → metadata map ──────────────────────────────
   const siteMap = {};
   sites.forEach(s => {
     const masterType = (s.master_type || s.type || '').toUpperCase();
-    // Region = first hierarchy tag, or site name as fallback
-    const region = s.region
-      || s.hierarchy_path?.split('/')?.slice(1, 2)?.[0]
-      || s.name
-      || `Site ${s.id}`;
-    siteMap[s.id] = { masterType, region, name: s.name };
+    const geoLabel = getGeoLabel(s, geoLevel);
+    siteMap[s.id] = { masterType, geoLabel, name: s.name };
   });
 
-  // ── 2. Build aggregation groups (region × masterType) ────────────
-  const groupKey = (masterType, region) => `${masterType}::${region}`;
+  // ── 2. Build aggregation groups (geoLabel × masterType) ──────────
+  const groupKey = (masterType, geoLabel) => `${masterType}::${geoLabel}`;
   const groups = {};
 
   sites.forEach(s => {
     const meta = siteMap[s.id];
     if (!meta) return;
-    const key = groupKey(meta.masterType, meta.region);
+    const key = groupKey(meta.masterType, meta.geoLabel);
     if (!groups[key]) {
       groups[key] = {
         id: key,
-        name: meta.region,
+        name: meta.geoLabel,
         type: meta.masterType,
         siteCount: 0,
         totalCapacity: 0,
@@ -108,8 +152,8 @@ const buildAggregatedSankeyData = (sites, lanes) => {
     const toMeta = siteMap[toId];
     if (!fromMeta || !toMeta) return;
 
-    const fromKey = groupKey(fromMeta.masterType, fromMeta.region);
-    const toKey = groupKey(toMeta.masterType, toMeta.region);
+    const fromKey = groupKey(fromMeta.masterType, fromMeta.geoLabel);
+    const toKey = groupKey(toMeta.masterType, toMeta.geoLabel);
     if (fromKey === toKey) return; // skip self-loops
 
     const lk = `${fromKey}→${toKey}`;
@@ -126,7 +170,7 @@ const buildAggregatedSankeyData = (sites, lanes) => {
     linkMap[lk].laneCount += 1;
   });
 
-  // ── 4. Convert to arrays ─────────────────────────────────────────
+  // ── 4. Convert to arrays with time scaling ─────────────────────
   const nodes = Object.values(groups).map(g => ({
     id: g.id,
     name: g.name,
@@ -139,7 +183,7 @@ const buildAggregatedSankeyData = (sites, lanes) => {
   const links = Object.values(linkMap).map(l => ({
     source: l.source,
     target: l.target,
-    value: Math.max(l.value, 0.01),
+    value: Math.max(l.value * timeMultiplier, 0.01),
     laneCount: l.laneCount,
     color: TYPE_COLORS[l.sourceType] || '#6b7280',
   }));
@@ -151,33 +195,20 @@ const buildAggregatedSankeyData = (sites, lanes) => {
   return { nodes, links, columnOrder };
 };
 
-// ── Default demo data (Food Dist network: Suppliers → 1 DC → Customers by region) ──
-const DEFAULT_SANKEY_DATA = {
-  nodes: [
-    { id: 'ms-suppliers', name: 'Suppliers', type: 'MARKET_SUPPLY', color: TYPE_COLORS.MARKET_SUPPLY, siteCount: 10 },
-    { id: 'dc-fooddist',  name: 'FoodDist DC', type: 'INVENTORY', color: TYPE_COLORS.INVENTORY, siteCount: 1 },
-    { id: 'md-oregon',    name: 'Oregon', type: 'MARKET_DEMAND', color: TYPE_COLORS.MARKET_DEMAND, siteCount: 3 },
-    { id: 'md-washington', name: 'Washington', type: 'MARKET_DEMAND', color: TYPE_COLORS.MARKET_DEMAND, siteCount: 3 },
-    { id: 'md-california', name: 'California', type: 'MARKET_DEMAND', color: TYPE_COLORS.MARKET_DEMAND, siteCount: 4 },
-    { id: 'md-arizona',   name: 'Arizona', type: 'MARKET_DEMAND', color: TYPE_COLORS.MARKET_DEMAND, siteCount: 3 },
-  ],
-  links: [
-    { source: 'ms-suppliers', target: 'dc-fooddist', value: 7000, laneCount: 10, color: TYPE_COLORS.MARKET_SUPPLY },
-    { source: 'dc-fooddist',  target: 'md-oregon',     value: 1800, laneCount: 3, color: TYPE_COLORS.INVENTORY },
-    { source: 'dc-fooddist',  target: 'md-washington',  value: 1800, laneCount: 3, color: TYPE_COLORS.INVENTORY },
-    { source: 'dc-fooddist',  target: 'md-california',  value: 2200, laneCount: 4, color: TYPE_COLORS.INVENTORY },
-    { source: 'dc-fooddist',  target: 'md-arizona',     value: 1200, laneCount: 3, color: TYPE_COLORS.INVENTORY },
-  ],
-  columnOrder: ['MARKET_SUPPLY', 'INVENTORY', 'MARKET_DEMAND'],
-};
-
-const PlanningCascadeSankey = ({ configId: configIdProp, height = 280, className }) => {
+const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className }) => {
   const [sankeyData, setSankeyData] = useState(null);
   const [rawSites, setRawSites] = useState([]);
   const [rawLanes, setRawLanes] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [rawProducts, setRawProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [viewMode, setViewMode] = useState('sankey');
   const [resolvedConfigId, setResolvedConfigId] = useState(configIdProp || null);
+
+  // Hierarchy navigation state
+  const [geoLevel, setGeoLevel] = useState('state');
+  const [productCategory, setProductCategory] = useState('all');
+  const [timeBucket, setTimeBucket] = useState('monthly');
 
   // Auto-resolve configId: if none passed, pick the first available config
   useEffect(() => {
@@ -191,46 +222,48 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 280, className
         const configs = await getSupplyChainConfigs();
         if (!cancelled && Array.isArray(configs) && configs.length > 0) {
           setResolvedConfigId(configs[0].id);
+        } else if (!cancelled) {
+          setLoading(false);
+          setError('no_config');
         }
       } catch {
-        // Silently fall back to defaults
+        if (!cancelled) {
+          setLoading(false);
+          setError('no_config');
+        }
       }
     };
     resolveConfig();
     return () => { cancelled = true; };
   }, [configIdProp]);
 
-  // Load real SC config data; fall back to defaults
+  // Load SC config data from DB
   useEffect(() => {
-    if (!resolvedConfigId) {
-      setSankeyData(DEFAULT_SANKEY_DATA);
-      return;
-    }
+    if (!resolvedConfigId) return;
 
     let cancelled = false;
     const load = async () => {
       setLoading(true);
+      setError(null);
       try {
-        const [sitesData, lanesData] = await Promise.all([
+        const [sitesData, lanesData, productsData] = await Promise.all([
           getSites(resolvedConfigId),
           getLanes(resolvedConfigId),
+          getProducts(resolvedConfigId),
         ]);
         if (cancelled) return;
         const sitesArr = Array.isArray(sitesData) ? sitesData : [];
         const lanesArr = Array.isArray(lanesData) ? lanesData : [];
+        const productsArr = Array.isArray(productsData) ? productsData : [];
         setRawSites(sitesArr);
         setRawLanes(lanesArr);
-        const aggregated = buildAggregatedSankeyData(sitesArr, lanesArr);
-        setSankeyData(
-          aggregated.nodes.length > 0 && aggregated.links.length > 0
-            ? aggregated
-            : DEFAULT_SANKEY_DATA
-        );
+        setRawProducts(productsArr);
       } catch {
         if (!cancelled) {
-          setSankeyData(DEFAULT_SANKEY_DATA);
+          setError('load_error');
           setRawSites([]);
           setRawLanes([]);
+          setRawProducts([]);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -240,18 +273,66 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 280, className
     return () => { cancelled = true; };
   }, [resolvedConfigId]);
 
-  const data = sankeyData || DEFAULT_SANKEY_DATA;
+  // Extract unique product categories from loaded products
+  const productCategories = useMemo(() => {
+    const cats = new Set();
+    rawProducts.forEach(p => {
+      if (p.category) cats.add(p.category);
+    });
+    return Array.from(cats).sort();
+  }, [rawProducts]);
+
+  // Compute time multiplier
+  const timeMultiplier = useMemo(() => {
+    const bucket = TIME_BUCKETS.find(b => b.value === timeBucket);
+    return bucket ? bucket.multiplier : 30;
+  }, [timeBucket]);
+
+  // Recompute Sankey data whenever hierarchy selections or raw data change
+  useEffect(() => {
+    if (rawSites.length === 0 || rawLanes.length === 0) {
+      if (!loading && !error) {
+        setError('no_data');
+      }
+      return;
+    }
+
+    // Product category filtering: if a category is selected and products have
+    // category data, we could filter sites. For now, product filter acts as
+    // a display label since lanes don't carry product-level data.
+    // Future: filter lanes by product when product-lane mapping exists.
+
+    const aggregated = buildAggregatedSankeyData(rawSites, rawLanes, geoLevel, timeMultiplier);
+    if (aggregated.nodes.length > 0 && aggregated.links.length > 0) {
+      setSankeyData(aggregated);
+      setError(null);
+    } else {
+      setSankeyData(null);
+      setError('no_data');
+    }
+  }, [rawSites, rawLanes, geoLevel, timeMultiplier, loading, error]);
+
+  // Subtitle updates with current hierarchy context
+  const subtitle = useMemo(() => {
+    const geoLabel = GEO_LEVELS.find(g => g.value === geoLevel)?.label || 'State';
+    const timeLabel = TIME_BUCKETS.find(t => t.value === timeBucket)?.label || 'Monthly';
+    const productLabel = productCategory === 'all' ? 'All Products' : productCategory;
+    return `${timeLabel} flow by ${geoLabel.toLowerCase()} × site type · ${productLabel}`;
+  }, [geoLevel, timeBucket, productCategory]);
 
   const nodeTooltipFn = useCallback((node) => (
     <span>{node.name} ({node.siteCount ?? '?'} sites)</span>
   ), []);
 
-  const linkTooltipFn = useCallback((link) => (
-    <span>
-      {link.source?.name || '?'} → {link.target?.name || '?'}
-      : {link.value?.toLocaleString()} units ({link.laneCount ?? '?'} lanes)
-    </span>
-  ), []);
+  const linkTooltipFn = useCallback((link) => {
+    const timeLabel = TIME_BUCKETS.find(t => t.value === timeBucket)?.label || 'Monthly';
+    return (
+      <span>
+        {link.source?.name || '?'} → {link.target?.name || '?'}
+        : {link.value?.toLocaleString()} units/{timeLabel.toLowerCase()} ({link.laneCount ?? '?'} lanes)
+      </span>
+    );
+  }, [timeBucket]);
 
   // Build map data from raw sites/lanes
   const mapData = useMemo(() => {
@@ -293,72 +374,139 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 280, className
     return { sites: mapSites, edges: mapEdges, siteTypeColors: siteTypeColorMap };
   }, [rawSites, rawLanes]);
 
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <div className="flex items-center justify-center" style={{ height }}>
+          <Spinner size="md" />
+        </div>
+      );
+    }
+
+    if (error) {
+      const message = error === 'no_config'
+        ? 'No supply chain configuration available. Create one in Administration > Supply Chain Configs.'
+        : error === 'no_data'
+        ? 'No sites or lanes found in the supply chain configuration.'
+        : 'Unable to load supply chain data.';
+      return (
+        <div className="flex items-center justify-center" style={{ height }}>
+          <p className="text-sm text-center text-muted-foreground">{message}</p>
+        </div>
+      );
+    }
+
+    if (viewMode === 'sankey' && sankeyData) {
+      return (
+        <>
+          <SankeyDiagram
+            nodes={sankeyData.nodes}
+            links={sankeyData.links}
+            height={height}
+            nodeWidth={14}
+            nodePadding={16}
+            align="justify"
+            columnOrder={sankeyData.columnOrder || COLUMN_ORDER}
+            nodeTooltip={nodeTooltipFn}
+            linkTooltip={linkTooltipFn}
+            defaultLinkOpacity={0.45}
+            nodeCornerRadius={4}
+          />
+          <SankeyMetricLegend orientation="row" justify="center" className="mt-2" />
+        </>
+      );
+    }
+
+    if (viewMode === 'map') {
+      return (
+        <div style={{ height }} className="w-full">
+          {mapData ? (
+            <GeospatialSupplyChain
+              sites={mapData.sites}
+              edges={mapData.edges}
+              inventoryData={{}}
+              activeFlows={[]}
+              siteTypeColors={mapData.siteTypeColors}
+            />
+          ) : (
+            <div className="h-full flex items-center justify-center">
+              <p className="text-sm text-center text-muted-foreground">
+                No geographic coordinates available. Add latitude/longitude data to your sites
+                via the Geography table to enable the map view.
+              </p>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return null;
+  };
+
   return (
     <Card className={className}>
       <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
             <CardTitle className="text-lg flex items-center gap-2">
-              <Network className="h-5 w-5" />
+              <Network className="h-5 w-5 shrink-0" />
               Supply Chain Flow
             </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Material flow at S&OP aggregation level (region × site type)
+            <p className="text-sm text-muted-foreground truncate">
+              {subtitle}
             </p>
           </div>
-          <ToggleGroup
-            type="single"
-            size="sm"
-            value={viewMode}
-            onValueChange={(val) => val && setViewMode(val)}
-          >
-            <ToggleGroupItem value="sankey">Sankey Flow</ToggleGroupItem>
-            <ToggleGroupItem value="map">Map View</ToggleGroupItem>
-          </ToggleGroup>
+          {!error && (
+            <div className="flex items-center gap-2 shrink-0">
+              <Select value={geoLevel} onValueChange={setGeoLevel}>
+                <SelectTrigger className="h-8 w-[110px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {GEO_LEVELS.map(g => (
+                    <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={productCategory} onValueChange={setProductCategory}>
+                <SelectTrigger className="h-8 w-[130px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Products</SelectItem>
+                  {productCategories.map(cat => (
+                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={timeBucket} onValueChange={setTimeBucket}>
+                <SelectTrigger className="h-8 w-[100px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIME_BUCKETS.map(t => (
+                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <ToggleGroup
+                type="single"
+                size="sm"
+                value={viewMode}
+                onValueChange={(val) => val && setViewMode(val)}
+              >
+                <ToggleGroupItem value="sankey">Sankey</ToggleGroupItem>
+                <ToggleGroupItem value="map">Map</ToggleGroupItem>
+              </ToggleGroup>
+            </div>
+          )}
         </div>
       </CardHeader>
       <CardContent className="px-2 pb-2">
-        {loading ? (
-          <div className="flex items-center justify-center" style={{ height }}>
-            <Spinner size="md" />
-          </div>
-        ) : viewMode === 'sankey' ? (
-          <>
-            <SankeyDiagram
-              nodes={data.nodes}
-              links={data.links}
-              height={height}
-              nodeWidth={14}
-              nodePadding={28}
-              align="justify"
-              columnOrder={data.columnOrder || COLUMN_ORDER}
-              nodeTooltip={nodeTooltipFn}
-              linkTooltip={linkTooltipFn}
-              defaultLinkOpacity={0.45}
-              nodeCornerRadius={4}
-            />
-            <SankeyMetricLegend orientation="row" justify="center" className="mt-2" />
-          </>
-        ) : (
-          <div style={{ height }} className="w-full">
-            {mapData ? (
-              <GeospatialSupplyChain
-                sites={mapData.sites}
-                edges={mapData.edges}
-                inventoryData={{}}
-                activeFlows={[]}
-                siteTypeColors={mapData.siteTypeColors}
-              />
-            ) : (
-              <div className="h-full flex items-center justify-center">
-                <p className="text-sm text-center text-muted-foreground">
-                  No geographic coordinates available. Add latitude/longitude data to your sites
-                  via the Geography table to enable the map view.
-                </p>
-              </div>
-            )}
-          </div>
-        )}
+        {renderContent()}
       </CardContent>
     </Card>
   );

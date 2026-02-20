@@ -935,7 +935,9 @@ def read_supply_chain_sites(
             .order_by(SupplySiteModel.id.asc())
             .all()
         )
-        return [_serialize_site(site) for site in sites]
+        # Build geo_id → region lookup from geography parent chain
+        region_map = _build_site_region_map(db, sites)
+        return [_serialize_site(site, region_map=region_map) for site in sites]
     finally:
         db.close()
 
@@ -1411,6 +1413,9 @@ def _serialize_product(product: SupplyProductModel, db: Optional[Session] = None
         "name": product.id,  # Product.id is the product name/SKU
         "description": product.description or "",
         "unit_cost_range": product.unit_cost_range or {"min": product.unit_cost or 0, "max": product.unit_price or 0},
+        "category": getattr(product, "category", None),
+        "family": getattr(product, "family", None),
+        "product_group_name": getattr(product, "product_group_name", None),
     }
     # Add hierarchy_path if db session is available and product has product_group_id
     if db and hasattr(product, 'product_group_id') and product.product_group_id:
@@ -1418,19 +1423,74 @@ def _serialize_product(product: SupplyProductModel, db: Optional[Session] = None
     return result
 
 
-def _serialize_site(site: SupplySiteModel) -> Dict[str, Any]:
+def _build_site_region_map(db, sites) -> Dict[str, str]:
+    """Build a geo_id → region_name lookup by walking the geography parent chain.
+
+    Geography hierarchy: Country → Region → State → City/Site
+    Sites link to city-level geography. We walk up 2 levels (city → state → region)
+    to find the region description.
+    """
+    from app.models.sc_entities import Geography as GeoModel
+
+    geo_ids = [s.geo_id for s in sites if getattr(s, "geo_id", None)]
+    if not geo_ids:
+        return {}
+
+    # Load all site-level geography records
+    all_geos = db.query(GeoModel).filter(GeoModel.id.in_(geo_ids)).all()
+    geo_map = {g.id: g for g in all_geos}
+
+    # Load parents (state level)
+    parent_ids = [g.parent_geo_id for g in all_geos if g.parent_geo_id]
+    if parent_ids:
+        parents = db.query(GeoModel).filter(GeoModel.id.in_(parent_ids)).all()
+        for p in parents:
+            geo_map[p.id] = p
+
+    # Load grandparents (region level)
+    grandparent_ids = [
+        geo_map[pid].parent_geo_id
+        for pid in parent_ids
+        if pid in geo_map and geo_map[pid].parent_geo_id
+    ]
+    if grandparent_ids:
+        grandparents = db.query(GeoModel).filter(GeoModel.id.in_(grandparent_ids)).all()
+        for gp in grandparents:
+            geo_map[gp.id] = gp
+
+    # Build geo_id → region name for each site-level geo
+    region_map = {}
+    for geo_id in geo_ids:
+        geo = geo_map.get(geo_id)
+        if not geo:
+            continue
+        state_geo = geo_map.get(geo.parent_geo_id) if geo.parent_geo_id else None
+        region_geo = geo_map.get(state_geo.parent_geo_id) if state_geo and state_geo.parent_geo_id else None
+        if region_geo and region_geo.description:
+            name = region_geo.description
+            if name.endswith(" Region"):
+                name = name[:-7]
+            region_map[geo_id] = name
+        elif state_geo and state_geo.description:
+            region_map[geo_id] = state_geo.description
+    return region_map
+
+
+def _serialize_site(site: SupplySiteModel, region_map: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """Serialize Site (AWS SC model) - nodes are called sites in AWS SC DM."""
     site_type = str(getattr(site, "dag_type", None) or getattr(site, "type", "")).lower()
     master_type = str(getattr(site, "master_node_type", None) or getattr(site, "master_type", "")).upper()
 
     # Include geography data if the relationship is loaded
     geography = getattr(site, "geography", None)
+    geo_id = getattr(site, "geo_id", None)
     geo_data = None
     if geography:
         geo_data = {
             "id": geography.id,
             "city": geography.city,
             "state_prov": geography.state_prov,
+            "region": region_map.get(geo_id) if region_map and geo_id else None,
             "country": geography.country,
             "latitude": geography.latitude,
             "longitude": geography.longitude,
@@ -1443,7 +1503,7 @@ def _serialize_site(site: SupplySiteModel) -> Dict[str, Any]:
         "type": site_type,
         "master_type": master_type,
         "dag_type": site_type,
-        "geo_id": getattr(site, "geo_id", None),
+        "geo_id": geo_id,
         "geography": geo_data,
         "inventory_capacity_min": None,
         "inventory_capacity_max": None,

@@ -281,6 +281,9 @@ from .decision_tracking import (
     DecisionType, DecisionStatus as DQSDecisionStatus, DecisionUrgency
 )
 
+# 25. Collaboration Scenarios (Agentic Authorization Protocol demo data)
+from .collaboration_scenario import CollaborationScenario
+
 # Verify all models are properly registered
 registered_tables = set(Base.metadata.tables.keys())
 # Updated terminology: scenarios, participants, participant_actions

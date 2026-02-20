@@ -212,7 +212,7 @@ class Product(Base):
     # Format: Category > Family > Group > Product
     category = Column(String(100), nullable=True, comment="Top-level category (e.g., Frozen, Refrigerated)")
     family = Column(String(100), nullable=True, comment="Product family (e.g., Proteins, Dairy)")
-    product_group = Column(String(100), nullable=True, comment="Product group (e.g., Chicken, Beef)")
+    product_group_name = Column("product_group", String(100), nullable=True, comment="Product group (e.g., Chicken, Beef)")
 
     # Relationships
     company = relationship("Company", back_populates="products")

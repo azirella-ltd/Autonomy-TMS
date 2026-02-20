@@ -85,6 +85,7 @@ function getFallbackCapabilities(userType) {
       'view_analytics',
       'view_sc_analytics',
       'view_insights',
+      'view_uncertainty_quantification',
 
       // Risk Analysis & Insights
       'view_risk_analysis',
@@ -92,6 +93,11 @@ function getFallbackCapabilities(userType) {
       'view_watchlists',
       'view_predictions',
       'view_recommendations',
+
+      // Powell Dashboards
+      'view_executive_dashboard',
+      'view_sop_worklist',
+      'view_agent_decisions',
 
       // Material Visibility
       'view_shipment_tracking',
@@ -112,14 +118,19 @@ function getFallbackCapabilities(userType) {
       'manage_group_configs',
 
       // Planning - All
+      'view_sop',
+      'view_network_design',
       'view_order_planning',
       'view_demand_planning',
+      'view_forecasting',
       'view_demand_collaboration',
+      'view_forecast_exceptions',
       'view_supply_planning',
       'view_supply_plan',
       'view_mps',
       'view_lot_sizing',
       'view_capacity_check',
+      'view_inventory_optimization',
       'view_mrp',
       'view_production_process',
       'view_atp_ctp',
@@ -128,12 +139,23 @@ function getFallbackCapabilities(userType) {
       'view_vendor_lead_times',
       'view_capacity_planning',
       'view_resource_capacity',
-      'view_inventory_optimization',
-      'view_stochastic_planning',
       'view_optimization',
       'view_collaboration',
       'view_kpi_monitoring',
-      'view_network_design',
+
+      // Planning Cascade
+      'view_cascade_dashboard',
+      'view_sop_policy',
+      'view_mrs_candidates',
+      'view_supply_worklist',
+      'view_allocation_worklist',
+      'view_execution_dashboard',
+
+      // TRM Worklists
+      'view_atp_worklist',
+      'view_rebalancing_worklist',
+      'view_po_worklist',
+      'view_order_tracking_worklist',
 
       // Order Management
       'view_order_management',
@@ -145,18 +167,16 @@ function getFallbackCapabilities(userType) {
 
       // Analytics
       'view_scenario_comparison',
-      'view_inventory_optimization_analytics',
-      'view_capacity_optimization_analytics',
-      'view_network_optimization_analytics',
-      'view_kpi_configuration_analytics',
 
       // AI/ML
       'use_ai_assistant',
       'view_ai_agents',
+      'manage_ai_agents',
       'view_trm_training',
       'view_gnn_training',
       'view_rl_training',
       'view_model_setup',
+      'view_powell',
 
       // Admin
       'view_groups',
@@ -167,6 +187,9 @@ function getFallbackCapabilities(userType) {
       'create_user',
       'edit_user',
       'manage_permissions',
+      'manage_roles',
+      'manage_group_users',
+      'manage_approval_templates',
     ];
   }
 

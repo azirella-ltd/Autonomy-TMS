@@ -998,7 +998,7 @@ def list_products(
 ):
     """Get all products for a supply chain configuration with computed hierarchy_path."""
     config = get_config_or_404(db, config_id)
-    _ensure_user_can_manage_config(db, current_user, config)
+    _ensure_user_can_view_config(db, current_user, config)
     # Use hierarchy-aware method to include hierarchy_path from product_hierarchy table
     products = crud.product.get_by_config_with_hierarchy(db, config_id=config_id)
     return products[skip:skip+limit]
@@ -1043,7 +1043,7 @@ def get_product(
 ):
     """Get a product by ID with computed hierarchy_path."""
     config = get_config_or_404(db, config_id)
-    _ensure_user_can_manage_config(db, current_user, config)
+    _ensure_user_can_view_config(db, current_user, config)
 
     # Use hierarchy-aware method to include hierarchy_path from product_hierarchy table
     product = crud.product.get_with_hierarchy(db, id=product_id)
@@ -1207,7 +1207,102 @@ def delete_product(
 
 # --- Site Endpoints (AWS SC DM) ---
 
-@router.get("/{config_id}/sites", response_model=List[schemas.Site])
+def _build_geo_region_map(db: Session, sites) -> Dict[str, str]:
+    """Build a geo_id → region_name lookup by walking the geography parent chain.
+
+    Geography hierarchy: Country → Region → State → City
+    Sites link to city-level geography. We walk up 2 levels (city → state → region)
+    to find the region description.
+    """
+    from app.models.sc_entities import Geography
+
+    geo_ids = {s.geo_id for s in sites if s.geo_id}
+    if not geo_ids:
+        return {}
+
+    # Load all geography records that could be in the ancestor chain
+    all_geos = db.query(Geography).filter(
+        Geography.id.in_(list(geo_ids))
+    ).all()
+    geo_map = {g.id: g for g in all_geos}
+
+    # Load parents (state level)
+    parent_ids = {g.parent_geo_id for g in all_geos if g.parent_geo_id}
+    if parent_ids:
+        parents = db.query(Geography).filter(Geography.id.in_(list(parent_ids))).all()
+        for p in parents:
+            geo_map[p.id] = p
+
+    # Load grandparents (region level)
+    grandparent_ids = {
+        geo_map[pid].parent_geo_id
+        for pid in parent_ids
+        if pid in geo_map and geo_map[pid].parent_geo_id
+    }
+    if grandparent_ids:
+        grandparents = db.query(Geography).filter(Geography.id.in_(list(grandparent_ids))).all()
+        for gp in grandparents:
+            geo_map[gp.id] = gp
+
+    # Build geo_id → region name for each site-level geo
+    region_map = {}
+    for geo_id in geo_ids:
+        geo = geo_map.get(geo_id)
+        if not geo:
+            logger.warning(f"Geography not found for geo_id={geo_id}")
+            continue
+        # Walk up: city → state → region
+        state_geo = geo_map.get(geo.parent_geo_id) if geo.parent_geo_id else None
+        region_geo = geo_map.get(state_geo.parent_geo_id) if state_geo and state_geo.parent_geo_id else None
+        if region_geo and region_geo.description:
+            # Strip " Region" suffix if present for cleaner display
+            name = region_geo.description
+            if name.endswith(" Region"):
+                name = name[:-7]
+            region_map[geo_id] = name
+        elif state_geo and state_geo.description:
+            # Fallback: use state description as region
+            region_map[geo_id] = state_geo.description
+    logger.info(f"Resolved {len(region_map)}/{len(geo_ids)} site geo regions")
+    return region_map
+
+
+def _enrich_sites_with_region(sites, region_map: Dict[str, str]) -> List[dict]:
+    """Convert site ORM objects to dicts with region added to geography."""
+    result = []
+    for site in sites:
+        site_dict = {
+            "id": site.id,
+            "config_id": site.config_id,
+            "name": site.name,
+            "type": site.type,
+            "dag_type": site.dag_type,
+            "master_type": site.master_type,
+            "priority": site.priority,
+            "order_aging": site.order_aging,
+            "lost_sale_cost": site.lost_sale_cost,
+            "attributes": site.attributes,
+            "geo_id": site.geo_id,
+            "segment_id": site.segment_id,
+            "company_id": site.company_id,
+        }
+        if site.geography:
+            site_dict["geography"] = {
+                "id": site.geography.id,
+                "city": site.geography.city,
+                "state_prov": site.geography.state_prov,
+                "region": region_map.get(site.geo_id),
+                "country": site.geography.country,
+                "latitude": site.geography.latitude,
+                "longitude": site.geography.longitude,
+            }
+        else:
+            site_dict["geography"] = None
+        result.append(site_dict)
+    return result
+
+
+@router.get("/{config_id}/sites")
 def read_sites(
     config_id: int,
     site_type: Optional[str] = None,
@@ -1216,7 +1311,7 @@ def read_sites(
 ):
     """Get all sites for a configuration, optionally filtered by type."""
     config = get_config_or_404(db, config_id)
-    _ensure_user_can_manage_config(db, current_user, config)
+    _ensure_user_can_view_config(db, current_user, config)
 
     if site_type:
         dag_token = MixedScenarioService._canonical_role(site_type)
@@ -1225,8 +1320,12 @@ def read_sites(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid site type '{site_type}'",
             )
-        return crud.site.get_by_type(db, node_type=dag_token, config_id=config_id)
-    return crud.site.get_multi_by_config(db, config_id=config_id)
+        sites = crud.site.get_by_type(db, node_type=dag_token, config_id=config_id)
+    else:
+        sites = crud.site.get_multi_by_config(db, config_id=config_id, limit=1000)
+
+    region_map = _build_geo_region_map(db, sites)
+    return _enrich_sites_with_region(sites, region_map)
 
 @router.post("/{config_id}/sites", response_model=schemas.Site, status_code=status.HTTP_201_CREATED)
 def create_site(
@@ -1272,7 +1371,7 @@ def read_site(
 ):
     """Get a single site by ID."""
     config = get_config_or_404(db, config_id)
-    _ensure_user_can_manage_config(db, current_user, config)
+    _ensure_user_can_view_config(db, current_user, config)
     return get_site_or_404(db, site_id, config_id)
 
 
@@ -1385,7 +1484,7 @@ def read_transportation_lanes(
 ) -> List[Dict[str, Any]]:
     """List all transportation lanes for a supply chain configuration."""
     config = get_config_or_404(db, config_id)
-    _ensure_user_can_manage_config(db, current_user, config)
+    _ensure_user_can_view_config(db, current_user, config)
     lanes = crud.transportation_lane.get_by_config(db, config_id=config_id)
     return [_transportation_lane_to_payload(lane) for lane in lanes]
 
@@ -1401,7 +1500,7 @@ def read_transportation_lane(
 ) -> Dict[str, Any]:
     """Get a specific transportation lane by ID."""
     config = get_config_or_404(db, config_id)
-    _ensure_user_can_manage_config(db, current_user, config)
+    _ensure_user_can_view_config(db, current_user, config)
     lane = get_transportation_lane_or_404(db, lane_id, config_id)
     return _transportation_lane_to_payload(lane)
 
@@ -1564,7 +1663,7 @@ def read_product_site_configs(
     from sqlalchemy import text
 
     config = get_config_or_404(db, config_id)
-    _ensure_user_can_manage_config(db, current_user, config)
+    _ensure_user_can_view_config(db, current_user, config)
 
     # Query item_node_configs joined with site to filter by config_id
     # site_id in item_node_configs references site.id (AWS SC DM)

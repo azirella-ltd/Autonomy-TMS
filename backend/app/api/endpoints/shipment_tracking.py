@@ -106,7 +106,7 @@ class ShipmentStatusUpdate(BaseModel):
 async def get_shipment_status(
     shipment_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequirePermission("shipment_tracking.view"))
+    current_user: User = Depends(RequirePermission("view_shipment_tracking"))
 ):
     """
     Get real-time shipment status with risk assessment
@@ -132,7 +132,7 @@ async def get_in_transit_inventory(
     site_id: Optional[str] = Query(None, description="Filter by destination site ID"),
     risk_level: Optional[str] = Query(None, pattern="^(LOW|MEDIUM|HIGH|CRITICAL)$", description="Filter by risk level"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequirePermission("shipment_tracking.view"))
+    current_user: User = Depends(RequirePermission("view_shipment_tracking"))
 ):
     """
     Get all in-transit inventory with optional filters
@@ -153,7 +153,7 @@ async def get_in_transit_inventory(
 async def get_delivery_risk(
     shipment_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequirePermission("shipment_tracking.view"))
+    current_user: User = Depends(RequirePermission("view_shipment_tracking"))
 ):
     """
     Calculate delivery risk for a specific shipment
@@ -179,7 +179,7 @@ async def get_delivery_risk(
 async def get_mitigation_recommendations(
     shipment_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequirePermission("shipment_tracking.view"))
+    current_user: User = Depends(RequirePermission("view_shipment_tracking"))
 ):
     """
     Get recommended mitigation actions for at-risk shipments
@@ -204,7 +204,7 @@ async def update_shipment_status(
     shipment_id: str,
     status_update: ShipmentStatusUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequirePermission("shipment_tracking.manage"))
+    current_user: User = Depends(RequirePermission("manage_shipment_tracking"))
 ):
     """
     Update shipment status and add tracking event
@@ -243,7 +243,7 @@ async def update_shipment_status(
 @router.get("/summary", response_model=Dict[str, Any])
 async def get_shipment_summary(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(RequirePermission("shipment_tracking.view"))
+    current_user: User = Depends(RequirePermission("view_shipment_tracking"))
 ):
     """
     Get summary statistics for all shipments

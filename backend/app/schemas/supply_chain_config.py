@@ -670,6 +670,7 @@ class SiteGeography(BaseModel):
     id: Optional[str] = None
     city: Optional[str] = None
     state_prov: Optional[str] = None
+    region: Optional[str] = None
     country: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
@@ -772,6 +773,10 @@ class ProductResponse(ProductBase):
     # AWS SC DM compliant: hierarchy_path computed from product_hierarchy table
     # Format: "Category > Family > Group" (e.g., "Frozen > Proteins > Poultry")
     hierarchy_path: Optional[str] = Field(None, description="Breadcrumb path from product_hierarchy tree")
+    # Product hierarchy fields (for filtering/aggregation)
+    category: Optional[str] = Field(None, description="Top-level category (e.g., Meat & Poultry)")
+    family: Optional[str] = Field(None, description="Product family (e.g., Frozen Proteins)")
+    product_group_name: Optional[str] = Field(None, description="Product group code (e.g., FRZ_PROTEIN)")
 
     class Config:
         orm_mode = True

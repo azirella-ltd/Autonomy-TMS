@@ -28,6 +28,7 @@ Demo Flow:
 """
 
 import sys
+import asyncio
 from pathlib import Path
 
 # Ensure backend package is importable
@@ -307,7 +308,20 @@ def create_powell_role(
     # Check if role already exists (global role with tenant_id=None)
     existing = rbac_service.get_role_by_slug(slug, tenant_id=None)
     if existing:
-        print(f"  Role '{role_name}' already exists (id={existing.id})")
+        # Update permissions on existing role to pick up new capabilities
+        capability_set_update = POWELL_ROLE_CAPABILITIES.get(role_name)
+        if capability_set_update:
+            permission_names_update = [cap.value for cap in capability_set_update.capabilities]
+            existing.permissions.clear()
+            for perm_name in permission_names_update:
+                permission = rbac_service.get_permission_by_name(perm_name)
+                if permission:
+                    existing.permissions.append(permission)
+            db.commit()
+            db.refresh(existing)
+            print(f"  Updated role '{role_name}' (id={existing.id}, permissions={len(existing.permissions)})")
+        else:
+            print(f"  Role '{role_name}' already exists (id={existing.id})")
         return existing
 
     # Get capability set for this role
@@ -329,6 +343,41 @@ def create_powell_role(
     )
     print(f"  Created role '{role.name}' (id={role.id}, permissions={len(role.permissions)})")
     return role
+
+
+def _generate_sc_config_for_group(group_id: int):
+    """Generate Food Dist SC config for an existing group using async generator."""
+    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+    from sqlalchemy.orm import sessionmaker as async_sessionmaker
+    from app.core.db_urls import resolve_async_database_url
+    from app.services.food_dist_config_generator import generate_food_dist_config
+
+    async def _run():
+        async_db_url = resolve_async_database_url()
+        engine = create_async_engine(async_db_url)
+        AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        async with AsyncSessionLocal() as session:
+            try:
+                result = await generate_food_dist_config(
+                    db=session,
+                    existing_group_id=group_id,
+                )
+                config_id = result.get("config_id")
+                status = result.get("summary", {}).get("status")
+                if status == "already_exists":
+                    print(f"  SC config already exists for group {group_id} (config_id={config_id})")
+                else:
+                    print(f"  Created SC config (id={config_id}) with:")
+                    print(f"    Suppliers: {result.get('suppliers_created', 0)}")
+                    print(f"    Customers: {result.get('customers_created', 0)}")
+                    print(f"    Products: {result.get('products_created', 0)}")
+                    print(f"    Lanes: {result.get('lanes_created', 0)}")
+            except Exception as e:
+                print(f"  Warning: SC config generation failed: {e}")
+                await session.rollback()
+        await engine.dispose()
+
+    asyncio.run(_run())
 
 
 def main():
@@ -418,7 +467,11 @@ def main():
 
         db.commit()
 
-        # Step 6: Print summary
+        # Step 6: Generate Food Dist SC config for this group (async)
+        print("\n6. Generating Food Dist supply chain config for group...")
+        _generate_sc_config_for_group(group.id)
+
+        # Step 7: Print summary
         print("\n" + "=" * 70)
         print("Food Dist Demo Setup Complete!")
         print("=" * 70)

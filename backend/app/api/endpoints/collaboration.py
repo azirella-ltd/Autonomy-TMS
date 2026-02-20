@@ -10,6 +10,7 @@ Provides endpoints for:
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 from typing import List, Optional, Dict
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -577,3 +578,55 @@ async def analyze_decision_tradeoffs(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to analyze trade-offs: {str(e)}"
         )
+
+
+# ============================================================================
+# Collaboration Scenarios (Agentic Authorization Protocol)
+# ============================================================================
+
+@router.get("/scenarios")
+def list_collaboration_scenarios(
+    group_id: Optional[int] = Query(None),
+    level: Optional[str] = Query(None, description="Filter by level: sop, tactical, execution"),
+    status_filter: Optional[str] = Query(None, alias="status", description="Filter by status"),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """List collaboration scenarios for a group."""
+    from sqlalchemy import text as sa_text
+
+    gid = group_id or current_user.group_id
+    query = "SELECT * FROM collaboration_scenarios WHERE group_id = :gid"
+    params = {"gid": gid}
+
+    if level:
+        query += " AND level = :level"
+        params["level"] = level
+    if status_filter:
+        query += " AND status = :status"
+        params["status"] = status_filter
+
+    query += " ORDER BY CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END, created_at DESC"
+
+    result = db.execute(sa_text(query), params)
+    rows = result.mappings().all()
+    return [dict(r) for r in rows]
+
+
+@router.get("/scenarios/{scenario_code}")
+def get_collaboration_scenario(
+    scenario_code: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Get a single collaboration scenario by code."""
+    from sqlalchemy import text as sa_text
+
+    result = db.execute(
+        sa_text("SELECT * FROM collaboration_scenarios WHERE scenario_code = :code"),
+        {"code": scenario_code}
+    )
+    row = result.mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Scenario {scenario_code} not found")
+    return dict(row)
