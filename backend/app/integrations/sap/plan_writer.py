@@ -28,6 +28,9 @@ try:
     from pyrfc import Connection, ABAPApplicationError, ABAPRuntimeError
     PYRFC_AVAILABLE = True
 except ImportError:
+    Connection = None  # type: ignore
+    ABAPApplicationError = Exception  # type: ignore
+    ABAPRuntimeError = Exception  # type: ignore
     PYRFC_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
