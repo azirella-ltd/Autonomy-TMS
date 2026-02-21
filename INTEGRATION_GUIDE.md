@@ -1327,7 +1327,7 @@ OpenClaw maps directly to the six UX Primitives defined in the AI-as-Labor strat
 | UX Primitive | OpenClaw Implementation |
 |---|---|
 | **Worklist** | Agent proactively sends exceptions via messaging |
-| **Ask Why** | Planner messages "Why?" → Agent calls Autonomy API for reasoning |
+| **Ask Why** | Planner messages "Why?" → Agent calls Autonomy Ask Why API → context-aware explanation with authority, guardrails, attribution, counterfactuals |
 | **Chat** | Native chat interface across WhatsApp/Slack/Teams |
 | **Task Log** | `sessions_history` provides full audit trail |
 | **Agent Config** | `AGENTS.md` + `SOUL.md` define agent behavior |
@@ -1387,6 +1387,44 @@ Authority boundaries are defined in Python dataclasses (deterministic enforcemen
 | OpenClaw requires broad permissions ([CrowdStrike advisory](https://www.crowdstrike.com/en-us/blog/what-security-teams-need-to-know-about-openclaw-ai-super-agent/)) | Restrict skills to read-only API calls in copilot mode; write operations require human confirmation |
 | PicoClaw not yet v1.0 | Use only for read-only monitoring/alerting, not execution decisions |
 | Business data sent to external LLMs | Self-host LLM (see next section) or use API key scoping |
+
+### Ask Why API Endpoints (Context-Aware Explainability)
+
+All TRM and GNN agent decisions support context-aware explanations via the planning cascade API:
+
+**TRM Decision Explanation**:
+```
+GET /api/v1/planning-cascade/trm-decision/{decision_id}/ask-why?level=NORMAL
+```
+Returns `ContextAwareExplanation` JSON:
+```json
+{
+  "summary": "Reorder point breach: Order 500 units from Supplier-A (confidence 87%, UNILATERAL).",
+  "explanation": "Full text at requested verbosity...",
+  "confidence": 0.87,
+  "authority": {
+    "agent_type": "trm_po", "authority_level": "OPERATOR",
+    "decision_classification": "UNILATERAL",
+    "authority_statement": "Standard PO within $10K threshold — unilateral authority."
+  },
+  "guardrails": [
+    {"name": "demand_deviation", "threshold": 0.15, "actual": 0.08, "status": "WITHIN", "margin": 0.47}
+  ],
+  "attribution": {
+    "method": "gradient_saliency",
+    "features": {"inventory_dos": 0.42, "demand_forecast": 0.28, "pipeline_qty": 0.15}
+  },
+  "prediction_interval": {"lower": 380, "estimate": 500, "upper": 620, "coverage": 0.9},
+  "counterfactuals": ["If inventory were 15% lower, PO would trigger at CRITICAL urgency."]
+}
+```
+
+**GNN Node Explanation**:
+```
+GET /api/v1/planning-cascade/gnn-analysis/{config_id}/node/{node_id}/ask-why?model_type=sop&level=NORMAL
+```
+
+**ExplainabilityLevel Query Parameter**: `VERBOSE` | `NORMAL` | `SUCCINCT`
 
 ### Further Reading
 

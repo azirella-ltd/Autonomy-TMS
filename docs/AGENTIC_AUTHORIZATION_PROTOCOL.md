@@ -830,6 +830,20 @@ Every human resolution of an escalation is captured as training data:
 
 Over time, agents learn the human's resolution patterns. A Logistics Agent that sees humans consistently approving small budget overages for strategic customers will learn to authorize those proactively, reducing escalations.
 
+### 7.4 Explanation of Authorization Decisions
+
+The Ask Why pattern surfaces authorization context through `AgentContextExplainer`. When a planner reviews an escalated decision, the explanation includes:
+
+1. **Authority Classification**: Whether the decision was UNILATERAL (auto-resolved), REQUIRES_AUTHORIZATION (escalated), or ADVISORY
+2. **Approval Chain**: Which agent(s) the decision was escalated to, and why (e.g., "Cost delta $15K exceeds $10K MANAGER threshold")
+3. **Balanced Scorecard Impact**: The net benefit calculation across Financial, Customer, Operational, and Strategic dimensions
+4. **Counterfactual Boundaries**: "If the PO value were below $10,000, this would be auto-resolved at OPERATOR level"
+
+This integrates with the three Board-as-Substrate adapters (Section 10):
+- **React UI**: `AskWhyPanel.jsx` renders authority context, guardrails, attribution, and counterfactuals as collapsible sections
+- **LLM Chat (OpenClaw)**: Agent formats authorization reasoning as natural language via explanation templates
+- **Agent Adapter**: Structured `ContextAwareExplanation` JSON for agent-to-agent authorization transparency
+
 ---
 
 ## 8. The Agentic Consensus Board (S&OP Application)

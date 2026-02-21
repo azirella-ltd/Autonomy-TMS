@@ -1244,3 +1244,100 @@ async def get_po_decision_history(
     """
     # TODO: Query from powell_po_decisions table
     return []
+
+
+# ============================================================================
+# S&OP GraphSAGE Analysis Endpoints
+# ============================================================================
+
+class SOPAnalysisResponse(BaseModel):
+    """S&OP network analysis results."""
+    config_id: int
+    num_sites: int
+    checkpoint_path: str
+    criticality: Dict[str, float]
+    bottleneck_risk: Dict[str, float]
+    concentration_risk: Dict[str, float]
+    resilience: Dict[str, float]
+    safety_stock_multiplier: Dict[str, float]
+    network_risk: Dict[str, float]
+    site_keys: List[str]
+    computed_at: Optional[str] = None
+
+
+class SOPSiteScoreResponse(BaseModel):
+    """S&OP scores for a single site."""
+    site_key: str
+    criticality: float
+    bottleneck_risk: float
+    concentration_risk: float
+    resilience: float
+    safety_stock_multiplier: float
+    embedding_dim: int = 0
+
+
+@router.get("/sop/analysis/{config_id}", response_model=SOPAnalysisResponse)
+async def get_sop_analysis(
+    config_id: int,
+    force_recompute: bool = Query(False, description="Force recomputation even if cached"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Run or return cached S&OP GraphSAGE network analysis.
+
+    Computes per-site criticality, bottleneck risk, concentration risk,
+    resilience, and safety stock multipliers. Results are cached in DB.
+
+    Set force_recompute=true to re-run the model even if cached results exist.
+    """
+    from app.services.powell.sop_inference_service import SOPInferenceService
+
+    try:
+        svc = SOPInferenceService(db=db, config_id=config_id)
+        analysis = await svc.analyze_network(force_recompute=force_recompute)
+        return SOPAnalysisResponse(
+            config_id=analysis.config_id,
+            num_sites=analysis.num_sites,
+            checkpoint_path=analysis.checkpoint_path,
+            criticality=analysis.criticality,
+            bottleneck_risk=analysis.bottleneck_risk,
+            concentration_risk=analysis.concentration_risk,
+            resilience=analysis.resilience,
+            safety_stock_multiplier=analysis.safety_stock_multiplier,
+            network_risk=analysis.network_risk,
+            site_keys=analysis.site_keys,
+            computed_at=analysis.computed_at.isoformat() if analysis.computed_at else None,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"S&OP analysis failed: {str(e)}")
+
+
+@router.get("/sop/criticality/{config_id}/{site_key}")
+async def get_site_criticality(
+    config_id: int,
+    site_key: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get criticality score for a specific site.
+
+    Returns the cached S&OP criticality score (0-1).
+    Higher values indicate more critical sites (single points of failure).
+    """
+    from app.services.powell.sop_inference_service import SOPInferenceService
+
+    svc = SOPInferenceService(db=db, config_id=config_id)
+    scores = await svc.get_site_scores(site_key)
+
+    if scores is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No S&OP analysis found for site '{site_key}' in config {config_id}. "
+                   f"Run GET /sop/analysis/{config_id} first."
+        )
+
+    return SOPSiteScoreResponse(site_key=site_key, **scores)

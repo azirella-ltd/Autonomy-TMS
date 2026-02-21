@@ -136,7 +136,7 @@ class SimDecision:
     site_id: int
     site_name: str
     product_id: str
-    decision_type: str  # "order", "atp", "rebalance", "exception"
+    decision_type: str  # "order"(PO), "atp", "rebalance", "exception", "transfer_order", "mo_execution", "quality", "maintenance", "subcontracting", "forecast_adjustment", "safety_stock"
     quantity: float
     context: Dict[str, Any] = field(default_factory=dict)
 
@@ -637,7 +637,47 @@ class DAGSimulator:
 
             # Update safety stock periodically (every 4 periods)
             if period > 0 and period % 4 == 0 and len(sp.demand_history) >= 4:
+                old_ss = sp.safety_stock
                 self._update_safety_stock(site, pid, sp)
+                if abs(sp.safety_stock - old_ss) > 0.01:
+                    self.decisions.append(SimDecision(
+                        period=period,
+                        site_id=site.id,
+                        site_name=site.name,
+                        product_id=pid,
+                        decision_type="safety_stock",
+                        quantity=sp.safety_stock,
+                        context={
+                            "old_safety_stock": old_ss,
+                            "new_safety_stock": sp.safety_stock,
+                            "target_inventory": sp.target_inventory,
+                            "avg_demand": float(np.mean(sp.demand_history[-4:])),
+                        },
+                    ))
+
+            # Rebalancing: check if this site has excess inventory relative to others
+            self._generate_rebalance_decision(site, pid, sp, period)
+
+            # Forecast adjustment: detect demand deviation from expected
+            self._generate_forecast_adjustment_decision(site, pid, sp, period)
+
+            # Quality: periodic quality checks on received inventory
+            if period > 0 and period % 2 == 0:
+                self._generate_quality_decision(site, pid, sp, period, rng)
+
+            # Maintenance: periodic maintenance decisions at interval
+            if period > 0 and period % 8 == 0:
+                self._generate_maintenance_decision(site, pid, period)
+
+            # Subcontracting: when capacity constrained (manufacturer sites)
+            if hasattr(site, 'master_type') and str(getattr(site, 'master_type', '')).lower() == 'manufacturer':
+                if order_qty > 0:
+                    self._generate_subcontracting_decision(site, pid, order_qty, sp, period)
+
+            # MO execution: for manufacturer sites with active production
+            if hasattr(site, 'master_type') and str(getattr(site, 'master_type', '')).lower() == 'manufacturer':
+                if order_qty > 0:
+                    self._generate_mo_decision(site, pid, order_qty, sp, period)
 
             # Compute costs
             sp_holding = max(0, sp.on_hand) * self.holding_cost_rate
@@ -695,6 +735,192 @@ class DAGSimulator:
                         "days_in_transit": days_in_transit,
                     },
                 ))
+
+    # ========================================================================
+    # New TRM Decision Generators
+    # ========================================================================
+
+    def _generate_rebalance_decision(
+        self, site: Node, product_id: str, sp: SiteProductState, period: int,
+    ):
+        """Generate rebalancing decision when DOS imbalance detected across sites."""
+        if sp.on_hand <= 0 or not sp.demand_history:
+            return
+        avg_demand = float(np.mean(sp.demand_history[-4:])) if len(sp.demand_history) >= 4 else sp.demand_history[-1]
+        if avg_demand <= 0:
+            return
+        this_dos = sp.on_hand / (avg_demand / 7.0) if avg_demand > 0 else 0
+
+        # Check peer sites for imbalance
+        topo = self.topology
+        downstream = topo.downstream_map.get(site.name, [])
+        for ds_name, lane in downstream:
+            ds_sp = self.state.get(ds_name, {}).get(product_id)
+            if not ds_sp or not ds_sp.demand_history:
+                continue
+            ds_avg = float(np.mean(ds_sp.demand_history[-4:])) if len(ds_sp.demand_history) >= 4 else ds_sp.demand_history[-1]
+            if ds_avg <= 0:
+                continue
+            ds_dos = ds_sp.on_hand / (ds_avg / 7.0)
+
+            # If this site has >2x more DOS than downstream, suggest rebalance
+            if this_dos > 2 * ds_dos and ds_dos < 14:
+                rebalance_qty = min(sp.on_hand * 0.2, (avg_demand / 7.0) * 7)
+                if rebalance_qty > 0:
+                    self.decisions.append(SimDecision(
+                        period=period,
+                        site_id=site.id,
+                        site_name=site.name,
+                        product_id=product_id,
+                        decision_type="rebalance",
+                        quantity=rebalance_qty,
+                        context={
+                            "to_site": ds_name,
+                            "source_dos": this_dos,
+                            "dest_dos": ds_dos,
+                            "reason": "dos_imbalance",
+                            "urgency": "medium" if ds_dos < 7 else "low",
+                        },
+                    ))
+                    break  # One rebalance per product per period
+
+    def _generate_forecast_adjustment_decision(
+        self, site: Node, product_id: str, sp: SiteProductState, period: int,
+    ):
+        """Generate forecast adjustment when actual demand deviates significantly."""
+        if period < 4 or len(sp.demand_history) < 4:
+            return
+        recent_avg = float(np.mean(sp.demand_history[-4:]))
+        forecast = self._get_forecast(site.name, product_id, period)
+        if forecast <= 0:
+            return
+        deviation_pct = (recent_avg - forecast) / forecast
+        if abs(deviation_pct) > 0.15:  # >15% deviation
+            direction = "up" if deviation_pct > 0 else "down"
+            self.decisions.append(SimDecision(
+                period=period,
+                site_id=site.id,
+                site_name=site.name,
+                product_id=product_id,
+                decision_type="forecast_adjustment",
+                quantity=recent_avg,
+                context={
+                    "current_forecast": forecast,
+                    "actual_avg_demand": recent_avg,
+                    "deviation_pct": round(deviation_pct, 4),
+                    "direction": direction,
+                    "adjustment_pct": round(deviation_pct, 4),
+                    "signal_source": "simulation",
+                    "signal_type": "demand_increase" if direction == "up" else "demand_decrease",
+                    "confidence": min(0.95, 0.6 + abs(deviation_pct)),
+                },
+            ))
+
+    def _generate_quality_decision(
+        self, site: Node, product_id: str, sp: SiteProductState,
+        period: int, rng: np.random.Generator,
+    ):
+        """Generate quality disposition decisions for received inventory."""
+        if sp.on_hand <= 0:
+            return
+        # Simulate occasional quality issues (5% chance per check)
+        if rng.random() > 0.05:
+            return
+        inspection_qty = min(sp.on_hand * 0.1, 50)
+        defect_rate = rng.uniform(0.01, 0.08)
+        disposition = "accept" if defect_rate < 0.03 else "rework" if defect_rate < 0.06 else "reject"
+        self.decisions.append(SimDecision(
+            period=period,
+            site_id=site.id,
+            site_name=site.name,
+            product_id=product_id,
+            decision_type="quality",
+            quantity=inspection_qty,
+            context={
+                "defect_rate": round(float(defect_rate), 4),
+                "disposition": disposition,
+                "severity_level": "minor" if defect_rate < 0.03 else "major" if defect_rate < 0.06 else "critical",
+                "inspection_type": "incoming",
+                "rework_cost_estimate": round(inspection_qty * defect_rate * 5.0, 2),
+                "scrap_cost_estimate": round(inspection_qty * defect_rate * 10.0, 2),
+                "confidence": 0.85,
+            },
+        ))
+
+    def _generate_maintenance_decision(
+        self, site: Node, product_id: str, period: int,
+    ):
+        """Generate maintenance scheduling decisions for site equipment."""
+        # Simulate preventive maintenance schedule decision
+        self.decisions.append(SimDecision(
+            period=period,
+            site_id=site.id,
+            site_name=site.name,
+            product_id=product_id,
+            decision_type="maintenance",
+            quantity=0,
+            context={
+                "maintenance_type": "preventive",
+                "decision_type": "schedule",
+                "asset_id": f"EQUIP-{site.name}-01",
+                "estimated_downtime_hours": 4.0,
+                "production_impact_units": 0,
+                "risk_score_if_deferred": 0.15 + (period / 52.0) * 0.1,
+                "confidence": 0.9,
+            },
+        ))
+
+    def _generate_subcontracting_decision(
+        self, site: Node, product_id: str, order_qty: float,
+        sp: SiteProductState, period: int,
+    ):
+        """Generate subcontracting routing decision for manufacturer sites."""
+        # Simulate capacity check: if order exceeds 80% of typical throughput, consider subcontracting
+        typical_weekly = sp.target_inventory * 0.5 if sp.target_inventory > 0 else 100
+        if order_qty <= typical_weekly * 0.8:
+            return  # Within capacity
+        internal_qty = typical_weekly * 0.8
+        external_qty = order_qty - internal_qty
+        self.decisions.append(SimDecision(
+            period=period,
+            site_id=site.id,
+            site_name=site.name,
+            product_id=product_id,
+            decision_type="subcontracting",
+            quantity=external_qty,
+            context={
+                "decision_type": "split",
+                "internal_quantity": internal_qty,
+                "external_quantity": external_qty,
+                "reason": "capacity_constraint",
+                "internal_capacity_pct": 0.8,
+                "subcontractor_lead_time_days": 14,
+                "confidence": 0.75,
+            },
+        ))
+
+    def _generate_mo_decision(
+        self, site: Node, product_id: str, order_qty: float,
+        sp: SiteProductState, period: int,
+    ):
+        """Generate Manufacturing Order execution decision."""
+        self.decisions.append(SimDecision(
+            period=period,
+            site_id=site.id,
+            site_name=site.name,
+            product_id=product_id,
+            decision_type="mo_execution",
+            quantity=order_qty,
+            context={
+                "decision_type": "release",
+                "production_order_id": f"MO-{period:04d}-{product_id[:6]}",
+                "sequence_position": 1,
+                "expedite": sp.backlog > sp.safety_stock,
+                "on_hand": sp.on_hand,
+                "backlog": sp.backlog,
+                "confidence": 0.85,
+            },
+        ))
 
     # ========================================================================
     # Ordering Heuristics
@@ -850,6 +1076,20 @@ class DAGSimulator:
                 ds_sp = self.state.get(ds_name, {}).get(product_id)
                 if ds_sp:
                     ds_sp.in_transit += per_site
+                # Record TO decision
+                self.decisions.append(SimDecision(
+                    period=period,
+                    site_id=source_site.id,
+                    site_name=source_site.name,
+                    product_id=product_id,
+                    decision_type="transfer_order",
+                    quantity=per_site,
+                    context={
+                        "dest_site": ds_name,
+                        "transit_periods": lead_time_periods,
+                        "trigger_reason": "demand_fulfillment",
+                    },
+                ))
         else:
             # Proportional distribution
             for ds_name, lane in downstream:
@@ -872,6 +1112,21 @@ class DAGSimulator:
                 ds_sp = self.state.get(ds_name, {}).get(product_id)
                 if ds_sp:
                     ds_sp.in_transit += qty
+                # Record TO decision
+                self.decisions.append(SimDecision(
+                    period=period,
+                    site_id=source_site.id,
+                    site_name=source_site.name,
+                    product_id=product_id,
+                    decision_type="transfer_order",
+                    quantity=qty,
+                    context={
+                        "dest_site": ds_name,
+                        "demand_share": share,
+                        "transit_periods": lead_time_periods,
+                        "trigger_reason": "demand_fulfillment",
+                    },
+                ))
 
     def _place_order_upstream(
         self,

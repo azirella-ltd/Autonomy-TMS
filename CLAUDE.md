@@ -120,12 +120,13 @@ Narrow TRMs (VFA - Value Function Approximation)
      - **MaintenanceSchedulingTRM**: Preventive maintenance scheduling and deferral
      - **SubcontractingTRM**: Make-vs-buy and external manufacturing routing
      - **ForecastAdjustmentTRM**: Signal-driven forecast adjustments (email, voice, market intel)
+     - **SafetyStockTRM**: Safety stock parameter adjustment and reoptimization
    - TRM does NOT do: long-term planning, network-wide optimization, policy parameters
    - **Training**: TRM = model architecture, RL = training method (not alternatives!)
      - Behavioral cloning for warm-start (supervised from experts)
      - RL/VFA fine-tuning (TD learning with actual outcomes)
      - Narrow scope makes RL tractable (small state, fast feedback, clear reward)
-   - Files: `backend/app/services/powell/atp_executor.py`, `inventory_rebalancing_trm.py`, `po_creation_trm.py`, `order_tracking_trm.py`, `mo_execution_trm.py`, `to_execution_trm.py`, `quality_disposition_trm.py`, `maintenance_scheduling_trm.py`, `subcontracting_trm.py`, `forecast_adjustment_trm.py`, `trm_trainer.py`
+   - Files: `backend/app/services/powell/atp_executor.py`, `inventory_rebalancing_trm.py`, `po_creation_trm.py`, `order_tracking_trm.py`, `mo_execution_trm.py`, `to_execution_trm.py`, `quality_disposition_trm.py`, `maintenance_scheduling_trm.py`, `subcontracting_trm.py`, `forecast_adjustment_trm.py`, `safety_stock_trm.py`, `trm_trainer.py`
    - **CDC → Relearning Loop**: Autonomous feedback pipeline for continuous TRM improvement
      - `cdc_monitor.py`: Event-driven metric deviation detection (6 thresholds, rate limiting)
      - `outcome_collector.py`: Computes actual outcomes for decisions after feedback horizon delays
@@ -382,6 +383,8 @@ make proxy-logs
 - `group_service.py`: Group and session management
 - `auth_service.py`: JWT authentication and authorization
 - `conformal_orchestrator.py`: Automatic conformal prediction feedback loop for demand, lead time, price, yield, and service level (forecast load hooks, multi-entity actuals observation, drift monitoring, scheduled recalibration, suite ↔ DB persistence)
+- `agent_context_explainer.py`: Context-aware explainability orchestrator — authority boundaries, guardrails, policy parameters, conformal intervals, feature attribution, counterfactuals for all 11 TRM agents and both GNN models
+- `explanation_templates.py`: 39 Jinja2-style templates (13 agent types × 3 verbosity levels) for inline decision explanations
 
 **API Endpoints** (`api/endpoints/`):
 - `mps.py`: Master Production Scheduling endpoints (TODO: implement)
@@ -510,6 +513,9 @@ The Powell SDAM framework constrains TRMs to narrow execution decisions:
 | `MaintenanceSchedulingTRM` | Per asset/work order | Schedule, defer, expedite, outsource |
 | `SubcontractingTRM` | Per make-vs-buy decision | Internal, external, split routing |
 | `ForecastAdjustmentTRM` | Per signal (email/voice/market) | Adjust forecast direction and magnitude |
+| `SafetyStockTRM` | Per product-location | Safety stock level adjustment and reoptimization |
+
+**Context-Aware Explainability**: All 11 TRM agents and both GNN models support context-aware explanations via `AgentContextExplainer`. Every decision includes authority boundaries, active guardrails, model attribution (gradient saliency for TRMs, attention weights for GNNs), conformal prediction intervals, and counterfactual analysis. Available at VERBOSE/NORMAL/SUCCINCT levels via Ask Why API endpoints.
 
 **AATP Consumption Logic** (critical):
 ```python

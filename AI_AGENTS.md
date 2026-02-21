@@ -25,14 +25,40 @@ Autonomy's AI agents replace or assist human planners in supply chain decision-m
 
 | Agent | Parameters | Inference Time | Accuracy vs. Optimal | Use Case | Explainability |
 |-------|-----------|----------------|---------------------|----------|----------------|
-| **TRM** | 7M | <10ms | 90-95% | Real-time ops | Low (black box) |
-| **GNN** | 128M | ~50ms | 85-92% demand pred | Network coordination | Medium (graph attention) |
+| **TRM** | 7M | <10ms | 90-95% | Real-time ops | Medium-High (context-aware) |
+| **GNN** | 128M | ~50ms | 85-92% demand pred | Network coordination | Medium-High (attention + context) |
 | **LLM** | 175B+ (GPT-4) | ~2s | 85-90% | Strategic planning | High (natural language) |
 | **RL (PPO)** | 2M | ~5ms | 75-90% | Policy learning | Low (black box) |
 | **Naive** | 0 | <1ms | Baseline (0%) | Benchmark | High (simple rule) |
 | **Optimizer** | N/A | ~500ms | 98-100% | Offline planning | High (mathematical) |
 | **PicoClaw** | 0 (deterministic) / Remote LLM (human query) | <100ms heartbeat / ~1-3s human query | N/A (gateway) | Edge CDC monitoring | Medium (workspace logs) |
 | **OpenClaw** | Remote LLM | ~1-3s | Depends on LLM | Chat interface, human escalation | High (natural language) |
+
+### Context-Aware Explainability
+
+All 11 TRM agents and both GNN models support context-aware explanations via `AgentContextExplainer` (`backend/app/services/agent_context_explainer.py`). Every decision explanation includes:
+
+| Component | TRM Method | GNN Method | Description |
+|-----------|-----------|------------|-------------|
+| **Authority Context** | Per-agent authority map | Advisory only | Unilateral / Requires-Authorization / Advisory classification |
+| **Active Guardrails** | CDC thresholds | CDC thresholds | Traffic-light status (WITHIN / APPROACHING / EXCEEDED) |
+| **Policy Parameters** | Active theta from DB | S&OP parameters | Current powell_policy_parameters driving decisions |
+| **Feature Attribution** | Gradient saliency | GAT attention weights | Which inputs drove the decision (top-5 ranked) |
+| **Conformal Intervals** | Belief state intervals | Belief state intervals | Prediction uncertainty with calibration quality |
+| **Counterfactuals** | Threshold proximity | Threshold proximity | "If X were Y, decision would change to Z" |
+
+**Verbosity Levels** (`ExplainabilityLevel` enum):
+- **SUCCINCT**: 1-sentence summary (<1ms, inline with every decision)
+- **NORMAL**: Summary + top driver + authority + guardrail status
+- **VERBOSE**: Full detail with attribution bars, all guardrails, policy parameters, counterfactuals
+
+**API Endpoints**:
+- `GET /planning-cascade/trm-decision/{id}/ask-why?level=NORMAL` — TRM decision explanation
+- `GET /planning-cascade/gnn-analysis/{config_id}/node/{node_id}/ask-why?level=NORMAL` — GNN node explanation
+
+**Frontend**: `AskWhyPanel.jsx` renders collapsible sections for authority, guardrails, feature attribution (bar charts), and counterfactuals.
+
+**Files**: `agent_context_explainer.py`, `explanation_templates.py` (39 templates: 13 agent types × 3 levels)
 
 ---
 

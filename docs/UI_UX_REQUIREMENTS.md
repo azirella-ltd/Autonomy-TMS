@@ -1068,6 +1068,16 @@ This document outlines the comprehensive UI/UX requirements for all functional a
     - Description: "GPT-4 based, natural language explainability"
     - Use case: "Strategic planning with human collaboration"
     - Select button
+- **Ask Why Requirements** (all agent types):
+  - **Trigger**: "Ask Why" button on any agent decision in worklist or decision history
+  - **Verbosity**: Toggle between SUCCINCT / NORMAL / VERBOSE levels
+  - **Sections** (collapsible accordion in `AskWhyPanel.jsx`):
+    1. **Authority Context** (Shield icon): Classification chip (UNILATERAL green / REQUIRES_AUTH amber / ADVISORY blue), authority level badge, statement text, approval info if escalated
+    2. **Active Guardrails** (Gauge icon): Traffic-light indicators per guardrail (green=WITHIN, yellow=APPROACHING, red=EXCEEDED), threshold vs actual values, margin percentage
+    3. **Feature Attribution** (BarChart icon): Horizontal bar chart of top-5 features by importance, neighbor attention chips for GNN models
+    4. **Conformal Interval**: Prediction uncertainty range (lower, estimate, upper) with coverage and calibration quality
+    5. **Counterfactuals** (CompareArrows icon): 1-3 "If X were Y, decision changes to Z" statements
+  - **API**: `GET /planning-cascade/trm-decision/{id}/ask-why?level=NORMAL`, `GET /planning-cascade/gnn-analysis/{config_id}/node/{node_id}/ask-why`
 - **Training Configuration Panel**:
   - **Data Source**:
     - Dropdown: Historical Games | SimPy Generated | Custom Dataset

@@ -29,6 +29,7 @@ from .engines import (
 )
 from .cdc_monitor import CDCMonitor, CDCConfig, SiteMetrics, TriggerEvent, ReplanAction
 from .site_agent_model import SiteAgentModel, SiteAgentModelConfig
+from app.services.agent_context_explainer import AgentContextExplainer, AgentType
 
 logger = logging.getLogger(__name__)
 
@@ -111,11 +112,26 @@ class SiteAgent:
         # Initialize CDC monitor
         self.cdc_monitor = CDCMonitor(config.site_key, config.cdc_config)
 
+        # Initialize context-aware explainers for each TRM type
+        self._explainers: Dict[str, AgentContextExplainer] = {}
+        for agent_type in [
+            AgentType.TRM_ATP, AgentType.TRM_PO, AgentType.TRM_REBALANCE,
+            AgentType.TRM_ORDER_TRACKING, AgentType.TRM_MO_EXECUTION,
+            AgentType.TRM_TO_EXECUTION, AgentType.TRM_QUALITY,
+            AgentType.TRM_MAINTENANCE, AgentType.TRM_SUBCONTRACTING,
+            AgentType.TRM_FORECAST_ADJUSTMENT, AgentType.TRM_SAFETY_STOCK,
+        ]:
+            self._explainers[agent_type.value] = AgentContextExplainer(agent_type)
+
         # State cache
         self._state_cache: Optional[torch.Tensor] = None
         self._state_cache_time: Optional[datetime] = None
 
         logger.info(f"SiteAgent initialized for {config.site_key}")
+
+    def get_explainer(self, agent_type: str) -> Optional[AgentContextExplainer]:
+        """Get the context-aware explainer for a specific agent type."""
+        return self._explainers.get(agent_type)
 
     def _load_model(self):
         """Load TRM model from checkpoint with fallback resolution."""

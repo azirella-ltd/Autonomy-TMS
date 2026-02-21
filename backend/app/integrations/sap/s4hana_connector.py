@@ -246,6 +246,175 @@ class S4HANAConnector:
         "LGFSB",  # Default Storage Location for Ext. Procurement
     ]
 
+    # ==========================================================================
+    # Config Builder Fields (for building SupplyChainConfig from SAP data)
+    # ==========================================================================
+
+    # Purchasing Info Record Header (EINA) - vendor-product relationships
+    PURCHASING_INFO_HEADER_FIELDS = [
+        "INFNR",  # Purchasing Info Record Number
+        "MATNR",  # Material Number
+        "LIFNR",  # Vendor Number
+        "LOEKZ",  # Deletion Indicator
+    ]
+
+    # Purchasing Info Record Item (EINE) - pricing, MOQ, lead times per org
+    PURCHASING_INFO_ITEM_FIELDS = [
+        "INFNR",  # Purchasing Info Record Number
+        "EKORG",  # Purchasing Organization
+        "ESOKZ",  # Purchasing Info Record Category
+        "NETPR",  # Net Price
+        "WAERS",  # Currency
+        "PEINH",  # Price Unit
+        "NORBM",  # Standard Order Quantity
+        "MINBM",  # Minimum Order Quantity
+        "APLFZ",  # Planned Delivery Time (days)
+        "UEBTO",  # Over-delivery Tolerance (%)
+        "UNTTO",  # Under-delivery Tolerance (%)
+    ]
+
+    # Source List (EORD) - approved vendor-plant assignments with priority
+    SOURCE_LIST_FIELDS = [
+        "MATNR",  # Material Number
+        "WERKS",  # Plant
+        "ZEESSION",  # Validity Period Counter (sequence)
+        "VDATU",  # Valid From Date
+        "BDATU",  # Valid To Date
+        "LIFNR",  # Vendor Number
+        "FLIFN",  # Fixed Vendor Indicator
+        "NOTKZ",  # Source List Usage (1=normal, 2=blocked)
+        "EKORG",  # Purchasing Organization
+        "AUESSION",  # Agreement Number (outline agreement)
+        "BESKZ",  # Procurement Type (F=external, E=in-house, U=subcontracting)
+        "SOBSL",  # Special Procurement Type
+    ]
+
+    # Company Codes (T001)
+    COMPANY_CODE_FIELDS = [
+        "BUKRS",  # Company Code
+        "BUTXT",  # Company Name
+        "LAND1",  # Country Key
+        "WAERS",  # Company Code Currency
+        "ADRNR",  # Address Number (FK to ADRC)
+    ]
+
+    # Central Address Management (ADRC)
+    ADDRESS_FIELDS = [
+        "ADDRNUMBER",  # Address Number
+        "NAME1",  # Name 1
+        "CITY1",  # City
+        "REGION",  # Region/State
+        "COUNTRY",  # Country Key
+        "POST_CODE1",  # Postal Code
+        "STREET",  # Street
+    ]
+
+    # Customer Sales Data (KNVV) - customer grouping for market segmentation
+    CUSTOMER_SALES_DATA_FIELDS = [
+        "KUNNR",  # Customer Number
+        "VKORG",  # Sales Organization
+        "VTWEG",  # Distribution Channel
+        "SPART",  # Division
+        "KDGRP",  # Customer Group
+        "BZIRK",  # Sales District
+        "KVGR1",  # Customer Group 1
+        "KVGR2",  # Customer Group 2
+        "WAERS",  # Currency
+    ]
+
+    # Sales Data for Material (MVKE) - product hierarchy enrichment
+    MATERIAL_SALES_DATA_FIELDS = [
+        "MATNR",  # Material Number
+        "VKORG",  # Sales Organization
+        "VTWEG",  # Distribution Channel
+        "PRODH",  # Product Hierarchy
+        "MTPOS",  # Item Category Group
+        "KONDM",  # Material Pricing Group
+        "VERSG",  # Material Statistics Group
+    ]
+
+    # Routing Header (PLKO) - manufacturing process definitions
+    ROUTING_HEADER_FIELDS = [
+        "PLNTY",  # Task List Type (N=routing, R=reference, S=rate routing)
+        "PLNNR",  # Group Counter (routing number)
+        "PLNAL",  # Group/Alternative Counter
+        "WERKS",  # Plant
+        "VERWE",  # Usage (1=production, 2=process, 9=maintenance)
+        "STATU",  # Status (1=created, 2=released, 3=locked)
+        "LOSVN",  # Lot Size From
+        "LOSBS",  # Lot Size To
+        "DAESSION",  # Valid From Date
+    ]
+
+    # Routing Operation (PLPO) - setup/machine/labor times
+    ROUTING_OPERATION_FIELDS = [
+        "PLNTY",  # Task List Type
+        "PLNNR",  # Routing Number
+        "PLNKN",  # Operation/Activity Number
+        "VORNR",  # Operation Number (display)
+        "ARBID",  # Work Center (Object ID)
+        "ARBPL",  # Work Center Name
+        "WERKS",  # Plant
+        "STEUS",  # Control Key
+        "BMSCH",  # Base Quantity
+        "VGW01",  # Setup Time
+        "VGW02",  # Machine Time
+        "VGW03",  # Labor Time
+        "VGE01",  # Unit for Setup
+        "VGE02",  # Unit for Machine
+        "VGE03",  # Unit for Labor
+    ]
+
+    # BOM Header (STKO) - contextualizes existing STPO items
+    BOM_HEADER_FIELDS = [
+        "STLNR",  # Bill of Material Number
+        "STLAL",  # Alternative BOM
+        "STKOZ",  # BOM Category (M=material, S=sales, etc.)
+        "BMENG",  # Base Quantity
+        "BMEIN",  # Base Unit of Measure
+        "DAESSION",  # Valid From Date
+        "ANESSION",  # Valid To Date
+        "STLST",  # BOM Status
+    ]
+
+    # Work Center Header (CRHD) - resource definitions
+    WORK_CENTER_HEADER_FIELDS = [
+        "OBJID",  # Object ID
+        "ARBPL",  # Work Center
+        "WERKS",  # Plant
+        "OBJTY",  # Object Type (A=work center, D=PRT)
+        "VERWE",  # Usage
+    ]
+
+    # Capacity Header (KAKO) - available capacity
+    CAPACITY_HEADER_FIELDS = [
+        "OBJID",  # Object ID
+        "KAPESSION",  # Capacity Category (001=machine, 002=labor)
+        "KESSION",  # Capacity Description
+        "ESSION",  # Capacity Planning Indicator
+        "ANESSION",  # Start Time
+        "ENESSION",  # End Time
+        "MOESSION",  # Monday Flag
+        "DIESSION",  # Tuesday Flag
+        "MIESSION",  # Wednesday Flag
+        "DOESSION",  # Thursday Flag
+        "FRESSION",  # Friday Flag
+    ]
+
+    # Material UOM Conversions (MARM) - unit conversion factors
+    MATERIAL_UOM_FIELDS = [
+        "MATNR",  # Material Number
+        "MEINH",  # Alternative Unit of Measure
+        "UMREZ",  # Numerator (alt → base)
+        "UMREN",  # Denominator (alt → base)
+        "BRGEW",  # Gross Weight
+        "NTGEW",  # Net Weight
+        "GEWEI",  # Weight Unit
+        "VOLUM",  # Volume
+        "VOLEH",  # Volume Unit
+        "EAN11",  # EAN/UPC
+    ]
+
     def __init__(self, config: S4HANAConnectionConfig):
         """Initialize S/4HANA connector."""
         if not PYRFC_AVAILABLE:
@@ -731,6 +900,260 @@ class S4HANAConnector:
 
         logger.info(f"Extracted {len(plants)} plants")
         return plants
+
+    # ==========================================================================
+    # Config Builder Extraction Methods
+    # ==========================================================================
+
+    def extract_purchasing_info_records(
+        self,
+        vendor: Optional[str] = None,
+        max_rows: int = 10000
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Extract purchasing info records (EINA header + EINE item).
+
+        Returns vendor-product relationships with pricing, MOQs, and lead times.
+        """
+        logger.info(f"Extracting purchasing info records (vendor={vendor})")
+
+        where_clause = []
+        if vendor:
+            where_clause.append({"FIELD": "LIFNR", "OPTION": "EQ", "LOW": vendor})
+
+        headers = self._execute_query(
+            table_name="EINA",
+            fields=self.PURCHASING_INFO_HEADER_FIELDS,
+            where_clause=where_clause if where_clause else None,
+            max_rows=max_rows,
+        )
+
+        items = self._execute_query(
+            table_name="EINE",
+            fields=self.PURCHASING_INFO_ITEM_FIELDS,
+            where_clause=None,
+            max_rows=max_rows,
+        )
+
+        if not headers.empty and not items.empty:
+            info_nrs = headers["INFNR"].unique()
+            items = items[items["INFNR"].isin(info_nrs)]
+
+        logger.info(f"Extracted {len(headers)} info record headers, {len(items)} items")
+        return headers, items
+
+    def extract_source_list(
+        self,
+        plant: Optional[str] = None,
+        max_rows: int = 10000
+    ) -> pd.DataFrame:
+        """Extract source list (EORD) — approved vendor-plant-material assignments."""
+        logger.info(f"Extracting source list (plant={plant})")
+
+        where_clause = []
+        if plant:
+            where_clause.append({"FIELD": "WERKS", "OPTION": "EQ", "LOW": plant})
+
+        source_list = self._execute_query(
+            table_name="EORD",
+            fields=self.SOURCE_LIST_FIELDS,
+            where_clause=where_clause if where_clause else None,
+            max_rows=max_rows,
+        )
+
+        logger.info(f"Extracted {len(source_list)} source list entries")
+        return source_list
+
+    def extract_company_codes(self, max_rows: int = 500) -> pd.DataFrame:
+        """Extract company codes (T001)."""
+        logger.info("Extracting company codes")
+
+        companies = self._execute_query(
+            table_name="T001",
+            fields=self.COMPANY_CODE_FIELDS,
+            max_rows=max_rows,
+        )
+
+        logger.info(f"Extracted {len(companies)} company codes")
+        return companies
+
+    def extract_addresses(
+        self,
+        address_numbers: Optional[List[str]] = None,
+        max_rows: int = 10000
+    ) -> pd.DataFrame:
+        """Extract central addresses (ADRC) for sites and partners."""
+        logger.info("Extracting addresses")
+
+        where_clause = []
+        if address_numbers:
+            for addr in address_numbers[:50]:
+                where_clause.append({"FIELD": "ADDRNUMBER", "OPTION": "EQ", "LOW": addr})
+
+        addresses = self._execute_query(
+            table_name="ADRC",
+            fields=self.ADDRESS_FIELDS,
+            where_clause=where_clause if where_clause else None,
+            max_rows=max_rows,
+        )
+
+        logger.info(f"Extracted {len(addresses)} addresses")
+        return addresses
+
+    def extract_customer_sales_data(
+        self,
+        sales_org: Optional[str] = None,
+        max_rows: int = 10000
+    ) -> pd.DataFrame:
+        """Extract customer sales data (KNVV) for market segmentation."""
+        logger.info(f"Extracting customer sales data (sales_org={sales_org})")
+
+        where_clause = []
+        if sales_org:
+            where_clause.append({"FIELD": "VKORG", "OPTION": "EQ", "LOW": sales_org})
+
+        customers = self._execute_query(
+            table_name="KNVV",
+            fields=self.CUSTOMER_SALES_DATA_FIELDS,
+            where_clause=where_clause if where_clause else None,
+            max_rows=max_rows,
+        )
+
+        logger.info(f"Extracted {len(customers)} customer sales records")
+        return customers
+
+    def extract_material_sales_data(
+        self,
+        sales_org: Optional[str] = None,
+        max_rows: int = 10000
+    ) -> pd.DataFrame:
+        """Extract material sales data (MVKE) for product hierarchy enrichment."""
+        logger.info(f"Extracting material sales data (sales_org={sales_org})")
+
+        where_clause = []
+        if sales_org:
+            where_clause.append({"FIELD": "VKORG", "OPTION": "EQ", "LOW": sales_org})
+
+        material_sales = self._execute_query(
+            table_name="MVKE",
+            fields=self.MATERIAL_SALES_DATA_FIELDS,
+            where_clause=where_clause if where_clause else None,
+            max_rows=max_rows,
+        )
+
+        logger.info(f"Extracted {len(material_sales)} material sales records")
+        return material_sales
+
+    def extract_routings(
+        self,
+        plant: Optional[str] = None,
+        max_rows: int = 10000
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Extract routing headers (PLKO) and operations (PLPO).
+
+        Returns manufacturing process definitions with setup/machine/labor times.
+        """
+        logger.info(f"Extracting routings (plant={plant})")
+
+        where_clause = []
+        if plant:
+            where_clause.append({"FIELD": "WERKS", "OPTION": "EQ", "LOW": plant})
+
+        headers = self._execute_query(
+            table_name="PLKO",
+            fields=self.ROUTING_HEADER_FIELDS,
+            where_clause=where_clause if where_clause else None,
+            max_rows=max_rows,
+        )
+
+        op_where = []
+        if plant:
+            op_where.append({"FIELD": "WERKS", "OPTION": "EQ", "LOW": plant})
+
+        operations = self._execute_query(
+            table_name="PLPO",
+            fields=self.ROUTING_OPERATION_FIELDS,
+            where_clause=op_where if op_where else None,
+            max_rows=max_rows,
+        )
+
+        if not headers.empty and not operations.empty:
+            routing_ids = headers["PLNNR"].unique()
+            operations = operations[operations["PLNNR"].isin(routing_ids)]
+
+        logger.info(f"Extracted {len(headers)} routing headers, {len(operations)} operations")
+        return headers, operations
+
+    def extract_bom_headers(
+        self,
+        max_rows: int = 10000
+    ) -> pd.DataFrame:
+        """Extract BOM headers (STKO) to contextualize STPO items."""
+        logger.info("Extracting BOM headers")
+
+        bom_headers = self._execute_query(
+            table_name="STKO",
+            fields=self.BOM_HEADER_FIELDS,
+            max_rows=max_rows,
+        )
+
+        logger.info(f"Extracted {len(bom_headers)} BOM headers")
+        return bom_headers
+
+    def extract_work_centers(
+        self,
+        plant: Optional[str] = None,
+        max_rows: int = 5000
+    ) -> pd.DataFrame:
+        """Extract work center definitions (CRHD)."""
+        logger.info(f"Extracting work centers (plant={plant})")
+
+        where_clause = []
+        if plant:
+            where_clause.append({"FIELD": "WERKS", "OPTION": "EQ", "LOW": plant})
+
+        work_centers = self._execute_query(
+            table_name="CRHD",
+            fields=self.WORK_CENTER_HEADER_FIELDS,
+            where_clause=where_clause if where_clause else None,
+            max_rows=max_rows,
+        )
+
+        logger.info(f"Extracted {len(work_centers)} work centers")
+        return work_centers
+
+    def extract_capacity_headers(
+        self,
+        max_rows: int = 5000
+    ) -> pd.DataFrame:
+        """Extract capacity headers (KAKO) for resource capacity planning."""
+        logger.info("Extracting capacity headers")
+
+        capacity = self._execute_query(
+            table_name="KAKO",
+            fields=self.CAPACITY_HEADER_FIELDS,
+            max_rows=max_rows,
+        )
+
+        logger.info(f"Extracted {len(capacity)} capacity records")
+        return capacity
+
+    def extract_material_uom(
+        self,
+        max_rows: int = 10000
+    ) -> pd.DataFrame:
+        """Extract material UOM conversions (MARM)."""
+        logger.info("Extracting material UOM conversions")
+
+        uom = self._execute_query(
+            table_name="MARM",
+            fields=self.MATERIAL_UOM_FIELDS,
+            max_rows=max_rows,
+        )
+
+        logger.info(f"Extracted {len(uom)} UOM conversion records")
+        return uom
 
     def execute_bapi(self, bapi_name: str, **params) -> Dict[str, Any]:
         """

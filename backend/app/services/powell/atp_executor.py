@@ -74,6 +74,9 @@ class ATPResponse:
     confidence: float = 1.0
     reasoning: str = ""
 
+    # Context-aware explanation (populated when explainer is available)
+    context_explanation: Optional[Dict] = None
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "order_id": self.order_id,
@@ -171,6 +174,9 @@ class ATPExecutorTRM:
         self.db = db
         self.config_id = config_id
 
+        # Context-aware explainer (set externally by SiteAgent or caller)
+        self.ctx_explainer = None
+
         # Decision history for TRM training
         self._decision_history: List[Dict[str, Any]] = []
 
@@ -182,6 +188,36 @@ class ATPExecutorTRM:
             "trm_decisions": 0,
             "heuristic_decisions": 0,
         }
+
+    def _enrich_with_context(
+        self,
+        response: 'ATPResponse',
+        state: 'ATPState',
+        request: 'ATPRequest',
+    ) -> 'ATPResponse':
+        """Enrich ATP response with context-aware reasoning if explainer is available."""
+        if self.ctx_explainer is None:
+            return response
+
+        try:
+            fill_pct = response.promised_qty / max(1, request.requested_qty)
+            summary = (
+                f"{'Full' if fill_pct >= 1.0 else f'Partial ({fill_pct:.0%})'} "
+                f"fulfillment for order {request.order_id}"
+            )
+            ctx = self.ctx_explainer.generate_inline_explanation(
+                decision_summary=summary,
+                confidence=response.confidence,
+                trm_confidence=response.confidence if self.trm_model else None,
+                decision_category='supply_plan',
+                decision_value=request.requested_qty * 10,  # Approx cost
+            )
+            response.reasoning = ctx.explanation
+            response.context_explanation = ctx.to_dict()
+        except Exception as e:
+            logger.debug(f"Context enrichment failed: {e}")
+
+        return response
 
     def check_atp(
         self,
@@ -221,6 +257,9 @@ class ATPExecutorTRM:
                 promised_qty=0,
                 reasoning="No TRM model available and heuristic disabled",
             )
+
+        # Enrich with context-aware reasoning
+        response = self._enrich_with_context(response, state, request)
 
         # Record for training
         self._record_decision(request, state, response)

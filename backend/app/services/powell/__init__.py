@@ -243,6 +243,12 @@ from .site_agent import (
     SiteAgent,
 )
 
+# S&OP GraphSAGE Inference (Runtime analysis + embedding cache)
+from .sop_inference_service import (
+    NetworkAnalysis,
+    SOPInferenceService,
+)
+
 # Integration Modules (Connecting SiteAgent to existing services)
 from .integration import (
     SiteAgentSupplyPlanAdapter,
@@ -431,6 +437,9 @@ __all__ = [
     "SiteATPResponse",
     "SitePORecommendation",
     "SiteAgent",
+    # S&OP GraphSAGE Inference
+    "NetworkAnalysis",
+    "SOPInferenceService",
     # Integration Modules
     "SiteAgentSupplyPlanAdapter",
     "SiteAgentATPAdapter",

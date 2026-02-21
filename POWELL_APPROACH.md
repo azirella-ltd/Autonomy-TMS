@@ -1970,7 +1970,7 @@ class SiteAgent:
 | Aspect | Deterministic Engine | TRM Head |
 |--------|---------------------|----------|
 | **Correctness** | Provably correct by construction | Learned, may have errors |
-| **Auditability** | Full trace, explainable | Black box, requires interpretation |
+| **Auditability** | Full trace, explainable | Context-aware explanations via AgentContextExplainer |
 | **Consistency** | Same input → same output | May vary (exploration) |
 | **Edge cases** | Handles defined cases only | Learns to handle exceptions |
 | **Adaptability** | Requires code change | Learns from data |
@@ -4790,6 +4790,77 @@ class TwoStageStochasticProgram:
             cvar_95=0.0
         )
 ```
+
+#### 5.15 Context-Aware Explainability Architecture
+
+All 11 TRM agents and both GNN models produce context-aware explanations via `AgentContextExplainer` (`backend/app/services/agent_context_explainer.py`).
+
+##### 5.15.1 Explanation Pipeline
+
+```
+Model Decision (tensor output)
+    ↓
+AgentContextExplainer.generate_inline_explanation()
+    ├── AuthorityContextResolver → agent authority boundaries + approval thresholds
+    ├── GuardrailStatusReporter → CDC thresholds vs current metrics (WITHIN/APPROACHING/EXCEEDED)
+    ├── PolicyParameterResolver → active theta from powell_policy_parameters
+    ├── ConformalContextFormatter → belief state intervals + calibration quality
+    └── CounterfactualGenerator → nearest threshold that would change the outcome
+    ↓
+ContextAwareExplanation (unified dataclass)
+    ├── Inline mode: Template string (<1ms, every decision) → populates decision.reasoning
+    └── On-demand mode: Rich JSON (Ask Why API) → optionally LLM-enhanced when Qwen 3 available
+```
+
+##### 5.15.2 Per-Model Attribution Methods
+
+| Model | Attribution Method | What It Extracts |
+|-------|-------------------|-----------------|
+| **TRM (SiteAgentModel)** | Gradient saliency (`predict_with_attribution()`) | Per-feature importance via ∂output/∂input |
+| **SOPGraphSAGE** | GAT attention weights (`forward_with_attention()`) | Neighbor site influence + input saliency |
+| **ExecutionTemporalGNN** | Temporal + spatial attention (`forward_with_full_attention()`) | Time-step weights + neighbor influence |
+
+##### 5.15.3 Authority Boundaries Per TRM
+
+| TRM | Unilateral Actions | Requires Authorization |
+|-----|-------------------|----------------------|
+| ATPExecutorTRM | Reallocate within priority tier, partial fill | Expedite (Logistics), cross-DC (Inventory) |
+| POCreationTRM | Standard PO within cost threshold | New supplier (Procurement), policy exception (S&OP) |
+| InventoryRebalancingTRM | Intra-region transfers within policy | Cross-region (Logistics), exception (S&OP) |
+| OrderTrackingTRM | Flag exceptions, recommend actions | Expedite/cancel (Supervisor) |
+| MOExecutionTRM | Release within schedule, sequence | Overtime/expedite (Plant), quality hold (Quality) |
+| TOExecutionTRM | Standard release, consolidation | Mode change (Logistics), cross-region (S&OP) |
+| QualityDispositionTRM | Accept/reject within spec | Use-as-is (Engineering), scrap (Finance) |
+| MaintenanceSchedulingTRM | Schedule within window | Defer critical (Plant Manager), outsource (Procurement) |
+| SubcontractingTRM | Select from approved vendors | New vendor (Procurement), IP-sensitive (Legal) |
+| ForecastAdjustmentTRM | Minor adjustments (<5%) | Large adjustments (Demand Manager) |
+| SafetyStockTRM | Adjust within ±20% of policy | Exceed bounds (S&OP), critical items (VP) |
+
+##### 5.15.4 Explanation Templates
+
+39 templates (13 agent types × 3 verbosity levels) in `backend/app/services/explanation_templates.py`.
+
+Example (POCreationTRM, NORMAL level):
+```
+"Reorder point breach: Order 500 units from Supplier-A.
+ Within OPERATOR authority (standard PO, $7,500 < $10K threshold).
+ Top driver: inventory_dos (42% importance — 8.2 days, below 14-day target).
+ All guardrails within thresholds. Policy theta: SS multiplier=1.65."
+```
+
+##### 5.15.5 API Endpoints
+
+- `GET /planning-cascade/trm-decision/{id}/ask-why?level=VERBOSE` — Full TRM explanation with attribution
+- `GET /planning-cascade/gnn-analysis/{config_id}/node/{node_id}/ask-why?model_type=sop&level=NORMAL` — GNN node explanation
+- Existing `ask_why_supply_commit` and `ask_why_allocation_commit` endpoints extended with `agent_context` field
+
+##### 5.15.6 Frontend Integration
+
+`AskWhyPanel.jsx` renders four collapsible sections:
+1. **Authority Context** — Shield icon, classification chip (UNILATERAL/REQUIRES_AUTH/ADVISORY), approval info
+2. **Active Guardrails** — Traffic-light indicators (green/yellow/red), threshold vs actual
+3. **Feature Attribution** — Horizontal bar charts for top-5 features, neighbor attention chips for GNN
+4. **Counterfactuals** — "If X were Y, decision would change to Z" statements
 
 ---
 

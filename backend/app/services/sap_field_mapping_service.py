@@ -202,6 +202,72 @@ SAP_FIELD_PATTERNS = {
     r"^(Z_)?REPOS$": ("subcontracting_order", "invoice_receipt"),
     r"^(Z_)?MKAL$": ("subcontracting_order", "production_version"),
     r"^(Z_)?LOHNV$": ("subcontracting_order", "subcontracting_flag"),
+
+    # --- Config Builder patterns ---
+
+    # Purchasing Info Record / Vendor Product patterns
+    r"^(Z_)?INFNR$": ("vendor_product", "info_record"),
+    r"^(Z_)?NETPR$": ("vendor_product", "net_price"),
+    r"^(Z_)?APLFZ$": ("vendor_lead_time", "planned_delivery_time"),
+    r"^(Z_)?NORBM$": ("vendor_product", "standard_order_qty"),
+    r"^(Z_)?MINBM$": ("vendor_product", "min_order_qty"),
+    r"^(Z_)?EKORG$": ("vendor_lead_time", "purchasing_org"),
+
+    # Source List / Sourcing Rules patterns
+    r"^(Z_)?NOTKZ$": ("sourcing_rules", "source_usage"),
+    r"^(Z_)?FLIFN$": ("sourcing_rules", "fixed_vendor"),
+    r"^(Z_)?BESKZ$": ("sourcing_rules", "procurement_type"),
+    r"^(Z_)?SOBSL$": ("sourcing_rules", "special_procurement_type"),
+
+    # Company / Address patterns
+    r"^(Z_)?BUTXT$": ("company", "company_name"),
+    r"^(Z_)?ADDRNUMBER$": ("geography", "address_id"),
+    r"^(Z_)?POST_CODE1?$": ("geography", "postal_code"),
+    r"^(Z_)?CITY1?$": ("geography", "city"),
+    r"^(Z_)?REGION$": ("geography", "region"),
+    r"^(Z_)?COUNTRY$": ("geography", "country"),
+
+    # Product Hierarchy / Sales Data patterns
+    r"^(Z_)?PRODH$": ("product", "product_hierarchy"),
+    r"^(Z_)?MVKE$": ("product", "sales_data"),
+    r"^(Z_)?KONDM$": ("product", "pricing_group"),
+
+    # Routing / Production Process patterns
+    r"^(Z_)?PLNTY$": ("production_process", "task_list_type"),
+    r"^(Z_)?PLNNR$": ("production_process", "process_id"),
+    r"^(Z_)?PLNKN$": ("production_process", "operation_number"),
+    r"^(Z_)?ARBID$": ("production_process", "work_center_id"),
+    r"^(Z_)?ARBPL$": ("production_process", "work_center_name"),
+    r"^(Z_)?VGW01$": ("production_process", "setup_time"),
+    r"^(Z_)?VGW02$": ("production_process", "machine_time"),
+    r"^(Z_)?VGW03$": ("production_process", "labor_time"),
+    r"^(Z_)?STEUS$": ("production_process", "control_key"),
+
+    # BOM Header patterns
+    r"^(Z_)?STLNR$": ("product_bom", "bom_number"),
+    r"^(Z_)?STLAL$": ("product_bom", "alternative"),
+    r"^(Z_)?BMENG$": ("product_bom", "base_quantity"),
+
+    # UOM Conversion patterns
+    r"^(Z_)?MEINH$": ("product", "alt_uom"),
+    r"^(Z_)?UMREZ$": ("product", "uom_numerator"),
+    r"^(Z_)?UMREN$": ("product", "uom_denominator"),
+
+    # Transportation Lane / APO patterns
+    r"^(Z_)?LOCFR$": ("transportation_lane", "source_site_id"),
+    r"^(Z_)?LOCTO$": ("transportation_lane", "destination_site_id"),
+    r"^(Z_)?TRANSTIME$": ("transportation_lane", "lead_time_days"),
+    r"^(Z_)?TRANSCOST$": ("transportation_lane", "cost_per_unit"),
+    r"^(Z_)?TRANSMODE$": ("transportation_lane", "transport_mode"),
+
+    # Resource Capacity patterns
+    r"^(Z_)?OBJID$": ("resource_capacity", "resource_id"),
+
+    # Customer Segmentation / Market patterns
+    r"^(Z_)?KDGRP$": ("market", "customer_group"),
+    r"^(Z_)?BZIRK$": ("market", "sales_district"),
+    r"^(Z_)?VTWEG$": ("market", "distribution_channel"),
+    r"^(Z_)?SPART$": ("market", "division"),
 }
 
 # AWS SC entity field definitions (expanded)

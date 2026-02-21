@@ -150,6 +150,10 @@ class RebalanceRecommendation:
     dest_dos_before: float
     dest_dos_after: float
 
+    # Context-aware explanation (populated when explainer is available)
+    reasoning: str = ""
+    context_explanation: Optional[Dict] = None
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "from_site": self.from_site,
@@ -257,6 +261,9 @@ class InventoryRebalancingTRM:
         self.max_recommendations_per_run = max_recommendations_per_run
         self.db = db
         self.config_id = config_id
+
+        # Context-aware explainer (set externally by SiteAgent or caller)
+        self.ctx_explainer = None
 
         # Decision history for training
         self._decision_history: List[Dict[str, Any]] = []
@@ -475,6 +482,28 @@ class InventoryRebalancingTRM:
         # Expected service improvement (simple estimate)
         service_improvement = min(0.2, dest.stockout_risk * 0.5)
 
+        # Build context-aware reasoning if explainer is available
+        reasoning = (
+            f"Transfer {quantity:.0f} units from {from_site} to {to_site}: "
+            f"Source DOS {source_dos_before:.1f}→{source_dos_after:.1f}, "
+            f"Dest DOS {dest_dos_before:.1f}→{dest_dos_after:.1f}"
+        )
+        context_dict = None
+        if self.ctx_explainer is not None:
+            try:
+                summary = f"{reason.value}: Transfer {quantity:.0f} units {from_site}→{to_site}"
+                ctx = self.ctx_explainer.generate_inline_explanation(
+                    decision_summary=summary,
+                    confidence=confidence,
+                    trm_confidence=confidence if self.trm_model else None,
+                    decision_category='supply_plan',
+                    decision_value=cost,
+                )
+                reasoning = ctx.explanation
+                context_dict = ctx.to_dict()
+            except Exception as e:
+                logger.debug(f"Context enrichment failed: {e}")
+
         return RebalanceRecommendation(
             from_site=from_site,
             to_site=to_site,
@@ -490,6 +519,8 @@ class InventoryRebalancingTRM:
             source_dos_after=source_dos_after,
             dest_dos_before=dest_dos_before,
             dest_dos_after=dest_dos_after,
+            reasoning=reasoning,
+            context_explanation=context_dict,
         )
 
     def _persist_recommendations(self, recommendations: List[RebalanceRecommendation]):

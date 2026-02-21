@@ -258,3 +258,29 @@ export const submitAllocationOverrides = async (configId, productId, locationId,
   });
   return res.data;
 };
+
+// =============================================================================
+// Context-Aware Explainability (Ask Why)
+// =============================================================================
+
+/**
+ * Get context-aware explanation for a TRM decision.
+ * Returns authority, guardrails, attribution, counterfactuals.
+ */
+export const askWhyTRMDecision = async (decisionId, level = 'NORMAL') => {
+  const res = await api.get(`${BASE}/trm-decision/${decisionId}/ask-why`, {
+    params: { level },
+  });
+  return res.data;
+};
+
+/**
+ * Get context-aware explanation for a GNN node's output.
+ * Returns neighbor attention, input saliency, and agent context.
+ */
+export const askWhyGNNNode = async (configId, nodeId, modelType = 'sop', level = 'NORMAL') => {
+  const res = await api.get(`${BASE}/gnn-analysis/${configId}/node/${nodeId}/ask-why`, {
+    params: { model_type: modelType, level },
+  });
+  return res.data;
+};

@@ -10,11 +10,14 @@ Provides REST API for:
 Accessible to Group Admins and authorized users.
 """
 
+import logging
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from datetime import datetime
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +45,7 @@ from app.services.sap_ingestion_monitoring_service import (
     ActionType,
     create_ingestion_monitoring_service,
 )
+from app.services.sap_config_builder import SAPConfigBuilder
 
 router = APIRouter()
 
@@ -931,3 +935,346 @@ async def get_dashboard_summary(
     summary = await service.get_dashboard_summary()
 
     return DashboardSummaryResponse(**summary)
+
+
+# -------------------------------------------------------------------------
+# Config Builder Endpoints
+# -------------------------------------------------------------------------
+
+class ConfigBuildPreviewRequest(BaseModel):
+    """Request for previewing a config build from SAP data."""
+    connection_id: int = Field(..., description="SAP connection to use for extraction")
+    config_name: str = Field("SAP Import", description="Name for the config")
+    company_filter: Optional[str] = Field(None, description="Filter by company code")
+    plant_filter: Optional[List[str]] = Field(None, description="Filter by plant codes")
+
+
+class ConfigBuildRequest(BaseModel):
+    """Request for building a SupplyChainConfig from SAP data."""
+    connection_id: int = Field(..., description="SAP connection to use")
+    config_name: str = Field("SAP Import", description="Name for the config")
+    company_filter: Optional[str] = Field(None, description="Filter by company code")
+    plant_filter: Optional[List[str]] = Field(None, description="Filter by plant codes")
+    master_type_overrides: Optional[Dict[str, str]] = Field(
+        None, description="User corrections to inferred master types {site_key: master_type}"
+    )
+    options: Optional[Dict[str, Any]] = Field(None, description="Build options")
+
+
+class ConfigBuildPreviewResponse(BaseModel):
+    """Preview of what the config build will create."""
+    sites: List[Dict[str, Any]]
+    lanes: List[Dict[str, Any]]
+    products: Dict[str, int]
+    vendors: int
+    customers: int
+    sourcing_rules: int
+    warnings: List[str]
+
+
+class ConfigBuildResponse(BaseModel):
+    """Result of a config build."""
+    config_id: int
+    config_name: str
+    summary: Dict[str, int]
+
+
+@router.post(
+    "/build-config/preview",
+    response_model=ConfigBuildPreviewResponse,
+    tags=["sap-config-builder"],
+)
+async def preview_config_build(
+    request: ConfigBuildPreviewRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Dry-run analysis of building a SupplyChainConfig from SAP data.
+
+    Extracts data, infers network topology (sites, lanes, master types),
+    and returns a preview without creating anything in the database.
+    """
+    # Load SAP data from connection
+    sap_data = await _load_sap_data(db, current_user.group_id, request.connection_id)
+
+    builder = SAPConfigBuilder(db, current_user.group_id)
+    preview = await builder.preview(
+        sap_data=sap_data,
+        config_name=request.config_name,
+        plant_filter=request.plant_filter,
+        company_filter=request.company_filter,
+    )
+
+    return ConfigBuildPreviewResponse(**preview.to_dict())
+
+
+@router.post(
+    "/build-config",
+    response_model=ConfigBuildResponse,
+    tags=["sap-config-builder"],
+)
+async def build_config_from_sap(
+    request: ConfigBuildRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Build a SupplyChainConfig from SAP data.
+
+    Creates all entities (sites, products, lanes, sourcing rules, BOM,
+    inventory, forecasts) in the database from extracted SAP tables.
+    """
+    sap_data = await _load_sap_data(db, current_user.group_id, request.connection_id)
+
+    builder = SAPConfigBuilder(db, current_user.group_id)
+    result = await builder.build(
+        sap_data=sap_data,
+        config_name=request.config_name,
+        plant_filter=request.plant_filter,
+        company_filter=request.company_filter,
+        master_type_overrides=request.master_type_overrides,
+        options=request.options,
+    )
+
+    return ConfigBuildResponse(**result)
+
+
+# -------------------------------------------------------------------------
+# Step-by-Step Config Builder Endpoints
+# -------------------------------------------------------------------------
+
+class ConfigStartRequest(BaseModel):
+    """Request to start a step-by-step config build."""
+    connection_id: int = Field(..., description="SAP connection to use")
+    config_name: str = Field("SAP Import", description="Name for the config")
+    company_filter: Optional[str] = Field(None, description="Filter by company code")
+    plant_filter: Optional[List[str]] = Field(None, description="Filter by plant codes")
+
+
+class StepExecuteRequest(BaseModel):
+    """Request to execute a single build step."""
+    connection_id: int = Field(..., description="SAP connection for data reload")
+    company_filter: Optional[str] = Field(None, description="Company filter")
+    plant_filter: Optional[List[str]] = Field(None, description="Plant filter")
+    master_type_overrides: Optional[Dict[str, str]] = Field(
+        None, description="Master type overrides for step 3 (sites)"
+    )
+    options: Optional[Dict[str, Any]] = Field(
+        None, description="Build options for step 8 (planning)"
+    )
+    z_table_includes: Optional[List[str]] = Field(
+        None, description="Z-tables to include in the build"
+    )
+
+
+class StepResultResponse(BaseModel):
+    """Result from executing one build step."""
+    config_id: Optional[int]
+    step: int
+    step_name: str
+    entities_created: int
+    entity_type: str
+    sample_data: List[Dict[str, Any]]
+    anomalies: List[Dict[str, Any]]
+    z_tables: List[Dict[str, Any]]
+    warnings: List[str]
+    table_inventory: List[Dict[str, Any]] = []
+    completed_steps: List[int]
+    total_steps: int = 8
+
+
+class BuildStatusResponse(BaseModel):
+    """Current build status for a config."""
+    config_id: int
+    config_name: str
+    completed_steps: List[int]
+    entity_counts: Dict[str, int]
+    created_at: Optional[str]
+
+
+@router.post(
+    "/build-config/start",
+    response_model=StepResultResponse,
+    tags=["sap-config-builder"],
+)
+async def start_config_build(
+    request: ConfigStartRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Step 1: Start a config build — creates config record, validates tables,
+    detects Z-tables, and returns table inventory with anomalies.
+    """
+    sap_data = await _load_sap_data(db, current_user.group_id, request.connection_id)
+
+    builder = SAPConfigBuilder(db, current_user.group_id)
+    result = await builder.start_build(
+        sap_data=sap_data,
+        config_name=request.config_name,
+        plant_filter=request.plant_filter,
+        company_filter=request.company_filter,
+    )
+
+    return StepResultResponse(**result.to_dict())
+
+
+@router.post(
+    "/build-config/{config_id}/step/{step_number}",
+    response_model=StepResultResponse,
+    tags=["sap-config-builder"],
+)
+async def execute_build_step(
+    config_id: int,
+    step_number: int,
+    request: StepExecuteRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Execute a single build step for an existing config.
+
+    Steps 2-8 create entities incrementally. Each step commits
+    and returns results with anomaly detection.
+    """
+    if step_number < 2 or step_number > 8:
+        raise HTTPException(status_code=400, detail="Step must be between 2 and 8")
+
+    sap_data = await _load_sap_data(db, current_user.group_id, request.connection_id)
+
+    builder = SAPConfigBuilder(db, current_user.group_id)
+    result = await builder.build_step(
+        config_id=config_id,
+        step=step_number,
+        sap_data=sap_data,
+        plant_filter=request.plant_filter,
+        company_filter=request.company_filter,
+        master_type_overrides=request.master_type_overrides,
+        options=request.options,
+    )
+
+    return StepResultResponse(**result.to_dict())
+
+
+@router.post(
+    "/build-config/{config_id}/complete",
+    response_model=ConfigBuildResponse,
+    tags=["sap-config-builder"],
+)
+async def complete_config_build(
+    config_id: int,
+    request: StepExecuteRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Complete all remaining build steps for a config.
+
+    Checks which steps are already done and runs the rest.
+    """
+    sap_data = await _load_sap_data(db, current_user.group_id, request.connection_id)
+
+    builder = SAPConfigBuilder(db, current_user.group_id)
+    result = await builder.build_remaining(
+        config_id=config_id,
+        sap_data=sap_data,
+        plant_filter=request.plant_filter,
+        company_filter=request.company_filter,
+        master_type_overrides=request.master_type_overrides,
+        options=request.options,
+    )
+
+    return ConfigBuildResponse(**result)
+
+
+@router.get(
+    "/build-config/{config_id}/status",
+    response_model=BuildStatusResponse,
+    tags=["sap-config-builder"],
+)
+async def get_build_status(
+    config_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get current build status for a config (completed steps, entity counts)."""
+    builder = SAPConfigBuilder(db, current_user.group_id)
+    status = await builder.get_build_status(config_id)
+
+    if "error" in status:
+        raise HTTPException(status_code=404, detail=status["error"])
+
+    return BuildStatusResponse(**status)
+
+
+@router.delete(
+    "/build-config/{config_id}",
+    tags=["sap-config-builder"],
+)
+async def delete_config_build(
+    config_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Delete a config build and all its child entities.
+
+    Use this to cancel a partial build or remove an unwanted config.
+    """
+    builder = SAPConfigBuilder(db, current_user.group_id)
+    deleted = await builder.delete_build(config_id)
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Config {config_id} not found")
+
+    return {"deleted": True, "config_id": config_id}
+
+
+async def _load_sap_data(
+    db: AsyncSession,
+    group_id: int,
+    connection_id: int,
+) -> Dict[str, "pd.DataFrame"]:
+    """
+    Load SAP data from a connection.
+
+    Supports CSV mode (reads from configured directory) and RFC mode.
+    Returns a dict of table_name → DataFrame.
+    """
+    import pandas as pd
+
+    service = create_deployment_service(db, group_id)
+    connection = service._connections.get(connection_id)
+
+    if not connection:
+        raise HTTPException(status_code=404, detail=f"Connection {connection_id} not found")
+
+    sap_data: Dict[str, pd.DataFrame] = {}
+
+    # CSV mode: read all available CSV files from the configured directory
+    if connection.connection_method.value == "csv" and connection.csv_directory:
+        from pathlib import Path
+        csv_dir = Path(connection.csv_directory)
+        if csv_dir.exists():
+            for csv_file in csv_dir.glob("*.csv"):
+                table_name = csv_file.stem.upper()
+                # Handle /SAPAPO/ prefix conventions
+                if table_name.startswith("_SAPAPO_"):
+                    table_name = f"/SAPAPO/{table_name[8:]}"
+                elif table_name.startswith("SAPAPO_"):
+                    table_name = f"/SAPAPO/{table_name[7:]}"
+                try:
+                    df = pd.read_csv(csv_file, dtype=str, na_values=["", "NULL"])
+                    df.columns = [c.upper().strip() for c in df.columns]
+                    sap_data[table_name] = df
+                except Exception as e:
+                    logger.warning(f"Failed to read {csv_file}: {e}")
+
+    if not sap_data:
+        raise HTTPException(
+            status_code=400,
+            detail="No SAP data could be loaded from the connection. Ensure CSV files are present.",
+        )
+
+    return sap_data

@@ -122,6 +122,9 @@ class SSAdjustment:
     # Explanation
     description: str
 
+    # Context-aware explanation (populated when explainer is available)
+    context_explanation: Optional[Dict] = None
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "product_id": self.product_id,
@@ -179,6 +182,9 @@ class SafetyStockTRM:
         self.db = db
         self.config_id = config_id
 
+        # Context-aware explainer (set externally by SiteAgent or caller)
+        self.ctx_explainer = None
+
         # Decision history for training
         self._decision_history: List[Dict[str, Any]] = []
 
@@ -208,6 +214,30 @@ class SafetyStockTRM:
                 confidence=1.0,
                 description="No adjustment - TRM disabled",
             )
+
+        # Enrich with context-aware reasoning
+        if self.ctx_explainer is not None:
+            try:
+                summary = (
+                    f"SS {result.reason.value}: {result.multiplier:.2f}x "
+                    f"for {state.product_id} at {state.location_id}"
+                )
+                ctx = self.ctx_explainer.generate_inline_explanation(
+                    decision_summary=summary,
+                    confidence=result.confidence,
+                    trm_confidence=result.confidence if self.trm_model else None,
+                    decision_category='safety_stock',
+                    delta_percent=abs(result.multiplier - 1.0) * 100,
+                    policy_params={
+                        'baseline_ss': state.baseline_ss,
+                        'baseline_rop': state.baseline_reorder_point,
+                        'multiplier': result.multiplier,
+                    },
+                )
+                result.description = ctx.explanation
+                result.context_explanation = ctx.to_dict()
+            except Exception as e:
+                logger.debug(f"Context enrichment failed: {e}")
 
         # Record for training
         self._record_decision(state, result)

@@ -122,10 +122,20 @@ class ContextAwareExplanation:
 # ---------------------------------------------------------------------------
 
 class AgentType(str, Enum):
+    # Original 4 TRMs
     TRM_ATP = "trm_atp"
     TRM_PO = "trm_po"
     TRM_REBALANCE = "trm_rebalance"
     TRM_ORDER_TRACKING = "trm_order_tracking"
+    # Extended TRMs (6 new)
+    TRM_MO_EXECUTION = "trm_mo_execution"
+    TRM_TO_EXECUTION = "trm_to_execution"
+    TRM_QUALITY = "trm_quality"
+    TRM_MAINTENANCE = "trm_maintenance"
+    TRM_SUBCONTRACTING = "trm_subcontracting"
+    TRM_FORECAST_ADJUSTMENT = "trm_forecast_adjustment"
+    TRM_SAFETY_STOCK = "trm_safety_stock"
+    # GNN models
     GNN_SOP = "gnn_sop"
     GNN_EXECUTION = "gnn_execution"
 
@@ -188,6 +198,103 @@ AGENT_AUTHORITY_MAP = {
             'Supply': ['Return to vendor'],
         },
         'forbidden': ['Auto-cancel orders above threshold', 'Write off inventory'],
+    },
+    AgentType.TRM_MO_EXECUTION: {
+        'default_level': 'OPERATOR',
+        'unilateral': [
+            'Schedule production within plan',
+            'Sequence within changeover rules',
+            'Batch size within MOQ/max',
+        ],
+        'requires_auth': {
+            'Supply': ['Rush insertion into schedule'],
+            'Quality': ['Release hold for production'],
+            'Maintenance': ['Schedule around downtime'],
+        },
+        'forbidden': ['Override quality holds', 'Exceed capacity without approval'],
+    },
+    AgentType.TRM_TO_EXECUTION: {
+        'default_level': 'OPERATOR',
+        'unilateral': [
+            'Release planned transfers on schedule',
+            'Consolidate shipments within window',
+            'Select carrier from approved list',
+        ],
+        'requires_auth': {
+            'Logistics': ['Mode change', 'Cross-border routing'],
+            'Inventory': ['Source below safety stock'],
+            'Finance': ['Expedite premium above threshold'],
+        },
+        'forbidden': ['Cancel planned transfers without MRP approval'],
+    },
+    AgentType.TRM_QUALITY: {
+        'default_level': 'SUPERVISOR',
+        'unilateral': [
+            'Place inspection hold',
+            'Trigger inspection',
+            'Accept within specification',
+            'Disposition per standard SOP',
+        ],
+        'requires_auth': {
+            'Plant': ['Return for rework (capacity impact)'],
+            'Supply': ['Return to vendor'],
+            'Finance': ['Write off / scrap above threshold'],
+        },
+        'forbidden': ['Release critical defects without sign-off'],
+    },
+    AgentType.TRM_MAINTENANCE: {
+        'default_level': 'OPERATOR',
+        'unilateral': [
+            'Schedule preventive within window',
+            'Adjust frequency within policy',
+            'Assign maintenance crew',
+        ],
+        'requires_auth': {
+            'Plant': ['Production shutdown for maintenance'],
+            'Finance': ['CapEx above threshold'],
+            'Procurement': ['Spare parts above budget'],
+        },
+        'forbidden': ['Defer safety-critical maintenance', 'Override lockout/tagout'],
+    },
+    AgentType.TRM_SUBCONTRACTING: {
+        'default_level': 'OPERATOR',
+        'unilateral': [
+            'Route to approved subcontractors',
+            'Split internal/external within policy',
+        ],
+        'requires_auth': {
+            'Procurement': ['New subcontractor qualification'],
+            'Quality': ['First-article inspection waiver'],
+            'Finance': ['Cost premium above threshold'],
+        },
+        'forbidden': ['Single-source above concentration limit', 'IP-sensitive items without approval'],
+    },
+    AgentType.TRM_FORECAST_ADJUSTMENT: {
+        'default_level': 'OPERATOR',
+        'unilateral': [
+            'Adjust forecast within statistical band',
+            'Flag demand anomalies',
+            'Incorporate POS signals',
+        ],
+        'requires_auth': {
+            'S&OP': ['Override beyond statistical band'],
+            'Channel': ['Volume commitment changes'],
+            'Finance': ['Revenue forecast revision'],
+        },
+        'forbidden': ['Override consensus forecast without S&OP approval'],
+    },
+    AgentType.TRM_SAFETY_STOCK: {
+        'default_level': 'OPERATOR',
+        'unilateral': [
+            'Compute safety stock per policy type',
+            'Apply hierarchical overrides',
+            'Adjust within configured bounds',
+        ],
+        'requires_auth': {
+            'S&OP': ['Policy type change', 'Service level target change'],
+            'Finance': ['Working capital impact above threshold'],
+        },
+        'forbidden': ['Zero safety stock without S&OP approval'],
     },
     AgentType.GNN_SOP: {
         'default_level': 'ADVISORY',

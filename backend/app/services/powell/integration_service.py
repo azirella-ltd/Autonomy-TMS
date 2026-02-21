@@ -1286,6 +1286,257 @@ class PowellIntegrationService:
         except Exception as e:
             logger.warning(f"Failed to save allocation consumption: {e}")
 
+    # ── New TRM decision logging (MO, TO, Quality, Maintenance, Subcontracting, Forecast) ──
+
+    async def _log_mo_decision(
+        self,
+        config_id: int,
+        recommendation: Any,
+    ) -> None:
+        """Log Manufacturing Order execution decision for TRM training."""
+        logger.info(
+            f"MO Decision: config={config_id}, order={getattr(recommendation, 'order_id', '?')}, "
+            f"type={getattr(recommendation, 'decision_type', '?')}, "
+            f"confidence={getattr(recommendation, 'confidence', 0)}"
+        )
+        try:
+            from app.models.powell_decisions import PowellMODecision
+
+            record = PowellMODecision(
+                config_id=config_id,
+                production_order_id=getattr(recommendation, 'order_id', ''),
+                product_id=getattr(recommendation, 'product_id', ''),
+                site_id=getattr(recommendation, 'site_id', ''),
+                planned_qty=getattr(recommendation, 'planned_qty', 0.0),
+                decision_type=getattr(recommendation, 'decision_type', 'release'),
+                sequence_position=getattr(recommendation, 'recommended_sequence_position', None),
+                priority_override=getattr(recommendation, 'priority_override', None),
+                resource_id=getattr(recommendation, 'resource_id', None),
+                setup_time_hours=getattr(recommendation, 'setup_time_hours', None),
+                run_time_hours=getattr(recommendation, 'run_time_hours', None),
+                confidence=getattr(recommendation, 'confidence', None),
+                state_features={
+                    "capacity_impact_pct": getattr(recommendation, 'capacity_impact_pct', None),
+                    "service_risk": getattr(recommendation, 'service_risk', None),
+                    "expedite": getattr(recommendation, 'expedite', False),
+                    "defer_days": getattr(recommendation, 'defer_days', None),
+                },
+            )
+            self.db.add(record)
+            await self.db.flush()
+        except Exception as e:
+            logger.warning(f"Failed to log MO decision: {e}")
+
+    async def _log_to_decision(
+        self,
+        config_id: int,
+        recommendation: Any,
+    ) -> None:
+        """Log Transfer Order execution decision for TRM training."""
+        logger.info(
+            f"TO Decision: config={config_id}, order={getattr(recommendation, 'order_id', '?')}, "
+            f"type={getattr(recommendation, 'decision_type', '?')}, "
+            f"confidence={getattr(recommendation, 'confidence', 0)}"
+        )
+        try:
+            from app.models.powell_decisions import PowellTODecision
+
+            record = PowellTODecision(
+                config_id=config_id,
+                transfer_order_id=getattr(recommendation, 'order_id', ''),
+                product_id=getattr(recommendation, 'product_id', ''),
+                source_site_id=getattr(recommendation, 'source_site_id', ''),
+                dest_site_id=getattr(recommendation, 'dest_site_id', ''),
+                planned_qty=getattr(recommendation, 'planned_qty', 0.0),
+                decision_type=getattr(recommendation, 'decision_type', 'release'),
+                transportation_mode=getattr(recommendation, 'transportation_mode', None),
+                estimated_transit_days=getattr(recommendation, 'estimated_transit_days', None),
+                priority=getattr(recommendation, 'priority', None),
+                trigger_reason=getattr(recommendation, 'trigger_reason', None),
+                confidence=getattr(recommendation, 'confidence', None),
+                state_features={
+                    "dest_stockout_risk": getattr(recommendation, 'dest_stockout_risk', None),
+                    "source_depletion_risk": getattr(recommendation, 'source_depletion_risk', None),
+                    "cost_impact": getattr(recommendation, 'cost_impact', None),
+                    "expedite": getattr(recommendation, 'expedite', False),
+                    "consolidate_with": getattr(recommendation, 'consolidate_with', None),
+                },
+            )
+            self.db.add(record)
+            await self.db.flush()
+        except Exception as e:
+            logger.warning(f"Failed to log TO decision: {e}")
+
+    async def _log_quality_decision(
+        self,
+        config_id: int,
+        recommendation: Any,
+    ) -> None:
+        """Log Quality disposition decision for TRM training."""
+        logger.info(
+            f"Quality Decision: config={config_id}, "
+            f"order={getattr(recommendation, 'quality_order_id', '?')}, "
+            f"disposition={getattr(recommendation, 'disposition', '?')}, "
+            f"confidence={getattr(recommendation, 'confidence', 0)}"
+        )
+        try:
+            from app.models.powell_decisions import PowellQualityDecision
+
+            record = PowellQualityDecision(
+                config_id=config_id,
+                quality_order_id=getattr(recommendation, 'quality_order_id', ''),
+                product_id=getattr(recommendation, 'product_id', ''),
+                site_id=getattr(recommendation, 'site_id', ''),
+                lot_number=getattr(recommendation, 'lot_number', None),
+                inspection_type=getattr(recommendation, 'inspection_type', None),
+                inspection_qty=getattr(recommendation, 'inspection_qty', None),
+                defect_rate=getattr(recommendation, 'defect_rate', None),
+                defect_category=getattr(recommendation, 'defect_category', None),
+                severity_level=getattr(recommendation, 'severity_level', None),
+                disposition=getattr(recommendation, 'disposition', 'accept'),
+                disposition_reason=getattr(recommendation, 'disposition_reason', None),
+                rework_cost_estimate=getattr(recommendation, 'rework_cost', None),
+                scrap_cost_estimate=getattr(recommendation, 'scrap_cost', None),
+                service_risk_if_accepted=getattr(recommendation, 'service_risk', None),
+                confidence=getattr(recommendation, 'confidence', None),
+                state_features={
+                    "accept_qty": getattr(recommendation, 'accept_qty', None),
+                    "reject_qty": getattr(recommendation, 'reject_qty', None),
+                    "rework_qty": getattr(recommendation, 'rework_qty', None),
+                    "scrap_qty": getattr(recommendation, 'scrap_qty', None),
+                },
+            )
+            self.db.add(record)
+            await self.db.flush()
+        except Exception as e:
+            logger.warning(f"Failed to log quality decision: {e}")
+
+    async def _log_maintenance_decision(
+        self,
+        config_id: int,
+        recommendation: Any,
+    ) -> None:
+        """Log Maintenance scheduling decision for TRM training."""
+        logger.info(
+            f"Maintenance Decision: config={config_id}, "
+            f"order={getattr(recommendation, 'order_id', '?')}, "
+            f"type={getattr(recommendation, 'decision_type', '?')}, "
+            f"confidence={getattr(recommendation, 'confidence', 0)}"
+        )
+        try:
+            from app.models.powell_decisions import PowellMaintenanceDecision
+
+            record = PowellMaintenanceDecision(
+                config_id=config_id,
+                maintenance_order_id=getattr(recommendation, 'order_id', ''),
+                asset_id=getattr(recommendation, 'asset_id', ''),
+                site_id=getattr(recommendation, 'site_id', ''),
+                maintenance_type=getattr(recommendation, 'maintenance_type', 'preventive'),
+                decision_type=getattr(recommendation, 'decision_type', 'schedule'),
+                scheduled_date=getattr(recommendation, 'recommended_date', None),
+                deferred_to_date=getattr(recommendation, 'defer_to_date', None),
+                estimated_downtime_hours=getattr(recommendation, 'production_impact_hours', None),
+                production_impact_units=getattr(recommendation, 'production_impact_units', None),
+                spare_parts_available=getattr(recommendation, 'spare_parts_available', None),
+                priority=getattr(recommendation, 'priority', None),
+                risk_score_if_deferred=getattr(recommendation, 'defer_risk', None),
+                confidence=getattr(recommendation, 'confidence', None),
+                state_features={
+                    "breakdown_probability": getattr(recommendation, 'breakdown_probability', None),
+                    "cost_estimate": getattr(recommendation, 'cost_estimate', None),
+                    "outsource": getattr(recommendation, 'outsource', False),
+                    "combine_with": getattr(recommendation, 'combine_with', None),
+                },
+            )
+            self.db.add(record)
+            await self.db.flush()
+        except Exception as e:
+            logger.warning(f"Failed to log maintenance decision: {e}")
+
+    async def _log_subcontracting_decision(
+        self,
+        config_id: int,
+        recommendation: Any,
+    ) -> None:
+        """Log Subcontracting routing decision for TRM training."""
+        logger.info(
+            f"Subcontracting Decision: config={config_id}, "
+            f"product={getattr(recommendation, 'product_id', '?')}, "
+            f"type={getattr(recommendation, 'decision_type', '?')}, "
+            f"confidence={getattr(recommendation, 'confidence', 0)}"
+        )
+        try:
+            from app.models.powell_decisions import PowellSubcontractingDecision
+
+            record = PowellSubcontractingDecision(
+                config_id=config_id,
+                product_id=getattr(recommendation, 'product_id', ''),
+                site_id=getattr(recommendation, 'site_id', ''),
+                subcontractor_id=getattr(recommendation, 'recommended_vendor', ''),
+                planned_qty=getattr(recommendation, 'external_quantity', 0.0) + getattr(recommendation, 'internal_quantity', 0.0),
+                decision_type=getattr(recommendation, 'decision_type', 'keep_internal'),
+                reason=getattr(recommendation, 'reason', None),
+                internal_capacity_pct=getattr(recommendation, 'internal_capacity_pct', None),
+                subcontractor_lead_time_days=getattr(recommendation, 'subcontractor_lead_time_days', None),
+                subcontractor_cost_per_unit=getattr(recommendation, 'external_cost', None),
+                internal_cost_per_unit=getattr(recommendation, 'internal_cost', None),
+                quality_score=getattr(recommendation, 'quality_risk', None),
+                on_time_score=getattr(recommendation, 'delivery_risk', None),
+                confidence=getattr(recommendation, 'confidence', None),
+                state_features={
+                    "internal_quantity": getattr(recommendation, 'internal_quantity', None),
+                    "external_quantity": getattr(recommendation, 'external_quantity', None),
+                    "total_cost": getattr(recommendation, 'total_cost', None),
+                    "cost_savings": getattr(recommendation, 'cost_savings', None),
+                },
+            )
+            self.db.add(record)
+            await self.db.flush()
+        except Exception as e:
+            logger.warning(f"Failed to log subcontracting decision: {e}")
+
+    async def _log_forecast_adjustment_decision(
+        self,
+        config_id: int,
+        recommendation: Any,
+    ) -> None:
+        """Log Forecast adjustment decision for TRM training."""
+        logger.info(
+            f"Forecast Adjustment Decision: config={config_id}, "
+            f"product={getattr(recommendation, 'product_id', '?')}, "
+            f"direction={getattr(recommendation, 'direction', '?')}, "
+            f"pct={getattr(recommendation, 'adjustment_pct', '?')}, "
+            f"confidence={getattr(recommendation, 'confidence', 0)}"
+        )
+        try:
+            from app.models.powell_decisions import PowellForecastAdjustmentDecision
+
+            record = PowellForecastAdjustmentDecision(
+                config_id=config_id,
+                product_id=getattr(recommendation, 'product_id', ''),
+                site_id=getattr(recommendation, 'site_id', ''),
+                signal_source=getattr(recommendation, 'signal_source', 'simulation'),
+                signal_type=getattr(recommendation, 'signal_type', 'demand_increase'),
+                signal_text=getattr(recommendation, 'signal_text', None),
+                signal_confidence=getattr(recommendation, 'signal_confidence', None),
+                current_forecast_value=getattr(recommendation, 'current_forecast_value', None),
+                adjustment_direction=getattr(recommendation, 'direction', 'no_change'),
+                adjustment_magnitude=getattr(recommendation, 'adjustment_magnitude', None),
+                adjustment_pct=getattr(recommendation, 'adjustment_pct', None),
+                adjusted_forecast_value=getattr(recommendation, 'adjusted_forecast_value', None),
+                time_horizon_periods=getattr(recommendation, 'time_horizon_periods', None),
+                reason=getattr(recommendation, 'reason', None),
+                confidence=getattr(recommendation, 'confidence', None),
+                state_features={
+                    "auto_applicable": getattr(recommendation, 'auto_applicable', False),
+                    "requires_human_review": getattr(recommendation, 'requires_human_review', True),
+                },
+            )
+            self.db.add(record)
+            await self.db.flush()
+        except Exception as e:
+            logger.warning(f"Failed to log forecast adjustment decision: {e}")
+
 
 # Factory function for dependency injection
 async def get_powell_integration_service(

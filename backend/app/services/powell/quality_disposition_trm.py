@@ -93,6 +93,7 @@ class QualityRecommendation:
     vendor_notification: bool = False
 
     reason: str = ""
+    context_explanation: Optional[Dict] = None
 
 
 @dataclass
@@ -122,6 +123,7 @@ class QualityDispositionTRM:
         self.engine = QualityEngine(site_key, self.config.engine_config)
         self.model = model
         self.db = db_session
+        self.ctx_explainer = None  # Set externally by SiteAgent or caller
 
     def evaluate_disposition(self, state: QualityDispositionState) -> QualityRecommendation:
         """Evaluate quality inspection and recommend disposition."""
@@ -161,6 +163,20 @@ class QualityDispositionTRM:
                 recommendation = self._heuristic_evaluate(state, engine_result)
         else:
             recommendation = self._heuristic_evaluate(state, engine_result)
+
+        # Enrich with context-aware reasoning
+        if self.ctx_explainer is not None:
+            try:
+                summary = f"{recommendation.disposition}: QO {state.quality_order_id}"
+                ctx = self.ctx_explainer.generate_inline_explanation(
+                    decision_summary=summary,
+                    confidence=recommendation.confidence,
+                    trm_confidence=recommendation.confidence if self.model else None,
+                )
+                recommendation.reason = ctx.explanation
+                recommendation.context_explanation = ctx.to_dict()
+            except Exception as e:
+                logger.debug(f"Context enrichment failed: {e}")
 
         self._persist_decision(state, recommendation)
         return recommendation

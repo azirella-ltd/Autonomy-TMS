@@ -406,6 +406,14 @@ const Navbar = () => {
             handleMenuClose();
           },
         },
+        {
+          label: "SAP Config Builder",
+          icon: NetworkIcon,
+          onClick: () => {
+            navigate("/deployment/sap-config-builder");
+            handleMenuClose();
+          },
+        },
       ];
     }
 
@@ -457,6 +465,14 @@ const Navbar = () => {
           icon: DataIcon,
           onClick: () => {
             navigate("/admin/sap-data");
+            handleMenuClose();
+          },
+        },
+        {
+          label: "SAP Config Builder",
+          icon: NetworkIcon,
+          onClick: () => {
+            navigate("/deployment/sap-config-builder");
             handleMenuClose();
           },
         },

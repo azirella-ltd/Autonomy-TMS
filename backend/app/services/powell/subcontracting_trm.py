@@ -82,6 +82,7 @@ class SubcontractingRecommendation:
     estimated_completion_date: Optional[date] = None
 
     reason: str = ""
+    context_explanation: Optional[Dict] = None
 
 
 @dataclass
@@ -100,6 +101,7 @@ class SubcontractingTRM:
         self.engine = SubcontractingEngine(site_key, self.config.engine_config)
         self.model = model
         self.db = db_session
+        self.ctx_explainer = None  # Set externally by SiteAgent or caller
 
     def evaluate_routing(self, state: SubcontractingState) -> SubcontractingRecommendation:
         snapshot = SubcontractSnapshot(
@@ -135,6 +137,21 @@ class SubcontractingTRM:
                 rec = self._heuristic_evaluate(state, engine_result)
         else:
             rec = self._heuristic_evaluate(state, engine_result)
+
+        # Enrich with context-aware reasoning
+        if self.ctx_explainer is not None:
+            try:
+                summary = f"{rec.decision_type}: {state.product_id} at {state.site_id}"
+                ctx = self.ctx_explainer.generate_inline_explanation(
+                    decision_summary=summary,
+                    confidence=rec.confidence,
+                    trm_confidence=rec.confidence if self.model else None,
+                    decision_value=rec.total_cost,
+                )
+                rec.reason = ctx.explanation
+                rec.context_explanation = ctx.to_dict()
+            except Exception as e:
+                logger.debug(f"Context enrichment failed: {e}")
 
         self._persist_decision(state, rec)
         return rec

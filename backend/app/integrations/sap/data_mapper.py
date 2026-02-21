@@ -915,3 +915,292 @@ class SupplyChainMapper:
             'atp': atp,
             'timestamp': datetime.now().isoformat()
         }
+
+    # ==========================================================================
+    # Config Builder Mapping Methods
+    # ==========================================================================
+
+    def map_vendor_products(
+        self,
+        eina_df: pd.DataFrame,
+        eine_df: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """
+        Map purchasing info records (EINA/EINE) to vendor_product.
+
+        Returns vendor-product relationships with pricing and MOQs.
+        """
+        logger.info("Mapping purchasing info records to vendor_product")
+
+        if eina_df.empty:
+            return pd.DataFrame()
+
+        merged = eina_df.merge(eine_df, on="INFNR", how="left") if not eine_df.empty else eina_df
+
+        result = pd.DataFrame()
+        result["vendor_id"] = merged["LIFNR"].astype(str).str.strip()
+        result["product_id"] = merged["MATNR"].astype(str).str.strip()
+        result["info_record"] = merged["INFNR"].astype(str).str.strip()
+        result["net_price"] = pd.to_numeric(merged.get("NETPR", 0), errors="coerce").fillna(0)
+        result["currency"] = merged.get("WAERS", "USD").astype(str).str.strip()
+        result["price_unit"] = pd.to_numeric(merged.get("PEINH", 1), errors="coerce").fillna(1)
+        result["min_order_qty"] = pd.to_numeric(merged.get("MINBM", 0), errors="coerce").fillna(0)
+        result["standard_order_qty"] = pd.to_numeric(merged.get("NORBM", 0), errors="coerce").fillna(0)
+        result["planned_delivery_time"] = pd.to_numeric(merged.get("APLFZ", 0), errors="coerce").fillna(0)
+
+        # Remove records flagged for deletion
+        if "LOEKZ" in merged.columns:
+            result = result[merged["LOEKZ"].isna() | (merged["LOEKZ"] == "")]
+
+        logger.info(f"Mapped {len(result)} vendor-product records")
+        return result
+
+    def map_vendor_lead_times(
+        self,
+        eina_df: pd.DataFrame,
+        eine_df: pd.DataFrame,
+        eord_df: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """
+        Map EINA/EINE + EORD to vendor_lead_time per vendor-product-site.
+
+        Priority: EINE.APLFZ (planned delivery time) > MARC.PLIFZ (fallback).
+        """
+        logger.info("Mapping vendor lead times")
+
+        if eina_df.empty:
+            return pd.DataFrame()
+
+        # Merge info records
+        merged = eina_df.merge(eine_df, on="INFNR", how="left") if not eine_df.empty else eina_df
+
+        # Get plant assignments from EORD
+        if not eord_df.empty:
+            # Each EORD row links (MATNR, WERKS, LIFNR) — join on vendor+material
+            plant_map = eord_df[["MATNR", "WERKS", "LIFNR"]].drop_duplicates()
+            merged = merged.merge(
+                plant_map,
+                on=["MATNR", "LIFNR"],
+                how="left",
+            )
+        else:
+            merged["WERKS"] = ""
+
+        result = pd.DataFrame()
+        result["vendor_id"] = merged["LIFNR"].astype(str).str.strip()
+        result["product_id"] = merged["MATNR"].astype(str).str.strip()
+        result["site_id"] = merged["WERKS"].astype(str).str.strip()
+        result["lead_time_days"] = pd.to_numeric(merged.get("APLFZ", 0), errors="coerce").fillna(0).astype(int)
+        result["purchasing_org"] = merged.get("EKORG", "").astype(str).str.strip()
+
+        result = result[result["lead_time_days"] > 0].drop_duplicates()
+
+        logger.info(f"Mapped {len(result)} vendor lead time records")
+        return result
+
+    def map_sourcing_rules(self, eord_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Map source list (EORD) to sourcing_rules.
+
+        EORD defines approved vendor-plant assignments with priority.
+        """
+        logger.info("Mapping EORD source list to sourcing_rules")
+
+        if eord_df.empty:
+            return pd.DataFrame()
+
+        result = pd.DataFrame()
+        result["product_id"] = eord_df["MATNR"].astype(str).str.strip()
+        result["site_id"] = eord_df["WERKS"].astype(str).str.strip()
+        result["source_id"] = eord_df["LIFNR"].astype(str).str.strip()
+
+        # Map procurement type
+        beskz = eord_df.get("BESKZ", "F").astype(str).str.strip()
+        source_type_map = {"F": "buy", "E": "manufacture", "U": "subcontract"}
+        result["source_type"] = beskz.map(source_type_map).fillna("buy")
+
+        # NOTKZ: 1=normal (usable), 2=blocked
+        notkz = eord_df.get("NOTKZ", "1").astype(str).str.strip()
+        result["is_active"] = notkz != "2"
+
+        result["fixed_vendor"] = eord_df.get("FLIFN", "").astype(str).str.strip() == "X"
+        result["valid_from"] = pd.to_datetime(eord_df.get("VDATU"), format="%Y%m%d", errors="coerce")
+        result["valid_to"] = pd.to_datetime(eord_df.get("BDATU"), format="%Y%m%d", errors="coerce")
+
+        # Priority from sequence number (lower = higher priority)
+        result["priority"] = pd.to_numeric(eord_df.get("ZEESSION", 1), errors="coerce").fillna(1).astype(int)
+
+        result = result[result["is_active"]].drop(columns=["is_active"])
+
+        logger.info(f"Mapped {len(result)} sourcing rules")
+        return result
+
+    def map_company(self, t001_df: pd.DataFrame) -> pd.DataFrame:
+        """Map company codes (T001) to company entities."""
+        logger.info("Mapping T001 to company")
+
+        if t001_df.empty:
+            return pd.DataFrame()
+
+        result = pd.DataFrame()
+        result["company_id"] = t001_df["BUKRS"].astype(str).str.strip()
+        result["company_name"] = t001_df.get("BUTXT", "").astype(str).str.strip()
+        result["country"] = t001_df.get("LAND1", "").astype(str).str.strip()
+        result["currency"] = t001_df.get("WAERS", "").astype(str).str.strip()
+
+        logger.info(f"Mapped {len(result)} companies")
+        return result
+
+    def map_geography(self, adrc_df: pd.DataFrame) -> pd.DataFrame:
+        """Map addresses (ADRC) to geography entities."""
+        logger.info("Mapping ADRC to geography")
+
+        if adrc_df.empty:
+            return pd.DataFrame()
+
+        result = pd.DataFrame()
+        result["address_id"] = adrc_df["ADDRNUMBER"].astype(str).str.strip()
+        result["name"] = adrc_df.get("NAME1", "").astype(str).str.strip()
+        result["city"] = adrc_df.get("CITY1", "").astype(str).str.strip()
+        result["region"] = adrc_df.get("REGION", "").astype(str).str.strip()
+        result["country"] = adrc_df.get("COUNTRY", "").astype(str).str.strip()
+        result["postal_code"] = adrc_df.get("POST_CODE1", "").astype(str).str.strip()
+
+        logger.info(f"Mapped {len(result)} geography records")
+        return result
+
+    def map_production_process(
+        self,
+        plko_df: pd.DataFrame,
+        plpo_df: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """
+        Map routings (PLKO/PLPO) to production_process.
+
+        Combines header validity/plant info with operation-level times.
+        """
+        logger.info("Mapping routings to production_process")
+
+        if plpo_df.empty:
+            return pd.DataFrame()
+
+        # Merge header info
+        if not plko_df.empty:
+            merged = plpo_df.merge(
+                plko_df[["PLNTY", "PLNNR", "PLNAL", "WERKS"]].drop_duplicates(),
+                on=["PLNTY", "PLNNR"],
+                how="left",
+            )
+        else:
+            merged = plpo_df
+
+        result = pd.DataFrame()
+        result["process_id"] = merged["PLNNR"].astype(str).str.strip()
+        result["operation_number"] = merged.get("VORNR", merged.get("PLNKN", "")).astype(str).str.strip()
+        result["site_id"] = merged.get("WERKS", "").astype(str).str.strip()
+        result["work_center_id"] = merged.get("ARBPL", merged.get("ARBID", "")).astype(str).str.strip()
+        result["setup_time"] = pd.to_numeric(merged.get("VGW01", 0), errors="coerce").fillna(0)
+        result["machine_time"] = pd.to_numeric(merged.get("VGW02", 0), errors="coerce").fillna(0)
+        result["labor_time"] = pd.to_numeric(merged.get("VGW03", 0), errors="coerce").fillna(0)
+        result["base_quantity"] = pd.to_numeric(merged.get("BMSCH", 1), errors="coerce").fillna(1)
+
+        logger.info(f"Mapped {len(result)} production process operations")
+        return result
+
+    def map_transportation_lanes_from_apo(
+        self,
+        trlane_df: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """
+        Map APO transportation lanes (/SAPAPO/TRLANE) to transportation_lane.
+
+        This is the highest-quality source for network edges.
+        """
+        logger.info("Mapping APO transportation lanes")
+
+        if trlane_df.empty:
+            return pd.DataFrame()
+
+        result = pd.DataFrame()
+        result["source_site_id"] = trlane_df["LOCFR"].astype(str).str.strip()
+        result["destination_site_id"] = trlane_df["LOCTO"].astype(str).str.strip()
+        result["product_id"] = trlane_df.get("MATID", "").astype(str).str.strip()
+        result["lead_time_days"] = pd.to_numeric(trlane_df.get("TRANSTIME", 0), errors="coerce").fillna(0).astype(int)
+        result["capacity"] = pd.to_numeric(trlane_df.get("CAPACITY", 0), errors="coerce").fillna(0)
+        result["transport_mode"] = trlane_df.get("TRANSMODE", "").astype(str).str.strip()
+        result["cost_per_unit"] = pd.to_numeric(trlane_df.get("TRANSCOST", 0), errors="coerce").fillna(0)
+
+        logger.info(f"Mapped {len(result)} transportation lanes from APO")
+        return result
+
+    def map_market_from_customers(
+        self,
+        knvv_df: pd.DataFrame,
+        kna1_df: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """
+        Map customer sales data (KNVV) + customer master (KNA1) to market entities.
+
+        Groups customers by sales district / customer group for demand segmentation.
+        """
+        logger.info("Mapping KNVV/KNA1 to market entities")
+
+        if knvv_df.empty:
+            return pd.DataFrame()
+
+        # Merge customer name from KNA1
+        if not kna1_df.empty and "KUNNR" in kna1_df.columns:
+            merged = knvv_df.merge(
+                kna1_df[["KUNNR", "NAME1"]].drop_duplicates(),
+                on="KUNNR",
+                how="left",
+            )
+        else:
+            merged = knvv_df.copy()
+            merged["NAME1"] = ""
+
+        result = pd.DataFrame()
+        result["customer_id"] = merged["KUNNR"].astype(str).str.strip()
+        result["customer_name"] = merged.get("NAME1", "").astype(str).str.strip()
+        result["sales_org"] = merged.get("VKORG", "").astype(str).str.strip()
+        result["distribution_channel"] = merged.get("VTWEG", "").astype(str).str.strip()
+        result["division"] = merged.get("SPART", "").astype(str).str.strip()
+        result["customer_group"] = merged.get("KDGRP", "").astype(str).str.strip()
+        result["sales_district"] = merged.get("BZIRK", "").astype(str).str.strip()
+
+        logger.info(f"Mapped {len(result)} market records from customer data")
+        return result
+
+    def map_bom_headers(self, stko_df: pd.DataFrame) -> pd.DataFrame:
+        """Map BOM headers (STKO) for enriching STPO items with header context."""
+        logger.info("Mapping STKO BOM headers")
+
+        if stko_df.empty:
+            return pd.DataFrame()
+
+        result = pd.DataFrame()
+        result["bom_number"] = stko_df["STLNR"].astype(str).str.strip()
+        result["alternative"] = stko_df.get("STLAL", "1").astype(str).str.strip()
+        result["base_quantity"] = pd.to_numeric(stko_df.get("BMENG", 1), errors="coerce").fillna(1)
+        result["base_uom"] = stko_df.get("BMEIN", "EA").astype(str).str.strip()
+        result["bom_status"] = stko_df.get("STLST", "").astype(str).str.strip()
+
+        logger.info(f"Mapped {len(result)} BOM headers")
+        return result
+
+    def map_material_uom(self, marm_df: pd.DataFrame) -> pd.DataFrame:
+        """Map material UOM conversions (MARM) for unit conversion enrichment."""
+        logger.info("Mapping MARM UOM conversions")
+
+        if marm_df.empty:
+            return pd.DataFrame()
+
+        result = pd.DataFrame()
+        result["product_id"] = marm_df["MATNR"].astype(str).str.strip()
+        result["alt_uom"] = marm_df["MEINH"].astype(str).str.strip()
+        result["numerator"] = pd.to_numeric(marm_df.get("UMREZ", 1), errors="coerce").fillna(1)
+        result["denominator"] = pd.to_numeric(marm_df.get("UMREN", 1), errors="coerce").fillna(1)
+        result["conversion_factor"] = result["numerator"] / result["denominator"]
+
+        logger.info(f"Mapped {len(result)} UOM conversion records")
+        return result

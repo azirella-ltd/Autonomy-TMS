@@ -93,6 +93,7 @@ class ForecastAdjustmentRecommendation:
     effective_date: Optional[date] = None
 
     reason: str = ""
+    context_explanation: Optional[Dict] = None
 
 
 @dataclass
@@ -118,6 +119,7 @@ class ForecastAdjustmentTRM:
         self.engine = ForecastAdjustmentEngine(site_key, self.config.engine_config)
         self.model = model
         self.db = db_session
+        self.ctx_explainer = None  # Set externally by SiteAgent or caller
 
     def evaluate_signal(self, state: ForecastAdjustmentState) -> ForecastAdjustmentRecommendation:
         """Evaluate a forecast signal and recommend adjustment."""
@@ -149,6 +151,26 @@ class ForecastAdjustmentTRM:
                 rec = self._heuristic_evaluate(state, engine_result)
         else:
             rec = self._heuristic_evaluate(state, engine_result)
+
+        # Enrich with context-aware reasoning
+        if self.ctx_explainer is not None:
+            try:
+                direction_str = rec.direction if isinstance(rec.direction, str) else rec.direction
+                summary = (
+                    f"Forecast {direction_str}: {rec.adjustment_pct:.1%} "
+                    f"for {state.product_id}"
+                )
+                ctx = self.ctx_explainer.generate_inline_explanation(
+                    decision_summary=summary,
+                    confidence=rec.confidence,
+                    trm_confidence=rec.confidence if self.model else None,
+                    decision_category='demand_forecast',
+                    delta_percent=rec.adjustment_pct * 100,
+                )
+                rec.reason = ctx.explanation
+                rec.context_explanation = ctx.to_dict()
+            except Exception as e:
+                logger.debug(f"Context enrichment failed: {e}")
 
         self._persist_decision(state, rec)
         return rec

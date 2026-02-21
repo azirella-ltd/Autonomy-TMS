@@ -150,6 +150,9 @@ class Capability(str, Enum):
     VIEW_MODEL_SETUP = "view_model_setup"
     MANAGE_MODEL_SETUP = "manage_model_setup"
 
+    # Deployment Pipeline (Demo System Builder)
+    MANAGE_DEPLOYMENT = "manage_deployment"  # Start pipelines, download CSVs, trigger Day 2 imports
+
     # Powell SDAM Framework (Narrow TRM Execution Services)
     VIEW_POWELL = "view_powell"  # View Powell dashboard, AATP allocations, exception detection, rebalancing
     MANAGE_POWELL = "manage_powell"  # Configure Powell TRM services and run monitoring checks
@@ -354,6 +357,9 @@ GROUP_ADMIN_CAPABILITIES = CapabilitySet(
         Capability.VIEW_RL_TRAINING,
         Capability.VIEW_MODEL_SETUP,
 
+        # Deployment Pipeline
+        Capability.MANAGE_DEPLOYMENT,
+
         # Powell SDAM Framework
         Capability.VIEW_POWELL,
         Capability.VIEW_ATP_CTP,
@@ -520,6 +526,9 @@ SC_VP_CAPABILITIES = CapabilitySet(
         Capability.VIEW_GNN_TRAINING,
         Capability.VIEW_RL_TRAINING,
         Capability.VIEW_MODEL_SETUP,
+
+        # Deployment Pipeline
+        Capability.MANAGE_DEPLOYMENT,
 
         # Powell Framework - Full configuration
         Capability.VIEW_POWELL,

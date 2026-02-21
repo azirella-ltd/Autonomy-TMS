@@ -5988,6 +5988,7 @@ from app.api.endpoints import (
     powell_training_router,
     insights_router,
     planning_cascade_router,
+    deployment_router,
 )
 from app.api.endpoints.sap_atp import router as sap_atp_router
 api.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
@@ -6016,6 +6017,7 @@ api.include_router(site_agent_router, tags=["site-agent"])
 api.include_router(powell_training_router, prefix="/powell-training", tags=["powell-training"])
 api.include_router(insights_router, tags=["insights"])
 api.include_router(planning_cascade_router, prefix="/planning-cascade", tags=["planning-cascade"])
+api.include_router(deployment_router, prefix="/deployment", tags=["deployment"])
 
 # ------------------------------------------------------------------------------
 # Mount routers

@@ -730,7 +730,8 @@ const SupplyPlanScreen = () => {
 **Features**:
 - Agent dashboard with performance metrics (agent score, touchless rate, override rate)
 - Worklist for exception triage (Ask Why, Accept, Override with reason)
-- TRM agent decision history (ATP, Rebalancing, PO Creation, Order Tracking)
+- **Ask Why mobile pattern**: Compact `AskWhyPanel` using accordion sections — tap to expand authority/guardrails/attribution. Feature attribution rendered as simplified horizontal bars (top-3 on mobile). Counterfactuals shown as swipeable cards. Verbosity defaults to NORMAL on mobile (VERBOSE available via "Show More" link).
+- TRM agent decision history (all 11 TRM types: ATP, PO, Rebalancing, OrderTracking, MOExecution, TOExecution, Quality, Maintenance, Subcontracting, ForecastAdjustment, SafetyStock)
 - CDC trigger log and retraining status
 - Agent-to-agent conversation monitoring
 - Human intervention controls

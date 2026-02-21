@@ -1163,6 +1163,111 @@ sap-reset-delta: ## Reset delta state (force full reload)
 
 ---
 
+## Building a SupplyChainConfig from SAP Data
+
+The SAP Config Builder creates a complete SupplyChainConfig (sites, products, lanes, BOMs, sourcing rules, forecasts, inventory) from extracted SAP tables. This is the **reverse path** — importing SAP data into the platform's AWS SC data model.
+
+### 8-Step Build Pipeline
+
+| Step | Name | SAP Tables Used | Entities Created |
+|------|------|-----------------|------------------|
+| 1 | **Data Validation** | All loaded tables | Config record (validates MARA/MARC + T001W minimum) |
+| 2 | **Geography** | ADRC | Geography (addresses, lat/lon, country, city) |
+| 3 | **Sites** | T001W, /SAPAPO/LOC | Site (with master type inference) |
+| 4 | **Products** | MARA, MARC, MVKE, MARM | Product (with hierarchy and UOM) |
+| 5 | **Transportation Lanes** | /SAPAPO/TRLANE, EORD, EKPO, LIKP/LIPS | TransportationLane (priority cascade) |
+| 6 | **Partners & Sourcing** | LFA1, KNA1, EINA, EINE, EORD | TradingPartner, VendorProduct, VendorLeadTime, SourcingRules |
+| 7 | **BOM & Manufacturing** | STPO, STKO, PLKO, PLPO | ProductBom, ProductionProcess |
+| 8 | **Planning Data** | /SAPAPO/SNPFC, /SAPAPO/SNPBV, MARD | Forecast, InvLevel, InvPolicy |
+
+### Master Type Inference
+
+Sites are automatically classified into one of four master types based on SAP data patterns:
+
+- **MANUFACTURER**: Plant has BOM production entries (STPO components linked via MARC)
+- **MARKET_SUPPLY**: Site code appears as vendor in LFA1
+- **MARKET_DEMAND**: Site code appears as customer in KNA1
+- **INVENTORY**: Default for sites with inventory data (MARD) but no BOM/vendor/customer role
+
+Users can override inferred master types in the wizard UI.
+
+### Transportation Lane Inference (Priority Cascade)
+
+When explicit APO lane data is unavailable, lanes are inferred from transactional data:
+
+1. **APO TRLANE** (highest confidence): Explicit transportation lane definitions
+2. **EORD Source List**: Approved vendor → plant assignments
+3. **Historical EKPO**: Purchase order patterns (vendor + plant with ≥3 POs)
+4. **Historical LIKP/LIPS**: Delivery flow patterns (plant → customer with ≥3 deliveries)
+
+### Z-Table and Z-Field Integration
+
+During validation (Step 1), the builder detects any Z-prefixed tables or unknown custom tables. For each:
+- Row count and field inventory are displayed
+- AI-powered entity suggestion identifies the likely AWS SC target entity
+- Users can toggle Z-tables for inclusion in the build process
+- Field mapping uses the existing SAP Field Mapping Service for fuzzy matching
+
+### Step-by-Step Wizard UI
+
+The wizard (accessible at **Navigation → SAP Config Builder**) provides:
+
+- **Progressive execution**: Each step can be executed individually
+- **Three control options** after each step: Stop Here, Continue to Next, Continue to End
+- **Anomaly detection**: Per-step data quality checks with severity levels (error/warning/info)
+- **Suggested actions**: Each anomaly includes a remediation suggestion
+- **Master type override**: Step 3 shows an editable table for correcting inferred site types
+- **Planning configuration**: Step 8 allows setting inventory policy type, safety stock days, and forecast horizon
+
+### API Reference
+
+```
+# Start build (Step 1: validate + create config)
+POST /api/v1/sap-data/build-config/start
+  Body: { connection_id, config_name, company_filter?, plant_filter? }
+  Returns: StepResult with table_inventory, anomalies, z_tables
+
+# Execute individual step
+POST /api/v1/sap-data/build-config/{config_id}/step/{step_number}
+  Body: { connection_id, master_type_overrides?, options? }
+  Returns: StepResult with entities_created, sample_data, anomalies
+
+# Complete all remaining steps
+POST /api/v1/sap-data/build-config/{config_id}/complete
+  Body: { connection_id, master_type_overrides?, options? }
+  Returns: { config_id, config_name, summary }
+
+# Check build status
+GET /api/v1/sap-data/build-config/{config_id}/status
+  Returns: { config_id, completed_steps, entity_counts }
+
+# Delete partial/complete build
+DELETE /api/v1/sap-data/build-config/{config_id}
+
+# Full preview (dry-run, no DB changes)
+POST /api/v1/sap-data/build-config/preview
+  Body: { connection_id, config_name, company_filter?, plant_filter? }
+
+# Full build (all steps at once)
+POST /api/v1/sap-data/build-config
+  Body: { connection_id, config_name, master_type_overrides?, options? }
+```
+
+### Anomaly Detection Summary
+
+| Step | Anomaly Checks |
+|------|---------------|
+| Validation | Missing required tables, small datasets (<5 rows), null key fields |
+| Geography | Missing country codes, missing city names |
+| Sites | Zero-product sites, ambiguous master type inference |
+| Products | Missing descriptions (MAKTX), missing base UOM |
+| Lanes | No lead time data, low-confidence inferred lanes, missing endpoints |
+| Partners | No source list, no purchasing info records, zero-price records |
+| BOM | Components not in product master, missing BOM headers |
+| Planning | No forecast data, no inventory data, high proportion of zero inventory |
+
+---
+
 ## Support and Resources
 
 ### Documentation
@@ -1187,6 +1292,6 @@ sap-reset-delta: ## Reset delta state (force full reload)
 
 ---
 
-**Document Version**: 1.1
-**Last Updated**: 2026-01-16
-**Status**: Production Ready (with AI enhancements)
+**Document Version**: 1.2
+**Last Updated**: 2026-02-21
+**Status**: Production Ready (with AI enhancements + Config Builder)

@@ -89,6 +89,7 @@ class MaintenanceRecommendation:
     cost_estimate: float = 0.0
 
     reason: str = ""
+    context_explanation: Optional[Dict] = None
 
 
 @dataclass
@@ -113,6 +114,7 @@ class MaintenanceSchedulingTRM:
         self.engine = MaintenanceEngine(site_key, self.config.engine_config)
         self.model = model
         self.db = db_session
+        self.ctx_explainer = None  # Set externally by SiteAgent or caller
 
     def evaluate_scheduling(self, state: MaintenanceSchedulingState) -> MaintenanceRecommendation:
         snapshot = MaintenanceSnapshot(
@@ -152,6 +154,21 @@ class MaintenanceSchedulingTRM:
                 recommendation = self._heuristic_evaluate(state, engine_result)
         else:
             recommendation = self._heuristic_evaluate(state, engine_result)
+
+        # Enrich with context-aware reasoning
+        if self.ctx_explainer is not None:
+            try:
+                summary = f"{recommendation.decision_type}: Maintenance {state.order_id}"
+                ctx = self.ctx_explainer.generate_inline_explanation(
+                    decision_summary=summary,
+                    confidence=recommendation.confidence,
+                    trm_confidence=recommendation.confidence if self.model else None,
+                    decision_value=recommendation.cost_estimate,
+                )
+                recommendation.reason = ctx.explanation
+                recommendation.context_explanation = ctx.to_dict()
+            except Exception as e:
+                logger.debug(f"Context enrichment failed: {e}")
 
         self._persist_decision(state, recommendation)
         return recommendation

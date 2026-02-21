@@ -159,6 +159,9 @@ class PORecommendation:
     confidence: float
     reasoning: str
 
+    # Context-aware explanation (populated when explainer is available)
+    context_explanation: Optional[Dict] = None
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "product_id": self.product_id,
@@ -280,6 +283,9 @@ class POCreationTRM:
         self.min_order_benefit_days = min_order_benefit_days
         self.db = db
         self.config_id = config_id
+
+        # Context-aware explainer (set externally by SiteAgent or caller)
+        self.ctx_explainer = None
 
         # Decision history for training
         self._decision_history: List[Dict[str, Any]] = []
@@ -465,7 +471,9 @@ class POCreationTRM:
         expected_position_after = inv_pos.inventory_position + quantity
 
         # Build reasoning
-        reasoning = self._build_reasoning(state, supplier, quantity, trigger_reason, urgency)
+        reasoning, context_dict = self._build_reasoning(
+            state, supplier, quantity, trigger_reason, urgency, confidence
+        )
 
         return PORecommendation(
             product_id=state.product_id,
@@ -482,6 +490,7 @@ class POCreationTRM:
             expected_inventory_position_after=expected_position_after,
             confidence=confidence,
             reasoning=reasoning,
+            context_explanation=context_dict,
         )
 
     def _build_reasoning(
@@ -490,9 +499,14 @@ class POCreationTRM:
         supplier: SupplierInfo,
         quantity: float,
         trigger_reason: POTriggerReason,
-        urgency: POUrgency
-    ) -> str:
-        """Build human-readable reasoning"""
+        urgency: POUrgency,
+        confidence: float = 1.0,
+    ) -> Tuple[str, Optional[Dict]]:
+        """Build human-readable reasoning, with context-aware explanation if available.
+
+        Returns:
+            Tuple of (reasoning_text, context_explanation_dict_or_None)
+        """
         inv_pos = state.inventory_position
 
         parts = []
@@ -515,7 +529,32 @@ class POCreationTRM:
         expected_dos = (inv_pos.inventory_position + quantity) / max(1, state.forecast_next_30_days / 30)
         parts.append(f"Expected DOS after receipt: {expected_dos:.1f} days")
 
-        return "; ".join(parts)
+        base_reasoning = "; ".join(parts)
+
+        # Enrich with context-aware explanation if available
+        context_dict = None
+        if self.ctx_explainer is not None:
+            try:
+                expected_cost = quantity * supplier.unit_cost + supplier.order_cost
+                summary = f"{trigger_reason.value}: Order {quantity:.0f} units from {supplier.supplier_id}"
+                ctx = self.ctx_explainer.generate_inline_explanation(
+                    decision_summary=summary,
+                    confidence=confidence,
+                    trm_confidence=confidence if self.trm_model else None,
+                    decision_category='supply_plan',
+                    decision_value=expected_cost,
+                    policy_params={
+                        'safety_stock': inv_pos.safety_stock,
+                        'reorder_point': inv_pos.reorder_point,
+                        'service_level': self.default_service_level,
+                    },
+                )
+                base_reasoning = ctx.explanation
+                context_dict = ctx.to_dict()
+            except Exception as e:
+                logger.debug(f"Context enrichment failed: {e}")
+
+        return base_reasoning, context_dict
 
     def get_best_recommendation(
         self,

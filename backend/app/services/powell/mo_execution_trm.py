@@ -93,6 +93,7 @@ class MORecommendation:
     capacity_impact_pct: float = 0.0
 
     reason: str = ""
+    context_explanation: Optional[Dict] = None
 
 
 @dataclass
@@ -125,6 +126,7 @@ class MOExecutionTRM:
         self.engine = MOExecutionEngine(site_key, self.config.engine_config)
         self.model = model
         self.db = db_session
+        self.ctx_explainer = None  # Set externally by SiteAgent or caller
 
     def evaluate_order(self, state: MOExecutionState) -> MORecommendation:
         """
@@ -167,7 +169,21 @@ class MOExecutionTRM:
         else:
             recommendation = self._heuristic_evaluate(state, engine_result)
 
-        # Step 3: Persist decision
+        # Step 3: Enrich with context-aware reasoning
+        if self.ctx_explainer is not None:
+            try:
+                summary = f"{recommendation.decision_type}: MO {state.order_id}"
+                ctx = self.ctx_explainer.generate_inline_explanation(
+                    decision_summary=summary,
+                    confidence=recommendation.confidence,
+                    trm_confidence=recommendation.confidence if self.model else None,
+                )
+                recommendation.reason = ctx.explanation
+                recommendation.context_explanation = ctx.to_dict()
+            except Exception as e:
+                logger.debug(f"Context enrichment failed: {e}")
+
+        # Step 4: Persist decision
         self._persist_decision(state, recommendation)
 
         return recommendation

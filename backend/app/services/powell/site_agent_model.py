@@ -411,6 +411,108 @@ class SiteAgentModel(nn.Module):
         """Get list of head names"""
         return ['atp_exception', 'inventory_planning', 'po_timing']
 
+    # Feature names for attribution mapping
+    STATE_FEATURE_NAMES = [
+        'inventory', 'pipeline', 'backlog', 'demand_history', 'forecasts',
+    ]
+
+    def predict_with_attribution(
+        self,
+        task: str,
+        inventory: torch.Tensor,
+        pipeline: torch.Tensor,
+        backlog: torch.Tensor,
+        demand_history: torch.Tensor,
+        forecasts: torch.Tensor,
+        order_context: Optional[torch.Tensor] = None,
+        shortage_qty: Optional[torch.Tensor] = None,
+        po_context: Optional[torch.Tensor] = None,
+    ) -> Dict[str, Any]:
+        """
+        Run inference with gradient-based input saliency for explainability.
+
+        Computes which input features the model weighted most heavily for
+        its decision, using gradient magnitude as the attribution signal.
+
+        Args:
+            task: "atp", "inventory", "po_timing", or "all"
+            inventory, pipeline, backlog, demand_history, forecasts: State inputs
+            order_context, shortage_qty: ATP-specific context
+            po_context: PO-specific context
+
+        Returns:
+            Dict with standard outputs plus:
+            - 'attribution': Dict[str, float] mapping feature groups to importance
+        """
+        # Enable gradients on a copy of the inputs
+        inv = inventory.detach().clone().requires_grad_(True)
+        pipe = pipeline.detach().clone().requires_grad_(True)
+        blog = backlog.detach().clone().requires_grad_(True)
+        dem = demand_history.detach().clone().requires_grad_(True)
+        fcst = forecasts.detach().clone().requires_grad_(True)
+
+        # Forward pass
+        results = self.forward(
+            inventory=inv,
+            pipeline=pipe,
+            backlog=blog,
+            demand_history=dem,
+            forecasts=fcst,
+            task=task,
+            order_context=order_context,
+            shortage_qty=shortage_qty,
+            po_context=po_context,
+        )
+
+        # Find the primary output to compute gradients against
+        target = None
+        if task == 'atp' and 'atp' in results:
+            # Use confidence-weighted action probability as target
+            atp_out = results['atp']
+            target = atp_out['confidence'].sum() + atp_out['action_probs'].max(dim=-1).values.sum()
+        elif task == 'inventory' and 'inventory' in results:
+            inv_out = results['inventory']
+            target = inv_out['ss_multiplier'].sum() + inv_out['confidence'].sum()
+        elif task == 'po_timing' and 'po_timing' in results:
+            po_out = results['po_timing']
+            target = po_out['confidence'].sum() + po_out['timing_probs'].max(dim=-1).values.sum()
+        elif 'atp' in results:
+            target = results['atp']['confidence'].sum()
+        elif 'inventory' in results:
+            target = results['inventory']['confidence'].sum()
+
+        attribution = {}
+        if target is not None:
+            target.backward(retain_graph=False)
+
+            # Collect gradient magnitudes per input group
+            grad_groups = {
+                'inventory': inv.grad,
+                'pipeline': pipe.grad,
+                'backlog': blog.grad,
+                'demand_history': dem.grad,
+                'forecasts': fcst.grad,
+            }
+
+            saliency = {}
+            for name, grad in grad_groups.items():
+                if grad is not None:
+                    saliency[name] = grad.abs().sum().item()
+                else:
+                    saliency[name] = 0.0
+
+            # Normalize to 0-1
+            total = sum(saliency.values())
+            if total > 0:
+                attribution = {k: v / total for k, v in saliency.items()}
+            else:
+                attribution = saliency
+
+        results['attribution'] = dict(sorted(
+            attribution.items(), key=lambda x: x[1], reverse=True
+        ))
+        return results
+
 
 def create_site_agent_model(
     config: Optional[SiteAgentModelConfig] = None

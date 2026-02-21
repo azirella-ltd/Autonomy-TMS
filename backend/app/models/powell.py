@@ -439,3 +439,58 @@ class PowellCalibrationLog(Base):
     __table_args__ = (
         Index('idx_calibration_belief', 'belief_state_id', 'observed_at'),
     )
+
+
+class PowellSOPEmbedding(Base):
+    """
+    Cached S&OP GraphSAGE embeddings and analysis scores per site.
+
+    Computed by SOPInferenceService when running network analysis.
+    These are consumed by:
+    - Execution tGNN (structural_embeddings as input features)
+    - AllocationService (criticality-weighted priority)
+    - RebalancingTRM (bottleneck_risk for transfer targeting)
+    - SiteAgent (embedded in state encoding)
+
+    Refresh: Weekly/Monthly (matches S&OP cadence)
+    """
+    __tablename__ = "powell_sop_embeddings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Context
+    config_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("supply_chain_configs.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    site_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("site.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    site_key: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+
+    # Structural embedding vector (64-dim by default)
+    embedding: Mapped[Dict] = mapped_column(JSON, nullable=False)  # List[float]
+
+    # S&OP analysis scores (all 0-1)
+    criticality: Mapped[float] = mapped_column(Float, nullable=False)
+    bottleneck_risk: Mapped[float] = mapped_column(Float, nullable=False)
+    concentration_risk: Mapped[float] = mapped_column(Float, nullable=False)
+    resilience: Mapped[float] = mapped_column(Float, nullable=False)
+    safety_stock_multiplier: Mapped[float] = mapped_column(Float, nullable=False)
+
+    # Network-level risk scores (from global aggregation)
+    network_risk: Mapped[Optional[Dict]] = mapped_column(JSON)  # {overall, supply, demand, operational}
+
+    # Checkpoint used
+    checkpoint_path: Mapped[Optional[str]] = mapped_column(String(255))
+
+    # Timestamps
+    computed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index('idx_sop_embedding_config_site', 'config_id', 'site_id'),
+        Index('idx_sop_embedding_computed', 'config_id', 'computed_at'),
+    )

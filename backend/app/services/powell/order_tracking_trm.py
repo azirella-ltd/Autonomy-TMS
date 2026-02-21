@@ -191,8 +191,11 @@ class ExceptionDetection:
     # Confidence
     confidence: float = 1.0
 
+    # Context-aware explanation (populated when explainer is available)
+    context_explanation: Optional[Dict] = None
+
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             "order_id": self.order_id,
             "exception_type": self.exception_type.value,
             "severity": self.severity.value,
@@ -202,6 +205,9 @@ class ExceptionDetection:
             "estimated_impact_cost": self.estimated_impact_cost,
             "confidence": self.confidence,
         }
+        if self.context_explanation:
+            result["context_explanation"] = self.context_explanation
+        return result
 
 
 class OrderTrackingTRM:
@@ -255,6 +261,9 @@ class OrderTrackingTRM:
         self.db = db
         self.config_id = config_id
 
+        # Context-aware explainer (set externally by SiteAgent or caller)
+        self.ctx_explainer = None
+
         # Decision history for training
         self._decision_history: List[Dict[str, Any]] = []
 
@@ -286,6 +295,25 @@ class OrderTrackingTRM:
                 description="No evaluation available",
                 impact_assessment="Unknown",
             )
+
+        # Enrich with context-aware reasoning
+        if self.ctx_explainer is not None:
+            try:
+                summary = (
+                    f"{result.exception_type.value}: {result.recommended_action.value} "
+                    f"for order {order_state.order_id}"
+                )
+                ctx = self.ctx_explainer.generate_inline_explanation(
+                    decision_summary=summary,
+                    confidence=result.confidence,
+                    trm_confidence=result.confidence if self.trm_model else None,
+                    decision_category='supply_plan',
+                    decision_value=result.estimated_impact_cost,
+                )
+                result.description = ctx.explanation
+                result.context_explanation = ctx.to_dict()
+            except Exception as e:
+                logger.debug(f"Context enrichment failed: {e}")
 
         # Record for training
         self._record_evaluation(order_state, result)

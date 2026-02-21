@@ -247,6 +247,155 @@ class SOPGraphSAGE(nn.Module):
             outputs = self.forward(x, edge_index, edge_attr)
         return outputs['structural_embeddings']
 
+    def forward_with_attention(
+        self,
+        x: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_attr: torch.Tensor,
+        batch: Optional[torch.Tensor] = None
+    ) -> Tuple[Dict[str, torch.Tensor], List[Tuple[torch.Tensor, torch.Tensor]]]:
+        """
+        Forward pass that also extracts per-layer GATv2Conv attention weights.
+
+        Returns:
+            (standard_outputs, attention_per_layer)
+            attention_per_layer: List of (edge_index, attention_coefficients) per GATv2 layer
+        """
+        h = self.node_encoder(x)
+        edge_emb = self.edge_encoder(edge_attr)
+
+        attention_per_layer = []
+        for i, (conv, norm) in enumerate(zip(self.convs, self.norms)):
+            h_new, (attn_edge_index, attn_weights) = conv(
+                h, edge_index, edge_emb, return_attention_weights=True
+            )
+            attention_per_layer.append((attn_edge_index, attn_weights))
+            h_new = norm(h_new)
+            h_new = F.relu(h_new)
+            h_new = F.dropout(h_new, p=0.1, training=self.training)
+            h = h + h_new
+
+        structural_embeddings = self.embedding_head(h)
+        criticality = self.criticality_head(h)
+        bottleneck = self.bottleneck_head(h)
+        concentration = self.concentration_head(h)
+        resilience = self.resilience_head(h)
+        safety_stock = self.safety_stock_head(h)
+
+        outputs = {
+            'structural_embeddings': structural_embeddings,
+            'criticality_score': criticality,
+            'bottleneck_risk': bottleneck,
+            'concentration_risk': concentration,
+            'resilience_score': resilience,
+            'safety_stock_multiplier': safety_stock,
+            'hidden_state': h,
+        }
+
+        if batch is not None:
+            network_risk = self.global_risk_head(global_mean_pool(h, batch))
+            outputs['network_risk'] = torch.sigmoid(network_risk)
+        else:
+            network_risk = self.global_risk_head(h.mean(dim=0, keepdim=True))
+            outputs['network_risk'] = torch.sigmoid(network_risk)
+
+        return outputs, attention_per_layer
+
+    @staticmethod
+    def explain_node(
+        target_node_idx: int,
+        attention_per_layer: List[Tuple[torch.Tensor, torch.Tensor]],
+        site_names: Optional[List[str]] = None,
+    ) -> Dict[str, float]:
+        """
+        Extract aggregated incoming attention weights for a target node.
+
+        Uses the final GATv2 layer's attention to identify which neighbor
+        sites most influenced this node's scores.
+
+        Args:
+            target_node_idx: Index of the node to explain
+            attention_per_layer: From forward_with_attention()
+            site_names: Optional list mapping node indices to site names
+
+        Returns:
+            Dict mapping neighbor identifier to aggregated attention weight
+        """
+        if not attention_per_layer:
+            return {}
+
+        # Use final layer attention
+        edge_index, attn_weights = attention_per_layer[-1]
+        # attn_weights shape: [num_edges, num_heads] for GATv2 with concat=True
+        # Average across attention heads
+        if attn_weights.dim() == 2:
+            avg_attn = attn_weights.mean(dim=1)
+        else:
+            avg_attn = attn_weights
+
+        # Find edges pointing TO target node (edge_index[1] == target)
+        target_mask = edge_index[1] == target_node_idx
+        source_nodes = edge_index[0][target_mask]
+        source_attention = avg_attn[target_mask]
+
+        # Build result
+        result = {}
+        for src_idx, weight in zip(source_nodes.tolist(), source_attention.tolist()):
+            name = site_names[src_idx] if site_names and src_idx < len(site_names) else f"node_{src_idx}"
+            result[name] = weight
+
+        # Normalize
+        total = sum(result.values()) if result else 1.0
+        if total > 0:
+            result = {k: v / total for k, v in result.items()}
+
+        return dict(sorted(result.items(), key=lambda x: x[1], reverse=True))
+
+    def compute_input_saliency(
+        self,
+        x: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_attr: torch.Tensor,
+        target_node_idx: int,
+        output_name: str = 'criticality_score',
+    ) -> Dict[str, float]:
+        """
+        Compute gradient-based input saliency for a target node's output.
+
+        Args:
+            x: Node features (requires_grad will be enabled)
+            edge_index: Edge indices
+            edge_attr: Edge features
+            target_node_idx: Node to explain
+            output_name: Which output head to compute saliency for
+
+        Returns:
+            Dict mapping feature index to saliency magnitude (normalized)
+        """
+        x_input = x.detach().clone().requires_grad_(True)
+
+        outputs = self.forward(x_input, edge_index, edge_attr)
+        target_output = outputs[output_name][target_node_idx]
+
+        target_output.backward(retain_graph=False)
+
+        if x_input.grad is not None:
+            saliency = x_input.grad[target_node_idx].abs()
+            total = saliency.sum()
+            if total > 0:
+                saliency = saliency / total
+            feature_names = [
+                'avg_lead_time', 'lead_time_cv', 'capacity', 'capacity_utilization',
+                'unit_cost', 'reliability', 'num_suppliers', 'num_customers',
+                'inventory_turns', 'service_level', 'holding_cost', 'position',
+            ]
+            result = {}
+            for i, val in enumerate(saliency.tolist()):
+                name = feature_names[i] if i < len(feature_names) else f"feature_{i}"
+                result[name] = val
+            return dict(sorted(result.items(), key=lambda x: x[1], reverse=True))
+        return {}
+
 
 # =============================================================================
 # Execution tGNN - Short-Term Operational
@@ -478,6 +627,158 @@ class ExecutionTemporalGNN(nn.Module):
             'confidence': confidence,
             'attention_weights': attn_weights.reshape(batch_size, num_nodes, window_size, window_size)
         }
+
+    def forward_with_full_attention(
+        self,
+        x_temporal: torch.Tensor,
+        structural_embeddings: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_attr: torch.Tensor,
+    ) -> Tuple[Dict[str, torch.Tensor], List[List[Tuple[torch.Tensor, torch.Tensor]]]]:
+        """
+        Forward pass that also extracts spatial GATv2Conv attention weights
+        at each timestep, in addition to the temporal attention.
+
+        Returns:
+            (standard_outputs, spatial_attention_per_timestep)
+            spatial_attention_per_timestep: List[timestep] of List[layer] of
+                (edge_index, attention_coefficients)
+        """
+        batch_size, window_size, num_nodes, trans_dim = x_temporal.shape
+
+        struct_expanded = structural_embeddings.unsqueeze(0).unsqueeze(0)
+        struct_expanded = struct_expanded.expand(batch_size, window_size, -1, -1)
+        x_combined = torch.cat([x_temporal, struct_expanded], dim=-1)
+
+        edge_emb = self.edge_encoder(edge_attr)
+
+        temporal_states = []
+        spatial_attention_per_timestep = []
+
+        for t in range(window_size):
+            x_t = x_combined[:, t]
+            x_t_flat = x_t.reshape(-1, self.combined_dim)
+            h = self.feature_encoder(x_t_flat)
+
+            layer_attention = []
+            for conv, norm in zip(self.spatial_convs, self.spatial_norms):
+                h_new, (attn_ei, attn_w) = conv(
+                    h, edge_index, edge_emb, return_attention_weights=True
+                )
+                layer_attention.append((attn_ei, attn_w))
+                h_new = norm(h_new)
+                h_new = F.relu(h_new)
+                h = h + h_new
+
+            spatial_attention_per_timestep.append(layer_attention)
+            h = h.reshape(batch_size, num_nodes, self.hidden_dim)
+            temporal_states.append(h)
+
+        h_temporal = torch.stack(temporal_states, dim=1)
+        h_temporal = h_temporal.transpose(1, 2).reshape(-1, window_size, self.hidden_dim)
+        h_gru, _ = self.temporal_gru(h_temporal)
+        h_attn, attn_weights = self.temporal_attention(h_gru, h_gru, h_gru)
+        h_temporal = self.temporal_norm(h_gru + h_attn)
+
+        h_final = h_temporal[:, -1]
+
+        order_rec = self.order_head(h_final).reshape(batch_size, num_nodes, 1)
+        demand_fcst = self.demand_head(h_final).reshape(batch_size, num_nodes, self.forecast_horizon)
+        exception_prob = self.exception_head(h_final).reshape(batch_size, num_nodes, 3)
+        propagation = self.propagation_head(h_final).reshape(batch_size, num_nodes, self.forecast_horizon)
+        confidence = self.confidence_head(h_final).reshape(batch_size, num_nodes, 1)
+
+        outputs = {
+            'order_recommendation': order_rec,
+            'demand_forecast': demand_fcst,
+            'exception_probability': exception_prob,
+            'propagation_impact': torch.sigmoid(propagation),
+            'confidence': confidence,
+            'attention_weights': attn_weights.reshape(batch_size, num_nodes, window_size, window_size),
+        }
+        return outputs, spatial_attention_per_timestep
+
+    @staticmethod
+    def explain_node_temporal(
+        target_node_idx: int,
+        temporal_attention: torch.Tensor,
+        window_labels: Optional[List[str]] = None,
+    ) -> Dict[str, float]:
+        """
+        Extract which past periods most influenced the target node's decision.
+
+        Args:
+            target_node_idx: Node index
+            temporal_attention: [batch, num_nodes, window, window] from forward output
+            window_labels: Optional labels like ["t-10", "t-9", ..., "t-1"]
+
+        Returns:
+            Dict mapping period label to attention weight (normalized)
+        """
+        # Take first batch element, target node, last timestep's attention over history
+        if temporal_attention.dim() == 4:
+            node_attn = temporal_attention[0, target_node_idx, -1]  # [window]
+        else:
+            return {}
+
+        total = node_attn.sum().item()
+        result = {}
+        for i, weight in enumerate(node_attn.tolist()):
+            offset = len(node_attn) - i
+            label = window_labels[i] if window_labels and i < len(window_labels) else f"t-{offset}"
+            result[label] = weight / total if total > 0 else 0.0
+
+        return dict(sorted(result.items(), key=lambda x: x[1], reverse=True))
+
+    @staticmethod
+    def explain_node_spatial(
+        target_node_idx: int,
+        spatial_attention_per_timestep: List[List[Tuple[torch.Tensor, torch.Tensor]]],
+        site_names: Optional[List[str]] = None,
+        timestep: int = -1,
+    ) -> Dict[str, float]:
+        """
+        Extract spatial neighbor attention for a target node at a given timestep.
+
+        Uses the final GATv2 layer's attention at the specified timestep.
+
+        Args:
+            target_node_idx: Node to explain
+            spatial_attention_per_timestep: From forward_with_full_attention()
+            site_names: Optional node index → name mapping
+            timestep: Which timestep (-1 = last)
+
+        Returns:
+            Dict mapping neighbor site to attention weight (normalized)
+        """
+        if not spatial_attention_per_timestep:
+            return {}
+
+        layer_attention = spatial_attention_per_timestep[timestep]
+        if not layer_attention:
+            return {}
+
+        # Use final spatial layer
+        edge_index, attn_weights = layer_attention[-1]
+        if attn_weights.dim() == 2:
+            avg_attn = attn_weights.mean(dim=1)
+        else:
+            avg_attn = attn_weights
+
+        target_mask = edge_index[1] == target_node_idx
+        source_nodes = edge_index[0][target_mask]
+        source_attention = avg_attn[target_mask]
+
+        result = {}
+        for src_idx, weight in zip(source_nodes.tolist(), source_attention.tolist()):
+            name = site_names[src_idx] if site_names and src_idx < len(site_names) else f"node_{src_idx}"
+            result[name] = weight
+
+        total = sum(result.values()) if result else 1.0
+        if total > 0:
+            result = {k: v / total for k, v in result.items()}
+
+        return dict(sorted(result.items(), key=lambda x: x[1], reverse=True))
 
 
 # =============================================================================

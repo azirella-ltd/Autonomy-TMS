@@ -353,12 +353,19 @@ Get agent reasoning for a specific decision.
 - "Ask why for {order_id}"
 
 ## Implementation
-1. GET /api/v1/site-agent/decisions/{decision_id}
-2. Extract: input_state, deterministic_result, trm_adjustment, confidence
-3. Format natural language explanation:
+1. GET /api/v1/planning-cascade/trm-decision/{decision_id}/ask-why?level=NORMAL
+2. Response contains `ContextAwareExplanation` with:
+   - `authority`: agent classification (UNILATERAL/REQUIRES_AUTH/ADVISORY), authority level, approval chain
+   - `guardrails`: CDC threshold status (WITHIN/APPROACHING/EXCEEDED) per metric
+   - `attribution`: top-5 feature importances from gradient saliency
+   - `counterfactuals`: nearest threshold boundaries that would change the outcome
+   - `summary` + `explanation` at requested verbosity level
+3. Format natural language explanation from template:
    - "The deterministic engine found {shortage} units shortage for {product} at {site}."
-   - "The TRM model (confidence: {confidence}) suggested {action} because {explanation}."
+   - "The TRM model (confidence: {confidence}) suggested {action} — {authority_statement}."
+   - "Top driver: {top_feature} ({importance}%). {guardrail_summary}."
    - "Impact: {fill_rate}% fill rate, estimated cost ${cost}."
+4. Fallback: GET /api/v1/site-agent/decisions/{decision_id} for legacy format
 ```
 
 **Skill: kpi-dashboard**

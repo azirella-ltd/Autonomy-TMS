@@ -682,6 +682,37 @@ export const NAVIGATION_CONFIG = [
   },
 
   // ============================================================================
+  // DEPLOYMENT (Demo System Builder)
+  // ============================================================================
+  {
+    section: 'Deployment',
+    divider: true,
+    items: [
+      {
+        label: 'Demo System Builder',
+        path: '/deployment/builder',
+        icon: WandIcon,
+        requiredCapability: 'manage_deployment',
+        description: 'End-to-end pipeline: simulate, train, export SAP CSVs',
+      },
+      {
+        label: 'Pipeline Status',
+        path: '/deployment/pipelines',
+        icon: ActivityIcon,
+        requiredCapability: 'manage_deployment',
+        description: 'Monitor deployment pipeline runs and step progress',
+      },
+      {
+        label: 'SAP CSV Exports',
+        path: '/deployment/csvs',
+        icon: DatabaseIcon,
+        requiredCapability: 'manage_deployment',
+        description: 'Download generated SAP-format CSV files',
+      },
+    ],
+  },
+
+  // ============================================================================
   // ADMINISTRATION (Group Admin)
   // ============================================================================
   {
@@ -798,6 +829,24 @@ export const SYSTEM_ADMIN_NAVIGATION = [
         path: '/admin/synthetic-data',
         icon: WandIcon,
         description: 'AI-guided setup for test environments',
+      },
+      {
+        label: 'Demo System Builder',
+        path: '/deployment/builder',
+        icon: WandIcon,
+        description: 'End-to-end deployment pipeline',
+      },
+      {
+        label: 'Pipeline Status',
+        path: '/deployment/pipelines',
+        icon: ActivityIcon,
+        description: 'Monitor pipeline runs',
+      },
+      {
+        label: 'SAP CSV Exports',
+        path: '/deployment/csvs',
+        icon: DatabaseIcon,
+        description: 'Download SAP-format CSV files',
       },
     ],
   },

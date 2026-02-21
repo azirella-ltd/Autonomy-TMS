@@ -307,6 +307,7 @@ Round 30: LLM: 45%, GNN: 38%, TRM: 17%  (weights converged)
 - **Impact Simulation**: Monte Carlo on human's alternative
 - **Confidence Scores**: Per-agent and ensemble confidence
 - **Explanation**: Why did ensemble recommend X? (reasoning from winning agent)
+- **Ask Why Deep-Dive**: `AskWhyPanel` shows authority context (is the agent within its unilateral authority?), active guardrails (CDC thresholds vs current metrics), feature attribution (which inputs drove the decision — gradient saliency for TRM, attention weights for GNN), and counterfactuals ("If demand were 20% lower, agent would defer the PO"). Available at SUCCINCT/NORMAL/VERBOSE verbosity levels.
 - **Weight Visualization**: See current agent weights and convergence status
 - **RLHF (Reinforcement Learning from Human Feedback)**:
   - Records all human overrides with reasoning

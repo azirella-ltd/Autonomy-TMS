@@ -96,6 +96,7 @@ class TORecommendation:
     cost_impact: float = 0.0
 
     reason: str = ""
+    context_explanation: Optional[Dict] = None
 
 
 @dataclass
@@ -127,6 +128,7 @@ class TOExecutionTRM:
         self.engine = TOExecutionEngine(site_key, self.config.engine_config)
         self.model = model
         self.db = db_session
+        self.ctx_explainer = None  # Set externally by SiteAgent or caller
 
     def evaluate_order(self, state: TOExecutionState) -> TORecommendation:
         """Evaluate a TO and recommend execution action."""
@@ -164,6 +166,20 @@ class TOExecutionTRM:
                 recommendation = self._heuristic_evaluate(state, engine_result)
         else:
             recommendation = self._heuristic_evaluate(state, engine_result)
+
+        # Enrich with context-aware reasoning
+        if self.ctx_explainer is not None:
+            try:
+                summary = f"{recommendation.decision_type}: TO {state.order_id}"
+                ctx = self.ctx_explainer.generate_inline_explanation(
+                    decision_summary=summary,
+                    confidence=recommendation.confidence,
+                    trm_confidence=recommendation.confidence if self.model else None,
+                )
+                recommendation.reason = ctx.explanation
+                recommendation.context_explanation = ctx.to_dict()
+            except Exception as e:
+                logger.debug(f"Context enrichment failed: {e}")
 
         self._persist_decision(state, recommendation)
         return recommendation

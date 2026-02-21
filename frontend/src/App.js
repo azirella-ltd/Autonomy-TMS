@@ -115,6 +115,10 @@ import { TrainingLeaderboards, TrainingReports, TrainingCompare } from "./pages/
 import ExecutiveDashboard from "./pages/ExecutiveDashboard";
 import AgentPerformancePage from "./pages/AgentPerformancePage";
 import SOPWorklistPage from "./pages/SOPWorklistPage";
+import DemoSystemBuilder from "./pages/deployment/DemoSystemBuilder.jsx";
+import PipelineStatusPage from "./pages/deployment/PipelineStatus.jsx";
+import CSVDownloads from "./pages/deployment/CSVDownloads.jsx";
+import SAPConfigBuilder from "./pages/deployment/SAPConfigBuilder.jsx";
 import { buildLoginRedirectPath, getDefaultLandingPath } from "./utils/authUtils";
 
 window.onerror = function (message, source, lineno, colno, error) {
@@ -1035,6 +1039,40 @@ const AppContent = () => {
             <Route
               path="/supply-chain-config/edit/:id"
               element={<SupplyChainConfigForm />}
+            />
+
+            {/* Deployment Pipeline */}
+            <Route
+              path="/deployment/builder"
+              element={
+                <CapabilityProtectedRoute requiredCapability="manage_deployment">
+                  <DemoSystemBuilder />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/deployment/pipelines"
+              element={
+                <CapabilityProtectedRoute requiredCapability="manage_deployment">
+                  <PipelineStatusPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/deployment/csvs"
+              element={
+                <CapabilityProtectedRoute requiredCapability="manage_deployment">
+                  <CSVDownloads />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/deployment/sap-config-builder"
+              element={
+                <CapabilityProtectedRoute requiredCapability="manage_deployment">
+                  <SAPConfigBuilder />
+                </CapabilityProtectedRoute>
+              }
             />
 
             <Route path="/" element={<LandingRedirect />} />

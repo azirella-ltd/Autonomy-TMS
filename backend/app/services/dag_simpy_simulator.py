@@ -516,7 +516,7 @@ class DAGSimPySimulator:
             if fulfilled > 0:
                 self._ship_downstream_stochastic(
                     site, pid, fulfilled, period, state,
-                    pipeline, all_shipments, rng,
+                    pipeline, all_shipments, decisions, rng,
                 )
 
             # Record ATP decision
@@ -565,9 +565,98 @@ class DAGSimPySimulator:
             else:
                 sp.order_history.append(0)
 
-            # Periodic safety stock update
+            # Periodic safety stock update with decision recording
             if period > 0 and period % 4 == 0 and len(sp.demand_history) >= 4:
+                old_ss = sp.safety_stock
                 self._update_safety_stock(sp)
+                if abs(sp.safety_stock - old_ss) > 0.01:
+                    decisions.append(SimDecision(
+                        period=period,
+                        site_id=site.id,
+                        site_name=site.name,
+                        product_id=pid,
+                        decision_type="safety_stock",
+                        quantity=sp.safety_stock,
+                        context={
+                            "old_safety_stock": old_ss,
+                            "new_safety_stock": sp.safety_stock,
+                            "avg_demand": float(np.mean(sp.demand_history[-4:])),
+                        },
+                    ))
+
+            # Rebalancing decision
+            if sp.on_hand > 0 and sp.demand_history:
+                avg_d = float(np.mean(sp.demand_history[-4:])) if len(sp.demand_history) >= 4 else sp.demand_history[-1]
+                if avg_d > 0:
+                    this_dos = sp.on_hand / (avg_d / 7.0)
+                    for ds_name, lane in topo.downstream_map.get(site.name, []):
+                        ds_sp = state.get(ds_name, {}).get(pid)
+                        if ds_sp and ds_sp.demand_history:
+                            ds_avg = float(np.mean(ds_sp.demand_history[-4:])) if len(ds_sp.demand_history) >= 4 else ds_sp.demand_history[-1]
+                            if ds_avg > 0:
+                                ds_dos = ds_sp.on_hand / (ds_avg / 7.0)
+                                if this_dos > 2 * ds_dos and ds_dos < 14:
+                                    qty = min(sp.on_hand * 0.2, (avg_d / 7.0) * 7)
+                                    if qty > 0:
+                                        decisions.append(SimDecision(
+                                            period=period, site_id=site.id, site_name=site.name,
+                                            product_id=pid, decision_type="rebalance", quantity=qty,
+                                            context={"to_site": ds_name, "source_dos": this_dos, "dest_dos": ds_dos, "reason": "dos_imbalance"},
+                                        ))
+                                        break
+
+            # Forecast adjustment decision
+            if period >= 4 and len(sp.demand_history) >= 4:
+                recent_avg = float(np.mean(sp.demand_history[-4:]))
+                forecast = self._get_forecast(site.name, pid, period)
+                if forecast > 0:
+                    dev = (recent_avg - forecast) / forecast
+                    if abs(dev) > 0.15:
+                        decisions.append(SimDecision(
+                            period=period, site_id=site.id, site_name=site.name,
+                            product_id=pid, decision_type="forecast_adjustment", quantity=recent_avg,
+                            context={"current_forecast": forecast, "deviation_pct": round(dev, 4),
+                                     "direction": "up" if dev > 0 else "down", "signal_source": "simulation"},
+                        ))
+
+            # Quality decision (stochastic, 5% chance)
+            if period > 0 and period % 2 == 0 and sp.on_hand > 0 and rng.random() < 0.05:
+                defect_rate = float(rng.uniform(0.01, 0.08))
+                disp = "accept" if defect_rate < 0.03 else "rework" if defect_rate < 0.06 else "reject"
+                decisions.append(SimDecision(
+                    period=period, site_id=site.id, site_name=site.name,
+                    product_id=pid, decision_type="quality", quantity=min(sp.on_hand * 0.1, 50),
+                    context={"defect_rate": round(defect_rate, 4), "disposition": disp, "inspection_type": "incoming"},
+                ))
+
+            # Maintenance decision (every 8 periods)
+            if period > 0 and period % 8 == 0:
+                decisions.append(SimDecision(
+                    period=period, site_id=site.id, site_name=site.name,
+                    product_id=pid, decision_type="maintenance", quantity=0,
+                    context={"maintenance_type": "preventive", "decision_type": "schedule",
+                             "asset_id": f"EQUIP-{site.name}-01", "estimated_downtime_hours": 4.0},
+                ))
+
+            # MO execution + subcontracting for manufacturer sites
+            master_type = str(getattr(site, 'master_type', '')).lower()
+            if master_type == 'manufacturer' and order_qty > 0:
+                decisions.append(SimDecision(
+                    period=period, site_id=site.id, site_name=site.name,
+                    product_id=pid, decision_type="mo_execution", quantity=order_qty,
+                    context={"decision_type": "release", "production_order_id": f"MO-{period:04d}-{pid[:6]}",
+                             "expedite": sp.backlog > sp.safety_stock},
+                ))
+                # Subcontracting if over capacity
+                typical = sp.target_inventory * 0.5 if sp.target_inventory > 0 else 100
+                if order_qty > typical * 0.8:
+                    ext = order_qty - typical * 0.8
+                    decisions.append(SimDecision(
+                        period=period, site_id=site.id, site_name=site.name,
+                        product_id=pid, decision_type="subcontracting", quantity=ext,
+                        context={"decision_type": "split", "internal_quantity": typical * 0.8,
+                                 "external_quantity": ext, "reason": "capacity_constraint"},
+                    ))
 
         return period_demand, period_fulfilled
 
@@ -584,6 +673,7 @@ class DAGSimPySimulator:
         state: Dict[str, Dict[str, SiteProductState]],
         pipeline: List[_StochasticShipment],
         all_shipments: list,
+        decisions: list,
         rng: np.random.Generator,
     ):
         """Ship to downstream with stochastic lead times."""
@@ -633,6 +723,22 @@ class DAGSimPySimulator:
             ds_sp = state.get(ds_name, {}).get(product_id)
             if ds_sp:
                 ds_sp.in_transit += qty
+
+            # Record TO decision
+            decisions.append(SimDecision(
+                period=period,
+                site_id=source_site.id,
+                site_name=source_site.name,
+                product_id=product_id,
+                decision_type="transfer_order",
+                quantity=qty,
+                context={
+                    "dest_site": ds_name,
+                    "base_lead_time": base_lt,
+                    "actual_lead_time": stochastic_lt,
+                    "trigger_reason": "demand_fulfillment",
+                },
+            ))
 
     def _place_order_upstream_stochastic(
         self,

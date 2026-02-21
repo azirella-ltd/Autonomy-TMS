@@ -53,6 +53,9 @@ from .insights import router as insights_router
 # Planning Cascade (S&OP → MRS → Supply Agent → Allocation Agent)
 from .planning_cascade import router as planning_cascade_router
 
+# Deployment Pipeline (Demo System Builder)
+from .deployment import router as deployment_router
+
 # Decision Metrics (Agent Performance) for Powell Framework Dashboards
 from .decision_metrics import router as decision_metrics_router
 
@@ -108,4 +111,6 @@ __all__ = [
     'planning_cascade_router',
     # Decision Metrics (Agent Performance)
     'decision_metrics_router',
+    # Deployment Pipeline (Demo System Builder)
+    'deployment_router',
 ]

@@ -18,10 +18,30 @@ import {
   TrendingUp as OutcomeIcon,
   Warning as RiskIcon,
   AccountTree as PeggingIcon,
+  Shield as AuthorityIcon,
+  Speed as GuardrailIcon,
+  BarChart as AttributionIcon,
+  CompareArrows as CounterfactualIcon,
 } from '@mui/icons-material';
-import { askWhySupplyCommit, askWhyAllocationCommit } from '../../services/planningCascadeApi';
+import {
+  askWhySupplyCommit, askWhyAllocationCommit,
+  askWhyTRMDecision, askWhyGNNNode,
+} from '../../services/planningCascadeApi';
 
-const AskWhyPanel = ({ commitId, commitType = 'supply' }) => {
+/**
+ * commitType: 'supply' | 'allocation' | 'trm' | 'gnn'
+ * commitId: decision ID for supply/allocation/trm, or unused for gnn
+ * configId, nodeId, modelType: required for gnn mode
+ * level: 'VERBOSE' | 'NORMAL' | 'SUCCINCT' for trm/gnn modes
+ */
+const AskWhyPanel = ({
+  commitId,
+  commitType = 'supply',
+  configId,
+  nodeId,
+  modelType = 'sop',
+  level = 'NORMAL',
+}) => {
   const [expanded, setExpanded] = useState(false);
   const [reasoning, setReasoning] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -36,9 +56,20 @@ const AskWhyPanel = ({ commitId, commitType = 'supply' }) => {
     try {
       setLoading(true);
       setError(null);
-      const data = commitType === 'supply'
-        ? await askWhySupplyCommit(commitId)
-        : await askWhyAllocationCommit(commitId);
+      let data;
+      switch (commitType) {
+        case 'trm':
+          data = await askWhyTRMDecision(commitId, level);
+          break;
+        case 'gnn':
+          data = await askWhyGNNNode(configId, nodeId, modelType, level);
+          break;
+        case 'allocation':
+          data = await askWhyAllocationCommit(commitId);
+          break;
+        default:
+          data = await askWhySupplyCommit(commitId);
+      }
       setReasoning(data);
       setExpanded(true);
     } catch (err) {
@@ -197,10 +228,232 @@ const AskWhyPanel = ({ commitId, commitType = 'supply' }) => {
                 )}
               </Box>
             )}
+
+            {/* === Context-Aware Sections (from AgentContextExplainer) === */}
+            {/* Use agent_context from supply/allocation, or top-level for trm/gnn */}
+            <AgentContextSections context={reasoning.agent_context || (commitType === 'trm' || commitType === 'gnn' ? reasoning : null)} />
           </Paper>
         )}
       </Collapse>
     </Box>
+  );
+};
+
+/**
+ * Sub-component rendering authority, guardrails, attribution, and counterfactual sections
+ * from a ContextAwareExplanation dict.
+ */
+const AgentContextSections = ({ context }) => {
+  const [showAuthority, setShowAuthority] = useState(false);
+  const [showGuardrails, setShowGuardrails] = useState(false);
+  const [showAttribution, setShowAttribution] = useState(false);
+  const [showCounterfactuals, setShowCounterfactuals] = useState(false);
+
+  if (!context) return null;
+
+  const { authority, guardrails, attribution, counterfactuals, prediction_interval, explanation } = context;
+
+  const guardrailColor = (status) => {
+    if (status === 'WITHIN') return 'success';
+    if (status === 'APPROACHING') return 'warning';
+    return 'error';
+  };
+
+  return (
+    <>
+      {/* Context Explanation Text */}
+      {explanation && (
+        <>
+          <Divider sx={{ my: 1 }} />
+          <Typography variant="body2" sx={{ whiteSpace: 'pre-line', mb: 1 }}>
+            {explanation}
+          </Typography>
+        </>
+      )}
+
+      {/* Authority Context */}
+      {authority && (
+        <>
+          <Divider sx={{ my: 1 }} />
+          <Box>
+            <Box
+              display="flex" alignItems="center" gap={0.5} mb={1}
+              sx={{ cursor: 'pointer' }}
+              onClick={() => setShowAuthority(!showAuthority)}
+            >
+              <AuthorityIcon fontSize="small" color="primary" />
+              <Typography variant="subtitle2">Authority Context</Typography>
+              <Chip
+                label={authority.decision_classification}
+                size="small"
+                color={
+                  authority.decision_classification === 'UNILATERAL' ? 'success'
+                    : authority.decision_classification === 'ADVISORY' ? 'info'
+                      : 'warning'
+                }
+              />
+              <Chip label={authority.authority_level} size="small" variant="outlined" />
+              {showAuthority ? <CollapseIcon fontSize="small" /> : <ExpandIcon fontSize="small" />}
+            </Box>
+            <Collapse in={showAuthority}>
+              <Typography variant="body2" sx={{ pl: 1, mb: 1 }}>
+                {authority.authority_statement}
+              </Typography>
+              {authority.approval_required && (
+                <Alert severity="info" variant="outlined" sx={{ mb: 1 }}>
+                  Requires {authority.approval_required} approval: {authority.approval_reason}
+                </Alert>
+              )}
+            </Collapse>
+          </Box>
+        </>
+      )}
+
+      {/* Active Guardrails */}
+      {guardrails?.length > 0 && (
+        <>
+          <Divider sx={{ my: 1 }} />
+          <Box>
+            <Box
+              display="flex" alignItems="center" gap={0.5} mb={1}
+              sx={{ cursor: 'pointer' }}
+              onClick={() => setShowGuardrails(!showGuardrails)}
+            >
+              <GuardrailIcon fontSize="small" color="secondary" />
+              <Typography variant="subtitle2">Active Guardrails</Typography>
+              <Chip
+                label={`${guardrails.filter(g => g.status !== 'WITHIN').length} alert(s)`}
+                size="small"
+                color={guardrails.some(g => g.status === 'EXCEEDED') ? 'error' : 'success'}
+              />
+              {showGuardrails ? <CollapseIcon fontSize="small" /> : <ExpandIcon fontSize="small" />}
+            </Box>
+            <Collapse in={showGuardrails}>
+              <List dense disablePadding>
+                {guardrails.map((g, i) => (
+                  <ListItem key={i} disableGutters>
+                    <ListItemIcon sx={{ minWidth: 24 }}>
+                      <Box
+                        sx={{
+                          width: 10, height: 10, borderRadius: '50%',
+                          bgcolor: guardrailColor(g.status) + '.main',
+                        }}
+                      />
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={g.name}
+                      secondary={`Threshold: ${g.threshold} | Actual: ${typeof g.actual === 'number' ? g.actual.toFixed(2) : g.actual} | ${g.status}`}
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            </Collapse>
+          </Box>
+        </>
+      )}
+
+      {/* Feature Attribution */}
+      {attribution?.features && Object.keys(attribution.features).length > 0 && (
+        <>
+          <Divider sx={{ my: 1 }} />
+          <Box>
+            <Box
+              display="flex" alignItems="center" gap={0.5} mb={1}
+              sx={{ cursor: 'pointer' }}
+              onClick={() => setShowAttribution(!showAttribution)}
+            >
+              <AttributionIcon fontSize="small" color="info" />
+              <Typography variant="subtitle2">Feature Attribution ({attribution.method})</Typography>
+              {showAttribution ? <CollapseIcon fontSize="small" /> : <ExpandIcon fontSize="small" />}
+            </Box>
+            <Collapse in={showAttribution}>
+              {/* Horizontal bars for top features */}
+              {Object.entries(attribution.features)
+                .sort(([, a], [, b]) => Math.abs(b) - Math.abs(a))
+                .slice(0, 5)
+                .map(([name, importance]) => (
+                  <Box key={name} display="flex" alignItems="center" gap={1} mb={0.5} pl={1}>
+                    <Typography variant="caption" sx={{ minWidth: 120 }}>{name}</Typography>
+                    <Box sx={{ flex: 1, bgcolor: 'grey.200', borderRadius: 1, height: 12, position: 'relative' }}>
+                      <Box
+                        sx={{
+                          width: `${Math.abs(importance) * 100}%`,
+                          bgcolor: importance >= 0 ? 'primary.main' : 'error.main',
+                          borderRadius: 1,
+                          height: '100%',
+                        }}
+                      />
+                    </Box>
+                    <Typography variant="caption" sx={{ minWidth: 40, textAlign: 'right' }}>
+                      {(importance * 100).toFixed(0)}%
+                    </Typography>
+                  </Box>
+                ))
+              }
+              {/* Neighbor attention for GNN */}
+              {attribution.neighbor_attention && Object.keys(attribution.neighbor_attention).length > 0 && (
+                <Box mt={1} pl={1}>
+                  <Typography variant="caption" color="textSecondary">Neighbor Attention:</Typography>
+                  <Box display="flex" gap={0.5} flexWrap="wrap" mt={0.5}>
+                    {Object.entries(attribution.neighbor_attention)
+                      .sort(([, a], [, b]) => b - a)
+                      .slice(0, 5)
+                      .map(([name, weight]) => (
+                        <Chip key={name} label={`${name}: ${(weight * 100).toFixed(0)}%`} size="small" variant="outlined" />
+                      ))
+                    }
+                  </Box>
+                </Box>
+              )}
+            </Collapse>
+          </Box>
+        </>
+      )}
+
+      {/* Conformal Prediction Interval */}
+      {prediction_interval && (
+        <>
+          <Divider sx={{ my: 1 }} />
+          <Box pl={1}>
+            <Typography variant="caption" color="textSecondary">
+              Prediction Interval: [{prediction_interval.lower?.toFixed(1)} — {prediction_interval.upper?.toFixed(1)}]
+              {prediction_interval.coverage && ` at ${(prediction_interval.coverage * 100).toFixed(0)}% coverage`}
+              {prediction_interval.calibration_quality && ` (${prediction_interval.calibration_quality})`}
+            </Typography>
+          </Box>
+        </>
+      )}
+
+      {/* Counterfactuals */}
+      {counterfactuals?.length > 0 && (
+        <>
+          <Divider sx={{ my: 1 }} />
+          <Box>
+            <Box
+              display="flex" alignItems="center" gap={0.5} mb={1}
+              sx={{ cursor: 'pointer' }}
+              onClick={() => setShowCounterfactuals(!showCounterfactuals)}
+            >
+              <CounterfactualIcon fontSize="small" />
+              <Typography variant="subtitle2">What Would Change</Typography>
+              {showCounterfactuals ? <CollapseIcon fontSize="small" /> : <ExpandIcon fontSize="small" />}
+            </Box>
+            <Collapse in={showCounterfactuals}>
+              <List dense disablePadding>
+                {counterfactuals.map((cf, i) => (
+                  <ListItem key={i} disableGutters>
+                    <ListItemText
+                      primary={cf}
+                      primaryTypographyProps={{ variant: 'body2', fontStyle: 'italic' }}
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            </Collapse>
+          </Box>
+        </>
+      )}
+    </>
   );
 };
 

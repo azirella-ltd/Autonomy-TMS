@@ -126,6 +126,50 @@ class APOConnector:
         "SHORTAGE_QTY",  # Shortage Quantity
     ]
 
+    # Config Builder APO fields
+
+    # Transportation Lanes (/SAPAPO/TRLANE) - network edges
+    TRANSPORTATION_LANE_FIELDS = [
+        "LOCFR",  # Source Location
+        "LOCTO",  # Destination Location
+        "MATID",  # Material ID
+        "TRLANE_ID",  # Lane ID
+        "TRANSTIME",  # Transportation Time (days)
+        "TRANSCOST",  # Transportation Cost
+        "CAPACITY",  # Lane Capacity
+        "TRANSMODE",  # Transportation Mode
+        "VALID_FROM",  # Valid From Date
+        "VALID_TO",  # Valid To Date
+    ]
+
+    # Product Data Structure (/SAPAPO/PDS) - alternative BOMs/routings
+    PDS_FIELDS = [
+        "PDSID",  # PDS ID
+        "MATNR",  # Material Number
+        "LOCNO",  # Location
+        "PDSTYPE",  # PDS Type
+        "PRIORITY",  # Priority
+        "VALID_FROM",  # Valid From Date
+        "VALID_TO",  # Valid To Date
+        "COMP_MATNR",  # Component Material Number
+        "COMP_QTY",  # Component Quantity
+        "SETUP_TIME",  # Setup Time
+        "PROC_TIME",  # Processing Time
+    ]
+
+    # SNP Basic Values (/SAPAPO/SNPBV) - historical demand/supply plan
+    SNPBV_FIELDS = [
+        "MATNR",  # Material Number
+        "LOCNO",  # Location Number
+        "PERIODID",  # Period ID
+        "PERIODSTART",  # Period Start Date
+        "DEMAND_QTY",  # Demand Quantity
+        "SUPPLY_QTY",  # Supply Quantity
+        "FORECAST_QTY",  # Forecast Quantity
+        "STOCK_QTY",  # Stock Quantity
+        "VERSION",  # Plan Version
+    ]
+
     def __init__(self, config: APOConnectionConfig):
         """Initialize APO connector."""
         self.config = config
@@ -642,6 +686,146 @@ class APOConnector:
 
         logger.info(f"Extracted {len(snp)} SNP plan records")
         return snp
+
+    # ==========================================================================
+    # Config Builder Extraction Methods
+    # ==========================================================================
+
+    def extract_transportation_lanes(
+        self,
+        source_location: Optional[str] = None,
+        dest_location: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """
+        Extract transportation lanes (/SAPAPO/TRLANE) — network edges.
+
+        These are the most critical APO data for building a SupplyChainConfig
+        as they define the physical material flow connections between sites.
+        """
+        logger.info("Extracting transportation lanes from APO")
+
+        if self.config.use_csv_mode:
+            lanes = self._read_csv_table(
+                "/SAPAPO/TRLANE",
+                expected_fields=self.TRANSPORTATION_LANE_FIELDS,
+            )
+        else:
+            where_clause = []
+            if source_location:
+                where_clause.append({"FIELD": "LOCFR", "OPTION": "EQ", "LOW": source_location})
+            if dest_location:
+                where_clause.append({"FIELD": "LOCTO", "OPTION": "EQ", "LOW": dest_location})
+            lanes = self._execute_query_rfc(
+                "/SAPAPO/TRLANE",
+                self.TRANSPORTATION_LANE_FIELDS,
+                where_clause if where_clause else None,
+            )
+
+        # Apply filters
+        if source_location and "LOCFR" in lanes.columns:
+            lanes = lanes[lanes["LOCFR"] == source_location]
+        if dest_location and "LOCTO" in lanes.columns:
+            lanes = lanes[lanes["LOCTO"] == dest_location]
+
+        # Convert numeric fields
+        for field in ["TRANSTIME", "TRANSCOST", "CAPACITY"]:
+            if field in lanes.columns:
+                lanes[field] = pd.to_numeric(lanes[field], errors="coerce")
+
+        logger.info(f"Extracted {len(lanes)} transportation lanes")
+        return lanes
+
+    def extract_product_data_structures(
+        self,
+        location: Optional[str] = None,
+        material: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """
+        Extract APO Product Data Structures (/SAPAPO/PDS).
+
+        PDS contains alternative BOM/routing definitions in APO, complementing
+        S/4HANA STPO/PLKO data.
+        """
+        logger.info("Extracting product data structures from APO")
+
+        if self.config.use_csv_mode:
+            pds = self._read_csv_table(
+                "/SAPAPO/PDS",
+                expected_fields=self.PDS_FIELDS,
+            )
+        else:
+            where_clause = []
+            if location:
+                where_clause.append({"FIELD": "LOCNO", "OPTION": "EQ", "LOW": location})
+            if material:
+                where_clause.append({"FIELD": "MATNR", "OPTION": "EQ", "LOW": material})
+            pds = self._execute_query_rfc(
+                "/SAPAPO/PDS",
+                self.PDS_FIELDS,
+                where_clause if where_clause else None,
+            )
+
+        if location and "LOCNO" in pds.columns:
+            pds = pds[pds["LOCNO"] == location]
+        if material and "MATNR" in pds.columns:
+            pds = pds[pds["MATNR"] == material]
+
+        for field in ["COMP_QTY", "SETUP_TIME", "PROC_TIME"]:
+            if field in pds.columns:
+                pds[field] = pd.to_numeric(pds[field], errors="coerce")
+
+        logger.info(f"Extracted {len(pds)} PDS records")
+        return pds
+
+    def extract_snp_basic_values(
+        self,
+        location: Optional[str] = None,
+        material: Optional[str] = None,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+    ) -> pd.DataFrame:
+        """
+        Extract SNP Basic Values (/SAPAPO/SNPBV) — historical demand/supply plan.
+
+        Used as fallback forecast source when /SAPAPO/SNPFC is unavailable.
+        """
+        logger.info("Extracting SNP basic values from APO")
+
+        if self.config.use_csv_mode:
+            snpbv = self._read_csv_table(
+                "/SAPAPO/SNPBV",
+                expected_fields=self.SNPBV_FIELDS,
+            )
+        else:
+            where_clause = []
+            if location:
+                where_clause.append({"FIELD": "LOCNO", "OPTION": "EQ", "LOW": location})
+            if material:
+                where_clause.append({"FIELD": "MATNR", "OPTION": "EQ", "LOW": material})
+            snpbv = self._execute_query_rfc(
+                "/SAPAPO/SNPBV",
+                self.SNPBV_FIELDS,
+                where_clause if where_clause else None,
+            )
+
+        if "PERIODSTART" in snpbv.columns:
+            snpbv["PERIODSTART"] = pd.to_datetime(snpbv["PERIODSTART"], errors="coerce")
+
+        if location and "LOCNO" in snpbv.columns:
+            snpbv = snpbv[snpbv["LOCNO"] == location]
+        if material and "MATNR" in snpbv.columns:
+            snpbv = snpbv[snpbv["MATNR"] == material]
+        if date_from and "PERIODSTART" in snpbv.columns:
+            snpbv = snpbv[snpbv["PERIODSTART"] >= pd.Timestamp(date_from)]
+        if date_to and "PERIODSTART" in snpbv.columns:
+            snpbv = snpbv[snpbv["PERIODSTART"] <= pd.Timestamp(date_to)]
+
+        for field in ["DEMAND_QTY", "SUPPLY_QTY", "FORECAST_QTY", "STOCK_QTY"]:
+            if field in snpbv.columns:
+                snpbv[field] = pd.to_numeric(snpbv[field], errors="coerce")
+
+        logger.info(f"Extracted {len(snpbv)} SNP basic value records")
+        return snpbv
 
     def get_available_csv_files(self) -> List[str]:
         """
