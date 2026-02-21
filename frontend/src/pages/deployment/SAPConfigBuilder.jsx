@@ -152,9 +152,38 @@ function AnomalyPanel({ anomalies }) {
 }
 
 // Z-table panel component
-function ZTablePanel({ zTables }) {
+function ConfidenceChip({ confidence }) {
+  const colorMap = { high: 'success', medium: 'warning', low: 'error', none: 'default' };
+  return <Chip label={confidence} size="small" color={colorMap[confidence] || 'default'} variant="outlined" />;
+}
+
+function ZTablePanel({ zTables, connectionId }) {
   const [expanded, setExpanded] = useState(true);
+  const [expandedTable, setExpandedTable] = useState(null);
+  const [deepAnalysis, setDeepAnalysis] = useState({});
+  const [analyzing, setAnalyzing] = useState(null);
+
   if (!zTables || zTables.length === 0) return null;
+
+  const handleDeepAnalyze = async (tableName) => {
+    if (deepAnalysis[tableName]) {
+      setExpandedTable(expandedTable === tableName ? null : tableName);
+      return;
+    }
+    setAnalyzing(tableName);
+    try {
+      const resp = await api.post('/api/v1/sap-data/build-config/z-table-analyze', {
+        connection_id: connectionId,
+        table_name: tableName,
+      });
+      setDeepAnalysis(prev => ({ ...prev, [tableName]: resp.data }));
+      setExpandedTable(tableName);
+    } catch (err) {
+      console.error('Z-table analysis failed:', err);
+    } finally {
+      setAnalyzing(null);
+    }
+  };
 
   return (
     <Card variant="outlined" sx={{ mt: 2, borderColor: 'secondary.main' }}>
@@ -175,22 +204,137 @@ function ZTablePanel({ zTables }) {
                 <TableCell>Rows</TableCell>
                 <TableCell>Fields</TableCell>
                 <TableCell>Suggested Entity</TableCell>
+                <TableCell>Mapping Quality</TableCell>
+                <TableCell>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {zTables.map((zt, i) => (
-                <TableRow key={i}>
-                  <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600 }}>{zt.table_name}</TableCell>
-                  <TableCell>{zt.row_count}</TableCell>
-                  <TableCell>{zt.field_count}</TableCell>
-                  <TableCell>
-                    {zt.suggested_entity ? (
-                      <Chip label={zt.suggested_entity} size="small" color="secondary" variant="outlined" />
-                    ) : (
-                      <Typography variant="caption" color="text.secondary">Unknown</Typography>
-                    )}
-                  </TableCell>
-                </TableRow>
+                <React.Fragment key={i}>
+                  <TableRow>
+                    <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600 }}>{zt.table_name}</TableCell>
+                    <TableCell>{zt.row_count}</TableCell>
+                    <TableCell>{zt.field_count}</TableCell>
+                    <TableCell>
+                      {zt.suggested_entity ? (
+                        <Chip label={zt.suggested_entity} size="small" color="secondary" variant="outlined" />
+                      ) : (
+                        <Typography variant="caption" color="text.secondary">Unknown</Typography>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {zt.mapping_summary ? (
+                        <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                          {zt.mapping_summary.high_confidence > 0 && (
+                            <Chip label={`${zt.mapping_summary.high_confidence} high`} size="small" color="success" variant="outlined" />
+                          )}
+                          {zt.mapping_summary.medium_confidence > 0 && (
+                            <Chip label={`${zt.mapping_summary.medium_confidence} med`} size="small" color="warning" variant="outlined" />
+                          )}
+                          {zt.mapping_summary.unmapped > 0 && (
+                            <Chip label={`${zt.mapping_summary.unmapped} unmapped`} size="small" color="default" variant="outlined" />
+                          )}
+                        </Box>
+                      ) : (
+                        <Typography variant="caption" color="text.secondary">-</Typography>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => handleDeepAnalyze(zt.table_name)}
+                        disabled={analyzing === zt.table_name}
+                        startIcon={analyzing === zt.table_name ? <CircularProgress size={14} /> : null}
+                      >
+                        {deepAnalysis[zt.table_name] ? 'Details' : 'Analyze'}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                  {/* Expanded field mapping detail row */}
+                  {expandedTable === zt.table_name && (
+                    <TableRow>
+                      <TableCell colSpan={6} sx={{ py: 0, bgcolor: 'action.hover' }}>
+                        <Collapse in={true}>
+                          <Box sx={{ p: 1.5 }}>
+                            {deepAnalysis[zt.table_name] ? (
+                              <>
+                                {deepAnalysis[zt.table_name].ai_purpose_analysis && (
+                                  <Alert severity="info" sx={{ mb: 1.5 }}>
+                                    <AlertTitle>AI Analysis</AlertTitle>
+                                    {deepAnalysis[zt.table_name].ai_purpose_analysis}
+                                  </Alert>
+                                )}
+                                {deepAnalysis[zt.table_name].ai_integration_guidance && (
+                                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                    {deepAnalysis[zt.table_name].ai_integration_guidance}
+                                  </Typography>
+                                )}
+                                <Typography variant="caption" sx={{ display: 'block', mb: 0.5 }}>
+                                  Mapped: {deepAnalysis[zt.table_name].mapped_fields}/{deepAnalysis[zt.table_name].mappable_fields} fields
+                                  {deepAnalysis[zt.table_name].unmapped_required > 0 && (
+                                    <Chip label={`${deepAnalysis[zt.table_name].unmapped_required} required fields missing`}
+                                      size="small" color="error" variant="outlined" sx={{ ml: 1 }} />
+                                  )}
+                                </Typography>
+                                <Table size="small">
+                                  <TableHead>
+                                    <TableRow>
+                                      <TableCell>SAP Field</TableCell>
+                                      <TableCell>Z-Field</TableCell>
+                                      <TableCell>AWS SC Entity</TableCell>
+                                      <TableCell>AWS SC Field</TableCell>
+                                      <TableCell>Confidence</TableCell>
+                                      <TableCell>Source</TableCell>
+                                    </TableRow>
+                                  </TableHead>
+                                  <TableBody>
+                                    {deepAnalysis[zt.table_name].field_mappings?.map((fm, j) => (
+                                      <TableRow key={j} sx={{ opacity: fm.confidence === 'none' ? 0.5 : 1 }}>
+                                        <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{fm.sap_field}</TableCell>
+                                        <TableCell>{fm.is_z_field ? <Chip label="Z" size="small" color="secondary" /> : '-'}</TableCell>
+                                        <TableCell>{fm.aws_sc_entity || '-'}</TableCell>
+                                        <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{fm.aws_sc_field || '-'}</TableCell>
+                                        <TableCell><ConfidenceChip confidence={fm.confidence} /></TableCell>
+                                        <TableCell><Chip label={fm.match_source} size="small" variant="outlined" /></TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </>
+                            ) : (
+                              /* Inline field mappings from quick detection */
+                              zt.field_mappings && zt.field_mappings.length > 0 ? (
+                                <Table size="small">
+                                  <TableHead>
+                                    <TableRow>
+                                      <TableCell>SAP Field</TableCell>
+                                      <TableCell>AWS SC Entity</TableCell>
+                                      <TableCell>AWS SC Field</TableCell>
+                                      <TableCell>Confidence</TableCell>
+                                    </TableRow>
+                                  </TableHead>
+                                  <TableBody>
+                                    {zt.field_mappings.filter(fm => fm.confidence !== 'none').map((fm, j) => (
+                                      <TableRow key={j}>
+                                        <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{fm.sap_field}</TableCell>
+                                        <TableCell>{fm.aws_sc_entity || '-'}</TableCell>
+                                        <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{fm.aws_sc_field || '-'}</TableCell>
+                                        <TableCell><ConfidenceChip confidence={fm.confidence} /></TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              ) : (
+                                <Typography variant="caption" color="text.secondary">No field mappings available</Typography>
+                              )
+                            )}
+                          </Box>
+                        </Collapse>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </React.Fragment>
               ))}
             </TableBody>
           </Table>
@@ -502,7 +646,7 @@ export default function SAPConfigBuilder() {
         </Card>
 
         <AnomalyPanel anomalies={result.anomalies} />
-        <ZTablePanel zTables={result.z_tables} />
+        <ZTablePanel zTables={result.z_tables} connectionId={formData.connection_id} />
 
         {result.warnings && result.warnings.length > 0 && (
           <Alert severity="warning" sx={{ mt: 2 }}>
@@ -635,7 +779,7 @@ export default function SAPConfigBuilder() {
         )}
 
         <AnomalyPanel anomalies={result.anomalies} />
-        <ZTablePanel zTables={result.z_tables} />
+        <ZTablePanel zTables={result.z_tables} connectionId={formData.connection_id} />
 
         {result.warnings && result.warnings.length > 0 && (
           <Alert severity="warning" sx={{ mt: 2 }}>

@@ -41,6 +41,10 @@ from app.models.supplier import VendorProduct, VendorLeadTime
 from app.models.group import Group
 
 from app.integrations.sap.data_mapper import SupplyChainMapper
+from app.services.sap_field_mapping_service import (
+    SAPFieldMappingService,
+    create_field_mapping_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +206,7 @@ class SAPConfigBuilder:
         self.db = db
         self.group_id = group_id
         self.mapper = SupplyChainMapper()
+        self._field_mapping_service = create_field_mapping_service(db, group_id)
 
         # Extracted data (DataFrames)
         self._data: Dict[str, pd.DataFrame] = {}
@@ -567,6 +572,51 @@ class SAPConfigBuilder:
             "summary": summary,
         }
 
+    async def analyze_z_table_deep(
+        self,
+        table_name: str,
+        sap_data: Dict[str, pd.DataFrame],
+    ) -> Dict[str, Any]:
+        """
+        Deep analysis of a single Z-table using the SAPFieldMappingService.
+
+        Calls the AI-powered analysis endpoint for semantic understanding
+        of the table's purpose and per-field mapping with confidence scores.
+        """
+        df = sap_data.get(table_name)
+        if df is None or df.empty:
+            return {"error": f"Table {table_name} not found or empty"}
+
+        # Build field list for the field mapping service
+        fields = [
+            {"name": col, "type": str(df[col].dtype), "description": ""}
+            for col in df.columns
+        ]
+
+        # Use the full AI-powered analysis from SAPFieldMappingService
+        analysis = await self._field_mapping_service.analyze_z_table(
+            table_name=table_name,
+            table_description=f"Custom SAP table with {len(df)} rows",
+            fields=fields,
+            use_ai=True,
+        )
+
+        return {
+            "table_name": analysis.table_name,
+            "description": analysis.description,
+            "suggested_entity": analysis.suggested_entity,
+            "entity_confidence": analysis.entity_confidence,
+            "field_count": analysis.field_count,
+            "z_field_count": analysis.z_field_count,
+            "field_mappings": [fm.to_dict() for fm in analysis.field_mappings],
+            "mappable_fields": analysis.mappable_fields,
+            "mapped_fields": analysis.mapped_fields,
+            "unmapped_required": analysis.unmapped_required,
+            "ai_purpose_analysis": analysis.ai_purpose_analysis,
+            "ai_integration_guidance": analysis.ai_integration_guidance,
+            "sample_data": df.head(5).to_dict(orient="records"),
+        }
+
     async def get_build_status(self, config_id: int) -> Dict[str, Any]:
         """Get current build status for a config."""
         stmt = select(SupplyChainConfig).where(SupplyChainConfig.id == config_id)
@@ -799,7 +849,11 @@ class SAPConfigBuilder:
     # ------------------------------------------------------------------
 
     def _detect_z_tables(self) -> List[Dict[str, Any]]:
-        """Detect Z-tables and unknown custom tables in loaded data."""
+        """Detect Z-tables and unknown custom tables in loaded data.
+
+        Uses SAPFieldMappingService for fuzzy matching of individual fields
+        to provide per-field mapping suggestions with confidence scores.
+        """
         z_tables = []
         for table_name, df in self._data.items():
             if df.empty:
@@ -807,8 +861,17 @@ class SAPConfigBuilder:
             is_z = table_name.upper().startswith("Z") or table_name.upper().startswith("/Z")
             is_unknown = table_name not in KNOWN_SAP_TABLES and not is_z
             if is_z or is_unknown:
-                # Guess entity type from column patterns
-                suggested_entity = self._guess_entity_for_table(df)
+                # Use field mapping service for per-field fuzzy matching
+                field_mappings = self._fuzzy_match_fields(df)
+
+                # Infer entity from field mappings (count which entity gets most matches)
+                suggested_entity = self._infer_entity_from_field_mappings(field_mappings)
+
+                # Summarize field mapping quality
+                high_conf = sum(1 for fm in field_mappings if fm["confidence"] == "high")
+                medium_conf = sum(1 for fm in field_mappings if fm["confidence"] == "medium")
+                low_conf = sum(1 for fm in field_mappings if fm["confidence"] == "low")
+
                 z_tables.append({
                     "table_name": table_name,
                     "row_count": len(df),
@@ -816,28 +879,105 @@ class SAPConfigBuilder:
                     "columns": list(df.columns)[:30],
                     "is_z_table": is_z,
                     "suggested_entity": suggested_entity,
-                    "ai_rationale": f"Table has {len(df)} rows and {len(df.columns)} fields",
+                    "field_mappings": field_mappings[:20],  # top 20 field mappings
+                    "mapping_summary": {
+                        "high_confidence": high_conf,
+                        "medium_confidence": medium_conf,
+                        "low_confidence": low_conf,
+                        "unmapped": len(df.columns) - high_conf - medium_conf - low_conf,
+                    },
+                    "ai_rationale": (
+                        f"Fuzzy matching found {high_conf} high-confidence, "
+                        f"{medium_conf} medium-confidence field mappings "
+                        f"out of {len(df.columns)} fields"
+                    ),
                 })
         return z_tables
 
-    def _guess_entity_for_table(self, df: pd.DataFrame) -> Optional[str]:
-        """Guess AWS SC entity type from DataFrame columns."""
-        cols = set(c.upper() for c in df.columns)
-        if "MATNR" in cols and "WERKS" in cols and "LIFNR" in cols:
-            return "sourcing_rules"
-        if "MATNR" in cols and "LIFNR" in cols:
-            return "vendor_product"
-        if "MATNR" in cols and "STLNR" in cols:
-            return "product_bom"
-        if "MATNR" in cols and "WERKS" in cols:
-            return "product"
-        if "LIFNR" in cols:
-            return "trading_partner"
-        if "KUNNR" in cols:
-            return "trading_partner"
-        if "LOCFR" in cols and "LOCTO" in cols:
-            return "transportation_lane"
-        return None
+    def _fuzzy_match_fields(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
+        """Use SAPFieldMappingService to fuzzy-match each column in a DataFrame.
+
+        Runs synchronous pattern + fuzzy matching (no AI calls) for speed.
+        """
+        results = []
+        svc = self._field_mapping_service
+
+        for col_name in df.columns:
+            # Pattern match first (fast, regex-based)
+            pattern_match = svc._match_by_pattern(col_name)
+            if pattern_match:
+                entity, field_name, score = pattern_match
+                results.append({
+                    "sap_field": col_name,
+                    "is_z_field": svc._is_z_field(col_name),
+                    "aws_sc_entity": entity if entity != "*" else None,
+                    "aws_sc_field": field_name,
+                    "confidence": "high" if score >= 0.9 else "medium",
+                    "confidence_score": round(score, 3),
+                    "match_source": "pattern",
+                })
+                continue
+
+            # Fuzzy match against all AWS SC fields
+            best_score = 0.0
+            best_entity = None
+            best_field = None
+
+            from app.services.sap_field_mapping_service import AWS_SC_FIELDS
+            for entity, entity_fields in AWS_SC_FIELDS.items():
+                for aws_field, field_info in entity_fields.items():
+                    score = svc._combined_similarity(
+                        col_name, aws_field, "", field_info.get("description", "")
+                    )
+                    if score > best_score:
+                        best_score = score
+                        best_entity = entity
+                        best_field = aws_field
+
+            if best_score >= 0.5:
+                if best_score >= 0.9:
+                    conf = "high"
+                elif best_score >= 0.7:
+                    conf = "medium"
+                else:
+                    conf = "low"
+                results.append({
+                    "sap_field": col_name,
+                    "is_z_field": svc._is_z_field(col_name),
+                    "aws_sc_entity": best_entity,
+                    "aws_sc_field": best_field,
+                    "confidence": conf,
+                    "confidence_score": round(best_score, 3),
+                    "match_source": "fuzzy",
+                })
+            else:
+                results.append({
+                    "sap_field": col_name,
+                    "is_z_field": svc._is_z_field(col_name),
+                    "aws_sc_entity": None,
+                    "aws_sc_field": None,
+                    "confidence": "none",
+                    "confidence_score": round(best_score, 3),
+                    "match_source": "none",
+                })
+
+        return results
+
+    def _infer_entity_from_field_mappings(
+        self, field_mappings: List[Dict[str, Any]]
+    ) -> Optional[str]:
+        """Infer the most likely entity type from aggregated field mappings."""
+        entity_scores: Dict[str, float] = {}
+        for fm in field_mappings:
+            entity = fm.get("aws_sc_entity")
+            if not entity:
+                continue
+            score = fm.get("confidence_score", 0)
+            entity_scores[entity] = entity_scores.get(entity, 0) + score
+
+        if not entity_scores:
+            return None
+        return max(entity_scores, key=entity_scores.get)
 
     # ------------------------------------------------------------------
     # Anomaly Detection (per step)

@@ -1231,6 +1231,38 @@ async def delete_config_build(
     return {"deleted": True, "config_id": config_id}
 
 
+class ZTableDeepAnalysisRequest(BaseModel):
+    """Request for deep Z-table analysis with AI-powered fuzzy matching."""
+    connection_id: int = Field(..., description="SAP connection to use")
+    table_name: str = Field(..., description="Z-table name to analyze")
+
+
+@router.post(
+    "/build-config/z-table-analyze",
+    tags=["sap-config-builder"],
+)
+async def analyze_z_table_deep(
+    request: ZTableDeepAnalysisRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Deep analysis of a Z-table using AI-powered fuzzy matching.
+
+    Calls SAPFieldMappingService.analyze_z_table() for per-field mapping
+    with confidence scores, entity inference, and AI integration guidance.
+    """
+    sap_data = await _load_sap_data(db, current_user.group_id, request.connection_id)
+
+    builder = SAPConfigBuilder(db, current_user.group_id)
+    result = await builder.analyze_z_table_deep(request.table_name, sap_data)
+
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+
+    return result
+
+
 async def _load_sap_data(
     db: AsyncSession,
     group_id: int,
