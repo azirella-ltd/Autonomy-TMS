@@ -1,29 +1,30 @@
-# The Continuous Autonomous Planning Platform - Mobile Application
+# Autonomy Platform - Mobile Application
 
 **Complete Documentation for iOS and Android Native Applications**
 
-**Version**: 1.0.0
-**Date**: January 22, 2026
+**Version**: 2.0.0
+**Date**: February 21, 2026
 **React Native**: 0.73.2
-**Status**: Production Ready
+**Status**: In Development
 
 ---
 
 ## Executive Summary
 
-The Beer Game Mobile Application extends the platform's capabilities to iOS and Android devices, enabling planners, managers, and players to participate in supply chain gaming, monitor AI agents, and access real-time analytics from anywhere. Built with React Native 0.73.2, the mobile app provides a native experience with offline mode, push notifications, and seamless WebSocket synchronization with the backend platform.
+The Autonomy Mobile Application extends the platform's capabilities to iOS and Android devices, enabling planners, managers, and users to monitor AI agents, manage forecasts, review supply plans, participate in supply chain simulations, and access real-time analytics from anywhere. Built with React Native 0.73.2, the mobile app provides a native experience with offline mode, push notifications, and seamless WebSocket synchronization with the backend platform.
 
 ### Key Capabilities
 
 - **Native iOS & Android**: Single codebase for both platforms using React Native
-- **Full Feature Parity**: All core features from web platform available on mobile
+- **Planning on the Go**: Forecasting, supply plans, inventory optimization from mobile
+- **AI Agent Monitoring**: Track TRM/GNN agent decisions, approve/override from worklist
 - **Offline Mode**: Queue actions and sync when connectivity resumes
-- **Push Notifications**: Real-time alerts for game events, agent decisions, and system updates
-- **WebSocket Integration**: Live game state updates via Socket.IO
+- **Push Notifications**: Real-time alerts for planning events, agent decisions, scenario updates
+- **WebSocket Integration**: Live state updates via Socket.IO
 - **Material Design UI**: Consistent, professional interface using React Native Paper
 - **Biometric Authentication**: Face ID/Touch ID support for secure, fast login
 - **Real-Time Analytics**: Mobile-optimized charts and dashboards
-- **Agent-to-Agent (A2A) Collaboration**: Monitor and intervene in AI agent conversations on the go
+- **Simulation Support**: Monitor and participate in supply chain scenarios
 
 ---
 
@@ -58,12 +59,13 @@ The Beer Game Mobile Application extends the platform's capabilities to iOS and 
 │                                                          │
 │  ┌──────────────────────────────────────────────────┐  │
 │  │         Presentation Layer (Screens)              │  │
-│  │  Login, Dashboard, Games, Templates, Analytics   │  │
+│  │  Login, Dashboard, Planning, AI Agents,          │  │
+│  │  Simulation, Analytics, Profile                   │  │
 │  └──────────────────────────────────────────────────┘  │
 │                         ↕                                │
 │  ┌──────────────────────────────────────────────────┐  │
 │  │      State Management (Redux Toolkit)             │  │
-│  │  Auth, Games, Templates, Analytics, UI Slices    │  │
+│  │  Auth, Planning, Scenarios, Agents, UI Slices    │  │
 │  └──────────────────────────────────────────────────┘  │
 │                         ↕                                │
 │  ┌──────────────────────────────────────────────────┐  │
@@ -94,14 +96,20 @@ The Beer Game Mobile Application extends the platform's capabilities to iOS and 
 3. Backend returns JWT token → Store in AsyncStorage + Redux state
 4. Navigate to Dashboard → Enable WebSocket connection
 
-**Game State Synchronization Flow**:
-1. Backend game state changes → FastAPI emits WebSocket event
-2. Mobile WebSocket client receives event → Dispatch to gamesSlice
+**Planning Data Flow**:
+1. User opens Planning screen → Fetch pipeline configs, supply plans, forecasts
+2. User triggers action (e.g., Start Forecast Run) → API call to backend
+3. Backend processes asynchronously → WebSocket pushes progress updates
+4. Mobile receives update → Redux state refreshes → UI re-renders
+
+**Scenario State Synchronization Flow**:
+1. Backend scenario state changes → FastAPI emits WebSocket event
+2. Mobile WebSocket client receives event → Dispatch to scenariosSlice
 3. Redux state updates → React components re-render
-4. UI reflects latest game state in real-time
+4. UI reflects latest scenario state in real-time
 
 **Offline Mode Flow**:
-1. User makes decision (e.g., place order) → Offline queue
+1. User makes decision (e.g., approve supply plan) → Offline queue
 2. Action saved to AsyncStorage with timestamp
 3. When connectivity resumes → Offline service processes queue
 4. Actions replayed to backend → Sync state
@@ -117,8 +125,8 @@ The Beer Game Mobile Application extends the platform's capabilities to iOS and 
 
 ### Navigation
 - **React Navigation 6.x**: Native-like navigation
-  - Stack Navigator: For screen hierarchies (e.g., Game Detail stack)
-  - Bottom Tab Navigator: Main app navigation (Dashboard, Games, Templates, Analytics, Profile)
+  - Stack Navigator: For screen hierarchies (e.g., Planning Detail stack)
+  - Bottom Tab Navigator: Main app navigation (Dashboard, Planning, Agents, Simulation, Profile)
 
 ### State Management
 - **Redux Toolkit 2.0.1**: Modern Redux with reduced boilerplate
@@ -185,7 +193,7 @@ The Beer Game Mobile Application extends the platform's capabilities to iOS and 
 #### 1. Clone Repository and Navigate to Mobile Directory
 
 ```bash
-cd /home/trevor/Projects/The_Beer_Game
+cd /home/trevor/Documents/Autonomy/Autonomy
 cd mobile
 ```
 
@@ -244,7 +252,7 @@ API_BASE_URL=http://172.29.20.187:8000
 WS_URL=ws://172.29.20.187:8000/ws
 
 # Firebase (for push notifications)
-FIREBASE_PROJECT_ID=beer-game-mobile
+FIREBASE_PROJECT_ID=autonomy-mobile
 FIREBASE_APP_ID=1:123456789012:ios:abcdef1234567890
 FIREBASE_API_KEY=AIzaSyC...
 
@@ -269,7 +277,7 @@ WS_URL=ws://172.29.20.187:8000/ws
 In a separate terminal:
 
 ```bash
-cd /home/trevor/Projects/The_Beer_Game
+cd /home/trevor/Documents/Autonomy/Autonomy
 make up
 ```
 
@@ -294,16 +302,11 @@ Or specify simulator:
 npm run ios -- --simulator="iPhone 15"
 ```
 
-**Available Simulators**:
-```bash
-xcrun simctl list devices available
-```
-
 ### iOS (Physical Device)
 
-1. Open `ios/BeerGame.xcworkspace` in Xcode
+1. Open `ios/Autonomy.xcworkspace` in Xcode
 2. Select your device from device list
-3. Click Run (▶) button
+3. Click Run button
 4. Xcode will handle code signing automatically
 
 ### Android (Emulator)
@@ -327,7 +330,6 @@ npm run android
 3. Verify device is detected:
 ```bash
 adb devices
-# Should show your device ID
 ```
 
 4. Run app:
@@ -341,8 +343,6 @@ npm run android
 npm start
 ```
 
-This starts the JavaScript bundler. Keep it running in a separate terminal.
-
 **Reset Cache**:
 ```bash
 npm start -- --reset-cache
@@ -354,59 +354,72 @@ npm start -- --reset-cache
 
 ```
 mobile/
-├── 📱 iOS Native Code
-│   ├── BeerGame.xcworkspace        # Xcode workspace
-│   ├── BeerGame/
-│   │   ├── AppDelegate.mm          # iOS app lifecycle
-│   │   ├── Info.plist             # iOS configuration
-│   │   └── GoogleService-Info.plist # Firebase config (add this)
-│   └── Podfile                    # CocoaPods dependencies
+├── iOS Native Code
+│   ├── Autonomy.xcworkspace          # Xcode workspace
+│   ├── Autonomy/
+│   │   ├── AppDelegate.mm            # iOS app lifecycle
+│   │   ├── Info.plist                 # iOS configuration
+│   │   └── GoogleService-Info.plist   # Firebase config (add this)
+│   └── Podfile                        # CocoaPods dependencies
 │
-├── 🤖 Android Native Code
+├── Android Native Code
 │   ├── app/
-│   │   ├── build.gradle           # App-level Gradle
+│   │   ├── build.gradle               # App-level Gradle
 │   │   ├── src/main/
 │   │   │   ├── AndroidManifest.xml
-│   │   │   └── java/com/beergame/ # Native Java/Kotlin code
-│   │   └── google-services.json   # Firebase config (add this)
-│   └── build.gradle               # Project-level Gradle
+│   │   │   └── java/com/autonomy/     # Native Java/Kotlin code
+│   │   └── google-services.json       # Firebase config (add this)
+│   └── build.gradle                   # Project-level Gradle
 │
-├── 📂 Source Code (src/)
-│   ├── App.tsx                    # Root component
+├── Source Code (src/)
+│   ├── App.tsx                        # Root component
 │   │
 │   ├── navigation/
-│   │   └── AppNavigator.tsx       # Navigation structure
+│   │   └── AppNavigator.tsx           # Navigation structure
 │   │
-│   ├── screens/                   # Screen components
+│   ├── screens/                       # Screen components
 │   │   ├── Auth/
 │   │   │   ├── LoginScreen.tsx
 │   │   │   └── RegisterScreen.tsx
 │   │   ├── Dashboard/
 │   │   │   └── DashboardScreen.tsx
-│   │   ├── Games/
-│   │   │   ├── GamesListScreen.tsx
-│   │   │   ├── GameDetailScreen.tsx
-│   │   │   ├── GameDetailWithChatScreen.tsx  # A2A integration
-│   │   │   └── CreateGameScreen.tsx
-│   │   ├── Templates/
-│   │   │   └── TemplateLibraryScreen.tsx
+│   │   ├── Planning/
+│   │   │   ├── ForecastingScreen.tsx
+│   │   │   ├── ForecastPipelineDetailScreen.tsx
+│   │   │   ├── SupplyPlanScreen.tsx
+│   │   │   ├── InventoryScreen.tsx
+│   │   │   └── MPSScreen.tsx
+│   │   ├── Agents/
+│   │   │   ├── AgentDashboardScreen.tsx
+│   │   │   ├── WorklistScreen.tsx
+│   │   │   └── AgentDetailScreen.tsx
+│   │   ├── Scenarios/
+│   │   │   ├── ScenariosListScreen.tsx
+│   │   │   ├── ScenarioDetailScreen.tsx
+│   │   │   ├── ScenarioDetailWithChatScreen.tsx
+│   │   │   └── CreateScenarioScreen.tsx
 │   │   ├── Analytics/
 │   │   │   └── AnalyticsScreen.tsx
 │   │   └── Profile/
 │   │       └── ProfileScreen.tsx
 │   │
-│   ├── components/                # Reusable components
+│   ├── components/                    # Reusable components
 │   │   ├── common/
 │   │   │   ├── LoadingSpinner.tsx
 │   │   │   ├── ErrorBoundary.tsx
 │   │   │   ├── EmptyState.tsx
 │   │   │   ├── Toast.tsx
 │   │   │   └── OfflineBanner.tsx
+│   │   ├── planning/
+│   │   │   ├── PipelineConfigCard.tsx
+│   │   │   ├── RunStatusBadge.tsx
+│   │   │   ├── ForecastChart.tsx
+│   │   │   └── SupplyPlanSummary.tsx
 │   │   ├── charts/
 │   │   │   ├── LineChart.tsx
 │   │   │   ├── BarChart.tsx
 │   │   │   └── PieChart.tsx
-│   │   └── chat/                  # A2A chat components
+│   │   └── chat/                      # Agent chat components
 │   │       ├── ChatMessage.tsx
 │   │       ├── ChatInput.tsx
 │   │       ├── ChatMessageList.tsx
@@ -414,50 +427,51 @@ mobile/
 │   │       ├── AgentSuggestionCard.tsx
 │   │       └── ChatContainer.tsx
 │   │
-│   ├── store/                     # Redux state management
-│   │   ├── index.ts               # Store configuration
+│   ├── store/                         # Redux state management
+│   │   ├── index.ts                   # Store configuration
 │   │   └── slices/
-│   │       ├── authSlice.ts       # Authentication state
-│   │       ├── gamesSlice.ts      # Games state
-│   │       ├── templatesSlice.ts  # Templates state
-│   │       ├── analyticsSlice.ts  # Analytics state
-│   │       ├── chatSlice.ts       # A2A chat state
-│   │       └── uiSlice.ts         # UI state (toasts, modals, theme)
+│   │       ├── authSlice.ts           # Authentication state
+│   │       ├── planningSlice.ts       # Planning state (forecasts, supply plans)
+│   │       ├── scenariosSlice.ts      # Simulation scenarios state
+│   │       ├── agentsSlice.ts         # AI agent monitoring state
+│   │       ├── analyticsSlice.ts      # Analytics state
+│   │       ├── chatSlice.ts           # Agent chat state
+│   │       └── uiSlice.ts            # UI state (toasts, modals, theme)
 │   │
-│   ├── services/                  # API & external services
-│   │   ├── api.ts                 # Axios HTTP client
-│   │   ├── websocket.ts           # Socket.IO WebSocket client
-│   │   ├── notifications.ts       # Firebase Cloud Messaging
-│   │   ├── offline.ts             # Offline mode queue
-│   │   └── chat.ts                # A2A chat service
+│   ├── services/                      # API & external services
+│   │   ├── api.ts                     # Axios HTTP client
+│   │   ├── websocket.ts              # Socket.IO WebSocket client
+│   │   ├── notifications.ts          # Firebase Cloud Messaging
+│   │   ├── offline.ts                # Offline mode queue
+│   │   └── chat.ts                    # Agent chat service
 │   │
 │   ├── theme/
-│   │   └── index.ts               # Material Design theme
+│   │   └── index.ts                   # Material Design theme
 │   │
-│   ├── utils/                     # Utility functions
-│   ├── constants/                 # Constants
-│   └── types/                     # TypeScript types
+│   ├── utils/                         # Utility functions
+│   ├── constants/                     # Constants
+│   └── types/                         # TypeScript types
 │
-├── 📦 Assets
-│   ├── images/                    # Images
-│   ├── fonts/                     # Custom fonts
-│   └── icons/                     # App icons
+├── Assets
+│   ├── images/                        # Images
+│   ├── fonts/                         # Custom fonts
+│   └── icons/                         # App icons
 │
-├── 🧪 Tests
+├── Tests
 │   ├── __tests__/
-│   │   ├── screens/               # Screen tests
-│   │   ├── store/slices/          # Redux slice tests
-│   │   └── services/              # Service tests
-│   ├── jest.config.js             # Jest configuration
-│   └── jest.setup.js              # Test setup
+│   │   ├── screens/                   # Screen tests
+│   │   ├── store/slices/              # Redux slice tests
+│   │   └── services/                  # Service tests
+│   ├── jest.config.js                 # Jest configuration
+│   └── jest.setup.js                  # Test setup
 │
-└── 📄 Configuration
-    ├── package.json               # Dependencies
-    ├── tsconfig.json              # TypeScript config
-    ├── babel.config.js            # Babel config
-    ├── metro.config.js            # Metro bundler config
-    ├── app.json                   # App metadata
-    └── .env.example               # Environment template
+└── Configuration
+    ├── package.json                   # Dependencies
+    ├── tsconfig.json                  # TypeScript config
+    ├── babel.config.js                # Babel config
+    ├── metro.config.js                # Metro bundler config
+    ├── app.json                       # App metadata
+    └── .env.example                   # Environment template
 ```
 
 ---
@@ -475,7 +489,7 @@ mobile/
 - JWT token management
 - Auto-refresh token before expiry
 
-**Implementation** ([src/screens/Auth/LoginScreen.tsx](../mobile/src/screens/Auth/LoginScreen.tsx)):
+**Implementation** (`src/screens/Auth/LoginScreen.tsx`):
 ```typescript
 import { useDispatch } from 'react-redux';
 import { login } from '../../store/slices/authSlice';
@@ -523,44 +537,49 @@ const LoginScreen = () => {
 ### 2. Dashboard
 
 **Features**:
-- Overview metrics (active games, win rate, total cost)
-- Active games list with quick join
-- Quick actions (Create Game, Browse Templates, View Analytics)
+- Overview metrics (active scenarios, active forecast pipelines, pending approvals)
+- Planning status cards (latest forecast run, supply plan status, inventory alerts)
+- AI agent health summary (agent score, touchless rate, override rate)
+- Quick actions (View Worklist, Start Forecast Run, Browse Scenarios)
 - Recent activity feed
 - Notifications badge
 
 **Key Metrics Displayed**:
-- Active Games Count
-- Completed Games Count
-- Win Rate (%)
-- Average Cost per Game
-- Recent Achievements
+- Active Forecast Pipelines
+- Pending Supply Plan Approvals
+- Agent Touchless Rate (%)
+- Open Worklist Items
+- Active Scenarios Count
 
-**Implementation** ([src/screens/Dashboard/DashboardScreen.tsx](../mobile/src/screens/Dashboard/DashboardScreen.tsx)):
+**Implementation** (`src/screens/Dashboard/DashboardScreen.tsx`):
 ```typescript
 const DashboardScreen = () => {
   const { user } = useSelector((state: RootState) => state.auth);
-  const { activeGames, stats } = useSelector((state: RootState) => state.games);
+  const { pipelineConfigs, latestRun } = useSelector((state: RootState) => state.planning);
+  const { worklistCount, agentScore } = useSelector((state: RootState) => state.agents);
 
   return (
     <ScrollView>
       <Card>
         <Title>Welcome, {user?.name}</Title>
-        <Paragraph>You have {activeGames.length} active games</Paragraph>
+        <Paragraph>You have {worklistCount} worklist items pending</Paragraph>
       </Card>
 
       <Card>
-        <Title>Quick Stats</Title>
+        <Title>Planning Overview</Title>
         <View>
-          <Text>Win Rate: {stats.winRate}%</Text>
-          <Text>Avg Cost: ${stats.avgCost}</Text>
+          <Text>Forecast Pipelines: {pipelineConfigs.length}</Text>
+          <Text>Latest Run: {latestRun?.status || 'None'}</Text>
+          <Text>Agent Score: {agentScore}</Text>
         </View>
       </Card>
 
-      <FlatList
-        data={activeGames}
-        renderItem={({ item }) => <GameCard game={item} />}
-      />
+      <Card>
+        <Title>Quick Actions</Title>
+        <Button onPress={() => nav.navigate('Worklist')}>View Worklist</Button>
+        <Button onPress={() => nav.navigate('Forecasting')}>Forecasting</Button>
+        <Button onPress={() => nav.navigate('ScenariosList')}>Scenarios</Button>
+      </Card>
     </ScrollView>
   );
 };
@@ -568,33 +587,228 @@ const DashboardScreen = () => {
 
 ---
 
-### 3. Game Management
+### 3. Planning
 
-#### 3.1 Games List
+The Planning module is the primary focus of the mobile app, providing on-the-go access to key planning workflows.
+
+#### 3.1 Forecasting
 
 **Features**:
-- Browse all games (active, completed, pending)
+- View forecast pipeline configs for the selected supply chain configuration
+- Overview cards showing pipeline model type, clustering method, cadence, and metric
+- Start new forecast pipeline runs
+- Monitor run progress (pending → running → completed → published)
+- View run results (records processed, error messages, run log)
+- Publish completed runs to the core Forecast table
+- Create and edit pipeline configurations with all AWS SC parameters
+
+**Pipeline Configuration Parameters** (24+ fields organized in 5 sections):
+
+| Section | Parameters |
+|---------|-----------|
+| Dataset & Column Mapping | demand_item, demand_point, target_column, date_column |
+| Forecast Settings | time_bucket (D/W/M), forecast_horizon, number_of_items_analyzed, forecast_metric (WAPE/MAE/RMSE) |
+| Data Quality Thresholds | min_observations, cv_sq_threshold, adi_threshold, ignore_numeric_columns |
+| Clustering | cluster_selection_method (9 algorithms), min/max_clusters, min_cluster_size, min_cluster_size_uom |
+| Feature Engineering | characteristics_creation_method, feature_correlation_threshold, feature_importance_method, feature_importance_threshold, pca_variance_threshold, pca_importance_threshold |
+
+**Implementation** (`src/screens/Planning/ForecastingScreen.tsx`):
+```typescript
+const ForecastingScreen = () => {
+  const dispatch = useDispatch();
+  const { pipelineConfigs, runs, loading } = useSelector((state: RootState) => state.planning);
+  const [selectedConfigId, setSelectedConfigId] = useState<number | null>(null);
+
+  useEffect(() => {
+    dispatch(fetchPipelineConfigs({ configId: scConfigId }));
+  }, [scConfigId]);
+
+  const activePipeline = pipelineConfigs.find(c => c.is_active) || pipelineConfigs[0];
+
+  const handleStartRun = async () => {
+    if (!selectedConfigId) return;
+    await dispatch(startPipelineRun({ pipeline_config_id: selectedConfigId }));
+    dispatch(fetchPipelineRuns({ pipeline_config_id: selectedConfigId }));
+  };
+
+  return (
+    <ScrollView>
+      {/* Overview Cards */}
+      <View style={styles.cardsRow}>
+        <MetricCard label="Pipeline" value={activePipeline?.model_type || 'Not Configured'} />
+        <MetricCard label="Clustering" value={activePipeline?.cluster_selection_method || '—'} />
+        <MetricCard label="Cadence" value={bucketLabel(activePipeline?.time_bucket)} />
+        <MetricCard label="Metric" value={(activePipeline?.forecast_metric || '—').toUpperCase()} />
+      </View>
+
+      {/* Pipeline Config Selector */}
+      <Card>
+        <Title>Pipeline Controls</Title>
+        <Picker selectedValue={selectedConfigId} onValueChange={setSelectedConfigId}>
+          {pipelineConfigs.map(c => (
+            <Picker.Item key={c.id} label={c.name} value={c.id} />
+          ))}
+        </Picker>
+        <Button onPress={handleStartRun} disabled={loading}>Start Run</Button>
+        <Button onPress={() => nav.navigate('PipelineDetail', { configId: selectedConfigId })}>
+          Edit Config
+        </Button>
+      </Card>
+
+      {/* Run History */}
+      <Card>
+        <Title>Run History</Title>
+        <FlatList
+          data={runs}
+          renderItem={({ item }) => (
+            <RunRow
+              run={item}
+              onPublish={() => dispatch(publishRun(item.id))}
+              onRerun={() => dispatch(reExecuteRun(item.id))}
+            />
+          )}
+        />
+      </Card>
+    </ScrollView>
+  );
+};
+```
+
+#### 3.2 Supply Planning
+
+**Features**:
+- View generated supply plans (PO/TO/MO requests)
+- Supply plan approval workflow (approve/reject with notes)
+- Monitor supply plan generation progress
+- View probabilistic balanced scorecard results
+- Filter by product, site, date range
+
+**Implementation** (`src/screens/Planning/SupplyPlanScreen.tsx`):
+```typescript
+const SupplyPlanScreen = () => {
+  const { supplyPlans, loading } = useSelector((state: RootState) => state.planning);
+
+  return (
+    <ScrollView>
+      <Card>
+        <Title>Supply Plans</Title>
+        <FlatList
+          data={supplyPlans}
+          renderItem={({ item }) => (
+            <SupplyPlanCard
+              plan={item}
+              onApprove={() => dispatch(approvePlan(item.id))}
+              onReject={() => dispatch(rejectPlan(item.id))}
+            />
+          )}
+        />
+      </Card>
+    </ScrollView>
+  );
+};
+```
+
+#### 3.3 Inventory Optimization
+
+**Features**:
+- View current inventory levels across sites
+- Safety stock policy overview (4 policy types: abs_level, doc_dem, doc_fcst, sl)
+- Inventory alerts (stockouts, overstock)
+- Inventory projection charts
+
+#### 3.4 Master Production Scheduling (MPS)
+
+**Features**:
+- View MPS plan items
+- Capacity check summaries
+- Key material requirements
+
+---
+
+### 4. AI Agent Monitoring
+
+**Features**:
+- Agent dashboard with performance metrics (agent score, touchless rate, override rate)
+- Worklist for exception triage (Ask Why, Accept, Override with reason)
+- TRM agent decision history (ATP, Rebalancing, PO Creation, Order Tracking)
+- CDC trigger log and retraining status
+- Agent-to-agent conversation monitoring
+- Human intervention controls
+
+**Worklist Implementation** (`src/screens/Agents/WorklistScreen.tsx`):
+```typescript
+const WorklistScreen = () => {
+  const { worklistItems, loading } = useSelector((state: RootState) => state.agents);
+
+  const handleAccept = (itemId: number) => {
+    dispatch(resolveWorklistItem({ id: itemId, action: 'accept' }));
+  };
+
+  const handleOverride = (itemId: number, reason: string, newValue: any) => {
+    dispatch(resolveWorklistItem({
+      id: itemId,
+      action: 'override',
+      override_reason: reason,
+      override_value: newValue,
+    }));
+  };
+
+  return (
+    <FlatList
+      data={worklistItems}
+      renderItem={({ item }) => (
+        <WorklistCard
+          item={item}
+          onAccept={() => handleAccept(item.id)}
+          onAskWhy={() => nav.navigate('AgentDetail', { itemId: item.id })}
+          onOverride={(reason, val) => handleOverride(item.id, reason, val)}
+        />
+      )}
+      refreshControl={
+        <RefreshControl refreshing={loading} onRefresh={() => dispatch(fetchWorklist())} />
+      }
+    />
+  );
+};
+```
+
+**Key Metrics**:
+- **Agent Score**: -100 to +100 measuring decision quality vs baseline
+- **Touchless Rate**: % of decisions executed without human intervention
+- **Human Override Rate**: % of decisions overridden by humans
+- **Override Dependency Ratio**: Frequency of overrides by decision type
+
+---
+
+### 5. Simulation (Scenarios)
+
+Supply chain simulation for learning, validation, and agent confidence building.
+
+#### 5.1 Scenarios List
+
+**Features**:
+- Browse all scenarios (active, completed, pending)
 - Filter by status, configuration, date
-- Search by game name
-- Quick join button for active games
+- Search by scenario name
+- Quick join button for active scenarios
 - Pull-to-refresh
 
-**Implementation** ([src/screens/Games/GamesListScreen.tsx](../mobile/src/screens/Games/GamesListScreen.tsx)):
+**Implementation** (`src/screens/Scenarios/ScenariosListScreen.tsx`):
 ```typescript
-const GamesListScreen = () => {
+const ScenariosListScreen = () => {
   const dispatch = useDispatch();
-  const { games, loading } = useSelector((state: RootState) => state.games);
+  const { scenarios, loading } = useSelector((state: RootState) => state.scenarios);
   const [filter, setFilter] = useState('active');
 
   useEffect(() => {
-    dispatch(fetchGames());
+    dispatch(fetchScenarios());
   }, []);
 
-  const filteredGames = games.filter(g => g.status === filter);
+  const filteredScenarios = scenarios.filter(s => s.status === filter);
 
   return (
     <View>
-      <Searchbar placeholder="Search games..." />
+      <Searchbar placeholder="Search scenarios..." />
       <SegmentedButtons
         value={filter}
         onValueChange={setFilter}
@@ -605,10 +819,10 @@ const GamesListScreen = () => {
         ]}
       />
       <FlatList
-        data={filteredGames}
-        renderItem={({ item }) => <GameListItem game={item} />}
+        data={filteredScenarios}
+        renderItem={({ item }) => <ScenarioListItem scenario={item} />}
         refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={() => dispatch(fetchGames())} />
+          <RefreshControl refreshing={loading} onRefresh={() => dispatch(fetchScenarios())} />
         }
       />
     </View>
@@ -616,202 +830,118 @@ const GamesListScreen = () => {
 };
 ```
 
-#### 3.2 Game Detail
+#### 5.2 Scenario Detail
 
 **Features**:
-- Game overview (status, players, rounds)
-- Player list with roles and stats
-- Round history with metrics
+- Scenario overview (status, participants, periods)
+- Participant list with roles and stats
+- Period history with metrics
 - Real-time updates via WebSocket
 - Place orders / make decisions
-- Round progression controls (for admins)
-- Export game data
+- Period progression controls (for admins)
 
 **Real-Time Updates**:
 ```typescript
-const GameDetailScreen = ({ route }: { route: any }) => {
-  const { gameId } = route.params;
+const ScenarioDetailScreen = ({ route }: { route: any }) => {
+  const { scenarioId } = route.params;
   const dispatch = useDispatch();
-  const game = useSelector((state: RootState) => state.games.currentGame);
+  const scenario = useSelector((state: RootState) => state.scenarios.currentScenario);
 
   useEffect(() => {
-    // Fetch game initially
-    dispatch(fetchGameById(gameId));
+    dispatch(fetchScenarioById(scenarioId));
 
     // Subscribe to WebSocket updates
-    socket.emit('join_game', { gameId });
-    socket.on('game_update', (data) => {
-      dispatch(updateGameState(data));
+    socket.emit('join_scenario', { scenarioId });
+    socket.on('scenario_update', (data) => {
+      dispatch(updateScenarioState(data));
     });
 
     return () => {
-      socket.emit('leave_game', { gameId });
-      socket.off('game_update');
+      socket.emit('leave_scenario', { scenarioId });
+      socket.off('scenario_update');
     };
-  }, [gameId]);
+  }, [scenarioId]);
 
   const handlePlaceOrder = (quantity: number) => {
     if (offlineService.isOffline()) {
-      // Queue action for later sync
       offlineService.queueAction({
         type: 'PLACE_ORDER',
-        payload: { gameId, quantity },
+        payload: { scenarioId, quantity },
         timestamp: Date.now(),
       });
       showToast('Order queued for sync');
     } else {
-      dispatch(placeOrder({ gameId, quantity }));
+      dispatch(placeOrder({ scenarioId, quantity }));
     }
   };
 
   return (
     <ScrollView>
       <Card>
-        <Title>{game?.name}</Title>
-        <Paragraph>Round {game?.currentRound} of {game?.maxRounds}</Paragraph>
+        <Title>{scenario?.name}</Title>
+        <Paragraph>Period {scenario?.currentPeriod} of {scenario?.maxPeriods}</Paragraph>
       </Card>
 
       <Card>
-        <Title>Your Role: {game?.myRole}</Title>
-        <Text>Inventory: {game?.myInventory}</Text>
-        <Text>Backlog: {game?.myBacklog}</Text>
+        <Title>Your Role: {scenario?.myRole}</Title>
+        <Text>Inventory: {scenario?.myInventory}</Text>
+        <Text>Backlog: {scenario?.myBacklog}</Text>
         <TextInput label="Order Quantity" keyboardType="numeric" />
         <Button onPress={() => handlePlaceOrder(orderQty)}>Place Order</Button>
       </Card>
 
       <Card>
-        <Title>Players</Title>
-        <FlatList data={game?.players} renderItem={({ item }) => <PlayerItem player={item} />} />
+        <Title>Participants</Title>
+        <FlatList
+          data={scenario?.participants}
+          renderItem={({ item }) => <ParticipantItem participant={item} />}
+        />
       </Card>
     </ScrollView>
   );
 };
 ```
 
-#### 3.3 Game Detail with A2A Chat
+#### 5.3 Scenario Detail with Agent Chat
 
 **Features**:
-- All features from Game Detail
+- All features from Scenario Detail
 - Real-time agent-to-agent conversation stream
 - Human intervention controls
 - Agent suggestion cards
 - Typing indicators
 - Message history with timestamps
 
-**Implementation** ([src/screens/Games/GameDetailWithChatScreen.tsx](../mobile/src/screens/Games/GameDetailWithChatScreen.tsx)):
-Integrates chat components from `src/components/chat/` to display agent conversations.
-
-#### 3.4 Create Game
+#### 5.4 Create Scenario
 
 **Features**:
 - Quick Start Wizard (guided flow)
 - Manual configuration
 - Select supply chain configuration
-- Add players (human or AI agents)
-- Configure game parameters (rounds, lead times, costs)
+- Add participants (human or AI agents)
+- Configure scenario parameters (periods, lead times, costs)
 - Template selection
 
-**Quick Start Wizard Flow**:
-```typescript
-const CreateGameScreen = () => {
-  const [step, setStep] = useState(1);
-  const [gameConfig, setGameConfig] = useState({});
-
-  const steps = [
-    { label: 'Choose Configuration', component: <ConfigSelector /> },
-    { label: 'Add Players', component: <PlayerSelector /> },
-    { label: 'Set Parameters', component: <ParameterForm /> },
-    { label: 'Review & Create', component: <ReviewStep /> },
-  ];
-
-  const handleNext = () => setStep(step + 1);
-  const handleBack = () => setStep(step - 1);
-
-  return (
-    <View>
-      <ProgressBar progress={step / steps.length} />
-      {steps[step - 1].component}
-      <Button onPress={handleBack} disabled={step === 1}>Back</Button>
-      <Button onPress={handleNext} disabled={step === steps.length}>Next</Button>
-      {step === steps.length && <Button onPress={handleCreateGame}>Create Game</Button>}
-    </View>
-  );
-};
-```
-
 ---
 
-### 4. Template Library
-
-**Features**:
-- Browse supply chain configuration templates
-- Search and filter templates
-- Template preview with Sankey diagram
-- Favorite templates
-- Use template to create new game
-- Template details (nodes, lanes, items, BOMs)
-
-**Template Categories**:
-- **Classic Beer Game**: Standard 4-echelon supply chain
-- **Multi-Product**: Multiple finished goods with shared components
-- **Complex Networks**: Convergent/divergent topologies
-- **Custom**: User-created configurations
-
-**Implementation** ([src/screens/Templates/TemplateLibraryScreen.tsx](../mobile/src/screens/Templates/TemplateLibraryScreen.tsx)):
-```typescript
-const TemplateLibraryScreen = () => {
-  const dispatch = useDispatch();
-  const { templates, loading } = useSelector((state: RootState) => state.templates);
-
-  useEffect(() => {
-    dispatch(fetchTemplates());
-  }, []);
-
-  const handleUseTemplate = (templateId: string) => {
-    navigation.navigate('CreateGame', { templateId });
-  };
-
-  return (
-    <View>
-      <Searchbar placeholder="Search templates..." />
-      <FlatList
-        data={templates}
-        renderItem={({ item }) => (
-          <Card>
-            <Card.Cover source={{ uri: item.thumbnailUrl }} />
-            <Card.Title title={item.name} subtitle={item.description} />
-            <Card.Actions>
-              <Button onPress={() => handleUseTemplate(item.id)}>Use Template</Button>
-            </Card.Actions>
-          </Card>
-        )}
-      />
-    </View>
-  );
-};
-```
-
----
-
-### 5. Analytics Dashboard
+### 6. Analytics Dashboard
 
 **Features**:
 - Real-time metrics (cost, service level, inventory)
 - Mobile-optimized charts (line, bar, pie)
-- Bullwhip effect analysis
+- Bullwhip effect analysis (for simulation scenarios)
+- Forecast accuracy metrics (WAPE, MAE, RMSE)
 - Cost breakdown by role/echelon
-- Demand amplification visualization
 - Export data (CSV, JSON)
-- Compare multiple games
 - Filter by date range
 
 **Charts Available**:
-- **Line Chart**: Inventory/backlog over time
-- **Bar Chart**: Cost comparison by player/round
-- **Pie Chart**: Cost breakdown (holding vs. backlog)
+- **Line Chart**: Inventory/backlog over time, forecast vs actual
+- **Bar Chart**: Cost comparison by participant/period, forecast accuracy by cluster
+- **Pie Chart**: Cost breakdown (holding vs. backlog), demand classification
 - **Bullwhip Chart**: Demand variance by echelon
 
-**Implementation** ([src/screens/Analytics/AnalyticsScreen.tsx](../mobile/src/screens/Analytics/AnalyticsScreen.tsx)):
+**Implementation** (`src/screens/Analytics/AnalyticsScreen.tsx`):
 ```typescript
 import { VictoryLine, VictoryChart, VictoryTheme } from 'victory-native';
 
@@ -821,11 +951,22 @@ const AnalyticsScreen = () => {
   return (
     <ScrollView>
       <Card>
+        <Title>Forecast Accuracy</Title>
+        <VictoryChart theme={VictoryTheme.material}>
+          <VictoryLine
+            data={analyticsData.forecastAccuracy}
+            x="period"
+            y="wape"
+          />
+        </VictoryChart>
+      </Card>
+
+      <Card>
         <Title>Inventory Over Time</Title>
         <VictoryChart theme={VictoryTheme.material}>
           <VictoryLine
             data={analyticsData.inventoryHistory}
-            x="round"
+            x="period"
             y="inventory"
           />
         </VictoryChart>
@@ -839,28 +980,14 @@ const AnalyticsScreen = () => {
           y="cost"
         />
       </Card>
-
-      <Card>
-        <Title>Bullwhip Effect</Title>
-        <Text>Demand Amplification: {analyticsData.bullwhipRatio}x</Text>
-        <VictoryChart>
-          <VictoryLine data={analyticsData.demandVariance} />
-        </VictoryChart>
-      </Card>
     </ScrollView>
   );
 };
 ```
 
-**Mobile-Optimized Charts**:
-- Victory Native for performant native charts
-- Responsive sizing for different screen sizes
-- Touch interactions (zoom, pan, tooltip)
-- Lazy loading for large datasets
-
 ---
 
-### 6. Profile & Settings
+### 7. Profile & Settings
 
 **Features**:
 - User profile information
@@ -868,30 +995,8 @@ const AnalyticsScreen = () => {
 - Notification preferences
 - Theme selection (light/dark)
 - Language selection
+- Group and role display
 - Logout
-
----
-
-### 7. Agent-to-Agent (A2A) Collaboration
-
-**Features**:
-- Real-time agent conversation monitoring
-- Human intervention controls
-- Agent suggestion cards
-- Message history
-- Typing indicators
-- Configurable notification preferences
-
-**Components** ([src/components/chat/](../mobile/src/components/chat/)):
-- **ChatMessage.tsx**: Individual message bubble
-- **ChatInput.tsx**: Message input field (for human intervention)
-- **ChatMessageList.tsx**: Scrollable message list
-- **TypingIndicator.tsx**: Shows when agent is "thinking"
-- **AgentSuggestionCard.tsx**: Displays agent recommendations
-- **ChatContainer.tsx**: Full chat interface
-
-**Service** ([src/services/chat.ts](../mobile/src/services/chat.ts)):
-Handles WebSocket events for agent messages and manages chat state.
 
 ---
 
@@ -899,14 +1004,15 @@ Handles WebSocket events for agent messages and manages chat state.
 
 ### Redux Store Architecture
 
-The app uses Redux Toolkit for centralized state management with 6 slices:
+The app uses Redux Toolkit for centralized state management with 7 slices:
 
 ```typescript
 // src/store/index.ts
 import { configureStore } from '@reduxjs/toolkit';
 import authReducer from './slices/authSlice';
-import gamesReducer from './slices/gamesSlice';
-import templatesReducer from './slices/templatesSlice';
+import planningReducer from './slices/planningSlice';
+import scenariosReducer from './slices/scenariosSlice';
+import agentsReducer from './slices/agentsSlice';
 import analyticsReducer from './slices/analyticsSlice';
 import chatReducer from './slices/chatSlice';
 import uiReducer from './slices/uiSlice';
@@ -914,8 +1020,9 @@ import uiReducer from './slices/uiSlice';
 export const store = configureStore({
   reducer: {
     auth: authReducer,
-    games: gamesReducer,
-    templates: templatesReducer,
+    planning: planningReducer,
+    scenarios: scenariosReducer,
+    agents: agentsReducer,
     analytics: analyticsReducer,
     chat: chatReducer,
     ui: uiReducer,
@@ -932,7 +1039,7 @@ export type AppDispatch = typeof store.dispatch;
 
 ### Redux Slices
 
-#### 1. authSlice ([src/store/slices/authSlice.ts](../mobile/src/store/slices/authSlice.ts))
+#### 1. authSlice (`src/store/slices/authSlice.ts`)
 
 **State**:
 ```typescript
@@ -945,73 +1052,99 @@ interface AuthState {
 }
 ```
 
-**Actions**:
-- `login()`: Authenticate user, store token
-- `logout()`: Clear token, navigate to login
-- `register()`: Create new user account
-- `refreshToken()`: Refresh JWT before expiry
-- `updateProfile()`: Update user info
+**Actions**: `login()`, `logout()`, `register()`, `refreshToken()`, `updateProfile()`
 
-**Thunks**:
-```typescript
-export const login = createAsyncThunk(
-  'auth/login',
-  async ({ email, password }: LoginCredentials, { rejectWithValue }) => {
-    try {
-      const response = await api.post('/auth/login', { email, password });
-      await AsyncStorage.setItem('auth_token', response.data.token);
-      return response.data;
-    } catch (error) {
-      return rejectWithValue(error.response.data);
-    }
-  }
-);
-```
-
-#### 2. gamesSlice ([src/store/slices/gamesSlice.ts](../mobile/src/store/slices/gamesSlice.ts))
+#### 2. planningSlice (`src/store/slices/planningSlice.ts`)
 
 **State**:
 ```typescript
-interface GamesState {
-  games: Game[];
-  currentGame: Game | null;
-  activeGames: Game[];
-  completedGames: Game[];
+interface PlanningState {
+  // Supply chain configs
+  scConfigs: SupplyChainConfig[];
+  selectedScConfigId: number | null;
+
+  // Forecast pipeline
+  pipelineConfigs: ForecastPipelineConfig[];
+  pipelineRuns: ForecastPipelineRun[];
+  selectedPipelineConfigId: number | null;
+
+  // Supply plans
+  supplyPlans: SupplyPlan[];
+
+  // Inventory
+  inventoryLevels: InventoryLevel[];
+  inventoryPolicies: InventoryPolicy[];
+
   loading: boolean;
   error: string | null;
-  stats: {
-    winRate: number;
-    avgCost: number;
-    totalGames: number;
-  };
 }
 ```
 
 **Actions**:
-- `fetchGames()`: Load all games for user
-- `fetchGameById()`: Load single game details
-- `createGame()`: Create new game
-- `joinGame()`: Join existing game
-- `placeOrder()`: Submit order decision
-- `updateGameState()`: Update from WebSocket event
+- `fetchScConfigs()`: Load supply chain configurations (auto-select root baseline)
+- `fetchPipelineConfigs()`: Load forecast pipeline configs for selected SC config
+- `fetchPipelineRuns()`: Load runs for selected pipeline config
+- `startPipelineRun()`: Create and start a new run
+- `reExecuteRun()`: Re-execute an existing run
+- `publishRun()`: Publish completed run to Forecast table
+- `createPipelineConfig()`: Create new pipeline configuration
+- `updatePipelineConfig()`: Update existing pipeline configuration
+- `fetchSupplyPlans()`: Load supply plans
+- `approvePlan()`: Approve a supply plan
+- `fetchInventoryLevels()`: Load inventory data
 
-#### 3. templatesSlice ([src/store/slices/templatesSlice.ts](../mobile/src/store/slices/templatesSlice.ts))
+#### 3. scenariosSlice (`src/store/slices/scenariosSlice.ts`)
 
 **State**:
 ```typescript
-interface TemplatesState {
-  templates: Template[];
-  favorites: string[];
+interface ScenariosState {
+  scenarios: Scenario[];
+  currentScenario: Scenario | null;
+  activeScenarios: Scenario[];
+  completedScenarios: Scenario[];
+  loading: boolean;
+  error: string | null;
+}
+```
+
+**Actions**:
+- `fetchScenarios()`: Load all scenarios for user
+- `fetchScenarioById()`: Load single scenario details
+- `createScenario()`: Create new scenario
+- `joinScenario()`: Join existing scenario
+- `placeOrder()`: Submit order decision
+- `updateScenarioState()`: Update from WebSocket event
+
+#### 4. agentsSlice (`src/store/slices/agentsSlice.ts`)
+
+**State**:
+```typescript
+interface AgentsState {
+  worklistItems: WorklistItem[];
+  worklistCount: number;
+  agentScore: number;
+  touchlessRate: number;
+  overrideRate: number;
+  cdcTriggers: CDCTrigger[];
+  retrainingStatus: RetrainingStatus | null;
   loading: boolean;
 }
 ```
 
-#### 4. analyticsSlice ([src/store/slices/analyticsSlice.ts](../mobile/src/store/slices/analyticsSlice.ts))
+**Actions**:
+- `fetchWorklist()`: Load worklist items
+- `resolveWorklistItem()`: Accept or override a worklist item
+- `fetchAgentMetrics()`: Load agent performance metrics
+- `fetchCDCTriggers()`: Load CDC trigger history
+- `triggerRetraining()`: Manually trigger agent retraining
+
+#### 5. analyticsSlice (`src/store/slices/analyticsSlice.ts`)
 
 **State**:
 ```typescript
 interface AnalyticsState {
   analyticsData: {
+    forecastAccuracy: DataPoint[];
     inventoryHistory: DataPoint[];
     costBreakdown: CostCategory[];
     bullwhipRatio: number;
@@ -1021,18 +1154,18 @@ interface AnalyticsState {
 }
 ```
 
-#### 5. chatSlice ([src/store/slices/chatSlice.ts](../mobile/src/store/slices/chatSlice.ts))
+#### 6. chatSlice (`src/store/slices/chatSlice.ts`)
 
 **State**:
 ```typescript
 interface ChatState {
-  conversations: { [gameId: string]: Message[] };
-  typingAgents: { [gameId: string]: string[] };
-  unreadCounts: { [gameId: string]: number };
+  conversations: { [scenarioId: string]: Message[] };
+  typingAgents: { [scenarioId: string]: string[] };
+  unreadCounts: { [scenarioId: string]: number };
 }
 ```
 
-#### 6. uiSlice ([src/store/slices/uiSlice.ts](../mobile/src/store/slices/uiSlice.ts))
+#### 7. uiSlice (`src/store/slices/uiSlice.ts`)
 
 **State**:
 ```typescript
@@ -1050,7 +1183,7 @@ interface UIState {
 
 ### Axios Client Configuration
 
-**File**: [src/services/api.ts](../mobile/src/services/api.ts)
+**File**: `src/services/api.ts`
 
 ```typescript
 import axios from 'axios';
@@ -1082,7 +1215,6 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error.response?.status === 401) {
-      // Token expired, logout user
       await AsyncStorage.removeItem('auth_token');
       store.dispatch(logout());
     }
@@ -1096,32 +1228,63 @@ export default api;
 ### API Endpoints Used
 
 **Authentication**:
-- `POST /api/v1/auth/login` - User login
-- `POST /api/v1/auth/register` - User registration
-- `POST /api/v1/auth/logout` - User logout
-- `POST /api/v1/auth/refresh` - Refresh JWT token
+- `POST /api/v1/auth/login` — User login
+- `POST /api/v1/auth/register` — User registration
+- `POST /api/v1/auth/logout` — User logout
+- `POST /api/v1/auth/refresh` — Refresh JWT token
 
-**Games**:
-- `GET /api/v1/mixed-games` - List games
-- `POST /api/v1/mixed-games` - Create game
-- `GET /api/v1/mixed-games/{id}` - Get game details
-- `POST /api/v1/mixed-games/{id}/start` - Start game
-- `POST /api/v1/mixed-games/{id}/play-round` - Submit round decisions
-- `GET /api/v1/mixed-games/{id}/state` - Get current state
-- `GET /api/v1/mixed-games/{id}/history` - Get game history
+**Supply Chain Configuration**:
+- `GET /api/v1/supply-chain-config/` — List configurations
+- `GET /api/v1/supply-chain-config/{id}` — Get config details
 
-**Templates**:
-- `GET /api/v1/supply-chain-configs` - List templates
-- `GET /api/v1/supply-chain-configs/{id}` - Get template details
+**Forecast Pipeline**:
+- `GET /api/v1/forecast-pipeline/configs` — List pipeline configs
+- `POST /api/v1/forecast-pipeline/configs` — Create pipeline config
+- `PUT /api/v1/forecast-pipeline/configs/{id}` — Update pipeline config
+- `GET /api/v1/forecast-pipeline/runs` — List runs
+- `POST /api/v1/forecast-pipeline/runs` — Create and start run
+- `GET /api/v1/forecast-pipeline/runs/{id}` — Get run details
+- `POST /api/v1/forecast-pipeline/runs/{id}/execute` — Re-execute run
+- `POST /api/v1/forecast-pipeline/runs/{id}/publish` — Publish run results
+- `GET /api/v1/forecast-pipeline/runs/{id}/publish-log` — Get publish history
+
+**Supply Planning**:
+- `POST /api/v1/supply-plan/generate` — Generate supply plan
+- `GET /api/v1/supply-plan/status/{task_id}` — Check progress
+- `GET /api/v1/supply-plan/result/{task_id}` — Get results
+- `POST /api/v1/supply-plan/approve/{task_id}` — Approve plan
+
+**Inventory**:
+- `GET /api/v1/inventory-visibility/levels` — Inventory levels
+- `GET /api/v1/inventory-projection/` — Inventory projections
+
+**MPS**:
+- `GET /api/v1/mps/plans` — List MPS plans
+- `GET /api/v1/mps/plans/{id}` — Get MPS plan details
+
+**AI Agents & Powell Framework**:
+- `GET /api/v1/powell/allocations` — Get current allocations
+- `GET /api/v1/site-agent/cdc/triggers/{site_key}` — CDC trigger history
+- `GET /api/v1/site-agent/retraining/status/{site_key}` — Retraining status
+- `POST /api/v1/site-agent/retraining/trigger/{site_key}` — Manual retraining
+- `GET /api/v1/decision-metrics/` — Agent decision metrics
+
+**Scenarios (Simulation)**:
+- `GET /api/v1/mixed-scenarios/` — List scenarios
+- `POST /api/v1/mixed-scenarios/` — Create scenario
+- `GET /api/v1/mixed-scenarios/{id}` — Get scenario details
+- `POST /api/v1/mixed-scenarios/{id}/start` — Start scenario
+- `POST /api/v1/mixed-scenarios/{id}/execute-period` — Submit period decisions
+- `GET /api/v1/mixed-scenarios/{id}/state` — Get current state
+- `GET /api/v1/mixed-scenarios/{id}/history` — Get scenario history
 
 **Analytics**:
-- `GET /api/v1/analytics/bullwhip` - Bullwhip metrics
-- `GET /api/v1/analytics/performance` - Performance report
-- `POST /api/v1/reports/generate` - Generate report
+- `GET /api/v1/analytics/kpi` — KPI metrics
+- `GET /api/v1/predictive-analytics/` — Predictive analytics
 
-**Agents**:
-- `POST /api/v1/agents/suggest` - Get AI suggestion
-- `GET /api/v1/agents/strategies` - List agent strategies
+**Notifications**:
+- `POST /api/v1/notifications/push-token` — Register FCM token
+- `GET /api/v1/notifications/` — List notifications
 
 ---
 
@@ -1131,7 +1294,7 @@ export default api;
 
 The offline mode uses a queue-based system to store actions when connectivity is lost and replay them when connectivity resumes.
 
-**File**: [src/services/offline.ts](../mobile/src/services/offline.ts)
+**File**: `src/services/offline.ts`
 
 ```typescript
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -1155,19 +1318,16 @@ class OfflineService {
   }
 
   async initialize() {
-    // Load queue from storage
     const stored = await AsyncStorage.getItem('offline_queue');
     if (stored) {
       this.queue = JSON.parse(stored);
     }
 
-    // Monitor connectivity
     NetInfo.addEventListener(state => {
       const wasOffline = !this.isOnline;
       this.isOnline = state.isConnected ?? false;
 
       if (wasOffline && this.isOnline) {
-        // Came back online, process queue
         this.processQueue();
       }
     });
@@ -1190,14 +1350,12 @@ class OfflineService {
 
       try {
         await this.executeAction(action);
-        this.queue.shift(); // Remove from queue on success
+        this.queue.shift();
       } catch (error) {
         action.retryCount++;
         if (action.retryCount >= 3) {
-          // Max retries reached, discard
           this.queue.shift();
         } else {
-          // Retry later
           break;
         }
       }
@@ -1209,11 +1367,25 @@ class OfflineService {
   async executeAction(action: QueuedAction) {
     switch (action.type) {
       case 'PLACE_ORDER':
-        await api.post(`/mixed-games/${action.payload.gameId}/play-round`, {
+        await api.post(`/mixed-scenarios/${action.payload.scenarioId}/execute-period`, {
           order_quantity: action.payload.quantity,
         });
         break;
-      // Add more action types as needed
+      case 'START_PIPELINE_RUN':
+        await api.post('/forecast-pipeline/runs', {
+          pipeline_config_id: action.payload.pipelineConfigId,
+          auto_start: true,
+        });
+        break;
+      case 'PUBLISH_RUN':
+        await api.post(`/forecast-pipeline/runs/${action.payload.runId}/publish`, {});
+        break;
+      case 'APPROVE_SUPPLY_PLAN':
+        await api.post(`/supply-plan/approve/${action.payload.taskId}`, {});
+        break;
+      case 'RESOLVE_WORKLIST':
+        await api.post(`/powell/worklist/${action.payload.itemId}/resolve`, action.payload.resolution);
+        break;
     }
   }
 
@@ -1229,30 +1401,9 @@ class OfflineService {
 export const offlineService = new OfflineService();
 ```
 
-### Usage in Components
-
-```typescript
-const GameDetailScreen = () => {
-  const handlePlaceOrder = async (quantity: number) => {
-    if (offlineService.isOffline()) {
-      // Queue action for later
-      await offlineService.queueAction({
-        type: 'PLACE_ORDER',
-        payload: { gameId, quantity },
-        timestamp: Date.now(),
-      });
-      showToast('Offline: Order queued for sync', 'warning');
-    } else {
-      // Online: Execute immediately
-      await dispatch(placeOrder({ gameId, quantity }));
-    }
-  };
-};
-```
-
 ### Offline Banner
 
-**Component**: [src/components/common/OfflineBanner.tsx](../mobile/src/components/common/OfflineBanner.tsx)
+**Component**: `src/components/common/OfflineBanner.tsx`
 
 Displays a banner at the top of the screen when offline.
 
@@ -1276,11 +1427,11 @@ const OfflineBanner = () => {
 
 ### Firebase Cloud Messaging Setup
 
-**See**: [mobile/firebase-setup.md](../mobile/firebase-setup.md) for detailed setup instructions.
+**See**: `mobile/firebase-setup.md` for detailed setup instructions.
 
 ### Implementation
 
-**File**: [src/services/notifications.ts](../mobile/src/services/notifications.ts)
+**File**: `src/services/notifications.ts`
 
 ```typescript
 import messaging from '@react-native-firebase/messaging';
@@ -1304,13 +1455,10 @@ class NotificationService {
   async registerDevice() {
     const token = await messaging().getToken();
     await AsyncStorage.setItem('fcm_token', token);
-
-    // Send token to backend
-    await api.post('/users/me/fcm-token', { token });
+    await api.post('/notifications/push-token', { token });
   }
 
   setupForegroundHandler() {
-    // Handle notifications when app is in foreground
     messaging().onMessage(async (remoteMessage) => {
       Alert.alert(
         remoteMessage.notification?.title ?? 'Notification',
@@ -1320,7 +1468,6 @@ class NotificationService {
   }
 
   setupBackgroundHandler() {
-    // Handle notifications when app is in background
     messaging().setBackgroundMessageHandler(async (remoteMessage) => {
       console.log('Background message:', remoteMessage);
     });
@@ -1336,58 +1483,42 @@ export const notificationService = new NotificationService();
 
 ### Notification Types
 
-**Game Events**:
-- `game_started`: "Game [name] has started!"
-- `round_completed`: "Round [X] completed in [game name]"
-- `your_turn`: "It's your turn in [game name]"
-- `game_completed`: "Game [name] has finished!"
+**Planning Events**:
+- `forecast_run_completed`: "Forecast pipeline run completed — 1,240 records"
+- `forecast_run_failed`: "Forecast pipeline run failed — insufficient data"
+- `supply_plan_ready`: "Supply plan ready for review"
+- `supply_plan_approved`: "Supply plan approved and released"
+- `inventory_alert`: "Stockout risk detected at Site DC-East for SKU-1234"
 
 **Agent Events**:
 - `agent_suggestion`: "AI agent suggests ordering [X] units"
-- `agent_decision`: "Agent [name] placed an order"
-- `a2a_message`: "New agent conversation in [game name]"
+- `agent_decision`: "Agent [name] made a decision"
+- `worklist_item`: "New worklist item requires your attention"
+- `cdc_trigger`: "CDC trigger detected — agent retraining initiated"
+
+**Scenario Events**:
+- `scenario_started`: "Scenario [name] has started!"
+- `period_completed`: "Period [X] completed in [scenario name]"
+- `your_turn`: "It's your turn in [scenario name]"
+- `scenario_completed`: "Scenario [name] has finished!"
 
 **System Events**:
 - `system_update`: "Platform maintenance scheduled"
-- `achievement_unlocked`: "You unlocked [achievement]!"
-
-### Notification Payload
-
-```json
-{
-  "notification": {
-    "title": "Your Turn!",
-    "body": "It's your turn in Classic Beer Game"
-  },
-  "data": {
-    "type": "your_turn",
-    "gameId": "123",
-    "roundNumber": "5"
-  }
-}
-```
 
 ### Handling Notification Taps
 
 ```typescript
-// Open app from notification
 messaging().onNotificationOpenedApp((remoteMessage) => {
-  const { type, gameId } = remoteMessage.data;
+  const { type, scenarioId, runId } = remoteMessage.data;
 
-  if (type === 'your_turn' || type === 'game_started') {
-    navigation.navigate('GameDetail', { gameId });
+  if (type === 'your_turn' || type === 'scenario_started') {
+    navigation.navigate('ScenarioDetail', { scenarioId });
+  } else if (type === 'forecast_run_completed') {
+    navigation.navigate('Forecasting');
+  } else if (type === 'worklist_item') {
+    navigation.navigate('Worklist');
   }
 });
-
-// App opened from quit state
-messaging()
-  .getInitialNotification()
-  .then((remoteMessage) => {
-    if (remoteMessage) {
-      const { type, gameId } = remoteMessage.data;
-      navigation.navigate('GameDetail', { gameId });
-    }
-  });
 ```
 
 ---
@@ -1396,14 +1527,15 @@ messaging()
 
 ### Socket.IO Client Configuration
 
-**File**: [src/services/websocket.ts](../mobile/src/services/websocket.ts)
+**File**: `src/services/websocket.ts`
 
 ```typescript
 import io, { Socket } from 'socket.io-client';
 import { WS_URL } from '../constants';
 import { store } from '../store';
-import { updateGameState } from '../store/slices/gamesSlice';
+import { updateScenarioState } from '../store/slices/scenariosSlice';
 import { addChatMessage } from '../store/slices/chatSlice';
+import { updatePipelineRunStatus } from '../store/slices/planningSlice';
 
 class WebSocketService {
   private socket: Socket | null = null;
@@ -1432,25 +1564,32 @@ class WebSocketService {
       console.log('WebSocket disconnected');
     });
 
-    this.socket.on('game_update', (data) => {
-      store.dispatch(updateGameState(data));
+    // Scenario events
+    this.socket.on('scenario_update', (data) => {
+      store.dispatch(updateScenarioState(data));
     });
 
+    this.socket.on('period_completed', (data) => {
+      // Show notification or update UI
+    });
+
+    // Agent chat events
     this.socket.on('a2a_message', (data) => {
       store.dispatch(addChatMessage(data));
     });
 
-    this.socket.on('round_completed', (data) => {
-      // Show notification or update UI
+    // Planning events
+    this.socket.on('pipeline_run_update', (data) => {
+      store.dispatch(updatePipelineRunStatus(data));
     });
   }
 
-  joinGame(gameId: string) {
-    this.socket?.emit('join_game', { gameId });
+  joinScenario(scenarioId: string) {
+    this.socket?.emit('join_scenario', { scenarioId });
   }
 
-  leaveGame(gameId: string) {
-    this.socket?.emit('leave_game', { gameId });
+  leaveScenario(scenarioId: string) {
+    this.socket?.emit('leave_scenario', { scenarioId });
   }
 
   disconnect() {
@@ -1462,39 +1601,20 @@ class WebSocketService {
 export const websocketService = new WebSocketService();
 ```
 
-### Usage in Components
-
-```typescript
-const GameDetailScreen = ({ route }: any) => {
-  const { gameId } = route.params;
-
-  useEffect(() => {
-    // Join game room
-    websocketService.joinGame(gameId);
-
-    return () => {
-      // Leave game room on unmount
-      websocketService.leaveGame(gameId);
-    };
-  }, [gameId]);
-
-  // Component automatically re-renders when Redux state updates from WebSocket
-};
-```
-
 ### WebSocket Events
 
 **Client → Server**:
-- `join_game`: Subscribe to game updates
-- `leave_game`: Unsubscribe from game updates
+- `join_scenario`: Subscribe to scenario updates
+- `leave_scenario`: Unsubscribe from scenario updates
 - `place_order`: Submit order decision (alternative to REST API)
 
 **Server → Client**:
-- `game_update`: Full game state update
-- `round_completed`: Round finished, new round started
-- `player_joined`: New player joined game
-- `player_left`: Player left game
+- `scenario_update`: Full scenario state update
+- `period_completed`: Period finished, new period started
+- `participant_joined`: New participant joined scenario
+- `participant_left`: Participant left scenario
 - `a2a_message`: Agent-to-agent conversation message
+- `pipeline_run_update`: Forecast pipeline run status change
 
 ---
 
@@ -1502,7 +1622,7 @@ const GameDetailScreen = ({ route }: any) => {
 
 ### Navigation Structure
 
-**File**: [src/navigation/AppNavigator.tsx](../mobile/src/navigation/AppNavigator.tsx)
+**File**: `src/navigation/AppNavigator.tsx`
 
 ```
 AppNavigator
@@ -1513,13 +1633,22 @@ AppNavigator
     └── BottomTabNavigator
         ├── DashboardTab
         │   └── DashboardScreen
-        ├── GamesTab (Stack)
-        │   ├── GamesListScreen
-        │   ├── GameDetailScreen
-        │   ├── GameDetailWithChatScreen
-        │   └── CreateGameScreen
-        ├── TemplatesTab
-        │   └── TemplateLibraryScreen
+        ├── PlanningTab (Stack)
+        │   ├── PlanningHubScreen (tab selector: Forecasting / Supply / Inventory / MPS)
+        │   ├── ForecastingScreen
+        │   ├── ForecastPipelineDetailScreen
+        │   ├── SupplyPlanScreen
+        │   ├── InventoryScreen
+        │   └── MPSScreen
+        ├── AgentsTab (Stack)
+        │   ├── AgentDashboardScreen
+        │   ├── WorklistScreen
+        │   └── AgentDetailScreen
+        ├── SimulationTab (Stack)
+        │   ├── ScenariosListScreen
+        │   ├── ScenarioDetailScreen
+        │   ├── ScenarioDetailWithChatScreen
+        │   └── CreateScenarioScreen
         ├── AnalyticsTab
         │   └── AnalyticsScreen
         └── ProfileTab
@@ -1543,22 +1672,46 @@ const AuthNavigator = () => (
   </Stack.Navigator>
 );
 
-const GamesStack = () => (
+const PlanningStack = () => (
   <Stack.Navigator>
-    <Stack.Screen name="GamesList" component={GamesListScreen} />
-    <Stack.Screen name="GameDetail" component={GameDetailScreen} />
-    <Stack.Screen name="GameDetailWithChat" component={GameDetailWithChatScreen} />
-    <Stack.Screen name="CreateGame" component={CreateGameScreen} />
+    <Stack.Screen name="PlanningHub" component={PlanningHubScreen} />
+    <Stack.Screen name="Forecasting" component={ForecastingScreen} />
+    <Stack.Screen name="PipelineDetail" component={ForecastPipelineDetailScreen} />
+    <Stack.Screen name="SupplyPlan" component={SupplyPlanScreen} />
+    <Stack.Screen name="Inventory" component={InventoryScreen} />
+    <Stack.Screen name="MPS" component={MPSScreen} />
+  </Stack.Navigator>
+);
+
+const AgentsStack = () => (
+  <Stack.Navigator>
+    <Stack.Screen name="AgentDashboard" component={AgentDashboardScreen} />
+    <Stack.Screen name="Worklist" component={WorklistScreen} />
+    <Stack.Screen name="AgentDetail" component={AgentDetailScreen} />
+  </Stack.Navigator>
+);
+
+const SimulationStack = () => (
+  <Stack.Navigator>
+    <Stack.Screen name="ScenariosList" component={ScenariosListScreen} />
+    <Stack.Screen name="ScenarioDetail" component={ScenarioDetailScreen} />
+    <Stack.Screen name="ScenarioDetailWithChat" component={ScenarioDetailWithChatScreen} />
+    <Stack.Screen name="CreateScenario" component={CreateScenarioScreen} />
   </Stack.Navigator>
 );
 
 const MainNavigator = () => (
   <Tab.Navigator>
-    <Tab.Screen name="Dashboard" component={DashboardScreen} />
-    <Tab.Screen name="Games" component={GamesStack} />
-    <Tab.Screen name="Templates" component={TemplateLibraryScreen} />
-    <Tab.Screen name="Analytics" component={AnalyticsScreen} />
-    <Tab.Screen name="Profile" component={ProfileScreen} />
+    <Tab.Screen name="Dashboard" component={DashboardScreen}
+      options={{ tabBarIcon: ({ color }) => <Icon name="view-dashboard" color={color} /> }} />
+    <Tab.Screen name="Planning" component={PlanningStack}
+      options={{ tabBarIcon: ({ color }) => <Icon name="chart-timeline" color={color} /> }} />
+    <Tab.Screen name="Agents" component={AgentsStack}
+      options={{ tabBarIcon: ({ color }) => <Icon name="robot" color={color} /> }} />
+    <Tab.Screen name="Simulation" component={SimulationStack}
+      options={{ tabBarIcon: ({ color }) => <Icon name="gamepad-variant" color={color} /> }} />
+    <Tab.Screen name="Profile" component={ProfileScreen}
+      options={{ tabBarIcon: ({ color }) => <Icon name="account" color={color} /> }} />
   </Tab.Navigator>
 );
 
@@ -1583,84 +1736,16 @@ const AppNavigator = () => {
 __tests__/
 ├── screens/
 │   ├── LoginScreen.test.tsx
-│   └── DashboardScreen.test.tsx
+│   ├── DashboardScreen.test.tsx
+│   └── ForecastingScreen.test.tsx
 ├── store/slices/
 │   ├── authSlice.test.ts
-│   ├── gamesSlice.test.ts
-│   └── templatesSlice.test.ts
+│   ├── planningSlice.test.ts
+│   ├── scenariosSlice.test.ts
+│   └── agentsSlice.test.ts
 └── services/
-    └── notifications.test.ts
-```
-
-### Unit Testing Example
-
-**File**: [__tests__/store/slices/authSlice.test.ts](../mobile/__tests__/store/slices/authSlice.test.ts)
-
-```typescript
-import { configureStore } from '@reduxjs/toolkit';
-import authReducer, { login, logout } from '../../../src/store/slices/authSlice';
-
-describe('authSlice', () => {
-  let store;
-
-  beforeEach(() => {
-    store = configureStore({ reducer: { auth: authReducer } });
-  });
-
-  it('should handle login success', async () => {
-    const credentials = { email: 'test@example.com', password: 'password' };
-    await store.dispatch(login(credentials));
-
-    const state = store.getState().auth;
-    expect(state.isAuthenticated).toBe(true);
-    expect(state.token).toBeTruthy();
-  });
-
-  it('should handle logout', () => {
-    store.dispatch(logout());
-
-    const state = store.getState().auth;
-    expect(state.isAuthenticated).toBe(false);
-    expect(state.token).toBeNull();
-  });
-});
-```
-
-### Component Testing Example
-
-```typescript
-import { render, fireEvent } from '@testing-library/react-native';
-import { Provider } from 'react-redux';
-import { store } from '../../../src/store';
-import LoginScreen from '../../../src/screens/Auth/LoginScreen';
-
-describe('LoginScreen', () => {
-  it('should render login form', () => {
-    const { getByPlaceholderText, getByText } = render(
-      <Provider store={store}>
-        <LoginScreen />
-      </Provider>
-    );
-
-    expect(getByPlaceholderText('Email')).toBeTruthy();
-    expect(getByPlaceholderText('Password')).toBeTruthy();
-    expect(getByText('Login')).toBeTruthy();
-  });
-
-  it('should call login on submit', () => {
-    const { getByPlaceholderText, getByText } = render(
-      <Provider store={store}>
-        <LoginScreen />
-      </Provider>
-    );
-
-    fireEvent.changeText(getByPlaceholderText('Email'), 'test@example.com');
-    fireEvent.changeText(getByPlaceholderText('Password'), 'password');
-    fireEvent.press(getByText('Login'));
-
-    // Assert login action was dispatched
-  });
-});
+    ├── notifications.test.ts
+    └── offline.test.ts
 ```
 
 ### Running Tests
@@ -1686,12 +1771,13 @@ npm test -- --watch
 ### React.memo for Expensive Components
 
 ```typescript
-const GameCard = React.memo(({ game }: { game: Game }) => {
+const PipelineConfigCard = React.memo(({ config }: { config: PipelineConfig }) => {
   return (
     <Card>
-      <Card.Title title={game.name} />
+      <Card.Title title={config.name} />
       <Card.Content>
-        <Text>Status: {game.status}</Text>
+        <Text>Method: {config.cluster_selection_method}</Text>
+        <Text>Metric: {config.forecast_metric?.toUpperCase()}</Text>
       </Card.Content>
     </Card>
   );
@@ -1702,9 +1788,9 @@ const GameCard = React.memo(({ game }: { game: Game }) => {
 
 ```typescript
 <FlatList
-  data={games}
-  renderItem={({ item }) => <GameCard game={item} />}
-  keyExtractor={(item) => item.id}
+  data={runs}
+  renderItem={({ item }) => <RunCard run={item} />}
+  keyExtractor={(item) => item.id.toString()}
   initialNumToRender={10}
   maxToRenderPerBatch={10}
   windowSize={5}
@@ -1717,21 +1803,9 @@ const GameCard = React.memo(({ game }: { game: Game }) => {
 />
 ```
 
-### Image Optimization
-
-```typescript
-import FastImage from 'react-native-fast-image';
-
-<FastImage
-  source={{ uri: imageUrl, priority: FastImage.priority.normal }}
-  style={{ width: 200, height: 200 }}
-  resizeMode={FastImage.resizeMode.contain}
-/>
-```
-
 ### Hermes JavaScript Engine
 
-**Android** ([android/app/build.gradle](../mobile/android/app/build.gradle)):
+**Android** (`android/app/build.gradle`):
 ```groovy
 project.ext.react = [
     enableHermes: true,
@@ -1754,20 +1828,12 @@ npm run ios
 **Release Build**:
 1. Open Xcode:
 ```bash
-open ios/BeerGame.xcworkspace
+open ios/Autonomy.xcworkspace
 ```
 
 2. Select "Any iOS Device (arm64)" target
-
 3. Product → Archive
-
 4. Distribute App → App Store Connect
-
-**Fastlane (Automated)**:
-```bash
-cd ios
-fastlane release
-```
 
 ### Android Build & Release
 
@@ -1780,24 +1846,14 @@ npm run android
 ```bash
 cd android
 ./gradlew assembleRelease
-
-# APK location:
-# android/app/build/outputs/apk/release/app-release.apk
+# APK: android/app/build/outputs/apk/release/app-release.apk
 ```
 
 **Release Bundle (for Play Store)**:
 ```bash
 cd android
 ./gradlew bundleRelease
-
-# AAB location:
-# android/app/build/outputs/bundle/release/app-release.aab
-```
-
-**Fastlane (Automated)**:
-```bash
-cd android
-fastlane release
+# AAB: android/app/build/outputs/bundle/release/app-release.aab
 ```
 
 ### Environment Configuration
@@ -1811,15 +1867,15 @@ ENVIRONMENT=development
 
 **Staging**:
 ```env
-API_BASE_URL=https://staging-api.beergame.com
-WS_URL=wss://staging-api.beergame.com/ws
+API_BASE_URL=https://staging-api.autonomy.ai
+WS_URL=wss://staging-api.autonomy.ai/ws
 ENVIRONMENT=staging
 ```
 
 **Production**:
 ```env
-API_BASE_URL=https://api.beergame.com
-WS_URL=wss://api.beergame.com/ws
+API_BASE_URL=https://api.autonomy.ai
+WS_URL=wss://api.autonomy.ai/ws
 ENVIRONMENT=production
 ```
 
@@ -1861,7 +1917,7 @@ npm start -- --reset-cache
 
 ### Push Notifications Not Working
 
-1. Verify Firebase setup: [firebase-setup.md](../mobile/firebase-setup.md)
+1. Verify Firebase setup: `mobile/firebase-setup.md`
 2. Check `google-services.json` (Android) and `GoogleService-Info.plist` (iOS) are present
 3. Request notification permissions in app
 4. Test with Firebase Console Test Message
@@ -1870,7 +1926,7 @@ npm start -- --reset-cache
 
 ## Deployment Checklist
 
-See [mobile/INTEGRATION_CHECKLIST.md](../mobile/INTEGRATION_CHECKLIST.md) for complete pre-launch checklist.
+See `mobile/INTEGRATION_CHECKLIST.md` for complete pre-launch checklist.
 
 **Quick Checklist**:
 - [ ] Environment variables configured
@@ -1891,15 +1947,15 @@ See [mobile/INTEGRATION_CHECKLIST.md](../mobile/INTEGRATION_CHECKLIST.md) for co
 ## Additional Resources
 
 ### Documentation
-- [README.md](../mobile/README.md) - Project overview
-- [INSTALL.md](../mobile/INSTALL.md) - Installation instructions
-- [QUICKSTART.md](../mobile/QUICKSTART.md) - 5-minute quick start
-- [QUICK_REFERENCE.md](../mobile/QUICK_REFERENCE.md) - Command reference
-- [firebase-setup.md](../mobile/firebase-setup.md) - Firebase setup
-- [DEPLOYMENT.md](../mobile/DEPLOYMENT.md) - Deployment guide
-- [TESTING_GUIDE.md](../mobile/TESTING_GUIDE.md) - Testing procedures
-- [ACCESSIBILITY.md](../mobile/ACCESSIBILITY.md) - Accessibility guidelines
-- [A2A_COLLABORATION_GUIDE.md](../mobile/A2A_COLLABORATION_GUIDE.md) - Agent-to-Agent feature guide
+- `mobile/README.md` — Project overview
+- `mobile/INSTALL.md` — Installation instructions
+- `mobile/QUICKSTART.md` — 5-minute quick start
+- `mobile/QUICK_REFERENCE.md` — Command reference
+- `mobile/firebase-setup.md` — Firebase setup
+- `mobile/DEPLOYMENT.md` — Deployment guide
+- `mobile/TESTING_GUIDE.md` — Testing procedures
+- `mobile/ACCESSIBILITY.md` — Accessibility guidelines
+- `mobile/A2A_COLLABORATION_GUIDE.md` — Agent-to-Agent feature guide
 
 ### External Links
 - [React Native Documentation](https://reactnative.dev/docs/getting-started)
@@ -1913,12 +1969,11 @@ See [mobile/INTEGRATION_CHECKLIST.md](../mobile/INTEGRATION_CHECKLIST.md) for co
 ## Support & Contact
 
 For issues, questions, or feature requests:
-- GitHub Issues: [Project Repository]
-- Email: support@beergame.com
-- Slack: #mobile-app channel
+- GitHub Issues: [Project Repository](https://github.com/anthropics/claude-code/issues)
+- Email: support@autonomy.ai
 
 ---
 
-**Document Version**: 1.0.0
-**Last Updated**: January 22, 2026
-**Status**: Complete ✅
+**Document Version**: 2.0.0
+**Last Updated**: February 21, 2026
+**Status**: In Development

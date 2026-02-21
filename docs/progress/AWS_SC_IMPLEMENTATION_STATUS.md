@@ -2,7 +2,7 @@
 
 **Last Updated**: 2026-01-24 (Major Update - Corrected Implementation Status)
 **Current Phase**: Phase 2 - Data Model Refactoring (NEARLY COMPLETE) + Sprint 6 COMPLETE
-**Compliance Score**: 65% AWS SC entities (23/35) + **85% Feature Coverage** (see note below)
+**Compliance Score**: 68% AWS SC entities (25/37) + **85% Feature Coverage** (see note below)
 
 ---
 
@@ -13,9 +13,9 @@ This document tracks the implementation status of AWS Supply Chain (AWS SC) stan
 **Strategic Vision**: Transform from "Beer Game-centric" to "AWS SC-first with AI, Stochastic Planning, and Gamification differentiators."
 
 **Current Status** (Updated 2026-01-24):
-- ✅ **Implemented**: 23 entities (65%)
+- ✅ **Implemented**: 25 entities (68%)
 - 🚧 **Partial**: 1 entity (3%) - Capacity Plan (backend done, frontend pending)
-- ❌ **Missing**: 11 entities (31%)
+- ❌ **Missing**: 11 entities (30%)
 
 **IMPORTANT NOTE**: AWS SC Entity compliance (65%) measures data model coverage only. **Feature-level implementation is significantly higher at ~85%**. Major features previously documented as missing (Risk Analysis, Recommendations, Collaboration, Sprint 6 Order Types) are **100% operational**.
 
@@ -193,12 +193,14 @@ Professional supply chain planning and execution following AWS SC data model and
 
 ---
 
-### 6. Execution & Fulfillment (2/4 entities) — **50% Complete**
+### 6. Execution & Fulfillment (4/6 entities) — **67% Complete**
 
 | Entity | Status | Implementation | Location |
 |--------|--------|----------------|----------|
 | **Shipment** | ✅ Implemented | Shipments tracked in transit | [backend/app/services/engine.py:BeerLine.tick()](backend/app/services/engine.py) |
 | **Receipt** | ✅ Implemented | Receipts update inventory | [backend/app/services/engine.py:BeerLine.tick()](backend/app/services/engine.py) |
+| **Quality Order** | ✅ Implemented | Quality inspection and disposition | [backend/app/models/quality_order.py](backend/app/models/quality_order.py) |
+| **Subcontracting Order** | ✅ Implemented | External manufacturing lifecycle | [backend/app/models/subcontracting_order.py](backend/app/models/subcontracting_order.py) |
 | **Fulfillment Order** | ❌ **Missing** | No fulfillment order entity | N/A |
 | **Backorder** | ❌ **Missing** | Backlog tracked but no formal backorder entity | N/A |
 
@@ -207,6 +209,8 @@ Professional supply chain planning and execution following AWS SC data model and
 - Receipt processing with inventory updates
 - Backlog accumulation when demand > supply
 - In-transit inventory tracking
+- **Quality Order**: Full inspection lifecycle (CREATED→INSPECTION_PENDING→IN_INSPECTION→DISPOSITION_PENDING→DISPOSITION_DECIDED→CLOSED) with 7 disposition types and TRM-powered decisions
+- **Subcontracting Order**: Complete external manufacturing lifecycle (PLANNED→RELEASED→MATERIAL_SENT→IN_PRODUCTION→GOODS_RECEIVED→QUALITY_CHECK→CLOSED) with cost tracking and quality requirements
 
 **What's Missing**:
 - **Fulfillment Order Lifecycle**: PICK → PACK → SHIP → DELIVER

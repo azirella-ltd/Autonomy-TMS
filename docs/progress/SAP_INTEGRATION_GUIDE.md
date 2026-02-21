@@ -1033,6 +1033,21 @@ print(f"Efficiency: {result.efficiency_metric:.2%} reduction")
 | **/SAPAPO/STOCK** | Stock/Inventory | MATNR, LOCNO, AVAILABLE_QTY |
 | **/SAPAPO/SNP** | SNP Planning Data | PLAN_VERSION, MATNR, LOCNO, DEMAND_QTY |
 
+### Execution & Quality Tables (New)
+
+| Table | Description | Key Fields | SyncDataType |
+|-------|-------------|------------|--------------|
+| **LTAK** | Transfer Order Header | LGNUM, TESSION | `transfer_orders` |
+| **LTAP** | Transfer Order Item | LGNUM, TESSION, TAESSION | `transfer_orders` |
+| **QMEL** | Quality Notification Header | QMNUM, QMART, MATNR | `quality_orders` |
+| **QMIH** | Quality Notification Item | QMNUM, FEESSION | `quality_orders` |
+| **AUFK_PM** | Maintenance Order Header (PM) | AUFNR, EQUNR, ILART | `maintenance_orders` |
+| **IHPA** | PM Object Partners | OBJNR, PESSION | `maintenance_orders` |
+| **MHIS** | Maintenance History | OBJNR, POINT | `maintenance_orders` |
+| **MKAL** | Subcontracting Cockpit | MATNR, WERKS, VEESSION | `subcontracting_orders` |
+| **EKKO_SC** | Subcontracting PO Header (doc type L) | EBELN, BSART='L' | `subcontracting_orders` |
+| **EKPO_SC** | Subcontracting PO Item | EBELN, EBELP | `subcontracting_orders` |
+
 ### Standard BAPIs
 
 | BAPI | Purpose | Parameters |

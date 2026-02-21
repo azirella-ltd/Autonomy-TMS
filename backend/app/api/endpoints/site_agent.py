@@ -686,16 +686,23 @@ async def get_retraining_status(
 @router.post("/retraining/trigger/{site_key}")
 async def trigger_retraining(
     site_key: str,
-    background_tasks: BackgroundTasks,
+    reason: Optional[str] = Query(None, description="Manual trigger reason"),
+    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
     Manually trigger TRM retraining for a site.
 
-    Runs in the background. Returns immediately with status.
+    Creates a TriggerEvent with manual reason, logs it to
+    powell_cdc_trigger_log, and runs retraining in background.
+    Returns a pipeline_id for status polling.
     """
+    import uuid
     from app.services.powell.cdc_retraining_service import CDCRetrainingService
+    from app.services.powell.cdc_monitor import TriggerEvent
+
+    pipeline_id = str(uuid.uuid4())
 
     svc = CDCRetrainingService(db=db, site_key=site_key, group_id=0)
 
@@ -703,22 +710,75 @@ async def trigger_retraining(
     if not svc.evaluate_retraining_need(skip_trigger_check=True):
         return {
             "status": "skipped",
+            "pipeline_id": pipeline_id,
             "site_key": site_key,
             "message": "Not enough training data or cooldown not elapsed",
         }
+
+    # Create a manual TriggerEvent
+    manual_trigger = TriggerEvent(
+        triggered=True,
+        reasons=[TriggerReason.DEMAND_DEVIATION],
+        metrics_snapshot=SiteMetrics(
+            site_key=site_key,
+            timestamp=datetime.utcnow(),
+            demand_cumulative=0.0,
+            forecast_cumulative=0.0,
+            inventory_on_hand=0.0,
+            inventory_target=0.0,
+            service_level=0.0,
+            target_service_level=0.95,
+            avg_lead_time_actual=0.0,
+            avg_lead_time_expected=0.0,
+            supplier_on_time_rate=1.0,
+            backlog_units=0.0,
+        ),
+        recommended_action=ReplanAction.FULL_CFA,
+        severity="medium",
+        message=f"Manual trigger by {current_user.email}: {reason or 'no reason given'}",
+    )
+
+    # Log trigger event to DB
+    try:
+        from app.models.powell_decision import CDCTriggerLog
+
+        trigger_log = CDCTriggerLog(
+            site_key=site_key,
+            triggered=True,
+            reasons=["manual_trigger"],
+            severity="medium",
+            recommended_action=ReplanAction.FULL_CFA.value,
+            metrics_snapshot={
+                "site_key": site_key,
+                "manual": True,
+                "reason": reason or "manual_trigger",
+                "triggered_by": current_user.email,
+                "pipeline_id": pipeline_id,
+            },
+        )
+        db.add(trigger_log)
+        db.commit()
+    except Exception as e:
+        logger.warning(f"Failed to log manual trigger: {e}")
 
     def _run_retraining():
         from app.db.session import SessionLocal
         bg_db = SessionLocal()
         try:
             bg_svc = CDCRetrainingService(db=bg_db, site_key=site_key, group_id=0)
-            result = bg_svc.execute_retraining()
+            result = bg_svc.execute_retraining(trigger_event=manual_trigger)
             if result and result.final_loss < float("inf"):
-                logger.info(f"Manual retraining completed for {site_key}: loss={result.final_loss:.4f}")
+                logger.info(
+                    f"Manual retraining completed for {site_key} "
+                    f"(pipeline={pipeline_id}): loss={result.final_loss:.4f}"
+                )
             else:
-                logger.warning(f"Manual retraining for {site_key} produced no improvement")
+                logger.warning(
+                    f"Manual retraining for {site_key} "
+                    f"(pipeline={pipeline_id}) produced no improvement"
+                )
         except Exception as e:
-            logger.error(f"Manual retraining failed for {site_key}: {e}")
+            logger.error(f"Manual retraining failed for {site_key} (pipeline={pipeline_id}): {e}")
         finally:
             bg_db.close()
 
@@ -726,6 +786,7 @@ async def trigger_retraining(
 
     return {
         "status": "started",
+        "pipeline_id": pipeline_id,
         "site_key": site_key,
         "message": f"Retraining triggered by {current_user.email}, running in background",
     }

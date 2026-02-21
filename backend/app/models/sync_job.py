@@ -37,10 +37,17 @@ class SyncDataType(str, enum.Enum):
     DELIVERIES = "deliveries"               # LIKP, LIPS
     RESERVATIONS = "reservations"           # RESB
 
+    # Execution Data (15-30 min cadence)
+    TRANSFER_ORDERS = "transfer_orders"           # LTAK, LTAP
+    QUALITY_ORDERS = "quality_orders"             # QMEL, QMIH
+    MAINTENANCE_ORDERS = "maintenance_orders"     # AUFK (PM), IHPA, MHIS
+    SUBCONTRACTING_ORDERS = "subcontracting_orders"  # EKKO (L-type), MKAL
+
     # Planning Data (hourly cadence)
     DEMAND_FORECAST = "demand_forecast"     # /SAPAPO/TSDFCP
     SUPPLY_PLAN = "supply_plan"             # /SAPAPO/MATLOC
     ATP_DATA = "atp_data"                   # ATP-related tables
+    FORECAST_ADJUSTMENTS = "forecast_adjustments"  # Manual/signal-based adj
 
 
 class SyncStatus(str, enum.Enum):
@@ -338,5 +345,35 @@ DEFAULT_SYNC_CADENCES = {
         "delta_days": 7,
         "tables": ["/SAPAPO/MATLOC"],
         "name": "Supply Plan Sync"
+    },
+    SyncDataType.TRANSFER_ORDERS: {
+        "cron": "*/30 * * * *",  # Every 30 minutes
+        "delta_days": 14,
+        "tables": ["LTAK", "LTAP"],
+        "name": "Transfer Orders Sync"
+    },
+    SyncDataType.QUALITY_ORDERS: {
+        "cron": "*/30 * * * *",  # Every 30 minutes
+        "delta_days": 14,
+        "tables": ["QMEL", "QMIH"],
+        "name": "Quality Orders Sync"
+    },
+    SyncDataType.MAINTENANCE_ORDERS: {
+        "cron": "*/30 * * * *",  # Every 30 minutes
+        "delta_days": 14,
+        "tables": ["AUFK_PM", "IHPA", "MHIS"],
+        "name": "Maintenance Orders Sync"
+    },
+    SyncDataType.SUBCONTRACTING_ORDERS: {
+        "cron": "*/30 * * * *",  # Every 30 minutes
+        "delta_days": 14,
+        "tables": ["EKKO_SC", "EKPO_SC", "MKAL"],
+        "name": "Subcontracting Orders Sync"
+    },
+    SyncDataType.FORECAST_ADJUSTMENTS: {
+        "cron": "0 * * * *",  # Hourly
+        "delta_days": 7,
+        "tables": ["/SAPAPO/TSDFCP_ADJ"],
+        "name": "Forecast Adjustments Sync"
     },
 }

@@ -724,10 +724,37 @@ class PowellIntegrationService:
         location_id: str,
     ) -> List[PriorityAllocation]:
         """Load current allocations from database."""
-        # Query powell_allocations table
-        # For now, return empty list (allocations not yet in DB)
-        # TODO: Implement after migration is run
-        return []
+        try:
+            from app.models.powell_allocation import PowellAllocation
+
+            now = datetime.utcnow()
+            result = await self.db.execute(
+                select(PowellAllocation).where(
+                    and_(
+                        PowellAllocation.config_id == config_id,
+                        PowellAllocation.product_id == product_id,
+                        PowellAllocation.location_id == location_id,
+                        PowellAllocation.is_active == True,
+                        PowellAllocation.valid_from <= now,
+                        PowellAllocation.valid_to >= now,
+                    )
+                ).order_by(PowellAllocation.priority)
+            )
+            db_allocs = result.scalars().all()
+
+            return [
+                PriorityAllocation(
+                    product_id=a.product_id,
+                    location_id=a.location_id,
+                    priority=a.priority,
+                    allocated_qty=a.allocated_qty,
+                    consumed_qty=a.consumed_qty,
+                )
+                for a in db_allocs
+            ]
+        except Exception as e:
+            logger.warning(f"Failed to load allocations: {e}")
+            return []
 
     async def _get_inventory_position(
         self,
@@ -1053,12 +1080,31 @@ class PowellIntegrationService:
         response: ATPResponse,
     ) -> None:
         """Log ATP decision for TRM training."""
-        # TODO: Insert into powell_atp_decisions table
         logger.info(
             f"ATP Decision: config={config_id}, order={request.order_id}, "
             f"product={request.product_id}, qty={request.requested_qty}, "
             f"can_fulfill={response.can_fulfill}, confidence={response.confidence}"
         )
+        try:
+            from app.models.powell_decisions import PowellATPDecision
+
+            record = PowellATPDecision(
+                config_id=config_id,
+                order_id=request.order_id,
+                product_id=request.product_id,
+                location_id=request.location_id,
+                requested_qty=request.requested_qty,
+                order_priority=request.priority,
+                can_fulfill=response.can_fulfill,
+                promised_qty=response.promised_qty,
+                consumption_breakdown=response.consumption_breakdown if hasattr(response, 'consumption_breakdown') else None,
+                decision_method=response.source if hasattr(response, 'source') else "heuristic",
+                confidence=response.confidence,
+            )
+            self.db.add(record)
+            await self.db.flush()
+        except Exception as e:
+            logger.warning(f"Failed to log ATP decision: {e}")
 
     async def _log_po_decision(
         self,
@@ -1067,12 +1113,38 @@ class PowellIntegrationService:
         recommendation: PORecommendation,
     ) -> None:
         """Log PO decision for TRM training."""
-        # TODO: Insert into powell_po_decisions table
         logger.info(
             f"PO Decision: config={config_id}, product={recommendation.product_id}, "
             f"supplier={recommendation.supplier.supplier_id}, qty={recommendation.recommended_qty}, "
             f"confidence={recommendation.confidence}"
         )
+        try:
+            from app.models.powell_decisions import PowellPODecision
+
+            inv_pos = getattr(state, 'inventory_position', None)
+            on_hand = getattr(inv_pos, 'on_hand', 0.0) if inv_pos else 0.0
+            forecast = getattr(inv_pos, 'forecast_demand', 0.0) if inv_pos else 0.0
+            dos = on_hand / (forecast / 30.0) if forecast and forecast > 0 else 0.0
+
+            record = PowellPODecision(
+                config_id=config_id,
+                product_id=recommendation.product_id,
+                location_id=recommendation.location_id,
+                supplier_id=recommendation.supplier.supplier_id,
+                recommended_qty=recommendation.recommended_qty,
+                trigger_reason=getattr(recommendation, 'trigger_reason', 'low_inventory'),
+                urgency=getattr(recommendation, 'urgency', 'normal'),
+                confidence=recommendation.confidence,
+                inventory_position=on_hand,
+                days_of_supply=dos,
+                forecast_30_day=forecast,
+                expected_receipt_date=date.today() + timedelta(days=int(recommendation.supplier.lead_time)),
+                expected_cost=recommendation.recommended_qty * recommendation.supplier.unit_cost,
+            )
+            self.db.add(record)
+            await self.db.flush()
+        except Exception as e:
+            logger.warning(f"Failed to log PO decision: {e}")
 
     async def _log_po_execution(
         self,
@@ -1094,12 +1166,37 @@ class PowellIntegrationService:
         detection: ExceptionDetection,
     ) -> None:
         """Log exception detection for TRM training."""
-        # TODO: Insert into powell_order_exceptions table
         logger.info(
             f"Exception Detected: config={config_id}, order={order_state.order_id}, "
             f"type={detection.exception_type.value}, severity={detection.severity.value}, "
             f"action={detection.recommended_action.value}"
         )
+        try:
+            from app.models.powell_decisions import PowellOrderException
+
+            record = PowellOrderException(
+                config_id=config_id,
+                order_id=order_state.order_id,
+                order_type=order_state.order_type.value,
+                order_status=order_state.status.value,
+                exception_type=detection.exception_type.value,
+                severity=detection.severity.value,
+                recommended_action=detection.recommended_action.value,
+                description=detection.description if hasattr(detection, 'description') else str(detection.exception_type.value),
+                confidence=detection.confidence,
+                state_features={
+                    "source_site": order_state.source_site,
+                    "destination_site": order_state.destination_site,
+                    "quantity": order_state.quantity,
+                    "shipped_qty": order_state.shipped_quantity,
+                    "received_qty": order_state.received_quantity,
+                    "days_since_last_update": order_state.days_since_last_update,
+                },
+            )
+            self.db.add(record)
+            await self.db.flush()
+        except Exception as e:
+            logger.warning(f"Failed to log exception detection: {e}")
 
     async def _log_rebalance_decision(
         self,
@@ -1107,13 +1204,36 @@ class PowellIntegrationService:
         recommendation: RebalanceRecommendation,
     ) -> None:
         """Log rebalancing decision for TRM training."""
-        # TODO: Insert into powell_rebalance_decisions table
         logger.info(
             f"Rebalance Decision: config={config_id}, "
             f"from={recommendation.from_site} to={recommendation.to_site}, "
             f"product={recommendation.product_id}, qty={recommendation.recommended_qty}, "
             f"reason={recommendation.reason.value}, confidence={recommendation.confidence}"
         )
+        try:
+            from app.models.powell_decisions import PowellRebalanceDecision
+
+            impact = recommendation.expected_impact if hasattr(recommendation, 'expected_impact') else {}
+
+            record = PowellRebalanceDecision(
+                config_id=config_id,
+                product_id=recommendation.product_id,
+                from_site=recommendation.from_site,
+                to_site=recommendation.to_site,
+                recommended_qty=recommendation.recommended_qty,
+                reason=recommendation.reason.value,
+                urgency=recommendation.urgency,
+                confidence=recommendation.confidence,
+                source_dos_before=impact.get("source_dos_before") if isinstance(impact, dict) else None,
+                source_dos_after=impact.get("source_dos_after") if isinstance(impact, dict) else None,
+                dest_dos_before=impact.get("dest_dos_before") if isinstance(impact, dict) else None,
+                dest_dos_after=impact.get("dest_dos_after") if isinstance(impact, dict) else None,
+                expected_cost=impact.get("expected_cost") if isinstance(impact, dict) else None,
+            )
+            self.db.add(record)
+            await self.db.flush()
+        except Exception as e:
+            logger.warning(f"Failed to log rebalance decision: {e}")
 
     async def _save_allocation_consumption(
         self,
@@ -1122,12 +1242,49 @@ class PowellIntegrationService:
         location_id: str,
         consumption_result: Any,
     ) -> None:
-        """Save allocation consumption to database."""
-        # TODO: Update powell_allocations table
+        """Save allocation consumption to database.
+
+        Updates powell_allocations rows to reflect consumed quantities
+        from each priority tier based on the ConsumptionResult.
+        """
+        fulfilled = getattr(consumption_result, 'fulfilled_qty', None) or getattr(consumption_result, 'consumed_qty', 0)
         logger.info(
             f"Allocation consumed: config={config_id}, product={product_id}, "
-            f"location={location_id}, qty={consumption_result.consumed_qty}"
+            f"location={location_id}, qty={fulfilled}"
         )
+        try:
+            from app.models.powell_allocation import PowellAllocation
+            from sqlalchemy import and_
+
+            consumption_map = getattr(consumption_result, 'consumption_by_priority', None) or {}
+            now = datetime.utcnow()
+
+            for priority, consumed_qty in consumption_map.items():
+                if consumed_qty <= 0:
+                    continue
+                result = await self.db.execute(
+                    select(PowellAllocation).where(and_(
+                        PowellAllocation.config_id == config_id,
+                        PowellAllocation.product_id == product_id,
+                        PowellAllocation.location_id == location_id,
+                        PowellAllocation.priority == int(priority),
+                        PowellAllocation.is_active == True,
+                        PowellAllocation.valid_from <= now,
+                        PowellAllocation.valid_to >= now,
+                    ))
+                )
+                alloc = result.scalar_one_or_none()
+                if alloc is not None:
+                    alloc.consumed_qty = (alloc.consumed_qty or 0) + consumed_qty
+                else:
+                    logger.warning(
+                        f"No active allocation found for config={config_id}, "
+                        f"product={product_id}, location={location_id}, priority={priority}"
+                    )
+
+            await self.db.flush()
+        except Exception as e:
+            logger.warning(f"Failed to save allocation consumption: {e}")
 
 
 # Factory function for dependency injection

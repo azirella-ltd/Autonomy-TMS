@@ -551,6 +551,28 @@ The architecture is **context-agnostic by design** - it works seamlessly for bot
 
 ---
 
+## Powell TRM Execution Agents (11 Engine-TRM Pairs)
+
+The execution layer now supports **11 specialized AI agents**, each pairing a deterministic engine with a learned TRM:
+
+| Domain | Engine | TRM Agent |
+|--------|--------|-----------|
+| ATP Consumption | AATPEngine | ATPExecutorTRM |
+| PO Creation | MRPEngine | POCreationTRM |
+| Safety Stock | SafetyStockCalculator | SafetyStockTRM |
+| Inventory Rebalancing | RebalancingEngine | InventoryRebalancingTRM |
+| Order Tracking | OrderTrackingEngine | OrderTrackingTRM |
+| MO Execution | MOExecutionEngine | MOExecutionTRM |
+| TO Execution | TOExecutionEngine | TOExecutionTRM |
+| Quality Disposition | QualityEngine | QualityDispositionTRM |
+| Maintenance Scheduling | MaintenanceEngine | MaintenanceSchedulingTRM |
+| Subcontracting | SubcontractingEngine | SubcontractingTRM |
+| Forecast Adjustment | ForecastAdjustmentEngine | ForecastAdjustmentTRM |
+
+All agents work identically in game and production modes — only the data source differs (synthetic vs real SAP/ERP data). See [TRM_AGENTS_EXPLAINED.md](TRM_AGENTS_EXPLAINED.md) for details.
+
+---
+
 ## Next Steps for Production Deployment
 
 1. **Add context_type parameter** throughout codebase

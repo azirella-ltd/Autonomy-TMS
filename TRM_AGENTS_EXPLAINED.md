@@ -22,17 +22,22 @@ Each TRM is paired 1:1 with a **deterministic engine**. The engine provides the 
 ┌──────────────────────────▼─────────────────────────────────┐
 │  Narrow TRMs  (VFA - Value Function Approximation)         │
 │  Updates: per-decision (< 10ms)                            │
-│  5 Engine-TRM pairs:                                        │
-│    ┌───────────────────┬───────────────────────────────┐   │
-│    │ Deterministic      │ Learned TRM                   │   │
-│    │ Engine             │ (adjustments on top)           │   │
-│    ├───────────────────┼───────────────────────────────┤   │
-│    │ AATPEngine         │ ATPExecutorTRM                   │   │
-│    │ MRPEngine          │ POCreationTRM                 │   │
-│    │ SafetyStockCalc    │ SafetyStockTRM                │   │
-│    │ RebalancingEngine  │ InventoryRebalancingTRM       │   │
-│    │ OrderTrackingEngine│ OrderTrackingTRM              │   │
-│    └───────────────────┴───────────────────────────────┘   │
+│  11 Engine-TRM pairs:                                       │
+│    ┌─────────────────────────┬──────────────────────────┐   │
+│    │ Deterministic Engine     │ Learned TRM              │   │
+│    ├─────────────────────────┼──────────────────────────┤   │
+│    │ AATPEngine               │ ATPExecutorTRM           │   │
+│    │ MRPEngine                │ POCreationTRM            │   │
+│    │ SafetyStockCalculator    │ SafetyStockTRM           │   │
+│    │ RebalancingEngine        │ InventoryRebalancingTRM  │   │
+│    │ OrderTrackingEngine      │ OrderTrackingTRM         │   │
+│    │ MOExecutionEngine        │ MOExecutionTRM           │   │
+│    │ TOExecutionEngine        │ TOExecutionTRM           │   │
+│    │ QualityEngine            │ QualityDispositionTRM    │   │
+│    │ MaintenanceEngine        │ MaintenanceSchedulingTRM │   │
+│    │ SubcontractingEngine     │ SubcontractingTRM        │   │
+│    │ ForecastAdjustmentEngine │ ForecastAdjustmentTRM    │   │
+│    └─────────────────────────┴──────────────────────────┘   │
 └────────────────────────────────────────────────────────────┘
 ```
 
@@ -305,6 +310,12 @@ Each TRM type has a dedicated reward calculator in `RewardCalculator`:
 | `po_creation` | stockout_penalty, dos_target, cost_efficiency, timing_accuracy |
 | `order_tracking` | correct_exception, resolution_speed, escalation_appropriateness |
 | `safety_stock` | stockout_penalty, dos_target, excess_cost, stability_bonus |
+| `mo_execution` | on_time_completion, yield_variance, sequence_efficiency, resource_utilization |
+| `to_execution` | transit_time_accuracy, consolidation_savings, stockout_prevention |
+| `quality_disposition` | correct_disposition, rework_success_rate, complaint_avoidance |
+| `maintenance` | breakdown_prevention, cost_efficiency, production_impact_avoidance |
+| `subcontracting` | quality_pass_rate, on_time_delivery, cost_savings_vs_internal |
+| `forecast_adjustment` | forecast_error_reduction, signal_accuracy, adjustment_stability |
 
 ### Per-Site Learning-Depth Curriculum
 
@@ -331,6 +342,12 @@ Training is organized **per site x per TRM type** with a 3-phase progressive cur
 | SafetyStockTRM | Yes | Yes | No |
 | InventoryRebalancingTRM | Yes | No | No |
 | OrderTrackingTRM | Yes | Yes | No |
+| MOExecutionTRM | No | Yes | No |
+| TOExecutionTRM | Yes | Yes | No |
+| QualityDispositionTRM | Yes | Yes | No |
+| MaintenanceSchedulingTRM | Yes | Yes | No |
+| SubcontractingTRM | No | Yes | No |
+| ForecastAdjustmentTRM | Yes | Yes | No |
 
 #### Checkpoint Naming & Fallback
 
@@ -359,7 +376,13 @@ SiteAgent (per site)
   ├── POCreationTRM (engine: MRPEngine)
   ├── SafetyStockTRM (engine: SafetyStockCalculator)
   ├── InventoryRebalancingTRM (engine: RebalancingEngine)
-  └── OrderTrackingTRM (engine: OrderTrackingEngine)
+  ├── OrderTrackingTRM (engine: OrderTrackingEngine)
+  ├── MOExecutionTRM (engine: MOExecutionEngine)
+  ├── TOExecutionTRM (engine: TOExecutionEngine)
+  ├── QualityDispositionTRM (engine: QualityEngine)
+  ├── MaintenanceSchedulingTRM (engine: MaintenanceEngine)
+  ├── SubcontractingTRM (engine: SubcontractingEngine)
+  └── ForecastAdjustmentTRM (engine: ForecastAdjustmentEngine)
 ```
 
 The SiteAgent:
@@ -381,6 +404,12 @@ The SiteAgent:
 | `engines/safety_stock_calculator.py` | `SafetyStockCalculator` | 4 AWS SC policy types |
 | `engines/rebalancing_engine.py` | `RebalancingEngine` | Cross-location transfer rules |
 | `engines/order_tracking_engine.py` | `OrderTrackingEngine` | Threshold-based exception detection |
+| `engines/mo_execution_engine.py` | `MOExecutionEngine` | MO release readiness, sequencing, expedite |
+| `engines/to_execution_engine.py` | `TOExecutionEngine` | TO release, consolidation, expedite |
+| `engines/quality_engine.py` | `QualityEngine` | Quality disposition rule cascade |
+| `engines/maintenance_engine.py` | `MaintenanceEngine` | Maintenance scheduling, breakdown risk |
+| `engines/subcontracting_engine.py` | `SubcontractingEngine` | Make-vs-buy decision cascade |
+| `engines/forecast_adjustment_engine.py` | `ForecastAdjustmentEngine` | Signal processing, confidence gating |
 | `engines/__init__.py` | — | Package exports |
 
 ### Narrow TRM Services (learned adjustments)
@@ -392,6 +421,12 @@ The SiteAgent:
 | `safety_stock_trm.py` | `SafetyStockTRM` | `SafetyStockCalculator` |
 | `inventory_rebalancing_trm.py` | `InventoryRebalancingTRM` | `RebalancingEngine` |
 | `order_tracking_trm.py` | `OrderTrackingTRM` | `OrderTrackingEngine` |
+| `mo_execution_trm.py` | `MOExecutionTRM` | `MOExecutionEngine` |
+| `to_execution_trm.py` | `TOExecutionTRM` | `TOExecutionEngine` |
+| `quality_disposition_trm.py` | `QualityDispositionTRM` | `QualityEngine` |
+| `maintenance_scheduling_trm.py` | `MaintenanceSchedulingTRM` | `MaintenanceEngine` |
+| `subcontracting_trm.py` | `SubcontractingTRM` | `SubcontractingEngine` |
+| `forecast_adjustment_trm.py` | `ForecastAdjustmentTRM` | `ForecastAdjustmentEngine` |
 
 ### Training & Data
 
@@ -406,7 +441,7 @@ The SiteAgent:
 
 | File | Purpose |
 |------|---------|
-| `models/trm_training_data.py` | Decision logs, outcomes, replay buffer (all 5 types) |
+| `models/trm_training_data.py` | Decision logs, outcomes, replay buffer (all 11 types) |
 | `models/powell_training_config.py` | `TRMType` enum, `DEFAULT_TRM_REWARD_WEIGHTS` |
 | `models/powell_decisions.py` | Production decision persistence tables |
 

@@ -21,7 +21,13 @@ Narrow TRM Services (VFA) ──────────────────
     ├── ATPExecutorTRM: Allocated ATP with priority consumption (<10ms)
     ├── InventoryRebalancingTRM: Cross-location transfer decisions
     ├── POCreationTRM: Purchase order timing and quantity
-    └── OrderTrackingTRM: Exception detection and response
+    ├── OrderTrackingTRM: Exception detection and response
+    ├── MOExecutionTRM: Manufacturing order release/sequence/expedite
+    ├── TOExecutionTRM: Transfer order release/consolidation/expedite
+    ├── QualityDispositionTRM: Quality hold/release/rework/scrap
+    ├── MaintenanceSchedulingTRM: Preventive maintenance scheduling
+    ├── SubcontractingTRM: Make-vs-buy/outsource decisions
+    └── ForecastAdjustmentTRM: Signal-driven forecast adjustments
 ```
 
 **TRM Scope Constraints**: TRMs work best with:
@@ -1056,6 +1062,14 @@ The TRM decision logs and replay buffer are stored in dedicated tables for train
 -- rebalancing_decision_log: Transfer decisions with outcomes
 -- po_decision_log: PO creation decisions with inventory outcomes
 -- order_tracking_decision_log: Exception handling with RLHF feedback
+
+-- Powell decision audit tables (execution-layer persistence)
+-- powell_mo_decisions: MO release/sequence/split/expedite/defer decisions
+-- powell_to_decisions: TO release/expedite/consolidate/defer decisions
+-- powell_quality_decisions: Quality disposition (accept/reject/rework/scrap/use-as-is)
+-- powell_maintenance_decisions: Maintenance schedule/defer/expedite/outsource decisions
+-- powell_subcontracting_decisions: Make-vs-buy routing decisions
+-- powell_forecast_adjustment_decisions: Signal-driven forecast adjustment decisions
 
 -- Unified replay buffer for RL training
 -- trm_replay_buffer: (state, action, reward, next_state, done, is_expert) tuples

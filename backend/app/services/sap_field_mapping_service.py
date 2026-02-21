@@ -174,6 +174,34 @@ SAP_FIELD_PATTERNS = {
     # Company patterns
     r"^(Z_)?BUKRS$": ("company", "company_id"),
     r"^(Z_)?VKORG$": ("company", "sales_org"),
+
+    # Transfer Order patterns
+    r"^(Z_)?LGNUM$": ("transfer_order", "warehouse_number"),
+    r"^(Z_)?TESSION$": ("transfer_order", "order_id"),
+    r"^(Z_)?NLTYP$": ("transfer_order", "destination_bin_type"),
+    r"^(Z_)?VLTYP$": ("transfer_order", "source_bin_type"),
+
+    # Quality Order patterns
+    r"^(Z_)?QMNUM$": ("quality_order", "order_id"),
+    r"^(Z_)?QMART$": ("quality_order", "inspection_type"),
+    r"^(Z_)?QMGRP$": ("quality_order", "code_group"),
+    r"^(Z_)?QMCOD$": ("quality_order", "code"),
+    r"^(Z_)?PRIOK$": ("quality_order", "priority"),
+    r"^(Z_)?RKMNG$": ("quality_order", "defect_quantity"),
+    r"^(Z_)?MGEIN$": ("quality_order", "complaint_uom"),
+
+    # Maintenance Order patterns
+    r"^(Z_)?EQUNR$": ("maintenance_order", "asset_id"),
+    r"^(Z_)?ILART$": ("maintenance_order", "maintenance_type"),
+    r"^(Z_)?IWERK$": ("maintenance_order", "site_id"),
+    r"^(Z_)?WARPL$": ("maintenance_order", "maintenance_plan"),
+    r"^(Z_)?ANLNR$": ("maintenance_order", "fixed_asset_number"),
+
+    # Subcontracting patterns
+    r"^(Z_)?BSART$": ("subcontracting_order", "order_type"),
+    r"^(Z_)?REPOS$": ("subcontracting_order", "invoice_receipt"),
+    r"^(Z_)?MKAL$": ("subcontracting_order", "production_version"),
+    r"^(Z_)?LOHNV$": ("subcontracting_order", "subcontracting_flag"),
 }
 
 # AWS SC entity field definitions (expanded)
@@ -251,6 +279,70 @@ AWS_SC_FIELDS = {
         "order_quantity": {"type": "decimal", "required": True, "description": "Order quantity"},
         "start_date": {"type": "date", "required": False, "description": "Planned start"},
         "end_date": {"type": "date", "required": False, "description": "Planned finish"},
+    },
+    "transfer_order": {
+        "order_id": {"type": "string", "required": True, "description": "Transfer order number"},
+        "company_id": {"type": "string", "required": True, "description": "Company identifier"},
+        "source_site_id": {"type": "string", "required": True, "description": "Source site/warehouse"},
+        "destination_site_id": {"type": "string", "required": True, "description": "Destination site/warehouse"},
+        "product_id": {"type": "string", "required": True, "description": "Product being transferred"},
+        "quantity": {"type": "decimal", "required": True, "description": "Transfer quantity"},
+        "status": {"type": "string", "required": False, "description": "Order status"},
+        "ship_date": {"type": "date", "required": False, "description": "Shipment date"},
+        "arrival_date": {"type": "date", "required": False, "description": "Expected arrival date"},
+        "transportation_mode": {"type": "string", "required": False, "description": "Mode of transport"},
+        "warehouse_number": {"type": "string", "required": False, "description": "Warehouse complex number"},
+    },
+    "quality_order": {
+        "order_id": {"type": "string", "required": True, "description": "Quality notification/order number"},
+        "company_id": {"type": "string", "required": True, "description": "Company identifier"},
+        "site_id": {"type": "string", "required": True, "description": "Inspection site"},
+        "product_id": {"type": "string", "required": True, "description": "Product being inspected"},
+        "inspection_type": {"type": "string", "required": True, "description": "Type of inspection (incoming/in-process/final)"},
+        "lot_number": {"type": "string", "required": False, "description": "Inspection lot number"},
+        "lot_size": {"type": "decimal", "required": False, "description": "Total lot size"},
+        "sample_size": {"type": "decimal", "required": False, "description": "Sample size inspected"},
+        "defect_count": {"type": "integer", "required": False, "description": "Number of defects found"},
+        "defect_quantity": {"type": "decimal", "required": False, "description": "Defective quantity"},
+        "disposition": {"type": "string", "required": False, "description": "Disposition decision"},
+        "status": {"type": "string", "required": False, "description": "Order status"},
+        "priority": {"type": "string", "required": False, "description": "Priority level"},
+        "inspection_date": {"type": "date", "required": False, "description": "Inspection date"},
+        "code_group": {"type": "string", "required": False, "description": "Catalog code group"},
+        "code": {"type": "string", "required": False, "description": "Catalog code"},
+    },
+    "maintenance_order": {
+        "order_id": {"type": "string", "required": True, "description": "Maintenance order number"},
+        "company_id": {"type": "string", "required": True, "description": "Company identifier"},
+        "site_id": {"type": "string", "required": True, "description": "Maintenance plant"},
+        "asset_id": {"type": "string", "required": True, "description": "Equipment/functional location"},
+        "maintenance_type": {"type": "string", "required": True, "description": "Activity type (preventive/corrective/predictive)"},
+        "priority": {"type": "string", "required": False, "description": "Priority level"},
+        "status": {"type": "string", "required": False, "description": "Order status"},
+        "planned_start": {"type": "date", "required": False, "description": "Planned start date"},
+        "planned_end": {"type": "date", "required": False, "description": "Planned end date"},
+        "actual_start": {"type": "date", "required": False, "description": "Actual start date"},
+        "actual_end": {"type": "date", "required": False, "description": "Actual end date"},
+        "estimated_duration_hours": {"type": "decimal", "required": False, "description": "Estimated duration"},
+        "cost": {"type": "decimal", "required": False, "description": "Total cost"},
+        "maintenance_plan": {"type": "string", "required": False, "description": "Linked maintenance plan ID"},
+        "fixed_asset_number": {"type": "string", "required": False, "description": "Fixed asset reference"},
+    },
+    "subcontracting_order": {
+        "order_id": {"type": "string", "required": True, "description": "Subcontracting order number"},
+        "company_id": {"type": "string", "required": True, "description": "Company identifier"},
+        "site_id": {"type": "string", "required": True, "description": "Ordering plant"},
+        "subcontractor_id": {"type": "string", "required": True, "description": "Subcontractor vendor ID"},
+        "product_id": {"type": "string", "required": True, "description": "Finished product"},
+        "quantity": {"type": "decimal", "required": True, "description": "Order quantity"},
+        "status": {"type": "string", "required": False, "description": "Order status"},
+        "order_date": {"type": "date", "required": False, "description": "Order creation date"},
+        "due_date": {"type": "date", "required": False, "description": "Due date for goods receipt"},
+        "material_sent_date": {"type": "date", "required": False, "description": "Date components sent to subcontractor"},
+        "goods_received_date": {"type": "date", "required": False, "description": "Date finished goods received back"},
+        "unit_cost": {"type": "decimal", "required": False, "description": "Unit cost from subcontractor"},
+        "order_type": {"type": "string", "required": False, "description": "PO category (L=subcontracting)"},
+        "production_version": {"type": "string", "required": False, "description": "Production version reference"},
     },
 }
 
@@ -607,6 +699,10 @@ class SAPFieldMappingService:
             "outbound_order": ["sales", "so", "order", "shipment", "outbound"],
             "forecast": ["forecast", "demand", "prediction", "plan"],
             "production_order": ["production", "manufacturing", "work order"],
+            "transfer_order": ["transfer", "sto", "warehouse movement", "stock transport"],
+            "quality_order": ["quality", "inspection", "qm", "defect", "notification"],
+            "maintenance_order": ["maintenance", "pm", "equipment", "preventive", "corrective", "breakdown"],
+            "subcontracting_order": ["subcontracting", "toll", "external manufacturing", "outsource"],
         }
 
         desc_lower = table_description.lower()

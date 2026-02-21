@@ -115,6 +115,12 @@ from .maintenance_order import MaintenanceOrder, MaintenanceOrderSpare
 # 4j. Turnaround Order models (Sprint 6 - Phase 3)
 from .turnaround_order import TurnaroundOrder, TurnaroundOrderLineItem
 
+# 4k. Quality Order models (Sprint 7 - Powell TRM Framework)
+from .quality_order import QualityOrder, QualityOrderLineItem
+
+# 4l. Subcontracting Order models (Sprint 7 - Powell TRM Framework)
+from .subcontracting_order import SubcontractingOrder, SubcontractingOrderLineItem
+
 # 4e. SC Entities (Phase 2) - SC Canonical Models
 # Import Product and other SC entities
 from .sc_entities import TradingPartner, Product, ProductBom
@@ -244,6 +250,9 @@ from .powell_allocation import PowellAllocation
 from .powell_decisions import (
     PowellATPDecision, PowellRebalanceDecision,
     PowellPODecision, PowellOrderException,
+    PowellMODecision, PowellTODecision,
+    PowellQualityDecision, PowellMaintenanceDecision,
+    PowellSubcontractingDecision, PowellForecastAdjustmentDecision,
 )
 
 # 21b. Powell Training Configuration and TRM Training Data
@@ -490,6 +499,19 @@ __all__ = [
     'ConformalMethod',
     'EntityType',
     'PolicyType',
+    # Quality Order models
+    'QualityOrder',
+    'QualityOrderLineItem',
+    # Subcontracting Order models
+    'SubcontractingOrder',
+    'SubcontractingOrderLineItem',
+    # Powell Execution Decision Records (new TRMs)
+    'PowellMODecision',
+    'PowellTODecision',
+    'PowellQualityDecision',
+    'PowellMaintenanceDecision',
+    'PowellSubcontractingDecision',
+    'PowellForecastAdjustmentDecision',
     # Condition Monitoring & Scenario Evaluation
     'ConditionAlert',
     'ScenarioEvaluation',

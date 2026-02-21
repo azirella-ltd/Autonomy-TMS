@@ -1,6 +1,6 @@
 # Execution Capabilities
 
-**Last Updated**: 2026-01-22
+**Last Updated**: 2026-02-21
 
 ---
 
@@ -895,9 +895,68 @@ POST /api/v1/transfer-orders/{id}/ship
 
 ---
 
+## AI-Powered Execution (Powell TRM Agents)
+
+The execution layer is augmented by **11 Engine-TRM pairs** that combine deterministic baselines with learned adjustments. Each TRM makes decisions in <10ms and logs all decisions for audit and continuous learning.
+
+### Manufacturing Order Execution
+
+**Engine**: `MOExecutionEngine` — Material availability checks (≥95%), capacity validation (≥80%), predecessor sequencing, expedite evaluation
+**TRM**: `MOExecutionTRM` — Learned adjustments for customer priority, yield-based quantity buffers
+**Decisions**: Release, sequence, split, expedite, defer
+**Audit Table**: `powell_mo_decisions`
+
+### Transfer Order Execution
+
+**Engine**: `TOExecutionEngine` — Source inventory validation, timing checks, lane consolidation (groups by route, estimates savings), expedite for destination stockout risk
+**TRM**: `TOExecutionTRM` — Transit variability buffers, backlog-driven release acceleration
+**Decisions**: Release, consolidate, expedite, defer
+**Audit Table**: `powell_to_decisions`
+
+### Quality Disposition
+
+**Engine**: `QualityEngine` — Rule cascade: critical defect → auto reject; low defect → auto accept; high defect → reject/rework/scrap; moderate → use-as-is or conditional accept. Includes service risk assessment based on DOS and safety stock.
+**TRM**: `QualityDispositionTRM` — Vendor reject rate learning, use-as-is complaint avoidance, rework success gating
+**Decisions**: Accept, reject, rework, scrap, use-as-is, return-to-vendor, conditional-accept
+**Audit Table**: `powell_quality_decisions`
+
+### Maintenance Scheduling
+
+**Engine**: `MaintenanceEngine` — Breakdown probability estimation from overdue days, usage ratio, failure history, asset age. Emergency/corrective → expedite; high risk → expedite; deferrable → defer to production gap; outsource if cost-favorable.
+**TRM**: `MaintenanceSchedulingTRM` — Historical deferral outcome learning, cost overrun prediction
+**Decisions**: Schedule, defer, expedite, outsource
+**Audit Table**: `powell_maintenance_decisions`
+
+### Subcontracting
+
+**Engine**: `SubcontractingEngine` — Decision cascade: no vendor → internal; high IP → internal; low quality → internal; capacity-driven → split; cost-driven → external; lead-time-driven → external.
+**TRM**: `SubcontractingTRM` — Vendor quality/reliability tracking, critical product quality gating
+**Decisions**: Keep internal, route external, split
+**Audit Table**: `powell_subcontracting_decisions`
+
+### Forecast Adjustment
+
+**Engine**: `ForecastAdjustmentEngine` — Multi-source signal processing (email, voice, market intelligence, news, customer feedback, weather, etc.) with source reliability scoring, time decay, confidence gating, and auto-apply vs human-review thresholds.
+**TRM**: `ForecastAdjustmentTRM` — Learned source reliability, poor-source dampening, volatility gating, trend alignment
+**Decisions**: Adjust up, adjust down, no change (with magnitude and confidence)
+**Audit Table**: `powell_forecast_adjustment_decisions`
+
+### DB Models for Execution Extensions
+
+| Model | Table | Purpose |
+|-------|-------|---------|
+| `QualityOrder` | `quality_order` | Quality inspection and disposition tracking |
+| `QualityOrderLineItem` | `quality_order_line_item` | Per-characteristic inspection results |
+| `SubcontractingOrder` | `subcontracting_order` | External manufacturing lifecycle |
+| `SubcontractingOrderLineItem` | `subcontracting_order_line_item` | Component materials sent to subcontractor |
+
+---
+
 ## Further Reading
 
 - [PLANNING_CAPABILITIES.md](PLANNING_CAPABILITIES.md) - Demand, supply, MPS, MRP, inventory optimization
 - [STOCHASTIC_PLANNING.md](STOCHASTIC_PLANNING.md) - Probabilistic planning framework
 - [BEER_GAME_GUIDE.md](BEER_GAME_GUIDE.md) - How Beer Game uses execution services
 - [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md) - API usage, data import/export
+- [TRM_AGENTS_EXPLAINED.md](TRM_AGENTS_EXPLAINED.md) - Detailed TRM architecture and training
+- [POWELL_APPROACH.md](POWELL_APPROACH.md) - Full Powell SDAM framework documentation

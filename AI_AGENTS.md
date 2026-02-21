@@ -1,6 +1,6 @@
 # AI Agents
 
-**Last Updated**: 2026-02-19
+**Last Updated**: 2026-02-21
 
 ---
 
@@ -185,6 +185,28 @@ python scripts/training/train_trm.py \
 - ✅ Handles complex state spaces
 - ❌ Black box (low explainability)
 - ❌ Requires extensive training data
+
+### Narrow TRM Execution Agents (Powell Framework)
+
+The TRM architecture is deployed as **11 specialized execution agents**, each paired 1:1 with a deterministic engine. The engine provides the auditable baseline; the TRM learns context-dependent adjustments.
+
+| TRM Agent | Engine | Decision Scope | Key Decisions |
+|-----------|--------|---------------|---------------|
+| `ATPExecutorTRM` | `AATPEngine` | Per order, <10ms | AATP consumption with priority sequence |
+| `POCreationTRM` | `MRPEngine` | Per product-location | PO timing and quantity |
+| `SafetyStockTRM` | `SafetyStockCalculator` | Per product-site | Safety stock level adjustments |
+| `InventoryRebalancingTRM` | `RebalancingEngine` | Cross-location, daily | Transfer recommendations |
+| `OrderTrackingTRM` | `OrderTrackingEngine` | Per order, continuous | Exception detection and actions |
+| `MOExecutionTRM` | `MOExecutionEngine` | Per production order | Release, sequence, split, expedite, defer |
+| `TOExecutionTRM` | `TOExecutionEngine` | Per transfer order | Release, consolidate, expedite, defer |
+| `QualityDispositionTRM` | `QualityEngine` | Per quality order | Accept, reject, rework, scrap, use-as-is |
+| `MaintenanceSchedulingTRM` | `MaintenanceEngine` | Per asset/work order | Schedule, defer, expedite, outsource |
+| `SubcontractingTRM` | `SubcontractingEngine` | Per make-vs-buy decision | Internal, external, split routing |
+| `ForecastAdjustmentTRM` | `ForecastAdjustmentEngine` | Per signal | Adjust forecast direction and magnitude |
+
+**Files**: All under `backend/app/services/powell/` — engines in `engines/` subdirectory, TRM agents at service level.
+
+See [TRM_AGENTS_EXPLAINED.md](TRM_AGENTS_EXPLAINED.md) for full architecture, training pipeline, and CDC relearning loop.
 
 ---
 
@@ -1459,7 +1481,7 @@ python backend/scripts/training/train_rl.py --evaluate --checkpoint best/best_mo
 
 ## External Agent Runtimes (PicoClaw & OpenClaw)
 
-**Last Updated**: 2026-02-19
+**Last Updated**: 2026-02-21
 
 In addition to the built-in agent types above, Autonomy supports **external agent runtimes** that wrap the platform's REST APIs as thin orchestration layers. These do not replace the core computation (TRM, GNN, MRP engines) — they provide alternative interfaces for edge monitoring, chat-based planning, and inter-agent communication.
 

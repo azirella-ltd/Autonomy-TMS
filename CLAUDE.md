@@ -98,7 +98,9 @@ S&OP GraphSAGE (CFA - Cost Function Approximation)
 Execution tGNN (CFA/VFA - Generates allocations)
     ↓ priority allocations + context (daily)
 Narrow TRMs (VFA - Value Function Approximation)
-    └── ATPExecutorTRM, RebalancingTRM, POCreationTRM, OrderTrackingTRM
+    └── 11 Engine-TRM pairs: ATP, Rebalancing, PO, OrderTracking,
+        MO Execution, TO Execution, Quality, Maintenance,
+        Subcontracting, Forecast Adjustment, Safety Stock
 ```
 
 **Agent Types**:
@@ -112,12 +114,18 @@ Narrow TRMs (VFA - Value Function Approximation)
      - **InventoryRebalancingTRM**: Cross-location transfer decisions
      - **POCreationTRM**: Purchase order timing and quantity
      - **OrderTrackingTRM**: Exception detection and recommended actions
+     - **MOExecutionTRM**: Manufacturing order release, sequencing, expedite
+     - **TOExecutionTRM**: Transfer order release, consolidation, expedite
+     - **QualityDispositionTRM**: Quality hold/release/rework/scrap decisions
+     - **MaintenanceSchedulingTRM**: Preventive maintenance scheduling and deferral
+     - **SubcontractingTRM**: Make-vs-buy and external manufacturing routing
+     - **ForecastAdjustmentTRM**: Signal-driven forecast adjustments (email, voice, market intel)
    - TRM does NOT do: long-term planning, network-wide optimization, policy parameters
    - **Training**: TRM = model architecture, RL = training method (not alternatives!)
      - Behavioral cloning for warm-start (supervised from experts)
      - RL/VFA fine-tuning (TD learning with actual outcomes)
      - Narrow scope makes RL tractable (small state, fast feedback, clear reward)
-   - Files: `backend/app/services/powell/atp_executor.py`, `inventory_rebalancing_trm.py`, `po_creation_trm.py`, `order_tracking_trm.py`, `trm_trainer.py`
+   - Files: `backend/app/services/powell/atp_executor.py`, `inventory_rebalancing_trm.py`, `po_creation_trm.py`, `order_tracking_trm.py`, `mo_execution_trm.py`, `to_execution_trm.py`, `quality_disposition_trm.py`, `maintenance_scheduling_trm.py`, `subcontracting_trm.py`, `forecast_adjustment_trm.py`, `trm_trainer.py`
    - **CDC → Relearning Loop**: Autonomous feedback pipeline for continuous TRM improvement
      - `cdc_monitor.py`: Event-driven metric deviation detection (6 thresholds, rate limiting)
      - `outcome_collector.py`: Computes actual outcomes for decisions after feedback horizon delays
@@ -496,6 +504,12 @@ The Powell SDAM framework constrains TRMs to narrow execution decisions:
 | `InventoryRebalancingTRM` | Cross-location, daily | Transfer recommendations |
 | `POCreationTRM` | Per product-location | PO timing and quantity |
 | `OrderTrackingTRM` | Per order, continuous | Exception detection and actions |
+| `MOExecutionTRM` | Per production order | Release, sequence, split, expedite, defer |
+| `TOExecutionTRM` | Per transfer order | Release, consolidate, expedite, defer |
+| `QualityDispositionTRM` | Per quality order | Accept, reject, rework, scrap, use-as-is |
+| `MaintenanceSchedulingTRM` | Per asset/work order | Schedule, defer, expedite, outsource |
+| `SubcontractingTRM` | Per make-vs-buy decision | Internal, external, split routing |
+| `ForecastAdjustmentTRM` | Per signal (email/voice/market) | Adjust forecast direction and magnitude |
 
 **AATP Consumption Logic** (critical):
 ```python
@@ -506,7 +520,7 @@ The Powell SDAM framework constrains TRMs to narrow execution decisions:
 # Example: P=2 order → [2, 5, 4, 3] (skips 1)
 ```
 
-Database tables: `powell_allocations`, `powell_atp_decisions`, `powell_rebalance_decisions`, `powell_po_decisions`, `powell_order_exceptions`
+Database tables: `powell_allocations`, `powell_atp_decisions`, `powell_rebalance_decisions`, `powell_po_decisions`, `powell_order_exceptions`, `powell_mo_decisions`, `powell_to_decisions`, `powell_quality_decisions`, `powell_maintenance_decisions`, `powell_subcontracting_decisions`, `powell_forecast_adjustment_decisions`
 
 **CDC → Relearning Feedback Loop** (see [POWELL_APPROACH.md](POWELL_APPROACH.md) Section 5.9.9):
 
@@ -625,6 +639,12 @@ See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
 - `powell_rebalance_decisions`: Rebalancing decision history
 - `powell_po_decisions`: PO creation decision history
 - `powell_order_exceptions`: Order tracking exception history
+- `powell_mo_decisions`: Manufacturing order execution decisions
+- `powell_to_decisions`: Transfer order execution decisions
+- `powell_quality_decisions`: Quality disposition decisions
+- `powell_maintenance_decisions`: Maintenance scheduling decisions
+- `powell_subcontracting_decisions`: Subcontracting routing decisions
+- `powell_forecast_adjustment_decisions`: Forecast adjustment decisions
 
 ---
 
