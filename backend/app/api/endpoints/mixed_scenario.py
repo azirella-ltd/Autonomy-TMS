@@ -871,13 +871,21 @@ def get_pipeline(
             .all()
         )
 
+        # Build site_id -> name lookup for resolving node names
+        site_name_cache = {}
+        for to, _ in in_transit:
+            for sid in (to.source_site_id, to.destination_site_id):
+                if sid and sid not in site_name_cache:
+                    node = scenario_service.db.query(Node).filter(Node.id == sid).first() if isinstance(sid, int) else None
+                    site_name_cache[sid] = node.name if node else str(sid)
+
         pipeline_list = [
             {
                 "transfer_order_id": to.id,
                 "to_number": to.to_number,
                 "quantity": int(total_qty) if total_qty else 0,
-                "origin": to.source_site_id,  # TODO: Resolve to node name
-                "destination": to.destination_site_id,  # TODO: Resolve to node name
+                "origin": site_name_cache.get(to.source_site_id, str(to.source_site_id)),
+                "destination": site_name_cache.get(to.destination_site_id, str(to.destination_site_id)),
                 "order_round": to.order_round,
                 "arrival_round": to.arrival_round,
                 "rounds_until_arrival": max(0, to.arrival_round - current_round),

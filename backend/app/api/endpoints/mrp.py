@@ -1089,7 +1089,37 @@ async def get_mrp_run(
     response["summary"] = summary
     response["requirements"] = requirements_list
     response["exceptions"] = exceptions_list
-    response["generated_orders"] = []  # TODO: Query from supply_plan table
+    # Query generated orders from supply_plan table linked to this MRP run
+    from app.models.sc_entities import SupplyPlan
+    from sqlalchemy import and_
+    generated_orders_query = db.query(SupplyPlan).filter(
+        and_(
+            SupplyPlan.source == "MRP",
+            SupplyPlan.source_event_id == mrp_run.run_id,
+        )
+    ).all()
+
+    orders_list = []
+    for sp in generated_orders_query:
+        product = db.get(Product, sp.product_id)
+        site = db.get(Node, sp.site_id)
+        from_site = db.get(Node, sp.from_site_id) if sp.from_site_id else None
+        orders_list.append({
+            "id": sp.id,
+            "plan_type": sp.plan_type,
+            "product_id": sp.product_id,
+            "product_name": product.name if product else f"Item {sp.product_id}",
+            "site_id": sp.site_id,
+            "site_name": site.name if site else f"Site {sp.site_id}",
+            "from_site_id": sp.from_site_id,
+            "from_site_name": from_site.name if from_site else None,
+            "planned_order_quantity": sp.planned_order_quantity,
+            "planned_order_date": sp.planned_order_date.isoformat() if sp.planned_order_date else None,
+            "planned_receipt_date": sp.planned_receipt_date.isoformat() if sp.planned_receipt_date else None,
+            "order_cost": sp.order_cost,
+            "supplier_id": sp.supplier_id,
+        })
+    response["generated_orders"] = orders_list
 
     return response
 

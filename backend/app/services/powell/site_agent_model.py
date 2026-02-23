@@ -44,6 +44,17 @@ class SiteAgentModelConfig:
     urgency_vector_dim: int = 11  # 11-slot UrgencyVector (one per TRM type)
     signal_summary_dim: int = 22  # 22 signal type counts (one per HiveSignalType)
 
+    # HetGAT (cross-TRM graph attention) — disabled by default for backward compat
+    het_gat_enabled: bool = False
+    het_gat_hidden_dim: int = 64  # Cross-context output dim per TRM node
+    het_gat_heads: int = 2        # GAT attention heads
+
+    # Recursive heads — disabled by default for backward compat
+    recursive_heads_enabled: bool = False
+    num_refinement_steps: int = 3
+    adaptive_halt: bool = False
+    halt_threshold: float = 0.95
+
     # Regularization
     dropout: float = 0.1
 
@@ -331,6 +342,11 @@ class POTimingHead(nn.Module):
 class SiteAgentModel(nn.Module):
     """
     Complete SiteAgent model with shared encoder and task heads.
+
+    When ``config.het_gat_enabled`` is True, a HiveHetGAT layer sits between
+    the shared encoder and the task heads, providing learned cross-TRM context
+    for each of the 11 TRM nodes.  Head input becomes
+    ``[state_embedding ‖ cross_context]`` (embedding_dim + het_gat_hidden_dim).
     """
 
     def __init__(self, config: SiteAgentModelConfig):
@@ -340,10 +356,49 @@ class SiteAgentModel(nn.Module):
         # Shared encoder
         self.encoder = SharedStateEncoder(config)
 
-        # Task-specific heads
+        # Optional HetGAT layer (cross-TRM graph attention)
+        self.het_gat = None
+        if config.het_gat_enabled:
+            from app.models.hive.het_gat_layer import HiveHetGAT, HiveHetGATConfig
+            gat_config = HiveHetGATConfig(
+                embedding_dim=config.embedding_dim,
+                hidden_dim=config.het_gat_hidden_dim,
+                num_heads=config.het_gat_heads,
+                urgency_dim=config.urgency_vector_dim,
+                signal_summary_dim=config.signal_summary_dim,
+                dropout=config.dropout,
+            )
+            self.het_gat = HiveHetGAT(gat_config)
+
+        # Task-specific heads (legacy, used when recursive_heads_enabled=False)
         self.atp_exception_head = ATPExceptionHead(config)
         self.inventory_planning_head = InventoryPlanningHead(config)
         self.po_timing_head = POTimingHead(config)
+
+        # Optional recursive heads (used when recursive_heads_enabled=True)
+        self.recursive_heads = None
+        if config.recursive_heads_enabled:
+            from app.models.hive.recursive_head import (
+                RecursiveHeadConfig,
+                RECURSIVE_HEAD_REGISTRY,
+            )
+            # Head input dim: state_embedding + optional cross_context
+            head_input_dim = config.embedding_dim
+            if config.het_gat_enabled:
+                head_input_dim += config.het_gat_hidden_dim
+
+            rh_config = RecursiveHeadConfig(
+                input_dim=head_input_dim,
+                hidden_dim=config.head_hidden_dim,
+                num_refinement_steps=config.num_refinement_steps,
+                adaptive_halt=config.adaptive_halt,
+                halt_threshold=config.halt_threshold,
+                dropout=config.dropout,
+            )
+            self.recursive_heads = nn.ModuleDict({
+                name: cls(rh_config)
+                for name, cls in RECURSIVE_HEAD_REGISTRY.items()
+            })
 
     def encode_state(
         self,
@@ -386,6 +441,33 @@ class SiteAgentModel(nn.Module):
         """PO timing decisions"""
         return self.po_timing_head(state_embedding, po_context)
 
+    def compute_cross_context(
+        self,
+        state_embedding: torch.Tensor,
+        urgency_vector: Optional[torch.Tensor] = None,
+        signal_summary: Optional[torch.Tensor] = None,
+    ) -> Optional[torch.Tensor]:
+        """Run HetGAT to produce per-node cross-TRM context.
+
+        Returns:
+            cross_context [B, 11, het_gat_hidden_dim] or None if HetGAT disabled.
+        """
+        if self.het_gat is None:
+            return None
+        return self.het_gat(state_embedding, urgency_vector, signal_summary)
+
+    def _get_head_input(
+        self,
+        state_embedding: torch.Tensor,
+        cross_context: Optional[torch.Tensor],
+        node_index: int,
+    ) -> torch.Tensor:
+        """Build head input: state_embedding optionally concatenated with cross_context."""
+        if cross_context is not None:
+            ctx = cross_context[:, node_index, :]  # [B, het_gat_hidden_dim]
+            return torch.cat([state_embedding, ctx], dim=-1)
+        return state_embedding
+
     def forward(
         self,
         inventory: torch.Tensor,
@@ -399,14 +481,16 @@ class SiteAgentModel(nn.Module):
         po_context: Optional[torch.Tensor] = None,
         urgency_vector: Optional[torch.Tensor] = None,
         signal_summary: Optional[torch.Tensor] = None,
+        **kwargs,
     ) -> Dict[str, Any]:
         """
         Full forward pass for specified task(s).
 
         Args:
-            task: "atp", "inventory", "po_timing", or "all"
+            task: "atp", "inventory", "po_timing", or any TRM type name (e.g. "atp_executor")
             urgency_vector: Optional 11-dim hive urgency state
             signal_summary: Optional 22-dim signal type counts
+            R: Optional refinement step override for CGAR curriculum (recursive heads only)
         """
         # Encode state
         state_embedding = self.encode_state(
@@ -415,8 +499,23 @@ class SiteAgentModel(nn.Module):
             signal_summary=signal_summary,
         )
 
-        results = {'state_embedding': state_embedding}
+        # Optional HetGAT cross-TRM context
+        cross_context = self.compute_cross_context(
+            state_embedding, urgency_vector, signal_summary,
+        )
 
+        results = {'state_embedding': state_embedding}
+        if cross_context is not None:
+            results['cross_context'] = cross_context
+
+        # Dispatch to recursive heads when enabled
+        if self.recursive_heads is not None:
+            R = kwargs.get('R', None)  # CGAR curriculum override
+            return self._forward_recursive(
+                task, state_embedding, cross_context, results, R=R,
+            )
+
+        # Legacy head dispatch
         if task in ("atp", "all") and order_context is not None:
             results['atp'] = self.forward_atp_exception(
                 state_embedding, order_context, shortage_qty or torch.zeros_like(order_context[:, :1])
@@ -430,18 +529,87 @@ class SiteAgentModel(nn.Module):
 
         return results
 
+    # Mapping from legacy task names to recursive head registry keys + node indices
+    _TASK_TO_RECURSIVE_HEAD = {
+        "atp": "atp_executor",
+        "inventory": "safety_stock",
+        "po_timing": "po_creation",
+    }
+
+    # Full TRM type name → node index (matches het_gat_layer.TRM_NODE_INDEX)
+    _TRM_NODE_INDEX = {
+        "atp_executor": 0, "order_tracking": 1, "po_creation": 2,
+        "rebalancing": 3, "subcontracting": 4, "safety_stock": 5,
+        "forecast_adj": 6, "quality": 7, "maintenance": 8,
+        "mo_execution": 9, "to_execution": 10,
+        # Aliases used in RECURSIVE_HEAD_REGISTRY
+        "quality_disposition": 7, "maintenance_scheduling": 8,
+        "forecast_adjustment": 6,
+    }
+
+    def _forward_recursive(
+        self,
+        task: str,
+        state_embedding: torch.Tensor,
+        cross_context: Optional[torch.Tensor],
+        results: Dict[str, Any],
+        R: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Dispatch forward pass through recursive heads.
+
+        Handles both legacy task names (atp, inventory, po_timing) and
+        direct TRM type names (atp_executor, safety_stock, etc.).
+        """
+        # Resolve which heads to run
+        heads_to_run = []
+        if task == "all":
+            heads_to_run = list(self.recursive_heads.keys())
+        elif task in self._TASK_TO_RECURSIVE_HEAD:
+            heads_to_run = [self._TASK_TO_RECURSIVE_HEAD[task]]
+        elif task in self.recursive_heads:
+            heads_to_run = [task]
+        else:
+            logger.warning(f"Unknown task '{task}' for recursive heads")
+            return results
+
+        for head_name in heads_to_run:
+            head = self.recursive_heads[head_name]
+            node_idx = self._TRM_NODE_INDEX.get(head_name, 0)
+            head_input = self._get_head_input(state_embedding, cross_context, node_idx)
+            out = head(head_input, R=R)
+
+            # Store under legacy task name if applicable
+            result_key = head_name
+            for legacy_name, reg_name in self._TASK_TO_RECURSIVE_HEAD.items():
+                if reg_name == head_name:
+                    result_key = legacy_name
+                    break
+            results[result_key] = out
+
+        return results
+
     def get_parameter_count(self) -> Dict[str, int]:
         """Get parameter counts for each component"""
         def count_params(module):
             return sum(p.numel() for p in module.parameters())
 
-        return {
+        counts = {
             'encoder': count_params(self.encoder),
             'atp_exception_head': count_params(self.atp_exception_head),
             'inventory_planning_head': count_params(self.inventory_planning_head),
             'po_timing_head': count_params(self.po_timing_head),
-            'total': count_params(self)
         }
+        if self.het_gat is not None:
+            counts['het_gat'] = count_params(self.het_gat)
+        if self.recursive_heads is not None:
+            rh_total = 0
+            for name, head in self.recursive_heads.items():
+                n = count_params(head)
+                counts[f'recursive_{name}'] = n
+                rh_total += n
+            counts['recursive_heads_total'] = rh_total
+        counts['total'] = count_params(self)
+        return counts
 
     def freeze_encoder(self):
         """Freeze encoder weights (for fine-tuning heads only)"""
@@ -462,6 +630,8 @@ class SiteAgentModel(nn.Module):
 
     def get_head_names(self) -> List[str]:
         """Get list of head names"""
+        if self.recursive_heads is not None:
+            return list(self.recursive_heads.keys())
         return ['atp_exception', 'inventory_planning', 'po_timing']
 
     # Feature names for attribution mapping

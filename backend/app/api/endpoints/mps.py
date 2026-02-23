@@ -17,7 +17,7 @@ from app.services.capability_service import user_has_capability
 from app.models.mps import MPSPlan, MPSPlanItem, MPSCapacityCheck, MPSStatus, MPSKeyMaterialRequirement
 from app.models.supply_chain_config import SupplyChainConfig, Node
 from app.models.production_order import ProductionOrder
-from app.models.sc_entities import Product
+from app.models.sc_entities import Product, SourcingRules
 from app.models.supplier import VendorLeadTime
 from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 from pydantic import BaseModel, Field
@@ -339,10 +339,16 @@ def explode_key_materials_for_mps(
                 procurement_lt_days = vendor_lead_time.lead_time_days
                 is_long_lead_time = (procurement_lt_days or 0) > 28  # >4 weeks
 
-            # For bottleneck and strategic flags, use BOM metadata if available
-            # (These could be enhanced by querying capacity_resources or supplier tables)
-            is_bottleneck = False  # TODO: Query capacity constraints
-            is_strategic = False   # TODO: Query supplier diversity metrics
+            # Bottleneck: component has single-source or constrained capacity
+            is_bottleneck = False
+            component_sources = db.query(SourcingRules).filter(
+                SourcingRules.product_id == component_id,
+            ).count()
+            if component_sources <= 1:
+                is_bottleneck = True  # Single-sourced = bottleneck risk
+
+            # Strategic: long lead time OR single-sourced high-value component
+            is_strategic = is_long_lead_time or (is_bottleneck and total_gross_req > 0)
 
             # Create key material requirement record
             key_mat_req = MPSKeyMaterialRequirement(

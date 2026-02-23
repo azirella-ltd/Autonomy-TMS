@@ -33,6 +33,7 @@ logs/
 .env.prod
 .env.*
 .env.example
+.venv-openai/ 
 
 # Bundles/archives
 *.zip

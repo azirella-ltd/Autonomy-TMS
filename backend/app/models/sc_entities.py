@@ -760,3 +760,524 @@ class Shipment(Base):
         Index('idx_shipment_risk', 'risk_level', 'status'),
         Index('idx_shipment_tracking', 'tracking_number', 'carrier_id'),
     )
+
+
+# ============================================================================
+# Inbound Order Entities
+# ============================================================================
+
+class InboundOrder(Base):
+    """
+    Purchase orders and transfer receipts
+    SC Entity: inbound_order
+    Tracks orders placed on suppliers and inter-site transfers.
+    """
+    __tablename__ = "inbound_order"
+
+    id = Column(String(100), primary_key=True)
+    company_id = Column(String(100), ForeignKey("company.id"))
+    order_type = Column(String(50), nullable=False)  # PURCHASE, TRANSFER, RETURN
+    supplier_id = Column(String(100))  # FK to trading_partner
+    supplier_name = Column(String(200))
+
+    # Sites
+    ship_from_site_id = Column(Integer, ForeignKey("site.id"))
+    ship_to_site_id = Column(Integer, ForeignKey("site.id"), nullable=False)
+
+    # Status
+    status = Column(String(30), nullable=False, server_default=text("'DRAFT'"))
+    # DRAFT, CONFIRMED, PARTIALLY_RECEIVED, RECEIVED, CANCELLED
+
+    # Dates
+    order_date = Column(Date, nullable=False)
+    requested_delivery_date = Column(Date)
+    promised_delivery_date = Column(Date)
+    actual_delivery_date = Column(Date)
+
+    # Totals
+    total_ordered_qty = Column(Double, server_default=text("0.0"))
+    total_received_qty = Column(Double, server_default=text("0.0"))
+    total_value = Column(Double)
+    currency = Column(String(10), server_default=text("'USD'"))
+
+    # References
+    reference_number = Column(String(100))  # Vendor PO number
+    contract_id = Column(String(100))
+
+    # Metadata
+    source = Column(String(100))
+    source_event_id = Column(String(100))
+    source_update_dttm = Column(DateTime)
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, onupdate=datetime.utcnow)
+
+    # Relationships
+    ship_from_site = relationship("Site", foreign_keys=[ship_from_site_id])
+    ship_to_site = relationship("Site", foreign_keys=[ship_to_site_id])
+    lines = relationship("InboundOrderLine", back_populates="order", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index('idx_inbound_order_status', 'status', 'order_type'),
+        Index('idx_inbound_order_supplier', 'supplier_id'),
+        Index('idx_inbound_order_site', 'ship_to_site_id', 'requested_delivery_date'),
+    )
+
+
+class InboundOrderLine(Base):
+    """
+    Line items on inbound orders
+    SC Entity: inbound_order_line
+    """
+    __tablename__ = "inbound_order_line"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_id = Column(String(100), ForeignKey("inbound_order.id", ondelete="CASCADE"), nullable=False)
+    line_number = Column(Integer, nullable=False)
+
+    product_id = Column(String(100), ForeignKey("product.id"), nullable=False)
+    site_id = Column(Integer, ForeignKey("site.id"), nullable=False)
+
+    ordered_quantity = Column(Double, nullable=False)
+    received_quantity = Column(Double, server_default=text("0.0"))
+    open_quantity = Column(Double)  # ordered - received
+    unit_price = Column(Double)
+    uom = Column(String(20))
+
+    # Dates
+    requested_delivery_date = Column(Date)
+    promised_delivery_date = Column(Date)
+    actual_receipt_date = Column(Date)
+
+    # Status
+    status = Column(String(30), server_default=text("'OPEN'"))
+    # OPEN, PARTIALLY_RECEIVED, RECEIVED, CANCELLED
+
+    # Lot tracking
+    lot_number = Column(String(100))
+    batch_id = Column(String(100))
+
+    # Quality
+    inspection_status = Column(String(30))  # PENDING, PASSED, FAILED, WAIVED
+
+    # Metadata
+    source = Column(String(100))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    # Relationships
+    order = relationship("InboundOrder", back_populates="lines")
+    product = relationship("Product")
+    site = relationship("Site")
+
+    __table_args__ = (
+        Index('idx_inbound_line_product', 'product_id', 'site_id', 'requested_delivery_date'),
+        Index('idx_inbound_line_order', 'order_id'),
+        Index('idx_inbound_line_status', 'status'),
+    )
+
+
+class InboundOrderLineSchedule(Base):
+    """
+    Delivery schedule for inbound order lines (split deliveries)
+    SC Entity: inbound_order_line_schedule
+    """
+    __tablename__ = "inbound_order_line_schedule"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_line_id = Column(Integer, ForeignKey("inbound_order_line.id", ondelete="CASCADE"), nullable=False)
+
+    schedule_number = Column(Integer, nullable=False)
+    scheduled_quantity = Column(Double, nullable=False)
+    received_quantity = Column(Double, server_default=text("0.0"))
+    scheduled_date = Column(Date, nullable=False)
+    actual_date = Column(Date)
+    status = Column(String(30), server_default=text("'SCHEDULED'"))
+    # SCHEDULED, IN_TRANSIT, RECEIVED, DELAYED, CANCELLED
+
+    # Metadata
+    source = Column(String(100))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    __table_args__ = (
+        Index('idx_inbound_schedule_line', 'order_line_id'),
+        Index('idx_inbound_schedule_date', 'scheduled_date', 'status'),
+    )
+
+
+# ============================================================================
+# Shipment Detail Entities
+# ============================================================================
+
+class ShipmentStop(Base):
+    """
+    Intermediate stops in multi-leg shipments
+    SC Entity: shipment_stop
+    """
+    __tablename__ = "shipment_stop"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    shipment_id = Column(String(100), ForeignKey("shipment.id", ondelete="CASCADE"), nullable=False)
+
+    stop_number = Column(Integer, nullable=False)
+    stop_type = Column(String(30), nullable=False)  # PICKUP, DELIVERY, CROSS_DOCK, CUSTOMS
+    site_id = Column(Integer, ForeignKey("site.id"))
+    location_name = Column(String(200))
+    location_lat = Column(Double)
+    location_lon = Column(Double)
+
+    # Dates
+    planned_arrival = Column(DateTime)
+    actual_arrival = Column(DateTime)
+    planned_departure = Column(DateTime)
+    actual_departure = Column(DateTime)
+
+    # Status
+    status = Column(String(20), server_default=text("'PLANNED'"))
+    # PLANNED, ARRIVED, DEPARTED, SKIPPED
+
+    dwell_time_hours = Column(Double)
+
+    # Metadata
+    source = Column(String(100))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    # Relationships
+    shipment = relationship("Shipment")
+    site = relationship("Site")
+
+    __table_args__ = (
+        Index('idx_shipment_stop_shipment', 'shipment_id', 'stop_number'),
+    )
+
+
+class ShipmentLot(Base):
+    """
+    Lot-level tracking within shipments (pharma, food traceability)
+    SC Entity: shipment_lot
+    """
+    __tablename__ = "shipment_lot"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    shipment_id = Column(String(100), ForeignKey("shipment.id", ondelete="CASCADE"), nullable=False)
+
+    product_id = Column(String(100), ForeignKey("product.id"), nullable=False)
+    lot_number = Column(String(100), nullable=False)
+    batch_id = Column(String(100))
+    quantity = Column(Double, nullable=False)
+    uom = Column(String(20))
+
+    # Lot details
+    manufacture_date = Column(Date)
+    expiration_date = Column(Date)
+    shelf_life_days = Column(Integer)
+
+    # Quality
+    quality_status = Column(String(30), server_default=text("'RELEASED'"))
+    # RELEASED, QUARANTINE, REJECTED, RECALL
+    certificate_of_analysis = Column(String(200))
+
+    # Traceability
+    origin_site_id = Column(Integer, ForeignKey("site.id"))
+    country_of_origin = Column(String(10))
+
+    # Metadata
+    source = Column(String(100))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    # Relationships
+    shipment = relationship("Shipment")
+    product = relationship("Product")
+    origin_site = relationship("Site")
+
+    __table_args__ = (
+        Index('idx_shipment_lot_shipment', 'shipment_id'),
+        Index('idx_shipment_lot_product', 'product_id', 'lot_number'),
+        Index('idx_shipment_lot_expiry', 'expiration_date'),
+    )
+
+
+# ============================================================================
+# Outbound Fulfillment Entities
+# ============================================================================
+
+class OutboundShipment(Base):
+    """
+    Outbound shipment against customer orders
+    SC Entity: outbound_shipment
+    """
+    __tablename__ = "outbound_shipment"
+
+    id = Column(String(100), primary_key=True)
+    company_id = Column(String(100), ForeignKey("company.id"))
+    order_id = Column(String(100), nullable=False, index=True)
+    order_line_number = Column(Integer)
+    shipment_id = Column(String(100), ForeignKey("shipment.id"))
+
+    product_id = Column(String(100), ForeignKey("product.id"), nullable=False)
+    site_id = Column(Integer, ForeignKey("site.id"), nullable=False)
+    customer_site_id = Column(Integer, ForeignKey("site.id"))
+
+    shipped_quantity = Column(Double, nullable=False)
+    uom = Column(String(20))
+
+    # Dates
+    ship_date = Column(DateTime, nullable=False)
+    expected_delivery_date = Column(DateTime)
+    actual_delivery_date = Column(DateTime)
+
+    # Status
+    status = Column(String(20), nullable=False, server_default=text("'SHIPPED'"))
+    # SHIPPED, IN_TRANSIT, DELIVERED, RETURNED
+
+    # Carrier
+    carrier_id = Column(String(100))
+    tracking_number = Column(String(100))
+
+    # Metadata
+    source = Column(String(100))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    # Relationships
+    product = relationship("Product")
+    site = relationship("Site", foreign_keys=[site_id])
+    customer_site = relationship("Site", foreign_keys=[customer_site_id])
+
+    __table_args__ = (
+        Index('idx_outbound_shipment_order', 'order_id'),
+        Index('idx_outbound_shipment_status', 'status', 'ship_date'),
+    )
+
+
+# ============================================================================
+# Segmentation Entity
+# ============================================================================
+
+class Segmentation(Base):
+    """
+    Customer/product segmentation for differentiated planning
+    SC Entity: segmentation
+    Referenced by InvPolicy.segment_id
+    """
+    __tablename__ = "segmentation"
+
+    id = Column(String(100), primary_key=True)
+    company_id = Column(String(100), ForeignKey("company.id"))
+    name = Column(String(200), nullable=False)
+    segment_type = Column(String(50), nullable=False)  # CUSTOMER, PRODUCT, CHANNEL
+    description = Column(String(500))
+
+    # Classification
+    classification = Column(String(10))  # A, B, C (ABC analysis)
+    priority = Column(Integer)  # 1=highest
+    service_level_target = Column(Double)  # Target SL for this segment
+
+    # Criteria
+    criteria = Column(JSON)  # {"revenue_min": 100000, "order_frequency": "weekly"}
+
+    is_active = Column(String(10), server_default=text("'true'"))
+
+    # Metadata
+    source = Column(String(100))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index('idx_segmentation_type', 'segment_type', 'classification'),
+    )
+
+
+# ============================================================================
+# Supplementary Planning Entities
+# ============================================================================
+
+class SupplementaryTimeSeries(Base):
+    """
+    External signals for demand sensing (market intel, weather, promotions)
+    SC Entity: supplementary_time_series
+    Used by ForecastAdjustmentTRM for signal-driven forecast modifications.
+    """
+    __tablename__ = "supplementary_time_series"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(String(100), ForeignKey("company.id"))
+    series_name = Column(String(200), nullable=False)
+    series_type = Column(String(50), nullable=False)
+    # PROMOTION, WEATHER, MARKET_INDEX, SOCIAL_MEDIA, ECONOMIC_INDICATOR, COMPETITOR, EMAIL_SIGNAL, VOICE_SIGNAL
+
+    product_id = Column(String(100), ForeignKey("product.id"))
+    site_id = Column(Integer, ForeignKey("site.id"))
+
+    # Time series data
+    observation_date = Column(Date, nullable=False)
+    value = Column(Double, nullable=False)
+    unit = Column(String(50))
+
+    # Signal metadata
+    confidence = Column(Double)  # 0.0-1.0
+    source_channel = Column(String(50))  # email, voice, market_feed, weather_api
+    signal_direction = Column(String(20))  # UP, DOWN, NEUTRAL
+    magnitude = Column(Double)  # Percentage impact estimate
+
+    # Processing
+    is_processed = Column(Boolean, server_default=text("false"))
+    processed_at = Column(DateTime)
+    forecast_impact = Column(Double)  # Actual impact after processing
+
+    # Metadata
+    source = Column(String(100))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    # Relationships
+    product = relationship("Product")
+    site = relationship("Site")
+
+    __table_args__ = (
+        Index('idx_supp_ts_lookup', 'product_id', 'site_id', 'observation_date'),
+        Index('idx_supp_ts_type', 'series_type', 'observation_date'),
+        Index('idx_supp_ts_unprocessed', 'is_processed', 'series_type'),
+    )
+
+
+# ============================================================================
+# Manufacturing Operations Entities
+# ============================================================================
+
+class ProcessHeader(Base):
+    """
+    Manufacturing process routing header
+    SC Entity: process_header
+    Groups operations into a routing sequence.
+    """
+    __tablename__ = "process_header"
+
+    id = Column(String(100), primary_key=True)
+    company_id = Column(String(100), ForeignKey("company.id"))
+    process_id = Column(String(100), ForeignKey("production_process.id"))
+    description = Column(String(500))
+    version = Column(Integer, server_default=text("1"))
+    status = Column(String(20), server_default=text("'ACTIVE'"))  # ACTIVE, OBSOLETE, DRAFT
+
+    # Metadata
+    source = Column(String(100))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    # Relationships
+    operations = relationship("ProcessOperation", back_populates="header", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index('idx_process_header_process', 'process_id'),
+    )
+
+
+class ProcessOperation(Base):
+    """
+    Individual manufacturing operation step
+    SC Entity: process_operation
+    """
+    __tablename__ = "process_operation"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    header_id = Column(String(100), ForeignKey("process_header.id", ondelete="CASCADE"), nullable=False)
+
+    operation_number = Column(Integer, nullable=False)
+    operation_name = Column(String(200), nullable=False)
+    work_center_id = Column(String(100))
+    resource_id = Column(String(100))
+
+    # Times (hours)
+    setup_time = Column(Double, server_default=text("0.0"))
+    run_time_per_unit = Column(Double, nullable=False)
+    teardown_time = Column(Double, server_default=text("0.0"))
+    queue_time = Column(Double, server_default=text("0.0"))
+    move_time = Column(Double, server_default=text("0.0"))
+
+    # Capacity
+    max_units_per_hour = Column(Double)
+    min_lot_size = Column(Double)
+    max_lot_size = Column(Double)
+
+    # Quality
+    yield_percentage = Column(Double, server_default=text("100.0"))
+    scrap_percentage = Column(Double, server_default=text("0.0"))
+
+    is_subcontracted = Column(Boolean, server_default=text("false"))
+    vendor_id = Column(String(100))
+
+    # Metadata
+    source = Column(String(100))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    # Relationships
+    header = relationship("ProcessHeader", back_populates="operations")
+
+    __table_args__ = (
+        Index('idx_process_op_header', 'header_id', 'operation_number'),
+    )
+
+
+class ProcessProduct(Base):
+    """
+    Products consumed/produced by a manufacturing process
+    SC Entity: process_product
+    """
+    __tablename__ = "process_product"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    header_id = Column(String(100), ForeignKey("process_header.id", ondelete="CASCADE"), nullable=False)
+    operation_id = Column(Integer, ForeignKey("process_operation.id"))
+
+    product_id = Column(String(100), ForeignKey("product.id"), nullable=False)
+    product_type = Column(String(20), nullable=False)  # INPUT, OUTPUT, BYPRODUCT, CO_PRODUCT
+    quantity = Column(Double, nullable=False)
+    uom = Column(String(20))
+
+    # Metadata
+    source = Column(String(100))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    # Relationships
+    product = relationship("Product")
+
+    __table_args__ = (
+        Index('idx_process_product_header', 'header_id'),
+        Index('idx_process_product_product', 'product_id'),
+    )
+
+
+class CustomerCost(Base):
+    """
+    Customer-specific cost/pricing structures
+    SC Entity: customer_cost
+    """
+    __tablename__ = "customer_cost"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(String(100), ForeignKey("company.id"))
+    customer_id = Column(String(100), nullable=False)  # FK to trading_partner
+    product_id = Column(String(100), ForeignKey("product.id"))
+    site_id = Column(Integer, ForeignKey("site.id"))
+
+    cost_type = Column(String(50), nullable=False)  # UNIT_PRICE, SHIPPING, HANDLING, DISCOUNT
+    amount = Column(Double, nullable=False)
+    currency = Column(String(10), server_default=text("'USD'"))
+    uom = Column(String(20))
+
+    # Validity
+    effective_date = Column(Date, nullable=False)
+    expiration_date = Column(Date)
+    min_quantity = Column(Double)
+    max_quantity = Column(Double)
+
+    # Contract reference
+    contract_id = Column(String(100))
+
+    # Metadata
+    source = Column(String(100))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    # Relationships
+    product = relationship("Product")
+    site = relationship("Site")
+
+    __table_args__ = (
+        Index('idx_customer_cost_lookup', 'customer_id', 'product_id', 'effective_date'),
+    )

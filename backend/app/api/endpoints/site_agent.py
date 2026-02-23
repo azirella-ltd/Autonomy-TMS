@@ -934,3 +934,60 @@ async def run_decision_cycle(
             for p in result.phases
         ],
     }
+
+
+# ============================================================================
+# Directive Broadcast Endpoints (Inter-Hive Orchestration)
+# ============================================================================
+
+# Singleton broadcast service
+_broadcast_service = None
+
+
+def _get_broadcast_service():
+    """Lazy-init the broadcast service with all registered SiteAgents."""
+    global _broadcast_service
+    if _broadcast_service is None:
+        from app.services.powell.directive_broadcast_service import DirectiveBroadcastService
+        _broadcast_service = DirectiveBroadcastService()
+        # Wire in any cached site agents
+        for key, agent in _site_agents.items():
+            _broadcast_service.register_site(key, agent)
+    return _broadcast_service
+
+
+@router.get("/directive-broadcast/status")
+async def get_broadcast_status(
+    current_user: User = Depends(get_current_user),
+):
+    """Get directive broadcast service status."""
+    svc = _get_broadcast_service()
+    return svc.get_status()
+
+
+@router.post("/directive-broadcast/run")
+async def run_broadcast_cycle(
+    gnn_outputs: Dict[str, Dict[str, Any]],
+    network_topology: Optional[Dict[str, List[str]]] = None,
+    current_user: User = Depends(get_current_user),
+):
+    """Run a full directive broadcast cycle.
+
+    Body:
+        gnn_outputs: Per-site tGNN output embeddings
+            {"plant_a": {"criticality_score": 0.8, "bottleneck_risk": 0.3, ...}}
+        network_topology: Optional DAG adjacency
+            {"plant_a": ["dc_east", "dc_west"]}
+    """
+    svc = _get_broadcast_service()
+    result = svc.run_cycle(gnn_outputs, network_topology)
+    return result
+
+
+@router.get("/directive-broadcast/feedback")
+async def get_broadcast_feedback(
+    current_user: User = Depends(get_current_user),
+):
+    """Collect hive feedback features from all registered sites."""
+    svc = _get_broadcast_service()
+    return svc.collect_feedback()

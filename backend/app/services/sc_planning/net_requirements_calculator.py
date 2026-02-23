@@ -663,15 +663,83 @@ class NetRequirementsCalculator:
     # Helper methods
     async def get_current_inventory(self, product_id: str, site_id: str,
                                     start_date: date, game_id: Optional[int]) -> float:
-        """Get current inventory from inv_level"""
-        # Implementation would query inv_level table
-        return 0.0
+        """Get current inventory from inv_level table.
+
+        Queries the most recent inventory snapshot for this product-site
+        combination on or before start_date.
+        """
+        from app.models.sc_entities import InvLevel
+        from sqlalchemy import select, and_, desc
+
+        filters = [
+            InvLevel.product_id == product_id,
+            InvLevel.site_id == site_id,
+        ]
+        # Prefer snapshot on or before start_date
+        if hasattr(InvLevel, 'inventory_date'):
+            filters.append(InvLevel.inventory_date <= start_date)
+
+        if game_id is not None and hasattr(InvLevel, 'scenario_id'):
+            filters.append(InvLevel.scenario_id == game_id)
+
+        if self.group_id is not None:
+            filters.append(InvLevel.company_id == str(self.group_id))
+
+        stmt = (
+            select(InvLevel)
+            .where(and_(*filters))
+            .order_by(desc(InvLevel.inventory_date) if hasattr(InvLevel, 'inventory_date') else desc(InvLevel.id))
+            .limit(1)
+        )
+
+        result = await self.db.execute(stmt)
+        inv = result.scalar_one_or_none()
+
+        if inv is None:
+            return 0.0
+
+        return float(inv.on_hand_qty or 0.0)
 
     async def get_scheduled_receipts(self, product_id: str, site_id: str,
                                      start_date: date, game_id: Optional[int]) -> Dict[date, float]:
-        """Get scheduled receipts from inbound_order_line"""
-        # Implementation would query inbound_order_line table
-        return {}
+        """Get scheduled receipts from supply_plan table.
+
+        Returns time-phased dict of {receipt_date: quantity} for confirmed
+        or planned receipts (PO/TO/MO) that haven't arrived yet.
+        """
+        from app.models.sc_entities import SupplyPlan
+        from sqlalchemy import select, and_, func
+        from collections import defaultdict
+
+        filters = [
+            SupplyPlan.product_id == product_id,
+            SupplyPlan.site_id == site_id,
+            SupplyPlan.planned_receipt_date >= start_date,
+        ]
+
+        if game_id is not None and hasattr(SupplyPlan, 'scenario_id'):
+            filters.append(SupplyPlan.scenario_id == game_id)
+
+        if self.group_id is not None:
+            filters.append(SupplyPlan.company_id == str(self.group_id))
+
+        stmt = (
+            select(
+                SupplyPlan.planned_receipt_date,
+                func.sum(SupplyPlan.planned_order_quantity),
+            )
+            .where(and_(*filters))
+            .group_by(SupplyPlan.planned_receipt_date)
+        )
+
+        result = await self.db.execute(stmt)
+        receipts: Dict[date, float] = {}
+        for row in result.all():
+            receipt_date, qty = row
+            if receipt_date is not None and qty is not None:
+                receipts[receipt_date] = float(qty)
+
+        return receipts
 
     async def get_component_site(self, component_id: str, parent_id: str,
                                  parent_site_id: str) -> str:

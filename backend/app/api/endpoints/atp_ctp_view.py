@@ -213,9 +213,24 @@ async def calculate_atp_ctp(
 
         # CTP calculation (includes planned production capacity)
         if include_capacity:
-            # TODO: Get planned production capacity from production_process table
-            # For now, assume CTP = ATP + 20% capacity buffer
-            planned_capacity = scheduled_receipts * 0.2
+            # Query production capacity from production_process table
+            from app.models.sc_entities import ProductionProcess
+            prod_proc = db.query(ProductionProcess).filter(
+                ProductionProcess.product_id == product_id,
+                ProductionProcess.site_id == site_id,
+            ).first()
+            if prod_proc and prod_proc.manufacturing_capacity_hours:
+                # Convert hours to units using operation time
+                op_time = float(prod_proc.operation_time or 1.0)
+                planned_capacity = (float(prod_proc.manufacturing_capacity_hours) / op_time) * float(prod_proc.lot_size or 1.0)
+            elif prod_proc and prod_proc.lot_size:
+                # Estimate weekly capacity from lot size and operation time
+                op_time = float(prod_proc.operation_time or 1.0)
+                hours_per_week = 40.0  # Standard work week
+                planned_capacity = (hours_per_week / op_time) * float(prod_proc.lot_size)
+            else:
+                # Fallback: estimate from scheduled receipts
+                planned_capacity = scheduled_receipts * 0.2
             ctp_qty = atp_qty + planned_capacity
         else:
             ctp_qty = atp_qty
@@ -628,8 +643,17 @@ async def get_atp_ctp_timeline(
         scheduled_receipts = float(result.scalar() or 0.0)
 
         # Get planned shipments (outbound orders)
-        # TODO: Add outbound_order table query
-        planned_shipments = 0.0  # Placeholder
+        from app.models.sc_entities import OutboundOrderLine
+        shipments_stmt = select(func.coalesce(func.sum(OutboundOrderLine.ordered_quantity), 0.0)).where(
+            and_(
+                OutboundOrderLine.product_id == product_id,
+                OutboundOrderLine.site_id == site_id,
+                OutboundOrderLine.requested_delivery_date >= proj.projection_date,
+                OutboundOrderLine.requested_delivery_date < proj.projection_date + timedelta(weeks=1),
+            )
+        )
+        shipments_result = await db.execute(shipments_stmt)
+        planned_shipments = float(shipments_result.scalar() or 0.0)
 
         timeline.append(TimelineEntry(
             week=proj.planning_week,

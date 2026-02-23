@@ -29,10 +29,10 @@ Player = Participant
 from app.models.supply_chain_config import SupplyChainConfig, Node
 from app.models.sc_entities import Product
 from app.models.sc_entities import (
-    InvLevel
-    Forecast
-    SupplyPlan
-    OutboundOrderLine
+    InvLevel,
+    Forecast,
+    SupplyPlan,
+    OutboundOrderLine,
 )
 
 
@@ -88,8 +88,8 @@ class SimulationToSCAdapter:
         # Delete old snapshots for this game (if any)
         await self.db.execute(
             delete(InvLevel).filter(
-                InvLevel.group_id == self.group_id
-                InvLevel.config_id == self.config_id
+                InvLevel.group_id == self.group_id,
+                InvLevel.config_id == self.config_id,
             )
         )
 
@@ -101,12 +101,12 @@ class SimulationToSCAdapter:
             # Get player's node
             node = next((n for n in self.config.nodes if n.name == player.role), None)
             if not node:
-                print(f"    ⚠️  No node found for player role {player.role}")
+                print(f"    Warning: No node found for player role {player.role}")
                 continue
 
             # Get item (simulation typically has 1 item: "Cases" or similar)
             if not self.config.items:
-                print(f"    ⚠️  No items defined in config")
+                print(f"    Warning: No items defined in config")
                 continue
 
             item = self.config.items[0]  # Use first item
@@ -117,27 +117,27 @@ class SimulationToSCAdapter:
 
             # Create InvLevel record
             inv_level = InvLevel(
-                product_id=item.id
-                site_id=node.id
-                on_hand_qty=inventory_qty
+                product_id=item.id,
+                site_id=node.id,
+                on_hand_qty=inventory_qty,
                 available_qty=max(0, inventory_qty),  # Available = on-hand minus reserved
                 reserved_qty=0,  # simulation doesn't track reservations
                 in_transit_qty=0,  # TODO: Calculate from pipeline
                 backorder_qty=max(0, -inventory_qty),  # Negative inventory = backlog
                 safety_stock_qty=0,  # TODO: Get from node policy
-                reorder_point_qty=0
-                snapshot_date=snapshot_date
-                group_id=self.group_id
-                config_id=self.config_id
+                reorder_point_qty=0,
+                snapshot_date=snapshot_date,
+                group_id=self.group_id,
+                config_id=self.config_id,
             )
 
             self.db.add(inv_level)
             records_created += 1
 
-            print(f"    ✓ {player.role}: on_hand={inventory_qty}")
+            print(f"    OK {player.role}: on_hand={inventory_qty}")
 
         await self.db.commit()
-        print(f"  ✓ Created {records_created} inv_level records")
+        print(f"  OK Created {records_created} inv_level records")
 
         return records_created
 
@@ -164,9 +164,9 @@ class SimulationToSCAdapter:
         return float(inventory)
 
     async def sync_demand_forecast(
-        self
-        round_number: int
-        horizon: int = 52
+        self,
+        round_number: int,
+        horizon: int = 52,
     ) -> int:
         """
         Sync market demand pattern to forecast table
@@ -186,31 +186,31 @@ class SimulationToSCAdapter:
         demand_pattern = self.game.demand_pattern or self.game.config.get('demand_pattern', {})
 
         if not demand_pattern:
-            print(f"    ⚠️  No demand pattern defined")
+            print(f"    Warning: No demand pattern defined")
             return 0
 
         # Get retailer node (where market demand hits)
         await self.db.refresh(self.config, ['nodes', 'items'])
         retailer_node = next(
-            (n for n in self.config.nodes if n.type in ['retailer', 'Retailer'])
-            None
+            (n for n in self.config.nodes if n.type in ['retailer', 'Retailer']),
+            None,
         )
 
         if not retailer_node:
-            print(f"    ⚠️  No retailer node found")
+            print(f"    Warning: No retailer node found")
             return 0
 
         item = self.config.items[0] if self.config.items else None
         if not item:
-            print(f"    ⚠️  No item found")
+            print(f"    Warning: No item found")
             return 0
 
         # Delete old forecasts for this game
         await self.db.execute(
             delete(Forecast).filter(
-                Forecast.group_id == self.group_id
-                Forecast.config_id == self.config_id
-                Forecast.game_id == self.game.id
+                Forecast.group_id == self.group_id,
+                Forecast.config_id == self.config_id,
+                Forecast.scenario_id == self.game.id,
             )
         )
 
@@ -225,32 +225,32 @@ class SimulationToSCAdapter:
             demand_qty = self._get_demand_for_period(demand_pattern, forecast_round)
 
             forecast = Forecast(
-                product_id=item.id
-                site_id=retailer_node.id
-                forecast_date=forecast_date
-                forecast_quantity=demand_qty
+                product_id=item.id,
+                site_id=retailer_node.id,
+                forecast_date=forecast_date,
+                forecast_quantity=demand_qty,
                 forecast_p50=demand_qty,  # Median = mean for deterministic
                 forecast_p10=demand_qty * 0.8,  # Pessimistic
                 forecast_p90=demand_qty * 1.2,  # Optimistic
-                user_override_quantity=None
-                is_active='true'
-                group_id=self.group_id
-                config_id=self.config_id
-                game_id=self.game.id
+                user_override_quantity=None,
+                is_active='true',
+                group_id=self.group_id,
+                config_id=self.config_id,
+                scenario_id=self.game.id,
             )
 
             self.db.add(forecast)
             records_created += 1
 
         await self.db.commit()
-        print(f"  ✓ Created {records_created} forecast records")
+        print(f"  OK Created {records_created} forecast records")
 
         return records_created
 
     def _get_demand_for_period(
-        self
-        demand_pattern: dict
-        period: int
+        self,
+        demand_pattern: dict,
+        period: int,
     ) -> float:
         """
         Get demand quantity for a specific period from demand pattern
@@ -295,22 +295,22 @@ class SimulationToSCAdapter:
             return 4.0
 
     async def convert_supply_plans_to_orders(
-        self
-        supply_plans: List[SupplyPlan]
+        self,
+        supply_plans: List[SupplyPlan],
     ) -> Dict[str, float]:
         """
         Convert SC supply plans to simulation player orders
 
         Maps:
-        - po_request (Purchase Order) → Player order to upstream supplier
-        - to_request (Transfer Order) → Player order to upstream DC
-        - mo_request (Manufacturing Order) → Production order at factory
+        - po_request (Purchase Order) -> Player order to upstream supplier
+        - to_request (Transfer Order) -> Player order to upstream DC
+        - mo_request (Manufacturing Order) -> Production order at factory
 
         Args:
             supply_plans: List of SupplyPlan recommendations from SC planner
 
         Returns:
-            Dict mapping player role → order quantity for this round
+            Dict mapping player role -> order quantity for this round
         """
         print(f"  Converting {len(supply_plans)} supply plans to player orders...")
 
@@ -326,7 +326,7 @@ class SimulationToSCAdapter:
             role = node_id_to_name.get(plan.destination_site_id)
 
             if not role:
-                print(f"    ⚠️  No role found for site_id {plan.destination_site_id}")
+                print(f"    Warning: No role found for site_id {plan.destination_site_id}")
                 continue
 
             # Aggregate orders for this player
@@ -335,10 +335,10 @@ class SimulationToSCAdapter:
 
             player_orders[role] += plan.planned_order_quantity
 
-            print(f"    ✓ {role}: order {plan.planned_order_quantity} "
+            print(f"    OK {role}: order {plan.planned_order_quantity} "
                   f"(type={plan.plan_type}, from site={plan.source_site_id})")
 
-        print(f"  ✓ Converted to {len(player_orders)} player orders")
+        print(f"  OK Converted to {len(player_orders)} player orders")
 
         return player_orders
 
@@ -354,8 +354,8 @@ class SimulationToSCAdapter:
         """
         result = await self.db.execute(
             select(Player).filter(
-                Player.game_id == self.game.id
-                Player.role == role
+                Player.game_id == self.game.id,
+                Player.role == role,
             )
         )
         player = result.scalar_one_or_none()
@@ -366,10 +366,10 @@ class SimulationToSCAdapter:
         return self._get_player_inventory(player, self.game.current_round)
 
     async def record_actual_demand(
-        self
-        role: str
-        demand_qty: float
-        period_date: date
+        self,
+        role: str,
+        demand_qty: float,
+        period_date: date,
     ) -> None:
         """
         Record actual customer demand in outbound_order_line table
@@ -392,19 +392,18 @@ class SimulationToSCAdapter:
 
         # Create outbound order line
         order_line = OutboundOrderLine(
-            order_id=f"GAME_{self.game.id}_R{self.game.current_round}"
-            line_number=1
-            product_id=item.id
-            site_id=node.id
-            ordered_quantity=demand_qty
-            requested_delivery_date=period_date
-            order_date=period_date
-            group_id=self.group_id
-            config_id=self.config_id
-            game_id=self.game.id
+            order_id=f"GAME_{self.game.id}_R{self.game.current_round}",
+            line_number=1,
+            product_id=item.id,
+            site_id=node.id,
+            ordered_quantity=demand_qty,
+            requested_delivery_date=period_date,
+            order_date=period_date,
+            config_id=self.config_id,
+            scenario_id=self.game.id,
         )
 
         self.db.add(order_line)
         await self.db.commit()
 
-        print(f"    ✓ Recorded actual demand: {role} = {demand_qty}")
+        print(f"    OK Recorded actual demand: {role} = {demand_qty}")

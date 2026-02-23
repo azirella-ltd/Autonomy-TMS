@@ -80,6 +80,7 @@ class TRMSiteTrainer:
         checkpoint_dir: Optional[Path] = None,
         stigmergic_phase: StigmergicPhase = StigmergicPhase.NO_SIGNALS,
         cross_head_reward_weight: float = 0.05,
+        het_gat_enabled: bool = False,
     ):
         self.trm_type = trm_type
         self.site_id = site_id
@@ -91,10 +92,27 @@ class TRMSiteTrainer:
         self.checkpoint_dir = checkpoint_dir or CHECKPOINT_DIR
         self.stigmergic_phase = stigmergic_phase
         self.cross_head_reward_weight = cross_head_reward_weight
+        self.het_gat_enabled = het_gat_enabled
 
         self.model = None
         self.model_cls = None
         self.state_dim = None
+
+    @staticmethod
+    def cgar_refinement_steps(epoch: int, total_epochs: int, max_R: int = 3) -> int:
+        """Compute progressive refinement depth for CGAR curriculum.
+
+        Curriculum-Guided Adaptive Recursion:
+          0-30% of training:  R=1 (learn basic mappings)
+          30-60% of training: R=2 (learn refinement)
+          60-100% of training: R=3 (full recursive reasoning)
+        """
+        progress = epoch / max(1, total_epochs)
+        if progress < 0.3:
+            return 1
+        elif progress < 0.6:
+            return min(2, max_R)
+        return max_R
 
     def _ensure_model(self):
         """Lazily create the TRM model on first use."""
