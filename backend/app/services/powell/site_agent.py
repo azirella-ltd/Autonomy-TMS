@@ -29,6 +29,8 @@ from .engines import (
 )
 from .cdc_monitor import CDCMonitor, CDCConfig, SiteMetrics, TriggerEvent, ReplanAction
 from .site_agent_model import SiteAgentModel, SiteAgentModelConfig
+from .hive_signal import HiveSignal, HiveSignalBus, HiveSignalType
+from .hive_health import HiveHealthMetrics
 from app.services.agent_context_explainer import AgentContextExplainer, AgentType
 
 logger = logging.getLogger(__name__)
@@ -57,6 +59,9 @@ class SiteAgentConfig:
 
     # Model checkpoint
     model_checkpoint_path: Optional[str] = None
+
+    # Hive signal coordination
+    enable_hive_signals: bool = True  # Enable stigmergic coordination
 
 
 @dataclass
@@ -123,11 +128,17 @@ class SiteAgent:
         ]:
             self._explainers[agent_type.value] = AgentContextExplainer(agent_type)
 
+        # Hive signal bus for stigmergic TRM coordination
+        self.signal_bus: Optional[HiveSignalBus] = None
+        if config.enable_hive_signals:
+            self.signal_bus = HiveSignalBus()
+
         # State cache
         self._state_cache: Optional[torch.Tensor] = None
         self._state_cache_time: Optional[datetime] = None
 
-        logger.info(f"SiteAgent initialized for {config.site_key}")
+        logger.info(f"SiteAgent initialized for {config.site_key}"
+                     f"{' [hive signals ON]' if self.signal_bus else ''}")
 
     def get_explainer(self, agent_type: str) -> Optional[AgentContextExplainer]:
         """Get the context-aware explainer for a specific agent type."""
@@ -175,10 +186,15 @@ class SiteAgent:
         Execute ATP decision for incoming order.
 
         Flow:
-        1. AATPEngine computes deterministic availability
-        2. If shortage, ATPExceptionHead suggests resolution
-        3. Return combined decision
+        1. Read hive signals (quality holds, rebalance inbound, etc.)
+        2. AATPEngine computes deterministic availability
+        3. If shortage, ATPExceptionHead suggests resolution
+        4. Emit hive signals (shortage, demand surge/drop)
+        5. Return combined decision
         """
+        # Step 0: Read relevant hive signals before decision
+        signal_context = self._read_atp_signals()
+
         # Step 1: Deterministic AATP
         base_result = self.aatp_engine.check_availability(order)
 
@@ -195,7 +211,10 @@ class SiteAgent:
                 explanation="Full availability in allocation tier"
             )
 
-        # Step 2: Shortage - check if TRM is available
+        # Step 2: Shortage detected — emit signal
+        self._emit_atp_shortage_signal(order, base_result)
+
+        # Step 2b: Check if TRM is available
         if not self.config.use_trm_adjustments or self.model is None:
             # No TRM - return deterministic result
             if base_result.available_qty > 0:
@@ -569,13 +588,86 @@ class SiteAgent:
 
         return torch.tensor([features], dtype=torch.float32)
 
+    # ---- Hive signal helpers ------------------------------------------------
+
+    def _read_atp_signals(self) -> Dict[str, Any]:
+        """Read signals relevant to ATP decisions. Returns empty dict if bus is None."""
+        if self.signal_bus is None:
+            return {}
+        try:
+            signals = self.signal_bus.read(
+                consumer_trm="atp_executor",
+                types={
+                    HiveSignalType.QUALITY_REJECT,
+                    HiveSignalType.QUALITY_HOLD,
+                    HiveSignalType.REBALANCE_INBOUND,
+                    HiveSignalType.MO_RELEASED,
+                    HiveSignalType.SS_INCREASED,
+                    HiveSignalType.SS_DECREASED,
+                },
+            )
+            return {"signals": [s.to_dict() for s in signals], "count": len(signals)}
+        except Exception as e:
+            logger.debug(f"Signal read failed: {e}")
+            return {}
+
+    def _emit_atp_shortage_signal(self, order: Order, result: ATPResult) -> None:
+        """Emit ATP_SHORTAGE signal when a shortage is detected."""
+        if self.signal_bus is None:
+            return
+        try:
+            urgency = min(1.0, result.shortage_qty / max(1.0, order.requested_qty))
+            signal = HiveSignal(
+                source_trm="atp_executor",
+                signal_type=HiveSignalType.ATP_SHORTAGE,
+                urgency=urgency,
+                direction="shortage",
+                magnitude=result.shortage_qty,
+                product_id=order.product_id,
+                payload={
+                    "order_id": order.order_id,
+                    "shortage_qty": result.shortage_qty,
+                    "available_qty": result.available_qty,
+                },
+            )
+            self.signal_bus.emit(signal)
+            self.signal_bus.urgency.update("atp_executor", urgency, "shortage")
+        except Exception as e:
+            logger.debug(f"Signal emit failed: {e}")
+
+    def _build_signal_context(self) -> Dict[str, Any]:
+        """Build signal context dict for logging/training data."""
+        if self.signal_bus is None:
+            return {}
+        try:
+            return self.signal_bus.to_context_dict()
+        except Exception as e:
+            logger.debug(f"Signal context build failed: {e}")
+            return {}
+
+    def get_hive_health(self) -> Optional[Dict[str, Any]]:
+        """Get current hive health metrics. Returns None if signals disabled."""
+        if self.signal_bus is None:
+            return None
+        try:
+            metrics = HiveHealthMetrics.from_signal_bus(
+                self.signal_bus, site_key=self.site_key
+            )
+            return metrics.to_dict()
+        except Exception as e:
+            logger.debug(f"Hive health failed: {e}")
+            return None
+
     def get_status(self) -> Dict[str, Any]:
         """Get agent status summary"""
-        return {
+        status = {
             'site_key': self.site_key,
             'agent_mode': self.config.agent_mode,
             'use_trm': self.config.use_trm_adjustments,
             'model_loaded': self.model is not None,
             'cdc_status': self.cdc_monitor.get_status(),
-            'allocations_summary': self.aatp_engine.get_allocation_summary()
+            'allocations_summary': self.aatp_engine.get_allocation_summary(),
         }
+        if self.signal_bus:
+            status['hive_signals'] = self.signal_bus.stats()
+        return status

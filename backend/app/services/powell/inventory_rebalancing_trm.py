@@ -30,6 +30,7 @@ from .engines.rebalancing_engine import (
     RebalancingEngine, RebalancingConfig,
     SiteState as EngineSiteState, LaneConstraints,
 )
+from .hive_signal import HiveSignal, HiveSignalBus, HiveSignalType
 
 logger = logging.getLogger(__name__)
 
@@ -261,6 +262,7 @@ class InventoryRebalancingTRM:
         self.max_recommendations_per_run = max_recommendations_per_run
         self.db = db
         self.config_id = config_id
+        self.signal_bus: Optional[HiveSignalBus] = None  # Set by SiteAgent
 
         # Context-aware explainer (set externally by SiteAgent or caller)
         self.ctx_explainer = None
@@ -281,6 +283,9 @@ class InventoryRebalancingTRM:
         Returns:
             List of rebalancing recommendations, sorted by urgency
         """
+        # Read hive signals before decision
+        self._read_signals_before_decision()
+
         recommendations = []
 
         # Identify potential source-destination pairs
@@ -300,6 +305,9 @@ class InventoryRebalancingTRM:
         # Sort by urgency and limit
         recommendations.sort(key=lambda r: -r.urgency)
         final = recommendations[:self.max_recommendations_per_run]
+
+        # Emit signals after decision
+        self._emit_signals_after_decision(final)
 
         # Persist to DB if session available
         self._persist_recommendations(final)
@@ -548,6 +556,69 @@ class InventoryRebalancingTRM:
                 self.db.add(row)
         except Exception as e:
             logger.warning(f"Failed to persist rebalance decisions: {e}")
+
+    # ---- Hive signal methods ------------------------------------------------
+
+    def _read_signals_before_decision(self) -> None:
+        """Read relevant hive signals before rebalancing evaluation."""
+        if self.signal_bus is None:
+            return
+        try:
+            signals = self.signal_bus.read(
+                consumer_trm="rebalancing",
+                types={
+                    HiveSignalType.ATP_SHORTAGE,
+                    HiveSignalType.ATP_EXCESS,
+                    HiveSignalType.NETWORK_SHORTAGE,
+                    HiveSignalType.NETWORK_SURPLUS,
+                },
+            )
+            if signals:
+                logger.debug(f"Rebalancing read {len(signals)} hive signals")
+        except Exception as e:
+            logger.debug(f"Rebalancing signal read failed: {e}")
+
+    def _emit_signals_after_decision(
+        self, recommendations: List[RebalanceRecommendation]
+    ) -> None:
+        """Emit hive signals after rebalancing decision."""
+        if not self.signal_bus or not recommendations:
+            return
+        try:
+            for rec in recommendations:
+                # Emit REBALANCE_INBOUND for destination site
+                self.signal_bus.emit(HiveSignal(
+                    source_trm="rebalancing",
+                    signal_type=HiveSignalType.REBALANCE_INBOUND,
+                    urgency=rec.urgency,
+                    direction="relief",
+                    magnitude=rec.quantity,
+                    product_id=rec.product_id,
+                    payload={
+                        "from_site": rec.from_site,
+                        "to_site": rec.to_site,
+                        "quantity": rec.quantity,
+                        "eta_days": rec.expected_arrival,
+                    },
+                ))
+                # Emit REBALANCE_OUTBOUND for source site
+                self.signal_bus.emit(HiveSignal(
+                    source_trm="rebalancing",
+                    signal_type=HiveSignalType.REBALANCE_OUTBOUND,
+                    urgency=rec.urgency * 0.5,
+                    direction="shortage",
+                    magnitude=rec.quantity,
+                    product_id=rec.product_id,
+                    payload={
+                        "from_site": rec.from_site,
+                        "to_site": rec.to_site,
+                        "quantity": rec.quantity,
+                    },
+                ))
+            max_urgency = max(r.urgency for r in recommendations)
+            self.signal_bus.urgency.update("rebalancing", max_urgency, "relief")
+        except Exception as e:
+            logger.debug(f"Rebalancing signal emit failed: {e}")
 
     def record_outcome(
         self,

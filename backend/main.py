@@ -5991,6 +5991,7 @@ from app.api.endpoints import (
     deployment_router,
 )
 from app.api.endpoints.sap_atp import router as sap_atp_router
+from app.api.endpoints.edge_agents import router as edge_agents_router, signal_router as signal_ingestion_router
 api.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
 api.include_router(advanced_analytics_router, prefix="/advanced-analytics", tags=["advanced-analytics"])
 api.include_router(mps_router, tags=["mps"])
@@ -6018,6 +6019,8 @@ api.include_router(powell_training_router, prefix="/powell-training", tags=["pow
 api.include_router(insights_router, tags=["insights"])
 api.include_router(planning_cascade_router, prefix="/planning-cascade", tags=["planning-cascade"])
 api.include_router(deployment_router, prefix="/deployment", tags=["deployment"])
+api.include_router(edge_agents_router, tags=["edge-agents"])
+api.include_router(signal_ingestion_router, tags=["signal-ingestion"])
 
 # ------------------------------------------------------------------------------
 # Mount routers

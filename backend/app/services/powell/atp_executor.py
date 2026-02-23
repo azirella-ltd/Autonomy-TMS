@@ -34,6 +34,7 @@ from .allocation_service import (
     UnfulfillableOrderAction,
 )
 from .engines.aatp_engine import AATPEngine, AATPConfig, Order as EngineOrder, Priority
+from .hive_signal import HiveSignal, HiveSignalBus, HiveSignalType
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +156,7 @@ class ATPExecutorTRM:
         aatp_engine: Optional[AATPEngine] = None,
         db: Optional[Any] = None,
         config_id: Optional[int] = None,
+        signal_bus: Optional[HiveSignalBus] = None,
     ):
         """
         Initialize ATP Executor.
@@ -166,6 +168,7 @@ class ATPExecutorTRM:
             aatp_engine: Deterministic AATP engine (optional, used for heuristic)
             db: Optional SQLAlchemy Session for persisting decisions
             config_id: Optional config_id for DB persistence
+            signal_bus: Optional HiveSignalBus for inter-TRM coordination
         """
         self.allocation_service = allocation_service
         self._engine = aatp_engine
@@ -173,6 +176,7 @@ class ATPExecutorTRM:
         self.use_heuristic_fallback = use_heuristic_fallback
         self.db = db
         self.config_id = config_id
+        self.signal_bus = signal_bus
 
         # Context-aware explainer (set externally by SiteAgent or caller)
         self.ctx_explainer = None
@@ -238,6 +242,9 @@ class ATPExecutorTRM:
         """
         self._metrics["total_requests"] += 1
 
+        # Read hive signals before decision
+        self._read_signals_before_decision()
+
         # Build state for TRM
         state = self._build_atp_state(request, inventory_context)
 
@@ -257,6 +264,9 @@ class ATPExecutorTRM:
                 promised_qty=0,
                 reasoning="No TRM model available and heuristic disabled",
             )
+
+        # Emit signals after decision
+        self._emit_signals_after_decision(request, state, response)
 
         # Enrich with context-aware reasoning
         response = self._enrich_with_context(response, state, request)
@@ -559,6 +569,63 @@ class ATPExecutorTRM:
             self.db.add(row)
         except Exception as e:
             logger.warning(f"Failed to persist ATP decision: {e}")
+
+    # ---- Hive signal methods ------------------------------------------------
+
+    def _read_signals_before_decision(self) -> None:
+        """Read relevant hive signals before making ATP decision."""
+        if self.signal_bus is None:
+            return
+        try:
+            signals = self.signal_bus.read(
+                consumer_trm="atp_executor",
+                types={
+                    HiveSignalType.QUALITY_REJECT,
+                    HiveSignalType.QUALITY_HOLD,
+                    HiveSignalType.REBALANCE_INBOUND,
+                    HiveSignalType.MO_RELEASED,
+                    HiveSignalType.SS_INCREASED,
+                    HiveSignalType.SS_DECREASED,
+                },
+            )
+            if signals:
+                logger.debug(f"ATP read {len(signals)} hive signals before decision")
+        except Exception as e:
+            logger.debug(f"ATP signal read failed: {e}")
+
+    def _emit_signals_after_decision(
+        self,
+        request: ATPRequest,
+        state: ATPState,
+        response: ATPResponse,
+    ) -> None:
+        """Emit hive signals after ATP decision."""
+        if self.signal_bus is None:
+            return
+        try:
+            if not response.can_fulfill or response.promised_qty < request.requested_qty:
+                # Emit ATP_SHORTAGE
+                shortage = request.requested_qty - response.promised_qty
+                urgency = min(1.0, shortage / max(1.0, request.requested_qty))
+                self.signal_bus.emit(HiveSignal(
+                    source_trm="atp_executor",
+                    signal_type=HiveSignalType.ATP_SHORTAGE,
+                    urgency=urgency,
+                    direction="shortage",
+                    magnitude=shortage,
+                    product_id=request.product_id,
+                    payload={
+                        "order_id": request.order_id,
+                        "shortage_qty": shortage,
+                        "priority": request.priority,
+                    },
+                ))
+                self.signal_bus.urgency.update("atp_executor", urgency, "shortage")
+            elif response.promised_qty >= request.requested_qty:
+                # Full fill — update urgency to low
+                self.signal_bus.urgency.update("atp_executor", 0.1, "neutral")
+        except Exception as e:
+            logger.debug(f"ATP signal emit failed: {e}")
 
     def get_training_data(self) -> List[Dict[str, Any]]:
         """

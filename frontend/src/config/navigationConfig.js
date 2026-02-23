@@ -887,6 +887,30 @@ export const SYSTEM_ADMIN_NAVIGATION = [
         icon: DatabaseIcon,
         description: 'Download SAP-format CSV files',
       },
+      {
+        label: 'PicoClaw Fleet',
+        path: '/admin/picoclaw',
+        icon: ExecutionIcon,
+        description: 'Edge CDC monitor fleet management',
+      },
+      {
+        label: 'OpenClaw Gateway',
+        path: '/admin/openclaw',
+        icon: CollaborationIcon,
+        description: 'Chat gateway and channel management',
+      },
+      {
+        label: 'Signal Ingestion',
+        path: '/admin/signals',
+        icon: ActivityIcon,
+        description: 'Signal capture monitoring and review',
+      },
+      {
+        label: 'Edge Security',
+        path: '/admin/edge-security',
+        icon: AdminIcon,
+        description: 'CVE tracking and deployment security',
+      },
     ],
   },
 ];

@@ -29,6 +29,7 @@ import logging
 from datetime import datetime, timedelta
 
 from .engines.mrp_engine import MRPEngine, MRPConfig
+from .hive_signal import HiveSignal, HiveSignalBus, HiveSignalType
 
 logger = logging.getLogger(__name__)
 
@@ -283,6 +284,7 @@ class POCreationTRM:
         self.min_order_benefit_days = min_order_benefit_days
         self.db = db
         self.config_id = config_id
+        self.signal_bus: Optional[HiveSignalBus] = None  # Set by SiteAgent
 
         # Context-aware explainer (set externally by SiteAgent or caller)
         self.ctx_explainer = None
@@ -303,6 +305,9 @@ class POCreationTRM:
         Returns:
             List of PO recommendations, one per available supplier
         """
+        # Read hive signals before decision
+        self._read_signals_before_decision()
+
         recommendations = []
 
         # First check if we need to order at all
@@ -330,6 +335,9 @@ class POCreationTRM:
         recommendations.sort(
             key=lambda r: r.expected_cost / max(1, r.recommended_qty)
         )
+
+        # Emit signals after decision
+        self._emit_signals_after_decision(recommendations)
 
         # Persist to DB if session available
         self._persist_recommendations(recommendations)
@@ -593,6 +601,75 @@ class POCreationTRM:
                 self.db.add(row)
         except Exception as e:
             logger.warning(f"Failed to persist PO decisions: {e}")
+
+    # ---- Hive signal methods ------------------------------------------------
+
+    def _read_signals_before_decision(self) -> None:
+        """Read relevant hive signals before PO evaluation."""
+        if self.signal_bus is None:
+            return
+        try:
+            signals = self.signal_bus.read(
+                consumer_trm="po_creation",
+                types={
+                    HiveSignalType.ATP_SHORTAGE,
+                    HiveSignalType.DEMAND_SURGE,
+                    HiveSignalType.SS_INCREASED,
+                    HiveSignalType.FORECAST_ADJUSTED,
+                },
+            )
+            if signals:
+                logger.debug(f"PO Creation read {len(signals)} hive signals")
+        except Exception as e:
+            logger.debug(f"PO signal read failed: {e}")
+
+    def _emit_signals_after_decision(
+        self, recommendations: List[PORecommendation]
+    ) -> None:
+        """Emit hive signals after PO decision."""
+        if not self.signal_bus or not recommendations:
+            return
+        try:
+            for rec in recommendations:
+                if rec.urgency in (POUrgency.CRITICAL, POUrgency.HIGH):
+                    self.signal_bus.emit(HiveSignal(
+                        source_trm="po_creation",
+                        signal_type=HiveSignalType.PO_EXPEDITE,
+                        urgency=0.8 if rec.urgency == POUrgency.CRITICAL else 0.6,
+                        direction="relief",
+                        magnitude=rec.recommended_qty,
+                        product_id=rec.product_id,
+                        payload={
+                            "supplier_id": rec.supplier_id,
+                            "qty": rec.recommended_qty,
+                            "expected_receipt": rec.expected_receipt_date,
+                        },
+                    ))
+                else:
+                    self.signal_bus.emit(HiveSignal(
+                        source_trm="po_creation",
+                        signal_type=HiveSignalType.PO_DEFERRED,
+                        urgency=0.2,
+                        direction="neutral",
+                        magnitude=rec.recommended_qty,
+                        product_id=rec.product_id,
+                        payload={
+                            "supplier_id": rec.supplier_id,
+                            "qty": rec.recommended_qty,
+                        },
+                    ))
+            max_urg = max(
+                0.8 if r.urgency == POUrgency.CRITICAL else
+                0.6 if r.urgency == POUrgency.HIGH else 0.2
+                for r in recommendations
+            )
+            direction = "relief" if any(
+                r.urgency in (POUrgency.CRITICAL, POUrgency.HIGH)
+                for r in recommendations
+            ) else "neutral"
+            self.signal_bus.urgency.update("po_creation", max_urg, direction)
+        except Exception as e:
+            logger.debug(f"PO signal emit failed: {e}")
 
     def record_outcome(
         self,

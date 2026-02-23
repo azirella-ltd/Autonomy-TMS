@@ -30,6 +30,7 @@ from datetime import datetime, timedelta
 from .engines.order_tracking_engine import (
     OrderTrackingEngine, OrderTrackingConfig, OrderSnapshot, ExceptionResult,
 )
+from .hive_signal import HiveSignal, HiveSignalBus, HiveSignalType
 
 logger = logging.getLogger(__name__)
 
@@ -260,6 +261,7 @@ class OrderTrackingTRM:
         self.price_variance_threshold = price_variance_threshold
         self.db = db
         self.config_id = config_id
+        self.signal_bus: Optional[HiveSignalBus] = None  # Set by SiteAgent
 
         # Context-aware explainer (set externally by SiteAgent or caller)
         self.ctx_explainer = None
@@ -282,6 +284,9 @@ class OrderTrackingTRM:
         Returns:
             ExceptionDetection with type, severity, and recommended action
         """
+        # Read hive signals before decision
+        self._read_signals_before_decision()
+
         if self.trm_model is not None:
             result = self._trm_evaluate(order_state, inventory_context)
         elif self.use_heuristic_fallback:
@@ -314,6 +319,9 @@ class OrderTrackingTRM:
                 result.context_explanation = ctx.to_dict()
             except Exception as e:
                 logger.debug(f"Context enrichment failed: {e}")
+
+        # Emit signals after decision
+        self._emit_signals_after_decision(order_state, result)
 
         # Record for training
         self._record_evaluation(order_state, result)
@@ -523,6 +531,60 @@ class OrderTrackingTRM:
             self.db.add(row)
         except Exception as e:
             logger.warning(f"Failed to persist order exception: {e}")
+
+    # ---- Hive signal methods ------------------------------------------------
+
+    def _read_signals_before_decision(self) -> None:
+        """Read relevant hive signals before order evaluation."""
+        if self.signal_bus is None:
+            return
+        try:
+            signals = self.signal_bus.read(
+                consumer_trm="order_tracking",
+                types={
+                    HiveSignalType.PO_EXPEDITE,
+                    HiveSignalType.TO_DELAYED,
+                    HiveSignalType.TO_RELEASED,
+                },
+            )
+            if signals:
+                logger.debug(f"OrderTracking read {len(signals)} hive signals")
+        except Exception as e:
+            logger.debug(f"OrderTracking signal read failed: {e}")
+
+    def _emit_signals_after_decision(
+        self, order_state: OrderState, result: ExceptionDetection
+    ) -> None:
+        """Emit hive signals after order tracking evaluation."""
+        if self.signal_bus is None:
+            return
+        if result.exception_type == ExceptionType.NO_EXCEPTION:
+            return
+        try:
+            severity_urgency = {
+                ExceptionSeverity.CRITICAL: 0.9,
+                ExceptionSeverity.HIGH: 0.7,
+                ExceptionSeverity.WARNING: 0.4,
+                ExceptionSeverity.INFO: 0.1,
+            }
+            urgency = severity_urgency.get(result.severity, 0.3)
+            self.signal_bus.emit(HiveSignal(
+                source_trm="order_tracking",
+                signal_type=HiveSignalType.ORDER_EXCEPTION,
+                urgency=urgency,
+                direction="risk",
+                magnitude=order_state.remaining_qty,
+                product_id=order_state.product_id,
+                payload={
+                    "order_id": order_state.order_id,
+                    "exception_type": result.exception_type.value,
+                    "severity": result.severity.value,
+                    "recommended_action": result.recommended_action.value,
+                },
+            ))
+            self.signal_bus.urgency.update("order_tracking", urgency, "risk")
+        except Exception as e:
+            logger.debug(f"OrderTracking signal emit failed: {e}")
 
     def record_outcome(
         self,

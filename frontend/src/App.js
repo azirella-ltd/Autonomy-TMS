@@ -44,6 +44,10 @@ import { ScenarioComparison } from "./components/stochastic";
 import SyntheticDataWizard from "./pages/admin/SyntheticDataWizard.jsx";
 import PlanningHierarchyConfig from "./pages/admin/PlanningHierarchyConfig.jsx";
 import SAPDataManagement from "./pages/admin/SAPDataManagement.jsx";
+import PicoClawManagement from "./pages/admin/PicoClawManagement.jsx";
+import OpenClawManagement from "./pages/admin/OpenClawManagement.jsx";
+import SignalIngestionDashboard from "./pages/admin/SignalIngestionDashboard.jsx";
+import EdgeAgentSecurity from "./pages/admin/EdgeAgentSecurity.jsx";
 import Players from "./pages/Players.jsx";
 import DebugBanner from "./components/DebugBanner.jsx";
 import AnalyticsDashboard from "./pages/AnalyticsDashboard.jsx";
@@ -425,6 +429,25 @@ const AppContent = () => {
               path="/admin/sap-data"
               element={<SAPDataManagement />}
             />
+
+            {/* Edge Agent Management (PicoClaw & OpenClaw) */}
+            <Route
+              path="/admin/picoclaw"
+              element={<PicoClawManagement />}
+            />
+            <Route
+              path="/admin/openclaw"
+              element={<OpenClawManagement />}
+            />
+            <Route
+              path="/admin/signals"
+              element={<SignalIngestionDashboard />}
+            />
+            <Route
+              path="/admin/edge-security"
+              element={<EdgeAgentSecurity />}
+            />
+
             <Route
               path="/users"
               element={<Users />}
