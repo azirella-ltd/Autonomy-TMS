@@ -555,16 +555,24 @@ class SAPFieldMappingService:
         self._openai_client = None
 
     async def _get_openai_client(self):
-        """Get or create OpenAI client for AI-powered suggestions."""
+        """Get or create OpenAI-compatible async client for AI-powered suggestions."""
         if self._openai_client is None:
             try:
                 from openai import AsyncOpenAI
                 import os
-                api_key = os.environ.get("OPENAI_API_KEY")
-                if api_key:
-                    self._openai_client = AsyncOpenAI(api_key=api_key)
+                base_url = os.environ.get("LLM_API_BASE")
+                api_key = (
+                    os.environ.get("LLM_API_KEY")
+                    or os.environ.get("OPENAI_API_KEY")
+                    or "not-needed"
+                )
+                kwargs = {"api_key": api_key}
+                if base_url:
+                    kwargs["base_url"] = base_url
+                if base_url or api_key != "not-needed":
+                    self._openai_client = AsyncOpenAI(**kwargs)
             except ImportError:
-                logger.warning("OpenAI not available for AI-powered field mapping")
+                logger.warning("openai package not available for AI-powered field mapping")
         return self._openai_client
 
     # -------------------------------------------------------------------------
