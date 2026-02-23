@@ -336,9 +336,13 @@ class RiskDetectionService:
 
         excess_qty = max(0, available_qty - optimal_inventory)
 
-        # Estimate cost impact (using $10/unit as placeholder)
-        # TODO: Get actual unit holding cost from Product model
+        # Get unit holding cost from Product or fall back to $10/unit
         unit_holding_cost = 10.0
+        if product_id:
+            from app.models.sc_entities import Product as ProductModel
+            prod = self.db.query(ProductModel).filter(ProductModel.id == product_id).first()
+            if prod and hasattr(prod, 'unit_cost') and prod.unit_cost:
+                unit_holding_cost = float(prod.unit_cost) * 0.25 / 365  # 25% annual holding rate / daily
         cost_impact = excess_qty * unit_holding_cost
 
         severity = self._calculate_overstock_severity(days_of_supply)

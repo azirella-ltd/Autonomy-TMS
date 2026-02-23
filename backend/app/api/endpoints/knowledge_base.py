@@ -17,7 +17,8 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db, require_group_admin
+from app.api.deps import get_current_user, require_group_admin
+from app.db.kb_session import get_kb_db
 from app.models.user import User
 from app.services.knowledge_base_service import KnowledgeBaseService
 
@@ -68,7 +69,7 @@ async def upload_document(
     description: Optional[str] = Form(None),
     tags: Optional[str] = Form(None),  # Comma-separated tags
     current_user: User = Depends(require_group_admin),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_kb_db),
 ) -> Dict[str, Any]:
     """Upload and index a document for RAG.
 
@@ -128,7 +129,7 @@ async def list_documents(
     status: Optional[str] = Query(None, description="Filter by status"),
     category: Optional[str] = Query(None, description="Filter by category"),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_kb_db),
 ) -> Dict[str, Any]:
     """List all documents in the knowledge base.
 
@@ -143,7 +144,7 @@ async def list_documents(
 async def get_document(
     document_id: int,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_kb_db),
 ) -> Dict[str, Any]:
     """Get details of a specific document.
 
@@ -160,7 +161,7 @@ async def get_document(
 async def delete_document(
     document_id: int,
     current_user: User = Depends(require_group_admin),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_kb_db),
 ) -> Dict[str, Any]:
     """Delete a document and all its chunks.
 
@@ -181,7 +182,7 @@ async def delete_document(
 async def search_knowledge_base(
     request: SearchRequest,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_kb_db),
 ) -> SearchResponse:
     """Semantic search across the knowledge base.
 
@@ -230,7 +231,7 @@ async def search_knowledge_base(
 @router.get("/status", tags=["knowledge-base"])
 async def get_knowledge_base_status(
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_kb_db),
 ) -> Dict[str, Any]:
     """Get knowledge base status and statistics.
 

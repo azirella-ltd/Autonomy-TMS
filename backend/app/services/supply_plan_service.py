@@ -183,9 +183,9 @@ class SupplyPlanService:
             # Total demand over horizon
             total_demand = mean_demand * horizon
 
-            # Assume item_id = 1 for simplicity (TODO: extract from config)
-            item_id = 1
-            node_id = market_demand.id  # Use market demand ID as proxy
+            # Use the product_id from the market demand record
+            item_id = market_demand.product_id or 1
+            node_id = market_demand.market_id or market_demand.id
 
             forecasts[(item_id, node_id)] = DemandForecast(
                 item_id=item_id,

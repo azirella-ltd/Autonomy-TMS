@@ -152,8 +152,8 @@ class AuthorizationRequestRecord(Base):
     evidence = Column(JSON, nullable=True)
     priority = Column(SAEnum(AuthorizationPriority), nullable=True)
 
-    # Link to planning scenario (optional)
-    scenario_id = Column(Integer, ForeignKey("planning_scenario.id"), nullable=True)
+    # Link to planning scenario (optional — FK deferred until planning_scenario table exists)
+    scenario_id = Column(Integer, nullable=True)
 
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
@@ -193,7 +193,7 @@ class AuthorizationResponseRecord(Base):
 
     # Counter-proposal details (if COUNTER_OFFER)
     counter_proposal = Column(JSON, nullable=True)
-    counter_scenario_id = Column(Integer, ForeignKey("planning_scenario.id"), nullable=True)
+    counter_scenario_id = Column(Integer, nullable=True)  # FK deferred until planning_scenario table exists
     revised_scorecard = Column(JSON, nullable=True)
 
     # Contention details (resource conflicts, capacity issues)

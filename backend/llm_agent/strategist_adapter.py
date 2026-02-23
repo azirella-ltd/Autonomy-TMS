@@ -1,4 +1,7 @@
-"""OpenAI Strategist adapter for the simulation engine."""
+"""LLM Strategist adapter for the simulation engine.
+
+Supports any OpenAI-compatible API: vLLM, Ollama, DeepSeek, LiteLLM, etc.
+"""
 
 from __future__ import annotations
 
@@ -88,7 +91,9 @@ INSTRUCTIONS = (
 
 
 def make_openai_client() -> OpenAI:
-    return OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    """Create an OpenAI-compatible client via the shared factory."""
+    from .autonomy_client import _get_client
+    return _get_client()
 
 
 def _handle_tool_calls(

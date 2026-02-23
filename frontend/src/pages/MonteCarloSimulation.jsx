@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import {
   Alert,
   AlertDescription,
@@ -48,6 +49,7 @@ import MonteCarloResultsView from '../components/montecarlo/MonteCarloResultsVie
 
 const MonteCarloSimulation = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [currentTab, setCurrentTab] = useState('list');
   const [runs, setRuns] = useState([]);
   const [configs, setConfigs] = useState([]);
@@ -112,7 +114,7 @@ const MonteCarloSimulation = () => {
     try {
       const payload = {
         ...newRun,
-        group_id: 1, // TODO: Get from current user context
+        group_id: user?.group_id || 1,
       };
 
       await api.post('/monte-carlo/runs', payload);

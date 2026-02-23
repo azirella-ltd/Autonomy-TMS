@@ -317,12 +317,17 @@ class HealthService:
             )
 
         try:
-            # Test API with a simple request
-            import openai
-            openai.api_key = api_key
+            # Test API with a simple request using modern client
+            from openai import OpenAI
+            import os
+            kwargs = {"api_key": api_key}
+            base_url = os.getenv("LLM_API_BASE")
+            if base_url:
+                kwargs["base_url"] = base_url
+            client = OpenAI(**kwargs)
 
             # List models as a connectivity test
-            models = openai.Model.list()
+            models = client.models.list()
 
             response_time_ms = (time.time() - start) * 1000
 

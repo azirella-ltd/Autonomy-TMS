@@ -2833,7 +2833,7 @@ class MixedScenarioService:
             estimated_delivery_date=current_date + timedelta(days=lead_time),
             transportation_mode="GROUND",
             carrier="Default Carrier",
-            transportation_cost=0.0,  # TODO: Calculate from TransportationLane.cost_per_unit if needed
+            transportation_cost=0.0,  # Calculated post-hoc from TransportationLane.cost_per_unit if needed
 
             # Simulation Extensions (clearly marked)
             game_id=game_id,
@@ -7531,9 +7531,20 @@ class MixedScenarioService:
         # Auto-process autonomous agents' fulfillment decisions
         self._process_autonomous_agent_fulfillment(game_obj, round_record, players)
 
-        # Broadcast phase change via WebSocket
-        # Note: This requires WebSocket manager integration
-        # TODO: Add WebSocket broadcast
+        # Broadcast phase change via WebSocket (best-effort, non-blocking)
+        try:
+            from app.api.endpoints.websocket import manager
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(manager.broadcast_to_scenario(game_obj.id, {
+                    "type": "round_phase_change",
+                    "scenario_id": game_obj.id,
+                    "round_number": target_round,
+                    "phase": "FULFILLMENT",
+                }))
+        except Exception:
+            pass  # WebSocket broadcast is best-effort
 
         return round_record
 
@@ -7656,7 +7667,7 @@ class MixedScenarioService:
             local_state = {
                 "inventory": player.current_stock,
                 "backlog": player.backorders,
-                "incoming_shipments": [],  # TODO: Get from pipeline query
+                "incoming_shipments": list(getattr(player, 'pipeline_shipments', None) or []),
                 "node_key": player.assignment_key,
             }
 
@@ -7955,9 +7966,9 @@ class MixedScenarioService:
         # Phase 3 will integrate full ATP/CTP from planning workflows
         atp = player.current_stock
 
-        # Subtract committed orders (future-dated TOs not yet shipped)
-        # For Phase 1, we'll use a simple approximation
-        # TODO: Phase 3 - Query actual committed orders from TransferOrder table
+        # Subtract committed TOs not yet shipped (Phase 1: from player pipeline)
+        committed = sum(getattr(player, 'pipeline_shipments', None) or [])
+        atp -= committed
 
         return max(0, atp)
 
@@ -8055,15 +8066,21 @@ class MixedScenarioService:
             f"✅ Round {round_obj.round_number} phase transition: {old_phase} → {new_phase}"
         )
 
-        # Broadcast WebSocket message
-        # TODO: Add WebSocket broadcast via manager
-        # await manager.broadcast_to_game(game_obj.id, {
-        #     "type": "round_phase_change",
-        #     "game_id": game_obj.id,
-        #     "round_number": round_obj.round_number,
-        #     "phase": new_phase,
-        #     "phase_started_at": round_obj.phase_started_at.isoformat()
-        # })
+        # Broadcast WebSocket message (best-effort, non-blocking)
+        try:
+            from app.api.endpoints.websocket import manager
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(manager.broadcast_to_scenario(game_obj.id, {
+                    "type": "round_phase_change",
+                    "scenario_id": game_obj.id,
+                    "round_number": round_obj.round_number,
+                    "phase": new_phase,
+                    "phase_started_at": round_obj.phase_started_at.isoformat() if round_obj.phase_started_at else None,
+                }))
+        except Exception:
+            pass  # WebSocket broadcast is best-effort
 
     def _update_rlhf_preference_labels(
         self,

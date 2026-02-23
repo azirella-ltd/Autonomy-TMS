@@ -843,13 +843,32 @@ class PowellIntegrationService:
         backlog_result = await self.db.execute(backlog_query)
         backlog = backlog_result.scalar() or 0.0
 
-        # Get demand forecast (simplified - use average of last 4 weeks)
-        # TODO: Integrate with actual forecast service
-        forecast_demand = 100.0  # Placeholder
+        # Get demand forecast from Forecast table (avg of recent entries)
+        from app.models.sc_entities import Forecast as ForecastModel, InvPolicy
+        fcst_query = select(func.avg(ForecastModel.p50_quantity)).where(
+            and_(
+                ForecastModel.product_id == product_id,
+                ForecastModel.site_id == site_id,
+            )
+        )
+        fcst_result = await self.db.execute(fcst_query)
+        forecast_demand = float(fcst_result.scalar() or 100.0)
 
         # Get safety stock and reorder point from InvPolicy
-        safety_stock = 50.0  # Placeholder
-        reorder_point = 100.0  # Placeholder
+        policy_query = select(InvPolicy).where(
+            and_(
+                InvPolicy.product_id == product_id,
+                InvPolicy.site_id == site_id,
+            )
+        ).limit(1)
+        policy_result = await self.db.execute(policy_query)
+        policy = policy_result.scalar_one_or_none()
+        if policy:
+            safety_stock = float(policy.ss_quantity or policy.reorder_point or 50.0)
+            reorder_point = float(policy.reorder_point or safety_stock * 2)
+        else:
+            safety_stock = 50.0
+            reorder_point = 100.0
 
         return InventoryPosition(
             product_id=product_id,

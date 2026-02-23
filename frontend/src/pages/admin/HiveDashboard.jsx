@@ -32,6 +32,7 @@ import {
   HeartPulse, Network, Signal, Bug,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import hiveApi from '../../services/hiveApi';
 
 // ============================================================================
 // Constants
@@ -278,6 +279,8 @@ const HiveDashboard = () => {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [authThreads, setAuthThreads] = useState([]);
+  const [authStats, setAuthStats] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -292,6 +295,17 @@ const HiveDashboard = () => {
       setError(err.response?.data?.detail || err.message);
     } finally {
       setLoading(false);
+    }
+    // Fetch authorization data (non-blocking)
+    try {
+      const [threadsRes, statsRes] = await Promise.all([
+        hiveApi.getAuthThreads(),
+        hiveApi.getAuthStats(),
+      ]);
+      setAuthThreads(threadsRes.data?.threads || []);
+      setAuthStats(statsRes.data);
+    } catch (_) {
+      // Authorization data is supplementary, don't block on failure
     }
   }, [siteKey]);
 
@@ -431,6 +445,7 @@ const HiveDashboard = () => {
           <TabsTrigger value="cycle">Decision Cycle</TabsTrigger>
           <TabsTrigger value="directive">tGNN Directive</TabsTrigger>
           <TabsTrigger value="health">Hive Health</TabsTrigger>
+          <TabsTrigger value="authorization">Authorization</TabsTrigger>
         </TabsList>
 
         {/* Urgency Heatmap Tab */}
@@ -753,6 +768,95 @@ const HiveDashboard = () => {
                   <p className="text-muted-foreground">No TRMs registered. Connect TRMs via SiteAgent.</p>
                 )}
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Authorization Tab */}
+        <TabsContent value="authorization" className="space-y-4">
+          {/* Stats Summary */}
+          {authStats && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <StatCard title="Active Threads" value={authStats.active_threads || 0} icon={Clock} color="blue" />
+              <StatCard title="Resolved" value={authStats.resolved_threads || 0} icon={CheckCircle} color="green" />
+              <StatCard title="Auto-Resolved" value={authStats.auto_resolved || 0} icon={Zap} color="amber" />
+              <StatCard title="Escalated" value={authStats.escalated || 0} icon={AlertTriangle} color="red" />
+            </div>
+          )}
+
+          {/* Thread List */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Shield className="h-5 w-5" /> Authorization Threads
+                <Badge variant="outline" className="ml-auto">{authThreads.length}</Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {authThreads.length > 0 ? (
+                <div className="space-y-3">
+                  {authThreads.map((thread) => {
+                    const statusColor = thread.status === 'ACCEPTED' ? '#10b981'
+                      : thread.status === 'DENIED' ? '#ef4444'
+                      : thread.status === 'ESCALATED' ? '#8b5cf6'
+                      : thread.status === 'COUNTER_OFFERED' ? '#f59e0b'
+                      : '#3b82f6';
+
+                    return (
+                      <div
+                        key={thread.thread_id}
+                        className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
+                      >
+                        <div
+                          className="w-2 h-10 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: statusColor }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">
+                              {thread.requesting_agent}
+                            </span>
+                            <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-sm font-medium">
+                              {thread.target_agent}
+                            </span>
+                            <Badge variant="outline" className="text-[10px]" style={{ borderColor: statusColor, color: statusColor }}>
+                              {thread.status}
+                            </Badge>
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {thread.site_key && `Site: ${thread.site_key} · `}
+                            Priority: {thread.priority}
+                            {thread.net_benefit != null && ` · Net Benefit: ${thread.net_benefit.toFixed(4)}`}
+                          </div>
+                        </div>
+                        <div className="text-right text-xs text-muted-foreground">
+                          {thread.resolution_source && (
+                            <Badge variant="outline" className="text-[10px]">
+                              {thread.resolution_source}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-center py-8">
+                  No authorization threads. Threads are created when TRM actions cross authority boundaries.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Link to full Authorization Board */}
+          <Card>
+            <CardContent className="p-4">
+              <Link to="/admin/authorization-protocol" className="text-sm text-blue-600 hover:underline flex items-center gap-2">
+                <Shield className="h-4 w-4" />
+                Open full Authorization Protocol Board for detailed thread management
+                <ArrowRight className="h-3 w-3" />
+              </Link>
             </CardContent>
           </Card>
         </TabsContent>

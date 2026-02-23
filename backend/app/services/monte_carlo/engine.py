@@ -233,16 +233,26 @@ class MonteCarloEngine:
                 )
                 sampled["lead_times"][f"{lane.from_node_id}->{lane.to_node_id}"] = lead_time
 
-            # Sample demand for each product-site-week combination
+            # Sample demand — lookup forecast mean from market_demands, fall back to 100
+            from app.models.supply_chain_config import MarketDemand
+            market_demands = {
+                (md.product_id, md.market_id): md
+                for md in (config.market_demands or [])
+            }
+
             for node in config.nodes:
                 if node.master_node_type == "MARKET_DEMAND":
                     for item in config.items:
+                        # Try to find forecast mean from market demand config
+                        md = market_demands.get((item.id, node.id)) or market_demands.get((str(item.id), node.id))
+                        if md and md.demand_pattern:
+                            params = md.demand_pattern.get("parameters", {})
+                            mean_demand = params.get("mean", params.get("final_demand", 100))
+                        else:
+                            mean_demand = 100  # Fallback when no forecast exists
+                        std_demand = max(1, mean_demand * 0.2)
+
                         for week in range(planning_horizon_weeks):
-                            week_date = start_date + timedelta(weeks=week)
-                            # In practice, you'd look up forecast and sample from demand distribution
-                            # For now, use a simple normal distribution
-                            mean_demand = 100  # TODO: Lookup from forecast
-                            std_demand = 20
                             demand = max(0, self.rng.normal(mean_demand, std_demand))
                             sampled["demands"][f"{item.id}_{node.id}_week{week}"] = demand
 

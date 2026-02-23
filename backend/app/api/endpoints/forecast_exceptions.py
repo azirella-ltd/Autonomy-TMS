@@ -15,6 +15,8 @@ import uuid
 from ...db.session import get_sync_db as get_db
 from ...models.forecast_exception import ForecastException, ForecastExceptionRule, ForecastExceptionComment
 from ...models.sc_entities import Forecast
+from ...models.user import User
+from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/forecast-exceptions", tags=["Forecast Exceptions"])
 
@@ -348,7 +350,7 @@ def acknowledge_exception(
     exception_id: int,
     data: AcknowledgeRequest,
     db: Session = Depends(get_db),
-    # current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Acknowledge an exception"""
     exception = db.query(ForecastException).filter(ForecastException.id == exception_id).first()
@@ -366,7 +368,7 @@ def acknowledge_exception(
         # Add comment
         comment = ForecastExceptionComment(
             exception_id=exception_id,
-            author_id=1,  # TODO: Use current_user.id
+            author_id=current_user.id,
             content=f"Acknowledged: {data.notes}",
         )
         db.add(comment)
@@ -430,6 +432,7 @@ def escalate_exception(
     exception_id: int,
     data: EscalateRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Escalate an exception"""
     exception = db.query(ForecastException).filter(ForecastException.id == exception_id).first()
@@ -442,7 +445,7 @@ def escalate_exception(
     # Add comment
     comment = ForecastExceptionComment(
         exception_id=exception_id,
-        author_id=1,  # TODO: Use current_user.id
+        author_id=current_user.id,
         content=f"Escalated to user {data.escalate_to_id}: {data.reason}",
     )
     db.add(comment)
@@ -513,6 +516,7 @@ def add_comment(
     exception_id: int,
     data: CommentCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Add a comment to an exception"""
     exception = db.query(ForecastException).filter(ForecastException.id == exception_id).first()
@@ -521,7 +525,7 @@ def add_comment(
 
     comment = ForecastExceptionComment(
         exception_id=exception_id,
-        author_id=1,  # TODO: Use current_user.id
+        author_id=current_user.id,
         content=data.content,
     )
     db.add(comment)

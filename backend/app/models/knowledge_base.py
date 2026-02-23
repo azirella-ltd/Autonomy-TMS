@@ -4,6 +4,10 @@ Knowledge Base Models — Document Storage and Vector Embeddings for RAG
 ORM models for managing uploaded documents and their chunked embeddings
 used by the RAG (Retrieval-Augmented Generation) pipeline.
 
+These models use a separate declarative Base (KBBase) so they can live
+in an independent pgvector database without interfering with the main
+application metadata.
+
 Tables:
   - kb_documents: Uploaded documents (PDF, DOCX, TXT)
   - kb_chunks: Document chunks with pgvector embeddings for similarity search
@@ -14,7 +18,7 @@ from sqlalchemy import (
     Column, Integer, String, Float, Boolean, DateTime,
     Text, JSON, ForeignKey, Index,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
 
 try:
@@ -23,24 +27,28 @@ except ImportError:
     # Fallback for environments without pgvector installed
     Vector = None
 
-from .base import Base
+# Separate Base — KB tables live in their own pgvector database
+KBBase = declarative_base()
 
 
 # ============================================================================
 # Documents
 # ============================================================================
 
-class KBDocument(Base):
+class KBDocument(KBBase):
     """Uploaded document in the knowledge base.
 
     Stores metadata about uploaded files. The actual content is chunked
     and stored in kb_chunks with vector embeddings for retrieval.
+
+    Note: group_id and uploaded_by are plain integers (no FK to main DB).
+    Association is enforced at the application level, not the database level.
     """
     __tablename__ = "kb_documents"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=False)
-    uploaded_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    group_id = Column(Integer, nullable=False)  # Application-level ref to groups.id
+    uploaded_by = Column(Integer, nullable=True)  # Application-level ref to users.id
 
     # Document metadata
     title = Column(String(500), nullable=False)
@@ -59,7 +67,7 @@ class KBDocument(Base):
     embedding_dimensions = Column(Integer, nullable=True)
 
     # Optional categorization
-    category = Column(String(100), nullable=True)  # annual_report, quarterly_report, operating_plan, etc.
+    category = Column(String(100), nullable=True)
     description = Column(Text, nullable=True)
     tags = Column(JSON, nullable=True)  # ["Q3", "2026", "financial"]
 
@@ -67,7 +75,7 @@ class KBDocument(Base):
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
-    # Relationships
+    # Relationships (within KB database only)
     chunks = relationship("KBChunk", back_populates="document", cascade="all, delete-orphan")
 
     __table_args__ = (
@@ -103,7 +111,7 @@ class KBDocument(Base):
 # Document Chunks with Vector Embeddings
 # ============================================================================
 
-class KBChunk(Base):
+class KBChunk(KBBase):
     """Document chunk with vector embedding for similarity search.
 
     Each document is split into overlapping chunks. Each chunk stores its
@@ -128,8 +136,8 @@ class KBChunk(Base):
     # pgvector column — uses HNSW index for fast approximate nearest neighbor search
     embedding = Column(Vector(768)) if Vector else Column(JSON)
 
-    # Metadata
-    metadata = Column(JSON, nullable=True)  # Optional extra context (section heading, etc.)
+    # Extra context (section heading, etc.)
+    chunk_metadata = Column("metadata", JSON, nullable=True)
 
     # Timestamps
     created_at = Column(DateTime, nullable=False, server_default=func.now())
@@ -152,6 +160,6 @@ class KBChunk(Base):
             "page_number": self.page_number,
             "start_char": self.start_char,
             "end_char": self.end_char,
-            "metadata": self.metadata,
+            "metadata": self.chunk_metadata,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

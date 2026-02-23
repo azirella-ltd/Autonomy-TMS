@@ -109,7 +109,7 @@ async def send_conversation_message(
 
         # Send message and get AI response
         result = await conversation_service.send_message(
-            game_id=game_id,
+            game_id=scenario_id,
             player_id=current_user.id,  # TODO: Map user to player properly
             message=request.message,
             parent_message_id=request.parent_message_id,
@@ -164,7 +164,7 @@ async def get_conversation_history(
 
         # Get conversation history
         messages = await conversation_service.get_conversation_history(
-            game_id=game_id,
+            game_id=scenario_id,
             player_id=current_user.id,  # TODO: Map user to player properly
             limit=limit,
             include_context=include_context,
@@ -173,7 +173,7 @@ async def get_conversation_history(
         return ConversationHistoryResponse(
             messages=[ConversationMessageResponse(**msg) for msg in messages],
             total_count=len(messages),
-            game_id=game_id,
+            scenario_id=scenario_id,
             player_id=current_user.id,
         )
 
@@ -205,7 +205,7 @@ async def clear_conversation(
         conversation_service = get_conversation_service(db)
 
         success = await conversation_service.clear_conversation(
-            game_id=game_id,
+            game_id=scenario_id,
             player_id=current_user.id,  # TODO: Map user to player properly
         )
 
@@ -247,7 +247,7 @@ async def get_conversation_summary(
         conversation_service = get_conversation_service(db)
 
         summary = await conversation_service.get_conversation_summary(
-            game_id=game_id,
+            game_id=scenario_id,
             player_id=current_user.id,  # TODO: Map user to player properly
         )
 

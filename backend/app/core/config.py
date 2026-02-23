@@ -170,35 +170,34 @@ class Settings(BaseSettings):
     # AI Settings
     AI_REACTION_TIME: float = 1.0  # seconds to wait before AI makes a move
 
-    # LLM Configuration (Phase 7 Sprint 3)
-    LLM_PROVIDER: str = "openai"  # openai, anthropic
-    LLM_MODEL: str = "gpt-3.5-turbo"  # gpt-4, gpt-4o-mini, gpt-3.5-turbo, claude-3-sonnet-20240229
+    # LLM Configuration — provider-agnostic (vLLM, Ollama, or any OpenAI-compatible API)
+    LLM_PROVIDER: str = "openai-compatible"
+    LLM_MODEL: str = "qwen3-8b"
     LLM_TEMPERATURE: float = 0.7
     LLM_MAX_TOKENS: int = 1000
     LLM_TIMEOUT: int = 10  # seconds
     LLM_CACHE_TTL: int = 300  # 5 minutes
 
-    # OpenAI specific
-    OPENAI_API_KEY: Optional[str] = None
-    OPENAI_PROJECT: Optional[str] = None
-    OPENAI_ORGANIZATION: Optional[str] = None
-
-    # Anthropic specific
-    ANTHROPIC_API_KEY: Optional[str] = None
-
-    # Local LLM / RAG Configuration
+    # LLM connection — works with vLLM, Ollama, OpenAI, DeepSeek, LiteLLM, etc.
     LLM_API_BASE: Optional[str] = None  # e.g. http://vllm:8000/v1 or http://ollama:11434/v1
-    LLM_MODEL_NAME: Optional[str] = None  # Served model name (e.g. qwen3-8b)
-    EMBEDDING_API_BASE: Optional[str] = None  # Embedding endpoint (e.g. http://ollama:11434/v1)
-    EMBEDDING_MODEL: str = "nomic-embed-text"  # Embedding model name
-    EMBEDDING_DIMENSIONS: int = 768  # Vector dimensions for nomic-embed-text-v2
-    RAG_ENABLED: bool = False  # Enable RAG context injection into agent prompts
-    RAG_CHUNK_SIZE: int = 1024  # Characters per document chunk
-    RAG_CHUNK_OVERLAP: int = 200  # Overlap between chunks
-    RAG_TOP_K: int = 5  # Number of chunks to retrieve per query
+    LLM_API_KEY: Optional[str] = None  # API key (reads OPENAI_API_KEY env as fallback)
+    LLM_MODEL_NAME: Optional[str] = None  # Served model name (overrides LLM_MODEL)
 
-    # ==========================================================================
-    # SAP S/4HANA Integration (SAP ATP/CTP Integration)
+    # Embedding configuration
+    EMBEDDING_API_BASE: Optional[str] = None  # e.g. http://ollama:11434/v1
+    EMBEDDING_MODEL: str = "nomic-embed-text"
+    EMBEDDING_DIMENSIONS: int = 768
+
+    # RAG Configuration
+    RAG_ENABLED: bool = False
+    RAG_CHUNK_SIZE: int = 1024
+    RAG_CHUNK_OVERLAP: int = 200
+    RAG_TOP_K: int = 5
+
+    # Separate KB database (pgvector) — if not set, falls back to main database
+    KB_DATABASE_URL: Optional[str] = None
+    KB_ASYNC_DATABASE_URL: Optional[str] = None
+
     # ==========================================================================
     # Connection settings
     SAP_HOST: Optional[str] = None  # Application server host (e.g., "sap-server.company.com")

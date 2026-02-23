@@ -187,14 +187,20 @@ class SiteAgentPolicy(OrderPolicy):
         base_stock = observation.get('base_stock', 20)
 
         # Normalize and pad to 12 dimensions
+        supplier_reliability = observation.get('supplier_reliability', 0.95)
+        lead_time_variability = observation.get('lead_time_variability', 0.15)
+        service_level = observation.get('service_level', 0.0)
+        demand_trend = observation.get('demand_trend', 0.0)
         context = [
             inventory / max(base_stock, 1),
             backlog / max(base_stock, 1),
             pipeline / max(base_stock, 1),
             incoming_order / max(base_stock, 1),
-            1.0,  # Supplier reliability placeholder
-            0.5,  # Lead time variability placeholder
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0  # Padding
+            supplier_reliability,
+            lead_time_variability,
+            service_level,
+            demand_trend,
+            0.0, 0.0, 0.0, 0.0  # Padding
         ]
 
         return torch.tensor([context], dtype=torch.float32)

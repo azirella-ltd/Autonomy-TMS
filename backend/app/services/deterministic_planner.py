@@ -221,21 +221,34 @@ class DeterministicPlanner:
         return max(1, eoq)
 
     def _get_lead_time(self, node: Node, item: Item) -> int:
-        """Get procurement/manufacturing lead time for node/item."""
-        # Simplified: use average lane lead time
-        # TODO: Extract from Lane model based on upstream connections
+        """Get procurement/manufacturing lead time from upstream lane."""
+        if self.session:
+            lane = self.session.query(TransportationLane).filter(
+                TransportationLane.to_node_id == node.id,
+                TransportationLane.config_id == node.config_id,
+            ).first()
+            if lane and lane.supply_lead_time:
+                return max(1, lane.supply_lead_time)
         return 2  # Default 2 weeks
 
     def _get_item_value(self, item: Item) -> float:
-        """Get item unit value."""
-        # Simplified: use fixed value
-        # TODO: Extract from Item model or cost data
+        """Get item unit value from Product model."""
+        if self.session and hasattr(item, 'id'):
+            product = self.session.query(Product).filter(Product.id == str(item.id)).first()
+            if product and hasattr(product, 'unit_cost') and product.unit_cost:
+                return float(product.unit_cost)
         return 100.0  # Default $100 per unit
 
     def _get_current_inventory(self, node: Node, item: Item) -> float:
-        """Get current on-hand inventory."""
-        # Simplified: assume starting from safety stock level
-        # TODO: Query actual inventory from game state or initial conditions
+        """Get current on-hand inventory from InvLevel."""
+        if self.session:
+            from app.models.sc_entities import InvLevel
+            inv = self.session.query(InvLevel).filter(
+                InvLevel.site_id == node.id,
+                InvLevel.product_id == str(item.id),
+            ).order_by(InvLevel.id.desc()).first()
+            if inv and inv.on_hand_qty:
+                return float(inv.on_hand_qty)
         return 0.0
 
     def _get_pipeline_inventory(self, node: Node, item: Item) -> float:

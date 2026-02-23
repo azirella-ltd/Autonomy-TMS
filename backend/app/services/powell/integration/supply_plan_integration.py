@@ -234,15 +234,24 @@ class SiteAgentSupplyPlanAdapter:
         return scheduled_receipts
 
     def _extract_bom(self, node: Node) -> Dict[str, List[Tuple[str, float]]]:
-        """Extract BOM structure for manufacturer nodes."""
+        """Extract BOM structure for manufacturer nodes from product_bom table."""
         # Only manufacturers have BOMs
         if node.master_type != "MANUFACTURER":
             return {}
 
-        # Query BOM from database
-        # This is a simplified implementation - extend for multi-level BOM
+        from app.models.sc_entities import ProductBom
+        bom_rows = self.db.query(ProductBom).filter(
+            ProductBom.config_id == node.config_id
+        ).all()
+
         bom = {}
-        # TODO: Load from product_bom table
+        for row in bom_rows:
+            parent = str(row.product_id)
+            component = str(row.component_product_id)
+            qty = float(row.component_quantity or 1.0)
+            if parent not in bom:
+                bom[parent] = []
+            bom[parent].append((component, qty))
         return bom
 
     def _extract_lead_times(self, node: Node) -> Dict[str, int]:

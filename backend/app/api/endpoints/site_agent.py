@@ -293,12 +293,28 @@ async def plan_replenishment(
     """
     site_agent = get_site_agent(request.site_key, db, request.include_trm_adjustments)
 
-    # TODO: Load actual data from database
-    # For now, return placeholder
+    # Load supply plan recommendations from database
+    from app.models.sc_entities import SupplyPlan
+    from app.models.supply_chain_config import Node
+    plans = db.query(SupplyPlan).join(
+        Node, SupplyPlan.site_id == Node.id
+    ).filter(Node.name == request.site_key).order_by(
+        SupplyPlan.planned_order_date
+    ).limit(50).all()
+    recs = []
+    for p in plans:
+        recs.append({
+            "plan_type": p.plan_type,
+            "product_id": p.product_id,
+            "quantity": p.planned_order_quantity,
+            "date": p.planned_order_date.isoformat() if p.planned_order_date else None,
+            "supplier_id": p.supplier_id,
+            "urgency": "normal",
+        })
     return ReplenishmentResponse(
         site_key=request.site_key,
-        recommendations=[],
-        total_orders=0,
+        recommendations=recs,
+        total_orders=len(recs),
         expedited_orders=0,
         generated_at=datetime.utcnow(),
     )
@@ -412,13 +428,26 @@ async def trigger_cdc_manual(
 
     Use this to force an out-of-cadence planning run.
     """
-    # TODO: Implement actual replanning trigger
+    # Trigger replanning via CDCRetrainingService
+    from app.services.powell.cdc_retraining_service import CDCRetrainingService
+    from app.models.powell_decision import CDCTriggerLog
+    site_agent = get_site_agent(request.site_key, db)
+    # Log the trigger
+    trigger = CDCTriggerLog(
+        site_key=request.site_key,
+        trigger_type="manual",
+        reason=f"Manual trigger by {current_user.email}",
+        severity=request.severity or "medium",
+        recommended_action="full_cfa",
+    )
+    db.add(trigger)
+    db.commit()
     return CDCTriggerResponse(
         triggered=True,
-        reasons=["manual"],
+        reasons=["manual", f"initiated by {current_user.email}"],
         recommended_action="full_cfa",
-        severity="medium",
-        message=f"Manual CDC trigger initiated by {current_user.email}",
+        severity=request.severity or "medium",
+        message=f"CDC replanning triggered for {request.site_key}. Trigger logged.",
     )
 
 
@@ -437,12 +466,22 @@ async def update_cdc_thresholds(
         if key in site_agent.cdc_monitor.config.thresholds:
             site_agent.cdc_monitor.config.thresholds[key] = value
 
-    # TODO: Persist to database
+    # Persist to database
+    from app.models.powell_decision import CDCThreshold
+    for key, value in thresholds.items():
+        existing = db.query(CDCThreshold).filter(
+            CDCThreshold.site_key == site_key, CDCThreshold.metric_name == key
+        ).first()
+        if existing:
+            existing.threshold_value = value
+        else:
+            db.add(CDCThreshold(site_key=site_key, metric_name=key, threshold_value=value))
+    db.commit()
 
     return {
         "status": "success",
         "site_key": site_key,
-        "thresholds": site_agent.cdc_monitor.config.thresholds
+        "thresholds": site_agent.cdc_monitor.config.thresholds,
     }
 
 

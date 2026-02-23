@@ -179,7 +179,7 @@ async def get_supply_chain_health(
         visibility_service = get_visibility_service(db)
 
         health = await visibility_service.calculate_supply_chain_health(
-            game_id=game_id,
+            game_id=scenario_id,
             round_number=round_number
         )
 
@@ -243,7 +243,7 @@ async def detect_bottlenecks(
         visibility_service = get_visibility_service(db)
 
         bottlenecks = await visibility_service.detect_bottlenecks(
-            game_id=game_id,
+            game_id=scenario_id,
             round_number=round_number
         )
 
@@ -304,7 +304,7 @@ async def measure_bullwhip_effect(
         visibility_service = get_visibility_service(db)
 
         bullwhip = await visibility_service.measure_bullwhip_severity(
-            game_id=game_id,
+            game_id=scenario_id,
             window_size=window_size
         )
 
@@ -371,7 +371,7 @@ async def set_visibility_permissions(
         player_id = current_user.id
 
         result = await visibility_service.set_visibility_permission(
-            game_id=game_id,
+            game_id=scenario_id,
             player_id=player_id,
             share_inventory=request.share_inventory,
             share_backlog=request.share_backlog,
@@ -433,7 +433,7 @@ async def get_visibility_permissions(
     try:
         visibility_service = get_visibility_service(db)
 
-        result = await visibility_service.get_visibility_permissions(game_id)
+        result = await visibility_service.get_visibility_permissions(scenario_id)
 
         return AllVisibilityPermissionsResponse(**result)
 
@@ -479,7 +479,7 @@ async def create_visibility_snapshot(
         visibility_service = get_visibility_service(db)
 
         result = await visibility_service.create_visibility_snapshot(
-            game_id=game_id,
+            game_id=scenario_id,
             round_number=round_number
         )
 
@@ -538,7 +538,7 @@ async def get_visibility_snapshots(
         visibility_service = get_visibility_service(db)
 
         snapshots = await visibility_service.get_visibility_snapshots(
-            game_id=game_id,
+            game_id=scenario_id,
             limit=limit
         )
 

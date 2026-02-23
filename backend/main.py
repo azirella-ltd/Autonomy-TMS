@@ -580,6 +580,14 @@ async def startup_event():
         else:
             logger.warning("Sync scheduler service not available")
 
+        # Initialize KB (RAG) tables in separate pgvector database
+        try:
+            from app.db.kb_session import init_kb_tables
+            await init_kb_tables()
+            logger.info("KB tables initialized successfully")
+        except Exception as e:
+            logger.warning(f"KB table initialization failed (non-critical): {e}")
+
         # Hydrate conformal suite from persisted belief states
         try:
             from app.services.conformal_orchestrator import ConformalOrchestrator

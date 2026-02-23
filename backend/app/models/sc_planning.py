@@ -348,85 +348,9 @@ from .base import Base
 #     )
 
 
-class InboundOrderLine(Base):
-    """Inbound orders (purchase/transfer/manufacturing orders) - execution entity
-
-    Tracks orders FROM suppliers/upstream sites TO destination sites.
-    This is the PRIMARY execution entity for Beer Game work orders.
-
-    Order Types:
-    - PO (Purchase Order): From external vendor
-    - TO (Transfer Order): Between internal sites
-    - MO (Manufacturing Order): Production at factory
-
-    Key Fields:
-    - quantity_submitted: Quantity ordered upstream (PRIMARY for Beer Game)
-    - quantity_confirmed: Vendor/upstream confirmed quantity
-    - quantity_received: Actual received quantity (execution complete)
-    - expected_delivery_date: When order is expected
-    - order_receive_date: When actually received
-
-    Beer Game Mapping:
-    - Player places order → quantity_submitted
-    - Order in transit → expected_delivery_date
-    - Shipment arrives → quantity_received, order_receive_date
-    """
-    __tablename__ = "inbound_order_line"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    order_id = Column(String(100), nullable=False)
-    line_number = Column(Integer, nullable=False)
-    product_id = Column(String(100), ForeignKey("product.id"), nullable=False)
-
-    # Site relationships
-    to_site_id = Column(Integer, ForeignKey("site.id"), nullable=False)  # Destination
-    from_site_id = Column(Integer, ForeignKey("site.id"))  # Source (for TO/MO)
-    tpartner_id = Column(String(100), ForeignKey("trading_partners.id"))  # Vendor (for PO)
-
-    # Order type (PO/TO/MO)
-    order_type = Column(String(20), nullable=False)  # 'PO', 'TO', 'MO'
-
-    # Quantities (execution tracking)
-    quantity_submitted = Column(Double, nullable=False)  # Ordered quantity (PRIMARY)
-    quantity_confirmed = Column(Double)  # Confirmed by supplier
-    quantity_received = Column(Double)  # Actually received
-    quantity_uom = Column(String(20))  # Unit of measure
-
-    # Dates (execution timeline)
-    submitted_date = Column(Date)  # When order was placed
-    expected_delivery_date = Column(Date)  # Expected arrival (lead time)
-    earliest_delivery_date = Column(Date)  # Earliest possible delivery
-    latest_delivery_date = Column(Date)  # Latest acceptable delivery
-    confirmation_date = Column(Date)  # When supplier confirmed
-    order_receive_date = Column(Date)  # When actually received
-
-    # Status and costs
-    status = Column(String(50))  # Order status (open, confirmed, received, cancelled)
-    vendor_status = Column(String(50))  # Real-time vendor status
-    cost = Column(Double)  # Unit cost
-    submitted_cost = Column(Double)  # Cost at submission
-    shipping_cost = Column(Double)
-    tax_cost = Column(Double)
-
-    # Lead time tracking
-    lead_time_days = Column(Integer)  # Planned lead time
-
-    # Multi-tenancy and game context
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
-    scenario_id = Column(Integer, ForeignKey("scenarios.id"))
-    round_number = Column(Integer)  # Which scenario round this order was placed
-    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
-    updated_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"), onupdate=text("CURRENT_TIMESTAMP"))
-
-    __table_args__ = (
-        Index('idx_inbound_order_lookup', 'product_id', 'to_site_id', 'expected_delivery_date'),
-        Index('idx_inbound_order_group_config', 'group_id', 'config_id'),
-        Index('idx_inbound_order_config', 'config_id'),
-        Index('idx_inbound_order_scenario_round', 'scenario_id', 'round_number'),
-        Index('idx_inbound_order_status', 'status'),
-        Index('idx_inbound_order_type', 'order_type'),
-    )
+# NOTE: InboundOrderLine is defined in sc_entities.py (canonical AWS SC model).
+# Re-exported here for backward compatibility with services that import from sc_planning.
+from app.models.sc_entities import InboundOrderLine  # noqa: F401
 
 
 class ProductionCapacity(Base):

@@ -83,8 +83,8 @@ def _bootstrap_llm_environment() -> None:
         load_dotenv(env_path, override=False)
     load_dotenv(override=False)  # Fall back to standard search path.
 
-    if "AUTONOMY_LLM_MODEL" not in os.environ and os.getenv("GPT_ID"):
-        os.environ.setdefault("AUTONOMY_LLM_MODEL", os.environ["GPT_ID"])
+    if "LLM_MODEL_NAME" not in os.environ and not os.getenv("AUTONOMY_LLM_MODEL"):
+        os.environ.setdefault("LLM_MODEL_NAME", "qwen3-8b")
 
 
 def auto_play_autonomy_scenarios() -> None:

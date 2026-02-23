@@ -1,4 +1,7 @@
-"""Session management for the simulation OpenAI agent hierarchy."""
+"""Session management for the simulation LLM agent hierarchy.
+
+Supports any OpenAI-compatible API: vLLM, Ollama, DeepSeek, LiteLLM, etc.
+"""
 
 from __future__ import annotations
 
@@ -23,11 +26,11 @@ _SESSION_CACHE_LOCK = Lock()
 def _get_client() -> OpenAI:
     """Create an OpenAI-compatible client.
 
-    Supports three modes (checked in order):
-    1. Local LLM (vLLM/Ollama): If LLM_API_BASE is set, connect to local endpoint.
-       No API key required — uses "not-needed" placeholder.
-    2. OpenAI API: If OPENAI_API_KEY is set, connect to OpenAI.
-    3. Error: If neither is configured, raise ValueError.
+    Works with any OpenAI-compatible API: vLLM, Ollama, DeepSeek, LiteLLM, etc.
+
+    Configuration (env vars):
+        LLM_API_BASE: API endpoint URL (e.g. http://localhost:8001/v1)
+        LLM_API_KEY:  API key (falls back to OPENAI_API_KEY; default "not-needed")
     """
     global _CLIENT
     if _CLIENT is not None:
@@ -37,53 +40,40 @@ def _get_client() -> OpenAI:
         if _CLIENT is None:
             client_kwargs: Dict[str, Any] = {}
 
-            # Check for local LLM first (vLLM or Ollama)
+            # Endpoint — required for local providers, optional for hosted
             llm_api_base = os.getenv("LLM_API_BASE")
             if llm_api_base:
                 client_kwargs["base_url"] = llm_api_base
-                # Local providers don't need a real API key
-                client_kwargs["api_key"] = os.getenv("OPENAI_API_KEY", "not-needed")
-            else:
-                # Fall back to OpenAI
-                api_key = os.getenv("OPENAI_API_KEY")
-                if not api_key:
-                    raise ValueError(
-                        "No LLM provider configured. Set LLM_API_BASE for local LLM "
-                        "(vLLM/Ollama) or OPENAI_API_KEY for OpenAI."
-                    )
-                client_kwargs["api_key"] = api_key
 
-                project = os.getenv("OPENAI_PROJECT")
-                if project:
-                    client_kwargs["project"] = project
+            # API key — LLM_API_KEY preferred, OPENAI_API_KEY as fallback
+            api_key = (
+                os.getenv("LLM_API_KEY")
+                or os.getenv("OPENAI_API_KEY")
+                or "not-needed"
+            )
+            client_kwargs["api_key"] = api_key
 
-                organization = os.getenv("OPENAI_ORGANIZATION") or os.getenv("OPENAI_ORG")
-                if organization:
-                    client_kwargs["organization"] = organization
+            if not llm_api_base and api_key == "not-needed":
+                raise ValueError(
+                    "No LLM provider configured. Set LLM_API_BASE for local LLM "
+                    "(vLLM/Ollama) or LLM_API_KEY for a hosted API."
+                )
 
+            # Timeout
             timeout_token = os.getenv("AUTONOMY_LLM_TIMEOUT")
-            if timeout_token:
-                try:
-                    timeout_value = float(timeout_token)
-                except ValueError:
-                    timeout_value = None
-            else:
-                timeout_value = None
-            if not timeout_value or timeout_value <= 0:
-                timeout_value = 15.0
-            client_kwargs["timeout"] = timeout_value
+            try:
+                timeout_value = float(timeout_token) if timeout_token else 0
+            except ValueError:
+                timeout_value = 0
+            client_kwargs["timeout"] = timeout_value if timeout_value > 0 else 15.0
 
+            # Retries
             retries_token = os.getenv("AUTONOMY_LLM_MAX_RETRIES")
-            if retries_token:
-                try:
-                    retries_value = int(retries_token)
-                except ValueError:
-                    retries_value = None
-            else:
-                retries_value = None
-            if retries_value is None or retries_value < 0:
-                retries_value = 1
-            client_kwargs["max_retries"] = retries_value
+            try:
+                retries_value = int(retries_token) if retries_token else -1
+            except ValueError:
+                retries_value = -1
+            client_kwargs["max_retries"] = retries_value if retries_value >= 0 else 1
 
             _CLIENT = OpenAI(**client_kwargs)
         return _CLIENT

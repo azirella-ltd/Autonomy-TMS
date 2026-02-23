@@ -71,6 +71,10 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_PROJECT=${OPENAI_PROJECT:-}
       - AUTONOMY_LLM_MODEL=${AUTONOMY_LLM_MODEL:-gpt-5-mini}
+
+      # Knowledge Base (RAG) — separate pgvector database
+      - KB_DATABASE_URL=postgresql+psycopg2://${KB_POSTGRESQL_USER:-kb_user}:${KB_POSTGRESQL_PASSWORD:-kb_password}@kb-db:5432/${KB_POSTGRESQL_DATABASE:-autonomy_kb}
+      - KB_ASYNC_DATABASE_URL=postgresql+asyncpg://${KB_POSTGRESQL_USER:-kb_user}:${KB_POSTGRESQL_PASSWORD:-kb_password}@kb-db:5432/${KB_POSTGRESQL_DATABASE:-autonomy_kb}
     ports:
       - "8000:8000"
     volumes:
@@ -81,6 +85,8 @@ services:
           - backend
     depends_on:
       db:
+        condition: service_healthy
+      kb-db:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import http.client; conn = http.client.HTTPConnection('localhost', 8000); conn.request('GET', '/api/health'); r = conn.getresponse(); exit(0 if r.status == 200 else 1)"]
@@ -128,6 +134,27 @@ services:
         soft: 65535
         hard: 65535
 
+  kb-db:
+    image: pgvector/pgvector:pg16
+    container_name: autonomy-kb-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${KB_POSTGRESQL_DATABASE:-autonomy_kb}
+      POSTGRES_USER: ${KB_POSTGRESQL_USER:-kb_user}
+      POSTGRES_PASSWORD: ${KB_POSTGRESQL_PASSWORD:-kb_password}
+    volumes:
+      - kb_postgres_data:/var/lib/postgresql/data
+      - ./init_kb_postgres.sql:/docker-entrypoint-initdb.d/init_kb.sql:ro
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KB_POSTGRESQL_USER:-kb_user}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - autonomy-network
+
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: autonomy-pgadmin
@@ -169,6 +196,8 @@ networks:
 
 volumes:
   postgres_data:
+    driver: local
+  kb_postgres_data:
     driver: local
   pgadmin_data:
     driver: local

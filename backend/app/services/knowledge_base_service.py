@@ -290,16 +290,25 @@ class KnowledgeBaseService:
                 await self.db.commit()
                 return doc.to_dict()
 
-            # Generate embeddings in batches
+            # Generate embeddings in batches (graceful degradation if service unavailable)
             batch_size = 32
             all_embeddings = []
-            for i in range(0, len(chunks), batch_size):
-                batch_texts = [c["content"] for c in chunks[i:i + batch_size]]
-                batch_embeddings = await self.embedding_service.embed_texts(batch_texts)
-                all_embeddings.extend(batch_embeddings)
+            embedding_available = True
+            try:
+                for i in range(0, len(chunks), batch_size):
+                    batch_texts = [c["content"] for c in chunks[i:i + batch_size]]
+                    batch_embeddings = await self.embedding_service.embed_texts(batch_texts)
+                    all_embeddings.extend(batch_embeddings)
+            except (RuntimeError, Exception) as emb_err:
+                logger.warning(
+                    f"Embedding service unavailable — storing chunks without embeddings: {emb_err}"
+                )
+                embedding_available = False
+                all_embeddings = []
 
-            # Store chunks with embeddings
-            for idx, (chunk_data, embedding) in enumerate(zip(chunks, all_embeddings)):
+            # Store chunks (with or without embeddings)
+            for idx, chunk_data in enumerate(chunks):
+                embedding = all_embeddings[idx] if embedding_available and idx < len(all_embeddings) else None
                 chunk = KBChunk(
                     document_id=doc.id,
                     chunk_index=idx,
@@ -312,12 +321,14 @@ class KnowledgeBaseService:
                 self.db.add(chunk)
 
             # Update document status
-            doc.status = "indexed"
+            doc.status = "indexed" if embedding_available else "pending_embedding"
             doc.chunk_count = len(chunks)
-            doc.embedding_model = self.embedding_service.model
-            doc.embedding_dimensions = len(all_embeddings[0]) if all_embeddings else None
+            if embedding_available and all_embeddings:
+                doc.embedding_model = self.embedding_service.model
+                doc.embedding_dimensions = len(all_embeddings[0])
 
             await self.db.commit()
+            await self.db.refresh(doc)  # Load server-generated defaults (created_at, updated_at)
             logger.info(
                 f"Ingested document '{doc.title}' ({doc.file_type}): "
                 f"{doc.chunk_count} chunks, {doc.page_count} pages"

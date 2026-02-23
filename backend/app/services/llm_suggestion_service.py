@@ -36,30 +36,32 @@ class LLMSuggestionService:
         logger.info(f"LLM service initialized: {provider}/{model}")
 
     def _init_client(self):
-        """Initialize API client (lazy loading)."""
+        """Initialize OpenAI-compatible async client (lazy loading).
+
+        Works with vLLM, Ollama, or any OpenAI-compatible API.
+        """
         if self._client_initialized:
             return
 
         try:
-            if self.provider == "openai":
-                from openai import AsyncOpenAI
-                self.client = AsyncOpenAI()
-                logger.info("OpenAI client initialized")
-            elif self.provider == "anthropic":
-                from anthropic import AsyncAnthropic
-                self.client = AsyncAnthropic()
-                logger.info("Anthropic client initialized")
-            else:
-                raise ValueError(f"Unsupported LLM provider: {self.provider}")
-
+            import os
+            from openai import AsyncOpenAI
+            kwargs = {}
+            base_url = os.getenv("LLM_API_BASE")
+            if base_url:
+                kwargs["base_url"] = base_url
+            api_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or "not-needed"
+            kwargs["api_key"] = api_key
+            self.client = AsyncOpenAI(**kwargs)
+            logger.info(f"LLM client initialized (base_url={base_url or 'default'})")
             self._client_initialized = True
 
         except ImportError as e:
-            logger.error(f"Failed to import {self.provider} library: {e}")
+            logger.error(f"Failed to import openai library: {e}")
             logger.warning("LLM suggestions will fall back to heuristic mode")
             self.client = None
         except Exception as e:
-            logger.error(f"Failed to initialize {self.provider} client: {e}")
+            logger.error(f"Failed to initialize LLM client: {e}")
             self.client = None
 
     async def generate_suggestion(

@@ -153,15 +153,14 @@ const ScenarioTreeViewer = ({ configId, onConfigChange }) => {
     }
   };
 
+  const [effectiveConfig, setEffectiveConfig] = useState(null);
+  const [effectiveDialogOpen, setEffectiveDialogOpen] = useState(false);
+
   const handleViewEffective = async (childConfigId) => {
     try {
       const response = await api.get(`/supply-chain-config/${childConfigId}/effective`);
-      console.log('Effective configuration:', response.data);
-
-      // TODO: Show in a dialog or navigate to visualization page
-      enqueueSnackbar('Effective configuration loaded (check console)', {
-        variant: 'info',
-      });
+      setEffectiveConfig(response.data);
+      setEffectiveDialogOpen(true);
     } catch (error) {
       console.error('Failed to load effective config:', error);
       enqueueSnackbar(
@@ -486,6 +485,44 @@ const ScenarioTreeViewer = ({ configId, onConfigChange }) => {
             </p>
           </Alert>
         </div>
+      </Modal>
+
+      {/* Effective Configuration Dialog */}
+      <Modal
+        isOpen={effectiveDialogOpen}
+        onClose={() => setEffectiveDialogOpen(false)}
+        title="Effective Configuration"
+        size="lg"
+        footer={
+          <Button variant="outline" onClick={() => setEffectiveDialogOpen(false)}>
+            Close
+          </Button>
+        }
+      >
+        {effectiveConfig && (
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            <div>
+              <span className="font-medium">Name:</span> {effectiveConfig.name}
+            </div>
+            {effectiveConfig.description && (
+              <div>
+                <span className="font-medium">Description:</span> {effectiveConfig.description}
+              </div>
+            )}
+            <div>
+              <span className="font-medium">Sites:</span> {effectiveConfig.sites?.length || 0}
+            </div>
+            <div>
+              <span className="font-medium">Lanes:</span> {effectiveConfig.transportation_lanes?.length || effectiveConfig.lanes?.length || 0}
+            </div>
+            <div>
+              <span className="font-medium">Products:</span> {effectiveConfig.products?.length || effectiveConfig.items?.length || 0}
+            </div>
+            <pre className="bg-muted p-3 rounded text-xs overflow-auto max-h-60">
+              {JSON.stringify(effectiveConfig, null, 2)}
+            </pre>
+          </div>
+        )}
       </Modal>
     </div>
   );

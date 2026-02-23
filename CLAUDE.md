@@ -283,25 +283,22 @@ make reseed-db
 make reset-admin
 ```
 
-### OpenAI/LLM Configuration
+### LLM Configuration
 
 ```bash
-# Check OpenAI connectivity
-make openai-check
-
-# Setup helper venv for OpenAI scripts
-make openai-venv
+# Check LLM endpoint connectivity
+make llm-check
 ```
 
-Required environment variables in `.env`:
+Environment variables in `.env`:
 ```env
-OPENAI_API_KEY=sk-your-api-key
-OPENAI_PROJECT=proj_your_project_id
-GPT_ID=g-xxxxxxxxxxxxxxxxxxxxxxxx
-AUTONOMY_LLM_MODEL=gpt-5-mini
-AUTONOMY_CUSTOM_GPT=user:my-custom-gpt  # Optional
-AUTONOMY_ENABLE_SUPERVISOR=true         # Default: true
-AUTONOMY_ENABLE_GLOBAL_AGENT=false      # Default: false
+# LLM Configuration (vLLM, Ollama, or any OpenAI-compatible API)
+LLM_API_BASE=http://localhost:8001/v1    # vLLM or Ollama endpoint
+LLM_API_KEY=not-needed                    # Only needed for hosted APIs
+LLM_MODEL_NAME=qwen3-8b                  # Model name served by your provider
+AUTONOMY_ENABLE_SUPERVISOR=true           # Default: true
+AUTONOMY_ENABLE_GLOBAL_AGENT=false        # Default: false
+```
 ```
 
 ### Training & Dataset Generation
@@ -760,9 +757,9 @@ POSTGRESQL_DATABASE=beer_game
 POSTGRESQL_USER=beer_user
 POSTGRESQL_PASSWORD=beer_password
 SECRET_KEY=<generate-random-key>
-OPENAI_API_KEY=sk-...
-OPENAI_PROJECT=proj_...
-GPT_ID=g-...
+LLM_API_BASE=http://localhost:8001/v1
+LLM_API_KEY=not-needed
+LLM_MODEL_NAME=qwen3-8b
 ```
 
 ---

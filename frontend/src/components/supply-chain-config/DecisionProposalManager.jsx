@@ -52,8 +52,10 @@ import {
 } from 'lucide-react';
 import { useSnackbar } from 'notistack';
 import { api } from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
 
 const DecisionProposalManager = ({ configId, scenarioName, onProposalChange }) => {
+  const { user } = useAuth();
   const [proposals, setProposals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -103,7 +105,7 @@ const DecisionProposalManager = ({ configId, scenarioName, onProposalChange }) =
       setActionLoading(true);
       const response = await api.post(`/supply-chain-config/${configId}/proposals`, {
         ...newProposal,
-        proposed_by: 'current_user', // TODO: Get from auth context
+        proposed_by: user?.email || 'unknown',
         proposed_by_type: 'human',
       });
 
@@ -177,7 +179,7 @@ const DecisionProposalManager = ({ configId, scenarioName, onProposalChange }) =
       const response = await api.post(
         `/supply-chain-config/proposals/${proposalId}/approve`,
         {
-          approved_by: 'current_user', // TODO: Get from auth context
+          approved_by: user?.email || 'unknown',
           commit_to_parent: true,
         }
       );
@@ -205,7 +207,7 @@ const DecisionProposalManager = ({ configId, scenarioName, onProposalChange }) =
       const response = await api.post(
         `/supply-chain-config/proposals/${proposalId}/reject`,
         {
-          rejected_by: 'current_user', // TODO: Get from auth context
+          rejected_by: user?.email || 'unknown',
           reason: reason || 'No reason provided',
           delete_scenario: true,
         }

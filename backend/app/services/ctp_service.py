@@ -635,16 +635,24 @@ class CTPService:
         return 0
 
     def _get_production_lead_time(self, node: Node) -> int:
-        """Get production lead time (rounds to manufacture)"""
-        # TODO: Query production_process table
-        # For now, return default 1 round
-        return 1
+        """Get production lead time from production_process table."""
+        from app.models.sc_entities import ProductionProcess
+        proc = self.db.query(ProductionProcess).filter(
+            ProductionProcess.site_id == node.id
+        ).first()
+        if proc and hasattr(proc, 'lead_time_days') and proc.lead_time_days:
+            return max(1, proc.lead_time_days)
+        return 1  # Default 1 round
 
     def _get_shipping_lead_time(self, node: Node) -> int:
-        """Get shipping lead time from manufacturer to customer"""
-        # TODO: Query lane.supply_lead_time for downstream lane
-        # For now, return default 2 rounds
-        return 2
+        """Get shipping lead time from downstream lane."""
+        from app.models.supply_chain_config import TransportationLane
+        lane = self.db.query(TransportationLane).filter(
+            TransportationLane.from_node_id == node.id,
+        ).first()
+        if lane and lane.supply_lead_time:
+            return max(1, lane.supply_lead_time)
+        return 2  # Default 2 rounds
 
     def _get_component_atp(
         self,

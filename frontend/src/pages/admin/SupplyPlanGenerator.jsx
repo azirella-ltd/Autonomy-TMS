@@ -147,7 +147,13 @@ export default function SupplyPlanGenerator() {
             config={planConfig}
             onReset={handleReset}
             onExport={() => {
-              // TODO: Implement export
+              const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `supply-plan-${planConfig?.config_id || 'unknown'}-${new Date().toISOString().slice(0,10)}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
             }}
           />
         );

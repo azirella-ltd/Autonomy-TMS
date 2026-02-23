@@ -35,7 +35,6 @@ from app.models.sc_planning import InboundOrderLine
 from app.models.monte_carlo import (
     MonteCarloRun, MonteCarloScenario, MonteCarloTimeSeries, MonteCarloRiskAlert
 )
-from app.models.knowledge_base import KBDocument, KBChunk
 try:
     from scripts.seed_core_config import seed_core_config
 except ModuleNotFoundError:  # pragma: no cover - fallback when script package unavailable

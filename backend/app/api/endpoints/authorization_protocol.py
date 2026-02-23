@@ -3,13 +3,17 @@ Authorization Protocol API Endpoints
 
 Exposes the Agentic Authorization Protocol (AAP) for the frontend
 Authorization Protocol Board.
+
+Delegates to AuthorizationService for production-grade authorization
+with auto-resolution, SLA tracking, and audit trail.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -19,113 +23,124 @@ from app.services.authorization_protocol import (
     AUTHORITY_MAP,
     ActionCategory,
     AgentRole,
-    AuthorizationThread,
 )
+from app.services.authorization_service import AuthorizationService
 
 router = APIRouter(prefix="/authorization-protocol", tags=["authorization-protocol"])
 
-# In-memory thread store (production would use DB)
-_threads: Dict[str, AuthorizationThread] = {}
+
+# Singleton service (in-memory for now; pass db_session for DB-backed)
+_service: Optional[AuthorizationService] = None
+_seeded: bool = False
+
+
+def _get_service() -> AuthorizationService:
+    """Get or create the authorization service singleton."""
+    global _service
+    if _service is None:
+        _service = AuthorizationService()
+    return _service
 
 
 def _seed_demo_threads() -> None:
-    """Create sample threads for demo/visualization purposes."""
-    if _threads:
+    """Seed demo threads for visualization when no real threads exist."""
+    global _seeded
+    if _seeded:
+        return
+    _seeded = True
+
+    svc = _get_service()
+    if svc.get_stats()["total"] > 0:
         return
 
-    from app.services.authorization_protocol import (
-        AuthorizationRequest,
-        AuthorizationResponse,
-        AuthorizationDecision,
-        AuthorizationPriority,
-        ProposedAction,
-        BalancedScorecard,
-        ScorecardDelta,
-    )
-
     # Thread 1: Active — SO/ATP requesting expedite from Logistics
-    t1 = AuthorizationThread()
-    req1 = AuthorizationRequest(
-        requesting_agent=AgentRole.SO_ATP,
-        target_agent=AgentRole.LOGISTICS,
-        site_key="plant_chicago",
-        priority=AuthorizationPriority.HIGH,
-        proposed_action=ProposedAction(
-            action_type="request_expedite",
-            description="Expedite PO-4821 delivery from 5 days to 2 days for priority customer",
-            parameters={"po_id": "PO-4821", "original_days": 5, "target_days": 2},
-        ),
-        balanced_scorecard=BalancedScorecard(metrics=[
-            ScorecardDelta(metric="otif_segment_a", quadrant="customer", baseline=0.92, projected=0.97, delta=0.05, weight=1.5, direction=1, unit="%"),
-            ScorecardDelta(metric="expedite_cost", quadrant="financial", baseline=0, projected=1200, delta=1200, weight=1.0, direction=-1, unit="USD"),
-            ScorecardDelta(metric="carrier_utilization", quadrant="operational", baseline=0.78, projected=0.85, delta=0.07, weight=0.8, direction=1, unit="%"),
-        ]),
+    svc.submit_request(
+        requesting_agent="so_atp",
+        target_agent="logistics",
+        proposed_action={
+            "action_type": "request_expedite",
+            "description": "Expedite PO-4821 delivery from 5 days to 2 days for priority customer",
+            "po_id": "PO-4821",
+            "original_days": 5,
+            "target_days": 2,
+        },
+        net_benefit=0.04,
         benefit_threshold=0.02,
         justification="Priority A customer order at risk of missing SLA. Expedite cost offset by retention value.",
+        priority="HIGH",
+        site_key="plant_chicago",
     )
-    t1.submit_request(req1)
 
-    # Thread 2: Resolved — Plant requesting overtime from Finance
-    t2 = AuthorizationThread()
-    req2 = AuthorizationRequest(
-        requesting_agent=AgentRole.PLANT,
-        target_agent=AgentRole.FINANCE,
-        site_key="plant_detroit",
-        priority=AuthorizationPriority.MEDIUM,
-        proposed_action=ProposedAction(
-            action_type="overtime_authorization",
-            description="Authorize 40h weekend overtime to clear production backlog",
-            parameters={"hours": 40, "cost_per_hour": 85},
-        ),
-        balanced_scorecard=BalancedScorecard(metrics=[
-            ScorecardDelta(metric="backlog_units", quadrant="operational", baseline=1200, projected=400, delta=-800, weight=1.2, direction=-1, unit="units"),
-            ScorecardDelta(metric="labor_cost", quadrant="financial", baseline=0, projected=3400, delta=3400, weight=1.0, direction=-1, unit="USD"),
-            ScorecardDelta(metric="on_time_delivery", quadrant="customer", baseline=0.88, projected=0.95, delta=0.07, weight=1.3, direction=1, unit="%"),
-        ]),
+    # Thread 2: Auto-resolved — Plant requesting overtime from Finance (high net benefit)
+    svc.submit_request(
+        requesting_agent="plant",
+        target_agent="finance",
+        proposed_action={
+            "action_type": "overtime_authorization",
+            "description": "Authorize 40h weekend overtime to clear production backlog",
+            "hours": 40,
+            "cost_per_hour": 85,
+        },
+        net_benefit=0.08,
         benefit_threshold=0.01,
         justification="Production backlog growing 200 units/day. Weekend overtime clears 800 units.",
+        priority="MEDIUM",
+        site_key="plant_detroit",
     )
-    t2.submit_request(req2)
-    resp2 = AuthorizationResponse(
-        request_id=req2.request_id,
-        decision=AuthorizationDecision.AUTHORIZE,
-        responding_agent=AgentRole.FINANCE,
-        reason="Within delegation authority. Backlog reduction justifies cost.",
-    )
-    t2.add_response(resp2)
 
-    # Thread 3: Resolved — Denied cross-DC transfer
-    t3 = AuthorizationThread()
-    req3 = AuthorizationRequest(
-        requesting_agent=AgentRole.INVENTORY,
-        target_agent=AgentRole.LOGISTICS,
-        site_key="dc_east",
-        priority=AuthorizationPriority.LOW,
-        proposed_action=ProposedAction(
-            action_type="cross_dc_transfer",
-            description="Transfer 500 units SKU-A from DC-West to DC-East",
-            parameters={"sku": "SKU-A", "from": "dc_west", "to": "dc_east", "qty": 500},
-        ),
-        balanced_scorecard=BalancedScorecard(metrics=[
-            ScorecardDelta(metric="transport_cost", quadrant="financial", baseline=0, projected=2800, delta=2800, weight=1.0, direction=-1, unit="USD"),
-            ScorecardDelta(metric="dos_dc_east", quadrant="operational", baseline=8, projected=15, delta=7, weight=0.5, direction=1, unit="days"),
-        ]),
+    # Thread 3: Auto-denied — Low net benefit cross-DC transfer
+    svc.submit_request(
+        requesting_agent="inventory",
+        target_agent="logistics",
+        proposed_action={
+            "action_type": "cross_dc_transfer",
+            "description": "Transfer 500 units SKU-A from DC-West to DC-East",
+            "sku": "SKU-A",
+            "from_site": "dc_west",
+            "to_site": "dc_east",
+            "qty": 500,
+        },
+        net_benefit=0.01,
         benefit_threshold=0.05,
         justification="DC-East low on SKU-A but demand forecast is moderate.",
+        priority="LOW",
+        site_key="dc_east",
     )
-    t3.submit_request(req3)
-    resp3 = AuthorizationResponse(
-        request_id=req3.request_id,
-        decision=AuthorizationDecision.DENY,
-        responding_agent=AgentRole.LOGISTICS,
-        reason="Net benefit below threshold. Demand at DC-East not urgent enough to justify transfer cost.",
-    )
-    t3.add_response(resp3)
 
-    _threads[t1.thread_id] = t1
-    _threads[t2.thread_id] = t2
-    _threads[t3.thread_id] = t3
 
+# ---------------------------------------------------------------------------
+# Request / Response models
+# ---------------------------------------------------------------------------
+
+class SubmitRequestBody(BaseModel):
+    requesting_agent: str
+    target_agent: str
+    proposed_action: Dict[str, Any]
+    net_benefit: float = 0.0
+    benefit_threshold: float = 0.0
+    justification: Optional[str] = None
+    evidence: Optional[Dict[str, Any]] = None
+    priority: str = "MEDIUM"
+    site_key: Optional[str] = None
+    scenario_id: Optional[int] = None
+
+
+class RespondBody(BaseModel):
+    decision: str  # AUTHORIZE, DENY, COUNTER_OFFER, ESCALATE
+    reason: Optional[str] = None
+    responding_agent: Optional[str] = None
+    counter_proposal: Optional[Dict[str, Any]] = None
+
+
+class ResolveBody(BaseModel):
+    decision: str  # AUTHORIZE or DENY
+    reason: Optional[str] = None
+    resolved_by: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
 
 @router.get("/threads")
 async def get_threads(
@@ -133,9 +148,11 @@ async def get_threads(
 ):
     """Get all authorization threads."""
     _seed_demo_threads()
+    svc = _get_service()
+    threads = svc._all_threads()
     return {
-        "threads": [t.to_dict() for t in _threads.values()],
-        "total": len(_threads),
+        "threads": [t.to_dict() for t in threads],
+        "total": len(threads),
     }
 
 
@@ -146,11 +163,91 @@ async def get_thread(
 ):
     """Get a single thread by ID."""
     _seed_demo_threads()
-    thread = _threads.get(thread_id)
+    svc = _get_service()
+    thread = svc.get_thread(thread_id)
     if not thread:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail=f"Thread {thread_id} not found")
     return thread.to_dict()
+
+
+@router.post("/threads")
+async def submit_request(
+    body: SubmitRequestBody,
+    current_user: User = Depends(get_current_user),
+):
+    """Submit a new authorization request."""
+    svc = _get_service()
+    thread = svc.submit_request(
+        requesting_agent=body.requesting_agent,
+        target_agent=body.target_agent,
+        proposed_action=body.proposed_action,
+        net_benefit=body.net_benefit,
+        benefit_threshold=body.benefit_threshold,
+        justification=body.justification,
+        evidence=body.evidence,
+        priority=body.priority,
+        site_key=body.site_key,
+        scenario_id=body.scenario_id,
+    )
+    return thread.to_dict()
+
+
+@router.post("/threads/{thread_id}/respond")
+async def respond_to_thread(
+    thread_id: str,
+    body: RespondBody,
+    current_user: User = Depends(get_current_user),
+):
+    """Respond to an authorization thread (authorize, deny, counter-offer, escalate)."""
+    svc = _get_service()
+    try:
+        response = svc.respond(
+            thread_id=thread_id,
+            decision=body.decision,
+            reason=body.reason,
+            responding_agent=body.responding_agent,
+        )
+        return {
+            "response_id": response.response_id,
+            "decision": response.decision.value,
+            "thread_id": thread_id,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/threads/{thread_id}/resolve")
+async def resolve_thread(
+    thread_id: str,
+    body: ResolveBody,
+    current_user: User = Depends(get_current_user),
+):
+    """Manually resolve a thread (typically by human reviewer)."""
+    svc = _get_service()
+    try:
+        thread = svc.resolve(
+            thread_id=thread_id,
+            decision=body.decision,
+            reason=body.reason,
+            resolved_by=body.resolved_by or current_user.email,
+        )
+        return thread.to_dict()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/threads/{thread_id}/escalate")
+async def escalate_thread(
+    thread_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Escalate a thread for human review."""
+    svc = _get_service()
+    try:
+        thread = svc.escalate(thread_id=thread_id)
+        return thread.to_dict()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/authority-map")
@@ -173,43 +270,20 @@ async def get_authority_map(
 async def get_stats(
     current_user: User = Depends(get_current_user),
 ):
-    """Get aggregated stats for the authorization protocol."""
+    """Get aggregated authorization statistics."""
     _seed_demo_threads()
-    all_threads = list(_threads.values())
-    resolved = [t for t in all_threads if t.is_resolved]
-    active = [t for t in all_threads if not t.is_resolved]
+    svc = _get_service()
+    return svc.get_stats()
 
-    decisions_by_type: Dict[str, int] = {}
-    top_requesters: Dict[str, int] = {}
-    total_duration = 0.0
-    duration_count = 0
 
-    for t in resolved:
-        if t.final_decision:
-            d = t.final_decision.value
-            decisions_by_type[d] = decisions_by_type.get(d, 0) + 1
-        if t.duration_seconds is not None:
-            total_duration += t.duration_seconds
-            duration_count += 1
-
-    for t in all_threads:
-        if t.request:
-            agent = t.request.requesting_agent.value
-            top_requesters[agent] = top_requesters.get(agent, 0) + 1
-
-    deny_count = decisions_by_type.get("deny", 0)
-    total_resolved = len(resolved)
-
+@router.post("/sla-check")
+async def check_sla_timeouts(
+    current_user: User = Depends(get_current_user),
+):
+    """Check all open threads for SLA expiry and auto-escalate."""
+    svc = _get_service()
+    escalated = svc.check_sla_timeouts()
     return {
-        "active_threads": len(active),
-        "resolved_threads": total_resolved,
-        "auto_resolved": sum(1 for t in resolved if t.resolution_source == "agent"),
-        "escalated": sum(1 for t in resolved if t.resolution_source == "human"),
-        "avg_resolution_seconds": total_duration / duration_count if duration_count > 0 else None,
-        "deny_rate": deny_count / total_resolved if total_resolved > 0 else None,
-        "decisions_by_type": decisions_by_type,
-        "top_requesters": [
-            {"agent": agent, "count": count}
-            for agent, count in sorted(top_requesters.items(), key=lambda x: -x[1])
-        ],
+        "escalated_count": len(escalated),
+        "escalated_threads": [t.thread_id for t in escalated],
     }

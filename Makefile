@@ -46,8 +46,6 @@ TRAIN_WINDOW ?= 52
 TRAIN_HORIZON ?= 1
 TRAIN_DEVICE ?= cuda
 
-# Helper virtual environment used by lightweight OpenAI tooling
-OPENAI_VENV := .venv-openai
 
 # Prefer the modern Docker Compose plugin when available, but allow overriding.
 DOCKER ?= docker
@@ -75,7 +73,7 @@ endif
 
 DOCKER_COMPOSE_CMD = $(strip $(COMPOSE_ENV) $(DOCKER_COMPOSE))
 
-.PHONY: up gpu-up up-dev down ps logs reload reload-backend reload-frontend seed reset-admin help init-env proxy-up proxy-down proxy-restart proxy-recreate proxy-logs proxy-url seed-default-group seed-default-beer-game seed-three-fg-beer-game seed-variable-beer-game all_beer_game build-create-users db-bootstrap db-reset rebuild-db reseed-db rebuild-gpu train-gnn openai-venv openai-check generate-site-agent-data train-site-agent train-site-agent-full eval-site-agent test-powell test-engines test-site-agent test-food-dist test-food-dist-trm generate-food-dist train-and-test-food-dist train-and-test-food-dist-quick train-and-test-food-dist-gpu up-llm up-llm-ollama ollama-pull-models
+.PHONY: up gpu-up up-dev down ps logs reload reload-backend reload-frontend seed reset-admin help init-env proxy-up proxy-down proxy-restart proxy-recreate proxy-logs proxy-url seed-default-group seed-default-beer-game seed-three-fg-beer-game seed-variable-beer-game all_beer_game build-create-users db-bootstrap db-reset rebuild-db reseed-db rebuild-gpu train-gnn llm-check generate-site-agent-data train-site-agent train-site-agent-full eval-site-agent test-powell test-engines test-site-agent test-food-dist test-food-dist-trm generate-food-dist train-and-test-food-dist train-and-test-food-dist-quick train-and-test-food-dist-gpu up-llm up-llm-ollama ollama-pull-models
 
 # =========================================================================
 # LOCAL LLM TARGETS (vLLM + Ollama for RAG)
@@ -400,7 +398,7 @@ help:
 	echo "  make reset-admin   - reset system administrator password to Autonomy@2025"; \
 	echo "  make proxy-url     - print URLs and login info"; \
         echo "  make init-env      - set up .env from template or host-specific file"; \
-        echo "  make openai-check  - create lightweight venv and probe OpenAI access"; \
+        echo "  make llm-check     - test LLM endpoint connectivity"; \
         echo ""; \
         echo "Advanced Training:"; \
         echo "  make train-setup   - create Python venv and install training deps"; \
@@ -414,21 +412,10 @@ help:
         echo "Environment Variables:"; \
         echo "  FORCE_GPU=1        - Enable GPU support (e.g., make up FORCE_GPU=1)";
 
-openai-venv:
-	@echo "\n[+] Preparing helper virtual environment for OpenAI tooling..."
-	@if [ ! -d $(OPENAI_VENV) ]; then \
-		echo "    -> Creating $(OPENAI_VENV)"; \
-		python3 -m venv $(OPENAI_VENV); \
-	fi
-	@echo "    -> Installing helper dependencies"
-	@$(OPENAI_VENV)/bin/python -m pip install --upgrade pip >/dev/null
-	@$(OPENAI_VENV)/bin/python -m pip install -r scripts/requirements.txt
-	@echo "    -> Done. Activate with 'source $(OPENAI_VENV)/bin/activate' if needed."
 
-
-openai-check: openai-venv
-	@echo "\n[+] Probing OpenAI connectivity via backend/scripts/check_openai_connection.py"
-	@$(OPENAI_VENV)/bin/python backend/scripts/check_openai_connection.py
+llm-check:
+	@echo "\n[+] Testing LLM endpoint connectivity..."
+	@docker compose exec backend python scripts/check_llm_connection.py || echo "\n[!] LLM check failed. Is the backend running? (make up)"
 
 init-env:
 	@$(SETUP_ENV)
@@ -612,7 +599,7 @@ HIVE_EPOCHS ?= 30
 HIVE_SAMPLES ?= 5000
 HIVE_XHR_WEIGHT ?= 0.05
 
-.PHONY: generate-hive-traces train-hive-warmstart train-hive-stress train-hive-full
+.PHONY: generate-hive-traces train-hive-warmstart train-hive-stress train-hive-full validate-hive
 
 generate-hive-traces:
 	@echo "\n[+] Generating hive coordination traces..."; \
@@ -651,6 +638,17 @@ train-hive-stress: generate-hive-traces
 
 train-hive-full: train-hive-warmstart train-hive-stress
 	@echo "\n[✓] Full hive training pipeline completed (warm-start + stress)."
+
+HIVE_VALIDATE_PERIODS ?= 52
+HIVE_VALIDATE_SITES ?= 4
+
+validate-hive:
+	@echo "\n[+] Running hive vs baseline comparison ($(HIVE_VALIDATE_PERIODS) periods, $(HIVE_VALIDATE_SITES) sites)..."
+	$(DOCKER_COMPOSE_CMD) exec backend python -m scripts.validation.compare_hive_vs_baseline \
+	  --periods $(HIVE_VALIDATE_PERIODS) \
+	  --sites $(HIVE_VALIDATE_SITES) \
+	  --output data/hive_validation_results.json
+	@echo "\n[✓] Hive validation completed. Results in data/hive_validation_results.json"
 
 test-engines:
 	@echo "\n[+] Running deterministic engine tests..."; \

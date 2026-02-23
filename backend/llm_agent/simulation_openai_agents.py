@@ -378,8 +378,8 @@ def resolve_model(preferred: Optional[str] = None, *, custom_gpt: Optional[str] 
     return (
         getenv("LLM_MODEL_NAME")  # Local vLLM/Ollama served model name
         or getenv("AUTONOMY_LLM_MODEL")
-        or getenv("OPENAI_MODEL")
-        or "gpt-4.1-mini"
+        
+        or "qwen3-8b"
     )
 
 

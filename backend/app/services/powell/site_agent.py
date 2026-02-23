@@ -39,8 +39,29 @@ from .decision_cycle import (
     PHASE_TRM_MAP, detect_conflicts,
 )
 from app.services.agent_context_explainer import AgentContextExplainer, AgentType
+from app.services.authorization_protocol import (
+    AgentRole,
+    ActionCategory,
+    get_action_category,
+)
+from app.services.authorization_service import AuthorizationService
 
 logger = logging.getLogger(__name__)
+
+# Mapping from TRM name → AgentRole for authority boundary checks
+_TRM_TO_AGENT_ROLE: Dict[str, AgentRole] = {
+    "atp_executor": AgentRole.SO_ATP,
+    "po_creation": AgentRole.PROCUREMENT,
+    "inventory_rebalancing": AgentRole.INVENTORY,
+    "order_tracking": AgentRole.SO_ATP,
+    "mo_execution": AgentRole.PLANT,
+    "to_execution": AgentRole.LOGISTICS,
+    "quality_disposition": AgentRole.QUALITY,
+    "maintenance_scheduling": AgentRole.MAINTENANCE,
+    "subcontracting": AgentRole.PROCUREMENT,
+    "forecast_adjustment": AgentRole.DEMAND,
+    "safety_stock": AgentRole.INVENTORY,
+}
 
 
 @dataclass
@@ -69,6 +90,9 @@ class SiteAgentConfig:
 
     # Hive signal coordination
     enable_hive_signals: bool = True  # Enable stigmergic coordination
+
+    # Authorization protocol
+    enable_authorization: bool = True  # Check authority boundaries before actions
 
 
 @dataclass
@@ -144,12 +168,18 @@ class SiteAgent:
         # Registered TRM instances (for signal_bus wiring)
         self._registered_trms: Dict[str, Any] = {}
 
+        # Authorization service for cross-authority requests
+        self.authorization_service: Optional[AuthorizationService] = None
+        if config.enable_authorization:
+            self.authorization_service = AuthorizationService(db=db_session)
+
         # State cache
         self._state_cache: Optional[torch.Tensor] = None
         self._state_cache_time: Optional[datetime] = None
 
         logger.info(f"SiteAgent initialized for {config.site_key}"
-                     f"{' [hive signals ON]' if self.signal_bus else ''}")
+                     f"{' [hive signals ON]' if self.signal_bus else ''}"
+                     f"{' [authorization ON]' if self.authorization_service else ''}")
 
     def get_explainer(self, agent_type: str) -> Optional[AgentContextExplainer]:
         """Get the context-aware explainer for a specific agent type."""
@@ -897,6 +927,93 @@ class SiteAgent:
         """Get a registered TRM instance by name."""
         return self._registered_trms.get(trm_name)
 
+    # ---- Authorization boundary checks ------------------------------------
+
+    def check_authority_boundary(
+        self,
+        trm_name: str,
+        action_type: str,
+    ) -> ActionCategory:
+        """Check the authority category for a TRM action.
+
+        Maps the TRM name to its corresponding AgentRole and looks up
+        the action in the AUTHORITY_MAP.
+
+        Args:
+            trm_name: TRM name (e.g. "atp_executor", "inventory_rebalancing").
+            action_type: Action being proposed (e.g. "cross_dc_transfer").
+
+        Returns:
+            ActionCategory (UNILATERAL, REQUIRES_AUTHORIZATION, or FORBIDDEN).
+        """
+        agent_role = _TRM_TO_AGENT_ROLE.get(trm_name)
+        if agent_role is None:
+            return ActionCategory.REQUIRES_AUTHORIZATION
+        return get_action_category(agent_role, action_type)
+
+    def request_authorization(
+        self,
+        trm_name: str,
+        action_type: str,
+        target_trm: str,
+        proposed_action: Dict[str, Any],
+        net_benefit: float = 0.0,
+        benefit_threshold: float = 0.0,
+        justification: str = "",
+        priority: str = "MEDIUM",
+    ) -> Optional[Any]:
+        """Submit an authorization request when an action crosses authority boundaries.
+
+        Called by TRM execution logic when ``check_authority_boundary``
+        returns REQUIRES_AUTHORIZATION.
+
+        Args:
+            trm_name: Requesting TRM.
+            action_type: Action type string.
+            target_trm: Target TRM or agent role for authorization.
+            proposed_action: Action details.
+            net_benefit: Balanced scorecard net benefit.
+            benefit_threshold: Threshold for auto-resolution.
+            justification: Reason for the request.
+            priority: Priority level.
+
+        Returns:
+            AuthorizationThread if service is available, None otherwise.
+        """
+        if self.authorization_service is None:
+            logger.debug("Authorization disabled; skipping request.")
+            return None
+
+        requesting_role = _TRM_TO_AGENT_ROLE.get(trm_name, AgentRole.SO_ATP).value
+        target_role = _TRM_TO_AGENT_ROLE.get(target_trm, AgentRole.LOGISTICS).value
+
+        thread = self.authorization_service.submit_request(
+            requesting_agent=requesting_role,
+            target_agent=target_role,
+            proposed_action={
+                "action_type": action_type,
+                "trm": trm_name,
+                **proposed_action,
+            },
+            net_benefit=net_benefit,
+            benefit_threshold=benefit_threshold,
+            justification=justification,
+            priority=priority,
+            site_key=self.site_key,
+        )
+
+        logger.info(
+            f"Authorization request submitted: {trm_name}→{target_trm} "
+            f"({action_type}) thread={thread.thread_id} status={thread.status.value}"
+        )
+        return thread
+
+    def get_pending_authorizations(self) -> List[Any]:
+        """Get pending authorization threads for this site."""
+        if self.authorization_service is None:
+            return []
+        return self.authorization_service.get_pending(site_key=self.site_key)
+
     def get_status(self) -> Dict[str, Any]:
         """Get agent status summary"""
         status = {
@@ -915,4 +1032,7 @@ class SiteAgent:
             )
         if self.get_current_directive() is not None:
             status['has_tgnn_directive'] = True
+        if self.authorization_service is not None:
+            pending = self.get_pending_authorizations()
+            status['pending_authorizations'] = len(pending)
         return status

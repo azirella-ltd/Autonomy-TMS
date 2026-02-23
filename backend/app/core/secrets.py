@@ -14,8 +14,6 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2
 from pydantic import BaseModel, Field, validator
-
-
 class SecretConfig(BaseModel):
     """Secret configuration"""
     name: str = Field(..., description="Secret name")
@@ -23,8 +21,6 @@ class SecretConfig(BaseModel):
     encrypted: bool = Field(default=False, description="Whether value is encrypted")
     required: bool = Field(default=True, description="Whether secret is required")
     env_var: Optional[str] = Field(None, description="Environment variable name")
-
-
 class SecretsManager:
     """
     Manages application secrets with encryption and secure storage.
@@ -298,12 +294,8 @@ class SecretsManager:
                 results[secret_name] = False
 
         return results
-
-
 # Global secrets manager instance
 _secrets_manager: Optional[SecretsManager] = None
-
-
 def get_secrets_manager() -> SecretsManager:
     """
     Get global secrets manager instance.
@@ -319,16 +311,11 @@ def get_secrets_manager() -> SecretsManager:
         _secrets_manager = SecretsManager(encryption_key)
 
     return _secrets_manager
-
-
 # Required secrets for the application
 REQUIRED_SECRETS = [
     "SECRET_KEY",              # FastAPI secret key
     "MARIADB_PASSWORD",        # Database password
-    "OPENAI_API_KEY",          # OpenAI API key (optional)
 ]
-
-
 def validate_environment_secrets() -> bool:
     """
     Validate that all required secrets are available.
@@ -346,8 +333,6 @@ def validate_environment_secrets() -> bool:
         return False
 
     return True
-
-
 def get_secret(name: str, default: Optional[str] = None, required: bool = False) -> Optional[str]:
     """
     Convenience function to get a secret.
