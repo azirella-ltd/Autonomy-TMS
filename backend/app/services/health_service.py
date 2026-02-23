@@ -295,56 +295,58 @@ class HealthService:
                 response_time_ms=round(response_time_ms, 2)
             )
 
-    def check_openai_api(self, api_key: Optional[str] = None) -> HealthStatus:
-        """
-        Check OpenAI API availability (optional)
+    def check_llm_provider(self, api_key: Optional[str] = None) -> HealthStatus:
+        """Check LLM provider availability (vLLM, Ollama, or any OpenAI-compatible API).
 
         Args:
-            api_key: OpenAI API key to test
+            api_key: API key to test (optional for local providers)
 
         Returns:
-            HealthStatus for OpenAI API
+            HealthStatus for the configured LLM provider
         """
         start = time.time()
+        import os
+        base_url = os.getenv("LLM_API_BASE")
 
-        if not api_key:
+        if not api_key and not base_url:
             return HealthStatus(
-                name='openai_api',
+                name='llm_provider',
                 status='healthy',
-                message='OpenAI API check skipped (no API key)',
+                message='LLM provider check skipped (not configured)',
                 details={'configured': False},
                 response_time_ms=0
             )
 
         try:
-            # Test API with a simple request using modern client
             from openai import OpenAI
-            import os
-            kwargs = {"api_key": api_key}
-            base_url = os.getenv("LLM_API_BASE")
+            kwargs: dict = {}
             if base_url:
                 kwargs["base_url"] = base_url
+            resolved_key = api_key or os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY") or "not-needed"
+            kwargs["api_key"] = resolved_key
             client = OpenAI(**kwargs)
 
             # List models as a connectivity test
             models = client.models.list()
 
             response_time_ms = (time.time() - start) * 1000
+            provider_label = base_url or "OpenAI API"
 
-            if response_time_ms > 5000:  # >5s is slow
+            if response_time_ms > 5000:
                 status = 'degraded'
-                message = 'OpenAI API responding slowly'
+                message = f'LLM provider responding slowly ({provider_label})'
             else:
                 status = 'healthy'
-                message = 'OpenAI API available'
+                message = f'LLM provider available ({provider_label})'
 
             return HealthStatus(
-                name='openai_api',
+                name='llm_provider',
                 status=status,
                 message=message,
                 details={
                     'configured': True,
                     'available': True,
+                    'provider': provider_label,
                     'model_count': len(models.data) if hasattr(models, 'data') else 0
                 },
                 response_time_ms=round(response_time_ms, 2)
@@ -354,9 +356,9 @@ class HealthService:
             response_time_ms = (time.time() - start) * 1000
 
             return HealthStatus(
-                name='openai_api',
+                name='llm_provider',
                 status='unhealthy',
-                message=f'OpenAI API unavailable: {str(e)}',
+                message=f'LLM provider unavailable: {str(e)}',
                 details={
                     'configured': True,
                     'available': False,
@@ -364,6 +366,9 @@ class HealthService:
                 },
                 response_time_ms=round(response_time_ms, 2)
             )
+
+    # Backward-compat alias
+    check_openai_api = check_llm_provider
 
 
 # Standalone testing

@@ -90,10 +90,14 @@ INSTRUCTIONS = (
 )
 
 
-def make_openai_client() -> OpenAI:
+def make_llm_client() -> OpenAI:
     """Create an OpenAI-compatible client via the shared factory."""
     from .autonomy_client import _get_client
     return _get_client()
+
+
+# Backward-compat alias
+make_openai_client = make_llm_client
 
 
 def _handle_tool_calls(
@@ -123,14 +127,16 @@ def _handle_tool_calls(
 def strategist_query(
     user_input: str,
     *,
-    model: str = "gpt-5-mini",
+    model: Optional[str] = None,
     base_url: str = DEFAULT_BASE_URL,
 ) -> str:
+    import os
+    resolved_model = model or os.getenv("LLM_MODEL_NAME") or os.getenv("AUTONOMY_LLM_MODEL") or "qwen3-8b"
     sim_api = SimulationClient(base_url=base_url)
-    ai = make_openai_client()
+    ai = make_llm_client()
 
     resp = ai.responses.create(
-        model=model,
+        model=resolved_model,
         instructions=INSTRUCTIONS,
         input=user_input,
         tools=TOOLS,

@@ -18,16 +18,17 @@ logger = logging.getLogger(__name__)
 class LLMSuggestionService:
     """Service for generating LLM-powered agent suggestions."""
 
-    def __init__(self, provider: str = "openai", model: str = "gpt-4o-mini"):
+    def __init__(self, provider: str = "openai-compatible", model: str = None):
         """
         Initialize LLM service.
 
         Args:
-            provider: LLM provider ("openai" or "anthropic")
-            model: Model name (e.g., "gpt-4o-mini", "claude-3-sonnet-20240229")
+            provider: LLM provider (default "openai-compatible" for vLLM/Ollama)
+            model: Model name (defaults to LLM_MODEL_NAME or AUTONOMY_LLM_MODEL env)
         """
+        import os
         self.provider = provider.lower()
-        self.model = model
+        self.model = model or os.getenv("LLM_MODEL_NAME") or os.getenv("AUTONOMY_LLM_MODEL") or "qwen3-8b"
         self.client = None
 
         # Initialize client lazily (only when first used)
