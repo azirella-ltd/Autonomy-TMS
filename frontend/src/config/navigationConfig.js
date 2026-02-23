@@ -761,6 +761,45 @@ export const NAVIGATION_CONFIG = [
       },
     ],
   },
+
+  // ============================================================================
+  // EDGE AGENTS (PicoClaw & OpenClaw)
+  // ============================================================================
+  {
+    section: 'Edge Agents',
+    divider: true,
+    adminOnly: true,
+    items: [
+      {
+        label: 'PicoClaw Fleet',
+        path: '/admin/picoclaw',
+        icon: ExecutionIcon,
+        requiredCapability: 'manage_group_users',
+        description: 'Edge CDC monitors — fleet health, alerts, configuration',
+      },
+      {
+        label: 'OpenClaw Gateway',
+        path: '/admin/openclaw',
+        icon: CollaborationIcon,
+        requiredCapability: 'manage_group_users',
+        description: 'Chat gateway — skills, channels, LLM config, sessions',
+      },
+      {
+        label: 'Signal Ingestion',
+        path: '/admin/signals',
+        icon: ActivityIcon,
+        requiredCapability: 'manage_group_users',
+        description: 'Captured signals — monitoring, review queue, source reliability',
+      },
+      {
+        label: 'Edge Security',
+        path: '/admin/edge-security',
+        icon: AdminIcon,
+        requiredCapability: 'manage_group_users',
+        description: 'CVE tracking, deployment checklist, integration health',
+      },
+    ],
+  },
 ];
 
 /**
