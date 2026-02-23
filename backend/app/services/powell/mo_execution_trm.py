@@ -27,6 +27,7 @@ from .engines.mo_execution_engine import (
     MOExecutionEngine, MOExecutionConfig, MOSnapshot, MOExecutionResult,
     MODecisionType,
 )
+from .hive_signal import HiveSignal, HiveSignalBus, HiveSignalType
 
 logger = logging.getLogger(__name__)
 
@@ -127,17 +128,88 @@ class MOExecutionTRM:
         self.model = model
         self.db = db_session
         self.ctx_explainer = None  # Set externally by SiteAgent or caller
+        self.signal_bus: Optional[HiveSignalBus] = None
+
+    def _read_signals_before_decision(self) -> Dict[str, Any]:
+        """Read relevant hive signals before making MO decision."""
+        if self.signal_bus is None:
+            return {}
+        try:
+            signals = self.signal_bus.read(
+                consumer_trm="mo_execution",
+                types={
+                    HiveSignalType.QUALITY_HOLD,
+                    HiveSignalType.QUALITY_REJECT,
+                    HiveSignalType.MAINTENANCE_URGENT,
+                    HiveSignalType.MAINTENANCE_DEFERRED,
+                },
+            )
+            context = {}
+            for s in signals:
+                if s.signal_type == HiveSignalType.QUALITY_HOLD:
+                    context["quality_hold_active"] = True
+                    context["quality_hold_urgency"] = s.current_strength
+                elif s.signal_type == HiveSignalType.QUALITY_REJECT:
+                    context["quality_reject_active"] = True
+                elif s.signal_type == HiveSignalType.MAINTENANCE_URGENT:
+                    context["maintenance_urgent"] = True
+                    context["maintenance_urgency"] = s.current_strength
+                elif s.signal_type == HiveSignalType.MAINTENANCE_DEFERRED:
+                    context["maintenance_deferred"] = True
+            return context
+        except Exception as e:
+            logger.debug(f"Signal read failed: {e}")
+            return {}
+
+    def _emit_signals_after_decision(
+        self, state: MOExecutionState, rec: MORecommendation
+    ) -> None:
+        """Emit hive signals after MO decision."""
+        if self.signal_bus is None:
+            return
+        try:
+            if rec.release_now:
+                self.signal_bus.emit(HiveSignal(
+                    source_trm="mo_execution",
+                    signal_type=HiveSignalType.MO_RELEASED,
+                    urgency=min(1.0, (5 - state.priority) / 4.0),
+                    direction="relief",
+                    magnitude=state.planned_quantity / 1000.0,
+                    product_id=state.product_id,
+                    payload={"order_id": state.order_id, "qty": state.planned_quantity},
+                ))
+                self.signal_bus.urgency.update(
+                    "mo_execution", 0.2, "relief",
+                )
+            elif rec.defer_days > 0 or rec.decision_type == "defer":
+                urgency = min(1.0, 0.4 + (rec.service_risk * 0.6))
+                self.signal_bus.emit(HiveSignal(
+                    source_trm="mo_execution",
+                    signal_type=HiveSignalType.MO_DELAYED,
+                    urgency=urgency,
+                    direction="risk",
+                    magnitude=rec.defer_days / 14.0,
+                    product_id=state.product_id,
+                    payload={"order_id": state.order_id, "defer_days": rec.defer_days},
+                ))
+                self.signal_bus.urgency.update("mo_execution", urgency, "risk")
+        except Exception as e:
+            logger.debug(f"Signal emit failed: {e}")
 
     def evaluate_order(self, state: MOExecutionState) -> MORecommendation:
         """
         Evaluate an MO and recommend execution action.
 
         Flow:
-        1. Build MOSnapshot from state
-        2. Run deterministic engine
-        3. If TRM model available, apply learned adjustments
-        4. Persist decision for training
+        1. Read hive signals for context
+        2. Build MOSnapshot from state
+        3. Run deterministic engine
+        4. If TRM model available, apply learned adjustments
+        5. Emit signals and persist decision
         """
+        # Read hive signals
+        self._read_signals_before_decision()
+
         # Build engine snapshot
         snapshot = MOSnapshot(
             order_id=state.order_id,
@@ -183,7 +255,10 @@ class MOExecutionTRM:
             except Exception as e:
                 logger.debug(f"Context enrichment failed: {e}")
 
-        # Step 4: Persist decision
+        # Step 4: Emit signals
+        self._emit_signals_after_decision(state, recommendation)
+
+        # Step 5: Persist decision
         self._persist_decision(state, recommendation)
 
         return recommendation

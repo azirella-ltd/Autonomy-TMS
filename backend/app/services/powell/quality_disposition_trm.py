@@ -21,6 +21,7 @@ from .engines.quality_engine import (
     QualityEngine, QualityEngineConfig, QualitySnapshot, QualityDispositionResult,
     DispositionType,
 )
+from .hive_signal import HiveSignal, HiveSignalBus, HiveSignalType
 
 logger = logging.getLogger(__name__)
 
@@ -124,9 +125,81 @@ class QualityDispositionTRM:
         self.model = model
         self.db = db_session
         self.ctx_explainer = None  # Set externally by SiteAgent or caller
+        self.signal_bus: Optional[HiveSignalBus] = None
+
+    def _read_signals_before_decision(self) -> Dict[str, Any]:
+        """Read relevant hive signals before making quality decision."""
+        if self.signal_bus is None:
+            return {}
+        try:
+            signals = self.signal_bus.read(
+                consumer_trm="quality",
+                types={
+                    HiveSignalType.MO_RELEASED,
+                    HiveSignalType.MO_DELAYED,
+                    HiveSignalType.ATP_SHORTAGE,
+                },
+            )
+            context = {}
+            for s in signals:
+                if s.signal_type == HiveSignalType.MO_RELEASED:
+                    context["mo_released_active"] = True
+                elif s.signal_type == HiveSignalType.ATP_SHORTAGE:
+                    context["atp_shortage"] = True
+                    context["atp_shortage_urgency"] = s.current_strength
+            return context
+        except Exception as e:
+            logger.debug(f"Signal read failed: {e}")
+            return {}
+
+    def _emit_signals_after_decision(
+        self, state: QualityDispositionState, rec: QualityRecommendation
+    ) -> None:
+        """Emit hive signals after quality decision."""
+        if self.signal_bus is None:
+            return
+        try:
+            severity_urgency = {"minor": 0.3, "major": 0.6, "critical": 0.9}
+            urgency = severity_urgency.get(state.severity_level, 0.5)
+
+            if rec.disposition in ("reject", "scrap", "return_to_vendor"):
+                self.signal_bus.emit(HiveSignal(
+                    source_trm="quality",
+                    signal_type=HiveSignalType.QUALITY_REJECT,
+                    urgency=urgency,
+                    direction="risk",
+                    magnitude=rec.reject_qty / max(1, state.inspection_quantity),
+                    product_id=state.product_id,
+                    payload={
+                        "quality_order_id": state.quality_order_id,
+                        "disposition": rec.disposition,
+                        "qty": rec.reject_qty + rec.scrap_qty,
+                    },
+                ))
+                self.signal_bus.urgency.update("quality", urgency, "risk")
+            elif rec.disposition == "rework":
+                self.signal_bus.emit(HiveSignal(
+                    source_trm="quality",
+                    signal_type=HiveSignalType.QUALITY_HOLD,
+                    urgency=urgency * 0.7,
+                    direction="risk",
+                    magnitude=rec.rework_qty / max(1, state.inspection_quantity),
+                    product_id=state.product_id,
+                    payload={
+                        "quality_order_id": state.quality_order_id,
+                        "rework_qty": rec.rework_qty,
+                    },
+                ))
+                self.signal_bus.urgency.update("quality", urgency * 0.7, "risk")
+            else:
+                self.signal_bus.urgency.update("quality", 0.1, "neutral")
+        except Exception as e:
+            logger.debug(f"Signal emit failed: {e}")
 
     def evaluate_disposition(self, state: QualityDispositionState) -> QualityRecommendation:
         """Evaluate quality inspection and recommend disposition."""
+        self._read_signals_before_decision()
+
         snapshot = QualitySnapshot(
             quality_order_id=state.quality_order_id,
             product_id=state.product_id,
@@ -178,6 +251,7 @@ class QualityDispositionTRM:
             except Exception as e:
                 logger.debug(f"Context enrichment failed: {e}")
 
+        self._emit_signals_after_decision(state, recommendation)
         self._persist_decision(state, recommendation)
         return recommendation
 

@@ -6,6 +6,11 @@ Trains one TRM model for one (site, trm_type) pair through 3 phases:
   Phase 2: Context Learning (Supervised) — learn from expert override logs
   Phase 3: Outcome Optimization (RL/VFA) — improve beyond expert from replay buffer
 
+Stigmergic signal enrichment adds an orthogonal dimension:
+  Signal Phase 1 (NO_SIGNALS): Original state vectors only — backward compatible
+  Signal Phase 2 (URGENCY_ONLY): Append 11-dim urgency vector to states
+  Signal Phase 3 (FULL_SIGNALS): Append 11-dim urgency + 22-dim signal summary
+
 Usage:
     trainer = TRMSiteTrainer(
         trm_type="atp_executor", site_id=42, site_name="SLC DC",
@@ -14,8 +19,12 @@ Usage:
     result = await trainer.train_phase1(epochs=20)
     result = await trainer.train_phase2(db, epochs=50)
     result = await trainer.train_phase3(db, epochs=80)
+
+    # Full stigmergic curriculum (all signal phases × learning phases)
+    result = await trainer.train_stigmergic_curriculum(db, epochs_per_phase=30)
 """
 
+import enum
 import logging
 import time
 from datetime import datetime
@@ -25,6 +34,22 @@ from typing import Dict, Any, Optional, List
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Stigmergic Signal Phase
+# ---------------------------------------------------------------------------
+
+class StigmergicPhase(enum.IntEnum):
+    """Signal enrichment level — orthogonal to the 3 learning-depth phases."""
+    NO_SIGNALS = 0      # Original state only
+    URGENCY_ONLY = 1    # + 11-dim urgency vector
+    FULL_SIGNALS = 2    # + 11-dim urgency + 22-dim signal summary
+
+    @property
+    def extra_dims(self) -> int:
+        """Number of extra dimensions added to the state vector."""
+        return {0: 0, 1: 11, 2: 33}[self.value]
 
 CHECKPOINT_DIR = Path(__file__).parent.parent.parent.parent / "checkpoints"
 CHECKPOINT_DIR.mkdir(exist_ok=True)
@@ -53,6 +78,8 @@ class TRMSiteTrainer:
         config_id: int,
         device: str = "cpu",
         checkpoint_dir: Optional[Path] = None,
+        stigmergic_phase: StigmergicPhase = StigmergicPhase.NO_SIGNALS,
+        cross_head_reward_weight: float = 0.05,
     ):
         self.trm_type = trm_type
         self.site_id = site_id
@@ -62,6 +89,8 @@ class TRMSiteTrainer:
         self.config_id = config_id
         self.device = device
         self.checkpoint_dir = checkpoint_dir or CHECKPOINT_DIR
+        self.stigmergic_phase = stigmergic_phase
+        self.cross_head_reward_weight = cross_head_reward_weight
 
         self.model = None
         self.model_cls = None
@@ -128,6 +157,89 @@ class TRMSiteTrainer:
         return str(path)
 
     # =========================================================================
+    # Signal Augmentation Helpers
+    # =========================================================================
+
+    def _augment_states_synthetic(self, states: "np.ndarray") -> "np.ndarray":
+        """Augment state vectors with synthetic signal features.
+
+        Used during Phase 1 (BC) where no real signal context exists.
+        Generates plausible urgency/signal patterns that correlate with
+        the physical state to help the model learn signal-state associations.
+        """
+        n = len(states)
+        extra_dims = self.stigmergic_phase.extra_dims
+        if extra_dims == 0 or n == 0:
+            return states
+
+        # Generate synthetic urgency vector (11 slots)
+        urgency = np.zeros((n, 11), dtype=np.float32)
+        if n > 0 and states.shape[1] > 0:
+            # Use physical state features to create correlated urgency
+            state_mean = np.mean(np.abs(states), axis=1, keepdims=True)
+            noise = np.random.randn(n, 11).astype(np.float32) * 0.15
+            urgency = np.clip(state_mean * 0.3 + noise, 0.0, 1.0)
+
+        if self.stigmergic_phase == StigmergicPhase.URGENCY_ONLY:
+            return np.concatenate([states, urgency], axis=1)
+
+        # FULL_SIGNALS: add 22-dim signal summary (synthetic)
+        signal_summary = np.zeros((n, 22), dtype=np.float32)
+        # First 11: signal type presence (binary-ish, correlated with urgency)
+        signal_summary[:, :11] = (urgency > 0.3).astype(np.float32) * np.random.uniform(
+            0.5, 1.0, size=(n, 11)
+        ).astype(np.float32)
+        # Next 11: signal strengths (scaled urgency with noise)
+        signal_summary[:, 11:] = urgency * np.random.uniform(
+            0.2, 0.8, size=(n, 11)
+        ).astype(np.float32)
+
+        return np.concatenate([states, urgency, signal_summary], axis=1)
+
+    def _augment_states_from_context(
+        self,
+        states: "np.ndarray",
+        signal_contexts: List[Optional[Dict[str, Any]]],
+    ) -> "np.ndarray":
+        """Augment state vectors with real signal context from decision logs.
+
+        Used in Phases 2-3 where decision records may include stored
+        signal_context from the HiveSignalBus.
+        """
+        n = len(states)
+        extra_dims = self.stigmergic_phase.extra_dims
+        if extra_dims == 0 or n == 0:
+            return states
+
+        urgency_block = np.zeros((n, 11), dtype=np.float32)
+        for i, ctx in enumerate(signal_contexts):
+            if ctx and "urgency_vector" in ctx:
+                uv = ctx["urgency_vector"]
+                vals = uv.get("values", [])
+                for j in range(min(11, len(vals))):
+                    urgency_block[i, j] = float(vals[j])
+
+        if self.stigmergic_phase == StigmergicPhase.URGENCY_ONLY:
+            return np.concatenate([states, urgency_block], axis=1)
+
+        # FULL_SIGNALS: extract 22-dim signal summary
+        signal_block = np.zeros((n, 22), dtype=np.float32)
+        for i, ctx in enumerate(signal_contexts):
+            if not ctx:
+                continue
+            summary = ctx.get("summary", {})
+            # Encode up to 11 signal type counts (normalized)
+            for j, (stype, count) in enumerate(list(summary.items())[:11]):
+                signal_block[i, j] = min(float(count) / 10.0, 1.0)
+            # Encode signal strengths (from active_signals if available)
+            active = ctx.get("active_signals", [])
+            for j, sig in enumerate(active[:11]):
+                if isinstance(sig, dict):
+                    signal_block[i, 11 + j] = float(sig.get("strength", 0.0))
+
+        return np.concatenate([states, urgency_block, signal_block], axis=1)
+
+    # =========================================================================
     # Phase 1: Engine Imitation (Behavioral Cloning)
     # =========================================================================
 
@@ -166,7 +278,9 @@ class TRMSiteTrainer:
         for sub_phase in [1, 2, 3]:
             data = curriculum.generate(phase=sub_phase, num_samples=num_samples)
 
-            states_t = torch.tensor(data.state_vectors, dtype=torch.float32).to(self.device)
+            # Signal augmentation: extend state vectors with synthetic signal features
+            augmented_states = self._augment_states_synthetic(data.state_vectors)
+            states_t = torch.tensor(augmented_states, dtype=torch.float32).to(self.device)
             act_disc_t = torch.tensor(data.action_discrete, dtype=torch.long).to(self.device)
             act_cont_t = torch.tensor(data.action_continuous, dtype=torch.float32).to(self.device)
             rewards_t = torch.tensor(data.rewards, dtype=torch.float32).to(self.device)
@@ -209,6 +323,7 @@ class TRMSiteTrainer:
 
         return {
             "phase": "engine_imitation",
+            "stigmergic_phase": self.stigmergic_phase.name,
             "epochs": epochs,
             "final_loss": best_loss,
             "samples": num_samples * 3,
@@ -251,7 +366,11 @@ class TRMSiteTrainer:
             }
 
         start = time.time()
-        states_t = torch.tensor(expert_data["states"], dtype=torch.float32).to(self.device)
+
+        # Signal augmentation: extend states with real signal context
+        signal_contexts = expert_data.get("signal_contexts", [None] * num_expert)
+        augmented = self._augment_states_from_context(expert_data["states"], signal_contexts)
+        states_t = torch.tensor(augmented, dtype=torch.float32).to(self.device)
         actions_t = torch.tensor(expert_data["actions"], dtype=torch.float32).to(self.device)
 
         loss_fn = torch.nn.MSELoss()
@@ -302,6 +421,7 @@ class TRMSiteTrainer:
 
         return {
             "phase": "context_learning",
+            "stigmergic_phase": self.stigmergic_phase.name,
             "epochs": epochs,
             "final_loss": best_loss,
             "expert_samples": num_expert,
@@ -346,10 +466,22 @@ class TRMSiteTrainer:
 
         start = time.time()
 
-        states_t = torch.tensor(replay_data["states"], dtype=torch.float32).to(self.device)
-        next_states_t = torch.tensor(replay_data["next_states"], dtype=torch.float32).to(self.device)
+        # Signal augmentation for states and next_states
+        signal_contexts = replay_data.get("signal_contexts", [None] * num_samples)
+        next_signal_contexts = replay_data.get("next_signal_contexts", [None] * num_samples)
+        augmented_s = self._augment_states_from_context(replay_data["states"], signal_contexts)
+        augmented_ns = self._augment_states_from_context(replay_data["next_states"], next_signal_contexts)
+
+        states_t = torch.tensor(augmented_s, dtype=torch.float32).to(self.device)
+        next_states_t = torch.tensor(augmented_ns, dtype=torch.float32).to(self.device)
         rewards_t = torch.tensor(replay_data["rewards"], dtype=torch.float32).to(self.device)
         dones_t = torch.tensor(replay_data["dones"], dtype=torch.float32).to(self.device)
+
+        # Cross-head reward augments the base reward when signal context is present
+        cross_head_rewards = replay_data.get("cross_head_rewards")
+        if cross_head_rewards is not None and self.cross_head_reward_weight > 0:
+            xhr_t = torch.tensor(cross_head_rewards, dtype=torch.float32).to(self.device)
+            rewards_t = rewards_t + self.cross_head_reward_weight * xhr_t
 
         # Target network for stable Q-learning
         import copy
@@ -415,10 +547,12 @@ class TRMSiteTrainer:
 
         return {
             "phase": "outcome_optimization",
+            "stigmergic_phase": self.stigmergic_phase.name,
             "epochs": epochs,
             "final_loss": best_loss,
             "outcome_samples": num_samples,
             "reward_mean": float(rewards_t.mean()),
+            "cross_head_reward_weight": self.cross_head_reward_weight,
             "duration_seconds": duration,
             "loss_history": loss_history,
         }
@@ -492,6 +626,7 @@ class TRMSiteTrainer:
 
         states = []
         actions = []
+        signal_contexts = []
         for row in rows:
             state = []
             for f in state_fields:
@@ -507,9 +642,13 @@ class TRMSiteTrainer:
                 action = [0.0]
             actions.append(action)
 
+            # Load signal context if available (Sprint 4 schema extension)
+            signal_contexts.append(getattr(row, "signal_context", None))
+
         return {
             "states": np.array(states, dtype=np.float32) if states else np.empty((0,)),
             "actions": np.array(actions, dtype=np.float32) if actions else np.empty((0,)),
+            "signal_contexts": signal_contexts,
         }
 
     async def _load_replay_buffer(self, db) -> Dict[str, Any]:
@@ -526,18 +665,25 @@ class TRMSiteTrainer:
         rows = result.scalars().all()
 
         states, next_states, rewards, dones = [], [], [], []
+        signal_contexts, next_signal_contexts, cross_head_rewards = [], [], []
         for row in rows:
             if row.state_vector and row.next_state_vector:
                 states.append(row.state_vector)
                 next_states.append(row.next_state_vector)
                 rewards.append(row.reward)
                 dones.append(1.0 if row.done else 0.0)
+                signal_contexts.append(getattr(row, "signal_context", None))
+                next_signal_contexts.append(getattr(row, "next_signal_context", None))
+                cross_head_rewards.append(getattr(row, "cross_head_reward", 0.0) or 0.0)
 
         return {
             "states": np.array(states, dtype=np.float32) if states else np.empty((0,)),
             "next_states": np.array(next_states, dtype=np.float32) if next_states else np.empty((0,)),
             "rewards": np.array(rewards, dtype=np.float32) if rewards else np.empty((0,)),
             "dones": np.array(dones, dtype=np.float32) if dones else np.empty((0,)),
+            "signal_contexts": signal_contexts,
+            "next_signal_contexts": next_signal_contexts,
+            "cross_head_rewards": np.array(cross_head_rewards, dtype=np.float32) if cross_head_rewards else np.empty((0,)),
         }
 
     # =========================================================================
@@ -585,6 +731,94 @@ class TRMSiteTrainer:
             return _OTLoss()
         else:
             return _MultiHeadLoss(discrete_key="action_logits")
+
+
+    # =========================================================================
+    # Stigmergic Curriculum Orchestrator
+    # =========================================================================
+
+    async def train_stigmergic_curriculum(
+        self,
+        db=None,
+        epochs_per_phase: int = 30,
+        num_samples: int = 5000,
+    ) -> Dict[str, Any]:
+        """Execute the full stigmergic curriculum: signal phases × learning phases.
+
+        Schedule (3 × 3 = 9 stages, but we skip combinations where data is absent):
+
+        Signal Phase 1 (NO_SIGNALS):
+            → Learning Phase 1 (BC): Baseline behavioral cloning
+        Signal Phase 2 (URGENCY_ONLY):
+            → Learning Phase 1 (BC): BC with urgency-augmented states
+            → Learning Phase 2 (Expert): Expert overrides with urgency context
+        Signal Phase 3 (FULL_SIGNALS):
+            → Learning Phase 1 (BC): BC with full signal features
+            → Learning Phase 2 (Expert): Expert overrides with full signal context
+            → Learning Phase 3 (RL): TD learning with cross-head reward
+
+        Returns:
+            Combined results dict with per-stage outcomes.
+        """
+        all_results = []
+        total_start = time.time()
+
+        # --- Signal Phase 1: NO_SIGNALS (warm-start baseline) ---
+        self.stigmergic_phase = StigmergicPhase.NO_SIGNALS
+        logger.info(f"Stigmergic curriculum: NO_SIGNALS × Phase 1 for {self.trm_type}@site{self.site_id}")
+        r = await self.train_phase1(epochs=epochs_per_phase, num_samples=num_samples)
+        all_results.append(r)
+
+        version = 1
+        self.save_checkpoint(version, extra_meta={"stigmergic_phase": "NO_SIGNALS", "learning_phase": 1})
+
+        # --- Signal Phase 2: URGENCY_ONLY ---
+        self.stigmergic_phase = StigmergicPhase.URGENCY_ONLY
+
+        logger.info(f"Stigmergic curriculum: URGENCY_ONLY × Phase 1 for {self.trm_type}@site{self.site_id}")
+        r = await self.train_phase1(epochs=epochs_per_phase, num_samples=num_samples)
+        all_results.append(r)
+
+        if db is not None:
+            logger.info(f"Stigmergic curriculum: URGENCY_ONLY × Phase 2 for {self.trm_type}@site{self.site_id}")
+            r = await self.train_phase2(db, epochs=epochs_per_phase)
+            all_results.append(r)
+
+        version = 2
+        self.save_checkpoint(version, extra_meta={"stigmergic_phase": "URGENCY_ONLY", "learning_phase": 2})
+
+        # --- Signal Phase 3: FULL_SIGNALS ---
+        self.stigmergic_phase = StigmergicPhase.FULL_SIGNALS
+
+        logger.info(f"Stigmergic curriculum: FULL_SIGNALS × Phase 1 for {self.trm_type}@site{self.site_id}")
+        r = await self.train_phase1(epochs=epochs_per_phase, num_samples=num_samples)
+        all_results.append(r)
+
+        if db is not None:
+            logger.info(f"Stigmergic curriculum: FULL_SIGNALS × Phase 2 for {self.trm_type}@site{self.site_id}")
+            r = await self.train_phase2(db, epochs=epochs_per_phase)
+            all_results.append(r)
+
+            logger.info(f"Stigmergic curriculum: FULL_SIGNALS × Phase 3 for {self.trm_type}@site{self.site_id}")
+            r = await self.train_phase3(db, epochs=epochs_per_phase)
+            all_results.append(r)
+
+        version = 3
+        self.save_checkpoint(version, extra_meta={"stigmergic_phase": "FULL_SIGNALS", "learning_phase": 3})
+
+        total_duration = time.time() - total_start
+        logger.info(
+            f"Stigmergic curriculum complete for {self.trm_type}@site{self.site_id}: "
+            f"{len(all_results)} stages, {total_duration:.1f}s"
+        )
+
+        return {
+            "trm_type": self.trm_type,
+            "site_id": self.site_id,
+            "stages": all_results,
+            "total_stages": len(all_results),
+            "total_duration_seconds": total_duration,
+        }
 
 
 def find_best_checkpoint(

@@ -1124,6 +1124,19 @@ The platform supports integration with external agent runtimes (PicoClaw, OpenCl
 - **Self-Hosted LLM**: Qwen 3 8B via vLLM — 96.5% tool calling accuracy, OpenAI-compatible API, 8GB VRAM minimum
 - **Docker**: `docker-compose.llm.yml` overlay adds vLLM service to existing stack
 
+**Implementation Files**:
+- `backend/app/models/edge_agents.py` — 13 SQLAlchemy models (PicoClaw instances/heartbeats/alerts, service accounts, OpenClaw config/channels/skills/sessions, ingested signals, correlations, source reliability, security checklist, activity log)
+- `backend/app/services/edge_agent_service.py` — Fleet management, gateway config, security checklist CRUD
+- `backend/app/services/signal_ingestion_service.py` — Confidence-gated signal pipeline (sanitize → rate limit → dedup → score → gate → correlate)
+- `backend/app/api/endpoints/edge_agents.py` — REST API: `/edge-agents/*` + `/signals/*` (40+ endpoints)
+- `frontend/src/pages/admin/PicoClawManagement.jsx` — Fleet dashboard, alerts, CDC config, service accounts
+- `frontend/src/pages/admin/OpenClawManagement.jsx` — Gateway overview, skills, channels, LLM config
+- `frontend/src/pages/admin/SignalIngestionDashboard.jsx` — Signal monitoring, review queue, source reliability, correlations
+- `frontend/src/pages/admin/EdgeAgentSecurity.jsx` — Security overview, CVE tracker, deployment checklist, integration health
+- `frontend/src/services/edgeAgentApi.js` — API client for all edge agent operations
+
+**Navigation**: Administration > Edge Agents (PicoClaw Fleet, OpenClaw Gateway, Signal Ingestion, Edge Security)
+
 ---
 
 ## Architectural Refactoring

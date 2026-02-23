@@ -229,6 +229,13 @@ const AskWhyPanel = ({
               </Box>
             )}
 
+            {/* === Hive Signal Context (from SiteAgent signal bus) === */}
+            {(reasoning.hive_signal_context || reasoning.agent_context?.hive_signal_context) && (
+              <HiveSignalContextSection
+                context={reasoning.hive_signal_context || reasoning.agent_context?.hive_signal_context}
+              />
+            )}
+
             {/* === Context-Aware Sections (from AgentContextExplainer) === */}
             {/* Use agent_context from supply/allocation, or top-level for trm/gnn */}
             <AgentContextSections context={reasoning.agent_context || (commitType === 'trm' || commitType === 'gnn' ? reasoning : null)} />
@@ -453,6 +460,104 @@ const AgentContextSections = ({ context }) => {
           </Box>
         </>
       )}
+    </>
+  );
+};
+
+/**
+ * Hive Signal Context — shows which signals were active at decision time.
+ * Renders urgency vector snapshot and active signal types.
+ */
+const HiveSignalContextSection = ({ context }) => {
+  const [showSignals, setShowSignals] = useState(false);
+
+  if (!context) return null;
+
+  const urgency = context.urgency_snapshot || context.urgency_vector || {};
+  const signals = context.active_signals || context.signal_summary || {};
+  const signalCount = context.signal_count || Object.values(signals).reduce((a, b) => a + (typeof b === 'number' ? b : 0), 0);
+
+  const urgencyEntries = Object.entries(urgency).filter(([, v]) => typeof v === 'number' && v > 0);
+  const signalEntries = Object.entries(signals);
+
+  if (urgencyEntries.length === 0 && signalEntries.length === 0) return null;
+
+  return (
+    <>
+      <Divider sx={{ my: 1 }} />
+      <Box>
+        <Box
+          display="flex" alignItems="center" gap={0.5} mb={1}
+          sx={{ cursor: 'pointer' }}
+          onClick={() => setShowSignals(!showSignals)}
+        >
+          <PeggingIcon fontSize="small" color="warning" />
+          <Typography variant="subtitle2">Hive Signal Context</Typography>
+          <Chip
+            label={`${signalCount} signal${signalCount !== 1 ? 's' : ''} active`}
+            size="small"
+            color="warning"
+            variant="outlined"
+          />
+        </Box>
+        <Collapse in={showSignals}>
+          {/* Urgency Vector */}
+          {urgencyEntries.length > 0 && (
+            <Box mb={1.5}>
+              <Typography variant="caption" color="textSecondary" sx={{ mb: 0.5, display: 'block' }}>
+                Urgency Vector at Decision Time
+              </Typography>
+              {urgencyEntries
+                .sort(([, a], [, b]) => b - a)
+                .map(([name, val]) => (
+                  <Box key={name} display="flex" alignItems="center" gap={1} mb={0.5} pl={1}>
+                    <Typography variant="caption" sx={{ minWidth: 120 }}>
+                      {name.replace(/_/g, ' ')}
+                    </Typography>
+                    <Box sx={{ flex: 1, bgcolor: 'grey.200', borderRadius: 1, height: 10, position: 'relative' }}>
+                      <Box
+                        sx={{
+                          width: `${Math.min(val * 100, 100)}%`,
+                          bgcolor: val > 0.7 ? 'error.main' : val > 0.3 ? 'warning.main' : 'success.main',
+                          borderRadius: 1,
+                          height: '100%',
+                        }}
+                      />
+                    </Box>
+                    <Typography variant="caption" sx={{ minWidth: 40, textAlign: 'right' }}>
+                      {typeof val === 'number' ? val.toFixed(2) : val}
+                    </Typography>
+                  </Box>
+                ))
+              }
+            </Box>
+          )}
+
+          {/* Active Signal Types */}
+          {signalEntries.length > 0 && (
+            <Box>
+              <Typography variant="caption" color="textSecondary" sx={{ mb: 0.5, display: 'block' }}>
+                Active Signal Types
+              </Typography>
+              <Box display="flex" gap={0.5} flexWrap="wrap" pl={1}>
+                {signalEntries.map(([type, count]) => (
+                  <Chip
+                    key={type}
+                    label={`${type.replace(/_/g, ' ')}: ${count}`}
+                    size="small"
+                    variant="outlined"
+                    color={
+                      type.includes('shortage') || type.includes('reject') ? 'error'
+                        : type.includes('relief') || type.includes('released') ? 'success'
+                        : 'default'
+                    }
+                  />
+                ))}
+              </Box>
+            </Box>
+          )}
+        </Collapse>
+      </Box>
     </>
   );
 };

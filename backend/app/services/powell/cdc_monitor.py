@@ -29,11 +29,13 @@ class TriggerReason(Enum):
     LEAD_TIME_INCREASE = "lead_time_increase"
     BACKLOG_GROWTH = "backlog_growth"
     SUPPLIER_RELIABILITY = "supplier_reliability"
+    SIGNAL_DIVERGENCE = "signal_divergence"  # Local hive signals diverge from tGNN predictions
 
 
 class ReplanAction(Enum):
     """Actions to take on CDC trigger"""
     FULL_CFA = "full_cfa"           # Full policy parameter re-optimization
+    TGNN_REFRESH = "tgnn_refresh"   # Off-cadence tGNN re-inference for this site
     ALLOCATION_ONLY = "allocation"   # Rerun tGNN allocations only
     PARAM_ADJUSTMENT = "param_adj"   # Light parameter tweak (±10%)
     NONE = "none"                    # No action (within tolerance)
@@ -90,6 +92,7 @@ class CDCConfig:
         'lead_time_increase': 0.30,     # +30%
         'backlog_growth_days': 2,       # 2 consecutive days
         'supplier_reliability_drop': 0.15,  # 15% below target
+        'signal_divergence_threshold': 0.30,  # Local vs tGNN prediction divergence
     })
     cooldown_hours: int = 24
     max_cfa_per_period_days: int = 3  # Max 1 full CFA per 3 days
@@ -158,6 +161,9 @@ class CDCMonitor:
 
         # 6. Supplier reliability check
         triggers.extend(self._check_supplier_reliability(metrics))
+
+        # 7. Signal divergence check (local hive vs tGNN predictions)
+        triggers.extend(self._check_signal_divergence(metrics))
 
         # Determine action and severity
         if not triggers:
@@ -386,6 +392,88 @@ class CDCMonitor:
 
         return triggers
 
+    def _check_signal_divergence(self, metrics: SiteMetrics) -> List[TriggerReason]:
+        """Check if local hive signals diverge from tGNN predictions.
+
+        When the tGNN predicted 'normal' but local signals show shortages
+        (or vice versa), trigger an off-cadence tGNN refresh so network
+        context stays in sync with ground reality.
+
+        Uses ``_signal_divergence_score`` cached by ``update_signal_divergence()``.
+        """
+        triggers = []
+        score = getattr(self, "_signal_divergence_score", 0.0)
+        threshold = self.config.thresholds.get("signal_divergence_threshold", 0.30)
+
+        if score > threshold:
+            if self._cooldown_ok(TriggerReason.SIGNAL_DIVERGENCE):
+                triggers.append(TriggerReason.SIGNAL_DIVERGENCE)
+                logger.info(
+                    f"CDC: Signal divergence {score:.2f} > {threshold:.2f} "
+                    f"at {self.site_key} — tGNN refresh recommended"
+                )
+
+        return triggers
+
+    def update_signal_divergence(
+        self,
+        signal_bus: Any,
+        directive: Any,
+    ) -> float:
+        """Compute divergence between local hive signals and tGNN predictions.
+
+        Call this periodically (e.g. after each decision cycle) so the next
+        ``check_and_trigger`` can evaluate SIGNAL_DIVERGENCE.
+
+        The score is the normalised L1 distance between:
+        - local signal summary  (shortage density from active hive signals)
+        - tGNN exception_probability (predicted stockout/overstock/normal)
+
+        Args:
+            signal_bus: The site's HiveSignalBus instance.
+            directive: The most recently applied tGNNSiteDirective (or None).
+
+        Returns:
+            Divergence score in [0, 1]. Higher = more divergent.
+        """
+        if signal_bus is None or directive is None:
+            self._signal_divergence_score = 0.0
+            return 0.0
+
+        try:
+            # Local signal distribution
+            summary = signal_bus.signal_summary()
+            total_local = max(sum(summary.values()), 1)
+            shortage_signals = sum(
+                v for k, v in summary.items()
+                if "shortage" in k or "expedite" in k or "urgent" in k
+            )
+            surplus_signals = sum(
+                v for k, v in summary.items()
+                if "surplus" in k or "excess" in k or "deferred" in k
+            )
+            local_shortage_ratio = shortage_signals / total_local
+            local_surplus_ratio = surplus_signals / total_local
+
+            # tGNN prediction (exception_probability = [stockout, overstock, normal])
+            exc_prob = getattr(directive, "exception_probability", None) or [0.0, 0.0, 1.0]
+            predicted_shortage = exc_prob[0] if len(exc_prob) > 0 else 0.0
+            predicted_surplus = exc_prob[1] if len(exc_prob) > 1 else 0.0
+
+            # Divergence = average absolute difference
+            divergence = (
+                abs(local_shortage_ratio - predicted_shortage)
+                + abs(local_surplus_ratio - predicted_surplus)
+            ) / 2.0
+
+            self._signal_divergence_score = min(1.0, divergence)
+            return self._signal_divergence_score
+
+        except Exception as e:
+            logger.debug(f"Signal divergence computation failed: {e}")
+            self._signal_divergence_score = 0.0
+            return 0.0
+
     def _cooldown_ok(self, reason: TriggerReason) -> bool:
         """Check if cooldown period has passed for this trigger type"""
         if reason not in self.last_trigger_time:
@@ -428,6 +516,10 @@ class CDCMonitor:
 
         if TriggerReason.SUPPLIER_RELIABILITY in triggers:
             return ReplanAction.FULL_CFA, "high"
+
+        # High-medium: Local reality diverges from network model
+        if TriggerReason.SIGNAL_DIVERGENCE in triggers:
+            return ReplanAction.TGNN_REFRESH, "high"
 
         # Medium: Operational adjustment needed
         if TriggerReason.INVENTORY_LOW in triggers:

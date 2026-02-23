@@ -48,6 +48,9 @@ import PicoClawManagement from "./pages/admin/PicoClawManagement.jsx";
 import OpenClawManagement from "./pages/admin/OpenClawManagement.jsx";
 import SignalIngestionDashboard from "./pages/admin/SignalIngestionDashboard.jsx";
 import EdgeAgentSecurity from "./pages/admin/EdgeAgentSecurity.jsx";
+import HiveDashboard from "./pages/admin/HiveDashboard.jsx";
+import AuthorizationProtocolBoard from "./pages/admin/AuthorizationProtocolBoard.jsx";
+import KnowledgeBase from "./pages/admin/KnowledgeBase.jsx";
 import Players from "./pages/Players.jsx";
 import DebugBanner from "./components/DebugBanner.jsx";
 import AnalyticsDashboard from "./pages/AnalyticsDashboard.jsx";
@@ -446,6 +449,18 @@ const AppContent = () => {
             <Route
               path="/admin/edge-security"
               element={<EdgeAgentSecurity />}
+            />
+            <Route
+              path="/admin/hive"
+              element={<HiveDashboard />}
+            />
+            <Route
+              path="/admin/authorization-protocol"
+              element={<AuthorizationProtocolBoard />}
+            />
+            <Route
+              path="/admin/knowledge-base"
+              element={<KnowledgeBase />}
             />
 
             <Route

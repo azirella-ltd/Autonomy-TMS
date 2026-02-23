@@ -5992,6 +5992,8 @@ from app.api.endpoints import (
 )
 from app.api.endpoints.sap_atp import router as sap_atp_router
 from app.api.endpoints.edge_agents import router as edge_agents_router, signal_router as signal_ingestion_router
+from app.api.endpoints.knowledge_base import router as knowledge_base_router
+from app.api.endpoints.authorization_protocol import router as authorization_protocol_router
 api.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
 api.include_router(advanced_analytics_router, prefix="/advanced-analytics", tags=["advanced-analytics"])
 api.include_router(mps_router, tags=["mps"])
@@ -6021,6 +6023,8 @@ api.include_router(planning_cascade_router, prefix="/planning-cascade", tags=["p
 api.include_router(deployment_router, prefix="/deployment", tags=["deployment"])
 api.include_router(edge_agents_router, tags=["edge-agents"])
 api.include_router(signal_ingestion_router, tags=["signal-ingestion"])
+api.include_router(knowledge_base_router, tags=["knowledge-base"])
+api.include_router(authorization_protocol_router, tags=["authorization-protocol"])
 
 # ------------------------------------------------------------------------------
 # Mount routers

@@ -20,6 +20,7 @@ from .engines.maintenance_engine import (
     MaintenanceEngine, MaintenanceEngineConfig, MaintenanceSnapshot,
     MaintenanceSchedulingResult, MaintenanceDecisionType,
 )
+from .hive_signal import HiveSignal, HiveSignalBus, HiveSignalType
 
 logger = logging.getLogger(__name__)
 
@@ -115,8 +116,74 @@ class MaintenanceSchedulingTRM:
         self.model = model
         self.db = db_session
         self.ctx_explainer = None  # Set externally by SiteAgent or caller
+        self.signal_bus: Optional[HiveSignalBus] = None
+
+    def _read_signals_before_decision(self) -> Dict[str, Any]:
+        """Read relevant hive signals before making maintenance decision."""
+        if self.signal_bus is None:
+            return {}
+        try:
+            signals = self.signal_bus.read(
+                consumer_trm="maintenance",
+                types={
+                    HiveSignalType.MO_RELEASED,
+                    HiveSignalType.MO_DELAYED,
+                },
+            )
+            context = {}
+            for s in signals:
+                if s.signal_type == HiveSignalType.MO_RELEASED:
+                    context["mo_released_count"] = context.get("mo_released_count", 0) + 1
+                elif s.signal_type == HiveSignalType.MO_DELAYED:
+                    context["mo_delayed"] = True
+            return context
+        except Exception as e:
+            logger.debug(f"Signal read failed: {e}")
+            return {}
+
+    def _emit_signals_after_decision(
+        self, state: MaintenanceSchedulingState, rec: MaintenanceRecommendation
+    ) -> None:
+        """Emit hive signals after maintenance decision."""
+        if self.signal_bus is None:
+            return
+        try:
+            if rec.decision_type == "defer":
+                urgency = min(1.0, 0.3 + rec.defer_risk * 0.7)
+                self.signal_bus.emit(HiveSignal(
+                    source_trm="maintenance",
+                    signal_type=HiveSignalType.MAINTENANCE_DEFERRED,
+                    urgency=urgency,
+                    direction="risk",
+                    magnitude=rec.breakdown_probability,
+                    payload={
+                        "order_id": state.order_id,
+                        "asset_id": state.asset_id,
+                        "defer_risk": rec.defer_risk,
+                    },
+                ))
+                self.signal_bus.urgency.update("maintenance", urgency, "risk")
+            elif rec.expedite or rec.decision_type in ("expedite", "schedule"):
+                urgency_val = 0.7 if rec.expedite else 0.4
+                self.signal_bus.emit(HiveSignal(
+                    source_trm="maintenance",
+                    signal_type=HiveSignalType.MAINTENANCE_URGENT,
+                    urgency=urgency_val,
+                    direction="risk" if rec.expedite else "neutral",
+                    magnitude=rec.production_impact_hours / 24.0,
+                    payload={
+                        "order_id": state.order_id,
+                        "asset_id": state.asset_id,
+                        "downtime_hours": state.estimated_downtime_hours,
+                    },
+                ))
+                self.signal_bus.urgency.update("maintenance", urgency_val, "risk" if rec.expedite else "neutral")
+        except Exception as e:
+            logger.debug(f"Signal emit failed: {e}")
 
     def evaluate_scheduling(self, state: MaintenanceSchedulingState) -> MaintenanceRecommendation:
+        self._read_signals_before_decision()
+
         snapshot = MaintenanceSnapshot(
             order_id=state.order_id,
             asset_id=state.asset_id,
@@ -170,6 +237,7 @@ class MaintenanceSchedulingTRM:
             except Exception as e:
                 logger.debug(f"Context enrichment failed: {e}")
 
+        self._emit_signals_after_decision(state, recommendation)
         self._persist_decision(state, recommendation)
         return recommendation
 

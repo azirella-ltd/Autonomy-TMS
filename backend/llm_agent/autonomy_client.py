@@ -21,25 +21,45 @@ _SESSION_CACHE_LOCK = Lock()
 
 
 def _get_client() -> OpenAI:
+    """Create an OpenAI-compatible client.
+
+    Supports three modes (checked in order):
+    1. Local LLM (vLLM/Ollama): If LLM_API_BASE is set, connect to local endpoint.
+       No API key required — uses "not-needed" placeholder.
+    2. OpenAI API: If OPENAI_API_KEY is set, connect to OpenAI.
+    3. Error: If neither is configured, raise ValueError.
+    """
     global _CLIENT
     if _CLIENT is not None:
         return _CLIENT
 
     with _CLIENT_LOCK:
         if _CLIENT is None:
-            api_key = os.getenv("OPENAI_API_KEY")
-            if not api_key:
-                raise ValueError("OPENAI_API_KEY is not set")
+            client_kwargs: Dict[str, Any] = {}
 
-            client_kwargs: Dict[str, Any] = {"api_key": api_key}
+            # Check for local LLM first (vLLM or Ollama)
+            llm_api_base = os.getenv("LLM_API_BASE")
+            if llm_api_base:
+                client_kwargs["base_url"] = llm_api_base
+                # Local providers don't need a real API key
+                client_kwargs["api_key"] = os.getenv("OPENAI_API_KEY", "not-needed")
+            else:
+                # Fall back to OpenAI
+                api_key = os.getenv("OPENAI_API_KEY")
+                if not api_key:
+                    raise ValueError(
+                        "No LLM provider configured. Set LLM_API_BASE for local LLM "
+                        "(vLLM/Ollama) or OPENAI_API_KEY for OpenAI."
+                    )
+                client_kwargs["api_key"] = api_key
 
-            project = os.getenv("OPENAI_PROJECT")
-            if project:
-                client_kwargs["project"] = project
+                project = os.getenv("OPENAI_PROJECT")
+                if project:
+                    client_kwargs["project"] = project
 
-            organization = os.getenv("OPENAI_ORGANIZATION") or os.getenv("OPENAI_ORG")
-            if organization:
-                client_kwargs["organization"] = organization
+                organization = os.getenv("OPENAI_ORGANIZATION") or os.getenv("OPENAI_ORG")
+                if organization:
+                    client_kwargs["organization"] = organization
 
             timeout_token = os.getenv("AUTONOMY_LLM_TIMEOUT")
             if timeout_token:

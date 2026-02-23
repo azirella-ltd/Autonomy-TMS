@@ -20,6 +20,7 @@ from .engines.subcontracting_engine import (
     SubcontractingEngine, SubcontractingEngineConfig,
     SubcontractSnapshot, SubcontractingResult, SubcontractDecisionType,
 )
+from .hive_signal import HiveSignal, HiveSignalBus, HiveSignalType
 
 logger = logging.getLogger(__name__)
 
@@ -102,8 +103,66 @@ class SubcontractingTRM:
         self.model = model
         self.db = db_session
         self.ctx_explainer = None  # Set externally by SiteAgent or caller
+        self.signal_bus: Optional[HiveSignalBus] = None
+
+    def _read_signals_before_decision(self) -> Dict[str, Any]:
+        """Read relevant hive signals before making subcontracting decision."""
+        if self.signal_bus is None:
+            return {}
+        try:
+            signals = self.signal_bus.read(
+                consumer_trm="subcontracting",
+                types={
+                    HiveSignalType.MO_DELAYED,
+                    HiveSignalType.QUALITY_REJECT,
+                    HiveSignalType.ATP_SHORTAGE,
+                },
+            )
+            context = {}
+            for s in signals:
+                if s.signal_type == HiveSignalType.MO_DELAYED:
+                    context["mo_delayed"] = True
+                    context["mo_delay_urgency"] = s.current_strength
+                elif s.signal_type == HiveSignalType.QUALITY_REJECT:
+                    context["quality_reject"] = True
+                elif s.signal_type == HiveSignalType.ATP_SHORTAGE:
+                    context["atp_shortage"] = True
+            return context
+        except Exception as e:
+            logger.debug(f"Signal read failed: {e}")
+            return {}
+
+    def _emit_signals_after_decision(
+        self, state: SubcontractingState, rec: SubcontractingRecommendation
+    ) -> None:
+        """Emit hive signals after subcontracting decision."""
+        if self.signal_bus is None:
+            return
+        try:
+            if rec.decision_type in ("route_external", "split"):
+                urgency = min(1.0, 0.3 + rec.delivery_risk * 0.5)
+                self.signal_bus.emit(HiveSignal(
+                    source_trm="subcontracting",
+                    signal_type=HiveSignalType.SUBCONTRACT_ROUTED,
+                    urgency=urgency,
+                    direction="relief" if rec.delivery_risk < 0.3 else "risk",
+                    magnitude=rec.external_quantity / max(1, state.required_quantity),
+                    product_id=state.product_id,
+                    payload={
+                        "vendor": rec.recommended_vendor,
+                        "external_qty": rec.external_quantity,
+                        "internal_qty": rec.internal_quantity,
+                    },
+                ))
+                self.signal_bus.urgency.update("subcontracting", urgency, "relief" if rec.delivery_risk < 0.3 else "risk")
+            else:
+                self.signal_bus.urgency.update("subcontracting", 0.1, "neutral")
+        except Exception as e:
+            logger.debug(f"Signal emit failed: {e}")
 
     def evaluate_routing(self, state: SubcontractingState) -> SubcontractingRecommendation:
+        self._read_signals_before_decision()
+
         snapshot = SubcontractSnapshot(
             product_id=state.product_id,
             site_id=state.site_id,
@@ -153,6 +212,7 @@ class SubcontractingTRM:
             except Exception as e:
                 logger.debug(f"Context enrichment failed: {e}")
 
+        self._emit_signals_after_decision(state, rec)
         self._persist_decision(state, rec)
         return rec
 

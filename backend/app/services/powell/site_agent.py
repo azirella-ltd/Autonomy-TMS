@@ -31,6 +31,13 @@ from .cdc_monitor import CDCMonitor, CDCConfig, SiteMetrics, TriggerEvent, Repla
 from .site_agent_model import SiteAgentModel, SiteAgentModelConfig
 from .hive_signal import HiveSignal, HiveSignalBus, HiveSignalType
 from .hive_health import HiveHealthMetrics
+from .inter_hive_signal import (
+    InterHiveSignal, InterHiveSignalType, tGNNSiteDirective,
+)
+from .decision_cycle import (
+    DecisionCyclePhase, CycleResult, PhaseResult, TRM_PHASE_MAP,
+    PHASE_TRM_MAP, detect_conflicts,
+)
 from app.services.agent_context_explainer import AgentContextExplainer, AgentType
 
 logger = logging.getLogger(__name__)
@@ -73,6 +80,7 @@ class ATPResponse:
     source: str  # "deterministic", "trm_adjusted", "exception"
     confidence: float = 1.0
     explanation: str = ""
+    signal_context: Optional[Dict[str, Any]] = None  # Hive signal snapshot at decision time
 
 
 @dataclass
@@ -133,6 +141,9 @@ class SiteAgent:
         if config.enable_hive_signals:
             self.signal_bus = HiveSignalBus()
 
+        # Registered TRM instances (for signal_bus wiring)
+        self._registered_trms: Dict[str, Any] = {}
+
         # State cache
         self._state_cache: Optional[torch.Tensor] = None
         self._state_cache_time: Optional[datetime] = None
@@ -143,6 +154,41 @@ class SiteAgent:
     def get_explainer(self, agent_type: str) -> Optional[AgentContextExplainer]:
         """Get the context-aware explainer for a specific agent type."""
         return self._explainers.get(agent_type)
+
+    def connect_trm(self, trm_name: str, trm_instance: Any) -> None:
+        """Register a TRM instance and wire the shared signal bus to it.
+
+        Any object with a ``signal_bus`` attribute will receive the SiteAgent's
+        bus, enabling stigmergic coordination between TRM workers within this
+        hive.
+
+        Args:
+            trm_name: Canonical TRM name (e.g. "atp_executor", "po_creation").
+            trm_instance: The TRM object. Must have a ``signal_bus`` attribute.
+        """
+        self._registered_trms[trm_name] = trm_instance
+        if self.signal_bus is not None and hasattr(trm_instance, "signal_bus"):
+            trm_instance.signal_bus = self.signal_bus
+            logger.debug(f"Wired signal_bus to TRM {trm_name}")
+
+    def connect_trms(self, **trms: Any) -> None:
+        """Bulk-register TRM instances and wire the signal bus.
+
+        Example::
+
+            site_agent.connect_trms(
+                atp_executor=atp_trm,
+                po_creation=po_trm,
+                safety_stock=ss_trm,
+            )
+        """
+        for name, instance in trms.items():
+            self.connect_trm(name, instance)
+        if trms:
+            logger.info(
+                f"Connected {len(trms)} TRMs to SiteAgent {self.site_key}: "
+                f"{list(trms.keys())}"
+            )
 
     def _load_model(self):
         """Load TRM model from checkpoint with fallback resolution."""
@@ -165,9 +211,12 @@ class SiteAgent:
 
         if checkpoint_path:
             try:
+                # SiteAgentModelConfig is stored in our checkpoints; allowlist it
+                # so torch.load(weights_only=True) can deserialize it safely.
+                torch.serialization.add_safe_globals([SiteAgentModelConfig])
                 checkpoint = torch.load(
                     checkpoint_path,
-                    map_location=self.config.model_config.device
+                    map_location=self.config.model_config.device,
                 )
                 self.model = SiteAgentModel(checkpoint.get('model_config', self.config.model_config))
                 self.model.load_state_dict(checkpoint['model_state_dict'])
@@ -195,6 +244,9 @@ class SiteAgent:
         # Step 0: Read relevant hive signals before decision
         signal_context = self._read_atp_signals()
 
+        # Capture hive signal snapshot for decision audit
+        hive_snapshot = self._build_signal_context()
+
         # Step 1: Deterministic AATP
         base_result = self.aatp_engine.check_availability(order)
 
@@ -208,7 +260,8 @@ class SiteAgent:
                 promise_date=base_result.available_date,
                 source="deterministic",
                 confidence=1.0,
-                explanation="Full availability in allocation tier"
+                explanation="Full availability in allocation tier",
+                signal_context=hive_snapshot or None,
             )
 
         # Step 2: Shortage detected — emit signal
@@ -504,6 +557,21 @@ class SiteAgent:
                 except Exception as e:
                     logger.error(f"CDC retraining failed for {self.site_key}: {e}")
 
+        elif trigger.recommended_action == ReplanAction.TGNN_REFRESH:
+            logger.info(f"Off-cadence tGNN refresh triggered for {self.site_key}")
+            # Signal to tGNN layer that this site needs re-inference.
+            # In production this would enqueue a tGNN job for this site.
+            if self.signal_bus is not None:
+                from .hive_signal import HiveSignal, HiveSignalType
+                self.signal_bus.emit(HiveSignal(
+                    source_trm="cdc_monitor",
+                    signal_type=HiveSignalType.ALLOCATION_REFRESH,
+                    urgency=0.8,
+                    direction="risk",
+                    magnitude=0.0,
+                    payload={"reason": "signal_divergence", "site_key": self.site_key},
+                ))
+
         elif trigger.recommended_action == ReplanAction.ALLOCATION_ONLY:
             logger.info(f"Allocation refresh triggered for {self.site_key}")
             # Would call allocation service here
@@ -525,10 +593,10 @@ class SiteAgent:
             (now - self._state_cache_time).seconds < 300):
             return self._state_cache
 
-        # Gather state from database/APIs
+        # Gather state from database/APIs (includes urgency_vector when signals enabled)
         state_data = await self._gather_state_data()
 
-        # Encode
+        # Encode (urgency_vector is passed through if present)
         with torch.no_grad():
             state = self.model.encode_state(**state_data)
 
@@ -543,6 +611,7 @@ class SiteAgent:
 
         Note: The dimensions here must match the trained model's state_dim.
         state_dim = inventory(1) + pipeline(4) + backlog(1) + demand_history(12) + forecasts(8) = 26
+        Plus optional urgency_vector(11) when hive signals are enabled.
         """
         # Dimensions must match training configuration
         n_products = 1  # Single aggregated product view
@@ -552,13 +621,20 @@ class SiteAgent:
 
         # TODO: Query actual data sources and aggregate to single product view
         # For now, return placeholder tensors with correct dimensions
-        return {
+        data: Dict[str, torch.Tensor] = {
             'inventory': torch.zeros(1, n_products),
             'pipeline': torch.zeros(1, n_products, lead_time_buckets),
             'backlog': torch.zeros(1, n_products),
             'demand_history': torch.zeros(1, n_products, history_window),
-            'forecasts': torch.zeros(1, n_products, forecast_horizon)
+            'forecasts': torch.zeros(1, n_products, forecast_horizon),
         }
+
+        # Append urgency vector from hive signal bus (11-dim)
+        if self.signal_bus is not None:
+            uv = self.signal_bus.urgency.values_array()
+            data['urgency_vector'] = torch.tensor([uv], dtype=torch.float32)
+
+        return data
 
     def _order_to_tensor(self, order: Order) -> torch.Tensor:
         """Convert order to tensor for TRM"""
@@ -658,6 +734,169 @@ class SiteAgent:
             logger.debug(f"Hive health failed: {e}")
             return None
 
+    def execute_decision_cycle(
+        self,
+        trm_executors: Optional[Dict[str, Any]] = None,
+    ) -> CycleResult:
+        """Execute a full 6-phase decision cycle with ordered TRM execution.
+
+        Each phase runs its assigned TRMs. Signals emitted in earlier phases
+        are visible to later phases within the same cycle.
+
+        Args:
+            trm_executors: Optional dict mapping TRM name → callable.
+                Each callable takes no args and returns any result.
+                Only TRMs present in this dict are executed.
+                If None, no TRMs are executed (dry-run for testing).
+
+        Returns:
+            CycleResult with per-phase details and conflict detection.
+        """
+        import time
+
+        executors = trm_executors or {}
+        result = CycleResult()
+        cycle_start = time.monotonic()
+
+        for phase in DecisionCyclePhase:
+            phase_start = time.monotonic()
+            phase_result = PhaseResult(phase=phase)
+            trm_names = PHASE_TRM_MAP.get(phase, [])
+            signals_before = len(self.signal_bus) if self.signal_bus else 0
+
+            for trm_name in trm_names:
+                executor = executors.get(trm_name)
+                if executor is None:
+                    continue
+                try:
+                    executor()
+                    phase_result.trms_executed.append(trm_name)
+                except Exception as e:
+                    phase_result.errors.append(f"{trm_name}: {e}")
+                    logger.warning(f"Decision cycle phase {phase.name} TRM {trm_name} failed: {e}")
+
+            signals_after = len(self.signal_bus) if self.signal_bus else 0
+            phase_result.signals_emitted = signals_after - signals_before
+            phase_result.duration_ms = (time.monotonic() - phase_start) * 1000.0
+            result.phases.append(phase_result)
+            result.total_signals_emitted += phase_result.signals_emitted
+
+            # REFLECT phase: detect conflicts and update signal divergence
+            if phase == DecisionCyclePhase.REFLECT and self.signal_bus:
+                try:
+                    snapshot = self.signal_bus.urgency.snapshot()
+                    result.conflicts_detected = detect_conflicts(snapshot)
+                except Exception as e:
+                    logger.debug(f"Conflict detection failed: {e}")
+                # Update signal divergence score for next CDC check
+                try:
+                    self.cdc_monitor.update_signal_divergence(
+                        self.signal_bus,
+                        self.get_current_directive(),
+                    )
+                except Exception as e:
+                    logger.debug(f"Signal divergence update failed: {e}")
+
+        result.completed_at = datetime.utcnow()
+        result.total_duration_ms = (time.monotonic() - cycle_start) * 1000.0
+        return result
+
+    # Mapping from InterHiveSignalType → HiveSignalType for local bus injection.
+    _INTER_TO_LOCAL: Dict[InterHiveSignalType, HiveSignalType] = {
+        InterHiveSignalType.NETWORK_SHORTAGE: HiveSignalType.NETWORK_SHORTAGE,
+        InterHiveSignalType.NETWORK_SURPLUS: HiveSignalType.NETWORK_SURPLUS,
+        InterHiveSignalType.DEMAND_PROPAGATION: HiveSignalType.PROPAGATION_ALERT,
+        InterHiveSignalType.BOTTLENECK_RISK: HiveSignalType.PROPAGATION_ALERT,
+        InterHiveSignalType.CONCENTRATION_RISK: HiveSignalType.PROPAGATION_ALERT,
+        InterHiveSignalType.RESILIENCE_ALERT: HiveSignalType.PROPAGATION_ALERT,
+        InterHiveSignalType.ALLOCATION_REFRESH: HiveSignalType.ALLOCATION_REFRESH,
+        InterHiveSignalType.PRIORITY_SHIFT: HiveSignalType.ALLOCATION_REFRESH,
+        InterHiveSignalType.FORECAST_REVISION: HiveSignalType.PROPAGATION_ALERT,
+        InterHiveSignalType.POLICY_PARAMETER_UPDATE: HiveSignalType.PROPAGATION_ALERT,
+    }
+
+    def apply_directive(self, directive: tGNNSiteDirective) -> Dict[str, Any]:
+        """Apply a tGNNSiteDirective to this hive.
+
+        Performs three actions:
+        1. Injects inter-hive signals into the local signal bus
+        2. Stores the directive so individual TRMs can read it
+        3. Pushes network params to TRMs that implement ``apply_network_context``
+
+        Args:
+            directive: A tGNNSiteDirective from the tGNN layer.
+
+        Returns:
+            Summary of actions taken.
+        """
+        summary: Dict[str, Any] = {
+            "site_key": self.site_key,
+            "signals_injected": 0,
+            "params_applied": {},
+        }
+
+        # Store directive for TRM consumption
+        self._current_directive = directive
+
+        # 1. Inject inter-hive signals into local bus
+        if self.signal_bus is not None:
+            for ihs in directive.inter_hive_signals:
+                try:
+                    local_type = self._INTER_TO_LOCAL.get(
+                        ihs.signal_type, HiveSignalType.PROPAGATION_ALERT
+                    )
+                    local_signal = HiveSignal(
+                        source_trm="tgnn_network",
+                        signal_type=local_type,
+                        urgency=ihs.urgency,
+                        direction=ihs.direction,
+                        magnitude=ihs.magnitude,
+                        half_life_minutes=ihs.half_life_hours * 60.0,
+                        payload={
+                            "source_site": ihs.source_site,
+                            "signal_type": ihs.signal_type.value,
+                            "from_tgnn": True,
+                        },
+                    )
+                    self.signal_bus.emit(local_signal)
+                    summary["signals_injected"] += 1
+                except Exception as e:
+                    logger.debug(f"Failed to inject inter-hive signal: {e}")
+
+        # 2. Collect S&OP parameters from directive
+        params: Dict[str, Any] = {}
+        for attr in (
+            "safety_stock_multiplier", "criticality_score", "bottleneck_risk",
+            "resilience_score", "demand_forecast", "exception_probability",
+        ):
+            val = getattr(directive, attr, None)
+            if val is not None:
+                params[attr] = val
+        summary["params_applied"] = params
+
+        # 3. Push directive params to registered TRMs that can consume them
+        for trm_name, trm_instance in self._registered_trms.items():
+            if hasattr(trm_instance, "apply_network_context"):
+                try:
+                    trm_instance.apply_network_context(params)
+                except Exception as e:
+                    logger.debug(f"TRM {trm_name} rejected network context: {e}")
+
+        logger.info(
+            f"Applied tGNN directive to {self.site_key}: "
+            f"{summary['signals_injected']} signals, "
+            f"{len(params)} params"
+        )
+        return summary
+
+    def get_current_directive(self) -> Optional[tGNNSiteDirective]:
+        """Return the most recently applied tGNNSiteDirective, or None."""
+        return getattr(self, "_current_directive", None)
+
+    def get_registered_trm(self, trm_name: str) -> Optional[Any]:
+        """Get a registered TRM instance by name."""
+        return self._registered_trms.get(trm_name)
+
     def get_status(self) -> Dict[str, Any]:
         """Get agent status summary"""
         status = {
@@ -667,7 +906,13 @@ class SiteAgent:
             'model_loaded': self.model is not None,
             'cdc_status': self.cdc_monitor.get_status(),
             'allocations_summary': self.aatp_engine.get_allocation_summary(),
+            'registered_trms': list(self._registered_trms.keys()),
         }
         if self.signal_bus:
             status['hive_signals'] = self.signal_bus.stats()
+            status['signal_divergence'] = getattr(
+                self.cdc_monitor, "_signal_divergence_score", 0.0
+            )
+        if self.get_current_directive() is not None:
+            status['has_tgnn_directive'] = True
         return status

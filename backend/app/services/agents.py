@@ -1797,7 +1797,7 @@ class SimulationAgent:
         upstream_data: Optional[List[Dict[str, Any]]],
         inventory_level: int,
         backlog_level: int,
-        incoming_shipments: int,
+        incoming_shipments,
     ) -> float:
         """
         Powell SiteAgent strategy using deterministic engines + TRM.
@@ -1817,8 +1817,12 @@ class SimulationAgent:
                     trm_confidence_threshold=0.7,
                 )
 
-            # Build observation for policy
-            pipeline = incoming_shipments
+            # Normalize incoming_shipments to a scalar
+            if isinstance(incoming_shipments, (list, tuple)):
+                pipeline = sum(float(x) for x in incoming_shipments)
+            else:
+                pipeline = float(incoming_shipments)
+
             observation = {
                 'inventory': inventory_level,
                 'backlog': backlog_level,
@@ -1843,7 +1847,8 @@ class SimulationAgent:
             logger.warning(f"SiteAgent strategy failed: {e}, falling back to naive")
             self._fallback_used = True
             self._fallback_reason = f"SiteAgent error: {e}"
-            return self._naive_strategy(current_demand)
+            on_order = sum(float(x) for x in incoming_shipments) if isinstance(incoming_shipments, (list, tuple)) else float(incoming_shipments)
+            return self._naive_strategy(current_demand, backlog_level, inventory_level, on_order)
 
     def get_last_explanation_comment(self) -> str:
         label = self._last_node_label or self.agent_type.value.title()

@@ -414,6 +414,22 @@ const Navbar = () => {
             handleMenuClose();
           },
         },
+        {
+          label: "Hive Dashboard",
+          icon: NetworkIcon,
+          onClick: () => {
+            navigate("/admin/hive");
+            handleMenuClose();
+          },
+        },
+        {
+          label: "Authorization Protocol",
+          icon: AdminIcon,
+          onClick: () => {
+            navigate("/admin/authorization-protocol");
+            handleMenuClose();
+          },
+        },
       ];
     }
 
@@ -449,6 +465,22 @@ const Navbar = () => {
           icon: NetworkIcon,
           onClick: () => {
             navigate("/admin/powell");
+            handleMenuClose();
+          },
+        },
+        {
+          label: "Hive Dashboard",
+          icon: NetworkIcon,
+          onClick: () => {
+            navigate("/admin/hive");
+            handleMenuClose();
+          },
+        },
+        {
+          label: "Authorization Protocol",
+          icon: AdminIcon,
+          onClick: () => {
+            navigate("/admin/authorization-protocol");
             handleMenuClose();
           },
         },

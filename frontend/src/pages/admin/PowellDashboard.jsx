@@ -367,6 +367,10 @@ const PowellDashboard = () => {
             <Sparkles className="h-4 w-4" />
             Belief State
           </TabsTrigger>
+          <TabsTrigger value="hive" className="flex items-center gap-2">
+            <Layers className="h-4 w-4" />
+            Hive Signals
+          </TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
@@ -1390,7 +1394,186 @@ const PowellDashboard = () => {
             </Card>
           </div>
         </TabsContent>
+
+        {/* Hive Signals Tab */}
+        <TabsContent value="hive">
+          <HiveSignalsTab siteKey={selectedSite} />
+        </TabsContent>
       </Tabs>
+    </div>
+  );
+};
+
+/**
+ * Embedded Hive Signals tab for the Powell Dashboard.
+ * Shows signal bus stats, urgency vector summary, and directive status.
+ */
+const HiveSignalsTab = ({ siteKey }) => {
+  const [hiveStatus, setHiveStatus] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState(null);
+  const effectiveSiteKey = siteKey || 'default_site';
+
+  React.useEffect(() => {
+    const fetchHive = async () => {
+      try {
+        setError(null);
+        const res = await api.get(`/api/v1/site-agent/hive/status/${effectiveSiteKey}`);
+        setHiveStatus(res.data);
+      } catch (err) {
+        setError(err.response?.data?.detail || err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchHive();
+  }, [effectiveSiteKey]);
+
+  if (loading) return <div className="text-center py-8 text-muted-foreground">Loading hive status...</div>;
+  if (error) return <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><span className="ml-2">{error}</span></Alert>;
+
+  const urgencyEntries = hiveStatus?.urgency_vector
+    ? Object.entries(hiveStatus.urgency_vector).map(([name, info]) => ({
+        name: name.replace(/_/g, ' '),
+        value: typeof info === 'object' ? info.urgency || 0 : info || 0,
+        direction: typeof info === 'object' ? info.direction : null,
+      }))
+    : [];
+
+  return (
+    <div className="grid grid-cols-2 gap-6">
+      {/* Signal Bus Stats */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="h-5 w-5 text-blue-500" />
+            Signal Bus Status
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="p-3 border rounded-lg text-center">
+              <div className="text-2xl font-bold text-blue-600">
+                {hiveStatus?.signal_bus?.alive || 0}
+              </div>
+              <div className="text-xs text-muted-foreground">Active Signals</div>
+            </div>
+            <div className="p-3 border rounded-lg text-center">
+              <div className="text-2xl font-bold text-green-600">
+                {hiveStatus?.registered_trms?.length || 0}
+              </div>
+              <div className="text-xs text-muted-foreground">Registered TRMs</div>
+            </div>
+            <div className="p-3 border rounded-lg text-center">
+              <div className="text-2xl font-bold" style={{ color: (hiveStatus?.signal_divergence || 0) > 0.3 ? '#ef4444' : '#10b981' }}>
+                {(hiveStatus?.signal_divergence || 0).toFixed(3)}
+              </div>
+              <div className="text-xs text-muted-foreground">Divergence Score</div>
+            </div>
+          </div>
+
+          {/* Signal Summary */}
+          {hiveStatus?.signal_summary && Object.keys(hiveStatus.signal_summary).length > 0 && (
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium">Signal Types</h4>
+              {Object.entries(hiveStatus.signal_summary).map(([type, count]) => (
+                <div key={type} className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{type.replace(/_/g, ' ')}</span>
+                  <Badge variant="outline">{count}</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-4">
+            <Link to="/admin/hive" className="text-sm text-primary hover:underline flex items-center gap-1">
+              Open Full Hive Dashboard <ChevronRight className="h-3 w-3" />
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Urgency Vector */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Gauge className="h-5 w-5 text-amber-500" />
+            Urgency Vector
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {urgencyEntries.length > 0 ? (
+            <div className="space-y-2">
+              {urgencyEntries.map(d => (
+                <div key={d.name} className="flex items-center gap-2">
+                  <span className="text-xs w-28 truncate capitalize">{d.name}</span>
+                  <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${d.value * 100}%`,
+                        backgroundColor: d.value > 0.7 ? '#ef4444' : d.value > 0.3 ? '#f59e0b' : '#10b981',
+                      }}
+                    />
+                  </div>
+                  <span className="text-xs w-10 text-right">{d.value.toFixed(2)}</span>
+                  {d.direction && (
+                    <span className="text-[10px] text-muted-foreground w-16">
+                      {d.direction === 'shortage' ? '▼' : d.direction === 'surplus' ? '▲' : '●'} {d.direction}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Layers className="h-12 w-12 mx-auto mb-4 opacity-30" />
+              <p>No urgency data</p>
+              <p className="text-sm mt-1">Connect TRMs to the SiteAgent to see urgency values</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* tGNN Directive Status */}
+      <Card className="col-span-2">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Settings className="h-5 w-5" />
+            tGNN Site Directive
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {hiveStatus?.directive ? (
+            <div className="grid grid-cols-5 gap-4">
+              <div className="p-3 border rounded-lg text-center">
+                <div className="text-lg font-bold">{hiveStatus.directive.criticality_score?.toFixed(2)}</div>
+                <div className="text-xs text-muted-foreground">Criticality</div>
+              </div>
+              <div className="p-3 border rounded-lg text-center">
+                <div className="text-lg font-bold">{hiveStatus.directive.bottleneck_risk?.toFixed(2)}</div>
+                <div className="text-xs text-muted-foreground">Bottleneck Risk</div>
+              </div>
+              <div className="p-3 border rounded-lg text-center">
+                <div className="text-lg font-bold">{hiveStatus.directive.safety_stock_multiplier?.toFixed(2)}</div>
+                <div className="text-xs text-muted-foreground">SS Multiplier</div>
+              </div>
+              <div className="p-3 border rounded-lg text-center">
+                <div className="text-lg font-bold">{hiveStatus.directive.resilience_score?.toFixed(2)}</div>
+                <div className="text-xs text-muted-foreground">Resilience</div>
+              </div>
+              <div className="p-3 border rounded-lg text-center">
+                <div className="text-lg font-bold">{hiveStatus.directive.inter_hive_signal_count || 0}</div>
+                <div className="text-xs text-muted-foreground">Inter-Hive Signals</div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-6 text-muted-foreground">
+              No tGNN directive active — waiting for network-level optimization
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 };

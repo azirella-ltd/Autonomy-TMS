@@ -673,6 +673,25 @@ t=5d: Supplier repairs complete, delivers to Site A
 
 **Bridging mechanism**: If accumulated local signals indicate tGNN outputs are stale (e.g., 5+ ATP_SHORTAGE signals when tGNN predicted `normal`), CDC Monitor triggers early tGNN refresh. This prevents the 24h gap from causing cascading failures.
 
+### 5.8 Implementation Status (Feb 2026)
+
+The following classes are now implemented in `backend/app/models/gnn/planning_execution_gnn.py`:
+
+| Class | Status | Description |
+|---|---|---|
+| `InterHiveSignalType` | Implemented | 9 signal types matching Section 5.3 spec |
+| `InterHiveSignal` | Implemented | Dataclass with 12h default half-life, `to_dict()` |
+| `tGNNSiteDirective` | Implemented | Per-site directive with S&OP + Execution outputs + addressed signals |
+| `HiveFeedbackFeatures` | Implemented | 8 feedback dimensions (Section 6.1), `from_signal_bus()` factory, `to_tensor()` |
+| `generate_inter_hive_signals()` | Implemented | Produces `InterHiveSignal` from tGNN exception/bottleneck outputs |
+| `generate_site_directives()` | Implemented | Bundles S&OP + Execution outputs into per-site directives |
+| `create_expanded_execution_model()` | Implemented | Factory for 16-dim Execution tGNN (8 base + 8 hive feedback) |
+
+The `SiteAgent` now supports:
+- `connect_trms(**trms)` — wires `signal_bus` to registered TRM instances
+- `SharedStateEncoder` accepts optional `urgency_vector` (11-dim) fused via additive projection
+- `_build_signal_context()` captured in `ATPResponse.signal_context` for decision audit
+
 ---
 
 ## 6. Feedback Loops
@@ -3697,16 +3716,25 @@ The tGNN is the connective tissue. Everything a site needs to know about the net
 |---|---|
 | SiteAgent orchestrator | `backend/app/services/powell/site_agent.py` |
 | Shared encoder + heads | `backend/app/services/powell/site_agent_model.py` |
-| tGNN models | `backend/app/models/gnn/planning_execution_gnn.py` |
+| HiveSignal primitives | `backend/app/services/powell/hive_signal.py` |
+| Hive health metrics | `backend/app/services/powell/hive_health.py` |
+| Decision cycle phases | `backend/app/services/powell/decision_cycle.py` |
+| tGNN models + InterHiveSignal | `backend/app/models/gnn/planning_execution_gnn.py` |
 | Allocation service | `backend/app/services/powell/allocation_service.py` |
 | CDC monitor | `backend/app/services/powell/cdc_monitor.py` |
 | Condition monitor (cross-site) | `backend/app/services/condition_monitor_service.py` |
 | Decision integration | `backend/app/services/powell/integration/decision_integration.py` |
 | Integration facade | `backend/app/services/powell/integration_service.py` |
+| Signal ingestion service | `backend/app/services/signal_ingestion_service.py` |
+| Edge agent models (DB) | `backend/app/models/edge_agents.py` |
+| Edge agent service (CRUD) | `backend/app/services/edge_agent_service.py` |
+| Edge agent API endpoints | `backend/app/api/endpoints/edge_agents.py` |
+| Edge agent frontend API | `frontend/src/services/edgeAgentApi.js` |
 | Context explainability | `backend/app/services/agent_context_explainer.py` |
 | Agentic Authorization Protocol | `docs/AGENTIC_AUTHORIZATION_PROTOCOL.md` |
 | Authorization models (proposed) | `AgentAuthority`, `AuthorizationThread`, `AuthorizationMessage` |
 | Scenario models (proposed) | `PlanningScenario` with tree branching, `ScenarioDecisionRecord` for knowledge capture |
 | Scenario tree service (proposed) | `ScenarioTreeService` — create, navigate, promote, prune, merge |
 | Scenario decisions table (proposed) | `powell_scenario_decisions` — decision records with scorecards, outcomes, learning signals |
+| DB migration (edge agents) | `backend/alembic/versions/20260223_edge_agent_tables.py` |
 | All 11 TRM services | `backend/app/services/powell/*.py` |

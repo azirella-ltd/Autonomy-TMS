@@ -59,6 +59,14 @@ class SiteAgentDecision(Base):
     feedback_recorded_at = Column(DateTime)
     feedback_user_id = Column(Integer, ForeignKey("users.id"))
 
+    # Hive signal context (Sprint 4 — nullable for backward compatibility)
+    signal_context = Column(JSON)           # Snapshot of signals read before decision
+    urgency_at_time = Column(Float)          # Urgency vector value for this TRM at decision time
+    triggered_by = Column(String(200))       # Comma-separated signal types that influenced decision
+    signals_emitted = Column(JSON)           # List of signal types emitted after decision
+    cycle_phase = Column(String(50))         # DecisionCyclePhase name (SENSE..REFLECT)
+    cycle_id = Column(String(100))           # UUID of the decision cycle run
+
     # Metadata
     scenario_id = Column(Integer, ForeignKey("scenarios.id"), index=True)
     period_number = Column(Integer)
@@ -69,6 +77,7 @@ class SiteAgentDecision(Base):
         Index("ix_powell_decisions_site_type", "site_key", "decision_type"),
         Index("ix_powell_decisions_timestamp_type", "timestamp", "decision_type"),
         Index("ix_powell_decisions_reward", "reward_signal"),
+        Index("ix_powell_decisions_cycle_id", "cycle_id"),
     )
 
 

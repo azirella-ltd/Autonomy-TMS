@@ -186,6 +186,17 @@ class Settings(BaseSettings):
     # Anthropic specific
     ANTHROPIC_API_KEY: Optional[str] = None
 
+    # Local LLM / RAG Configuration
+    LLM_API_BASE: Optional[str] = None  # e.g. http://vllm:8000/v1 or http://ollama:11434/v1
+    LLM_MODEL_NAME: Optional[str] = None  # Served model name (e.g. qwen3-8b)
+    EMBEDDING_API_BASE: Optional[str] = None  # Embedding endpoint (e.g. http://ollama:11434/v1)
+    EMBEDDING_MODEL: str = "nomic-embed-text"  # Embedding model name
+    EMBEDDING_DIMENSIONS: int = 768  # Vector dimensions for nomic-embed-text-v2
+    RAG_ENABLED: bool = False  # Enable RAG context injection into agent prompts
+    RAG_CHUNK_SIZE: int = 1024  # Characters per document chunk
+    RAG_CHUNK_OVERLAP: int = 200  # Overlap between chunks
+    RAG_TOP_K: int = 5  # Number of chunks to retrieve per query
+
     # ==========================================================================
     # SAP S/4HANA Integration (SAP ATP/CTP Integration)
     # ==========================================================================

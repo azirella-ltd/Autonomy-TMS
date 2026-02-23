@@ -29,6 +29,7 @@ from .engines.forecast_adjustment_engine import (
     ForecastAdjustmentEngine, ForecastAdjustmentConfig,
     ForecastSignal, ForecastAdjustmentResult, AdjustmentDirection,
 )
+from .hive_signal import HiveSignal, HiveSignalBus, HiveSignalType
 
 logger = logging.getLogger(__name__)
 
@@ -120,9 +121,70 @@ class ForecastAdjustmentTRM:
         self.model = model
         self.db = db_session
         self.ctx_explainer = None  # Set externally by SiteAgent or caller
+        self.signal_bus: Optional[HiveSignalBus] = None
+
+    def _read_signals_before_decision(self) -> Dict[str, Any]:
+        """Read relevant hive signals before making forecast decision."""
+        if self.signal_bus is None:
+            return {}
+        try:
+            signals = self.signal_bus.read(
+                consumer_trm="forecast_adj",
+                types={
+                    HiveSignalType.DEMAND_SURGE,
+                    HiveSignalType.DEMAND_DROP,
+                    HiveSignalType.ORDER_EXCEPTION,
+                },
+            )
+            context = {}
+            for s in signals:
+                if s.signal_type == HiveSignalType.DEMAND_SURGE:
+                    context["demand_surge"] = True
+                    context["surge_urgency"] = s.current_strength
+                elif s.signal_type == HiveSignalType.DEMAND_DROP:
+                    context["demand_drop"] = True
+                    context["drop_urgency"] = s.current_strength
+                elif s.signal_type == HiveSignalType.ORDER_EXCEPTION:
+                    context["order_exceptions"] = True
+            return context
+        except Exception as e:
+            logger.debug(f"Signal read failed: {e}")
+            return {}
+
+    def _emit_signals_after_decision(
+        self, state: ForecastAdjustmentState, rec: ForecastAdjustmentRecommendation
+    ) -> None:
+        """Emit hive signals after forecast adjustment decision."""
+        if self.signal_bus is None:
+            return
+        try:
+            if rec.should_adjust and abs(rec.adjustment_pct) > 0.01:
+                urgency = min(1.0, abs(rec.adjustment_pct) * 2.0)
+                direction = "surplus" if rec.direction == "up" else "shortage" if rec.direction == "down" else "neutral"
+                self.signal_bus.emit(HiveSignal(
+                    source_trm="forecast_adj",
+                    signal_type=HiveSignalType.FORECAST_ADJUSTED,
+                    urgency=urgency,
+                    direction=direction,
+                    magnitude=abs(rec.adjustment_pct),
+                    product_id=state.product_id,
+                    payload={
+                        "signal_id": state.signal_id,
+                        "adj_direction": rec.direction,
+                        "adj_pct": rec.adjustment_pct,
+                        "source": state.source,
+                    },
+                ))
+                self.signal_bus.urgency.update("forecast_adj", urgency, direction)
+            else:
+                self.signal_bus.urgency.update("forecast_adj", 0.0, "neutral")
+        except Exception as e:
+            logger.debug(f"Signal emit failed: {e}")
 
     def evaluate_signal(self, state: ForecastAdjustmentState) -> ForecastAdjustmentRecommendation:
         """Evaluate a forecast signal and recommend adjustment."""
+        self._read_signals_before_decision()
+
         signal = ForecastSignal(
             signal_id=state.signal_id,
             product_id=state.product_id,
@@ -172,6 +234,7 @@ class ForecastAdjustmentTRM:
             except Exception as e:
                 logger.debug(f"Context enrichment failed: {e}")
 
+        self._emit_signals_after_decision(state, rec)
         self._persist_decision(state, rec)
         return rec
 

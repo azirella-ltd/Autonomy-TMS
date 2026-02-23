@@ -39,3 +39,12 @@ from app.models.session import TokenBlacklist, UserSession
 # Import the association table to ensure it's registered
 # Note: user_games renamed to user_scenarios in Feb 2026 refactoring
 from app.models.user import user_scenarios
+
+# Edge agent models (PicoClaw, OpenClaw, Signal Ingestion)
+from app.models.edge_agents import (
+    EdgePicoClawInstance, EdgePicoClawHeartbeat, EdgePicoClawAlert,
+    EdgeServiceAccount, EdgeOpenClawConfig, EdgeOpenClawChannel,
+    EdgeOpenClawSkill, EdgeOpenClawSession, EdgeIngestedSignal,
+    EdgeSignalCorrelation, EdgeSourceReliability, EdgeSecurityChecklist,
+    EdgeActivityLog,
+)

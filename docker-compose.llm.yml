@@ -1,0 +1,121 @@
+# docker-compose.llm.yml
+# Self-hosted LLM overlay for RAG and local inference
+#
+# Usage:
+#   make up-llm                    # Full stack with vLLM (Qwen 3 8B)
+#   make up-llm-ollama             # Full stack with Ollama (lighter)
+#
+# Manual:
+#   docker compose -f docker-compose.yml -f docker-compose.llm.yml up -d
+#
+# Requirements:
+#   - NVIDIA GPU with >= 8GB VRAM (RTX 4060 or better)
+#   - NVIDIA Container Toolkit installed
+#
+# Environment variables (optional, set in .env):
+#   LLM_MODEL=Qwen/Qwen3-8B-AWQ          # HuggingFace model ID for vLLM
+#   LLM_API_BASE=http://vllm:8000/v1      # Override LLM endpoint
+#   EMBEDDING_MODEL=nomic-ai/nomic-embed-text-v2-moe  # Embedding model
+
+services:
+  # =========================================================================
+  # vLLM — High-performance inference server (Qwen 3 8B)
+  # =========================================================================
+  # OpenAI-compatible API at http://vllm:8000/v1
+  # Serves both chat completions and embeddings
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: autonomy-vllm
+    restart: unless-stopped
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - HF_HOME=/root/.cache/huggingface
+    command: >
+      --model ${LLM_MODEL:-Qwen/Qwen3-8B-AWQ}
+      --quantization awq
+      --max-model-len 8192
+      --gpu-memory-utilization 0.85
+      --host 0.0.0.0
+      --port 8000
+      --served-model-name qwen3-8b
+      --trust-remote-code
+    ports:
+      - "8001:8000"
+    volumes:
+      - vllm_cache:/root/.cache
+    networks:
+      - autonomy-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    runtime: nvidia
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s  # Model loading takes time
+
+  # =========================================================================
+  # Ollama — Lightweight alternative (dev/prototyping)
+  # =========================================================================
+  # OpenAI-compatible API at http://ollama:11434/v1
+  # Supports both generation and embedding models
+  ollama:
+    image: ollama/ollama:latest
+    container_name: autonomy-ollama
+    restart: unless-stopped
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - OLLAMA_HOST=0.0.0.0
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - autonomy-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    runtime: nvidia
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:11434/api/tags || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    profiles:
+      - ollama  # Only starts when explicitly requested
+
+  # =========================================================================
+  # Backend override — inject LLM environment variables
+  # =========================================================================
+  backend:
+    environment:
+      # Local LLM provider (vLLM)
+      - LLM_API_BASE=${LLM_API_BASE:-http://vllm:8000/v1}
+      - LLM_MODEL_NAME=${LLM_MODEL_NAME:-qwen3-8b}
+      # Embedding provider (Ollama or vLLM)
+      - EMBEDDING_API_BASE=${EMBEDDING_API_BASE:-http://ollama:11434/v1}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
+      # RAG configuration
+      - RAG_ENABLED=${RAG_ENABLED:-true}
+      - RAG_CHUNK_SIZE=${RAG_CHUNK_SIZE:-1024}
+      - RAG_CHUNK_OVERLAP=${RAG_CHUNK_OVERLAP:-200}
+      - RAG_TOP_K=${RAG_TOP_K:-5}
+
+volumes:
+  vllm_cache:
+    driver: local
+  ollama_data:
+    driver: local

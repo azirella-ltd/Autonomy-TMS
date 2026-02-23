@@ -22,7 +22,31 @@ from sqlalchemy.sql import func
 from .base import Base
 
 
-class PowellATPDecision(Base):
+class HiveSignalMixin:
+    """Mixin adding hive signal context columns to decision tables.
+
+    All columns are nullable so existing records are unaffected.
+    """
+    signal_context = Column(JSON, nullable=True)        # Snapshot of signals read before decision
+    urgency_at_time = Column(Float, nullable=True)       # Urgency vector value for this TRM at decision time
+    triggered_by = Column(String(200), nullable=True)    # Comma-separated signal types that influenced decision
+    signals_emitted = Column(JSON, nullable=True)        # List of signal types emitted after decision
+    cycle_phase = Column(String(50), nullable=True)      # DecisionCyclePhase name (SENSE..REFLECT)
+    cycle_id = Column(String(100), nullable=True)        # UUID of the decision cycle run
+
+    def _signal_dict(self) -> dict:
+        """Return signal fields for to_dict()."""
+        return {
+            "signal_context": self.signal_context,
+            "urgency_at_time": self.urgency_at_time,
+            "triggered_by": self.triggered_by,
+            "signals_emitted": self.signals_emitted,
+            "cycle_phase": self.cycle_phase,
+            "cycle_id": self.cycle_id,
+        }
+
+
+class PowellATPDecision(HiveSignalMixin, Base):
     """ATP decision history for TRM training and audit trail."""
     __tablename__ = "powell_atp_decisions"
 
@@ -75,10 +99,11 @@ class PowellATPDecision(Base):
             "confidence": self.confidence,
             "was_committed": self.was_committed,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            **self._signal_dict(),
         }
 
 
-class PowellRebalanceDecision(Base):
+class PowellRebalanceDecision(HiveSignalMixin, Base):
     """Rebalancing decision history for TRM training and audit trail."""
     __tablename__ = "powell_rebalance_decisions"
 
@@ -134,10 +159,11 @@ class PowellRebalanceDecision(Base):
             "expected_cost": self.expected_cost,
             "was_executed": self.was_executed,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            **self._signal_dict(),
         }
 
 
-class PowellPODecision(Base):
+class PowellPODecision(HiveSignalMixin, Base):
     """PO creation decision history for TRM training and audit trail."""
     __tablename__ = "powell_po_decisions"
 
@@ -196,10 +222,11 @@ class PowellPODecision(Base):
             "expected_cost": self.expected_cost,
             "was_executed": self.was_executed,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            **self._signal_dict(),
         }
 
 
-class PowellOrderException(Base):
+class PowellOrderException(HiveSignalMixin, Base):
     """Order tracking exception history for TRM training and audit trail."""
     __tablename__ = "powell_order_exceptions"
 
@@ -256,10 +283,11 @@ class PowellOrderException(Base):
             "action_taken": self.action_taken,
             "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            **self._signal_dict(),
         }
 
 
-class PowellMODecision(Base):
+class PowellMODecision(HiveSignalMixin, Base):
     """Manufacturing Order execution decision history for TRM training and audit trail."""
     __tablename__ = "powell_mo_decisions"
 
@@ -321,10 +349,11 @@ class PowellMODecision(Base):
             "actual_qty": self.actual_qty,
             "actual_yield_pct": self.actual_yield_pct,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            **self._signal_dict(),
         }
 
 
-class PowellTODecision(Base):
+class PowellTODecision(HiveSignalMixin, Base):
     """Transfer Order execution decision history for TRM training and audit trail."""
     __tablename__ = "powell_to_decisions"
 
@@ -359,10 +388,10 @@ class PowellTODecision(Base):
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
     __table_args__ = (
-        Index("idx_to_config", "config_id"),
-        Index("idx_to_product", "product_id"),
-        Index("idx_to_source_dest", "source_site_id", "dest_site_id"),
-        Index("idx_to_created", "created_at"),
+        Index("idx_powell_to_config", "config_id"),
+        Index("idx_powell_to_product", "product_id"),
+        Index("idx_powell_to_source_dest", "source_site_id", "dest_site_id"),
+        Index("idx_powell_to_created", "created_at"),
     )
 
     def to_dict(self):
@@ -386,10 +415,11 @@ class PowellTODecision(Base):
             "actual_qty": self.actual_qty,
             "actual_transit_days": self.actual_transit_days,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            **self._signal_dict(),
         }
 
 
-class PowellQualityDecision(Base):
+class PowellQualityDecision(HiveSignalMixin, Base):
     """Quality disposition decision history for TRM training and audit trail."""
     __tablename__ = "powell_quality_decisions"
 
@@ -462,10 +492,11 @@ class PowellQualityDecision(Base):
             "actual_scrap_cost": self.actual_scrap_cost,
             "customer_complaints_after": self.customer_complaints_after,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            **self._signal_dict(),
         }
 
 
-class PowellMaintenanceDecision(Base):
+class PowellMaintenanceDecision(HiveSignalMixin, Base):
     """Maintenance scheduling decision history for TRM training and audit trail."""
     __tablename__ = "powell_maintenance_decisions"
 
@@ -532,10 +563,11 @@ class PowellMaintenanceDecision(Base):
             "actual_downtime_hours": self.actual_downtime_hours,
             "breakdown_occurred": self.breakdown_occurred,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            **self._signal_dict(),
         }
 
 
-class PowellSubcontractingDecision(Base):
+class PowellSubcontractingDecision(HiveSignalMixin, Base):
     """Subcontracting routing decision history for TRM training and audit trail."""
     __tablename__ = "powell_subcontracting_decisions"
 
@@ -601,10 +633,11 @@ class PowellSubcontractingDecision(Base):
             "actual_lead_time_days": self.actual_lead_time_days,
             "quality_passed": self.quality_passed,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            **self._signal_dict(),
         }
 
 
-class PowellForecastAdjustmentDecision(Base):
+class PowellForecastAdjustmentDecision(HiveSignalMixin, Base):
     """Forecast adjustment decision history for TRM training and audit trail."""
     __tablename__ = "powell_forecast_adjustment_decisions"
 
@@ -673,4 +706,5 @@ class PowellForecastAdjustmentDecision(Base):
             "forecast_error_before": self.forecast_error_before,
             "forecast_error_after": self.forecast_error_after,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            **self._signal_dict(),
         }

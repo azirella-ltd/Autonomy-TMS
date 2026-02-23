@@ -54,6 +54,9 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Query performance statistics (highly recommended)
 CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
 
+-- Vector similarity search for RAG (Retrieval-Augmented Generation)
+CREATE EXTENSION IF NOT EXISTS "vector";
+
 -- =============================================================================
 -- CREATE CUSTOM TYPES (if needed)
 -- =============================================================================
@@ -76,5 +79,5 @@ SET timezone = 'UTC';
 \echo 'PostgreSQL initialization complete!'
 \echo 'Database: autonomy'
 \echo 'User: autonomy_user'
-\echo 'Extensions enabled: uuid-ossp, pg_stat_statements'
+\echo 'Extensions enabled: uuid-ossp, pg_stat_statements, vector (pgvector)'
 \echo 'Ready for SQLAlchemy migrations.'

@@ -28,10 +28,12 @@ References:
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Set
 from enum import Enum
 import numpy as np
 import logging
+
+from .hive_signal import HiveSignal, HiveSignalBus, HiveSignalType
 
 logger = logging.getLogger(__name__)
 
@@ -185,8 +187,124 @@ class SafetyStockTRM:
         # Context-aware explainer (set externally by SiteAgent or caller)
         self.ctx_explainer = None
 
+        self.signal_bus: Optional[HiveSignalBus] = None
+
+        # tGNN-provided safety stock multiplier for bound modulation.
+        # When set via apply_network_context(), modulates min/max_multiplier
+        # so the TRM operates within tGNN-adjusted bounds.
+        self._tgnn_ss_multiplier: float = 1.0
+
         # Decision history for training
         self._decision_history: List[Dict[str, Any]] = []
+
+    @property
+    def effective_bounds(self) -> tuple:
+        """Return (min_mult, max_mult) modulated by the tGNN SS multiplier.
+
+        When tGNN says safety_stock_multiplier=1.3 (increase SS across the board),
+        the effective bounds shift upward so the TRM's range becomes [0.65, 2.6]
+        instead of [0.5, 2.0].  This lets the tGNN steer the TRM without overriding it.
+        """
+        return (
+            self.min_multiplier * self._tgnn_ss_multiplier,
+            self.max_multiplier * self._tgnn_ss_multiplier,
+        )
+
+    def apply_network_context(self, params: Dict[str, Any]) -> None:
+        """Accept network-level parameters from tGNNSiteDirective.
+
+        Called by SiteAgent.apply_directive() when a new directive arrives.
+        The key parameter is ``safety_stock_multiplier`` which modulates the
+        TRM's effective min/max bounds (see ``effective_bounds``).
+        """
+        ssm = params.get("safety_stock_multiplier")
+        if ssm is not None:
+            self._tgnn_ss_multiplier = float(max(0.1, min(5.0, ssm)))
+            logger.info(
+                f"SafetyStockTRM: tGNN SS multiplier updated to "
+                f"{self._tgnn_ss_multiplier:.2f}, effective bounds "
+                f"{self.effective_bounds}"
+            )
+
+    def _read_signals_before_decision(self) -> Dict[str, Any]:
+        """Read relevant hive signals before making SS decision."""
+        if self.signal_bus is None:
+            return {}
+        try:
+            signals = self.signal_bus.read(
+                consumer_trm="safety_stock",
+                types={
+                    HiveSignalType.ATP_SHORTAGE,
+                    HiveSignalType.ATP_EXCESS,
+                    HiveSignalType.FORECAST_ADJUSTED,
+                    HiveSignalType.DEMAND_SURGE,
+                    HiveSignalType.DEMAND_DROP,
+                },
+            )
+            context: Dict[str, Any] = {}
+            for s in signals:
+                if s.signal_type == HiveSignalType.ATP_SHORTAGE:
+                    context["atp_shortage"] = True
+                    context["atp_shortage_urgency"] = s.current_strength
+                elif s.signal_type == HiveSignalType.ATP_EXCESS:
+                    context["atp_excess"] = True
+                elif s.signal_type == HiveSignalType.FORECAST_ADJUSTED:
+                    context["forecast_adjusted"] = True
+                    context["forecast_direction"] = s.direction
+                elif s.signal_type == HiveSignalType.DEMAND_SURGE:
+                    context["demand_surge"] = True
+                elif s.signal_type == HiveSignalType.DEMAND_DROP:
+                    context["demand_drop"] = True
+            return context
+        except Exception as e:
+            logger.debug(f"Signal read failed: {e}")
+            return {}
+
+    def _emit_signals_after_decision(
+        self, state: SSState, result: SSAdjustment
+    ) -> None:
+        """Emit hive signals after SS decision."""
+        if self.signal_bus is None:
+            return
+        try:
+            if result.multiplier > 1.05:
+                urgency = min(1.0, (result.multiplier - 1.0) * 2.0)
+                self.signal_bus.emit(HiveSignal(
+                    source_trm="safety_stock",
+                    signal_type=HiveSignalType.SS_INCREASED,
+                    urgency=urgency,
+                    direction="shortage",
+                    magnitude=result.multiplier - 1.0,
+                    product_id=state.product_id,
+                    payload={
+                        "baseline": result.baseline_ss,
+                        "adjusted": result.adjusted_ss,
+                        "multiplier": result.multiplier,
+                        "reason": result.reason.value,
+                    },
+                ))
+                self.signal_bus.urgency.update("safety_stock", urgency, "shortage")
+            elif result.multiplier < 0.95:
+                urgency = min(1.0, (1.0 - result.multiplier) * 2.0)
+                self.signal_bus.emit(HiveSignal(
+                    source_trm="safety_stock",
+                    signal_type=HiveSignalType.SS_DECREASED,
+                    urgency=urgency,
+                    direction="surplus",
+                    magnitude=1.0 - result.multiplier,
+                    product_id=state.product_id,
+                    payload={
+                        "baseline": result.baseline_ss,
+                        "adjusted": result.adjusted_ss,
+                        "multiplier": result.multiplier,
+                        "reason": result.reason.value,
+                    },
+                ))
+                self.signal_bus.urgency.update("safety_stock", urgency, "surplus")
+            else:
+                self.signal_bus.urgency.update("safety_stock", 0.0, "neutral")
+        except Exception as e:
+            logger.debug(f"Signal emit failed: {e}")
 
     def evaluate(self, state: SSState) -> SSAdjustment:
         """
@@ -198,6 +316,8 @@ class SafetyStockTRM:
         Returns:
             SSAdjustment with multiplier and adjusted SS
         """
+        self._read_signals_before_decision()
+
         if self.trm_model is not None:
             result = self._trm_evaluate(state)
         elif self.use_heuristic_fallback:
@@ -239,6 +359,9 @@ class SafetyStockTRM:
             except Exception as e:
                 logger.debug(f"Context enrichment failed: {e}")
 
+        # Emit signals
+        self._emit_signals_after_decision(state, result)
+
         # Record for training
         self._record_decision(state, result)
 
@@ -261,7 +384,8 @@ class SafetyStockTRM:
             output = self.trm_model.predict(features.reshape(1, -1))
 
             multiplier = float(output["multiplier"][0, 0])
-            multiplier = max(self.min_multiplier, min(self.max_multiplier, multiplier))
+            lo, hi = self.effective_bounds
+            multiplier = max(lo, min(hi, multiplier))
             confidence = float(np.clip(output["confidence"][0, 0], 0, 1))
 
             adjusted_ss = state.baseline_ss * multiplier
@@ -338,8 +462,9 @@ class SafetyStockTRM:
             multiplier = 1.0 + min(0.3, max(-0.3, -state.forecast_bias))
             reason = SSAdjustmentReason.FORECAST_BIAS
 
-        # Clamp multiplier
-        multiplier = max(self.min_multiplier, min(self.max_multiplier, multiplier))
+        # Clamp multiplier using tGNN-modulated bounds
+        lo, hi = self.effective_bounds
+        multiplier = max(lo, min(hi, multiplier))
 
         adjusted_ss = state.baseline_ss * multiplier
         adjusted_rop = state.baseline_reorder_point + (adjusted_ss - state.baseline_ss)

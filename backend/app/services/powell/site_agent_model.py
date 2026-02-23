@@ -40,6 +40,10 @@ class SiteAgentModelConfig:
     order_context_dim: int = 16   # Order features for ATP
     po_context_dim: int = 12      # PO features for timing
 
+    # Hive signal dimensions
+    urgency_vector_dim: int = 11  # 11-slot UrgencyVector (one per TRM type)
+    signal_summary_dim: int = 22  # 22 signal type counts (one per HiveSignalType)
+
     # Regularization
     dropout: float = 0.1
 
@@ -55,14 +59,32 @@ class SharedStateEncoder(nn.Module):
     Shared encoder that produces site state embeddings.
 
     Used by all TRM heads - compute once, use many times.
+
+    Optionally accepts an ``urgency_vector`` (11-dim) from the HiveSignalBus,
+    fused via a small projection before the transformer.  When the urgency
+    vector is not provided, a zero vector is used (backward-compatible).
     """
 
     def __init__(self, config: SiteAgentModelConfig):
         super().__init__()
         self.config = config
 
-        # Input projection
+        # Input projection (physical state → embedding)
         self.input_proj = nn.Linear(config.state_dim, config.embedding_dim)
+
+        # Urgency vector projection (11-dim → small hidden, then added to embedding)
+        self.urgency_proj = nn.Sequential(
+            nn.Linear(config.urgency_vector_dim, config.embedding_dim // 4),
+            nn.ReLU(),
+            nn.Linear(config.embedding_dim // 4, config.embedding_dim),
+        )
+
+        # Signal summary projection (22-dim counts → embedding, added like urgency)
+        self.signal_summary_proj = nn.Sequential(
+            nn.Linear(config.signal_summary_dim, config.embedding_dim // 4),
+            nn.ReLU(),
+            nn.Linear(config.embedding_dim // 4, config.embedding_dim),
+        )
 
         # Transformer encoder for temporal patterns
         encoder_layer = nn.TransformerEncoderLayer(
@@ -86,10 +108,21 @@ class SharedStateEncoder(nn.Module):
         pipeline: torch.Tensor,       # [batch, products, lead_time_buckets]
         backlog: torch.Tensor,        # [batch, products]
         demand_history: torch.Tensor, # [batch, products, history_window]
-        forecasts: torch.Tensor       # [batch, products, forecast_horizon]
+        forecasts: torch.Tensor,      # [batch, products, forecast_horizon]
+        urgency_vector: Optional[torch.Tensor] = None,   # [batch, 11]
+        signal_summary: Optional[torch.Tensor] = None,   # [batch, 22]
     ) -> torch.Tensor:
         """
         Encode site state into shared embedding.
+
+        Args:
+            urgency_vector: Optional 11-dim UrgencyVector from HiveSignalBus.
+                When provided, its projection is *added* to the physical state
+                embedding before the transformer — acting as a pheromone layer
+                that biases attention toward areas of current urgency.
+            signal_summary: Optional 22-dim signal type counts from
+                HiveSignalBus.signal_summary().  Adds an additional pheromone
+                layer that captures *which* types of signals are active.
 
         Returns: [batch, embedding_dim] site embedding
         """
@@ -98,7 +131,7 @@ class SharedStateEncoder(nn.Module):
         demand_flat = demand_history.flatten(start_dim=1)
         forecast_flat = forecasts.flatten(start_dim=1)
 
-        # Concatenate all features
+        # Concatenate all physical state features
         state = torch.cat([
             inventory,
             pipeline_flat,
@@ -109,6 +142,14 @@ class SharedStateEncoder(nn.Module):
 
         # Project to embedding dim
         x = self.input_proj(state)
+
+        # Fuse urgency vector (additive — zero vector when None)
+        if urgency_vector is not None:
+            x = x + self.urgency_proj(urgency_vector)
+
+        # Fuse signal summary (additive — zero vector when None)
+        if signal_summary is not None:
+            x = x + self.signal_summary_proj(signal_summary)
 
         # Add sequence dimension for transformer (single "token")
         x = x.unsqueeze(1)
@@ -310,10 +351,16 @@ class SiteAgentModel(nn.Module):
         pipeline: torch.Tensor,
         backlog: torch.Tensor,
         demand_history: torch.Tensor,
-        forecasts: torch.Tensor
+        forecasts: torch.Tensor,
+        urgency_vector: Optional[torch.Tensor] = None,
+        signal_summary: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Encode state once, use for all heads"""
-        return self.encoder(inventory, pipeline, backlog, demand_history, forecasts)
+        return self.encoder(
+            inventory, pipeline, backlog, demand_history, forecasts,
+            urgency_vector=urgency_vector,
+            signal_summary=signal_summary,
+        )
 
     def forward_atp_exception(
         self,
@@ -349,17 +396,23 @@ class SiteAgentModel(nn.Module):
         task: str = "all",
         order_context: Optional[torch.Tensor] = None,
         shortage_qty: Optional[torch.Tensor] = None,
-        po_context: Optional[torch.Tensor] = None
+        po_context: Optional[torch.Tensor] = None,
+        urgency_vector: Optional[torch.Tensor] = None,
+        signal_summary: Optional[torch.Tensor] = None,
     ) -> Dict[str, Any]:
         """
         Full forward pass for specified task(s).
 
         Args:
             task: "atp", "inventory", "po_timing", or "all"
+            urgency_vector: Optional 11-dim hive urgency state
+            signal_summary: Optional 22-dim signal type counts
         """
         # Encode state
         state_embedding = self.encode_state(
-            inventory, pipeline, backlog, demand_history, forecasts
+            inventory, pipeline, backlog, demand_history, forecasts,
+            urgency_vector=urgency_vector,
+            signal_summary=signal_summary,
         )
 
         results = {'state_embedding': state_embedding}
@@ -414,6 +467,7 @@ class SiteAgentModel(nn.Module):
     # Feature names for attribution mapping
     STATE_FEATURE_NAMES = [
         'inventory', 'pipeline', 'backlog', 'demand_history', 'forecasts',
+        'urgency_vector', 'signal_summary',
     ]
 
     def predict_with_attribution(
@@ -427,6 +481,8 @@ class SiteAgentModel(nn.Module):
         order_context: Optional[torch.Tensor] = None,
         shortage_qty: Optional[torch.Tensor] = None,
         po_context: Optional[torch.Tensor] = None,
+        urgency_vector: Optional[torch.Tensor] = None,
+        signal_summary: Optional[torch.Tensor] = None,
     ) -> Dict[str, Any]:
         """
         Run inference with gradient-based input saliency for explainability.
@@ -439,6 +495,8 @@ class SiteAgentModel(nn.Module):
             inventory, pipeline, backlog, demand_history, forecasts: State inputs
             order_context, shortage_qty: ATP-specific context
             po_context: PO-specific context
+            urgency_vector: Optional 11-dim hive urgency state
+            signal_summary: Optional 22-dim signal type counts
 
         Returns:
             Dict with standard outputs plus:
@@ -450,6 +508,12 @@ class SiteAgentModel(nn.Module):
         blog = backlog.detach().clone().requires_grad_(True)
         dem = demand_history.detach().clone().requires_grad_(True)
         fcst = forecasts.detach().clone().requires_grad_(True)
+        uv = None
+        if urgency_vector is not None:
+            uv = urgency_vector.detach().clone().requires_grad_(True)
+        ss = None
+        if signal_summary is not None:
+            ss = signal_summary.detach().clone().requires_grad_(True)
 
         # Forward pass
         results = self.forward(
@@ -462,12 +526,13 @@ class SiteAgentModel(nn.Module):
             order_context=order_context,
             shortage_qty=shortage_qty,
             po_context=po_context,
+            urgency_vector=uv,
+            signal_summary=ss,
         )
 
         # Find the primary output to compute gradients against
         target = None
         if task == 'atp' and 'atp' in results:
-            # Use confidence-weighted action probability as target
             atp_out = results['atp']
             target = atp_out['confidence'].sum() + atp_out['action_probs'].max(dim=-1).values.sum()
         elif task == 'inventory' and 'inventory' in results:
@@ -493,6 +558,10 @@ class SiteAgentModel(nn.Module):
                 'demand_history': dem.grad,
                 'forecasts': fcst.grad,
             }
+            if uv is not None and uv.grad is not None:
+                grad_groups['urgency_vector'] = uv.grad
+            if ss is not None and ss.grad is not None:
+                grad_groups['signal_summary'] = ss.grad
 
             saliency = {}
             for name, grad in grad_groups.items():

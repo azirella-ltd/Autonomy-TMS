@@ -87,6 +87,9 @@ class OutcomeCollectorService:
                         trm_type = decision.decision_type.replace("_exception", "")
                         reward = self.reward_calculator.calculate_reward(trm_type, outcome)
 
+                        # Signal-aware coordination bonus
+                        reward = self._apply_signal_bonus(decision, reward)
+
                         # Record outcome
                         decision.actual_outcome = outcome
                         decision.reward_signal = reward
@@ -270,3 +273,27 @@ class OutcomeCollectorService:
         except Exception as e:
             logger.debug(f"CDC outcome computation failed: {e}")
             return None
+
+    def _apply_signal_bonus(
+        self, decision: SiteAgentDecision, base_reward: float
+    ) -> float:
+        """Apply coordination bonus/penalty based on signal context.
+
+        Decisions made with active signal context receive:
+        - +5% bonus when base reward is positive (reinforce signal usage)
+        - -2% penalty when base reward is negative (discourage blind trust)
+
+        Decisions without signal context are unchanged.
+        """
+        try:
+            signal_ctx = getattr(decision, "signal_context", None)
+            if not signal_ctx:
+                return base_reward
+
+            if base_reward > 0:
+                return base_reward * 1.05  # +5% coordination bonus
+            elif base_reward < 0:
+                return base_reward * 1.02  # -2% coordination penalty (makes it worse)
+            return base_reward
+        except Exception:
+            return base_reward

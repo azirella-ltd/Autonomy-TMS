@@ -86,6 +86,14 @@ class TrainingRecord:
     trm_type: str = ""  # 'atp', 'rebalancing', 'po_creation', 'order_tracking'
     confidence: float = 1.0
 
+    # Hive signal context (Sprint 4)
+    signal_context: Optional[Dict[str, Any]] = None
+    urgency_at_time: Optional[float] = None
+    triggered_by: Optional[str] = None
+    signals_emitted: Optional[List[str]] = None
+    cycle_phase: Optional[str] = None
+    cycle_id: Optional[str] = None
+
 
 @dataclass
 class TrainingResult:
@@ -236,8 +244,46 @@ class RewardCalculator:
 
         return stockout_penalty * 0.4 + dos_reward * 0.3 + excess_penalty * 0.2 + stability_bonus * 0.1
 
+    @staticmethod
+    def signal_attribution_bonus(outcome: Dict[str, Any]) -> float:
+        """Bonus reward for signal-aware decisions (Sprint 7).
+
+        When a TRM decision was triggered by a hive signal and the outcome
+        was positive, reward the signal-response behavior.  Conversely, if
+        signals were ignored and the outcome was negative, penalize.
+
+        outcome keys (optional — returns 0.0 if absent):
+          - signal_triggered: bool — was the decision triggered by a signal?
+          - signal_urgency: float — urgency of the triggering signal
+          - outcome_positive: bool — was the outcome beneficial?
+          - cross_head_reward: float — coordination reward from the cycle
+        """
+        if "signal_triggered" not in outcome:
+            return 0.0
+
+        triggered = outcome.get("signal_triggered", False)
+        urgency = outcome.get("signal_urgency", 0.0)
+        positive = outcome.get("outcome_positive", True)
+        xhr = outcome.get("cross_head_reward", 0.0)
+
+        bonus = 0.0
+        if triggered and positive:
+            # Reward responding to signal when outcome was good
+            bonus += 0.15 * urgency
+        elif triggered and not positive:
+            # Small penalty — responded to signal but outcome was bad
+            bonus -= 0.05
+        elif not triggered and not positive:
+            # Penalty for ignoring available signals when outcome was bad
+            bonus -= 0.10 * urgency
+
+        # Additional bonus scaled by cross-head coordination reward
+        bonus += xhr * 0.05
+
+        return bonus
+
     def calculate_reward(self, trm_type: str, outcome: Dict[str, Any]) -> float:
-        """Calculate reward based on TRM type"""
+        """Calculate reward based on TRM type, with signal attribution bonus."""
         calculators = {
             'atp': self.atp_reward,
             'rebalancing': self.rebalancing_reward,
@@ -247,7 +293,10 @@ class RewardCalculator:
         }
 
         calculator = calculators.get(trm_type, lambda x: 0.0)
-        return calculator(outcome)
+        base_reward = calculator(outcome)
+
+        # Add signal-attribution bonus (zero if no signal context in outcome)
+        return base_reward + self.signal_attribution_bonus(outcome)
 
 
 class TRMTrainer:

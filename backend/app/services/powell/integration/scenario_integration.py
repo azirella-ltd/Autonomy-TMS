@@ -272,14 +272,8 @@ class SiteAgentStrategy:
 
         # Build decision with explanation
         decision = AgentDecision(
-            order_quantity=order_qty,
-            strategy="site_agent",
-            reasoning=self._build_reasoning(observation, order_qty),
-            confidence=0.85 if policy.use_trm else 1.0,
-            metadata={
-                "use_trm": policy.use_trm,
-                "site_key": site_key,
-            }
+            quantity=order_qty,
+            reason=self._build_reasoning(observation, order_qty),
         )
 
         return decision

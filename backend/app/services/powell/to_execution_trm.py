@@ -22,6 +22,7 @@ from .engines.to_execution_engine import (
     TOExecutionEngine, TOExecutionConfig, TOSnapshot, TOExecutionResult,
     TODecisionType,
 )
+from .hive_signal import HiveSignal, HiveSignalBus, HiveSignalType
 
 logger = logging.getLogger(__name__)
 
@@ -129,9 +130,77 @@ class TOExecutionTRM:
         self.model = model
         self.db = db_session
         self.ctx_explainer = None  # Set externally by SiteAgent or caller
+        self.signal_bus: Optional[HiveSignalBus] = None
+
+    def _read_signals_before_decision(self) -> Dict[str, Any]:
+        """Read relevant hive signals before making TO decision."""
+        if self.signal_bus is None:
+            return {}
+        try:
+            signals = self.signal_bus.read(
+                consumer_trm="to_execution",
+                types={
+                    HiveSignalType.REBALANCE_INBOUND,
+                    HiveSignalType.REBALANCE_OUTBOUND,
+                    HiveSignalType.NETWORK_SHORTAGE,
+                    HiveSignalType.NETWORK_SURPLUS,
+                },
+            )
+            context = {}
+            for s in signals:
+                if s.signal_type == HiveSignalType.REBALANCE_INBOUND:
+                    context["rebalance_inbound"] = True
+                    context["rebalance_urgency"] = s.current_strength
+                elif s.signal_type == HiveSignalType.REBALANCE_OUTBOUND:
+                    context["rebalance_outbound"] = True
+                elif s.signal_type in (HiveSignalType.NETWORK_SHORTAGE, HiveSignalType.NETWORK_SURPLUS):
+                    context["network_signal"] = s.signal_type.value
+            return context
+        except Exception as e:
+            logger.debug(f"Signal read failed: {e}")
+            return {}
+
+    def _emit_signals_after_decision(
+        self, state: TOExecutionState, rec: TORecommendation
+    ) -> None:
+        """Emit hive signals after TO decision."""
+        if self.signal_bus is None:
+            return
+        try:
+            if rec.release_now:
+                self.signal_bus.emit(HiveSignal(
+                    source_trm="to_execution",
+                    signal_type=HiveSignalType.TO_RELEASED,
+                    urgency=min(1.0, (5 - state.priority) / 4.0),
+                    direction="relief",
+                    magnitude=state.planned_qty / 1000.0,
+                    product_id=state.product_id,
+                    payload={
+                        "order_id": state.order_id,
+                        "source": state.source_site_id,
+                        "dest": state.dest_site_id,
+                    },
+                ))
+                self.signal_bus.urgency.update("to_execution", 0.2, "relief")
+            elif rec.defer_days > 0 or rec.decision_type == "defer":
+                urgency = min(1.0, 0.3 + rec.dest_stockout_risk * 0.7)
+                self.signal_bus.emit(HiveSignal(
+                    source_trm="to_execution",
+                    signal_type=HiveSignalType.TO_DELAYED,
+                    urgency=urgency,
+                    direction="risk",
+                    magnitude=rec.defer_days / 7.0,
+                    product_id=state.product_id,
+                    payload={"order_id": state.order_id, "defer_days": rec.defer_days},
+                ))
+                self.signal_bus.urgency.update("to_execution", urgency, "risk")
+        except Exception as e:
+            logger.debug(f"Signal emit failed: {e}")
 
     def evaluate_order(self, state: TOExecutionState) -> TORecommendation:
         """Evaluate a TO and recommend execution action."""
+        self._read_signals_before_decision()
+
         snapshot = TOSnapshot(
             order_id=state.order_id,
             product_id=state.product_id,
@@ -181,6 +250,7 @@ class TOExecutionTRM:
             except Exception as e:
                 logger.debug(f"Context enrichment failed: {e}")
 
+        self._emit_signals_after_decision(state, recommendation)
         self._persist_decision(state, recommendation)
         return recommendation
 

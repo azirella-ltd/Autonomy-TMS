@@ -119,9 +119,8 @@ class TestSiteAgentStrategy:
 
         decision = strategy.compute_order("retailer", observation)
 
-        assert decision.order_quantity >= 0
-        assert decision.strategy == "site_agent"
-        assert decision.reasoning is not None
+        assert decision.quantity >= 0
+        assert decision.reason is not None
 
 
 class TestSiteAgentATPAdapter:
@@ -317,12 +316,13 @@ class TestAgentStrategyIntegration:
 
         decision = agent.make_decision(
             current_round=1,
-            prev_order=4,
             current_demand=4,
             upstream_data=None,
-            inventory_level=12,
-            backlog_level=0,
-            incoming_shipments=4,
+            local_state={
+                "inventory_level": 12,
+                "backlog_level": 0,
+                "incoming_shipments": 4,
+            },
         )
 
         assert decision.quantity >= 0

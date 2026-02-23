@@ -790,3 +790,147 @@ async def trigger_retraining(
         "site_key": site_key,
         "message": f"Retraining triggered by {current_user.email}, running in background",
     }
+
+
+# ============================================================================
+# Hive Signal Bus & Decision Cycle Endpoints
+# ============================================================================
+
+@router.get("/hive/status/{site_key}")
+async def get_hive_status(
+    site_key: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get hive signal bus status, urgency vector, and signal divergence."""
+    site_agent = get_site_agent(site_key, db)
+    result: Dict[str, Any] = {
+        "site_key": site_key,
+        "hive_enabled": site_agent.signal_bus is not None,
+    }
+
+    if site_agent.signal_bus is None:
+        result["urgency_vector"] = None
+        result["signal_bus"] = None
+        result["signal_divergence"] = 0.0
+        result["hive_health"] = None
+        return result
+
+    bus = site_agent.signal_bus
+
+    # Urgency vector as labelled dict
+    uv = bus.urgency
+    uv_values = uv.values_array()
+    uv_snapshot = uv.snapshot()
+    idx_to_name = {v: k for k, v in uv.TRM_INDICES.items()}
+    result["urgency_vector"] = {
+        "values": {idx_to_name[i]: round(v, 4) for i, v in enumerate(uv_values)},
+        "directions": {
+            idx_to_name[i]: d for i, d in enumerate(uv_snapshot["directions"])
+        },
+        "last_updated": {
+            idx_to_name[i]: t for i, t in enumerate(uv_snapshot["last_updated"])
+        },
+    }
+
+    # Signal bus stats
+    result["signal_bus"] = bus.stats()
+    result["signal_summary"] = bus.signal_summary()
+
+    # Active signals (limited to 50 most recent)
+    active = bus.active_signals()
+    result["active_signals"] = [s.to_dict() for s in active[-50:]]
+
+    # Signal divergence
+    result["signal_divergence"] = getattr(
+        site_agent.cdc_monitor, "_signal_divergence_score", 0.0
+    )
+
+    # Hive health metrics
+    result["hive_health"] = site_agent.get_hive_health()
+
+    # tGNN directive status
+    directive = site_agent.get_current_directive()
+    if directive is not None:
+        result["directive"] = {
+            "site_key": getattr(directive, "site_key", ""),
+            "criticality_score": getattr(directive, "criticality_score", 0.0),
+            "bottleneck_risk": getattr(directive, "bottleneck_risk", 0.0),
+            "safety_stock_multiplier": getattr(directive, "safety_stock_multiplier", 1.0),
+            "resilience_score": getattr(directive, "resilience_score", 0.0),
+            "confidence": getattr(directive, "confidence", 0.0),
+            "inter_hive_signal_count": len(getattr(directive, "inter_hive_signals", [])),
+        }
+    else:
+        result["directive"] = None
+
+    # Registered TRMs
+    result["registered_trms"] = list(site_agent._registered_trms.keys())
+
+    return result
+
+
+@router.get("/hive/decision-cycle/{site_key}")
+async def get_decision_cycle_info(
+    site_key: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get decision cycle phase mapping and TRM assignments."""
+    from app.services.powell.decision_cycle import PHASE_TRM_MAP, DecisionCyclePhase
+
+    phases = []
+    for phase in DecisionCyclePhase:
+        trms = PHASE_TRM_MAP.get(phase, [])
+        phases.append({
+            "phase": phase.value,
+            "name": phase.name,
+            "trms": trms,
+        })
+
+    site_agent = get_site_agent(site_key, db)
+    registered = list(site_agent._registered_trms.keys())
+
+    return {
+        "site_key": site_key,
+        "phases": phases,
+        "registered_trms": registered,
+        "total_phases": len(phases),
+    }
+
+
+@router.post("/hive/decision-cycle/{site_key}/run")
+async def run_decision_cycle(
+    site_key: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Execute a decision cycle and return phase-by-phase results."""
+    site_agent = get_site_agent(site_key, db)
+
+    # Build executors from registered TRMs (if they're callable)
+    executors = {}
+    for name, trm in site_agent._registered_trms.items():
+        if callable(trm):
+            executors[name] = trm
+
+    result = site_agent.execute_decision_cycle(trm_executors=executors)
+
+    return {
+        "site_key": site_key,
+        "completed_at": result.completed_at.isoformat() if result.completed_at else None,
+        "total_duration_ms": round(result.total_duration_ms, 2),
+        "total_signals_emitted": result.total_signals_emitted,
+        "conflicts_detected": result.conflicts_detected,
+        "phases": [
+            {
+                "phase": p.phase.value,
+                "name": p.phase.name,
+                "trms_executed": p.trms_executed,
+                "signals_emitted": p.signals_emitted,
+                "duration_ms": round(p.duration_ms, 2),
+                "errors": p.errors,
+            }
+            for p in result.phases
+        ],
+    }

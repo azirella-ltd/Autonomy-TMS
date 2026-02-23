@@ -1708,6 +1708,22 @@ def ask_why_trm_decision(
 
     result = ctx.to_dict()
 
+    # Enrich with hive signal context if available
+    signal_context = exec_details.get("signal_context")
+    if not signal_context:
+        # Try to find it from the powell decision record
+        try:
+            from app.services.powell.integration.decision_integration import DecisionRecord
+            powell_dec = db.query(DecisionRecord).filter_by(
+                id=decision_id
+            ).first()
+            if powell_dec and hasattr(powell_dec, "signal_context"):
+                signal_context = powell_dec.signal_context
+        except Exception:
+            pass
+    if signal_context:
+        result["hive_signal_context"] = signal_context
+
     # Cache for future requests
     exec_details[cache_key] = result
     action.execution_details = exec_details

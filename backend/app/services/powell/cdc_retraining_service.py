@@ -308,8 +308,12 @@ class CDCRetrainingService:
             return None
 
     def _extract_features(self, input_state: Dict[str, Any]) -> List[float]:
-        """Extract a feature vector from decision input state."""
-        # Construct a 26-dimensional feature vector from available state
+        """Extract a feature vector from decision input state.
+
+        Returns a 26-dimensional vector: 10 physical state features,
+        11 urgency vector values, and 5 signal summary features.
+        """
+        # 10 physical state features
         features = [
             float(input_state.get("inventory_on_hand", 0)),
             float(input_state.get("inventory_target", 0)),
@@ -322,9 +326,21 @@ class CDCRetrainingService:
             float(input_state.get("safety_stock", 0)),
             float(input_state.get("reorder_point", 0)),
         ]
-        # Pad to 26 features (SiteAgentModel input size)
-        while len(features) < 26:
-            features.append(0.0)
+
+        # 11 urgency vector values (from signal_context if available)
+        signal_ctx = input_state.get("signal_context") or {}
+        urgency_values = signal_ctx.get("urgency_vector", {}).get("values", [])
+        for i in range(11):
+            features.append(float(urgency_values[i]) if i < len(urgency_values) else 0.0)
+
+        # 5 aggregated signal features
+        features.append(float(signal_ctx.get("active_signal_count", 0)) / 20.0)
+        summary = signal_ctx.get("summary", {})
+        features.append(float(len(summary)))  # distinct signal types active
+        features.append(float(input_state.get("urgency_at_time", 0.0)))
+        features.append(1.0 if input_state.get("triggered_by") else 0.0)
+        features.append(float(len(input_state.get("signals_emitted", []) or [])))
+
         return features[:26]
 
     def _get_current_loss(self) -> Optional[float]:

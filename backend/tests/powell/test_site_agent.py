@@ -232,7 +232,15 @@ class TestCDCIntegration:
         config = SiteAgentConfig(
             site_key="SITE001",
             cdc_config=CDCConfig(
-                thresholds={'demand_deviation': 0.10},
+                thresholds={
+                    'demand_deviation': 0.10,
+                    'inventory_ratio_low': 0.70,
+                    'inventory_ratio_high': 1.50,
+                    'service_level_drop': 0.05,
+                    'lead_time_increase': 0.30,
+                    'backlog_growth_days': 2,
+                    'supplier_reliability_drop': 0.15,
+                },
                 cooldown_hours=1,
             ),
         )
@@ -356,7 +364,7 @@ class TestSiteAgentModel:
     @pytest.fixture
     def model(self):
         config = SiteAgentModelConfig(
-            state_dim=64,
+            state_dim=260,
             embedding_dim=128,
         )
         return SiteAgentModel(config)

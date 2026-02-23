@@ -65,6 +65,7 @@ import {
   FileInput as InputIcon,
   ListChecks as WorklistIcon,
   Cpu as ExecutionIcon,
+  BookOpen as BookOpenIcon,
 } from 'lucide-react';
 
 /**
@@ -759,6 +760,13 @@ export const NAVIGATION_CONFIG = [
         requiredCapability: 'manage_group_users',
         description: 'SAP connections, field mapping, and data ingestion',
       },
+      {
+        label: 'Knowledge Base',
+        path: '/admin/knowledge-base',
+        icon: BookOpenIcon,
+        requiredCapability: 'manage_group_users',
+        description: 'Upload documents for AI agent context (RAG)',
+      },
     ],
   },
 
@@ -910,6 +918,12 @@ export const SYSTEM_ADMIN_NAVIGATION = [
         path: '/admin/edge-security',
         icon: AdminIcon,
         description: 'CVE tracking and deployment security',
+      },
+      {
+        label: 'Knowledge Base',
+        path: '/admin/knowledge-base',
+        icon: BookOpenIcon,
+        description: 'Upload documents for AI agent context (RAG)',
       },
     ],
   },

@@ -134,11 +134,13 @@ class SyntheticTRMDataGenerator:
         db: AsyncSession,
         config_id: int,
         group_id: int,
-        seed: Optional[int] = None
+        seed: Optional[int] = None,
+        signal_bus=None,
     ):
         self.db = db
         self.config_id = config_id
         self.group_id = group_id
+        self.signal_bus = signal_bus  # Optional HiveSignalBus for signal-enriched data
 
         # Set random seed for reproducibility
         if seed:
@@ -1377,7 +1379,8 @@ async def generate_synthetic_trm_data(
     num_days: int = 365,
     num_orders_per_day: int = 50,
     num_decisions_per_day: int = 20,
-    seed: Optional[int] = None
+    seed: Optional[int] = None,
+    signal_bus=None,
 ) -> GenerationStats:
     """
     Convenience function to generate synthetic TRM training data.
@@ -1390,11 +1393,12 @@ async def generate_synthetic_trm_data(
         num_orders_per_day: Average orders per day
         num_decisions_per_day: Average TRM decisions per day
         seed: Random seed for reproducibility
+        signal_bus: Optional HiveSignalBus for signal-enriched generation
 
     Returns:
         GenerationStats with counts of generated records
     """
-    generator = SyntheticTRMDataGenerator(db, config_id, group_id, seed)
+    generator = SyntheticTRMDataGenerator(db, config_id, group_id, seed, signal_bus=signal_bus)
     return await generator.generate(
         num_days=num_days,
         num_orders_per_day=num_orders_per_day,

@@ -135,7 +135,7 @@ export const signalApi = {
 
   /** Get recent signals */
   getSignals: (params = {}) =>
-    api.get('/api/v1/signals', { params }),
+    api.get('/api/v1/signals/list', { params }),
 
   /** Get pending signals for review */
   getPendingSignals: (params = {}) =>

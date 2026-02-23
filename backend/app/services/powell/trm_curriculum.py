@@ -1103,3 +1103,24 @@ CURRICULUM_REGISTRY = {
     "po_creation": POCreationCurriculum,
     "order_tracking": OrderTrackingCurriculum,
 }
+
+# Register hive curricula (7 remaining TRMs) from hive_curriculum module
+_hive_registered = False
+
+def register_hive_curricula():
+    """Import and register the 7 hive TRM curricula.
+
+    Safe to call multiple times — only registers once.
+    Called automatically on first import; call explicitly if needed.
+    """
+    global _hive_registered
+    if _hive_registered:
+        return
+    try:
+        from .hive_curriculum import HIVE_CURRICULUM_REGISTRY
+        CURRICULUM_REGISTRY.update(HIVE_CURRICULUM_REGISTRY)
+        _hive_registered = True
+    except Exception:
+        pass  # hive_curriculum not yet available
+
+register_hive_curricula()

@@ -75,7 +75,36 @@ endif
 
 DOCKER_COMPOSE_CMD = $(strip $(COMPOSE_ENV) $(DOCKER_COMPOSE))
 
-.PHONY: up gpu-up up-dev down ps logs reload reload-backend reload-frontend seed reset-admin help init-env proxy-up proxy-down proxy-restart proxy-recreate proxy-logs proxy-url seed-default-group seed-default-beer-game seed-three-fg-beer-game seed-variable-beer-game all_beer_game build-create-users db-bootstrap db-reset rebuild-db reseed-db rebuild-gpu train-gnn openai-venv openai-check generate-site-agent-data train-site-agent train-site-agent-full eval-site-agent test-powell test-engines test-site-agent test-food-dist test-food-dist-trm generate-food-dist train-and-test-food-dist train-and-test-food-dist-quick train-and-test-food-dist-gpu
+.PHONY: up gpu-up up-dev down ps logs reload reload-backend reload-frontend seed reset-admin help init-env proxy-up proxy-down proxy-restart proxy-recreate proxy-logs proxy-url seed-default-group seed-default-beer-game seed-three-fg-beer-game seed-variable-beer-game all_beer_game build-create-users db-bootstrap db-reset rebuild-db reseed-db rebuild-gpu train-gnn openai-venv openai-check generate-site-agent-data train-site-agent train-site-agent-full eval-site-agent test-powell test-engines test-site-agent test-food-dist test-food-dist-trm generate-food-dist train-and-test-food-dist train-and-test-food-dist-quick train-and-test-food-dist-gpu up-llm up-llm-ollama ollama-pull-models
+
+# =========================================================================
+# LOCAL LLM TARGETS (vLLM + Ollama for RAG)
+# =========================================================================
+
+# Start full stack with vLLM (Qwen 3 8B) — requires NVIDIA GPU with >= 8GB VRAM
+up-llm:
+	@echo "\n[+] Starting full stack with local LLM (vLLM + Qwen 3 8B)..."
+	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.llm.yml up -d
+	@echo "\n[✓] Stack started with local LLM."
+	@echo "   App:     http://$(HOST):8088"
+	@echo "   vLLM:    http://$(HOST):8001/v1 (OpenAI-compatible)"
+	@echo "   Note:    First start downloads model (~5GB). Check: docker logs autonomy-vllm"
+
+# Start full stack with Ollama (lighter, good for dev)
+up-llm-ollama:
+	@echo "\n[+] Starting full stack with Ollama..."
+	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.llm.yml --profile ollama up -d
+	@echo "\n[✓] Stack started with Ollama."
+	@echo "   App:     http://$(HOST):8088"
+	@echo "   Ollama:  http://$(HOST):11434"
+	@echo "   Next:    make ollama-pull-models"
+
+# Pull required models into Ollama
+ollama-pull-models:
+	@echo "\n[+] Pulling Qwen 3 8B and Nomic Embed Text into Ollama..."
+	docker exec autonomy-ollama ollama pull qwen3:8b
+	docker exec autonomy-ollama ollama pull nomic-embed-text
+	@echo "\n[✓] Models ready."
 
 # Default CPU target
 up:
@@ -574,6 +603,54 @@ test-powell:
 	@echo "\n[+] Running Powell framework tests..."; \
 	$(DOCKER_COMPOSE_CMD) exec backend pytest tests/powell/ -v --tb=short; \
 	echo "\n[✓] Powell tests completed."
+
+# Hive trace generation and training
+HIVE_EPISODES ?= 10
+HIVE_PERIODS ?= 52
+HIVE_SEED ?= 42
+HIVE_EPOCHS ?= 30
+HIVE_SAMPLES ?= 5000
+HIVE_XHR_WEIGHT ?= 0.05
+
+.PHONY: generate-hive-traces train-hive-warmstart train-hive-stress train-hive-full
+
+generate-hive-traces:
+	@echo "\n[+] Generating hive coordination traces..."; \
+	set -e; \
+	$(DOCKER_COMPOSE_CMD) exec backend python scripts/training/generate_hive_traces.py \
+	  --site-key "$(SITE_KEY)" \
+	  --episodes $(HIVE_EPISODES) \
+	  --periods $(HIVE_PERIODS) \
+	  --seed $(HIVE_SEED) \
+	  --output data/hive_traces_$(SITE_KEY).json; \
+	echo "\n[✓] Hive trace generation completed."
+
+train-hive-warmstart:
+	@echo "\n[+] Hive warm-start: Signal Phases 1+2 (NO_SIGNALS → URGENCY_ONLY)..."; \
+	set -e; \
+	$(DOCKER_COMPOSE_CMD) exec backend python scripts/training/train_hive_warmstart.py \
+	  --config-id $(CONFIG_ID) \
+	  --epochs $(HIVE_EPOCHS) \
+	  --num-samples $(HIVE_SAMPLES) \
+	  --device $(TRAIN_DEVICE) \
+	  --results-json data/hive_warmstart_results.json; \
+	echo "\n[✓] Hive warm-start training completed."
+
+train-hive-stress: generate-hive-traces
+	@echo "\n[+] Hive stress: Signal Phase 3 (FULL_SIGNALS + RL/CQL)..."; \
+	set -e; \
+	$(DOCKER_COMPOSE_CMD) exec backend python scripts/training/train_hive_stress.py \
+	  --config-id $(CONFIG_ID) \
+	  --epochs $(HIVE_EPOCHS) \
+	  --num-samples $(HIVE_SAMPLES) \
+	  --cross-head-weight $(HIVE_XHR_WEIGHT) \
+	  --device $(TRAIN_DEVICE) \
+	  --trace-dir data/ \
+	  --results-json data/hive_stress_results.json; \
+	echo "\n[✓] Hive stress training completed."
+
+train-hive-full: train-hive-warmstart train-hive-stress
+	@echo "\n[✓] Full hive training pipeline completed (warm-start + stress)."
 
 test-engines:
 	@echo "\n[+] Running deterministic engine tests..."; \

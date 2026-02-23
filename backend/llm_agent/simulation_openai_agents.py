@@ -375,7 +375,12 @@ def resolve_model(preferred: Optional[str] = None, *, custom_gpt: Optional[str] 
     if preferred:
         return preferred
 
-    return getenv("AUTONOMY_LLM_MODEL") or getenv("OPENAI_MODEL") or "gpt-4.1-mini"
+    return (
+        getenv("LLM_MODEL_NAME")  # Local vLLM/Ollama served model name
+        or getenv("AUTONOMY_LLM_MODEL")
+        or getenv("OPENAI_MODEL")
+        or "gpt-4.1-mini"
+    )
 
 
 class SimulationAgentsOrchestrator:

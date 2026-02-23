@@ -60,8 +60,11 @@ class LLMAgent:
         self.supervisor_enabled = supervisor
         self.global_enabled = global_agent
         self.custom_gpt = custom_gpt or os.getenv("AUTONOMY_CUSTOM_GPT") or os.getenv("SIMULATION_CUSTOM_GPT")
-        if not os.getenv("OPENAI_API_KEY"):
-            raise ValueError("OPENAI_API_KEY environment variable not set")
+        if not os.getenv("OPENAI_API_KEY") and not os.getenv("LLM_API_BASE"):
+            raise ValueError(
+                "No LLM provider configured. Set LLM_API_BASE for local LLM "
+                "(vLLM/Ollama) or OPENAI_API_KEY for OpenAI."
+            )
 
         strategy_name = strategy.value if isinstance(strategy, LLMStrategy) else str(strategy)
         self.session = get_session(
@@ -239,10 +242,10 @@ def check_autonomy_llm_access(
 ) -> Tuple[bool, str]:
     """Probe the configured Autonomy LLM endpoint to confirm availability."""
 
-    if not os.getenv("OPENAI_API_KEY"):
-        return False, "OPENAI_API_KEY environment variable not set"
+    if not os.getenv("OPENAI_API_KEY") and not os.getenv("LLM_API_BASE"):
+        return False, "No LLM provider configured (set LLM_API_BASE or OPENAI_API_KEY)"
 
-    target_model = model or os.getenv("AUTONOMY_LLM_MODEL") or "gpt-5-mini"
+    target_model = model or os.getenv("LLM_MODEL_NAME") or os.getenv("AUTONOMY_LLM_MODEL") or "gpt-5-mini"
 
     try:
         session = AutonomyStrategistSession(model=target_model)

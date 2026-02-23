@@ -44,6 +44,14 @@ class TRMDecisionRecord:
     reward_signal: Optional[float] = None
     human_feedback: Optional[str] = None
 
+    # Hive signal context (Sprint 4)
+    signal_context: Optional[Dict[str, Any]] = None
+    urgency_at_time: Optional[float] = None
+    triggered_by: Optional[str] = None
+    signals_emitted: Optional[List[str]] = None
+    cycle_phase: Optional[str] = None
+    cycle_id: Optional[str] = None
+
 
 class SiteAgentDecisionTracker:
     """
@@ -500,6 +508,13 @@ class SiteAgentDecisionTracker:
                     actual_outcome=record.actual_outcome,
                     reward_signal=record.reward_signal,
                     human_feedback=record.human_feedback,
+                    # Hive signal context
+                    signal_context=record.signal_context,
+                    urgency_at_time=record.urgency_at_time,
+                    triggered_by=record.triggered_by,
+                    signals_emitted=record.signals_emitted,
+                    cycle_phase=record.cycle_phase,
+                    cycle_id=record.cycle_id,
                 )
                 self.db.add(decision)
 
