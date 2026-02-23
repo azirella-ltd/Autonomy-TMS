@@ -1801,6 +1801,8 @@ The CDC Monitor tab displays:
 
 #### 5.10 Unified SiteAgent Architecture
 
+> **See also**: [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) for the "Hive" model that reconceptualizes each SiteAgent as a colony of 11 specialized TRM workers coordinating through signal-mediated communication, with the tGNN serving as inter-hive connective tissue. Sections 10-12 integrate the Hive with the [Agentic Authorization Protocol](docs/AGENTIC_AUTHORIZATION_PROTOCOL.md) and define a Kinaxis-inspired embedded scenario architecture where agents create branched what-if scenarios and negotiate via the AAP.
+
 The SiteAgent is the **execution-level orchestrator** that combines deterministic engines with learned TRM heads. Each site in the supply chain network has a SiteAgent responsible for all execution decisions at that location.
 
 ##### 5.10.1 Architecture Overview

@@ -109,6 +109,13 @@ Narrow TRMs (VFA - Value Function Approximation)
    - 7M parameters, 2-layer transformer with 3-step recursive refinement
    - <10ms inference time (100+ decisions/second)
    - 90-95% accuracy vs optimal policies
+   - **Research Foundation**: Architecture inspired by Samsung SAIL Montreal's TRM ([arxiv:2510.04871](https://arxiv.org/abs/2510.04871)), which demonstrated that a 7M-parameter recursive network outperforms 671B-parameter LLMs on structured reasoning. See [TRM_RESEARCH_SYNTHESIS.md](TRM_RESEARCH_SYNTHESIS.md) for full research context.
+   - **Architecture Principles** (from Samsung TRM research):
+     - Recursion multiplies compute without multiplying parameters (2 layers × N applications = 2N effective layers)
+     - Post-normalization essential for recursion stability (bounds hidden state magnitude)
+     - Full backpropagation through all recursive steps (no gradient approximation)
+     - Deep supervision at each refinement step encourages good intermediate outputs
+     - Fewer parameters → better generalization (model must learn rules, not memorize)
    - **Scope: Narrow execution decisions only**:
      - **ATPExecutorTRM**: Allocated Available-to-Promise with priority consumption
      - **InventoryRebalancingTRM**: Cross-location transfer decisions
@@ -126,6 +133,7 @@ Narrow TRMs (VFA - Value Function Approximation)
      - Behavioral cloning for warm-start (supervised from experts)
      - RL/VFA fine-tuning (TD learning with actual outcomes)
      - Narrow scope makes RL tractable (small state, fast feedback, clear reward)
+     - CGAR curriculum ([arxiv:2511.08653](https://arxiv.org/abs/2511.08653)): Progressive recursion depth during training reduces FLOPs ~40%
    - Files: `backend/app/services/powell/atp_executor.py`, `inventory_rebalancing_trm.py`, `po_creation_trm.py`, `order_tracking_trm.py`, `mo_execution_trm.py`, `to_execution_trm.py`, `quality_disposition_trm.py`, `maintenance_scheduling_trm.py`, `subcontracting_trm.py`, `forecast_adjustment_trm.py`, `safety_stock_trm.py`, `trm_trainer.py`
    - **CDC → Relearning Loop**: Autonomous feedback pipeline for continuous TRM improvement
      - `cdc_monitor.py`: Event-driven metric deviation detection (6 thresholds, rate limiting)
@@ -469,6 +477,8 @@ The system uses a **4-master-type DAG model**:
 See [DAG_Logic.md](DAG_Logic.md) for detailed master site type mappings and config examples.
 
 ### Agent System Architecture
+
+**TRM Hive Model**: Each site's 11 TRM agents form a self-organizing "hive" with intra-hive signal propagation (HiveSignalBus, UrgencyVector) and the tGNN as inter-hive connective tissue. Integrates with the [Agentic Authorization Protocol](docs/AGENTIC_AUTHORIZATION_PROTOCOL.md) for cross-authority negotiation and includes a Kinaxis-inspired embedded scenario architecture where agents create branched what-if scenarios at machine speed. **Recommended neural architecture**: Three-layer hybrid — stigmergic coordination (S-MADRL pheromones), heterogeneous graph attention (HetNet), and recursive per-head refinement (Samsung TRM) — totaling ~473K params at <10ms latency. See [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 14 for architecture specification and [TRM_RESEARCH_SYNTHESIS.md](TRM_RESEARCH_SYNTHESIS.md) Section 8 for research foundations.
 
 **Strategy Types** (see [AGENT_SYSTEM.md](AGENT_SYSTEM.md)):
 - `naive`: Mirrors incoming demand (baseline)
@@ -1094,14 +1104,14 @@ Use these books as references when writing executive summaries, competitive posi
 The platform supports integration with external agent runtimes (PicoClaw, OpenClaw) as thin orchestration layers wrapping the existing REST API. A self-hosted LLM (Qwen 3 via vLLM) eliminates dependency on external LLM providers for data sovereignty.
 
 **Key Documentation**:
-- [PICOCLAW_OPENCLAW_IMPLEMENTATION.md](PICOCLAW_OPENCLAW_IMPLEMENTATION.md) - **Implementation Roadmap**: 4-phase plan covering OpenClaw chat interface, PicoClaw edge CDC monitors, multi-agent authorization protocol, and simulation swarm
+- [PICOCLAW_OPENCLAW_IMPLEMENTATION.md](PICOCLAW_OPENCLAW_IMPLEMENTATION.md) - **Implementation Roadmap**: 5-phase plan covering OpenClaw chat interface, PicoClaw edge CDC monitors, multi-agent authorization protocol, simulation swarm, and **channel context capture** (email/Slack/voice/market data signal ingestion into ForecastAdjustmentTRM). Includes comprehensive security risk matrix with CVE tracking (7+ OpenClaw CVEs documented), supply chain attack analysis (ClawHavoc), deployment checklist, and hardening requirements.
 - [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md#external-agent-runtimes-picoclaw--openclaw) - **Integration Details**: PicoClaw/OpenClaw workspace configuration, security considerations, Docker Compose deployment
 - [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md#self-hosted-llm-configuration) - **Self-Hosted LLM**: Qwen 3 model selection, vLLM serving, GPU sharing strategy, Docker Compose overlay
 - [AI_AGENTS.md](AI_AGENTS.md#external-agent-runtimes-picoclaw--openclaw) - **Agent Comparison**: PicoClaw/OpenClaw vs built-in agents, hybrid architecture, LLM provider configuration
 
 **Quick Reference**:
-- **PicoClaw**: Ultra-lightweight Go binary (<10MB RAM, $10 hardware) for edge CDC monitoring and alert routing via Telegram/Slack
-- **OpenClaw**: Feature-rich agent platform for chat-based planning via WhatsApp/Slack/Teams, implements Agentic Authorization Protocol via `sessions_send`
+- **PicoClaw**: Ultra-lightweight Go binary (<10MB RAM, $10 hardware) for edge CDC monitoring, alert routing via Telegram/Slack, and structured market data capture (weather, economic indicators, commodity prices). **Security**: Pre-v1.0, no formal audit, deploy in read-only containers only.
+- **OpenClaw**: Feature-rich agent platform for chat-based planning via WhatsApp/Slack/Teams, human escalation, and **channel context capture** (email/Slack/voice signals → ForecastAdjustmentTRM). **Security**: Minimum version v2026.2.15 required (CVE-2026-25253 critical RCE patched). Never install ClawHub marketplace skills.
 - **Self-Hosted LLM**: Qwen 3 8B via vLLM — 96.5% tool calling accuracy, OpenAI-compatible API, 8GB VRAM minimum
 - **Docker**: `docker-compose.llm.yml` overlay adds vLLM service to existing stack
 

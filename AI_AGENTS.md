@@ -64,6 +64,8 @@ All 11 TRM agents and both GNN models support context-aware explanations via `Ag
 
 ## TRM Agent (Tiny Recursive Model)
 
+> **See also**: [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) for the "Hive" model — each site's 11 TRMs form a self-organizing colony with intra-hive signal propagation and tGNN as the inter-hive connective tissue.
+
 ### Architecture
 
 **Purpose**: Ultra-fast operational decision-making for high-volume scenarios.
@@ -1531,6 +1533,10 @@ PicoClaw is an ultra-lightweight Go binary that acts as a deterministic CDC gate
 
 **Dual-Mode Operation**: At 50+ sites, heartbeats execute as deterministic shell scripts (`HEARTBEAT.sh`). Below 50 sites (pilot), LLM-interpreted `HEARTBEAT.md` provides richer analysis. Mode auto-selects based on site count.
 
+**Market Data Capture**: PicoClaw instances also capture structured signals from weather APIs, economic indicators, commodity prices, and news feeds via deterministic scripts (`MARKET_SIGNAL.sh`). These feed into the ForecastAdjustmentTRM evaluation pipeline via the Signal Ingestion API. No LLM needed — pure API fetch → threshold check → signal submission.
+
+**Security Posture**: PicoClaw is pre-v1.0 with no formal security audit, no SECURITY.md, and a 95% AI-generated codebase. The Autonomy deployment model limits risk by using PicoClaw only for read-only API calls in deterministic mode (no LLM in the decision path, no execution authority). Deploy in read-only Docker containers with `--no-new-privileges --cap-drop ALL` and network restricted to the Autonomy API endpoint only. See [PICOCLAW_OPENCLAW_IMPLEMENTATION.md — Security](PICOCLAW_OPENCLAW_IMPLEMENTATION.md#security--risk-mitigation).
+
 ### OpenClaw — Human Interface Layer
 
 **GitHub**: https://github.com/openclaw/openclaw | **Resource**: ~200MB RAM, any OS
@@ -1547,9 +1553,13 @@ OpenClaw provides a chat-based interface to the planning cascade via WhatsApp, S
 | **Audit trail** | `powell_decision` table | `sessions_history` + decision table |
 | **Best For** | Automated planning workflows | Human-in-the-loop chat interaction |
 
-**AgentSkills**: Modular capability packages wrapping Autonomy API endpoints — `supply-plan-query`, `atp-check`, `ask-why`, `override-decision`, `escalate-authorization`, `kpi-dashboard`. Installable from ClawHub or workspace `skills/` directory.
+**AgentSkills**: Modular capability packages wrapping Autonomy API endpoints — `supply-plan-query`, `atp-check`, `ask-why`, `override-decision`, `escalate-authorization`, `kpi-dashboard`, `signal-capture`, `voice-signal`, `email-signal`. **IMPORTANT**: All skills must be authored in-house — never install from public ClawHub marketplace (see Security section below).
+
+**Channel Context Capture**: OpenClaw serves as a **structured signal ingestion gateway** for the ForecastAdjustmentTRM. Signals from email, Slack, Teams, WhatsApp, Telegram, and voice are captured by the `signal-capture` skill, classified by the LLM, and submitted to the Signal Ingestion API (`POST /api/v1/signals/ingest`). PicoClaw handles structured data feeds (weather, economic indicators, commodity prices) via deterministic scripts. See [PICOCLAW_OPENCLAW_IMPLEMENTATION.md Phase 5](PICOCLAW_OPENCLAW_IMPLEMENTATION.md#phase-5-channel-context-capture-signal-ingestion-from-external-sources).
 
 **Authorization Protocol Role**: At enterprise scale (50+ sites), OpenClaw handles **human escalation only** — formatting authorization requests that agents could not resolve autonomously. Agent-to-agent authorization uses the existing `ConditionMonitorService` (pure Python, DB-backed, <500ms, no LLM). At pilot scale (<50 sites), OpenClaw's `sessions_send` can handle agent-to-agent negotiation directly.
+
+**Security Posture**: OpenClaw has had 7+ CVEs including a critical RCE (CVE-2026-25253, CVSS 8.8). The ClawHub marketplace suffered a supply chain attack with 1,184 malicious skills discovered. **Minimum required version: v2026.2.15**. Deploy in read-only containers with loopback-only gateway binding behind an authenticated reverse proxy. Store all credentials in environment variables or secrets manager, never in config files. See [PICOCLAW_OPENCLAW_IMPLEMENTATION.md — Security](PICOCLAW_OPENCLAW_IMPLEMENTATION.md#security--risk-mitigation) for full risk matrix and deployment checklist.
 
 ### Hybrid Architecture (Enterprise-Scale)
 

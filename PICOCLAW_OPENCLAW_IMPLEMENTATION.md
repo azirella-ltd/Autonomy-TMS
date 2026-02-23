@@ -15,10 +15,11 @@
 5. [Phase 2: PicoClaw Edge CDC Monitors](#phase-2-picoclaw-edge-cdc-monitors)
 6. [Phase 3: Multi-Agent Authorization Protocol](#phase-3-multi-agent-authorization-protocol)
 7. [Phase 4: PicoClaw Simulation Swarm](#phase-4-picoclaw-simulation-swarm)
-8. [Self-Hosted LLM Infrastructure](#self-hosted-llm-infrastructure)
-9. [Security & Risk Mitigation](#security--risk-mitigation)
-10. [Cost Analysis](#cost-analysis)
-11. [Success Metrics](#success-metrics)
+8. [Phase 5: Channel Context Capture](#phase-5-channel-context-capture-signal-ingestion-from-external-sources)
+9. [Self-Hosted LLM Infrastructure](#self-hosted-llm-infrastructure)
+10. [Security & Risk Mitigation](#security--risk-mitigation)
+11. [Cost Analysis](#cost-analysis)
+12. [Success Metrics](#success-metrics)
 
 ---
 
@@ -29,6 +30,7 @@ This document defines the implementation plan for integrating PicoClaw and OpenC
 1. **Chat-based planning interface** (OpenClaw) — planners interact via WhatsApp/Slack/Teams instead of only the React frontend
 2. **Edge CDC monitoring** (PicoClaw) — distributed, ultra-lightweight deterministic site monitoring on $10 hardware
 3. **Human escalation for authorization** (OpenClaw) — format agent-unresolvable decisions for human review; agent-to-agent uses existing `ConditionMonitorService`
+4. **Channel context capture** (OpenClaw + PicoClaw) — structured signal ingestion from email, Slack, voice, market data, and other channels into the ForecastAdjustmentTRM evaluation pipeline (see [Phase 5](#phase-5-channel-context-capture-signal-ingestion-from-external-sources))
 
 All three capabilities consume the **same Autonomy REST API** that already exists. No backend computation changes are required.
 
@@ -1136,6 +1138,304 @@ python aggregate_simulation_results.py --dir "$RESULTS_DIR"
 
 ---
 
+## Phase 5: Channel Context Capture (Signal Ingestion from External Sources)
+
+**Timeline**: 2-3 weeks (after Phase 3)
+**Prerequisites**: OpenClaw chat working (Phase 1), PicoClaw CDC running (Phase 2)
+**Effort**: Medium — new OpenClaw skills + new Autonomy API endpoint for signal ingestion
+
+### 5.1 The Signal Capture Problem
+
+The `ForecastAdjustmentTRM` already defines 10 signal sources (email, voice, market_intelligence, news, customer_feedback, sales_input, weather, economic_indicator, social_media, competitor_action) and a complete evaluation pipeline (source reliability weighting, time decay, confidence thresholds, magnitude estimation). **But there is no automated ingestion path** — signals currently enter only through the REST API or the forecast adjustment UI.
+
+OpenClaw and PicoClaw close this gap by serving as **structured context capture gateways** that normalize multi-channel input into `ForecastAdjustmentState` signals for TRM evaluation.
+
+### 5.2 Channel-to-Signal Architecture
+
+```
+EXTERNAL CHANNELS                    CAPTURE LAYER                     AUTONOMY BACKEND
+─────────────────                    ─────────────                     ────────────────
+                                     ┌──────────────┐
+  Email (IMAP/webhook) ──────────────┤              │
+  Slack (@mention, thread) ──────────┤              │
+  Teams (channel message) ───────────┤   OpenClaw   │    POST /api/v1/signals/ingest
+  WhatsApp (planner chat) ───────────┤   Gateway    ├──────────────────────────────►
+  Telegram (field report) ───────────┤   + Skills   │    {source, signal_type,
+  Voice (transcribed call) ──────────┤              │     direction, magnitude,
+                                     └──────────────┘     product_id, site_id,
+                                                          signal_text, confidence}
+  Market data feeds (API) ───────────┐                         │
+  News/RSS webhooks ─────────────────┤   PicoClaw              │
+  Weather API (scheduled) ───────────┤   Heartbeat      ┌─────▼──────┐
+  Economic indicators ──────────────►│   + Digest   ────►│ Signal     │
+  IoT sensor alerts ─────────────────┤                   │ Ingestion  │
+                                     └───────────────    │ Service    │
+                                                         └─────┬──────┘
+                                                               │
+                                                    ┌──────────▼──────────┐
+                                                    │ ForecastAdjustment  │
+                                                    │ TRM Evaluation      │
+                                                    │ (source reliability,│
+                                                    │  time decay,        │
+                                                    │  confidence gate)   │
+                                                    └──────────┬──────────┘
+                                                               │
+                                              ┌────────────────┼────────────────┐
+                                              │                │                │
+                                         confidence       confidence       confidence
+                                         ≥ 0.8            0.3-0.8          < 0.3
+                                              │                │                │
+                                         AUTO-APPLY       HUMAN REVIEW      REJECT
+                                         + HiveSignal     via OpenClaw      (logged)
+                                         FORECAST_ADJ     escalation
+```
+
+### 5.3 OpenClaw Signal Capture Skills
+
+**Skill: signal-capture** (primary ingestion skill)
+
+```markdown
+# skills/signal-capture/SKILL.md
+
+## Description
+Capture supply chain signals from planner messages and route to
+ForecastAdjustmentTRM for evaluation. Extracts structured signal
+data from natural language input across any channel.
+
+## Triggers
+- "ACME just announced a 30% expansion"
+- "Heard from sales that Q2 demand is going to spike"
+- "Supplier Alpha delayed shipment by 2 weeks"
+- "Weather forecast: hurricane approaching Gulf Coast"
+- "Customer called — they want to double their order"
+- Any message containing: forecast, demand, supply, delay, shortage,
+  surplus, promotion, disruption, competitor, price change
+
+## Implementation
+1. CLASSIFY the message using LLM:
+   - Extract: source (infer from channel + sender role)
+   - Extract: signal_type (DEMAND_INCREASE, DISRUPTION, etc.)
+   - Extract: direction (up, down, no_change)
+   - Extract: magnitude_hint (% if mentioned, null otherwise)
+   - Extract: product_id (if specific product mentioned)
+   - Extract: site_id (if specific site mentioned)
+   - Extract: time_horizon (if timeframe mentioned)
+   - Assign: signal_confidence based on specificity and sender
+
+2. VALIDATE extracted fields:
+   - product_id must exist in Autonomy product catalog
+     (GET /api/v1/products?search={product_name})
+   - site_id must exist in supply chain config
+     (GET /api/v1/supply-chain-configs/{id}/sites?search={site_name})
+   - If ambiguous, ask sender for clarification
+
+3. SUBMIT to Autonomy Signal Ingestion API:
+   POST /api/v1/signals/ingest
+   {
+     "source": "{channel_type}",          // email, slack, voice, etc.
+     "signal_type": "{classified_type}",
+     "direction": "{up|down|no_change}",
+     "magnitude_hint": {pct_or_null},
+     "product_id": "{resolved_id}",
+     "site_id": "{resolved_id}",
+     "signal_text": "{original_message}",
+     "signal_confidence": {0.0-1.0},
+     "sender_id": "{channel_sender_id}",
+     "sender_role": "{planner|sales|customer|external}",
+     "channel": "{slack|teams|whatsapp|telegram|email}",
+     "thread_id": "{channel_thread_id}",
+     "timestamp": "{message_timestamp}"
+   }
+
+4. REPORT back to sender:
+   "Signal captured: {signal_type} for {product} at {site}.
+    Source reliability: {weight}. Confidence: {score}.
+    Status: {auto-applied | pending human review | rejected (too weak)}"
+
+5. If auto-applied, report the adjustment:
+   "Forecast adjusted: {product} at {site} {direction} by {pct}%.
+    New forecast: {value}. Reason: {signal_text}"
+```
+
+**Skill: voice-signal** (voice-specific transcription + capture)
+
+```markdown
+# skills/voice-signal/SKILL.md
+
+## Description
+Process voice notes and phone call transcripts as forecast signals.
+OpenClaw automatically transcribes voice notes sent via WhatsApp,
+Telegram, and other channels. This skill captures the transcription
+as a structured signal.
+
+## Triggers
+- Any voice note or audio file attachment
+- "I just got off the phone with..."
+- "In today's call, they mentioned..."
+
+## Implementation
+1. Voice note transcription is handled by OpenClaw's built-in
+   speech-to-text pipeline (Whisper via voice-call plugin)
+2. Treat transcription as signal_text
+3. Set source = "voice", signal_confidence *= 0.4 (voice reliability weight)
+4. Route to signal-capture skill for classification and submission
+```
+
+**Skill: email-signal** (email-specific parsing)
+
+```markdown
+# skills/email-signal/SKILL.md
+
+## Description
+Parse inbound emails for supply chain signals. Extracts signal
+context from email subject, body, and attachments.
+
+## Triggers
+- Emails received via OpenClaw email channel (IMAP polling or webhook)
+- Emails forwarded to the planning channel with "FYI" or "signal"
+
+## Implementation
+1. Extract: sender domain (customer vs supplier vs internal)
+2. Extract: email subject for signal type classification
+3. Extract: body text for magnitude, product, site references
+4. If attachment (PDF, Excel): extract key figures via document parsing
+5. Set source = "email", signal_confidence *= 0.5 (email reliability weight)
+6. Route to signal-capture skill for classification and submission
+```
+
+### 5.4 PicoClaw Market Data Capture
+
+PicoClaw instances can monitor structured data feeds on a scheduled basis and convert them to signals:
+
+```bash
+#!/bin/bash
+# MARKET_SIGNAL.sh — Scheduled market data capture (deterministic, NO LLM)
+# Runs every 4 hours via PicoClaw cron
+
+SITE_KEY="${PICOCLAW_SITE_KEY}"
+API_BASE="${PICOCLAW_API_BASE}"
+AUTH_TOKEN="${PICOCLAW_AUTH_TOKEN}"
+
+# Step 1: Pull weather data for site region
+WEATHER=$(curl -sf "https://api.weather.gov/alerts/active?area=${SITE_REGION}")
+SEVERE_COUNT=$(echo "$WEATHER" | jq '[.features[] | select(.properties.severity == "Severe" or .properties.severity == "Extreme")] | length')
+
+if [ "$SEVERE_COUNT" -gt 0 ]; then
+  curl -sf -X POST -H "Authorization: Bearer ${AUTH_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "{
+      \"source\": \"weather\",
+      \"signal_type\": \"DISRUPTION\",
+      \"direction\": \"down\",
+      \"magnitude_hint\": null,
+      \"site_id\": \"${SITE_KEY}\",
+      \"signal_text\": \"${SEVERE_COUNT} severe weather alerts active in region\",
+      \"signal_confidence\": 0.7
+    }" \
+    "${API_BASE}/api/v1/signals/ingest"
+fi
+
+# Step 2: Check commodity price index (if relevant)
+# Step 3: Check economic indicators (PMI, etc.)
+# ... (similar pattern: fetch → threshold check → submit signal)
+```
+
+### 5.5 Signal Ingestion API Endpoint (New)
+
+```python
+# backend/app/api/endpoints/signal_ingestion.py
+
+@router.post("/signals/ingest")
+async def ingest_signal(
+    signal: SignalIngestRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ingest an external signal for ForecastAdjustmentTRM evaluation.
+
+    Called by OpenClaw (chat-captured signals) and PicoClaw
+    (market data feeds). Validates the signal, creates a
+    ForecastAdjustmentState, evaluates via the TRM, and returns
+    the recommendation.
+
+    Security: Requires authenticated user or service account.
+    Rate limited: 100 signals/hour per source to prevent flooding.
+    """
+    # 1. Validate product_id and site_id exist
+    # 2. Create ForecastAdjustmentState from signal
+    # 3. Evaluate via ForecastAdjustmentTRM
+    # 4. If auto_applicable: apply adjustment, emit HiveSignal
+    # 5. If requires_human_review: create worklist item
+    # 6. Return recommendation to caller
+    ...
+```
+
+### 5.6 Signal-to-HiveSignal Bridge
+
+When a captured signal results in an auto-applied forecast adjustment, the system bridges to the Hive Signal Bus:
+
+```
+OpenClaw captures: "ACME doubled their Q2 order"
+  → signal-capture skill classifies: DEMAND_INCREASE, +100%, customer_feedback
+  → POST /api/v1/signals/ingest
+  → ForecastAdjustmentTRM evaluates: confidence 0.72 × source 0.7 = 0.50
+  → REQUIRES_HUMAN_REVIEW (below 0.8 threshold)
+  → OpenClaw presents to planner: "Approve forecast increase of 35% for SKU-X?"
+  → Planner approves via chat: "Yes, ACME confirmed this in their PO"
+  → Forecast adjusted, override captured (is_expert_decision=true)
+  → HiveSignalBus emits: FORECAST_ADJUSTED (direction=up, magnitude=35%)
+  → POCreationTRM reads signal → adjusts reorder quantities
+  → SafetyStockTRM reads signal → evaluates buffer adequacy
+```
+
+### 5.7 Channel-to-Signal Source Mapping
+
+| Channel | Default Signal Source | Reliability Weight | Notes |
+|---|---|---|---|
+| Slack (#demand-planning) | sales_input | 0.7 | Internal planning team |
+| Slack (#customer-alerts) | customer_feedback | 0.7 | Customer-facing team |
+| Teams (planner chat) | sales_input | 0.7 | Internal |
+| WhatsApp (field reports) | sales_input | 0.6 | Less structured, lower reliability |
+| Telegram (supplier updates) | customer_feedback | 0.6 | Informal channel |
+| Email (customer PO update) | customer_feedback | 0.5 | Email signal decay applies |
+| Email (market report) | market_intelligence | 0.8 | Professional analysis |
+| Voice note (sales call) | voice | 0.4 | Lowest reliability — informal, noisy |
+| Weather API (PicoClaw) | weather | 0.7 | Structured data, high reliability |
+| Economic API (PicoClaw) | economic_indicator | 0.8 | Professional data feed |
+| News RSS (PicoClaw) | news | 0.6 | Requires context interpretation |
+
+### 5.8 Multi-Signal Correlation
+
+When multiple signals arrive from different channels about the same topic, the Signal Ingestion Service correlates them to boost confidence:
+
+```
+Signal 1 (Slack, 10:00): "Sales says ACME wants 30% more in Q2"
+  → source: sales_input, confidence: 0.49
+
+Signal 2 (Email, 10:30): ACME sends updated forecast spreadsheet
+  → source: customer_feedback, confidence: 0.56
+
+Signal 3 (Voice, 11:00): VP Sales calls: "Just confirmed ACME expansion"
+  → source: voice, confidence: 0.32
+
+CORRELATION ENGINE detects: 3 signals, same product, same direction, <2h window
+  → Correlated confidence: 1 - (1-0.49)(1-0.56)(1-0.32) = 0.85
+  → Now exceeds 0.8 threshold → AUTO-APPLY
+  → No human review needed — multi-source corroboration sufficient
+```
+
+### 5.9 Validation Criteria
+
+- [ ] OpenClaw signal-capture skill correctly classifies 90%+ of test signals (50-message test set)
+- [ ] Captured signals appear in `powell_forecast_adjustment_decisions` within 5s
+- [ ] Voice notes transcribed and classified within 10s
+- [ ] PicoClaw weather/market scripts submit signals deterministically (no LLM)
+- [ ] Multi-signal correlation correctly boosts confidence when 2+ signals agree
+- [ ] Rate limiting prevents more than 100 signals/hour per source
+- [ ] All captured signals include full provenance (channel, sender, thread_id, timestamp)
+
+---
+
 ## Self-Hosted LLM Infrastructure
 
 ### Docker Compose Configuration
@@ -1223,15 +1523,183 @@ OPENCLAW_LLM_MODEL=qwen3-8b
 
 ## Security & Risk Mitigation
 
-| Risk | Severity | Mitigation |
-|---|---|---|
-| **OpenClaw broad permissions** | HIGH | Restrict skills to read-only API calls in copilot mode; write operations require human confirmation via gateway. Reference: [CrowdStrike advisory](https://www.crowdstrike.com/en-us/blog/what-security-teams-need-to-know-about-openclaw-ai-super-agent/) |
-| **PicoClaw pre-v1.0 maturity** | MEDIUM | Use only for read-only monitoring/alerting. No execution decisions. Sandbox mode enabled by default. |
-| **LLM hallucination** | MEDIUM | All agent actions go through Autonomy API with validation. Agents cannot bypass API-level permission checks. Structured JSON output via vLLM constrained generation reduces parsing errors. |
-| **Data sovereignty** | HIGH | Self-hosted Qwen 3 via vLLM — no data leaves the network. LLM container runs on same Docker network as backend. |
-| **Prompt injection via chat** | MEDIUM | OpenClaw's DM pairing mode (default) requires user approval. Skill definitions constrain available actions. Autonomy API enforces RBAC regardless of caller. |
-| **Agent impersonation** | LOW | Each OpenClaw session authenticated via JWT. PicoClaw instances use service account tokens with per-site scoping. |
-| **Runaway agent costs** | LOW | PicoClaw heartbeat interval (30 min) limits LLM call frequency. OpenClaw rate limiting via gateway configuration. vLLM is self-hosted (no per-token cost). |
+### Known Vulnerabilities (as of February 2026)
+
+Both PicoClaw and OpenClaw are early-stage open-source projects with active security histories. This section documents known issues, their relevance to the Autonomy deployment model, and required mitigations.
+
+#### OpenClaw CVEs
+
+| CVE | CVSS | Description | Patched In | Autonomy Impact |
+|---|---|---|---|---|
+| **CVE-2026-25253** | 8.8 (Critical) | 1-click RCE via auth token exfiltration through crafted `gatewayUrl` query parameter | v2026.1.29 | HIGH — exposes gateway control if user clicks malicious link |
+| **CVE-2026-26325** | High | Auth bypass via `rawCommand`/`command[]` mismatch in `system.run` handler | v2026.2.14 | HIGH — bypasses tool execution allowlist |
+| **CVE-2026-25474** | High | Telegram webhook request forgery when `webhookSecret` not configured | v2026.2.1 | MEDIUM — affects Telegram channel only |
+| **CVE-2026-26324** | 7.6 (High) | SSRF guard bypass via IPv4-mapped IPv6 addresses, reaching loopback/metadata | Patched | MEDIUM — mitigated by container network isolation |
+| **CVE-2026-27003** | Moderate | Telegram bot token exposure via error logs and stack traces | Patched | MEDIUM — token leakage enables bot impersonation |
+| **CVE-2026-27004** | Moderate | Session isolation bypass in `sessions_list`/`sessions_history`/`sessions_send` | v2026.2.15 | LOW — Autonomy uses single-agent mode, not multi-tenant |
+| **GHSA-r5fq-947m-xm57** | 8.8 (High) | Path traversal in `apply_patch` tool via LLM guardrail bypass | Patched | HIGH — demonstrates LLM-mediated guards can be bypassed |
+
+**MANDATORY**: Minimum OpenClaw version for Autonomy deployment: **v2026.2.15** or later.
+
+Additionally, Endor Labs discovered 6 SAST-identified vulnerabilities (SSRF in gateway, Urbit auth, image tool; missing webhook verification for Telnyx/Twilio; path traversal in browser upload) — all patched. A January 2026 audit identified 512 total vulnerabilities, 8 classified as critical.
+
+#### PicoClaw Security Status
+
+| Issue | Severity | Description | Status |
+|---|---|---|---|
+| No CVEs published | N/A | No formal vulnerability tracking exists | **HIGH RISK** — absence of CVEs indicates lack of scrutiny, not absence of vulnerabilities |
+| No SECURITY.md | HIGH | No vulnerability disclosure policy | No structured way to report security issues |
+| No signed binaries | MEDIUM | GitHub Releases without cryptographic signatures | Users cannot verify binary integrity |
+| 95% AI-generated codebase | HIGH | "Vibe coded" — LLMs fail to secure against common attacks (XSS, injection) in 86-88% of cases | Independent audit required before production |
+| Slack allowlist bypass (#179) | MEDIUM | Any user in Slack workspace could interact regardless of allowlist | Patched, but indicates access control immaturity |
+| Blocklist-based sandbox | MEDIUM | `restrict_to_workspace` uses deny-list approach | Novel bypasses possible (OpenClaw's GHSA-r5fq proved similar guards breakable) |
+
+**Assessment**: PicoClaw has no formal security audit, no vulnerability disclosure process, and its maintainers explicitly warn against production deployment. However, the Autonomy deployment model (deterministic heartbeat scripts, read-only API calls, no LLM in the decision path) **limits the blast radius significantly**.
+
+### Supply Chain Attack Surface
+
+#### ClawHavoc Campaign (OpenClaw/ClawHub)
+
+In January 2026, security researchers discovered **1,184 malicious skills** on ClawHub (the OpenClaw marketplace), uploaded by just 12 accounts. Malware payloads included Atomic macOS Stealer (AMOS), reverse shells, SSH key theft, and crypto wallet exfiltration. The #1 most popular skill on ClawHub was malware.
+
+**Mitigation for Autonomy**:
+- **NEVER install skills from public ClawHub**. All OpenClaw skills must be authored in-house from the templates in this document (Section 1.2).
+- Skills are defined as SKILL.md files in the workspace — plain Markdown, not executable code. The attack surface is the LLM's interpretation of these files, not arbitrary code execution.
+- Autonomy API enforces RBAC regardless of caller — even a compromised skill can only perform actions the authenticated service account is authorized for.
+
+#### WhatsApp via Baileys Library
+
+OpenClaw uses the Baileys library for WhatsApp integration, which reverse-engineers the WhatsApp Web protocol. Risks:
+
+- **Terms of Service violation**: Meta prohibits unauthorized automation tools. Accounts can be permanently banned without warning.
+- **Supply chain poisoning**: A malicious fork ("lotusbail", 56K+ downloads) stole WhatsApp auth tokens, session keys, and all messages via a persistent backdoor.
+- **Protocol instability**: WhatsApp protocol changes can break Baileys without notice.
+
+**Mitigation for Autonomy**:
+- **For production**: Use only the official WhatsApp Business API (requires Meta Business verification). Baileys is acceptable only for pilot/development environments.
+- Pin the exact Baileys npm version and verify checksums.
+- Monitor for account bans and have fallback to Slack/Teams channels.
+
+#### Credential Targeting (Infostealer Campaign)
+
+In February 2026, a Vidar infostealer variant was discovered specifically targeting OpenClaw configuration files (`openclaw.json`, `device.json`), exfiltrating gateway auth tokens and RSA key pairs. Security researchers characterized this as "the transition from stealing browser credentials to harvesting the souls of personal AI agents."
+
+### Comprehensive Risk Matrix
+
+| Risk | Severity | Likelihood | Autonomy Mitigation |
+|---|---|---|---|
+| **OpenClaw RCE via known CVEs** | CRITICAL | LOW (if patched) | **Minimum version v2026.2.15. No exceptions.** Automated version check in deployment script. |
+| **Prompt injection via channel messages** | HIGH | HIGH | All channel inputs treated as untrusted. OpenClaw LLM classifies signals but **cannot execute actions directly** — must go through Autonomy API which enforces RBAC. Signal ingestion rate-limited to 100/hour/source. Input sanitization layer strips control characters and injection patterns before LLM processing. |
+| **Supply chain attack (ClawHub skills)** | CRITICAL | MEDIUM | **Zero ClawHub skills installed.** All skills authored in-house as SKILL.md files. `npm audit` run on every OpenClaw update. Dependency lockfile checked into version control. |
+| **WhatsApp account ban (Baileys ToS)** | HIGH | MEDIUM | Production deployments use official WhatsApp Business API only. Baileys restricted to pilot/dev. Multi-channel fallback (Slack, Teams, Telegram) ensures no single-channel dependency. |
+| **Credential theft (infostealer)** | HIGH | MEDIUM | Store all credentials (API keys, bot tokens, gateway auth) in **environment variables or secrets manager** (HashiCorp Vault, AWS Secrets Manager), not plaintext config files. Rotate gateway tokens quarterly. PicoClaw service accounts use short-lived JWT with per-site scoping. |
+| **PicoClaw sandbox escape** | MEDIUM | LOW | PicoClaw runs in **read-only Docker containers** with `--read-only --no-new-privileges --cap-drop ALL`. No host filesystem access. Workspace mounted as tmpfs. Network restricted to Autonomy API endpoint only via Docker network policy. |
+| **OpenClaw broad permissions** | HIGH | MEDIUM | Skills restricted to read-only API calls in copilot mode. Write operations (forecast adjustment, override capture) require human confirmation via gateway. OpenClaw process runs as non-root user in container with minimal capabilities. |
+| **Session isolation bypass** | MEDIUM | LOW | Autonomy uses single-agent single-tenant mode (one OpenClaw per planning team). Multi-tenant shared-agent mode is **prohibited** in Autonomy deployments. |
+| **Telegram bot token exposure** | MEDIUM | MEDIUM | Configure `webhookSecret` (mandatory, not optional). Enable log redaction. Bot tokens stored in environment variables, not config files. |
+| **SSRF from gateway** | HIGH | LOW | OpenClaw gateway bound to **loopback only** (127.0.0.1). External access via authenticated reverse proxy (Nginx) with TLS. Container network isolated — gateway cannot reach cloud metadata endpoints. |
+| **LLM hallucination / false signals** | MEDIUM | HIGH | All signal ingestion goes through ForecastAdjustmentTRM's source reliability weighting and confidence thresholding. Signals below 0.3 confidence auto-rejected. Signals 0.3-0.8 require human review. Only signals above 0.8 auto-apply — and even then, bounded to ±50% adjustment cap. |
+| **Data sovereignty** | HIGH | LOW | Self-hosted Qwen 3 via vLLM — all LLM processing stays on-premises. No data leaves the Docker network. LLM container has no internet access (egress blocked). |
+| **PicoClaw pre-v1.0 maturity** | MEDIUM | HIGH | PicoClaw used **only** for deterministic heartbeat scripts and structured data feed polling. No LLM in the decision path at enterprise scale. No execution authority — read-only API access. |
+| **Signal flooding / DoS** | MEDIUM | LOW | Rate limiting: 100 signals/hour per source, 500/hour globally. Duplicate detection via signal deduplication (same source + same product + same direction within 1h = deduplicate). PicoClaw heartbeat interval (30 min) inherently limits throughput. |
+| **Agent impersonation** | LOW | LOW | Each OpenClaw session authenticated via JWT from Autonomy auth service. PicoClaw instances use service account tokens with per-site scoping (token for DC-East cannot query DC-West). Token rotation on 90-day cycle. |
+| **Runaway agent costs** | LOW | LOW | Self-hosted vLLM eliminates per-token costs. PicoClaw heartbeat interval limits LLM call frequency. OpenClaw rate limiting via gateway configuration. |
+| **Project governance (founder departure)** | MEDIUM | MEDIUM | OpenClaw founder joined OpenAI in Feb 2026. Project moved to open-source foundation. **Monitor foundation's security response cadence** — if patch velocity drops below 7-day SLA for critical CVEs, evaluate fork or alternative. PicoClaw's Sipeed backing provides hardware company stability but limited software security expertise. |
+
+### Required Security Controls for Deployment
+
+**Pre-deployment checklist** (all items mandatory before any PicoClaw/OpenClaw instance touches production data):
+
+```
+INFRASTRUCTURE
+  □ OpenClaw version ≥ v2026.2.15 (all known CVEs patched)
+  □ OpenClaw gateway bound to loopback (127.0.0.1) only
+  □ Authenticated reverse proxy (Nginx + TLS) for external access
+  □ Gateway auth token set (no unauthenticated access)
+  □ OpenClaw container: non-root user, --no-new-privileges, --cap-drop ALL
+  □ PicoClaw container: --read-only, tmpfs workspace, network-restricted
+  □ No internet egress from LLM container (air-gapped from external APIs)
+  □ Run SecureClaw audit tool: `openclaw security audit --deep`
+
+CREDENTIALS
+  □ All API keys in environment variables or secrets manager (not config files)
+  □ Bot tokens (Telegram, Slack) in environment variables (not config files)
+  □ Gateway auth token rotated from default
+  □ PicoClaw service accounts: per-site JWT with minimal permissions
+  □ No plaintext credentials in workspace IDENTITY.md, SOUL.md, or TOOLS.md
+
+CHANNEL SECURITY
+  □ Telegram: webhookSecret configured (not empty)
+  □ Slack: Bot token scoped to specific channels only
+  □ WhatsApp: Official Business API for production (Baileys for dev/pilot only)
+  □ Email: SPF/DKIM/DMARC validation enabled, allowlist enforcement
+  □ DM pairing mode enabled (default) — users must approve connection
+
+SIGNAL INGESTION
+  □ Rate limiting enabled: 100 signals/hour/source, 500/hour global
+  □ Signal deduplication active (same source + product + direction within 1h)
+  □ Input sanitization: strip control characters, detect injection patterns
+  □ ForecastAdjustmentTRM confidence gate active (0.3 minimum, 0.8 auto-apply)
+  □ Adjustment cap: ±50% maximum (±15% for low-confidence signals)
+
+MONITORING
+  □ OpenClaw gateway access logs forwarded to SIEM
+  □ PicoClaw heartbeat logs retained for 30 days
+  □ Failed authentication attempts alerting configured
+  □ Signal ingestion anomaly detection (volume spike = potential attack)
+  □ Weekly review of captured signals for prompt injection patterns
+
+SKILLS
+  □ Zero ClawHub marketplace skills installed
+  □ All skills authored in-house from Section 1.2 templates
+  □ npm audit clean (no known vulnerabilities in dependencies)
+  □ Dependency lockfile checked into version control
+  □ Skills reviewed for prompt injection vectors before deployment
+```
+
+### Security Architecture Diagram
+
+```
+INTERNET                          DMZ                             INTERNAL NETWORK
+─────────                         ───                             ────────────────
+                           ┌─────────────┐
+  Slack/Teams/Telegram ────┤   Nginx     │
+  (TLS, webhook verify)    │   Reverse   │
+                           │   Proxy     │
+  Email (SPF/DKIM/DMARC) ──┤   + WAF    │
+                           └──────┬──────┘
+                                  │ Authenticated
+                                  │ (JWT + TLS)
+                           ┌──────▼──────┐
+                           │  OpenClaw   │  ← loopback only (127.0.0.1:18789)
+                           │  Container  │  ← non-root, --cap-drop ALL
+                           │  (Gateway)  │  ← no internet egress
+                           └──────┬──────┘
+                                  │ REST API (JWT auth)
+                                  │
+                    ┌─────────────▼──────────────┐
+                    │    Autonomy Backend        │
+                    │    (FastAPI + RBAC)        │  ← enforces permissions
+                    │                            │     regardless of caller
+                    │  ┌──────────────────────┐  │
+                    │  │ Signal Ingestion     │  │  ← rate limited
+                    │  │ Service              │  │  ← input sanitized
+                    │  │  → ForecastAdjTRM    │  │  ← confidence gated
+                    │  └──────────────────────┘  │
+                    │                            │
+                    │  ┌──────────────────────┐  │
+                    │  │ vLLM (Qwen 3)       │  │  ← no internet egress
+                    │  │ Air-gapped container │  │  ← data stays on-prem
+                    │  └──────────────────────┘  │
+                    └─────────────▲──────────────┘
+                                  │ REST API (service JWT)
+                    ┌─────────────┴──────────────┐
+                    │  PicoClaw Fleet            │
+                    │  (223 containers)           │  ← --read-only
+                    │  Deterministic heartbeats   │  ← tmpfs workspace
+                    │  No LLM at enterprise scale │  ← network restricted
+                    └────────────────────────────┘
+```
 
 ---
 
@@ -1319,6 +1787,19 @@ For comparison, if everything routed through LLM as originally proposed for smal
 | **Decision quality** | Agent-resolved authorizations perform within 10% of human-resolved | Outcome comparison after 30 days |
 | **RLHF training data** | 100+ authorization decisions per month (agent + human) | `powell_decision` records with reasoning |
 
+### Phase 5 (Channel Context Capture)
+
+| Metric | Target | Measurement |
+|---|---|---|
+| **Signal classification accuracy** | 90%+ of signals correctly classified (type, direction) | Manual audit of 50-message test set |
+| **Signal ingestion latency** | <5s from channel message to `powell_forecast_adjustment_decisions` record | Timestamp diff: channel → API |
+| **Voice transcription + classification** | <10s end-to-end | Timestamp diff: voice note → signal record |
+| **Multi-signal correlation** | Correctly boosts confidence when 2+ signals agree within 2h | Correlation engine audit |
+| **False signal rate** | <10% of ingested signals are noise/irrelevant | Manual review of signals over 1 week |
+| **Prompt injection resistance** | 0 successful prompt injections in signal capture pipeline | Red team test with 20 crafted injection attempts |
+| **Rate limiting** | Enforced at 100 signals/hour/source, 500/hour global | Load test with signal flooding |
+| **Source provenance** | 100% of signals include channel, sender, thread_id, timestamp | Field completeness audit |
+
 ---
 
 ## References
@@ -1327,5 +1808,17 @@ For comparison, if everything routed through LLM as originally proposed for smal
 - **OpenClaw**: [GitHub](https://github.com/openclaw/openclaw) | [DigitalOcean Guide](https://www.digitalocean.com/resources/articles/what-is-openclaw) | [Agent Workforce Guide](https://o-mega.ai/articles/openclaw-creating-the-ai-agent-workforce-ultimate-guide-2026)
 - **Qwen 3**: [Tool Calling Docs](https://qwen.readthedocs.io/en/latest/framework/function_call.html) | [Qwen-Agent Framework](https://github.com/QwenLM/Qwen-Agent)
 - **vLLM**: [Structured Outputs](https://docs.vllm.ai/en/latest/features/structured_outputs/) | [Docker Serving](https://docs.vllm.ai/en/stable/cli/serve/)
-- **Security**: [CrowdStrike OpenClaw Advisory](https://www.crowdstrike.com/en-us/blog/what-security-teams-need-to-know-about-openclaw-ai-super-agent/)
-- **Autonomy Internal**: [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md) | [AI_AGENTS.md](AI_AGENTS.md) | [POWELL_APPROACH.md](POWELL_APPROACH.md) | [AGENTIC_AUTHORIZATION_PROTOCOL.md](docs/AGENTIC_AUTHORIZATION_PROTOCOL.md)
+- **Security Advisories**:
+  - [CrowdStrike — What Security Teams Need to Know About OpenClaw](https://www.crowdstrike.com/en-us/blog/what-security-teams-need-to-know-about-openclaw-ai-super-agent/)
+  - [Microsoft — Running OpenClaw Safely](https://www.microsoft.com/en-us/security/blog/2026/02/19/running-openclaw-safely-identity-isolation-runtime-risk/)
+  - [Cisco — Personal AI Agents Like OpenClaw Are a Security Nightmare](https://blogs.cisco.com/ai/personal-ai-agents-like-openclaw-are-a-security-nightmare)
+  - [Endor Labs — Path Traversal in OpenClaw via LLM Guardrail Bypass](https://www.endorlabs.com/learn/ai-sast-finding-path-traversal-in-openclaw-via-llm-guardrail-bypass)
+  - [Adversa AI — OpenClaw Security 101](https://adversa.ai/blog/openclaw-security-101-vulnerabilities-hardening-2026/)
+  - [Snyk — 280+ Leaky Skills in ClawHub](https://snyk.io/blog/openclaw-skills-credential-leaks-research/)
+  - [SecureClaw Audit Tool](https://github.com/polyakov/secureclaw)
+- **Supply Chain Incidents**:
+  - [The Hacker News — 341 Malicious ClawHub Skills](https://thehackernews.com/2026/02/researchers-find-341-malicious-clawhub.html)
+  - [BleepingComputer — Infostealer Targeting OpenClaw Secrets](https://www.bleepingcomputer.com/news/security/infostealer-malware-found-stealing-openclaw-secrets-for-first-time/)
+  - [The Register — Poisoned WhatsApp API Package (Baileys fork)](https://www.theregister.com/2025/12/22/whatsapp_npm_package_message_steal/)
+- **CVE Database**: [NVD — CVE-2026-25253](https://nvd.nist.gov/vuln/detail/CVE-2026-25253) | [GitLab Advisory — CVE-2026-25474](https://advisories.gitlab.com/pkg/npm/openclaw/CVE-2026-25474/) | [GitLab Advisory — CVE-2026-26324](https://advisories.gitlab.com/pkg/npm/openclaw/CVE-2026-26324/) | [GitLab Advisory — CVE-2026-26325](https://advisories.gitlab.com/pkg/npm/openclaw/CVE-2026-26325/)
+- **Autonomy Internal**: [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md) | [AI_AGENTS.md](AI_AGENTS.md) | [POWELL_APPROACH.md](POWELL_APPROACH.md) | [AGENTIC_AUTHORIZATION_PROTOCOL.md](docs/AGENTIC_AUTHORIZATION_PROTOCOL.md) | [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md)

@@ -752,6 +752,8 @@ The Finance Agent evaluates: Does the additional $180K fit within the inventory 
 **Time horizon**: Real-time (seconds)
 **Artifacts**: ATP decisions, rebalancing recommendations, PO actions
 
+> **Hive Integration**: At the execution level, the TRM Hive architecture (see [TRM_HIVE_ARCHITECTURE.md](../TRM_HIVE_ARCHITECTURE.md)) provides the detection layer. HiveSignals identify conditions that may escalate to AAP authorization requests. The 11 TRM worker castes (Scouts, Foragers, Nurses, Guards, Builders) map directly to AAP agent authority boundaries, and the HiveSignalBus context enriches AuthorizationRequests with urgency vectors and signal chains.
+
 ### 6.5 Unified Protocol Across Levels
 
 The same `AuthorizationRequest` / `AuthorizationResponse` protocol works at every level. The only things that change:
@@ -1638,6 +1640,8 @@ The judgment layer -- the patterns humans use to resolve ambiguous situations --
 | Learning | None (human memory) | Explicit RL training from outcomes |
 
 **The AAP is the Kinaxis workflow at machine speed.** Agents do what planners do: evaluate alternatives, assess cross-functional impact, propose to stakeholders, negotiate when needed. But continuously, in seconds, with full auditability.
+
+> **See also**: [TRM_HIVE_ARCHITECTURE.md](../TRM_HIVE_ARCHITECTURE.md) Sections 10-12 detail how the Hive architecture integrates with the AAP: Section 10 maps TRM castes to AAP authority boundaries and defines signal-to-authorization escalation; Section 11 defines the Kinaxis-inspired embedded scenario architecture; Section 12 specifies the scenario-based agent negotiation protocol where agents create branched scenarios, evaluate via Balanced Scorecard, and negotiate via AAP AuthorizationRequests with scenario evidence.
 
 ### 13.2 vs. Mathematical Multi-Objective Optimization
 

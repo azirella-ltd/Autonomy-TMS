@@ -6,6 +6,24 @@ The Autonomy platform uses Warren B. Powell's **Sequential Decision Analytics an
 
 Each TRM is paired 1:1 with a **deterministic engine**. The engine provides the auditable, formula-based baseline. The TRM learns context-dependent adjustments the engine's fixed rules cannot capture.
 
+> **Research context**: Our TRM architecture is grounded in Samsung SAIL Montreal's foundational research showing that a 7M-parameter recursive network can outperform 671B-parameter LLMs on structured reasoning tasks. See [TRM_RESEARCH_SYNTHESIS.md](TRM_RESEARCH_SYNTHESIS.md) for full research synthesis including the original paper, critical analysis, extensions, and applicability to supply chain.
+
+### Samsung TRM Research Foundations
+
+The name "Tiny Recursive Model" comes from the paper ["Less is More: Recursive Reasoning with Tiny Networks"](https://arxiv.org/abs/2510.04871) (Jolicoeur-Martineau et al., Samsung SAIL Montreal, Oct 2025), which won the **1st Place Paper Award at ARC Prize 2025**. Key findings that inform our architecture:
+
+| Samsung TRM Finding | Our Application |
+|---------------------|-----------------|
+| 2-layer network applied recursively gives 42 effective layers | 2-layer transformer with 3-step recursive refinement |
+| 7M params beats 671B on structured reasoning | 7M params sufficient for narrow execution decisions |
+| Post-norm essential for recursion stability | Post-normalization in all TRM layers |
+| Deep supervision at each step improves learning | Multi-phase curriculum with BC → RL progression |
+| CGAR progressive depth reduces training FLOPs 40% | Progressive curriculum (simple → moderate → full) |
+| Recursion > parameters for generalization | Small model + site-specific conditioning |
+| 94.4% accuracy at first recursion step | 3 steps sufficient; latency-critical paths may use fewer |
+
+**Critical insight from follow-up research** ([arxiv:2512.11847](https://arxiv.org/abs/2512.11847)): Samsung's TRM showed 0% accuracy when task identifiers were removed, demonstrating strict dependence on task-specific conditioning. This *validates* our per-site checkpoint strategy — each site genuinely has different dynamics, and site-specific training is essential.
+
 ```
 ┌────────────────────────────────────────────────────────────┐
 │  S&OP GraphSAGE  (CFA - Cost Function Approximation)      │
@@ -366,6 +384,8 @@ Checkpoints follow the naming convention `trm_{type}_site{site_id}_v{N}.pt`. Whe
 ---
 
 ## SiteAgent Orchestration
+
+> **See also**: [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) for the "Hive" model — a signal-mediated coordination architecture where each SiteAgent's 11 TRMs form functional castes (Scouts, Foragers, Nurses, Guards, Builders) that communicate through an intra-hive signal bus, with the tGNN connecting hives across the network.
 
 The `SiteAgent` (`site_agent.py`) wires engines and TRMs together at the per-site execution level:
 
