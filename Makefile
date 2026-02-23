@@ -82,7 +82,7 @@ DOCKER_COMPOSE_CMD = $(strip $(COMPOSE_ENV) $(DOCKER_COMPOSE))
 # Start full stack with vLLM (Qwen 3 8B) — requires NVIDIA GPU with >= 8GB VRAM
 up-llm:
 	@echo "\n[+] Starting full stack with local LLM (vLLM + Qwen 3 8B)..."
-	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.llm.yml up -d
+	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.llm.yml --profile vllm up -d
 	@echo "\n[✓] Stack started with local LLM."
 	@echo "   App:     http://$(HOST):8088"
 	@echo "   vLLM:    http://$(HOST):8001/v1 (OpenAI-compatible)"

@@ -54,6 +54,8 @@ services:
               count: 1
               capabilities: [gpu]
     runtime: nvidia
+    profiles:
+      - vllm  # Only starts when explicitly requested
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
       interval: 30s

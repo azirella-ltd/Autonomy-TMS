@@ -79,18 +79,19 @@ async def init_kb_tables() -> None:
 async def get_kb_db() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency that yields a KB database session.
 
+    The service layer (KnowledgeBaseService) manages its own commits.
+    This dependency only provides the session and handles cleanup.
     Falls back to the main async session if no separate KB database is configured.
     """
     if _kb_session_factory is not None:
-        async with _kb_session_factory() as session:
-            try:
-                yield session
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
-            finally:
-                await session.close()
+        session = _kb_session_factory()
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
     else:
         # Fallback to main database
         from app.db.session import get_db

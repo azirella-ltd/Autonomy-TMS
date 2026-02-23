@@ -71,13 +71,13 @@ def make_hive_executors(signal_bus: HiveSignalBus, period: int) -> Dict[str, Any
 
     signal_types = [
         HiveSignalType.ATP_SHORTAGE,
-        HiveSignalType.PO_CREATED,
+        HiveSignalType.PO_EXPEDITE,
         HiveSignalType.REBALANCE_INBOUND,
         HiveSignalType.MO_RELEASED,
         HiveSignalType.TO_RELEASED,
         HiveSignalType.QUALITY_REJECT,
-        HiveSignalType.MAINT_SCHEDULED,
-        HiveSignalType.SUBCON_TRIGGERED,
+        HiveSignalType.MAINTENANCE_URGENT,
+        HiveSignalType.SUBCONTRACT_ROUTED,
         HiveSignalType.FORECAST_ADJUSTED,
         HiveSignalType.SS_INCREASED,
         HiveSignalType.DEMAND_SURGE,
@@ -179,7 +179,7 @@ def compute_scorecard(
     total_cost = float(np.sum(holding_cost) + np.sum(backorder_cost))
 
     # Fill rate: hive achieves ~95%, baseline ~88%
-    fill_rate = float(rng.beta(19, 1).mean() if is_hive else rng.beta(15, 2).mean())
+    fill_rate = float(rng.beta(19, 1, size=n_periods).mean() if is_hive else rng.beta(15, 2, size=n_periods).mean())
 
     # Inventory turns: hive more efficient
     inventory_turns = float(rng.normal(12.5, 1.0) if is_hive else rng.normal(10.0, 1.5))
@@ -219,7 +219,6 @@ def run_comparison(num_periods: int = 52, num_sites: int = 4) -> Dict[str, Any]:
             runner = CoordinatedSimRunner(
                 site_key=site_key,
                 signal_bus=HiveSignalBus() if mode == "hive" else None,
-                trm_names=TRM_NAMES,
             )
 
             # Build executor factory

@@ -10,6 +10,7 @@ Manages the full RAG pipeline:
 Uses pgvector on existing PostgreSQL — no additional infrastructure needed.
 """
 
+import asyncio
 import io
 import logging
 import os
@@ -269,20 +270,26 @@ class KnowledgeBaseService:
         await self.db.flush()  # Get the ID
 
         try:
-            # Parse document
-            content, page_count = PARSERS[ext](file_bytes)
+            # Parse document — run in thread to avoid blocking the event loop
+            # (PyPDF2 parsing is CPU-intensive and can trigger greenlet errors)
+            parser = PARSERS[ext]
+            content, page_count = await asyncio.to_thread(parser, file_bytes)
             doc.page_count = page_count
+
+            # Strip null bytes — PostgreSQL rejects 0x00 in text columns
+            content = content.replace("\x00", "")
 
             if not content.strip():
                 doc.status = "failed"
                 doc.error_message = "Document contains no extractable text"
                 await self.db.commit()
-                return doc.to_dict()
+                return {"id": doc.id, "status": "failed", "error_message": doc.error_message,
+                        "filename": doc.filename, "title": doc.title, "chunk_count": 0}
 
-            # Chunk document
+            # Chunk document — also CPU-intensive for large docs
             chunk_size = int(os.getenv("RAG_CHUNK_SIZE", "1024"))
             chunk_overlap = int(os.getenv("RAG_CHUNK_OVERLAP", "200"))
-            chunks = chunk_text(content, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+            chunks = await asyncio.to_thread(chunk_text, content, chunk_size, chunk_overlap)
 
             if not chunks:
                 doc.status = "failed"
@@ -327,19 +334,45 @@ class KnowledgeBaseService:
                 doc.embedding_model = self.embedding_service.model
                 doc.embedding_dimensions = len(all_embeddings[0])
 
+            # Build result dict BEFORE commit to avoid post-commit greenlet issues
+            # (server_default columns like created_at aren't loaded until refresh,
+            # and refresh can trigger greenlet errors with mixed sync/async sessions)
+            result = {
+                "id": doc.id,
+                "group_id": doc.group_id,
+                "uploaded_by": doc.uploaded_by,
+                "title": doc.title,
+                "filename": doc.filename,
+                "file_type": doc.file_type,
+                "file_size": doc.file_size,
+                "page_count": doc.page_count,
+                "status": doc.status,
+                "error_message": doc.error_message,
+                "chunk_count": doc.chunk_count,
+                "embedding_model": doc.embedding_model,
+                "embedding_dimensions": doc.embedding_dimensions,
+                "category": doc.category,
+                "description": doc.description,
+                "tags": doc.tags,
+                "created_at": None,
+                "updated_at": None,
+            }
+
             await self.db.commit()
-            await self.db.refresh(doc)  # Load server-generated defaults (created_at, updated_at)
             logger.info(
                 f"Ingested document '{doc.title}' ({doc.file_type}): "
                 f"{doc.chunk_count} chunks, {doc.page_count} pages"
             )
-            return doc.to_dict()
+            return result
 
         except Exception as e:
-            doc.status = "failed"
-            doc.error_message = str(e)[:500]
-            await self.db.commit()
             logger.error(f"Document ingestion failed for '{filename}': {e}")
+            try:
+                doc.status = "failed"
+                doc.error_message = str(e)[:500]
+                await self.db.commit()
+            except Exception:
+                pass  # Best-effort status update
             raise
 
     # ------------------------------------------------------------------
