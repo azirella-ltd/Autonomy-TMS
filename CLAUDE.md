@@ -478,7 +478,16 @@ See [DAG_Logic.md](DAG_Logic.md) for detailed master site type mappings and conf
 
 ### Agent System Architecture
 
-**TRM Hive Model**: Each site's 11 TRM agents form a self-organizing "hive" with intra-hive signal propagation (HiveSignalBus, UrgencyVector) and the tGNN as inter-hive connective tissue. Integrates with the [Agentic Authorization Protocol](docs/AGENTIC_AUTHORIZATION_PROTOCOL.md) for cross-authority negotiation and includes a Kinaxis-inspired embedded scenario architecture where agents create branched what-if scenarios at machine speed. **Recommended neural architecture**: Three-layer hybrid — stigmergic coordination (S-MADRL pheromones), heterogeneous graph attention (HetNet), and recursive per-head refinement (Samsung TRM) — totaling ~473K params at <10ms latency. See [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 14 for architecture specification and [TRM_RESEARCH_SYNTHESIS.md](TRM_RESEARCH_SYNTHESIS.md) Section 8 for research foundations.
+**TRM Hive Model**: Each site's 11 TRM agents form a self-organizing "hive" with intra-hive signal propagation (HiveSignalBus, UrgencyVector) and the tGNN as inter-hive connective tissue. Integrates with the [Agentic Authorization Protocol](docs/AGENTIC_AUTHORIZATION_PROTOCOL.md) for cross-authority negotiation and includes a Kinaxis-inspired embedded scenario architecture where agents create branched what-if scenarios at machine speed. **Recommended neural architecture**: Three-layer hybrid — stigmergic coordination (S-MADRL pheromones), heterogeneous graph attention (HetNet), and recursive per-head refinement (Samsung TRM) — totaling ~473K params at <10ms latency. **Pragmatic start**: Stigmergic layer only (Phase A, 2-3 weeks, 10M training records) captures 80% of coordination value. See [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 14 for architecture specification, Section 15 for digital twin training pipeline, Section 16 for multi-site coordination stack, and [TRM_RESEARCH_SYNTHESIS.md](TRM_RESEARCH_SYNTHESIS.md) Section 8 for research foundations.
+
+**Multi-Site Coordination Stack** (4 layers, see [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 16):
+- **Layer 1 — Intra-Hive** (<10ms): UrgencyVector + HiveSignalBus within a single site
+- **Layer 2 — tGNN Inter-Hive** (daily): S&OP GraphSAGE + Execution tGNN process full network graph, produce per-site tGNNSiteDirective
+- **Layer 3 — AAP Cross-Authority** (seconds-minutes): AuthorizationRequest/Response for transfers, priority overrides, capacity sharing
+- **Layer 4 — S&OP Consensus Board** (weekly): Policy parameters θ negotiated by functional agents
+- **Key principle**: TRMs never call across sites. All cross-site information flows through the tGNN directive or AAP authorization.
+
+**Digital Twin Training Pipeline** (see [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 15): Five-phase cold-start pipeline using platform simulation capabilities as digital twin — (1) Individual BC warm-start from curriculum, (2) Multi-head coordinated traces from SimPy/Beer Game, (3) Stochastic stress-testing via Monte Carlo, (4) Copilot calibration from human overrides, (5) Autonomous CDC relearning from production outcomes. Total synthetic data: ~46M records, ~7-10 days compute. Stigmergic-only variant: ~10M records, ~5-8 days.
 
 **Strategy Types** (see [AGENT_SYSTEM.md](AGENT_SYSTEM.md)):
 - `naive`: Mirrors incoming demand (baseline)

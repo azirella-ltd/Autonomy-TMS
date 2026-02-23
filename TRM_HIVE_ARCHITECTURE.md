@@ -3073,6 +3073,622 @@ This architectural unity means that as the platform's planning capabilities impr
 └──────────────────────────────────────────────────────────────────┘
 ```
 
+### 15.11 Digital Twin Training per Architecture Variant
+
+Section 14 evaluated seven candidate architectures for intra-hive coordination. The digital twin training pipeline adapts to each — simpler architectures require substantially less training data and compute because they have fewer coordination mechanisms to learn.
+
+#### Architecture A: HydraNet — Current State (Minimal Training)
+
+**What it is**: SharedStateEncoder + independent heads. No cross-head communication.
+
+**Training data needed**: Only Phase 1 (individual BC) and Phase 3 (RL fine-tuning with stochastic data). No multi-head traces needed because there is no coordination to learn.
+
+```
+Phase 1: BC warm-start per head          → 165K records, 1-2 days
+Phase 3: RL fine-tuning per head         → 1.76M records per config, 2-3 days
+Skip Phase 2 entirely (no signals exist)
+Total: ~2M records, ~3-5 days compute
+```
+
+**Digital twin role**: SimPy generates independent decision scenarios per TRM type. Beer Game provides multi-echelon context but each head trains on its own slice. This is what the platform does today.
+
+**Limitation**: Each head is blind to what other heads decided. ATP may promise inventory that Quality just rejected. PO may expedite a replenishment that SafetyStock already covered through rebalancing.
+
+#### Architecture B: Sparse MoE with Per-Task Routing (Moderate Training)
+
+**What it is**: Router network selects which expert sub-networks activate for each input. Tasks share some experts but have task-specific routing.
+
+**Training data needed**: Standard per-task data (same as Architecture A) plus router training data that teaches the gating network which experts to activate for which state patterns.
+
+```
+Phase 1: BC warm-start per expert        → 165K records, 1-2 days
+Phase 2: Router training                 → 500K records with task labels, 1-2 days
+Phase 3: End-to-end RL fine-tuning       → 2M records, 2-3 days
+Total: ~2.7M records, ~4-7 days compute
+```
+
+**Digital twin role**: The key challenge is generating training data with sufficient task diversity — the router must learn that a "demand spike + low inventory" state should route to ATP+PO+SafetyStock experts simultaneously. SimPy Monte Carlo with varied disruption profiles provides this diversity. No multi-head coordination traces are needed because MoE routes within a single forward pass; experts do not emit signals to each other.
+
+**Limitation**: MoE assumes homogeneous input shapes. Our 11 TRMs have different input shapes (ATP needs order context, PO needs supplier context). MoE routing adds overhead without solving the heterogeneity problem. The PEER insight validates many tiny experts, but MoE does not provide inter-expert communication.
+
+#### Architecture C: Stigmergic MARL / S-MADRL (Phase A — Pragmatic Choice)
+
+**What it is**: UrgencyVector + HiveSignalBus provide indirect coordination via virtual pheromones. No neural coordination layer — heads communicate through shared environmental state.
+
+**Training data needed**: Phase 1 (individual BC) + Phase 2 (multi-head traces with signal context). Phase 2 is lighter than the full hybrid because there is no HetGAT to train — the model only needs to learn input features that include urgency and signal summaries.
+
+```
+Phase 1: BC warm-start per head          → 165K records, 1-2 days
+Phase 2: Multi-head traces with signals  → 5M records (100 configs × 100 episodes × 52 periods × ~10 active heads), 2-3 days
+Phase 3: RL fine-tuning on stress data   → 5M records, 2-3 days
+Total: ~10M records, ~5-8 days compute
+```
+
+**Digital twin adaptation for stigmergic training**:
+
+The critical difference from Architecture A: the digital twin must run all heads simultaneously to generate the signal interaction data.
+
+```
+CoordinatedSimRunner (simplified for stigmergic-only):
+
+For each simulation period:
+    1. Encode site state → SharedStateEncoder → state_embedding [128-dim]
+
+    2. Construct input for each head:
+       head_input = [state_embedding | urgency_vector[11] | signal_summary[22]]
+       (Total: 128 + 11 + 22 = 161 features per head)
+
+    3. Execute heads in phase order (Section 4):
+       SCOUTS first  → ATP, OrderTracking emit signals
+       FORAGERS next → PO, Rebalancing, Subcontracting read + emit
+       NURSES        → SafetyStock, ForecastAdjustment read + emit
+       GUARDS        → Quality, Maintenance read + emit
+       BUILDERS last → MO, TO read + emit
+
+    4. Record per-head:
+       {state, urgency_before, signals_consumed, action, urgency_after, signals_emitted}
+
+    5. No HetGAT pass needed — heads read urgency/signals as raw input features
+```
+
+**Why this is the recommended starting point**: S-MADRL research shows stigmergic coordination scales to 8+ agents where explicit messaging (MADDPG, MAPPO) collapses at 3-4. The UrgencyVector is exactly a virtual pheromone field — 11 slots, each updated atomically, read by all. The heads learn to respond to urgency patterns without any neural graph layer. Training data requirements are 5× less than the full hybrid.
+
+**What the digital twin teaches the stigmergic model**:
+
+| Simulation Scenario | Stigmergic Pattern Learned |
+|---|---|
+| ATP rejects 3 orders in a row | PO reads urgency[ATP]=0.8 → expedites next order |
+| Quality rejects batch (urgency[Quality]=0.9) | ATP reads high quality urgency → reduces available inventory promises |
+| SafetyStock increases buffer (emits SS_INCREASED) | Rebalancing reads signal → checks if sister sites can provide |
+| MO delayed by maintenance (urgency[Maintenance]=0.7) | TO reads delay signal → reroutes to alternate production site |
+
+Each pattern emerges from multi-head simulation traces — they cannot be learned from isolated decision logs.
+
+#### Architecture D: Heterogeneous Graph Attention (HetGAT Only)
+
+**What it is**: 11 TRM types modeled as nodes in a heterogeneous graph with caste-to-caste edge types. Learned attention weights replace the implicit stigmergic coordination with explicit graph-mediated communication.
+
+**Training data needed**: Full multi-head traces with cross-head attribution (same as Phase 2 of the full pipeline, but without recursive refinement).
+
+```
+Phase 1: BC warm-start per head          → 165K records, 1-2 days
+Phase 2: Multi-head traces with graph    → 28.6M records (full trace dataset), 3-4 days
+Phase 3: RL fine-tuning on stress data   → 17.6M records, 3-5 days
+Total: ~46M records, ~7-11 days compute
+```
+
+**Digital twin adaptation**: Same as full hybrid Phase 2, but each head is a simple FC network (not recursive). The HetGAT layer requires backpropagation through the graph, so multi-head traces must include per-head gradients. The `CrossHeadRewardCalculator` computes attribution: when ATP emits a shortage signal and PO responds with expedite, did the expedite improve the ATP fill rate 3 periods later? This cross-head reward is the training signal for the HetGAT edge attention weights.
+
+**Trade-off vs stigmergic**: HetGAT learns richer coordination patterns (attention weights reveal which TRM relationships matter most), but requires ~5× more training data and the HetGAT layer adds ~160K parameters and ~2ms latency. For hives with only 3-4 active heads, the overhead is not justified. For full 11-head hives, the learned attention may outperform fixed stigmergic coupling.
+
+#### Architecture E: CTDE with MAPPO/QMIX (Training Paradigm, Not Architecture)
+
+**What it is**: Not a model architecture but a training paradigm. Centralized training (shared critic with global state view), decentralized execution (per-head actors with local state only).
+
+**Training data needed**: Same as whatever architecture CTDE wraps. CTDE changes how the model trains, not what data it needs. The shared critic needs hive-level rewards (total site cost, service level) which the digital twin naturally produces from SimPy/Beer Game episodes.
+
+**Digital twin adaptation**: The shared critic is trained on site-level outcomes (not per-head outcomes). The digital twin records per-episode site metrics:
+```python
+site_outcome = {
+    "total_cost": holding_cost + backlog_cost + ordering_cost,
+    "service_level": fulfilled / demanded,
+    "bullwhip_ratio": upstream_order_variance / downstream_demand_variance,
+    "inventory_turns": demand / avg_inventory,
+}
+# Shared critic learns: Q(all_11_head_states, all_11_head_actions) → site_outcome
+```
+
+**Key insight**: CTDE is compatible with any of the other architectures. Apply it to Architecture C (stigmergic) for the simplest CTDE setup, or to the full hybrid for maximum coordination.
+
+#### Architecture F: Knocking-Heads Attention (Zero-Overhead Cross-Head)
+
+**What it is**: Cross-head projections within the existing transformer attention layers. No additional parameters, no additional latency — coordination happens inside the attention mechanism.
+
+**Training data needed**: Multi-head traces (similar to Architecture D) but without a separate HetGAT layer. The cross-head projections learn from the same data that trains individual heads — they just need the heads to run simultaneously.
+
+```
+Phase 1: BC warm-start per head          → 165K records, 1-2 days
+Phase 2: Multi-head traces (lighter)     → 10M records, 2-3 days
+Phase 3: RL fine-tuning                  → 5M records, 2-3 days
+Total: ~15M records, ~5-8 days compute
+```
+
+**Digital twin adaptation**: The key difference from Architecture D is that Knocking-Heads does not require a separate graph construction step. The cross-head projections are part of the existing transformer layers — they learn which attention heads in one TRM should attend to which attention heads in another TRM. The digital twin generates standard multi-head traces; the coordination emerges from the training process, not from explicit graph structure.
+
+**Trade-off**: Zero latency overhead (appealing for the <10ms budget), but the coordination patterns are less interpretable than HetGAT attention weights or stigmergic urgency vectors.
+
+#### Architecture G: Recursive Multi-Head / Samsung TRM-Style (Per-Head Enhancement)
+
+**What it is**: Each head applies recursive refinement (z/y scratchpad loop for R steps) within its own decision. This is an intra-head enhancement, not inter-head coordination.
+
+**Training data needed**: Same as Architecture A (independent per-head) but with recursive target labels — the curriculum must include problems that benefit from iterative reasoning.
+
+```
+Phase 1: BC warm-start with CGAR curriculum → 200K records (progressive R), 2-3 days
+Phase 3: RL fine-tuning with recursive heads → 2M records, 3-5 days
+Skip Phase 2 (no inter-head coordination)
+Total: ~2.2M records, ~5-8 days compute
+```
+
+**Digital twin adaptation for recursive training**: The CGAR curriculum (Section 14.7) requires progressive recursion depth during training. The digital twin generates problems of increasing difficulty:
+
+```
+Training 0-30%:  R=1 (2 effective layers)
+    Digital twin: simple scenarios, obvious decisions, stable demand
+    Purpose: learn basic state→action mapping
+
+Training 30-60%: R=2 (4 effective layers)
+    Digital twin: moderate scenarios, trade-offs, variable demand
+    Purpose: learn to refine initial guess via latent scratchpad
+
+Training 60-100%: R=3 (6 effective layers)
+    Digital twin: complex scenarios, disruptions, conflicting signals
+    Purpose: learn full iterative reasoning under uncertainty
+```
+
+The `SyntheticTRMDataGenerator` already produces three complexity levels (simple, moderate, full) — these map directly to the CGAR curriculum phases.
+
+**Trade-off**: Recursive refinement is an orthogonal enhancement that can be combined with any coordination mechanism. Add it to Architecture C (stigmergic + recursive) for low-overhead improvement, or to Architecture D (HetGAT + recursive) for the full hybrid.
+
+#### Summary: Training Effort per Architecture
+
+| Architecture | Training Data | Compute | New Infrastructure | Coordination Quality |
+|---|---|---|---|---|
+| **A. HydraNet (current)** | 2M records | 3-5 days | None (exists today) | None |
+| **B. Sparse MoE** | 2.7M records | 4-7 days | Router training loop | Within-forward-pass only |
+| **C. Stigmergic (Phase A)** | 10M records | 5-8 days | CoordinatedSimRunner | Emergent via pheromones |
+| **D. HetGAT only** | 46M records | 7-11 days | HetGAT + CrossHeadReward | Learned graph attention |
+| **E. CTDE (any base)** | Same as base | +1-2 days | Shared critic network | Training paradigm |
+| **F. Knocking-Heads** | 15M records | 5-8 days | Cross-head projections | Implicit in attention |
+| **G. Recursive (per-head)** | 2.2M records | 5-8 days | CGAR curriculum | None (intra-head only) |
+| **C+D+G Hybrid (Section 14.2)** | 46M records | 7-10 days | All of the above | Three-layer full stack |
+| **C+G (Pragmatic hybrid)** | 10M records | 5-8 days | CoordinatedSimRunner + CGAR | Stigmergic + recursive |
+
+**Recommended progression**: Start with **C (stigmergic)**, which provides the best value-to-effort ratio. Add **G (recursive)** to individual heads as a per-head enhancement. Defer **D (HetGAT)** until 6+ heads are active and stigmergic coordination patterns are validated. This matches the Phase A → B → C progression from the effort estimate discussion.
+
+---
+
+## 16. Multi-Site Physical Architecture: The Complete Coordination Stack
+
+### 16.1 The Physical Reality
+
+In production, the Autonomy platform manages a network of supply chain sites — factories, distribution centers, warehouses, retail locations, suppliers. A mid-market manufacturer might have 10-50 sites; a large distributor could have 200+. Each site runs its own TRM hive (11 agents). The question is: **how do 550 agents across 50 sites coordinate?**
+
+The answer is a four-layer coordination stack, where each layer operates at a different speed and scope:
+
+```
+┌───────────────────────────────────────────────────────────────────────────┐
+│  LAYER 4: S&OP CONSENSUS BOARD (Policy Parameters)                       │
+│  Scope: Enterprise-wide    Cadence: Weekly/Monthly    Latency: Hours     │
+│                                                                          │
+│  Functional agents negotiate Policy Envelope parameters:                 │
+│  safety_stock_targets, OTIF_floors, allocation_reserves, expedite_caps   │
+│  Output: PolicyParameters θ → consumed by all downstream layers          │
+│  Implementation: Agentic Consensus Board (AAP Section 10)                │
+│  Who: VP Supply Chain, S&OP Director review                              │
+├───────────────────────────────────────────────────────────────────────────┤
+│  LAYER 3: AGENTIC AUTHORIZATION PROTOCOL (Cross-Authority Negotiation)   │
+│  Scope: Cross-site, cross-function    Cadence: On-demand    Latency: s-m │
+│                                                                          │
+│  When a TRM decision exceeds its authority boundary:                     │
+│  Site A's RebalancingTRM wants to pull from Site B →                     │
+│    AuthorizationRequest → Site B evaluates → Accept/Reject               │
+│  Net benefit threshold governs autonomy vs escalation                    │
+│  Implementation: AGENTIC_AUTHORIZATION_PROTOCOL.md                       │
+│  Who: Agents negotiate autonomously; humans review edge cases            │
+├───────────────────────────────────────────────────────────────────────────┤
+│  LAYER 2: tGNN INTER-HIVE COORDINATION (Network Intelligence)            │
+│  Scope: All sites simultaneously    Cadence: Daily    Latency: minutes   │
+│                                                                          │
+│  Two-tier GNN processes the entire supply chain graph:                   │
+│  S&OP GraphSAGE (weekly) → structural embeddings, criticality, risk     │
+│  Execution tGNN (daily)  → priority allocations, exception forecasts    │
+│  Output: tGNNSiteDirective per site (demand forecast, propagation        │
+│          impact, allocation adjustments, inter-hive signals)             │
+│  Implementation: planning_execution_gnn.py, allocation_service.py        │
+│  Who: Fully automated; humans see via Dashboards UX primitive            │
+├───────────────────────────────────────────────────────────────────────────┤
+│  LAYER 1: INTRA-HIVE SIGNALS (Per-Site Reflexive Coordination)           │
+│  Scope: Single site only    Cadence: Per-decision    Latency: <10ms      │
+│                                                                          │
+│  11 TRM agents coordinate via UrgencyVector + HiveSignalBus:            │
+│  ATP detects shortage → PO expedites → SafetyStock adjusts              │
+│  No cross-site visibility — only local state + tGNN directives           │
+│  Implementation: site_agent.py, HiveSignalBus (proposed)                 │
+│  Who: Fully automated; humans see via Worklist UX primitive              │
+└───────────────────────────────────────────────────────────────────────────┘
+```
+
+### 16.2 The tGNN as Inter-Hive Connective Tissue
+
+The tGNN is the primary mechanism for cross-site coordination. It operates at a different timescale than intra-hive signals and serves a fundamentally different purpose.
+
+**Intra-hive signals** (Layer 1) answer: "What is happening at THIS site right now?"
+**tGNN directives** (Layer 2) answer: "What is happening ACROSS THE NETWORK that this site should know about?"
+
+#### How the tGNN Sees the Network
+
+The tGNN processes the supply chain as a graph where:
+- **Nodes** = sites (each with 16 input features — 8 transactional + 8 hive feedback)
+- **Edges** = transportation lanes (material flow, with lead time and capacity attributes)
+- **Edge direction** = upstream→downstream (supply flow) and downstream→upstream (order flow)
+
+```
+Supplier A ──────┐
+                  ├──→ Factory C ──→ DC D ──→ Retailer F
+Supplier B ──────┘              \
+                                 └──→ DC E ──→ Retailer G
+
+tGNN graph representation:
+  Nodes: [A, B, C, D, E, F, G]
+  Edges: [(A→C), (B→C), (C→D), (C→E), (D→F), (E→G)]
+         + reverse edges for order flow
+  Node features: [inventory, backlog, demand, pipeline, urgency_avg,
+                   shortage_signals, allocation_util, fill_rate, ...]
+```
+
+#### What the tGNN Computes
+
+**S&OP GraphSAGE** (weekly/monthly):
+```
+Input:  Node features + edge topology (static structure)
+Output per site:
+  structural_embedding[64]    — encodes network position and connectivity
+  criticality_score           — how important is this site to overall network
+  bottleneck_risk             — congestion/capacity constraint risk
+  safety_stock_multiplier     — SS adjustment from network context
+  resilience_score            — how well the network absorbs disruption at this site
+  concentration_risk          — supplier/customer concentration vulnerability
+```
+
+**Execution tGNN** (daily):
+```
+Input:  Node features (daily transactional) + S&OP embeddings (cached)
+        + HiveFeedbackFeatures from each site (Section 6.1)
+Output per site:
+  demand_forecast[4]          — 4-period demand forecast
+  exception_probability[3]    — [stockout, overstock, normal]
+  propagation_impact[4]       — if disruption hits, when downstream feels it
+  order_recommendation        — suggested order quantity
+  allocation_adjustments      — priority rebalance suggestions
+
+Output as InterHiveSignals:
+  UPSTREAM_DISRUPTION         — supplier/factory problems propagating downstream
+  LATERAL_SURPLUS/SHORTAGE    — sister sites with excess/deficit
+  DEMAND_WAVE                 — demand pattern propagating upstream
+  CAPACITY_CONSTRAINT         — bottleneck forming at a production site
+```
+
+#### How tGNN Directives Reach Individual TRMs
+
+The tGNN does not communicate directly with individual TRMs. It produces a per-site `tGNNSiteDirective` (Section 5.4), which the SiteAgent unpacks and injects into the signal bus:
+
+```
+tGNN daily run (processes all sites simultaneously)
+    ↓
+tGNNSiteDirective per site (cached in SiteAgent)
+    ↓
+SiteAgent unpacks directive into:
+    ├── InterHiveSignals → injected into HiveSignalBus
+    ├── allocation_adjustments → fed to AllocationService
+    ├── safety_stock_multiplier → bounds for SafetyStockTRM
+    ├── demand_forecast → input feature for ForecastAdjustmentTRM
+    └── exception_probability → threshold for ATPExecutorTRM
+
+Individual TRM heads read signals and features:
+    ├── ATPExecutorTRM sees: allocation adjustment + exception probability
+    ├── POCreationTRM sees: demand forecast + propagation impact
+    ├── SafetyStockTRM sees: SS multiplier bounds + resilience score
+    └── RebalancingTRM sees: LATERAL_SURPLUS/SHORTAGE inter-hive signals
+```
+
+**Key design principle**: TRMs never call across sites. They only see their local state + whatever the tGNN told them about the network. This is the CTDE principle — centralized training (tGNN sees everything), decentralized execution (each TRM sees only its site + directives).
+
+### 16.3 Cross-Site Agent Communication Paths
+
+There are exactly three ways agents at one site communicate with agents at another site:
+
+#### Path 1: tGNN Passive Propagation (Daily, Automatic)
+
+```
+Site A's hive state (urgency, shortages, performance)
+    ↓ (daily feature refresh)
+HiveFeedbackFeatures aggregated
+    ↓ (fed as tGNN input features)
+Execution tGNN processes all sites simultaneously
+    ↓ (spatial attention propagates information across graph edges)
+Site B receives tGNNSiteDirective with:
+    - InterHiveSignal: UPSTREAM_DISRUPTION from Site A
+    - propagation_impact: [when Site B will feel it]
+    ↓
+Site B's TRMs respond locally (no acknowledgement to Site A)
+```
+
+**Speed**: Daily cadence (or CDC off-cadence trigger). Latency = tGNN inference time (~seconds) + feature collection.
+
+**Direction**: Unidirectional. Site A does not know that Site B received its signal. This is sufficient for most coordination because the tGNN already computed the optimal response for Site B.
+
+**Analogy**: Weather forecast. You do not negotiate with a weather system — you read the forecast and adjust your plans accordingly.
+
+#### Path 2: AAP Authorization Request (On-Demand, Negotiated)
+
+```
+Site A's RebalancingTRM needs inventory from Site B
+    ↓
+RebalancingTRM determines: transfer exceeds unilateral authority
+    (e.g., quantity > 500 units, or Site B is not a pre-approved source)
+    ↓
+SiteAgent escalates to AAP:
+    AuthorizationRequest(
+        originator="site_A.rebalancing_trm",
+        target="site_B.rebalancing_trm",
+        action="TRANSFER_500_UNITS_SKU_X",
+        scorecard={
+            "site_A_service_improvement": +12%,
+            "site_B_inventory_impact": -8%,
+            "network_net_benefit": +$15K,
+            "transport_cost": -$2K
+        }
+    )
+    ↓
+Site B's SiteAgent evaluates:
+    - Do I have surplus? (local inventory check)
+    - What's the impact on my performance? (scorecard)
+    - Is there contention? (other sites requesting same inventory)
+    ↓
+AuthorizationResponse: APPROVED / REJECTED (with reason)
+    ↓
+If approved: Site A's TOExecutionTRM releases transfer order
+             Site B's RebalancingTRM emits REBALANCE_OUTBOUND signal
+```
+
+**Speed**: Seconds to minutes (agent-to-agent). Hours if escalated to human.
+
+**Direction**: Bidirectional. Both sites participate in the decision. The AAP scorecard ensures both sites understand the network-level impact.
+
+**When used**: Only when a TRM decision crosses authority boundaries — transferring between sites, changing shared resource allocations, requesting priority override from another function. Most routine decisions (>90%) stay within Layer 1 (intra-hive) and never trigger cross-site communication.
+
+#### Path 3: ConditionMonitor SupplyRequest (Threshold-Based, Semi-Automated)
+
+```
+Site A's ConditionMonitorService detects:
+    ATP shortfall persisting for 24 hours
+    service_level < target - 5%
+    ↓
+ConditionMonitor checks can_request_supply:
+    - Are there sibling sites with surplus? (from tGNN LATERAL_SURPLUS signals)
+    - Is the shortfall above minimum threshold?
+    ↓
+SupplyRequest(
+    requesting_entity="site_A",
+    requested_entity="site_B",
+    product_id="SKU-X",
+    quantity_needed=500,
+    needed_by=tomorrow,
+    priority=2,
+    context={"signal_type": "ATP_SHORTFALL", "duration_hours": 24}
+)
+    ↓
+Site B's RebalancingTRM evaluates (same as AAP Path 2)
+```
+
+**Speed**: Hours (condition must persist past threshold). Faster than waiting for next tGNN daily run.
+
+**Direction**: Request-response between specific sites. The ConditionMonitor identifies the best partner site using tGNN data.
+
+**Relationship to Path 2**: This is a specific, automated trigger for AAP authorization. The ConditionMonitor generates the AuthorizationRequest automatically when conditions breach thresholds — no manual escalation needed.
+
+### 16.4 What Each Layer Cannot See
+
+Understanding the boundaries is as important as understanding the connections:
+
+| Layer | Can See | Cannot See |
+|---|---|---|
+| **Intra-Hive (Layer 1)** | Own site inventory, backlog, demand, all 11 TRM urgencies and signals | Other sites' inventory, other sites' TRM decisions, network topology |
+| **tGNN (Layer 2)** | All sites' aggregate features (daily snapshot), full network graph | Individual TRM decisions, real-time urgency changes within a site |
+| **AAP (Layer 3)** | Both sites' scorecards for a specific proposed action | Global optimum (only evaluates pairwise, not network-wide) |
+| **S&OP Board (Layer 4)** | Enterprise-wide KPIs, policy parameter impacts | Execution-level details (individual orders, per-TRM decisions) |
+
+**Critical gap the tGNN bridges**: Intra-hive signals are invisible outside the site. The tGNN observes the *effects* of intra-hive coordination (via HiveFeedbackFeatures: urgency averages, shortage signal density, override rate) without seeing the signals themselves. This is by design — the tGNN learns network-level patterns from aggregated site behavior, not from individual TRM decisions.
+
+### 16.5 Multi-Site Physical Deployment Topology
+
+In production, the coordination stack maps to concrete deployment infrastructure:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        CENTRAL SERVICES                                  │
+│                                                                          │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌────────────────────┐    │
+│  │ S&OP GraphSAGE   │  │ Execution tGNN   │  │ S&OP Consensus     │    │
+│  │ (weekly batch)    │  │ (daily batch)    │  │ Board              │    │
+│  │                   │  │                   │  │ (PolicyEnvelope)   │    │
+│  │ Input: all site   │  │ Input: all site   │  │ Input: agent       │    │
+│  │ structural data   │  │ transactional +   │  │ proposals +        │    │
+│  │                   │  │ hive feedback     │  │ KPI actuals        │    │
+│  │ Output: embed-    │  │ Output:           │  │                    │    │
+│  │ dings, criticality│  │ directives,       │  │ Output: policy     │    │
+│  │ risk scores       │  │ allocations,      │  │ parameters θ       │    │
+│  │                   │  │ inter-hive signals│  │                    │    │
+│  └────────┬─────────┘  └────────┬─────────┘  └─────────┬──────────┘    │
+│           │ cached weekly        │ cached daily          │ cached weekly │
+│           └──────────────────────┼──────────────────────┘               │
+│                                  │                                       │
+│                    ┌─────────────┴─────────────┐                        │
+│                    │ Directive Distribution     │                        │
+│                    │ Service                    │                        │
+│                    │ (pushes tGNNSiteDirective  │                        │
+│                    │  to each site's SiteAgent) │                        │
+│                    └───────────┬────────────────┘                        │
+│                                │                                         │
+└────────────────────────────────┼─────────────────────────────────────────┘
+                                 │
+              ┌──────────────────┼──────────────────┐
+              │                  │                  │
+              ▼                  ▼                  ▼
+┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
+│ SITE A: Factory  │ │ SITE B: DC       │ │ SITE C: Retail   │
+│                  │ │                  │ │                  │
+│ ┌──────────────┐ │ │ ┌──────────────┐ │ │ ┌──────────────┐ │
+│ │ SiteAgent    │ │ │ │ SiteAgent    │ │ │ │ SiteAgent    │ │
+│ │              │ │ │ │              │ │ │ │              │ │
+│ │ 11 TRM Heads │ │ │ │ 11 TRM Heads │ │ │ │ 11 TRM Heads │ │
+│ │ HiveSignalBus│ │ │ │ HiveSignalBus│ │ │ │ HiveSignalBus│ │
+│ │ UrgencyVector│ │ │ │ UrgencyVector│ │ │ │ UrgencyVector│ │
+│ │              │ │ │ │              │ │ │ │              │ │
+│ │ Deterministic│ │ │ │ Deterministic│ │ │ │ Deterministic│ │
+│ │ Engines:     │ │ │ │ Engines:     │ │ │ │ Engines:     │ │
+│ │ MRP, AATP,   │ │ │ │ MRP, AATP,   │ │ │ │ MRP, AATP,   │ │
+│ │ SS, Capacity │ │ │ │ SS, Capacity │ │ │ │ SS, Capacity │ │
+│ │              │ │ │ │              │ │ │ │              │ │
+│ │ CDC Monitor  │ │ │ │ CDC Monitor  │ │ │ │ CDC Monitor  │ │
+│ │ Outcome      │ │ │ │ Outcome      │ │ │ │ Outcome      │ │
+│ │ Collector    │ │ │ │ Collector    │ │ │ │ Collector    │ │
+│ └──────────────┘ │ │ └──────────────┘ │ │ └──────────────┘ │
+│                  │ │                  │ │                  │
+│ ← tGNNDirective │ │ ← tGNNDirective │ │ ← tGNNDirective │
+│ → FeedbackFeat  │ │ → FeedbackFeat  │ │ → FeedbackFeat  │
+│ ↔ AAP Requests  │ │ ↔ AAP Requests  │ │ ↔ AAP Requests  │
+└──────────────────┘ └──────────────────┘ └──────────────────┘
+```
+
+**Deployment options**:
+- **Centralized** (current): All SiteAgents run in the same backend process. Cross-site communication is in-process function calls. tGNN and SiteAgents share the same database.
+- **Distributed** (future): Each site runs its own SiteAgent process (or container). tGNN runs centrally. Directives distributed via message queue (Kafka/RabbitMQ). AAP requests via REST API between sites.
+- **Edge** (PicoClaw): Ultra-lightweight SiteAgents run on edge hardware at physical sites. tGNN runs in cloud. Directives pushed via MQTT. CDC alerts via Telegram/Slack.
+
+### 16.6 Digital Twin Training for Multi-Site Coordination
+
+The digital twin pipeline (Section 15) generates training data for Layers 1 and 2 simultaneously. Here is how multi-site coordination is trained:
+
+#### Training the tGNN (Layer 2)
+
+The tGNN learns from full-network simulation traces:
+
+```
+1. Generate diverse network topologies (SyntheticDataGenerator):
+   ├── 4-site Beer Game (linear)
+   ├── 10-site retailer (divergent)
+   ├── 30-site manufacturer (convergent + divergent)
+   └── 50-site mixed (realistic enterprise)
+
+2. Run SimPy Monte Carlo on each topology:
+   ├── 2500 runs × 64 periods = 160K state snapshots per topology
+   ├── Each state snapshot = all sites' features simultaneously
+   ├── Stochastic disruptions create cross-site propagation patterns
+   └── Record: which site was disrupted → how all other sites were affected
+
+3. Build graph tensors:
+   ├── X: [batch, T=52, N=sites, F=16] node features
+   ├── A: [2, edges] adjacency (supply + order flow)
+   ├── Y: [batch, N, H=4] action targets (orders, allocations)
+   └── Feed to SupplyChainTemporalGNN for supervised training
+
+4. Validate:
+   ├── tGNN predicts Site B exception_probability[stockout]
+   ├── Compare to actual stockout in simulation
+   ├── Target: 85-92% prediction accuracy
+   └── Generalization: test on held-out topologies
+```
+
+**Key insight for multi-site training**: The tGNN's spatial attention mechanism (GATv2) must learn that disruption at an upstream factory propagates faster to nearby DCs than to distant ones, and that convergent topologies (many suppliers → one factory) are more resilient than serial ones. This can only be learned from multi-topology training data.
+
+#### Training Hive-tGNN Integration (Layer 1+2)
+
+Once both the tGNN and individual TRM hives are trained, they must learn to work together:
+
+```
+End-to-end training loop:
+
+For each simulation episode:
+    1. tGNN daily run → produces tGNNSiteDirective per site
+    2. Each site's SiteAgent unpacks directive into signals
+    3. Each site's 11 TRMs execute with directive context
+    4. Decisions produce outcomes (fill_rate, cost, etc.)
+    5. Outcomes become next day's HiveFeedbackFeatures
+    6. HiveFeedbackFeatures feed into next tGNN run
+    7. Loop: tGNN → Hives → Feedback → tGNN
+
+Trained jointly:
+    - tGNN loss: prediction accuracy of site-level outcomes
+    - Hive loss: per-TRM reward + hive-level shared critic
+    - Integration loss: did the tGNN directive improve hive performance
+      vs the hive running without tGNN context?
+```
+
+This end-to-end loop can only run in the digital twin — it requires full-network simulation with all hives active simultaneously.
+
+#### Training AAP Negotiation (Layer 3)
+
+AAP authorization is a higher-level protocol that does not require neural training — it uses rule-based evaluation with scorecard comparison. However, the digital twin can calibrate AAP parameters:
+
+```
+For each cross-site scenario (supplier failure, demand spike, etc.):
+    1. Run simulation WITHOUT AAP → observe cascade failure cost
+    2. Run simulation WITH AAP (different net_benefit thresholds) →
+       observe cost with cross-site coordination
+    3. Find optimal net_benefit_threshold that maximizes network
+       performance while minimizing AAP negotiation overhead
+    4. Store as AAP policy parameter in PolicyEnvelope
+```
+
+The digital twin's Monte Carlo capability is essential here — it quantifies the **value of cross-site coordination** by comparing network performance with and without AAP authorization.
+
+### 16.7 Scaling Properties
+
+| Network Size | Sites | TRM Agents | tGNN Complexity | AAP Requests/Day | Training Data |
+|---|---|---|---|---|---|
+| **Beer Game** (baseline) | 4 | 44 | O(4²)=16 edges | 0-2 | 2M records |
+| **Mid-Market** (target) | 10-50 | 110-550 | O(N×E) ~500 edges | 5-20 | 10-50M records |
+| **Enterprise** (future) | 50-200 | 550-2200 | O(N×E) ~5K edges | 20-100 | 50-200M records |
+
+**What scales linearly**: Number of SiteAgents (each independent), intra-hive signal processing (per-site), CDC monitoring (per-site).
+
+**What scales with graph size**: tGNN inference (edges), S&OP GraphSAGE (node embeddings). GraphSAGE was chosen specifically because it samples neighborhoods rather than processing all nodes — O(edges) not O(N²).
+
+**What does not scale**: AAP negotiation (pairwise, on-demand). Most cross-site decisions are handled by tGNN passive propagation (Path 1), keeping AAP requests to <1% of total decisions.
+
+### 16.8 Summary: How Site A Talks to Site B
+
+A concrete summary of all communication channels between two sites:
+
+| Channel | Mechanism | Latency | Direction | What Flows |
+|---|---|---|---|---|
+| **tGNN passive** | Site A's features → tGNN graph attention → Site B's directive | Daily | A→tGNN→B (indirect) | Exception forecasts, propagation impact, allocation adjustments |
+| **InterHiveSignal** | tGNN detects A's disruption → generates signal → delivered in B's directive | Daily | A→tGNN→B (indirect) | UPSTREAM_DISRUPTION, LATERAL_SURPLUS/SHORTAGE, DEMAND_WAVE |
+| **AAP authorization** | A's TRM sends AuthorizationRequest → B's SiteAgent evaluates | Seconds-minutes | A↔B (direct) | Transfer requests, priority overrides, capacity sharing |
+| **ConditionMonitor** | A's persistent shortfall → automatic SupplyRequest to B | Hours | A→B (direct) | Inventory relief requests |
+| **CDC off-cadence tGNN** | A's CDC trigger → forces early tGNN rerun → new directives for all sites | Minutes-hours | A→tGNN→all (broadcast) | Updated forecasts reflecting A's condition |
+| **S&OP policy** | Consensus Board updates safety_stock_multiplier for A and B | Weekly | Board→A, Board→B | Policy parameter changes |
+
+**What does NOT exist (by design)**:
+- No direct TRM-to-TRM calls across sites (would create coupling and latency)
+- No shared signal bus across sites (signals are local to each hive)
+- No shared UrgencyVector across sites (urgency is per-site only)
+- No real-time streaming between sites (tGNN operates on daily snapshots)
+
+The tGNN is the connective tissue. Everything a site needs to know about the network arrives through its `tGNNSiteDirective`. Everything the network needs to know about a site is captured in its `HiveFeedbackFeatures`. These two data structures are the complete interface contract between per-site execution (Layer 1) and network intelligence (Layer 2).
+
 ---
 
 ## File Reference

@@ -325,6 +325,36 @@ The recommended architecture combines three layers:
 
 Total: ~7ms per decision, ~473K parameters. Still tiny, edge-deployable, within the 10ms latency budget.
 
+**Pragmatic start**: Stigmergic layer only (Architecture C) with ~10M training records from digital twin, 5-8 days compute. See [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 15.11 for training requirements per architecture variant.
+
+### 8.6 Digital Twin as Training Substrate
+
+The critical research insight for hive training: **stigmergic coordination cannot be learned from isolated decision logs**. Multi-head execution traces — where all 11 TRMs run simultaneously against the same site state — are required to generate the signal interaction data that enables emergent coordination.
+
+The platform's simulation stack (SimPy DAG simulator, Beer Game engine, synthetic data generator) functions as a digital twin that produces these coordinated traces without requiring production data. Five-phase pipeline:
+1. **Individual BC** (curriculum-generated, 165K records per phase)
+2. **Multi-head traces** (coordinated SimPy/Beer Game episodes, 28.6M records)
+3. **Stochastic stress-testing** (Monte Carlo disruptions, 17.6M records)
+4. **Copilot calibration** (human override patterns, 4-10K records)
+5. **CDC relearning** (production outcome feedback, continuous)
+
+See [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 15 for the complete pipeline specification.
+
+### 8.7 Multi-Site Coordination: Four-Layer Stack
+
+In production networks (10-200 sites), the coordination challenge extends beyond intra-hive signals to cross-site communication. The architecture uses four layers at increasing scope and latency:
+
+| Layer | Scope | Latency | Mechanism | What Flows |
+|---|---|---|---|---|
+| **1. Intra-Hive** | Single site | <10ms | UrgencyVector, HiveSignalBus | TRM-to-TRM signals within a site |
+| **2. tGNN Inter-Hive** | All sites | Daily | S&OP GraphSAGE + Execution tGNN | Per-site directives, exception forecasts, allocation adjustments |
+| **3. AAP Cross-Authority** | Pairwise sites | Seconds-minutes | AuthorizationRequest/Response | Transfers, priority overrides, capacity sharing |
+| **4. S&OP Consensus Board** | Enterprise | Weekly | PolicyEnvelope negotiation | Policy parameters θ |
+
+**Key design principle**: TRMs never call across sites. All cross-site information flows through the tGNN directive (passive, daily) or AAP authorization (active, on-demand). This prevents coupling and maintains the <10ms per-decision latency target.
+
+See [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 16 for the complete multi-site physical architecture.
+
 ---
 
 ## 9. Source Papers and References
