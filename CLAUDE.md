@@ -80,7 +80,7 @@ The group mode determines the **user experience**, not whether AI models can be 
 - **Order Management**: Inbound/outbound orders, shipment tracking, fulfillment
 - **Network Design**: DAG-based supply chain topology (35 AWS SC entities)
 
-**AWS SC Compliance**: Currently ~60% (21/35 entities implemented). See [AWS_SC_IMPLEMENTATION_STATUS.md](AWS_SC_IMPLEMENTATION_STATUS.md) for detailed status.
+**AWS SC Compliance**: 91% (32/35 entities implemented). See [AWS_SC_IMPLEMENTATION_STATUS.md](docs/progress/AWS_SC_IMPLEMENTATION_STATUS.md) for detailed status.
 
 **AWS SC References**:
 - **Features**: Target feature parity (excluding Data Lakes) with AWS Supply Chain capabilities: https://aws.amazon.com/aws-supply-chain/features/
@@ -392,7 +392,7 @@ make proxy-logs
 - `explanation_templates.py`: 39 Jinja2-style templates (13 agent types × 3 verbosity levels) for inline decision explanations
 
 **API Endpoints** (`api/endpoints/`):
-- `mps.py`: Master Production Scheduling endpoints (TODO: implement)
+- `mps.py`: Master Production Scheduling endpoints
 - `supply_plan.py`: Supply plan generation and approval
 - `mixed_scenario.py`: Beer Game API (human + AI scenarios)
 - `agent_scenario.py`: Pure agent scenario API
@@ -421,12 +421,13 @@ make proxy-logs
 
 ### Frontend Structure (`frontend/src/`)
 
-**Planning Pages** (`pages/planning/`):
-- `MasterProductionScheduling.jsx`: MPS page (✅ implemented)
-- `DemandPlanning.jsx`: Demand forecasting UI (TODO)
-- `SupplyPlanning.jsx`: Supply plan generation (TODO)
-- `InventoryOptimization.jsx`: Safety stock optimization (TODO)
-- `CapacityPlanning.jsx`: Resource capacity planning (TODO)
+**Planning Pages** (`pages/planning/` — 43+ pages implemented):
+- `MasterProductionScheduling.jsx`: MPS plan management with approval workflow
+- `DemandPlanView.jsx` / `DemandPlanEdit.jsx`: Demand forecasting with versioning
+- `SupplyPlanGeneration.jsx` / `SupplyWorklistPage.jsx`: Supply plan generation and worklist
+- `InventoryOptimization.jsx`: Safety stock policy management (5 policy types)
+- `CapacityPlanning.jsx`: Resource capacity, requirements, bottleneck analysis
+- Plus: S&OP, cascade dashboard, ATP/rebalancing/PO/order tracking worklists, lot sizing, execution pages
 
 **Simulation Pages** (`pages/`):
 - `ScenarioBoard.jsx`: Main Beer Game interface
