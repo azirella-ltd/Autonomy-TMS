@@ -1281,3 +1281,236 @@ class CustomerCost(Base):
     __table_args__ = (
         Index('idx_customer_cost_lookup', 'customer_id', 'product_id', 'effective_date'),
     )
+
+
+# ============================================================================
+# SC Entity: InventoryProjection (ATP/CTP)
+# ============================================================================
+
+class InventoryProjection(Base):
+    """
+    Time-phased inventory projection for Available-to-Promise (ATP)
+    and Capable-to-Promise (CTP) calculations.
+
+    SC Entity: inventory_projection
+
+    Each row represents projected inventory for a product-site-period
+    combination, enabling forward-looking order promising.
+
+    SC Core Fields:
+    - company_id, site_id, product_id, period_start, period_end
+    - gross_requirements, scheduled_receipts, projected_on_hand
+    - atp_quantity, ctp_quantity
+
+    Extensions:
+    - P10/P50/P90 probabilistic projections for stochastic planning
+    - supply_plan_id linking to the supply plan that generated this projection
+    """
+    __tablename__ = "inventory_projection"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(String(100), ForeignKey("company.id"))
+    site_id = Column(Integer, ForeignKey("site.id"), nullable=False)
+    product_id = Column(String(100), ForeignKey("product.id"), nullable=False)
+
+    # Time bucket
+    period_start = Column(Date, nullable=False)
+    period_end = Column(Date, nullable=False)
+    period_type = Column(String(20), server_default=text("'WEEKLY'"))  # DAILY, WEEKLY, MONTHLY
+
+    # Projection components
+    beginning_on_hand = Column(Double, server_default=text("0"))
+    gross_requirements = Column(Double, server_default=text("0"))
+    scheduled_receipts = Column(Double, server_default=text("0"))
+    planned_receipts = Column(Double, server_default=text("0"))  # From MRP/supply plan
+    projected_on_hand = Column(Double, server_default=text("0"))
+
+    # ATP/CTP
+    atp_quantity = Column(Double, server_default=text("0"))  # Available-to-Promise
+    ctp_quantity = Column(Double)  # Capable-to-Promise (considers production capacity)
+    cumulative_atp = Column(Double, server_default=text("0"))  # Cumulative ATP across periods
+
+    # Safety stock
+    safety_stock = Column(Double, server_default=text("0"))
+    projected_available = Column(Double, server_default=text("0"))  # On-hand minus safety stock
+
+    # Stochastic projections (Extension)
+    projected_on_hand_p10 = Column(Double)  # 10th percentile
+    projected_on_hand_p50 = Column(Double)  # Median
+    projected_on_hand_p90 = Column(Double)  # 90th percentile
+    atp_p10 = Column(Double)
+    atp_p90 = Column(Double)
+
+    # Linkage
+    supply_plan_id = Column(Integer)  # FK deferred — links to supply_plan when generated
+
+    # Source tracking
+    source = Column(String(100))  # MRP, MPS, MANUAL
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    # Relationships
+    product = relationship("Product")
+    site = relationship("Site")
+
+    __table_args__ = (
+        Index('idx_inv_projection_lookup', 'site_id', 'product_id', 'period_start'),
+        Index('idx_inv_projection_product_period', 'product_id', 'period_start'),
+        UniqueConstraint('site_id', 'product_id', 'period_start', 'source', name='uq_inv_projection_unique'),
+    )
+
+
+# ============================================================================
+# SC Entity: FulfillmentOrder
+# ============================================================================
+
+class FulfillmentOrder(Base):
+    """
+    Fulfillment order tracking the PICK → PACK → SHIP → DELIVER lifecycle.
+
+    SC Entity: fulfillment_order
+
+    Represents the execution of an outbound customer order through warehouse
+    operations and delivery.
+
+    SC Core Fields:
+    - company_id, order_id, order_line_id, site_id, product_id
+    - status, quantity, promised_date, ship_date, delivery_date
+
+    Extensions:
+    - wave_id: Warehouse wave grouping
+    - carrier/tracking: Shipment tracking
+    - priority: Fulfillment priority for allocation
+    """
+    __tablename__ = "fulfillment_order"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(String(100), ForeignKey("company.id"))
+    fulfillment_order_id = Column(String(100), unique=True, nullable=False, index=True)
+
+    # Order reference
+    order_id = Column(String(100), nullable=False, index=True)  # Customer/outbound order ID
+    order_line_id = Column(String(100))
+
+    # Location and product
+    site_id = Column(Integer, ForeignKey("site.id"), nullable=False)
+    product_id = Column(String(100), ForeignKey("product.id"), nullable=False)
+    quantity = Column(Double, nullable=False)
+    uom = Column(String(20), server_default=text("'EA'"))
+
+    # Lifecycle status: CREATED → ALLOCATED → PICKED → PACKED → SHIPPED → DELIVERED → CLOSED
+    status = Column(String(20), nullable=False, server_default=text("'CREATED'"))
+
+    # Dates
+    created_date = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    promised_date = Column(DateTime)
+    allocated_date = Column(DateTime)
+    pick_date = Column(DateTime)
+    pack_date = Column(DateTime)
+    ship_date = Column(DateTime)
+    delivery_date = Column(DateTime)  # Actual delivery
+
+    # Fulfillment details
+    allocated_quantity = Column(Double, server_default=text("0"))
+    picked_quantity = Column(Double, server_default=text("0"))
+    shipped_quantity = Column(Double, server_default=text("0"))
+    delivered_quantity = Column(Double, server_default=text("0"))
+    short_quantity = Column(Double, server_default=text("0"))  # Unfulfilled
+
+    # Warehouse operations (Extension)
+    wave_id = Column(String(100))
+    pick_location = Column(String(100))
+    pack_station = Column(String(50))
+
+    # Shipment tracking (Extension)
+    carrier = Column(String(100))
+    tracking_number = Column(String(200))
+    ship_method = Column(String(50))  # GROUND, EXPRESS, AIR, OCEAN
+
+    # Priority and customer (Extension)
+    priority = Column(Integer, server_default=text("3"))  # 1=highest, 5=lowest
+    customer_id = Column(String(100))  # FK to trading_partner
+
+    # Source tracking
+    source = Column(String(100))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    # Relationships
+    product = relationship("Product")
+    site = relationship("Site")
+
+    __table_args__ = (
+        Index('idx_fulfillment_order_lookup', 'order_id', 'status'),
+        Index('idx_fulfillment_site_product', 'site_id', 'product_id', 'status'),
+    )
+
+
+# ============================================================================
+# SC Entity: ConsensusDemand
+# ============================================================================
+
+class ConsensusDemand(Base):
+    """
+    Consensus demand plan from S&OP process.
+
+    SC Entity: consensus_demand
+
+    Represents the agreed-upon demand after reconciliation between
+    sales forecasts, statistical forecasts, and management adjustments.
+
+    SC Core Fields:
+    - company_id, product_id, site_id, period_start, period_end
+    - statistical_forecast, sales_forecast, consensus_quantity
+    - adjustment_reason, approved_by
+    """
+    __tablename__ = "consensus_demand"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(String(100), ForeignKey("company.id"))
+    product_id = Column(String(100), ForeignKey("product.id"), nullable=False)
+    site_id = Column(Integer, ForeignKey("site.id"))
+    customer_id = Column(String(100))  # Optional customer-level consensus
+
+    # Time bucket
+    period_start = Column(Date, nullable=False)
+    period_end = Column(Date, nullable=False)
+    period_type = Column(String(20), server_default=text("'MONTHLY'"))  # WEEKLY, MONTHLY, QUARTERLY
+
+    # Demand components
+    statistical_forecast = Column(Double)  # From forecasting engine
+    sales_forecast = Column(Double)  # From sales team
+    marketing_forecast = Column(Double)  # From marketing (promotions, launches)
+    management_override = Column(Double)  # Executive adjustment
+
+    # Consensus result
+    consensus_quantity = Column(Double, nullable=False)  # Agreed demand
+    confidence_level = Column(Double)  # 0-1 confidence in consensus
+
+    # Probabilistic (Extension)
+    consensus_p10 = Column(Double)
+    consensus_p50 = Column(Double)
+    consensus_p90 = Column(Double)
+
+    # Adjustment tracking
+    adjustment_reason = Column(String(500))
+    adjustment_type = Column(String(50))  # PROMOTION, SEASON, NEW_PRODUCT, PHASE_OUT, EXECUTIVE
+    approved_by = Column(String(100))
+    approval_date = Column(DateTime)
+
+    # S&OP cycle reference
+    sop_cycle_id = Column(String(100))  # Which S&OP meeting produced this
+    version = Column(Integer, server_default=text("1"))
+
+    # Source tracking
+    source = Column(String(100))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    # Relationships
+    product = relationship("Product")
+    site = relationship("Site")
+
+    __table_args__ = (
+        Index('idx_consensus_demand_lookup', 'product_id', 'site_id', 'period_start'),
+        UniqueConstraint('product_id', 'site_id', 'period_start', 'version', name='uq_consensus_demand'),
+    )
