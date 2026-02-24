@@ -6033,6 +6033,10 @@ api.include_router(edge_agents_router, tags=["edge-agents"])
 api.include_router(signal_ingestion_router, tags=["signal-ingestion"])
 api.include_router(knowledge_base_router, tags=["knowledge-base"])
 api.include_router(authorization_protocol_router, tags=["authorization-protocol"])
+from app.api.endpoints.fulfillment_orders import router as fulfillment_orders_router
+api.include_router(fulfillment_orders_router, prefix="/fulfillment-orders", tags=["fulfillment-orders"])
+from app.api.endpoints.planning_scenarios import router as planning_scenarios_router
+api.include_router(planning_scenarios_router, tags=["planning-scenarios"])
 
 # ------------------------------------------------------------------------------
 # Mount routers
