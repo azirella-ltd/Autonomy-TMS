@@ -174,7 +174,7 @@ class Participant(Base):
     ai_strategy: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     can_see_demand: Mapped[bool] = mapped_column(Boolean, default=False)
     llm_model: Mapped[Optional[str]] = mapped_column(
-        String(100), nullable=True, default="gpt-5-mini"
+        String(100), nullable=True, default="qwen3-8b"
     )
     site_key: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
 

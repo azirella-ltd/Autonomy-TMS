@@ -103,13 +103,8 @@ class LLMSuggestionService:
             # Build prompt
             prompt = self._build_suggestion_prompt(agent_name, context, request_data, kb_context=kb_context)
 
-            # Call LLM
-            if self.provider == "openai":
-                response = await self._call_openai(prompt)
-            elif self.provider == "anthropic":
-                response = await self._call_anthropic(prompt)
-            else:
-                raise ValueError(f"Unsupported provider: {self.provider}")
+            # Call LLM (all providers use OpenAI-compatible API)
+            response = await self._call_openai(prompt)
 
             # Parse response
             suggestion = self._parse_response(response)
@@ -612,11 +607,11 @@ def get_llm_service(
     if provider is None or model is None:
         try:
             from app.core.config import settings
-            provider = provider or getattr(settings, 'LLM_PROVIDER', 'openai')
-            model = model or getattr(settings, 'LLM_MODEL', 'gpt-4o-mini')
+            provider = provider or getattr(settings, 'LLM_PROVIDER', 'openai-compatible')
+            model = model or getattr(settings, 'LLM_MODEL', 'qwen3-8b')
         except Exception:
-            provider = provider or 'openai'
-            model = model or 'gpt-4o-mini'
+            provider = provider or 'openai-compatible'
+            model = model or 'qwen3-8b'
 
     # Create new instance if needed
     if _llm_service_instance is None:

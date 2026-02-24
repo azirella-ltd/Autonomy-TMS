@@ -156,7 +156,7 @@ class AgentAction(Base):
         String(200),
         nullable=False,
         index=True,
-        comment="Product identifier at the specified level: FAMILY_Beer, PRODUCT_Lager-6pk"
+        comment="Product identifier at the specified level: FAMILY_Beverage, PRODUCT_Product-6pk"
     )
     time_bucket: Mapped[TimeBucketType] = mapped_column(
         SAEnum(TimeBucketType, name="time_bucket_type_enum", create_constraint=False),

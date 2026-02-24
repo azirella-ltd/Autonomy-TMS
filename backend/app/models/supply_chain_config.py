@@ -447,7 +447,7 @@ class DecisionProposal(Base):
        - Uses scenario_id for simulation linkage
 
     2. Operational simulation-based override proposals (Phase 2 Copilot Mode):
-       - Override of agent recommendations in Beer Game simulation
+       - Override of agent recommendations in supply chain simulation
        - Uses alternative_id for simulation linkage, decision_type for override type
        - metadata stores participant context (participant_id, role, round, quantities)
 

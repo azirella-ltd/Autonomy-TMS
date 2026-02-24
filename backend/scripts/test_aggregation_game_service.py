@@ -21,13 +21,13 @@ from app.models.aws_sc_planning import (
     AggregatedOrder,
     InboundOrderLine
 )
-from app.services.aws_sc_planning.beer_scenario_execution_adapter import BeerScenarioExecutionAdapter
+from app.services.sc_planning.simulation_execution_adapter import SimulationExecutionAdapter
 
 
 async def test_scenario_service_integration():
     """Test order aggregation integration with scenario service config flags"""
     print("=" * 80)
-    print("GAME SERVICE INTEGRATION TEST")
+    print("SCENARIO SERVICE INTEGRATION TEST")
     print("=" * 80)
     print()
 
@@ -97,7 +97,7 @@ async def test_scenario_service_integration():
         print(f"  ✓ Created scenario (ID: {scenario1.id})")
         print(f"    use_order_aggregation: {scenario1.config.get('use_order_aggregation')}")
 
-        adapter1 = BeerScenarioExecutionAdapter(scenario1, db, use_cache=True)
+        adapter1 = SimulationExecutionAdapter(scenario1, db, use_cache=True)
         await adapter1.cache.load()
 
         # Should use batch method (no aggregation)
@@ -157,7 +157,7 @@ async def test_scenario_service_integration():
 
         print(f"  ✓ Created aggregation policy (min: 50, multiple: 10)")
 
-        adapter2 = BeerScenarioExecutionAdapter(scenario2, db, use_cache=True)
+        adapter2 = SimulationExecutionAdapter(scenario2, db, use_cache=True)
         await adapter2.cache.load()
 
         # Should use aggregation method
@@ -261,7 +261,7 @@ async def test_scenario_service_integration():
 
         print(f"  ✓ Created aggregation policy (min: 50, multiple: 10)")
 
-        adapter3 = BeerScenarioExecutionAdapter(scenario3, db, use_cache=True)
+        adapter3 = SimulationExecutionAdapter(scenario3, db, use_cache=True)
         await adapter3.cache.load()
 
         # Order 35 units - should be aggregated to 50, which fits in capacity
@@ -358,7 +358,7 @@ async def main():
     """Main entry point"""
     print()
     print("=" * 80)
-    print("GAME SERVICE INTEGRATION TEST")
+    print("SCENARIO SERVICE INTEGRATION TEST")
     print("=" * 80)
     print()
 
@@ -371,7 +371,7 @@ async def main():
         print()
 
         if success:
-            print("✅ ALL GAME SERVICE INTEGRATION TESTS PASSED")
+            print("✅ ALL SCENARIO SERVICE INTEGRATION TESTS PASSED")
             print()
             print("Order aggregation scenario service integration verified:")
             print("  ✓ Scenarios without aggregation flag use batch method")
@@ -381,7 +381,7 @@ async def main():
             print()
             return 0
         else:
-            print("❌ GAME SERVICE INTEGRATION TESTS FAILED")
+            print("❌ SCENARIO SERVICE INTEGRATION TESTS FAILED")
             return 1
 
     except Exception as e:

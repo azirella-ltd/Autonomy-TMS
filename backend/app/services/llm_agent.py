@@ -47,7 +47,7 @@ class LLMAgent:
         self,
         role: str,
         strategy: LLMStrategy = LLMStrategy.BALANCED,
-        model: str = "gpt-5-mini",
+        model: str = "qwen3-8b",
         *,
         supervisor: bool = True,
         global_agent: bool = False,
@@ -290,7 +290,7 @@ if __name__ == "__main__":
     load_dotenv()
     
     # Example usage
-    agent = LLMAgent(role="retailer", strategy=LLMStrategy.BALANCED, model="gpt-5-mini")
+    agent = LLMAgent(role="retailer", strategy=LLMStrategy.BALANCED, model="qwen3-8b")
     
     # Example scenario state
     order = agent.make_decision(

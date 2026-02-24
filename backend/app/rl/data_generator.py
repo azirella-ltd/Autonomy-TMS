@@ -409,7 +409,7 @@ def simulate_supply_chain(
     demand_fn=SimDemand(),
     *,
     agent_strategy: Union[AgentStrategy, str] = AgentStrategy.LLM,
-    llm_model: Optional[str] = "gpt-5-mini",
+    llm_model: Optional[str] = "qwen3-8b",
     history_window: Optional[int] = None,
     pid_params: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Dict[str, List[int]]]:

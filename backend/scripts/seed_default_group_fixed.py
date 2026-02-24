@@ -46,12 +46,12 @@ except ImportError as e:
 
 # Constants
 DEFAULT_GROUP_NAME = "Default TBG"
-DEFAULT_GROUP_DESCRIPTION = "Default Autonomy Beer Game group"
+DEFAULT_GROUP_DESCRIPTION = "Default Autonomy simulation group"
 DEFAULT_ADMIN_USERNAME = "groupadmin"
 DEFAULT_ADMIN_EMAIL = "groupadmin@autonomy.ai"
 DEFAULT_ADMIN_FULL_NAME = "Group Administrator"
 DEFAULT_PASSWORD = "Autonomy@2025"
-DEFAULT_GAME_NAME = "The Beer Game"
+DEFAULT_GAME_NAME = "Default Simulation"
 DEFAULT_AGENT_TYPE = "pid_heuristic"
 
 def ensure_group(session: Session) -> Tuple[Group, bool]:

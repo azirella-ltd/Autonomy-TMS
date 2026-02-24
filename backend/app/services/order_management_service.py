@@ -127,7 +127,7 @@ class OrderManagementService:
             and_(
                 OutboundOrderLine.site_id == site_id,
                 OutboundOrderLine.status.in_(['DRAFT', 'CONFIRMED', 'PARTIALLY_FULFILLED']),
-                OutboundOrderLine.backlog_quantity > 0 or OutboundOrderLine.shipped_quantity < OutboundOrderLine.ordered_quantity
+                or_(OutboundOrderLine.backlog_quantity > 0, OutboundOrderLine.shipped_quantity < OutboundOrderLine.ordered_quantity)
             )
         )
 
@@ -338,7 +338,7 @@ class OrderManagementService:
                 PurchaseOrder.supplier_site_id == supplier_site_id,
                 PurchaseOrder.status.in_(['APPROVED', 'ACKNOWLEDGED', 'PARTIALLY_SHIPPED'])
             )
-        ).options(selectinload(PurchaseOrder.line_items))
+        )
 
         if scenario_id is not None:
             query = query.where(PurchaseOrder.scenario_id == scenario_id)
@@ -463,7 +463,8 @@ class OrderManagementService:
             line_number=1,
             product_id=product_id,
             quantity=quantity,
-            uom="CASE",
+            requested_ship_date=date.today(),
+            requested_delivery_date=estimated_delivery_date,
         )
 
         self.db.add(to_line)
@@ -496,7 +497,6 @@ class OrderManagementService:
                     TransferOrder.status == "IN_TRANSIT"
                 )
             )
-            .options(selectinload(TransferOrder.line_items))
         )
 
         return list(result.scalars().all())

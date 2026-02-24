@@ -21,7 +21,7 @@ from app.models.supply_chain_config import SupplyChainConfig
 from app.models.group import Group
 from app.models.scenario import Scenario
 from app.models.aws_sc_planning import InboundOrderLine, ProductionCapacity
-from app.services.aws_sc_planning.beer_scenario_execution_adapter import BeerScenarioExecutionAdapter
+from app.services.sc_planning.simulation_execution_adapter import SimulationExecutionAdapter
 
 
 async def setup_test_scenario():
@@ -145,7 +145,7 @@ async def test_within_capacity(scenario_id: int):
         scenario = result.scalar_one()
         await db.refresh(scenario, ['supply_chain_config'])
 
-        adapter = BeerScenarioExecutionAdapter(scenario, db, use_cache=True)
+        adapter = SimulationExecutionAdapter(scenario, db, use_cache=True)
         await adapter.cache.load()
 
         # Order quantities well within limits
@@ -198,7 +198,7 @@ async def test_exceed_capacity(scenario_id: int):
         await db.refresh(scenario, ['supply_chain_config'])
 
         # Reset capacity counters
-        adapter = BeerScenarioExecutionAdapter(scenario, db, use_cache=True)
+        adapter = SimulationExecutionAdapter(scenario, db, use_cache=True)
         await adapter.cache.load()
         reset_count = await adapter.reset_period_capacity()
         print(f"✓ Reset {reset_count} capacity counters")
@@ -274,7 +274,7 @@ async def test_partial_fulfillment(scenario_id: int):
         scenario = result.scalar_one()
         await db.refresh(scenario, ['supply_chain_config'])
 
-        adapter = BeerScenarioExecutionAdapter(scenario, db, use_cache=True)
+        adapter = SimulationExecutionAdapter(scenario, db, use_cache=True)
         await adapter.cache.load()
 
         # Reset capacity
@@ -341,7 +341,7 @@ async def test_capacity_reset(scenario_id: int):
         scenario = result.scalar_one()
         await db.refresh(scenario, ['supply_chain_config'])
 
-        adapter = BeerScenarioExecutionAdapter(scenario, db, use_cache=True)
+        adapter = SimulationExecutionAdapter(scenario, db, use_cache=True)
         await adapter.cache.load()
 
         # Use capacity
@@ -411,7 +411,7 @@ async def test_overflow_handling(scenario_id: int):
         scenario = result.scalar_one()
         await db.refresh(scenario, ['supply_chain_config'])
 
-        adapter = BeerScenarioExecutionAdapter(scenario, db, use_cache=True)
+        adapter = SimulationExecutionAdapter(scenario, db, use_cache=True)
         await adapter.cache.load()
 
         # Reset capacity

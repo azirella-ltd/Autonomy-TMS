@@ -1,4 +1,4 @@
-"""Interactive driver for stepping through Beer Game rounds in a debugger.
+"""Interactive driver for stepping through simulation periods in a debugger.
 
 Run this script under Windsurf's ``Python: Launch current file`` configuration
 while the FastAPI backend is attached to the debugger. The script pauses before
@@ -22,7 +22,7 @@ AUTH_PASSWORD = "Admin123!"
 
 
 class BackendError(RuntimeError):
-    """Raised when the Beer Game backend responds with an error."""
+    """Raised when the simulation backend responds with an error."""
 
 
 def _raise_for_status(response: requests.Response) -> None:
@@ -209,7 +209,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    print("=== Manual Beer Game debugger ===")
+    print("=== Manual Simulation debugger ===")
     args = _parse_args()
     token = _login()
     driver = ManualRoundDebugger(token=token)

@@ -94,7 +94,7 @@ class VendorProduct(Base):
 
     # Relationships
     trading_partner = relationship("TradingPartner", back_populates="vendor_products")
-    product = relationship("Product")  # Using Item model for Beer Game
+    product = relationship("Product")
 
     # Constraints
     __table_args__ = (
@@ -154,7 +154,7 @@ class VendorLeadTime(Base):
     # SC Core Fields - Hierarchy Levels (most specific wins)
     company_id: Mapped[Optional[str]] = mapped_column(String(100), ForeignKey("company.id"))
     region_id: Mapped[Optional[str]] = mapped_column(String(100), ForeignKey("geography.id"))
-    site_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("site.id"))  # Using nodes for Beer Game
+    site_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("site.id"))
     product_group_id: Mapped[Optional[str]] = mapped_column(String(100))  # Future: link to product_hierarchy
     product_id: Mapped[Optional[str]] = mapped_column(String(100), ForeignKey("product.id"))  # SC Product table
 
@@ -185,8 +185,8 @@ class VendorLeadTime(Base):
 
     # Relationships
     trading_partner = relationship("TradingPartner", back_populates="vendor_lead_times")
-    product = relationship("Product")  # Using Item model for Beer Game
-    site = relationship("Site")  # Using Node model for Beer Game
+    product = relationship("Product")
+    site = relationship("Site")
 
     # Indexes
     __table_args__ = (

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Apply Transfer Order schema migration for Beer Game support.
+Apply Transfer Order schema migration for simulation support.
 
 This script updates the transfer_order and transfer_order_line_item tables
-to support Beer Game integration with string-based site_ids and game-specific fields.
+to support simulation integration with string-based site_ids and scenario-specific fields.
 """
 
 import sys

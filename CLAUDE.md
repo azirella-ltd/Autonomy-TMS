@@ -137,11 +137,13 @@ Narrow TRMs (VFA - Value Function Approximation)
    - Files: `backend/app/services/powell/atp_executor.py`, `inventory_rebalancing_trm.py`, `po_creation_trm.py`, `order_tracking_trm.py`, `mo_execution_trm.py`, `to_execution_trm.py`, `quality_disposition_trm.py`, `maintenance_scheduling_trm.py`, `subcontracting_trm.py`, `forecast_adjustment_trm.py`, `safety_stock_trm.py`, `trm_trainer.py`
    - **CDC → Relearning Loop**: Autonomous feedback pipeline for continuous TRM improvement
      - `cdc_monitor.py`: Event-driven metric deviation detection (6 thresholds, rate limiting)
-     - `outcome_collector.py`: Computes actual outcomes for decisions after feedback horizon delays
+     - `outcome_collector.py`: Computes actual outcomes for decisions after feedback horizon delays (both SiteAgentDecision and all 11 powell_*_decisions tables)
+     - `cdt_calibration_service.py`: Batch and incremental CDT calibration from decision-outcome pairs across all 11 TRM types
      - `cdc_retraining_service.py`: Evaluates retraining need, executes Offline RL, checkpoints model
-     - `relearning_jobs.py`: APScheduler jobs — outcome collection (hourly), retraining eval (every 6h)
+     - `relearning_jobs.py`: APScheduler jobs — outcome collection (:30, :32), CDT calibration (:35), retraining eval (every 6h at :45)
      - `condition_monitor_service.py`: 6 real-time condition checks against DB (ATP shortfall, inventory, capacity, orders, forecast)
      - `integration/decision_integration.py`: Decision tracking and training data extraction
+   - **Conformal Decision Theory (CDT)**: All 11 TRM agents carry `risk_bound` and `risk_assessment` on every decision response — P(loss > threshold) with distribution-free guarantee. Calibrated via `CDTCalibrationService` from historical decision-outcome pairs in `powell_*_decisions` tables. Batch calibration at startup, incremental hourly.
 
 2. **GNN Agent** (Graph Neural Network) - Two-Tier Architecture
    - **S&OP GraphSAGE** (Medium-Term): Network structure analysis, risk scoring, bottleneck detection
@@ -543,19 +545,23 @@ The Powell SDAM framework constrains TRMs to narrow execution decisions:
 # Example: P=2 order → [2, 5, 4, 3] (skips 1)
 ```
 
-Database tables: `powell_allocations`, `powell_atp_decisions`, `powell_rebalance_decisions`, `powell_po_decisions`, `powell_order_exceptions`, `powell_mo_decisions`, `powell_to_decisions`, `powell_quality_decisions`, `powell_maintenance_decisions`, `powell_subcontracting_decisions`, `powell_forecast_adjustment_decisions`
+Database tables: `powell_allocations`, `powell_atp_decisions`, `powell_rebalance_decisions`, `powell_po_decisions`, `powell_order_exceptions`, `powell_mo_decisions`, `powell_to_decisions`, `powell_quality_decisions`, `powell_maintenance_decisions`, `powell_subcontracting_decisions`, `powell_forecast_adjustment_decisions`, `powell_safety_stock_decisions`
 
 **CDC → Relearning Feedback Loop** (see [POWELL_APPROACH.md](POWELL_APPROACH.md) Section 5.9.9):
 
-Autonomous closed-loop pipeline for continuous TRM improvement:
+Autonomous closed-loop pipeline for continuous TRM improvement and CDT calibration:
 
 ```
-SiteAgent decisions → [powell_site_agent_decisions]
-       ↓ (hourly)
-OutcomeCollector computes actual outcomes + rewards
+TRM decisions → [powell_*_decisions] (11 tables)
+       ↓ (hourly at :32)
+OutcomeCollector.collect_trm_outcomes() fills actual outcome columns
+       ↓ (hourly at :35)
+CDTCalibrationService.calibrate_incremental() → DecisionOutcomePair → CDT wrappers
+       ↓
+All 11 TRM decisions carry risk_bound = P(loss > τ)
        ↓
 CDCMonitor fires → [powell_cdc_trigger_log]
-       ↓ (every 6h or on FULL_CFA)
+       ↓ (every 6h at :45)
 CDCRetrainingService evaluates need → TRMTrainer.train() → checkpoint
        ↓
 SiteAgent reloads model
@@ -563,7 +569,10 @@ SiteAgent reloads model
 
 | Component | Schedule | Purpose |
 |-----------|----------|---------|
-| `OutcomeCollectorService` | Hourly (:30) | Compute outcomes for decisions past feedback horizon (ATP=4h, Inv=24h, PO=7d, CDC=24h) |
+| `OutcomeCollectorService.collect_outcomes()` | Hourly (:30) | Compute outcomes for SiteAgentDecision (ATP=4h, Inv=24h, PO=7d, CDC=24h) |
+| `OutcomeCollectorService.collect_trm_outcomes()` | Hourly (:32) | Compute outcomes for all 11 powell_*_decisions tables |
+| `CDTCalibrationService.calibrate_incremental()` | Hourly (:35) | Feed new decision-outcome pairs into CDT wrappers |
+| `CDTCalibrationService.calibrate_all()` | Startup (batch) | Batch calibrate CDT wrappers from all historical data |
 | `CDCRetrainingService` | Every 6h (:45) | Evaluate & execute retraining when ≥100 experiences + CDC trigger + cooldown elapsed |
 | `ConditionMonitorService` | On-demand | 6 real-time DB condition checks (ATP shortfall, inventory, capacity, orders past due, forecast deviation) |
 
@@ -668,6 +677,7 @@ See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
 - `powell_maintenance_decisions`: Maintenance scheduling decisions
 - `powell_subcontracting_decisions`: Subcontracting routing decisions
 - `powell_forecast_adjustment_decisions`: Forecast adjustment decisions
+- `powell_safety_stock_decisions`: Safety stock adjustment decisions
 
 ---
 

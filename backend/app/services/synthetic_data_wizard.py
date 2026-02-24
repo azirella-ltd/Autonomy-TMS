@@ -366,14 +366,25 @@ class SyntheticDataWizard:
     """
 
     def __init__(self, model: str = None):
-        """Initialize the wizard with OpenAI client."""
-        self.model = model or os.getenv("AUTONOMY_LLM_MODEL", "gpt-4o-mini")
+        """Initialize the wizard with OpenAI-compatible client."""
+        self.model = model or os.getenv("LLM_MODEL_NAME") or os.getenv("AUTONOMY_LLM_MODEL") or "qwen3-8b"
 
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY environment variable not set")
+        api_key = (
+            os.getenv("LLM_API_KEY")
+            or os.getenv("OPENAI_API_KEY")
+            or "not-needed"
+        )
+        base_url = os.getenv("LLM_API_BASE")
+        kwargs: dict = {"api_key": api_key}
+        if base_url:
+            kwargs["base_url"] = base_url
+        if not base_url and api_key == "not-needed":
+            raise ValueError(
+                "No LLM provider configured. Set LLM_API_BASE for local LLM "
+                "(vLLM/Ollama) or LLM_API_KEY for a hosted API."
+            )
 
-        self.client = OpenAI(api_key=api_key)
+        self.client = OpenAI(**kwargs)
 
         # In-memory session storage (should be replaced with Redis in production)
         self._sessions: Dict[str, WizardState] = {}

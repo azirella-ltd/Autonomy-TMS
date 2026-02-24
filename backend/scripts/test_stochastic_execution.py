@@ -1,7 +1,7 @@
 """
 Test Stochastic Execution Integration
 
-Tests that the StochasticSampler integrates correctly with the Beer Game execution adapter.
+Tests that the StochasticSampler integrates correctly with the simulation execution adapter.
 Verifies that:
 1. Sampler initializes correctly
 2. Distribution sampling works with model entities

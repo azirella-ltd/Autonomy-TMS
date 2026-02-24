@@ -392,7 +392,7 @@ async def test_inventory_adjustments(site_agent, config: SupplyChainConfig, db: 
 
 
 def test_agent_strategy_integration(site_agent, config: SupplyChainConfig, db: Session):
-    """Test SiteAgent as a Beer Game agent strategy."""
+    """Test SiteAgent as a simulation agent strategy."""
     print("\n" + "=" * 60)
     print("Testing Agent Strategy Integration")
     print("=" * 60)

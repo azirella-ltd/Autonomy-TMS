@@ -2,11 +2,13 @@
 Powell Relearning Job Registration
 
 Registers CDC relearning loop jobs with APScheduler:
-- Hourly: Outcome collection for TRM decisions
-- Every 6 hours: CDC-triggered retraining evaluation
+- Hourly at :30: Outcome collection for TRM decisions (SiteAgentDecision path)
+- Hourly at :32: TRM outcome collection for all 11 powell_*_decisions tables
+- Hourly at :35: CDT calibration (incremental, after outcomes collected)
+- Every 6h at :45: CDC-triggered retraining evaluation
 
 Part of the Powell SDAM feedback loop:
-  Decision → Wait → Observe outcome → Compute reward → Retrain if warranted
+  Decision → Wait → Observe outcome → Compute reward → Calibrate CDT → Retrain if warranted
 """
 
 from typing import TYPE_CHECKING
@@ -26,7 +28,9 @@ def register_relearning_jobs(scheduler_service: 'SyncSchedulerService') -> None:
     Register Powell relearning loop jobs with the scheduler.
 
     Jobs:
-    - outcome_collector: Hourly at :30 — compute actual outcomes for past decisions
+    - outcome_collector: Hourly at :30 — compute actual outcomes (SiteAgentDecision)
+    - trm_outcome_collector: Hourly at :32 — compute outcomes for all 11 powell_*_decisions
+    - cdt_calibration: Hourly at :35 — incremental CDT calibration from new outcomes
     - cdc_retraining: Every 6h at :45 — evaluate and execute retraining if warranted
     """
     scheduler = scheduler_service._scheduler
@@ -35,16 +39,38 @@ def register_relearning_jobs(scheduler_service: 'SyncSchedulerService') -> None:
         logger.warning("Scheduler not available, relearning jobs not registered")
         return
 
-    # Hourly: Outcome collection (at :30 to offset from other hourly jobs)
+    # Hourly: Outcome collection — SiteAgentDecision path (at :30)
     scheduler.add_job(
         func=_run_outcome_collection,
         trigger=CronTrigger(minute=30),
         id="powell_outcome_collector",
         name="Powell: Outcome Collection (hourly)",
         replace_existing=True,
-        misfire_grace_time=1800,  # 30 min grace
+        misfire_grace_time=1800,
     )
     logger.info("Registered Powell outcome collection job (hourly at :30)")
+
+    # Hourly: TRM outcome collection — all 11 powell_*_decisions tables (at :32)
+    scheduler.add_job(
+        func=_run_trm_outcome_collection,
+        trigger=CronTrigger(minute=32),
+        id="powell_trm_outcome_collector",
+        name="Powell: TRM Outcome Collection (hourly)",
+        replace_existing=True,
+        misfire_grace_time=1800,
+    )
+    logger.info("Registered Powell TRM outcome collection job (hourly at :32)")
+
+    # Hourly: CDT calibration — after outcomes are collected (at :35)
+    scheduler.add_job(
+        func=_run_cdt_calibration,
+        trigger=CronTrigger(minute=35),
+        id="powell_cdt_calibration",
+        name="Powell: CDT Calibration (hourly)",
+        replace_existing=True,
+        misfire_grace_time=1800,
+    )
+    logger.info("Registered Powell CDT calibration job (hourly at :35)")
 
     # Every 6 hours: Retraining evaluation (at :45)
     scheduler.add_job(
@@ -53,7 +79,7 @@ def register_relearning_jobs(scheduler_service: 'SyncSchedulerService') -> None:
         id="powell_cdc_retraining",
         name="Powell: CDC Retraining Evaluation (every 6h)",
         replace_existing=True,
-        misfire_grace_time=3600,  # 1 hour grace
+        misfire_grace_time=3600,
     )
     logger.info("Registered Powell CDC retraining job (every 6h at :45)")
 
@@ -63,7 +89,7 @@ def register_relearning_jobs(scheduler_service: 'SyncSchedulerService') -> None:
 # ---------------------------------------------------------------------------
 
 def _run_outcome_collection() -> None:
-    """Collect outcomes for TRM decisions across all sites."""
+    """Collect outcomes for TRM decisions across all sites (SiteAgentDecision path)."""
     from app.db.session import SessionLocal
 
     logger.info("Starting scheduled outcome collection")
@@ -81,6 +107,55 @@ def _run_outcome_collection() -> None:
         )
     except Exception as e:
         logger.error(f"Outcome collection job failed: {e}")
+    finally:
+        db.close()
+
+
+def _run_trm_outcome_collection() -> None:
+    """Collect outcomes for all 11 powell_*_decisions tables."""
+    from app.db.session import SessionLocal
+
+    logger.info("Starting scheduled TRM outcome collection")
+
+    db = SessionLocal()
+    try:
+        from app.services.powell.outcome_collector import OutcomeCollectorService
+
+        service = OutcomeCollectorService(db)
+        stats = service.collect_trm_outcomes()
+        logger.info(
+            f"TRM outcome collection completed: "
+            f"{stats['succeeded']} computed, {stats['failed']} failed "
+            f"out of {stats['processed']} processed"
+        )
+    except Exception as e:
+        logger.error(f"TRM outcome collection job failed: {e}")
+    finally:
+        db.close()
+
+
+def _run_cdt_calibration() -> None:
+    """Incrementally calibrate CDT wrappers from newly collected outcomes."""
+    from app.db.session import SessionLocal
+
+    logger.info("Starting scheduled CDT calibration")
+
+    db = SessionLocal()
+    try:
+        from app.services.powell.cdt_calibration_service import CDTCalibrationService
+
+        service = CDTCalibrationService(db)
+        stats = service.calibrate_incremental()
+        total_added = sum(s.get("added", 0) for s in stats.values())
+        calibrated = sum(
+            1 for s in stats.values() if s.get("is_calibrated", False)
+        )
+        logger.info(
+            f"CDT calibration: {total_added} new pairs, "
+            f"{calibrated}/11 agents calibrated"
+        )
+    except Exception as e:
+        logger.error(f"CDT calibration job failed: {e}")
     finally:
         db.close()
 

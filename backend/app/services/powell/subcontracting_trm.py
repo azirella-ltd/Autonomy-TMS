@@ -226,6 +226,15 @@ class SubcontractingTRM:
             except Exception as e:
                 logger.debug(f"Context enrichment failed: {e}")
 
+        # CDT risk bound
+        if self._cdt_wrapper is not None and self._cdt_wrapper.is_calibrated:
+            try:
+                risk = self._cdt_wrapper.compute_risk_bound(rec.total_cost)
+                rec.risk_bound = risk.risk_bound
+                rec.risk_assessment = risk.to_dict()
+            except Exception:
+                pass
+
         self._emit_signals_after_decision(state, rec)
         self._persist_decision(state, rec)
         return rec

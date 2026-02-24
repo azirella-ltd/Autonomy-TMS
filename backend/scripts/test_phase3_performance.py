@@ -19,7 +19,7 @@ from app.db.session import async_session_factory
 from app.models.supply_chain_config import SupplyChainConfig
 from app.models.group import Group
 from app.models.scenario import Scenario
-from app.services.aws_sc_planning.beer_scenario_execution_adapter import BeerScenarioExecutionAdapter
+from app.services.sc_planning.simulation_execution_adapter import SimulationExecutionAdapter
 from app.services.aws_sc_planning.execution_cache import ExecutionCache
 
 
@@ -138,7 +138,7 @@ async def benchmark_batch_vs_single():
 
         # Test 1: Single insert (without cache)
         print("Benchmark 1: Single insert WITHOUT cache")
-        adapter_no_cache = BeerScenarioExecutionAdapter(scenario, db, use_cache=False)
+        adapter_no_cache = SimulationExecutionAdapter(scenario, db, use_cache=False)
 
         start = time.time()
         count = await adapter_no_cache.create_work_orders(player_orders, round_number=1)
@@ -155,7 +155,7 @@ async def benchmark_batch_vs_single():
 
         # Test 2: Single insert (with cache)
         print("Benchmark 2: Single insert WITH cache")
-        adapter_cache = BeerScenarioExecutionAdapter(scenario, db, use_cache=True)
+        adapter_cache = SimulationExecutionAdapter(scenario, db, use_cache=True)
         await adapter_cache.cache.load()
 
         start = time.time()
@@ -171,7 +171,7 @@ async def benchmark_batch_vs_single():
 
         # Test 3: Batch insert (with cache)
         print("Benchmark 3: BATCH insert WITH cache")
-        adapter_batch = BeerScenarioExecutionAdapter(scenario, db, use_cache=True)
+        adapter_batch = SimulationExecutionAdapter(scenario, db, use_cache=True)
         await adapter_batch.cache.load()
 
         start = time.time()

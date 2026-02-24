@@ -708,3 +708,68 @@ class PowellForecastAdjustmentDecision(HiveSignalMixin, Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             **self._signal_dict(),
         }
+
+
+class PowellSSDecision(HiveSignalMixin, Base):
+    """Safety stock adjustment decision history for TRM training and audit trail."""
+    __tablename__ = "powell_safety_stock_decisions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"), nullable=False)
+
+    # Product-location
+    product_id = Column(String(100), nullable=False)
+    location_id = Column(String(100), nullable=False)
+
+    # Decision
+    baseline_ss = Column(Float, nullable=False)
+    multiplier = Column(Float, nullable=False)
+    adjusted_ss = Column(Float, nullable=False)
+    reason = Column(String(50), nullable=False)  # SSAdjustmentReason value
+
+    # Context
+    confidence = Column(Float, nullable=True)
+    demand_cv = Column(Float, nullable=True)
+    current_dos = Column(Float, nullable=True)
+    seasonal_index = Column(Float, nullable=True)
+    recent_stockout_count = Column(Integer, nullable=True)
+    state_features = Column(JSON, nullable=True)
+
+    # Outcome (filled by outcome collector)
+    was_applied = Column(Boolean, nullable=True)
+    actual_stockout_occurred = Column(Boolean, nullable=True)
+    actual_dos_after = Column(Float, nullable=True)
+    excess_holding_cost = Column(Float, nullable=True)
+    actual_service_level = Column(Float, nullable=True)
+
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("idx_ss_config", "config_id"),
+        Index("idx_ss_product_loc", "product_id", "location_id"),
+        Index("idx_ss_created", "created_at"),
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "config_id": self.config_id,
+            "product_id": self.product_id,
+            "location_id": self.location_id,
+            "baseline_ss": self.baseline_ss,
+            "multiplier": self.multiplier,
+            "adjusted_ss": self.adjusted_ss,
+            "reason": self.reason,
+            "confidence": self.confidence,
+            "demand_cv": self.demand_cv,
+            "current_dos": self.current_dos,
+            "seasonal_index": self.seasonal_index,
+            "recent_stockout_count": self.recent_stockout_count,
+            "was_applied": self.was_applied,
+            "actual_stockout_occurred": self.actual_stockout_occurred,
+            "actual_dos_after": self.actual_dos_after,
+            "excess_holding_cost": self.excess_holding_cost,
+            "actual_service_level": self.actual_service_level,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            **self._signal_dict(),
+        }

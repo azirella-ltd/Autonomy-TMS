@@ -553,8 +553,22 @@ async def startup_event():
             # Register retention jobs (HOT->WARM, WARM->COLD, monthly collapse)
             register_retention_jobs(scheduler_service)
 
-            # Register Powell relearning loop jobs (outcome collection, CDC retraining)
+            # Register Powell relearning loop jobs (outcome collection, CDT calibration, CDC retraining)
             register_relearning_jobs(scheduler_service)
+
+            # Batch calibrate CDT wrappers from historical decision data
+            try:
+                from app.services.powell.cdt_calibration_service import CDTCalibrationService
+                cdt_db = sync_session_factory()
+                try:
+                    cdt_svc = CDTCalibrationService(cdt_db)
+                    cdt_stats = cdt_svc.calibrate_all()
+                    calibrated = sum(1 for s in cdt_stats.values() if s.get("status") == "calibrated")
+                    logger.info(f"CDT startup calibration: {calibrated}/11 agents calibrated")
+                finally:
+                    cdt_db.close()
+            except Exception as e:
+                logger.warning(f"CDT startup calibration failed (non-fatal): {e}")
 
             # Register conformal prediction recalibration jobs
             from app.services.conformal_orchestrator import register_conformal_jobs

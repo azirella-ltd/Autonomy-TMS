@@ -22,7 +22,7 @@ from app.models.aws_sc_planning import (
     ProductionCapacity,
     InboundOrderLine
 )
-from app.services.aws_sc_planning.beer_scenario_execution_adapter import BeerScenarioExecutionAdapter
+from app.services.sc_planning.simulation_execution_adapter import SimulationExecutionAdapter
 from app.services.analytics_service import AnalyticsService
 
 
@@ -132,7 +132,7 @@ async def test_analytics_integration():
         print(f"  ✓ Created aggregation policy")
 
         # Create adapter and generate some aggregated orders
-        adapter = BeerScenarioExecutionAdapter(scenario1, db, use_cache=True)
+        adapter = SimulationExecutionAdapter(scenario1, db, use_cache=True)
         await adapter.cache.load()
 
         # Round 1: Create aggregated orders
@@ -229,7 +229,7 @@ async def test_analytics_integration():
         print(f"  ✓ Created capacity constraint (100 units max)")
 
         # Create adapter and generate some work orders to test capacity tracking
-        adapter2 = BeerScenarioExecutionAdapter(scenario2, db, use_cache=True)
+        adapter2 = SimulationExecutionAdapter(scenario2, db, use_cache=True)
         await adapter2.cache.load()
 
         # Create work order that uses 50 units of capacity
@@ -314,7 +314,7 @@ async def test_analytics_integration():
         await db.commit()
 
         # Create some aggregated orders using the policy
-        adapter = BeerScenarioExecutionAdapter(scenario3, db, use_cache=True)
+        adapter = SimulationExecutionAdapter(scenario3, db, use_cache=True)
         await adapter.cache.load()
 
         for round_num in range(1, 4):

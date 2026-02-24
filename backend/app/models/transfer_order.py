@@ -45,14 +45,14 @@ class TransferOrder(Base):
 
     # Status and dates
     status = Column(String(20), nullable=False, default="DRAFT")  # DRAFT, RELEASED, PICKED, SHIPPED, IN_TRANSIT, RECEIVED, CANCELLED
-    order_date = Column(Date)  # Extension: Beer Game - date order was placed
+    order_date = Column(Date)  # Extension: Simulation - date order was placed
     shipment_date = Column(Date, nullable=False)
     estimated_delivery_date = Column(Date, nullable=False)
     actual_ship_date = Column(Date)
     actual_delivery_date = Column(Date)
 
-    # Extension: Beer Game fields
-    scenario_id = Column(Integer, ForeignKey("scenarios.id"))  # Link to Beer Game session
+    # Extension: Simulation fields
+    scenario_id = Column(Integer, ForeignKey("scenarios.id"))  # Link to simulation session
     order_round = Column(Integer)  # Round when TO was created
     arrival_round = Column(Integer)  # Round when TO arrives (order_round + lead_time)
 
@@ -102,8 +102,8 @@ class TransferOrder(Base):
         Index('idx_to_lane', 'source_site_id', 'destination_site_id'),
         Index('idx_to_company', 'company_id'),
         Index('idx_to_order_type', 'order_type'),
-        Index('idx_to_scenario_arrival', 'scenario_id', 'arrival_round', 'status'),  # Beer Game: efficient TO arrival queries
-        Index('idx_to_scenario_order', 'scenario_id', 'order_round'),  # Beer Game: TOs created per round
+        Index('idx_to_scenario_arrival', 'scenario_id', 'arrival_round', 'status'),  # Simulation: efficient TO arrival queries
+        Index('idx_to_scenario_order', 'scenario_id', 'order_round'),  # Simulation: TOs created per round
         Index('idx_to_source_po', 'source_po_id'),  # Link TO to PO
         Index('idx_to_participant_round', 'source_participant_round_id'),  # DAG: bidirectional link to ParticipantRound
     )

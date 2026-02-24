@@ -35,6 +35,12 @@ import logging
 
 from .hive_signal import HiveSignal, HiveSignalBus, HiveSignalType
 
+try:
+    from ..conformal_prediction.conformal_decision import get_cdt_registry
+    _CDT_AVAILABLE = True
+except ImportError:
+    _CDT_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -126,9 +132,11 @@ class SSAdjustment:
 
     # Context-aware explanation (populated when explainer is available)
     context_explanation: Optional[Dict] = None
+    risk_bound: Optional[float] = None
+    risk_assessment: Optional[Dict] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "product_id": self.product_id,
             "location_id": self.location_id,
             "baseline_ss": self.baseline_ss,
@@ -139,6 +147,11 @@ class SSAdjustment:
             "confidence": self.confidence,
             "description": self.description,
         }
+        if self.risk_bound is not None:
+            d["risk_bound"] = self.risk_bound
+        if self.risk_assessment is not None:
+            d["risk_assessment"] = self.risk_assessment
+        return d
 
 
 class SafetyStockTRM:
@@ -186,6 +199,12 @@ class SafetyStockTRM:
 
         # Context-aware explainer (set externally by SiteAgent or caller)
         self.ctx_explainer = None
+        self._cdt_wrapper = None
+        if _CDT_AVAILABLE:
+            try:
+                self._cdt_wrapper = get_cdt_registry().get_or_create("safety_stock")
+            except Exception:
+                pass
 
         self.signal_bus: Optional[HiveSignalBus] = None
 
@@ -358,6 +377,15 @@ class SafetyStockTRM:
                 result.context_explanation = ctx.to_dict()
             except Exception as e:
                 logger.debug(f"Context enrichment failed: {e}")
+
+        # CDT risk bound
+        if self._cdt_wrapper is not None and self._cdt_wrapper.is_calibrated:
+            try:
+                risk = self._cdt_wrapper.compute_risk_bound(result.adjusted_ss)
+                result.risk_bound = risk.risk_bound
+                result.risk_assessment = risk.to_dict()
+            except Exception:
+                pass
 
         # Emit signals
         self._emit_signals_after_decision(state, result)

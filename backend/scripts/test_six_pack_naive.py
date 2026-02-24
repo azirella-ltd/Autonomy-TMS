@@ -1,4 +1,4 @@
-"""Test script to run Naive Agent Showcase for Six-Pack Beer Game.
+"""Test script to run Naive Agent Showcase for Six-Pack simulation scenario.
 
 This will find and start the Naive Agent Showcase (Six-Pack Beer Game) scenario
 to test the manufacturer site fix.
@@ -23,7 +23,7 @@ TARGET_GAME_NAME = "Naive Agent Showcase (Six-Pack Beer Game)"
 
 
 async def find_target_scenario(session: AsyncSession) -> Scenario | None:
-    """Find the Naive Agent Showcase scenario for Six-Pack Beer Game."""
+    """Find the Naive Agent Showcase scenario for Six-Pack simulation."""
     result = await session.execute(
         select(Scenario).where(Scenario.name == TARGET_GAME_NAME).order_by(Scenario.id)
     )

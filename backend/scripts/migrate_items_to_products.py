@@ -2,7 +2,7 @@
 """
 Data Migration Script: Items → AWS SC Product Table
 
-This script migrates The Beer Game from the items table to the AWS Supply Chain
+This script migrates from the items table to the AWS Supply Chain
 compliant product table, including:
 1. Converting Item records to Product records with string IDs
 2. Extracting BOMs from Node.attributes JSON to ProductBom table
@@ -151,7 +151,7 @@ def ensure_default_company(db: Session, dry_run: bool = False) -> None:
         logger.info("Creating DEFAULT company...")
         company = Company(
             id="DEFAULT",
-            description="Default Beer Game Company"
+            description="Default Simulation Company"
         )
         db.add(company)
         db.commit()

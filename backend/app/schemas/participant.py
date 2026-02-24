@@ -103,7 +103,7 @@ class ParticipantAssignment(BaseModel):
         description="Canonical node identifiers covered by this participant assignment.",
     )
     llm_model: Optional[str] = Field(
-        default="gpt-5-mini", description="Selected Autonomy LLM when using Autonomy LLM strategies"
+        default="qwen3-8b", description="Selected Autonomy LLM when using Autonomy LLM strategies"
     )
     llm_config: Optional[dict] = None  # temperature, max_tokens, prompt
     basic_config: Optional[dict] = None  # heuristic params, e.g., base_stock_target, smoothing

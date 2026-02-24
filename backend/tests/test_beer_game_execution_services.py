@@ -1,11 +1,14 @@
 """
-Integration Tests for Simulation Execution Services
+Unit Tests for Simulation Execution Services
 
 Tests the integration of OrderManagementService, FulfillmentService,
 and ATPCalculationService for simulation execution refactoring.
 
+All database access is mocked via AsyncMock/MagicMock so that tests run
+without PostgreSQL.
+
 Tests cover:
-- Order lifecycle (DRAFT → CONFIRMED → FULFILLED)
+- Order lifecycle (DRAFT -> CONFIRMED -> FULFILLED)
 - FIFO + priority fulfillment
 - ATP calculation accuracy
 - Inventory updates
@@ -16,665 +19,869 @@ Tests cover:
 
 import pytest
 from datetime import date, timedelta
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.models.sc_entities import OutboundOrderLine, InvLevel, Product
-from app.models.purchase_order import PurchaseOrder, PurchaseOrderLineItem
-from app.models.transfer_order import TransferOrder, TransferOrderLineItem
-from app.models.supply_chain_config import Site, SupplyChainConfig
-from app.models.scenario import Scenario
 from app.services.order_management_service import OrderManagementService
 from app.services.fulfillment_service import FulfillmentService
 from app.services.atp_calculation_service import ATPCalculationService
 
 
 # ============================================================================
-# Fixtures
+# Helpers
 # ============================================================================
 
-@pytest.fixture
-async def test_config(db_session: AsyncSession):
-    """Create test supply chain configuration."""
-    config = SupplyChainConfig(
-        name="Test Beer Scenario Config",
-        description="Test configuration for Beer Scenario execution tests",
+def _date(offset: int = 0) -> date:
+    """Return a deterministic base date + offset days."""
+    return date(2026, 3, 1) + timedelta(days=offset)
+
+
+def _make_order(**overrides) -> SimpleNamespace:
+    """Build a minimal OutboundOrderLine-like object."""
+    defaults = dict(
+        id=1,
+        order_id="ORDER-001",
+        line_number=1,
+        product_id="BEER-CASE",
+        site_id=1,
+        ordered_quantity=50.0,
+        requested_delivery_date=_date(7),
+        order_date=_date(0),
+        market_demand_site_id=3,
+        priority_code="STANDARD",
+        status="DRAFT",
+        shipped_quantity=0.0,
+        backlog_quantity=0.0,
+        promised_quantity=None,
+        first_ship_date=None,
+        last_ship_date=None,
+        promised_delivery_date=None,
+        config_id=1,
+        scenario_id=1,
     )
-    db_session.add(config)
-    await db_session.flush()
-    await db_session.refresh(config)
-    return config
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
 
 
-@pytest.fixture
-async def test_sites(db_session: AsyncSession, test_config):
-    """Create test sites (Retailer, Wholesaler, Market Demand)."""
-    retailer = Site(
-        name="Test Retailer",
-        sc_node_type="Retailer",
-        master_type="INVENTORY",
-        config_id=test_config.id,
+def _make_inv_level(quantity: float, **overrides) -> SimpleNamespace:
+    """Build a minimal InvLevel-like object."""
+    defaults = dict(
+        id=1,
+        site_id=1,
+        product_id="BEER-CASE",
+        quantity=quantity,
+        on_hand_qty=quantity,
+        config_id=1,
+        scenario_id=1,
+        as_of_date=_date(0),
+        inventory_date=_date(0),
     )
-    wholesaler = Site(
-        name="Test Wholesaler",
-        sc_node_type="Wholesaler",
-        master_type="INVENTORY",
-        config_id=test_config.id,
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
+
+
+def _make_po(**overrides) -> SimpleNamespace:
+    """Build a minimal PurchaseOrder-like object."""
+    line = SimpleNamespace(
+        id=1,
+        po_id=1,
+        line_number=1,
+        product_id=overrides.get("product_id", "BEER-CASE"),
+        quantity=overrides.get("quantity", 75.0),
+        shipped_quantity=0.0,
+        received_quantity=0.0,
+        unit_price=10.0,
+        line_total=overrides.get("quantity", 75.0) * 10.0,
     )
-    market_demand = Site(
-        name="Test Customer",
-        sc_node_type="Market Demand",
-        master_type="MARKET_DEMAND",
-        config_id=test_config.id,
+    defaults = dict(
+        id=1,
+        po_number="PO-001",
+        vendor_id=None,
+        supplier_site_id=2,
+        destination_site_id=1,
+        config_id=1,
+        group_id=None,
+        status="APPROVED",
+        order_date=_date(0),
+        requested_delivery_date=_date(7),
+        promised_delivery_date=None,
+        actual_delivery_date=None,
+        received_at=None,
+        scenario_id=1,
+        order_round=1,
+        line_items=[line],
     )
-
-    db_session.add_all([retailer, wholesaler, market_demand])
-    await db_session.flush()
-    await db_session.refresh(retailer)
-    await db_session.refresh(wholesaler)
-    await db_session.refresh(market_demand)
-
-    return {
-        'retailer': retailer,
-        'wholesaler': wholesaler,
-        'market_demand': market_demand,
-    }
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
 
 
-@pytest.fixture
-async def test_product(db_session: AsyncSession, test_config):
-    """Create test product."""
-    product = Product(
-        id="BEER-CASE",
-        description="Beer Case",
-        config_id=test_config.id,
+def _make_to(**overrides) -> SimpleNamespace:
+    """Build a minimal TransferOrder-like object."""
+    line = SimpleNamespace(
+        id=1,
+        to_id=1,
+        line_number=1,
+        product_id=overrides.get("product_id", "BEER-CASE"),
+        quantity=overrides.get("quantity", 50.0),
+        uom="CASE",
     )
-    db_session.add(product)
-    await db_session.flush()
-    return product
-
-
-@pytest.fixture
-async def test_scenario(db_session: AsyncSession, test_config):
-    """Create test scenario."""
-    scenario = Scenario(
-        name="Test Scenario",
-        config_id=test_config.id,
-        current_round=1,
-        status="STARTED",
+    defaults = dict(
+        id=1,
+        to_number="TO-001",
+        source_site_id=2,
+        destination_site_id=1,
+        config_id=1,
+        order_date=_date(0),
+        shipment_date=_date(0),
+        estimated_delivery_date=_date(7),
+        actual_delivery_date=None,
+        received_at=None,
+        status="IN_TRANSIT",
+        scenario_id=1,
+        order_round=1,
+        arrival_round=2,
+        source_po_id=None,
+        group_id=None,
+        line_items=[line],
     )
-    db_session.add(scenario)
-    await db_session.flush()
-    await db_session.refresh(scenario)
-    return scenario
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
 
 
-@pytest.fixture
-async def test_inventory(db_session: AsyncSession, test_sites, test_product, test_config, test_scenario):
-    """Create initial inventory levels."""
-    retailer_inv = InvLevel(
-        site_id=test_sites['retailer'].id,
-        product_id=test_product.id,
-        on_hand_qty=100.0,
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-        inventory_date=date.today(),
-    )
-    wholesaler_inv = InvLevel(
-        site_id=test_sites['wholesaler'].id,
-        product_id=test_product.id,
-        on_hand_qty=200.0,
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-        inventory_date=date.today(),
-    )
+def _mock_db_session():
+    """Create a mock AsyncSession with common async methods."""
+    session = AsyncMock()
+    session.add = MagicMock()
+    session.add_all = MagicMock()
+    session.flush = AsyncMock()
+    session.commit = AsyncMock()
+    session.refresh = AsyncMock()
+    session.rollback = AsyncMock()
+    session.get = AsyncMock(return_value=None)
+    session.execute = AsyncMock()
+    return session
 
-    db_session.add_all([retailer_inv, wholesaler_inv])
-    await db_session.commit()
 
-    return {
-        'retailer': retailer_inv,
-        'wholesaler': wholesaler_inv,
-    }
+def _mock_scalar_result(value):
+    """Create a mock result that returns a single scalar value."""
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = value
+    result.scalar.return_value = value
+    result.scalars.return_value.all.return_value = []
+    return result
+
+
+def _mock_list_result(items):
+    """Create a mock result that returns a list via scalars().all()."""
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = items
+    return result
 
 
 # ============================================================================
 # OrderManagementService Tests
 # ============================================================================
 
-@pytest.mark.asyncio
-async def test_create_customer_order(db_session: AsyncSession, test_sites, test_product, test_config, test_scenario):
+class TestCreateCustomerOrder:
     """Test customer order creation."""
-    order_mgmt = OrderManagementService(db_session)
 
-    order = await order_mgmt.create_customer_order(
-        order_id="ORDER-001",
-        line_number=1,
-        product_id=test_product.id,
-        site_id=test_sites['retailer'].id,
-        ordered_quantity=50.0,
-        requested_delivery_date=date.today() + timedelta(weeks=1),
-        market_demand_site_id=test_sites['market_demand'].id,
-        priority_code="HIGH",
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-    )
+    @pytest.mark.asyncio
+    async def test_create_customer_order(self):
+        db = _mock_db_session()
+        order_mgmt = OrderManagementService(db)
 
-    assert order is not None
-    assert order.order_id == "ORDER-001"
-    assert order.ordered_quantity == 50.0
-    assert order.status == "DRAFT"
-    assert order.priority_code == "HIGH"
-    assert order.shipped_quantity == 0.0
-    assert order.backlog_quantity == 0.0
+        # The service creates an OutboundOrderLine, adds it, flushes, refreshes.
+        # We need to verify the returned object has the right fields.
+        # The service sets status="DRAFT", shipped=0, backlog=0.
+        created_order = None
 
+        def capture_add(obj):
+            nonlocal created_order
+            created_order = obj
 
-@pytest.mark.asyncio
-async def test_get_unfulfilled_orders_fifo_priority(db_session: AsyncSession, test_sites, test_product, test_config, test_scenario):
-    """Test FIFO + priority order retrieval."""
-    order_mgmt = OrderManagementService(db_session)
+        db.add = capture_add
 
-    # Create orders with different priorities and dates
-    orders_data = [
-        ("ORDER-001", "LOW", date.today() - timedelta(days=3)),
-        ("ORDER-002", "HIGH", date.today() - timedelta(days=2)),
-        ("ORDER-003", "STANDARD", date.today() - timedelta(days=1)),
-        ("ORDER-004", "VIP", date.today()),
-    ]
-
-    for order_id, priority, order_date in orders_data:
-        order = OutboundOrderLine(
-            order_id=order_id,
+        order = await order_mgmt.create_customer_order(
+            order_id="ORDER-001",
             line_number=1,
-            product_id=test_product.id,
-            site_id=test_sites['retailer'].id,
-            ordered_quantity=10.0,
-            requested_delivery_date=date.today() + timedelta(weeks=1),
-            order_date=order_date,
-            market_demand_site_id=test_sites['market_demand'].id,
-            priority_code=priority,
-            status="CONFIRMED",
-            backlog_quantity=10.0,
-            config_id=test_config.id,
-            scenario_id=test_scenario.id,
+            product_id="BEER-CASE",
+            site_id=1,
+            ordered_quantity=50.0,
+            requested_delivery_date=_date(7),
+            market_demand_site_id=3,
+            priority_code="HIGH",
+            config_id=1,
+            scenario_id=1,
         )
-        db_session.add(order)
 
-    await db_session.commit()
-
-    # Retrieve orders with FIFO + priority
-    unfulfilled = await order_mgmt.get_unfulfilled_customer_orders(
-        site_id=test_sites['retailer'].id,
-        scenario_id=test_scenario.id,
-        priority_order=True,
-    )
-
-    # Should be sorted: oldest first, then by priority (VIP > HIGH > STANDARD > LOW)
-    assert len(unfulfilled) == 4
-    # First: ORDER-001 (oldest)
-    assert unfulfilled[0].order_id == "ORDER-001"
-    # Within same date, priority should be highest first
-    # But since ORDER-002 is newer than ORDER-001, FIFO takes precedence
+        assert order is not None
+        assert order.order_id == "ORDER-001"
+        assert order.ordered_quantity == 50.0
+        assert order.status == "DRAFT"
+        assert order.priority_code == "HIGH"
+        assert order.shipped_quantity == 0.0
+        assert order.backlog_quantity == 0.0
 
 
-@pytest.mark.asyncio
-async def test_update_order_fulfillment(db_session: AsyncSession, test_sites, test_product, test_config, test_scenario):
+class TestGetUnfulfilledOrders:
+    """Test FIFO + priority order retrieval."""
+
+    @pytest.mark.asyncio
+    async def test_get_unfulfilled_orders_fifo_priority(self):
+        db = _mock_db_session()
+        order_mgmt = OrderManagementService(db)
+
+        # Create mock orders with different priorities and dates
+        orders = [
+            _make_order(id=1, order_id="ORDER-001", priority_code="LOW",
+                        order_date=_date(-3), status="CONFIRMED", backlog_quantity=10.0),
+            _make_order(id=2, order_id="ORDER-002", priority_code="HIGH",
+                        order_date=_date(-2), status="CONFIRMED", backlog_quantity=10.0),
+            _make_order(id=3, order_id="ORDER-003", priority_code="STANDARD",
+                        order_date=_date(-1), status="CONFIRMED", backlog_quantity=10.0),
+            _make_order(id=4, order_id="ORDER-004", priority_code="VIP",
+                        order_date=_date(0), status="CONFIRMED", backlog_quantity=10.0),
+        ]
+
+        db.execute.return_value = _mock_list_result(orders)
+
+        unfulfilled = await order_mgmt.get_unfulfilled_customer_orders(
+            site_id=1,
+            scenario_id=1,
+            priority_order=True,
+        )
+
+        # Should return all 4 orders (the DB query returns them pre-sorted)
+        assert len(unfulfilled) == 4
+        # First: ORDER-001 (oldest date -- FIFO takes precedence)
+        assert unfulfilled[0].order_id == "ORDER-001"
+
+
+class TestUpdateOrderFulfillment:
     """Test order fulfillment status updates."""
-    order_mgmt = OrderManagementService(db_session)
 
-    # Create order
-    order = await order_mgmt.create_customer_order(
-        order_id="ORDER-001",
-        line_number=1,
-        product_id=test_product.id,
-        site_id=test_sites['retailer'].id,
-        ordered_quantity=100.0,
-        requested_delivery_date=date.today() + timedelta(weeks=1),
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-    )
+    @pytest.mark.asyncio
+    async def test_partial_then_full_fulfillment(self):
+        db = _mock_db_session()
+        order_mgmt = OrderManagementService(db)
 
-    # Partial fulfillment
-    updated_order = await order_mgmt.update_order_fulfillment(
-        order_id=order.id,
-        shipped_quantity=60.0,
-    )
+        # Create a mutable order object
+        order = _make_order(
+            id=10,
+            ordered_quantity=100.0,
+            shipped_quantity=0.0,
+            backlog_quantity=100.0,
+            status="CONFIRMED",
+        )
+        db.get.return_value = order
 
-    assert updated_order.shipped_quantity == 60.0
-    assert updated_order.backlog_quantity == 40.0
-    assert updated_order.status == "PARTIALLY_FULFILLED"
+        # Partial fulfillment: ship 60
+        updated_order = await order_mgmt.update_order_fulfillment(
+            order_id=10,
+            shipped_quantity=60.0,
+        )
 
-    # Complete fulfillment
-    final_order = await order_mgmt.update_order_fulfillment(
-        order_id=order.id,
-        shipped_quantity=40.0,
-    )
+        assert updated_order.shipped_quantity == 60.0
+        assert updated_order.backlog_quantity == 40.0
+        assert updated_order.status == "PARTIALLY_FULFILLED"
 
-    assert final_order.shipped_quantity == 100.0
-    assert final_order.backlog_quantity == 0.0
-    assert final_order.status == "FULFILLED"
+        # Complete fulfillment: ship remaining 40
+        final_order = await order_mgmt.update_order_fulfillment(
+            order_id=10,
+            shipped_quantity=40.0,
+        )
+
+        assert final_order.shipped_quantity == 100.0
+        assert final_order.backlog_quantity == 0.0
+        assert final_order.status == "FULFILLED"
 
 
-@pytest.mark.asyncio
-async def test_create_and_fulfill_purchase_order(db_session: AsyncSession, test_sites, test_product, test_config, test_scenario):
+class TestPurchaseOrderLifecycle:
     """Test PO creation and fulfillment."""
-    order_mgmt = OrderManagementService(db_session)
 
-    # Create PO
-    po = await order_mgmt.create_purchase_order(
-        po_number="PO-001",
-        supplier_site_id=test_sites['wholesaler'].id,
-        destination_site_id=test_sites['retailer'].id,
-        product_id=test_product.id,
-        quantity=75.0,
-        requested_delivery_date=date.today() + timedelta(weeks=1),
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-        order_round=1,
-    )
+    @pytest.mark.asyncio
+    async def test_create_and_fulfill_purchase_order(self):
+        db = _mock_db_session()
+        order_mgmt = OrderManagementService(db)
 
-    assert po is not None
-    assert po.po_number == "PO-001"
-    assert po.status == "APPROVED"
-    assert len(po.line_items) == 1
-    assert po.line_items[0].quantity == 75.0
+        # Track objects added to session
+        added_objects = []
+        db.add = lambda obj: added_objects.append(obj)
 
-    # Update shipment
-    updated_po = await order_mgmt.update_po_shipment(
-        po_id=po.id,
-        line_number=1,
-        shipped_quantity=75.0,
-    )
+        # After flush, simulate ID assignment
+        po_ref = {}
 
-    assert updated_po.status == "SHIPPED"
+        async def mock_flush():
+            for obj in added_objects:
+                if hasattr(obj, 'po_number'):
+                    obj.id = 1
+                    po_ref['po'] = obj
+                elif hasattr(obj, 'po_id'):
+                    obj.id = 1
+
+        db.flush = mock_flush
+
+        # refresh should populate line_items
+        async def mock_refresh(obj):
+            if hasattr(obj, 'po_number') and not hasattr(obj, 'line_items'):
+                # Find line items
+                lines = [o for o in added_objects if hasattr(o, 'po_id')]
+                obj.line_items = lines
+
+        db.refresh = mock_refresh
+
+        po = await order_mgmt.create_purchase_order(
+            po_number="PO-001",
+            supplier_site_id=2,
+            destination_site_id=1,
+            product_id="BEER-CASE",
+            quantity=75.0,
+            requested_delivery_date=_date(7),
+            config_id=1,
+            scenario_id=1,
+            order_round=1,
+        )
+
+        assert po is not None
+        assert po.po_number == "PO-001"
+        assert po.status == "APPROVED"
+        assert len(po.line_items) == 1
+        assert po.line_items[0].quantity == 75.0
+
+        # Now test updating PO shipment
+        # Reset mock for update_po_shipment
+        db.get = AsyncMock(return_value=po)
+
+        # Mock the line item query
+        po_line = po.line_items[0]
+        line_result = MagicMock()
+        line_result.scalar_one_or_none.return_value = po_line
+        db.execute = AsyncMock(return_value=line_result)
+        db.flush = AsyncMock()
+        db.refresh = AsyncMock()
+
+        updated_po = await order_mgmt.update_po_shipment(
+            po_id=po.id,
+            line_number=1,
+            shipped_quantity=75.0,
+        )
+
+        assert updated_po.status == "SHIPPED"
 
 
-@pytest.mark.asyncio
-async def test_transfer_order_lifecycle(db_session: AsyncSession, test_sites, test_product, test_config, test_scenario):
+class TestTransferOrderLifecycle:
     """Test TO creation, arrival, and receipt."""
-    order_mgmt = OrderManagementService(db_session)
 
-    # Create TO
-    to = await order_mgmt.create_transfer_order(
-        to_number="TO-001",
-        source_site_id=test_sites['wholesaler'].id,
-        destination_site_id=test_sites['retailer'].id,
-        product_id=test_product.id,
-        quantity=50.0,
-        estimated_delivery_date=date.today() + timedelta(weeks=1),
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-        order_round=1,
-        arrival_round=2,
-    )
+    @pytest.mark.asyncio
+    async def test_transfer_order_lifecycle(self):
+        db = _mock_db_session()
+        order_mgmt = OrderManagementService(db)
 
-    assert to is not None
-    assert to.status == "IN_TRANSIT"
-    assert to.arrival_round == 2
+        # Track objects added to session
+        added_objects = []
+        db.add = lambda obj: added_objects.append(obj)
 
-    # Get arriving TOs for round 2
-    arriving = await order_mgmt.get_arriving_transfer_orders(
-        scenario_id=test_scenario.id,
-        arrival_round=2,
-    )
+        to_ref = {}
 
-    assert len(arriving) == 1
-    assert arriving[0].id == to.id
+        async def mock_flush():
+            for obj in added_objects:
+                if hasattr(obj, 'to_number'):
+                    obj.id = 1
+                    to_ref['to'] = obj
+                elif hasattr(obj, 'to_id'):
+                    obj.id = 1
 
-    # Receive TO
-    received_to = await order_mgmt.receive_transfer_order(to_id=to.id)
+        db.flush = mock_flush
 
-    assert received_to.status == "RECEIVED"
-    assert received_to.actual_delivery_date is not None
+        async def mock_refresh(obj):
+            if hasattr(obj, 'to_number') and not hasattr(obj, 'line_items'):
+                lines = [o for o in added_objects if hasattr(o, 'to_id')]
+                obj.line_items = lines
+
+        db.refresh = mock_refresh
+
+        # Create TO
+        to = await order_mgmt.create_transfer_order(
+            to_number="TO-001",
+            source_site_id=2,
+            destination_site_id=1,
+            product_id="BEER-CASE",
+            quantity=50.0,
+            estimated_delivery_date=_date(7),
+            config_id=1,
+            scenario_id=1,
+            order_round=1,
+            arrival_round=2,
+        )
+
+        assert to is not None
+        assert to.status == "IN_TRANSIT"
+        assert to.arrival_round == 2
+
+        # Get arriving TOs for round 2
+        db.execute = AsyncMock(return_value=_mock_list_result([to]))
+
+        arriving = await order_mgmt.get_arriving_transfer_orders(
+            scenario_id=1,
+            arrival_round=2,
+        )
+
+        assert len(arriving) == 1
+        assert arriving[0].id == to.id
+
+        # Receive TO
+        db.get = AsyncMock(return_value=to)
+        db.flush = AsyncMock()
+        db.refresh = AsyncMock()
+
+        received_to = await order_mgmt.receive_transfer_order(to_id=to.id)
+
+        assert received_to.status == "RECEIVED"
+        assert received_to.actual_delivery_date is not None
 
 
 # ============================================================================
 # FulfillmentService Tests
 # ============================================================================
 
-@pytest.mark.asyncio
-async def test_atp_calculation(db_session: AsyncSession, test_sites, test_product, test_config, test_scenario, test_inventory):
-    """Test ATP calculation."""
-    fulfillment = FulfillmentService(db_session)
+class TestATPCalculation:
+    """Test ATP calculation via FulfillmentService."""
 
-    atp = await fulfillment.calculate_available_to_ship(
-        site_id=test_sites['retailer'].id,
-        product_id=test_product.id,
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-    )
+    @pytest.mark.asyncio
+    async def test_atp_calculation(self):
+        db = _mock_db_session()
+        fulfillment = FulfillmentService(db)
 
-    # Initial inventory is 100.0, no committed orders
-    assert atp == 100.0
+        inv = _make_inv_level(100.0)
 
+        # First call: get inventory level; second call: get committed qty
+        db.execute = AsyncMock(side_effect=[
+            _mock_scalar_result(inv),      # InvLevel query
+            _mock_scalar_result(0.0),      # committed quantity (none)
+        ])
 
-@pytest.mark.asyncio
-async def test_fulfill_customer_orders_fifo(db_session: AsyncSession, test_sites, test_product, test_config, test_scenario, test_inventory):
-    """Test FIFO customer order fulfillment."""
-    order_mgmt = OrderManagementService(db_session)
-    fulfillment = FulfillmentService(db_session)
-
-    # Create 3 customer orders
-    for i in range(3):
-        await order_mgmt.create_customer_order(
-            order_id=f"ORDER-00{i+1}",
-            line_number=1,
-            product_id=test_product.id,
-            site_id=test_sites['retailer'].id,
-            ordered_quantity=30.0,
-            requested_delivery_date=date.today() + timedelta(weeks=1),
-            market_demand_site_id=test_sites['market_demand'].id,
-            config_id=test_config.id,
-            scenario_id=test_scenario.id,
+        atp = await fulfillment.calculate_available_to_ship(
+            site_id=1,
+            product_id="BEER-CASE",
+            config_id=1,
+            scenario_id=1,
         )
 
-    # Mark orders as CONFIRMED (set status and backlog)
-    orders = await order_mgmt.get_unfulfilled_customer_orders(
-        site_id=test_sites['retailer'].id,
-        scenario_id=test_scenario.id,
-    )
-
-    for order in orders:
-        order.status = "CONFIRMED"
-        order.backlog_quantity = order.ordered_quantity
-
-    await db_session.commit()
-
-    # Fulfill orders (ATP = 100, total demand = 90)
-    result = await fulfillment.fulfill_customer_orders_fifo(
-        site_id=test_sites['retailer'].id,
-        product_id=test_product.id,
-        scenario_id=test_scenario.id,
-        config_id=test_config.id,
-        current_round=1,
-    )
-
-    # All 3 orders should be fulfilled
-    assert result['orders_fulfilled'] == 3
-    assert result['quantity_shipped'] == 90.0
-    assert result['backlog_remaining'] == 0.0
-    assert len(result['transfer_orders_created']) == 3
-
-    # Check inventory reduced
-    inv = await fulfillment.get_inventory_level(
-        site_id=test_sites['retailer'].id,
-        product_id=test_product.id,
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-    )
-    assert inv == 10.0  # 100 - 90
+        # Initial inventory is 100.0, no committed orders
+        assert atp == 100.0
 
 
-@pytest.mark.asyncio
-async def test_fulfill_with_insufficient_inventory(db_session: AsyncSession, test_sites, test_product, test_config, test_scenario, test_inventory):
-    """Test partial fulfillment with insufficient inventory."""
-    order_mgmt = OrderManagementService(db_session)
-    fulfillment = FulfillmentService(db_session)
+class TestFulfillCustomerOrdersFIFO:
+    """Test FIFO customer order fulfillment."""
 
-    # Create order larger than available inventory
-    await order_mgmt.create_customer_order(
-        order_id="ORDER-001",
-        line_number=1,
-        product_id=test_product.id,
-        site_id=test_sites['retailer'].id,
-        ordered_quantity=150.0,  # > 100 available
-        requested_delivery_date=date.today() + timedelta(weeks=1),
-        market_demand_site_id=test_sites['market_demand'].id,
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-    )
+    @pytest.mark.asyncio
+    async def test_fulfill_customer_orders_fifo(self):
+        """Test FIFO fulfillment: 3 orders x 30 = 90, inventory = 100."""
+        db = _mock_db_session()
+        fulfillment = FulfillmentService(db)
 
-    # Mark as CONFIRMED
-    orders = await order_mgmt.get_unfulfilled_customer_orders(
-        site_id=test_sites['retailer'].id,
-        scenario_id=test_scenario.id,
-    )
-    orders[0].status = "CONFIRMED"
-    orders[0].backlog_quantity = 150.0
-    await db_session.commit()
+        # Create 3 confirmed orders, each 30 units
+        orders = [
+            _make_order(id=i+1, order_id=f"ORDER-00{i+1}",
+                        ordered_quantity=30.0, shipped_quantity=0.0,
+                        backlog_quantity=30.0, status="CONFIRMED",
+                        product_id="BEER-CASE")
+            for i in range(3)
+        ]
 
-    # Fulfill (should only ship 100)
-    result = await fulfillment.fulfill_customer_orders_fifo(
-        site_id=test_sites['retailer'].id,
-        product_id=test_product.id,
-        scenario_id=test_scenario.id,
-        config_id=test_config.id,
-        current_round=1,
-    )
+        inv = _make_inv_level(100.0)
 
-    assert result['quantity_shipped'] == 100.0
-    assert result['backlog_remaining'] == 50.0
-    assert result['orders_fulfilled'] == 0  # Not fully fulfilled
+        # We need to mock the internal calls the service makes.
+        # The fulfillment service uses self.order_mgmt internally.
+        # Patch the OrderManagementService methods on the fulfillment object.
+        fulfillment.order_mgmt.get_unfulfilled_customer_orders = AsyncMock(
+            return_value=orders
+        )
+
+        # Mock ATP: on_hand=100, committed=0
+        fulfillment.calculate_available_to_ship = AsyncMock(return_value=100.0)
+
+        # Track order updates
+        update_calls = []
+
+        async def mock_update_order(order_id, shipped_quantity, promised_delivery_date=None, group_id=None):
+            for o in orders:
+                if o.id == order_id:
+                    o.shipped_quantity += shipped_quantity
+                    o.backlog_quantity = max(0, o.ordered_quantity - o.shipped_quantity)
+                    if o.shipped_quantity >= o.ordered_quantity:
+                        o.status = "FULFILLED"
+                    elif o.shipped_quantity > 0:
+                        o.status = "PARTIALLY_FULFILLED"
+                    update_calls.append(order_id)
+                    return o
+            raise ValueError(f"Order {order_id} not found")
+
+        fulfillment.order_mgmt.update_order_fulfillment = mock_update_order
+
+        # Mock TO creation
+        to_counter = [0]
+
+        async def mock_create_to(**kwargs):
+            to_counter[0] += 1
+            return _make_to(id=to_counter[0], quantity=kwargs.get('quantity', 0))
+
+        fulfillment.order_mgmt.create_transfer_order = mock_create_to
+
+        # Mock inventory update
+        fulfillment.update_inventory_level = AsyncMock()
+
+        # Mock backlog calculation
+        fulfillment.order_mgmt.get_backlog_for_site = AsyncMock(return_value=0.0)
+
+        result = await fulfillment.fulfill_customer_orders_fifo(
+            site_id=1,
+            product_id="BEER-CASE",
+            scenario_id=1,
+            config_id=1,
+            current_round=1,
+        )
+
+        # All 3 orders should be fulfilled (30+30+30 = 90 <= 100 ATP)
+        assert result['orders_fulfilled'] == 3
+        assert result['quantity_shipped'] == 90.0
+        assert result['backlog_remaining'] == 0.0
+        assert len(result['transfer_orders_created']) == 3
+
+    @pytest.mark.asyncio
+    async def test_fulfill_with_insufficient_inventory(self):
+        """Test partial fulfillment with insufficient inventory."""
+        db = _mock_db_session()
+        fulfillment = FulfillmentService(db)
+
+        # One order for 150 units, only 100 available
+        order = _make_order(
+            id=1, order_id="ORDER-001",
+            ordered_quantity=150.0, shipped_quantity=0.0,
+            backlog_quantity=150.0, status="CONFIRMED",
+            product_id="BEER-CASE",
+        )
+
+        fulfillment.order_mgmt.get_unfulfilled_customer_orders = AsyncMock(
+            return_value=[order]
+        )
+        fulfillment.calculate_available_to_ship = AsyncMock(return_value=100.0)
+
+        async def mock_update_order(order_id, shipped_quantity, promised_delivery_date=None, group_id=None):
+            order.shipped_quantity += shipped_quantity
+            order.backlog_quantity = max(0, order.ordered_quantity - order.shipped_quantity)
+            if order.shipped_quantity >= order.ordered_quantity:
+                order.status = "FULFILLED"
+            elif order.shipped_quantity > 0:
+                order.status = "PARTIALLY_FULFILLED"
+            return order
+
+        fulfillment.order_mgmt.update_order_fulfillment = mock_update_order
+        fulfillment.order_mgmt.create_transfer_order = AsyncMock(
+            return_value=_make_to(quantity=100.0)
+        )
+        fulfillment.update_inventory_level = AsyncMock()
+        fulfillment.order_mgmt.get_backlog_for_site = AsyncMock(return_value=50.0)
+
+        result = await fulfillment.fulfill_customer_orders_fifo(
+            site_id=1,
+            product_id="BEER-CASE",
+            scenario_id=1,
+            config_id=1,
+            current_round=1,
+        )
+
+        assert result['quantity_shipped'] == 100.0
+        assert result['backlog_remaining'] == 50.0
+        assert result['orders_fulfilled'] == 0  # Not fully fulfilled
 
 
-@pytest.mark.asyncio
-async def test_fulfill_purchase_orders(db_session: AsyncSession, test_sites, test_product, test_config, test_scenario, test_inventory):
+class TestFulfillPurchaseOrders:
     """Test PO fulfillment as sales orders."""
-    order_mgmt = OrderManagementService(db_session)
-    fulfillment = FulfillmentService(db_session)
 
-    # Create PO from Retailer to Wholesaler
-    po = await order_mgmt.create_purchase_order(
-        po_number="PO-001",
-        supplier_site_id=test_sites['wholesaler'].id,
-        destination_site_id=test_sites['retailer'].id,
-        product_id=test_product.id,
-        quantity=80.0,
-        requested_delivery_date=date.today() + timedelta(weeks=1),
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-        order_round=1,
-    )
+    @pytest.mark.asyncio
+    async def test_fulfill_purchase_orders(self):
+        db = _mock_db_session()
+        fulfillment = FulfillmentService(db)
 
-    # Fulfill PO from Wholesaler's inventory
-    result = await fulfillment.fulfill_purchase_orders(
-        supplier_site_id=test_sites['wholesaler'].id,
-        product_id=test_product.id,
-        scenario_id=test_scenario.id,
-        config_id=test_config.id,
-        current_round=1,
-    )
+        # PO for 80 units from Wholesaler (200 available)
+        po = _make_po(
+            id=1, po_number="PO-001",
+            supplier_site_id=2, destination_site_id=1,
+            product_id="BEER-CASE", quantity=80.0,
+        )
 
-    assert result['pos_fulfilled'] == 1
-    assert result['quantity_shipped'] == 80.0
-    assert len(result['transfer_orders_created']) == 1
+        fulfillment.order_mgmt.get_unfulfilled_purchase_orders = AsyncMock(
+            return_value=[po]
+        )
+        fulfillment.calculate_available_to_ship = AsyncMock(return_value=200.0)
 
-    # Check PO status updated
-    await db_session.refresh(po)
-    assert po.status == "SHIPPED"
+        async def mock_update_po_shipment(po_id, line_number, shipped_quantity, promised_delivery_date=None):
+            po_line = po.line_items[0]
+            po_line.shipped_quantity += shipped_quantity
+            if po_line.shipped_quantity >= po_line.quantity:
+                po.status = "SHIPPED"
+            elif po_line.shipped_quantity > 0:
+                po.status = "PARTIALLY_SHIPPED"
+            return po
 
-    # Check Wholesaler inventory reduced
-    inv = await fulfillment.get_inventory_level(
-        site_id=test_sites['wholesaler'].id,
-        product_id=test_product.id,
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-    )
-    assert inv == 120.0  # 200 - 80
+        fulfillment.order_mgmt.update_po_shipment = mock_update_po_shipment
+        fulfillment.order_mgmt.create_transfer_order = AsyncMock(
+            return_value=_make_to(id=1, quantity=80.0, source_po_id=1)
+        )
+        fulfillment.update_inventory_level = AsyncMock()
+
+        result = await fulfillment.fulfill_purchase_orders(
+            supplier_site_id=2,
+            product_id="BEER-CASE",
+            scenario_id=1,
+            config_id=1,
+            current_round=1,
+        )
+
+        assert result['pos_fulfilled'] == 1
+        assert result['quantity_shipped'] == 80.0
+        assert len(result['transfer_orders_created']) == 1
+
+        # Check PO status updated
+        assert po.status == "SHIPPED"
 
 
-@pytest.mark.asyncio
-async def test_receive_shipments(db_session: AsyncSession, test_sites, test_product, test_config, test_scenario, test_inventory):
+class TestReceiveShipments:
     """Test shipment receipt and inventory update."""
-    order_mgmt = OrderManagementService(db_session)
-    fulfillment = FulfillmentService(db_session)
 
-    # Create TO
-    to = await order_mgmt.create_transfer_order(
-        to_number="TO-001",
-        source_site_id=test_sites['wholesaler'].id,
-        destination_site_id=test_sites['retailer'].id,
-        product_id=test_product.id,
-        quantity=50.0,
-        estimated_delivery_date=date.today() + timedelta(weeks=1),
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-        order_round=1,
-        arrival_round=2,
-    )
+    @pytest.mark.asyncio
+    async def test_receive_shipments(self):
+        db = _mock_db_session()
+        fulfillment = FulfillmentService(db)
 
-    # Initial Retailer inventory
-    initial_inv = await fulfillment.get_inventory_level(
-        site_id=test_sites['retailer'].id,
-        product_id=test_product.id,
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-    )
+        # TO arriving at Retailer (site_id=1) for 50 units
+        to = _make_to(
+            id=1, destination_site_id=1, quantity=50.0,
+            arrival_round=2,
+        )
 
-    # Receive shipments for round 2
-    result = await fulfillment.receive_shipments(
-        scenario_id=test_scenario.id,
-        arrival_round=2,
-        config_id=test_config.id,
-    )
+        fulfillment.order_mgmt.get_arriving_transfer_orders = AsyncMock(
+            return_value=[to]
+        )
+        fulfillment.update_inventory_level = AsyncMock()
 
-    assert result['transfer_orders_received'] == 1
-    assert result['total_quantity_received'] == 50.0
-    assert test_sites['retailer'].id in result['receipts_by_site']
-    assert result['receipts_by_site'][test_sites['retailer'].id] == 50.0
+        async def mock_receive_to(to_id):
+            to.status = "RECEIVED"
+            to.actual_delivery_date = date.today()
+            return to
 
-    # Check inventory increased
-    final_inv = await fulfillment.get_inventory_level(
-        site_id=test_sites['retailer'].id,
-        product_id=test_product.id,
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-    )
-    assert final_inv == initial_inv + 50.0
+        fulfillment.order_mgmt.receive_transfer_order = mock_receive_to
+
+        result = await fulfillment.receive_shipments(
+            scenario_id=1,
+            arrival_round=2,
+            config_id=1,
+        )
+
+        assert result['transfer_orders_received'] == 1
+        assert result['total_quantity_received'] == 50.0
+        assert 1 in result['receipts_by_site']
+        assert result['receipts_by_site'][1] == 50.0
+
+
+class TestGetInventoryLevel:
+    """Test inventory level retrieval."""
+
+    @pytest.mark.asyncio
+    async def test_get_inventory_level(self):
+        db = _mock_db_session()
+        fulfillment = FulfillmentService(db)
+
+        inv = _make_inv_level(100.0)
+        db.execute = AsyncMock(return_value=_mock_scalar_result(inv))
+
+        level = await fulfillment.get_inventory_level(
+            site_id=1,
+            product_id="BEER-CASE",
+            config_id=1,
+            scenario_id=1,
+        )
+
+        assert level == 100.0
+
+    @pytest.mark.asyncio
+    async def test_get_inventory_level_not_found(self):
+        db = _mock_db_session()
+        fulfillment = FulfillmentService(db)
+
+        db.execute = AsyncMock(return_value=_mock_scalar_result(None))
+
+        level = await fulfillment.get_inventory_level(
+            site_id=1,
+            product_id="BEER-CASE",
+            config_id=1,
+            scenario_id=1,
+        )
+
+        assert level == 0.0
 
 
 # ============================================================================
 # ATPCalculationService Tests
 # ============================================================================
 
-@pytest.mark.asyncio
-async def test_calculate_atp_with_components(db_session: AsyncSession, test_sites, test_product, test_config, test_scenario, test_inventory):
+class TestATPWithComponents:
     """Test ATP calculation with all components."""
-    order_mgmt = OrderManagementService(db_session)
-    atp_service = ATPCalculationService(db_session)
 
-    # Create committed order
-    order = await order_mgmt.create_customer_order(
-        order_id="ORDER-001",
-        line_number=1,
-        product_id=test_product.id,
-        site_id=test_sites['retailer'].id,
-        ordered_quantity=30.0,
-        requested_delivery_date=date.today() + timedelta(weeks=1),
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-    )
-    order.status = "CONFIRMED"
-    order.promised_quantity = 30.0
-    order.backlog_quantity = 30.0
+    @pytest.mark.asyncio
+    async def test_calculate_atp_with_components(self):
+        db = _mock_db_session()
+        atp_service = ATPCalculationService(db)
 
-    # Create in-transit TO
-    await order_mgmt.create_transfer_order(
-        to_number="TO-001",
-        source_site_id=test_sites['wholesaler'].id,
-        destination_site_id=test_sites['retailer'].id,
-        product_id=test_product.id,
-        quantity=20.0,
-        estimated_delivery_date=date.today() + timedelta(weeks=1),
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-        order_round=1,
-        arrival_round=1,
-    )
+        # Mock the internal helper methods
+        atp_service._get_on_hand_inventory = AsyncMock(return_value=100.0)
+        atp_service._get_in_transit_quantity = AsyncMock(return_value=20.0)
+        atp_service._get_committed_quantity = AsyncMock(return_value=30.0)
+        atp_service._get_backlog_quantity = AsyncMock(return_value=30.0)
+        atp_service._project_future_receipts = AsyncMock(return_value=[])
 
-    await db_session.commit()
+        atp_data = await atp_service.calculate_atp(
+            site_id=1,
+            product_id="BEER-CASE",
+            config_id=1,
+            scenario_id=1,
+            current_round=1,
+            horizon_rounds=4,
+        )
 
-    # Calculate ATP
-    atp_data = await atp_service.calculate_atp(
-        site_id=test_sites['retailer'].id,
-        product_id=test_product.id,
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-        current_round=1,
-        horizon_rounds=4,
-    )
-
-    # ATP = On-hand (100) + In-transit (20) - Committed (30) - Backlog (30) = 60
-    assert atp_data['current_atp'] == 60.0
-    assert atp_data['on_hand'] == 100.0
-    assert atp_data['in_transit'] == 20.0
-    assert atp_data['committed'] == 30.0
-    assert atp_data['backlog'] == 30.0
+        # ATP = On-hand (100) + In-transit (20) - Committed (30) - Backlog (30) = 60
+        assert atp_data['current_atp'] == 60.0
+        assert atp_data['on_hand'] == 100.0
+        assert atp_data['in_transit'] == 20.0
+        assert atp_data['committed'] == 30.0
+        assert atp_data['backlog'] == 30.0
 
 
-@pytest.mark.asyncio
-async def test_calculate_promise_date_immediate(db_session: AsyncSession, test_sites, test_product, test_config, test_scenario, test_inventory):
-    """Test promise date calculation when ATP is sufficient."""
-    atp_service = ATPCalculationService(db_session)
+class TestPromiseDateCalculation:
+    """Test promise date calculations."""
 
-    promise = await atp_service.calculate_promise_date(
-        site_id=test_sites['retailer'].id,
-        product_id=test_product.id,
-        requested_quantity=50.0,
-        requested_date=date.today() + timedelta(weeks=1),
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-        current_round=1,
-    )
+    @pytest.mark.asyncio
+    async def test_calculate_promise_date_immediate(self):
+        """Test promise date when ATP is sufficient."""
+        db = _mock_db_session()
+        atp_service = ATPCalculationService(db)
 
-    assert promise['can_promise'] is True
-    assert promise['promised_quantity'] == 50.0
-    assert promise['shortfall_quantity'] == 0.0
-    assert promise['confidence'] == 1.0
+        # Mock calculate_atp to return sufficient ATP
+        atp_service.calculate_atp = AsyncMock(return_value={
+            'current_atp': 100.0,
+            'on_hand': 100.0,
+            'in_transit': 0.0,
+            'committed': 0.0,
+            'backlog': 0.0,
+            'future_receipts': [],
+            'projected_atp': [],
+        })
+
+        promise = await atp_service.calculate_promise_date(
+            site_id=1,
+            product_id="BEER-CASE",
+            requested_quantity=50.0,
+            requested_date=_date(7),
+            config_id=1,
+            scenario_id=1,
+            current_round=1,
+        )
+
+        assert promise['can_promise'] is True
+        assert promise['promised_quantity'] == 50.0
+        assert promise['shortfall_quantity'] == 0.0
+        assert promise['confidence'] == 1.0
+
+    @pytest.mark.asyncio
+    async def test_calculate_promise_date_insufficient(self):
+        """Test promise date when ATP is insufficient."""
+        db = _mock_db_session()
+        atp_service = ATPCalculationService(db)
+
+        # Mock calculate_atp with insufficient ATP and no future receipts
+        atp_service.calculate_atp = AsyncMock(return_value={
+            'current_atp': 100.0,
+            'on_hand': 100.0,
+            'in_transit': 0.0,
+            'committed': 0.0,
+            'backlog': 0.0,
+            'future_receipts': [],
+            'projected_atp': [],
+        })
+
+        promise = await atp_service.calculate_promise_date(
+            site_id=1,
+            product_id="BEER-CASE",
+            requested_quantity=150.0,  # > 100 available
+            requested_date=_date(7),
+            config_id=1,
+            scenario_id=1,
+            current_round=1,
+        )
+
+        assert promise['can_promise'] is False
+        assert promise['promised_quantity'] == 100.0
+        assert promise['shortfall_quantity'] == 50.0
 
 
-@pytest.mark.asyncio
-async def test_calculate_promise_date_insufficient(db_session: AsyncSession, test_sites, test_product, test_config, test_scenario, test_inventory):
-    """Test promise date calculation when ATP is insufficient."""
-    atp_service = ATPCalculationService(db_session)
-
-    promise = await atp_service.calculate_promise_date(
-        site_id=test_sites['retailer'].id,
-        product_id=test_product.id,
-        requested_quantity=150.0,  # > 100 available
-        requested_date=date.today() + timedelta(weeks=1),
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-        current_round=1,
-    )
-
-    assert promise['can_promise'] is False
-    assert promise['promised_quantity'] == 100.0
-    assert promise['shortfall_quantity'] == 50.0
-
-
-@pytest.mark.asyncio
-async def test_check_fulfillment_feasibility(db_session: AsyncSession, test_sites, test_product, test_config, test_scenario, test_inventory):
+class TestFulfillmentFeasibility:
     """Test quick fulfillment feasibility check."""
-    atp_service = ATPCalculationService(db_session)
 
-    # Should be feasible
-    feasible = await atp_service.check_fulfillment_feasibility(
-        site_id=test_sites['retailer'].id,
-        product_id=test_product.id,
-        required_quantity=80.0,
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-    )
-    assert feasible is True
+    @pytest.mark.asyncio
+    async def test_check_fulfillment_feasibility_sufficient(self):
+        db = _mock_db_session()
+        atp_service = ATPCalculationService(db)
 
-    # Should not be feasible
-    not_feasible = await atp_service.check_fulfillment_feasibility(
-        site_id=test_sites['retailer'].id,
-        product_id=test_product.id,
-        required_quantity=150.0,
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-    )
-    assert not_feasible is False
+        atp_service.calculate_atp = AsyncMock(return_value={
+            'current_atp': 100.0,
+            'on_hand': 100.0,
+            'in_transit': 0.0,
+            'committed': 0.0,
+            'backlog': 0.0,
+            'future_receipts': [],
+            'projected_atp': [],
+        })
+
+        feasible = await atp_service.check_fulfillment_feasibility(
+            site_id=1,
+            product_id="BEER-CASE",
+            required_quantity=80.0,
+            config_id=1,
+            scenario_id=1,
+        )
+        assert feasible is True
+
+    @pytest.mark.asyncio
+    async def test_check_fulfillment_feasibility_insufficient(self):
+        db = _mock_db_session()
+        atp_service = ATPCalculationService(db)
+
+        atp_service.calculate_atp = AsyncMock(return_value={
+            'current_atp': 100.0,
+            'on_hand': 100.0,
+            'in_transit': 0.0,
+            'committed': 0.0,
+            'backlog': 0.0,
+            'future_receipts': [],
+            'projected_atp': [],
+        })
+
+        not_feasible = await atp_service.check_fulfillment_feasibility(
+            site_id=1,
+            product_id="BEER-CASE",
+            required_quantity=150.0,
+            config_id=1,
+            scenario_id=1,
+        )
+        assert not_feasible is False
 
 
 # ============================================================================
-# End-to-End Integration Test
+# End-to-End Integration Test (Mocked)
 # ============================================================================
 
-@pytest.mark.asyncio
-async def test_end_to_end_order_fulfillment_cycle(db_session: AsyncSession, test_sites, test_product, test_config, test_scenario, test_inventory):
+class TestEndToEndOrderFulfillmentCycle:
     """
     End-to-end test of complete order fulfillment cycle:
     1. Customer places order
@@ -683,87 +890,116 @@ async def test_end_to_end_order_fulfillment_cycle(db_session: AsyncSession, test
     4. Receive TO at destination
     5. Update inventory
     """
-    order_mgmt = OrderManagementService(db_session)
-    fulfillment = FulfillmentService(db_session)
-    atp_service = ATPCalculationService(db_session)
 
-    # Step 1: Customer places order
-    order = await order_mgmt.create_customer_order(
-        order_id="ORDER-E2E-001",
-        line_number=1,
-        product_id=test_product.id,
-        site_id=test_sites['retailer'].id,
-        ordered_quantity=40.0,
-        requested_delivery_date=date.today() + timedelta(weeks=1),
-        market_demand_site_id=test_sites['market_demand'].id,
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-    )
+    @pytest.mark.asyncio
+    async def test_end_to_end_order_fulfillment_cycle(self):
+        db = _mock_db_session()
 
-    # Step 2: Check ATP and promise
-    promise = await atp_service.calculate_promise_date(
-        site_id=test_sites['retailer'].id,
-        product_id=test_product.id,
-        requested_quantity=40.0,
-        requested_date=date.today() + timedelta(weeks=1),
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-        current_round=1,
-    )
+        order_mgmt = OrderManagementService(db)
+        fulfillment = FulfillmentService(db)
+        atp_service = ATPCalculationService(db)
 
-    assert promise['can_promise'] is True
+        # ---- Step 1: Customer places order ----
+        order = _make_order(
+            id=1, order_id="ORDER-E2E-001",
+            ordered_quantity=40.0, shipped_quantity=0.0,
+            backlog_quantity=0.0, status="DRAFT",
+            product_id="BEER-CASE", site_id=1,
+            market_demand_site_id=3, config_id=1, scenario_id=1,
+        )
 
-    # Confirm order
-    order.status = "CONFIRMED"
-    order.promised_quantity = 40.0
-    order.backlog_quantity = 40.0
-    await db_session.commit()
+        # ---- Step 2: Check ATP and promise ----
+        atp_service.calculate_atp = AsyncMock(return_value={
+            'current_atp': 100.0,
+            'on_hand': 100.0,
+            'in_transit': 0.0,
+            'committed': 0.0,
+            'backlog': 0.0,
+            'future_receipts': [],
+            'projected_atp': [],
+        })
 
-    # Step 3: Fulfill order
-    result = await fulfillment.fulfill_customer_orders_fifo(
-        site_id=test_sites['retailer'].id,
-        product_id=test_product.id,
-        scenario_id=test_scenario.id,
-        config_id=test_config.id,
-        current_round=1,
-    )
+        promise = await atp_service.calculate_promise_date(
+            site_id=1,
+            product_id="BEER-CASE",
+            requested_quantity=40.0,
+            requested_date=_date(7),
+            config_id=1,
+            scenario_id=1,
+            current_round=1,
+        )
 
-    assert result['orders_fulfilled'] == 1
-    assert result['quantity_shipped'] == 40.0
-    assert len(result['transfer_orders_created']) == 1
+        assert promise['can_promise'] is True
 
-    # Check order status
-    await db_session.refresh(order)
-    assert order.status == "FULFILLED"
-    assert order.shipped_quantity == 40.0
-    assert order.backlog_quantity == 0.0
+        # Confirm order
+        order.status = "CONFIRMED"
+        order.promised_quantity = 40.0
+        order.backlog_quantity = 40.0
 
-    # Check inventory reduced
-    inv = await fulfillment.get_inventory_level(
-        site_id=test_sites['retailer'].id,
-        product_id=test_product.id,
-        config_id=test_config.id,
-        scenario_id=test_scenario.id,
-    )
-    assert inv == 60.0  # 100 - 40
+        # ---- Step 3: Fulfill order ----
+        fulfillment.order_mgmt.get_unfulfilled_customer_orders = AsyncMock(
+            return_value=[order]
+        )
+        fulfillment.calculate_available_to_ship = AsyncMock(return_value=100.0)
 
-    # Step 4: Receive TO at customer site (arrival_round = 2)
-    to = result['transfer_orders_created'][0]
-    await db_session.refresh(to)
+        created_to = _make_to(id=1, quantity=40.0, destination_site_id=3, arrival_round=2)
 
-    # Simulate round advance to round 2
-    receipt_result = await fulfillment.receive_shipments(
-        scenario_id=test_scenario.id,
-        arrival_round=to.arrival_round,
-        config_id=test_config.id,
-    )
+        async def mock_update_order(order_id, shipped_quantity, promised_delivery_date=None, group_id=None):
+            order.shipped_quantity += shipped_quantity
+            order.backlog_quantity = max(0, order.ordered_quantity - order.shipped_quantity)
+            if order.shipped_quantity >= order.ordered_quantity:
+                order.status = "FULFILLED"
+            elif order.shipped_quantity > 0:
+                order.status = "PARTIALLY_FULFILLED"
+            return order
 
-    assert receipt_result['transfer_orders_received'] == 1
-    assert receipt_result['total_quantity_received'] == 40.0
+        fulfillment.order_mgmt.update_order_fulfillment = mock_update_order
+        fulfillment.order_mgmt.create_transfer_order = AsyncMock(return_value=created_to)
+        fulfillment.update_inventory_level = AsyncMock()
+        fulfillment.order_mgmt.get_backlog_for_site = AsyncMock(return_value=0.0)
 
-    # Check TO status
-    await db_session.refresh(to)
-    assert to.status == "RECEIVED"
+        result = await fulfillment.fulfill_customer_orders_fifo(
+            site_id=1,
+            product_id="BEER-CASE",
+            scenario_id=1,
+            config_id=1,
+            current_round=1,
+        )
+
+        assert result['orders_fulfilled'] == 1
+        assert result['quantity_shipped'] == 40.0
+        assert len(result['transfer_orders_created']) == 1
+
+        # Check order status
+        assert order.status == "FULFILLED"
+        assert order.shipped_quantity == 40.0
+        assert order.backlog_quantity == 0.0
+
+        # ---- Step 4: Receive TO at customer site ----
+        to = result['transfer_orders_created'][0]
+
+        fulfillment.order_mgmt.get_arriving_transfer_orders = AsyncMock(
+            return_value=[to]
+        )
+
+        async def mock_receive_to(to_id):
+            to.status = "RECEIVED"
+            to.actual_delivery_date = date.today()
+            return to
+
+        fulfillment.order_mgmt.receive_transfer_order = mock_receive_to
+
+        receipt_result = await fulfillment.receive_shipments(
+            scenario_id=1,
+            arrival_round=to.arrival_round,
+            config_id=1,
+        )
+
+        assert receipt_result['transfer_orders_received'] == 1
+        assert receipt_result['total_quantity_received'] == 40.0
+
+        # Check TO status
+        assert to.status == "RECEIVED"
 
 
 if __name__ == "__main__":

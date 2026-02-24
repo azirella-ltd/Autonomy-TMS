@@ -2842,21 +2842,27 @@ Expected improvement: 20-35% cost reduction vs deterministic baseline under stoc
 
 **Goal**: The hive runs autonomously. The CDC → Relearning feedback loop continuously improves models from actual production outcomes.
 
-**Data Source**: Production outcomes via `OutcomeCollectorService`
+**Data Source**: Production outcomes via `OutcomeCollectorService` (both SiteAgentDecision and all 11 powell_*_decisions tables)
 
 **Process**:
 ```
 SiteAgent decisions (11 TRMs per site, continuous)
-    ↓ stored in powell_site_agent_decisions with signal_context
+    ↓ stored in powell_*_decisions (11 tables) + powell_site_agent_decisions
     ↓
-OutcomeCollectorService (hourly :30)
+OutcomeCollectorService.collect_trm_outcomes() (hourly :32)
     ↓ waits for feedback horizon per TRM type:
-    │   ATP: 4 hours (order fulfillment observable)
-    │   Inventory: 24 hours (next-day snapshot)
-    │   PO: 7 days (delivery receipt)
-    │   MO: 24-72 hours (production completion)
-    │   Quality: 4-24 hours (inspection result)
-    ↓ computes actual outcome + reward signal
+    │   ATP: 4 hours       │ TO: 5 days
+    │   Inventory: 24 hours │ Quality: 2 days
+    │   PO: 7 days         │ Maintenance: 7 days
+    │   Order Tracking: 3 days │ Subcontracting: 14 days
+    │   MO: 3 days         │ Forecast: 30 days
+    │   Safety Stock: 14 days
+    ↓ fills actual outcome columns (actual_cost, was_executed, etc.)
+    ↓
+CDTCalibrationService.calibrate_incremental() (hourly :35)
+    ↓ extracts (estimated_cost, actual_cost) pairs per agent type
+    ↓ feeds DecisionOutcomePair into ConformalDecisionWrapper
+    ↓ auto-calibrates at ≥30 pairs → risk_bound on every decision
     ↓
 CDCMonitor (6 real-time conditions)
     ↓ triggers when:
@@ -2874,6 +2880,12 @@ CDCRetrainingService (every 6h or on trigger)
     ↓
 New checkpoint → SiteAgent.reload_model()
 ```
+
+**CDT Risk Bounds**: After calibration, every TRM decision includes:
+- `risk_bound: float` — P(loss > threshold), lower is safer
+- `risk_assessment: dict` — Full assessment with `is_safe`, `escalation_recommended`, `reasoning`
+- Enables autonomous operation when `risk_bound < 0.10` and human escalation when `> 0.20`
+- Batch calibration at startup from historical data; incremental calibration hourly
 
 **Digital twin role in Phase 5**: The digital twin does not disappear in production. It serves three ongoing functions:
 
@@ -2980,7 +2992,9 @@ The digital twin pipeline connects to existing platform components without requi
 | Train individual TRMs | `TRMTrainer` (BC, CQL, Hybrid) | `backend/app/services/powell/trm_trainer.py` |
 | Train GNN | `train_gpu_default.py` | `backend/scripts/training/train_gpu_default.py` |
 | Generate GNN training tensors | `SimPyAdapter` | `backend/app/rl/data_generator.py` |
-| Collect outcomes | `OutcomeCollectorService` | `backend/app/services/powell/outcome_collector.py` |
+| Collect outcomes (SiteAgent) | `OutcomeCollectorService.collect_outcomes()` | `backend/app/services/powell/outcome_collector.py` |
+| Collect outcomes (all 11 TRMs) | `OutcomeCollectorService.collect_trm_outcomes()` | `backend/app/services/powell/outcome_collector.py` |
+| Calibrate CDT risk bounds | `CDTCalibrationService` | `backend/app/services/powell/cdt_calibration_service.py` |
 | Monitor conditions | `CDCMonitor` | `backend/app/services/powell/cdc_monitor.py` |
 | Retrain autonomously | `CDCRetrainingService` | `backend/app/services/powell/cdc_retraining_service.py` |
 | Calibrate uncertainty | `ConformalOrchestrator` | `backend/app/services/conformal_orchestrator.py` |

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Script to set up the default environment with a group admin, default group, 
-supply chain configuration, and a game with AI players.
+Script to set up the default environment with a group admin, default group,
+supply chain configuration, and a scenario with AI participants.
 """
 import asyncio
 import sys
@@ -56,7 +56,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 async def create_default_environment():
-    """Create the default environment with group admin, group, and game."""
+    """Create the default environment with group admin, group, and scenario."""
     # Create all tables if they don't exist
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -158,7 +158,7 @@ async def create_default_environment():
                     db.add(lane)
                 
                 # Create default item
-                item = Item(name="Beer", description="Standard beer product")
+                item = Item(name="Standard Product", description="Standard supply chain product")
                 db.add(item)
                 await db.flush()
                 
@@ -207,14 +207,14 @@ async def create_default_environment():
                 ai_users[role] = ai_user
                 logger.info(f"✅ Created AI player: {ai_user.username}")
             
-            # Check if default game exists
+            # Check if default scenario exists
             result = await db.execute(
                 select(Scenario).where(Scenario.name == "Default Simulation")
             )
             default_scenario = result.scalars().first()
             
             if not default_scenario:
-                # Create default game
+                # Create default scenario
                 default_scenario = Scenario(
                     name="Default Simulation",
                     description="Default simulation with AI participants",
@@ -228,7 +228,7 @@ async def create_default_environment():
                 db.add(default_scenario)
                 await db.flush()
                 
-                # Create players for the game
+                # Create participants for the scenario
                 for role, user in ai_users.items():
                     player = Participant(
                         scenario_id=default_scenario.id,
@@ -239,7 +239,7 @@ async def create_default_environment():
                     )
                     db.add(player)
                 
-                logger.info(f"✅ Created default game: {default_scenario.name}")
+                logger.info(f"✅ Created default scenario: {default_scenario.name}")
             
             # Commit all changes at the end
             await db.commit()

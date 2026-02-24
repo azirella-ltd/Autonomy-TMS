@@ -172,7 +172,7 @@ if __name__ == "__main__":
     try:
         answer = strategist_query(
             "Demand ~40±15 weekly, lead 2w, initial inv 100. Propose low‑WIP policy and A/B sim plan.",
-            model=os.getenv("OPENAI_MODEL", "gpt-5-mini"),
+            model=os.getenv("LLM_MODEL_NAME") or os.getenv("AUTONOMY_LLM_MODEL") or "qwen3-8b",
             base_url=base,
         )
         print("\n=== Strategist Answer ===\n", answer)

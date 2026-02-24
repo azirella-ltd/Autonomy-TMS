@@ -1254,7 +1254,7 @@ class SimulationAgent:
 
         if self._llm_agent is None:
             try:
-                model = self.llm_model or "gpt-5-mini"
+                model = self.llm_model or "qwen3-8b"
                 strategy_name = (self.llm_strategy_name or "balanced").strip().lower()
                 if not strategy_name:
                     strategy_name = "balanced"
@@ -1913,7 +1913,7 @@ class AgentManager:
             agent_type=AgentType.RETAILER,
             strategy=AgentStrategy.NAIVE,
             can_see_demand=True,  # Retailer can always see demand
-            llm_model="gpt-5-mini",
+            llm_model="qwen3-8b",
             central_coordinator=self.autonomy_coordinator,
             global_controller=self.autonomy_global_controller,
             model_path=self.model_path,
@@ -1924,7 +1924,7 @@ class AgentManager:
             agent_type=AgentType.WHOLESALER,
             strategy=AgentStrategy.NAIVE,
             can_see_demand=self.can_see_demand,
-            llm_model="gpt-5-mini",
+            llm_model="qwen3-8b",
             central_coordinator=self.autonomy_coordinator,
             global_controller=self.autonomy_global_controller,
             model_path=self.model_path,
@@ -1935,7 +1935,7 @@ class AgentManager:
             agent_type=AgentType.DISTRIBUTOR,
             strategy=AgentStrategy.NAIVE,
             can_see_demand=self.can_see_demand,
-            llm_model="gpt-5-mini",
+            llm_model="qwen3-8b",
             central_coordinator=self.autonomy_coordinator,
             global_controller=self.autonomy_global_controller,
             model_path=self.model_path,
@@ -1946,7 +1946,7 @@ class AgentManager:
             agent_type=AgentType.MANUFACTURER,
             strategy=AgentStrategy.NAIVE,
             can_see_demand=self.can_see_demand,
-            llm_model="gpt-5-mini",
+            llm_model="qwen3-8b",
             central_coordinator=self.autonomy_coordinator,
             global_controller=self.autonomy_global_controller,
             model_path=self.model_path,
@@ -1957,7 +1957,7 @@ class AgentManager:
             agent_type=AgentType.SUPPLIER,
             strategy=AgentStrategy.NAIVE,
             can_see_demand=self.can_see_demand,
-            llm_model="gpt-5-mini",
+            llm_model="qwen3-8b",
             central_coordinator=self.autonomy_coordinator,
             global_controller=self.autonomy_global_controller,
             model_path=self.model_path,

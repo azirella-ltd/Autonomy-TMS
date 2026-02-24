@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seed the default Autonomy group, configuration, and games with AI players."""
+"""Seed the default Autonomy group, configuration, and scenarios with AI participants."""
 
 from __future__ import annotations
 
@@ -82,10 +82,10 @@ from app.core.time_buckets import TimeBucket, DEFAULT_START_DATE
 # from backend.scripts.create_regional_sc_config import ensure_multi_region_config
 
 DEFAULT_GROUP_NAME = "Beer Game"
-DEFAULT_GROUP_DESCRIPTION = "Beer Game supply chain scenarios"
-DEFAULT_ADMIN_USERNAME = "beer_game_admin"
-DEFAULT_ADMIN_EMAIL = "beer_game_admin@autonomy.ai"
-DEFAULT_ADMIN_FULL_NAME = "Beer Game Administrator"
+DEFAULT_GROUP_DESCRIPTION = "Default supply chain simulation scenarios"
+DEFAULT_ADMIN_USERNAME = "simulation_admin"
+DEFAULT_ADMIN_EMAIL = "simulation_admin@autonomy.ai"
+DEFAULT_ADMIN_FULL_NAME = "Simulation Administrator"
 DEFAULT_PASSWORD = "Autonomy@2025"
 DEFAULT_CONFIG_NAME = "Default Beer Game"
 INVENTORY_CONFIG_NAME = "Default Beer Game"
@@ -93,23 +93,23 @@ DEFAULT_GAME_NAME = "Default Simulation"
 DEFAULT_AGENT_TYPE = "pid_heuristic"
 DEFAULT_LLM_MODEL = os.getenv("LLM_MODEL_NAME") or os.getenv("AUTONOMY_LLM_MODEL") or "qwen3-8b"
 NAIVE_AGENT_GAME_NAME = "Naive Agent Showcase"
-NAIVE_AGENT_DESCRIPTION = "Unsupervised benchmark game using naive agents for every role."
+NAIVE_AGENT_DESCRIPTION = "Unsupervised benchmark scenario using naive agents for every role."
 PID_AGENT_GAME_NAME = "PID Agent Showcase"
-PID_AGENT_DESCRIPTION = "Benchmark game using the PID heuristic controller for every role."
+PID_AGENT_DESCRIPTION = "Benchmark scenario using the PID heuristic controller for every role."
 PID_AGENT_STRATEGY = "pid_heuristic"
 TRM_AGENT_GAME_NAME = "TRM Agent Showcase"
-TRM_AGENT_DESCRIPTION = "Showcase game using TRM (Tiny Recursive Model) agents with 7M parameter neural network and recursive refinement for fast, optimized supply chain decisions."
+TRM_AGENT_DESCRIPTION = "Showcase scenario using TRM (Tiny Recursive Model) agents with 7M parameter neural network and recursive refinement for fast, optimized supply chain decisions."
 TRM_AGENT_STRATEGY = "trm"
 
 # Dedicated group metadata for alternative DAG templates
 SIX_PACK_GROUP_NAME = "Six-Pack Beer Game"
-SIX_PACK_GROUP_DESCRIPTION = "Six-Pack Beer Game supply chain template"
+SIX_PACK_GROUP_DESCRIPTION = "Six-Pack supply chain simulation template"
 SIX_PACK_ADMIN_USERNAME = "sixpack_admin"
 SIX_PACK_ADMIN_EMAIL = "sixpack_admin@autonomy.ai"
 SIX_PACK_ADMIN_FULL_NAME = "Six-Pack Administrator"
 
 BOTTLE_GROUP_NAME = "Bottle Beer Game"
-BOTTLE_GROUP_DESCRIPTION = "Bottle Beer Game supply chain template"
+BOTTLE_GROUP_DESCRIPTION = "Bottle supply chain simulation template"
 BOTTLE_ADMIN_USERNAME = "bottle_admin"
 BOTTLE_ADMIN_EMAIL = "bottle_admin@autonomy.ai"
 BOTTLE_ADMIN_FULL_NAME = "Bottle Administrator"
@@ -121,28 +121,28 @@ MULTI_ITEM_ADMIN_EMAIL = "multisix_admin@autonomy.ai"
 MULTI_ITEM_ADMIN_FULL_NAME = "Multi-Product SixPack Administrator"
 
 THREE_FG_GROUP_NAME = "Three FG Beer Game"
-THREE_FG_GROUP_DESCRIPTION = "Three finished-goods Beer Game template"
-THREE_FG_ADMIN_USERNAME = "ThreeBeerGame_admin"
-THREE_FG_ADMIN_EMAIL = "ThreeBeerGame_admin@autonomy.ai"
-THREE_FG_ADMIN_FULL_NAME = "Three FG Beer Game Administrator"
+THREE_FG_GROUP_DESCRIPTION = "Three finished-goods simulation template"
+THREE_FG_ADMIN_USERNAME = "ThreeFG_admin"
+THREE_FG_ADMIN_EMAIL = "ThreeFG_admin@autonomy.ai"
+THREE_FG_ADMIN_FULL_NAME = "Three FG Simulation Administrator"
 
 VARIABLE_BEER_GAME_GROUP_NAME = "Variable Beer Game"
-VARIABLE_BEER_GAME_GROUP_DESCRIPTION = "Lognormal-demand Beer Game with three finished goods"
-VARIABLE_BEER_GAME_ADMIN_USERNAME = "VarBeerGame_admin"
-VARIABLE_BEER_GAME_ADMIN_EMAIL = "VarBeerGame_admin@autonomy.ai"
-VARIABLE_BEER_GAME_ADMIN_FULL_NAME = "Variable Beer Game Administrator"
+VARIABLE_BEER_GAME_GROUP_DESCRIPTION = "Lognormal-demand simulation with three finished goods"
+VARIABLE_BEER_GAME_ADMIN_USERNAME = "VarSimulation_admin"
+VARIABLE_BEER_GAME_ADMIN_EMAIL = "VarSimulation_admin@autonomy.ai"
+VARIABLE_BEER_GAME_ADMIN_FULL_NAME = "Variable Simulation Administrator"
 
 THREE_FG_GROUP_NAME = "Three FG Beer Game"
-THREE_FG_GROUP_DESCRIPTION = "Three finished-goods Beer Game template"
-THREE_FG_ADMIN_USERNAME = "ThreeBeerGame_admin"
-THREE_FG_ADMIN_EMAIL = "ThreeBeerGame_admin@autonomy.ai"
-THREE_FG_ADMIN_FULL_NAME = "Three FG Beer Game Administrator"
+THREE_FG_GROUP_DESCRIPTION = "Three finished-goods simulation template"
+THREE_FG_ADMIN_USERNAME = "ThreeFG_admin"
+THREE_FG_ADMIN_EMAIL = "ThreeFG_admin@autonomy.ai"
+THREE_FG_ADMIN_FULL_NAME = "Three FG Simulation Administrator"
 
 VARIABLE_BEER_GAME_GROUP_NAME = "Variable Beer Game"
-VARIABLE_BEER_GAME_GROUP_DESCRIPTION = "Lognormal-demand Beer Game with three finished goods"
-VARIABLE_BEER_GAME_ADMIN_USERNAME = "VarBeerGame_admin"
-VARIABLE_BEER_GAME_ADMIN_EMAIL = "VarBeerGame_admin@autonomy.ai"
-VARIABLE_BEER_GAME_ADMIN_FULL_NAME = "Variable Beer Game Administrator"
+VARIABLE_BEER_GAME_GROUP_DESCRIPTION = "Lognormal-demand simulation with three finished goods"
+VARIABLE_BEER_GAME_ADMIN_USERNAME = "VarSimulation_admin"
+VARIABLE_BEER_GAME_ADMIN_EMAIL = "VarSimulation_admin@autonomy.ai"
+VARIABLE_BEER_GAME_ADMIN_FULL_NAME = "Variable Simulation Administrator"
 
 COMPLEX_GROUP_NAME = "Complex_SC"
 COMPLEX_GROUP_DESCRIPTION = (
@@ -168,7 +168,7 @@ logger = logging.getLogger(__name__)
 if not logging.getLogger().handlers:
     logging.basicConfig(level=logging.INFO)
 
-DEFAULT_BEER_GAME_SITE_TYPE_DEFINITIONS = [
+DEFAULT_SIMULATION_SITE_TYPE_DEFINITIONS = [
     {
         "type": "market_demand",
         "label": "Market Demand",
@@ -233,7 +233,7 @@ def _case_classic_demand_pattern() -> Dict[str, Any]:
         },
     }
 
-CASE_BEER_GAME_NODE_TYPE_DEFINITIONS = [
+CASE_SIMULATION_NODE_TYPE_DEFINITIONS = [
     {
         "type": "market_demand",
         "label": "Market Demand",
@@ -278,7 +278,7 @@ CASE_BEER_GAME_NODE_TYPE_DEFINITIONS = [
     },
 ]
 
-SIX_PACK_BEER_GAME_NODE_TYPE_DEFINITIONS = [
+SIX_PACK_SIMULATION_NODE_TYPE_DEFINITIONS = [
     {
         "type": "market_demand",
         "label": "Market Demand",
@@ -330,7 +330,7 @@ SIX_PACK_BEER_GAME_NODE_TYPE_DEFINITIONS = [
     },
 ]
 
-BOTTLE_BEER_GAME_NODE_TYPE_DEFINITIONS = [
+BOTTLE_SIMULATION_NODE_TYPE_DEFINITIONS = [
     {
         "type": "market_demand",
         "label": "Market Demand",
@@ -1206,7 +1206,7 @@ def ensure_supply_chain_config(
             demand_row.demand_pattern = base_pattern if item_obj.id in demand_item_ids else zero_pattern
             session.add(demand_row)
         _apply_default_supply_chain_settings(session, config)
-        _apply_site_type_definitions(session, config, DEFAULT_BEER_GAME_SITE_TYPE_DEFINITIONS)
+        _apply_site_type_definitions(session, config, DEFAULT_SIMULATION_SITE_TYPE_DEFINITIONS)
         if override_payload:
             _apply_market_demand_override(session, config, override_payload)
             updated = True
@@ -1235,12 +1235,12 @@ def ensure_supply_chain_config(
     case_item = Product(
         config_id=config.id,
         id="Case",
-        description="Standard product for the Beer Game",
+        description="Standard case product",
     )
     six_pack_item = Product(
         config_id=config.id,
         id="Six-Pack",
-        description="Six-pack of beer",
+        description="Standard six-pack product",
     )
     session.add(case_item)
     session.add(six_pack_item)
@@ -1369,7 +1369,7 @@ def ensure_supply_chain_config(
         f"[success] Created supply chain configuration (id={config.id}) for group {group.id}."
     )
     _apply_default_supply_chain_settings(session, config)
-    _apply_site_type_definitions(session, config, DEFAULT_BEER_GAME_SITE_TYPE_DEFINITIONS)
+    _apply_site_type_definitions(session, config, DEFAULT_SIMULATION_SITE_TYPE_DEFINITIONS)
     _ensure_factory_node_type_definition(
         session, config, desired_factory_master_type
     )
@@ -1384,7 +1384,7 @@ def ensure_three_fg_inventory_config(
     group: Group,
     *,
     name: str = "Three FG Beer Game",
-    description: str = "Inventory-only Beer Game with three finished goods (Lager, IPA, Dark).",
+    description: str = "Inventory-only simulation with three finished goods (Lager, IPA, Dark).",
     demand_pattern_override: Optional[Dict[str, Any]] = None,
 ) -> SupplyChainConfig:
     """Create or update an inventory-only config with three finished goods."""
@@ -1494,7 +1494,7 @@ def ensure_three_fg_inventory_config(
 
     session.flush()
     _ensure_lane_lead_times(session, config, overwrite_existing=True)
-    _apply_site_type_definitions(session, config, DEFAULT_BEER_GAME_SITE_TYPE_DEFINITIONS)
+    _apply_site_type_definitions(session, config, DEFAULT_SIMULATION_SITE_TYPE_DEFINITIONS)
     _ensure_factory_node_type_definition(session, config, NodeType.INVENTORY.value)
     _reseed_product_site_configs(session, config)
     return config
@@ -1508,9 +1508,9 @@ def _create_inventory_only_config(
     description: Optional[str],
     override_payload: Optional[Dict[str, Any]],
 ) -> SupplyChainConfig:
-    """Create an inventory-only Default Beer Game (no BOM; factory acts as inventory).
+    """Create an inventory-only default simulation config (no BOM; factory acts as inventory).
 
-    This is the ROOT config for the Beer Game lineage chain.
+    This is the ROOT config for the simulation lineage chain.
     Lineage: Default Beer Game (ROOT)
     """
     print("[info] Creating inventory-only supply chain configuration...")
@@ -1521,7 +1521,7 @@ def _create_inventory_only_config(
         group_id=group.id,
         is_active=True,
         time_bucket=TimeBucket.WEEK,
-        site_type_definitions=DEFAULT_BEER_GAME_SITE_TYPE_DEFINITIONS,
+        site_type_definitions=DEFAULT_SIMULATION_SITE_TYPE_DEFINITIONS,
     )
     session.add(config)
     session.flush()
@@ -1538,7 +1538,7 @@ def _create_inventory_only_config(
     case_item = Product(
         config_id=config.id,
         id="Case",
-        description="Standard product for the Beer Game",
+        description="Standard case product",
     )
     session.add(case_item)
     session.flush()
@@ -1648,7 +1648,7 @@ def _ensure_default_topology(
     *,
     factory_master_type: str = NodeType.INVENTORY.value,
 ) -> None:
-    """Ensure Default Beer Game config includes Market Demand/Supply nodes and canonical lanes."""
+    """Ensure default simulation config includes Market Demand/Supply nodes and canonical lanes."""
 
     factory_master_token = _normalise_node_key(factory_master_type) or "inventory"
     allowed_keys = {
@@ -1782,7 +1782,7 @@ def _ensure_default_topology(
         "market_demand",
     )
 
-    # Products: Case only (inventory-only Default Beer Game)
+    # Products: Case only (inventory-only default simulation config)
     # Using AWS SC Product model instead of legacy Product
     case_product = (
         session.query(Product)
@@ -1793,7 +1793,7 @@ def _ensure_default_topology(
     if not case_product:
         case_product = Product(
             id="CASE",
-            description="Case of beer",
+            description="Standard case product",
             config_id=config.id,
             company_id="DEFAULT",
             product_type="finished_good",
@@ -2444,16 +2444,16 @@ def _get_parent_config(session: Session, group: Group, parent_name: str) -> Opti
 
 
 def _get_root_config(session: Session, group: Group) -> Optional[SupplyChainConfig]:
-    """Get the root config (Default Beer Game) for the group."""
+    """Get the root config (Default Beer Game) for the group by DB lookup name."""
     return _get_parent_config(session, group, "Default Beer Game")
 
 
 def ensure_case_config(session: Session, group: Group) -> SupplyChainConfig:
-    """Create or update the Case Beer Game configuration (Case built from Six-Packs).
+    """Create or update the Case simulation configuration (Case built from Six-Packs).
 
-    Lineage: Default Beer Game -> Case Beer Game
+    Lineage: Default Beer Game -> Case Beer Game (DB config names)
     """
-    # Get parent config (Default Beer Game)
+    # Get parent config (Default Beer Game - DB lookup name)
     parent_config = _get_root_config(session, group)
     root_config = parent_config
 
@@ -2489,8 +2489,8 @@ def ensure_case_config(session: Session, group: Group) -> SupplyChainConfig:
 
     # Items
     items = {item.name: item for item in session.query(Product).filter(Product.config_id == config.id).all()}
-    case_item = items.get("Case") or items.get("Case of Beer") or Product(id="Case", description="Case of beer")
-    six_pack_item = items.get("Six-Pack") or Product(id="Six-Pack", description="Six-pack of beer")
+    case_item = items.get("Case") or items.get("Case of Beer") or Product(id="Case", description="Standard case product")
+    six_pack_item = items.get("Six-Pack") or Product(id="Six-Pack", description="Standard six-pack product")
     for itm in (case_item, six_pack_item):
         if itm.id is None:
             session.add(itm)
@@ -2651,17 +2651,17 @@ def ensure_case_config(session: Session, group: Group) -> SupplyChainConfig:
         session.add(demand)
 
     session.flush()
-    _apply_site_type_definitions(session, config, CASE_BEER_GAME_NODE_TYPE_DEFINITIONS)
+    _apply_site_type_definitions(session, config, CASE_SIMULATION_NODE_TYPE_DEFINITIONS)
     _reseed_product_site_configs(session, config)
     return config
 
 
 def ensure_six_pack_config(session: Session, group: Group) -> SupplyChainConfig:
-    """Create or update the Six-Pack Beer Game configuration (Case built from Six-Packs).
+    """Create or update the Six-Pack simulation configuration (Case built from Six-Packs).
 
-    Lineage: Default Beer Game -> Case Beer Game -> Six-Pack Beer Game
+    Lineage: Default Beer Game -> Case Beer Game -> Six-Pack Beer Game (DB config names)
     """
-    # Get parent config (Case Beer Game)
+    # Get parent config (Case Beer Game - DB lookup name)
     parent_config = _get_parent_config(session, group, "Case Beer Game")
     root_config = _get_root_config(session, group)
 
@@ -2699,8 +2699,8 @@ def ensure_six_pack_config(session: Session, group: Group) -> SupplyChainConfig:
 
     # Items
     items = {item.name: item for item in session.query(Product).filter(Product.config_id == config.id).all()}
-    case_item = items.get("Case") or items.get("Case of Beer") or Product(id="Case", description="Case of beer")
-    six_pack_item = items.get("Six-Pack") or Product(id="Six-Pack", description="Six-pack of beer")
+    case_item = items.get("Case") or items.get("Case of Beer") or Product(id="Case", description="Standard case product")
+    six_pack_item = items.get("Six-Pack") or Product(id="Six-Pack", description="Standard six-pack product")
     bottle_item = items.get("Bottle") or Product(id="Bottle", description="Single bottle")
     for itm in (case_item, six_pack_item, bottle_item):
         if itm.id is None:
@@ -2881,17 +2881,17 @@ def ensure_six_pack_config(session: Session, group: Group) -> SupplyChainConfig:
         demand.demand_pattern = pattern
         session.add(demand)
     session.flush()
-    _apply_site_type_definitions(session, config, SIX_PACK_BEER_GAME_NODE_TYPE_DEFINITIONS)
+    _apply_site_type_definitions(session, config, SIX_PACK_SIMULATION_NODE_TYPE_DEFINITIONS)
     _reseed_product_site_configs(session, config)
     return config
 
 
 def ensure_bottle_config(session: Session, group: Group) -> SupplyChainConfig:
-    """Create or update the Bottle Beer Game configuration (Case <- Six-Pack <- Bottle <- Ingredients).
+    """Create or update the Bottle simulation configuration (Case <- Six-Pack <- Bottle <- Ingredients).
 
-    Lineage: Default Beer Game -> Case Beer Game -> Six-Pack Beer Game -> Bottle Beer Game
+    Lineage: Default Beer Game -> Case Beer Game -> Six-Pack Beer Game -> Bottle Beer Game (DB config names)
     """
-    # Get parent config (Six-Pack Beer Game)
+    # Get parent config (Six-Pack Beer Game - DB lookup name)
     parent_config = _get_parent_config(session, group, "Six-Pack Beer Game")
     root_config = _get_root_config(session, group)
 
@@ -2926,8 +2926,8 @@ def ensure_bottle_config(session: Session, group: Group) -> SupplyChainConfig:
     _ensure_manufacturer_master_type_definition(session, config)
 
     items = {item.name: item for item in session.query(Product).filter(Product.config_id == config.id).all()}
-    case_item = items.get("Case") or Product(id="Case", description="Case of beer")
-    six_pack_item = items.get("Six-Pack") or Product(id="Six-Pack", description="Six-pack of beer")
+    case_item = items.get("Case") or Product(id="Case", description="Standard case product")
+    six_pack_item = items.get("Six-Pack") or Product(id="Six-Pack", description="Standard six-pack product")
     bottle_item = items.get("Bottle") or Product(id="Bottle", description="Single bottle")
     ingredients_item = items.get("Ingredients") or Product(
         config_id=config.id, id="Ingredients", description="Ingredients for bottles"
@@ -3122,13 +3122,13 @@ def ensure_bottle_config(session: Session, group: Group) -> SupplyChainConfig:
         demand.demand_pattern = pattern
         session.add(demand)
     session.flush()
-    _apply_site_type_definitions(session, config, BOTTLE_BEER_GAME_NODE_TYPE_DEFINITIONS)
+    _apply_site_type_definitions(session, config, BOTTLE_SIMULATION_NODE_TYPE_DEFINITIONS)
     _reseed_product_site_configs(session, config)
     return config
 
 
 def ensure_multi_item_six_pack_config(session: Session, group: Group) -> SupplyChainConfig:
-    """Create or update a multi-item Six-Pack Beer Game variant with mixed sourcing."""
+    """Create or update a multi-item Six-Pack simulation variant with mixed sourcing."""
 
     config = (
         session.query(SupplyChainConfig)
@@ -3825,7 +3825,7 @@ def ensure_hybrid_human_naive_game(
     recreate: bool = False,
 ) -> Game:
     """
-    Create a hybrid game with one human player at specified site and Naive AI agents at all other sites.
+    Create a hybrid scenario with one human participant at specified site and Naive AI agents at all other sites.
 
     Args:
         session: Database session
@@ -3917,7 +3917,7 @@ def ensure_hybrid_human_naive_game(
         session.add(player)
 
     session.flush()
-    print(f"[success] Created hybrid game '{game_name}' with human at {human_site_key}")
+    print(f"[success] Created hybrid scenario '{game_name}' with human at {human_site_key}")
     return game
 
 
@@ -4663,7 +4663,7 @@ def _build_config_specs() -> List[Dict[str, Any]]:
     return [
         {
             "config_name": INVENTORY_CONFIG_NAME,
-            "config_description": "Inventory-only Default Beer Game (no BOM)",
+            "config_description": "Inventory-only default simulation config (no BOM)",
             "demand_pattern": None,
             "game_name": DEFAULT_GAME_NAME,
             "naive_game_name": NAIVE_AGENT_GAME_NAME,
@@ -4679,7 +4679,7 @@ def _build_config_specs() -> List[Dict[str, Any]]:
         },
         {
             "config_name": "Three FG Beer Game",
-            "config_description": "Inventory-only Beer Game with three finished goods (Lager, IPA, Dark).",
+            "config_description": "Inventory-only simulation with three finished goods (Lager, IPA, Dark).",
             "demand_pattern": None,
             "game_name": f"{DEFAULT_GAME_NAME} (Three FG)",
             "naive_game_name": f"{NAIVE_AGENT_GAME_NAME} (Three FG)",
@@ -4694,13 +4694,13 @@ def _build_config_specs() -> List[Dict[str, Any]]:
             "ensure_func": ensure_three_fg_inventory_config,
             "ensure_kwargs": {
                 "name": "Three FG Beer Game",
-                "description": "Inventory-only Beer Game with three finished goods (Lager, IPA, Dark).",
+                "description": "Inventory-only simulation with three finished goods (Lager, IPA, Dark).",
                 "demand_pattern_override": None,
             },
         },
         {
             "config_name": VARIABLE_BEER_GAME_GROUP_NAME,
-            "config_description": "Lognormal-demand Beer Game with three finished goods",
+            "config_description": "Lognormal-demand simulation with three finished goods",
             "demand_pattern": _lognormal_pattern_from_median_variance(8.0, 8.0),
             "game_name": f"{DEFAULT_GAME_NAME} (Variable Beer Game)",
             "naive_game_name": f"{NAIVE_AGENT_GAME_NAME} (Variable Beer Game)",
@@ -4715,7 +4715,7 @@ def _build_config_specs() -> List[Dict[str, Any]]:
             "ensure_func": ensure_three_fg_inventory_config,
             "ensure_kwargs": {
                 "name": VARIABLE_BEER_GAME_GROUP_NAME,
-                "description": "Lognormal-demand Beer Game with three finished goods",
+                "description": "Lognormal-demand simulation with three finished goods",
                 "demand_pattern_override": _lognormal_pattern_from_median_variance(8.0, 8.0),
             },
         },
@@ -4876,7 +4876,7 @@ def seed_default_data(
         session.flush()
         session.commit()
 
-        # Skip Node Types variant for single-node-per-role configs (e.g., Default Beer Game)
+        # Skip Node Types variant for single-node-per-role configs (e.g., default simulation)
 
         pid_game = ensure_pid_game(
             session,
@@ -4900,16 +4900,16 @@ def seed_default_data(
         session.flush()
         session.commit()
 
-        # Create hybrid human/naive games for Default Beer Game config
-        if spec["config_name"] == INVENTORY_CONFIG_NAME:  # "Default Beer Game"
-            print("[info] Creating hybrid human/Naive AI games for Default Beer Game...")
+        # Create hybrid human/naive scenarios for Default Beer Game config
+        if spec["config_name"] == INVENTORY_CONFIG_NAME:  # "Default Beer Game" (DB lookup name)
+            print("[info] Creating hybrid human/Naive AI scenarios for default simulation...")
 
-            # Define the 4 hybrid games (one for each playable site)
+            # Define the 4 hybrid scenarios (one for each playable site)
             hybrid_site_configs = [
-                ("retailer", "Retailer Beer Game", "Play as Retailer with Naive AI teammates"),
-                ("wholesaler", "Wholesaler Beer Game", "Play as Wholesaler with Naive AI teammates"),
-                ("distributor", "Distributor Beer Game", "Play as Distributor with Naive AI teammates"),
-                ("factory", "Manufacturer Beer Game", "Play as Manufacturer with Naive AI teammates"),
+                ("retailer", "Retailer Simulation", "Play as Retailer with Naive AI teammates"),
+                ("wholesaler", "Wholesaler Simulation", "Play as Wholesaler with Naive AI teammates"),
+                ("distributor", "Distributor Simulation", "Play as Distributor with Naive AI teammates"),
+                ("factory", "Manufacturer Simulation", "Play as Manufacturer with Naive AI teammates"),
             ]
 
             for site_key, game_name, game_desc in hybrid_site_configs:
@@ -4925,9 +4925,9 @@ def seed_default_data(
                 )
                 session.flush()
                 session.commit()
-                print(f"[success] Created hybrid game: {game_name}")
+                print(f"[success] Created hybrid scenario: {game_name}")
 
-        # Remove any legacy Node Types variants for single-node-per-role configs (e.g., Default Beer Game)
+        # Remove any legacy Node Types variants for single-node-per-role configs (e.g., default simulation)
         _delete_node_type_games_for_config(session, config)
         session.commit()
 
@@ -5168,7 +5168,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--use-human-players",
         action="store_true",
-        help="Assign the default Beer Game to human accounts instead of AI agents.",
+        help="Assign the default simulation to human accounts instead of AI agents.",
     )
     parser.add_argument(
         "--agent-strategy",
@@ -5228,7 +5228,7 @@ def main() -> None:
     try:
         SyncSessionLocal = session_factory_from_settings()
         run_seed_with_session(SyncSessionLocal, options)
-        print("[done] Default group, users, and game are ready.")
+        print("[done] Default group, users, and scenarios are ready.")
         if configured_label:
             print(f"[info] Data stored in: {configured_label}")
         return

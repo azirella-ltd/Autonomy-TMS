@@ -96,23 +96,23 @@ class TradingPartner(Base):
     Suppliers, customers, carriers, and other trading partners
     SC Entity: trading_partner
 
-    SIMPLIFIED for Beer Game: Single column PK instead of composite PK
+    SIMPLIFIED for simulation: Single column PK instead of composite PK
     Standard model uses composite PK (id, tpartner_type, geo_id, eff_start_date, eff_end_date)
-    but Beer Game doesn't need temporal tracking, so we use a surrogate key.
+    but simulation doesn't need temporal tracking, so we use a surrogate key.
 
-    Table name: trading_partners (pluralized for consistency with other Beer Game tables)
+    Table name: trading_partners (pluralized for consistency with other platform tables)
     """
     __tablename__ = "trading_partners"
 
-    # Surrogate PK for Beer Game simplicity (allows simple foreign key references)
+    # Surrogate PK for simplicity (allows simple foreign key references)
     _id = Column(Integer, primary_key=True, autoincrement=True)
 
     # Standard supply chain fields (id is now unique but not part of PK)
     id = Column(String(100), nullable=False, unique=True, index=True)  # Business key
     tpartner_type = Column(String(50), nullable=False)  # vendor, customer, 3PL, carrier
     geo_id = Column(String(100), ForeignKey("geography.id"), nullable=True)
-    eff_start_date = Column(DateTime, nullable=True)  # Optional for Beer Game
-    eff_end_date = Column(DateTime, nullable=True)  # Optional for Beer Game
+    eff_start_date = Column(DateTime, nullable=True)  # Optional for simulation
+    eff_end_date = Column(DateTime, nullable=True)  # Optional for simulation
 
     description = Column(String(500))
     company_id = Column(String(100), ForeignKey("company.id"))
@@ -146,7 +146,7 @@ class TradingPartner(Base):
 # Network Entities
 # ============================================================================
 # NOTE: Site and TransportationLane are now defined in supply_chain_config.py
-# with Integer PKs for Beer Game compatibility. Import from there:
+# with Integer PKs for platform compatibility. Import from there:
 #   from app.models.supply_chain_config import Site, TransportationLane
 
 
@@ -203,7 +203,7 @@ class Product(Base):
     source_event_id = Column(String(100))
     source_update_dttm = Column(DateTime)
 
-    # Beer Game extensions
+    # Simulation extensions
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
     priority = Column(Integer)
     unit_cost_range = Column(JSON)
@@ -259,7 +259,7 @@ class SourcingRules(Base):
     source_event_id = Column(String(100))
     source_update_dttm = Column(DateTime)
 
-    # Beer Game extensions
+    # Simulation extensions
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
 
     # Relationships
@@ -325,7 +325,7 @@ class InvPolicy(Base):
     source_event_id = Column(String(100))
     source_update_dttm = Column(DateTime)
 
-    # Simulation extensions (Beer Game)
+    # Simulation extensions
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
     inventory_target_range = Column(JSON)
     initial_inventory_range = Column(JSON)
@@ -373,7 +373,7 @@ class InvLevel(Base):
     source_event_id = Column(String(100))
     source_update_dttm = Column(DateTime)
 
-    # Beer Game extensions
+    # Simulation extensions
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))
     round_number = Column(Integer)
@@ -447,7 +447,7 @@ class ProductBom(Base):
     source_event_id = Column(String(100))
     source_update_dttm = Column(DateTime)
 
-    # Beer Game extensions
+    # Simulation extensions
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
 
     # MPS Key Material Extension
@@ -492,7 +492,7 @@ class ProductionProcess(Base):
     source_event_id = Column(String(100))
     source_update_dttm = Column(DateTime)
 
-    # Beer Game extensions
+    # Simulation extensions
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
     manufacturing_leadtime = Column(Integer, default=0)
     manufacturing_capacity_hours = Column(Double)
@@ -547,7 +547,7 @@ class SupplyPlan(Base):
     source_event_id = Column(String(100))
     source_update_dttm = Column(DateTime)
 
-    # Beer Game extensions
+    # Simulation extensions
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))
     round_number = Column(Integer)
@@ -602,10 +602,10 @@ class Forecast(Base):
     source_event_id = Column(String(100))
     source_update_dttm = Column(DateTime)
 
-    # Beer Game extensions
+    # Simulation extensions
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))
-    demand_pattern = Column(JSON)  # Classic Beer Game demand patterns
+    demand_pattern = Column(JSON)  # Classic simulation demand patterns
 
     # Relationships
     product = relationship("Product")
@@ -642,7 +642,7 @@ class OutboundOrderLine(Base):
     """
     Customer orders (actual demand)
 
-    Extended for Beer Game execution with fulfillment tracking:
+    Extended for simulation execution with fulfillment tracking:
     - promised_quantity: ATP-promised amount
     - shipped_quantity: Fulfilled so far
     - backlog_quantity: Unfulfilled amount
@@ -662,7 +662,7 @@ class OutboundOrderLine(Base):
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))
 
-    # Beer Game execution extensions
+    # Simulation execution extensions
     promised_quantity = Column(Double)  # ATP-promised quantity
     shipped_quantity = Column(Double, server_default=text("0.0"), nullable=False)  # Fulfilled amount
     backlog_quantity = Column(Double, server_default=text("0.0"), nullable=False)  # Unfulfilled amount
@@ -671,7 +671,7 @@ class OutboundOrderLine(Base):
     promised_delivery_date = Column(Date)  # ATP-promised delivery date
     first_ship_date = Column(Date)  # First partial shipment date
     last_ship_date = Column(Date)  # Final shipment date
-    market_demand_site_id = Column(Integer, ForeignKey("site.id"))  # Customer site (for Beer Game)
+    market_demand_site_id = Column(Integer, ForeignKey("site.id"))  # Customer site (for simulation)
 
     created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
 

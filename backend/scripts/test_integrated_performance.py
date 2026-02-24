@@ -89,7 +89,7 @@ async def test_integrated_performance():
             print()
             print("However, the cache and batch methods should have been called.")
             print("Check the logs above for:")
-            print("  - 'Initializing BeerScenarioExecutionAdapter (with cache)...'")
+            print("  - 'Initializing SimulationExecutionAdapter (with cache)...'")
             print("  - '✓ Cache loaded: {...}'")
             print("  - 'Creating work orders (BATCH)...'")
             print()

@@ -1,7 +1,7 @@
 """
 Monte Carlo Simulation Runner
 
-Runs multiple stochastic Beer Game simulations to assess supply chain performance
+Runs multiple stochastic supply chain simulations to assess performance
 under uncertainty and generate confidence intervals for key metrics.
 
 Features:
@@ -81,7 +81,7 @@ class SimulationResult:
 
 class MonteCarloRunner:
     """
-    Runner for Monte Carlo simulations of stochastic Beer Games
+    Runner for Monte Carlo simulations of stochastic supply chain scenarios
 
     Executes multiple independent simulation runs with different random seeds
     to assess supply chain performance variability and generate statistical summaries.
@@ -334,7 +334,7 @@ class MonteCarloRunner:
 
 def main():
     """Command-line interface for Monte Carlo runner"""
-    parser = argparse.ArgumentParser(description='Run Monte Carlo simulation for Beer Game')
+    parser = argparse.ArgumentParser(description='Run Monte Carlo supply chain simulation')
     parser.add_argument('--scenario-id', type=int, required=True, help='Scenario ID to simulate')
     parser.add_argument('--num-runs', type=int, default=100, help='Number of simulation runs')
     parser.add_argument('--seed', type=int, default=42, help='Base random seed')

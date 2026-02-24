@@ -300,7 +300,7 @@ from .base import Base
 #     """Customer orders (actual demand) - execution entity
 #
 #     Tracks orders FROM customers TO sites (demand fulfillment).
-#     Used for recording actual customer demand in Beer Game execution.
+#     Used for recording actual customer demand in simulation execution.
 #
 #     Key Fields:
 #     - quantity_delivered: Actual fulfilled quantity (primary)
@@ -357,7 +357,7 @@ class ProductionCapacity(Base):
     """Production/transfer capacity limits per site (Phase 3 - Capacity Constraints)
 
     Tracks capacity constraints for sites, preventing unlimited production/transfers.
-    Used to enforce realistic capacity limits in Beer Game execution.
+    Used to enforce realistic capacity limits in simulation execution.
 
     Key Fields:
     - max_capacity_per_period: Maximum units that can be produced/transferred per period

@@ -27,9 +27,9 @@ from app.services.mixed_scenario_service import MixedScenarioService
 
 
 def test_legacy_mode():
-    """Test legacy Beer Scenario engine mode"""
+    """Test legacy simulation engine mode"""
     print("=" * 80)
-    print("TEST 1: Legacy Beer Scenario Engine Mode")
+    print("TEST 1: Legacy Simulation Engine Mode")
     print("=" * 80)
     print()
 

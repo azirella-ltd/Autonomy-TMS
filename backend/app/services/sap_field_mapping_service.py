@@ -1019,8 +1019,9 @@ Respond in JSON format:
 }}
 """
 
+            model = os.environ.get("LLM_MODEL_NAME") or os.environ.get("AUTONOMY_LLM_MODEL") or "qwen3-8b"
             response = await client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=model,
                 messages=[
                     {"role": "system", "content": "You are an SAP-to-AWS Supply Chain field mapping expert. Use the provided reference knowledge to ground your mapping suggestions in the actual AWS SC data model."},
                     {"role": "user", "content": prompt}
@@ -1079,8 +1080,9 @@ Provide analysis in JSON format:
 }}
 """
 
+            model = os.environ.get("LLM_MODEL_NAME") or os.environ.get("AUTONOMY_LLM_MODEL") or "qwen3-8b"
             response = await client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=model,
                 messages=[
                     {"role": "system", "content": "You are an SAP integration expert helping migrate data to AWS Supply Chain. Use the provided reference knowledge to ground your analysis in the actual AWS SC data model."},
                     {"role": "user", "content": prompt}

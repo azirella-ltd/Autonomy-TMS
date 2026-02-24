@@ -277,7 +277,7 @@ class User(Base):
         Check if user can access a specific product.
 
         Args:
-            product_key: Product hierarchy key (e.g., 'PRODUCT_Lager-6pk', 'FAMILY_Beer')
+            product_key: Product hierarchy key (e.g., 'PRODUCT_Product-6pk', 'FAMILY_Beverage')
 
         Returns:
             True if user has access, False otherwise

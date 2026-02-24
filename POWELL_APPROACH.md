@@ -1734,9 +1734,10 @@ SiteAgent.reload_model() → hot-swap active model
 
 | File | Purpose |
 |------|---------|
-| `backend/app/services/powell/outcome_collector.py` | `OutcomeCollectorService` — computes actual outcomes from DB state |
+| `backend/app/services/powell/outcome_collector.py` | `OutcomeCollectorService` — computes actual outcomes from DB state (both SiteAgentDecision and all 11 powell_*_decisions tables) |
+| `backend/app/services/powell/cdt_calibration_service.py` | `CDTCalibrationService` — batch and incremental CDT calibration from decision-outcome pairs |
 | `backend/app/services/powell/cdc_retraining_service.py` | `CDCRetrainingService` — evaluates need, trains, checkpoints |
-| `backend/app/services/powell/relearning_jobs.py` | APScheduler job registration for the relearning loop |
+| `backend/app/services/powell/relearning_jobs.py` | APScheduler job registration for outcome collection, CDT calibration, and CDC retraining |
 | `backend/app/services/powell/integration/decision_integration.py` | `SiteAgentDecisionTracker` — records decisions and extracts training data |
 | `backend/app/services/powell/trm_trainer.py` | `TRMTrainer` — model training (4 methods) and `RewardCalculator` |
 | `backend/app/services/condition_monitor_service.py` | 6 real-time condition checks with actual DB queries |
@@ -1788,7 +1789,9 @@ The `ConditionMonitorService` provides 6 condition checks that query actual data
 
 | Job ID | Schedule | Function |
 |--------|----------|----------|
-| `powell_outcome_collector` | Hourly at :30 | Compute outcomes for all sites |
+| `powell_outcome_collector` | Hourly at :30 | Compute outcomes for SiteAgentDecision (4 types) |
+| `powell_trm_outcome_collector` | Hourly at :32 | Compute outcomes for all 11 powell_*_decisions tables |
+| `powell_cdt_calibration` | Hourly at :35 | Incremental CDT calibration from new outcomes |
 | `powell_cdc_retraining` | Every 6h at :45 | Evaluate retraining for sites with recent CDC triggers |
 
 **Frontend — PowellDashboard CDC Monitor Tab**:
@@ -3692,6 +3695,45 @@ The `ConformalOrchestrator` singleton fills 6 gaps with generic multi-entity sup
 
 3. **Conformal Decision Theory (CDT)** — `conformal_prediction/conformal_decision.py: ConformalDecisionWrapper`:
    Wraps any TRM decision with provable risk bounds. Calibrated from historical (decision, outcome) pairs. Returns `risk_bound: float` on every decision — the probability that the realized cost exceeds the decision's cost estimate. Enables autonomous escalation when `risk_bound > threshold`.
+
+**CDT Calibration Pipeline** — `powell/cdt_calibration_service.py: CDTCalibrationService`:
+
+All 11 TRM agents have CDT wired in (`risk_bound`, `risk_assessment` on every response dataclass). The calibration pipeline closes the loop:
+
+```
+powell_*_decisions (11 tables, estimated + actual costs)
+       ↓ OutcomeCollectorService.collect_trm_outcomes() — hourly at :32
+       ↓ (fills actual_cost / was_executed / etc. columns)
+CDTCalibrationService.calibrate_incremental() — hourly at :35
+       ↓ (reads completed decisions, extracts DecisionOutcomePair)
+ConformalDecisionWrapper.add_calibration_pair()
+       ↓ (auto-calibrates at ≥30 pairs)
+TRM.evaluate() → response.risk_bound = P(loss > τ) ≤ bound
+```
+
+| Component | Schedule | Purpose |
+|-----------|----------|---------|
+| `OutcomeCollectorService.collect_trm_outcomes()` | Hourly at :32 | Fill outcome columns on all 11 `powell_*_decisions` tables |
+| `CDTCalibrationService.calibrate_all()` | Startup (batch) | Batch calibrate CDT wrappers from all historical decisions with outcomes |
+| `CDTCalibrationService.calibrate_incremental()` | Hourly at :35 | Add newly completed pairs to CDT wrappers (online calibration) |
+
+Per-TRM cost mapping (estimated → actual → loss):
+
+| TRM | Estimated | Actual | Loss Function |
+|-----|-----------|--------|---------------|
+| ATP | `promised_qty` | `actual_fulfilled_qty` | Fill rate shortfall |
+| Rebalance | `expected_cost` | `actual_cost` | Cost overrun ratio |
+| PO | `expected_cost` | `actual_cost` | Cost overrun ratio |
+| Order Tracking | `estimated_impact_cost` | `actual_impact_cost` | Cost overrun ratio |
+| MO Execution | `planned_qty` | `actual_qty` | Yield loss ratio |
+| TO Execution | `estimated_transit_days` | `actual_transit_days` | Transit delay ratio |
+| Quality | `rework + scrap estimate` | `actual rework + scrap` | Cost overrun ratio |
+| Maintenance | `estimated_downtime_hours` | `actual_downtime_hours` | Downtime overrun + breakdown penalty |
+| Subcontracting | `unit_cost × qty` | `actual_cost` | Cost overrun ratio |
+| Forecast | `adjustment_magnitude` | `error_after - error_before` | Error increase |
+| Safety Stock | `adjusted_ss` | `holding_cost + stockout_penalty` | Stockout + excess ratio |
+
+Key files: `cdt_calibration_service.py`, `conformal_decision.py`, `outcome_collector.py`, `relearning_jobs.py`
 
 **Architecture Summary**:
 ```

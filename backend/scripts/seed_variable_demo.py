@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seed only the Variable Beer Game group and its games."""
+"""Seed only the Variable simulation group and its scenarios."""
 
 from __future__ import annotations
 

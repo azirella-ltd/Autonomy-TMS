@@ -22,7 +22,7 @@ async def test_basic_suggestion():
     print("TEST 1: Basic Suggestion Generation")
     print("=" * 60)
 
-    llm_service = get_llm_service(provider="openai", model="gpt-4o-mini")
+    llm_service = get_llm_service(provider="openai", model="qwen3-8b")
 
     # Mock context: Normal operating conditions
     context = {
@@ -259,7 +259,7 @@ async def test_fallback_mode():
     print("=" * 60)
 
     # Create service with invalid provider to force fallback
-    llm_service = get_llm_service(provider="invalid_provider", model="gpt-4o-mini")
+    llm_service = get_llm_service(provider="invalid_provider", model="qwen3-8b")
 
     context = {
         "current_round": 5,

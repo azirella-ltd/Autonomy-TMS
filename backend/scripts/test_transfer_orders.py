@@ -2,7 +2,7 @@
 """
 Test Transfer Orders Implementation
 
-Runs a full 52-round Beer Scenario simulation with Transfer Order tracking
+Runs a full 52-round Simulation Scenario simulation with Transfer Order tracking
 and validates in-transit inventory projections.
 
 Usage:
@@ -28,8 +28,8 @@ from app.models.sc_entities import InvLevel, SourcingRules
 from app.models.supply_chain_config import Site
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
 from app.models.purchase_order import PurchaseOrder
-from app.services.sc_execution.beer_scenario_executor import BeerScenarioExecutor
-from app.services.sc_execution.site_id_mapper import BeerScenarioIdMapper
+from app.services.sc_execution.simulation_executor import SimulationExecutor
+from app.services.sc_execution.site_id_mapper import SimulationIdMapper
 from app.services.agents import get_policy_by_strategy
 
 
@@ -59,7 +59,7 @@ class TransferOrderValidator:
             Validation report dictionary
         """
         print(f"\n{'='*80}")
-        print(f"VALIDATING TRANSFER ORDERS FOR GAME {scenario_id}")
+        print(f"VALIDATING TRANSFER ORDERS FOR SCENARIO {scenario_id}")
         print(f"{'='*80}\n")
 
         report = {
@@ -144,7 +144,7 @@ class TransferOrderValidator:
         print("\n📦 Check 2: In-Transit Inventory Consistency")
         print("-" * 80)
 
-        # Get all nodes for scenario (nodes ARE sites in Beer Scenario)
+        # Get all nodes for scenario (nodes ARE sites in Simulation Scenario)
         scenario = self.db.query(Scenario).filter(Scenario.id == scenario_id).first()
         nodes = self.db.query(Site).filter(
             Site.config_id == scenario.config_id
@@ -379,7 +379,7 @@ class TransferOrderValidator:
             ).scalar() or 0.0
 
         # Balance: initial + produced = on_hand + in_transit + shipped_to_market + backorder_fulfilled
-        # Since no production in Beer Scenario (Factory has infinite supply), we check:
+        # Since no production in Simulation Scenario (Factory has infinite supply), we check:
         # on_hand + in_transit + market_shipments should be close to initial
 
         total_accounted = total_on_hand + total_in_transit + market_shipments
@@ -465,7 +465,7 @@ class TransferOrderValidator:
         }
 
         # Initialize ID mapper to get source node names
-        mapper = BeerScenarioIdMapper(self.db, scenario.config_id)
+        mapper = SimulationIdMapper(self.db, scenario.config_id)
 
         total_in_transit_from_tos = 0.0
         for to in in_transit_tos:
@@ -523,7 +523,7 @@ class TransferOrderValidator:
 
 def run_52_round_simulation(db: Session, validate: bool = True) -> dict:
     """
-    Run full 52-round Beer Scenario simulation with Transfer Order tracking.
+    Run full 52-round Simulation Scenario simulation with Transfer Order tracking.
 
     Args:
         db: Database session
@@ -533,7 +533,7 @@ def run_52_round_simulation(db: Session, validate: bool = True) -> dict:
         Simulation report with TO statistics
     """
     print(f"\n{'='*80}")
-    print(f"52-ROUND BEER GAME SIMULATION WITH TRANSFER ORDERS")
+    print(f"52-ROUND SUPPLY CHAIN SIMULATION WITH TRANSFER ORDERS")
     print(f"{'='*80}\n")
 
     # Create scenario
@@ -553,7 +553,7 @@ def run_52_round_simulation(db: Session, validate: bool = True) -> dict:
     print(f"Scenario created: ID={scenario.id}")
 
     # Initialize executor
-    executor = BeerScenarioExecutor(db)
+    executor = SimulationExecutor(db)
 
     # Initialize scenario state
     print("Initializing scenario state...")
@@ -570,7 +570,7 @@ def run_52_round_simulation(db: Session, validate: bool = True) -> dict:
 
     print(f"Sites: {site_ids}\n")
 
-    # Market demand pattern (classic Beer Scenario: 4 units for 4 rounds, then 8 units)
+    # Market demand pattern (classic Simulation Scenario: 4 units for 4 rounds, then 8 units)
     def get_market_demand(round_num):
         if round_num <= 4:
             return 4.0
@@ -733,7 +733,7 @@ def run_52_round_simulation(db: Session, validate: bool = True) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Test Transfer Orders with full Beer Scenario simulation"
+        description="Test Transfer Orders with full Simulation Scenario simulation"
     )
     parser.add_argument(
         "--rounds",

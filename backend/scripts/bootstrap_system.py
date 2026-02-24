@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End-to-end bootstrap for the Autonomy Beer Game system."""
+"""End-to-end bootstrap for the Autonomy supply chain system."""
 
 from __future__ import annotations
 

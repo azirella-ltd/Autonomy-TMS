@@ -375,7 +375,7 @@ def main():
                         help="Learning rate")
     parser.add_argument("--num-samples", type=int, default=10000,
                         help="Samples per phase")
-    parser.add_argument("--config-id", type=str, default="default_beer_game",
+    parser.add_argument("--config-id", type=str, default="default_supply_chain",
                         help="Supply chain config ID for checkpoint naming")
     parser.add_argument("--checkpoint-dir", type=str, default="./checkpoints",
                         help="Checkpoint directory")
