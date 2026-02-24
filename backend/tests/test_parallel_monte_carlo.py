@@ -370,16 +370,14 @@ class TestParallelMonteCarloEngine:
             mock_run.return_value = []
             mock_save.return_value = None
 
-            # Mock database operations
-            with patch('app.services.monte_carlo.parallel_engine.MonteCarloEngine'):
-                try:
-                    await engine.run_parallel_simulation(
-                        start_date=date(2026, 1, 1),
-                        planning_horizon_weeks=4,
-                        progress_callback=progress_callback
-                    )
-                except:
-                    pass  # Expected to fail due to mocking
+            try:
+                await engine.run_parallel_simulation(
+                    start_date=date(2026, 1, 1),
+                    planning_horizon_weeks=4,
+                    progress_callback=progress_callback
+                )
+            except Exception:
+                pass  # Expected to fail due to mocking
 
 
 # ============================================================================

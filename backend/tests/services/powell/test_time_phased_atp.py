@@ -116,7 +116,8 @@ class TestShipDateCalculation:
         delivery_date = date(2026, 2, 13)  # Friday
         lead_time = 3  # business days
 
-        ship_date = service.calculate_ship_date(delivery_date, lead_time)
+        # Use from_date before the expected ship date so the "not in the past" clamp doesn't trigger
+        ship_date = service.calculate_ship_date(delivery_date, lead_time, from_date=date(2026, 2, 1))
 
         # Fri - 3 business days = Tue
         assert ship_date == date(2026, 2, 10)
@@ -128,7 +129,7 @@ class TestShipDateCalculation:
         delivery_date = date(2026, 2, 10)  # Tuesday
         lead_time = 3  # business days
 
-        ship_date = service.calculate_ship_date(delivery_date, lead_time)
+        ship_date = service.calculate_ship_date(delivery_date, lead_time, from_date=date(2026, 2, 1))
 
         # Tue - 3 business days = Thu of previous week
         assert ship_date == date(2026, 2, 5)

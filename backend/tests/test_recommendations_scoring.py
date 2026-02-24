@@ -66,8 +66,8 @@ class TestHaversineDistance:
         # Buenos Aires: 34.6037° S, 58.3816° W
         distance = calculate_haversine_distance(-33.8688, 151.2093, -34.6037, -58.3816)
 
-        # Actual distance is ~11,600 km
-        assert 11400 < distance < 11800
+        # Actual distance is ~11,800 km
+        assert 11400 < distance < 12000
 
 
 class TestDistanceScoring:
@@ -468,9 +468,11 @@ class TestStockoutRiskReduction:
         assert impact["stockout_risk_before"] < 0.2  # Low risk
 
     def test_higher_variability_increases_risk(self):
-        """Higher demand variability should increase risk"""
-        low_cv = simulate_stockout_risk_reduction(20, 30, 30, 0.1)
-        high_cv = simulate_stockout_risk_reduction(20, 30, 30, 0.5)
+        """Higher demand variability should increase risk when DOS > safety stock"""
+        # Use DOS above safety stock so higher CV spreads the distribution
+        # further into the danger zone, correctly increasing risk.
+        low_cv = simulate_stockout_risk_reduction(40, 50, 30, 0.1)
+        high_cv = simulate_stockout_risk_reduction(40, 50, 30, 0.5)
 
         assert high_cv["stockout_risk_before"] > low_cv["stockout_risk_before"]
 
