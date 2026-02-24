@@ -56,7 +56,7 @@ const Users = () => {
   const toggleAdmin = async (user) => {
     try {
       const currentType = resolveUserType(user);
-      const nextType = currentType === 'systemadmin' ? 'ScenarioUser' : 'SystemAdmin';
+      const nextType = currentType === 'systemadmin' ? 'User' : 'SystemAdmin';
       await api.put(`/users/${user.id}`, { user_type: nextType });
       toast.success('Role updated');
       fetchUsers();
@@ -82,7 +82,7 @@ const Users = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const targetType = formData.is_admin ? 'SystemAdmin' : 'ScenarioUser';
+      const targetType = formData.is_admin ? 'SystemAdmin' : 'User';
       if (editingUser) {
         // Update: email/full_name only (password uses change-password endpoint)
         await api.put(`/users/${editingUser.id}`, {

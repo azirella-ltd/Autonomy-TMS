@@ -98,7 +98,7 @@ const HelpCenter = ({ onClose, onStartTutorial }) => {
         {
           id: 'leaderboards',
           title: 'Leaderboards & Rankings',
-          summary: 'Compete with other scenarioUsers',
+          summary: 'Compete with other users',
         },
       ],
     },

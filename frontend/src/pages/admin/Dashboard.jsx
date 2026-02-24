@@ -44,7 +44,7 @@ import { cn } from '../../lib/utils/cn';
 
 const tabItems = [
   { value: 'game', label: 'Games', icon: <Gamepad2 className="h-4 w-4" /> },
-  { value: 'users', label: 'ScenarioUsers', icon: <Users className="h-4 w-4" /> },
+  { value: 'users', label: 'Users', icon: <Users className="h-4 w-4" /> },
   { value: 'sc', label: 'Supply Chains', icon: <Database className="h-4 w-4" /> },
   { value: 'training', label: 'AI Training', icon: <GraduationCap className="h-4 w-4" /> },
   { value: 'supervision', label: 'Supervision', icon: <Eye className="h-4 w-4" /> },

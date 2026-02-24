@@ -371,9 +371,9 @@ const GroupGameSupervisionPanel = ({
                           'llm_adaptive', 'llm_supervised', 'llm_global'];
 
     const agentsRequiringTraining = scenarioUsers
-      .filter(scenarioUser => scenarioUser.is_ai)
+      .filter(scenarioUser => user.is_ai)
       .filter(scenarioUser => {
-        const strategy = String(scenarioUser.ai_strategy || '').toLowerCase();
+        const strategy = String(user.ai_strategy || '').toLowerCase();
         const requiresGNN = gnnStrategies.some(s => strategy.includes(s));
         const requiresTRM = trmStrategies.some(s => strategy.includes(s));
         const isLLM = llmStrategies.some(s => strategy.includes(s));
@@ -390,12 +390,12 @@ const GroupGameSupervisionPanel = ({
     }
 
     const needsGNN = agentsRequiringTraining.some(scenarioUser => {
-      const strategy = String(scenarioUser.ai_strategy || '').toLowerCase();
+      const strategy = String(user.ai_strategy || '').toLowerCase();
       return gnnStrategies.some(s => strategy.includes(s));
     });
 
     const needsTRM = agentsRequiringTraining.some(scenarioUser => {
-      const strategy = String(scenarioUser.ai_strategy || '').toLowerCase();
+      const strategy = String(user.ai_strategy || '').toLowerCase();
       return trmStrategies.some(s => strategy.includes(s));
     });
 

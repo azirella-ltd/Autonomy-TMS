@@ -185,7 +185,7 @@ const LeaderboardPanel = ({ scenarioUserId }) => {
                     Rank
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    ScenarioUser
+                    User
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Score
@@ -218,7 +218,7 @@ const LeaderboardPanel = ({ scenarioUserId }) => {
                         </div>
                       </td>
 
-                      {/* ScenarioUser */}
+                      {/* User */}
                       <td className="px-6 py-4">
                         <div className="flex items-center">
                           <div className="flex-shrink-0 h-10 w-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold">
@@ -226,7 +226,7 @@ const LeaderboardPanel = ({ scenarioUserId }) => {
                           </div>
                           <div className="ml-4">
                             <div className="text-sm font-medium text-gray-900">
-                              {entry.scenario_user_name || `ScenarioUser ${entry.scenario_user_id}`}
+                              {entry.scenario_user_name || `User ${entry.scenario_user_id}`}
                               {isCurrentPlayer && (
                                 <span className="ml-2 px-2 py-1 text-xs bg-indigo-600 text-white rounded-full">
                                   You

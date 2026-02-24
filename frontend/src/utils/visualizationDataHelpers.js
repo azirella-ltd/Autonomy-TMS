@@ -9,17 +9,17 @@
 export function transformPlayersToSites(scenarioUsers, supplyChainConfig = null) {
   if (!scenarioUsers || !Array.isArray(scenarioUsers)) return [];
 
-  return scenarioUsers.map((scenarioUser) => {
+  return users.map((scenarioUser) => {
     const site = {
-      id: scenarioUser.scenario_user_id || scenarioUser.id,
-      name: scenarioUser.scenario_user_name || scenarioUser.name || `ScenarioUser ${scenarioUser.scenario_user_id}`,
-      role: scenarioUser.role || scenarioUser.sc_site_type || scenarioUser.sc_node_type || 'unknown',
+      id: user.scenario_user_id || user.id,
+      name: user.scenario_user_name || user.name || `ScenarioUser ${user.scenario_user_id}`,
+      role: user.role || user.sc_site_type || user.sc_node_type || 'unknown',
     };
 
     // Add location data if available from supply chain config
     if (supplyChainConfig?.sites) {
       const configSite = supplyChainConfig.sites.find(
-        (n) => n.id === scenarioUser.site_id || n.name === scenarioUser.site_name
+        (n) => n.id === user.site_id || n.name === user.site_name
       );
       if (configSite && configSite.location) {
         site.latitude = configSite.location.latitude;
@@ -30,7 +30,7 @@ export function transformPlayersToSites(scenarioUsers, supplyChainConfig = null)
 
     // Fallback: Generate approximate locations based on role
     if (!site.latitude || !site.longitude) {
-      const generatedLocation = generateLocationByRole(site.role, scenarioUser.scenario_user_id);
+      const generatedLocation = generateLocationByRole(site.role, user.scenario_user_id);
       site.latitude = generatedLocation.latitude;
       site.longitude = generatedLocation.longitude;
       site.location = generatedLocation.name;
@@ -108,18 +108,18 @@ export function transformConnectionsToEdges(scenarioUsers, supplyChainConfig = n
   const edges = [];
 
   // Method 1: Extract from scenarioUser upstream/downstream relationships
-  scenarioUsers.forEach((scenarioUser) => {
-    if (scenarioUser.upstream_scenario_user_id) {
+  users.forEach((scenarioUser) => {
+    if (user.upstream_scenario_user_id) {
       edges.push({
-        from: scenarioUser.scenario_user_id || scenarioUser.id,
-        to: scenarioUser.upstream_scenario_user_id,
+        from: user.scenario_user_id || user.id,
+        to: user.upstream_scenario_user_id,
         flowSpeed: 1,
       });
     }
-    if (scenarioUser.downstream_scenario_user_id) {
+    if (user.downstream_scenario_user_id) {
       edges.push({
-        from: scenarioUser.downstream_scenario_user_id,
-        to: scenarioUser.scenario_user_id || scenarioUser.id,
+        from: user.downstream_scenario_user_id,
+        to: user.scenario_user_id || user.id,
         flowSpeed: 1,
       });
     }
@@ -129,8 +129,8 @@ export function transformConnectionsToEdges(scenarioUsers, supplyChainConfig = n
   if (supplyChainConfig && supplyChainConfig.lanes) {
     supplyChainConfig.lanes.forEach((lane) => {
       // Find scenarioUser IDs that correspond to these sites
-      const fromPlayer = scenarioUsers.find((p) => p.site_id === lane.from_site_id);
-      const toPlayer = scenarioUsers.find((p) => p.site_id === lane.to_site_id);
+      const fromPlayer = users.find((p) => p.site_id === lane.from_site_id);
+      const toPlayer = users.find((p) => p.site_id === lane.to_site_id);
 
       if (fromPlayer && toPlayer) {
         edges.push({
@@ -161,14 +161,14 @@ export function buildInventoryData(scenarioUsers) {
 
   const inventoryData = {};
 
-  scenarioUsers.forEach((scenarioUser) => {
-    const scenarioUserId = scenarioUser.scenario_user_id || scenarioUser.id;
+  users.forEach((scenarioUser) => {
+    const scenarioUserId = user.scenario_user_id || user.id;
     inventoryData[scenarioUserId] = {
-      inventory: scenarioUser.inventory_end ?? scenarioUser.inventory ?? 0,
-      backlog: scenarioUser.backlog ?? 0,
-      cost: scenarioUser.total_cost ?? scenarioUser.cost ?? 0,
-      order_placed: scenarioUser.order_placed ?? scenarioUser.last_order ?? 0,
-      incoming_order: scenarioUser.incoming_order ?? scenarioUser.demand ?? 0,
+      inventory: user.inventory_end ?? user.inventory ?? 0,
+      backlog: user.backlog ?? 0,
+      cost: user.total_cost ?? user.cost ?? 0,
+      order_placed: user.order_placed ?? user.last_order ?? 0,
+      incoming_order: user.incoming_order ?? user.demand ?? 0,
     };
   });
 
@@ -186,12 +186,12 @@ export function identifyActiveFlows(scenarioUsers, threshold = 1) {
 
   const activeFlows = [];
 
-  scenarioUsers.forEach((scenarioUser) => {
-    const scenarioUserId = scenarioUser.scenario_user_id || scenarioUser.id;
-    const orderPlaced = scenarioUser.order_placed ?? scenarioUser.last_order ?? 0;
+  users.forEach((scenarioUser) => {
+    const scenarioUserId = user.scenario_user_id || user.id;
+    const orderPlaced = user.order_placed ?? user.last_order ?? 0;
 
-    if (orderPlaced >= threshold && scenarioUser.upstream_scenario_user_id) {
-      activeFlows.push(`${scenarioUserId}-${scenarioUser.upstream_scenario_user_id}`);
+    if (orderPlaced >= threshold && user.upstream_scenario_user_id) {
+      activeFlows.push(`${scenarioUserId}-${user.upstream_scenario_user_id}`);
     }
   });
 

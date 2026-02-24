@@ -95,7 +95,7 @@ const ROUTE_LABELS = {
   visualizations: 'Visualizations',
 
   // Other
-  scenarioUsers: 'ScenarioUsers',
+  scenarioUsers: 'Users',
   settings: 'Settings',
   'ai-assistant': 'AI Assistant',
   production: 'Production',

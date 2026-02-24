@@ -243,7 +243,7 @@ export const simulationApi = {
   },
 
   // ==========================================================================
-  // ScenarioUser Management (formerly "ScenarioUsers")
+  // User Management (formerly "Users")
   // ==========================================================================
   async getScenarioUsers(scenarioId) {
     const { data } = await http.get(`/scenarios/${scenarioId}/scenarioUsers`);

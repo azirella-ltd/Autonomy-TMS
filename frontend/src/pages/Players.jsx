@@ -139,7 +139,7 @@ const PlayersPage = () => {
       fetchPlayers(selectedGameId);
     } catch (e) {
       console.error(e);
-      const msg = e?.response?.data?.detail || 'Failed to add scenarioUser';
+      const msg = e?.response?.data?.detail || 'Failed to add user';
       toast.error(msg);
     }
   };
@@ -177,7 +177,7 @@ const PlayersPage = () => {
   return (
     <PageLayout title="Users">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-foreground">ScenarioUsers</h1>
+        <h1 className="text-2xl font-bold text-foreground">Users</h1>
         <Button
           as={Link}
           to="/games"
@@ -234,7 +234,7 @@ const PlayersPage = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Add ScenarioUser Form */}
             <div>
-              <h3 className="text-lg font-semibold text-foreground mb-4">Add ScenarioUser</h3>
+              <h3 className="text-lg font-semibold text-foreground mb-4">Add User</h3>
               <div className="space-y-4">
                 <FormField label="Role">
                   <Select
@@ -303,19 +303,19 @@ const PlayersPage = () => {
                 </FormField>
 
                 <Button onClick={handleAdd} className="w-full">
-                  Add ScenarioUser
+                  Add User
                 </Button>
               </div>
             </div>
 
             {/* Current ScenarioUsers */}
             <div>
-              <h3 className="text-lg font-semibold text-foreground mb-4">Current ScenarioUsers</h3>
-              {scenarioUsers.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No scenarioUsers yet for this game.</p>
+              <h3 className="text-lg font-semibold text-foreground mb-4">Current Users</h3>
+              {users.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No users yet for this game.</p>
               ) : (
                 <div className="space-y-3">
-                  {scenarioUsers.map(p => (
+                  {users.map(p => (
                     <div
                       key={p.id}
                       className="border border-border rounded-lg p-4 bg-card"

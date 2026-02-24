@@ -60,7 +60,7 @@ const FEATURES = [
   { value: 'stochastic', label: 'Stochastic Demand', description: 'Variable demand patterns' },
   { value: 'monte_carlo', label: 'Monte Carlo Simulation', description: 'Risk analysis' },
   { value: 'multi_tier', label: 'Multi-Tier Network', description: '3+ echelons' },
-  { value: 'ai_agents', label: 'AI Agents', description: 'Automated scenarioUsers' }
+  { value: 'ai_agents', label: 'AI Agents', description: 'Automated users' }
 ];
 
 const steps = ['Select Industry', 'Choose Template', 'Configure & Launch'];

@@ -155,7 +155,7 @@ const HumanDashboard = () => {
     setOrderError('');
 
     if (!dashboardData?.scenario_id || !dashboardData?.scenario_user_id) {
-      setOrderError('Unable to determine the current game or scenarioUser.');
+      setOrderError('Unable to determine the current game or user.');
       return;
     }
 
@@ -468,7 +468,7 @@ const HumanDashboard = () => {
               <div>
                 <h1 className="text-2xl font-bold">{game_name || 'My Game'}</h1>
                 <p className="text-muted-foreground mt-1">
-                  Welcome back, {user?.username || 'ScenarioUser'}
+                  Welcome back, {user?.username || 'User'}
                 </p>
               </div>
               <div className="text-right">

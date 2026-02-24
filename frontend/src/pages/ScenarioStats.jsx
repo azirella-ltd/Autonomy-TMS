@@ -106,9 +106,9 @@ const ScenarioStats = () => {
       
       const gameDate = new Date(game.ended_at || game.created_at);
       labels.push(format(gameDate, 'MMM d'));
-      scores.push(scenarioUser.score || 0);
-      inventories.push(scenarioUser.inventory || 0);
-      backlogs.push(scenarioUser.backlog || 0);
+      scores.push(user.score || 0);
+      inventories.push(user.inventory || 0);
+      backlogs.push(user.backlog || 0);
     });
     
     return {
@@ -299,13 +299,13 @@ const ScenarioStats = () => {
             <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
               <dt className="text-sm font-medium text-gray-500">Score</dt>
               <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                {scenarioUser.score || 0} points
+                {user.score || 0} points
               </dd>
             </div>
             <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
               <dt className="text-sm font-medium text-gray-500">Position</dt>
               <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                #{scenarioUser.position || 'N/A'} of {game.scenarioUsers?.length || 0} scenarioUsers
+                #{user.position || 'N/A'} of {game.scenarioUsers?.length || 0} scenarioUsers
               </dd>
             </div>
             <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">

@@ -91,7 +91,7 @@ const ProfilePage = () => {
             { id: 2, name: 'Supply Chain Master', description: 'Win 25 games', icon: 'medal', earned: true, date: '2023-03-15' },
             { id: 3, name: 'Perfect Game', description: 'Win a game with maximum score', icon: 'star', earned: false },
             { id: 4, name: 'Marathoner', description: 'Play for more than 10 hours', icon: 'clock', earned: true, date: '2023-04-02' },
-            { id: 5, name: 'Social Butterfly', description: 'Play with 50 different scenarioUsers', icon: 'users', earned: false },
+            { id: 5, name: 'Social Butterfly', description: 'Play with 50 different users', icon: 'users', earned: false },
           ],
           recentGames: [
             { id: 101, name: 'Supply Chain Masters', status: 'won', score: 1450, position: 1, date: '2023-05-15T14:30:00Z' },
@@ -441,7 +441,7 @@ const ProfilePage = () => {
                     <div className="ml-4">
                       <h3 className="text-lg font-medium text-primary">Welcome back, {profile.username}!</h3>
                       <div className="mt-2 text-sm text-primary/80">
-                        <p>You're currently ranked <span className="font-semibold">#{profile.stats.rank}</span> out of {profile.stats.totalPlayers} scenarioUsers.</p>
+                        <p>You're currently ranked <span className="font-semibold">#{profile.stats.rank}</span> out of {profile.stats.totalPlayers} users.</p>
                         <p className="mt-1">You've played {profile.stats.gamesPlayed} games with a {profile.stats.winRate}% win rate.</p>
                       </div>
                       <div className="mt-4">
@@ -732,7 +732,7 @@ const ProfilePage = () => {
                   <div className="flex justify-between items-center">
                     <div>
                       <CardTitle>Global Leaderboard</CardTitle>
-                      <CardDescription>Top scenarioUsers by total score</CardDescription>
+                      <CardDescription>Top users by total score</CardDescription>
                     </div>
                     <Select defaultValue="global" className="w-40">
                       <SelectOption value="global">Global</SelectOption>
@@ -746,10 +746,10 @@ const ProfilePage = () => {
                   <ul className="divide-y divide-border">
                     {leaderboard.map((scenarioUser, index) => (
                       <li
-                        key={scenarioUser.id}
+                        key={user.id}
                         className={cn(
                           'px-4 py-4 sm:px-6',
-                          scenarioUser.isCurrentUser ? 'bg-primary/10' : 'hover:bg-muted/50'
+                          user.isCurrentUser ? 'bg-primary/10' : 'hover:bg-muted/50'
                         )}
                       >
                         <div className="flex items-center">
@@ -773,7 +773,7 @@ const ProfilePage = () => {
                             <div className="flex-shrink-0 h-10 w-10">
                               <img
                                 className="h-10 w-10 rounded-full"
-                                src={scenarioUser.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(scenarioUser.username)}&background=random`}
+                                src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.username)}&background=random`}
                                 alt=""
                               />
                             </div>
@@ -781,22 +781,22 @@ const ProfilePage = () => {
                               <div className="flex justify-between">
                                 <p className={cn(
                                   'text-sm font-medium truncate',
-                                  scenarioUser.isCurrentUser ? 'text-primary' : 'text-foreground'
+                                  user.isCurrentUser ? 'text-primary' : 'text-foreground'
                                 )}>
-                                  {scenarioUser.username}
-                                  {scenarioUser.isCurrentUser && ' (You)'}
+                                  {user.username}
+                                  {user.isCurrentUser && ' (You)'}
                                 </p>
                                 <div className="ml-2 flex-shrink-0 flex">
                                   <p className="text-sm text-muted-foreground">
-                                    {scenarioUser.score.toLocaleString()} pts
+                                    {user.score.toLocaleString()} pts
                                   </p>
                                 </div>
                               </div>
                               <div className="mt-1 flex justify-between">
                                 <p className="text-sm text-muted-foreground">
-                                  {scenarioUser.gamesPlayed} games - {scenarioUser.winRate}% win rate
+                                  {user.gamesPlayed} games - {user.winRate}% win rate
                                 </p>
-                                {scenarioUser.isCurrentUser && (
+                                {user.isCurrentUser && (
                                   <Badge variant="info">
                                     Your Rank: #{index + 1}
                                   </Badge>
@@ -805,19 +805,19 @@ const ProfilePage = () => {
                             </div>
                           </div>
                         </div>
-                        {scenarioUser.isCurrentUser && index < leaderboard.length - 1 && (
+                        {user.isCurrentUser && index < leaderboard.length - 1 && (
                           <div className="mt-4 pt-4 border-t border-border">
                             <div className="flex justify-between text-sm">
                               <span className="text-muted-foreground">Next rank (#{index}):</span>
                               <span className="font-medium">
-                                {Math.ceil((leaderboard[index].score - scenarioUser.score) / 1000) * 1000 - (leaderboard[index].score - scenarioUser.score)} pts to go
+                                {Math.ceil((leaderboard[index].score - user.score) / 1000) * 1000 - (leaderboard[index].score - user.score)} pts to go
                               </span>
                             </div>
                             <div className="mt-2 w-full bg-muted rounded-full h-2">
                               <div
                                 className="bg-primary h-2 rounded-full"
                                 style={{
-                                  width: `${((leaderboard[index].score - scenarioUser.score) / 1000) * 100}%`
+                                  width: `${((leaderboard[index].score - user.score) / 1000) * 100}%`
                                 }}
                               ></div>
                             </div>

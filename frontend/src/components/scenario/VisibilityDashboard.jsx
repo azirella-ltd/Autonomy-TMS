@@ -354,7 +354,7 @@ const VisibilityDashboard = ({ scenarioId }) => {
         {showSettings && (
           <div className="space-y-4 border-t pt-4">
             <p className="text-sm text-gray-600 mb-4">
-              Opt-in to share your metrics with other scenarioUsers. Sharing reduces
+              Opt-in to share your metrics with other users. Sharing reduces
               the bullwhip effect and improves coordination.
             </p>
 
@@ -420,22 +420,22 @@ const VisibilityDashboard = ({ scenarioId }) => {
               Sharing Participation
             </h4>
             <div className="grid grid-cols-2 gap-2">
-              {allPermissions.scenarioUsers.map((scenarioUser) => {
+              {allPermissions.users.map((scenarioUser) => {
                 const isSharing =
-                  scenarioUser.permissions.share_inventory ||
-                  scenarioUser.permissions.share_backlog ||
-                  scenarioUser.permissions.share_orders;
+                  user.permissions.share_inventory ||
+                  user.permissions.share_backlog ||
+                  user.permissions.share_orders;
 
                 return (
                   <div
-                    key={scenarioUser.scenario_user_id}
+                    key={user.scenario_user_id}
                     className={`text-sm p-2 rounded ${
                       isSharing
                         ? "bg-green-50 text-green-700"
                         : "bg-gray-50 text-gray-500"
                     }`}
                   >
-                    {scenarioUser.role} {isSharing ? "✓" : "—"}
+                    {user.role} {isSharing ? "✓" : "—"}
                   </div>
                 );
               })}

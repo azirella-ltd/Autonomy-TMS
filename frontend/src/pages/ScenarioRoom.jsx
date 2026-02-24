@@ -508,12 +508,12 @@ const ScenarioRoom = () => {
     );
   }
 
-  const currentPlayer = game.scenarioUsers.find((p) => p.user_id === user.id);
+  const currentPlayer = game.users.find((p) => p.user_id === user.id);
   const isGameMaster = game.created_by === user.id;
   const isGameActive = game.status === "in_progress";
   const isPlayerReady = currentPlayer?.is_ready;
   const allPlayersReady =
-    game.scenarioUsers.every((p) => p.is_ready) && game.scenarioUsers.length >= 2;
+    game.users.every((p) => p.is_ready) && game.users.length >= 2;
 
   // Tab configuration
   const tabs = [
@@ -549,24 +549,24 @@ const ScenarioRoom = () => {
             <div className="space-y-4 max-w-md mx-auto">
               <div className="bg-muted/50 p-4 rounded-lg">
                 <h3 className="font-medium mb-2">
-                  Users ({game.scenarioUsers.length}/{game.max_players})
+                  Users ({game.users.length}/{game.max_players})
                 </h3>
                 <ul className="space-y-2">
-                  {game.scenarioUsers.map((scenarioUser) => (
+                  {game.users.map((scenarioUser) => (
                     <li
-                      key={scenarioUser.id}
+                      key={user.id}
                       className="flex items-center justify-between"
                     >
                       <span
                         className={cn(
-                          scenarioUser.is_ready ? "text-emerald-600" : "text-muted-foreground"
+                          user.is_ready ? "text-emerald-600" : "text-muted-foreground"
                         )}
                       >
-                        {scenarioUser.username}
-                        {scenarioUser.is_ready && " \u2713"}
-                        {scenarioUser.user_id === game.created_by && " \uD83D\uDC51"}
+                        {user.username}
+                        {user.is_ready && " \u2713"}
+                        {user.user_id === game.created_by && " \uD83D\uDC51"}
                       </span>
-                      {scenarioUser.user_id === user.id && !isPlayerReady && (
+                      {user.user_id === user.id && !isPlayerReady && (
                         <Button
                           size="sm"
                           variant="default"
@@ -617,7 +617,7 @@ const ScenarioRoom = () => {
             <DecisionPhaseIndicator
               phase={roundPhase}
               playersCompleted={playersCompleted}
-              totalPlayers={game.scenarioUsers.length}
+              totalPlayers={game.users.length}
               currentRound={game.current_round}
               phaseStartedAt={game.phase_started_at}
             />
@@ -812,14 +812,14 @@ const ScenarioRoom = () => {
 
             {/* ScenarioUsers list */}
             <div className="bg-muted/50 p-4 rounded-lg">
-              <h3 className="font-medium mb-3">ScenarioUsers</h3>
+              <h3 className="font-medium mb-3">Users</h3>
               <ul className="space-y-3">
-                {game.scenarioUsers.map((scenarioUser) => (
+                {game.users.map((scenarioUser) => (
                   <li
-                    key={scenarioUser.id}
+                    key={user.id}
                     className={cn(
                       "p-3 rounded",
-                      scenarioUser.user_id === user.id
+                      user.user_id === user.id
                         ? "bg-primary/10 border border-primary/20"
                         : "bg-card"
                     )}
@@ -827,19 +827,19 @@ const ScenarioRoom = () => {
                     <div className="flex justify-between items-center">
                       <div>
                         <span className="font-medium">
-                          {scenarioUser.username}
-                          {scenarioUser.user_id === game.created_by && " \uD83D\uDC51"}
+                          {user.username}
+                          {user.user_id === game.created_by && " \uD83D\uDC51"}
                         </span>
                         <p className="text-sm text-muted-foreground">
-                          Score: {scenarioUser.score || 0}
+                          Score: {user.score || 0}
                         </p>
                       </div>
                       <div className="text-right">
                         <div className="text-sm">
-                          Inv: {scenarioUser.inventory || 0}
+                          Inv: {user.inventory || 0}
                         </div>
                         <div className="text-sm text-muted-foreground">
-                          Bklog: {scenarioUser.backlog || 0}
+                          Bklog: {user.backlog || 0}
                         </div>
                       </div>
                     </div>
@@ -958,32 +958,32 @@ const ScenarioRoom = () => {
               <Card variant="outlined" padding="default">
                 <CardContent>
                   <h3 className="font-medium mb-3">
-                    ScenarioUsers ({game.scenarioUsers.length}/{game.max_players})
+                    ScenarioUsers ({game.users.length}/{game.max_players})
                   </h3>
                   <ul className="space-y-2">
-                    {game.scenarioUsers.map((scenarioUser) => (
+                    {game.users.map((scenarioUser) => (
                       <li
-                        key={scenarioUser.id}
+                        key={user.id}
                         className="flex items-center justify-between p-2 hover:bg-muted/50 rounded transition-colors"
                       >
                         <div className="flex items-center">
                           <div
                             className={cn(
                               "h-2 w-2 rounded-full mr-2",
-                              scenarioUser.is_online ? "bg-emerald-500" : "bg-muted-foreground/30"
+                              user.is_online ? "bg-emerald-500" : "bg-muted-foreground/30"
                             )}
                           ></div>
                           <span
                             className={cn(
-                              scenarioUser.user_id === user.id && "font-medium text-primary"
+                              user.user_id === user.id && "font-medium text-primary"
                             )}
                           >
-                            {scenarioUser.username}
-                            {scenarioUser.user_id === game.created_by && " \uD83D\uDC51"}
+                            {user.username}
+                            {user.user_id === game.created_by && " \uD83D\uDC51"}
                           </span>
                         </div>
                         <span className="text-sm text-muted-foreground">
-                          {scenarioUser.score || 0} pts
+                          {user.score || 0} pts
                         </span>
                       </li>
                     ))}
@@ -1073,13 +1073,13 @@ const ScenarioRoom = () => {
                           .sort((a, b) => (b.score || 0) - (a.score || 0))
                           .slice(0, 3)
                           .map((scenarioUser, idx) => (
-                            <li key={scenarioUser.id} className="flex items-center">
+                            <li key={user.id} className="flex items-center">
                               <span className="text-muted-foreground w-6">
                                 {idx + 1}.
                               </span>
-                              <span className="flex-1">{scenarioUser.username}</span>
+                              <span className="flex-1">{user.username}</span>
                               <span className="font-medium">
-                                {scenarioUser.score || 0} pts
+                                {user.score || 0} pts
                               </span>
                             </li>
                           ))}

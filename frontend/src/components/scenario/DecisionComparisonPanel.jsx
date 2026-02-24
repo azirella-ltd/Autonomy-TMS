@@ -213,7 +213,7 @@ const DecisionComparisonPanel = ({
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/50">
-                      <TableHead>ScenarioUser</TableHead>
+                      <TableHead>User</TableHead>
                       <TableHead className="text-center">
                         <div className="flex items-center justify-center gap-1">
                           <AgentIcon className="h-4 w-4" />

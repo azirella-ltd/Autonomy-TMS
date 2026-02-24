@@ -118,7 +118,7 @@ const ScenarioBoard = () => {
   const handleRoleSelection = useCallback(
     (playerIdValue) => {
       const selected = playerOptions.find(
-        (scenarioUser) => String(scenarioUser.id) === String(playerIdValue)
+        (scenarioUser) => String(user.id) === String(playerIdValue)
       );
       if (selected) {
         setViewingPlayerId(selected.id);
@@ -226,7 +226,7 @@ const ScenarioBoard = () => {
       return;
     }
     const selected = playerOptions.find(
-      (scenarioUser) => scenarioUser.id === viewingPlayerId
+      (scenarioUser) => user.id === viewingPlayerId
     );
     if (selected && selected.role !== viewingRole) {
       setViewingRole(selected.role);
@@ -241,7 +241,7 @@ const ScenarioBoard = () => {
         const associated = (games || []).filter((g) => {
           const createdByUser = g.created_by === user?.id;
           const isPlayer = Array.isArray(g.scenarioUsers)
-            ? g.scenarioUsers.some((p) => p.user_id === user?.id)
+            ? g.users.some((p) => p.user_id === user?.id)
             : false;
           return createdByUser || isPlayer;
         });
@@ -309,7 +309,7 @@ const ScenarioBoard = () => {
         const scenarioUsers = Array.isArray(game.scenarioUsers) ? game.scenarioUsers : [];
         const currentUserId = user?.id;
         const assignedPlayer =
-          scenarioUsers.find((p) => p.user_id === currentUserId) || null;
+          users.find((p) => p.user_id === currentUserId) || null;
 
         if (assignedPlayer) {
           setAssignedRole(assignedPlayer.role);
@@ -320,7 +320,7 @@ const ScenarioBoard = () => {
           setIsPlayerTurn(game.current_player_turn === assignedPlayer.role);
         } else {
           const existingViewer =
-            scenarioUsers.find((p) => p.id === viewingPlayerId) || scenarioUsers[0] || null;
+            users.find((p) => p.id === viewingPlayerId) || scenarioUsers[0] || null;
           setAssignedRole("");
           setAssignedPlayerId(null);
           setIsPlayerTurn(false);
@@ -616,8 +616,8 @@ const ScenarioBoard = () => {
                             className="mt-1"
                           >
                             {playerOptions.map((scenarioUser) => (
-                              <SelectOption key={scenarioUser.id} value={scenarioUser.id}>
-                                {formatRoleLabel(scenarioUser.role)}
+                              <SelectOption key={user.id} value={user.id}>
+                                {formatRoleLabel(user.role)}
                               </SelectOption>
                             ))}
                           </Select>

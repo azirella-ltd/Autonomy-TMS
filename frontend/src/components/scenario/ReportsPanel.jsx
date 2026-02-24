@@ -265,7 +265,7 @@ const ReportsPanel = ({ scenarioId }) => {
       {/* Performance Section */}
       {activeSection === 'performance' && (
         <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-xl font-bold text-gray-900 mb-4">ScenarioUser Performance</h3>
+          <h3 className="text-xl font-bold text-gray-900 mb-4">User Performance</h3>
 
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
@@ -296,29 +296,29 @@ const ReportsPanel = ({ scenarioId }) => {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {player_performance.map((scenarioUser, index) => (
-                  <tr key={scenarioUser.scenario_user_id} className={index < 3 ? 'bg-yellow-50' : ''}>
+                  <tr key={user.scenario_user_id} className={index < 3 ? 'bg-yellow-50' : ''}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="text-2xl">
                         {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : index + 1}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
-                      {scenarioUser.role}
+                      {user.role}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      ${scenarioUser.total_cost.toFixed(2)}
+                      ${user.total_cost.toFixed(2)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {scenarioUser.service_level ? `${(scenarioUser.service_level * 100).toFixed(1)}%` : 'N/A'}
+                      {user.service_level ? `${(user.service_level * 100).toFixed(1)}%` : 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {scenarioUser.avg_inventory?.toFixed(1) || 'N/A'}
+                      {user.avg_inventory?.toFixed(1) || 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {scenarioUser.orders_placed}
+                      {user.orders_placed}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {scenarioUser.order_variance?.toFixed(2) || 'N/A'}
+                      {user.order_variance?.toFixed(2) || 'N/A'}
                     </td>
                   </tr>
                 ))}

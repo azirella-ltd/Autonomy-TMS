@@ -166,11 +166,11 @@ function GroupPlayerManagement() {
 
   const handleDeleteUser = async (scenarioUser) => {
     if (!scenarioUser) return;
-    const confirmMessage = `Are you sure you want to delete ${scenarioUser.username || 'this user'}?`;
+    const confirmMessage = `Are you sure you want to delete ${user.username || 'this user'}?`;
     if (!window.confirm(confirmMessage)) return;
 
     try {
-      await api.delete(`/users/${scenarioUser.id}/`);
+      await api.delete(`/users/${user.id}/`);
       toast.success('User deleted');
       await loadPlayers();
     } catch (error) {
@@ -235,21 +235,21 @@ function GroupPlayerManagement() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {scenarioUsers.length === 0 ? (
+            {users.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center">
                   <span className="text-muted-foreground">No users found for your group yet.</span>
                 </TableCell>
               </TableRow>
             ) : (
-              scenarioUsers.map((scenarioUser) => {
+              users.map((scenarioUser) => {
                 const type = resolveUserType(scenarioUser);
-                const capCount = Array.isArray(scenarioUser.capabilities) ? scenarioUser.capabilities.length : 0;
+                const capCount = Array.isArray(user.capabilities) ? user.capabilities.length : 0;
                 return (
-                  <TableRow key={scenarioUser.id}>
-                    <TableCell>{scenarioUser.username}</TableCell>
-                    <TableCell>{scenarioUser.email}</TableCell>
-                    <TableCell>{groupMap[scenarioUser.group_id] || '—'}</TableCell>
+                  <TableRow key={user.id}>
+                    <TableCell>{user.username}</TableCell>
+                    <TableCell>{user.email}</TableCell>
+                    <TableCell>{groupMap[user.group_id] || '—'}</TableCell>
                     <TableCell>
                       <Badge variant={type === 'user' ? 'success' : 'secondary'}>
                         {type === 'user' ? 'User' : type === 'groupadmin' ? 'Group Admin' : 'User'}

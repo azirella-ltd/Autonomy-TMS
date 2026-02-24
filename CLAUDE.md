@@ -21,13 +21,13 @@ When implementing any entity:
 | Old Term (Removed) | New Term (Canonical) | Context |
 |-------------------|---------------------|---------|
 | Game | Scenario | Simulation scenario |
-| Player | Participant | Code/API level |
-| Player | User | UI display |
+| Player/Participant | ScenarioUser | Code/API/DB level |
+| Player/Participant | User | UI display |
 | Round | Period | Time period |
 | Gamification | Simulation | Section/feature name |
 | play_round | execute_period | Function name |
 | game_id | scenario_id | Database/API field |
-| player_id | participant_id | Database/API field |
+| player_id/participant_id | scenario_user_id | Database/API field |
 | Training Group | Learning Group | Group mode for user education |
 | node | site | AWS SC data model |
 | nodes | site (table) | AWS SC data model |
@@ -46,9 +46,9 @@ When implementing any entity:
 
 **Clean Rename**: The old terminology has been fully replaced. There are no backward-compatible aliases.
 - Use `Scenario`, `ScenarioCreate`, `ScenarioState` (not Game*)
-- Use `Participant`, `ParticipantRole`, `ParticipantResponse` (not Player*)
-- Use `Period`, `ScenarioPeriod` (not Round*, GameRound)
-- Frontend uses `simulationApi` with methods like `createScenario()`, `getParticipants()`
+- Use `ScenarioUser`, `ScenarioUserRole`, `ScenarioUserResponse` (not Player*/Participant*)
+- Use `Period`, `ScenarioUserPeriod` (not Round*, GameRound)
+- Frontend uses `simulationApi` with methods like `createScenario()`, `getScenarioUsers()`
 
 ### Group Modes vs AI Model Training
 
@@ -203,7 +203,7 @@ Narrow TRMs (VFA - Value Function Approximation)
 **The Beer Game**:
 - **Classic Simulation**: Multi-echelon supply chain (Retailer → Wholesaler → Distributor → Factory)
 - **Bullwhip Effect**: Demonstrates demand amplification through supply chain
-- **Multi-participant**: 2-8 participants in real-time WebSocket scenarios
+- **Multi-user**: 2-8 users in real-time WebSocket scenarios
 - **Mixed Human-AI**: Humans compete alongside/against AI agents
 
 **Use Cases**:
@@ -414,8 +414,8 @@ make proxy-logs
 **Database Models** (`models/`):
 - `aws_sc_planning.py`: AWS SC planning entities (forecast, supply_plan, sourcing_rules, inv_policy, etc.)
 - `supply_chain_config.py`: Network topology (SupplyChainConfig, Node, Lane, Item, Market)
-- `scenario.py`: Scenario, Round, ParticipantAction (simulation module)
-- `participant.py`: Participant, ParticipantRole, ParticipantRound (simulation module)
+- `scenario.py`: Scenario, Period, ScenarioUserAction (simulation module)
+- `participant.py`: ScenarioUser, ScenarioUserRole, ScenarioUserPeriod (simulation module)
 - `agent_config.py`: AgentConfig, AgentScenarioConfig
 - `group.py`: Group model (company equivalent)
 - `user.py`: User, Role, Permission
@@ -627,7 +627,7 @@ See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
    - Receive orders from downstream → update node state
    - Agent decides order quantity → place order upstream
    - Update costs and metrics
-3. **State Persistence**: Save `ParticipantPeriod` records to database
+3. **State Persistence**: Save `ScenarioUserPeriod` records to database
 4. **Analytics**: Compute bullwhip metrics, service levels, costs
 
 ### Database Schema
@@ -653,9 +653,9 @@ See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
 
 **Simulation Tables**:
 - `scenarios`: Beer Game sessions
-- `participants`: Participant assignments to scenarios
+- `scenario_users`: ScenarioUser assignments to scenarios
 - `periods`: Per-period scenario state
-- `participant_periods`: Per-participant per-period metrics
+- `scenario_user_periods`: Per-scenario-user per-period metrics
 - `agent_configs`: Agent strategy configurations
 - `agent_scenario_configs`: Agent-to-scenario mappings
 
@@ -840,7 +840,7 @@ LLM_MODEL_NAME=qwen3-8b
 ### Running a Beer Game Simulation
 
 1. Create scenario via `/api/v1/mixed-scenarios/` or `/api/v1/agent-scenarios/`
-2. Assign participants (human or AI)
+2. Assign scenario users (human or AI)
 3. POST to `/start` endpoint
 4. Iteratively POST to `/execute-period` for each period
 5. GET `/state` or `/history` for analytics
@@ -851,7 +851,7 @@ LLM_MODEL_NAME=qwen3-8b
 2. Run `scripts/manual_period_driver.py` to step through periods
 3. Set breakpoints in `engine.py:BeerLine.tick()` or agent strategy
 4. Inspect `node.inventory`, `node.backlog`, `node.pipeline_shipments`
-5. Check `ParticipantPeriod` records in database for historical state
+5. Check `ScenarioUserPeriod` records in database for historical state
 
 ### Creating Synthetic Data for Testing
 

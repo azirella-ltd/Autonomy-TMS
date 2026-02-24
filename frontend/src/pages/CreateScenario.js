@@ -270,8 +270,8 @@ const CreateMixedGame = () => {
 
   const usesAutonomyStrategist = useMemo(
     () =>
-      scenarioUsers.some(
-        (scenarioUser) => scenarioUser.scenarioUserType === 'ai' && String(scenarioUser.strategy || '').startsWith('LLM_')
+      users.some(
+        (scenarioUser) => user.scenarioUserType === 'ai' && String(user.strategy || '').startsWith('LLM_')
       ),
     [scenarioUsers]
   );
@@ -1109,7 +1109,7 @@ const CreateMixedGame = () => {
       return;
     }
     setPlayers((prevPlayers) => {
-      const existingByRole = new Map(prevPlayers.map((scenarioUser) => [scenarioUser.role, scenarioUser]));
+      const existingByRole = new Map(prevPlayers.map((scenarioUser) => [user.role, scenarioUser]));
       const defaults = playableSites.map((node) => {
         const nodeType = normalizeSiteType(node?.type);
         const roleKey = playableTypeToRole[nodeType];
@@ -1272,7 +1272,7 @@ const CreateMixedGame = () => {
         };
         if (type === 'human') {
           updatedPlayer.strategy = agentStrategies[0].options[0].value;
-          if (scenarioUser.role === 'retailer' && !scenarioUser.userId && user) {
+          if (user.role === 'retailer' && !user.userId && user) {
             updatedPlayer.userId = user.id;
           }
           updatedPlayer.autonomyOverridePct = undefined;
@@ -1299,7 +1299,7 @@ const CreateMixedGame = () => {
           updated.llmModel = DEFAULT_LLM_BASE_MODEL;
         }
         if (strategy === 'AUTONOMY_DTCE_CENTRAL' || strategy === 'LLM_SUPERVISED') {
-          const basePct = scenarioUser.autonomyOverridePct ?? 5;
+          const basePct = user.autonomyOverridePct ?? 5;
           updated.autonomyOverridePct = clampOverridePercent(basePct);
         }
         return updated;
@@ -1325,7 +1325,7 @@ const CreateMixedGame = () => {
     if (e) e.preventDefault();
 
     // Validate that each human role has a user assigned
-    const invalidPlayers = scenarioUsers.filter(
+    const invalidPlayers = users.filter(
       (p) => p.scenarioUserType === 'human' && !p.userId
     );
 
@@ -1458,26 +1458,26 @@ const CreateMixedGame = () => {
             standard_cost: parseFloat(pricingConfig.manufacturer.standard_cost),
           },
         },
-        player_assignments: scenarioUsers.map((scenarioUser) => {
+        player_assignments: users.map((scenarioUser) => {
           const role = String(scenarioUser?.role || '').toLowerCase();
-          const isAi = scenarioUser.scenarioUserType === 'ai';
-          const normalizedStrategy = isAi ? normalizeStrategyForPayload(scenarioUser.strategy) : null;
+          const isAi = user.scenarioUserType === 'ai';
+          const normalizedStrategy = isAi ? normalizeStrategyForPayload(user.strategy) : null;
           const overridePercent =
             normalizedStrategy === 'autonomy_dtce_central' || normalizedStrategy === 'llm_supervised'
-              ? clampOverridePercent(scenarioUser.autonomyOverridePct) / 100
+              ? clampOverridePercent(user.autonomyOverridePct) / 100
               : null;
 
           return {
             role,
             scenario_user_type: isAi ? 'agent' : 'human',
             strategy: normalizedStrategy,
-            can_see_demand: Boolean(scenarioUser.canSeeDemand),
-            user_id: isAi ? null : scenarioUser.userId || null,
+            can_see_demand: Boolean(user.canSeeDemand),
+            user_id: isAi ? null : user.userId || null,
             llm_model:
-              isAi && String(scenarioUser.strategy || '')
+              isAi && String(user.strategy || '')
                 .toUpperCase()
                 .startsWith('LLM_')
-                ? scenarioUser.llmModel
+                ? user.llmModel
                 : null,
             autonomy_override_pct: overridePercent,
           };
@@ -1688,18 +1688,18 @@ const CreateMixedGame = () => {
   const playerSummaryRows = useMemo(() =>
     playerRoles.map(({ value, label }) => {
       const scenarioUser = (summaryPlayers || []).find((entry) => entry.role === value) || {};
-      const isHuman = scenarioUser.scenarioUserType === 'human';
+      const isHuman = user.scenarioUserType === 'human';
       const assignmentLabel = isHuman
-        ? (scenarioUser.userId ? userLookup.get(Number(scenarioUser.userId)) || `User #${scenarioUser.userId}` : 'Unassigned')
+        ? (user.userId ? userLookup.get(Number(user.userId)) || `User #${user.userId}` : 'Unassigned')
         : 'AI Agent';
       const strategyLabel = isHuman
         ? 'Human Controlled'
-        : getStrategyLabel(scenarioUser.strategy || 'NAIVE');
-      const llmModel = !isHuman && String(scenarioUser.strategy || '').toUpperCase().startsWith('LLM_')
-        ? scenarioUser.llmModel
+        : getStrategyLabel(user.strategy || 'NAIVE');
+      const llmModel = !isHuman && String(user.strategy || '').toUpperCase().startsWith('LLM_')
+        ? user.llmModel
         : null;
-      const overridePct = !isHuman && Number.isFinite(Number(scenarioUser.autonomyOverridePct))
-        ? `${clampOverridePercent(scenarioUser.autonomyOverridePct)}%`
+      const overridePct = !isHuman && Number.isFinite(Number(user.autonomyOverridePct))
+        ? `${clampOverridePercent(user.autonomyOverridePct)}%`
         : null;
 
       return {
@@ -1710,7 +1710,7 @@ const CreateMixedGame = () => {
         strategyLabel,
         llmModel,
         overridePct,
-        canSeeDemand: Boolean(scenarioUser.canSeeDemand ?? (value === 'retailer')),
+        canSeeDemand: Boolean(user.canSeeDemand ?? (value === 'retailer')),
       };
     }),
     [summaryPlayers, userLookup]
@@ -2395,14 +2395,14 @@ const CreateMixedGame = () => {
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {scenarioUsers.map((scenarioUser, index) => {
-                    const selectedStrategy = scenarioUser.strategy || agentStrategies[0].options[0].value;
+                  {users.map((scenarioUser, index) => {
+                    const selectedStrategy = user.strategy || agentStrategies[0].options[0].value;
                     const badgeLabel =
-                      scenarioUser.scenarioUserType === 'human'
+                      user.scenarioUserType === 'human'
                         ? 'Human User'
                         : getStrategyLabel(selectedStrategy);
                     const isAutonomySelection =
-                      scenarioUser.scenarioUserType === 'ai' &&
+                      user.scenarioUserType === 'ai' &&
                       ['AUTONOMY_DTCE', 'AUTONOMY_DTCE_CENTRAL', 'AUTONOMY_DTCE_GLOBAL'].includes(selectedStrategy);
                     const autonomyTrainingLocked =
                       isAutonomySelection && !(modelStatus && modelStatus.is_trained);
@@ -2415,7 +2415,7 @@ const CreateMixedGame = () => {
 
                     return (
                       <div
-                        key={scenarioUser.role}
+                        key={user.role}
                         className="w-full p-5 border rounded-lg hover:shadow-md hover:-translate-y-0.5 transition-all"
                       >
                         <div className="space-y-4">
@@ -2423,18 +2423,18 @@ const CreateMixedGame = () => {
                             <div>
                               <div className="flex items-center gap-3">
                                 <span className="text-lg font-semibold">
-                                  {scenarioUser.displayName || scenarioUser.role}
+                                  {user.displayName || user.role}
                                 </span>
-                                {scenarioUser.role === 'retailer' && (
+                                {user.role === 'retailer' && (
                                   <Badge variant="info">Required</Badge>
                                 )}
                               </div>
                               <div className="flex items-center gap-2 mt-1">
                                 <Badge variant="secondary" className="text-xs">
-                                  Role: {scenarioUser.role}
+                                  Role: {user.role}
                                 </Badge>
                                 <Badge
-                                  variant={scenarioUser.scenarioUserType === 'human' ? 'success' : 'default'}
+                                  variant={user.scenarioUserType === 'human' ? 'success' : 'default'}
                                 >
                                   {badgeLabel}
                                 </Badge>
@@ -2443,33 +2443,33 @@ const CreateMixedGame = () => {
                           </div>
 
                           <div>
-                            <Label className="font-semibold">ScenarioUser Type</Label>
+                            <Label className="font-semibold">User Type</Label>
                             <div className="flex gap-3 mt-2">
                               <Button
                                 type="button"
-                                variant={scenarioUser.scenarioUserType === 'human' ? 'default' : 'outline'}
+                                variant={user.scenarioUserType === 'human' ? 'default' : 'outline'}
                                 onClick={() => handlePlayerTypeChange(index, 'human')}
                                 size="sm"
-                                className={scenarioUser.scenarioUserType === 'human' ? 'bg-green-600 hover:bg-green-700' : ''}
+                                className={user.scenarioUserType === 'human' ? 'bg-green-600 hover:bg-green-700' : ''}
                               >
                                 Human
                               </Button>
                               <Button
                                 type="button"
-                                variant={scenarioUser.scenarioUserType === 'ai' ? 'default' : 'outline'}
+                                variant={user.scenarioUserType === 'ai' ? 'default' : 'outline'}
                                 onClick={() => handlePlayerTypeChange(index, 'ai')}
                                 size="sm"
-                                className={scenarioUser.scenarioUserType === 'ai' ? 'bg-purple-600 hover:bg-purple-700' : ''}
+                                className={user.scenarioUserType === 'ai' ? 'bg-purple-600 hover:bg-purple-700' : ''}
                               >
                                 Agent
                               </Button>
                             </div>
                             <HelperText>
-                              {scenarioUser.scenarioUserType === 'human' ? humanHelper : agentHelper}
+                              {user.scenarioUserType === 'human' ? humanHelper : agentHelper}
                             </HelperText>
                           </div>
 
-                          {scenarioUser.scenarioUserType === 'ai' && (
+                          {user.scenarioUserType === 'ai' && (
                             <div>
                               <Label className="font-semibold">Agent Strategy</Label>
                               <select
@@ -2495,13 +2495,13 @@ const CreateMixedGame = () => {
                             </div>
                           )}
 
-                          {scenarioUser.scenarioUserType === 'ai' && (
+                          {user.scenarioUserType === 'ai' && (
                             <div className="space-y-3">
-                              {String(scenarioUser.strategy).startsWith('LLM_') && (
+                              {String(user.strategy).startsWith('LLM_') && (
                                 <div>
                                   <Label className="font-semibold">Choose Autonomy LLM</Label>
                                   <select
-                                    value={scenarioUser.llmModel}
+                                    value={user.llmModel}
                                     onChange={(e) =>
                                       setPlayers((prev) =>
                                         prev.map((p, i) => (i === index ? { ...p, llmModel: e.target.value } : p))
@@ -2519,7 +2519,7 @@ const CreateMixedGame = () => {
                                 </div>
                               )}
 
-                              {['AUTONOMY_DTCE_CENTRAL', 'LLM_SUPERVISED'].includes(scenarioUser.strategy) && (
+                              {['AUTONOMY_DTCE_CENTRAL', 'LLM_SUPERVISED'].includes(user.strategy) && (
                                 <div>
                                   <Label className="font-semibold">Supervisor Override (±%)</Label>
                                   <Input
@@ -2527,11 +2527,11 @@ const CreateMixedGame = () => {
                                     min={5}
                                     max={50}
                                     step={1}
-                                    value={clampOverridePercent(scenarioUser.autonomyOverridePct)}
+                                    value={clampOverridePercent(user.autonomyOverridePct)}
                                     onChange={(e) => {
                                       const raw = parseFloat(e.target.value);
                                       const next = clampOverridePercent(
-                                        Number.isFinite(raw) ? raw : scenarioUser.autonomyOverridePct
+                                        Number.isFinite(raw) ? raw : user.autonomyOverridePct
                                       );
                                       setPlayers((prev) =>
                                         prev.map((p, i) =>
@@ -2549,11 +2549,11 @@ const CreateMixedGame = () => {
                             </div>
                           )}
 
-                          {scenarioUser.scenarioUserType === 'human' && (
+                          {user.scenarioUserType === 'human' && (
                             <div>
                               <Label className="font-semibold">Assign User</Label>
                               <select
-                                value={scenarioUser.userId || ''}
+                                value={user.userId || ''}
                                 onChange={(e) => handleUserChange(index, e.target.value || null)}
                                 disabled={loadingUsers}
                                 className="w-full mt-1 h-10 px-3 rounded-md border border-input bg-background disabled:opacity-50"
@@ -2563,18 +2563,18 @@ const CreateMixedGame = () => {
                                   <option
                                     key={u.id}
                                     value={u.id}
-                                    disabled={scenarioUsers.some(p => p.userId === u.id && p.role !== scenarioUser.role)}
+                                    disabled={users.some(p => p.userId === u.id && p.role !== user.role)}
                                   >
                                     {u.username} {resolveUserType(u) === 'systemadmin' ? '(Admin)' : ''}
-                                    {scenarioUsers.some(p => p.userId === u.id && p.role !== scenarioUser.role) ? ' (Assigned)' : ''}
+                                    {users.some(p => p.userId === u.id && p.role !== user.role) ? ' (Assigned)' : ''}
                                   </option>
                                 ))}
                               </select>
                               <HelperText>
                                 {loadingUsers
                                   ? 'Loading users...'
-                                  : scenarioUser.userId
-                                    ? `Assigned to: ${availableUsers.find(u => u.id === scenarioUser.userId)?.username || 'Unknown'}`
+                                  : user.userId
+                                    ? `Assigned to: ${availableUsers.find(u => u.id === user.userId)?.username || 'Unknown'}`
                                     : 'Select a user to assign to this role'}
                               </HelperText>
                             </div>
@@ -2583,16 +2583,16 @@ const CreateMixedGame = () => {
                           <div className="flex items-center space-x-3">
                             <Switch
                               id={`demand-${index}`}
-                              checked={scenarioUser.canSeeDemand}
+                              checked={user.canSeeDemand}
                               onCheckedChange={(checked) => handleCanSeeDemandChange(index, checked)}
-                              disabled={scenarioUser.role === 'retailer'}
+                              disabled={user.role === 'retailer'}
                             />
                             <Label
                               htmlFor={`demand-${index}`}
-                              className={`font-semibold ${scenarioUser.role === 'retailer' ? 'opacity-70' : ''}`}
+                              className={`font-semibold ${user.role === 'retailer' ? 'opacity-70' : ''}`}
                             >
                               Can see customer demand
-                              {scenarioUser.role === 'retailer' && ' (Always enabled for Retailer)'}
+                              {user.role === 'retailer' && ' (Always enabled for Retailer)'}
                             </Label>
                           </div>
                         </div>

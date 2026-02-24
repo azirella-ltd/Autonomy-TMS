@@ -25,14 +25,14 @@ export const calculateScore = (scenarioUser, game) => {
   
   // Points for inventory (up to a certain limit)
   const maxInventoryScore = 100;
-  const inventoryScore = Math.min(scenarioUser.inventory || 0, 20) * 2; // 2 points per unit up to 20
+  const inventoryScore = Math.min(user.inventory || 0, 20) * 2; // 2 points per unit up to 20
   score += Math.min(inventoryScore, maxInventoryScore);
   
   // Penalty for backlog
-  score -= (scenarioUser.backlog || 0) * 5;
+  score -= (user.backlog || 0) * 5;
   
   // Bonus for completing orders
-  score += (scenarioUser.orders_completed || 0) * 10;
+  score += (user.orders_completed || 0) * 10;
   
   // Bonus for game completion
   if (game.status === 'completed') {
@@ -53,7 +53,7 @@ export const validateOrder = (scenarioUser, amount) => {
     return { isValid: false, message: 'Please enter a valid positive number' };
   }
   
-  if (amount > (scenarioUser.inventory || 0) + (scenarioUser.incoming_order || 0) + 10) {
+  if (amount > (user.inventory || 0) + (user.incoming_order || 0) + 10) {
     return { 
       isValid: false, 
       message: 'Order exceeds maximum allowed amount' 
@@ -102,7 +102,7 @@ export const getGameStatusBadge = (status) => {
   switch (status) {
     case 'waiting':
       return { 
-        text: 'Waiting for scenarioUsers', 
+        text: 'Waiting for users', 
         color: 'bg-yellow-100 text-yellow-800' 
       };
     case 'in_progress':

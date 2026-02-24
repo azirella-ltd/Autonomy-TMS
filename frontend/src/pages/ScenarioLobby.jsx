@@ -153,7 +153,7 @@ const ScenarioLobby = () => {
                           <div className="flex items-center text-sm text-gray-500">
                             <UserGroupIcon className="flex-shrink-0 mr-1.5 h-5 w-5 text-gray-400" />
                             <p>
-                              {game.scenarioUsers.length}/{game.max_players} scenarioUsers
+                              {game.users.length}/{game.max_players} scenarioUsers
                             </p>
                           </div>
                           {game.status === 'in_progress' && (

@@ -165,17 +165,17 @@ const NegotiationPanel = ({ scenarioId, scenarioUserRole, currentPlayerId }) => 
           </button>
         </div>
 
-        {/* Target ScenarioUser */}
+        {/* Target User */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Target ScenarioUser
+            Target User
           </label>
           <select
             value={targetPlayer}
             onChange={(e) => setTargetPlayer(e.target.value)}
             className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
           >
-            <option value="">Select scenarioUser...</option>
+            <option value="">Select user...</option>
             <option value="1">Retailer</option>
             <option value="2">Wholesaler</option>
             <option value="3">Distributor</option>
@@ -480,7 +480,7 @@ const NegotiationPanel = ({ scenarioId, scenarioUserRole, currentPlayerId }) => 
           <HandshakeIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
           <p className="text-gray-600 mb-2">No negotiations yet</p>
           <p className="text-sm text-gray-400 mb-4">
-            Start negotiating with other scenarioUsers to optimize the supply chain
+            Start negotiating with other users to optimize the supply chain
           </p>
           <button
             onClick={() => setShowCreateForm(true)}

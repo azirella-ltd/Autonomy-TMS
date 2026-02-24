@@ -75,7 +75,7 @@ const Login = () => {
 
       try {
         const games = await simulationApi.getGames();
-        const assigned = games.find(g => Array.isArray(g.scenarioUsers) && g.scenarioUsers.some(p => p.user_id === user?.id));
+        const assigned = games.find(g => Array.isArray(g.scenarioUsers) && g.users.some(p => p.user_id === user?.id));
         if (assigned) {
           navigate(`/scenarios/${assigned.id}` , { replace: true });
           return;
@@ -161,7 +161,7 @@ const Login = () => {
 
           try {
             const games = await simulationApi.getGames();
-            const assigned = games.find(g => Array.isArray(g.scenarioUsers) && g.scenarioUsers.some(p => p.user_id === loggedInUser?.id));
+            const assigned = games.find(g => Array.isArray(g.scenarioUsers) && g.users.some(p => p.user_id === loggedInUser?.id));
             if (assigned) {
               navigate(`/scenarios/${assigned.id}`, { replace: true });
               return;

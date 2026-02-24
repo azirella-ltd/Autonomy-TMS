@@ -7,7 +7,7 @@ const USER_TYPE_ALIASES = {
   groupadmin: "groupadmin",
   "group admin": "groupadmin",
   group_admin: "groupadmin",
-  scenarioUser: "user",
+  player: "user",
   user: "user",
 };
 

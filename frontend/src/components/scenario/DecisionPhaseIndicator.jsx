@@ -54,7 +54,7 @@ const DecisionPhaseIndicator = ({
       bgClass: 'bg-primary/10',
       textClass: 'text-primary',
       borderClass: 'border-l-primary',
-      description: 'ScenarioUsers fulfill downstream orders (ATP-based)',
+      description: 'Users fulfill downstream orders (ATP-based)',
     },
     {
       key: 'replenishment',
@@ -65,7 +65,7 @@ const DecisionPhaseIndicator = ({
       bgClass: 'bg-blue-100 dark:bg-blue-950/30',
       textClass: 'text-blue-600 dark:text-blue-400',
       borderClass: 'border-l-blue-500',
-      description: 'ScenarioUsers order from upstream suppliers',
+      description: 'Users order from upstream suppliers',
     },
     {
       key: 'completed',
@@ -209,7 +209,7 @@ const DecisionPhaseIndicator = ({
               <div className="flex items-center gap-3">
                 <PeopleIcon className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">
-                  ScenarioUsers Completed: <strong className="text-foreground">{playersCompleted}</strong> / {totalPlayers}
+                  Users Completed: <strong className="text-foreground">{playersCompleted}</strong> / {totalPlayers}
                 </span>
                 <span className="text-xs text-muted-foreground">
                   ({completionPercentage.toFixed(0)}%)
