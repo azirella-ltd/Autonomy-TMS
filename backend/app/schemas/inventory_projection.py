@@ -85,7 +85,7 @@ class InvProjectionBase(BaseModel):
     scenario_id: Optional[str] = None
     scenario_name: Optional[str] = None
 
-    # Beer Game integration
+    # Simulation integration
     config_id: Optional[int] = None
     scenario_id: Optional[int] = None
     round_number: Optional[int] = None
@@ -156,7 +156,7 @@ class AtpProjectionBase(BaseModel):
     atp_rule: Optional[AtpRuleType] = None
     time_fence_days: Optional[int] = Field(None, ge=0)
 
-    # Beer Game integration
+    # Simulation integration
     config_id: Optional[int] = None
     scenario_id: Optional[int] = None
 
@@ -213,7 +213,7 @@ class CtpProjectionBase(BaseModel):
     production_lead_time: Optional[int] = Field(None, ge=0)
     earliest_ship_date: Optional[date] = None
 
-    # Beer Game integration
+    # Simulation integration
     config_id: Optional[int] = None
     scenario_id: Optional[int] = None
 

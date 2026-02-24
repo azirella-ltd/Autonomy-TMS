@@ -152,7 +152,7 @@ async def get_job_status(job_id: str):
 
 class OptimizeGNNRequest(BaseModel):
     """Request for GNN hyperparameter optimization"""
-    config_name: str = "Default Beer Game"
+    config_name: str = "Default Supply Chain"
     architecture: str = "enhanced"  # 'graphsage', 'temporal', 'enhanced'
     n_trials: int = 50
     timeout: Optional[int] = None  # seconds
@@ -164,7 +164,7 @@ class OptimizeGNNRequest(BaseModel):
 
 class OptimizeRLRequest(BaseModel):
     """Request for RL hyperparameter optimization"""
-    config_name: str = "Default Beer Game"
+    config_name: str = "Default Supply Chain"
     algorithm: str = "PPO"  # 'PPO', 'SAC', 'A2C'
     n_trials: int = 30
     timeout: Optional[int] = None  # seconds
@@ -173,7 +173,7 @@ class OptimizeRLRequest(BaseModel):
 
 class BenchmarkRequest(BaseModel):
     """Request for agent benchmarking"""
-    config_name: str = "Default Beer Game"
+    config_name: str = "Default Supply Chain"
     agent_types: List[str] = ["naive", "rl", "gnn", "llm"]
     num_trials: int = 10
     max_rounds: int = 36
@@ -181,7 +181,7 @@ class BenchmarkRequest(BaseModel):
 
 class EvaluateAgentRequest(BaseModel):
     """Request for single agent evaluation"""
-    config_name: str = "Default Beer Game"
+    config_name: str = "Default Supply Chain"
     agent_type: str = "rl"
     num_trials: int = 10
     max_rounds: int = 36

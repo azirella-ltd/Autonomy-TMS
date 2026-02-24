@@ -23,6 +23,12 @@ from .engines.quality_engine import (
 )
 from .hive_signal import HiveSignal, HiveSignalBus, HiveSignalType
 
+try:
+    from ..conformal_prediction.conformal_decision import get_cdt_registry
+    _CDT_AVAILABLE = True
+except ImportError:
+    _CDT_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -95,6 +101,8 @@ class QualityRecommendation:
 
     reason: str = ""
     context_explanation: Optional[Dict] = None
+    risk_bound: Optional[float] = None
+    risk_assessment: Optional[Dict] = None
 
 
 @dataclass
@@ -126,6 +134,12 @@ class QualityDispositionTRM:
         self.db = db_session
         self.ctx_explainer = None  # Set externally by SiteAgent or caller
         self.signal_bus: Optional[HiveSignalBus] = None
+        self._cdt_wrapper = None
+        if _CDT_AVAILABLE:
+            try:
+                self._cdt_wrapper = get_cdt_registry().get_or_create("quality_disposition")
+            except Exception:
+                pass
 
     def _read_signals_before_decision(self) -> Dict[str, Any]:
         """Read relevant hive signals before making quality decision."""
@@ -250,6 +264,16 @@ class QualityDispositionTRM:
                 recommendation.context_explanation = ctx.to_dict()
             except Exception as e:
                 logger.debug(f"Context enrichment failed: {e}")
+
+        # CDT risk bound
+        if self._cdt_wrapper is not None and self._cdt_wrapper.is_calibrated:
+            try:
+                cost = recommendation.rework_cost + recommendation.scrap_cost
+                risk = self._cdt_wrapper.compute_risk_bound(cost)
+                recommendation.risk_bound = risk.risk_bound
+                recommendation.risk_assessment = risk.to_dict()
+            except Exception:
+                pass
 
         self._emit_signals_after_decision(state, recommendation)
         self._persist_decision(state, recommendation)

@@ -128,7 +128,7 @@ const SourcingAllocation = () => {
     return [
       {
         id: '1',
-        product_id: 'BEER-001',
+        product_id: 'PROD-001',
         from_site_id: 'FACTORY-1',
         to_site_id: 'DC-1',
         sourcing_rule_type: 'transfer',
@@ -141,7 +141,7 @@ const SourcingAllocation = () => {
       },
       {
         id: '2',
-        product_id: 'BEER-001',
+        product_id: 'PROD-001',
         from_site_id: 'SUPPLIER-A',
         to_site_id: 'FACTORY-1',
         tpartner_id: 'VENDOR-A',
@@ -155,7 +155,7 @@ const SourcingAllocation = () => {
       },
       {
         id: '3',
-        product_id: 'BEER-001',
+        product_id: 'PROD-001',
         from_site_id: 'SUPPLIER-B',
         to_site_id: 'FACTORY-1',
         tpartner_id: 'VENDOR-B',

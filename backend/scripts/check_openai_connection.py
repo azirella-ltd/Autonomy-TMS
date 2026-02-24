@@ -2,7 +2,7 @@
 """CLI utility to verify OpenAI Autonomy strategist connectivity.
 
 This script loads environment variables (optionally from a given .env file)
-so it can reuse the credentials you already configured for the Beer Game.
+so it can reuse the credentials you already configured for the Autonomy platform.
 It then calls :func:`check_autonomy_llm_access` to ensure the configured
 model can be reached.  A non-zero exit status indicates a failure.
 """

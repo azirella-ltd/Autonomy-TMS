@@ -28,8 +28,8 @@ class TenantMiddleware(BaseHTTPMiddleware):
     Middleware to detect and validate tenant from request
 
     Extracts tenant information from:
-    1. Subdomain (e.g., company1.beergame.com)
-    2. Custom domain (e.g., beergame.company.com)
+    1. Subdomain (e.g., company1.autonomy.ai)
+    2. Custom domain (e.g., autonomy.company.com)
     3. X-Tenant-ID header (for API clients)
     4. Falls back to default tenant if configured
     """
@@ -154,8 +154,8 @@ class TenantMiddleware(BaseHTTPMiddleware):
         Extract subdomain from host
 
         Examples:
-        - company1.beergame.com -> company1
-        - beergame.com -> None (root domain)
+        - company1.autonomy.ai -> company1
+        - autonomy.ai -> None (root domain)
         - localhost -> None
         """
         parts = host.split(".")
@@ -164,11 +164,11 @@ class TenantMiddleware(BaseHTTPMiddleware):
         if len(parts) <= 1 or host in ["localhost", "127.0.0.1"]:
             return None
 
-        # Root domain (beergame.com)
+        # Root domain (autonomy.ai)
         if len(parts) == 2:
             return None
 
-        # Subdomain exists (company1.beergame.com)
+        # Subdomain exists (company1.autonomy.ai)
         if len(parts) >= 3:
             return parts[0]
 

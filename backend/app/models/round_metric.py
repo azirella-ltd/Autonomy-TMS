@@ -1,7 +1,7 @@
 """
 Round Metric Database Model
 
-Stores per-round metrics for Beer Game execution tracking.
+Stores per-round metrics for simulation execution tracking.
 Replaces ParticipantRound for execution-based simulations.
 
 Terminology (Feb 2026):
@@ -25,7 +25,7 @@ from .base import Base
 
 class RoundMetric(Base):
     """
-    Round-level metrics for Beer Game execution.
+    Round-level metrics for simulation execution.
 
     Tracks inventory, backlog, costs, and KPIs for each site in each round.
     Used by the SimulationExecutionEngine to calculate performance metrics.
@@ -46,7 +46,7 @@ class RoundMetric(Base):
     pipeline_qty = Column(Double, server_default=text("0.0"), nullable=False)  # On order to upstream
     in_transit_qty = Column(Double, server_default=text("0.0"), nullable=False)  # Shipments arriving
 
-    # Cost metrics (classic Beer Game)
+    # Cost metrics (classic simulation)
     holding_cost = Column(Double, server_default=text("0.0"), nullable=False)  # inventory * holding_cost_per_unit
     backlog_cost = Column(Double, server_default=text("0.0"), nullable=False)  # backlog * backlog_cost_per_unit
     total_cost = Column(Double, server_default=text("0.0"), nullable=False)  # holding_cost + backlog_cost

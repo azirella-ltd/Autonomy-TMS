@@ -49,7 +49,7 @@ from app.models.scenario import Scenario
 from app.models.agent_config import AgentConfig
 from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 from app.services.supply_chain_config_service import SupplyChainConfigService
-from app.services.group_service import DEFAULT_BEER_GAME_SITE_TYPE_DEFINITIONS
+from app.services.group_service import DEFAULT_SITE_TYPE_DEFINITIONS
 
 router = APIRouter()
 
@@ -131,18 +131,18 @@ def _ensure_default_setup_sync(db: Session, user: User) -> None:
             logger.warning(f"Cannot create default config for user {user.id} - no group_id assigned")
             return
         config = SupplyChainConfig(
-            name="Default Beer Game",
+            name="Default Supply Chain",
             is_active=True,
             created_by=user.id,
             group_id=user.group_id,  # Required field
-            site_type_definitions=deepcopy(DEFAULT_BEER_GAME_SITE_TYPE_DEFINITIONS),
+            site_type_definitions=deepcopy(DEFAULT_SITE_TYPE_DEFINITIONS),
         )
         db.add(config)
         db.commit()
         db.refresh(config)
 
         # Default item
-        item = Item(config_id=config.id, name="Case of Beer")
+        item = Item(config_id=config.id, name="Standard Product")
         db.add(item)
         db.commit()
         db.refresh(item)
@@ -220,7 +220,7 @@ def _ensure_default_setup_sync(db: Session, user: User) -> None:
         db.add_all(lanes)
         db.commit()
 
-        # Item-node configs with standard beer game ranges
+        # Item-node configs with standard simulation ranges
         for node in [
             nodes[NodeType.RETAILER],
             nodes[NodeType.WHOLESALER],
@@ -273,7 +273,7 @@ def _ensure_default_setup_sync(db: Session, user: User) -> None:
     # Create default game from configuration
     service = SupplyChainConfigService(db)
     scenario_cfg = service.create_scenario_from_config(
-        config.id, {"name": "The Beer Game", "max_rounds": 50}
+        config.id, {"name": "Default Scenario", "max_rounds": 50}
     )
     scenario = Scenario(
         name=scenario_cfg["name"],

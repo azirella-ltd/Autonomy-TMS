@@ -1,5 +1,5 @@
 """
-SAP Integration Module for Beer Game Supply Chain.
+SAP Integration Module for Supply Chain.
 
 Complete integration suite with AI assistance and incremental loading:
 

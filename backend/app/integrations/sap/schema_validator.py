@@ -129,7 +129,7 @@ For each Z-field, provide:
 3. Data transformation needed (if any)
 4. Confidence level (HIGH/MEDIUM/LOW)
 
-Context: This is for Beer Game supply chain optimization. Focus on inventory, demand, supply, and logistics fields.
+Context: This is for supply chain optimization. Focus on inventory, demand, supply, and logistics fields.
 
 Respond in JSON format:
 {{
@@ -216,7 +216,7 @@ Please suggest:
 3. What's the best fallback strategy if we can't derive it?
 4. What default value makes sense for supply chain optimization?
 
-Context: This is for Beer Game supply chain simulation and optimization.
+Context: This is for supply chain simulation and optimization.
 
 Respond in JSON format:
 {{

@@ -1800,7 +1800,7 @@ def _read_model_cfg() -> ModelConfig:
                 except Exception:
                     pass
             return ModelConfig(**data)
-    # Default classic beer game
+    # Default classic demand pattern
     default = ModelConfig(
         items=[Item(id="item_1", name="Item 1")],
         sites=[

@@ -2785,7 +2785,7 @@ class MixedScenarioService:
         lead_time: int,
         round_number: int,
         source_player_round_id: Optional[int] = None,
-        product_id: str = "Beer",
+        product_id: str = "DEFAULT",
     ) -> TransferOrder:
         """
         Create a TransferOrder for simulation execution.
@@ -2802,7 +2802,7 @@ class MixedScenarioService:
             lead_time: Lead time in rounds (from TransportationLane.supply_lead_time['value'])
             round_number: Current round number
             source_player_round_id: PlayerRound ID that created this TO (bidirectional link)
-            product_id: Product ID (default: "Beer")
+            product_id: Product ID (default: "DEFAULT")
 
         Returns:
             Created TransferOrder with line items

@@ -62,8 +62,8 @@ class PurchaseOrder(Base):
     mrp_run_id = Column(String(100))  # Link to MRP run that generated this PO
     planning_run_id = Column(String(100))
 
-    # Beer Game extensions
-    scenario_id = Column(Integer, ForeignKey("scenarios.id", ondelete="CASCADE"))  # Link to Beer Game session
+    # Simulation extensions
+    scenario_id = Column(Integer, ForeignKey("scenarios.id", ondelete="CASCADE"))  # Link to simulation session
     order_round = Column(Integer)  # Round when PO was created
 
     # Audit
@@ -106,7 +106,7 @@ class PurchaseOrderLineItem(Base):
 
     # Quantities
     quantity = Column(Double, nullable=False)
-    shipped_quantity = Column(Double, default=0.0)  # Beer Game: fulfilled amount (vs. received_quantity which is after receipt)
+    shipped_quantity = Column(Double, default=0.0)  # Simulation: fulfilled amount (vs. received_quantity which is after receipt)
     received_quantity = Column(Double, default=0.0)
     rejected_quantity = Column(Double, default=0.0)
 

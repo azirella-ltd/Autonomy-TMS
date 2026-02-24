@@ -5,7 +5,7 @@ Supply Chain Entity #17: Supplier (Trading Partner)
 Based on SC entities: trading_partner, vendor_product, vendor_lead_time
 
 IMPORTANT: This implementation follows the Supply Chain Data Model as the foundation.
-Extensions for Beer Game and platform-specific features are clearly marked.
+Extensions for simulation and platform-specific features are clearly marked.
 """
 
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Index, UniqueConstraint, text, Double

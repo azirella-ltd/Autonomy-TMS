@@ -1,4 +1,4 @@
-"""Reusable helpers for Beer Game simulation state updates."""
+"""Reusable helpers for supply chain simulation state updates."""
 
 from typing import Any, Dict, List, Tuple
 

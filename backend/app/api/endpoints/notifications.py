@@ -63,7 +63,7 @@ class NotificationPreferencesUpdate(BaseModel):
 class SendTestNotificationRequest(BaseModel):
     """Request model for sending a test notification."""
     title: str = Field(default="Test Notification", max_length=100)
-    body: str = Field(default="This is a test notification from The Beer Game", max_length=500)
+    body: str = Field(default="This is a test notification from Autonomy", max_length=500)
 
 class TokenResponse(BaseModel):
     """Response model for push token."""

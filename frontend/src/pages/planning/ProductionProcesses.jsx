@@ -377,7 +377,7 @@ const ProductionProcesses = () => {
             <Input
               value={formData.description}
               onChange={(e) => setFormData(f => ({ ...f, description: e.target.value }))}
-              placeholder="e.g., Beer Case Assembly Line"
+              placeholder="e.g., Case Pack Assembly Line"
             />
           </div>
           <div className="grid grid-cols-2 gap-4">

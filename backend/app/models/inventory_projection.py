@@ -98,9 +98,9 @@ class InvProjection(Base):
     source_event_id: Mapped[Optional[str]] = mapped_column(String(100), comment="Source event identifier")
     source_update_dttm: Mapped[Optional[datetime]] = mapped_column(DateTime, comment="Source update timestamp")
 
-    # Extension: Beer Game Integration
+    # Extension: Simulation Integration
     config_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("supply_chain_configs.id"))
-    round_number: Mapped[Optional[int]] = mapped_column(Integer, comment="Beer Game round")
+    round_number: Mapped[Optional[int]] = mapped_column(Integer, comment="Simulation round")
 
     # Audit Fields
     created_by: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"))
@@ -216,7 +216,7 @@ class AtpProjection(Base):
     source_event_id: Mapped[Optional[str]] = mapped_column(String(100))
     source_update_dttm: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
-    # Beer Game Integration
+    # Simulation Integration
     config_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("supply_chain_configs.id"))
     scenario_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("scenarios.id"))
 
@@ -295,7 +295,7 @@ class CtpProjection(Base):
     source_event_id: Mapped[Optional[str]] = mapped_column(String(100))
     source_update_dttm: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
-    # Beer Game Integration
+    # Simulation Integration
     config_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("supply_chain_configs.id"))
     scenario_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("scenarios.id"))
 

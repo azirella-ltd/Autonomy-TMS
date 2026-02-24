@@ -240,7 +240,7 @@ def estimate_demand_stats(pattern_config: Optional[Dict[str, Any]]) -> Tuple[flo
 
 
 class DemandGenerator:
-    """Generates different types of demand patterns for the beer game."""
+    """Generates different types of demand patterns for simulation scenarios."""
 
     @staticmethod
     def generate_classic(
@@ -251,7 +251,7 @@ class DemandGenerator:
         stable_period: Optional[int] = None,
         step_increase: Optional[int] = None,
     ) -> List[int]:
-        """Generate a classic beer game demand pattern with a single step change."""
+        """Generate a classic demand pattern with a single step change."""
         if num_rounds <= 0:
             return []
 

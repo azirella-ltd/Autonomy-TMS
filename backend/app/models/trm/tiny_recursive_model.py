@@ -1,5 +1,5 @@
 """
-Tiny Recursive Model (TRM) for Beer Game Supply Chain Optimization.
+Tiny Recursive Model (TRM) for Supply Chain Optimization.
 
 A compact 7M parameter model using recursive refinement for multi-step reasoning.
 Based on the architecture described in TRM_IMPLEMENTATION_PLAN.md.
@@ -148,7 +148,7 @@ class RecursiveRefinementBlock(nn.Module):
 
 class TinyRecursiveModel(nn.Module):
     """
-    Tiny Recursive Model for Beer Game decisions.
+    Tiny Recursive Model for supply chain decisions.
 
     Total parameters: ~7M
     - Encoder: ~1.5M

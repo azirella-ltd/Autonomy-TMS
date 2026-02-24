@@ -1,7 +1,7 @@
 """
 Plan Writer for SAP Integration.
 
-Writes Beer Game optimization results back to SAP S/4HANA and APO systems.
+Writes supply chain optimization results back to SAP S/4HANA and APO systems.
 
 Supports:
 - Direct BAPI calls (S/4HANA)
@@ -48,7 +48,7 @@ class PlanWriteResult:
 
 class PlanWriter:
     """
-    Write Beer Game optimization plans back to SAP systems.
+    Write supply chain optimization plans back to SAP systems.
 
     Supports two modes:
     1. Direct RFC connection (BAPI calls)
@@ -132,7 +132,7 @@ class PlanWriter:
         pr_export["CURRENCY"] = requisitions.get("CURRENCY", "USD")
         pr_export["PUR_GROUP"] = requisitions.get("PUR_GROUP", "")
         pr_export["DOC_TYPE"] = "NB"  # Standard PR type
-        pr_export["SHORT_TEXT"] = "Beer Game Optimization Plan"
+        pr_export["SHORT_TEXT"] = "Supply Chain Optimization Plan"
 
         # Export to CSV
         pr_export.to_csv(output_file, index=False)
@@ -173,7 +173,7 @@ class PlanWriter:
                     "PREQ_PRICE": float(row.get("PREQ_PRICE", 0)),
                     "CURRENCY": str(row.get("CURRENCY", "USD")),
                     "PUR_GROUP": str(row.get("PUR_GROUP", "")),
-                    "SHORT_TEXT": "Beer Game Plan",
+                    "SHORT_TEXT": "Supply Chain Plan",
                 }]
 
                 # Call BAPI
@@ -361,7 +361,7 @@ class PlanWriter:
         apo_export["STOCK_QTY"] = snp_plan.get("STOCK_QTY", 0)
         apo_export["HORIZON_START"] = horizon_start.strftime("%Y%m%d")
         apo_export["HORIZON_END"] = horizon_end.strftime("%Y%m%d")
-        apo_export["CREATED_BY"] = "BEERGAME"
+        apo_export["CREATED_BY"] = "AUTONOMY"
         apo_export["CREATED_DATE"] = datetime.now().strftime("%Y%m%d")
 
         apo_export.to_csv(output_file, index=False)
@@ -566,7 +566,7 @@ class PlanWriter:
         Returns:
             Dictionary with PlanWriteResult for each component
         """
-        logger.info("Writing Beer Game optimization plan to SAP")
+        logger.info("Writing supply chain optimization plan to SAP")
         logger.info(f"Plan metadata: {plan_metadata}")
 
         results = {}
@@ -615,7 +615,7 @@ class PlanWriter:
         report_file = self.output_dir / f"PLAN_SUMMARY_{timestamp}.txt"
 
         with open(report_file, "w") as f:
-            f.write("Beer Game Optimization Plan - Write Summary\n")
+            f.write("Supply Chain Optimization Plan - Write Summary\n")
             f.write("=" * 60 + "\n\n")
 
             f.write("Plan Metadata:\n")

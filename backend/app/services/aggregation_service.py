@@ -126,7 +126,7 @@ class AggregatedRecord:
     """
     # Hierarchy keys
     site_key: str  # Aggregated site identifier (e.g., "REGION_AMERICAS")
-    product_key: str  # Aggregated product identifier (e.g., "FAMILY_BEER")
+    product_key: str  # Aggregated product identifier (e.g., "FAMILY_BEVERAGE")
     time_key: str  # Aggregated time identifier (e.g., "2026-01" for monthly)
 
     # Hierarchy levels

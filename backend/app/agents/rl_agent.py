@@ -1,5 +1,5 @@
 """
-Reinforcement Learning Agent for The Beer Game
+Reinforcement Learning Agent for Supply Chain Simulation
 
 Implements multiple RL algorithms:
 - Proximal Policy Optimization (PPO)
@@ -90,7 +90,7 @@ class RLConfig:
 
 class SimulationRLEnv(gym.Env):
     """
-    Gymnasium environment for training RL agents on Beer Game.
+    Gymnasium environment for training RL agents on supply chain simulation.
 
     Observation space:
     - inventory: current inventory level
@@ -293,7 +293,7 @@ class TensorBoardCallback(BaseCallback):
 
 class RLAgent(BasePolicy):
     """
-    Reinforcement Learning agent for Beer Game.
+    Reinforcement Learning agent for supply chain simulation.
 
     Uses Stable-Baselines3 for training and inference.
     Falls back to base-stock heuristic if SB3 not available or model not trained.

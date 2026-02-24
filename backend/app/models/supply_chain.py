@@ -24,7 +24,7 @@ class RoundPhase(str, Enum):
     """Round phase for DAG-ordered sequential execution"""
     FULFILLMENT = "FULFILLMENT"  # Phase 1: Participants fulfill downstream orders (ATP-based)
     REPLENISHMENT = "REPLENISHMENT"  # Phase 2: Participants order from upstream (after receiving POs)
-    DECISION = "DECISION"  # Legacy: Single decision point (original Beer Game)
+    DECISION = "DECISION"  # Legacy: Single decision point (original simulation)
     COMPLETED = "COMPLETED"  # Round finished, ready for next round
 
 

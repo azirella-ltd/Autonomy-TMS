@@ -95,7 +95,7 @@ const ProfilePage = () => {
           ],
           recentGames: [
             { id: 101, name: 'Supply Chain Masters', status: 'won', score: 1450, position: 1, date: '2023-05-15T14:30:00Z' },
-            { id: 102, name: 'Beer Distribution', status: 'lost', score: 980, position: 3, date: '2023-05-14T10:15:00Z' },
+            { id: 102, name: 'Distribution Challenge', status: 'lost', score: 980, position: 3, date: '2023-05-14T10:15:00Z' },
             { id: 103, name: 'Logistics Challenge', status: 'won', score: 1320, position: 2, date: '2023-05-12T16:45:00Z' },
             { id: 104, name: 'Supply Chain Newbies', status: 'won', score: 1560, position: 1, date: '2023-05-10T09:20:00Z' },
             { id: 105, name: 'Supply Chain Pro', status: 'lost', score: 890, position: 4, date: '2023-05-08T11:30:00Z' },

@@ -24,7 +24,7 @@ router = APIRouter(prefix="/trm", tags=["trm"])
 class TRMTrainingRequest(BaseModel):
     """Request to start per-TRM training."""
     trm_type: str = Field("all", description="TRM type: atp_executor, rebalancing, po_creation, order_tracking, or 'all'")
-    supply_chain_config: str = Field("default_beer_game", description="Supply chain config ID to train on")
+    supply_chain_config: str = Field("default_supply_chain", description="Supply chain config ID to train on")
     phase: str = Field("all", description="Training phase: 1, 2, 3, or 'all'")
     epochs: int = Field(50, description="Epochs per phase", ge=1, le=500)
     device: str = Field("cuda", description="Training device: cuda or cpu")
@@ -270,7 +270,7 @@ async def list_checkpoints(
 
     Args:
         checkpoint_dir: Directory containing checkpoints
-        config_id: Optional supply chain config ID to filter by (e.g., 'default_beer_game')
+        config_id: Optional supply chain config ID to filter by (e.g., 'default_supply_chain')
     """
     checkpoint_path = Path(checkpoint_dir)
 

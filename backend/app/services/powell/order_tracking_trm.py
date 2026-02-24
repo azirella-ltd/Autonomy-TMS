@@ -32,6 +32,12 @@ from .engines.order_tracking_engine import (
 )
 from .hive_signal import HiveSignal, HiveSignalBus, HiveSignalType
 
+try:
+    from ..conformal_prediction.conformal_decision import get_cdt_registry
+    _CDT_AVAILABLE = True
+except ImportError:
+    _CDT_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -194,6 +200,8 @@ class ExceptionDetection:
 
     # Context-aware explanation (populated when explainer is available)
     context_explanation: Optional[Dict] = None
+    risk_bound: Optional[float] = None
+    risk_assessment: Optional[Dict] = None
 
     def to_dict(self) -> Dict[str, Any]:
         result = {
@@ -208,6 +216,8 @@ class ExceptionDetection:
         }
         if self.context_explanation:
             result["context_explanation"] = self.context_explanation
+        if self.risk_bound is not None:
+            result["risk_bound"] = self.risk_bound
         return result
 
 
@@ -266,6 +276,14 @@ class OrderTrackingTRM:
         # Context-aware explainer (set externally by SiteAgent or caller)
         self.ctx_explainer = None
 
+        # Conformal Decision Theory wrapper for risk bounds
+        self._cdt_wrapper = None
+        if _CDT_AVAILABLE:
+            try:
+                self._cdt_wrapper = get_cdt_registry().get_or_create("order_tracking")
+            except Exception:
+                pass
+
         # Decision history for training
         self._decision_history: List[Dict[str, Any]] = []
 
@@ -319,6 +337,15 @@ class OrderTrackingTRM:
                 result.context_explanation = ctx.to_dict()
             except Exception as e:
                 logger.debug(f"Context enrichment failed: {e}")
+
+        # Compute CDT risk bound
+        if self._cdt_wrapper is not None and self._cdt_wrapper.is_calibrated:
+            try:
+                risk = self._cdt_wrapper.compute_risk_bound(result.estimated_impact_cost)
+                result.risk_bound = risk.risk_bound
+                result.risk_assessment = risk.to_dict()
+            except Exception:
+                pass
 
         # Emit signals after decision
         self._emit_signals_after_decision(order_state, result)

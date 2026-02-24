@@ -21,7 +21,7 @@ from app.models.aws_sc_planning import (
     AggregatedOrder,
     InboundOrderLine
 )
-from app.services.aws_sc_planning.beer_scenario_execution_adapter import BeerScenarioExecutionAdapter
+from app.services.sc_planning.simulation_execution_adapter import SimulationExecutionAdapter
 
 
 async def test_aggregation_integration():
@@ -137,7 +137,7 @@ async def test_aggregation_integration():
 
         # Test 1: Initialize adapter with aggregation cache
         print("TEST 1: Adapter initialization with aggregation cache")
-        adapter = BeerScenarioExecutionAdapter(scenario, db, use_cache=True)
+        adapter = SimulationExecutionAdapter(scenario, db, use_cache=True)
         cache_counts = await adapter.cache.load()
 
         print(f"  ✓ Cache loaded: {cache_counts}")

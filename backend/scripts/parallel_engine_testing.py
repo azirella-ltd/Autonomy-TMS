@@ -34,7 +34,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.models.scenario import Scenario
 from app.models.supply_chain_config import SupplyChainConfig
-from app.services.beer_scenario_execution_engine import BeerScenarioExecutionEngine
+from app.services.simulation_execution_engine import SimulationExecutionEngine
 from app.services.engine import SupplyChainLine  # Legacy engine
 
 
@@ -134,7 +134,7 @@ class ParallelEngineComparator:
 
         start_time = time.time()
 
-        engine = BeerScenarioExecutionEngine(self.db)
+        engine = SimulationExecutionEngine(self.db)
 
         round_snapshots = []
 

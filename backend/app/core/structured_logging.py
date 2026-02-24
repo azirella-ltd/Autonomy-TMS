@@ -443,7 +443,7 @@ if __name__ == '__main__':
             'context': {
                 'scenario_id': 100,
                 'player_count': 4,
-                'config': 'Default Beer Game'
+                'config': 'Default Supply Chain'
             }
         }
     )

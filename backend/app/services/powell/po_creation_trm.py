@@ -31,6 +31,12 @@ from datetime import datetime, timedelta
 from .engines.mrp_engine import MRPEngine, MRPConfig
 from .hive_signal import HiveSignal, HiveSignalBus, HiveSignalType
 
+try:
+    from ..conformal_prediction.conformal_decision import get_cdt_registry
+    _CDT_AVAILABLE = True
+except ImportError:
+    _CDT_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -162,9 +168,11 @@ class PORecommendation:
 
     # Context-aware explanation (populated when explainer is available)
     context_explanation: Optional[Dict] = None
+    risk_bound: Optional[float] = None
+    risk_assessment: Optional[Dict] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             "product_id": self.product_id,
             "location_id": self.location_id,
             "supplier_id": self.supplier_id,
@@ -180,6 +188,9 @@ class PORecommendation:
             "confidence": self.confidence,
             "reasoning": self.reasoning,
         }
+        if self.risk_bound is not None:
+            result["risk_bound"] = self.risk_bound
+        return result
 
 
 @dataclass
@@ -288,6 +299,14 @@ class POCreationTRM:
 
         # Context-aware explainer (set externally by SiteAgent or caller)
         self.ctx_explainer = None
+
+        # Conformal Decision Theory wrapper for risk bounds
+        self._cdt_wrapper = None
+        if _CDT_AVAILABLE:
+            try:
+                self._cdt_wrapper = get_cdt_registry().get_or_create("po_creation")
+            except Exception:
+                pass
 
         # Decision history for training
         self._decision_history: List[Dict[str, Any]] = []
@@ -483,6 +502,17 @@ class POCreationTRM:
             state, supplier, quantity, trigger_reason, urgency, confidence
         )
 
+        # Compute CDT risk bound
+        cdt_risk_bound = None
+        cdt_risk_assessment = None
+        if self._cdt_wrapper is not None and self._cdt_wrapper.is_calibrated:
+            try:
+                risk = self._cdt_wrapper.compute_risk_bound(expected_cost)
+                cdt_risk_bound = risk.risk_bound
+                cdt_risk_assessment = risk.to_dict()
+            except Exception:
+                pass
+
         return PORecommendation(
             product_id=state.product_id,
             location_id=state.location_id,
@@ -499,6 +529,8 @@ class POCreationTRM:
             confidence=confidence,
             reasoning=reasoning,
             context_explanation=context_dict,
+            risk_bound=cdt_risk_bound,
+            risk_assessment=cdt_risk_assessment,
         )
 
     def _build_reasoning(

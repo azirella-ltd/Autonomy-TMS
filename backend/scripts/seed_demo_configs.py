@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seed only the Default Beer Game group and related configs/games."""
+"""Seed only the default demo group and related configs/scenarios."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from scripts.seed_default_group import (
     session_factory_from_settings,
 )
 
-DEFAULT_BEER_GAME_CONFIG_NAMES = [
+DEFAULT_CONFIG_NAMES = [
     INVENTORY_CONFIG_NAME,
     "Case Beer Game",
     "Six-Pack Beer Game",
@@ -23,7 +23,7 @@ DEFAULT_BEER_GAME_CONFIG_NAMES = [
 def main() -> None:
     args = parse_args()
     options = build_seed_options_from_args(args)
-    config_specs = get_config_specs(DEFAULT_BEER_GAME_CONFIG_NAMES)
+    config_specs = get_config_specs(DEFAULT_CONFIG_NAMES)
     session_factory = session_factory_from_settings()
     run_seed_with_session(
         session_factory,

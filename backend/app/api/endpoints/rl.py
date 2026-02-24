@@ -231,7 +231,7 @@ def run_training_task(request: RLTrainingRequest):
                             if i + 1 < len(parts):
                                 reward = float(parts[i + 1].strip())
                                 training_status.mean_reward = reward
-                                # Cost is negative reward in Beer Game
+                                # Cost is negative reward in simulation
                                 training_status.mean_cost = abs(reward)
                 except:
                     pass

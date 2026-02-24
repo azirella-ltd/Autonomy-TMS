@@ -2,7 +2,7 @@
 Tenant Models for Multi-Tenancy
 
 Provides full organizational isolation with:
-- Subdomain routing (company1.beergame.com)
+- Subdomain routing (company1.autonomy.ai)
 - Resource quotas and limits
 - Custom branding per tenant
 - Billing integration
@@ -68,7 +68,7 @@ class Tenant(Base):
 
     # Subdomain Configuration
     subdomain = Column(String(50), unique=True, nullable=False, index=True)
-    custom_domain = Column(String(200), nullable=True, unique=True)  # e.g., beergame.company.com
+    custom_domain = Column(String(200), nullable=True, unique=True)  # e.g., autonomy.company.com
 
     # Branding
     logo_url = Column(String(500), nullable=True)

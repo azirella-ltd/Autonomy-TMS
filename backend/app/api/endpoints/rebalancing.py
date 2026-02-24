@@ -242,7 +242,7 @@ async def demo_rebalancing(
     Run demo rebalancing with sample data.
     Useful for testing and demonstration.
     """
-    # Sample 4-node Beer Game network
+    # Sample 4-node supply chain network
     nodes = [
         Node(id=1, name="Retailer", current_inventory=25, target_inventory=100,
              min_inventory=30, max_inventory=500, holding_cost_per_unit=0.5,

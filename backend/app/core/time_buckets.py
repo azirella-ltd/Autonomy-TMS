@@ -1,4 +1,4 @@
-"""Utilities for handling time bucket calculations across the Beer Game."""
+"""Utilities for handling time bucket calculations across the supply chain simulation."""
 from __future__ import annotations
 
 from datetime import date, timedelta

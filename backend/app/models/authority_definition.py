@@ -23,7 +23,7 @@ class AuthorityLevel(str, Enum):
     """
     Authority levels for override approval thresholds.
 
-    Maps to player roles in Beer Game:
+    Maps to participant roles in simulation:
     - OPERATOR: Retailer (front-line, limited authority)
     - SUPERVISOR: Wholesaler (mid-level)
     - MANAGER: Distributor (senior)

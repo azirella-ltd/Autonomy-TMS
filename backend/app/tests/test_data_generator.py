@@ -21,7 +21,7 @@ def test_generate_sim_training_windows_pid_strategy():
 
     assert X.shape[0] > 0
     assert A.shape == (2, 4, 4)
-    assert X.shape[2] == 4  # four nodes in the beer game
+    assert X.shape[2] == 4  # four nodes in the default topology
     assert Y.shape[1] == 4
     # ensure outputs are finite numbers
     assert np.isfinite(X).all()
