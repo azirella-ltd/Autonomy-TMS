@@ -441,14 +441,92 @@ class NegotiationService:
 
     async def _execute_negotiation(self, negotiation_id: int, negotiation: Any) -> None:
         """
-        Execute an accepted negotiation (apply changes to game state).
+        Execute an accepted negotiation by modifying game state.
 
-        This would modify player_rounds, update inventories, etc.
-        For now, just log the execution.
+        Supported negotiation types:
+        - order_adjustment: Modify next-period order quantity for the target
+        - inventory_share: Transfer inventory from initiator to target
+        - lead_time: Record agreed lead-time change (metadata only)
+        - price_adjustment: Record agreed unit-cost change (metadata only)
         """
-        logger.info(f"Executing negotiation {negotiation_id}: {negotiation.negotiation_type}")
-        # TODO: Implement actual game state modifications based on negotiation type
-        pass
+        neg_type = negotiation.negotiation_type
+        proposal = negotiation.proposal
+        if isinstance(proposal, str):
+            import ast
+            try:
+                proposal = ast.literal_eval(proposal)
+            except Exception:
+                proposal = {}
+
+        logger.info(f"Executing negotiation {negotiation_id}: {neg_type}")
+
+        try:
+            if neg_type == "inventory_share":
+                transfer_qty = proposal.get("quantity", 0)
+                if transfer_qty > 0:
+                    # Deduct from initiator inventory
+                    await self.db.execute(text("""
+                        UPDATE participant_rounds SET inventory = GREATEST(0, inventory - :qty)
+                        WHERE participant_id = :pid
+                        AND round_id = (
+                            SELECT id FROM scenario_rounds WHERE scenario_id = :gid
+                            ORDER BY round_number DESC LIMIT 1
+                        )
+                    """), {
+                        "qty": transfer_qty,
+                        "pid": negotiation.initiator_id,
+                        "gid": negotiation.game_id,
+                    })
+                    # Add to target inventory
+                    await self.db.execute(text("""
+                        UPDATE participant_rounds SET inventory = inventory + :qty
+                        WHERE participant_id = :pid
+                        AND round_id = (
+                            SELECT id FROM scenario_rounds WHERE scenario_id = :gid
+                            ORDER BY round_number DESC LIMIT 1
+                        )
+                    """), {
+                        "qty": transfer_qty,
+                        "pid": negotiation.target_id,
+                        "gid": negotiation.game_id,
+                    })
+                    await self.db.commit()
+                    logger.info(
+                        f"Inventory share executed: {transfer_qty} units from "
+                        f"player {negotiation.initiator_id} to {negotiation.target_id}"
+                    )
+
+            elif neg_type == "order_adjustment":
+                new_qty = proposal.get("new_order_quantity", proposal.get("quantity"))
+                if new_qty is not None:
+                    await self.db.execute(text("""
+                        UPDATE participant_rounds SET order_upstream = :qty
+                        WHERE participant_id = :pid
+                        AND round_id = (
+                            SELECT id FROM scenario_rounds WHERE scenario_id = :gid
+                            ORDER BY round_number DESC LIMIT 1
+                        )
+                    """), {
+                        "qty": int(new_qty),
+                        "pid": negotiation.target_id,
+                        "gid": negotiation.game_id,
+                    })
+                    await self.db.commit()
+                    logger.info(
+                        f"Order adjustment executed: player {negotiation.target_id} "
+                        f"order set to {new_qty}"
+                    )
+
+            elif neg_type in ("lead_time", "price_adjustment"):
+                # Informational agreements — proposal details stored on negotiation record
+                logger.info(
+                    f"Negotiation {neg_type} recorded for negotiation {negotiation_id}: "
+                    f"{proposal}"
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to execute negotiation {negotiation_id}: {e}", exc_info=True)
+            await self.db.rollback()
 
     async def _expire_negotiation(self, negotiation_id: int) -> None:
         """Mark a negotiation as expired."""

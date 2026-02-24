@@ -156,7 +156,10 @@ def chunk_text(
 # ============================================================================
 
 def parse_pdf(file_bytes: bytes) -> tuple[str, int]:
-    """Extract text from PDF bytes. Returns (text, page_count)."""
+    """Extract text from PDF bytes. Falls back to OCR for scanned PDFs.
+
+    Returns (text, page_count).
+    """
     try:
         from PyPDF2 import PdfReader
         reader = PdfReader(io.BytesIO(file_bytes))
@@ -165,10 +168,46 @@ def parse_pdf(file_bytes: bytes) -> tuple[str, int]:
             page_text = page.extract_text()
             if page_text:
                 pages.append(page_text)
-        return "\n\n".join(pages), len(reader.pages)
+        text = "\n\n".join(pages)
+        page_count = len(reader.pages)
+
+        # If PyPDF2 extracted meaningful text, return it
+        if text.strip() and len(text.strip().split()) > 50:
+            return text, page_count
+
+        # Scanned PDF — fall back to OCR
+        logger.info(f"PDF has little/no extractable text ({len(text.split())} words), trying OCR...")
+        return _ocr_pdf(file_bytes, page_count)
+
     except Exception as e:
         logger.error(f"PDF parsing failed: {e}")
         raise ValueError(f"Failed to parse PDF: {e}")
+
+
+def _ocr_pdf(file_bytes: bytes, page_count_hint: int = 0) -> tuple[str, int]:
+    """OCR a scanned PDF using Tesseract + pdf2image."""
+    try:
+        import tempfile
+        from pdf2image import convert_from_bytes
+        import pytesseract
+    except ImportError as ie:
+        logger.warning(f"OCR dependencies not available: {ie}")
+        return "", page_count_hint
+
+    try:
+        images = convert_from_bytes(file_bytes, dpi=150, fmt="png")
+        all_text = []
+        for i, img in enumerate(images):
+            text = pytesseract.image_to_string(img, lang="eng").strip()
+            if text:
+                all_text.append(text)
+        full_text = "\n\n".join(all_text)
+        full_text = full_text.replace("\x00", "")
+        logger.info(f"OCR extracted {len(full_text.split())} words from {len(images)} pages")
+        return full_text, len(images)
+    except Exception as e:
+        logger.error(f"OCR failed: {e}")
+        return "", page_count_hint
 
 
 def parse_docx(file_bytes: bytes) -> tuple[str, int]:

@@ -220,6 +220,63 @@ class SAPConfigBuilder:
     # Public API
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def suggest_config_name(sap_data: Dict[str, pd.DataFrame]) -> str:
+        """
+        Derive a meaningful SC config name from SAP data.
+
+        Priority cascade:
+        1. T001 company name (BUTXT) — e.g. "ACME Corp SC Network"
+        2. T001W plant names — e.g. "Hamburg + Berlin SC Network"
+        3. Fallback — "SAP Import"
+        """
+        # Try T001 company name first
+        t001 = sap_data.get("T001", pd.DataFrame())
+        if not t001.empty:
+            butxt_col = None
+            for col in ["BUTXT", "butxt", "Butxt"]:
+                if col in t001.columns:
+                    butxt_col = col
+                    break
+            if butxt_col:
+                names = t001[butxt_col].dropna().unique()
+                names = [str(n).strip() for n in names if str(n).strip()]
+                if len(names) == 1:
+                    return f"{names[0]} SC Network"
+                elif len(names) > 1:
+                    return f"{names[0]} (+{len(names) - 1}) SC Network"
+
+        # Try T001W plant names
+        t001w = sap_data.get("T001W", pd.DataFrame())
+        if not t001w.empty:
+            name_col = None
+            for col in ["NAME1", "name1", "Name1"]:
+                if col in t001w.columns:
+                    name_col = col
+                    break
+            werks_col = None
+            for col in ["WERKS", "werks", "Werks"]:
+                if col in t001w.columns:
+                    werks_col = col
+                    break
+
+            if name_col:
+                plant_names = t001w[name_col].dropna().unique()
+                plant_names = [str(n).strip() for n in plant_names if str(n).strip()]
+                if len(plant_names) == 1:
+                    return f"{plant_names[0]} SC Network"
+                elif len(plant_names) == 2:
+                    return f"{plant_names[0]} & {plant_names[1]} SC Network"
+                elif len(plant_names) > 2:
+                    return f"{plant_names[0]} (+{len(plant_names) - 1} sites) SC Network"
+            elif werks_col:
+                codes = t001w[werks_col].dropna().unique()
+                codes = [str(c).strip() for c in codes if str(c).strip()]
+                if codes:
+                    return f"Plants {', '.join(codes[:3])} SC Network"
+
+        return "SAP Import"
+
     async def preview(
         self,
         sap_data: Dict[str, pd.DataFrame],

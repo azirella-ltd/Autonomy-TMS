@@ -43,6 +43,11 @@ import {
   Zap,
   Activity,
   BarChart3,
+  Users,
+  Trash2,
+  Plus,
+  Eye,
+  Shield,
 } from 'lucide-react';
 import { cn } from '../../lib/utils/cn';
 
@@ -52,6 +57,7 @@ const tabItems = [
   { value: 'tables', label: 'Tables & Mapping', icon: <Table2 className="h-4 w-4" /> },
   { value: 'jobs', label: 'Ingestion Jobs', icon: <Activity className="h-4 w-4" /> },
   { value: 'insights', label: 'Insights & Actions', icon: <Lightbulb className="h-4 w-4" /> },
+  { value: 'user-import', label: 'User Import', icon: <Users className="h-4 w-4" /> },
 ];
 
 const systemTypes = [
@@ -980,6 +986,484 @@ const InsightsTab = ({ insights, actions, onAcknowledge, onUpdateAction, loading
   );
 };
 
+// User Import Tab Component
+const UserImportTab = () => {
+  const [roleMappings, setRoleMappings] = useState([]);
+  const [importLogs, setImportLogs] = useState([]);
+  const [scFilterConfig, setScFilterConfig] = useState(null);
+  const [previewData, setPreviewData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [showAddMapping, setShowAddMapping] = useState(false);
+  const [csvFiles, setCsvFiles] = useState({});
+
+  // New mapping form
+  const [newMapping, setNewMapping] = useState({
+    agr_name_pattern: '',
+    pattern_type: 'glob',
+    powell_role: 'MPS_MANAGER',
+    priority: 100,
+    description: '',
+  });
+
+  const powellRoles = [
+    'SC_VP', 'SOP_DIRECTOR', 'MPS_MANAGER', 'PO_ANALYST', 'ALLOCATION_MANAGER',
+  ];
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [mappingsRes, logsRes, filterRes] = await Promise.all([
+        api.get('/api/v1/sap-data/user-import/role-mappings'),
+        api.get('/api/v1/sap-data/user-import/logs?limit=10'),
+        api.get('/api/v1/sap-data/user-import/sc-filter-config'),
+      ]);
+      setRoleMappings(mappingsRes.data || []);
+      setImportLogs(logsRes.data?.items || []);
+      setScFilterConfig(filterRes.data);
+    } catch (err) {
+      console.error('Failed to load user import data:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const handleAddMapping = async () => {
+    try {
+      await api.post('/api/v1/sap-data/user-import/role-mappings', newMapping);
+      setShowAddMapping(false);
+      setNewMapping({ agr_name_pattern: '', pattern_type: 'glob', powell_role: 'MPS_MANAGER', priority: 100, description: '' });
+      loadData();
+    } catch (err) {
+      console.error('Failed to create mapping:', err);
+    }
+  };
+
+  const handleDeleteMapping = async (id) => {
+    try {
+      await api.delete(`/api/v1/sap-data/user-import/role-mappings/${id}`);
+      loadData();
+    } catch (err) {
+      console.error('Failed to delete mapping:', err);
+    }
+  };
+
+  const handleFileChange = (tableName, file) => {
+    setCsvFiles(prev => ({ ...prev, [tableName]: file }));
+  };
+
+  const parseCSV = (text) => {
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) return [];
+    const headers = lines[0].split(',').map(h => h.trim().toUpperCase());
+    return lines.slice(1).map(line => {
+      const values = line.split(',').map(v => v.trim());
+      const row = {};
+      headers.forEach((h, i) => { row[h] = values[i] || ''; });
+      return row;
+    });
+  };
+
+  const buildRawData = async () => {
+    const tables = ['usr02', 'usr21', 'adrp', 'agr_users', 'agr_define', 'agr_1251', 'agr_tcodes'];
+    const raw = {};
+    for (const t of tables) {
+      if (csvFiles[t]) {
+        const text = await csvFiles[t].text();
+        raw[t] = parseCSV(text);
+      } else {
+        raw[t] = [];
+      }
+    }
+    return raw;
+  };
+
+  const handlePreview = async () => {
+    setUploading(true);
+    try {
+      const rawData = await buildRawData();
+      const res = await api.post('/api/v1/sap-data/user-import/preview', rawData);
+      setPreviewData(res.data);
+    } catch (err) {
+      console.error('Preview failed:', err);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleExecute = async () => {
+    if (!window.confirm(`This will create/update ${previewData?.sc_eligible_users || 0} users. Continue?`)) return;
+    setUploading(true);
+    try {
+      const rawData = await buildRawData();
+      await api.post('/api/v1/sap-data/user-import/execute', rawData);
+      setPreviewData(null);
+      setCsvFiles({});
+      loadData();
+    } catch (err) {
+      console.error('Import failed:', err);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const csvTableDefs = [
+    { key: 'usr02', label: 'USR02 (User Logon)', required: true },
+    { key: 'agr_users', label: 'AGR_USERS (Role Assignments)', required: true },
+    { key: 'usr21', label: 'USR21 (Name/Address Key)', required: false },
+    { key: 'adrp', label: 'ADRP (Person Data)', required: false },
+    { key: 'agr_define', label: 'AGR_DEFINE (Role Definitions)', required: false },
+    { key: 'agr_1251', label: 'AGR_1251 (Auth Values)', required: false },
+    { key: 'agr_tcodes', label: 'AGR_TCODES (Transaction Codes)', required: false },
+  ];
+
+  if (loading) {
+    return <div className="flex justify-center py-12"><Spinner size="lg" /></div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Role Mapping Rules */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5" />
+              Role Mapping Rules
+            </CardTitle>
+            <Button size="sm" onClick={() => setShowAddMapping(true)}>
+              <Plus className="h-4 w-4 mr-1" /> Add Rule
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground mb-4">
+            Map SAP role patterns (AGR_NAME) to Autonomy powell_role. Rules are evaluated by priority (lower = first match wins).
+          </p>
+          {roleMappings.length === 0 ? (
+            <p className="text-muted-foreground text-sm italic">
+              No custom rules. Heuristic fallback will be used.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2 px-3">Pattern</th>
+                    <th className="text-left py-2 px-3">Type</th>
+                    <th className="text-left py-2 px-3">Powell Role</th>
+                    <th className="text-left py-2 px-3">Priority</th>
+                    <th className="text-left py-2 px-3">Description</th>
+                    <th className="py-2 px-3"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {roleMappings.map(m => (
+                    <tr key={m.id} className="border-b hover:bg-muted/50">
+                      <td className="py-2 px-3 font-mono text-xs">{m.agr_name_pattern}</td>
+                      <td className="py-2 px-3"><Badge variant="outline">{m.pattern_type}</Badge></td>
+                      <td className="py-2 px-3"><Badge>{m.powell_role}</Badge></td>
+                      <td className="py-2 px-3">{m.priority}</td>
+                      <td className="py-2 px-3 text-muted-foreground">{m.description || '—'}</td>
+                      <td className="py-2 px-3">
+                        <Button variant="ghost" size="sm" onClick={() => handleDeleteMapping(m.id)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Add Mapping Dialog */}
+          <Dialog open={showAddMapping} onOpenChange={setShowAddMapping}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Role Mapping Rule</DialogTitle>
+                <DialogDescription>
+                  Map a SAP role name pattern to an Autonomy powell_role.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 mt-4">
+                <div>
+                  <label className="text-sm font-medium">AGR_NAME Pattern</label>
+                  <Input
+                    value={newMapping.agr_name_pattern}
+                    onChange={e => setNewMapping(p => ({ ...p, agr_name_pattern: e.target.value }))}
+                    placeholder="*SC_VP*"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium">Pattern Type</label>
+                    <NativeSelect
+                      value={newMapping.pattern_type}
+                      onChange={e => setNewMapping(p => ({ ...p, pattern_type: e.target.value }))}
+                    >
+                      <option value="glob">Glob</option>
+                      <option value="regex">Regex</option>
+                    </NativeSelect>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Powell Role</label>
+                    <NativeSelect
+                      value={newMapping.powell_role}
+                      onChange={e => setNewMapping(p => ({ ...p, powell_role: e.target.value }))}
+                    >
+                      {powellRoles.map(r => <option key={r} value={r}>{r}</option>)}
+                    </NativeSelect>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium">Priority</label>
+                    <Input
+                      type="number"
+                      value={newMapping.priority}
+                      onChange={e => setNewMapping(p => ({ ...p, priority: parseInt(e.target.value) || 100 }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Description</label>
+                    <Input
+                      value={newMapping.description}
+                      onChange={e => setNewMapping(p => ({ ...p, description: e.target.value }))}
+                      placeholder="Optional"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" onClick={() => setShowAddMapping(false)}>Cancel</Button>
+                  <Button onClick={handleAddMapping} disabled={!newMapping.agr_name_pattern}>Save</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </CardContent>
+      </Card>
+
+      {/* CSV Upload & Preview */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Upload className="h-5 w-5" />
+            Data Upload & Preview
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground mb-4">
+            Upload SAP user/role CSV extracts. USR02 and AGR_USERS are required; others improve accuracy.
+          </p>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            {csvTableDefs.map(t => (
+              <div key={t.key} className="flex items-center gap-2">
+                <label className="text-sm w-64 flex items-center gap-1">
+                  {t.label}
+                  {t.required && <span className="text-destructive">*</span>}
+                </label>
+                <input
+                  type="file"
+                  accept=".csv"
+                  className="text-sm"
+                  onChange={e => handleFileChange(t.key, e.target.files[0])}
+                />
+                {csvFiles[t.key] && <CheckCircle className="h-4 w-4 text-green-600" />}
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              onClick={handlePreview}
+              disabled={uploading || !csvFiles.usr02 || !csvFiles.agr_users}
+            >
+              {uploading ? <Spinner size="sm" className="mr-2" /> : <Eye className="h-4 w-4 mr-1" />}
+              Preview Import
+            </Button>
+            {previewData && (
+              <Button variant="default" onClick={handleExecute} disabled={uploading}>
+                {uploading ? <Spinner size="sm" className="mr-2" /> : <Play className="h-4 w-4 mr-1" />}
+                Execute Import ({previewData.sc_eligible_users} users)
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Preview Results */}
+      {previewData && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Preview Results</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-4 gap-4 mb-4">
+              <div className="text-center p-3 rounded bg-muted">
+                <div className="text-2xl font-bold">{previewData.total_users}</div>
+                <div className="text-xs text-muted-foreground">Total SAP Users</div>
+              </div>
+              <div className="text-center p-3 rounded bg-blue-50 dark:bg-blue-950">
+                <div className="text-2xl font-bold text-blue-600">{previewData.sc_eligible_users}</div>
+                <div className="text-xs text-muted-foreground">SC Eligible</div>
+              </div>
+              <div className="text-center p-3 rounded bg-green-50 dark:bg-green-950">
+                <div className="text-2xl font-bold text-green-600">
+                  {previewData.preview_rows?.filter(r => r.action === 'create').length || 0}
+                </div>
+                <div className="text-xs text-muted-foreground">To Create</div>
+              </div>
+              <div className="text-center p-3 rounded bg-yellow-50 dark:bg-yellow-950">
+                <div className="text-2xl font-bold text-yellow-600">
+                  {previewData.preview_rows?.filter(r => r.action === 'update').length || 0}
+                </div>
+                <div className="text-xs text-muted-foreground">To Update</div>
+              </div>
+            </div>
+
+            {previewData.unmapped_roles?.length > 0 && (
+              <Alert className="mb-4">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  {previewData.unmapped_roles.length} SAP roles have no mapping rule (using heuristic fallback):
+                  <span className="font-mono text-xs ml-1">{previewData.unmapped_roles.slice(0, 5).join(', ')}</span>
+                  {previewData.unmapped_roles.length > 5 && ` +${previewData.unmapped_roles.length - 5} more`}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2 px-2">SAP Username</th>
+                    <th className="text-left py-2 px-2">Name</th>
+                    <th className="text-left py-2 px-2">Email</th>
+                    <th className="text-left py-2 px-2">SC Roles</th>
+                    <th className="text-left py-2 px-2">Powell Role</th>
+                    <th className="text-left py-2 px-2">Site Scope</th>
+                    <th className="text-left py-2 px-2">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(previewData.preview_rows || []).map((row, i) => (
+                    <tr key={i} className="border-b hover:bg-muted/50">
+                      <td className="py-2 px-2 font-mono text-xs">{row.sap_username}</td>
+                      <td className="py-2 px-2">{row.full_name}</td>
+                      <td className="py-2 px-2 text-xs">{row.email}</td>
+                      <td className="py-2 px-2 text-xs">
+                        {row.sc_roles?.slice(0, 2).map((r, j) => (
+                          <Badge key={j} variant="outline" className="mr-1 mb-1">{r}</Badge>
+                        ))}
+                        {row.sc_roles?.length > 2 && <span className="text-muted-foreground">+{row.sc_roles.length - 2}</span>}
+                      </td>
+                      <td className="py-2 px-2"><Badge>{row.proposed_powell_role}</Badge></td>
+                      <td className="py-2 px-2 text-xs">
+                        {row.proposed_site_scope ? row.proposed_site_scope.join(', ') : 'All'}
+                      </td>
+                      <td className="py-2 px-2">
+                        <Badge variant={row.action === 'create' ? 'default' : 'secondary'}>
+                          {row.action}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Import History */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Clock className="h-5 w-5" />
+            Import History
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {importLogs.length === 0 ? (
+            <p className="text-muted-foreground text-sm italic">No imports yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2 px-2">Date</th>
+                    <th className="text-left py-2 px-2">Discovered</th>
+                    <th className="text-left py-2 px-2">SC Eligible</th>
+                    <th className="text-left py-2 px-2">Created</th>
+                    <th className="text-left py-2 px-2">Updated</th>
+                    <th className="text-left py-2 px-2">Skipped</th>
+                    <th className="text-left py-2 px-2">Failed</th>
+                    <th className="text-left py-2 px-2">Duration</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {importLogs.map(log => (
+                    <tr key={log.id} className="border-b hover:bg-muted/50">
+                      <td className="py-2 px-2 text-xs">
+                        {log.started_at ? new Date(log.started_at).toLocaleString() : '—'}
+                      </td>
+                      <td className="py-2 px-2">{log.users_discovered}</td>
+                      <td className="py-2 px-2 font-medium text-blue-600">{log.users_sc_eligible}</td>
+                      <td className="py-2 px-2 text-green-600">{log.users_created}</td>
+                      <td className="py-2 px-2 text-yellow-600">{log.users_updated}</td>
+                      <td className="py-2 px-2 text-muted-foreground">{log.users_skipped}</td>
+                      <td className="py-2 px-2 text-destructive">{log.users_failed}</td>
+                      <td className="py-2 px-2 text-xs">{log.duration_seconds ? `${log.duration_seconds}s` : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* SC Filter Reference */}
+      {scFilterConfig && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5" />
+              SC Relevance Filter
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-3">
+              Only SAP users whose roles contain these authorization objects or transaction codes are imported.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <h4 className="text-sm font-medium mb-2">Authorization Objects ({scFilterConfig.auth_objects?.length})</h4>
+                <div className="flex flex-wrap gap-1">
+                  {scFilterConfig.auth_objects?.map(o => (
+                    <Badge key={o} variant="outline" className="text-xs font-mono">{o}</Badge>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <h4 className="text-sm font-medium mb-2">Transaction Codes ({scFilterConfig.transaction_codes?.length})</h4>
+                <div className="flex flex-wrap gap-1">
+                  {scFilterConfig.transaction_codes?.map(t => (
+                    <Badge key={t} variant="outline" className="text-xs font-mono">{t}</Badge>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+};
+
 // Main Component
 const SAPDataManagement = () => {
   const { user, isGroupAdmin } = useAuth();
@@ -1136,6 +1620,10 @@ const SAPDataManagement = () => {
               onUpdateAction={handleUpdateAction}
               loading={loading}
             />
+          )}
+
+          {activeTab === 'user-import' && (
+            <UserImportTab />
           )}
         </Tabs>
       </div>

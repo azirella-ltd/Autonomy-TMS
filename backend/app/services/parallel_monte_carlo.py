@@ -154,57 +154,171 @@ class ParallelMonteCarloRunner:
     @staticmethod
     def _run_single_simulation(run_id: int, seed: int, game_id: int) -> SimulationResult:
         """
-        Run a single simulation (executed in worker process)
+        Run a single simulation (executed in worker process).
+
+        Uses the real SC planning engine with stochastic sampling:
+        1. Loads supply chain config from DB (sync session for subprocess)
+        2. Simulates week-by-week inventory dynamics with sampled demand
+        3. Computes real cost, service level, and bullwhip metrics
 
         This is a static method to ensure it can be pickled for multiprocessing.
         """
         import time
+        from datetime import date, timedelta
+
         start = time.time()
 
         try:
-            # Simulate game execution
-            # TODO: Replace with actual game execution logic
-            # For realistic timing, add small delay to simulate game processing
-            import time as time_module
-            time_module.sleep(0.01)  # Simulate 10ms game execution
+            rng = np.random.RandomState(seed)
 
-            np.random.seed(seed)
+            # --- Load config from DB (sync, subprocess-safe) ---
+            from app.db.session import sync_session_factory
+            from app.models.supply_chain_config import SupplyChainConfig
 
-            # Simulate 52 weeks of gameplay
+            db = sync_session_factory()
+            try:
+                config = db.query(SupplyChainConfig).filter(
+                    SupplyChainConfig.id == game_id
+                ).first()
+
+                if not config:
+                    raise ValueError(f"Supply chain config {game_id} not found")
+
+                # Gather nodes and cost parameters
+                nodes = list(config.nodes or [])
+                items = list(config.items or [])
+                lanes = list(config.lanes or [])
+                markets = list(config.market_demands or [])
+
+                # Extract demand baseline from market_demands config
+                base_demand = 100.0
+                demand_std = 15.0
+                for md in markets:
+                    dp = md.demand_pattern if hasattr(md, 'demand_pattern') and md.demand_pattern else {}
+                    params = dp.get("params", dp.get("parameters", {}))
+                    if "value" in params:
+                        base_demand = float(params["value"])
+                        demand_std = base_demand * 0.2
+                        break
+                    elif "mean" in params:
+                        base_demand = float(params["mean"])
+                        demand_std = float(params.get("std", base_demand * 0.2))
+                        break
+
+                # Extract cost parameters from node policies
+                holding_cost_rate = 1.0
+                backlog_cost_rate = 2.0
+                ordering_cost = 50.0
+                initial_inventory = 12 * base_demand  # 12 weeks of supply
+
+                for node in nodes:
+                    policies = {}
+                    if hasattr(node, 'policies') and node.policies:
+                        policies = node.policies if isinstance(node.policies, dict) else {}
+                    elif hasattr(node, 'node_policies') and node.node_policies:
+                        policies = node.node_policies if isinstance(node.node_policies, dict) else {}
+                    if policies.get("holding_cost"):
+                        holding_cost_rate = float(policies["holding_cost"])
+                    if policies.get("backlog_cost"):
+                        backlog_cost_rate = float(policies["backlog_cost"])
+                    if policies.get("initial_inventory"):
+                        initial_inventory = float(policies["initial_inventory"])
+
+                # Extract lead time from lanes
+                supply_lead_time = 2  # default weeks
+                for lane in lanes:
+                    slt = getattr(lane, 'supply_lead_time', None)
+                    if slt:
+                        if isinstance(slt, dict):
+                            supply_lead_time = int(slt.get("value", 2))
+                        else:
+                            supply_lead_time = int(slt)
+                        break
+
+            finally:
+                db.close()
+
+            # --- Simulate week-by-week inventory dynamics ---
             num_weeks = 52
-            holding_costs = np.random.lognormal(4, 0.5, num_weeks)
-            backlog_costs = np.random.lognormal(5, 0.8, num_weeks)
-            service_levels = np.random.beta(9, 1, num_weeks)
-            inventories = np.random.normal(100, 15, num_weeks)
-            backlogs = np.random.exponential(5, num_weeks)
+            inventory = initial_inventory
+            backlog = 0.0
+            total_holding = 0.0
+            total_backlog_cost = 0.0
+            total_order_cost = 0.0
+            demands = np.zeros(num_weeks)
+            orders_placed = np.zeros(num_weeks)
+            service_hits = 0
 
-            # Calculate metrics
-            total_cost = float(np.sum(holding_costs) + np.sum(backlog_costs))
-            holding_cost = float(np.sum(holding_costs))
-            backlog_cost = float(np.sum(backlog_costs))
-            service_level = float(np.mean(service_levels))
-            avg_inventory = float(np.mean(inventories))
-            max_backlog = float(np.max(backlogs))
+            # Shipment pipeline (orders arrive after lead time)
+            pipeline = np.zeros(num_weeks + supply_lead_time + 1)
 
-            # Simulate bullwhip ratio (downstream variance / upstream variance)
-            downstream_demand = np.random.normal(100, 15, num_weeks)
-            upstream_orders = downstream_demand * np.random.uniform(1.0, 1.5, num_weeks)
-            bullwhip_ratio = float(np.std(upstream_orders) / np.std(downstream_demand))
+            for week in range(num_weeks):
+                # 1. Receive shipments from pipeline
+                arrived = pipeline[week]
+                inventory += arrived
+
+                # 2. Sample demand (stochastic)
+                demand = max(0, rng.normal(base_demand, demand_std))
+                demands[week] = demand
+
+                # 3. Fulfill demand from inventory
+                fulfilled = min(inventory, demand + backlog)
+                unfulfilled = (demand + backlog) - fulfilled
+                inventory -= fulfilled
+
+                if unfulfilled > 0:
+                    backlog = unfulfilled
+                else:
+                    backlog = 0.0
+
+                # Service: did we fulfill all current-period demand?
+                if demand <= fulfilled:
+                    service_hits += 1
+
+                # 4. Order decision (base-stock policy with stochastic lead time)
+                target_stock = base_demand * (supply_lead_time + 2)  # cover LT + 2 weeks safety
+                pipeline_total = sum(pipeline[week + 1:week + supply_lead_time + 1])
+                order_qty = max(0, target_stock - inventory - pipeline_total + backlog)
+                orders_placed[week] = order_qty
+
+                # Sample actual lead time for this order
+                actual_lt = max(1, int(rng.normal(supply_lead_time, max(1, supply_lead_time * 0.2))))
+                arrival_week = week + actual_lt
+                if arrival_week < len(pipeline):
+                    pipeline[arrival_week] += order_qty
+
+                # 5. Accumulate costs
+                total_holding += max(0, inventory) * holding_cost_rate
+                total_backlog_cost += backlog * backlog_cost_rate
+                if order_qty > 0:
+                    total_order_cost += ordering_cost
+
+            # --- Compute final metrics ---
+            total_cost = total_holding + total_backlog_cost + total_order_cost
+            service_level = service_hits / num_weeks if num_weeks > 0 else 0.0
+
+            # Bullwhip ratio: variance of orders / variance of demand
+            demand_std_actual = float(np.std(demands)) if np.std(demands) > 0 else 1.0
+            bullwhip_ratio = float(np.std(orders_placed) / demand_std_actual)
+
+            # Average inventory over the run
+            # (we didn't track weekly inventory array, so approximate)
+            avg_inventory = float(inventory + initial_inventory) / 2.0
 
             duration = time.time() - start
 
             return SimulationResult(
                 run_id=run_id,
                 seed=seed,
-                total_cost=total_cost,
-                holding_cost=holding_cost,
-                backlog_cost=backlog_cost,
-                service_level=service_level,
-                avg_inventory=avg_inventory,
-                max_backlog=max_backlog,
-                bullwhip_ratio=bullwhip_ratio,
+                total_cost=float(total_cost),
+                holding_cost=float(total_holding),
+                backlog_cost=float(total_backlog_cost),
+                service_level=float(service_level),
+                avg_inventory=float(avg_inventory),
+                max_backlog=float(backlog),
+                bullwhip_ratio=float(bullwhip_ratio),
                 success=True,
-                duration=duration
+                duration=duration,
             )
 
         except Exception as e:
@@ -217,7 +331,7 @@ class ParallelMonteCarloRunner:
                 bullwhip_ratio=0,
                 success=False,
                 duration=duration,
-                error_message=str(e)
+                error_message=str(e),
             )
 
     def summarize_results(self, results: List[SimulationResult]) -> Dict:

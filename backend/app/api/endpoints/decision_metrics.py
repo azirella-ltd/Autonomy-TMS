@@ -269,61 +269,8 @@ async def get_agent_decisions(
 
     decisions = query.order_by(AgentDecision.created_at.desc()).limit(limit).all()
 
-    # If no decisions, return demo data structure
-    if not decisions:
-        return {
-            "success": True,
-            "decisions": _get_demo_agent_decisions(),
-            "count": 10,
-        }
-
     return {
         "success": True,
         "decisions": [d.to_dict() for d in decisions],
         "count": len(decisions),
     }
-
-
-def _get_demo_agent_decisions():
-    """Return demo agent decisions for display."""
-    return [
-        {
-            "id": 1,
-            "decision_type": "inventory_rebalance",
-            "item_code": "HB-1001",
-            "item_name": "HydraBoost Original 12pk",
-            "issue_summary": "Inventory imbalance between DC-Chicago and DC-Indianapolis",
-            "agent_recommendation": "Transfer 500 units from Chicago to Indianapolis",
-            "agent_reasoning": "Indianapolis DOS at 3.2 days vs target 7 days. Chicago at 14 days (excess). Transfer cost $0.12/unit vs stockout cost $2.50/unit.",
-            "recommended_value": 500,
-            "status": "pending",
-            "urgency": "urgent",
-            "created_at": "2025-07-15T10:30:00Z",
-        },
-        {
-            "id": 2,
-            "decision_type": "purchase_order",
-            "item_code": "HB-2001",
-            "item_name": "HydraBoost Classic",
-            "issue_summary": "Replenishment trigger reached",
-            "agent_recommendation": "Create PO for 2,000 units from Supplier A",
-            "agent_reasoning": "Current inventory 1,200 units. Reorder point 1,500 units. Supplier A has best lead time (5 days) and 98% OTIF.",
-            "recommended_value": 2000,
-            "status": "auto_executed",
-            "urgency": "standard",
-            "created_at": "2025-07-15T09:15:00Z",
-        },
-        {
-            "id": 3,
-            "decision_type": "atp_allocation",
-            "item_code": "HL-3001",
-            "item_name": "HydraLite Citrus",
-            "issue_summary": "Competing orders exceed available inventory",
-            "agent_recommendation": "Allocate 60% to Priority 1 customer, 40% to Priority 2",
-            "agent_reasoning": "Priority 1 customer has contractual SLA. Priority 2 order can accept partial with 3-day backorder.",
-            "recommended_value": None,
-            "status": "pending",
-            "urgency": "urgent",
-            "created_at": "2025-07-15T11:00:00Z",
-        },
-    ]

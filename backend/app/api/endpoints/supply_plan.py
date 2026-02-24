@@ -86,11 +86,13 @@ def run_supply_plan_generation(
             progress_callback=progress_callback
         )
 
-        # Save result
+        # Save result including plan detail (orders + inventory targets)
         plan_result = SupplyPlanResult(
             request_id=request.id,
             scorecard=result_data["scorecard"],
             recommendations=result_data["recommendations"],
+            orders=result_data.get("orders"),
+            inventory_targets=result_data.get("inventory_targets"),
             total_cost_expected=result_data["scorecard"]["financial"]["total_cost"]["expected"],
             total_cost_p10=result_data["scorecard"]["financial"]["total_cost"]["p10"],
             total_cost_p90=result_data["scorecard"]["financial"]["total_cost"]["p90"],
@@ -238,8 +240,6 @@ def get_supply_plan_result(
             detail="Supply plan result not found"
         )
 
-    # TODO: Properly construct response from result
-    # For now, return minimal data
     return SupplyPlanResultResponse(
         task_id=task_id,
         status=plan_request.status,
@@ -250,8 +250,13 @@ def get_supply_plan_result(
         planning_horizon=plan_request.objectives.get("planning_horizon", 52),
         scorecard=result.scorecard,
         recommendations=result.recommendations,
+        orders=result.orders,
+        inventory_targets=result.inventory_targets,
         total_cost_expected=result.total_cost_expected,
+        total_cost_p10=result.total_cost_p10,
+        total_cost_p90=result.total_cost_p90,
         otif_expected=result.otif_expected,
+        otif_probability_above_target=result.otif_probability_above_target,
         fill_rate_expected=result.fill_rate_expected,
         inventory_turns_expected=result.inventory_turns_expected,
         bullwhip_ratio_expected=result.bullwhip_ratio_expected,

@@ -19,6 +19,7 @@ from dataclasses import dataclass, asdict
 from typing import Any, Dict, List, Optional, Tuple, Union
 from datetime import datetime
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.participant import Participant
@@ -434,20 +435,67 @@ class CTPService:
         for period_offset in range(1, periods + 1):
             future_round = current_round.round_number + period_offset
 
-            # Get production commitments for this period
-            # TODO: Query scheduled production orders
-            commitments = 0  # Placeholder
+            # Get production commitments for future periods from ProductionOrder
+            commitments = 0
+            try:
+                from app.models.production_order import ProductionOrder
+                from datetime import timedelta
+                active_statuses = ("PLANNED", "RELEASED", "IN_PROGRESS")
+                period_start = datetime.utcnow() + timedelta(days=(period_offset - 1) * 7)
+                period_end = period_start + timedelta(days=7)
+                commitments = int(
+                    self.db.query(
+                        func.coalesce(func.sum(ProductionOrder.planned_quantity), 0)
+                    )
+                    .filter(
+                        ProductionOrder.site_id == node.id,
+                        ProductionOrder.status.in_(active_statuses),
+                        ProductionOrder.planned_start_date >= period_start,
+                        ProductionOrder.planned_start_date < period_end,
+                    )
+                    .scalar()
+                )
+            except Exception:
+                commitments = 0
 
             # Available capacity
             available_capacity = max(0, capacity - commitments)
 
-            # Component ATP for this period
-            # TODO: Project component ATP forward
-            component_atp = {}  # Placeholder
+            # Component ATP: check BOM components at supplier sites via InvLevel
+            component_atp = {}
+            try:
+                bom_entries = (
+                    self.db.query(ProductBOM)
+                    .filter(ProductBOM.product_id == str(item_id))
+                    .all()
+                )
+                for entry in bom_entries:
+                    comp_id = entry.component_product_id
+                    comp_inv = (
+                        self.db.query(
+                            func.coalesce(func.sum(InvLevel.available_qty), 0)
+                        )
+                        .filter(InvLevel.product_id == comp_id)
+                        .scalar()
+                    )
+                    component_atp[comp_id] = int(comp_inv)
+            except Exception:
+                pass
 
-            # CTP for this period
+            # CTP for this period (minimum of capacity-based and component-constrained)
             available_after_yield = int(available_capacity * yield_rate)
-            ctp = available_after_yield  # Simplified (no component check yet)
+            ctp = available_after_yield
+            if component_atp:
+                bom_entries_list = (
+                    self.db.query(ProductBOM)
+                    .filter(ProductBOM.product_id == str(item_id))
+                    .all()
+                ) if not component_atp else []
+                for entry in (self.db.query(ProductBOM).filter(ProductBOM.product_id == str(item_id)).all()):
+                    qty_per = entry.component_quantity or 1
+                    comp_avail = component_atp.get(entry.component_product_id, 0)
+                    max_from_comp = int(comp_avail / qty_per) if qty_per > 0 else 0
+                    ctp = min(ctp, max_from_comp)
 
             # Utilization percentage
             utilization_pct = (
@@ -598,21 +646,36 @@ class CTPService:
     # --- Helper Methods ---
 
     def _get_production_capacity(self, node: Node) -> int:
-        """Get production capacity per round from node configuration"""
-        # TODO: Query node.production_capacity field when available
-        # For now, return default capacity based on node type
-        if hasattr(node, "production_capacity_per_round"):
-            return node.production_capacity_per_round or 1000
+        """Get production capacity per round from node configuration or ProductionProcess."""
+        # 1. Try node attribute
+        if hasattr(node, "production_capacity_per_round") and node.production_capacity_per_round:
+            return node.production_capacity_per_round
 
-        # Fallback defaults by node type
+        # 2. Try site attributes JSON
+        if hasattr(node, "attributes") and isinstance(node.attributes, dict):
+            cap = node.attributes.get("production_capacity")
+            if cap:
+                return int(cap)
+
+        # 3. Try ProductionProcess table
+        try:
+            from app.models.sc_entities import ProductionProcess
+            proc = self.db.query(ProductionProcess).filter(
+                ProductionProcess.site_id == node.id
+            ).first()
+            if proc and hasattr(proc, "manufacturing_capacity_hours") and proc.manufacturing_capacity_hours:
+                return int(proc.manufacturing_capacity_hours)
+        except Exception:
+            pass
+
+        # 4. Fallback defaults by node type
         capacity_defaults = {
             "manufacturer": 1000,
             "factory": 1000,
             "component_supplier": 800,
             "case_manufacturer": 600,
         }
-        # Use master_type or dag_type (Node model attributes)
-        node_type = node.master_type or node.dag_type or "manufacturer"
+        node_type = node.master_type or getattr(node, "dag_type", None) or "manufacturer"
         return capacity_defaults.get(
             node_type.lower() if node_type else "manufacturer", 1000
         )
@@ -629,10 +692,32 @@ class CTPService:
     def _get_production_commitments(
         self, player: Player, current_round: GameRound
     ) -> int:
-        """Get current production commitments (WIP + scheduled)"""
-        # TODO: Query manufacturing_order or production_schedule table
-        # For now, return 0 (no commitments)
-        return 0
+        """Get current production commitments (WIP + scheduled).
+
+        Sums planned_quantity from ProductionOrder records that are
+        PLANNED, RELEASED, or IN_PROGRESS for this player's site.
+        """
+        try:
+            from app.models.production_order import ProductionOrder
+
+            node = _get_player_node(self.db, player, current_round.game)
+            if not node:
+                return 0
+
+            active_statuses = ("PLANNED", "RELEASED", "IN_PROGRESS")
+            total = (
+                self.db.query(
+                    func.coalesce(func.sum(ProductionOrder.planned_quantity), 0)
+                )
+                .filter(
+                    ProductionOrder.site_id == node.id,
+                    ProductionOrder.status.in_(active_statuses),
+                )
+                .scalar()
+            )
+            return int(total)
+        except Exception:
+            return 0
 
     def _get_production_lead_time(self, node: Node) -> int:
         """Get production lead time from production_process table."""

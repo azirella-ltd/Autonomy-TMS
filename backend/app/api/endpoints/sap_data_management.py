@@ -46,6 +46,12 @@ from app.services.sap_ingestion_monitoring_service import (
     create_ingestion_monitoring_service,
 )
 from app.services.sap_config_builder import SAPConfigBuilder
+from app.services.sap_user_provisioning_service import (
+    SAPUserProvisioningService,
+    SC_AUTH_OBJECTS,
+    SC_TRANSACTION_CODES,
+)
+from app.models.sap_user_import import SAPRoleMapping, SAPUserImportLog
 
 router = APIRouter()
 
@@ -979,6 +985,26 @@ class ConfigBuildResponse(BaseModel):
     summary: Dict[str, int]
 
 
+@router.get(
+    "/connections/{connection_id}/suggest-config-name",
+    tags=["sap-config-builder"],
+)
+async def suggest_config_name(
+    connection_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Derive a meaningful SC config name from SAP data.
+
+    Uses T001 company name, or T001W plant names as fallback.
+    Call this before build-config/preview to pre-fill the config name.
+    """
+    sap_data = await _load_sap_data(db, current_user.group_id, connection_id)
+    suggested = SAPConfigBuilder.suggest_config_name(sap_data)
+    return {"suggested_name": suggested}
+
+
 @router.post(
     "/build-config/preview",
     response_model=ConfigBuildPreviewResponse,
@@ -998,10 +1024,15 @@ async def preview_config_build(
     # Load SAP data from connection
     sap_data = await _load_sap_data(db, current_user.group_id, request.connection_id)
 
+    # Auto-suggest name if using default
+    config_name = request.config_name
+    if config_name == "SAP Import":
+        config_name = SAPConfigBuilder.suggest_config_name(sap_data)
+
     builder = SAPConfigBuilder(db, current_user.group_id)
     preview = await builder.preview(
         sap_data=sap_data,
-        config_name=request.config_name,
+        config_name=config_name,
         plant_filter=request.plant_filter,
         company_filter=request.company_filter,
     )
@@ -1027,10 +1058,15 @@ async def build_config_from_sap(
     """
     sap_data = await _load_sap_data(db, current_user.group_id, request.connection_id)
 
+    # Auto-suggest name if using default
+    config_name = request.config_name
+    if config_name == "SAP Import":
+        config_name = SAPConfigBuilder.suggest_config_name(sap_data)
+
     builder = SAPConfigBuilder(db, current_user.group_id)
     result = await builder.build(
         sap_data=sap_data,
-        config_name=request.config_name,
+        config_name=config_name,
         plant_filter=request.plant_filter,
         company_filter=request.company_filter,
         master_type_overrides=request.master_type_overrides,
@@ -1109,10 +1145,15 @@ async def start_config_build(
     """
     sap_data = await _load_sap_data(db, current_user.group_id, request.connection_id)
 
+    # Auto-suggest name if using default
+    config_name = request.config_name
+    if config_name == "SAP Import":
+        config_name = SAPConfigBuilder.suggest_config_name(sap_data)
+
     builder = SAPConfigBuilder(db, current_user.group_id)
     result = await builder.start_build(
         sap_data=sap_data,
-        config_name=request.config_name,
+        config_name=config_name,
         plant_filter=request.plant_filter,
         company_filter=request.company_filter,
     )
@@ -1310,3 +1351,200 @@ async def _load_sap_data(
         )
 
     return sap_data
+
+
+# =========================================================================
+# SAP User Import Endpoints
+# =========================================================================
+
+# --- Pydantic models for user import ---
+
+class RoleMappingCreateRequest(BaseModel):
+    agr_name_pattern: str = Field(..., description="SAP role pattern (glob or regex)")
+    pattern_type: str = Field("glob", description="Pattern type: glob or regex")
+    powell_role: str = Field(..., description="Target Autonomy powell_role")
+    user_type: str = Field("USER", description="Target user type")
+    derive_site_scope_from_werks: bool = Field(True)
+    derive_product_scope_from_matkl: bool = Field(False)
+    priority: int = Field(100, description="Priority (lower = first)")
+    description: Optional[str] = None
+
+
+class UserImportFilterConfig(BaseModel):
+    extra_auth_objects: List[str] = Field(default_factory=list)
+    excluded_auth_objects: List[str] = Field(default_factory=list)
+    extra_tcodes: List[str] = Field(default_factory=list)
+    excluded_tcodes: List[str] = Field(default_factory=list)
+    include_ustyp: List[str] = Field(default_factory=lambda: ["A"])
+    exclude_expired: bool = True
+
+
+class UserImportRequest(BaseModel):
+    """Raw SAP table data (7 tables) plus optional filter config."""
+    usr02: List[Dict[str, Any]] = Field(default_factory=list)
+    usr21: List[Dict[str, Any]] = Field(default_factory=list)
+    adrp: List[Dict[str, Any]] = Field(default_factory=list)
+    agr_users: List[Dict[str, Any]] = Field(default_factory=list)
+    agr_define: List[Dict[str, Any]] = Field(default_factory=list)
+    agr_1251: List[Dict[str, Any]] = Field(default_factory=list)
+    agr_tcodes: List[Dict[str, Any]] = Field(default_factory=list)
+    filter_config: Optional[UserImportFilterConfig] = None
+
+
+# --- Role Mapping CRUD ---
+
+@router.get("/user-import/role-mappings")
+async def list_role_mappings(
+    current_user: User = Depends(require_group_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all role mapping rules for the current group."""
+    from sqlalchemy import select as sa_select
+
+    result = await db.execute(
+        sa_select(SAPRoleMapping)
+        .where(SAPRoleMapping.group_id == current_user.group_id)
+        .order_by(SAPRoleMapping.priority)
+    )
+    mappings = result.scalars().all()
+    return [m.to_dict() for m in mappings]
+
+
+@router.post("/user-import/role-mappings")
+async def create_role_mapping(
+    body: RoleMappingCreateRequest,
+    current_user: User = Depends(require_group_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new role mapping rule."""
+    mapping = SAPRoleMapping(
+        group_id=current_user.group_id,
+        agr_name_pattern=body.agr_name_pattern,
+        pattern_type=body.pattern_type,
+        powell_role=body.powell_role,
+        user_type=body.user_type,
+        derive_site_scope_from_werks=body.derive_site_scope_from_werks,
+        derive_product_scope_from_matkl=body.derive_product_scope_from_matkl,
+        priority=body.priority,
+        description=body.description,
+    )
+    db.add(mapping)
+    await db.commit()
+    await db.refresh(mapping)
+    return mapping.to_dict()
+
+
+@router.delete("/user-import/role-mappings/{mapping_id}")
+async def delete_role_mapping(
+    mapping_id: int,
+    current_user: User = Depends(require_group_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a role mapping rule."""
+    from sqlalchemy import select as sa_select
+
+    result = await db.execute(
+        sa_select(SAPRoleMapping).where(
+            SAPRoleMapping.id == mapping_id,
+            SAPRoleMapping.group_id == current_user.group_id,
+        )
+    )
+    mapping = result.scalar_one_or_none()
+    if not mapping:
+        raise HTTPException(status_code=404, detail="Role mapping not found")
+
+    await db.delete(mapping)
+    await db.commit()
+    return {"status": "deleted", "id": mapping_id}
+
+
+# --- Import Preview & Execute ---
+
+@router.post("/user-import/preview")
+async def preview_user_import(
+    body: UserImportRequest,
+    current_user: User = Depends(require_group_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Dry-run: show proposed user mappings without creating records."""
+    service = SAPUserProvisioningService(db, current_user.group_id)
+    raw_data = {
+        "usr02": body.usr02,
+        "usr21": body.usr21,
+        "adrp": body.adrp,
+        "agr_users": body.agr_users,
+        "agr_define": body.agr_define,
+        "agr_1251": body.agr_1251,
+        "agr_tcodes": body.agr_tcodes,
+    }
+    filter_cfg = body.filter_config.model_dump() if body.filter_config else None
+    return await service.preview_import(raw_data, filter_cfg)
+
+
+@router.post("/user-import/execute")
+async def execute_user_import(
+    body: UserImportRequest,
+    current_user: User = Depends(require_group_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Commit import: create/update Autonomy users from SAP data."""
+    service = SAPUserProvisioningService(db, current_user.group_id)
+    raw_data = {
+        "usr02": body.usr02,
+        "usr21": body.usr21,
+        "adrp": body.adrp,
+        "agr_users": body.agr_users,
+        "agr_define": body.agr_define,
+        "agr_1251": body.agr_1251,
+        "agr_tcodes": body.agr_tcodes,
+    }
+    filter_cfg = body.filter_config.model_dump() if body.filter_config else None
+    log = await service.execute_import(
+        raw_data, filter_cfg, initiated_by_user_id=current_user.id
+    )
+    return log.to_dict()
+
+
+# --- Import History ---
+
+@router.get("/user-import/logs")
+async def list_import_logs(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(require_group_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return paginated import audit history."""
+    from sqlalchemy import select as sa_select, func
+
+    # Count
+    count_q = await db.execute(
+        sa_select(func.count(SAPUserImportLog.id)).where(
+            SAPUserImportLog.group_id == current_user.group_id
+        )
+    )
+    total = count_q.scalar() or 0
+
+    # Fetch
+    result = await db.execute(
+        sa_select(SAPUserImportLog)
+        .where(SAPUserImportLog.group_id == current_user.group_id)
+        .order_by(SAPUserImportLog.started_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    logs = result.scalars().all()
+    return {"total": total, "items": [l.to_dict() for l in logs]}
+
+
+# --- SC Filter Config ---
+
+@router.get("/user-import/sc-filter-config")
+async def get_sc_filter_config(
+    current_user: User = Depends(get_current_user),
+):
+    """Return the default SC relevance filter constants."""
+    return {
+        "auth_objects": sorted(SC_AUTH_OBJECTS),
+        "transaction_codes": sorted(SC_TRANSACTION_CODES),
+    }

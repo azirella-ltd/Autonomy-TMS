@@ -928,6 +928,8 @@ GET  /api/v1/sap-data/actions             # Get remediation actions
 
 **Access**: Navigation > Administration > SAP Data Management (Group Admin required)
 
+**SAP System Access**: Free S/4HANA FAA (Fully-Activated Appliance) with IDES sample data available via [cal.sap.com](https://cal.sap.com). Requires SAP ID ([register here](https://account.sap.com/core/create/register)) and a cloud provider account (AWS/Azure/GCP, ~$1-3/hr compute). See [SAP_INTEGRATION_GUIDE.md](docs/progress/SAP_INTEGRATION_GUIDE.md#getting-access-to-sap-s4hana-free) for full setup instructions.
+
 ---
 
 ## Accessing Services

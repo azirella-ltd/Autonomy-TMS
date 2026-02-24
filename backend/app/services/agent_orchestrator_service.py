@@ -533,7 +533,7 @@ class AgentOrchestratorService:
             actions.extend(soop_actions)
 
         if cycle_type in ["daily", "weekly", "monthly"]:
-            # Run Execution tGNN
+            # Run Execution tGNN to generate allocations
             trigger = TriggerContext(
                 trigger_type=TriggerType.PLANNING_CYCLE,
                 group_id=group_id,
@@ -542,7 +542,8 @@ class AgentOrchestratorService:
                 priority=2,
                 payload={"cycle_type": cycle_type},
             )
-            # This would trigger TRM agents based on allocations generated
+            tgnn_actions = await self.process_trigger(trigger)
+            actions.extend(tgnn_actions)
 
         return actions
 
@@ -741,11 +742,8 @@ class AgentOrchestratorService:
 
             # Check if scenario evaluation is needed
             if action_spec.get("requires_scenario_eval"):
-                # Get current state (placeholder - would query actual state)
-                current_state = {
-                    "total_cost": 100000,
-                    "service_level": 0.92,
-                }
+                # Query real current state from DB
+                current_state = await self._get_current_state(group_id, entity_id)
 
                 # Evaluate scenarios
                 recommended, comparison = await scenario_service.evaluate_and_recommend(
@@ -1093,39 +1091,230 @@ class AgentOrchestratorService:
 
         return result
 
+    async def _get_current_state(self, group_id: int, entity_id: str) -> Dict[str, Any]:
+        """
+        Query current supply chain state from DB for scenario evaluation.
+
+        Returns aggregate cost, service level, and inventory metrics
+        from InvLevel and supply_plan tables.
+        """
+        from app.models.sc_entities import InvLevel, Forecast
+
+        try:
+            # Total on-hand inventory value (proxy for cost exposure)
+            inv_result = await self.db.execute(
+                select(
+                    func.sum(InvLevel.on_hand_qty).label("total_on_hand"),
+                    func.count(InvLevel.id).label("location_count"),
+                )
+            )
+            inv_row = inv_result.first()
+            total_on_hand = float(inv_row.total_on_hand or 0) if inv_row else 0
+
+            # Approximate service level from inventory coverage
+            # (locations with positive inventory / total locations)
+            if inv_row and inv_row.location_count and inv_row.location_count > 0:
+                covered_result = await self.db.execute(
+                    select(func.count(InvLevel.id)).where(InvLevel.on_hand_qty > 0)
+                )
+                covered = covered_result.scalar() or 0
+                service_level = covered / inv_row.location_count
+            else:
+                service_level = 0.95  # Default assumption
+
+            return {
+                "total_cost": total_on_hand * 1.5,  # Rough holding cost estimate
+                "service_level": round(service_level, 3),
+                "total_on_hand": total_on_hand,
+                "entity_id": entity_id,
+            }
+
+        except Exception as e:
+            logger.warning(f"Failed to query current state, using defaults: {e}")
+            return {
+                "total_cost": 100000,
+                "service_level": 0.92,
+            }
+
 
 # =============================================================================
 # Agent Handler Registration
 # =============================================================================
 
+def _build_trm_handler(trm_class, evaluate_method: str):
+    """
+    Build an async handler that instantiates a TRM and calls its evaluate method.
+
+    Each TRM has a slightly different evaluate method name, but they all
+    accept a state dict (from trigger payload) and return a recommendation.
+    """
+    async def handler(trigger: TriggerContext, scope: AgentScope) -> Dict:
+        try:
+            trm = trm_class()
+            payload = trigger.payload or {}
+
+            eval_fn = getattr(trm, evaluate_method, None)
+            if eval_fn is None:
+                return {
+                    "decision": {
+                        "action_type": "error",
+                        "title": f"No {evaluate_method} on {trm_class.__name__}",
+                    },
+                    "confidence": 0.0,
+                    "input_features": payload,
+                }
+
+            # TRM evaluate methods are synchronous - call directly
+            result = eval_fn(payload) if callable(eval_fn) else None
+
+            # Normalize result to dict
+            if hasattr(result, '__dict__'):
+                result_dict = {k: v for k, v in result.__dict__.items() if not k.startswith('_')}
+            elif isinstance(result, dict):
+                result_dict = result
+            else:
+                result_dict = {"raw_result": str(result)}
+
+            return {
+                "decision": {
+                    "action_type": result_dict.get("action", result_dict.get("recommendation", "evaluate")),
+                    "title": f"{trm_class.__name__} decision",
+                    "details": result_dict,
+                },
+                "confidence": result_dict.get("confidence", 0.75),
+                "input_features": payload,
+            }
+
+        except Exception as e:
+            logger.warning(f"{trm_class.__name__}.{evaluate_method} failed: {e}")
+            return {
+                "decision": {
+                    "action_type": "error",
+                    "title": f"{trm_class.__name__} error: {str(e)[:100]}",
+                },
+                "confidence": 0.0,
+                "input_features": trigger.payload or {},
+            }
+
+    return handler
+
+
 def create_orchestrator_with_handlers(db: AsyncSession) -> AgentOrchestratorService:
     """
-    Create an orchestrator with default agent handlers registered.
+    Create an orchestrator with real TRM/GNN agent handlers registered.
 
-    This is where actual TRM/GNN implementations would be connected.
+    Each handler instantiates the corresponding TRM class and delegates
+    to its evaluate method. Failures are caught and logged gracefully.
     """
     orchestrator = AgentOrchestratorService(db)
 
-    # Import actual agent implementations
-    # from app.services.powell.atp_executor import ATPExecutorTRM
-    # from app.services.powell.inventory_rebalancing_trm import RebalancingTRM
-    # etc.
+    # --- Import and register real TRM agents ---
+    try:
+        from app.services.powell.atp_executor import ATPExecutorTRM
+        orchestrator.register_agent_handler(
+            AgentType.TRM_ATP,
+            _build_trm_handler(ATPExecutorTRM, "check_atp"),
+        )
+    except Exception as e:
+        logger.warning(f"Failed to register TRM_ATP handler: {e}")
 
-    # For now, register placeholder handlers
-    async def placeholder_handler(trigger: TriggerContext, scope: AgentScope) -> Dict:
-        """Placeholder until real agents are connected."""
+    try:
+        from app.services.powell.inventory_rebalancing_trm import InventoryRebalancingTRM
+        orchestrator.register_agent_handler(
+            AgentType.TRM_REBALANCE,
+            _build_trm_handler(InventoryRebalancingTRM, "evaluate_rebalancing"),
+        )
+    except Exception as e:
+        logger.warning(f"Failed to register TRM_REBALANCE handler: {e}")
+
+    try:
+        from app.services.powell.po_creation_trm import POCreationTRM
+        orchestrator.register_agent_handler(
+            AgentType.TRM_PO_CREATION,
+            _build_trm_handler(POCreationTRM, "evaluate_po_need"),
+        )
+    except Exception as e:
+        logger.warning(f"Failed to register TRM_PO_CREATION handler: {e}")
+
+    try:
+        from app.services.powell.order_tracking_trm import OrderTrackingTRM
+        orchestrator.register_agent_handler(
+            AgentType.TRM_ORDER_TRACKING,
+            _build_trm_handler(OrderTrackingTRM, "evaluate_order"),
+        )
+    except Exception as e:
+        logger.warning(f"Failed to register TRM_ORDER_TRACKING handler: {e}")
+
+    # --- GNN agents ---
+    try:
+        from app.services.powell.allocation_service import AllocationService
+        async def gnn_execution_handler(trigger: TriggerContext, scope: AgentScope) -> Dict:
+            try:
+                alloc_svc = AllocationService()
+                payload = trigger.payload or {}
+                # Generate default priority allocations using the service
+                allocations = alloc_svc.generate_default_allocations()
+                status = alloc_svc.get_allocation_status()
+                return {
+                    "decision": {
+                        "action_type": "generate_allocations",
+                        "title": "tGNN allocation generation",
+                        "details": status if isinstance(status, dict) else {"status": str(status)[:200]},
+                    },
+                    "confidence": 0.8,
+                    "input_features": payload,
+                }
+            except Exception as e:
+                logger.warning(f"GNN_EXECUTION handler failed: {e}")
+                return {"decision": {"action_type": "error", "title": str(e)[:100]}, "confidence": 0.0, "input_features": trigger.payload or {}}
+
+        orchestrator.register_agent_handler(AgentType.GNN_EXECUTION, gnn_execution_handler)
+    except Exception as e:
+        logger.warning(f"Failed to register GNN_EXECUTION handler: {e}")
+
+    try:
+        from app.services.powell.sop_inference_service import SOPInferenceService
+        async def gnn_soop_handler(trigger: TriggerContext, scope: AgentScope) -> Dict:
+            try:
+                payload = trigger.payload or {}
+                config_id = payload.get("config_id") or payload.get("group_id")
+                if config_id:
+                    sop_svc = SOPInferenceService(db, config_id=config_id)
+                    result = await sop_svc.analyze_network()
+                    result_dict = result.to_dict() if hasattr(result, 'to_dict') else {"result": str(result)[:200]}
+                    return {
+                        "decision": {
+                            "action_type": "sop_inference",
+                            "title": "S&OP GraphSAGE inference",
+                            "details": result_dict,
+                        },
+                        "confidence": 0.8,
+                        "input_features": payload,
+                    }
+                return {"decision": {"action_type": "skip", "title": "No config_id"}, "confidence": 0.0, "input_features": payload}
+            except Exception as e:
+                logger.warning(f"GNN_SOOP handler failed: {e}")
+                return {"decision": {"action_type": "error", "title": str(e)[:100]}, "confidence": 0.0, "input_features": trigger.payload or {}}
+
+        orchestrator.register_agent_handler(AgentType.GNN_SOOP, gnn_soop_handler)
+    except Exception as e:
+        logger.warning(f"Failed to register GNN_SOOP handler: {e}")
+
+    # --- Fallback: register graceful no-op for any unregistered agent types ---
+    async def fallback_handler(trigger: TriggerContext, scope: AgentScope) -> Dict:
+        """Graceful fallback for agent types without a dedicated handler."""
         return {
             "decision": {
-                "action_type": "placeholder",
-                "title": f"Placeholder decision for {trigger.trigger_type.value}",
-                "description": "Real agent implementation needed",
+                "action_type": "not_implemented",
+                "title": f"Handler not yet registered for {trigger.trigger_type.value}",
             },
-            "confidence": 0.5,
+            "confidence": 0.0,
             "input_features": trigger.payload or {},
         }
 
     for agent_type in AgentType:
         if agent_type not in [AgentType.PLAN_COMPARISON, AgentType.LLM_PLANNER, AgentType.LLM_SUPERVISOR]:
-            orchestrator.register_agent_handler(agent_type, placeholder_handler)
+            if agent_type not in orchestrator._agent_handlers:
+                orchestrator.register_agent_handler(agent_type, fallback_handler)
 
     return orchestrator

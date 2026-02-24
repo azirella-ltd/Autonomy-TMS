@@ -12,12 +12,15 @@ ENV PYTHONUNBUFFERED=1 \
     NO_CUDA=1 \
     USE_CUDA=0
 
-# Install system dependencies
+# Install system dependencies (includes Tesseract OCR + poppler for PDF image extraction)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     python3-dev \
     postgresql-client \
     libpq-dev \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory

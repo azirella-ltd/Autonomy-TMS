@@ -237,9 +237,16 @@ class SupplyPlanResultResponse(BaseModel):
     scorecard: BalancedScorecard
     recommendations: List[Recommendation]
 
+    # Plan detail: orders (PO/MO/STO) and inventory targets (safety stock / ROP)
+    orders: Optional[List[Dict[str, Any]]] = None
+    inventory_targets: Optional[List[Dict[str, Any]]] = None
+
     # Summary metrics
     total_cost_expected: float
+    total_cost_p10: Optional[float] = None
+    total_cost_p90: Optional[float] = None
     otif_expected: float
+    otif_probability_above_target: Optional[float] = None
     fill_rate_expected: float
     inventory_turns_expected: float
     bullwhip_ratio_expected: float

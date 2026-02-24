@@ -306,6 +306,53 @@ async def compare_scenarios(
         )
 
 
+# In-memory task store for Monte Carlo background tasks
+# In production, use Redis or a database table
+_monte_carlo_tasks: Dict[str, Dict[str, Any]] = {}
+
+
+def _run_monte_carlo_task(task_id: str, game_id: int, num_runs: int, base_seed: int):
+    """
+    Background task that runs Monte Carlo simulation using ParallelMonteCarloRunner.
+
+    Executes in background thread, updates task store with progress and results.
+    """
+    import logging
+    mc_logger = logging.getLogger(__name__)
+
+    try:
+        _monte_carlo_tasks[task_id]["status"] = "running"
+
+        from app.services.parallel_monte_carlo import (
+            ParallelMonteCarloConfig, ParallelMonteCarloRunner,
+        )
+
+        config = ParallelMonteCarloConfig(
+            game_id=game_id,
+            num_runs=num_runs,
+            base_seed=base_seed,
+        )
+
+        runner = ParallelMonteCarloRunner(config)
+
+        def progress_callback(completed: int, total: int):
+            _monte_carlo_tasks[task_id]["progress"] = completed / total
+
+        results = runner.run(progress_callback=progress_callback)
+        summary = runner.summarize_results(results)
+
+        _monte_carlo_tasks[task_id]["status"] = "complete"
+        _monte_carlo_tasks[task_id]["progress"] = 1.0
+        _monte_carlo_tasks[task_id]["result"] = summary
+
+        mc_logger.info(f"Monte Carlo task {task_id} completed: {summary.get('successful_runs', 0)}/{num_runs} runs")
+
+    except Exception as e:
+        mc_logger.error(f"Monte Carlo task {task_id} failed: {e}")
+        _monte_carlo_tasks[task_id]["status"] = "failed"
+        _monte_carlo_tasks[task_id]["result"] = {"error": str(e)}
+
+
 @router.post("/monte-carlo/start", response_model=MonteCarloStatusResponse)
 async def start_monte_carlo(
     request: MonteCarloRequest,
@@ -315,30 +362,38 @@ async def start_monte_carlo(
     """
     Start Monte Carlo simulation (background task)
 
-    Runs multiple stochastic simulations and returns a task ID
-    for checking progress.
-
-    NOTE: This is a placeholder implementation. In production, this would:
-    1. Create a background task
-    2. Run simulations asynchronously
-    3. Store results in database
-    4. Return task ID for polling
+    Runs multiple stochastic simulations using the real supply chain planning
+    engine with stochastic sampling. Returns a task ID for polling progress.
 
     Requires authentication.
     """
     try:
-        # Generate task ID
         import uuid
         task_id = str(uuid.uuid4())
 
-        # TODO: In production, queue background task
-        # background_tasks.add_task(run_monte_carlo_task, task_id, request)
+        # Initialize task tracking
+        _monte_carlo_tasks[task_id] = {
+            "status": "pending",
+            "progress": 0.0,
+            "result": None,
+            "game_id": request.game_id,
+            "num_runs": request.num_runs,
+        }
+
+        # Queue background task
+        background_tasks.add_task(
+            _run_monte_carlo_task,
+            task_id,
+            request.game_id,
+            request.num_runs,
+            request.base_seed,
+        )
 
         return MonteCarloStatusResponse(
             task_id=task_id,
             status='pending',
             progress=0.0,
-            result=None
+            result=None,
         )
 
     except Exception as e:
@@ -358,25 +413,16 @@ async def get_monte_carlo_status(
 
     Check progress and retrieve results for a Monte Carlo simulation task.
 
-    NOTE: Placeholder implementation.
-
     Requires authentication.
     """
-    # TODO: In production, query task status from database/cache
+    task = _monte_carlo_tasks.get(task_id)
+
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
     return MonteCarloStatusResponse(
         task_id=task_id,
-        status='complete',
-        progress=1.0,
-        result={
-            'total_runs': 100,
-            'successful_runs': 100,
-            'total_cost': {
-                'mean': 10000.0,
-                'std': 1500.0,
-                'cv': 15.0,
-                'ci_lower': 9700.0,
-                'ci_upper': 10300.0
-            }
-        }
+        status=task["status"],
+        progress=task.get("progress", 0.0),
+        result=task.get("result"),
     )

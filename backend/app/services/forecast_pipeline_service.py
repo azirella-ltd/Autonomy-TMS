@@ -298,17 +298,33 @@ class ForecastPipelineService:
         min_obs = int(cfg.min_observations or 12)
         keep = stats[stats["count"] >= min_obs].index
 
-        # TODO: Apply cv_sq_threshold (coefficient of variation squared) and
-        # adi_threshold (average demand interval) for demand classification
-        # into smooth/erratic/intermittent/lumpy categories.
-        # cv_sq = (std/mean)**2; adi = 1/non_zero_fraction
-        # For now these thresholds are stored on the config for future use.
-
         filtered = history[history["unique_id"].isin(keep)]
         dropped = len(stats) - len(keep)
         if dropped > 0:
             logger.info("Filtered out %d series below min_observations=%d", dropped, min_obs)
         return filtered
+
+    @staticmethod
+    def _classify_demand(values: np.ndarray, cv_sq_thresh: float = 0.49, adi_thresh: float = 1.32) -> str:
+        """Classify demand pattern using CV-squared and ADI (Syntetos-Boylan).
+
+        Returns one of: smooth, erratic, intermittent, lumpy.
+        """
+        mean_val = float(np.mean(values))
+        std_val = float(np.std(values))
+        cv_sq = (std_val / mean_val) ** 2 if mean_val > 0 else 0.0
+
+        non_zero = np.count_nonzero(values)
+        adi = len(values) / non_zero if non_zero > 0 else float("inf")
+
+        if cv_sq < cv_sq_thresh and adi < adi_thresh:
+            return "smooth"
+        elif cv_sq >= cv_sq_thresh and adi < adi_thresh:
+            return "erratic"
+        elif cv_sq < cv_sq_thresh and adi >= adi_thresh:
+            return "intermittent"
+        else:
+            return "lumpy"
 
     def _cluster_series(self, history: pd.DataFrame, cfg: ForecastPipelineConfig) -> Dict[str, int]:
         series_stats = history.groupby("unique_id")["actual"].agg(["mean", "std", "count"]).fillna(0.0)
@@ -329,13 +345,42 @@ class ForecastPipelineService:
             labels = np.zeros(n_series, dtype=int)
         elif method == "KMeans":
             labels = KMeans(n_clusters=k, n_init=10, random_state=42).fit_predict(features)
+        elif method == "Agglomerative":
+            from sklearn.cluster import AgglomerativeClustering
+            labels = AgglomerativeClustering(n_clusters=k).fit_predict(features)
+        elif method == "Birch":
+            from sklearn.cluster import Birch
+            labels = Birch(n_clusters=k).fit_predict(features)
+        elif method == "GaussianMixture":
+            from sklearn.mixture import GaussianMixture
+            labels = GaussianMixture(n_components=k, random_state=42).fit_predict(features)
+        elif method == "MeanShift":
+            from sklearn.cluster import MeanShift
+            ms = MeanShift().fit(features)
+            labels = ms.labels_
+        elif method == "Spectral":
+            from sklearn.cluster import SpectralClustering
+            labels = SpectralClustering(n_clusters=k, random_state=42, affinity="nearest_neighbors").fit_predict(features)
+        elif method == "AffinityPropagation":
+            from sklearn.cluster import AffinityPropagation
+            ap = AffinityPropagation(random_state=42).fit(features)
+            labels = ap.labels_
+        elif method == "OPTICS":
+            from sklearn.cluster import OPTICS
+            labels = OPTICS(min_samples=max(2, n_series // 10)).fit_predict(features)
+            # OPTICS returns -1 for noise; remap to cluster 0
+            labels = np.where(labels < 0, 0, labels)
+        elif method == "HDBSCAN":
+            try:
+                from sklearn.cluster import HDBSCAN as HDBSCAN_cls
+                labels = HDBSCAN_cls(min_cluster_size=max(2, n_series // 10)).fit_predict(features)
+                labels = np.where(labels < 0, 0, labels)
+            except ImportError:
+                logger.warning("HDBSCAN not available; falling back to KMeans")
+                labels = KMeans(n_clusters=k, n_init=10, random_state=42).fit_predict(features)
         else:
-            # TODO: Implement HDBSCAN, Agglomerative, OPTICS, Birch,
-            # GaussianMixture, MeanShift, Spectral, AffinityPropagation.
-            # These are available in the legacy scripts at
-            # backend/scripts/training/forecast_pipeline/
             logger.warning(
-                "Clustering method '%s' not yet implemented; falling back to KMeans", method
+                "Unknown clustering method '%s'; falling back to KMeans", method
             )
             labels = KMeans(n_clusters=k, n_init=10, random_state=42).fit_predict(features)
 
@@ -373,10 +418,11 @@ class ForecastPipelineService:
                 continue
             product_id = str(ordered["product_id"].iloc[0])
             site_id = str(ordered["site_id"].iloc[0])
-            base = float(np.mean(values[-min(4, len(values)) :]))
-            delta = float(values[-1] - values[-2]) if len(values) > 1 else 0.0
-            spread = float(np.std(values[-min(8, len(values)) :])) or 1.0
             last_date = pd.to_datetime(ordered["demand_date"].max()).date()
+
+            # Classify demand pattern and select algorithm
+            pattern = self._classify_demand(values)
+            point_fcst, residual_std = self._forecast_by_pattern(values, horizon, pattern)
 
             for step in range(1, horizon + 1):
                 if bucket.startswith("D"):
@@ -386,8 +432,8 @@ class ForecastPipelineService:
                 else:
                     f_date = last_date + timedelta(weeks=step)
 
-                p50 = max(0.0, base + (0.25 * delta * step))
-                median = p50
+                p50 = max(0.0, point_fcst[step - 1])
+                spread = residual_std * np.sqrt(step)  # widen with horizon
                 p10 = max(0.0, p50 - 1.28 * spread)
                 p90 = max(p10, p50 + 1.28 * spread)
                 forecasts.append(
@@ -398,11 +444,137 @@ class ForecastPipelineService:
                         forecast_date=f_date,
                         p10=round(p10, 4),
                         p50=round(p50, 4),
-                        median=round(median, 4),
+                        median=round(p50, 4),
                         p90=round(p90, 4),
                     )
                 )
         return forecasts
+
+    def _forecast_by_pattern(
+        self, values: np.ndarray, horizon: int, pattern: str
+    ) -> Tuple[np.ndarray, float]:
+        """Select and run the best forecast algorithm for the demand pattern.
+
+        Returns (point_forecasts[horizon], residual_std).
+        """
+        if pattern == "intermittent":
+            return self._croston_forecast(values, horizon)
+        elif pattern == "lumpy":
+            return self._croston_forecast(values, horizon)
+
+        # smooth or erratic: try Holt-Winters, then Holt, then SES
+        try:
+            return self._holtwinters_forecast(values, horizon)
+        except Exception:
+            pass
+        try:
+            return self._holt_forecast(values, horizon)
+        except Exception:
+            pass
+        return self._ses_forecast(values, horizon)
+
+    # ------------------------------------------------------------------
+    # Exponential Smoothing Algorithms
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _ses_forecast(values: np.ndarray, horizon: int, alpha: float = 0.3) -> Tuple[np.ndarray, float]:
+        """Simple Exponential Smoothing (level only, no trend/season)."""
+        level = float(values[0])
+        residuals = []
+        for v in values[1:]:
+            level = alpha * v + (1 - alpha) * level
+            residuals.append(v - level)
+        point = np.full(horizon, level)
+        std = float(np.std(residuals)) if residuals else float(np.std(values)) or 1.0
+        return point, std
+
+    @staticmethod
+    def _holt_forecast(values: np.ndarray, horizon: int, alpha: float = 0.3, beta: float = 0.1) -> Tuple[np.ndarray, float]:
+        """Holt's Double Exponential Smoothing (level + trend)."""
+        if len(values) < 3:
+            return ForecastPipelineService._ses_forecast(values, horizon)
+        level = float(values[0])
+        trend = float(values[1] - values[0])
+        residuals = []
+        for v in values[1:]:
+            prev_level = level
+            level = alpha * v + (1 - alpha) * (level + trend)
+            trend = beta * (level - prev_level) + (1 - beta) * trend
+            residuals.append(v - (prev_level + trend))
+        point = np.array([level + trend * (i + 1) for i in range(horizon)])
+        point = np.maximum(point, 0.0)
+        std = float(np.std(residuals)) if residuals else 1.0
+        return point, std
+
+    @staticmethod
+    def _holtwinters_forecast(values: np.ndarray, horizon: int) -> Tuple[np.ndarray, float]:
+        """Holt-Winters Triple Exponential Smoothing via statsmodels.
+
+        Automatically selects additive or multiplicative seasonality.
+        Falls back to Holt if seasonal period not detected or data too short.
+        """
+        from statsmodels.tsa.holtwinters import ExponentialSmoothing
+
+        n = len(values)
+        # Need at least 2 full seasonal cycles; try common periods
+        seasonal_period = None
+        for sp in [12, 4, 52, 7]:
+            if n >= 2 * sp:
+                seasonal_period = sp
+                break
+        if seasonal_period is None:
+            return ForecastPipelineService._holt_forecast(values, horizon)
+
+        # Try additive first, fall back to multiplicative if all values > 0
+        series = pd.Series(values.astype(float))
+        try:
+            model = ExponentialSmoothing(
+                series, trend="add", seasonal="add", seasonal_periods=seasonal_period
+            ).fit(optimized=True)
+        except Exception:
+            if (values > 0).all():
+                model = ExponentialSmoothing(
+                    series, trend="add", seasonal="mul", seasonal_periods=seasonal_period
+                ).fit(optimized=True)
+            else:
+                raise
+
+        forecast = model.forecast(horizon).to_numpy()
+        forecast = np.maximum(forecast, 0.0)
+        residuals = (model.fittedvalues - series).to_numpy()
+        std = float(np.std(residuals)) if len(residuals) > 0 else 1.0
+        return forecast, std
+
+    @staticmethod
+    def _croston_forecast(values: np.ndarray, horizon: int, alpha: float = 0.15) -> Tuple[np.ndarray, float]:
+        """Croston's method for intermittent demand.
+
+        Separately smooths demand size and inter-arrival interval.
+        """
+        if len(values) < 2 or np.count_nonzero(values) < 2:
+            mean_val = float(np.mean(values)) if len(values) > 0 else 0.0
+            return np.full(horizon, mean_val), float(np.std(values)) or 1.0
+
+        # Initialize with first nonzero demand
+        nz_indices = np.nonzero(values)[0]
+        z = float(values[nz_indices[0]])  # demand size estimate
+        p = float(nz_indices[1] - nz_indices[0]) if len(nz_indices) > 1 else 1.0  # inter-arrival interval
+
+        q = 0  # periods since last demand
+        residuals = []
+        for v in values:
+            q += 1
+            if v > 0:
+                z = alpha * v + (1 - alpha) * z
+                p = alpha * q + (1 - alpha) * p
+                residuals.append(v - (z / p if p > 0 else z))
+                q = 0
+
+        rate = z / p if p > 0 else z
+        point = np.full(horizon, max(0.0, rate))
+        std = float(np.std(residuals)) if residuals else float(np.std(values)) or 1.0
+        return point, std
 
     def _compute_metrics(self, history: pd.DataFrame, clusters: Dict[str, int]) -> List[dict]:
         rows: List[dict] = []

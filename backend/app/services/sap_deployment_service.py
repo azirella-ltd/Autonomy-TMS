@@ -536,6 +536,49 @@ STANDARD_SAP_TABLES = {
             "aws_sc_entity": "company",
             "key_fields": ["EKORG"],
         },
+        # --- User / Authorization Tables (SC-filtered user import) ---
+        "USR02": {
+            "description": "User Logon Data (username, type, validity dates)",
+            "priority": 2,
+            "aws_sc_entity": "sap_user",
+            "key_fields": ["MANDT", "BNAME"],
+        },
+        "USR21": {
+            "description": "User Name / Address Assignment",
+            "priority": 2,
+            "aws_sc_entity": "sap_user",
+            "key_fields": ["MANDT", "BNAME"],
+        },
+        "ADRP": {
+            "description": "Person Address Data (email, first/last name)",
+            "priority": 2,
+            "aws_sc_entity": "sap_user",
+            "key_fields": ["PERSNUMBER"],
+        },
+        "AGR_USERS": {
+            "description": "Role-to-User Assignments",
+            "priority": 2,
+            "aws_sc_entity": "sap_role",
+            "key_fields": ["MANDT", "UNAME", "AGR_NAME"],
+        },
+        "AGR_DEFINE": {
+            "description": "Role Definitions (name, description)",
+            "priority": 2,
+            "aws_sc_entity": "sap_role",
+            "key_fields": ["MANDT", "AGR_NAME"],
+        },
+        "AGR_1251": {
+            "description": "Authorization Values in Roles (objects, field values)",
+            "priority": 2,
+            "aws_sc_entity": "sap_authorization",
+            "key_fields": ["MANDT", "AGR_NAME", "OBJECT", "FIELD"],
+        },
+        "AGR_TCODES": {
+            "description": "Transaction Codes Assigned to Roles",
+            "priority": 2,
+            "aws_sc_entity": "sap_authorization",
+            "key_fields": ["MANDT", "AGR_NAME", "TCODE"],
+        },
     },
     "apo": {
         "/SAPAPO/LOC": {
@@ -841,6 +884,32 @@ AWS_SC_ENTITY_FIELDS = {
         {"name": "price", "type": "decimal", "required": False},
         {"name": "status", "type": "string", "required": False},
         {"name": "source_plan_id", "type": "string", "required": False},
+    ],
+    # --- SAP User / Role / Authorization entities (SC-filtered import) ---
+    "sap_user": [
+        {"name": "sap_username", "type": "string", "required": True},
+        {"name": "email", "type": "string", "required": False},
+        {"name": "first_name", "type": "string", "required": False},
+        {"name": "last_name", "type": "string", "required": False},
+        {"name": "user_type", "type": "string", "required": False},
+        {"name": "valid_from", "type": "date", "required": False},
+        {"name": "valid_to", "type": "date", "required": False},
+        {"name": "account_class", "type": "string", "required": False},
+    ],
+    "sap_role": [
+        {"name": "role_name", "type": "string", "required": True},
+        {"name": "role_description", "type": "string", "required": False},
+        {"name": "assigned_user", "type": "string", "required": False},
+        {"name": "valid_from", "type": "date", "required": False},
+        {"name": "valid_to", "type": "date", "required": False},
+    ],
+    "sap_authorization": [
+        {"name": "role_name", "type": "string", "required": True},
+        {"name": "auth_object", "type": "string", "required": False},
+        {"name": "field_name", "type": "string", "required": False},
+        {"name": "value_low", "type": "string", "required": False},
+        {"name": "value_high", "type": "string", "required": False},
+        {"name": "tcode", "type": "string", "required": False},
     ],
 }
 

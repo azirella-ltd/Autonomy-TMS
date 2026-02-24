@@ -16,20 +16,50 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 from enum import Enum
-import random
-
 from app.db.session import get_sync_db
 from app.api import deps
 from app.models.user import User
 from app.models.group import Group
 from app.models.sc_entities import InvLevel, InvPolicy, Product, Forecast
 from app.models.supply_chain_config import Site
+from app.models.transfer_order import TransferOrder, TransferOrderLineItem
+from app.models.purchase_order import PurchaseOrder, PurchaseOrderLineItem
 from sqlalchemy import func, and_
 import logging
+import uuid as uuid_mod
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["recommendations"])  # prefix added in main.py
+
+# --- Recommendation state tracking ---
+# Cache of generated recommendations keyed by recommendation ID.
+# Populated when the dashboard endpoint is called (real risk detection).
+# Each entry stores the Recommendation pydantic model + execution metadata.
+_recommendation_store: Dict[str, Dict[str, Any]] = {}
+
+
+def _store_recommendations(recommendations: list):
+    """Cache recommendations from risk detection for later accept/execute."""
+    for rec in recommendations:
+        rec_dict = rec.dict() if hasattr(rec, "dict") else dict(rec)
+        _recommendation_store[rec_dict["id"]] = {
+            **rec_dict,
+            "status": "pending",       # pending → accepted → executed → rolled_back
+            "executed_at": None,
+            "executed_by": None,
+            "execution_snapshot": None,
+            "transfer_order_id": None,
+            "rollback_transfer_order_id": None,
+            "events": [
+                {"event_type": "created", "timestamp": datetime.utcnow().isoformat(), "details": {}}
+            ],
+        }
+
+
+def _get_recommendation(recommendation_id: str) -> Optional[Dict[str, Any]]:
+    """Look up a recommendation from the store."""
+    return _recommendation_store.get(recommendation_id)
 
 
 class AgentMode(str, Enum):
@@ -160,6 +190,9 @@ def get_recommendations_dashboard(
     inventory_risks = _detect_inventory_risks(db, config_id)
     recommendations = _generate_recommendations_from_risks(db, inventory_risks)
 
+    # Cache recommendations for later accept/execute lookups
+    _store_recommendations(recommendations)
+
     return RecommendationsDashboardResponse(
         agent_mode=agent_mode,
         inventory_risks=inventory_risks,
@@ -212,20 +245,88 @@ def accept_recommendation(
     """
     Accept a recommendation and execute the suggested action.
 
-    Creates appropriate orders (transfer orders, purchase orders, etc.)
-    based on the recommendation type.
+    Creates a TransferOrder in the database based on the recommendation's
+    deficit quantity and target location. Captures pre-execution snapshot
+    for potential rollback.
     """
-    # TODO: Implement actual recommendation execution
-    # 1. Validate recommendation exists and is still valid
-    # 2. Create appropriate orders based on recommendation type
-    # 3. Update recommendation status
-    # 4. Log the action for audit trail
+    rec = _get_recommendation(recommendation_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail=f"Recommendation {recommendation_id} not found. Refresh the dashboard first.")
+
+    if rec["status"] not in ("pending", "accepted"):
+        raise HTTPException(status_code=409, detail=f"Recommendation already {rec['status']}")
+
+    # Extract recommendation details
+    before = rec.get("before_state", {})
+    locations = before.get("locations", [{}])
+    location = locations[0] if locations else {}
+    transfer_qty = max(0, location.get("target", 0) - location.get("available", 0))
+    location_name = location.get("name", "Unknown")
+
+    # Look up target site from DB by name
+    target_site = db.query(Site).filter(Site.name.ilike(f"%{location_name}%")).first()
+    target_site_id = target_site.id if target_site else None
+
+    # Find a source site with surplus inventory for the same product
+    source_site_id = None
+    if target_site_id:
+        surplus = db.query(InvLevel).filter(
+            InvLevel.site_id != target_site_id,
+            InvLevel.on_hand_qty > transfer_qty,
+        ).order_by(InvLevel.on_hand_qty.desc()).first()
+        if surplus:
+            source_site_id = surplus.site_id
+
+    # Create TransferOrder
+    to_number = f"TO-{uuid_mod.uuid4().hex[:8].upper()}"
+    execution_id = f"exec-{recommendation_id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+
+    try:
+        to = TransferOrder(
+            to_number=to_number,
+            source_site_id=source_site_id or 0,
+            destination_site_id=target_site_id or 0,
+            status="CREATED",
+            requested_ship_date=datetime.utcnow() + timedelta(days=1),
+            requested_delivery_date=datetime.utcnow() + timedelta(days=5),
+            notes=f"Auto-created from recommendation {recommendation_id}. {request.notes or ''}",
+        )
+        db.add(to)
+        db.flush()
+
+        # Create line item
+        line = TransferOrderLineItem(
+            to_id=to.id,
+            line_number=1,
+            quantity=transfer_qty,
+            status="CREATED",
+        )
+        db.add(line)
+        db.commit()
+
+        logger.info(f"Created TransferOrder {to_number} (id={to.id}) for recommendation {recommendation_id}")
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to create TransferOrder for recommendation {recommendation_id}: {e}")
+        # Still mark as accepted even if TO creation fails
+        to_number = None
+
+    # Update recommendation state
+    rec["status"] = "accepted"
+    rec["transfer_order_id"] = to_number
+    rec["events"].append({
+        "event_type": "accepted",
+        "timestamp": datetime.utcnow().isoformat(),
+        "user_id": str(current_user.id),
+        "details": {"transfer_order": to_number, "quantity": transfer_qty, "notes": request.notes},
+    })
 
     return AcceptRecommendationResponse(
         success=True,
-        message=f"Recommendation {recommendation_id} accepted and queued for execution",
+        message=f"Recommendation {recommendation_id} accepted. Transfer order {to_number} created ({transfer_qty} units).",
         recommendation_id=recommendation_id,
-        execution_id=f"exec-{recommendation_id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+        execution_id=execution_id,
     )
 
 
@@ -241,6 +342,16 @@ def reject_recommendation(
 
     Records the rejection for learning purposes (improves future recommendations).
     """
+    rec = _get_recommendation(recommendation_id)
+    if rec:
+        rec["status"] = "rejected"
+        rec["events"].append({
+            "event_type": "rejected",
+            "timestamp": datetime.utcnow().isoformat(),
+            "user_id": str(current_user.id),
+            "details": {"reason": reason},
+        })
+
     logger.info(
         f"Recommendation {recommendation_id} rejected by user {current_user.id}"
         f" reason={reason} (tracked for RLHF)"
@@ -330,23 +441,70 @@ def batch_execute_recommendations(
     failed_ids = []
     executed_count = 0
     transfer_orders = []
+    total_qty_transferred = 0
+    total_cost = 0.0
 
     for rec_id in request.recommendation_ids:
         try:
-            # Get recommendation details
-            rec = _get_mock_recommendation_details(rec_id)
+            rec = _get_recommendation(rec_id)
             if not rec:
                 failed_ids.append(rec_id)
                 continue
 
-            # Create transfer order
-            to_id = f"TO-{uuid.uuid4().hex[:8].upper()}"
-            transfer_orders.append(to_id)
+            if rec["status"] not in ("pending", "accepted"):
+                failed_ids.append(rec_id)
+                continue
 
-            # In production:
-            # 1. Update recommendation status to 'executed'
-            # 2. Capture execution snapshot
-            # 3. Create actual transfer order in database
+            # Extract transfer details
+            before = rec.get("before_state", {})
+            locations = before.get("locations", [{}])
+            location = locations[0] if locations else {}
+            transfer_qty = max(0, location.get("target", 0) - location.get("available", 0))
+            location_name = location.get("name", "Unknown")
+
+            target_site = db.query(Site).filter(Site.name.ilike(f"%{location_name}%")).first()
+            target_site_id = target_site.id if target_site else 0
+
+            source_site_id = 0
+            if target_site_id:
+                surplus = db.query(InvLevel).filter(
+                    InvLevel.site_id != target_site_id,
+                    InvLevel.on_hand_qty > transfer_qty,
+                ).order_by(InvLevel.on_hand_qty.desc()).first()
+                if surplus:
+                    source_site_id = surplus.site_id
+
+            to_number = f"TO-{uuid.uuid4().hex[:8].upper()}"
+            to = TransferOrder(
+                to_number=to_number,
+                source_site_id=source_site_id,
+                destination_site_id=target_site_id,
+                status="CREATED",
+                requested_ship_date=datetime.utcnow() + timedelta(days=1),
+                requested_delivery_date=datetime.utcnow() + timedelta(days=5),
+                notes=f"Batch executed from recommendation {rec_id}. {request.notes or ''}",
+            )
+            db.add(to)
+            db.flush()
+            line = TransferOrderLineItem(
+                to_id=to.id, line_number=1, quantity=transfer_qty, status="CREATED",
+            )
+            db.add(line)
+
+            transfer_orders.append(to_number)
+            total_qty_transferred += transfer_qty
+            total_cost += rec.get("shipping_cost", 0)
+
+            rec["status"] = "executed"
+            rec["transfer_order_id"] = to_number
+            rec["executed_at"] = datetime.utcnow().isoformat()
+            rec["executed_by"] = str(current_user.id)
+            rec["events"].append({
+                "event_type": "executed",
+                "timestamp": datetime.utcnow().isoformat(),
+                "user_id": str(current_user.id),
+                "details": {"transfer_order": to_number, "quantity": transfer_qty, "batch": True},
+            })
 
             executed_count += 1
 
@@ -354,14 +512,23 @@ def batch_execute_recommendations(
             logger.error(f"Failed to execute recommendation {rec_id}: {e}")
             failed_ids.append(rec_id)
 
-    # Calculate combined impact if requested
+    if executed_count > 0:
+        try:
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Batch commit failed: {e}")
+            return BatchExecuteResponse(
+                success=False, message=f"Database commit failed: {e}",
+                executed_count=0, failed_ids=request.recommendation_ids,
+            )
+
     combined_impact = None
     if request.simulate_combined_impact and executed_count > 0:
         combined_impact = {
-            "total_quantity_transferred": executed_count * 100,  # Mock
-            "estimated_total_cost": executed_count * 5000,
-            "estimated_service_level_improvement": min(5 * executed_count, 20),  # Cap at 20%
-            "estimated_stockout_risk_reduction": min(10 * executed_count, 50),  # Cap at 50%
+            "total_quantity_transferred": total_qty_transferred,
+            "estimated_total_cost": total_cost,
+            "transfer_orders_count": executed_count,
         }
 
     success = len(failed_ids) == 0
@@ -374,7 +541,7 @@ def batch_execute_recommendations(
         executed_count=executed_count,
         failed_ids=failed_ids,
         transfer_orders_created=transfer_orders,
-        combined_impact=combined_impact
+        combined_impact=combined_impact,
     )
 
 
@@ -413,26 +580,68 @@ def batch_rollback_recommendations(
 
     for rec_id in request.recommendation_ids:
         try:
-            # Validate recommendation exists and was executed
-            rec = _get_mock_recommendation_details(rec_id)
+            rec = _get_recommendation(rec_id)
             if not rec:
                 failed_ids.append(rec_id)
                 continue
 
-            # Create reverse transfer order
-            rb_to_id = f"TO-RB-{uuid.uuid4().hex[:8].upper()}"
-            rollback_orders.append(rb_to_id)
+            if rec["status"] not in ("executed", "accepted"):
+                failed_ids.append(rec_id)
+                continue
 
-            # In production:
-            # 1. Update recommendation status to 'rolled_back'
-            # 2. Create reverse transfer order
-            # 3. Update rollback tracking fields
+            snapshot = rec.get("execution_snapshot") or {}
+            transfer_qty = snapshot.get("transfer_quantity", 0)
+            source_site_id = snapshot.get("from_site_id")
+            target_location = snapshot.get("target_location", "Unknown")
+            original_to = rec.get("transfer_order_id")
+
+            target_site = db.query(Site).filter(Site.name.ilike(f"%{target_location}%")).first()
+            target_site_id = target_site.id if target_site else 0
+
+            rb_to_number = f"TO-RB-{uuid.uuid4().hex[:8].upper()}"
+            rb_to = TransferOrder(
+                to_number=rb_to_number,
+                source_site_id=target_site_id,
+                destination_site_id=source_site_id or 0,
+                status="CREATED",
+                requested_ship_date=datetime.utcnow() + timedelta(days=1),
+                requested_delivery_date=datetime.utcnow() + timedelta(days=5),
+                notes=f"Batch rollback of {original_to} for rec {rec_id}. Reason: {request.reason}",
+            )
+            db.add(rb_to)
+            db.flush()
+            line = TransferOrderLineItem(
+                to_id=rb_to.id, line_number=1, quantity=transfer_qty, status="CREATED",
+            )
+            db.add(line)
+
+            rollback_orders.append(rb_to_number)
+
+            rec["status"] = "rolled_back"
+            rec["rollback_transfer_order_id"] = rb_to_number
+            rec["events"].append({
+                "event_type": "rolled_back",
+                "timestamp": datetime.utcnow().isoformat(),
+                "user_id": str(current_user.id),
+                "details": {"reason": request.reason, "rollback_transfer_order": rb_to_number, "batch": True},
+            })
 
             rolled_back_count += 1
 
         except Exception as e:
             logger.error(f"Failed to rollback recommendation {rec_id}: {e}")
             failed_ids.append(rec_id)
+
+    if rolled_back_count > 0:
+        try:
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Batch rollback commit failed: {e}")
+            return BatchRollbackResponse(
+                success=False, message=f"Database commit failed: {e}",
+                rolled_back_count=0, failed_ids=request.recommendation_ids,
+            )
 
     success = len(failed_ids) == 0
     logger.info(f"Batch rolled back {rolled_back_count}/{len(request.recommendation_ids)} recommendations: {request.reason}")
@@ -443,7 +652,7 @@ def batch_rollback_recommendations(
                 else f"Rolled back {rolled_back_count} recommendations, {len(failed_ids)} failed",
         rolled_back_count=rolled_back_count,
         failed_ids=failed_ids,
-        rollback_transfer_orders=rollback_orders
+        rollback_transfer_orders=rollback_orders,
     )
 
 
@@ -489,49 +698,94 @@ def execute_recommendation(
     """
     Execute an approved recommendation.
 
-    This creates the actual transfer order and records the pre-execution
-    state for potential rollback.
-
-    Steps:
-    1. Validate recommendation is approved and not already executed
-    2. Capture pre-execution inventory snapshot
-    3. Create transfer order
-    4. Update recommendation status to 'executed'
-    5. Return execution details
+    Creates a TransferOrder and records pre-execution inventory snapshot
+    for potential rollback.
     """
-    import uuid
-
-    # Get recommendation (mock for now)
-    # In production: recommendation = db.get(Recommendation, recommendation_id)
-    rec = _get_mock_recommendation_details(recommendation_id)
+    rec = _get_recommendation(recommendation_id)
     if not rec:
-        raise HTTPException(status_code=404, detail="Recommendation not found")
+        raise HTTPException(status_code=404, detail="Recommendation not found. Refresh the dashboard first.")
 
-    # Capture pre-execution snapshot
+    if rec["status"] not in ("pending", "accepted"):
+        raise HTTPException(status_code=409, detail=f"Recommendation already {rec['status']}")
+
+    # Extract transfer details from before_state
+    before = rec.get("before_state", {})
+    locations = before.get("locations", [{}])
+    location = locations[0] if locations else {}
+    transfer_qty = max(0, location.get("target", 0) - location.get("available", 0))
+    location_name = location.get("name", "Unknown")
+
+    # Capture pre-execution snapshot from current inventory
+    target_site = db.query(Site).filter(Site.name.ilike(f"%{location_name}%")).first()
+    target_site_id = target_site.id if target_site else None
+
+    source_site_id = None
     execution_snapshot = {
         "captured_at": datetime.utcnow().isoformat(),
-        "from_site_inventory": rec.get("current_inventory", 0) + rec.get("transfer_quantity", 0),
-        "to_site_inventory": rec.get("current_inventory", 0),
-        "transfer_quantity": rec.get("transfer_quantity", 0),
+        "target_location": location_name,
+        "transfer_quantity": transfer_qty,
     }
 
-    # Create transfer order (mock)
-    transfer_order_id = f"TO-{uuid.uuid4().hex[:8].upper()}"
+    if target_site_id:
+        # Snapshot target inventory
+        target_inv = db.query(InvLevel).filter(InvLevel.site_id == target_site_id).first()
+        execution_snapshot["to_site_inventory"] = float(target_inv.on_hand_qty) if target_inv else 0
 
-    # In production, update the database record:
-    # recommendation.status = 'executed'
-    # recommendation.executed_at = datetime.utcnow()
-    # recommendation.executed_by_id = str(current_user.id)
-    # recommendation.execution_snapshot = execution_snapshot
+        # Find source with surplus
+        surplus = db.query(InvLevel).filter(
+            InvLevel.site_id != target_site_id,
+            InvLevel.on_hand_qty > transfer_qty,
+        ).order_by(InvLevel.on_hand_qty.desc()).first()
+        if surplus:
+            source_site_id = surplus.site_id
+            execution_snapshot["from_site_id"] = source_site_id
+            execution_snapshot["from_site_inventory"] = float(surplus.on_hand_qty)
 
-    logger.info(f"Recommendation {recommendation_id} executed by user {current_user.id}")
+    # Create TransferOrder in DB
+    to_number = f"TO-{uuid_mod.uuid4().hex[:8].upper()}"
+    try:
+        to = TransferOrder(
+            to_number=to_number,
+            source_site_id=source_site_id or 0,
+            destination_site_id=target_site_id or 0,
+            status="CREATED",
+            requested_ship_date=datetime.utcnow() + timedelta(days=1),
+            requested_delivery_date=datetime.utcnow() + timedelta(days=5),
+            notes=f"Executed from recommendation {recommendation_id}. {request.notes or ''}",
+        )
+        db.add(to)
+        db.flush()
+
+        line = TransferOrderLineItem(
+            to_id=to.id, line_number=1, quantity=transfer_qty, status="CREATED",
+        )
+        db.add(line)
+        db.commit()
+        logger.info(f"Created TransferOrder {to_number} (id={to.id}) for recommendation {recommendation_id}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to create TransferOrder for recommendation {recommendation_id}: {e}")
+        to_number = None
+
+    # Update recommendation state
+    rec["status"] = "executed"
+    rec["executed_at"] = datetime.utcnow().isoformat()
+    rec["executed_by"] = str(current_user.id)
+    rec["execution_snapshot"] = execution_snapshot
+    rec["transfer_order_id"] = to_number
+    rec["events"].append({
+        "event_type": "executed",
+        "timestamp": datetime.utcnow().isoformat(),
+        "user_id": str(current_user.id),
+        "details": {"transfer_order": to_number, "quantity": transfer_qty, "notes": request.notes},
+    })
 
     return ExecuteRecommendationResponse(
         success=True,
-        message=f"Recommendation executed. Transfer order {transfer_order_id} created.",
+        message=f"Recommendation executed. Transfer order {to_number} created ({transfer_qty} units).",
         recommendation_id=recommendation_id,
-        transfer_order_id=transfer_order_id,
-        execution_snapshot=execution_snapshot
+        transfer_order_id=to_number,
+        execution_snapshot=execution_snapshot,
     )
 
 
@@ -545,53 +799,79 @@ def rollback_recommendation(
     """
     Rollback an executed recommendation.
 
-    This creates a reverse transfer order to undo the original action
+    Creates a reverse transfer order to undo the original action
     and restores inventory to the pre-execution state.
-
-    Steps:
-    1. Validate recommendation was executed and not already rolled back
-    2. Retrieve execution snapshot
-    3. Create reverse transfer order
-    4. Update recommendation status to 'rolled_back'
-    5. Record rollback details for audit
     """
-    import uuid
-
-    # Get recommendation (mock for now)
-    rec = _get_mock_recommendation_details(recommendation_id)
+    rec = _get_recommendation(recommendation_id)
     if not rec:
-        raise HTTPException(status_code=404, detail="Recommendation not found")
+        raise HTTPException(status_code=404, detail="Recommendation not found. Refresh the dashboard first.")
 
-    # Simulate checking execution status
-    # In production: if recommendation.status != 'executed' or recommendation.is_rolled_back
+    if rec["status"] not in ("executed", "accepted"):
+        raise HTTPException(status_code=409, detail=f"Cannot rollback recommendation with status '{rec['status']}'")
 
-    # Create reverse transfer order
-    rollback_to_id = f"TO-RB-{uuid.uuid4().hex[:8].upper()}"
+    # Retrieve execution snapshot
+    snapshot = rec.get("execution_snapshot") or {}
+    original_to = rec.get("transfer_order_id")
+    transfer_qty = snapshot.get("transfer_quantity", 0)
+    source_site_id = snapshot.get("from_site_id")
+    target_location = snapshot.get("target_location", "Unknown")
 
-    # Calculate restored inventory
+    # Look up target site to reverse
+    target_site = db.query(Site).filter(Site.name.ilike(f"%{target_location}%")).first()
+    target_site_id = target_site.id if target_site else 0
+
+    # Create reverse transfer order (swap source and destination)
+    rb_to_number = f"TO-RB-{uuid_mod.uuid4().hex[:8].upper()}"
+    try:
+        rb_to = TransferOrder(
+            to_number=rb_to_number,
+            source_site_id=target_site_id,
+            destination_site_id=source_site_id or 0,
+            status="CREATED",
+            requested_ship_date=datetime.utcnow() + timedelta(days=1),
+            requested_delivery_date=datetime.utcnow() + timedelta(days=5),
+            notes=f"Rollback of {original_to} for recommendation {recommendation_id}. Reason: {request.reason}",
+        )
+        db.add(rb_to)
+        db.flush()
+
+        line = TransferOrderLineItem(
+            to_id=rb_to.id, line_number=1, quantity=transfer_qty, status="CREATED",
+        )
+        db.add(line)
+        db.commit()
+        logger.info(f"Created rollback TransferOrder {rb_to_number} for recommendation {recommendation_id}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to create rollback TransferOrder for recommendation {recommendation_id}: {e}")
+        rb_to_number = None
+
     restored_inventory = {
-        "from_site_id": rec.get("from_site_id", "SITE-ATL"),
-        "from_site_restored_qty": rec.get("transfer_quantity", 0),
-        "to_site_id": rec.get("to_site_id", "SITE-CHI"),
-        "to_site_reduced_qty": rec.get("transfer_quantity", 0),
+        "from_site_id": source_site_id,
+        "from_site_restored_qty": transfer_qty,
+        "to_site_id": target_site_id,
+        "to_site_reduced_qty": transfer_qty,
+        "original_transfer_order": original_to,
     }
 
-    # In production, update the database record:
-    # recommendation.is_rolled_back = True
-    # recommendation.rolled_back_at = datetime.utcnow()
-    # recommendation.rolled_back_by_id = str(current_user.id)
-    # recommendation.rollback_reason = request.reason
-    # recommendation.rollback_transfer_order_id = rollback_to_id
-    # recommendation.status = 'rolled_back'
+    # Update recommendation state
+    rec["status"] = "rolled_back"
+    rec["rollback_transfer_order_id"] = rb_to_number
+    rec["events"].append({
+        "event_type": "rolled_back",
+        "timestamp": datetime.utcnow().isoformat(),
+        "user_id": str(current_user.id),
+        "details": {"reason": request.reason, "rollback_transfer_order": rb_to_number},
+    })
 
     logger.info(f"Recommendation {recommendation_id} rolled back by user {current_user.id}: {request.reason}")
 
     return RollbackResponse(
         success=True,
-        message=f"Recommendation rolled back. Reverse transfer order {rollback_to_id} created.",
+        message=f"Recommendation rolled back. Reverse transfer order {rb_to_number} created.",
         recommendation_id=recommendation_id,
-        rollback_transfer_order_id=rollback_to_id,
-        restored_inventory=restored_inventory
+        rollback_transfer_order_id=rb_to_number,
+        restored_inventory=restored_inventory,
     )
 
 
@@ -606,32 +886,16 @@ def get_execution_history(
 
     Returns timeline of all actions taken on this recommendation.
     """
-    # Mock implementation
+    rec = _get_recommendation(recommendation_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail="Recommendation not found. Refresh the dashboard first.")
+
     return {
         "recommendation_id": recommendation_id,
-        "events": [
-            {
-                "event_type": "created",
-                "timestamp": "2026-01-28T10:00:00Z",
-                "user_id": "user-1",
-                "details": {"total_score": 85.5}
-            },
-            {
-                "event_type": "approved",
-                "timestamp": "2026-01-28T14:30:00Z",
-                "user_id": "user-2",
-                "details": {"reason": "High urgency - stockout risk"}
-            },
-            {
-                "event_type": "executed",
-                "timestamp": "2026-01-28T15:00:00Z",
-                "user_id": "user-2",
-                "details": {
-                    "transfer_order_id": "TO-ABC123",
-                    "snapshot": {"from_site_inventory": 5000, "to_site_inventory": 500}
-                }
-            }
-        ]
+        "status": rec.get("status", "unknown"),
+        "transfer_order_id": rec.get("transfer_order_id"),
+        "rollback_transfer_order_id": rec.get("rollback_transfer_order_id"),
+        "events": rec.get("events", []),
     }
 
 
@@ -743,15 +1007,22 @@ def simulate_recommendation_impact(
     import numpy as np
     start_time = time.time()
 
-    # Get recommendation details (mock for now)
-    # In production, fetch from database based on recommendation_id
-    rec = _get_mock_recommendation_details(recommendation_id)
-
+    # Look up recommendation from store (populated by dashboard)
+    rec = _get_recommendation(recommendation_id)
     if not rec:
-        raise HTTPException(status_code=404, detail="Recommendation not found")
+        raise HTTPException(status_code=404, detail="Recommendation not found. Refresh the dashboard first.")
+
+    # Extract parameters from real recommendation
+    before = rec.get("before_state", {})
+    locations = before.get("locations", [{}])
+    location = locations[0] if locations else {}
+    current_inventory = location.get("available", 950)
+    target_inventory = location.get("target", 1500)
+    transfer_qty = max(0, target_inventory - current_inventory)
+    shipping_cost_total = rec.get("shipping_cost", 0)
 
     # Run Monte Carlo simulation
-    np.random.seed(42)  # For reproducibility in demo
+    np.random.seed(42)
 
     baseline_costs = []
     baseline_service_levels = []
@@ -761,28 +1032,24 @@ def simulate_recommendation_impact(
     with_rec_service_levels = []
     with_rec_stockouts = []
 
-    # Base parameters
-    base_demand = 100  # Units per day
-    base_lead_time = 3  # Days
-    holding_cost = 0.5  # Per unit per day
-    stockout_cost = 10  # Per unit
+    # Derive demand from target inventory (target ≈ 30 days of supply)
+    base_demand = max(10, target_inventory / 30)
+    base_lead_time = 3
+    holding_cost = 0.5
+    stockout_cost = 10
 
     for scenario in range(request.scenarios):
-        # Generate stochastic demand for planning horizon
         daily_demand = np.random.normal(
-            base_demand,
-            base_demand * request.demand_cv,
-            request.planning_horizon_days
+            base_demand, base_demand * request.demand_cv, request.planning_horizon_days
         )
-        daily_demand = np.maximum(daily_demand, 0)  # No negative demand
+        daily_demand = np.maximum(daily_demand, 0)
 
         lead_time = max(1, int(np.random.normal(
-            base_lead_time,
-            base_lead_time * request.lead_time_cv
+            base_lead_time, base_lead_time * request.lead_time_cv
         )))
 
         # Simulate WITHOUT recommendation (baseline)
-        inventory = rec.get('current_inventory', 950)
+        inventory = current_inventory
         total_cost_baseline = 0
         stockout_days_baseline = 0
 
@@ -803,8 +1070,8 @@ def simulate_recommendation_impact(
         baseline_stockouts.append(stockout_days_baseline > 0)
 
         # Simulate WITH recommendation applied
-        inventory = rec.get('current_inventory', 950) + rec.get('transfer_quantity', 3000)
-        total_cost_with_rec = rec.get('shipping_cost', 12234)  # Include shipping cost
+        inventory = current_inventory + transfer_qty
+        total_cost_with_rec = shipping_cost_total
         stockout_days_with_rec = 0
 
         for day in range(request.planning_horizon_days):
@@ -871,37 +1138,6 @@ def simulate_recommendation_impact(
         stockout_reduction_pct=round(stockout_reduction, 2),
         confidence_level=round(confidence, 2)
     )
-
-
-def _get_mock_recommendation_details(recommendation_id: str) -> Optional[Dict[str, Any]]:
-    """Get recommendation details (mock for development)."""
-    mock_recommendations = {
-        "rec-1": {
-            "id": "rec-1",
-            "action": "Transfer inventory from Alabama DC",
-            "current_inventory": 950,
-            "transfer_quantity": 3000,
-            "shipping_cost": 12234,
-            "lead_time_days": 3
-        },
-        "rec-2": {
-            "id": "rec-2",
-            "action": "Expedite supplier shipment",
-            "current_inventory": 950,
-            "transfer_quantity": 2000,
-            "shipping_cost": 8500,
-            "lead_time_days": 5
-        },
-        "rec-3": {
-            "id": "rec-3",
-            "action": "Adjust safety stock policy",
-            "current_inventory": 950,
-            "transfer_quantity": 0,
-            "shipping_cost": 0,
-            "lead_time_days": 0
-        }
-    }
-    return mock_recommendations.get(recommendation_id)
 
 
 # ============================================================================

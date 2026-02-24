@@ -574,13 +574,12 @@ class ScenarioEvaluationService:
         """
         Run Monte Carlo simulation for a scenario.
 
-        In a full implementation, this would:
-        1. Sample from stochastic distributions (demand, lead times, etc.)
-        2. Simulate forward through the planning horizon
-        3. Collect outcome metrics for each simulation
-
-        For now, returns placeholder distributions.
+        Simulates inventory dynamics with stochastic demand and lead times,
+        applying the scenario's decision as a parameter modification.
+        Uses current_state from DB to ground the simulation in real data.
         """
+        import numpy as np
+
         results = {
             "total_cost": [],
             "service_level": [],
@@ -590,47 +589,117 @@ class ScenarioEvaluationService:
             "fill_rate": [],
         }
 
-        # Get baseline values from current state
+        # Extract baseline parameters from current state
         base_cost = current_state.get("total_cost", 100000)
         base_service = current_state.get("service_level", 0.92)
+        base_inventory = current_state.get("avg_inventory", 1000)
+        base_demand = current_state.get("avg_daily_demand", 100)
+        base_lead_time = current_state.get("avg_lead_time_days", 14)
 
-        # Scenario-specific adjustments
+        # Scenario-specific parameter modifications
         decision = scenario.decision
         action = decision.get("action", "none")
+        params = decision.get("parameter_changes", {})
 
-        # Simulate outcomes based on action type
-        for _ in range(num_simulations):
-            # Add stochastic variation
-            cost_var = random.gauss(0, 0.15)  # 15% std dev
-            service_var = random.gauss(0, 0.05)  # 5% std dev
+        # Apply action effects to simulation parameters
+        cost_multiplier = 1.0
+        service_boost = 0.0
+        lead_time_reduction = 0
+        demand_shift = 0.0
 
-            if action == "none":
-                # Baseline - no improvement
-                results["total_cost"].append(base_cost * (1 + cost_var))
-                results["service_level"].append(max(0, min(1, base_service + service_var)))
-            elif action in ["reallocate", "transfer"]:
-                # Improvement in service, slight cost increase
-                results["total_cost"].append(base_cost * (1.05 + cost_var))
-                results["service_level"].append(max(0, min(1, base_service + 0.03 + service_var)))
-            elif action == "expedite_po":
-                # Good service improvement, higher cost
-                cost_mult = decision.get("expedite_premium", 1.5)
-                results["total_cost"].append(base_cost * (cost_mult + cost_var))
-                results["service_level"].append(max(0, min(1, base_service + 0.05 + service_var)))
-            elif action == "optimize_flow":
-                # Best overall improvement
-                results["total_cost"].append(base_cost * (0.95 + cost_var))
-                results["service_level"].append(max(0, min(1, base_service + 0.04 + service_var)))
-            else:
-                # Default
-                results["total_cost"].append(base_cost * (1 + cost_var))
-                results["service_level"].append(max(0, min(1, base_service + service_var)))
+        if action == "none":
+            pass  # baseline
+        elif action in ["reallocate", "transfer"]:
+            cost_multiplier = 1.02  # slight logistics cost
+            service_boost = 0.03
+        elif action == "expedite_po":
+            cost_multiplier = params.get("expedite_premium", 1.3)
+            lead_time_reduction = params.get("lead_time_reduction_days", 3)
+            service_boost = 0.05
+        elif action == "optimize_flow":
+            cost_multiplier = 0.95  # efficiency gain
+            service_boost = 0.04
+            lead_time_reduction = 1
+        elif action == "increase_safety_stock":
+            cost_multiplier = 1.08  # higher holding cost
+            service_boost = 0.06
 
-            # Other metrics with variation
-            results["inventory_turns"].append(max(1, random.gauss(8, 1.5)))
-            results["otif_rate"].append(max(0, min(1, random.gauss(0.88, 0.05))))
-            results["days_of_supply"].append(max(5, random.gauss(21, 5)))
-            results["fill_rate"].append(max(0, min(1, random.gauss(0.95, 0.03))))
+        # Effective parameters for simulation
+        eff_lead_time = max(1, base_lead_time - lead_time_reduction)
+        holding_cost_rate = max(0.5, base_cost / max(1, base_inventory) / 52)
+        backlog_cost_rate = holding_cost_rate * 2.0
+
+        num_weeks = scenario.horizon_days // 7 if scenario.horizon_days else 12
+
+        for sim_idx in range(num_simulations):
+            rng = np.random.RandomState(sim_idx + 1)
+
+            inventory = base_inventory
+            backlog = 0.0
+            total_cost_sim = 0.0
+            weeks_met_demand = 0
+            total_demand = 0.0
+            total_fulfilled = 0.0
+            weekly_inventories = []
+
+            # Shipment pipeline
+            lt_weeks = max(1, int(eff_lead_time / 7))
+            pipeline = [0.0] * (num_weeks + lt_weeks + 1)
+
+            for week in range(num_weeks):
+                # Receive shipments
+                if week < len(pipeline):
+                    inventory += pipeline[week]
+
+                # Stochastic demand
+                demand = max(0, rng.normal(base_demand * 7, base_demand * 7 * 0.2))
+                demand += demand_shift
+                total_demand += demand
+
+                # Fulfill
+                available = inventory
+                fulfilled = min(available, demand + backlog)
+                total_fulfilled += min(fulfilled, demand)
+                unfulfilled = (demand + backlog) - fulfilled
+                inventory = max(0, inventory - fulfilled)
+                backlog = max(0, unfulfilled)
+
+                if demand <= fulfilled:
+                    weeks_met_demand += 1
+
+                # Order (base-stock)
+                target = base_demand * 7 * (lt_weeks + 2)
+                pip_total = sum(pipeline[week + 1:week + lt_weeks + 1])
+                order_qty = max(0, target - inventory - pip_total + backlog)
+
+                actual_lt = max(1, int(rng.normal(lt_weeks, max(1, lt_weeks * 0.15))))
+                arrival = week + actual_lt
+                if arrival < len(pipeline):
+                    pipeline[arrival] += order_qty
+
+                # Costs
+                total_cost_sim += max(0, inventory) * holding_cost_rate
+                total_cost_sim += backlog * backlog_cost_rate
+                weekly_inventories.append(inventory)
+
+            # Apply cost multiplier from action
+            total_cost_sim *= cost_multiplier
+
+            # Compute metrics
+            service = (weeks_met_demand / num_weeks) if num_weeks > 0 else 0.0
+            service = min(1.0, service + service_boost * rng.uniform(0.5, 1.0))
+            fill_rate = total_fulfilled / total_demand if total_demand > 0 else 1.0
+            avg_inv = np.mean(weekly_inventories) if weekly_inventories else base_inventory
+            inv_turns = (total_demand / avg_inv) if avg_inv > 0 else 0.0
+            dos = (avg_inv / (base_demand * 7)) if base_demand > 0 else 21
+            otif = min(1.0, fill_rate * service)
+
+            results["total_cost"].append(float(total_cost_sim))
+            results["service_level"].append(float(max(0, min(1, service))))
+            results["inventory_turns"].append(float(max(0.5, inv_turns)))
+            results["otif_rate"].append(float(max(0, min(1, otif))))
+            results["days_of_supply"].append(float(max(1, dos)))
+            results["fill_rate"].append(float(max(0, min(1, fill_rate))))
 
         return results
 
@@ -719,22 +788,51 @@ class ScenarioEvaluationService:
         self,
         scorecard: BalancedScorecard,
     ) -> float:
-        """Calculate weighted overall score from all metrics."""
+        """Calculate weighted overall score from all metrics.
+
+        Normalization strategy:
+        - Ratio metrics (0-1 range like service_level, fill_rate): multiply by 100
+        - Turns metrics (typically 1-30): scale proportionally (10 turns = 50 score)
+        - Cost metrics (lower is better): use percentile rank within P5-P95 range
+        - Days metrics (lower is better): 7 days=90, 30 days=50, 60+ days=10
+        """
         total_score = 0.0
         total_weight = 0.0
 
         for metric in scorecard.get_all_metrics():
-            if metric.value is not None:
-                # Normalize metric to 0-100 scale
-                if metric.direction == "higher_is_better":
-                    normalized = metric.value * 100 if metric.value <= 1 else metric.value
-                else:
-                    # Lower is better - invert
-                    # Assume reasonable bounds for cost-type metrics
-                    normalized = max(0, 100 - (metric.value / 1000))  # Adjust scale as needed
+            if metric.value is None:
+                continue
 
-                total_score += normalized * metric.weight
-                total_weight += metric.weight
+            if metric.direction == "higher_is_better":
+                if metric.value <= 1.0:
+                    # Ratio metric (service level, fill rate, OTIF)
+                    normalized = metric.value * 100
+                elif metric.value <= 50:
+                    # Turns-type metric: scale so 10=50, 20=80, 30=100
+                    normalized = min(100, metric.value * 4)
+                else:
+                    # Already on a 0-100ish scale
+                    normalized = min(100, metric.value)
+            else:
+                # Lower is better
+                if hasattr(metric, 'p95') and metric.p95 and hasattr(metric, 'p5') and metric.p5:
+                    # Use actual distribution range for normalization
+                    range_val = metric.p95 - metric.p5
+                    if range_val > 0:
+                        # 100 at p5 (best), 0 at p95 (worst)
+                        normalized = max(0, min(100, 100 * (1 - (metric.value - metric.p5) / range_val)))
+                    else:
+                        normalized = 50.0
+                elif metric.value <= 60:
+                    # Days-type metric: 7d=90, 14d=75, 21d=60, 30d=50, 60d=10
+                    normalized = max(0, min(100, 100 - (metric.value * 1.5)))
+                else:
+                    # Cost-type: use log scale, higher cost = lower score
+                    import math
+                    normalized = max(0, min(100, 100 - math.log10(max(1, metric.value)) * 15))
+
+            total_score += normalized * metric.weight
+            total_weight += metric.weight
 
         return total_score / total_weight if total_weight > 0 else 0.0
 

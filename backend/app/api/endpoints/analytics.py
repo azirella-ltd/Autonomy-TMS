@@ -592,25 +592,27 @@ async def get_kpis(
                 inventory_trend=[]
             ),
             strategic=StrategicKPIs(
-                supplier_reliability=95.0,
-                supplier_trend=0.5,
-                network_flexibility=70.0,
-                flexibility_trend=2.0,
-                forecast_accuracy=85.0,
-                forecast_trend=1.5,
+                supplier_reliability=0,
+                supplier_trend=0,
+                network_flexibility=0,
+                flexibility_trend=0,
+                forecast_accuracy=0,
+                forecast_trend=0,
                 carbon_emissions=0,
-                emissions_trend=-5.0,
-                risk_score=3.0,
-                risk_trend=-10.0
+                emissions_trend=0,
+                risk_score=0,
+                risk_trend=0
             )
         )
 
-    # Calculate Financial KPIs
+    # ── Financial KPIs ──
     total_cost = sum(pr.total_cost or 0 for pr in participant_rounds)
     inventory_cost = sum(pr.holding_cost or 0 for pr in participant_rounds)
     backlog_cost = sum(pr.backlog_cost or 0 for pr in participant_rounds)
-    transportation_cost = total_cost * 0.25
-    production_cost = total_cost * 0.25
+    # Derive transport/production as remainder split evenly (no dedicated columns)
+    other_cost = max(0, total_cost - inventory_cost - backlog_cost)
+    transportation_cost = other_cost * 0.5
+    production_cost = other_cost * 0.5
 
     cost_by_week = []
     for i in range(12):
@@ -618,12 +620,28 @@ async def get_kpis(
         week_end = week_start + timedelta(weeks=1)
         week_cost = sum(
             pr.total_cost or 0 for pr in participant_rounds
-            if week_start <= pr.created_at < week_end if hasattr(pr, 'created_at')
+            if hasattr(pr, 'created_at') and pr.created_at and week_start <= pr.created_at < week_end
         )
         cost_by_week.append({"week": i + 1, "cost": round(week_cost, 2)})
 
-    # Calculate Customer KPIs
+    # ── Helper: compute % trend from first-half vs second-half ──
     total_rounds = len(participant_rounds)
+    mid = total_rounds // 2
+
+    def _pct_trend(values):
+        """Compute percentage change between first and second halves."""
+        if len(values) < 4:
+            return 0.0
+        m = len(values) // 2
+        first_avg = sum(values[:m]) / m if m > 0 else 0
+        second_avg = sum(values[m:]) / (len(values) - m) if (len(values) - m) > 0 else 0
+        if first_avg == 0:
+            return 0.0
+        return round((second_avg - first_avg) / abs(first_avg) * 100, 1)
+
+    cost_trend = _pct_trend([pr.total_cost or 0 for pr in participant_rounds])
+
+    # ── Customer KPIs ──
     rounds_no_backlog = sum(1 for pr in participant_rounds if (pr.backlog or 0) == 0)
     otif = (rounds_no_backlog / total_rounds * 100) if total_rounds > 0 else 0
 
@@ -633,11 +651,32 @@ async def get_kpis(
 
     complaints = sum(1 for pr in participant_rounds if (pr.backlog or 0) > 10)
 
+    otif_values = [
+        (1 if (pr.backlog or 0) == 0 else 0) for pr in participant_rounds
+    ]
+    otif_trend = _pct_trend(otif_values) if otif_values else 0
+    fill_values = [
+        ((pr.shipment_downstream or 0) / (pr.demand or 1) * 100)
+        for pr in participant_rounds
+    ]
+    fill_trend = _pct_trend(fill_values)
+
+    # Real per-week OTIF from data
     otif_by_week = []
     for i in range(12):
-        otif_by_week.append({"week": i + 1, "otif": round(otif + (i % 3 - 1) * 2, 2)})
+        week_start = end_date - timedelta(weeks=12-i)
+        week_end = week_start + timedelta(weeks=1)
+        week_prs = [
+            pr for pr in participant_rounds
+            if hasattr(pr, 'created_at') and pr.created_at and week_start <= pr.created_at < week_end
+        ]
+        if week_prs:
+            wk_otif = sum(1 for pr in week_prs if (pr.backlog or 0) == 0) / len(week_prs) * 100
+        else:
+            wk_otif = otif  # use overall average when no data for this week
+        otif_by_week.append({"week": i + 1, "otif": round(wk_otif, 2)})
 
-    # Calculate Operational KPIs
+    # ── Operational KPIs ──
     avg_inventory = sum(pr.inventory or 0 for pr in participant_rounds) / total_rounds if total_rounds > 0 else 0
     inventory_turns = (total_fulfilled / avg_inventory * 12) if avg_inventory > 0 else 0
 
@@ -657,18 +696,51 @@ async def get_kpis(
 
     stockout_incidents = sum(1 for pr in participant_rounds if (pr.inventory or 0) < 0)
 
-    inventory_trend = []
-    for i in range(12):
-        inventory_trend.append({"week": i + 1, "inventory": round(avg_inventory + (i % 4 - 2) * 500, 2)})
+    inv_trend = _pct_trend([pr.inventory or 0 for pr in participant_rounds])
+    turns_trend = _pct_trend(
+        [(pr.shipment_downstream or 0) / max(pr.inventory or 1, 1) for pr in participant_rounds]
+    )
+    dos_trend = _pct_trend(
+        [(pr.inventory or 0) / max(pr.demand or 1, 1) for pr in participant_rounds]
+    )
 
-    # Calculate Strategic KPIs
+    # Capacity utilization: fulfilled / (fulfilled + backlog) as proxy
+    total_capacity_proxy = total_fulfilled + sum(pr.backlog or 0 for pr in participant_rounds)
+    capacity_utilization = (total_fulfilled / total_capacity_proxy * 100) if total_capacity_proxy > 0 else 0
+
+    # Real per-week inventory from data
+    inventory_trend_data = []
+    for i in range(12):
+        week_start = end_date - timedelta(weeks=12-i)
+        week_end = week_start + timedelta(weeks=1)
+        week_prs = [
+            pr for pr in participant_rounds
+            if hasattr(pr, 'created_at') and pr.created_at and week_start <= pr.created_at < week_end
+        ]
+        wk_inv = sum(pr.inventory or 0 for pr in week_prs) / len(week_prs) if week_prs else avg_inventory
+        inventory_trend_data.append({"week": i + 1, "inventory": round(wk_inv, 2)})
+
+    # ── Strategic KPIs ──
     stockouts = sum(1 for pr in participant_rounds if (pr.inventory or 0) < 0)
     supplier_reliability = max(80, 100 - (stockouts / total_rounds * 100))
+
+    # Forecast accuracy: compare demand vs order placed (demand-matching proxy)
+    forecast_accuracy = fill_rate  # best available proxy
+
+    # Network flexibility: ratio of rounds where inventory > safety threshold
+    safety_threshold = avg_demand * 2 if avg_demand > 0 else 0
+    flex_rounds = sum(1 for pr in participant_rounds if (pr.inventory or 0) > safety_threshold)
+    network_flexibility = (flex_rounds / total_rounds * 100) if total_rounds > 0 else 0
+
+    # Risk score: weighted composite (lower is better, 1-5 scale)
+    stockout_rate = stockouts / total_rounds if total_rounds > 0 else 0
+    backlog_rate = complaints / total_rounds if total_rounds > 0 else 0
+    risk_score = min(5.0, max(1.0, 1.0 + stockout_rate * 10 + backlog_rate * 5 + max(0, bullwhip_ratio - 1) * 2))
 
     return KPIResponse(
         financial=FinancialKPIs(
             total_cost=round(total_cost, 2),
-            total_cost_trend=-3.5,
+            total_cost_trend=cost_trend,
             inventory_holding_cost=round(inventory_cost, 2),
             backlog_cost=round(backlog_cost, 2),
             transportation_cost=round(transportation_cost, 2),
@@ -677,41 +749,51 @@ async def get_kpis(
         ),
         customer=CustomerKPIs(
             otif=round(otif, 2),
-            otif_trend=2.1,
+            otif_trend=otif_trend,
             otif_target=95.0,
             fill_rate=round(fill_rate, 2),
-            fill_rate_trend=1.5,
+            fill_rate_trend=fill_trend,
             service_level=round(fill_rate, 2),
-            service_level_trend=-0.8,
+            service_level_trend=fill_trend,
             customer_complaints=complaints,
-            complaints_trend=-25.0,
+            complaints_trend=_pct_trend([1 if (pr.backlog or 0) > 10 else 0 for pr in participant_rounds]),
             otif_by_week=otif_by_week
         ),
         operational=OperationalKPIs(
             inventory_turns=round(inventory_turns, 2),
-            inventory_turns_trend=1.2,
+            inventory_turns_trend=turns_trend,
             days_of_supply=round(days_of_supply, 2),
-            days_of_supply_trend=-2.5,
+            days_of_supply_trend=dos_trend,
             bullwhip_ratio=round(bullwhip_ratio, 2),
-            bullwhip_trend=-5.6,
+            bullwhip_trend=_pct_trend(
+                [abs((pr.order_upstream or 0) - (pr.demand or 0)) for pr in participant_rounds]
+            ),
             stockout_incidents=stockout_incidents,
-            stockout_trend=-40.0,
-            capacity_utilization=78.5,
-            utilization_trend=3.2,
+            stockout_trend=_pct_trend([1 if (pr.inventory or 0) < 0 else 0 for pr in participant_rounds]),
+            capacity_utilization=round(capacity_utilization, 2),
+            utilization_trend=_pct_trend(
+                [(pr.shipment_downstream or 0) / max((pr.shipment_downstream or 0) + (pr.backlog or 0), 1) for pr in participant_rounds]
+            ),
             on_time_delivery=round(otif, 2),
-            delivery_trend=1.8,
-            inventory_trend=inventory_trend
+            delivery_trend=otif_trend,
+            inventory_trend=inventory_trend_data
         ),
         strategic=StrategicKPIs(
             supplier_reliability=round(supplier_reliability, 2),
-            supplier_trend=0.5,
-            network_flexibility=72.0,
-            flexibility_trend=4.2,
-            forecast_accuracy=85.7,
-            forecast_trend=2.3,
+            supplier_trend=_pct_trend(
+                [0 if (pr.inventory or 0) < 0 else 1 for pr in participant_rounds]
+            ),
+            network_flexibility=round(network_flexibility, 2),
+            flexibility_trend=_pct_trend(
+                [1 if (pr.inventory or 0) > safety_threshold else 0 for pr in participant_rounds]
+            ),
+            forecast_accuracy=round(forecast_accuracy, 2),
+            forecast_trend=fill_trend,
             carbon_emissions=round(total_fulfilled * 0.5, 2),
-            emissions_trend=-8.5,
-            risk_score=3.2,
-            risk_trend=-12.5
+            emissions_trend=_pct_trend([pr.shipment_downstream or 0 for pr in participant_rounds]),
+            risk_score=round(risk_score, 1),
+            risk_trend=_pct_trend(
+                [((pr.backlog or 0) + max(0, -(pr.inventory or 0))) for pr in participant_rounds]
+            ),
         )
     )

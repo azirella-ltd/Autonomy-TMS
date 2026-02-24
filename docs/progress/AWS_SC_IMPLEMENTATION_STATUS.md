@@ -212,21 +212,19 @@ Professional supply chain planning and execution following AWS SC data model and
 
 ---
 
-### 8. Collaboration & Governance (2/3 entities) — **67% Complete**
+### 8. Collaboration & Governance (3/3 entities) — **100% Complete**
 
 | Entity | Status | Implementation | Location |
 |--------|--------|----------------|----------|
-| **S&OP Plan** | ⚠️ **Partial** | ConsensusDemand covers S&OP consensus; no dedicated S&OP Plan entity | [backend/app/models/sc_entities.py](backend/app/models/sc_entities.py) (ConsensusDemand) |
+| **S&OP Plan** | ✅ **Implemented** | PolicyEnvelope + SOPService + rolling_horizon_sop.py + S&OP GraphSAGE inference | [backend/app/services/planning_cascade/sop_service.py](backend/app/services/planning_cascade/sop_service.py), [backend/app/services/powell/sop_inference_service.py](backend/app/services/powell/sop_inference_service.py), [backend/app/models/planning_cascade.py](backend/app/models/planning_cascade.py) (PolicyEnvelope) |
 | **Collaboration Workflow** | ✅ **Implemented** | WorkflowTemplate, WorkflowExecution, WorkflowStepExecution (10 step types, 6 trigger types) | [backend/app/models/workflow.py](backend/app/models/workflow.py) |
 | **Approval** | ✅ **Implemented** | ApprovalTemplate, ApprovalRequest, ApprovalAction (sequential/parallel, auto-approval, escalation) | [backend/app/models/approval_template.py](backend/app/models/approval_template.py) |
 
 **What's Working**:
+- **S&OP Plan**: PolicyEnvelope stores S&OP policy parameters (safety stock targets, OTIF floors, allocation reserves). SOPService runs S&OP simulation with Monte Carlo. rolling_horizon_sop provides multi-period optimization. S&OP GraphSAGE (sop_inference_service.py) generates network-wide risk scores and policy recommendations.
 - **Workflow Engine**: Multi-stage workflows with 10 step types (validate, transform, analytics, insights, notify, plan_update, snapshot, atp_refresh, reconcile, custom) and 6 trigger types (sync_completed, manual, scheduled, event, threshold, approval)
 - **Approval Hierarchies**: Sequential/parallel approval levels, conditional routing (amount-based, category-based), auto-approval thresholds, escalation rules, timeout handling
 - **Audit Trails**: ApprovalAction records all approve/reject decisions with timestamps
-
-**Still Missing**:
-- **Dedicated S&OP Plan Entity**: ConsensusDemand covers demand consensus but a full S&OP Plan entity with executive-level KPIs and cross-functional alignment is not yet formalized
 
 ---
 

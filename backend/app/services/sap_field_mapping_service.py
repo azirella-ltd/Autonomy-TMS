@@ -321,6 +321,24 @@ SAP_FIELD_PATTERNS = {
     # Supporting table patterns (T001L, MAKT, T024E)
     r"^(Z_)?SPRAS$": ("product", "language_key"),
     r"^(Z_)?LGOBE$": ("site", "storage_location_desc"),
+
+    # User / Authorization patterns (SAP user import)
+    r"^(Z_)?BNAME$": ("sap_user", "sap_username"),
+    r"^(Z_)?SMTP_ADDR$": ("sap_user", "email"),
+    r"^(Z_)?NAME_FIRST$": ("sap_user", "first_name"),
+    r"^(Z_)?NAME_LAST$": ("sap_user", "last_name"),
+    r"^(Z_)?USTYP$": ("sap_user", "user_type"),
+    r"^(Z_)?GLTGV$": ("sap_user", "valid_from"),
+    r"^(Z_)?GLTGB$": ("sap_user", "valid_to"),
+    r"^(Z_)?CLASS$": ("sap_user", "account_class"),
+    r"^(Z_)?AGR_NAME$": ("sap_role", "role_name"),
+    r"^(Z_)?AGR_TEXT$": ("sap_role", "role_description"),
+    r"^(Z_)?FROM_DAT$": ("sap_role", "valid_from"),
+    r"^(Z_)?TO_DAT$": ("sap_role", "valid_to"),
+    r"^(Z_)?OBJECT$": ("sap_authorization", "auth_object"),
+    r"^(Z_)?TCODE$": ("sap_authorization", "tcode"),
+    r"^(Z_)?LOW$": ("sap_authorization", "value_low"),
+    r"^(Z_)?HIGH$": ("sap_authorization", "value_high"),
 }
 
 # AWS SC entity field definitions (expanded)
@@ -532,6 +550,32 @@ AWS_SC_FIELDS = {
         "release_status": {"type": "string", "required": False, "description": "Release status (FRGZU)"},
         "deletion_indicator": {"type": "string", "required": False, "description": "Deletion indicator (LOEKZ)"},
         "requisition_date": {"type": "date", "required": False, "description": "Requisition date (BADAT)"},
+    },
+    # --- SAP User / Role / Authorization entities (SC-filtered import) ---
+    "sap_user": {
+        "sap_username": {"type": "string", "required": True, "description": "SAP username (BNAME from USR02)"},
+        "email": {"type": "string", "required": False, "description": "Email address (SMTP_ADDR from ADRP)"},
+        "first_name": {"type": "string", "required": False, "description": "First name (NAME_FIRST from ADRP)"},
+        "last_name": {"type": "string", "required": False, "description": "Last name (NAME_LAST from ADRP)"},
+        "user_type": {"type": "string", "required": False, "description": "SAP user type: A=Dialog, B=System, C=Comms, S=Service (USTYP)"},
+        "valid_from": {"type": "date", "required": False, "description": "Account valid from date (GLTGV)"},
+        "valid_to": {"type": "date", "required": False, "description": "Account valid to date (GLTGB)"},
+        "account_class": {"type": "string", "required": False, "description": "User group/class (CLASS from USR02)"},
+    },
+    "sap_role": {
+        "role_name": {"type": "string", "required": True, "description": "SAP role name (AGR_NAME from AGR_DEFINE)"},
+        "role_description": {"type": "string", "required": False, "description": "Role description text (TEXT from AGR_DEFINE)"},
+        "assigned_user": {"type": "string", "required": False, "description": "Assigned user (UNAME from AGR_USERS)"},
+        "valid_from": {"type": "date", "required": False, "description": "Assignment valid from (FROM_DAT)"},
+        "valid_to": {"type": "date", "required": False, "description": "Assignment valid to (TO_DAT)"},
+    },
+    "sap_authorization": {
+        "role_name": {"type": "string", "required": True, "description": "Role containing this authorization (AGR_NAME)"},
+        "auth_object": {"type": "string", "required": False, "description": "Authorization object name (OBJECT from AGR_1251)"},
+        "field_name": {"type": "string", "required": False, "description": "Auth object field name (FIELD from AGR_1251)"},
+        "value_low": {"type": "string", "required": False, "description": "Lower bound value (LOW from AGR_1251)"},
+        "value_high": {"type": "string", "required": False, "description": "Upper bound value (HIGH from AGR_1251)"},
+        "tcode": {"type": "string", "required": False, "description": "Transaction code (TCODE from AGR_TCODES)"},
     },
 }
 
@@ -903,6 +947,9 @@ class SAPFieldMappingService:
             "supply_plan": ["mrp", "planned order", "requirements planning", "supply plan", "netting", "planning run"],
             "inv_policy": ["safety stock", "reorder", "lot size", "mrp type", "inventory policy", "replenishment"],
             "purchase_requisition": ["purchase requisition", "banf", "procurement request", "requisition", "buy request"],
+            "sap_user": ["user", "bname", "logon", "username", "person", "email", "smtp"],
+            "sap_role": ["role", "agr_name", "composite", "profile", "activity group"],
+            "sap_authorization": ["authorization", "auth object", "tcode", "transaction code", "actvt"],
         }
 
         desc_lower = table_description.lower()

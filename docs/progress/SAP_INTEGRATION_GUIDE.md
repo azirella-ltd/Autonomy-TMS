@@ -265,6 +265,68 @@ ANTHROPIC_API_KEY=sk-ant-your-api-key
 
 ---
 
+## Getting Access to SAP S/4HANA (Free)
+
+If you don't have an existing SAP system, you can deploy a fully-configured **S/4HANA Fully-Activated Appliance (FAA)** with IDES sample data for development and testing.
+
+### Step 1: Create an SAP Account
+
+1. Go to [https://account.sap.com/core/create/register](https://account.sap.com/core/create/register)
+2. Fill in: First name, Last name, Email, Username, Password, Country
+3. Accept terms, complete captcha, click **Register**
+4. Verify your email — you now have an **SAP Universal ID**
+
+This account is free and gives access to SAP Cloud Appliance Library, SAP Community, SAP Learning Hub, SAP BTP Trial, and SAP API Business Hub.
+
+### Step 2: Deploy S/4HANA FAA via Cloud Appliance Library
+
+1. Go to [cal.sap.com](https://cal.sap.com) and sign in with your SAP ID
+2. Click **Appliances** → **Create**
+3. Search for **"SAP S/4HANA Fully-Activated Appliance"**
+4. Select it and choose a cloud provider (AWS, Azure, or GCP)
+5. Link your cloud provider account (requires billing enabled)
+6. Pick an instance size — smallest is sufficient for table extraction
+7. Click **Create** — provisioning takes ~1-2 hours
+
+**Cost**: You pay only the cloud provider for compute while the instance runs (~$1-3/hr depending on size). **Suspend or terminate when not in use.**
+
+### Step 3: Connect and Extract Data
+
+Once deployed, you receive login credentials for SAP GUI and/or Fiori Launchpad.
+
+**Table extraction methods:**
+- **SE16/SE16N** (SAP GUI): Browse and export individual tables (MARC, MDKP, PLAF, EBAN, PBIM, etc.)
+- **OData APIs** (recommended for automation):
+  - `API_PRODUCT_SRV` — Material master data
+  - `API_MRP_MATERIALS_SRV_01` — MRP planning data
+  - `API_PURCHASEREQ_PROCESS_SRV` — Purchase requisitions
+  - `API_BUSINESS_PARTNER` — Vendors and customers
+- **CSV export** via SE16N → Download spreadsheet → use as input for CSV connection mode
+
+### What's Included
+
+The FAA comes pre-loaded with **IDES sample data** covering:
+- Material master (MARA, MARC, MARD, MARM, MAKT)
+- Organizational structure (T001, T001W, T001L, T024E)
+- Purchasing (EKKO, EKPO, EINA, EINE, EBAN)
+- Sales (VBAK, VBAP, KNA1, KNVV)
+- Production (AFKO, AFPO, STKO, STPO, PLKO, PLPO)
+- MRP (MDKP, MDTB, PLAF)
+- Forecasting (PBIM, MPOP)
+- Quality, Maintenance, Subcontracting, and more
+
+All 56 SAP tables mapped in the platform (47 S/4HANA + 9 APO) are available for extraction and testing.
+
+### Alternative Free Options
+
+| Option | Access | Limitations |
+|--------|--------|-------------|
+| **SAP Learning Hub** (free tier) | Preconfigured sandbox, no cloud account needed | Limited hours, shared system |
+| **SAP BTP Trial** ([account.hanatrial.ondemand.com](https://account.hanatrial.ondemand.com)) | ABAP environment | No full ERP, limited modules |
+| **SAP Datasphere Sample Content** (GitHub) | CSV extracts of demo data | No live system, static data |
+
+---
+
 ## Installation
 
 ### Prerequisites

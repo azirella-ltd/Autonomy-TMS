@@ -293,6 +293,9 @@ from .decision_tracking import (
 # 25. Collaboration Scenarios (Agentic Authorization Protocol demo data)
 from .collaboration_scenario import CollaborationScenario
 
+# 26. SAP User Import (SC-filtered user provisioning)
+from .sap_user_import import SAPUserImportLog, SAPRoleMapping
+
 # Verify all models are properly registered
 registered_tables = set(Base.metadata.tables.keys())
 # Updated terminology: scenarios, participants, participant_actions
@@ -543,6 +546,9 @@ __all__ = [
     'DecisionType',
     'DQSDecisionStatus',
     'DecisionUrgency',
+    # SAP User Import
+    'SAPUserImportLog',
+    'SAPRoleMapping',
 ]
 
 # Note: SQLAlchemy will configure mappers lazily when first used.
