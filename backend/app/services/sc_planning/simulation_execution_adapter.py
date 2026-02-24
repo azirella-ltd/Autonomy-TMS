@@ -96,7 +96,7 @@ class SimulationExecutionAdapter:
             self.cache = ExecutionCache(db, self.config_id, self.group_id)
 
         # Phase 5: Stochastic sampler for distribution sampling
-        self.stochastic_sampler = StochasticSampler(game_id=game.id, use_cache=use_cache)
+        self.stochastic_sampler = StochasticSampler(scenario_id=game.id, use_cache=use_cache)
 
     # ============================================================================
     # STATE SYNCHRONIZATION (Game → SC)
@@ -119,7 +119,7 @@ class SimulationExecutionAdapter:
 
         # Get all players in this game
         result = await self.db.execute(
-            select(Player).filter(Player.game_id == self.game.id)
+            select(Player).filter(Player.scenario_id == self.game.id)
         )
         players = result.scalars().all()
 
@@ -205,7 +205,7 @@ class SimulationExecutionAdapter:
                     InboundOrderLine.to_site_id == site_id,
                     InboundOrderLine.group_id == self.group_id,
                     InboundOrderLine.config_id == self.config_id,
-                    InboundOrderLine.game_id == self.game.id,
+                    InboundOrderLine.scenario_id == self.game.id,
                     InboundOrderLine.status.in_(['open', 'confirmed']),
                     InboundOrderLine.quantity_received == None
                 )
@@ -296,7 +296,7 @@ class SimulationExecutionAdapter:
             # Multi-tenancy
             group_id=self.group_id,
             config_id=self.config_id,
-            game_id=self.game.id,
+            scenario_id=self.game.id,
             round_number=round_number
         )
 
@@ -404,7 +404,7 @@ class SimulationExecutionAdapter:
                 # Multi-tenancy
                 group_id=self.group_id,
                 config_id=self.config_id,
-                game_id=self.game.id,
+                scenario_id=self.game.id,
                 round_number=round_number
             )
 
@@ -533,7 +533,7 @@ class SimulationExecutionAdapter:
                 lead_time_days=lead_time_days,
                 group_id=self.group_id,
                 config_id=self.config_id,
-                game_id=self.game.id,
+                scenario_id=self.game.id,
                 round_number=round_number
             )
 
@@ -628,7 +628,7 @@ class SimulationExecutionAdapter:
                 and_(
                     InboundOrderLine.group_id == self.group_id,
                     InboundOrderLine.config_id == self.config_id,
-                    InboundOrderLine.game_id == self.game.id,
+                    InboundOrderLine.scenario_id == self.game.id,
                     InboundOrderLine.status == 'open',
                     InboundOrderLine.expected_delivery_date <= current_date
                 )
@@ -677,7 +677,7 @@ class SimulationExecutionAdapter:
         """
         result = await self.db.execute(
             select(Player).filter(
-                Player.game_id == self.game.id,
+                Player.scenario_id == self.game.id,
                 Player.role == role
             )
         )
@@ -926,7 +926,7 @@ class SimulationExecutionAdapter:
             lead_time_days=lead_time_days,
             group_id=self.group_id,
             config_id=self.config_id,
-            game_id=self.game.id,
+            scenario_id=self.game.id,
             round_number=round_number
         )
 
@@ -1178,7 +1178,7 @@ class SimulationExecutionAdapter:
             source_order_ids = ','.join([f"{role}" for (role, _, _, _, _, _) in orders])
             agg_record = AggregatedOrder(
                 policy_id=policy.id,
-                game_id=self.game.id,
+                scenario_id=self.game.id,
                 round_number=round_number,
                 from_site_id=first_node.id,
                 to_site_id=upstream_node.id,

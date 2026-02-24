@@ -7,107 +7,107 @@ from ... import models, schemas
 from ...crud import crud_dashboard as crud
 from ...db.session import get_sync_db as get_db
 from ...core.security import get_current_active_user
-from ...models.player import Player as SupplyChainPlayer
-from ...models.game import Game, GameStatus
+from ...models.participant import Participant
+from ...models.scenario import Scenario, ScenarioStatus
 
 # Router for dashboard endpoints
 dashboard_router = APIRouter()
 
-@dashboard_router.get("/user-games")
-async def get_user_games(
+@dashboard_router.get("/user-scenarios")
+async def get_user_scenarios(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
     """
-    Get all active games for the current user.
-    Returns a list of games with basic info (id, name, status, role).
+    Get all active scenarios for the current user.
+    Returns a list of scenarios with basic info (id, name, status, role).
     """
-    # Get all games where user is a player
-    games = (
-        db.query(Game)
-        .join(SupplyChainPlayer, SupplyChainPlayer.game_id == Game.id)
-        .filter(SupplyChainPlayer.user_id == current_user.id)
+    # Get all scenarios where user is a participant
+    scenarios = (
+        db.query(Scenario)
+        .join(Participant, Participant.scenario_id == Scenario.id)
+        .filter(Participant.user_id == current_user.id)
         .all()
     )
 
-    if not games:
+    if not scenarios:
         return []
 
-    # Get player roles for each game
+    # Get participant roles for each scenario
     result = []
-    for game in games:
-        player = (
-            db.query(SupplyChainPlayer)
+    for scenario in scenarios:
+        participant = (
+            db.query(Participant)
             .filter(
-                SupplyChainPlayer.user_id == current_user.id,
-                SupplyChainPlayer.game_id == game.id
+                Participant.user_id == current_user.id,
+                Participant.scenario_id == scenario.id
             )
             .first()
         )
 
-        if player:
-            role_value = getattr(player.role, "name", str(player.role)).upper()
+        if participant:
+            role_value = getattr(participant.role, "name", str(participant.role)).upper()
             result.append({
-                "id": game.id,
-                "name": game.name,
-                "status": game.status.value if hasattr(game.status, 'value') else str(game.status),
+                "id": scenario.id,
+                "name": scenario.name,
+                "status": scenario.status.value if hasattr(scenario.status, 'value') else str(scenario.status),
                 "role": role_value,
-                "current_round": game.current_round,
-                "max_rounds": game.max_rounds,
-                "created_at": game.created_at.isoformat() if game.created_at else None
+                "current_round": scenario.current_round,
+                "max_rounds": scenario.max_rounds,
+                "created_at": scenario.created_at.isoformat() if scenario.created_at else None
             })
 
     return result
 
 @dashboard_router.get("/human-dashboard", response_model=schemas.DashboardResponse)
 async def get_human_dashboard(
-    game_id: Optional[int] = Query(None, description="Specific game ID to view. If not provided, returns the most recent active game."),
+    scenario_id: Optional[int] = Query(None, description="Specific scenario ID to view. If not provided, returns the most recent active scenario."),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
     """
-    Get dashboard data for a human player.
-    Returns game info, player role, current round, and metrics.
+    Get dashboard data for a human participant.
+    Returns scenario info, participant role, current period, and metrics.
 
-    If game_id is provided, returns data for that specific game.
-    Otherwise, returns data for the most recent active game.
+    If scenario_id is provided, returns data for that specific scenario.
+    Otherwise, returns data for the most recent active scenario.
     """
-    # Get active game for the user (either specific game_id or most recent)
-    if game_id:
-        active_game = db.query(Game).filter(Game.id == game_id).first()
-        if not active_game:
+    # Get active scenario for the user (either specific scenario_id or most recent)
+    if scenario_id:
+        active_scenario = db.query(Scenario).filter(Scenario.id == scenario_id).first()
+        if not active_scenario:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Game with ID {game_id} not found"
+                detail=f"Scenario with ID {scenario_id} not found"
             )
-        # Verify user is a player in this game
+        # Verify user is a participant in this scenario
         player_check = (
-            db.query(SupplyChainPlayer)
+            db.query(Participant)
             .filter(
-                SupplyChainPlayer.user_id == current_user.id,
-                SupplyChainPlayer.game_id == game_id
+                Participant.user_id == current_user.id,
+                Participant.scenario_id == scenario_id
             )
             .first()
         )
         if not player_check:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="You are not a player in this game"
+                detail="You are not a participant in this scenario"
             )
     else:
-        active_game = crud.get_active_game_for_user(db, user_id=current_user.id)
-        if not active_game:
+        active_scenario = crud.get_active_scenario_for_user(db, user_id=current_user.id)
+        if not active_scenario:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="No active game found for the user"
+                detail="No active scenario found for the user"
             )
     
-    # Get player's role in the game
+    # Get participant's role in the scenario
     player = (
-        db.query(SupplyChainPlayer)
+        db.query(Participant)
         .filter(
-            SupplyChainPlayer.user_id == current_user.id,
-            SupplyChainPlayer.game_id == active_game.id,
+            Participant.user_id == current_user.id,
+            Participant.scenario_id == active_scenario.id,
         )
         .first()
     )
@@ -115,11 +115,11 @@ async def get_human_dashboard(
     if not player:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Player data not found for this game"
+            detail="Participant data not found for this scenario"
         )
     
-    # Get game metrics
-    metrics = crud.get_player_metrics(db, player_id=player.id, game_id=active_game.id)
+    # Get scenario metrics
+    metrics = crud.get_player_metrics(db, player_id=player.id, scenario_id=active_scenario.id)
     
     # Get time series data for the player
     role_value = getattr(player.role, "name", str(player.role)).upper()
@@ -127,7 +127,7 @@ async def get_human_dashboard(
     time_series = crud.get_time_series_metrics(
         db,
         player_id=player.id,
-        game_id=active_game.id,
+        scenario_id=active_scenario.id,
         role=role_value,
     )
 
@@ -148,11 +148,11 @@ async def get_human_dashboard(
 
     # Create the response model
     return schemas.DashboardResponse(
-        game_id=active_game.id,
+        scenario_id=active_scenario.id,
         player_id=player.id,
-        game_name=active_game.name,
-        current_round=active_game.current_round,
-        max_rounds=active_game.max_rounds,
+        scenario_name=active_scenario.name,
+        current_round=active_scenario.current_round,
+        max_rounds=active_scenario.max_rounds,
         player_role=role_value,
         metrics=schemas.PlayerMetrics(**metrics),
         time_series=time_series_points,

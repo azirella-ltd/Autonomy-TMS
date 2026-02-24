@@ -43,7 +43,7 @@ class ParticipantMetrics(BaseModel):
 class DashboardResponse(BaseModel):
     """Dashboard data response model."""
 
-    scenario_id: int = Field(..., alias="game_id", description="Identifier of the active scenario")
+    scenario_id: int = Field(..., alias="scenario_id", description="Identifier of the active scenario")
     participant_id: int = Field(..., alias="player_id", description="Identifier of the participant viewing the dashboard")
     scenario_name: str = Field(..., alias="game_name", description="Name of the current scenario")
     current_period: int = Field(..., alias="current_round", description="Current period number in the scenario")

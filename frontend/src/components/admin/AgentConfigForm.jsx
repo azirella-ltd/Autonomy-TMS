@@ -57,7 +57,7 @@ const AgentConfigForm = ({ gameId, configId, onSuccess }) => {
         setError(null);
         const data = {
           ...values,
-          game_id: gameId
+          scenario_id: gameId
         };
 
         if (configId) {

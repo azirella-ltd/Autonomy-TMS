@@ -68,7 +68,7 @@ class MonteCarloEngine:
         self.rng = np.random.RandomState(seed=random_seed)
 
         # Initialize components
-        self.sampler = StochasticSampler(config_id, group_id, game_id=None)
+        self.sampler = StochasticSampler(config_id, group_id, scenario_id=None)
 
         # Results storage
         self.scenario_results: List[Dict[str, Any]] = []

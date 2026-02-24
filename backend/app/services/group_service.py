@@ -32,7 +32,7 @@ from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_BEER_GAME_SITE_TYPE_DEFINITIONS = [
+DEFAULT_SITE_TYPE_DEFINITIONS = [
     {
         "type": "factory",
         "label": "Factory",
@@ -123,21 +123,21 @@ class GroupService:
             self.db.add(admin_user)
 
             sc_config = SupplyChainConfig(
-                name="Default Beer Game",
+                name="Default Supply Chain",
                 description="Default supply chain configuration",
                 created_by=admin_user.id,
                 group_id=group.id,
                 is_active=True,
                 time_bucket=TimeBucket.WEEK,
-                site_type_definitions=DEFAULT_BEER_GAME_SITE_TYPE_DEFINITIONS,
+                site_type_definitions=DEFAULT_SITE_TYPE_DEFINITIONS,
             )
             self.db.add(sc_config)
             self.db.flush()
 
             item = Item(
                 config_id=sc_config.id,
-                name="Case of Beer",
-                description="Standard product for the Beer Game"
+                name="Standard Product",
+                description="Default product for the simulation"
             )
             self.db.add(item)
             self.db.flush()
@@ -232,11 +232,11 @@ class GroupService:
                 config_service = SupplyChainConfigService(self.db)
                 game_config = config_service.create_game_from_config(
                     sc_config.id,
-                    {"name": "The Beer Game", "max_rounds": 50},
+                    {"name": "Default Scenario", "max_rounds": 50},
                 )
 
                 game = Game(
-                    name=game_config.get("name", "The Beer Game"),
+                    name=game_config.get("name", "Default Scenario"),
                     created_by=admin_user.id,
                     group_id=group.id,
                     status=GameStatus.CREATED,
@@ -296,7 +296,7 @@ class GroupService:
                 players = []
                 for user_obj, role_enum, display_name in player_users:
                     player = Player(
-                        game_id=game.id,
+                        scenario_id=game.id,
                         user_id=user_obj.id,
                         name=display_name,
                         role=role_enum,

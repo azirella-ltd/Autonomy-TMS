@@ -87,7 +87,7 @@ class InvProjectionBase(BaseModel):
 
     # Beer Game integration
     config_id: Optional[int] = None
-    game_id: Optional[int] = None
+    scenario_id: Optional[int] = None
     round_number: Optional[int] = None
 
 
@@ -158,7 +158,7 @@ class AtpProjectionBase(BaseModel):
 
     # Beer Game integration
     config_id: Optional[int] = None
-    game_id: Optional[int] = None
+    scenario_id: Optional[int] = None
 
 
 class AtpProjectionCreate(AtpProjectionBase):
@@ -215,7 +215,7 @@ class CtpProjectionBase(BaseModel):
 
     # Beer Game integration
     config_id: Optional[int] = None
-    game_id: Optional[int] = None
+    scenario_id: Optional[int] = None
 
 
 class CtpProjectionCreate(CtpProjectionBase):
@@ -336,7 +336,7 @@ class CalculateAtpRequest(BaseModel):
     atp_rule: AtpRuleType = AtpRuleType.CUMULATIVE
     customer_id: Optional[str] = None
     config_id: Optional[int] = None
-    game_id: Optional[int] = None
+    scenario_id: Optional[int] = None
 
 
 class CalculateCtpRequest(BaseModel):
@@ -349,7 +349,7 @@ class CalculateCtpRequest(BaseModel):
     check_component_availability: bool = True
     check_resource_capacity: bool = True
     config_id: Optional[int] = None
-    game_id: Optional[int] = None
+    scenario_id: Optional[int] = None
 
 
 class OrderPromiseRequest(BaseModel):

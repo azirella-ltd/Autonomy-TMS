@@ -1,11 +1,11 @@
 """
-ATP Calculation Service for Beer Game Execution
+ATP Calculation Service for Simulation Execution
 
 Provides real-time ATP (Available-to-Promise) calculations during
-Beer Game order promising and fulfillment. Integrates with order
+simulation order promising and fulfillment. Integrates with order
 management and fulfillment services.
 
-This service is specialized for Beer Game execution, complementing
+This service is specialized for simulation execution, complementing
 the broader ATP/CTP view endpoints used for planning.
 """
 
@@ -21,7 +21,7 @@ from app.models.supply_chain_config import Node, TransportationLane
 
 
 class ATPCalculationService:
-    """Service for calculating ATP during Beer Game execution."""
+    """Service for calculating ATP during simulation execution."""
 
     def __init__(self, db_session: AsyncSession):
         self.db = db_session
@@ -35,12 +35,12 @@ class ATPCalculationService:
         site_id: int,
         product_id: str,
         config_id: Optional[int] = None,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
         current_round: Optional[int] = None,
         horizon_rounds: int = 4,
     ) -> Dict[str, Any]:
         """
-        Calculate real-time ATP for Beer Game order promising.
+        Calculate real-time ATP for simulation order promising.
 
         ATP = On-hand + In-transit receipts - Committed - Backlog
 
@@ -48,7 +48,7 @@ class ATPCalculationService:
             site_id: Site ID
             product_id: Product ID
             config_id: Supply chain configuration ID
-            game_id: Beer Game ID
+            scenario_id: Scenario ID
             current_round: Current round number
             horizon_rounds: Number of future rounds to project (default: 4)
 
@@ -69,14 +69,14 @@ class ATPCalculationService:
             site_id=site_id,
             product_id=product_id,
             config_id=config_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
         )
 
         # Get in-transit quantity (arriving this round or next)
         in_transit = await self._get_in_transit_quantity(
             site_id=site_id,
             product_id=product_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
             arrival_round=current_round,
             horizon_rounds=2,  # Current + next round
         )
@@ -85,14 +85,14 @@ class ATPCalculationService:
         committed = await self._get_committed_quantity(
             site_id=site_id,
             product_id=product_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
         )
 
         # Get backlog quantity
         backlog = await self._get_backlog_quantity(
             site_id=site_id,
             product_id=product_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
         )
 
         # Current ATP
@@ -102,7 +102,7 @@ class ATPCalculationService:
         future_receipts = await self._project_future_receipts(
             site_id=site_id,
             product_id=product_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
             current_round=current_round,
             horizon_rounds=horizon_rounds,
         )
@@ -130,7 +130,7 @@ class ATPCalculationService:
         requested_quantity: float,
         requested_date: date,
         config_id: Optional[int] = None,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
         current_round: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
@@ -145,7 +145,7 @@ class ATPCalculationService:
             requested_quantity: Requested order quantity
             requested_date: Customer's requested delivery date
             config_id: Supply chain configuration ID
-            game_id: Beer Game ID
+            scenario_id: Scenario ID
             current_round: Current round number
 
         Returns:
@@ -164,7 +164,7 @@ class ATPCalculationService:
             site_id=site_id,
             product_id=product_id,
             config_id=config_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
             current_round=current_round,
             horizon_rounds=6,
         )
@@ -224,7 +224,7 @@ class ATPCalculationService:
         product_id: str,
         required_quantity: float,
         config_id: Optional[int] = None,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
     ) -> bool:
         """
         Check if a quantity can be fulfilled immediately.
@@ -237,7 +237,7 @@ class ATPCalculationService:
             product_id: Product ID
             required_quantity: Required quantity
             config_id: Supply chain configuration ID
-            game_id: Beer Game ID
+            scenario_id: Scenario ID
 
         Returns:
             True if fulfillment is feasible, False otherwise
@@ -246,7 +246,7 @@ class ATPCalculationService:
             site_id=site_id,
             product_id=product_id,
             config_id=config_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
             horizon_rounds=1,
         )
 
@@ -261,7 +261,7 @@ class ATPCalculationService:
         site_id: int,
         product_id: str,
         config_id: Optional[int] = None,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
     ) -> float:
         """Get current on-hand inventory quantity."""
         query = select(InvLevel).where(
@@ -273,8 +273,8 @@ class ATPCalculationService:
 
         if config_id is not None:
             query = query.where(InvLevel.config_id == config_id)
-        if game_id is not None:
-            query = query.where(InvLevel.game_id == game_id)
+        if scenario_id is not None:
+            query = query.where(InvLevel.scenario_id == scenario_id)
 
         result = await self.db.execute(query)
         inv_level = result.scalar_one_or_none()
@@ -285,7 +285,7 @@ class ATPCalculationService:
         self,
         site_id: int,
         product_id: str,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
         arrival_round: Optional[int] = None,
         horizon_rounds: int = 2,
     ) -> float:
@@ -295,7 +295,7 @@ class ATPCalculationService:
         Args:
             site_id: Destination site ID
             product_id: Product ID
-            game_id: Beer Game ID
+            scenario_id: Scenario ID
             arrival_round: Current round number
             horizon_rounds: Look ahead N rounds
 
@@ -310,15 +310,15 @@ class ATPCalculationService:
                     TransferOrder.status == "IN_TRANSIT",
                 )
             )
-            if game_id is not None:
-                query = query.where(TransferOrder.game_id == game_id)
+            if scenario_id is not None:
+                query = query.where(TransferOrder.scenario_id == scenario_id)
 
         else:
             # Get TOs arriving in current + next N rounds
             query = select(TransferOrder).where(
                 and_(
                     TransferOrder.destination_site_id == site_id,
-                    TransferOrder.game_id == game_id,
+                    TransferOrder.scenario_id == scenario_id,
                     TransferOrder.arrival_round >= arrival_round,
                     TransferOrder.arrival_round <= arrival_round + horizon_rounds,
                     TransferOrder.status == "IN_TRANSIT",
@@ -350,7 +350,7 @@ class ATPCalculationService:
         self,
         site_id: int,
         product_id: str,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
     ) -> float:
         """
         Get committed quantity (promised but not yet shipped).
@@ -366,8 +366,8 @@ class ATPCalculationService:
             )
         )
 
-        if game_id is not None:
-            query = query.where(OutboundOrderLine.game_id == game_id)
+        if scenario_id is not None:
+            query = query.where(OutboundOrderLine.scenario_id == scenario_id)
 
         result = await self.db.execute(query)
         committed = result.scalar()
@@ -378,7 +378,7 @@ class ATPCalculationService:
         self,
         site_id: int,
         product_id: str,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
     ) -> float:
         """Get total backlog quantity."""
         query = select(func.sum(OutboundOrderLine.backlog_quantity)).where(
@@ -389,8 +389,8 @@ class ATPCalculationService:
             )
         )
 
-        if game_id is not None:
-            query = query.where(OutboundOrderLine.game_id == game_id)
+        if scenario_id is not None:
+            query = query.where(OutboundOrderLine.scenario_id == scenario_id)
 
         result = await self.db.execute(query)
         backlog = result.scalar()
@@ -401,7 +401,7 @@ class ATPCalculationService:
         self,
         site_id: int,
         product_id: str,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
         current_round: Optional[int] = None,
         horizon_rounds: int = 4,
     ) -> List[Dict[str, Any]]:
@@ -427,7 +427,7 @@ class ATPCalculationService:
             query = select(TransferOrder).where(
                 and_(
                     TransferOrder.destination_site_id == site_id,
-                    TransferOrder.game_id == game_id,
+                    TransferOrder.scenario_id == scenario_id,
                     TransferOrder.arrival_round == future_round,
                     TransferOrder.status == "IN_TRANSIT",
                 )
@@ -524,7 +524,7 @@ class ATPCalculationService:
         lane = result.scalar_one_or_none()
 
         if lane and hasattr(lane, 'lead_time_days'):
-            # Convert days to rounds (1 round = 7 days in Beer Game)
+            # Convert days to rounds (1 round = 7 days in simulation)
             return max(1, lane.lead_time_days // 7)
 
         # Default: 1 round lead time

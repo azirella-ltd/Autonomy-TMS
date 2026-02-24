@@ -17,10 +17,6 @@ from app.models.scenario import Scenario
 from app.models.participant import Participant
 from app.models.supply_chain import ParticipantRound
 
-# Aliases for backwards compatibility
-Game = Scenario
-Player = Participant
-PlayerRound = ParticipantRound
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +56,7 @@ class WhatIfAnalysisService:
 
             # Run simulation
             sim_result = await self._simulate_scenario(
-                game_id=analysis.game_id,
+                scenario_id=analysis.scenario_id,
                 round=analysis.round,
                 player_id=analysis.player_id,
                 scenario=analysis.scenario,
@@ -87,8 +83,8 @@ class WhatIfAnalysisService:
             # Broadcast completion via WebSocket
             try:
                 from app.api.endpoints.websocket import manager
-                await manager.broadcast_to_game(
-                    analysis.game_id,
+                await manager.broadcast_to_scenario(
+                    analysis.scenario_id,
                     {
                         "type": "chat:analysis_complete",
                         "data": {
@@ -124,7 +120,7 @@ class WhatIfAnalysisService:
 
     async def _simulate_scenario(
         self,
-        game_id: int,
+        scenario_id: int,
         round: int,
         player_id: int,
         scenario: Dict[str, Any],
@@ -136,41 +132,41 @@ class WhatIfAnalysisService:
         In future, integrate with full SimPy simulation engine.
 
         Args:
-            game_id: Game ID
-            round: Current round
-            player_id: Player ID
+            scenario_id: Scenario ID
+            round: Current period
+            player_id: Participant ID
             scenario: Scenario parameters (order_quantity, etc.)
 
         Returns:
             Dictionary with projected metrics
         """
-        # Get game state
-        game_result = await self.db.execute(select(Game).filter(Game.id == game_id))
-        game = game_result.scalars().first()
+        # Get scenario state
+        scenario_result = await self.db.execute(select(Scenario).filter(Scenario.id == scenario_id))
+        scenario_obj = scenario_result.scalars().first()
 
-        if not game:
-            raise ValueError(f"Game {game_id} not found")
+        if not scenario_obj:
+            raise ValueError(f"Scenario {scenario_id} not found")
 
-        # Get player
-        player_result = await self.db.execute(
-            select(Player).filter(Player.id == player_id)
+        # Get participant
+        participant_result = await self.db.execute(
+            select(Participant).filter(Participant.id == player_id)
         )
-        player = player_result.scalars().first()
+        participant = participant_result.scalars().first()
 
-        if not player:
-            raise ValueError(f"Player {player_id} not found")
+        if not participant:
+            raise ValueError(f"Participant {player_id} not found")
 
-        # Get latest player round
+        # Get latest participant period
         round_result = await self.db.execute(
-            select(PlayerRound)
-            .filter(PlayerRound.player_id == player.id)
-            .order_by(desc(PlayerRound.round))
+            select(ParticipantRound)
+            .filter(ParticipantRound.player_id == participant.id)
+            .order_by(desc(ParticipantRound.round))
             .limit(1)
         )
         current_round = round_result.scalars().first()
 
         if not current_round:
-            raise ValueError(f"No rounds found for player {player.id}")
+            raise ValueError(f"No periods found for participant {participant.id}")
 
         # Extract scenario parameters
         order_quantity = scenario.get('order_quantity', 0)
@@ -178,9 +174,9 @@ class WhatIfAnalysisService:
 
         # Get recent demand for projection
         recent_rounds_result = await self.db.execute(
-            select(PlayerRound)
-            .filter(PlayerRound.player_id == player.id)
-            .order_by(desc(PlayerRound.round))
+            select(ParticipantRound)
+            .filter(ParticipantRound.player_id == participant.id)
+            .order_by(desc(ParticipantRound.round))
             .limit(5)
         )
         recent_rounds = list(recent_rounds_result.scalars().all())
@@ -195,7 +191,7 @@ class WhatIfAnalysisService:
 
         # Simple projection (1-round ahead)
         # Assumes order arrives with lead time and demand continues at projected rate
-        lead_time = player.lead_time if hasattr(player, 'lead_time') else 2
+        lead_time = participant.lead_time if hasattr(participant, 'lead_time') else 2
 
         # Calculate next round state
         incoming = order_quantity  # Simplified: ignoring lead time for what-if
@@ -266,14 +262,21 @@ class WhatIfAnalysisService:
         """
         try:
             from app.services.llm_suggestion_service import get_llm_service
+            from app.services.rag_context import get_rag_context
 
             llm_service = get_llm_service()
 
+            # Retrieve RAG context relevant to the what-if question
+            kb_context = await get_rag_context(question, top_k=3, max_tokens=2000)
+            kb_section = ""
+            if kb_context:
+                kb_section = f"\nRelevant Supply Chain Knowledge:\n{kb_context}\nUse the above knowledge to inform your analysis.\n"
+
             # Build analysis prompt
-            prompt = f"""You are a supply chain advisor analyzing a "what-if" scenario for a player in The Beer Game.
+            prompt = f"""You are a supply chain advisor analyzing a "what-if" scenario for a participant in a supply chain simulation.
 
 User Question: {question}
-
+{kb_section}
 Scenario Parameters:
 - Proposed Order Quantity: {scenario.get('order_quantity', 'N/A')} units
 - Baseline Order: {scenario.get('current_order', 'N/A')} units

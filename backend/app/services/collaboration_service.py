@@ -65,7 +65,7 @@ class CollaborationService:
             content: Message content
             message_type: Type of coordination (negotiation, information, request)
             context: Additional context (supply chain state, constraints, etc.)
-            session_id: Optional session/game ID for context
+            session_id: Optional session/scenario ID for context
 
         Returns:
             Message with agent coordination details
@@ -73,7 +73,7 @@ class CollaborationService:
         try:
             # Create A2A message
             message = ChatMessage(
-                game_id=int(session_id) if session_id else None,
+                scenario_id=int(session_id) if session_id else None,
                 sender_id=f"agent:{from_agent}",
                 sender_name=from_agent,
                 sender_type=SenderType.AGENT,
@@ -141,7 +141,7 @@ class CollaborationService:
         )
 
         if session_id:
-            stmt = stmt.where(ChatMessage.game_id == int(session_id))
+            stmt = stmt.where(ChatMessage.scenario_id == int(session_id))
 
         stmt = stmt.order_by(ChatMessage.created_at).limit(limit)
 
@@ -311,7 +311,7 @@ class CollaborationService:
 
             # Create chat message with human rationale
             rationale_message = ChatMessage(
-                game_id=suggestion.game_id,
+                scenario_id=suggestion.scenario_id,
                 sender_id=f"user:{user_id}",
                 sender_name=user_id,
                 sender_type=SenderType.PLAYER,

@@ -1,4 +1,4 @@
-"""Utilities for constructing structured payloads for the Beer Game Autonomy LLM agent."""
+"""Utilities for constructing structured payloads for the Autonomy LLM agent."""
 
 from __future__ import annotations
 
@@ -375,7 +375,7 @@ def build_llm_decision_payload(
         db.query(PlayerRound, Player, GameRound)
         .join(Player, PlayerRound.player_id == Player.id)
         .join(GameRound, PlayerRound.round_id == GameRound.id)
-        .filter(Player.game_id == game.id)
+        .filter(Player.scenario_id == game.id)
         .order_by(GameRound.round_number.asc())
         .all()
     )
@@ -422,7 +422,7 @@ def build_llm_decision_payload(
     players_with_inventory = (
         db.query(Player, PlayerInventory)
         .outerjoin(PlayerInventory, PlayerInventory.player_id == Player.id)
-        .filter(Player.game_id == game.id)
+        .filter(Player.scenario_id == game.id)
         .all()
     )
 

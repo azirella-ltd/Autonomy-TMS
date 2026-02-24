@@ -89,7 +89,7 @@ class DbLookupConfig:
     def __post_init__(self):
         if self.column_map is None:
             self.column_map = {
-                "game_id": "game_id",
+                "scenario_id": "scenario_id",
                 "week": "week",
                 "role": "role",
                 "inventory": "inventory",
@@ -100,12 +100,12 @@ class DbLookupConfig:
                 "placed_order": "placed_order",
             }
 
-def _build_select_sql(cfg: DbLookupConfig, game_ids: Optional[List[int]]) -> Tuple[str, Dict]:
+def _build_select_sql(cfg: DbLookupConfig, scenario_ids: Optional[List[int]]) -> Tuple[str, Dict]:
     cols = cfg.column_map
     table = cfg.steps_table
     base = f"""
       SELECT
-        {cols['game_id']}     AS game_id,
+        {cols['scenario_id']}     AS scenario_id,
         {cols['week']}        AS week,
         {cols['role']}        AS role,
         {cols['inventory']}   AS inventory,
@@ -117,18 +117,18 @@ def _build_select_sql(cfg: DbLookupConfig, game_ids: Optional[List[int]]) -> Tup
       FROM {table}
     """
     params: Dict = {}
-    if game_ids:
-        ph = ", ".join([f":gid_{i}" for i in range(len(game_ids))])
-        where = f" WHERE {cols['game_id']} IN ({ph})"
-        params = {f"gid_{i}": gid for i, gid in enumerate(game_ids)}
-        return base + where + " ORDER BY game_id, week, role", params
+    if scenario_ids:
+        ph = ", ".join([f":gid_{i}" for i in range(len(scenario_ids))])
+        where = f" WHERE {cols['scenario_id']} IN ({ph})"
+        params = {f"gid_{i}": gid for i, gid in enumerate(scenario_ids)}
+        return base + where + " ORDER BY scenario_id, week, role", params
     else:
-        return base + " ORDER BY game_id, week, role", params
+        return base + " ORDER BY scenario_id, week, role", params
 
 def load_sequences_from_db(
     cfg: DbLookupConfig,
     params: SimulationParams,
-    game_ids: Optional[List[int]] = None,
+    scenario_ids: Optional[List[int]] = None,
     window: int = 12,
     horizon: int = 1,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -142,18 +142,18 @@ def load_sequences_from_db(
       Y: [num_windows, N, T=horizon] action indices (discrete) to imitate
     """
     engine: Engine = create_engine(cfg.database_url)
-    sql, bind = _build_select_sql(cfg, game_ids)
+    sql, bind = _build_select_sql(cfg, scenario_ids)
 
     with engine.connect() as conn:
         rows = conn.execute(text(sql), bind).mappings().all()
 
-    # Bucket rows by (game_id, week) to form 4 nodes per week in fixed order
+    # Bucket rows by (scenario_id, week) to form 4 nodes per week in fixed order
     by_gw: Dict[Tuple[int, int], Dict[str, dict]] = {}
     for r in rows:
-        key = (int(r["game_id"]), int(r["week"]))
+        key = (int(r["scenario_id"]), int(r["week"]))
         by_gw.setdefault(key, {})[r["role"]] = dict(r)
 
-    # Build ordered timelines per game_id
+    # Build ordered timelines per scenario_id
     by_game: Dict[int, List[Dict[str, dict]]] = {}
     for (gid, wk), role_map in by_gw.items():
         by_game.setdefault(gid, []).append({"week": wk, "roles": role_map})

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add AI players to Complex_SC showcase games that have no players."""
+"""Add AI participants to Complex_SC showcase scenarios that have no participants."""
 
 import sys
 from pathlib import Path
@@ -48,18 +48,18 @@ def _player_role_for_node_type(node_type_str: str) -> PlayerRole:
 
 
 def add_players_to_game(session: Session, game: Game, agent_type: str = "naive") -> None:
-    """Add AI players to a game based on its supply chain config."""
-    print(f"\n[info] Processing game {game.id}: {game.name}")
+    """Add AI participants to a scenario based on its supply chain config."""
+    print(f"\n[info] Processing scenario {game.id}: {game.name}")
 
     # Check if players already exist
-    existing_player_count = session.query(Player).filter(Player.game_id == game.id).count()
+    existing_player_count = session.query(Player).filter(Player.scenario_id == game.id).count()
     if existing_player_count > 0:
-        print(f"  [skip] Game already has {existing_player_count} players")
+        print(f"  [skip] Scenario already has {existing_player_count} participants")
         return
 
-    # Get the supply chain config to find all nodes
+    # Get the supply chain config to find all sites
     if not game.supply_chain_config_id:
-        print("  [error] Game has no supply_chain_config_id")
+        print("  [error] Scenario has no supply_chain_config_id")
         return
 
     from app.models.supply_chain_config import SupplyChainConfig, Node as SCNode
@@ -88,7 +88,7 @@ def add_players_to_game(session: Session, game: Game, agent_type: str = "naive")
     for node in nodes:
         if node.master_type in playable_master_types:
             player = Player(
-                game_id=game.id,
+                scenario_id=game.id,
                 role=_player_role_for_node_type(node.type),
                 name=f"{node.name} ({agent_type})",
                 node_key=node.name,  # Use node.name as key
@@ -104,20 +104,20 @@ def add_players_to_game(session: Session, game: Game, agent_type: str = "naive")
             print(f"    [+] Created player for {node.name} (type: {node.type}, master_type: {node.master_type})")
 
     session.flush()
-    print(f"  [success] Created {created_count} players for game {game.id}")
+    print(f"  [success] Created {created_count} participants for scenario {game.id}")
 
 
 def main():
     session = SessionLocal()
 
     try:
-        # Find all Complex_SC games (config_id = 12)
+        # Find all Complex_SC scenarios (config_id = 12)
         games = session.query(Game).filter(Game.supply_chain_config_id == 12).all()
 
-        print(f"\n[info] Found {len(games)} Complex_SC games")
+        print(f"\n[info] Found {len(games)} Complex_SC scenarios")
 
         for game in games:
-            # Determine agent type from game name
+            # Determine agent type from scenario name
             game_name_lower = game.name.lower()
             if "naive" in game_name_lower:
                 agent_type = "naive"
@@ -135,7 +135,7 @@ def main():
             add_players_to_game(session, game, agent_type)
 
         session.commit()
-        print("\n[success] All games processed successfully!")
+        print("\n[success] All scenarios processed successfully!")
 
     except Exception as e:
         session.rollback()

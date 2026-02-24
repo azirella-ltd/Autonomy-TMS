@@ -2052,7 +2052,7 @@ const ScenarioReport = () => {
                       <div className="space-y-3">
                         <div className="flex justify-between items-center">
                           <span className="text-sm text-slate-500">Alternative ID</span>
-                          <span className="text-sm font-semibold">#{report.game_id}</span>
+                          <span className="text-sm font-semibold">#{report.scenario_id}</span>
                         </div>
                         <div className="flex justify-between items-center">
                           <span className="text-sm text-slate-500">Supply Chain Config</span>

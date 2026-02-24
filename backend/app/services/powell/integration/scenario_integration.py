@@ -1,7 +1,7 @@
 """
 Scenario Integration
 
-Enables SiteAgent as a Beer Game agent strategy.
+Enables SiteAgent as a simulation agent strategy.
 Provides integration with mixed_scenario_service for simulation scenarios.
 """
 
@@ -23,7 +23,7 @@ class SiteAgentPolicy(OrderPolicy):
     """
     Order policy backed by SiteAgent.
 
-    Integrates with the Beer Game engine by implementing the OrderPolicy interface.
+    Integrates with the simulation engine by implementing the OrderPolicy interface.
     Uses SiteAgent's deterministic engines + TRM for order decisions.
     """
 
@@ -38,7 +38,7 @@ class SiteAgentPolicy(OrderPolicy):
         Initialize SiteAgent policy.
 
         Args:
-            site_key: Site identifier (role in Beer Game)
+            site_key: Site identifier (role in simulation)
             use_trm: Enable TRM adjustments
             trm_confidence_threshold: Minimum confidence for TRM decisions
             model_checkpoint_path: Path to trained model checkpoint
@@ -73,7 +73,7 @@ class SiteAgentPolicy(OrderPolicy):
         """
         Compute order quantity using SiteAgent.
 
-        This is called by the Beer Game engine each period.
+        This is called by the simulation engine each period.
 
         Args:
             observation: Current node state
@@ -210,7 +210,7 @@ class SiteAgentStrategy:
     """
     Agent strategy wrapper for SiteAgent integration with AgentManager.
 
-    Enables SiteAgent to be used as an agent strategy in Beer Game scenarios.
+    Enables SiteAgent to be used as an agent strategy in simulation scenarios.
     """
 
     def __init__(

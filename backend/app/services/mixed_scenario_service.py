@@ -2777,7 +2777,7 @@ class MixedScenarioService:
 
     def _create_transfer_order(
         self,
-        game_id: int,
+        scenario_id: int,
         player_id: int,
         source_site_id: int,
         destination_site_id: int,
@@ -2794,7 +2794,7 @@ class MixedScenarioService:
         Lead time comes from TransportationLane.supply_lead_time (AWS SC compliant).
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             player_id: Player placing order (destination player)
             source_site_id: Source site ID
             destination_site_id: Destination site ID
@@ -2820,7 +2820,7 @@ class MixedScenarioService:
 
         # Generate unique TO number
         import uuid
-        to_number = f"TO-G{game_id}-R{round_number}-{uuid.uuid4().hex[:8].upper()}"
+        to_number = f"TO-G{scenario_id}-R{round_number}-{uuid.uuid4().hex[:8].upper()}"
 
         # Create TransferOrder
         transfer_order = TransferOrder(
@@ -2836,7 +2836,7 @@ class MixedScenarioService:
             transportation_cost=0.0,  # Calculated post-hoc from TransportationLane.cost_per_unit if needed
 
             # Simulation Extensions (clearly marked)
-            game_id=game_id,
+            scenario_id=scenario_id,
             order_round=round_number,
             arrival_round=arrival_round,
             source_player_round_id=source_player_round_id,
@@ -2862,14 +2862,14 @@ class MixedScenarioService:
 
     def _process_transfer_order_arrivals(
         self,
-        game_id: int,
+        scenario_id: int,
         current_round: int,
     ) -> List[TransferOrder]:
         """
         Process TransferOrders arriving in the current round.
 
         Queries all TOs where:
-        - game_id matches
+        - scenario_id matches
         - arrival_round == current_round
         - status == 'IN_TRANSIT'
 
@@ -2879,7 +2879,7 @@ class MixedScenarioService:
         - PlayerRound.order_received += quantity (handled by caller)
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             current_round: Current round number
 
         Returns:
@@ -2893,7 +2893,7 @@ class MixedScenarioService:
         arriving_orders = (
             self.db.query(TransferOrder)
             .filter(
-                TransferOrder.game_id == game_id,
+                TransferOrder.scenario_id == scenario_id,
                 TransferOrder.arrival_round == current_round,
                 TransferOrder.status == "IN_TRANSIT",
             )
@@ -4269,12 +4269,12 @@ class MixedScenarioService:
         
         round_record = (
             self.db.query(GameRound)
-            .filter(GameRound.game_id == game.id, GameRound.round_number == round_number)
+            .filter(GameRound.scenario_id == game.id, GameRound.round_number == round_number)
             .first()
         )
         if not round_record:
             round_record = GameRound(
-                game_id=game.id,
+                scenario_id=game.id,
                 round_number=round_number,
                 customer_demand=demand_value,
                 started_at=datetime.utcnow(),
@@ -4295,7 +4295,7 @@ class MixedScenarioService:
 
         context = RoundContext(
             round_number=round_number,
-            game_id=game.id,
+            scenario_id=game.id,
             topology=topology,
             config=cfg,
             node_states=node_states,
@@ -6038,7 +6038,7 @@ class MixedScenarioService:
         for i, assignment in enumerate(game_data.player_assignments):
             is_ai = assignment.player_type == PlayerType.AGENT
             player = Player(
-                game_id=game.id,
+                scenario_id=game.id,
                 role=assignment.role,
                 name=f"{assignment.role.capitalize()} ({'AI' if is_ai else 'Human'})",
                 is_ai=is_ai,
@@ -6128,16 +6128,16 @@ class MixedScenarioService:
         self.db.refresh(game)
         return game
 
-    def add_player(self, game_id: int, player_data: PlayerCreate) -> Player:
+    def add_player(self, scenario_id: int, player_data: PlayerCreate) -> Player:
         """Add a human or AI participant to an existing game."""
 
-        game = self.db.query(Game).filter(Game.id == game_id).first()
+        game = self.db.query(Game).filter(Game.id == scenario_id).first()
         if not game:
             raise ValueError("Game not found")
 
         existing = (
             self.db.query(Player)
-            .filter(Player.game_id == game_id, Player.role == PlayerRole[player_data.role.name])
+            .filter(Player.scenario_id == scenario_id, Player.role == PlayerRole[player_data.role.name])
             .first()
         )
         if existing:
@@ -6146,7 +6146,7 @@ class MixedScenarioService:
         is_ai = bool(player_data.is_ai)
         db_role = PlayerRole[player_data.role.name]
         player = Player(
-            game_id=game_id,
+            scenario_id=scenario_id,
             user_id=player_data.user_id,
             role=db_role,
             name=player_data.name,
@@ -6218,10 +6218,10 @@ class MixedScenarioService:
         self.db.refresh(player)
         return player
 
-    def update_game(self, game_id: int, payload: Dict[str, Any]) -> Game:
+    def update_game(self, scenario_id: int, payload: Dict[str, Any]) -> Game:
         game = (
             self.db.query(Game)
-            .filter(Game.id == game_id)
+            .filter(Game.id == scenario_id)
             .first()
         )
         if not game:
@@ -6377,20 +6377,20 @@ class MixedScenarioService:
 
     def submit_order(
         self,
-        game_id: int,
+        scenario_id: int,
         player_id: int,
         order_quantity: int,
         comment: Optional[str] = None,
     ) -> PlayerRound:
         """Record or update a player's order for the active round."""
 
-        game = self.db.query(Game).filter(Game.id == game_id).first()
+        game = self.db.query(Game).filter(Game.id == scenario_id).first()
         if not game or MixedScenarioService._map_status_to_schema(game.status) != GameStatus.IN_PROGRESS:
             raise ValueError("Game is not in progress")
 
         player = (
             self.db.query(Player)
-            .filter(Player.id == player_id, Player.game_id == game_id)
+            .filter(Player.id == player_id, Player.scenario_id == scenario_id)
             .first()
         )
         if not player:
@@ -6399,7 +6399,7 @@ class MixedScenarioService:
         current_round = (
             self.db.query(GameRound)
             .filter(
-                GameRound.game_id == game_id,
+                GameRound.scenario_id == scenario_id,
                 GameRound.round_number == game.current_round,
             )
             .first()
@@ -6546,7 +6546,7 @@ class MixedScenarioService:
             player = assignment_to_player.get(assignment_key)
             if player is None:
                 player = Player(
-                    game_id=game.id,
+                    scenario_id=game.id,
                     role=db_role,
                     name=f"{assignment.role.value.title()} ({'AI' if is_ai else 'Human'})",
                     is_ai=is_ai,
@@ -6651,9 +6651,9 @@ class MixedScenarioService:
         if role_assignments_upgraded:
             flag_modified(game, "role_assignments")
     
-    def start_game(self, game_id: int, debug_logging: bool = False) -> Game:
+    def start_game(self, scenario_id: int, debug_logging: bool = False) -> Game:
         """Start a game, initializing the first round."""
-        game = self.db.query(Game).filter(Game.id == game_id).first()
+        game = self.db.query(Game).filter(Game.id == scenario_id).first()
         if not game:
             raise ValueError("Game not found")
             
@@ -6687,7 +6687,7 @@ class MixedScenarioService:
 
         # If the game was restarted but has lingering rounds/history, clear them.
         existing_rounds = (
-            self.db.query(GameRound).filter(GameRound.game_id == game.id).all()
+            self.db.query(GameRound).filter(GameRound.scenario_id == game.id).all()
         )
         if existing_rounds:
             for r in existing_rounds:
@@ -7010,7 +7010,7 @@ class MixedScenarioService:
         if progression_mode != "unsupervised":
             players = (
                 self.db.query(Player)
-                .filter(Player.game_id == game.id)
+                .filter(Player.scenario_id == game.id)
                 .all()
             )
             if players and all(p.is_ai for p in players):
@@ -7027,13 +7027,13 @@ class MixedScenarioService:
                 self._auto_play_unsupervised(game)
                 self.db.refresh(game)
             except Exception:  # noqa: BLE001
-                logger.exception("Auto-play failed for game %s", game_id)
+                logger.exception("Auto-play failed for game %s", scenario_id)
 
         return game
     
-    def stop_game(self, game_id: int) -> Game:
+    def stop_game(self, scenario_id: int) -> Game:
         """Stop a game that is in progress."""
-        game = self.db.query(Game).filter(Game.id == game_id).first()
+        game = self.db.query(Game).filter(Game.id == scenario_id).first()
         if not game:
             raise ValueError("Game not found")
             
@@ -7047,9 +7047,9 @@ class MixedScenarioService:
         self.db.refresh(game)
         return game
 
-    def delete_game(self, game_id: int, current_user: User) -> Dict[str, Any]:
+    def delete_game(self, scenario_id: int, current_user: User) -> Dict[str, Any]:
         """Delete a game if the requester is allowed to manage it."""
-        game = self.db.query(Game).filter(Game.id == game_id).first()
+        game = self.db.query(Game).filter(Game.id == scenario_id).first()
         if not game:
             raise ValueError("Game not found")
 
@@ -7073,7 +7073,7 @@ class MixedScenarioService:
 
         self.db.delete(game)
         self.db.commit()
-        return {"status": "deleted", "game_id": game_id}
+        return {"status": "deleted", "scenario_id": scenario_id}
 
     def _auto_play_unsupervised(
         self,
@@ -7086,7 +7086,7 @@ class MixedScenarioService:
 
         players = (
             self.db.query(Player)
-            .filter(Player.game_id == game.id)
+            .filter(Player.scenario_id == game.id)
             .all()
         )
         if any(not player.is_ai for player in players):
@@ -7182,7 +7182,7 @@ class MixedScenarioService:
         # Determine target round based on existing round records
         latest_round: Optional[GameRound] = (
             self.db.query(GameRound)
-            .filter(GameRound.game_id == game_obj.id)
+            .filter(GameRound.scenario_id == game_obj.id)
             .order_by(GameRound.round_number.desc())
             .first()
         )
@@ -7270,7 +7270,7 @@ class MixedScenarioService:
         total_rounds = game_obj.max_rounds or 50
         latest_round: Optional[GameRound] = (
             self.db.query(GameRound)
-            .filter(GameRound.game_id == game_obj.id)
+            .filter(GameRound.scenario_id == game_obj.id)
             .order_by(GameRound.round_number.desc())
             .first()
         )
@@ -7421,7 +7421,7 @@ class MixedScenarioService:
             from app.models.supply_chain import GameRound as GameRoundModel
 
             game_round = GameRoundModel(
-                game_id=game.id,
+                scenario_id=game.id,
                 round_number=target_round,
                 started_at=datetime.utcnow(),
                 is_completed=False,
@@ -7471,7 +7471,7 @@ class MixedScenarioService:
         # Determine target round
         latest_round: Optional[GameRound] = (
             self.db.query(GameRound)
-            .filter(GameRound.game_id == game_obj.id)
+            .filter(GameRound.scenario_id == game_obj.id)
             .order_by(GameRound.round_number.desc())
             .first()
         )
@@ -7495,7 +7495,7 @@ class MixedScenarioService:
 
         # Create new round with FULFILLMENT phase
         round_record = GameRound(
-            game_id=game_obj.id,
+            scenario_id=game_obj.id,
             round_number=target_round,
             customer_demand=0,  # Will be set later
             is_completed=False,
@@ -7510,7 +7510,7 @@ class MixedScenarioService:
         self._process_transfer_order_arrivals(game_obj.id, target_round)
 
         # Initialize player rounds (create skeleton records)
-        players = self.db.query(Player).filter(Player.game_id == game_obj.id).all()
+        players = self.db.query(Player).filter(Player.scenario_id == game_obj.id).all()
         for player in players:
             player_round = PlayerRound(
                 player_id=player.id,
@@ -7746,7 +7746,7 @@ class MixedScenarioService:
             self._transition_phase(game_obj, round_obj, RoundPhase.REPLENISHMENT)
 
             # Process autonomous agents' replenishment decisions
-            players = self.db.query(Player).filter(Player.game_id == game_obj.id).all()
+            players = self.db.query(Player).filter(Player.scenario_id == game_obj.id).all()
             self._process_autonomous_agent_replenishment(game_obj, round_obj, players)
 
     def _check_and_transition_replenishment_phase(
@@ -7823,7 +7823,7 @@ class MixedScenarioService:
 
         # Create transfer order
         transfer_order = self._create_transfer_order(
-            game_id=game_obj.id,
+            scenario_id=game_obj.id,
             player_id=player.id,
             source_site_id=player.site_id,
             destination_site_id=downstream_lane.to_site_id,
@@ -7914,7 +7914,7 @@ class MixedScenarioService:
 
         # Create transfer order (represents PO/MO)
         transfer_order = self._create_transfer_order(
-            game_id=game_obj.id,
+            scenario_id=game_obj.id,
             player_id=player.id,
             source_site_id=upstream_lane.from_site_id,
             destination_site_id=player.site_id,
@@ -7996,7 +7996,7 @@ class MixedScenarioService:
         from app.models.supply_chain import RoundPhase
 
         # Get all players in game
-        players = self.db.query(Player).filter(Player.game_id == game_obj.id).all()
+        players = self.db.query(Player).filter(Player.scenario_id == game_obj.id).all()
         player_count = len(players)
 
         if from_phase == RoundPhase.FULFILLMENT and to_phase == RoundPhase.REPLENISHMENT:
@@ -8104,7 +8104,7 @@ class MixedScenarioService:
             feedbacks = (
                 self.db.query(RLHFFeedback)
                 .filter(
-                    RLHFFeedback.game_id == game_obj.id,
+                    RLHFFeedback.scenario_id == game_obj.id,
                     RLHFFeedback.round_number == round_obj.round_number,
                     RLHFFeedback.preference_label == "unknown"
                 )
@@ -8244,7 +8244,7 @@ class MixedScenarioService:
         from app.models.participant import Participant as Player
 
         result = await db.execute(
-            select(Player).filter(Player.game_id == game.id)
+            select(Player).filter(Player.scenario_id == game.id)
         )
         players = result.scalars().all()
 
@@ -8323,7 +8323,7 @@ class MixedScenarioService:
     def process_ai_players(self, game: Game, game_round: GameRound, context: RoundContext) -> None:
         """Process AI players' moves for the current round."""
         players = self.db.query(Player).filter(
-            Player.game_id == game.id,
+            Player.scenario_id == game.id,
             Player.is_ai == True
         ).all()
 
@@ -8835,10 +8835,10 @@ class MixedScenarioService:
         game_round.completed_at = timestamp
         self.db.commit()
     
-    def get_current_round(self, game_id: int) -> Optional[GameRound]:
+    def get_current_round(self, scenario_id: int) -> Optional[GameRound]:
         """Get the current round for a game."""
         return self.db.query(GameRound).filter(
-            GameRound.game_id == game_id,
+            GameRound.scenario_id == scenario_id,
             GameRound.ended_at.is_(None)
         ).first()
 
@@ -8859,16 +8859,16 @@ class MixedScenarioService:
 
         return comment
 
-    def finish_game(self, game_id: int) -> Game:
-        game = self.db.query(Game).filter(Game.id == game_id).first()
+    def finish_game(self, scenario_id: int) -> Game:
+        game = self.db.query(Game).filter(Game.id == scenario_id).first()
         if not game:
             raise ValueError("Game not found")
         game.status = GameStatusDB.FINISHED
         self.db.commit(); self.db.refresh(game)
         return game
 
-    def get_report(self, game_id: int) -> Dict[str, Any]:
-        game = self.db.query(Game).filter(Game.id == game_id).first()
+    def get_report(self, scenario_id: int) -> Dict[str, Any]:
+        game = self.db.query(Game).filter(Game.id == scenario_id).first()
         if not game:
             raise ValueError("Game not found")
 
@@ -9020,7 +9020,7 @@ class MixedScenarioService:
         config_history_observed_types: Set[str] = set()
         rounds = (
             self.db.query(GameRound)
-            .filter(GameRound.game_id == game_id)
+            .filter(GameRound.scenario_id == scenario_id)
             .order_by(GameRound.round_number.asc())
             .all()
         )
@@ -9058,7 +9058,7 @@ class MixedScenarioService:
             placeholder_start = compute_period_start(start_date, 0, bucket)
             placeholder_end = compute_period_end(placeholder_start, bucket)
             placeholder = GameRound(
-                game_id=first.game_id,
+                scenario_id=first.scenario_id,
                 round_number=1,
                 customer_demand=first.customer_demand,
                 period_start=placeholder_start,
@@ -9100,7 +9100,7 @@ class MixedScenarioService:
             self.db.query(PlayerRound, GameRound, Player)
             .join(GameRound, PlayerRound.round_id == GameRound.id)
             .join(Player, PlayerRound.player_id == Player.id)
-            .filter(GameRound.game_id == game_id)
+            .filter(GameRound.scenario_id == scenario_id)
             .order_by(GameRound.round_number.asc())
             .all()
         )
@@ -9580,7 +9580,7 @@ class MixedScenarioService:
             )
 
         return {
-            "game_id": game_id,
+            "scenario_id": scenario_id,
             "name": game.name,
             "status": str(game.status),
             "progression_mode": cfg.get("progression_mode", "supervised"),
@@ -9738,7 +9738,7 @@ class MixedScenarioService:
 
         return games
     
-    def get_game_state(self, game_id: int) -> GameState:
+    def get_game_state(self, scenario_id: int) -> GameState:
         """Get the current state of a game."""
         from sqlalchemy import text
         
@@ -9762,15 +9762,15 @@ class MixedScenarioService:
             FROM games AS g
             LEFT JOIN supply_chain_configs AS sc
                 ON g.supply_chain_config_id = sc.id
-            WHERE g.id = :game_id
+            WHERE g.id = :scenario_id
         """
-        game_result = self.db.execute(text(game_query), {"game_id": game_id}).first()
+        game_result = self.db.execute(text(game_query), {"scenario_id": scenario_id}).first()
 
         if not game_result:
             raise ValueError("Game not found")
 
         game_record = dict(game_result._mapping)
-        game_obj = self.db.query(Game).filter(Game.id == game_id).first()
+        game_obj = self.db.query(Game).filter(Game.id == scenario_id).first()
         bucket = normalize_time_bucket(game_record.get("time_bucket", TimeBucket.WEEK))
         start_date = game_record.get("start_date") or DEFAULT_START_DATE
         current_period_start = game_record.get("current_period_start")
@@ -9788,9 +9788,9 @@ class MixedScenarioService:
                    COALESCE(pi.backorders, 0) as backorders
             FROM players p
             LEFT JOIN player_inventories pi ON p.id = pi.player_id
-            WHERE p.game_id = :game_id
+            WHERE p.scenario_id = :scenario_id
         """
-        players_rows = list(self.db.execute(text(players_query), {"game_id": game_id}).mappings())
+        players_rows = list(self.db.execute(text(players_query), {"scenario_id": scenario_id}).mappings())
 
         player_states = []
         node_player_map: Dict[str, Dict[str, Any]] = {}
@@ -9836,7 +9836,7 @@ class MixedScenarioService:
                 node_key=node_key,
             ))
 
-        current_round = self.get_current_round(game_id)
+        current_round = self.get_current_round(scenario_id)
         
         # Create a default demand pattern if none exists
         try:

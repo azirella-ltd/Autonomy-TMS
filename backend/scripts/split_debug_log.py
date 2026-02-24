@@ -13,10 +13,10 @@ round_re = re.compile(r"^Round\s+(\d+)")
 node_re = re.compile(r"^\s*Node:\s*(.+)$")
 
 
-async def fetch_states(game_id: int):
+async def fetch_states(scenario_id: int):
     """Fetch initial_state and engine_state for a scenario if available."""
     async with SessionLocal() as session:
-        scenario = await session.get(Scenario, game_id)
+        scenario = await session.get(Scenario, scenario_id)
         if not scenario or not scenario.config:
             return {}, {}
         cfg = dict(scenario.config)
@@ -84,10 +84,10 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description="Split a debug log into per-node files.")
     parser.add_argument("log_path", type=Path, help="Path to the debug log file")
     parser.add_argument(
-        "--game-id",
+        "--scenario-id",
         type=int,
         default=None,
-        help="Game id to pull initial_state/engine_state (optional)",
+        help="Scenario id to pull initial_state/engine_state (optional)",
     )
     parser.add_argument(
         "--out-dir",
@@ -99,8 +99,8 @@ async def main() -> None:
 
     initial_state: dict = {}
     engine_state: dict = {}
-    if args.game_id is not None:
-        initial_state, engine_state = await fetch_states(args.game_id)
+    if args.scenario_id is not None:
+        initial_state, engine_state = await fetch_states(args.scenario_id)
 
     out_dir = args.out_dir or args.log_path.with_name(args.log_path.stem + "_split")
     split_log(args.log_path, out_dir, initial_state=initial_state, engine_state=engine_state)

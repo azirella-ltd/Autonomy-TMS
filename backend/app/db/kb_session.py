@@ -6,6 +6,7 @@ PostgreSQL instance with pgvector. Otherwise, falls back to the main database.
 """
 
 import logging
+from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -74,6 +75,30 @@ async def init_kb_tables() -> None:
         await conn.run_sync(KBBase.metadata.create_all)
 
     logger.info("KB tables created/verified in separate database")
+
+
+@asynccontextmanager
+async def get_kb_session():
+    """Standalone KB session for use outside FastAPI endpoints.
+
+    Use this when you need a KB session without FastAPI dependency injection,
+    e.g. from service-to-service calls like RAG context retrieval.
+    """
+    global _kb_session_factory
+
+    if _kb_session_factory is None:
+        init_kb_engine()
+    if _kb_session_factory is None:
+        raise RuntimeError("KB database not configured (KB_ASYNC_DATABASE_URL not set)")
+
+    session = _kb_session_factory()
+    try:
+        yield session
+    except Exception:
+        await session.rollback()
+        raise
+    finally:
+        await session.close()
 
 
 async def get_kb_db() -> AsyncGenerator[AsyncSession, None]:

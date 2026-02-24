@@ -60,7 +60,7 @@ const AchievementsPanel = ({ scenarioId, playerId }) => {
   const checkForNewAchievements = async () => {
     try {
       const response = await fetch(
-        `/api/v1/gamification/players/${playerId}/check-achievements?game_id=${scenarioId}`,
+        `/api/v1/gamification/players/${playerId}/check-achievements?scenario_id=${scenarioId}`,
         {
           method: 'POST',
           credentials: 'include'

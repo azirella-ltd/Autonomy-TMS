@@ -333,7 +333,7 @@ async def calculate_atp(
             customer_id=request.customer_id,
             atp_rule=request.atp_rule.value,
             config_id=request.config_id,
-            game_id=request.game_id,
+            scenario_id=request.scenario_id,
             created_by=current_user.id
         )
 
@@ -429,7 +429,7 @@ async def calculate_ctp(
         start_date=request.start_date,
         end_date=request.end_date,
         config_id=request.config_id,
-        game_id=request.game_id
+        scenario_id=request.scenario_id
     )
     atp_projections = await calculate_atp(atp_request, db, current_user)
 
@@ -501,7 +501,7 @@ async def calculate_ctp(
             resource_constrained=resource_constrained,
             constraining_resource=constraining_resource,
             config_id=request.config_id,
-            game_id=request.game_id,
+            scenario_id=request.scenario_id,
             created_by=current_user.id
         )
 

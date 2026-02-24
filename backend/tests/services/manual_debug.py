@@ -1,8 +1,8 @@
-"""Utility helpers for manually starting a Beer Game instance during debugging.
+"""Utility helpers for manually starting a Beer Game scenario during debugging.
 
 This module mirrors the minimal snippet shared with QA for reproducing the
 frontend "Start" button behaviour, but adds a convenience function to resolve a
-`game_id` from a human-readable name.
+`scenario_id` from a human-readable name.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import requests
 BASE_URL = "http://localhost:8000/api/v1"
 EMAIL = "admin@example.com"
 PASSWORD = "Admin123!"
-DEFAULT_GAME_NAME = "Naive Agent Showcase"
+DEFAULT_SCENARIO_NAME = "Naive Agent Showcase"
 
 
 class BackendError(RuntimeError):
@@ -44,29 +44,29 @@ def login(email: str = EMAIL, password: str = PASSWORD) -> str:
     return payload["access_token"]
 
 
-def find_game_id(game_name: str, *, token: str) -> Optional[int]:
-    """Return the numeric ``game_id`` matching ``game_name`` if it exists."""
+def find_scenario_id(scenario_name: str, *, token: str) -> Optional[int]:
+    """Return the numeric ``scenario_id`` matching ``scenario_name`` if it exists."""
 
     response = requests.get(
-        f"{BASE_URL}/games",
+        f"{BASE_URL}/scenarios",
         headers={"Authorization": f"Bearer {token}"},
         params={"skip": 0, "limit": 500},
         timeout=30,
     )
     _raise_for_status(response)
-    games = response.json()
+    scenarios = response.json()
 
-    for game in games:
-        if game.get("name") == game_name:
-            return int(game["id"])
+    for scenario in scenarios:
+        if scenario.get("name") == scenario_name:
+            return int(scenario["id"])
     return None
 
 
-def start_game(game_id: int, *, token: str) -> dict:
-    """Trigger the backend to start the specified game."""
+def start_scenario(scenario_id: int, *, token: str) -> dict:
+    """Trigger the backend to start the specified scenario."""
 
     response = requests.post(
-        f"{BASE_URL}/games/{game_id}/start",
+        f"{BASE_URL}/scenarios/{scenario_id}/start",
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
@@ -78,18 +78,18 @@ def start_game(game_id: int, *, token: str) -> dict:
 
 
 def main() -> None:
-    """Authenticate, resolve the showcase game, and start it."""
+    """Authenticate, resolve the showcase scenario, and start it."""
 
     token = login()
-    game_id = find_game_id(DEFAULT_GAME_NAME, token=token)
-    if game_id is None:
+    scenario_id = find_scenario_id(DEFAULT_SCENARIO_NAME, token=token)
+    if scenario_id is None:
         raise SystemExit(
-            f"Could not locate a game named '{DEFAULT_GAME_NAME}'."
+            f"Could not locate a scenario named '{DEFAULT_SCENARIO_NAME}'."
             " Ensure the database is seeded and try again."
         )
 
-    payload = start_game(game_id, token=token)
-    print(f"Started game {game_id} ({DEFAULT_GAME_NAME})")
+    payload = start_scenario(scenario_id, token=token)
+    print(f"Started scenario {scenario_id} ({DEFAULT_SCENARIO_NAME})")
     print(payload)
 
 

@@ -2,7 +2,7 @@
 Pattern Analysis API Endpoints
 Phase 7 Sprint 4 - Feature 2
 
-Tracks suggestion outcomes and analyzes player patterns.
+Tracks suggestion outcomes and analyzes participant patterns.
 """
 
 from typing import List, Optional
@@ -207,12 +207,12 @@ async def get_player_patterns(
     - **Conservative**: Accepts most suggestions, small modifications
     - **Aggressive**: Frequently rejects or heavily modifies
     - **Balanced**: Mix of acceptance and thoughtful adjustments
-    - **Reactive**: Behavior varies based on game state
+    - **Reactive**: Behavior varies based on scenario state
     """
     try:
         service = get_pattern_analysis_service(db)
 
-        patterns = await service.get_player_patterns(player_id, game_id)
+        patterns = await service.get_player_patterns(player_id, scenario_id)
 
         return PlayerPatternsResponse(**patterns)
 
@@ -230,7 +230,7 @@ async def get_ai_effectiveness(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Measure AI suggestion effectiveness for a game.
+    Measure AI suggestion effectiveness for a scenario.
 
     Compares outcomes when players:
     - Accept AI suggestions vs reject them
@@ -250,7 +250,7 @@ async def get_ai_effectiveness(
     try:
         service = get_pattern_analysis_service(db)
 
-        effectiveness = await service.get_ai_effectiveness(game_id)
+        effectiveness = await service.get_ai_effectiveness(scenario_id)
 
         return AIEffectivenessResponse(**effectiveness)
 
@@ -292,7 +292,7 @@ async def get_suggestion_history(
         service = get_pattern_analysis_service(db)
 
         history = await service.get_suggestion_history(
-            game_id=game_id,
+            scenario_id=scenario_id,
             player_id=player_id,
             limit=limit,
         )
@@ -300,7 +300,7 @@ async def get_suggestion_history(
         return SuggestionHistoryResponse(
             suggestions=[SuggestionHistoryItem(**item) for item in history],
             total_count=len(history),
-            game_id=game_id,
+            scenario_id=scenario_id,
         )
 
     except Exception as e:
@@ -339,7 +339,7 @@ async def get_acceptance_trends(
         service = get_pattern_analysis_service(db)
 
         trends = await service.get_acceptance_trends(
-            game_id=game_id,
+            scenario_id=scenario_id,
             player_id=player_id,
             window=window,
         )
@@ -382,12 +382,12 @@ async def get_insights(
         service = get_pattern_analysis_service(db)
 
         insights = await service.generate_insights(
-            game_id=game_id,
+            scenario_id=scenario_id,
             player_id=player_id,
         )
 
         return InsightsResponse(
-            game_id=game_id,
+            scenario_id=scenario_id,
             player_id=player_id,
             insights=insights,
         )

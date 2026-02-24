@@ -104,15 +104,15 @@ const ProfilePage = () => {
 
         const mockLeaderboard = [
           { id: 1, username: 'supplychainmaster', score: 24560, gamesPlayed: 87, winRate: 82, avatar: 'https://i.pravatar.cc/150?img=1' },
-          { id: 2, username: 'beerbaron', score: 23120, gamesPlayed: 92, winRate: 78, avatar: 'https://i.pravatar.cc/150?img=2' },
+          { id: 2, username: 'scplanner', score: 23120, gamesPlayed: 92, winRate: 78, avatar: 'https://i.pravatar.cc/150?img=2' },
           { id: 3, username: 'logisticspro', score: 21890, gamesPlayed: 76, winRate: 81, avatar: 'https://i.pravatar.cc/150?img=3' },
           { id: 4, username: 'inventoryguru', score: 20560, gamesPlayed: 68, winRate: 85, avatar: 'https://i.pravatar.cc/150?img=4' },
           { id: 5, username: 'supplyqueen', score: 19870, gamesPlayed: 72, winRate: 79, avatar: 'https://i.pravatar.cc/150?img=5' },
-          { id: 6, username: 'beerwizard', score: 18730, gamesPlayed: 65, winRate: 76, avatar: 'https://i.pravatar.cc/150?img=6' },
+          { id: 6, username: 'demandwizard', score: 18730, gamesPlayed: 65, winRate: 76, avatar: 'https://i.pravatar.cc/150?img=6' },
           { id: 7, username: mockProfile?.username || 'johndoe', score: mockProfile?.stats?.averageScore * 10 || 12450, gamesPlayed: mockProfile?.stats?.gamesPlayed || 42, winRate: mockProfile?.stats?.winRate || 67, avatar: mockProfile?.avatar, isCurrentUser: true },
           { id: 8, username: 'logisticsninja', score: 12340, gamesPlayed: 51, winRate: 72, avatar: 'https://i.pravatar.cc/150?img=7' },
           { id: 9, username: 'supplychainnewbie', score: 11890, gamesPlayed: 48, winRate: 68, avatar: 'https://i.pravatar.cc/150?img=8' },
-          { id: 10, username: 'beerlover', score: 10980, gamesPlayed: 43, winRate: 65, avatar: 'https://i.pravatar.cc/150?img=9' },
+          { id: 10, username: 'scenthusiast', score: 10980, gamesPlayed: 43, winRate: 65, avatar: 'https://i.pravatar.cc/150?img=9' },
         ];
 
         setProfile(mockProfile);

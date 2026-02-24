@@ -23,7 +23,7 @@ class CostCalculator:
     - Holding cost = on_hand_qty * holding_cost_per_unit
     - Backlog cost = backorder_qty * backlog_cost_per_unit
 
-    The Beer Game uses this to accrue costs each round.
+    The simulation uses this to accrue costs each round.
     """
 
     def __init__(self, db: Session):
@@ -77,7 +77,7 @@ class CostCalculator:
             )
         ).first()
 
-        # Default cost rates (Beer Game standard)
+        # Default cost rates
         holding_cost_rate = 0.5
         backlog_cost_rate = 1.0
 
@@ -104,15 +104,15 @@ class CostCalculator:
 
     def calculate_game_cost(
         self,
-        game_id: int,
+        scenario_id: int,
         site_ids: List[str],
         item_id: str = "cases"
     ) -> Dict:
         """
-        Calculate total cost for all sites in Beer Game.
+        Calculate total cost for all sites in simulation.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             site_ids: List of site IDs
             item_id: Item ID (default: "cases")
 
@@ -133,7 +133,7 @@ class CostCalculator:
             total_cost += site_cost["total_cost"]
 
         return {
-            "game_id": game_id,
+            "scenario_id": scenario_id,
             "item_id": item_id,
             "site_costs": site_costs,
             "total_holding_cost": total_holding_cost,
@@ -144,18 +144,41 @@ class CostCalculator:
 
     def record_round_cost(
         self,
-        game_id: int,
+        scenario_id: int,
         round_number: int,
         site_costs: Dict
     ) -> None:
         """
-        Record costs for a round in beer_game_round table.
+        Record costs for a round by updating ParticipantRound records.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID (scenario_id)
             round_number: Round number
             site_costs: Cost dictionary from calculate_game_cost()
         """
-        # TODO: Insert into beer_game_round table
-        # This will be implemented after beer_game_round table is created
-        pass
+        from app.models.supply_chain import ScenarioRound, ParticipantRound
+
+        scenario_round = (
+            self.db.query(ScenarioRound)
+            .filter(
+                ScenarioRound.scenario_id == scenario_id,
+                ScenarioRound.round_number == round_number,
+            )
+            .first()
+        )
+        if not scenario_round:
+            return
+
+        # Update each participant's cost in this round
+        for site_cost in site_costs.get("site_costs", []):
+            pr = (
+                self.db.query(ParticipantRound)
+                .filter(ParticipantRound.scenario_round_id == scenario_round.id)
+                .first()
+            )
+            if pr:
+                pr.holding_cost = site_cost.get("holding_cost", 0.0)
+                pr.backorder_cost = site_cost.get("backlog_cost", 0.0)
+                pr.total_cost = site_cost.get("total_cost", 0.0)
+
+        self.db.commit()

@@ -47,7 +47,7 @@ def setup_relationships():
         "Game", 
         back_populates="players", 
         lazy="selectin",
-        foreign_keys=[Player.game_id]
+        foreign_keys=[Player.scenario_id]
     )
     Player.user = relationship(
         "User", 
@@ -68,7 +68,7 @@ def setup_relationships():
         "Game", 
         back_populates="rounds", 
         lazy="selectin",
-        foreign_keys=[Round.game_id]
+        foreign_keys=[Round.scenario_id]
     )
     Round.player_actions = relationship(
         "PlayerAction", 
@@ -94,7 +94,7 @@ def setup_relationships():
     PlayerAction.game = relationship(
         "Game", 
         lazy="selectin",
-        foreign_keys=[PlayerAction.game_id]
+        foreign_keys=[PlayerAction.scenario_id]
     )
     
     # RefreshToken relationship (using string reference)

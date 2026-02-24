@@ -95,8 +95,13 @@ class LLMSuggestionService:
             return self._fallback_suggestion(agent_name, context)
 
         try:
+            # Retrieve RAG context from knowledge base
+            from app.services.rag_context import get_rag_context
+            rag_query = f"{agent_name} supply chain order quantity inventory management demand planning"
+            kb_context = await get_rag_context(rag_query, top_k=3, max_tokens=2000)
+
             # Build prompt
-            prompt = self._build_suggestion_prompt(agent_name, context, request_data)
+            prompt = self._build_suggestion_prompt(agent_name, context, request_data, kb_context=kb_context)
 
             # Call LLM
             if self.provider == "openai":
@@ -126,6 +131,7 @@ class LLMSuggestionService:
         agent_name: str,
         context: Dict[str, Any],
         request_data: Optional[Dict[str, Any]],
+        kb_context: str = "",
     ) -> str:
         """Build prompt for suggestion generation."""
 
@@ -136,7 +142,7 @@ class LLMSuggestionService:
         demand_history_str = self._format_demand_history(context.get('recent_demand', []))
 
         # Build base prompt
-        prompt = f"""You are an AI advisor for the {agent_name} in a supply chain simulation (The Beer Game).
+        prompt = f"""You are an AI advisor for the {agent_name} in a supply chain simulation.
 
 Your role: {objectives['description']}
 
@@ -201,6 +207,10 @@ IMPORTANT:
 - Explain your reasoning clearly
 - Confidence should reflect uncertainty in demand forecasting
 """
+
+        # Add knowledge base context
+        if kb_context:
+            prompt += f"\n\nRelevant Supply Chain Knowledge:\n{kb_context}\nUse the above knowledge to ground your recommendation in established theory.\n"
 
         # Add request-specific context
         if request_data:
@@ -287,7 +297,7 @@ IMPORTANT:
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a supply chain optimization expert with deep knowledge of inventory management, demand forecasting, and the bullwhip effect."
+                        "content": "You are a supply chain optimization expert. Use the provided knowledge base context to ground your recommendations in established supply chain theory and best practices."
                     },
                     {
                         "role": "user",
@@ -479,10 +489,14 @@ IMPORTANT:
             return self._fallback_conversation_response(context)
 
         try:
+            # Retrieve RAG context based on conversation prompt
+            from app.services.rag_context import get_rag_context
+            kb_context = await get_rag_context(prompt[:200], top_k=3, max_tokens=1500)
+
             if self.provider == "openai":
-                response = await self._call_openai_conversation(prompt)
+                response = await self._call_openai_conversation(prompt, kb_context=kb_context)
             elif self.provider == "anthropic":
-                response = await self._call_anthropic_conversation(prompt)
+                response = await self._call_anthropic_conversation(prompt, kb_context=kb_context)
             else:
                 return self._fallback_conversation_response(context)
 
@@ -494,12 +508,15 @@ IMPORTANT:
             logger.error(f"Conversation generation failed: {e}", exc_info=True)
             return self._fallback_conversation_response(context)
 
-    async def _call_openai_conversation(self, prompt: str) -> str:
+    async def _call_openai_conversation(self, prompt: str, kb_context: str = "") -> str:
         """Call OpenAI for conversation response."""
+        system_msg = "You are a helpful supply chain advisor."
+        if kb_context:
+            system_msg += f"\n\nUse this reference knowledge to inform your response:\n{kb_context}"
         response = await self.client.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": "You are a helpful supply chain advisor."},
+                {"role": "system", "content": system_msg},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
@@ -507,12 +524,15 @@ IMPORTANT:
         )
         return response.choices[0].message.content
 
-    async def _call_anthropic_conversation(self, prompt: str) -> str:
+    async def _call_anthropic_conversation(self, prompt: str, kb_context: str = "") -> str:
         """Call Anthropic for conversation response."""
+        full_prompt = prompt
+        if kb_context:
+            full_prompt = f"Reference Knowledge:\n{kb_context}\n\n{prompt}"
         response = await self.client.messages.create(
             model=self.model,
             max_tokens=500,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": full_prompt}],
         )
         return response.content[0].text
 
@@ -650,14 +670,27 @@ async def generate_global_optimization(
             # Fallback to heuristic
             return _fallback_global_optimization(game_state, focus_nodes)
 
+        # Retrieve RAG context for multi-echelon optimization
+        from app.services.rag_context import get_rag_context
+        kb_context = await get_rag_context(
+            "multi-echelon supply chain coordination bullwhip effect optimization inventory",
+            top_k=3, max_tokens=2000,
+        )
+
         # Build multi-node context
         context = _build_multi_node_context(game_state, focus_nodes)
 
+        # Build knowledge section
+        kb_section = ""
+        if kb_context:
+            kb_section = f"\n\nRELEVANT SUPPLY CHAIN KNOWLEDGE:\n{kb_context}\nUse this knowledge to improve your coordination recommendations.\n"
+
         # Build prompt for global optimization
-        prompt = f"""You are a supply chain optimization advisor analyzing a multi-echelon beer distribution game.
+        prompt = f"""You are a supply chain optimization advisor analyzing a multi-echelon supply chain simulation.
 
 SUPPLY CHAIN STATE:
 {json.dumps(context, indent=2)}
+{kb_section}
 
 TASK: Provide coordinated recommendations for multiple nodes to optimize overall supply chain performance.
 

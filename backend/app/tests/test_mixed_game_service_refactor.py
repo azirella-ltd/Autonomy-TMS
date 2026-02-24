@@ -41,7 +41,7 @@ def mock_context():
     
     return RoundContext(
         round_number=1,
-        game_id=1,
+        scenario_id=1,
         topology=topology,
         node_states=node_states,
         node_policies={"wholesaler": {"order_leadtime": 1}}
@@ -51,7 +51,7 @@ def test_process_ai_players_places_order(mock_service, mock_context):
     # Setup
     game = Scenario(id=1, config={})
     game_round = ScenarioRound(round_number=1)
-    player = Participant(id=1, game_id=1, role=ParticipantRole.RETAILER, is_ai=True)
+    player = Participant(id=1, scenario_id=1, role=ParticipantRole.RETAILER, is_ai=True)
     
     mock_service.db.query.return_value.filter.return_value.all.return_value = [player]
     

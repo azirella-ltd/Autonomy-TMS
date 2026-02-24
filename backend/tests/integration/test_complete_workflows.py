@@ -184,7 +184,7 @@ class TestGameCreationWorkflow:
         response = await client.post("/api/v1/mixed-scenarios/", json=game_data, headers=headers)
         assert response.status_code == 201
         game = response.json()
-        game_id = game["id"]
+        scenario_id = game["id"]
 
         # Step 4: Add players
         player_data = {
@@ -193,18 +193,18 @@ class TestGameCreationWorkflow:
             "agent_strategy": "naive"
         }
         response = await client.post(
-            f"/api/v1/mixed-scenarios/{game_id}/players",
+            f"/api/v1/mixed-scenarios/{scenario_id}/players",
             json=player_data,
             headers=headers
         )
         assert response.status_code == 201
 
         # Step 5: Start game
-        response = await client.post(f"/api/v1/mixed-scenarios/{game_id}/start", headers=headers)
+        response = await client.post(f"/api/v1/mixed-scenarios/{scenario_id}/start", headers=headers)
         assert response.status_code == 200
 
         # Step 6: Verify game state
-        response = await client.get(f"/api/v1/mixed-scenarios/{game_id}/state", headers=headers)
+        response = await client.get(f"/api/v1/mixed-scenarios/{scenario_id}/state", headers=headers)
         assert response.status_code == 200
         state = response.json()
         assert state["status"] == "active"
@@ -289,15 +289,15 @@ class TestConcurrentAccessWorkflow:
             "max_periods": 24
         }
         response = await client.post("/api/v1/mixed-scenarios/", json=game_data, headers=headers)
-        game_id = response.json()["id"]
+        scenario_id = response.json()["id"]
 
         # Start game
-        await client.post(f"/api/v1/mixed-scenarios/{game_id}/start", headers=headers)
+        await client.post(f"/api/v1/mixed-scenarios/{scenario_id}/start", headers=headers)
 
         # Simulate 10 concurrent reads
         tasks = []
         for _ in range(10):
-            task = client.get(f"/api/v1/mixed-scenarios/{game_id}/state", headers=headers)
+            task = client.get(f"/api/v1/mixed-scenarios/{scenario_id}/state", headers=headers)
             tasks.append(task)
 
         responses = await asyncio.gather(*tasks)

@@ -789,7 +789,7 @@ class TestTimePhasedNetting:
             scheduled_receipts={},
             net_demand=net_demand,
             target_inventory=50.0,
-            game_id=None,
+            scenario_id=None,
         )
 
         # Inventory starts at 1000, loses 100 total → always above 50 target
@@ -814,7 +814,7 @@ class TestTimePhasedNetting:
             scheduled_receipts={},
             net_demand=net_demand,
             target_inventory=40.0,
-            game_id=None,
+            scenario_id=None,
         )
 
         # Day 0: 50 + 0 - 80 = -30. That is < 40 target → replenish
@@ -841,7 +841,7 @@ class TestTimePhasedNetting:
             scheduled_receipts=scheduled_receipts,
             net_demand=net_demand,
             target_inventory=20.0,
-            game_id=None,
+            scenario_id=None,
         )
 
         # Day 0: 50 + 80 - 100 = 30 ≥ 20 target → no replenishment

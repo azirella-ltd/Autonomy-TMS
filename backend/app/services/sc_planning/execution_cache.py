@@ -460,7 +460,7 @@ class ExecutionCache:
 
     def get_first_item(self) -> Optional[Item]:
         """
-        Get first item (Beer Game typically has one item: 'Case')
+        Get first item (simulation may use a single item, e.g. 'Case')
 
         Returns:
             First item if any exist, None otherwise
@@ -542,7 +542,7 @@ class ExecutionCache:
         if not rules:
             return None
 
-        # Get first supplier (typically only one in Beer Game)
+        # Get first supplier (typically only one in simple configs)
         supplier_site_id = rules[0].supplier_site_id
         return self.get_node(supplier_site_id)
 

@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ParallelMonteCarloConfig:
     """Configuration for parallel Monte Carlo execution"""
-    game_id: int
+    scenario_id: int
     num_runs: int
     base_seed: int = 42
     num_workers: Optional[int] = None  # None = use all CPUs
@@ -77,7 +77,7 @@ class ParallelMonteCarloRunner:
             self.num_workers = min(config.num_workers, mp.cpu_count(), config.num_runs)
 
         logger.info(f"ParallelMonteCarloRunner initialized with {self.num_workers} workers")
-        logger.info(f"Running {config.num_runs} simulations for game {config.game_id}")
+        logger.info(f"Running {config.num_runs} simulations for game {config.scenario_id}")
 
     def run(self, progress_callback: Optional[Callable[[int, int], None]] = None) -> List[SimulationResult]:
         """
@@ -97,7 +97,7 @@ class ParallelMonteCarloRunner:
 
         # Create list of run configurations
         run_configs = [
-            (run_id, self.config.base_seed + run_id, self.config.game_id)
+            (run_id, self.config.base_seed + run_id, self.config.scenario_id)
             for run_id in range(self.config.num_runs)
         ]
 
@@ -105,8 +105,8 @@ class ParallelMonteCarloRunner:
         with ProcessPoolExecutor(max_workers=self.num_workers) as executor:
             # Submit all tasks
             future_to_run = {
-                executor.submit(self._run_single_simulation, run_id, seed, game_id): run_id
-                for run_id, seed, game_id in run_configs
+                executor.submit(self._run_single_simulation, run_id, seed, scenario_id): run_id
+                for run_id, seed, scenario_id in run_configs
             }
 
             # Collect results as they complete
@@ -152,7 +152,7 @@ class ParallelMonteCarloRunner:
         return results
 
     @staticmethod
-    def _run_single_simulation(run_id: int, seed: int, game_id: int) -> SimulationResult:
+    def _run_single_simulation(run_id: int, seed: int, scenario_id: int) -> SimulationResult:
         """
         Run a single simulation (executed in worker process).
 
@@ -178,11 +178,11 @@ class ParallelMonteCarloRunner:
             db = sync_session_factory()
             try:
                 config = db.query(SupplyChainConfig).filter(
-                    SupplyChainConfig.id == game_id
+                    SupplyChainConfig.id == scenario_id
                 ).first()
 
                 if not config:
-                    raise ValueError(f"Supply chain config {game_id} not found")
+                    raise ValueError(f"Supply chain config {scenario_id} not found")
 
                 # Gather nodes and cost parameters
                 nodes = list(config.nodes or [])
@@ -412,7 +412,7 @@ class SequentialMonteCarloRunner:
         for run_id in range(self.config.num_runs):
             seed = self.config.base_seed + run_id
             result = ParallelMonteCarloRunner._run_single_simulation(
-                run_id, seed, self.config.game_id
+                run_id, seed, self.config.scenario_id
             )
             results.append(result)
 
@@ -425,24 +425,24 @@ class SequentialMonteCarloRunner:
         return results
 
 
-def compare_parallel_vs_sequential(num_runs: int = 100, game_id: int = 1) -> Dict:
+def compare_parallel_vs_sequential(num_runs: int = 100, scenario_id: int = 1) -> Dict:
     """
     Benchmark parallel vs sequential execution
 
     Args:
         num_runs: Number of Monte Carlo runs
-        game_id: Game ID to simulate
+        scenario_id: Game ID to simulate
 
     Returns:
         Dictionary with comparison results
     """
     print(f"\n{'='*80}")
     print(f"PARALLEL vs SEQUENTIAL BENCHMARK")
-    print(f"Runs: {num_runs}, Game ID: {game_id}")
+    print(f"Runs: {num_runs}, Game ID: {scenario_id}")
     print(f"{'='*80}\n")
 
     config = ParallelMonteCarloConfig(
-        game_id=game_id,
+        scenario_id=scenario_id,
         num_runs=num_runs,
         base_seed=42
     )
@@ -492,9 +492,9 @@ if __name__ == "__main__":
     import sys
 
     num_runs = int(sys.argv[1]) if len(sys.argv) > 1 else 100
-    game_id = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+    scenario_id = int(sys.argv[2]) if len(sys.argv) > 2 else 1
 
-    results = compare_parallel_vs_sequential(num_runs, game_id)
+    results = compare_parallel_vs_sequential(num_runs, scenario_id)
 
     print("\n✅ Parallel Monte Carlo implementation complete!")
     print(f"   Achieved {results['speedup']:.2f}x speedup")

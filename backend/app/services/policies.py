@@ -1,7 +1,7 @@
-"""Order policies for the Beer Game engine.
+"""Order policies for the simulation engine.
 
 This module implements a tiny policy abstraction that can be plugged into the
-Beer Game simulation engine.  Policies consume a dictionary of observations for
+simulation engine.  Policies consume a dictionary of observations for
 the current node and return the order quantity that should be placed upstream
 for the current tick.
 
@@ -13,7 +13,7 @@ Two policies are provided:
 * :class:`PIDPolicy` – a lightweight proportional–integral–derivative controller that tries
   to keep the inventory position close to a base-stock target.  The controller
   operates on the inventory position (on-hand + pipeline − backlog), which is
-  the standard control signal for the Beer Game.
+  the standard control signal for the simulation.
 
 The policies expose a very small state interface so that their internal state
 can be serialised along with the engine state between requests.
@@ -46,7 +46,7 @@ class OrderPolicy:
 
 
 class NaiveEchoPolicy(OrderPolicy):
-    """Simple base-stock heuristic mirroring the classic teaching version of the Beer Game.
+    """Simple base-stock heuristic mirroring the classic teaching version of the simulation.
 
     The controller uses a one-step demand estimate (the last incoming order) and
     tops up inventory to the configured base-stock level while clearing any

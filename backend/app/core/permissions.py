@@ -269,7 +269,7 @@ class RequireAllPermissions:
     FastAPI dependency for requiring all of multiple permissions
 
     Usage:
-        @router.delete("/games/{game_id}")
+        @router.delete("/games/{scenario_id}")
         async def delete_game(
             user: User = Depends(RequireAllPermissions(["games.read", "games.delete"]))
         ):

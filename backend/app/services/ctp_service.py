@@ -316,7 +316,7 @@ class CTPService:
         base_lead_time = self._get_production_lead_time(node)
 
         # Initialize stochastic sampler
-        sampler = StochasticSampler(game_id=game.id)
+        sampler = StochasticSampler(scenario_id=game.id)
 
         # Run Monte Carlo simulation
         ctp_samples = []
@@ -751,7 +751,7 @@ class CTPService:
 
         Phase 4 Implementation:
         1. First try SC-compliant path: SourcingRules → InvLevel
-        2. Fallback to Beer Game path: Lanes → Players → PlayerInventory
+        2. Fallback to simulation path: Lanes → Players → PlayerInventory
 
         Args:
             player: The manufacturer player requesting the component
@@ -816,14 +816,14 @@ class CTPService:
         except Exception as e:
             logger.debug(f"SC-compliant path failed for component ATP: {e}")
 
-        # Fallback to Beer Game path: Check upstream players in the same game
+        # Fallback to simulation path: Check upstream players in the same scenario
         try:
             # Find upstream players (component suppliers) in the same game
-            # For Beer Game, component suppliers are typically "component_supplier" or similar node types
+            # For simulation, component suppliers are typically "component_supplier" or similar node types
             upstream_players = (
                 self.db.query(Player)
                 .filter(
-                    Player.game_id == game.id,
+                    Player.scenario_id == game.id,
                     Player.id != player.id,  # Exclude the manufacturer
                 )
                 .all()
@@ -844,7 +844,7 @@ class CTPService:
                 return total_component_atp
 
         except Exception as e:
-            logger.debug(f"Beer Game path failed for component ATP: {e}")
+            logger.debug(f"Simulation path failed for component ATP: {e}")
 
         # Final fallback: assume unlimited components
         # This ensures CTP calculations don't break when supply chain isn't fully configured
@@ -987,7 +987,7 @@ class CTPService:
                 resource_constrained=(result.constrained_by == "capacity"),
                 constraining_resource=result.constrained_by,
                 # Game integration
-                game_id=game.id,
+                scenario_id=game.id,
                 source="probabilistic_ctp",
                 source_event_id=f"game_{game.id}_round_{current_round}",
             )

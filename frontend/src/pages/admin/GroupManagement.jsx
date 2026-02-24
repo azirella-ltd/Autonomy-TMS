@@ -37,8 +37,8 @@ const GroupManagement = () => {
 
   const AUTO_CREATION_STEPS = [
     'Creating default users…',
-    'Creating Beer Game supply chain configuration…',
-    'Creating Beer Game scenario…',
+    'Creating supply chain configuration…',
+    'Creating scenario…',
   ];
 
   const selectedGroup = useMemo(

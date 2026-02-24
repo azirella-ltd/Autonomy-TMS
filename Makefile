@@ -34,7 +34,7 @@ endif
 COMPOSE_CMD = $(DOCKER_COMPOSE_CMD) $(COMPOSE_FILES)
 
 # Default configuration name and training parameters (overridable via environment)
-CONFIG_NAME ?= Default Beer Game
+CONFIG_NAME ?= Default Supply Chain
 
 SIMPY_NUM_RUNS ?= 128
 SIMPY_TIMESTEPS ?= 64
@@ -73,7 +73,7 @@ endif
 
 DOCKER_COMPOSE_CMD = $(strip $(COMPOSE_ENV) $(DOCKER_COMPOSE))
 
-.PHONY: up gpu-up up-dev down ps logs reload reload-backend reload-frontend seed reset-admin help init-env proxy-up proxy-down proxy-restart proxy-recreate proxy-logs proxy-url seed-default-group seed-default-beer-game seed-three-fg-beer-game seed-variable-beer-game all_beer_game build-create-users db-bootstrap db-reset rebuild-db reseed-db rebuild-gpu train-gnn llm-check generate-site-agent-data train-site-agent train-site-agent-full eval-site-agent test-powell test-engines test-site-agent test-food-dist test-food-dist-trm generate-food-dist train-and-test-food-dist train-and-test-food-dist-quick train-and-test-food-dist-gpu up-llm up-llm-ollama ollama-pull-models
+.PHONY: up gpu-up up-dev down ps logs reload reload-backend reload-frontend seed reset-admin help init-env proxy-up proxy-down proxy-restart proxy-recreate proxy-logs proxy-url seed-default-group seed-demo-configs seed-three-fg-demo seed-variable-demo all_demo_configs build-create-users db-bootstrap db-reset rebuild-db reseed-db rebuild-gpu train-gnn llm-check generate-site-agent-data train-site-agent train-site-agent-full eval-site-agent test-powell test-engines test-site-agent test-food-dist test-food-dist-trm generate-food-dist train-and-test-food-dist train-and-test-food-dist-quick train-and-test-food-dist-gpu up-llm up-llm-ollama ollama-pull-models
 
 # =========================================================================
 # LOCAL LLM TARGETS (vLLM + Ollama for RAG)
@@ -301,16 +301,16 @@ build-create-users:
 	echo "    Hint: leave requirements*.txt untouched to maximise Docker build caching."
 
 db-bootstrap:
-	@echo "\n[+] Bootstrapping Autonomy defaults (config, users, showcase games)..."; \
-	$(MAKE) --no-print-directory all_beer_game
+	@echo "\n[+] Bootstrapping Autonomy defaults (config, users, showcase scenarios)..."; \
+	$(MAKE) --no-print-directory all_demo_configs
 
 bootstrap-system:
 	@echo "\n[+] Running full system bootstrap (DB init, seeding, dataset, GNN training)..."; \
 	$(DOCKER_COMPOSE_CMD) exec backend python3 scripts/bootstrap_system.py
 
 db-reset:
-	@echo "\n[+] Resetting games and rebuilding Autonomy training artifacts..."; \
-	$(MAKE) --no-print-directory all_beer_game SEED_ARGS="--reset-games"
+	@echo "\n[+] Resetting scenarios and rebuilding Autonomy training artifacts..."; \
+	$(MAKE) --no-print-directory all_demo_configs SEED_ARGS="--reset-games"
 
 rebuild-db:
 	@echo "\n[+] Rebuilding database container and volume..."; \
@@ -327,22 +327,22 @@ reseed-db:
 seed-default-group:
 	@$(MAKE) --no-print-directory db-bootstrap
 
-seed-default-beer-game:
-	@echo "\n[+] Seeding Default Beer Game group and configs..."; \
-	$(DOCKER_COMPOSE_CMD) exec backend python3 scripts/seed_default_beer_game.py $(SEED_ARGS)
+seed-demo-configs:
+	@echo "\n[+] Seeding default demo group and configs..."; \
+	$(DOCKER_COMPOSE_CMD) exec backend python3 scripts/seed_demo_configs.py $(SEED_ARGS)
 
-seed-three-fg-beer-game:
-	@echo "\n[+] Seeding Three FG Beer Game group..."; \
-	$(DOCKER_COMPOSE_CMD) exec backend python3 scripts/seed_three_fg_beer_game.py $(SEED_ARGS)
+seed-three-fg-demo:
+	@echo "\n[+] Seeding Three FG demo group..."; \
+	$(DOCKER_COMPOSE_CMD) exec backend python3 scripts/seed_three_fg_demo.py $(SEED_ARGS)
 
-seed-variable-beer-game:
-	@echo "\n[+] Seeding Variable Beer Game group..."; \
-	$(DOCKER_COMPOSE_CMD) exec backend python3 scripts/seed_variable_beer_game.py $(SEED_ARGS)
+seed-variable-demo:
+	@echo "\n[+] Seeding Variable demo group..."; \
+	$(DOCKER_COMPOSE_CMD) exec backend python3 scripts/seed_variable_demo.py $(SEED_ARGS)
 
-all_beer_game:
-	@$(MAKE) --no-print-directory seed-default-beer-game SEED_ARGS="$(SEED_ARGS)"
-	@$(MAKE) --no-print-directory seed-three-fg-beer-game SEED_ARGS="$(SEED_ARGS)"
-	@$(MAKE) --no-print-directory seed-variable-beer-game SEED_ARGS="$(SEED_ARGS)"
+all_demo_configs:
+	@$(MAKE) --no-print-directory seed-demo-configs SEED_ARGS="$(SEED_ARGS)"
+	@$(MAKE) --no-print-directory seed-three-fg-demo SEED_ARGS="$(SEED_ARGS)"
+	@$(MAKE) --no-print-directory seed-variable-demo SEED_ARGS="$(SEED_ARGS)"
 
 reset-admin:
 	@echo "\n[+] Resetting superadmin password to Autonomy@2025..."; \

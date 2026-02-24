@@ -3653,6 +3653,56 @@ The `ConformalOrchestrator` singleton fills 6 gaps with generic multi-entity sup
 - `inventory_target_calculator._calculate_conformal_safety_stock()` checks staleness
 - `BeliefStateManager.integrate_with_conformal_service()` wires to `SupplyChainConformalSuite`
 
+#### 1.5 Conformal Prediction vs Discrete Event Simulation: Hybrid Architecture
+
+**Goal**: Replace batch Monte Carlo / DES where possible with real-time conformal prediction, keeping DES for system-level dynamics.
+
+**Research Foundation**:
+- Gibbs & Candes (2024). *Adaptive Conformal Inference under Distribution Shift* (AISTATS)
+- Angelopoulos et al. (2024). *Conformal Risk Control* (ICLR 2024) — controls expected loss directly, not just coverage
+- Clarkson (2025). *CoRel: Relational Conformal Prediction for Correlated Time Series* — graph deep learning operators for network-wide intervals
+- Lekeufack et al. (2024). *Conformal Decision Theory* (ICRA 2024) — calibrates decisions rather than predictions
+
+**Where CP Replaces DES**:
+
+| Function | DES Approach | CP Replacement | Advantage |
+|----------|-------------|----------------|-----------|
+| Per-decision UQ | Run 1000 MC scenarios, extract P10/P50/P90 | Single conformal interval, <1ms | 1000x faster, guaranteed coverage |
+| Safety stock | z × σ × √LT (assumes Normal) | Conformal Risk Control: minimize E[stockout cost] subject to coverage | Distribution-free, cost-aware |
+| Real-time risk | Batch simulation every N hours | ACI intervals update online with every observation | Continuous, no batch lag |
+| TRM confidence | No formal guarantees on TRM output | CDT wrapper: P(loss ≤ τ) ≥ 1−α on every decision | Provable risk bounds |
+
+**Where DES Remains Essential**:
+
+| Function | Why CP Cannot Replace |
+|----------|----------------------|
+| Training data generation | CP needs training data; DES/SimPy generates it |
+| Multi-echelon dynamics | Bullwhip, pipeline coupling, BOM explosion require sequential simulation |
+| Policy evaluation | "What if we change lot size from 100→200?" needs full trajectory simulation |
+| Rare event analysis | Extreme scenarios (supplier failure + demand spike) need explicit sampling |
+| Counterfactual reasoning | "What would have happened with strategy X?" needs replay |
+
+**Implemented Upgrades**:
+
+1. **Conformal Risk Control (CRC)** — `inventory_target_calculator._calculate_conformal_safety_stock()`:
+   Controls expected stockout cost directly rather than raw coverage. Uses a loss function L(safety_stock, actual_demand) and finds the smallest safety stock where E[L] ≤ λ with conformal guarantee. Replaces z-score safety stock for `sl` policy type.
+
+2. **CoRel (Graph-Aware CP)** — `conformal_prediction/suite.py: RelationalConformalPredictor`:
+   Exploits DAG structure to produce tighter, correlated prediction intervals across sites. A demand spike at retailer implies increased demand at upstream wholesaler/distributor within lead-time offset. Uses graph attention to weight neighbor residuals.
+
+3. **Conformal Decision Theory (CDT)** — `conformal_prediction/conformal_decision.py: ConformalDecisionWrapper`:
+   Wraps any TRM decision with provable risk bounds. Calibrated from historical (decision, outcome) pairs. Returns `risk_bound: float` on every decision — the probability that the realized cost exceeds the decision's cost estimate. Enables autonomous escalation when `risk_bound > threshold`.
+
+**Architecture Summary**:
+```
+Batch Layer (DES/SimPy)           Real-Time Layer (Conformal)
+├─ Training data generation       ├─ ACI demand intervals (<1ms)
+├─ Policy evaluation              ├─ CRC safety stock (per-product)
+├─ Stochastic programming         ├─ CoRel network-wide intervals
+└─ Rare event scenarios           ├─ CDT decision risk bounds
+                                  └─ CDC relearning triggers
+```
+
 ---
 
 ### Phase 2: Operational Level (MRP/DRP)

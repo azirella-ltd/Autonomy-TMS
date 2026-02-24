@@ -40,13 +40,13 @@ def get_chat_service(db: Session = Depends(get_db)) -> ChatService:
 
 
 @router.get(
-    "/games/{game_id}/chat/messages",
+    "/scenarios/{scenario_id}/chat/messages",
     response_model=ChatMessagesResponse,
     summary="Get chat messages",
-    description="Retrieve chat messages for a game with optional filtering",
+    description="Retrieve chat messages for a scenario with optional filtering",
 )
 async def get_chat_messages(
-    game_id: int,
+    scenario_id: int,
     since: Optional[datetime] = Query(None, description="Only return messages after this timestamp"),
     limit: int = Query(100, ge=1, le=200, description="Maximum number of messages"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
@@ -54,7 +54,7 @@ async def get_chat_messages(
     chat_service: ChatService = Depends(get_chat_service),
 ):
     """
-    Get chat messages for a game.
+    Get chat messages for a scenario.
 
     **Query Parameters:**
     - `since`: ISO 8601 timestamp - only return messages after this time
@@ -68,7 +68,7 @@ async def get_chat_messages(
     """
     try:
         messages, total, has_more = await chat_service.get_messages(
-            game_id=game_id,
+            scenario_id=scenario_id,
             since=since,
             limit=limit,
             offset=offset,
@@ -81,7 +81,7 @@ async def get_chat_messages(
         )
 
     except Exception as e:
-        logger.error(f"Error getting chat messages for game {game_id}: {e}")
+        logger.error(f"Error getting chat messages for scenario {scenario_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve chat messages: {str(e)}",
@@ -89,14 +89,14 @@ async def get_chat_messages(
 
 
 @router.post(
-    "/games/{game_id}/chat/messages",
+    "/scenarios/{scenario_id}/chat/messages",
     response_model=ChatMessageResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Send chat message",
-    description="Send a new chat message in a game",
+    description="Send a new chat message in a scenario",
 )
 async def send_chat_message(
-    game_id: int,
+    scenario_id: int,
     message_data: ChatMessageCreate,
     current_user: User = Depends(get_current_user),
     chat_service: ChatService = Depends(get_chat_service),
@@ -117,17 +117,17 @@ async def send_chat_message(
     - Created message with ID and timestamp
 
     **WebSocket Broadcast:**
-    - Emits `chat:new_message` event to all game participants
+    - Emits `chat:new_message` event to all scenario participants
     """
     try:
         message = await chat_service.create_message(
-            game_id=game_id,
+            scenario_id=scenario_id,
             message_data=message_data,
         )
 
-        # Broadcast to game via WebSocket
-        await manager.broadcast_to_game(
-            game_id,
+        # Broadcast to scenario via WebSocket
+        await manager.broadcast_to_scenario(
+            scenario_id,
             {
                 "type": "chat:new_message",
                 "data": ChatMessageResponse.from_orm(message).dict(),
@@ -139,7 +139,7 @@ async def send_chat_message(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
-        logger.error(f"Error sending chat message in game {game_id}: {e}")
+        logger.error(f"Error sending chat message in scenario {scenario_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to send message: {str(e)}",
@@ -147,12 +147,12 @@ async def send_chat_message(
 
 
 @router.put(
-    "/games/{game_id}/chat/messages/read",
+    "/scenarios/{scenario_id}/chat/messages/read",
     summary="Mark messages as read",
     description="Mark multiple messages as read",
 )
 async def mark_messages_read(
-    game_id: int,
+    scenario_id: int,
     message_ids: List[int],
     current_user: User = Depends(get_current_user),
     chat_service: ChatService = Depends(get_chat_service),
@@ -171,14 +171,14 @@ async def mark_messages_read(
     """
     try:
         count = await chat_service.mark_messages_read(
-            game_id=game_id,
+            scenario_id=scenario_id,
             message_ids=message_ids,
         )
 
         # Broadcast read receipts
         for message_id in message_ids:
-            await manager.broadcast_to_game(
-                game_id,
+            await manager.broadcast_to_scenario(
+                scenario_id,
                 {
                     "type": "chat:message_read",
                     "data": {
@@ -191,7 +191,7 @@ async def mark_messages_read(
         return {"count": count}
 
     except Exception as e:
-        logger.error(f"Error marking messages as read in game {game_id}: {e}")
+        logger.error(f"Error marking messages as read in scenario {scenario_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to mark messages as read: {str(e)}",
@@ -202,20 +202,20 @@ async def mark_messages_read(
 
 
 @router.get(
-    "/games/{game_id}/chat/suggestions",
+    "/scenarios/{scenario_id}/chat/suggestions",
     response_model=AgentSuggestionsResponse,
     summary="Get agent suggestions",
-    description="Retrieve agent suggestions for a game",
+    description="Retrieve agent suggestions for a scenario",
 )
 async def get_agent_suggestions(
-    game_id: int,
+    scenario_id: int,
     agent_name: Optional[str] = Query(None, description="Filter by agent name"),
     pending_only: bool = Query(False, description="Only show pending suggestions"),
     current_user: User = Depends(get_current_user),
     chat_service: ChatService = Depends(get_chat_service),
 ):
     """
-    Get agent suggestions for a game.
+    Get agent suggestions for a scenario.
 
     **Query Parameters:**
     - `agent_name`: Filter by specific agent (retailer, wholesaler, etc.)
@@ -226,7 +226,7 @@ async def get_agent_suggestions(
     """
     try:
         suggestions = await chat_service.get_suggestions(
-            game_id=game_id,
+            scenario_id=scenario_id,
             agent_name=agent_name,
             pending_only=pending_only,
         )
@@ -237,7 +237,7 @@ async def get_agent_suggestions(
         )
 
     except Exception as e:
-        logger.error(f"Error getting suggestions for game {game_id}: {e}")
+        logger.error(f"Error getting suggestions for scenario {scenario_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve suggestions: {str(e)}",
@@ -245,14 +245,14 @@ async def get_agent_suggestions(
 
 
 @router.post(
-    "/games/{game_id}/chat/request-suggestion",
+    "/scenarios/{scenario_id}/chat/request-suggestion",
     response_model=AgentSuggestionResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Request agent suggestion",
     description="Request an order recommendation from an AI agent",
 )
 async def request_agent_suggestion(
-    game_id: int,
+    scenario_id: int,
     agent_name: str = Query(..., description="Agent to request suggestion from"),
     request_data: Optional[AgentSuggestionRequest] = None,
     current_user: User = Depends(get_current_user),
@@ -275,15 +275,15 @@ async def request_agent_suggestion(
     - Emits `chat:suggestion_ready` when complete
 
     **Processing:**
-    1. Retrieves current game state
+    1. Retrieves current scenario state
     2. Calls LLM agent for analysis
     3. Generates order recommendation with confidence
     4. Returns suggestion with rationale
     """
     try:
         # Emit typing indicator
-        await manager.broadcast_to_game(
-            game_id,
+        await manager.broadcast_to_scenario(
+            scenario_id,
             {
                 "type": "chat:agent_typing",
                 "data": {
@@ -294,14 +294,14 @@ async def request_agent_suggestion(
         )
 
         suggestion = await chat_service.request_suggestion(
-            game_id=game_id,
+            scenario_id=scenario_id,
             agent_name=agent_name,
             request_data=request_data,
         )
 
         # Stop typing indicator
-        await manager.broadcast_to_game(
-            game_id,
+        await manager.broadcast_to_scenario(
+            scenario_id,
             {
                 "type": "chat:agent_typing",
                 "data": {
@@ -312,8 +312,8 @@ async def request_agent_suggestion(
         )
 
         # Emit suggestion ready
-        await manager.broadcast_to_game(
-            game_id,
+        await manager.broadcast_to_scenario(
+            scenario_id,
             {
                 "type": "chat:suggestion_ready",
                 "data": AgentSuggestionResponse.from_orm(suggestion).dict(),
@@ -325,7 +325,7 @@ async def request_agent_suggestion(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
-        logger.error(f"Error requesting suggestion in game {game_id}: {e}")
+        logger.error(f"Error requesting suggestion in scenario {scenario_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate suggestion: {str(e)}",
@@ -333,13 +333,13 @@ async def request_agent_suggestion(
 
 
 @router.put(
-    "/games/{game_id}/chat/suggestions/{suggestion_id}/accept",
+    "/scenarios/{scenario_id}/chat/suggestions/{suggestion_id}/accept",
     response_model=AgentSuggestionResponse,
     summary="Accept agent suggestion",
     description="Accept an agent's order recommendation",
 )
 async def accept_agent_suggestion(
-    game_id: int,
+    scenario_id: int,
     suggestion_id: int,
     decision: AgentSuggestionDecision,
     current_user: User = Depends(get_current_user),
@@ -362,14 +362,14 @@ async def accept_agent_suggestion(
     """
     try:
         suggestion = await chat_service.accept_suggestion(
-            game_id=game_id,
+            scenario_id=scenario_id,
             suggestion_id=suggestion_id,
             player_id=decision.player_id,
         )
 
         # Broadcast decision
-        await manager.broadcast_to_game(
-            game_id,
+        await manager.broadcast_to_scenario(
+            scenario_id,
             {
                 "type": "chat:suggestion_accepted",
                 "data": AgentSuggestionResponse.from_orm(suggestion).dict(),
@@ -389,13 +389,13 @@ async def accept_agent_suggestion(
 
 
 @router.put(
-    "/games/{game_id}/chat/suggestions/{suggestion_id}/decline",
+    "/scenarios/{scenario_id}/chat/suggestions/{suggestion_id}/decline",
     response_model=AgentSuggestionResponse,
     summary="Decline agent suggestion",
     description="Decline an agent's order recommendation",
 )
 async def decline_agent_suggestion(
-    game_id: int,
+    scenario_id: int,
     suggestion_id: int,
     decision: AgentSuggestionDecision,
     current_user: User = Depends(get_current_user),
@@ -415,14 +415,14 @@ async def decline_agent_suggestion(
     """
     try:
         suggestion = await chat_service.decline_suggestion(
-            game_id=game_id,
+            scenario_id=scenario_id,
             suggestion_id=suggestion_id,
             player_id=decision.player_id,
         )
 
         # Broadcast decision
-        await manager.broadcast_to_game(
-            game_id,
+        await manager.broadcast_to_scenario(
+            scenario_id,
             {
                 "type": "chat:suggestion_declined",
                 "data": AgentSuggestionResponse.from_orm(suggestion).dict(),
@@ -445,14 +445,14 @@ async def decline_agent_suggestion(
 
 
 @router.post(
-    "/games/{game_id}/chat/what-if",
+    "/scenarios/{scenario_id}/chat/what-if",
     response_model=WhatIfAnalysisResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Run what-if analysis",
     description="Run a hypothetical scenario analysis",
 )
 async def run_what_if_analysis(
-    game_id: int,
+    scenario_id: int,
     analysis_data: WhatIfAnalysisRequest,
     current_user: User = Depends(get_current_user),
     chat_service: ChatService = Depends(get_chat_service),
@@ -479,7 +479,7 @@ async def run_what_if_analysis(
     """
     try:
         analysis = await chat_service.create_what_if_analysis(
-            game_id=game_id,
+            scenario_id=scenario_id,
             analysis_data=analysis_data,
         )
 
@@ -499,7 +499,7 @@ async def run_what_if_analysis(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
-        logger.error(f"Error creating what-if analysis in game {game_id}: {e}")
+        logger.error(f"Error creating what-if analysis in scenario {scenario_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create analysis: {str(e)}",
@@ -507,13 +507,13 @@ async def run_what_if_analysis(
 
 
 @router.get(
-    "/games/{game_id}/chat/what-if/{analysis_id}",
+    "/scenarios/{scenario_id}/chat/what-if/{analysis_id}",
     response_model=WhatIfAnalysisResponse,
     summary="Get what-if analysis",
     description="Retrieve a what-if analysis by ID",
 )
 async def get_what_if_analysis(
-    game_id: int,
+    scenario_id: int,
     analysis_id: int,
     current_user: User = Depends(get_current_user),
     chat_service: ChatService = Depends(get_chat_service),
@@ -527,14 +527,14 @@ async def get_what_if_analysis(
     """
     try:
         analysis = await chat_service.get_what_if_analysis(
-            game_id=game_id,
+            scenario_id=scenario_id,
             analysis_id=analysis_id,
         )
 
         if not analysis:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Analysis {analysis_id} not found in game {game_id}",
+                detail=f"Analysis {analysis_id} not found in scenario {scenario_id}",
             )
 
         return WhatIfAnalysisResponse.from_orm(analysis)

@@ -69,7 +69,7 @@ class SimulationExecutor:
 
     async def execute_round(
         self,
-        game_id: int,
+        scenario_id: int,
         round_number: int,
         agent_decisions: Dict[str, float],
         market_demand: Optional[float] = None
@@ -80,7 +80,7 @@ class SimulationExecutor:
         This is the CORE method that replaces SupplyChainLine.tick().
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             round_number: Current round number
             agent_decisions: Dict mapping site_id to order_qty
                 Example: {"retailer_001": 12.0, "wholesaler_001": 15.0}
@@ -90,16 +90,16 @@ class SimulationExecutor:
             Round execution summary
         """
         print(f"\n{'='*80}")
-        print(f"BEER GAME ROUND {round_number} - SC EXECUTION")
-        print(f"Game ID: {game_id}")
+        print(f"SIMULATION ROUND {round_number} - SC EXECUTION")
+        print(f"Game ID: {scenario_id}")
         print(f"{'='*80}\n")
 
         # Get current round date
-        round_date = self._get_round_date(game_id, round_number)
+        round_date = self._get_round_date(scenario_id, round_number)
 
         # Track round execution
         round_summary = {
-            "game_id": game_id,
+            "scenario_id": scenario_id,
             "round_number": round_number,
             "round_date": round_date,
             "steps": {}
@@ -112,7 +112,7 @@ class SimulationExecutor:
         print("-" * 80)
 
         # 1a. Process arriving Purchase Orders
-        arriving_pos = self.po_creator.process_arriving_orders(game_id, round_number)
+        arriving_pos = self.po_creator.process_arriving_orders(scenario_id, round_number)
 
         print(f"✓ Received {len(arriving_pos)} purchase orders")
         for po in arriving_pos:
@@ -120,7 +120,7 @@ class SimulationExecutor:
                   f"→ {po.destination_site_id}")
 
         # 1b. Process arriving Transfer Orders
-        arriving_tos = self.order_promising.process_arriving_transfers(game_id, round_number)
+        arriving_tos = self.order_promising.process_arriving_transfers(scenario_id, round_number)
 
         print(f"✓ Received {len(arriving_tos)} transfer orders")
         for to in arriving_tos:
@@ -147,15 +147,15 @@ class SimulationExecutor:
 
             # Create outbound order line (SC entity)
             outbound_order = OutboundOrderLine(
-                order_id=f"MARKET-G{game_id}-R{round_number}",
+                order_id=f"MARKET-G{scenario_id}-R{round_number}",
                 line_number=1,
                 product_id="cases",
                 site_id="retailer_001",  # Retailer receives market demand
                 ordered_quantity=market_demand,
                 requested_delivery_date=round_date,
                 order_date=round_date,
-                config_id=self._get_game_config_id(game_id),
-                game_id=game_id
+                config_id=self._get_game_config_id(scenario_id),
+                scenario_id=scenario_id
             )
             self.db.add(outbound_order)
             self.db.commit()
@@ -174,7 +174,7 @@ class SimulationExecutor:
         print("-" * 80)
 
         atp_results = self.order_promising.process_round_demand(
-            game_id, round_number
+            scenario_id, round_number
         )
 
         print(f"✓ Processed {len(atp_results)} order promising operations")
@@ -223,10 +223,10 @@ class SimulationExecutor:
         print("-" * 80)
 
         # Get config ID for ID mapping
-        config_id = self._get_game_config_id(game_id)
+        config_id = self._get_game_config_id(scenario_id)
 
         created_pos = self.po_creator.create_simulation_orders(
-            game_id, round_number, agent_decisions, config_id
+            scenario_id, round_number, agent_decisions, config_id
         )
 
         print(f"✓ Created {len(created_pos)} purchase orders")
@@ -256,12 +256,12 @@ class SimulationExecutor:
         print("-" * 80)
 
         # Get all sites
-        sites = self._get_game_sites(game_id)
+        sites = self._get_game_sites(scenario_id)
         site_ids = [site.site_id for site in sites]
 
         # Calculate costs
         cost_summary = self.cost_calculator.calculate_game_cost(
-            game_id, site_ids, "cases"
+            scenario_id, site_ids, "cases"
         )
 
         print(f"✓ Total Holding Cost: ${cost_summary['total_holding_cost']:.2f}")
@@ -283,7 +283,7 @@ class SimulationExecutor:
         print(f"\n📸 STEP 7: State Snapshot")
         print("-" * 80)
 
-        state_snapshot = self.state_manager.snapshot_state(game_id, round_number)
+        state_snapshot = self.state_manager.snapshot_state(scenario_id, round_number)
 
         print(f"✓ State snapshot captured")
         print(f"  Sites: {len(state_snapshot['sites'])}")
@@ -304,7 +304,7 @@ class SimulationExecutor:
 
     def initialize_game(
         self,
-        game_id: int,
+        scenario_id: int,
         config_id: int,
         initial_inventory: float = 12.0
     ) -> None:
@@ -314,51 +314,51 @@ class SimulationExecutor:
         Creates inv_level records for all sites.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             config_id: Supply chain config ID
             initial_inventory: Initial inventory for all sites
         """
         print(f"\n{'='*80}")
-        print(f"INITIALIZING BEER GAME {game_id}")
+        print(f"INITIALIZING SIMULATION {scenario_id}")
         print(f"{'='*80}\n")
 
         self.state_manager.initialize_game_state(
-            game_id, config_id, initial_inventory
+            scenario_id, config_id, initial_inventory
         )
 
         print(f"✓ Game initialized with SC state")
         print(f"  Initial inventory: {initial_inventory} units per site")
 
-    def get_game_status(self, game_id: int) -> Dict:
+    def get_game_status(self, scenario_id: int) -> Dict:
         """
         Get current game status from SC entities.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
 
         Returns:
             Game status dictionary
         """
         # Get current round
-        game = self.db.query(Game).filter(Game.id == game_id).first()
+        game = self.db.query(Game).filter(Game.id == scenario_id).first()
         if not game:
-            raise ValueError(f"Game {game_id} not found")
+            raise ValueError(f"Game {scenario_id} not found")
 
         # Load current state
-        current_state = self.state_manager.load_game_state(game_id)
+        current_state = self.state_manager.load_game_state(scenario_id)
 
         # Get sites
-        sites = self._get_game_sites(game_id)
+        sites = self._get_game_sites(scenario_id)
 
         # Calculate current costs
         cost_summary = self.cost_calculator.calculate_game_cost(
-            game_id,
+            scenario_id,
             [site.site_id for site in sites],
             "cases"
         )
 
         return {
-            "game_id": game_id,
+            "scenario_id": scenario_id,
             "current_round": game.current_round or 0,
             "max_rounds": game.max_rounds or 52,
             "status": game.status,
@@ -370,11 +370,11 @@ class SimulationExecutor:
     # Private Helper Methods
     # ========================================================================
 
-    def _get_round_date(self, game_id: int, round_number: int) -> date:
+    def _get_round_date(self, scenario_id: int, round_number: int) -> date:
         """Get date for round (1 round = 1 week)."""
-        game = self.db.query(Game).filter(Game.id == game_id).first()
+        game = self.db.query(Game).filter(Game.id == scenario_id).first()
         if not game:
-            raise ValueError(f"Game {game_id} not found")
+            raise ValueError(f"Game {scenario_id} not found")
 
         # Start date (default: today)
         start_date = game.created_at.date() if game.created_at else date.today()
@@ -384,28 +384,28 @@ class SimulationExecutor:
 
         return round_date
 
-    def _get_game_config_id(self, game_id: int) -> int:
+    def _get_game_config_id(self, scenario_id: int) -> int:
         """Get config ID for game."""
-        game = self.db.query(Game).filter(Game.id == game_id).first()
+        game = self.db.query(Game).filter(Game.id == scenario_id).first()
         if not game:
-            raise ValueError(f"Game {game_id} not found")
+            raise ValueError(f"Game {scenario_id} not found")
         return game.config_id
 
-    def _get_id_mapper(self, game_id: int) -> SimulationIdMapper:
+    def _get_id_mapper(self, scenario_id: int) -> SimulationIdMapper:
         """
         Get ID mapper for translating between node names and node IDs.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
 
         Returns:
             SimulationIdMapper instance
         """
-        config_id = self._get_game_config_id(game_id)
+        config_id = self._get_game_config_id(scenario_id)
         return SimulationIdMapper(self.db, config_id)
 
-    def _get_game_sites(self, game_id: int) -> List[Site]:
+    def _get_game_sites(self, scenario_id: int) -> List[Site]:
         """Get all sites for game."""
-        config_id = self._get_game_config_id(game_id)
+        config_id = self._get_game_config_id(scenario_id)
         sites = self.db.query(Site).filter(Site.config_id == config_id).all()
         return sites

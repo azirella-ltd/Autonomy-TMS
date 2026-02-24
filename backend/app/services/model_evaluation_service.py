@@ -163,7 +163,7 @@ class ModelEvaluationService:
                 # Get all rounds
                 rounds_result = await self.db.execute(
                     select(GameRound)
-                    .where(GameRound.game_id == game.id)
+                    .where(GameRound.scenario_id == game.id)
                     .order_by(GameRound.round_number)
                 )
                 rounds = rounds_result.scalars().all()

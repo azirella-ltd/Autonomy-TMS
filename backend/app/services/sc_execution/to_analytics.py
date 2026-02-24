@@ -35,7 +35,7 @@ class TransferOrderAnalytics:
 
     def get_game_to_metrics(
         self,
-        game_id: int,
+        scenario_id: int,
         include_routes: bool = True,
         include_timeline: bool = True
     ) -> Dict:
@@ -43,7 +43,7 @@ class TransferOrderAnalytics:
         Get comprehensive TO metrics for a game.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             include_routes: Include route-level breakdowns
             include_timeline: Include round-by-round timeline
 
@@ -51,27 +51,27 @@ class TransferOrderAnalytics:
             Dictionary with TO metrics
         """
         metrics = {
-            "game_id": game_id,
-            "summary": self._calculate_summary_metrics(game_id),
-            "delivery_performance": self._calculate_delivery_performance(game_id),
-            "lead_time_analysis": self._calculate_lead_time_analysis(game_id),
-            "in_transit_analysis": self._calculate_in_transit_analysis(game_id),
-            "throughput": self._calculate_throughput(game_id)
+            "scenario_id": scenario_id,
+            "summary": self._calculate_summary_metrics(scenario_id),
+            "delivery_performance": self._calculate_delivery_performance(scenario_id),
+            "lead_time_analysis": self._calculate_lead_time_analysis(scenario_id),
+            "in_transit_analysis": self._calculate_in_transit_analysis(scenario_id),
+            "throughput": self._calculate_throughput(scenario_id)
         }
 
         if include_routes:
-            metrics["route_analysis"] = self._calculate_route_metrics(game_id)
+            metrics["route_analysis"] = self._calculate_route_metrics(scenario_id)
 
         if include_timeline:
-            metrics["timeline"] = self._calculate_timeline(game_id)
+            metrics["timeline"] = self._calculate_timeline(scenario_id)
 
         return metrics
 
-    def _calculate_summary_metrics(self, game_id: int) -> Dict:
+    def _calculate_summary_metrics(self, scenario_id: int) -> Dict:
         """Calculate high-level summary metrics."""
         # Total TOs
         total_tos = self.db.query(func.count(TransferOrder.id)).filter(
-            TransferOrder.game_id == game_id
+            TransferOrder.scenario_id == scenario_id
         ).scalar() or 0
 
         # Status breakdown
@@ -79,7 +79,7 @@ class TransferOrderAnalytics:
             TransferOrder.status,
             func.count(TransferOrder.id)
         ).filter(
-            TransferOrder.game_id == game_id
+            TransferOrder.scenario_id == scenario_id
         ).group_by(TransferOrder.status).all()
 
         status_breakdown = {status: count for status, count in status_counts}
@@ -91,7 +91,7 @@ class TransferOrderAnalytics:
             TransferOrder,
             TransferOrderLineItem.to_id == TransferOrder.id
         ).filter(
-            TransferOrder.game_id == game_id
+            TransferOrder.scenario_id == scenario_id
         ).scalar() or 0.0
 
         # Average quantity per TO
@@ -104,12 +104,12 @@ class TransferOrderAnalytics:
             "avg_quantity_per_to": avg_quantity
         }
 
-    def _calculate_delivery_performance(self, game_id: int) -> Dict:
+    def _calculate_delivery_performance(self, scenario_id: int) -> Dict:
         """Calculate on-time delivery metrics."""
         # Get all RECEIVED TOs
         received_tos = self.db.query(TransferOrder).filter(
             and_(
-                TransferOrder.game_id == game_id,
+                TransferOrder.scenario_id == scenario_id,
                 TransferOrder.status == "RECEIVED"
             )
         ).all()
@@ -150,11 +150,11 @@ class TransferOrderAnalytics:
             "on_time_percentage": on_time_rate
         }
 
-    def _calculate_lead_time_analysis(self, game_id: int) -> Dict:
+    def _calculate_lead_time_analysis(self, scenario_id: int) -> Dict:
         """Calculate lead time statistics."""
         # Get all TOs with shipment and delivery dates
         tos = self.db.query(TransferOrder).filter(
-            TransferOrder.game_id == game_id
+            TransferOrder.scenario_id == scenario_id
         ).all()
 
         planned_lead_times = []
@@ -198,7 +198,7 @@ class TransferOrderAnalytics:
             }
         }
 
-    def _calculate_in_transit_analysis(self, game_id: int) -> Dict:
+    def _calculate_in_transit_analysis(self, scenario_id: int) -> Dict:
         """Calculate in-transit inventory metrics."""
         # Get current in-transit by site
         tos_in_transit = self.db.query(
@@ -209,7 +209,7 @@ class TransferOrderAnalytics:
             TransferOrder.id == TransferOrderLineItem.to_id
         ).filter(
             and_(
-                TransferOrder.game_id == game_id,
+                TransferOrder.scenario_id == scenario_id,
                 TransferOrder.status == "IN_TRANSIT"
             )
         ).group_by(TransferOrder.destination_site_id).all()
@@ -229,7 +229,7 @@ class TransferOrderAnalytics:
             "num_sites_with_in_transit": len(in_transit_by_site)
         }
 
-    def _calculate_throughput(self, game_id: int) -> Dict:
+    def _calculate_throughput(self, scenario_id: int) -> Dict:
         """Calculate TO throughput (TOs per round)."""
         # Group TOs by order_round
         tos_by_round = self.db.query(
@@ -240,7 +240,7 @@ class TransferOrderAnalytics:
             TransferOrderLineItem,
             TransferOrder.id == TransferOrderLineItem.to_id
         ).filter(
-            TransferOrder.game_id == game_id
+            TransferOrder.scenario_id == scenario_id
         ).group_by(TransferOrder.order_round).all()
 
         throughput_by_round = {
@@ -259,7 +259,7 @@ class TransferOrderAnalytics:
             "throughput_by_round": throughput_by_round
         }
 
-    def _calculate_route_metrics(self, game_id: int) -> Dict:
+    def _calculate_route_metrics(self, scenario_id: int) -> Dict:
         """Calculate metrics by route (source → destination)."""
         # Group TOs by route
         route_stats = self.db.query(
@@ -279,7 +279,7 @@ class TransferOrderAnalytics:
             TransferOrderLineItem,
             TransferOrder.id == TransferOrderLineItem.to_id
         ).filter(
-            TransferOrder.game_id == game_id
+            TransferOrder.scenario_id == scenario_id
         ).group_by(
             TransferOrder.source_site_id,
             TransferOrder.destination_site_id
@@ -304,13 +304,13 @@ class TransferOrderAnalytics:
             "routes": routes
         }
 
-    def _calculate_timeline(self, game_id: int) -> Dict:
+    def _calculate_timeline(self, scenario_id: int) -> Dict:
         """Calculate round-by-round TO timeline."""
         # Get max round
         max_round = self.db.query(
             func.max(TransferOrder.order_round)
         ).filter(
-            TransferOrder.game_id == game_id
+            TransferOrder.scenario_id == scenario_id
         ).scalar() or 0
 
         timeline = []
@@ -319,7 +319,7 @@ class TransferOrderAnalytics:
             # TOs created this round
             tos_created = self.db.query(func.count(TransferOrder.id)).filter(
                 and_(
-                    TransferOrder.game_id == game_id,
+                    TransferOrder.scenario_id == scenario_id,
                     TransferOrder.order_round == round_num
                 )
             ).scalar() or 0
@@ -327,7 +327,7 @@ class TransferOrderAnalytics:
             # TOs received this round
             tos_received = self.db.query(func.count(TransferOrder.id)).filter(
                 and_(
-                    TransferOrder.game_id == game_id,
+                    TransferOrder.scenario_id == scenario_id,
                     TransferOrder.arrival_round == round_num,
                     TransferOrder.status == "RECEIVED"
                 )
@@ -341,7 +341,7 @@ class TransferOrderAnalytics:
                 TransferOrderLineItem.to_id == TransferOrder.id
             ).filter(
                 and_(
-                    TransferOrder.game_id == game_id,
+                    TransferOrder.scenario_id == scenario_id,
                     TransferOrder.order_round == round_num
                 )
             ).scalar() or 0.0
@@ -354,7 +354,7 @@ class TransferOrderAnalytics:
                 TransferOrderLineItem.to_id == TransferOrder.id
             ).filter(
                 and_(
-                    TransferOrder.game_id == game_id,
+                    TransferOrder.scenario_id == scenario_id,
                     TransferOrder.arrival_round == round_num,
                     TransferOrder.status == "RECEIVED"
                 )
@@ -373,21 +373,21 @@ class TransferOrderAnalytics:
             "timeline": timeline
         }
 
-    def export_to_metrics_summary(self, game_id: int) -> str:
+    def export_to_metrics_summary(self, scenario_id: int) -> str:
         """
         Export TO metrics as formatted text summary.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
 
         Returns:
             Formatted text summary
         """
-        metrics = self.get_game_to_metrics(game_id)
+        metrics = self.get_game_to_metrics(scenario_id)
 
         lines = []
         lines.append("=" * 80)
-        lines.append(f"TRANSFER ORDER ANALYTICS - GAME {game_id}")
+        lines.append(f"TRANSFER ORDER ANALYTICS - GAME {scenario_id}")
         lines.append("=" * 80)
         lines.append("")
 

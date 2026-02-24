@@ -55,7 +55,7 @@ class NetRequirementsCalculator:
         net_demand: Dict[Tuple[str, str, date], float],
         target_inventory: Dict[Tuple[str, str], float],
         start_date: date,
-        game_id: Optional[int] = None
+        scenario_id: Optional[int] = None
     ) -> List[SupplyPlan]:
         """
         Calculate net requirements and generate supply plans
@@ -64,7 +64,7 @@ class NetRequirementsCalculator:
             net_demand: Net demand by (product_id, site_id, date)
             target_inventory: Target inventory by (product_id, site_id)
             start_date: Planning start date
-            game_id: Optional game ID for Beer Game integration
+            scenario_id: Optional game ID for scenario integration
 
         Returns:
             List of SupplyPlan recommendations (PO/TO/MO requests)
@@ -79,12 +79,12 @@ class NetRequirementsCalculator:
         for product_id, site_id in product_sites:
             # Get current inventory level
             current_inventory = await self.get_current_inventory(
-                product_id, site_id, start_date, game_id
+                product_id, site_id, start_date, scenario_id
             )
 
             # Get scheduled receipts (inbound orders)
             scheduled_receipts = await self.get_scheduled_receipts(
-                product_id, site_id, start_date, game_id
+                product_id, site_id, start_date, scenario_id
             )
 
             # Get target inventory
@@ -94,7 +94,7 @@ class NetRequirementsCalculator:
             plans = await self.time_phased_netting(
                 product_id, site_id, start_date,
                 current_inventory, scheduled_receipts, net_demand,
-                target, game_id
+                target, scenario_id
             )
 
             supply_plans.extend(plans)
@@ -112,7 +112,7 @@ class NetRequirementsCalculator:
         scheduled_receipts: Dict[date, float],
         net_demand: Dict[Tuple[str, str, date], float],
         target_inventory: float,
-        game_id: Optional[int]
+        scenario_id: Optional[int]
     ) -> List[SupplyPlan]:
         """
         Perform time-phased inventory projection and netting
@@ -125,7 +125,7 @@ class NetRequirementsCalculator:
             scheduled_receipts: Scheduled receipts by date
             net_demand: Net demand data
             target_inventory: Target inventory level
-            game_id: Optional game ID
+            scenario_id: Optional game ID
 
         Returns:
             List of SupplyPlan recommendations
@@ -154,7 +154,7 @@ class NetRequirementsCalculator:
                 plan = await self.generate_supply_plan(
                     product_id, site_id, period_date,
                     net_requirement, projected_inventory,
-                    target_inventory, game_id
+                    target_inventory, scenario_id
                 )
 
                 if plan:
@@ -172,7 +172,7 @@ class NetRequirementsCalculator:
         net_requirement: float,
         projected_inventory: float,
         target_inventory: float,
-        game_id: Optional[int]
+        scenario_id: Optional[int]
     ) -> Optional[SupplyPlan]:
         """
         Generate supply plan based on sourcing rules
@@ -189,7 +189,7 @@ class NetRequirementsCalculator:
             net_requirement: Net requirement quantity
             projected_inventory: Projected inventory before order
             target_inventory: Target inventory level
-            game_id: Optional game ID
+            scenario_id: Optional game ID
 
         Returns:
             SupplyPlan or None
@@ -218,7 +218,7 @@ class NetRequirementsCalculator:
 
                 plan = await self.create_plan_for_sourcing_rule(
                     rule, product_id, site_id, plan_date,
-                    rule_quantity, projected_inventory, target_inventory, game_id
+                    rule_quantity, projected_inventory, target_inventory, scenario_id
                 )
                 if plan:
                     plans.append(plan)
@@ -230,7 +230,7 @@ class NetRequirementsCalculator:
             rule = top_priority_rules[0]
             return await self.create_plan_for_sourcing_rule(
                 rule, product_id, site_id, plan_date,
-                net_requirement, projected_inventory, target_inventory, game_id
+                net_requirement, projected_inventory, target_inventory, scenario_id
             )
 
     async def create_plan_for_sourcing_rule(
@@ -242,7 +242,7 @@ class NetRequirementsCalculator:
         order_quantity: float,
         projected_inventory: float,
         target_inventory: float,
-        game_id: Optional[int]
+        scenario_id: Optional[int]
     ) -> Optional[SupplyPlan]:
         """
         Create supply plan based on sourcing rule type
@@ -255,7 +255,7 @@ class NetRequirementsCalculator:
             order_quantity: Order quantity
             projected_inventory: Projected inventory
             target_inventory: Target inventory
-            game_id: Optional game ID
+            scenario_id: Optional game ID
 
         Returns:
             SupplyPlan
@@ -263,19 +263,19 @@ class NetRequirementsCalculator:
         if rule.sourcing_rule_type == 'manufacture':
             return await self.create_manufacture_plan(
                 rule, product_id, site_id, plan_date,
-                order_quantity, projected_inventory, target_inventory, game_id
+                order_quantity, projected_inventory, target_inventory, scenario_id
             )
 
         elif rule.sourcing_rule_type == 'buy':
             return await self.create_buy_plan(
                 rule, product_id, site_id, plan_date,
-                order_quantity, projected_inventory, target_inventory, game_id
+                order_quantity, projected_inventory, target_inventory, scenario_id
             )
 
         elif rule.sourcing_rule_type == 'transfer':
             return await self.create_transfer_plan(
                 rule, product_id, site_id, plan_date,
-                order_quantity, projected_inventory, target_inventory, game_id
+                order_quantity, projected_inventory, target_inventory, scenario_id
             )
 
         return None
@@ -289,7 +289,7 @@ class NetRequirementsCalculator:
         order_quantity: float,
         projected_inventory: float,
         target_inventory: float,
-        game_id: Optional[int]
+        scenario_id: Optional[int]
     ) -> SupplyPlan:
         """
         Create manufacturing order plan with BOM explosion
@@ -302,7 +302,7 @@ class NetRequirementsCalculator:
             order_quantity: Order quantity
             projected_inventory: Projected inventory
             target_inventory: Target inventory
-            game_id: Optional game ID
+            scenario_id: Optional game ID
 
         Returns:
             SupplyPlan for manufacturing order
@@ -320,7 +320,7 @@ class NetRequirementsCalculator:
             await self.explode_bom(
                 product_id, order_quantity, planned_order_date,
                 None,  # production_process_id not used in simplified implementation
-                site_id, game_id
+                site_id, scenario_id
             )
 
             # Get planner info
@@ -337,7 +337,7 @@ class NetRequirementsCalculator:
                 planned_receipt_date=planned_receipt_date,
                 lead_time_days=manufacturing_lead_time,
                 config_id=self.config_id,
-                game_id=game_id
+                scenario_id=scenario_id
             )
 
             db.add(plan)
@@ -353,7 +353,7 @@ class NetRequirementsCalculator:
         planned_start_date: date,
         production_process_id: Optional[str],
         site_id: str,
-        game_id: Optional[int]
+        scenario_id: Optional[int]
     ):
         """
         Explode BOM to generate component requirements
@@ -370,7 +370,7 @@ class NetRequirementsCalculator:
             planned_start_date: Start date for production
             production_process_id: Production process ID
             site_id: Manufacturing site
-            game_id: Optional game ID
+            scenario_id: Optional game ID
         """
         # Cycle detection
         if self._bom_traversal_depth >= self._max_bom_depth:
@@ -434,7 +434,7 @@ class NetRequirementsCalculator:
                         component_site,
                         planned_start_date,
                         component_requirement,
-                        game_id
+                        scenario_id
                     )
 
                     # Recursive BOM explosion for multi-level BOMs
@@ -448,7 +448,7 @@ class NetRequirementsCalculator:
                             planned_start_date,
                             component_sourcing[0].production_process_id,
                             component_site,
-                            game_id
+                            scenario_id
                         )
 
         finally:
@@ -461,7 +461,7 @@ class NetRequirementsCalculator:
         component_site_id: str,
         required_date: date,
         required_quantity: float,
-        game_id: Optional[int]
+        scenario_id: Optional[int]
     ):
         """
         Create dependent demand reservation for component
@@ -471,7 +471,7 @@ class NetRequirementsCalculator:
             component_site_id: Component site ID
             required_date: Date component is needed
             required_quantity: Quantity required
-            game_id: Optional game ID
+            scenario_id: Optional game ID
         """
         async with SessionLocal() as db:
             reservation = Reservation(
@@ -482,7 +482,7 @@ class NetRequirementsCalculator:
                 reserved_quantity=required_quantity,
                 reservation_type='production_order',
                 config_id=self.config_id,
-                game_id=game_id
+                scenario_id=scenario_id
             )
             db.add(reservation)
             await db.commit()
@@ -496,7 +496,7 @@ class NetRequirementsCalculator:
         order_quantity: float,
         projected_inventory: float,
         target_inventory: float,
-        game_id: Optional[int]
+        scenario_id: Optional[int]
     ) -> SupplyPlan:
         """Create purchase order plan"""
         async with SessionLocal() as db:
@@ -533,7 +533,7 @@ class NetRequirementsCalculator:
                 lead_time_days=lead_time,
                 unit_cost=unit_cost,
                 config_id=self.config_id,
-                game_id=game_id
+                scenario_id=scenario_id
             )
 
             db.add(plan)
@@ -551,7 +551,7 @@ class NetRequirementsCalculator:
         order_quantity: float,
         projected_inventory: float,
         target_inventory: float,
-        game_id: Optional[int]
+        scenario_id: Optional[int]
     ) -> SupplyPlan:
         """Create transfer order plan"""
         async with SessionLocal() as db:
@@ -577,7 +577,7 @@ class NetRequirementsCalculator:
                 lead_time_days=transit_time,
                 unit_cost=rule.unit_cost,
                 config_id=self.config_id,
-                game_id=game_id
+                scenario_id=scenario_id
             )
 
             db.add(plan)
@@ -662,7 +662,7 @@ class NetRequirementsCalculator:
 
     # Helper methods
     async def get_current_inventory(self, product_id: str, site_id: str,
-                                    start_date: date, game_id: Optional[int]) -> float:
+                                    start_date: date, scenario_id: Optional[int]) -> float:
         """Get current inventory from inv_level table.
 
         Queries the most recent inventory snapshot for this product-site
@@ -679,8 +679,8 @@ class NetRequirementsCalculator:
         if hasattr(InvLevel, 'inventory_date'):
             filters.append(InvLevel.inventory_date <= start_date)
 
-        if game_id is not None and hasattr(InvLevel, 'scenario_id'):
-            filters.append(InvLevel.scenario_id == game_id)
+        if scenario_id is not None and hasattr(InvLevel, 'scenario_id'):
+            filters.append(InvLevel.scenario_id == scenario_id)
 
         if self.group_id is not None:
             filters.append(InvLevel.company_id == str(self.group_id))
@@ -701,7 +701,7 @@ class NetRequirementsCalculator:
         return float(inv.on_hand_qty or 0.0)
 
     async def get_scheduled_receipts(self, product_id: str, site_id: str,
-                                     start_date: date, game_id: Optional[int]) -> Dict[date, float]:
+                                     start_date: date, scenario_id: Optional[int]) -> Dict[date, float]:
         """Get scheduled receipts from supply_plan table.
 
         Returns time-phased dict of {receipt_date: quantity} for confirmed
@@ -717,8 +717,8 @@ class NetRequirementsCalculator:
             SupplyPlan.planned_receipt_date >= start_date,
         ]
 
-        if game_id is not None and hasattr(SupplyPlan, 'scenario_id'):
-            filters.append(SupplyPlan.scenario_id == game_id)
+        if scenario_id is not None and hasattr(SupplyPlan, 'scenario_id'):
+            filters.append(SupplyPlan.scenario_id == scenario_id)
 
         if self.group_id is not None:
             filters.append(SupplyPlan.company_id == str(self.group_id))

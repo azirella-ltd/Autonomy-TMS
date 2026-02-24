@@ -11,8 +11,8 @@ class SupervisorAgent(BaseAgent):
     Only overrides AI decisions, never human decisions.
     """
     
-    def __init__(self, db: Session, game_id: int):
-        super().__init__(db, game_id)
+    def __init__(self, db: Session, scenario_id: int):
+        super().__init__(db, scenario_id)
         self.bullwhip_threshold = 1.5  # Threshold for bullwhip effect detection
         self.decision_history: List[dict] = []
         self.override_count = 0
@@ -24,7 +24,7 @@ class SupervisorAgent(BaseAgent):
         Returns a value where > 1 indicates bullwhip effect.
         """
         # Get recent orders from all players
-        recent_rounds = self.db.query(models.GameRound)\n            .filter(models.GameRound.game_id == self.game_id)\n            .order_by(models.GameRound.round_number.desc())\n            .limit(4)\n            .all()
+        recent_rounds = self.db.query(models.GameRound)\n            .filter(models.GameRound.scenario_id == self.scenario_id)\n            .order_by(models.GameRound.round_number.desc())\n            .limit(4)\n            .all()
             
         if len(recent_rounds) < 2:
             return 0.0
@@ -123,7 +123,7 @@ class SupervisorAgent(BaseAgent):
                 
                 # Log the override
                 self.db.add(models.SupervisorAction(
-                    game_id=self.game_id,
+                    scenario_id=self.scenario_id,
                     role=role,
                     original_order=proposed_order,
                     adjusted_order=decision['final_order'],

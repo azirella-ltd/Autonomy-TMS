@@ -36,6 +36,16 @@ from .allocation_service import (
 from .engines.aatp_engine import AATPEngine, AATPConfig, Order as EngineOrder, Priority
 from .hive_signal import HiveSignal, HiveSignalBus, HiveSignalType
 
+# Conformal Decision Theory (optional, lazy import)
+try:
+    from ..conformal_prediction.conformal_decision import (
+        ConformalDecisionWrapper,
+        get_cdt_registry,
+    )
+    _CDT_AVAILABLE = True
+except ImportError:
+    _CDT_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -75,11 +85,15 @@ class ATPResponse:
     confidence: float = 1.0
     reasoning: str = ""
 
+    # Conformal Decision Theory risk bound (CDT wrapper)
+    risk_bound: Optional[float] = None  # P(loss > threshold), lower is safer
+    risk_assessment: Optional[Dict] = None  # Full CDT diagnostics
+
     # Context-aware explanation (populated when explainer is available)
     context_explanation: Optional[Dict] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             "order_id": self.order_id,
             "line_id": self.line_id,
             "can_fulfill": self.can_fulfill,
@@ -91,6 +105,11 @@ class ATPResponse:
             "confidence": self.confidence,
             "reasoning": self.reasoning,
         }
+        if self.risk_bound is not None:
+            result["risk_bound"] = self.risk_bound
+        if self.risk_assessment is not None:
+            result["risk_assessment"] = self.risk_assessment
+        return result
 
 
 @dataclass
@@ -172,6 +191,14 @@ class ATPExecutorTRM:
         """
         self.allocation_service = allocation_service
         self._engine = aatp_engine
+
+        # Conformal Decision Theory wrapper for risk bounds
+        self._cdt_wrapper: Optional[Any] = None
+        if _CDT_AVAILABLE:
+            try:
+                self._cdt_wrapper = get_cdt_registry().get_or_create("atp")
+            except Exception:
+                pass  # CDT is optional enhancement
         self.trm_model = trm_model
         self.use_heuristic_fallback = use_heuristic_fallback
         self.db = db
@@ -267,6 +294,20 @@ class ATPExecutorTRM:
 
         # Emit signals after decision
         self._emit_signals_after_decision(request, state, response)
+
+        # Apply Conformal Decision Theory risk bound
+        if self._cdt_wrapper is not None and self._cdt_wrapper.is_calibrated:
+            try:
+                # Cost estimate: unfulfilled fraction as normalized loss
+                fill_rate = response.promised_qty / max(1.0, request.requested_qty)
+                cost_estimate = 1.0 - fill_rate  # 0 = full fill, 1 = zero fill
+                risk = self._cdt_wrapper.compute_risk_bound(
+                    cost_estimate, state.to_features()
+                )
+                response.risk_bound = risk.risk_bound
+                response.risk_assessment = risk.to_dict()
+            except Exception as e:
+                logger.debug(f"CDT risk bound computation skipped: {e}")
 
         # Enrich with context-aware reasoning
         response = self._enrich_with_context(response, state, request)

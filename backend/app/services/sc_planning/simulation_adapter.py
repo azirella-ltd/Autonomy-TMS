@@ -78,7 +78,7 @@ class SimulationToSCAdapter:
 
         # Get all players in this game
         result = await self.db.execute(
-            select(Player).filter(Player.game_id == self.game.id)
+            select(Player).filter(Player.scenario_id == self.game.id)
         )
         players = result.scalars().all()
 
@@ -354,7 +354,7 @@ class SimulationToSCAdapter:
         """
         result = await self.db.execute(
             select(Player).filter(
-                Player.game_id == self.game.id,
+                Player.scenario_id == self.game.id,
                 Player.role == role,
             )
         )

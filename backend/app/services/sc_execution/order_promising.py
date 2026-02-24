@@ -2,7 +2,7 @@
 Order Promising Engine - SC Execution
 
 Implements Available-to-Promise (ATP) logic for order fulfillment.
-This is the core execution logic that The Beer Game uses to fulfill demand.
+The simulation uses this core execution logic to fulfill demand.
 
 Reference: SC Order Promising
 """
@@ -57,7 +57,7 @@ class OrderPromisingEngine:
     3. Creating shipment records
     4. Updating backorders for unfulfilled demand
 
-    The Beer Game uses this engine each round to fulfill:
+    The simulation uses this engine each round to fulfill:
     - Market demand (for Retailer)
     - Downstream POs (for Wholesaler/Distributor/Factory)
     """
@@ -153,7 +153,7 @@ class OrderPromisingEngine:
         requested_date: date,
         to_site_id: Optional[int] = None,
         lead_time_days: int = 0,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
         round_number: Optional[int] = None
     ) -> Tuple[ATPResult, Optional[TransferOrder]]:
         """
@@ -174,7 +174,7 @@ class OrderPromisingEngine:
             requested_date: Requested delivery date
             to_site_id: Destination node ID (Integer, optional)
             lead_time_days: Shipment lead time (default: 0)
-            game_id: Game ID (optional)
+            scenario_id: Game ID (optional)
             round_number: Round number (optional)
 
         Returns:
@@ -203,7 +203,7 @@ class OrderPromisingEngine:
             order_date=datetime.now().date(),
             shipment_date=datetime.now().date(),
             estimated_delivery_date=requested_date + timedelta(days=lead_time_days),
-            game_id=game_id,
+            scenario_id=scenario_id,
             order_round=round_number,
             arrival_round=round_number + (lead_time_days // 7) if round_number else None
         )
@@ -230,24 +230,24 @@ class OrderPromisingEngine:
         item_id: int,
         demand_qty: float,
         demand_date: date,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
         round_number: Optional[int] = None
     ) -> Tuple[ATPResult, Optional[TransferOrder]]:
         """
-        Fulfill market demand (Beer Game: Retailer fulfilling customer orders).
+        Fulfill market demand (e.g., Retailer fulfilling customer orders).
 
         Args:
             site_id: Retailer node ID (Integer from nodes table)
             item_id: Item ID (Integer from items table)
             demand_qty: Market demand quantity
             demand_date: Demand date
-            game_id: Game ID (optional)
+            scenario_id: Game ID (optional)
             round_number: Round number (optional)
 
         Returns:
             Tuple of (ATPResult, TransferOrder or None)
         """
-        order_id = f"MARKET-{game_id or 0}-R{round_number or 0}"
+        order_id = f"MARKET-{scenario_id or 0}-R{round_number or 0}"
 
         return self.promise_order(
             site_id=site_id,
@@ -257,7 +257,7 @@ class OrderPromisingEngine:
             requested_date=demand_date,
             to_site_id="MARKET",
             lead_time_days=0,  # Immediate delivery to market
-            game_id=game_id,
+            scenario_id=scenario_id,
             round_number=round_number
         )
 
@@ -288,24 +288,24 @@ class OrderPromisingEngine:
             requested_date=po.requested_delivery_date or datetime.now().date(),
             to_site_id=po.destination_site_id,
             lead_time_days=lead_time_days,
-            game_id=po.game_id,
+            scenario_id=po.scenario_id,
             round_number=po.round_number
         )
 
     def process_round_demand(
         self,
-        game_id: int,
+        scenario_id: int,
         round_number: int
     ) -> List[Tuple[ATPResult, Optional[TransferOrder]]]:
         """
-        Process all demand for a Beer Game round.
+        Process all demand for a simulation round.
 
         This executes order promising for:
         1. Market demand (Retailer)
         2. All POs due this round (Wholesaler/Distributor/Factory)
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             round_number: Current round number
 
         Returns:
@@ -316,7 +316,7 @@ class OrderPromisingEngine:
         # 1. Process market demand (outbound orders)
         outbound_orders = self.db.query(OutboundOrderLine).filter(
             and_(
-                OutboundOrderLine.game_id == game_id,
+                OutboundOrderLine.scenario_id == scenario_id,
                 OutboundOrderLine.round_number == round_number
             )
         ).all()
@@ -327,7 +327,7 @@ class OrderPromisingEngine:
                 item_id=order.product_id,
                 demand_qty=order.ordered_quantity,
                 demand_date=order.requested_delivery_date,
-                game_id=game_id,
+                scenario_id=scenario_id,
                 round_number=round_number
             )
             results.append((atp_result, transfer_order))
@@ -336,7 +336,7 @@ class OrderPromisingEngine:
         # Get POs that should be fulfilled this round
         purchase_orders = self.db.query(PurchaseOrder).filter(
             and_(
-                PurchaseOrder.game_id == game_id,
+                PurchaseOrder.scenario_id == scenario_id,
                 PurchaseOrder.round_number == round_number,
                 PurchaseOrder.status == "APPROVED"
             )
@@ -359,14 +359,14 @@ class OrderPromisingEngine:
 
     def process_arriving_transfers(
         self,
-        game_id: int,
+        scenario_id: int,
         round_number: int
     ) -> List[TransferOrder]:
         """
         Process all Transfer Orders arriving in current round.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             round_number: Current round number
 
         Returns:
@@ -375,7 +375,7 @@ class OrderPromisingEngine:
         # Get TOs that are arriving this round
         arriving_tos = self.db.query(TransferOrder).filter(
             and_(
-                TransferOrder.game_id == game_id,
+                TransferOrder.scenario_id == scenario_id,
                 TransferOrder.arrival_round == round_number,
                 TransferOrder.status == "IN_TRANSIT"
             )
@@ -442,7 +442,7 @@ class OrderPromisingEngine:
         order_date: date,
         shipment_date: date,
         estimated_delivery_date: date,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
         order_round: Optional[int] = None,
         arrival_round: Optional[int] = None
     ) -> TransferOrder:
@@ -457,7 +457,7 @@ class OrderPromisingEngine:
             order_date: Order date
             shipment_date: Shipment date
             estimated_delivery_date: Estimated delivery date
-            game_id: Game ID (optional)
+            scenario_id: Game ID (optional)
             order_round: Round when TO created (optional)
             arrival_round: Round when TO arrives (optional)
 
@@ -466,18 +466,18 @@ class OrderPromisingEngine:
         """
         # Generate TO number
         timestamp = int(datetime.now().timestamp())
-        to_number = f"TO-G{game_id or 0}-R{order_round or 0}-N{source_site_id}-{timestamp}"
+        to_number = f"TO-G{scenario_id or 0}-R{order_round or 0}-N{source_site_id}-{timestamp}"
 
         # Create TO with Integer IDs
         to = TransferOrder(
             to_number=to_number,
             source_site_id=source_site_id,  # Integer node ID
             destination_site_id=destination_site_id,  # Integer node ID or None
-            status="IN_TRANSIT",  # Immediately in transit for Beer Game
+            status="IN_TRANSIT",  # Immediately in transit for simulation
             order_date=order_date,
             shipment_date=shipment_date,
             estimated_delivery_date=estimated_delivery_date,
-            game_id=game_id,
+            scenario_id=scenario_id,
             order_round=order_round,
             arrival_round=arrival_round,
             created_at=datetime.now()

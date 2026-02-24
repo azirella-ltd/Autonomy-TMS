@@ -504,6 +504,20 @@ class SyntheticDataWizard:
         """Call the LLM with the current context."""
         system_prompt = self._build_system_prompt(state)
 
+        # Inject RAG knowledge base context relevant to the current wizard step
+        try:
+            from app.services.rag_context import get_rag_context
+            rag_query = f"supply chain {state.current_step.value} configuration"
+            if state.archetype:
+                rag_query += f" {state.archetype.value}"
+            if user_message:
+                rag_query += f" {user_message[:100]}"
+            kb_context = await get_rag_context(rag_query, top_k=3, max_tokens=1500)
+            if kb_context:
+                system_prompt += f"\n\n## Reference Knowledge\n{kb_context}"
+        except Exception as e:
+            logger.debug(f"RAG context not available for wizard: {e}")
+
         messages = [{"role": "system", "content": system_prompt}]
 
         # Add conversation history

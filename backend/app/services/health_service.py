@@ -374,7 +374,7 @@ class HealthService:
 # Standalone testing
 if __name__ == '__main__':
     import sys
-    sys.path.insert(0, '/home/trevor/Projects/The_Beer_Game/backend')
+    sys.path.insert(0, '/home/trevor/Documents/Autonomy/Autonomy/backend')
 
     from app.db.session import SessionLocal
 

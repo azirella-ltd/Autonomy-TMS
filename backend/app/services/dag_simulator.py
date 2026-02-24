@@ -5,7 +5,7 @@ Reads any SupplyChainConfig from the database and runs period-by-period
 deterministic simulation using existing Powell engines (MRP, AATP,
 SafetyStock, Rebalancing, OrderTracking).
 
-Unlike engine.py (4-node BeerLine) or data_generator.py (4-node linear),
+Unlike engine.py (linear SupplyChainLine) or data_generator.py (linear chain),
 this simulator operates on arbitrary DAG topologies with N sites, M products,
 and L transportation lanes.
 

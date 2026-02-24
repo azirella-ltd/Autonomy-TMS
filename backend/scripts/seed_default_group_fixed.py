@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seed the default Autonomy group, configuration, and game with AI players."""
+"""Seed the default Autonomy group, configuration, and scenario with AI participants."""
 
 from __future__ import annotations
 
@@ -139,7 +139,7 @@ def ensure_group(session: Session) -> Tuple[Group, bool]:
     return group, True
 
 def ensure_default_game(session: Session, group: Group) -> Game:
-    """Ensure the default game exists for the supplied group."""
+    """Ensure the default scenario exists for the supplied group."""
     sc_config = ensure_supply_chain_config(session, group)
     existing_game = session.query(Game).filter(
         Game.name == DEFAULT_GAME_NAME,
@@ -147,44 +147,44 @@ def ensure_default_game(session: Session, group: Group) -> Game:
     ).first()
 
     if existing_game:
-        print(f"Game '{DEFAULT_GAME_NAME}' already exists with ID: {existing_game.id}")
+        print(f"Scenario '{DEFAULT_GAME_NAME}' already exists with ID: {existing_game.id}")
         existing_game.supply_chain_config_id = sc_config.id
         session.add(existing_game)
         return existing_game
-    
-    print(f"Creating new game: {DEFAULT_GAME_NAME}")
 
-    # Create the game
+    print(f"Creating new scenario: {DEFAULT_GAME_NAME}")
+
+    # Create the scenario
     game = Game(
         name=DEFAULT_GAME_NAME,
         status=GameStatus.CREATED,
         group_id=group.id,
         created_by=group.created_by,
-        max_rounds=52,  # Default number of rounds
+        max_rounds=52,  # Default number of periods
         supply_chain_config_id=sc_config.id,
     )
     session.add(game)
     session.flush()
-    
-    # Create default players
+
+    # Create default participants
     _ensure_default_players(session, game)
-    
+
     # Create default AI agents
     ensure_naive_agents(session, game)
-    
+
     session.commit()
-    
-    print(f"Created game '{game.name}' with ID: {game.id}")
+
+    print(f"Created scenario '{game.name}' with ID: {game.id}")
     return game
 
 def _ensure_default_players(session: Session, game: Game) -> None:
-    """Create placeholder AI players if none exist for the game."""
-    existing_players = session.query(Player).filter(Player.game_id == game.id).count()
+    """Create placeholder AI participants if none exist for the scenario."""
+    existing_players = session.query(Player).filter(Player.scenario_id == game.id).count()
     if existing_players > 0:
-        print(f"Game already has {existing_players} players")
+        print(f"Scenario already has {existing_players} participants")
         return
-    
-    print("Creating default players for the game")
+
+    print("Creating default participants for the scenario")
     
     # Define the default player roles and types
     player_roles = [
@@ -196,7 +196,7 @@ def _ensure_default_players(session: Session, game: Game) -> None:
     
     for role, player_type, name in player_roles:
         player = Player(
-            game_id=game.id,
+            scenario_id=game.id,
             role=role,
             player_type=player_type,
             name=name,
@@ -205,18 +205,18 @@ def _ensure_default_players(session: Session, game: Game) -> None:
         session.add(player)
     
     session.flush()
-    print(f"Created {len(player_roles)} default players")
+    print(f"Created {len(player_roles)} default participants")
 
 def ensure_naive_agents(session: Session, game: Game) -> None:
-    """Assign AI agents to each role in the game."""
-    # Get all AI players in the game
+    """Assign AI agents to each role in the scenario."""
+    # Get all AI participants in the scenario
     players = session.query(Player).filter(
-        Player.game_id == game.id,
+        Player.scenario_id == game.id,
         Player.player_type == PlayerType.AI
     ).all()
     
     if not players:
-        print("No AI players found for the game")
+        print("No AI participants found for the scenario")
         return
     
     print(f"Ensuring {DEFAULT_AGENT_TYPE} AI agents for {len(players)} players")
@@ -265,13 +265,13 @@ def main():
         # Create the default group and admin user
         group, created = ensure_group(db)
         
-        # For now, skip game creation since the games table doesn't exist yet
-        print("Skipping game creation - games table does not exist yet")
+        # For now, skip scenario creation since the scenarios table doesn't exist yet
+        print("Skipping scenario creation - scenarios table does not exist yet")
         
         print("Database seeding completed successfully!")
         print("\nNext steps:")
-        print("1. Run database migrations to create the games table")
-        print("2. Run this script again to create the default game")
+        print("1. Run database migrations to create the scenarios table")
+        print("2. Run this script again to create the default scenario")
         
         return True
     except Exception as e:

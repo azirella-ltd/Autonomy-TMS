@@ -56,16 +56,16 @@ async def get_player_progress(
 
 
 @router.post("/players/{player_id}/scenarios/{scenario_id}/complete", response_model=PlayerStats)
-async def update_stats_after_game(
+async def update_stats_after_scenario(
     player_id: int,
     scenario_id: int,
-    won: bool = Query(..., description="Whether player won the game"),
+    won: bool = Query(..., description="Whether participant won the scenario"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Update player stats after game completion."""
+    """Update participant stats after scenario completion."""
     service = get_gamification_service(db)
-    stats = await service.update_player_stats_after_game(player_id, game_id, won)
+    stats = await service.update_player_stats_after_game(player_id, scenario_id, won)
     return stats
 
 
@@ -186,13 +186,13 @@ async def update_achievement(
 @router.post("/players/{player_id}/check-achievements", response_model=AchievementCheckResponse)
 async def check_player_achievements(
     player_id: int,
-    game_id: Optional[int] = Query(None, description="Game ID to check achievements for"),
+    scenario_id: Optional[int] = Query(None, description="Scenario ID to check achievements for"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Check and unlock achievements for a player."""
     service = get_gamification_service(db)
-    result = await service.check_achievements(player_id, game_id)
+    result = await service.check_achievements(player_id, scenario_id)
     return result
 
 
@@ -219,7 +219,7 @@ async def get_player_achievements(
             'id': pa.id,
             'player_id': pa.player_id,
             'achievement_id': pa.achievement_id,
-            'game_id': pa.game_id,
+            'scenario_id': pa.scenario_id,
             'unlocked_at': pa.unlocked_at,
             'progress': pa.progress,
             'achievement': {

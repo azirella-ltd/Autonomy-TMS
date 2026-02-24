@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 class PerformanceMetrics:
     """Snapshot of agent performance metrics."""
     player_id: int
-    game_id: int
+    scenario_id: int
     round_number: int
     agent_type: str
     agent_mode: str  # manual, copilot, autonomous
@@ -123,7 +123,7 @@ class AgentPerformanceTracker:
         # Create performance log record
         performance_log = AgentPerformanceLog(
             player_id=performance_metrics.player_id,
-            game_id=performance_metrics.game_id,
+            scenario_id=performance_metrics.scenario_id,
             round_number=performance_metrics.round_number,
             agent_type=performance_metrics.agent_type,
             agent_mode=performance_metrics.agent_mode,
@@ -152,7 +152,7 @@ class AgentPerformanceTracker:
     def get_agent_performance_summary(
         self,
         player_id: Optional[int] = None,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
         agent_type: Optional[str] = None,
         min_rounds: int = 5
     ) -> Dict[str, Any]:
@@ -161,7 +161,7 @@ class AgentPerformanceTracker:
 
         Args:
             player_id: Filter by player
-            game_id: Filter by game
+            scenario_id: Filter by game
             agent_type: Filter by agent type (llm, gnn, trm)
             min_rounds: Minimum rounds for statistical significance
 
@@ -172,8 +172,8 @@ class AgentPerformanceTracker:
 
         if player_id:
             query = query.filter_by(player_id=player_id)
-        if game_id:
-            query = query.filter_by(game_id=game_id)
+        if scenario_id:
+            query = query.filter_by(scenario_id=scenario_id)
         if agent_type:
             query = query.filter_by(agent_type=agent_type)
 
@@ -204,7 +204,7 @@ class AgentPerformanceTracker:
         self,
         agent_type: str,
         baseline_type: str,
-        game_id: int
+        scenario_id: int
     ) -> PerformanceComparison:
         """
         Compare agent performance vs baseline.
@@ -212,7 +212,7 @@ class AgentPerformanceTracker:
         Args:
             agent_type: Agent to evaluate (llm, gnn, trm)
             baseline_type: Baseline to compare against (naive, optimal)
-            game_id: Game context
+            scenario_id: Game context
 
         Returns:
             PerformanceComparison with relative metrics
@@ -222,13 +222,13 @@ class AgentPerformanceTracker:
         """
         # Get agent performance
         agent_logs = self.db.query(AgentPerformanceLog).filter_by(
-            game_id=game_id,
+            scenario_id=scenario_id,
             agent_type=agent_type
         ).all()
 
         # Get baseline performance
         baseline_logs = self.db.query(AgentPerformanceLog).filter_by(
-            game_id=game_id,
+            scenario_id=scenario_id,
             agent_type=baseline_type
         ).all()
 
@@ -374,27 +374,27 @@ class AgentPerformanceTracker:
 
     def get_leaderboard(
         self,
-        game_id: int,
+        scenario_id: int,
         metric: str = "total_cost"
     ) -> List[Dict[str, Any]]:
         """
         Get player leaderboard sorted by performance metric.
 
         Args:
-            game_id: Game to analyze
+            scenario_id: Game to analyze
             metric: Metric to sort by (total_cost, service_level, etc.)
 
         Returns:
             List of players with aggregate metrics, sorted by performance
         """
         # Get all players in game
-        players = self.db.query(Player).filter_by(game_id=game_id).all()
+        players = self.db.query(Player).filter_by(scenario_id=scenario_id).all()
 
         leaderboard = []
         for player in players:
             summary = self.get_agent_performance_summary(
                 player_id=player.id,
-                game_id=game_id
+                scenario_id=scenario_id
             )
 
             if summary.get("insufficient_data"):
@@ -435,7 +435,7 @@ class AgentPerformanceLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     player_id = Column(Integer, ForeignKey("players.id"), nullable=False, index=True)
-    game_id = Column(Integer, ForeignKey("games.id"), nullable=False, index=True)
+    scenario_id = Column(Integer, ForeignKey("games.id"), nullable=False, index=True)
     round_number = Column(Integer, nullable=False, index=True)
 
     agent_type = Column(String(20), nullable=False, index=True)  # llm, gnn, trm, manual

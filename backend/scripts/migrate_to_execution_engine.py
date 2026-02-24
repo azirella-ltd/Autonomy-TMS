@@ -12,7 +12,7 @@ Migration Strategy:
 5. Enable parallel testing mode
 
 Usage:
-    python scripts/migrate_to_execution_engine.py --game-id 1 [--dry-run] [--validate]
+    python scripts/migrate_to_execution_engine.py --scenario-id 1 [--dry-run] [--validate]
 """
 
 import asyncio
@@ -42,9 +42,9 @@ from app.models.supply_chain_config import Node
 class LegacyToExecutionMigrator:
     """Migrates Beer Game data from legacy to execution engine."""
 
-    def __init__(self, db: AsyncSession, game_id: int, dry_run: bool = False):
+    def __init__(self, db: AsyncSession, scenario_id: int, dry_run: bool = False):
         self.db = db
-        self.game_id = game_id
+        self.scenario_id = scenario_id
         self.dry_run = dry_run
         self.migration_log = []
 
@@ -55,12 +55,12 @@ class LegacyToExecutionMigrator:
         Returns:
             Migration summary with counts and validation results
         """
-        self.log(f"Starting migration for scenario {self.game_id}")
+        self.log(f"Starting migration for scenario {self.scenario_id}")
 
         # Step 1: Load scenario and validate
         scenario = await self._load_and_validate_scenario()
         if not scenario:
-            return {'status': 'error', 'message': f'Scenario {self.game_id} not found'}
+            return {'status': 'error', 'message': f'Scenario {self.scenario_id} not found'}
 
         # Step 2: Load legacy data
         legacy_data = await self._load_legacy_data()
@@ -88,7 +88,7 @@ class LegacyToExecutionMigrator:
 
         return {
             'status': 'success' if validation['valid'] else 'validation_failed',
-            'game_id': self.game_id,
+            'scenario_id': self.scenario_id,
             'dry_run': self.dry_run,
             'inventory': inventory_summary,
             'orders': orders_summary,
@@ -99,9 +99,9 @@ class LegacyToExecutionMigrator:
 
     async def _load_and_validate_scenario(self) -> Optional[Scenario]:
         """Load scenario and validate it's eligible for migration."""
-        scenario = await self.db.get(Scenario, self.game_id)
+        scenario = await self.db.get(Scenario, self.scenario_id)
         if not scenario:
-            self.log(f"ERROR: Scenario {self.game_id} not found")
+            self.log(f"ERROR: Scenario {self.scenario_id} not found")
             return None
 
         self.log(f"Scenario: {scenario.name}, Status: {scenario.status}, Rounds: {scenario.current_round}")
@@ -111,7 +111,7 @@ class LegacyToExecutionMigrator:
         """Load all ParticipantRound records for the scenario."""
         result = await self.db.execute(
             select(ParticipantRound)
-            .where(ParticipantRound.scenario_round_id == self.game_id)
+            .where(ParticipantRound.scenario_round_id == self.scenario_id)
             .order_by(ParticipantRound.scenario_round_id)
         )
         return list(result.scalars().all())
@@ -139,7 +139,7 @@ class LegacyToExecutionMigrator:
                 select(InventoryLevel).where(
                     and_(
                         InventoryLevel.site_id == site_id,
-                        InventoryLevel.game_id == self.game_id
+                        InventoryLevel.scenario_id == self.scenario_id
                     )
                 )
             )
@@ -147,16 +147,16 @@ class LegacyToExecutionMigrator:
                 self.log(f"Inventory level already exists for site {site_id}, skipping")
                 continue
 
-            # Get game
-            game = await self.db.get(Game, self.game_id)
+            # Get scenario
+            scenario = await self.db.get(Scenario, self.scenario_id)
 
             # Create inventory level
             inv_level = InventoryLevel(
                 site_id=site_id,
                 product_id="BEER-CASE",  # Default Beer Game product
                 quantity=float(pr.inventory),
-                config_id=game.config_id if game else None,
-                game_id=self.game_id,
+                config_id=scenario.supply_chain_config_id if scenario else None,
+                scenario_id=self.scenario_id,
                 as_of_date=date.today(),
             )
 
@@ -194,19 +194,19 @@ class LegacyToExecutionMigrator:
                 if pr.backlog > 0:
                     # Create customer order
                     order = OutboundOrderLine(
-                        order_id=f"MIGRATED-ORD-{self.game_id}-{round_num}-{pr.site_id}",
+                        order_id=f"MIGRATED-ORD-{self.scenario_id}-{round_num}-{pr.site_id}",
                         line_number=1,
                         product_id="BEER-CASE",
                         site_id=pr.site_id,
                         ordered_quantity=float(pr.backlog),
                         requested_delivery_date=date.today() + timedelta(weeks=1),
-                        order_date=date.today() - timedelta(weeks=(game.current_round - round_num)),
+                        order_date=date.today() - timedelta(weeks=(scenario.current_round - round_num)),
                         status="PARTIALLY_FULFILLED" if pr.backlog > 0 else "FULFILLED",
                         priority_code="STANDARD",
                         shipped_quantity=0.0,
                         backlog_quantity=float(pr.backlog),
-                        config_id=game.config_id,
-                        game_id=self.game_id,
+                        config_id=scenario.supply_chain_config_id,
+                        scenario_id=self.scenario_id,
                     )
                     self.db.add(order)
                     orders_created += 1
@@ -214,14 +214,14 @@ class LegacyToExecutionMigrator:
                 # Reconstruct PO if order was placed (from PlayerRound.order_placed)
                 if hasattr(pr, 'order_placed') and pr.order_placed and pr.order_placed > 0:
                     po = PurchaseOrder(
-                        po_number=f"MIGRATED-PO-{self.game_id}-{round_num}-{pr.site_id}",
+                        po_number=f"MIGRATED-PO-{self.scenario_id}-{round_num}-{pr.site_id}",
                         supplier_site_id=pr.site_id + 1,  # Simplified: assume upstream site
                         destination_site_id=pr.site_id,
-                        config_id=game.config_id,
+                        config_id=scenario.supply_chain_config_id,
                         status="APPROVED",
-                        order_date=date.today() - timedelta(weeks=(game.current_round - round_num)),
+                        order_date=date.today() - timedelta(weeks=(scenario.current_round - round_num)),
                         requested_delivery_date=date.today() + timedelta(weeks=2),
-                        game_id=self.game_id,
+                        scenario_id=self.scenario_id,
                         order_round=round_num,
                     )
                     self.db.add(po)
@@ -264,7 +264,7 @@ class LegacyToExecutionMigrator:
             existing = await self.db.execute(
                 select(RoundMetric).where(
                     and_(
-                        RoundMetric.game_id == self.game_id,
+                        RoundMetric.scenario_id == self.scenario_id,
                         RoundMetric.round_number == pr.round_number,
                         RoundMetric.site_id == pr.site_id
                     )
@@ -276,7 +276,7 @@ class LegacyToExecutionMigrator:
 
             # Create RoundMetric
             metric = RoundMetric(
-                game_id=self.game_id,
+                scenario_id=self.scenario_id,
                 round_number=pr.round_number,
                 site_id=pr.site_id,
                 player_id=pr.player_id,
@@ -319,16 +319,16 @@ class LegacyToExecutionMigrator:
 
         # Check metrics count
         metrics_result = await self.db.execute(
-            select(RoundMetric).where(RoundMetric.game_id == self.game_id)
+            select(RoundMetric).where(RoundMetric.scenario_id == self.scenario_id)
         )
         metrics_count = len(list(metrics_result.scalars().all()))
 
         # Expected: sites * rounds
         result = await self.db.execute(
-            select(Node).where(Node.config_id == game.config_id)
+            select(Node).where(Node.config_id == scenario.supply_chain_config_id)
         )
         sites_count = len(list(result.scalars().all()))
-        expected_metrics = sites_count * game.current_round
+        expected_metrics = sites_count * scenario.current_round
 
         if metrics_count < expected_metrics:
             validation_errors.append(
@@ -337,7 +337,7 @@ class LegacyToExecutionMigrator:
 
         # Check inventory levels exist
         inv_result = await self.db.execute(
-            select(InventoryLevel).where(InventoryLevel.game_id == self.game_id)
+            select(InventoryLevel).where(InventoryLevel.scenario_id == self.scenario_id)
         )
         inv_count = len(list(inv_result.scalars().all()))
 
@@ -368,8 +368,8 @@ class LegacyToExecutionMigrator:
         print(log_message)
 
 
-async def run_migration(game_id: int, dry_run: bool = False, validate_only: bool = False):
-    """Run migration for a game."""
+async def run_migration(scenario_id: int, dry_run: bool = False, validate_only: bool = False):
+    """Run migration for a scenario."""
     # Create database engine
     engine = create_async_engine(settings.SQLALCHEMY_DATABASE_URI, echo=False)
     async_session = sessionmaker(
@@ -377,13 +377,13 @@ async def run_migration(game_id: int, dry_run: bool = False, validate_only: bool
     )
 
     async with async_session() as session:
-        migrator = LegacyToExecutionMigrator(session, game_id, dry_run=dry_run)
+        migrator = LegacyToExecutionMigrator(session, scenario_id, dry_run=dry_run)
 
         if validate_only:
-            # Load game and validate
-            game = await migrator._load_and_validate_game()
-            if game:
-                validation = await migrator._validate_migration(game)
+            # Load scenario and validate
+            scenario = await migrator._load_and_validate_scenario()
+            if scenario:
+                validation = await migrator._validate_migration(scenario)
                 print("\n=== Validation Results ===")
                 print(f"Valid: {validation['valid']}")
                 for error in validation.get('errors', []):
@@ -395,7 +395,7 @@ async def run_migration(game_id: int, dry_run: bool = False, validate_only: bool
 
         print("\n=== Migration Summary ===")
         print(f"Status: {result['status']}")
-        print(f"Game ID: {result['game_id']}")
+        print(f"Scenario ID: {result['scenario_id']}")
         print(f"Dry Run: {result['dry_run']}")
         print(f"\nInventory:")
         print(f"  - Levels created: {result['inventory']['inventory_levels_created']}")
@@ -415,13 +415,13 @@ async def run_migration(game_id: int, dry_run: bool = False, validate_only: bool
 
 def main():
     parser = argparse.ArgumentParser(description="Migrate Beer Game to Execution Engine")
-    parser.add_argument("--game-id", type=int, required=True, help="Game ID to migrate")
+    parser.add_argument("--scenario-id", type=int, required=True, help="Scenario ID to migrate")
     parser.add_argument("--dry-run", action="store_true", help="Run without committing changes")
     parser.add_argument("--validate", action="store_true", help="Only validate, don't migrate")
 
     args = parser.parse_args()
 
-    asyncio.run(run_migration(args.game_id, dry_run=args.dry_run, validate_only=args.validate))
+    asyncio.run(run_migration(args.scenario_id, dry_run=args.dry_run, validate_only=args.validate))
 
 
 if __name__ == "__main__":

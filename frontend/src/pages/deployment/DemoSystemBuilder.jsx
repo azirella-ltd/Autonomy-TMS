@@ -198,7 +198,7 @@ export default function DemoSystemBuilder() {
           onChange={(e) => setConfig({ ...config, config_template: e.target.value })}
         >
           <MenuItem value="Food Distribution">Food Distribution (21 sites, 25 products)</MenuItem>
-          <MenuItem value="Default TBG" disabled>Default TBG (4 sites) - Coming Soon</MenuItem>
+          <MenuItem value="Default Demo" disabled>Default Demo (4 sites) - Coming Soon</MenuItem>
         </Select>
       </FormControl>
       <Card variant="outlined" sx={{ mt: 2 }}>

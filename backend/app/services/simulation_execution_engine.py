@@ -61,7 +61,7 @@ class SimulationExecutionEngine:
 
     async def execute_round(
         self,
-        game_id: int,
+        scenario_id: int,
         current_round: int,
         agent_decisions: Optional[Dict[int, float]] = None,
     ) -> Dict[str, Any]:
@@ -69,7 +69,7 @@ class SimulationExecutionEngine:
         Execute a complete simulation round.
 
         Args:
-            game_id: simulation ID
+            scenario_id: simulation ID
             current_round: Current round number
             agent_decisions: Optional dict of {site_id: order_quantity} for agent decisions
 
@@ -77,9 +77,9 @@ class SimulationExecutionEngine:
             Round execution summary with metrics
         """
         # Get game and config
-        game = await self.db.get(Game, game_id)
+        game = await self.db.get(Game, scenario_id)
         if not game:
-            raise ValueError(f"Game {game_id} not found")
+            raise ValueError(f"Game {scenario_id} not found")
 
         config = await self.db.get(SupplyChainConfig, game.config_id)
         if not config:
@@ -92,14 +92,14 @@ class SimulationExecutionEngine:
 
         # Step 1: Receive shipments (TransferOrders arriving this round)
         receipt_summary = await self._receive_shipments(
-            game_id=game_id,
+            scenario_id=scenario_id,
             current_round=current_round,
             config_id=config.id,
         )
 
         # Step 2: Generate customer orders (Market Demand → Retailer)
         customer_order_summary = await self._generate_customer_orders(
-            game_id=game_id,
+            scenario_id=scenario_id,
             config_id=config.id,
             current_round=current_round,
             product_id=product_id,
@@ -108,7 +108,7 @@ class SimulationExecutionEngine:
         # Step 3: Fulfill customer orders and POs at all sites (downstream to upstream)
         fulfillment_summary = await self._fulfill_orders_all_sites(
             sites=sites,
-            game_id=game_id,
+            scenario_id=scenario_id,
             config_id=config.id,
             current_round=current_round,
             product_id=product_id,
@@ -117,7 +117,7 @@ class SimulationExecutionEngine:
         # Step 4: Evaluate replenishment needs and issue POs
         replenishment_summary = await self._evaluate_replenishment(
             sites=sites,
-            game_id=game_id,
+            scenario_id=scenario_id,
             config_id=config.id,
             current_round=current_round,
             product_id=product_id,
@@ -127,7 +127,7 @@ class SimulationExecutionEngine:
         # Step 5: Calculate costs and save metrics
         metrics_summary = await self._calculate_and_save_metrics(
             sites=sites,
-            game_id=game_id,
+            scenario_id=scenario_id,
             config_id=config.id,
             current_round=current_round,
             product_id=product_id,
@@ -137,7 +137,7 @@ class SimulationExecutionEngine:
         await self.db.commit()
 
         return {
-            'game_id': game_id,
+            'scenario_id': scenario_id,
             'round': current_round,
             'receipts': receipt_summary,
             'customer_orders': customer_order_summary,
@@ -152,13 +152,13 @@ class SimulationExecutionEngine:
 
     async def _receive_shipments(
         self,
-        game_id: int,
+        scenario_id: int,
         current_round: int,
         config_id: int,
     ) -> Dict[str, Any]:
         """Process all arriving TransferOrders for current round."""
         return await self.fulfillment.receive_shipments(
-            game_id=game_id,
+            scenario_id=scenario_id,
             arrival_round=current_round,
             config_id=config_id,
         )
@@ -169,7 +169,7 @@ class SimulationExecutionEngine:
 
     async def _generate_customer_orders(
         self,
-        game_id: int,
+        scenario_id: int,
         config_id: int,
         current_round: int,
         product_id: str,
@@ -197,7 +197,7 @@ class SimulationExecutionEngine:
         for market_site in market_demand_sites:
             # Get demand quantity for this round (from game settings or default)
             demand_qty = await self._get_market_demand(
-                game_id=game_id,
+                scenario_id=scenario_id,
                 market_site_id=market_site.id,
                 round_number=current_round,
             )
@@ -213,7 +213,7 @@ class SimulationExecutionEngine:
 
             # Create customer order
             order = await self.order_mgmt.create_customer_order(
-                order_id=f"ORD-{game_id}-{current_round}-{market_site.id}",
+                order_id=f"ORD-{scenario_id}-{current_round}-{market_site.id}",
                 line_number=1,
                 product_id=product_id,
                 site_id=retailer.id,
@@ -222,7 +222,7 @@ class SimulationExecutionEngine:
                 market_demand_site_id=market_site.id,
                 priority_code="STANDARD",
                 config_id=config_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
             )
 
             # Mark as CONFIRMED with backlog
@@ -245,7 +245,7 @@ class SimulationExecutionEngine:
     async def _fulfill_orders_all_sites(
         self,
         sites: List[Node],
-        game_id: int,
+        scenario_id: int,
         config_id: int,
         current_round: int,
         product_id: str,
@@ -269,7 +269,7 @@ class SimulationExecutionEngine:
             customer_fulfillment = await self.fulfillment.fulfill_customer_orders_fifo(
                 site_id=site.id,
                 product_id=product_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
                 config_id=config_id,
                 current_round=current_round,
             )
@@ -278,7 +278,7 @@ class SimulationExecutionEngine:
             po_fulfillment = await self.fulfillment.fulfill_purchase_orders(
                 supplier_site_id=site.id,
                 product_id=product_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
                 config_id=config_id,
                 current_round=current_round,
             )
@@ -298,7 +298,7 @@ class SimulationExecutionEngine:
     async def _evaluate_replenishment(
         self,
         sites: List[Node],
-        game_id: int,
+        scenario_id: int,
         config_id: int,
         current_round: int,
         product_id: str,
@@ -334,7 +334,7 @@ class SimulationExecutionEngine:
                 order_qty = await self._calculate_default_replenishment(
                     site_id=site.id,
                     product_id=product_id,
-                    game_id=game_id,
+                    scenario_id=scenario_id,
                     config_id=config_id,
                 )
 
@@ -348,7 +348,7 @@ class SimulationExecutionEngine:
 
             # Create PO to upstream site
             po = await self.order_mgmt.create_purchase_order(
-                po_number=f"PO-{game_id}-{current_round}-{site.id}-{upstream_site.id}",
+                po_number=f"PO-{scenario_id}-{current_round}-{site.id}-{upstream_site.id}",
                 supplier_site_id=upstream_site.id,
                 destination_site_id=site.id,
                 product_id=product_id,
@@ -356,7 +356,7 @@ class SimulationExecutionEngine:
                 requested_delivery_date=date.today() + timedelta(weeks=2),
                 config_id=config_id,
                 group_id=None,
-                game_id=game_id,
+                scenario_id=scenario_id,
                 order_round=current_round,
             )
 
@@ -374,7 +374,7 @@ class SimulationExecutionEngine:
         self,
         site_id: int,
         product_id: str,
-        game_id: int,
+        scenario_id: int,
         config_id: int,
     ) -> float:
         """
@@ -389,14 +389,14 @@ class SimulationExecutionEngine:
             site_id=site_id,
             product_id=product_id,
             config_id=config_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
         )
 
         # Get backlog
         backlog = await self.order_mgmt.get_backlog_for_site(
             site_id=site_id,
             product_id=product_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
         )
 
         # Simple heuristic: target inventory = 12 units (classic simulation)
@@ -414,7 +414,7 @@ class SimulationExecutionEngine:
     async def _calculate_and_save_metrics(
         self,
         sites: List[Node],
-        game_id: int,
+        scenario_id: int,
         config_id: int,
         current_round: int,
         product_id: str,
@@ -440,25 +440,25 @@ class SimulationExecutionEngine:
                 site_id=site.id,
                 product_id=product_id,
                 config_id=config_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
             )
 
             backlog = await self.order_mgmt.get_backlog_for_site(
                 site_id=site.id,
                 product_id=product_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
             )
 
             pipeline_qty = await self._get_pipeline_quantity(
                 site_id=site.id,
                 product_id=product_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
             )
 
             in_transit_qty = await self.atp_service._get_in_transit_quantity(
                 site_id=site.id,
                 product_id=product_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
             )
 
             # Calculate costs
@@ -468,7 +468,7 @@ class SimulationExecutionEngine:
 
             # Get cumulative cost from previous round
             prev_cumulative = await self._get_previous_cumulative_cost(
-                game_id=game_id,
+                scenario_id=scenario_id,
                 site_id=site.id,
                 round_number=current_round - 1,
             )
@@ -478,21 +478,21 @@ class SimulationExecutionEngine:
             incoming_order_qty = await self._get_incoming_order_quantity(
                 site_id=site.id,
                 product_id=product_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
                 current_round=current_round,
             )
 
             outgoing_order_qty = await self._get_outgoing_order_quantity(
                 site_id=site.id,
                 product_id=product_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
                 current_round=current_round,
             )
 
             shipment_qty = await self._get_shipment_quantity(
                 site_id=site.id,
                 product_id=product_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
                 current_round=current_round,
             )
 
@@ -500,19 +500,22 @@ class SimulationExecutionEngine:
             orders_received, orders_fulfilled = await self._get_order_counts(
                 site_id=site.id,
                 product_id=product_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
                 current_round=current_round,
             )
 
             fill_rate = (orders_fulfilled / orders_received) if orders_received > 0 else 1.0
             service_level = fill_rate  # Simplified for simulation
 
+            # Look up participant assigned to this site
+            participant_id = await self._get_participant_for_site(scenario_id, site.id)
+
             # Create RoundMetric
             metric = RoundMetric(
-                game_id=game_id,
+                scenario_id=scenario_id,
                 round_number=current_round,
                 site_id=site.id,
-                player_id=None,  # TODO: Link to player if applicable
+                participant_id=participant_id,
                 inventory=inventory,
                 backlog=backlog,
                 pipeline_qty=pipeline_qty,
@@ -605,17 +608,53 @@ class SimulationExecutionEngine:
 
     async def _get_market_demand(
         self,
-        game_id: int,
+        scenario_id: int,
         market_site_id: int,
         round_number: int,
     ) -> float:
         """
-        Get market demand quantity for a round.
+        Get market demand quantity for a round from config demand patterns.
 
-        TODO: Replace with actual demand pattern from game settings.
-        For now, use classic simulation pattern: 4 units initially, then 8 units.
+        Queries MarketDemand for the scenario's config. Falls back to classic
+        classic pattern (4 units for rounds 1-4, then 8) if no config exists.
         """
+        try:
+            from app.models.supply_chain_config import MarketDemand
+
+            # Get scenario to find config_id
+            scenario = await self.db.get(Scenario, scenario_id)
+            if scenario and scenario.config_id:
+                result = await self.db.execute(
+                    select(MarketDemand).where(
+                        MarketDemand.config_id == scenario.config_id
+                    ).limit(1)
+                )
+                md = result.scalar_one_or_none()
+                if md and md.demand_pattern:
+                    params = md.demand_pattern.get("parameters") or md.demand_pattern.get("params", {})
+                    initial = params.get("initial_demand", 4)
+                    change_week = params.get("change_week", 15)
+                    final = params.get("final_demand", 8)
+                    return float(initial) if round_number <= change_week else float(final)
+        except Exception:
+            pass  # Fall back to classic pattern
+
         return 4.0 if round_number <= 4 else 8.0
+
+    async def _get_participant_for_site(self, scenario_id: int, site_id: int) -> Optional[int]:
+        """Look up the participant assigned to a site in this scenario."""
+        try:
+            from app.models.participant import Participant
+            result = await self.db.execute(
+                select(Participant.id).where(and_(
+                    Participant.scenario_id == scenario_id,
+                    Participant.node_id == site_id,
+                )).limit(1)
+            )
+            row = result.scalar_one_or_none()
+            return row
+        except Exception:
+            return None
 
     async def _get_upstream_supplier(self, site_id: int, config_id: int) -> Optional[Node]:
         """Get upstream supplier site via TransportationLane."""
@@ -638,7 +677,7 @@ class SimulationExecutionEngine:
         self,
         site_id: int,
         product_id: str,
-        game_id: int,
+        scenario_id: int,
     ) -> float:
         """Get pipeline quantity (POs issued but not yet shipped)."""
         result = await self.db.execute(
@@ -647,7 +686,7 @@ class SimulationExecutionEngine:
             .join(PurchaseOrderLineItem, PurchaseOrderLineItem.po_id == PurchaseOrder.id)
             .where(and_(
                 PurchaseOrder.destination_site_id == site_id,
-                PurchaseOrder.game_id == game_id,
+                PurchaseOrder.scenario_id == scenario_id,
                 PurchaseOrder.status.in_(['APPROVED', 'ACKNOWLEDGED']),
                 PurchaseOrderLineItem.product_id == product_id
             ))
@@ -657,7 +696,7 @@ class SimulationExecutionEngine:
 
     async def _get_previous_cumulative_cost(
         self,
-        game_id: int,
+        scenario_id: int,
         site_id: int,
         round_number: int,
     ) -> float:
@@ -668,7 +707,7 @@ class SimulationExecutionEngine:
         result = await self.db.execute(
             select(RoundMetric.cumulative_cost)
             .where(and_(
-                RoundMetric.game_id == game_id,
+                RoundMetric.scenario_id == scenario_id,
                 RoundMetric.site_id == site_id,
                 RoundMetric.round_number == round_number
             ))
@@ -680,7 +719,7 @@ class SimulationExecutionEngine:
         self,
         site_id: int,
         product_id: str,
-        game_id: int,
+        scenario_id: int,
         current_round: int,
     ) -> float:
         """Get incoming order quantity (customer orders + POs received this round)."""
@@ -690,7 +729,7 @@ class SimulationExecutionEngine:
             .where(and_(
                 OutboundOrderLine.site_id == site_id,
                 OutboundOrderLine.product_id == product_id,
-                OutboundOrderLine.game_id == game_id,
+                OutboundOrderLine.scenario_id == scenario_id,
                 func.extract('week', OutboundOrderLine.order_date) == current_round
             ))
         )
@@ -703,7 +742,7 @@ class SimulationExecutionEngine:
             .join(PurchaseOrderLineItem)
             .where(and_(
                 PurchaseOrder.supplier_site_id == site_id,
-                PurchaseOrder.game_id == game_id,
+                PurchaseOrder.scenario_id == scenario_id,
                 PurchaseOrder.order_round == current_round,
                 PurchaseOrderLineItem.product_id == product_id
             ))
@@ -716,7 +755,7 @@ class SimulationExecutionEngine:
         self,
         site_id: int,
         product_id: str,
-        game_id: int,
+        scenario_id: int,
         current_round: int,
     ) -> float:
         """Get outgoing order quantity (POs issued this round)."""
@@ -726,7 +765,7 @@ class SimulationExecutionEngine:
             .join(PurchaseOrderLineItem)
             .where(and_(
                 PurchaseOrder.destination_site_id == site_id,
-                PurchaseOrder.game_id == game_id,
+                PurchaseOrder.scenario_id == scenario_id,
                 PurchaseOrder.order_round == current_round,
                 PurchaseOrderLineItem.product_id == product_id
             ))
@@ -738,7 +777,7 @@ class SimulationExecutionEngine:
         self,
         site_id: int,
         product_id: str,
-        game_id: int,
+        scenario_id: int,
         current_round: int,
     ) -> float:
         """Get shipment quantity (TOs created this round)."""
@@ -748,7 +787,7 @@ class SimulationExecutionEngine:
             .join(TransferOrderLineItem)
             .where(and_(
                 TransferOrder.source_site_id == site_id,
-                TransferOrder.game_id == game_id,
+                TransferOrder.scenario_id == scenario_id,
                 TransferOrder.order_round == current_round,
                 TransferOrderLineItem.product_id == product_id
             ))
@@ -760,7 +799,7 @@ class SimulationExecutionEngine:
         self,
         site_id: int,
         product_id: str,
-        game_id: int,
+        scenario_id: int,
         current_round: int,
     ) -> Tuple[int, int]:
         """Get orders received and fulfilled counts."""
@@ -770,7 +809,7 @@ class SimulationExecutionEngine:
             .where(and_(
                 OutboundOrderLine.site_id == site_id,
                 OutboundOrderLine.product_id == product_id,
-                OutboundOrderLine.game_id == game_id,
+                OutboundOrderLine.scenario_id == scenario_id,
                 func.extract('week', OutboundOrderLine.order_date) == current_round
             ))
         )
@@ -782,7 +821,7 @@ class SimulationExecutionEngine:
             .where(and_(
                 OutboundOrderLine.site_id == site_id,
                 OutboundOrderLine.product_id == product_id,
-                OutboundOrderLine.game_id == game_id,
+                OutboundOrderLine.scenario_id == scenario_id,
                 OutboundOrderLine.status == "FULFILLED",
                 func.extract('week', OutboundOrderLine.last_ship_date) == current_round
             ))

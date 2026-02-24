@@ -5,7 +5,7 @@ Stores per-round metrics for Beer Game execution tracking.
 Replaces ParticipantRound for execution-based simulations.
 
 Terminology (Feb 2026):
-- game_id -> scenario_id
+# Terminology: scenario_id (was game_id)
 - player_id -> participant_id
 """
 

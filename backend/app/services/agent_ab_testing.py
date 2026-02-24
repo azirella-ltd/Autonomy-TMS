@@ -141,7 +141,7 @@ class AgentABTesting:
     def assign_variant(
         self,
         test_id: int,
-        game_id: int,
+        scenario_id: int,
         player_id: Optional[int] = None
     ) -> str:
         """
@@ -151,7 +151,7 @@ class AgentABTesting:
 
         Args:
             test_id: Test ID
-            game_id: Game ID
+            scenario_id: Game ID
             player_id: Player ID (optional, for player-level tests)
 
         Returns:
@@ -179,7 +179,7 @@ class AgentABTesting:
         # Create assignment record
         assignment = ABTestAssignment(
             test_id=test_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
             player_id=player_id,
             variant=variant,
             config=config,
@@ -189,14 +189,14 @@ class AgentABTesting:
         self.db.add(assignment)
         self.db.commit()
 
-        logger.info(f"Assigned game {game_id} to variant {variant} in test {test_id}")
+        logger.info(f"Assigned game {scenario_id} to variant {variant} in test {test_id}")
 
         return variant
 
     def record_observation(
         self,
         test_id: int,
-        game_id: int,
+        scenario_id: int,
         metrics: Dict[str, float]
     ):
         """
@@ -204,23 +204,23 @@ class AgentABTesting:
 
         Args:
             test_id: Test ID
-            game_id: Game ID
+            scenario_id: Game ID
             metrics: Performance metrics (cost, service_level, etc.)
         """
         # Get assignment
         assignment = self.db.query(ABTestAssignment).filter_by(
             test_id=test_id,
-            game_id=game_id
+            scenario_id=scenario_id
         ).first()
 
         if not assignment:
-            raise ValueError(f"No assignment found for game {game_id} in test {test_id}")
+            raise ValueError(f"No assignment found for game {scenario_id} in test {test_id}")
 
         # Create observation
         observation = ABTestObservation(
             test_id=test_id,
             assignment_id=assignment.id,
-            game_id=game_id,
+            scenario_id=scenario_id,
             variant=assignment.variant,
             metrics=metrics,
             timestamp=datetime.utcnow()
@@ -229,7 +229,7 @@ class AgentABTesting:
         self.db.add(observation)
         self.db.commit()
 
-        logger.info(f"Recorded observation for game {game_id} in test {test_id}")
+        logger.info(f"Recorded observation for game {scenario_id} in test {test_id}")
 
     def analyze_test(
         self,
@@ -385,7 +385,7 @@ class ABTestAssignment(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     test_id = Column(Integer, ForeignKey("ab_tests.id"), nullable=False, index=True)
-    game_id = Column(Integer, ForeignKey("games.id"), nullable=False, index=True)
+    scenario_id = Column(Integer, ForeignKey("games.id"), nullable=False, index=True)
     player_id = Column(Integer, ForeignKey("players.id"), nullable=True, index=True)
 
     variant = Column(String(20), nullable=False, index=True)
@@ -401,7 +401,7 @@ class ABTestObservation(Base):
     id = Column(Integer, primary_key=True, index=True)
     test_id = Column(Integer, ForeignKey("ab_tests.id"), nullable=False, index=True)
     assignment_id = Column(Integer, ForeignKey("ab_test_assignments.id"), nullable=False)
-    game_id = Column(Integer, ForeignKey("games.id"), nullable=False, index=True)
+    scenario_id = Column(Integer, ForeignKey("games.id"), nullable=False, index=True)
 
     variant = Column(String(20), nullable=False, index=True)
     metrics = Column(JSON, nullable=False)

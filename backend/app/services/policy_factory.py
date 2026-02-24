@@ -1,4 +1,4 @@
-"""Factory helpers for creating Beer Game order policies."""
+"""Factory helpers for creating simulation order policies."""
 
 from __future__ import annotations
 

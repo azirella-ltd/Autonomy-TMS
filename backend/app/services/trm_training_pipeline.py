@@ -45,7 +45,7 @@ class CurriculumStage(str, Enum):
     """Progressive training stages for TRM curriculum learning."""
     SINGLE_NODE = "single_node"       # One site, one product
     TWO_NODE = "two_node"             # Source-destination pair
-    FOUR_NODE = "four_node"           # Classic Beer Game topology
+    FOUR_NODE = "four_node"           # Classic 4-site topology
     MULTI_ECHELON = "multi_echelon"   # Full network
     PRODUCTION = "production"          # Real data fine-tuning
 
@@ -301,7 +301,7 @@ class TRMTrainingDataGenerator:
         Each stage progressively increases complexity:
         - SINGLE_NODE: One site, constant demand
         - TWO_NODE: Source-target with lead time
-        - FOUR_NODE: Classic beer game
+        - FOUR_NODE: Classic 4-site topology
         - MULTI_ECHELON: Full network
         """
         # This would use SimPy simulation

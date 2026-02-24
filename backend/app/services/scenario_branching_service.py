@@ -398,8 +398,8 @@ class ScenarioBranchingService:
             "lanes": [self._serialize_lane(l) for l in config.lanes],
             "markets": [self._serialize_market(m) for m in config.markets],
             "market_demands": [self._serialize_market_demand(md) for md in config.market_demands],
-            "products": [],  # TODO: Load from Product table
-            "boms": [],  # TODO: Load from ProductBOM table
+            "products": self._load_products(config.id),
+            "boms": self._load_boms(config.id),
         }
 
     def _serialize_node(self, node: Node) -> Dict[str, Any]:
@@ -441,6 +441,39 @@ class ScenarioBranchingService:
             "demand_distribution": md.demand_distribution,
             "num_rounds": md.num_rounds,
         }
+
+    def _load_products(self, config_id: int) -> List[Dict[str, Any]]:
+        """Load products for a config from the Product table."""
+        try:
+            products = self.db.query(Product).filter(Product.config_id == config_id).all()
+            return [
+                {
+                    "id": p.id,
+                    "description": getattr(p, "description", None),
+                    "product_group_id": getattr(p, "product_group_id", None),
+                    "unit_cost": float(getattr(p, "unit_cost", 0) or 0),
+                }
+                for p in products
+            ]
+        except Exception:
+            return []
+
+    def _load_boms(self, config_id: int) -> List[Dict[str, Any]]:
+        """Load BOMs for a config from the ProductBom table."""
+        try:
+            boms = self.db.query(ProductBom).filter(ProductBom.config_id == config_id).all()
+            return [
+                {
+                    "id": b.id,
+                    "parent_product_id": b.parent_product_id,
+                    "component_product_id": b.component_product_id,
+                    "quantity_per": float(getattr(b, "quantity_per", 1) or 1),
+                    "scrap_rate": float(getattr(b, "scrap_rate", 0) or 0),
+                }
+                for b in boms
+            ]
+        except Exception:
+            return []
 
     def _apply_delta(self, effective: Dict[str, Any], delta: ConfigDelta) -> None:
         """Apply a delta to an effective configuration"""

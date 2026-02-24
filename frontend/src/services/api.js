@@ -743,7 +743,7 @@ export const simulationApi = {
 
   async checkParticipantAchievements(participantId, scenarioId = null) {
     const url = scenarioId
-      ? `/gamification/players/${participantId}/check-achievements?game_id=${scenarioId}`
+      ? `/gamification/players/${participantId}/check-achievements?scenario_id=${scenarioId}`
       : `/gamification/players/${participantId}/check-achievements`;
     const { data } = await http.post(url);
     return data;
@@ -812,7 +812,7 @@ export const simulationApi = {
   },
 
   async compareScenarios(scenarioIds, metrics = null) {
-    let url = `/reports/comparisons?${scenarioIds.map(id => `game_ids=${id}`).join('&')}`;
+    let url = `/reports/comparisons?${scenarioIds.map(id => `scenario_ids=${id}`).join('&')}`;
     if (metrics && metrics.length > 0) {
       url += `&${metrics.map(m => `metrics=${m}`).join('&')}`;
     }

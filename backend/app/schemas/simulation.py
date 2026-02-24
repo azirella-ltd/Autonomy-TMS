@@ -79,7 +79,7 @@ class TopologyConfig(BaseModel):
 class RoundContext(BaseModel):
     """Holds the context for the current simulation round."""
     round_number: int
-    game_id: int
+    scenario_id: int
     topology: TopologyConfig
     config: Dict[str, Any] = Field(default_factory=dict)
     node_states: Dict[str, NodeState] = Field(default_factory=dict)
@@ -100,6 +100,6 @@ class RoundContext(BaseModel):
 
 class SimulationConfig(BaseModel):
     """Unified configuration for the simulation."""
-    game_id: int
+    scenario_id: int
     topology: TopologyConfig
     # Add other config fields as needed

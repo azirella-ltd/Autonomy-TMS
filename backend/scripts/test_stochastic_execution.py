@@ -34,8 +34,8 @@ def test_sampler_initialization():
     print("=" * 80)
 
     try:
-        sampler = StochasticSampler(game_id=42, use_cache=True)
-        print(f"✅ Sampler initialized with game_id={sampler.game_id}")
+        sampler = StochasticSampler(scenario_id=42, use_cache=True)
+        print(f"✅ Sampler initialized with scenario_id={sampler.scenario_id}")
         print(f"   Engine seed: {sampler.engine.seed}")
         print(f"   Cache enabled: {sampler.use_cache}")
         return True
@@ -51,7 +51,7 @@ def test_deterministic_sampling():
     print("TEST 2: Deterministic Sampling (Backward Compatibility)")
     print("=" * 80)
 
-    sampler = StochasticSampler(game_id=42)
+    sampler = StochasticSampler(scenario_id=42)
 
     # Create test entities with NULL distributions
     sourcing_rule = SourcingRules()
@@ -116,7 +116,7 @@ def test_stochastic_sampling():
     print("TEST 3: Stochastic Sampling (With Distributions)")
     print("=" * 80)
 
-    sampler = StochasticSampler(game_id=42)
+    sampler = StochasticSampler(scenario_id=42)
 
     # Create test entities with distributions
     sourcing_rule = SourcingRules()
@@ -206,7 +206,7 @@ def test_mixture_distribution():
     print("TEST 4: Mixture Distribution (Normal + Disruptions)")
     print("=" * 80)
 
-    sampler = StochasticSampler(game_id=42)
+    sampler = StochasticSampler(scenario_id=42)
 
     # Create sourcing rule with mixture distribution (95% normal, 5% disruption)
     sourcing_rule = SourcingRules()
@@ -265,7 +265,7 @@ def test_batch_sampling():
     print("TEST 5: Batch Sampling (Performance Test)")
     print("=" * 80)
 
-    sampler = StochasticSampler(game_id=42)
+    sampler = StochasticSampler(scenario_id=42)
 
     # Create multiple distribution configs
     variable_configs = {
@@ -320,7 +320,7 @@ def test_is_stochastic():
     print("TEST 6: is_stochastic() Utility Method")
     print("=" * 80)
 
-    sampler = StochasticSampler(game_id=42)
+    sampler = StochasticSampler(scenario_id=42)
 
     tests_passed = 0
     tests_failed = 0

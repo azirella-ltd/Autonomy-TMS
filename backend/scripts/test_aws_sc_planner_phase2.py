@@ -115,7 +115,7 @@ async def test_planner_with_group_id():
                 start_date = date.today()
                 supply_plans = await planner_new.run_planning(
                     start_date=start_date,
-                    game_id=None
+                    scenario_id=None
                 )
                 print(f"✓ Planning completed successfully")
                 print(f"  - Generated {len(supply_plans)} supply plans")

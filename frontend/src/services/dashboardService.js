@@ -22,7 +22,7 @@ export const getUserGames = async () => {
 export const getHumanDashboard = async (gameId = null) => {
   try {
     const url = gameId
-      ? `/dashboard/human-dashboard?game_id=${gameId}`
+      ? `/dashboard/human-dashboard?scenario_id=${gameId}`
       : '/dashboard/human-dashboard';
     const response = await api.get(url);
     
@@ -58,7 +58,7 @@ export const getHumanDashboard = async (gameId = null) => {
     if (process.env.NODE_ENV === 'development') {
       console.warn('Using mock dashboard data due to error');
       return {
-        game_id: 1,
+        scenario_id: 1,
         game_name: 'Demo Game',
         current_round: 5,
         max_rounds: 12,

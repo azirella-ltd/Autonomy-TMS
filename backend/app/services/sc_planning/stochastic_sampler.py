@@ -1,7 +1,7 @@
 """
-Stochastic Sampler for Beer Game Execution
+Stochastic Sampler for Simulation Execution
 
-This service integrates the Phase 5 distribution engine with Beer Game execution,
+This service integrates the Phase 5 distribution engine with simulation execution,
 enabling stochastic sampling of operational variables (lead times, capacities, yields, etc.).
 
 Key Features:
@@ -11,7 +11,7 @@ Key Features:
 - Integration with ExecutionCache
 
 Usage:
-    sampler = StochasticSampler(game_id=42, use_cache=True)
+    sampler = StochasticSampler(scenario_id=42, use_cache=True)
 
     # Sample lead time
     lead_time = sampler.sample_lead_time(
@@ -41,22 +41,22 @@ from app.models.supply_chain_config import TransportationLane
 
 class StochasticSampler:
     """
-    Sampler for stochastic distributions in Beer Game execution
+    Sampler for stochastic distributions in simulation execution
 
     Integrates the distribution engine with SC planning entities,
     providing a clean interface for sampling operational variables.
     """
 
-    def __init__(self, game_id: int, use_cache: bool = True):
+    def __init__(self, scenario_id: int, use_cache: bool = True):
         """
         Initialize stochastic sampler
 
         Args:
-            game_id: Game ID (used as seed for reproducibility)
+            scenario_id: Game ID (used as seed for reproducibility)
             use_cache: Enable distribution caching (default: True)
         """
-        self.game_id = game_id
-        self.engine = DistributionEngine(seed=game_id)
+        self.scenario_id = scenario_id
+        self.engine = DistributionEngine(seed=scenario_id)
         self.use_cache = use_cache
 
         # Distribution cache: Maps entity ID → parsed distribution
@@ -419,7 +419,7 @@ class StochasticSampler:
         # Fall back to deterministic JSON field (backward compatible)
         supply_lt = getattr(lane, 'supply_lead_time', None)
         if supply_lt and isinstance(supply_lt, dict):
-            # Classic Beer Game format: {"min": 1, "max": 2}
+            # Classic format: {"min": 1, "max": 2}
             lt_min = supply_lt.get('min', default_value)
             lt_max = supply_lt.get('max', default_value)
             # Sample uniformly from min to max
@@ -461,7 +461,7 @@ class StochasticSampler:
         # Fall back to deterministic JSON field (backward compatible)
         demand_lt = getattr(lane, 'demand_lead_time', None)
         if demand_lt and isinstance(demand_lt, dict):
-            # Classic Beer Game format: {"min": 1, "max": 2}
+            # Classic format: {"min": 1, "max": 2}
             lt_min = demand_lt.get('min', default_value)
             lt_max = demand_lt.get('max', default_value)
             # Sample uniformly from min to max

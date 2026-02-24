@@ -64,7 +64,7 @@ class RLHFTrainingExample:
 
     # Metadata (required)
     player_id: int
-    game_id: int
+    scenario_id: int
     agent_type: str  # llm, gnn, trm
     timestamp: str
 
@@ -82,7 +82,7 @@ class RLHFTrainingExample:
 class FeedbackSession:
     """Aggregate feedback from a gameplay session."""
     player_id: int
-    game_id: int
+    scenario_id: int
     num_decisions: int
     num_accepted: int
     num_modified: int
@@ -110,7 +110,7 @@ class RLHFDataCollector:
     def record_feedback(
         self,
         player_id: int,
-        game_id: int,
+        scenario_id: int,
         round_number: int,
         agent_type: str,
         game_state: Dict[str, Any],
@@ -124,7 +124,7 @@ class RLHFDataCollector:
 
         Args:
             player_id: Player who made decision
-            game_id: Game context
+            scenario_id: Game context
             round_number: Round number
             agent_type: Type of AI agent (llm, gnn, trm)
             game_state: Current game state (inventory, backlog, etc.)
@@ -142,7 +142,7 @@ class RLHFDataCollector:
         # Create feedback record
         feedback = RLHFFeedback(
             player_id=player_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
             round_number=round_number,
             agent_type=agent_type,
             game_state=game_state,
@@ -251,7 +251,7 @@ class RLHFDataCollector:
                 human_outcome=feedback.human_outcome,
                 preference_label=feedback.preference_label,
                 player_id=feedback.player_id,
-                game_id=feedback.game_id,
+                scenario_id=feedback.scenario_id,
                 agent_type=feedback.agent_type,
                 timestamp=feedback.timestamp.isoformat()
             )
@@ -261,27 +261,27 @@ class RLHFDataCollector:
     def get_feedback_session_summary(
         self,
         player_id: int,
-        game_id: int
+        scenario_id: int
     ) -> FeedbackSession:
         """
         Get aggregate feedback summary for a player's game session.
 
         Args:
             player_id: Player ID
-            game_id: Game ID
+            scenario_id: Game ID
 
         Returns:
             FeedbackSession with aggregate metrics
         """
         feedbacks = self.db.query(RLHFFeedback).filter_by(
             player_id=player_id,
-            game_id=game_id
+            scenario_id=scenario_id
         ).all()
 
         if not feedbacks:
             return FeedbackSession(
                 player_id=player_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
                 num_decisions=0,
                 num_accepted=0,
                 num_modified=0,
@@ -314,7 +314,7 @@ class RLHFDataCollector:
 
         return FeedbackSession(
             player_id=player_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
             num_decisions=num_decisions,
             num_accepted=num_accepted,
             num_modified=num_modified,
@@ -486,7 +486,7 @@ class RLHFFeedback(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     player_id = Column(Integer, ForeignKey("players.id"), nullable=False, index=True)
-    game_id = Column(Integer, ForeignKey("games.id"), nullable=False, index=True)
+    scenario_id = Column(Integer, ForeignKey("games.id"), nullable=False, index=True)
     round_number = Column(Integer, nullable=False)
 
     agent_type = Column(String(20), nullable=False, index=True)  # llm, gnn, trm

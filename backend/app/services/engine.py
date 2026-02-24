@@ -1,4 +1,4 @@
-"""Core supply chain simulation engine used for agent-driven scenarios."""
+"""Core supply chain simulation engine for arbitrary sequential topologies."""
 
 from __future__ import annotations
 
@@ -7,14 +7,14 @@ from typing import Any, Deque, Dict, Iterable, List
 
 from .policies import NaiveEchoPolicy, OrderPolicy
 
-# Classic simulation lead times (can be made configurable via supply chain config)
+# Default lead times (can be overridden per supply chain config)
 DEFAULT_SHIPMENT_LEAD_TIME = 2  # inbound shipment delay (periods)
 DEFAULT_DEMAND_LEAD_TIME = 2  # information / order transmission delay (periods)
-DEFAULT_STEADY_STATE_DEMAND = 4  # classic simulation initial demand (units/week)
+DEFAULT_STEADY_STATE_DEMAND = 4  # initial demand (units/period)
 
 
 class Node:
-    """Represents a single role in the supply chain simulation."""
+    """Represents a single site in the supply chain simulation."""
 
     def __init__(
         self,
@@ -113,7 +113,7 @@ class Node:
 
     @property
     def inventory_position(self) -> int:
-        """Inventory position used by classic simulation policies."""
+        """Inventory position used by ordering policies."""
 
         return self.inventory + self.pipeline_on_order - self.backlog
 
@@ -174,7 +174,7 @@ class Node:
         self.order_pipe[-1] += qty
 
     def decide_order(self) -> int:
-        """Call the node's policy to determine the order for this week."""
+        """Call the node's policy to determine the order for this period."""
 
         observation = {
             "inventory": self.inventory,
@@ -191,7 +191,7 @@ class Node:
         return max(0, int(round(quantity)))
 
     def accrue_costs(self, holding_cost: float = 1.0, backlog_cost: float = 2.0) -> float:
-        """Accrue weekly holding and backlog costs."""
+        """Accrue periodic holding and backlog costs."""
 
         previous = self.cost
         holding = holding_cost * max(self.inventory, 0)
@@ -250,22 +250,18 @@ class Node:
 
 
 class SupplyChainLine:
-    """Supply chain simulation consisting of four sequential roles."""
+    """Supply chain simulation for an arbitrary sequential topology.
 
-    #: Material flows downstream following these lanes.
-    #: Each tuple represents (from_node, to_node) for shipments. Orders travel
-    #: back upstream, i.e. the opposite direction of these edges.
-    MATERIAL_LANES: List[tuple[str, str]] = [
-        ("Manufacturer", "Distributor"),
-        ("Distributor", "Wholesaler"),
-        ("Wholesaler", "Retailer"),
-    ]
-
-    _ROLE_CACHE: List[str] | None = None
+    The topology is defined by ``material_lanes`` — a list of
+    (upstream_site, downstream_site) tuples describing material flow.
+    The engine derives the site ordering via topological sort and
+    simulates period-by-period inventory, shipment, and ordering dynamics.
+    """
 
     def __init__(
         self,
         *,
+        material_lanes: List[tuple[str, str]],
         role_policies: Dict[str, OrderPolicy] | None = None,
         base_stocks: Dict[str, int] | None = None,
         state: Dict[str, Dict[str, Any]] | None = None,
@@ -276,7 +272,8 @@ class SupplyChainLine:
         role_policies = role_policies or {}
         base_stocks = base_stocks or {}
 
-        self.role_names = self.role_sequence_names()
+        self._material_lanes = list(material_lanes)
+        self.role_names = self._derive_role_sequence(self._material_lanes)
         self.shipment_lead_time = max(
             0, int(shipment_lead_time) if shipment_lead_time is not None else 0
         )
@@ -323,16 +320,16 @@ class SupplyChainLine:
         return {node.name: node.to_dict() for node in self.nodes}
 
     # ------------------------------------------------------------------
-    # Transportation lane/role helpers
+    # Transportation lane/site helpers
     # ------------------------------------------------------------------
-    @classmethod
-    def _derive_role_sequence(cls) -> List[str]:
-        """Return the downstream-to-upstream role order implied by the transportation lanes."""
+    @staticmethod
+    def _derive_role_sequence(lanes: List[tuple[str, str]]) -> List[str]:
+        """Return the downstream-to-upstream site order implied by the transportation lanes."""
 
         nodes = set()
         adjacency: Dict[str, List[str]] = {}
         indegree: Dict[str, int] = {}
-        for upstream, downstream in cls.MATERIAL_LANES:
+        for upstream, downstream in lanes:
             nodes.add(upstream)
             nodes.add(downstream)
             adjacency.setdefault(upstream, []).append(downstream)
@@ -350,25 +347,22 @@ class SupplyChainLine:
                     queue.append(neighbour)
 
         if len(topo) != len(nodes):
-            raise ValueError("Material lanes contain a cycle; cannot derive role order")
+            raise ValueError("Material lanes contain a cycle; cannot derive site order")
 
         # The topological order walks with shipments (upstream -> downstream);
-        # we keep nodes indexed from downstream -> upstream because customer
-        # demand enters at index 0 (Retailer) in the classic simulation.
+        # we keep sites indexed from downstream -> upstream because customer
+        # demand enters at index 0 in the simulation.
         return list(reversed(topo))
 
-    @classmethod
-    def role_sequence_names(cls) -> List[str]:
-        if cls._ROLE_CACHE is None:
-            cls._ROLE_CACHE = cls._derive_role_sequence()
-        # Return a shallow copy to avoid accidental mutation by callers.
-        return list(cls._ROLE_CACHE)
+    def role_sequence_names(self) -> List[str]:
+        """Return a copy of the site names in downstream-to-upstream order."""
+        return list(self.role_names)
 
     # ------------------------------------------------------------------
     # Simulation step
     # ------------------------------------------------------------------
     def tick(self, customer_demand: int) -> Dict[str, Dict[str, Any]]:
-        """Advance the supply chain by one week following the simulation cookbook."""
+        """Advance the supply chain by one period."""
 
         demand = max(0, int(customer_demand))
         stats: Dict[str, Dict[str, Any]] = {}
@@ -399,7 +393,7 @@ class SupplyChainLine:
             upstream_stats["incoming_order"] = incoming_orders[idx + 1]
             upstream_stats["last_incoming_order"] = incoming_orders[idx + 1]
 
-        # Step 3/4/5 – Walk nodes downstream -> upstream applying the simulation steps
+        # Step 3/4/5 – Walk sites downstream -> upstream applying the simulation steps
         for idx, node in enumerate(self.nodes):
             incoming = incoming_orders[idx]
             node.last_incoming_order = incoming
@@ -446,7 +440,7 @@ class SupplyChainLine:
                         upstream_stats["incoming_order"] = incoming_orders[idx + 1]
                         upstream_stats["last_incoming_order"] = incoming_orders[idx + 1]
             else:
-                # Manufacturer starts production that feeds its own shipment pipeline
+                # Most upstream site starts production feeding its own shipment pipeline
                 node.schedule_inbound_shipment(order_qty)
                 stats[node.name]["order_pipe"] = list(node.order_pipe)
 

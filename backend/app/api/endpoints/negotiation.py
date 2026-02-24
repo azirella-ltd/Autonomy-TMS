@@ -192,7 +192,7 @@ async def create_negotiation(
         initiator_id = current_user.id
 
         result = await negotiation_service.create_negotiation(
-            game_id=scenario_id,
+            scenario_id=scenario_id,
             initiator_id=initiator_id,
             target_id=request.target_player_id,
             negotiation_type=request.negotiation_type,
@@ -231,8 +231,8 @@ async def respond_to_negotiation(
 
     **When Accepting**:
     - Proposal is executed immediately
-    - Game state is modified (inventory, orders, etc.)
-    - Both players are notified
+    - Scenario state is modified (inventory, orders, etc.)
+    - Both participants are notified
 
     **When Countering**:
     - Original proposal remains pending
@@ -348,7 +348,7 @@ async def get_player_negotiations(
         player_id = current_user.id
 
         negotiations = await negotiation_service.get_player_negotiations(
-            game_id=scenario_id,
+            scenario_id=scenario_id,
             player_id=player_id,
             status_filter=status_filter,
             limit=limit
@@ -434,7 +434,7 @@ async def get_negotiation_suggestion(
     """
     Get AI-mediated negotiation suggestion.
 
-    Analyzes current game state and suggests mutually beneficial proposals.
+    Analyzes current scenario state and suggests mutually beneficial proposals.
 
     **Algorithm**:
     1. Retrieve current state for both players
@@ -483,7 +483,7 @@ async def get_negotiation_suggestion(
         player_id = current_user.id
 
         suggestion = await negotiation_service.generate_negotiation_suggestion(
-            game_id=scenario_id,
+            scenario_id=scenario_id,
             player_id=player_id,
             target_player_id=target_player_id
         )

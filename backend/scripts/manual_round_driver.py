@@ -113,11 +113,11 @@ def _format_player_snapshot(snapshot: PlayerSnapshot) -> str:
 
 
 class ManualRoundDebugger:
-    """Creates an AI-only game and advances it on demand."""
+    """Creates an AI-only scenario and advances it on demand."""
 
     def __init__(self, *, token: str) -> None:
         self.token = token
-        self.game_id: Optional[int] = None
+        self.scenario_id: Optional[int] = None
 
     # ------------------------------------------------------------------
     # Lifecycle helpers
@@ -139,13 +139,13 @@ class ManualRoundDebugger:
             payload["demand_pattern"] = demand_pattern
 
         created = _post_json("/agent-games/", token=self.token, payload=payload)
-        self.game_id = int(created["game_id"])
+        self.scenario_id = int(created["scenario_id"])
 
-        _post_json(f"/agent-games/{self.game_id}/start", token=self.token)
+        _post_json(f"/agent-games/{self.scenario_id}/start", token=self.token)
 
         # Default AI policies are acceptable for inspection, but you can tweak
         # them here if desired. The API call resets policy state, which keeps the
-        # game deterministic while you experiment inside the debugger.
+        # scenario deterministic while you experiment inside the debugger.
         policies = policies or {
             "retailer": ("naive", {}),
             "wholesaler": ("conservative", {"base_stock": 18}),
@@ -154,7 +154,7 @@ class ManualRoundDebugger:
         }
         for role, (strategy, params) in policies.items():
             _put(
-                f"/agent-games/{self.game_id}/agent-strategy",
+                f"/agent-games/{self.scenario_id}/agent-strategy",
                 token=self.token,
                 params={"role": role, "strategy": strategy},
                 json_data=params or {},
@@ -164,14 +164,14 @@ class ManualRoundDebugger:
     # Round control
     # ------------------------------------------------------------------
     def play_next_round(self) -> Dict[str, Any]:
-        if self.game_id is None:
-            raise RuntimeError("Game is not initialised; call setup_game() first")
-        return _post_json(f"/agent-games/{self.game_id}/play-round", token=self.token)
+        if self.scenario_id is None:
+            raise RuntimeError("Scenario is not initialised; call setup_game() first")
+        return _post_json(f"/agent-games/{self.scenario_id}/play-round", token=self.token)
 
     def fetch_state(self) -> Dict[str, Any]:
-        if self.game_id is None:
-            raise RuntimeError("Game is not initialised; call setup_game() first")
-        return _get(f"/agent-games/{self.game_id}/state", token=self.token)
+        if self.scenario_id is None:
+            raise RuntimeError("Scenario is not initialised; call setup_game() first")
+        return _get(f"/agent-games/{self.scenario_id}/state", token=self.token)
 
 
 def _print_state(state: Dict[str, Any]) -> None:
@@ -197,7 +197,7 @@ def _parse_args() -> argparse.Namespace:
         "--config-id",
         type=int,
         default=1,
-        help="Supply chain configuration ID to seed the game (default: 1)",
+        help="Supply chain configuration ID to seed the scenario (default: 1)",
     )
     parser.add_argument(
         "--max-rounds",
@@ -224,11 +224,11 @@ def main() -> None:
             break
 
         result = driver.play_next_round()
-        state = result.get("game_state") or driver.fetch_state()
+        state = result.get("scenario_state") or driver.fetch_state()
         _print_state(state)
 
         if state.get("status") == "FINISHED":
-            print("\nThe game has finished; restart the script for a new session.")
+            print("\nThe scenario has finished; restart the script for a new session.")
             break
 
 

@@ -7,7 +7,7 @@ This module implements the execution layer for SC operations:
 - State Management (import/export from SC entities)
 - Simulation Execution (period-by-period orchestration)
 
-The Beer Game is a specific supply chain configuration used within
+A simulation scenario uses a specific supply chain configuration within
 this execution engine, not a separate system.
 """
 

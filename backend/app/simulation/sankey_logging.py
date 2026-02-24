@@ -200,7 +200,7 @@ def write_sankey_log(game: Any, history: Sequence[Mapping[str, Any]]) -> Path:
     path = _ensure_log_path(game)
     snapshot = build_sankey_snapshot(history or [])
     payload = {
-        "game_id": getattr(game, "id", None),
+        "scenario_id": getattr(game, "id", None),
         "game_name": getattr(game, "name", None),
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "snapshot": snapshot,

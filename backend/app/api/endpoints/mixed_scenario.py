@@ -152,7 +152,7 @@ def start_game(
 ):
     """Start a game that's in the 'created' state."""
     try:
-        return scenario_service.start_game(game_id, debug_logging=debug_logging)
+        return scenario_service.start_game(scenario_id, debug_logging=debug_logging)
     except AutonomyLLMError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -172,7 +172,7 @@ def stop_game(
 ):
     """Stop a game that's in progress."""
     try:
-        return scenario_service.stop_game(game_id)
+        return scenario_service.stop_game(scenario_id)
     except AutonomyLLMError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -192,8 +192,8 @@ def next_round(
 ):
     """Advance to the next round of the game."""
     try:
-        scenario_service.start_new_round(game_id)
-        return scenario_service.get_scenario_state(game_id)
+        scenario_service.start_new_round(scenario_id)
+        return scenario_service.get_scenario_state(scenario_id)
     except AutonomyLLMError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -213,7 +213,7 @@ def finish_game(
 ):
     """Finish a game and compute a summary."""
     try:
-        return scenario_service.finish_game(game_id)
+        return scenario_service.finish_game(scenario_id)
     except AutonomyLLMError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -233,7 +233,7 @@ def get_game_report(
 ):
     """Get simple endgame report."""
     try:
-        return scenario_service.get_report(game_id)
+        return scenario_service.get_report(scenario_id)
     except AutonomyLLMError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -250,7 +250,7 @@ def get_scenario_state(
 ):
     """Get the current state of a game."""
     try:
-        return scenario_service.get_scenario_state(game_id)
+        return scenario_service.get_scenario_state(scenario_id)
     except AutonomyLLMError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -271,8 +271,8 @@ def update_game(
 ):
     """Update a game's core configuration, demand pattern, and participant assignments."""
     try:
-        scenario_service.update_game(game_id, payload)
-        return scenario_service.get_scenario_state(game_id)
+        scenario_service.update_game(scenario_id, payload)
+        return scenario_service.get_scenario_state(scenario_id)
     except AutonomyLLMError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -288,7 +288,7 @@ def delete_game(
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
 ):
     try:
-        return scenario_service.delete_game(game_id, current_user)
+        return scenario_service.delete_game(scenario_id, current_user)
     except PermissionError:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions to delete this game")
     except AutonomyLLMError as exc:
@@ -351,7 +351,7 @@ async def submit_fulfillment_decision(
     in downstream→upstream order. Creates TransferOrder and updates inventory.
 
     Args:
-        game_id: Scenario ID
+        scenario_id: Scenario ID
         round_number: Current round number
         request: Fulfillment decision (participant_id, fulfill_qty)
 
@@ -599,7 +599,7 @@ async def submit_replenishment_decision(
     Creates TransferOrder/PurchaseOrder and updates participant state.
 
     Args:
-        game_id: Scenario ID
+        scenario_id: Scenario ID
         round_number: Current round number
         request: Replenishment decision (participant_id, order_qty)
 
@@ -818,7 +818,7 @@ def get_pipeline(
     expected arrival times.
 
     Args:
-        game_id: Scenario ID
+        scenario_id: Scenario ID
         participant_id: Participant ID
 
     Returns:
@@ -920,7 +920,7 @@ def get_fulfillment_recommendation(
     alternative scenarios, and impact preview for accepting/overriding.
 
     Args:
-        game_id: Scenario ID
+        scenario_id: Scenario ID
         participant_id: Participant ID
 
     Returns:
@@ -1028,7 +1028,7 @@ def get_replenishment_recommendation(
     alternative scenarios, and impact preview.
 
     Args:
-        game_id: Scenario ID
+        scenario_id: Scenario ID
         participant_id: Participant ID
 
     Returns:
@@ -1159,7 +1159,7 @@ async def get_current_atp(
     ATP = On-Hand Inventory + Scheduled Receipts - Allocated Orders - Safety Stock
 
     Args:
-        game_id: Scenario ID
+        scenario_id: Scenario ID
         participant_id: Participant ID
         include_safety_stock: Whether to reserve safety stock (default True)
 
@@ -1229,7 +1229,7 @@ async def get_atp_projection(
     - Planned allocations (future commitments)
 
     Args:
-        game_id: Scenario ID
+        scenario_id: Scenario ID
         participant_id: Participant ID
         periods: Number of future periods to project (default 8, max 12)
 
@@ -1314,7 +1314,7 @@ async def get_probabilistic_atp(
     the probability distribution of ATP values.
 
     Args:
-        game_id: Scenario ID
+        scenario_id: Scenario ID
         participant_id: Participant ID
         n_simulations: Number of Monte Carlo runs (default 100, max 1000)
         include_safety_stock: Whether to reserve safety stock (default True)
@@ -1397,7 +1397,7 @@ async def get_atp_history(
     allowing visualization of ATP trends over time with confidence bands.
 
     Args:
-        game_id: Scenario ID
+        scenario_id: Scenario ID
         participant_id: Participant ID
         limit: Maximum records to return (default 20)
 
@@ -1544,7 +1544,7 @@ async def get_current_ctp(
     CTP = (Production Capacity - Commitments) × Yield Rate × Component Availability
 
     Args:
-        game_id: Scenario ID
+        scenario_id: Scenario ID
         participant_id: Participant ID (must be manufacturer node)
         item_id: Item ID to produce
 
@@ -1651,7 +1651,7 @@ async def get_probabilistic_ctp(
     CTP = (Production Capacity - Commitments) × Yield Rate × Component Availability
 
     Args:
-        game_id: Scenario ID
+        scenario_id: Scenario ID
         participant_id: Participant ID (must be manufacturer node)
         product_id: AWS SC Product ID (string, e.g., "FG-001")
         n_simulations: Number of Monte Carlo simulations (default 100)
@@ -1752,7 +1752,7 @@ async def get_pipeline_visualization(
     based on stochastic lead time distributions from upstream lanes.
 
     Args:
-        game_id: Scenario ID
+        scenario_id: Scenario ID
         participant_id: Participant ID
         n_simulations: Number of simulations for probability estimation (default 100)
 
@@ -2027,7 +2027,7 @@ async def get_conformal_atp(
     - adaptive: Adaptive Conformal Inference - adjusts to distribution shift over time
 
     Args:
-        game_id: Scenario ID
+        scenario_id: Scenario ID
         participant_id: Participant ID
         coverage: Target coverage probability (default 0.90 = 90%)
         method: Conformal method (split, quantile, adaptive)
@@ -2216,7 +2216,7 @@ async def calibrate_conformal_atp(
     useful for bootstrapping the conformal predictor or incorporating external data.
 
     Args:
-        game_id: Scenario ID
+        scenario_id: Scenario ID
         participant_id: Participant ID
         predictions: List of historical point predictions
         actuals: List of corresponding actual values
@@ -2302,7 +2302,7 @@ async def get_conformal_demand_forecast(
     the interval width automatically.
 
     Args:
-        game_id: Scenario ID
+        scenario_id: Scenario ID
         participant_id: Participant ID
         horizon: Forecast horizon in rounds (default 1)
         coverage: Target coverage probability (default 0.90)
@@ -2447,7 +2447,7 @@ async def get_conformal_lead_time(
     guaranteed coverage. Useful for planning inventory replenishment.
 
     Args:
-        game_id: Scenario ID
+        scenario_id: Scenario ID
         participant_id: Participant ID
         coverage: Target coverage probability (default 0.90)
 
@@ -2608,7 +2608,7 @@ async def allocate_atp_to_customers(
     - fcfs: First-come-first-served
 
     Args:
-        game_id: Scenario ID
+        scenario_id: Scenario ID
         request: {
             "participant_id": 3,
             "demands": [
@@ -2720,7 +2720,7 @@ async def calculate_promise_date(
     - Shipping lead time
 
     Args:
-        game_id: Scenario ID
+        scenario_id: Scenario ID
         participant_id: Participant ID (manufacturer)
         item_id: Item ID to produce
         quantity: Quantity requested
@@ -2925,7 +2925,7 @@ def switch_agent_mode(
             previous_mode=result.previous_mode,
             new_mode=result.new_mode,
             participant_id=result.participant_id,
-            game_id=result.game_id,
+            scenario_id=result.scenario_id,
             round_number=result.round_number,
             reason=result.reason,
             message=result.message,
@@ -2981,7 +2981,7 @@ def get_mode_history(
         )
 
         return {
-            "game_id": game_id,
+            "scenario_id": scenario_id,
             "participant_id": participant_id,
             "count": len(history),
             "history": [
@@ -3026,7 +3026,7 @@ def get_mode_distribution(
     **Example Response**:
     ```json
     {
-      "game_id": 1,
+      "scenario_id": 1,
       "total_participants": 4,
       "distribution": {
         "manual": 2,
@@ -3053,7 +3053,7 @@ def get_mode_distribution(
             raise HTTPException(status_code=404, detail="Scenario not found")
 
         # Get mode distribution
-        distribution = mode_service.get_current_mode_distribution(game_id)
+        distribution = mode_service.get_current_mode_distribution(scenario_id)
 
         # Calculate total and percentages
         total_participants = sum(distribution.values())
@@ -3063,7 +3063,7 @@ def get_mode_distribution(
         }
 
         return {
-            "game_id": game_id,
+            "scenario_id": scenario_id,
             "total_participants": total_participants,
             "distribution": distribution,
             "percentage": percentage
@@ -3178,13 +3178,13 @@ def set_agent_weights(
 
         # Persist weights
         learner._persist_weights(
-            context_id=game_id,
+            context_id=scenario_id,
             weights=normalized_weights,
             learning_method="manual"
         )
 
         return {
-            "game_id": game_id,
+            "scenario_id": scenario_id,
             "context_type": request.context_type,
             "original_weights": request.weights,
             "normalized_weights": normalized_weights,
@@ -3245,13 +3245,13 @@ def get_agent_weights(
             raise HTTPException(status_code=404, detail="Scenario not found")
 
         # Get learned weights
-        adaptive_weights = learner.get_learned_weights(context_id=game_id)
+        adaptive_weights = learner.get_learned_weights(context_id=scenario_id)
 
         if not adaptive_weights:
             # Return default equal weights
             default_weights = {"llm": 1.0/3, "gnn": 1.0/3, "trm": 1.0/3}
             return {
-                "game_id": game_id,
+                "scenario_id": scenario_id,
                 "weights": default_weights,
                 "confidence": 0.0,
                 "num_samples": 0,
@@ -3262,7 +3262,7 @@ def get_agent_weights(
             }
 
         return {
-            "game_id": game_id,
+            "scenario_id": scenario_id,
             "weights": adaptive_weights.weights,
             "confidence": adaptive_weights.confidence,
             "num_samples": adaptive_weights.num_samples,
@@ -3349,7 +3349,7 @@ def enable_adaptive_learning(
         # For now, just return confirmation
 
         return {
-            "game_id": game_id,
+            "scenario_id": scenario_id,
             "learning_enabled": True,
             "learning_method": learning_method.value,
             "learning_rate": request.learning_rate,
@@ -3395,7 +3395,7 @@ def get_weight_history(
     **Example Response**:
     ```json
     {
-      "game_id": 1,
+      "scenario_id": 1,
       "history": [
         {
           "weights": {"llm": 0.33, "gnn": 0.33, "trm": 0.33},
@@ -3440,7 +3440,7 @@ def get_weight_history(
         history = integration.get_weight_history(scenario_id=scenario_id, limit=limit)
 
         return {
-            "game_id": game_id,
+            "scenario_id": scenario_id,
             "history": history,
             "count": len(history)
         }
@@ -3475,7 +3475,7 @@ def get_ensemble_summary(
     **Example Response**:
     ```json
     {
-      "game_id": 1,
+      "scenario_id": 1,
       "current_weights": {"llm": 0.45, "gnn": 0.38, "trm": 0.17},
       "confidence": 0.85,
       "num_samples": 42,
@@ -3510,10 +3510,10 @@ def get_ensemble_summary(
 
         # Initialize integration if needed
         if not integration.learner:
-            integration.initialize_for_game(game_id)
+            integration.initialize_for_game(scenario_id)
 
         # Get summary
-        summary = integration.get_ensemble_summary(game_id)
+        summary = integration.get_ensemble_summary(scenario_id)
 
         return summary
 
@@ -3542,7 +3542,7 @@ def get_decision_comparison(
     for display in the DecisionComparisonPanel.
 
     Args:
-        game_id: Scenario ID
+        scenario_id: Scenario ID
         round_number: Round number (should be completed)
 
     Returns:
@@ -3677,7 +3677,7 @@ def get_rlhf_feedback_summary(
     Returns aggregate stats on AI vs human decision performance.
 
     Args:
-        game_id: Scenario ID
+        scenario_id: Scenario ID
         participant_id: Optional participant ID to filter by
 
     Returns:

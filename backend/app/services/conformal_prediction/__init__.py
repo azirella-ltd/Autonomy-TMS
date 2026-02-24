@@ -9,6 +9,9 @@ References:
 - Vovk, V., Gammerman, A., & Shafer, G. (2005). Algorithmic Learning in a Random World
 - Romano, Y., Patterson, E., & Candès, E. (2019). Conformalized Quantile Regression
 - Gibbs, I., & Candès, E. (2021). Adaptive Conformal Inference Under Distribution Shift
+- Angelopoulos et al. (2024). Conformal Risk Control, ICLR 2024
+- Clarkson (2025). CoRel: Relational Conformal Prediction for Correlated Time Series
+- Lekeufack et al. (2024). Conformal Decision Theory, ICRA 2024
 """
 
 import logging
@@ -33,8 +36,17 @@ from .suite import (
     JointUncertaintyScenario,
     YieldConformalPredictor,
     PriceConformalPredictor,
+    RelationalConformalPredictor,
     get_conformal_suite,
     reset_conformal_suite,
+)
+from .conformal_decision import (
+    ConformalDecisionWrapper,
+    ConformalDecisionRegistry,
+    DecisionOutcomePair,
+    RiskAssessment,
+    get_cdt_registry,
+    reset_cdt_registry,
 )
 
 logger = logging.getLogger(__name__)
@@ -429,8 +441,16 @@ __all__ = [
     "JointUncertaintyScenario",
     "YieldConformalPredictor",
     "PriceConformalPredictor",
+    "RelationalConformalPredictor",
     "get_conformal_suite",
     "reset_conformal_suite",
+    # Conformal Decision Theory
+    "ConformalDecisionWrapper",
+    "ConformalDecisionRegistry",
+    "DecisionOutcomePair",
+    "RiskAssessment",
+    "get_cdt_registry",
+    "reset_cdt_registry",
     # API service
     "ConformalPredictionService",
     "ConformalPredictor",

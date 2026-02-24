@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class OrderManagementService:
-    """Service for managing orders in Beer Game execution."""
+    """Service for managing orders in simulation execution."""
 
     def __init__(self, db_session: AsyncSession):
         self.db = db_session
@@ -45,7 +45,7 @@ class OrderManagementService:
         market_demand_site_id: Optional[int] = None,
         priority_code: str = "STANDARD",
         config_id: Optional[int] = None,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
         group_id: Optional[int] = None,
     ) -> OutboundOrderLine:
         """
@@ -58,10 +58,10 @@ class OrderManagementService:
             site_id: Fulfillment site (e.g., Retailer)
             ordered_quantity: Quantity ordered
             requested_delivery_date: Customer's requested date
-            market_demand_site_id: Customer site (Beer Game)
+            market_demand_site_id: Customer site (simulation)
             priority_code: VIP, HIGH, STANDARD, LOW
             config_id: Supply chain configuration ID
-            game_id: Beer Game ID (if applicable)
+            scenario_id: Scenario ID (if applicable)
             group_id: Group ID (enables conformal prediction feedback)
 
         Returns:
@@ -81,7 +81,7 @@ class OrderManagementService:
             shipped_quantity=0.0,
             backlog_quantity=0.0,
             config_id=config_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
         )
 
         self.db.add(order)
@@ -109,7 +109,7 @@ class OrderManagementService:
     async def get_unfulfilled_customer_orders(
         self,
         site_id: int,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
         priority_order: bool = True,
     ) -> List[OutboundOrderLine]:
         """
@@ -117,7 +117,7 @@ class OrderManagementService:
 
         Args:
             site_id: Site fulfilling the orders
-            game_id: Filter by game ID
+            scenario_id: Filter by game ID
             priority_order: If True, sort by order_date ASC, priority DESC (FIFO with priority)
 
         Returns:
@@ -131,8 +131,8 @@ class OrderManagementService:
             )
         )
 
-        if game_id is not None:
-            query = query.where(OutboundOrderLine.game_id == game_id)
+        if scenario_id is not None:
+            query = query.where(OutboundOrderLine.scenario_id == scenario_id)
 
         if priority_order:
             # FIFO with priority: oldest first, then VIP > HIGH > STANDARD > LOW
@@ -215,7 +215,7 @@ class OrderManagementService:
         self,
         site_id: int,
         product_id: Optional[str] = None,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
     ) -> float:
         """
         Calculate total backlog quantity for a site.
@@ -223,7 +223,7 @@ class OrderManagementService:
         Args:
             site_id: Site ID
             product_id: Optional product filter
-            game_id: Optional game filter
+            scenario_id: Optional game filter
 
         Returns:
             Total backlog quantity
@@ -238,8 +238,8 @@ class OrderManagementService:
         if product_id:
             query = query.where(OutboundOrderLine.product_id == product_id)
 
-        if game_id is not None:
-            query = query.where(OutboundOrderLine.game_id == game_id)
+        if scenario_id is not None:
+            query = query.where(OutboundOrderLine.scenario_id == scenario_id)
 
         result = await self.db.execute(query)
         backlog = result.scalar()
@@ -261,7 +261,7 @@ class OrderManagementService:
         vendor_id: Optional[str] = None,
         config_id: Optional[int] = None,
         group_id: Optional[int] = None,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
         order_round: Optional[int] = None,
     ) -> PurchaseOrder:
         """
@@ -277,7 +277,7 @@ class OrderManagementService:
             vendor_id: External vendor ID (if applicable)
             config_id: Supply chain configuration
             group_id: Group ID
-            game_id: Beer Game ID
+            scenario_id: Scenario ID
             order_round: Round when PO was created
 
         Returns:
@@ -290,10 +290,10 @@ class OrderManagementService:
             destination_site_id=destination_site_id,
             config_id=config_id,
             group_id=group_id,
-            status="APPROVED",  # Auto-approve in Beer Game
+            status="APPROVED",  # Auto-approve in simulation
             order_date=date.today(),
             requested_delivery_date=requested_delivery_date,
-            game_id=game_id,
+            scenario_id=scenario_id,
             order_round=order_round,
         )
 
@@ -308,7 +308,7 @@ class OrderManagementService:
             quantity=quantity,
             shipped_quantity=0.0,
             received_quantity=0.0,
-            unit_price=10.0,  # Fixed for Beer Game
+            unit_price=10.0,  # Fixed for simulation
             line_total=quantity * 10.0,
         )
 
@@ -321,14 +321,14 @@ class OrderManagementService:
     async def get_unfulfilled_purchase_orders(
         self,
         supplier_site_id: int,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
     ) -> List[PurchaseOrder]:
         """
         Get all unfulfilled POs for a supplier site.
 
         Args:
             supplier_site_id: Supplier site ID
-            game_id: Optional game filter
+            scenario_id: Optional game filter
 
         Returns:
             List of unfulfilled PurchaseOrders
@@ -340,8 +340,8 @@ class OrderManagementService:
             )
         ).options(selectinload(PurchaseOrder.line_items))
 
-        if game_id is not None:
-            query = query.where(PurchaseOrder.game_id == game_id)
+        if scenario_id is not None:
+            query = query.where(PurchaseOrder.scenario_id == scenario_id)
 
         query = query.order_by(PurchaseOrder.order_date.asc())  # FIFO
 
@@ -415,7 +415,7 @@ class OrderManagementService:
         quantity: float,
         estimated_delivery_date: date,
         config_id: Optional[int] = None,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
         order_round: Optional[int] = None,
         arrival_round: Optional[int] = None,
         source_po_id: Optional[int] = None,
@@ -431,7 +431,7 @@ class OrderManagementService:
             quantity: Transfer quantity
             estimated_delivery_date: Estimated delivery date
             config_id: Supply chain configuration
-            game_id: Beer Game ID
+            scenario_id: Scenario ID
             order_round: Round when TO was created
             arrival_round: Round when TO arrives
             source_po_id: Link to originating PO (if applicable)
@@ -448,7 +448,7 @@ class OrderManagementService:
             shipment_date=date.today(),
             estimated_delivery_date=estimated_delivery_date,
             status="IN_TRANSIT",
-            game_id=game_id,
+            scenario_id=scenario_id,
             order_round=order_round,
             arrival_round=arrival_round,
             source_po_id=source_po_id,
@@ -474,14 +474,14 @@ class OrderManagementService:
 
     async def get_arriving_transfer_orders(
         self,
-        game_id: int,
+        scenario_id: int,
         arrival_round: int,
     ) -> List[TransferOrder]:
         """
         Get all TOs arriving in a specific round.
 
         Args:
-            game_id: Beer Game ID
+            scenario_id: Scenario ID
             arrival_round: Round number
 
         Returns:
@@ -491,7 +491,7 @@ class OrderManagementService:
             select(TransferOrder)
             .where(
                 and_(
-                    TransferOrder.game_id == game_id,
+                    TransferOrder.scenario_id == scenario_id,
                     TransferOrder.arrival_round == arrival_round,
                     TransferOrder.status == "IN_TRANSIT"
                 )

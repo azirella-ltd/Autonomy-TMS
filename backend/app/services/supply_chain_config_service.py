@@ -1125,12 +1125,12 @@ class SupplyChainConfigService:
 
         return game_config
     
-    def create_config_from_game(self, game_id: int, config_name: str) -> SupplyChainConfig:
+    def create_config_from_game(self, scenario_id: int, config_name: str) -> SupplyChainConfig:
         """
         Create a supply chain configuration from an existing game.
         
         Args:
-            game_id: ID of the game to create a configuration from
+            scenario_id: ID of the game to create a configuration from
             config_name: Name for the new configuration
             
         Returns:

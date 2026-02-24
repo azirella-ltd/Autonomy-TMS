@@ -2,7 +2,7 @@
 Purchase Order Creation - SC Execution
 
 Creates purchase orders based on agent decisions and sourcing rules.
-This is how The Beer Game agents place orders upstream.
+Simulation agents use this to place orders upstream.
 
 Reference: SC Purchase Order Creation
 """
@@ -26,9 +26,9 @@ class PurchaseOrderCreator:
     1. Reads sourcing rules to find upstream supplier
     2. Creates purchase order based on agent decision
     3. Updates in_transit_qty in inv_level
-    4. Tracks arrival round for Beer Game
+    4. Tracks arrival round for simulation
 
-    The Beer Game uses this each round when agents decide order quantities.
+    The simulation uses this each round when agents decide order quantities.
     """
 
     def __init__(self, db: Session):
@@ -46,7 +46,7 @@ class PurchaseOrderCreator:
         item_id: int,
         order_qty: float,
         order_date: date,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
         round_number: Optional[int] = None,
         company_id: str = "company_001",
         auto_approve: bool = True
@@ -66,10 +66,10 @@ class PurchaseOrderCreator:
             item_id: Item ID (Integer from items table)
             order_qty: Quantity to order (from agent decision)
             order_date: Order date
-            game_id: Game ID (optional)
+            scenario_id: Game ID (optional)
             round_number: Round number when order is placed (optional)
             company_id: Company ID
-            auto_approve: Auto-approve PO (default: True for Beer Game)
+            auto_approve: Auto-approve PO (default: True for simulation)
 
         Returns:
             Created PurchaseOrder
@@ -87,7 +87,7 @@ class PurchaseOrderCreator:
         lead_time_days = sourcing_rule.lead_time_days or 14
         requested_delivery_date = order_date + timedelta(days=lead_time_days)
 
-        # Calculate arrival round (for Beer Game)
+        # Calculate arrival round (for simulation)
         arrival_round = None
         if round_number is not None:
             # Assuming 1 round = 1 week, lead time in weeks
@@ -96,7 +96,7 @@ class PurchaseOrderCreator:
 
         # Generate PO number
         po_number = self._generate_po_number(
-            game_id, round_number, destination_site_id
+            scenario_id, round_number, destination_site_id
         )
 
         # Create PO
@@ -109,7 +109,7 @@ class PurchaseOrderCreator:
             status="APPROVED" if auto_approve else "DRAFT",
             order_date=order_date,
             requested_delivery_date=requested_delivery_date,
-            game_id=game_id,
+            scenario_id=scenario_id,
             round_number=round_number,
             arrival_round=arrival_round,
             created_at=datetime.now()
@@ -127,7 +127,7 @@ class PurchaseOrderCreator:
             line_number=1,
             product_id=item_id,
             ordered_quantity=order_qty,
-            unit_price=0.0,  # Not tracked in Beer Game
+            unit_price=0.0,  # Not tracked in simulation
             line_total=0.0,
             requested_delivery_date=requested_delivery_date
         )
@@ -142,7 +142,7 @@ class PurchaseOrderCreator:
 
     def create_simulation_orders(
         self,
-        game_id: int,
+        scenario_id: int,
         round_number: int,
         order_decisions: Dict[str, float],
         config_id: int
@@ -151,7 +151,7 @@ class PurchaseOrderCreator:
         Create POs for all sites in a simulation based on agent decisions.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             round_number: Current round number
             order_decisions: Dict mapping site_name to order_qty
                 Example: {
@@ -185,7 +185,7 @@ class PurchaseOrderCreator:
             if site and site.master_type == "manufacturer":
                 continue  # Manufacturers don't place orders
 
-            # Get product ID (Beer Game uses single product)
+            # Get product ID (simulation may use single product)
             product_id = mapper.get_product_id("Cases")
             if not product_id:
                 print(f"Warning: Product 'Cases' not found, skipping PO creation")
@@ -197,7 +197,7 @@ class PurchaseOrderCreator:
                     product_id=product_id,  # Integer product ID
                     order_qty=order_qty,
                     order_date=order_date,
-                    game_id=game_id,
+                    scenario_id=scenario_id,
                     round_number=round_number,
                     auto_approve=True
                 )
@@ -255,16 +255,16 @@ class PurchaseOrderCreator:
 
     def process_arriving_orders(
         self,
-        game_id: int,
+        scenario_id: int,
         round_number: int
     ) -> List[PurchaseOrder]:
         """
-        Process all POs arriving in current Beer Game round.
+        Process all POs arriving in current simulation round.
 
         Receives all POs where arrival_round == current round.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             round_number: Current round number
 
         Returns:
@@ -273,7 +273,7 @@ class PurchaseOrderCreator:
         # Get POs that are arriving this round
         arriving_pos = self.db.query(PurchaseOrder).filter(
             and_(
-                PurchaseOrder.game_id == game_id,
+                PurchaseOrder.scenario_id == scenario_id,
                 PurchaseOrder.arrival_round == round_number,
                 PurchaseOrder.status.in_(["APPROVED", "SENT", "SHIPPED"])
             )
@@ -313,15 +313,15 @@ class PurchaseOrderCreator:
 
     def _generate_po_number(
         self,
-        game_id: Optional[int],
+        scenario_id: Optional[int],
         round_number: Optional[int],
         site_id: int
     ) -> str:
         """Generate unique PO number."""
         timestamp = int(datetime.now().timestamp())
 
-        if game_id and round_number:
-            return f"PO-G{game_id}-R{round_number}-N{site_id}-{timestamp}"
+        if scenario_id and round_number:
+            return f"PO-G{scenario_id}-R{round_number}-N{site_id}-{timestamp}"
         else:
             return f"PO-N{site_id}-{timestamp}"
 
@@ -362,7 +362,7 @@ class PurchaseOrderCreator:
 
     def get_po_status(
         self,
-        game_id: int,
+        scenario_id: int,
         round_number: Optional[int] = None,
         site_id: Optional[str] = None
     ) -> List[Dict]:
@@ -370,7 +370,7 @@ class PurchaseOrderCreator:
         Get PO status for game/round/site.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             round_number: Round number (optional)
             site_id: Site ID (optional)
 
@@ -378,7 +378,7 @@ class PurchaseOrderCreator:
             List of PO status dictionaries
         """
         query = self.db.query(PurchaseOrder).filter(
-            PurchaseOrder.game_id == game_id
+            PurchaseOrder.scenario_id == scenario_id
         )
 
         if round_number is not None:

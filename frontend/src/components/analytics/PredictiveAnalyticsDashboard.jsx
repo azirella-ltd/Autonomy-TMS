@@ -59,7 +59,7 @@ const PredictiveAnalyticsDashboard = ({ gameId, siteId, onClose }) => {
   const loadDemandForecast = async () => {
     try {
       const response = await api.post('/predictive-analytics/forecast/demand', {
-        game_id: gameId,
+        scenario_id: gameId,
         site_id: siteId,
         horizon: 10,
         confidence_level: 0.95,
@@ -74,7 +74,7 @@ const PredictiveAnalyticsDashboard = ({ gameId, siteId, onClose }) => {
   const loadBullwhipPrediction = async () => {
     try {
       const response = await api.post('/predictive-analytics/predict/bullwhip', {
-        game_id: gameId,
+        scenario_id: gameId,
       })
       return response.data
     } catch (error) {
@@ -86,7 +86,7 @@ const PredictiveAnalyticsDashboard = ({ gameId, siteId, onClose }) => {
   const loadCostTrajectory = async () => {
     try {
       const response = await api.post('/predictive-analytics/forecast/cost-trajectory', {
-        game_id: gameId,
+        scenario_id: gameId,
         site_id: siteId,
         horizon: 10,
       })
@@ -100,7 +100,7 @@ const PredictiveAnalyticsDashboard = ({ gameId, siteId, onClose }) => {
   const loadShapExplanation = async (roundNumber) => {
     try {
       const response = await api.post('/predictive-analytics/explain/prediction', {
-        game_id: gameId,
+        scenario_id: gameId,
         site_id: siteId,
         round_number: roundNumber,
       })
@@ -113,7 +113,7 @@ const PredictiveAnalyticsDashboard = ({ gameId, siteId, onClose }) => {
   const runWhatIfAnalysis = async (scenarios) => {
     try {
       const response = await api.post('/predictive-analytics/analyze/what-if', {
-        game_id: gameId,
+        scenario_id: gameId,
         site_id: siteId,
         scenarios: scenarios,
       })

@@ -450,7 +450,7 @@ const ScenarioTreeViewer = ({ configId, onConfigChange }) => {
               id="branch-name"
               value={branchName}
               onChange={(e) => setBranchName(e.target.value)}
-              placeholder="e.g., Case Beer Game, Six-Pack Beer Game"
+              placeholder="e.g., Case Config, Six-Pack Config"
               disabled={actionLoading}
             />
           </div>

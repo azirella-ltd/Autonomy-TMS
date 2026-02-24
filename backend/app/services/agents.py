@@ -6,7 +6,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-from .beer_game_xai_explain import (
+from .agent_xai_explain import (
     Obs,
     Forecast,
     RoleParams,
@@ -52,11 +52,18 @@ except Exception:
 logger = logging.getLogger(__name__)
 
 class AgentType(Enum):
+    """Site-type classification for simulation agents.
+
+    Values mirror ``NodeType`` from ``supply_chain_config.py`` (lowercased).
+    """
     RETAILER = "retailer"
     WHOLESALER = "wholesaler"
     DISTRIBUTOR = "distributor"
+    INVENTORY = "inventory"
     MANUFACTURER = "manufacturer"
     SUPPLIER = "supplier"
+    MARKET_DEMAND = "market_demand"
+    MARKET_SUPPLY = "market_supply"
 
 class AgentStrategy(Enum):
     NAIVE = "naive"  # Simple strategy, always orders based on current demand
@@ -344,9 +351,11 @@ class SimulationAgent:
         central_coordinator: Optional[AutonomyCoordinator] = None,
         global_controller: Optional[AutonomyGlobalController] = None,
         model_path: Optional[str] = None,
+        downstream_role: Optional[str] = None,
     ):
         self.agent_id = agent_id
         self.agent_type = agent_type
+        self._downstream_role = downstream_role
         self.strategy = strategy
         self.can_see_demand = can_see_demand
         self.inventory = initial_inventory
@@ -663,13 +672,14 @@ class SimulationAgent:
         self.reset_for_strategy()
 
     def _get_downstream_role_name(self) -> Optional[str]:
-        mapping = {
-            AgentType.WHOLESALER: AgentType.RETAILER.value,
-            AgentType.DISTRIBUTOR: AgentType.WHOLESALER.value,
-            AgentType.MANUFACTURER: AgentType.DISTRIBUTOR.value,
-            AgentType.SUPPLIER: AgentType.MANUFACTURER.value,
-        }
-        return mapping.get(self.agent_type)
+        """Return the downstream partner's role name, if known.
+
+        When a ``downstream_role`` was set on this agent (e.g. from the
+        topology's material lanes), use it directly.  Otherwise return
+        ``None`` — callers should handle the missing-downstream case
+        gracefully.
+        """
+        return getattr(self, "_downstream_role", None)
     
     def _naive_strategy(
         self,

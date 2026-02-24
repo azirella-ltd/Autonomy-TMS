@@ -44,7 +44,7 @@ from .base import Base
 #     is_active = Column(String(10))
 #     group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
 #     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
-#     game_id = Column(Integer, ForeignKey("games.id"))
+#     scenario_id = Column(Integer, ForeignKey("games.id"))
 #     created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
 #
 #     # Phase 5: Stochastic distribution fields
@@ -55,7 +55,7 @@ from .base import Base
 #         Index('idx_forecast_lookup', 'product_id', 'site_id', 'forecast_date'),
 #         Index('idx_forecast_group_config', 'group_id', 'config_id'),
 #         Index('idx_forecast_config', 'config_id'),
-#         Index('idx_forecast_game', 'game_id'),
+#         Index('idx_forecast_game', 'scenario_id'),
 #     )
 
 
@@ -80,14 +80,14 @@ from .base import Base
 #     planning_run_id = Column(String(100))
 #     group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
 #     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
-#     game_id = Column(Integer, ForeignKey("games.id"))
+#     scenario_id = Column(Integer, ForeignKey("games.id"))
 #     created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
 #
 #     __table_args__ = (
 #         Index('idx_supply_plan_lookup', 'product_id', 'destination_site_id', 'planned_order_date'),
 #         Index('idx_supply_plan_group_config', 'group_id', 'config_id'),
 #         Index('idx_supply_plan_config', 'config_id'),
-#         Index('idx_supply_plan_game', 'game_id'),
+#         Index('idx_supply_plan_game', 'scenario_id'),
 #     )
 
 
@@ -284,7 +284,7 @@ from .base import Base
 #     reference_id = Column(String(100))
 #     group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
 #     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
-#     game_id = Column(Integer, ForeignKey("games.id"))
+#     scenario_id = Column(Integer, ForeignKey("games.id"))
 #     created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
 #
 #     __table_args__ = (
@@ -336,7 +336,7 @@ from .base import Base
 #     # Multi-tenancy and game context
 #     group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
 #     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
-#     game_id = Column(Integer, ForeignKey("games.id"))
+#     scenario_id = Column(Integer, ForeignKey("games.id"))
 #     round_number = Column(Integer)  # Which game round this order belongs to
 #     created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
 #
@@ -344,7 +344,7 @@ from .base import Base
 #         Index('idx_outbound_order_lookup', 'product_id', 'site_id', 'requested_delivery_date'),
 #         Index('idx_outbound_order_group_config', 'group_id', 'config_id'),
 #         Index('idx_outbound_order_config', 'config_id'),
-#         Index('idx_outbound_order_game_round', 'game_id', 'round_number'),
+#         Index('idx_outbound_order_game_round', 'scenario_id', 'round_number'),
 #     )
 
 

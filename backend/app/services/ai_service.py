@@ -3,20 +3,13 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.models.participant import Participant, ParticipantRole
+from app.models.scenario import Scenario
 from app.models.supply_chain import ParticipantInventory, ScenarioRound, ParticipantRound
 from app.schemas.scenario import ParticipantState, ScenarioState
 
-# Aliases for backwards compatibility
-Player = Participant
-PlayerRole = ParticipantRole
-PlayerInventory = ParticipantInventory
-GameRound = ScenarioRound
-PlayerRound = ParticipantRound
-PlayerState = ParticipantState
-GameState = ScenarioState
 
 class AIService:
-    """Service for AI player decision making in the Beer Game."""
+    """Service for AI participant decision making in simulation scenarios."""
     
     # AI difficulty levels
     class Difficulty:
@@ -27,40 +20,41 @@ class AIService:
     def __init__(self, db: Session):
         self.db = db
     
-    def make_decision(self, player: Player, game_state: GameState) -> int:
+    def make_decision(self, participant: Participant, scenario_state: ScenarioState) -> int:
         """
-        Make a decision on how many units to order based on the current game state.
-        
+        Make a decision on how many units to order based on the current scenario state.
+
         Args:
-            player: The AI player making the decision
-            game_state: Current state of the game
-            
+            participant: The AI participant making the decision
+            scenario_state: Current state of the scenario
+
         Returns:
             int: Number of units to order
         """
-        # Get the player's state
-        player_state = next((p for p in game_state.players if p.id == player.id), None)
-        if not player_state:
+        # Get the participant's state
+        participant_state = next((p for p in scenario_state.players if p.id == participant.id), None)
+        if not participant_state:
             return 0
-            
-        # Get the current round
-        current_round = self._get_current_round(player.game_id)
+
+        # Get the current period
+        current_round = self._get_current_round(participant.scenario_id)
         if not current_round:
             return 0
-            
+
         # Get historical data
-        history = self._get_player_history(player.id, current_round.round_number)
-        
+        history = self._get_participant_history(participant.id, current_round.round_number)
+
         # Make decision based on difficulty level
-        if player.is_ai == "easy":
-            return self._easy_ai(player_state, history)
-        elif player.is_ai == "hard":
-            return self._hard_ai(player_state, history, game_state)
+        if participant.is_ai == "easy":
+            return self._easy_ai(participant_state, history)
+        elif participant.is_ai == "hard":
+            return self._hard_ai(participant_state, history, scenario_state)
         else:  # medium is default
-            return self._medium_ai(player_state, history)
+            return self._medium_ai(participant_state, history)
     
-    def _easy_ai(self, player_state: PlayerState, history: List[Dict]) -> int:
+    def _easy_ai(self, participant_state: ParticipantState, history: List[Dict]) -> int:
         """Easy AI: Makes random decisions within a reasonable range."""
+
         # Random order between 0 and 2x the average of last 3 orders
         if len(history) >= 3:
             last_orders = [h.get('order_placed', 4) for h in history[-3:]]
@@ -68,20 +62,20 @@ class AIService:
             return random.randint(0, int(avg_order * 2))
         return random.randint(0, 8)  # Default range if not enough history
     
-    def _medium_ai(self, player_state: PlayerState, history: List[Dict]) -> int:
+    def _medium_ai(self, participant_state: ParticipantState, history: List[Dict]) -> int:
         """
         Medium AI: Uses a basic strategy considering current inventory and recent demand.
         Implements a simple base stock policy.
         """
         # Base stock level depends on role (further upstream needs to keep more inventory)
         role_multiplier = {
-            PlayerRole.RETAILER: 1.0,
-            PlayerRole.WHOLESALER: 1.2,
-            PlayerRole.DISTRIBUTOR: 1.5,
-            PlayerRole.MANUFACTURER: 2.0
+            ParticipantRole.RETAILER: 1.0,
+            ParticipantRole.WHOLESALER: 1.2,
+            ParticipantRole.DISTRIBUTOR: 1.5,
+            ParticipantRole.MANUFACTURER: 2.0
         }
         
-        base_stock = 12 * role_multiplier.get(player_state.role, 1.0)
+        base_stock = 12 * role_multiplier.get(participant_state.role, 1.0)
         
         # Calculate average of last 3 orders received
         if len(history) >= 3:
@@ -93,9 +87,9 @@ class AIService:
         target_inventory = base_stock + avg_demand
         
         # Calculate order quantity
-        current_inventory = player_state.current_stock
-        incoming_shipments = sum(shipment.get('quantity', 0) for shipment in player_state.incoming_shipments)
-        backorders = player_state.backorders
+        current_inventory = participant_state.current_stock
+        incoming_shipments = sum(shipment.get('quantity', 0) for shipment in participant_state.incoming_shipments)
+        backorders = participant_state.backorders
         
         # Inventory position = on-hand + in-transit - backorders
         inventory_position = current_inventory + incoming_shipments - backorders
@@ -105,33 +99,33 @@ class AIService:
         
         return order_quantity
     
-    def _hard_ai(self, player_state: PlayerState, history: List[Dict], game_state: GameState) -> int:
+    def _hard_ai(self, participant_state: ParticipantState, history: List[Dict], scenario_state: ScenarioState) -> int:
         """
         Hard AI: Implements an advanced strategy with demand forecasting and bullwhip effect mitigation.
         Uses exponential smoothing for demand forecasting and considers supply chain position.
         """
         # Get more historical data for better forecasting
-        full_history = self._get_player_history(player_state.id, game_state.current_round)
+        full_history = self._get_participant_history(participant_state.id, scenario_state.current_round)
         
         # Calculate demand forecast using exponential smoothing (alpha = 0.3)
         alpha = 0.3
         forecast = self._calculate_demand_forecast(full_history, alpha)
         
         # Adjust forecast based on position in supply chain (bullwhip effect)
-        position_factor = self._get_position_factor(player_state.role)
+        position_factor = self._get_position_factor(participant_state.role)
         adjusted_forecast = forecast * position_factor
         
         # Calculate safety stock based on demand variability
         safety_stock = self._calculate_safety_stock(full_history)
         
         # Calculate target inventory level
-        lead_time = 2  # Assuming 2 rounds lead time
+        lead_time = 2  # Assuming 2 periods lead time
         target_inventory = (adjusted_forecast * lead_time) + safety_stock
         
         # Calculate current inventory position
-        current_inventory = player_state.current_stock
-        incoming_shipments = sum(shipment.get('quantity', 0) for shipment in player_state.incoming_shipments)
-        backorders = player_state.backorders
+        current_inventory = participant_state.current_stock
+        incoming_shipments = sum(shipment.get('quantity', 0) for shipment in participant_state.incoming_shipments)
+        backorders = participant_state.backorders
         inventory_position = current_inventory + incoming_shipments - backorders
         
         # Calculate order quantity using (s, S) policy
@@ -160,13 +154,13 @@ class AIService:
             
         return forecast
     
-    def _get_position_factor(self, role: PlayerRole) -> float:
+    def _get_position_factor(self, role: ParticipantRole) -> float:
         """Get a factor based on position in supply chain to adjust for bullwhip effect."""
         return {
-            PlayerRole.RETAILER: 1.0,
-            PlayerRole.WHOLESALER: 1.1,
-            PlayerRole.DISTRIBUTOR: 1.3,
-            PlayerRole.MANUFACTURER: 1.5
+            ParticipantRole.RETAILER: 1.0,
+            ParticipantRole.WHOLESALER: 1.1,
+            ParticipantRole.DISTRIBUTOR: 1.3,
+            ParticipantRole.MANUFACTURER: 1.5
         }.get(role, 1.0)
     
     def _calculate_safety_stock(self, history: List[Dict]) -> float:
@@ -185,23 +179,23 @@ class AIService:
         lead_time = 2
         return 1.65 * std_dev * (lead_time ** 0.5)
     
-    def _get_current_round(self, game_id: int) -> Optional[GameRound]:
-        """Get the current round for a game."""
-        return self.db.query(GameRound).join(Game).filter(
-            Game.id == game_id
+    def _get_current_round(self, scenario_id: int) -> Optional[ScenarioRound]:
+        """Get the current period for a scenario."""
+        return self.db.query(ScenarioRound).join(Scenario).filter(
+            Scenario.id == scenario_id
         ).order_by(
-            GameRound.round_number.desc()
+            ScenarioRound.round_number.desc()
         ).first()
     
-    def _get_player_history(self, player_id: int, current_round: int, limit: int = 10) -> List[Dict]:
-        """Get the player's order history."""
-        history = self.db.query(PlayerRound, GameRound).join(
-            GameRound, PlayerRound.round_id == GameRound.id
+    def _get_participant_history(self, participant_id: int, current_round: int, limit: int = 10) -> List[Dict]:
+        """Get the participant's order history."""
+        history = self.db.query(ParticipantRound, ScenarioRound).join(
+            ScenarioRound, ParticipantRound.round_id == ScenarioRound.id
         ).filter(
-            PlayerRound.player_id == player_id,
-            GameRound.round_number < current_round
+            ParticipantRound.player_id == participant_id,
+            ScenarioRound.round_number < current_round
         ).order_by(
-            GameRound.round_number.desc()
+            ScenarioRound.round_number.desc()
         ).limit(limit).all()
         
         return [

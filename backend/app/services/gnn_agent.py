@@ -1,7 +1,7 @@
 """
-GNN (Graph Neural Network) Agent for Beer Game.
+GNN (Graph Neural Network) Agent for Simulation.
 
-Provides GNN-based decision making integrated with the Beer Game engine.
+Provides GNN-based decision making integrated with the simulation engine.
 Models are config-specific - each supply chain configuration has its own trained model.
 """
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class GNNAgent:
     """
-    GNN-powered agent for Beer Game decisions.
+    GNN-powered agent for simulation decisions.
 
     Features:
     - 128M+ parameter graph neural network
@@ -137,8 +137,8 @@ class GNNAgent:
         Compute order quantity for a node using GNN.
 
         Args:
-            node: Beer Game node object
-            context: Game context with state information
+            node: Simulation node object
+            context: Scenario context with state information
 
         Returns:
             order_quantity: Non-negative order quantity
@@ -238,8 +238,8 @@ class GNNAgent:
         Fallback heuristic: Simple base stock policy.
 
         Args:
-            node: Beer Game node
-            context: Game context
+            node: Simulation site node
+            context: Scenario context
 
         Returns:
             order_quantity
@@ -336,8 +336,8 @@ def compute_gnn_order(node: Any, context: Dict, model_path: Optional[str] = None
     Compute GNN order (convenience function for agent integration).
 
     Args:
-        node: Beer Game node
-        context: Game context
+        node: Simulation site node
+        context: Scenario context
         model_path: Optional path to GNN checkpoint (config-specific)
 
     Returns:

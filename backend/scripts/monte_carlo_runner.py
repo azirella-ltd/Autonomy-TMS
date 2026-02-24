@@ -6,19 +6,19 @@ under uncertainty and generate confidence intervals for key metrics.
 
 Features:
 - Run N independent simulations with different random seeds
-- Support for both agent-only and mixed games
+- Support for both agent-only and mixed scenarios
 - Parallel execution for performance
 - Comprehensive result aggregation
 - Statistical analysis of outcomes
 
 Usage:
     # Run from command line
-    python scripts/monte_carlo_runner.py --game-id 123 --num-runs 100
+    python scripts/monte_carlo_runner.py --scenario-id 123 --num-runs 100
 
     # Run programmatically
     from scripts.monte_carlo_runner import MonteCarloRunner
 
-    runner = MonteCarloRunner(game_id=123, num_runs=100)
+    runner = MonteCarloRunner(scenario_id=123, num_runs=100)
     results = runner.run()
     summary = runner.summarize_results(results)
 """
@@ -43,7 +43,7 @@ from app.services.stochastic_analytics_service import StochasticAnalyticsService
 @dataclass
 class MonteCarloConfig:
     """Configuration for Monte Carlo simulation"""
-    game_id: int
+    scenario_id: int
     num_runs: int
     base_seed: int = 42
     parallel: bool = False  # Parallel execution (future)
@@ -108,7 +108,7 @@ class MonteCarloRunner:
             List of SimulationResult objects
         """
         print(f"Starting Monte Carlo simulation: {self.config.num_runs} runs")
-        print(f"Game ID: {self.config.game_id}")
+        print(f"Scenario ID: {self.config.scenario_id}")
         print(f"Base seed: {self.config.base_seed}")
         print()
 
@@ -165,9 +165,9 @@ class MonteCarloRunner:
         """
         # NOTE: This is a placeholder implementation
         # In production, this would:
-        # 1. Clone the game configuration
-        # 2. Create a new game instance with the specified seed
-        # 3. Run the game to completion
+        # 1. Clone the scenario configuration
+        # 2. Create a new scenario instance with the specified seed
+        # 3. Run the scenario to completion
         # 4. Extract and return metrics
 
         # For now, simulate realistic results
@@ -196,7 +196,7 @@ class MonteCarloRunner:
             avg_inventory=float(avg_inventory),
             max_backlog=float(max_backlog),
             bullwhip_ratio=float(bullwhip_ratio),
-            num_rounds=52,  # Typical game length
+            num_rounds=52,  # Typical scenario length
             success=True
         )
 
@@ -235,7 +235,7 @@ class MonteCarloRunner:
             'successful_runs': len(successful_results),
             'failed_runs': len(results) - len(successful_results),
             'success_rate': len(successful_results) / len(results) * 100,
-            'game_id': self.config.game_id,
+            'scenario_id': self.config.scenario_id,
             'base_seed': self.config.base_seed,
             'timestamp': datetime.utcnow().isoformat()
         }
@@ -326,7 +326,7 @@ class MonteCarloRunner:
         axes[1, 1].set_ylabel('Total Cost')
 
         plt.tight_layout()
-        output_file = os.path.join(output_dir, f'monte_carlo_results_{self.config.game_id}.png')
+        output_file = os.path.join(output_dir, f'monte_carlo_results_{self.config.scenario_id}.png')
         plt.savefig(output_file, dpi=150)
         print(f"Plots saved to: {output_file}")
         plt.close()
@@ -335,7 +335,7 @@ class MonteCarloRunner:
 def main():
     """Command-line interface for Monte Carlo runner"""
     parser = argparse.ArgumentParser(description='Run Monte Carlo simulation for Beer Game')
-    parser.add_argument('--game-id', type=int, required=True, help='Game ID to simulate')
+    parser.add_argument('--scenario-id', type=int, required=True, help='Scenario ID to simulate')
     parser.add_argument('--num-runs', type=int, default=100, help='Number of simulation runs')
     parser.add_argument('--seed', type=int, default=42, help='Base random seed')
     parser.add_argument('--output', type=str, help='Output CSV file for results')
@@ -345,7 +345,7 @@ def main():
 
     # Create configuration
     config = MonteCarloConfig(
-        game_id=args.game_id,
+        scenario_id=args.scenario_id,
         num_runs=args.num_runs,
         base_seed=args.seed
     )

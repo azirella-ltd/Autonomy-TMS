@@ -54,14 +54,14 @@ class SupplyChainPlanner:
     async def run_planning(
         self,
         start_date: date,
-        game_id: Optional[int] = None
+        scenario_id: Optional[int] = None
     ) -> List[SupplyPlan]:
         """
         Execute full SC planning process
 
         Args:
             start_date: Planning start date
-            game_id: Optional game ID for Beer Game integration
+            scenario_id: Optional game ID for scenario integration
 
         Returns:
             List of SupplyPlan recommendations (PO/TO/MO requests)
@@ -70,7 +70,7 @@ class SupplyChainPlanner:
         print(f"   Config ID: {self.config_id}")
         print(f"   Start Date: {start_date}")
         print(f"   Planning Horizon: {self.planning_horizon} days")
-        print(f"   Game ID: {game_id or 'N/A'}")
+        print(f"   Game ID: {scenario_id or 'N/A'}")
         print()
 
         # ========================================================================
@@ -106,7 +106,7 @@ class SupplyChainPlanner:
         print("-" * 80)
 
         supply_plans = await self.net_requirements_calculator.calculate_requirements(
-            net_demand, target_inventory, start_date, game_id
+            net_demand, target_inventory, start_date, scenario_id
         )
 
         print(f"✓ Generated {len(supply_plans)} supply plan recommendations")

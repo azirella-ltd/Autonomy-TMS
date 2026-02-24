@@ -322,10 +322,17 @@ class DeterministicPlanner:
             return OrderType.PURCHASE_ORDER
 
     def _get_source_node(self, node: Node, item: Item) -> Optional[int]:
-        """Get source node (upstream supplier) for this node/item."""
-        # Simplified: assume first upstream lane
-        # TODO: Query Lane model for upstream connections
-        return None  # Placeholder
+        """Get source node (upstream supplier) for this node/item via TransportationLane."""
+        try:
+            lane = self.session.query(TransportationLane).filter(
+                TransportationLane.to_site_id == node.id,
+                TransportationLane.config_id == node.config_id,
+            ).first()
+            if lane:
+                return lane.from_site_id
+        except Exception:
+            pass
+        return None
 
     def _calculate_order_cost(self, order_type: OrderType, quantity: float) -> float:
         """Calculate order cost."""

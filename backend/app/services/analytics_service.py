@@ -9,7 +9,7 @@ This service computes analytics metrics for:
 
 Usage:
     service = AnalyticsService(db)
-    metrics = await service.get_aggregation_metrics(game_id)
+    metrics = await service.get_aggregation_metrics(scenario_id)
 """
 
 from typing import Dict, List, Optional
@@ -46,17 +46,17 @@ class AnalyticsService:
     # AGGREGATION METRICS
     # ============================================================================
 
-    async def get_aggregation_metrics(self, game_id: int) -> Dict:
+    async def get_aggregation_metrics(self, scenario_id: int) -> Dict:
         """
         Get order aggregation metrics for a game
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
 
         Returns:
             Dictionary with aggregation metrics:
             {
-                'game_id': int,
+                'scenario_id': int,
                 'total_rounds': int,
                 'aggregation_summary': {...},
                 'by_round': [...],
@@ -66,14 +66,14 @@ class AnalyticsService:
         # Get all aggregated orders
         result = await self.db.execute(
             select(AggregatedOrder)
-            .filter(AggregatedOrder.game_id == game_id)
+            .filter(AggregatedOrder.scenario_id == scenario_id)
             .order_by(AggregatedOrder.round_number)
         )
         agg_orders = result.scalars().all()
 
         if not agg_orders:
             return {
-                'game_id': game_id,
+                'scenario_id': scenario_id,
                 'total_rounds': 0,
                 'aggregation_summary': {
                     'total_orders_aggregated': 0,
@@ -159,7 +159,7 @@ class AnalyticsService:
             )
 
         return {
-            'game_id': game_id,
+            'scenario_id': scenario_id,
             'total_rounds': max_round,
             'aggregation_summary': {
                 'total_orders_aggregated': total_orders_aggregated,
@@ -175,18 +175,18 @@ class AnalyticsService:
     # CAPACITY METRICS
     # ============================================================================
 
-    async def get_capacity_metrics(self, game_id: int) -> Dict:
+    async def get_capacity_metrics(self, scenario_id: int) -> Dict:
         """
         Get capacity constraint metrics for a game
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
 
         Returns:
             Dictionary with capacity metrics
         """
         # Get game and config
-        game = await self.db.get(Game, game_id)
+        game = await self.db.get(Game, scenario_id)
         if not game:
             return {'error': 'Game not found'}
 
@@ -201,7 +201,7 @@ class AnalyticsService:
 
         if not capacities:
             return {
-                'game_id': game_id,
+                'scenario_id': scenario_id,
                 'capacity_summary': {
                     'sites_with_capacity': 0,
                     'total_capacity': 0.0,
@@ -216,7 +216,7 @@ class AnalyticsService:
         # Get all work orders for this game
         result = await self.db.execute(
             select(InboundOrderLine).filter(
-                InboundOrderLine.game_id == game_id
+                InboundOrderLine.scenario_id == scenario_id
             ).order_by(InboundOrderLine.round_number)
         )
         work_orders = result.scalars().all()
@@ -285,7 +285,7 @@ class AnalyticsService:
             )
 
         return {
-            'game_id': game_id,
+            'scenario_id': scenario_id,
             'capacity_summary': {
                 'sites_with_capacity': len(capacities),
                 'total_capacity': float(total_capacity),
@@ -387,18 +387,18 @@ class AnalyticsService:
     # COMPARATIVE ANALYTICS
     # ============================================================================
 
-    async def get_comparative_analytics(self, game_id: int) -> Dict:
+    async def get_comparative_analytics(self, scenario_id: int) -> Dict:
         """
         Get comparative analytics (with vs. without features)
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
 
         Returns:
             Dictionary with comparative metrics
         """
         # Get game config
-        game = await self.db.get(Game, game_id)
+        game = await self.db.get(Game, scenario_id)
         if not game:
             return {'error': 'Game not found'}
 
@@ -410,7 +410,7 @@ class AnalyticsService:
         # Get aggregation data
         result = await self.db.execute(
             select(AggregatedOrder).filter(
-                AggregatedOrder.game_id == game_id
+                AggregatedOrder.scenario_id == scenario_id
             )
         )
         agg_orders = result.scalars().all()
@@ -432,7 +432,7 @@ class AnalyticsService:
         fulfillment_rate = 0.0
 
         return {
-            'game_id': game_id,
+            'scenario_id': scenario_id,
             'features_enabled': features_enabled,
             'comparison': {
                 'theoretical_without_aggregation': {

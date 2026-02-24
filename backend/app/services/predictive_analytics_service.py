@@ -100,7 +100,7 @@ class PredictiveAnalyticsService:
 
     async def forecast_demand(
         self,
-        game_id: int,
+        scenario_id: int,
         node_id: int,
         horizon: int = 10,
         confidence_level: float = 0.95
@@ -109,7 +109,7 @@ class PredictiveAnalyticsService:
         Forecast demand for a node over specified horizon.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             node_id: Node/Player ID
             horizon: Number of rounds to forecast
             confidence_level: Confidence level for bounds (default 0.95)
@@ -118,7 +118,7 @@ class PredictiveAnalyticsService:
             forecasts: List of forecast results
         """
         # Get historical data
-        historical_data = await self._get_historical_data(game_id, node_id, lookback=20)
+        historical_data = await self._get_historical_data(scenario_id, node_id, lookback=20)
 
         if len(historical_data) < 5:
             logger.warning(f"Insufficient data for forecasting (got {len(historical_data)} rounds)")
@@ -166,19 +166,19 @@ class PredictiveAnalyticsService:
 
     async def predict_bullwhip(
         self,
-        game_id: int
+        scenario_id: int
     ) -> List[BullwhipPrediction]:
         """
         Predict bullwhip effect for all nodes in a game.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
 
         Returns:
             predictions: Bullwhip predictions per node
         """
         # Get all players in game
-        stmt = select(Player).where(Player.game_id == game_id)
+        stmt = select(Player).where(Player.scenario_id == scenario_id)
         result = await self.db.execute(stmt)
         players = result.scalars().all()
 
@@ -186,7 +186,7 @@ class PredictiveAnalyticsService:
 
         for player in players:
             # Get historical orders and demands
-            historical = await self._get_historical_data(game_id, player.id, lookback=20)
+            historical = await self._get_historical_data(scenario_id, player.id, lookback=20)
 
             if len(historical) < 10:
                 continue
@@ -240,7 +240,7 @@ class PredictiveAnalyticsService:
 
     async def forecast_cost_trajectory(
         self,
-        game_id: int,
+        scenario_id: int,
         node_id: int,
         horizon: int = 10
     ) -> CostTrajectory:
@@ -248,7 +248,7 @@ class PredictiveAnalyticsService:
         Forecast cost trajectory for a node.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             node_id: Node/Player ID
             horizon: Forecast horizon
 
@@ -256,7 +256,7 @@ class PredictiveAnalyticsService:
             trajectory: Cost trajectory with scenarios
         """
         # Get historical data
-        historical = await self._get_historical_data(game_id, node_id, lookback=20)
+        historical = await self._get_historical_data(scenario_id, node_id, lookback=20)
 
         if len(historical) < 5:
             raise ValueError("Insufficient historical data")
@@ -310,7 +310,7 @@ class PredictiveAnalyticsService:
 
     async def explain_prediction(
         self,
-        game_id: int,
+        scenario_id: int,
         node_id: int,
         round_number: int
     ) -> Dict[str, Any]:
@@ -318,7 +318,7 @@ class PredictiveAnalyticsService:
         Explain a prediction using SHAP values.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             node_id: Node/Player ID
             round_number: Round number to explain
 
@@ -338,7 +338,7 @@ class PredictiveAnalyticsService:
             }
 
         # Get data for this round
-        historical = await self._get_historical_data(game_id, node_id, lookback=10)
+        historical = await self._get_historical_data(scenario_id, node_id, lookback=10)
 
         if not historical:
             return {"error": "No data found"}
@@ -415,7 +415,7 @@ class PredictiveAnalyticsService:
 
     async def analyze_what_if(
         self,
-        game_id: int,
+        scenario_id: int,
         node_id: int,
         scenarios: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
@@ -423,7 +423,7 @@ class PredictiveAnalyticsService:
         Analyze what-if scenarios.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             node_id: Node/Player ID
             scenarios: List of scenarios to test
                 Each scenario: {"name": "...", "changes": {"inventory": 20, ...}}
@@ -432,7 +432,7 @@ class PredictiveAnalyticsService:
             analysis: Scenario comparison
         """
         # Get baseline data
-        historical = await self._get_historical_data(game_id, node_id, lookback=10)
+        historical = await self._get_historical_data(scenario_id, node_id, lookback=10)
         baseline_features = self._prepare_features(historical)
 
         results = {
@@ -480,7 +480,7 @@ class PredictiveAnalyticsService:
 
     async def _get_historical_data(
         self,
-        game_id: int,
+        scenario_id: int,
         player_id: int,
         lookback: int = 20
     ) -> List[Dict[str, Any]]:
@@ -488,7 +488,7 @@ class PredictiveAnalyticsService:
         stmt = (
             select(PlayerRound)
             .where(and_(
-                PlayerRound.game_id == game_id,
+                PlayerRound.scenario_id == scenario_id,
                 PlayerRound.player_id == player_id
             ))
             .order_by(PlayerRound.round_number.desc())
@@ -565,24 +565,24 @@ class PredictiveAnalyticsService:
 
     async def generate_insights_report(
         self,
-        game_id: int
+        scenario_id: int
     ) -> Dict[str, Any]:
         """
         Generate comprehensive insights report for a game.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
 
         Returns:
             report: Comprehensive analytics report
         """
         # Get all players
-        stmt = select(Player).where(Player.game_id == game_id)
+        stmt = select(Player).where(Player.scenario_id == scenario_id)
         result = await self.db.execute(stmt)
         players = result.scalars().all()
 
         insights = {
-            "game_id": game_id,
+            "scenario_id": scenario_id,
             "generated_at": datetime.utcnow().isoformat(),
             "demand_forecasts": {},
             "bullwhip_predictions": [],
@@ -594,14 +594,14 @@ class PredictiveAnalyticsService:
         # Demand forecasts for each player
         for player in players:
             try:
-                forecast = await self.forecast_demand(game_id, player.id, horizon=10)
+                forecast = await self.forecast_demand(scenario_id, player.id, horizon=10)
                 insights["demand_forecasts"][player.role] = [asdict(f) for f in forecast]
             except Exception as e:
                 logger.error(f"Forecast failed for player {player.id}: {e}")
 
         # Bullwhip predictions
         try:
-            bullwhip_preds = await self.predict_bullwhip(game_id)
+            bullwhip_preds = await self.predict_bullwhip(scenario_id)
             insights["bullwhip_predictions"] = [asdict(bp) for bp in bullwhip_preds]
         except Exception as e:
             logger.error(f"Bullwhip prediction failed: {e}")
@@ -609,7 +609,7 @@ class PredictiveAnalyticsService:
         # Cost trajectories
         for player in players:
             try:
-                trajectory = await self.forecast_cost_trajectory(game_id, player.id, horizon=10)
+                trajectory = await self.forecast_cost_trajectory(scenario_id, player.id, horizon=10)
                 insights["cost_trajectories"][player.role] = asdict(trajectory)
             except Exception as e:
                 logger.error(f"Cost trajectory failed for player {player.id}: {e}")

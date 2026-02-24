@@ -9,7 +9,7 @@ Provides background monitoring capabilities for Powell TRM services:
 This service is designed to be called by:
 - Scheduled background tasks (e.g., Celery, APScheduler)
 - API endpoints for on-demand checks
-- Beer Game execution engine for round-based monitoring
+- Simulation execution engine for round-based monitoring
 
 Powell Philosophy:
 - TRMs make NARROW execution decisions
@@ -90,14 +90,14 @@ class PowellMonitoringService:
     async def run_all_checks(
         self,
         config_id: int,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
     ) -> Dict[str, MonitoringResult]:
         """
         Run all monitoring checks.
 
         Args:
             config_id: Supply chain configuration ID
-            game_id: Optional game ID for Beer Game context
+            scenario_id: Optional scenario ID for simulation context
 
         Returns:
             Dictionary of check_type -> MonitoringResult
@@ -105,15 +105,15 @@ class PowellMonitoringService:
         results = {}
 
         # Exception detection
-        exception_result = await self.check_order_exceptions(config_id, game_id)
+        exception_result = await self.check_order_exceptions(config_id, scenario_id)
         results["exceptions"] = exception_result
 
         # PO recommendations
-        po_result = await self.check_inventory_positions(config_id, game_id)
+        po_result = await self.check_inventory_positions(config_id, scenario_id)
         results["po_recommendations"] = po_result
 
         # Rebalancing opportunities
-        rebalance_result = await self.check_rebalancing_opportunities(config_id, game_id)
+        rebalance_result = await self.check_rebalancing_opportunities(config_id, scenario_id)
         results["rebalancing"] = rebalance_result
 
         return results
@@ -121,7 +121,7 @@ class PowellMonitoringService:
     async def check_order_exceptions(
         self,
         config_id: int,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
     ) -> MonitoringResult:
         """
         Check for order exceptions using OrderTrackingTRM.
@@ -134,7 +134,7 @@ class PowellMonitoringService:
 
         Args:
             config_id: Supply chain configuration ID
-            game_id: Optional game ID
+            scenario_id: Optional game ID
 
         Returns:
             MonitoringResult with detected exceptions
@@ -143,7 +143,7 @@ class PowellMonitoringService:
             from app.services.powell.integration_service import PowellIntegrationService
 
             integration = PowellIntegrationService(self.db)
-            result = await integration.detect_order_exceptions(config_id, game_id)
+            result = await integration.detect_order_exceptions(config_id, scenario_id)
 
             findings = []
             recommendations = []
@@ -195,7 +195,7 @@ class PowellMonitoringService:
     async def check_inventory_positions(
         self,
         config_id: int,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
     ) -> MonitoringResult:
         """
         Check inventory positions for PO recommendations.
@@ -207,7 +207,7 @@ class PowellMonitoringService:
 
         Args:
             config_id: Supply chain configuration ID
-            game_id: Optional game ID
+            scenario_id: Optional game ID
 
         Returns:
             MonitoringResult with PO recommendations
@@ -271,7 +271,7 @@ class PowellMonitoringService:
     async def check_rebalancing_opportunities(
         self,
         config_id: int,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
     ) -> MonitoringResult:
         """
         Check for inventory rebalancing opportunities.
@@ -283,7 +283,7 @@ class PowellMonitoringService:
 
         Args:
             config_id: Supply chain configuration ID
-            game_id: Optional game ID
+            scenario_id: Optional game ID
 
         Returns:
             MonitoringResult with rebalancing recommendations
@@ -402,44 +402,44 @@ class PowellMonitoringService:
         return False
 
     # =========================================================================
-    # Beer Game Integration
+    # Simulation Integration
     # =========================================================================
 
     async def run_round_end_checks(
         self,
         config_id: int,
-        game_id: int,
+        scenario_id: int,
         round_number: int,
     ) -> Dict[str, MonitoringResult]:
         """
-        Run monitoring checks at the end of a Beer Game round.
+        Run monitoring checks at the end of a simulation round.
 
-        This is called by the Beer Game execution engine to:
+        This is called by the simulation execution engine to:
         1. Detect any order exceptions that occurred this round
         2. Check if POs should be created for next round
         3. Identify rebalancing opportunities
 
         Args:
             config_id: Supply chain configuration ID
-            game_id: Beer Game ID
+            scenario_id: Scenario ID
             round_number: Completed round number
 
         Returns:
             Dictionary of monitoring results
         """
-        logger.info(f"Running round-end monitoring for game {game_id}, round {round_number}")
+        logger.info(f"Running round-end monitoring for game {scenario_id}, round {round_number}")
 
         results = {}
 
         # Always check exceptions at round end
-        results["exceptions"] = await self.check_order_exceptions(config_id, game_id)
+        results["exceptions"] = await self.check_order_exceptions(config_id, scenario_id)
 
         # Check PO recommendations (for next round planning)
-        results["po_recommendations"] = await self.check_inventory_positions(config_id, game_id)
+        results["po_recommendations"] = await self.check_inventory_positions(config_id, scenario_id)
 
-        # Check rebalancing (less frequent in Beer Game, but useful)
+        # Check rebalancing (less frequent in simulation, but useful)
         if round_number % 4 == 0:  # Every 4 rounds
-            results["rebalancing"] = await self.check_rebalancing_opportunities(config_id, game_id)
+            results["rebalancing"] = await self.check_rebalancing_opportunities(config_id, scenario_id)
 
         return results
 

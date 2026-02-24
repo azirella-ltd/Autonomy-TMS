@@ -1,4 +1,4 @@
-"""Utility helpers for presenting Beer Game inventory state."""
+"""Utility helpers for presenting simulation inventory state."""
 
 from __future__ import annotations
 

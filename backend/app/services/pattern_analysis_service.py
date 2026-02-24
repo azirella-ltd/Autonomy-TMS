@@ -113,7 +113,7 @@ class PatternAnalysisService:
         return round(performance_score, 2)
 
     async def get_player_patterns(
-        self, player_id: int, game_id: int
+        self, player_id: int, scenario_id: int
     ) -> Dict[str, Any]:
         """
         Get detected patterns for a player in a game.
@@ -126,7 +126,7 @@ class PatternAnalysisService:
 
         Args:
             player_id: Player ID
-            game_id: Game ID
+            scenario_id: Game ID
 
         Returns:
             Pattern analysis dictionary
@@ -136,7 +136,7 @@ class PatternAnalysisService:
 
         patterns = {
             "player_id": player_id,
-            "game_id": game_id,
+            "scenario_id": scenario_id,
             "pattern_type": "balanced",  # conservative, aggressive, balanced, reactive
             "acceptance_rate": 0.75,  # 75% of suggestions accepted
             "avg_modification": 0.15,  # Average 15% deviation when modified
@@ -154,7 +154,7 @@ class PatternAnalysisService:
 
         return patterns
 
-    async def get_ai_effectiveness(self, game_id: int) -> Dict[str, Any]:
+    async def get_ai_effectiveness(self, scenario_id: int) -> Dict[str, Any]:
         """
         Measure AI suggestion effectiveness for a game.
 
@@ -162,7 +162,7 @@ class PatternAnalysisService:
         to determine which performs better.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
 
         Returns:
             Effectiveness metrics
@@ -171,7 +171,7 @@ class PatternAnalysisService:
         # For now, return mock analysis
 
         effectiveness = {
-            "game_id": game_id,
+            "scenario_id": scenario_id,
             "total_suggestions": 50,
             "acceptance_rate": 0.72,  # 72% accepted
             "avg_confidence_accepted": 0.81,
@@ -219,7 +219,7 @@ class PatternAnalysisService:
 
     async def get_suggestion_history(
         self,
-        game_id: int,
+        scenario_id: int,
         player_id: Optional[int] = None,
         limit: int = 50,
     ) -> List[Dict[str, Any]]:
@@ -227,7 +227,7 @@ class PatternAnalysisService:
         Get suggestion history with outcomes.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             player_id: Optional player filter
             limit: Maximum number of records
 
@@ -312,13 +312,13 @@ class PatternAnalysisService:
         return "balanced"
 
     async def get_acceptance_trends(
-        self, game_id: int, player_id: int, window: int = 10
+        self, scenario_id: int, player_id: int, window: int = 10
     ) -> Dict[str, Any]:
         """
         Get acceptance rate trends over time.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             player_id: Player ID
             window: Rolling window size for trend calculation
 
@@ -330,7 +330,7 @@ class PatternAnalysisService:
 
         trends = {
             "player_id": player_id,
-            "game_id": game_id,
+            "scenario_id": scenario_id,
             "window_size": window,
             "current_acceptance_rate": 0.75,
             "trend": "stable",  # increasing, decreasing, stable, volatile
@@ -353,22 +353,22 @@ class PatternAnalysisService:
         return trends
 
     async def generate_insights(
-        self, game_id: int, player_id: Optional[int] = None
+        self, scenario_id: int, player_id: Optional[int] = None
     ) -> List[str]:
         """
         Generate actionable insights from pattern analysis.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             player_id: Optional player filter
 
         Returns:
             List of insight strings
         """
         patterns = await self.get_player_patterns(
-            player_id, game_id
+            player_id, scenario_id
         ) if player_id else None
-        effectiveness = await self.get_ai_effectiveness(game_id)
+        effectiveness = await self.get_ai_effectiveness(scenario_id)
 
         insights = []
 

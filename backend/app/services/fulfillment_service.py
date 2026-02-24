@@ -76,7 +76,7 @@ class FulfillmentService:
         site_id: int,
         product_id: str,
         config_id: Optional[int] = None,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
     ) -> float:
         """
         Calculate available-to-ship quantity (ATP).
@@ -87,7 +87,7 @@ class FulfillmentService:
             site_id: Site ID
             product_id: Product ID
             config_id: Supply chain configuration ID
-            game_id: Beer Game ID (if applicable)
+            scenario_id: Scenario ID (if applicable)
 
         Returns:
             Available-to-ship quantity (ATP)
@@ -102,8 +102,8 @@ class FulfillmentService:
 
         if config_id is not None:
             query = query.where(InvLevel.config_id == config_id)
-        if game_id is not None:
-            query = query.where(InvLevel.game_id == game_id)
+        if scenario_id is not None:
+            query = query.where(InvLevel.scenario_id == scenario_id)
 
         result = await self.db.execute(query)
         inv_level = result.scalar_one_or_none()
@@ -123,8 +123,8 @@ class FulfillmentService:
             )
         )
 
-        if game_id is not None:
-            committed_query = committed_query.where(OutboundOrderLine.game_id == game_id)
+        if scenario_id is not None:
+            committed_query = committed_query.where(OutboundOrderLine.scenario_id == scenario_id)
 
         committed_result = await self.db.execute(committed_query)
         committed_qty = committed_result.scalar() or 0.0
@@ -139,7 +139,7 @@ class FulfillmentService:
         site_id: int,
         product_id: str,
         config_id: Optional[int] = None,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
     ) -> float:
         """
         Get current on-hand inventory level.
@@ -148,7 +148,7 @@ class FulfillmentService:
             site_id: Site ID
             product_id: Product ID
             config_id: Configuration ID
-            game_id: Game ID
+            scenario_id: Game ID
 
         Returns:
             On-hand inventory quantity
@@ -162,8 +162,8 @@ class FulfillmentService:
 
         if config_id is not None:
             query = query.where(InvLevel.config_id == config_id)
-        if game_id is not None:
-            query = query.where(InvLevel.game_id == game_id)
+        if scenario_id is not None:
+            query = query.where(InvLevel.scenario_id == scenario_id)
 
         result = await self.db.execute(query)
         inv_level = result.scalar_one_or_none()
@@ -176,7 +176,7 @@ class FulfillmentService:
         product_id: str,
         quantity_change: float,
         config_id: Optional[int] = None,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
     ) -> InvLevel:
         """
         Update inventory level by adding/subtracting quantity.
@@ -186,7 +186,7 @@ class FulfillmentService:
             product_id: Product ID
             quantity_change: Positive for receipt, negative for shipment
             config_id: Configuration ID
-            game_id: Game ID
+            scenario_id: Game ID
 
         Returns:
             Updated InvLevel
@@ -200,8 +200,8 @@ class FulfillmentService:
 
         if config_id is not None:
             query = query.where(InvLevel.config_id == config_id)
-        if game_id is not None:
-            query = query.where(InvLevel.game_id == game_id)
+        if scenario_id is not None:
+            query = query.where(InvLevel.scenario_id == scenario_id)
 
         result = await self.db.execute(query)
         inv_level = result.scalar_one_or_none()
@@ -213,7 +213,7 @@ class FulfillmentService:
                 product_id=product_id,
                 quantity=max(0.0, quantity_change),
                 config_id=config_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
                 as_of_date=date.today(),
             )
             self.db.add(inv_level)
@@ -235,7 +235,7 @@ class FulfillmentService:
         self,
         site_id: int,
         product_id: str,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
         config_id: Optional[int] = None,
         current_round: Optional[int] = None,
     ) -> Dict[str, Any]:
@@ -249,7 +249,7 @@ class FulfillmentService:
         Args:
             site_id: Fulfillment site ID
             product_id: Product to fulfill
-            game_id: Beer Game ID
+            scenario_id: Scenario ID
             config_id: Supply chain configuration ID
             current_round: Current round number (for TO arrival calculation)
 
@@ -265,7 +265,7 @@ class FulfillmentService:
         # Get unfulfilled orders (FIFO + priority)
         orders = await self.order_mgmt.get_unfulfilled_customer_orders(
             site_id=site_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
             priority_order=True,
         )
 
@@ -285,7 +285,7 @@ class FulfillmentService:
             site_id=site_id,
             product_id=product_id,
             config_id=config_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
         )
 
         orders_fulfilled = 0
@@ -316,7 +316,7 @@ class FulfillmentService:
             # Create TransferOrder for shipment
             to_number = f"TO-{order.order_id}-{order.line_number}-{current_round or 0}"
 
-            # Calculate arrival round (1-week lead time for Beer Game)
+            # Calculate arrival round (1-week lead time for simulation)
             arrival_round = (current_round + 1) if current_round is not None else None
             estimated_delivery = order.requested_delivery_date or (date.today() + timedelta(weeks=1))
 
@@ -328,7 +328,7 @@ class FulfillmentService:
                 quantity=ship_qty,
                 estimated_delivery_date=estimated_delivery,
                 config_id=config_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
                 order_round=current_round,
                 arrival_round=arrival_round,
                 source_po_id=None,  # Not applicable for customer orders
@@ -342,7 +342,7 @@ class FulfillmentService:
                 product_id=product_id,
                 quantity_change=-ship_qty,
                 config_id=config_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
             )
 
             # Update ATP and counters
@@ -356,7 +356,7 @@ class FulfillmentService:
         backlog_remaining = await self.order_mgmt.get_backlog_for_site(
             site_id=site_id,
             product_id=product_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
         )
 
         return {
@@ -370,7 +370,7 @@ class FulfillmentService:
         self,
         site_id: int,
         product_id: str,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
         config_id: Optional[int] = None,
         current_round: Optional[int] = None,
     ) -> Dict[str, Any]:
@@ -383,7 +383,7 @@ class FulfillmentService:
         Args:
             site_id: Fulfillment site ID
             product_id: Product to fulfill
-            game_id: Beer Game ID
+            scenario_id: Scenario ID
             config_id: Supply chain configuration ID
             current_round: Current round number
 
@@ -393,7 +393,7 @@ class FulfillmentService:
         return await self.fulfill_customer_orders_fifo(
             site_id=site_id,
             product_id=product_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
             config_id=config_id,
             current_round=current_round,
         )
@@ -406,21 +406,21 @@ class FulfillmentService:
         self,
         supplier_site_id: int,
         product_id: str,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
         config_id: Optional[int] = None,
         current_round: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Fulfill purchase orders from downstream sites.
 
-        In Beer Game, upstream sites (Wholesaler, Distributor, Manufacturer)
+        In simulation, upstream sites (Wholesaler, Distributor, Manufacturer)
         receive POs from downstream sites. These POs are treated as sales orders
         and fulfilled using available inventory.
 
         Args:
             supplier_site_id: Supplier site ID (e.g., Wholesaler)
             product_id: Product to fulfill
-            game_id: Beer Game ID
+            scenario_id: Scenario ID
             config_id: Supply chain configuration ID
             current_round: Current round number
 
@@ -435,7 +435,7 @@ class FulfillmentService:
         # Get unfulfilled POs for this supplier
         pos = await self.order_mgmt.get_unfulfilled_purchase_orders(
             supplier_site_id=supplier_site_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
         )
 
         if not pos:
@@ -450,7 +450,7 @@ class FulfillmentService:
             site_id=supplier_site_id,
             product_id=product_id,
             config_id=config_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
         )
 
         pos_fulfilled = 0
@@ -466,7 +466,7 @@ class FulfillmentService:
             if not po.line_items:
                 continue
 
-            # Beer Game: only 1 line item per PO
+            # Simulation: only 1 line item per PO
             po_line = po.line_items[0]
 
             if po_line.product_id != product_id:
@@ -504,7 +504,7 @@ class FulfillmentService:
                 quantity=ship_qty,
                 estimated_delivery_date=estimated_delivery,
                 config_id=config_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
                 order_round=current_round,
                 arrival_round=arrival_round,
                 source_po_id=po.id,
@@ -518,7 +518,7 @@ class FulfillmentService:
                 product_id=product_id,
                 quantity_change=-ship_qty,
                 config_id=config_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
             )
 
             # Update ATP and counters
@@ -540,7 +540,7 @@ class FulfillmentService:
 
     async def receive_shipments(
         self,
-        game_id: int,
+        scenario_id: int,
         arrival_round: int,
         config_id: Optional[int] = None,
     ) -> Dict[str, Any]:
@@ -550,7 +550,7 @@ class FulfillmentService:
         Updates inventory levels and marks TOs as received.
 
         Args:
-            game_id: Beer Game ID
+            scenario_id: Scenario ID
             arrival_round: Round number when shipments arrive
             config_id: Supply chain configuration ID
 
@@ -564,7 +564,7 @@ class FulfillmentService:
         """
         # Get arriving TOs
         arriving_tos = await self.order_mgmt.get_arriving_transfer_orders(
-            game_id=game_id,
+            scenario_id=scenario_id,
             arrival_round=arrival_round,
         )
 
@@ -584,7 +584,7 @@ class FulfillmentService:
             if not to.line_items:
                 continue
 
-            # Beer Game: only 1 line item per TO
+            # Simulation: only 1 line item per TO
             to_line = to.line_items[0]
 
             # Update inventory at destination site
@@ -593,7 +593,7 @@ class FulfillmentService:
                 product_id=to_line.product_id,
                 quantity_change=to_line.quantity,
                 config_id=config_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
             )
 
             # Mark TO as received
@@ -638,7 +638,7 @@ class FulfillmentService:
         site_id: int,
         product_id: str,
         config_id: int,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
         current_round: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
@@ -657,7 +657,7 @@ class FulfillmentService:
             site_id: Fulfillment site ID
             product_id: Product to fulfill
             config_id: Supply chain configuration ID
-            game_id: Beer Game ID (optional)
+            scenario_id: Scenario ID (optional)
             current_round: Current round number
 
         Returns:
@@ -671,7 +671,7 @@ class FulfillmentService:
             return await self.fulfill_customer_orders_fifo(
                 site_id=site_id,
                 product_id=product_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
                 config_id=config_id,
                 current_round=current_round,
             )
@@ -679,7 +679,7 @@ class FulfillmentService:
         # Get unfulfilled orders (FIFO + priority)
         orders = await self.order_mgmt.get_unfulfilled_customer_orders(
             site_id=site_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
             priority_order=True,
         )
 
@@ -781,7 +781,7 @@ class FulfillmentService:
                 quantity=ship_qty,
                 estimated_delivery_date=estimated_delivery,
                 config_id=config_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
                 order_round=current_round,
                 arrival_round=arrival_round,
                 source_po_id=None,
@@ -795,7 +795,7 @@ class FulfillmentService:
                 product_id=product_id,
                 quantity_change=-ship_qty,
                 config_id=config_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
             )
 
             quantity_shipped += ship_qty
@@ -807,7 +807,7 @@ class FulfillmentService:
         backlog_remaining = await self.order_mgmt.get_backlog_for_site(
             site_id=site_id,
             product_id=product_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
         )
 
         return {

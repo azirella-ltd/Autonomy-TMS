@@ -101,7 +101,7 @@ class SupplyChainDataset(Dataset):
                     'edge_attr': edge_attr,
                     'y_order': y_order,
                     'y_demand': y_demand,
-                    'game_id': game['name'],
+                    'scenario_id': game['name'],
                     'round_num': t
                 })
         
@@ -130,7 +130,7 @@ class SupplyChainDataset(Dataset):
             edge_attr=sample['edge_attr'],
             y_order=sample['y_order'],
             y_demand=sample['y_demand'],
-            game_id=sample['game_id'],
+            scenario_id=sample['scenario_id'],
             round_num=sample['round_num']
         )
 

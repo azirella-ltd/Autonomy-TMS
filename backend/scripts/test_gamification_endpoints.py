@@ -94,7 +94,7 @@ async def test_gamification():
         print("\n5. Testing Achievement Checking")
         print("-" * 80)
         try:
-            result = await service.check_achievements(player_id=1, game_id=None)
+            result = await service.check_achievements(player_id=1, scenario_id=None)
             print(f"✅ Achievement check completed")
             print(f"   Newly unlocked: {len(result.newly_unlocked)}")
             print(f"   Points earned: {result.total_points_earned}")

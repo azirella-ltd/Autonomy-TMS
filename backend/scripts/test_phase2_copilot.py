@@ -3,7 +3,7 @@
 Phase 2 Copilot Mode End-to-End Test Script
 
 Tests the complete copilot workflow:
-1. Create a game with copilot mode players
+1. Create a scenario with copilot mode participants
 2. Test RLHF data collection on human overrides
 3. Test authority check and DecisionProposal creation
 4. Verify preference label updates
@@ -145,7 +145,7 @@ def test_rlhf_data_collector(db: Session):
 
 
 def test_decision_proposal_model(db: Session):
-    """Test DecisionProposal model supports game-based overrides"""
+    """Test DecisionProposal model supports scenario-based overrides"""
     print_header("Test 5: DecisionProposal Model")
 
     # Check that model has required columns
@@ -155,7 +155,7 @@ def test_decision_proposal_model(db: Session):
         columns = {c.key for c in mapper.columns}
 
         required_columns = {
-            'id', 'scenario_id', 'game_id', 'title', 'description',
+            'id', 'scenario_id', 'title', 'description',
             'created_by', 'status', 'decision_type', 'proposal_metadata'
         }
 
@@ -164,7 +164,7 @@ def test_decision_proposal_model(db: Session):
             print_result("DecisionProposal columns", False, f"Missing: {missing}")
             return False
 
-        print_result("DecisionProposal columns", True, f"Has: game_id, decision_type, proposal_metadata")
+        print_result("DecisionProposal columns", True, f"Has: scenario_id, decision_type, proposal_metadata")
     except Exception as e:
         print_result("DecisionProposal columns", False, str(e))
         return False
@@ -173,9 +173,9 @@ def test_decision_proposal_model(db: Session):
     try:
         scenario_col = mapper.columns['scenario_id']
         if scenario_col.nullable:
-            print_result("scenario_id nullable", True, "Supports game-based overrides")
+            print_result("scenario_id nullable", True, "Supports scenario-based overrides")
         else:
-            print_result("scenario_id nullable", False, "Should be nullable for game overrides")
+            print_result("scenario_id nullable", False, "Should be nullable for scenario overrides")
             return False
     except Exception as e:
         print_result("scenario_id nullable", False, str(e))
@@ -215,7 +215,7 @@ def test_rlhf_feedback_model(db: Session):
         columns = {c.key for c in mapper.columns}
 
         required_columns = {
-            'id', 'game_id', 'player_id', 'round_number',
+            'id', 'scenario_id', 'player_id', 'round_number',
             'ai_suggestion', 'human_decision', 'feedback_action',
             'preference_label', 'ai_outcome', 'human_outcome'
         }
@@ -259,11 +259,11 @@ def test_integration_with_existing_scenario(db: Session):
     print(f"  INFO: {len(copilot_participants)}/{len(participants)} participants in COPILOT mode")
 
     # Check for RLHF feedback
-    feedback_count = db.query(RLHFFeedback).filter(RLHFFeedback.game_id == scenario.id).count()
+    feedback_count = db.query(RLHFFeedback).filter(RLHFFeedback.scenario_id == scenario.id).count()
     print(f"  INFO: {feedback_count} RLHF feedback records for this scenario")
 
     # Check for decision proposals
-    proposal_count = db.query(DecisionProposal).filter(DecisionProposal.game_id == scenario.id).count()
+    proposal_count = db.query(DecisionProposal).filter(DecisionProposal.scenario_id == scenario.id).count()
     print(f"  INFO: {proposal_count} decision proposals for this scenario")
 
     return True
@@ -304,7 +304,7 @@ def run_all_tests():
         if failed == 0:
             print("\n  🎉 All Phase 2 tests passed!")
             print("\n  Next steps:")
-            print("  1. Create a game with copilot mode players")
+            print("  1. Create a scenario with copilot mode participants")
             print("  2. Play rounds with human overrides")
             print("  3. Verify RLHF data collection")
             print("  4. Check decision-comparison endpoint")

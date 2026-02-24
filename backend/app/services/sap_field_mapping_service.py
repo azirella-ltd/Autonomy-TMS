@@ -989,13 +989,23 @@ class SAPFieldMappingService:
                 available_fields = {f"{e}.{f}": info for e, fields in AWS_SC_FIELDS.items()
                                    for f, info in fields.items()}
 
+            # Retrieve RAG context for AWS SC data model knowledge
+            from app.services.rag_context import get_rag_context
+            kb_context = await get_rag_context(
+                f"AWS supply chain data model {sap_field} {sap_field_description} SAP field mapping",
+                top_k=3, max_tokens=1500, category="supply_chain_planning",
+            )
+            kb_section = ""
+            if kb_context:
+                kb_section = f"\nReference Knowledge:\n{kb_context}\n"
+
             prompt = f"""Analyze this SAP field and suggest the best AWS Supply Chain field mapping:
 
 SAP Field: {sap_field}
 Type: {sap_field_type}
 Description: {sap_field_description}
 Is Custom (Z-field): {self._is_z_field(sap_field)}
-
+{kb_section}
 Available target fields:
 {json.dumps(available_fields, indent=2)}
 
@@ -1012,7 +1022,7 @@ Respond in JSON format:
             response = await client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "You are an SAP-to-AWS Supply Chain field mapping expert."},
+                    {"role": "system", "content": "You are an SAP-to-AWS Supply Chain field mapping expert. Use the provided reference knowledge to ground your mapping suggestions in the actual AWS SC data model."},
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
@@ -1043,12 +1053,22 @@ Respond in JSON format:
                 for f in fields[:20]  # Limit to first 20 fields
             ])
 
+            # Retrieve RAG context for SAP integration knowledge
+            from app.services.rag_context import get_rag_context
+            kb_context = await get_rag_context(
+                f"AWS supply chain data model SAP Z-table {table_name} {table_description} integration",
+                top_k=3, max_tokens=1500, category="supply_chain_planning",
+            )
+            kb_section = ""
+            if kb_context:
+                kb_section = f"\nReference Knowledge:\n{kb_context}\n"
+
             prompt = f"""Analyze this custom SAP table (Z-table) for AWS Supply Chain integration:
 
 Table: {table_name}
 Description: {table_description}
 Suggested Entity: {suggested_entity or 'Unknown'}
-
+{kb_section}
 Fields:
 {field_summary}
 
@@ -1062,7 +1082,7 @@ Provide analysis in JSON format:
             response = await client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "You are an SAP integration expert helping migrate data to AWS Supply Chain."},
+                    {"role": "system", "content": "You are an SAP integration expert helping migrate data to AWS Supply Chain. Use the provided reference knowledge to ground your analysis in the actual AWS SC data model."},
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},

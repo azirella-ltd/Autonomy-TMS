@@ -36,7 +36,7 @@ class ChatService:
 
     async def get_messages(
         self,
-        game_id: int,
+        scenario_id: int,
         since: Optional[datetime] = None,
         limit: int = 100,
         offset: int = 0,
@@ -45,7 +45,7 @@ class ChatService:
         Get chat messages for a game.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             since: Only return messages after this timestamp
             limit: Maximum number of messages to return
             offset: Offset for pagination
@@ -53,13 +53,13 @@ class ChatService:
         Returns:
             Tuple of (messages, total_count, has_more)
         """
-        stmt = select(ChatMessage).filter(ChatMessage.game_id == game_id)
+        stmt = select(ChatMessage).filter(ChatMessage.scenario_id == scenario_id)
 
         if since:
             stmt = stmt.filter(ChatMessage.created_at > since)
 
         # Get total count
-        count_result = await self.db.execute(select(ChatMessage).filter(ChatMessage.game_id == game_id))
+        count_result = await self.db.execute(select(ChatMessage).filter(ChatMessage.scenario_id == scenario_id))
         total_count = len(count_result.scalars().all())
 
         # Get messages
@@ -76,21 +76,21 @@ class ChatService:
 
     async def create_message(
         self,
-        game_id: int,
+        scenario_id: int,
         message_data: ChatMessageCreate,
     ) -> ChatMessage:
         """
         Create a new chat message.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             message_data: Message data
 
         Returns:
             Created message
         """
         message = ChatMessage(
-            game_id=game_id,
+            scenario_id=scenario_id,
             sender_id=message_data.sender_id,
             sender_name=message_data.sender_name,
             sender_type=message_data.sender_type,
@@ -106,21 +106,21 @@ class ChatService:
         await self.db.refresh(message)
 
         logger.info(
-            f"Created chat message {message.id} in game {game_id} from {message.sender_name}"
+            f"Created chat message {message.id} in game {scenario_id} from {message.sender_name}"
         )
 
         return message
 
     async def mark_messages_read(
         self,
-        game_id: int,
+        scenario_id: int,
         message_ids: List[int],
     ) -> int:
         """
         Mark messages as read.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             message_ids: List of message IDs to mark as read
 
         Returns:
@@ -129,7 +129,7 @@ class ChatService:
         stmt = (
             update(ChatMessage)
             .where(
-                ChatMessage.game_id == game_id,
+                ChatMessage.scenario_id == scenario_id,
                 ChatMessage.id.in_(message_ids),
                 ChatMessage.read == False,  # noqa: E712
             )
@@ -141,7 +141,7 @@ class ChatService:
 
         count = result.rowcount
 
-        logger.info(f"Marked {count} messages as read in game {game_id}")
+        logger.info(f"Marked {count} messages as read in game {scenario_id}")
 
         return count
 
@@ -149,7 +149,7 @@ class ChatService:
 
     async def get_suggestions(
         self,
-        game_id: int,
+        scenario_id: int,
         agent_name: Optional[str] = None,
         pending_only: bool = False,
     ) -> List[AgentSuggestion]:
@@ -157,7 +157,7 @@ class ChatService:
         Get agent suggestions for a game.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             agent_name: Filter by agent name
             pending_only: Only return pending (not accepted/declined) suggestions
 
@@ -165,7 +165,7 @@ class ChatService:
             List of suggestions
         """
         stmt = select(AgentSuggestion).filter(
-            AgentSuggestion.game_id == game_id
+            AgentSuggestion.scenario_id == scenario_id
         )
 
         if agent_name:
@@ -182,7 +182,7 @@ class ChatService:
 
     async def request_suggestion(
         self,
-        game_id: int,
+        scenario_id: int,
         agent_name: str,
         request_data: Optional[AgentSuggestionRequest] = None,
     ) -> AgentSuggestion:
@@ -192,7 +192,7 @@ class ChatService:
         This triggers the LLM agent to generate an intelligent order recommendation.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             agent_name: Agent name (retailer, wholesaler, etc.)
             request_data: Optional additional context
 
@@ -200,16 +200,16 @@ class ChatService:
             Created suggestion with LLM reasoning
         """
         # Get game
-        game_result = await self.db.execute(select(Game).filter(Game.id == game_id))
+        game_result = await self.db.execute(select(Game).filter(Game.id == scenario_id))
         game = game_result.scalars().first()
         if not game:
-            raise ValueError(f"Game {game_id} not found")
+            raise ValueError(f"Game {scenario_id} not found")
 
         # Build comprehensive context
         try:
-            context = await self._build_suggestion_context(game_id, agent_name)
+            context = await self._build_suggestion_context(scenario_id, agent_name)
         except Exception as e:
-            logger.error(f"Failed to build context for {agent_name} in game {game_id}: {e}")
+            logger.error(f"Failed to build context for {agent_name} in game {scenario_id}: {e}")
             # Fallback to minimal context
             context = {
                 "current_round": game.current_round,
@@ -241,7 +241,7 @@ class ChatService:
             }
 
             logger.info(
-                f"LLM suggestion for {agent_name} in game {game_id}: "
+                f"LLM suggestion for {agent_name} in game {scenario_id}: "
                 f"{order_quantity} units ({confidence:.0%} confidence)"
             )
 
@@ -259,7 +259,7 @@ class ChatService:
 
         # Create suggestion
         suggestion = AgentSuggestion(
-            game_id=game_id,
+            scenario_id=scenario_id,
             round=game.current_round,
             agent_name=agent_name,
             order_quantity=order_quantity,
@@ -273,7 +273,7 @@ class ChatService:
         await self.db.refresh(suggestion)
 
         logger.info(
-            f"Created suggestion {suggestion.id} from {agent_name} in game {game_id}: "
+            f"Created suggestion {suggestion.id} from {agent_name} in game {scenario_id}: "
             f"{order_quantity} units ({confidence:.0%} confidence)"
         )
 
@@ -281,7 +281,7 @@ class ChatService:
 
     async def accept_suggestion(
         self,
-        game_id: int,
+        scenario_id: int,
         suggestion_id: int,
         player_id: int,
     ) -> AgentSuggestion:
@@ -289,7 +289,7 @@ class ChatService:
         Accept an agent suggestion.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             suggestion_id: Suggestion ID
             player_id: Player accepting the suggestion
 
@@ -299,13 +299,13 @@ class ChatService:
         suggestion_result = await self.db.execute(
             select(AgentSuggestion).filter(
                 AgentSuggestion.id == suggestion_id,
-                AgentSuggestion.game_id == game_id,
+                AgentSuggestion.scenario_id == scenario_id,
             )
         )
         suggestion = suggestion_result.scalars().first()
 
         if not suggestion:
-            raise ValueError(f"Suggestion {suggestion_id} not found in game {game_id}")
+            raise ValueError(f"Suggestion {suggestion_id} not found in game {scenario_id}")
 
         suggestion.accepted = True
         suggestion.player_id = player_id
@@ -315,14 +315,14 @@ class ChatService:
         await self.db.refresh(suggestion)
 
         logger.info(
-            f"Player {player_id} accepted suggestion {suggestion_id} in game {game_id}"
+            f"Player {player_id} accepted suggestion {suggestion_id} in game {scenario_id}"
         )
 
         return suggestion
 
     async def decline_suggestion(
         self,
-        game_id: int,
+        scenario_id: int,
         suggestion_id: int,
         player_id: int,
     ) -> AgentSuggestion:
@@ -330,7 +330,7 @@ class ChatService:
         Decline an agent suggestion.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             suggestion_id: Suggestion ID
             player_id: Player declining the suggestion
 
@@ -340,13 +340,13 @@ class ChatService:
         suggestion_result = await self.db.execute(
             select(AgentSuggestion).filter(
                 AgentSuggestion.id == suggestion_id,
-                AgentSuggestion.game_id == game_id,
+                AgentSuggestion.scenario_id == scenario_id,
             )
         )
         suggestion = suggestion_result.scalars().first()
 
         if not suggestion:
-            raise ValueError(f"Suggestion {suggestion_id} not found in game {game_id}")
+            raise ValueError(f"Suggestion {suggestion_id} not found in game {scenario_id}")
 
         suggestion.accepted = False
         suggestion.player_id = player_id
@@ -356,7 +356,7 @@ class ChatService:
         await self.db.refresh(suggestion)
 
         logger.info(
-            f"Player {player_id} declined suggestion {suggestion_id} in game {game_id}"
+            f"Player {player_id} declined suggestion {suggestion_id} in game {scenario_id}"
         )
 
         return suggestion
@@ -365,26 +365,26 @@ class ChatService:
 
     async def create_what_if_analysis(
         self,
-        game_id: int,
+        scenario_id: int,
         analysis_data: WhatIfAnalysisRequest,
     ) -> WhatIfAnalysis:
         """
         Create a what-if analysis request.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             analysis_data: Analysis request data
 
         Returns:
             Created analysis
         """
-        game_result = await self.db.execute(select(Game).filter(Game.id == game_id))
+        game_result = await self.db.execute(select(Game).filter(Game.id == scenario_id))
         game = game_result.scalars().first()
         if not game:
-            raise ValueError(f"Game {game_id} not found")
+            raise ValueError(f"Game {scenario_id} not found")
 
         analysis = WhatIfAnalysis(
-            game_id=game_id,
+            scenario_id=scenario_id,
             round=game.current_round,
             player_id=analysis_data.player_id,
             question=analysis_data.question,
@@ -396,7 +396,7 @@ class ChatService:
         await self.db.refresh(analysis)
 
         logger.info(
-            f"Created what-if analysis {analysis.id} for player {analysis_data.player_id} in game {game_id}"
+            f"Created what-if analysis {analysis.id} for player {analysis_data.player_id} in game {scenario_id}"
         )
 
         # TODO: Trigger async analysis processing
@@ -406,14 +406,14 @@ class ChatService:
 
     async def get_what_if_analysis(
         self,
-        game_id: int,
+        scenario_id: int,
         analysis_id: int,
     ) -> Optional[WhatIfAnalysis]:
         """
         Get a what-if analysis.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             analysis_id: Analysis ID
 
         Returns:
@@ -422,7 +422,7 @@ class ChatService:
         analysis_result = await self.db.execute(
             select(WhatIfAnalysis).filter(
                 WhatIfAnalysis.id == analysis_id,
-                WhatIfAnalysis.game_id == game_id,
+                WhatIfAnalysis.scenario_id == scenario_id,
             )
         )
         analysis = analysis_result.scalars().first()
@@ -433,7 +433,7 @@ class ChatService:
 
     async def _build_suggestion_context(
         self,
-        game_id: int,
+        scenario_id: int,
         agent_name: str,
     ) -> Dict[str, Any]:
         """
@@ -448,7 +448,7 @@ class ChatService:
         - Demand volatility
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             agent_name: Agent role name
 
         Returns:
@@ -458,20 +458,20 @@ class ChatService:
         from sqlalchemy import func
 
         # Get game
-        game_result = await self.db.execute(select(Game).filter(Game.id == game_id))
+        game_result = await self.db.execute(select(Game).filter(Game.id == scenario_id))
         game = game_result.scalars().first()
 
         # Get player for this agent role
         player_result = await self.db.execute(
             select(Player).filter(
-                Player.game_id == game_id,
+                Player.scenario_id == scenario_id,
                 Player.role == agent_name.upper()
             )
         )
         player = player_result.scalars().first()
 
         if not player:
-            raise ValueError(f"No player found for agent {agent_name} in game {game_id}")
+            raise ValueError(f"No player found for agent {agent_name} in game {scenario_id}")
 
         # Get recent player rounds (last 10)
         rounds_result = await self.db.execute(
@@ -625,14 +625,14 @@ class ChatService:
 
     async def get_unread_count(
         self,
-        game_id: int,
+        scenario_id: int,
         user_id: str,
     ) -> int:
         """
         Get unread message count for a user in a game.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             user_id: User ID (player:1)
 
         Returns:
@@ -640,7 +640,7 @@ class ChatService:
         """
         result = await self.db.execute(
             select(ChatMessage).filter(
-                ChatMessage.game_id == game_id,
+                ChatMessage.scenario_id == scenario_id,
                 ChatMessage.recipient_id == user_id,
                 ChatMessage.read == False,  # noqa: E712
             )

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export per-round supply chain metrics for one or more games."""
+"""Export per-round supply chain metrics for one or more scenarios."""
 
 from __future__ import annotations
 
@@ -33,17 +33,17 @@ def _net_inventory(state: Dict[str, Any]) -> int:
     return inventory - backlog
 
 
-def export_game(game_id: int, output_dir: str) -> str:
+def export_game(scenario_id: int, output_dir: str) -> str:
     session = SessionLocal()
     try:
-        scenario = session.query(Scenario).filter(Scenario.id == game_id).first()
+        scenario = session.query(Scenario).filter(Scenario.id == scenario_id).first()
         if not scenario:
-            raise RuntimeError(f"Scenario {game_id} not found")
+            raise RuntimeError(f"Scenario {scenario_id} not found")
 
         config = _coerce_game_config(scenario)
         history = config.get("history", [])
         if not history:
-            rounds = session.query(Round).filter(Round.game_id == game_id).order_by(Round.round_number.asc()).all()
+            rounds = session.query(Round).filter(Round.scenario_id == scenario_id).order_by(Round.round_number.asc()).all()
             history = []
             for round_record in rounds:
                 payload = round_record.config or {}
@@ -63,7 +63,7 @@ def export_game(game_id: int, output_dir: str) -> str:
         session.close()
 
     if not history:
-        raise RuntimeError(f"Game {game_id} has no recorded rounds to export.")
+        raise RuntimeError(f"Scenario {scenario_id} has no recorded rounds to export.")
 
     initial_state = config.get("initial_state", {})
     if not initial_state:
@@ -73,7 +73,7 @@ def export_game(game_id: int, output_dir: str) -> str:
         }
 
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, f"game_{game_id}_rounds.csv")
+    output_path = os.path.join(output_dir, f"scenario_{scenario_id}_rounds.csv")
 
     prev_inventory = {role: _net_inventory(initial_state.get(role, {})) for role in ROLES}
     pipelines = {
@@ -152,16 +152,16 @@ def export_game(game_id: int, output_dir: str) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--game-id",
+        "--scenario-id",
         type=int,
         action="append",
-        dest="game_ids",
-        help="Specific game ID to export (can be passed multiple times).",
+        dest="scenario_ids",
+        help="Specific scenario ID to export (can be passed multiple times).",
     )
     parser.add_argument(
         "--all",
         action="store_true",
-        help="Export every game in the database (ignores --game-id).",
+        help="Export every scenario in the database (ignores --scenario-id).",
     )
     parser.add_argument(
         "--output-dir",
@@ -173,27 +173,27 @@ def main() -> None:
     session = SessionLocal()
     try:
         if args.all:
-            game_data = session.query(Scenario.id, Scenario.name).order_by(Scenario.id.asc()).all()
-        elif args.game_ids:
-            game_data = session.query(Scenario.id, Scenario.name).filter(Scenario.id.in_(set(args.game_ids))).order_by(Scenario.id.asc()).all()
-            missing = set(args.game_ids) - {gid for gid, _ in game_data}
+            scenario_data = session.query(Scenario.id, Scenario.name).order_by(Scenario.id.asc()).all()
+        elif args.scenario_ids:
+            scenario_data = session.query(Scenario.id, Scenario.name).filter(Scenario.id.in_(set(args.scenario_ids))).order_by(Scenario.id.asc()).all()
+            missing = set(args.scenario_ids) - {gid for gid, _ in scenario_data}
             if missing:
                 raise SystemExit(f"Scenario id(s) not found: {', '.join(str(i) for i in sorted(missing))}")
         else:
-            raise SystemExit("Must specify --all or at least one --game-id")
+            raise SystemExit("Must specify --all or at least one --scenario-id")
     finally:
         session.close()
 
-    if not game_data:
-        raise SystemExit("No games to export.")
+    if not scenario_data:
+        raise SystemExit("No scenarios to export.")
 
-    for game_id, name in game_data:
+    for scenario_id, name in scenario_data:
         try:
-            path = export_game(game_id, args.output_dir)
+            path = export_game(scenario_id, args.output_dir)
             label = f" ({name})" if name else ""
-            print(f"Exported game {game_id}{label} -> {path}")
+            print(f"Exported scenario {scenario_id}{label} -> {path}")
         except RuntimeError as exc:
-            print(f"Skipping game {game_id}: {exc}")
+            print(f"Skipping scenario {scenario_id}: {exc}")
 
 
 if __name__ == "__main__":

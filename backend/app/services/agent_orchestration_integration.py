@@ -69,7 +69,7 @@ class AgentOrchestrationIntegration:
 
     def initialize_for_game(
         self,
-        game_id: int,
+        scenario_id: int,
         consensus_method: ConsensusMethod = ConsensusMethod.AVERAGING,
         learning_method: LearningMethod = LearningMethod.EMA,
         learning_rate: float = 0.1
@@ -78,7 +78,7 @@ class AgentOrchestrationIntegration:
         Initialize orchestration services for a game.
 
         Args:
-            game_id: Game ID to initialize for
+            scenario_id: Game ID to initialize for
             consensus_method: Ensemble consensus method
             learning_method: Weight learning algorithm
             learning_rate: Learning rate for adaptive learning
@@ -91,13 +91,13 @@ class AgentOrchestrationIntegration:
         )
 
         # Get learned weights or use defaults
-        adaptive_weights = self.learner.get_learned_weights(context_id=game_id)
+        adaptive_weights = self.learner.get_learned_weights(context_id=scenario_id)
         if adaptive_weights:
             agent_weights = adaptive_weights.weights
-            logger.info(f"Loaded learned weights for game {game_id}: {agent_weights}")
+            logger.info(f"Loaded learned weights for game {scenario_id}: {agent_weights}")
         else:
             agent_weights = {"llm": 1.0/3, "gnn": 1.0/3, "trm": 1.0/3}
-            logger.info(f"Using default equal weights for game {game_id}")
+            logger.info(f"Using default equal weights for game {scenario_id}")
 
         # Initialize ensemble with learned weights
         self.ensemble = MultiAgentEnsemble(
@@ -200,7 +200,7 @@ class AgentOrchestrationIntegration:
         # Record performance
         performance_metrics = PerformanceMetrics(
             player_id=player.id,
-            game_id=game.id,
+            scenario_id=game.id,
             round_number=round_number,
             agent_type=agent_type,
             agent_mode=player.agent_mode or "manual",
@@ -272,7 +272,7 @@ class AgentOrchestrationIntegration:
         """
         feedback_id = self.rlhf_collector.record_feedback(
             player_id=player.id,
-            game_id=game.id,
+            scenario_id=game.id,
             round_number=round_number,
             agent_type=agent_type,
             game_state=game_state,
@@ -316,22 +316,22 @@ class AgentOrchestrationIntegration:
             f"human_cost={human_outcome.get('total_cost')}"
         )
 
-    def get_ensemble_summary(self, game_id: int) -> Dict[str, Any]:
+    def get_ensemble_summary(self, scenario_id: int) -> Dict[str, Any]:
         """
         Get summary of ensemble performance for a game.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
 
         Returns:
             Dict with ensemble statistics
         """
         # Get current weights
-        adaptive_weights = self.learner.get_learned_weights(context_id=game_id) if self.learner else None
+        adaptive_weights = self.learner.get_learned_weights(context_id=scenario_id) if self.learner else None
 
         # Get performance summary
         summary = {
-            "game_id": game_id,
+            "scenario_id": scenario_id,
             "current_weights": adaptive_weights.weights if adaptive_weights else {},
             "confidence": adaptive_weights.confidence if adaptive_weights else 0.0,
             "num_samples": adaptive_weights.num_samples if adaptive_weights else 0,
@@ -345,7 +345,7 @@ class AgentOrchestrationIntegration:
                 # Get agent-level performance summaries
                 for agent_type in ["llm", "gnn", "trm"]:
                     perf_summary = self.tracker.get_agent_performance_summary(
-                        game_id=game_id,
+                        scenario_id=scenario_id,
                         agent_type=agent_type,
                         min_rounds=5
                     )
@@ -356,12 +356,12 @@ class AgentOrchestrationIntegration:
 
         return summary
 
-    def get_weight_history(self, game_id: int, limit: int = 50) -> List[Dict[str, Any]]:
+    def get_weight_history(self, scenario_id: int, limit: int = 50) -> List[Dict[str, Any]]:
         """
         Get history of weight changes over time.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             limit: Max records to return
 
         Returns:
@@ -371,7 +371,7 @@ class AgentOrchestrationIntegration:
         from app.services.adaptive_weight_learner import LearnedWeightConfig
 
         configs = self.db.query(LearnedWeightConfig).filter_by(
-            context_id=game_id,
+            context_id=scenario_id,
             is_active=True
         ).order_by(LearnedWeightConfig.updated_at.desc()).limit(limit).all()
 

@@ -75,14 +75,14 @@ user_games = Table(
     'user_games',
     Base.metadata,
     Column('user_id', Integer, ForeignKey('users.id'), primary_key=True),
-    Column('game_id', Integer, ForeignKey('games.id'), primary_key=True)
+    Column('scenario_id', Integer, ForeignKey('games.id'), primary_key=True)
 )
 
 class Player(Base):
     __tablename__ = "players"
     
     id = Column(Integer, primary_key=True, index=True)
-    game_id = Column(Integer, ForeignKey("games.id"), nullable=False)
+    scenario_id = Column(Integer, ForeignKey("games.id"), nullable=False)
     user_id = Column(Integer, nullable=True)  # Null for AI players
     role = Column(Enum(PlayerRole), nullable=False)
     name = Column(String(100), nullable=False)
@@ -111,7 +111,7 @@ class Order(Base):
     __tablename__ = "orders"
     
     id = Column(Integer, primary_key=True, index=True)
-    game_id = Column(Integer, ForeignKey("games.id"), nullable=False)
+    scenario_id = Column(Integer, ForeignKey("games.id"), nullable=False)
     player_id = Column(Integer, ForeignKey("players.id"), nullable=False)
     round_number = Column(Integer, nullable=False)
     quantity = Column(Integer, nullable=False)
@@ -125,7 +125,7 @@ class GameRound(Base):
     __tablename__ = "game_rounds"
     
     id = Column(Integer, primary_key=True, index=True)
-    game_id = Column(Integer, ForeignKey("games.id"), nullable=False)
+    scenario_id = Column(Integer, ForeignKey("games.id"), nullable=False)
     round_number = Column(Integer, nullable=False)
     customer_demand = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)

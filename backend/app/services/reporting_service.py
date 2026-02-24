@@ -32,29 +32,29 @@ class ReportingService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def generate_game_report(self, game_id: int) -> Dict[str, Any]:
+    async def generate_game_report(self, scenario_id: int) -> Dict[str, Any]:
         """
         Generate comprehensive game report with overview, performance, insights.
 
         Args:
-            game_id: ID of the game to report on
+            scenario_id: ID of the game to report on
 
         Returns:
             Complete game report with overview, player performance, insights, recommendations
         """
         # Fetch game data
-        game = await self._get_game_with_rounds(game_id)
+        game = await self._get_game_with_rounds(scenario_id)
         if not game:
-            raise ValueError(f"Game {game_id} not found")
+            raise ValueError(f"Game {scenario_id} not found")
 
         # Fetch all player rounds
-        player_rounds = await self._get_player_rounds(game_id)
+        player_rounds = await self._get_player_rounds(scenario_id)
 
         # Calculate overview metrics
         overview = await self._calculate_overview(game, player_rounds)
 
         # Calculate per-player performance
-        player_performance = await self._calculate_player_performance(game_id, player_rounds)
+        player_performance = await self._calculate_player_performance(scenario_id, player_rounds)
 
         # Generate insights
         insights = await self._generate_insights(game, player_rounds, player_performance)
@@ -63,18 +63,18 @@ class ReportingService:
         recommendations = await self._generate_recommendations(game, player_rounds, insights)
 
         return {
-            "game_id": game_id,
+            "scenario_id": scenario_id,
             "generated_at": datetime.utcnow().isoformat(),
             "overview": overview,
             "player_performance": player_performance,
             "key_insights": insights,
             "recommendations": recommendations,
-            "charts_data": await self._prepare_charts_data(game_id, player_rounds)
+            "charts_data": await self._prepare_charts_data(scenario_id, player_rounds)
         }
 
     async def export_game_data(
         self,
-        game_id: int,
+        scenario_id: int,
         format: str = 'csv',
         include_rounds: bool = True
     ) -> bytes:
@@ -82,7 +82,7 @@ class ReportingService:
         Export game data in specified format.
 
         Args:
-            game_id: Game to export
+            scenario_id: Game to export
             format: Export format (csv, json, excel)
             include_rounds: Whether to include round-by-round data
 
@@ -90,11 +90,11 @@ class ReportingService:
             File content as bytes
         """
         if format == 'csv':
-            return await self._export_csv(game_id, include_rounds)
+            return await self._export_csv(scenario_id, include_rounds)
         elif format == 'json':
-            return await self._export_json(game_id, include_rounds)
+            return await self._export_json(scenario_id, include_rounds)
         elif format == 'excel':
-            return await self._export_excel(game_id, include_rounds)
+            return await self._export_excel(scenario_id, include_rounds)
         else:
             raise ValueError(f"Unsupported format: {format}")
 
@@ -118,7 +118,7 @@ class ReportingService:
         # Get recent player rounds
         stmt = (
             select(PlayerRound, Game)
-            .join(Game, PlayerRound.game_id == Game.id)
+            .join(Game, PlayerRound.scenario_id == Game.id)
             .where(PlayerRound.player_id == player_id)
             .where(Game.status == 'completed')
             .order_by(desc(Game.created_at))
@@ -140,7 +140,7 @@ class ReportingService:
         for pr, game in player_rounds:
             if game.id not in games_data:
                 games_data[game.id] = {
-                    "game_id": game.id,
+                    "scenario_id": game.id,
                     "created_at": game.created_at,
                     "rounds": []
                 }
@@ -148,13 +148,13 @@ class ReportingService:
 
         # Calculate metric for each game
         data_points = []
-        for game_id, game_data in sorted(
+        for scenario_id, game_data in sorted(
             games_data.items(),
             key=lambda x: x[1]["created_at"]
         )[-lookback:]:
             value = self._calculate_metric_for_game(game_data["rounds"], metric)
             data_points.append({
-                "game_id": game_id,
+                "scenario_id": scenario_id,
                 "date": game_data["created_at"].isoformat(),
                 "value": value
             })
@@ -181,14 +181,14 @@ class ReportingService:
 
     async def compare_games(
         self,
-        game_ids: List[int],
+        scenario_ids: List[int],
         metrics: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Compare performance across multiple games.
 
         Args:
-            game_ids: List of game IDs to compare
+            scenario_ids: List of game IDs to compare
             metrics: Metrics to compare (default: all)
 
         Returns:
@@ -198,16 +198,16 @@ class ReportingService:
             metrics = ['total_cost', 'service_level', 'avg_inventory', 'bullwhip_effect']
 
         comparisons = []
-        for game_id in game_ids:
-            game = await self._get_game_with_rounds(game_id)
+        for scenario_id in scenario_ids:
+            game = await self._get_game_with_rounds(scenario_id)
             if not game:
                 continue
 
-            player_rounds = await self._get_player_rounds(game_id)
+            player_rounds = await self._get_player_rounds(scenario_id)
             overview = await self._calculate_overview(game, player_rounds)
 
             game_data = {
-                "game_id": game_id,
+                "scenario_id": scenario_id,
                 "config_name": game.config.name if game.config else "Unknown",
                 "rounds": game.num_rounds,
                 "players": len(set(pr.player_id for pr in player_rounds)),
@@ -228,17 +228,17 @@ class ReportingService:
 
     # Private helper methods
 
-    async def _get_game_with_rounds(self, game_id: int):
+    async def _get_game_with_rounds(self, scenario_id: int):
         """Fetch game with rounds."""
-        stmt = select(Game).where(Game.id == game_id)
+        stmt = select(Game).where(Game.id == scenario_id)
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def _get_player_rounds(self, game_id: int) -> List[PlayerRound]:
+    async def _get_player_rounds(self, scenario_id: int) -> List[PlayerRound]:
         """Fetch all player rounds for a game."""
         stmt = (
             select(PlayerRound)
-            .where(PlayerRound.game_id == game_id)
+            .where(PlayerRound.scenario_id == scenario_id)
             .order_by(PlayerRound.round_number, PlayerRound.player_id)
         )
         result = await self.db.execute(stmt)
@@ -252,7 +252,7 @@ class ReportingService:
         """Calculate game overview metrics."""
         if not player_rounds:
             return {
-                "game_id": game.id,
+                "scenario_id": game.id,
                 "status": game.status,
                 "rounds": 0,
                 "message": "No player data available"
@@ -281,7 +281,7 @@ class ReportingService:
         max_round = max((pr.round_number for pr in player_rounds), default=0)
 
         return {
-            "game_id": game.id,
+            "scenario_id": game.id,
             "config_name": game.config.name if game.config else "Unknown",
             "status": game.status,
             "rounds_played": max_round,
@@ -295,7 +295,7 @@ class ReportingService:
 
     async def _calculate_player_performance(
         self,
-        game_id: int,
+        scenario_id: int,
         player_rounds: List[PlayerRound]
     ) -> List[Dict[str, Any]]:
         """Calculate per-player performance metrics."""
@@ -341,7 +341,7 @@ class ReportingService:
 
     async def _calculate_bullwhip_effect(
         self,
-        game_id: int,
+        scenario_id: int,
         player_rounds: List[PlayerRound]
     ) -> Optional[float]:
         """Calculate bullwhip effect (order variance amplification)."""
@@ -454,7 +454,7 @@ class ReportingService:
 
     async def _prepare_charts_data(
         self,
-        game_id: int,
+        scenario_id: int,
         player_rounds: List[PlayerRound]
     ) -> Dict[str, List]:
         """Prepare data for frontend charts."""
@@ -583,7 +583,7 @@ class ReportingService:
 
         for metric in metrics:
             values = [
-                (c["game_id"], c.get(metric))
+                (c["scenario_id"], c.get(metric))
                 for c in comparisons
                 if c.get(metric) is not None
             ]
@@ -599,15 +599,15 @@ class ReportingService:
                 best_game = max(values, key=lambda x: x[1])
 
             best[metric] = {
-                "game_id": best_game[0],
+                "scenario_id": best_game[0],
                 "value": best_game[1]
             }
 
         return best
 
-    async def _export_csv(self, game_id: int, include_rounds: bool) -> bytes:
+    async def _export_csv(self, scenario_id: int, include_rounds: bool) -> bytes:
         """Export game data as CSV."""
-        player_rounds = await self._get_player_rounds(game_id)
+        player_rounds = await self._get_player_rounds(scenario_id)
 
         output = io.StringIO()
         writer = csv.writer(output)
@@ -623,7 +623,7 @@ class ReportingService:
         for pr in player_rounds:
             player = await self.db.get(Player, pr.player_id)
             writer.writerow([
-                game_id,
+                scenario_id,
                 pr.round_number,
                 pr.player_id,
                 player.role if player else 'Unknown',
@@ -637,26 +637,26 @@ class ReportingService:
 
         return output.getvalue().encode('utf-8')
 
-    async def _export_json(self, game_id: int, include_rounds: bool) -> bytes:
+    async def _export_json(self, scenario_id: int, include_rounds: bool) -> bytes:
         """Export game data as JSON."""
-        report = await self.generate_game_report(game_id)
+        report = await self.generate_game_report(scenario_id)
         return json.dumps(report, indent=2).encode('utf-8')
 
-    async def _export_excel(self, game_id: int, include_rounds: bool) -> bytes:
+    async def _export_excel(self, scenario_id: int, include_rounds: bool) -> bytes:
         """Export game data as Excel (requires openpyxl)."""
         try:
             from openpyxl import Workbook
             from openpyxl.utils import get_column_letter
         except ImportError:
             # Fallback to CSV if openpyxl not available
-            return await self._export_csv(game_id, include_rounds)
+            return await self._export_csv(scenario_id, include_rounds)
 
         wb = Workbook()
         ws = wb.active
         ws.title = "Game Report"
 
         # Get data
-        player_rounds = await self._get_player_rounds(game_id)
+        player_rounds = await self._get_player_rounds(scenario_id)
 
         # Write headers
         headers = [
@@ -670,7 +670,7 @@ class ReportingService:
         for pr in player_rounds:
             player = await self.db.get(Player, pr.player_id)
             ws.append([
-                game_id,
+                scenario_id,
                 pr.round_number,
                 pr.player_id,
                 player.role if player else 'Unknown',

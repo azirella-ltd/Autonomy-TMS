@@ -311,7 +311,7 @@ class ATPService:
         safety_stock = self._get_safety_stock(player, game) if include_safety_stock else 0
 
         # Initialize stochastic sampler with game seed
-        sampler = StochasticSampler(game_id=game.id)
+        sampler = StochasticSampler(scenario_id=game.id)
 
         # Get lanes feeding into this player's node for lead time distributions
         lanes = self._get_upstream_lanes(player, game)
@@ -776,17 +776,36 @@ class ATPService:
             Forecasted demand (integer)
         """
         # Get historical demand (last 4 rounds)
-        # TODO: Query player_rounds table for historical incoming_order values
         historical_demand = self._get_historical_demand(player, periods=4)
 
         if historical_demand:
             # Use simple moving average
             avg_demand = sum(historical_demand) / len(historical_demand)
             return int(avg_demand)
-        else:
-            # Fallback to baseline demand from config
-            # TODO: Get from supply chain config
-            return 100  # Default placeholder
+
+        # Fallback: try to get baseline demand from MarketDemand config
+        try:
+            from app.models.supply_chain_config import MarketDemand
+            config_id = getattr(game, "config_id", None)
+            if config_id:
+                md = (
+                    self.db.query(MarketDemand)
+                    .filter(MarketDemand.config_id == config_id)
+                    .first()
+                )
+                if md and md.demand_pattern:
+                    params = md.demand_pattern.get("parameters") or md.demand_pattern.get("params", {})
+                    final = params.get("final_demand")
+                    initial = params.get("initial_demand")
+                    if final is not None:
+                        return int(final)
+                    if initial is not None:
+                        return int(initial)
+        except Exception as e:
+            logger.debug(f"Could not load MarketDemand baseline: {e}")
+
+        # Last resort: 0 (no data available)
+        return 0
 
     def _get_historical_demand(self, player: Player, periods: int = 4) -> List[int]:
         """
@@ -1006,7 +1025,7 @@ class ATPService:
                 logger.warning(f"Cannot save ATP - no node ID for player {player.id}")
                 return None
 
-            # Get product ID (default to "CASE" for Beer Game)
+            # Get product ID (default to "CASE" for simulation)
             product_id = "CASE"
 
             # Create ATP projection record
@@ -1027,7 +1046,7 @@ class ATPService:
                 lead_time_mean=result.lead_time_mean,
                 lead_time_stddev=result.lead_time_stddev,
                 # Game integration
-                game_id=game.id,
+                scenario_id=game.id,
                 source="probabilistic_atp",
                 source_event_id=f"game_{game.id}_round_{current_round}",
             )
@@ -1096,7 +1115,7 @@ class ATPService:
         """
         Get SAP material number for player's primary item.
 
-        For Beer Game, this is typically "CASE" or the primary finished good.
+        For simulation, this is typically "CASE" or the primary finished good.
 
         Args:
             player: Player instance
@@ -1110,7 +1129,7 @@ class ATPService:
 
             # Get primary item from game config
             if not game or not game.supply_chain_config_id:
-                return "CASE"  # Default Beer Game item
+                return "CASE"  # Default simulation item
 
             # Get the first/primary item for this config
             item = (

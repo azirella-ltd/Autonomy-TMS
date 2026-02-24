@@ -3,7 +3,7 @@ Achievement models for gamification/simulation system.
 
 Terminology (Feb 2026):
 - player_id -> participant_id
-- game_id -> scenario_id
+# Terminology: scenario_id (was game_id)
 - PlayerStats -> ParticipantStats
 - PlayerAchievement -> ParticipantAchievement
 - PlayerBadge -> ParticipantBadge

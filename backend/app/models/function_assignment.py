@@ -5,7 +5,7 @@ functions. Each function can be assigned with a different agent mode (MANUAL,
 COPILOT, AUTONOMOUS).
 
 Terminology (Feb 2026):
-- game_id -> scenario_id
+# Terminology: scenario_id (was game_id)
 - Game -> Scenario
 - player -> participant
 """

@@ -1181,8 +1181,8 @@ def _detect_inventory_risks(db: Session, config_id: Optional[int]) -> List[Inven
         inventory_rows = query.limit(200).all()
 
         if not inventory_rows:
-            # Fall back to mock data if no real inventory exists
-            return _generate_mock_inventory_risks(config_id)
+            # No real inventory data — return empty (no mock fallback)
+            return []
 
         risks = []
         risk_idx = 0
@@ -1249,8 +1249,8 @@ def _detect_inventory_risks(db: Session, config_id: Optional[int]) -> List[Inven
         return risks[:20]  # Cap at 20 risks for dashboard
 
     except Exception as e:
-        logger.warning(f"Failed to detect real inventory risks, falling back to mock: {e}")
-        return _generate_mock_inventory_risks(config_id)
+        logger.warning(f"Failed to detect inventory risks: {e}")
+        return []
 
 
 def _generate_recommendations_from_risks(db: Session, risks: List[InventoryRisk]) -> List[Recommendation]:
@@ -1305,165 +1305,3 @@ def _generate_recommendations_from_risks(db: Session, risks: List[InventoryRisk]
     return recommendations
 
 
-# ============================================================================
-# Mock data fallback (used when no real inventory data exists)
-# ============================================================================
-
-def _generate_mock_inventory_risks(config_id: Optional[int]) -> List[InventoryRisk]:
-    """Generate mock inventory risks for development."""
-    risks = [
-        InventoryRisk(
-            id="risk-1",
-            location_name="Atlanta Distribution Center",
-            product_name="Brake Pads - Premium",
-            status=RiskStatus.CRITICAL,
-            summary_message="At risk of stocking out in 3 days which will result in a shortage of 3,000 units / 31%",
-            current_inventory=950,
-            min_qty=300,
-            target_inventory=1500,
-            days_of_supply=2,
-            projected_inventory=[950, 700, 400, 200, 0, 0, 0, 0, 100, 300, 500, 700]
-        ),
-        InventoryRisk(
-            id="risk-2",
-            location_name="Denver Warehouse",
-            product_name="Oil Filter - Standard",
-            status=RiskStatus.WARNING,
-            summary_message="Inventory below target levels, may impact fulfillment in 7 days",
-            current_inventory=2400,
-            min_qty=1000,
-            target_inventory=4000,
-            days_of_supply=8,
-            projected_inventory=[2400, 2200, 2000, 1800, 1600, 1400, 1200, 1000, 1200, 1400, 1600, 1800]
-        )
-    ]
-    return risks
-
-
-def _generate_mock_recommendations(risks: List[InventoryRisk]) -> List[Recommendation]:
-    """Generate mock recommendations based on detected risks."""
-    if not risks:
-        return []
-
-    recommendations = [
-        Recommendation(
-            id="rec-1",
-            action_title="Move 3,000 units from Alabama DC",
-            description="Transfer inventory from Alabama Distribution Center which has excess stock",
-            arrival_estimate="3 days",
-            score=86,
-            risk_resolved_pct=91,
-            emissions_kg=46.8,
-            shipping_cost=12234,
-            before_state=BeforeAfterState(
-                locations=[
-                    LocationState(
-                        name="Atlanta DC",
-                        available=950,
-                        min_qty=300,
-                        target=1500,
-                        days_of_cover=2,
-                        projected=[950, 700, 400, 200, 0, 0, 0, 0]
-                    ),
-                    LocationState(
-                        name="Alabama DC",
-                        available=7000,
-                        min_qty=500,
-                        target=3000,
-                        days_of_cover=14,
-                        projected=[7000, 6500, 6000, 5500, 5000, 4500, 4000, 3500]
-                    )
-                ]
-            ),
-            after_state=BeforeAfterState(
-                locations=[
-                    LocationState(
-                        name="Atlanta DC",
-                        available=3950,
-                        min_qty=300,
-                        target=1500,
-                        days_of_cover=9,
-                        projected=[950, 700, 3700, 3500, 3300, 3100, 2900, 2700]
-                    ),
-                    LocationState(
-                        name="Alabama DC",
-                        available=4000,
-                        min_qty=500,
-                        target=3000,
-                        days_of_cover=8,
-                        projected=[7000, 6500, 3000, 2500, 2000, 1500, 1000, 500]
-                    )
-                ]
-            )
-        ),
-        Recommendation(
-            id="rec-2",
-            action_title="Expedite supplier shipment",
-            description="Request expedited delivery from primary supplier for incoming PO-2024-1234",
-            arrival_estimate="5 days",
-            score=72,
-            risk_resolved_pct=78,
-            emissions_kg=82.5,
-            shipping_cost=8500,
-            before_state=BeforeAfterState(
-                locations=[
-                    LocationState(
-                        name="Atlanta DC",
-                        available=950,
-                        min_qty=300,
-                        target=1500,
-                        days_of_cover=2,
-                        projected=[950, 700, 400, 200, 0, 0, 0, 0]
-                    )
-                ]
-            ),
-            after_state=BeforeAfterState(
-                locations=[
-                    LocationState(
-                        name="Atlanta DC",
-                        available=950,
-                        min_qty=300,
-                        target=1500,
-                        days_of_cover=7,
-                        projected=[950, 700, 400, 200, 100, 2100, 2000, 1900]
-                    )
-                ]
-            )
-        ),
-        Recommendation(
-            id="rec-3",
-            action_title="Adjust safety stock policy",
-            description="Temporarily reduce safety stock at Atlanta DC to extend coverage while awaiting replenishment",
-            arrival_estimate="Immediate",
-            score=58,
-            risk_resolved_pct=45,
-            emissions_kg=0,
-            shipping_cost=0,
-            before_state=BeforeAfterState(
-                locations=[
-                    LocationState(
-                        name="Atlanta DC",
-                        available=950,
-                        min_qty=300,
-                        target=1500,
-                        days_of_cover=2,
-                        projected=[950, 700, 400, 200, 0, 0, 0, 0]
-                    )
-                ]
-            ),
-            after_state=BeforeAfterState(
-                locations=[
-                    LocationState(
-                        name="Atlanta DC",
-                        available=950,
-                        min_qty=150,
-                        target=1000,
-                        days_of_cover=4,
-                        projected=[950, 700, 400, 200, 100, 50, 25, 0]
-                    )
-                ]
-            )
-        )
-    ]
-
-    return recommendations

@@ -36,7 +36,7 @@ class MonteCarloRunCreate(BaseModel):
     description: Optional[str] = Field(None, description="Run description")
     supply_chain_config_id: int = Field(..., description="Supply chain configuration ID")
     mps_plan_id: Optional[int] = Field(None, description="Optional MPS plan ID to simulate")
-    game_id: Optional[int] = Field(None, description="Optional game ID for integration")
+    scenario_id: Optional[int] = Field(None, description="Optional scenario ID for integration")
     group_id: int = Field(..., description="Group ID")
 
     num_scenarios: int = Field(1000, description="Number of scenarios to run", ge=100, le=10000)
@@ -54,7 +54,7 @@ class MonteCarloRunResponse(BaseModel):
     supply_chain_config_id: int
     config_name: Optional[str]
     mps_plan_id: Optional[int]
-    game_id: Optional[int]
+    scenario_id: Optional[int]
     group_id: int
 
     num_scenarios: int
@@ -274,7 +274,7 @@ async def create_monte_carlo_run(
     run = MonteCarloRun(
         supply_chain_config_id=run_create.supply_chain_config_id,
         mps_plan_id=run_create.mps_plan_id,
-        game_id=run_create.game_id,
+        scenario_id=run_create.scenario_id,
         group_id=run_create.group_id,
         name=run_create.name,
         description=run_create.description,

@@ -42,7 +42,7 @@ class NegotiationService:
 
     async def create_negotiation(
         self,
-        game_id: int,
+        scenario_id: int,
         initiator_id: int,
         target_id: int,
         negotiation_type: str,
@@ -59,7 +59,7 @@ class NegotiationService:
         - `price_adjustment`: Request for cost modification
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             initiator_id: Player initiating negotiation
             target_id: Player receiving proposal
             negotiation_type: Type of negotiation
@@ -85,11 +85,11 @@ class NegotiationService:
             query = text("""
                 SELECT COUNT(*) as count
                 FROM players
-                WHERE game_id = :game_id
+                WHERE scenario_id = :scenario_id
                 AND id IN (:initiator_id, :target_id)
             """)
             result = await self.db.execute(query, {
-                "game_id": game_id,
+                "scenario_id": scenario_id,
                 "initiator_id": initiator_id,
                 "target_id": target_id
             })
@@ -102,17 +102,17 @@ class NegotiationService:
 
             # Simulate impact (if possible)
             impact_sim = await self._simulate_proposal_impact(
-                game_id, initiator_id, target_id, negotiation_type, proposal
+                scenario_id, initiator_id, target_id, negotiation_type, proposal
             )
 
             # Insert negotiation
             query = text("""
                 INSERT INTO negotiations
-                (game_id, initiator_id, target_id, negotiation_type, proposal, status, expires_at, created_at)
-                VALUES (:game_id, :initiator_id, :target_id, :negotiation_type, :proposal, 'pending', :expires_at, NOW())
+                (scenario_id, initiator_id, target_id, negotiation_type, proposal, status, expires_at, created_at)
+                VALUES (:scenario_id, :initiator_id, :target_id, :negotiation_type, :proposal, 'pending', :expires_at, NOW())
             """)
             result = await self.db.execute(query, {
-                "game_id": game_id,
+                "scenario_id": scenario_id,
                 "initiator_id": initiator_id,
                 "target_id": target_id,
                 "negotiation_type": negotiation_type,
@@ -145,7 +145,7 @@ class NegotiationService:
 
     async def _simulate_proposal_impact(
         self,
-        game_id: int,
+        scenario_id: int,
         initiator_id: int,
         target_id: int,
         negotiation_type: str,
@@ -174,11 +174,11 @@ class NegotiationService:
                 JOIN player_rounds pr ON p.id = pr.player_id
                 WHERE p.id IN (:initiator_id, :target_id)
                 AND pr.round_number = (
-                    SELECT MAX(round_number) FROM rounds WHERE game_id = :game_id
+                    SELECT MAX(round_number) FROM rounds WHERE scenario_id = :scenario_id
                 )
             """)
             result = await self.db.execute(query, {
-                "game_id": game_id,
+                "scenario_id": scenario_id,
                 "initiator_id": initiator_id,
                 "target_id": target_id
             })
@@ -370,7 +370,7 @@ class NegotiationService:
             # Get negotiation
             query = text("""
                 SELECT
-                    id, game_id, initiator_id, target_id, negotiation_type,
+                    id, scenario_id, initiator_id, target_id, negotiation_type,
                     proposal, status, expires_at
                 FROM negotiations
                 WHERE id = :negotiation_id
@@ -475,7 +475,7 @@ class NegotiationService:
                     """), {
                         "qty": transfer_qty,
                         "pid": negotiation.initiator_id,
-                        "gid": negotiation.game_id,
+                        "gid": negotiation.scenario_id,
                     })
                     # Add to target inventory
                     await self.db.execute(text("""
@@ -488,7 +488,7 @@ class NegotiationService:
                     """), {
                         "qty": transfer_qty,
                         "pid": negotiation.target_id,
-                        "gid": negotiation.game_id,
+                        "gid": negotiation.scenario_id,
                     })
                     await self.db.commit()
                     logger.info(
@@ -509,7 +509,7 @@ class NegotiationService:
                     """), {
                         "qty": int(new_qty),
                         "pid": negotiation.target_id,
-                        "gid": negotiation.game_id,
+                        "gid": negotiation.scenario_id,
                     })
                     await self.db.commit()
                     logger.info(
@@ -544,7 +544,7 @@ class NegotiationService:
 
     async def get_player_negotiations(
         self,
-        game_id: int,
+        scenario_id: int,
         player_id: int,
         status_filter: Optional[str] = None,
         limit: int = 20
@@ -553,7 +553,7 @@ class NegotiationService:
         Get negotiations for a player (as initiator or target).
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             player_id: Player ID
             status_filter: Filter by status (pending, accepted, rejected, countered, expired)
             limit: Maximum negotiations to return
@@ -562,7 +562,7 @@ class NegotiationService:
             List of negotiations with details
         """
         try:
-            where_clause = "WHERE n.game_id = :game_id AND (n.initiator_id = :player_id OR n.target_id = :player_id)"
+            where_clause = "WHERE n.scenario_id = :scenario_id AND (n.initiator_id = :player_id OR n.target_id = :player_id)"
             if status_filter:
                 where_clause += " AND n.status = :status_filter"
 
@@ -588,7 +588,7 @@ class NegotiationService:
                 LIMIT :limit
             """)
 
-            params = {"game_id": game_id, "player_id": player_id, "limit": limit}
+            params = {"scenario_id": scenario_id, "player_id": player_id, "limit": limit}
             if status_filter:
                 params["status_filter"] = status_filter
 
@@ -689,7 +689,7 @@ class NegotiationService:
 
     async def generate_negotiation_suggestion(
         self,
-        game_id: int,
+        scenario_id: int,
         player_id: int,
         target_player_id: int
     ) -> Dict[str, Any]:
@@ -699,7 +699,7 @@ class NegotiationService:
         Analyzes current game state and suggests mutually beneficial proposals.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             player_id: Player requesting suggestion
             target_player_id: Potential negotiation partner
 
@@ -727,11 +727,11 @@ class NegotiationService:
                 JOIN player_rounds pr ON p.id = pr.player_id
                 WHERE p.id IN (:player_id, :target_player_id)
                 AND pr.round_number = (
-                    SELECT MAX(round_number) FROM rounds WHERE game_id = :game_id
+                    SELECT MAX(round_number) FROM rounds WHERE scenario_id = :scenario_id
                 )
             """)
             result = await self.db.execute(query, {
-                "game_id": game_id,
+                "scenario_id": scenario_id,
                 "player_id": player_id,
                 "target_player_id": target_player_id
             })

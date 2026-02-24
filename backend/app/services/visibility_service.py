@@ -40,7 +40,7 @@ class VisibilityService:
 
     async def calculate_supply_chain_health(
         self,
-        game_id: int,
+        scenario_id: int,
         round_number: Optional[int] = None
     ) -> Dict[str, Any]:
         """
@@ -54,7 +54,7 @@ class VisibilityService:
         - Backlog pressure (10%): Unfulfilled orders
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             round_number: Specific round to analyze (None = latest)
 
         Returns:
@@ -78,9 +78,9 @@ class VisibilityService:
                 query = text("""
                     SELECT MAX(round_number) as latest_round
                     FROM rounds
-                    WHERE game_id = :game_id
+                    WHERE scenario_id = :scenario_id
                 """)
-                result = await self.db.execute(query, {"game_id": game_id})
+                result = await self.db.execute(query, {"scenario_id": scenario_id})
                 row = result.fetchone()
                 round_number = row.latest_round if row and row.latest_round else 1
 
@@ -97,11 +97,11 @@ class VisibilityService:
                     p.role
                 FROM player_rounds pr
                 JOIN players p ON pr.player_id = p.id
-                WHERE p.game_id = :game_id
+                WHERE p.scenario_id = :scenario_id
                 AND pr.round_number = :round_number
             """)
             result = await self.db.execute(query, {
-                "game_id": game_id,
+                "scenario_id": scenario_id,
                 "round_number": round_number
             })
             rows = result.fetchall()
@@ -118,7 +118,7 @@ class VisibilityService:
             inventory_balance_score = await self._calculate_inventory_balance_score(rows)
             service_level_score = await self._calculate_service_level_score(rows)
             cost_efficiency_score = await self._calculate_cost_efficiency_score(rows)
-            order_stability_score = await self._calculate_order_stability_score(game_id, round_number)
+            order_stability_score = await self._calculate_order_stability_score(scenario_id, round_number)
             backlog_pressure_score = await self._calculate_backlog_pressure_score(rows)
 
             # Weighted health score
@@ -225,7 +225,7 @@ class VisibilityService:
 
         return score
 
-    async def _calculate_order_stability_score(self, game_id: int, round_number: int) -> float:
+    async def _calculate_order_stability_score(self, scenario_id: int, round_number: int) -> float:
         """Score based on order volatility (bullwhip effect)."""
         try:
             # Get last 5 rounds of orders
@@ -233,13 +233,13 @@ class VisibilityService:
                 SELECT pr.order_placed
                 FROM player_rounds pr
                 JOIN players p ON pr.player_id = p.id
-                WHERE p.game_id = :game_id
+                WHERE p.scenario_id = :scenario_id
                 AND pr.round_number BETWEEN :start_round AND :end_round
                 ORDER BY pr.round_number DESC
                 LIMIT 5
             """)
             result = await self.db.execute(query, {
-                "game_id": game_id,
+                "scenario_id": scenario_id,
                 "start_round": max(1, round_number - 4),
                 "end_round": round_number
             })
@@ -345,7 +345,7 @@ class VisibilityService:
 
     async def detect_bottlenecks(
         self,
-        game_id: int,
+        scenario_id: int,
         round_number: Optional[int] = None
     ) -> Dict[str, Any]:
         """
@@ -357,7 +357,7 @@ class VisibilityService:
         - Service level < 0.7
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             round_number: Specific round (None = latest)
 
         Returns:
@@ -385,9 +385,9 @@ class VisibilityService:
                 query = text("""
                     SELECT MAX(round_number) as latest_round
                     FROM rounds
-                    WHERE game_id = :game_id
+                    WHERE scenario_id = :scenario_id
                 """)
-                result = await self.db.execute(query, {"game_id": game_id})
+                result = await self.db.execute(query, {"scenario_id": scenario_id})
                 row = result.fetchone()
                 round_number = row.latest_round if row and row.latest_round else 1
 
@@ -402,11 +402,11 @@ class VisibilityService:
                     pr.total_cost
                 FROM player_rounds pr
                 JOIN players p ON pr.player_id = p.id
-                WHERE p.game_id = :game_id
+                WHERE p.scenario_id = :scenario_id
                 AND pr.round_number = :round_number
             """)
             result = await self.db.execute(query, {
-                "game_id": game_id,
+                "scenario_id": scenario_id,
                 "round_number": round_number
             })
             rows = result.fetchall()
@@ -480,7 +480,7 @@ class VisibilityService:
 
     async def measure_bullwhip_severity(
         self,
-        game_id: int,
+        scenario_id: int,
         window_size: int = 10
     ) -> Dict[str, Any]:
         """
@@ -489,7 +489,7 @@ class VisibilityService:
         Bullwhip effect = demand variance amplification upstream.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             window_size: Number of rounds to analyze
 
         Returns:
@@ -513,12 +513,12 @@ class VisibilityService:
                     pr.order_placed
                 FROM player_rounds pr
                 JOIN players p ON pr.player_id = p.id
-                WHERE p.game_id = :game_id
+                WHERE p.scenario_id = :scenario_id
                 ORDER BY p.role, pr.round_number DESC
                 LIMIT :limit
             """)
             result = await self.db.execute(query, {
-                "game_id": game_id,
+                "scenario_id": scenario_id,
                 "limit": window_size * 4  # 4 roles
             })
             rows = result.fetchall()
@@ -606,7 +606,7 @@ class VisibilityService:
 
     async def set_visibility_permission(
         self,
-        game_id: int,
+        scenario_id: int,
         player_id: int,
         share_inventory: bool = False,
         share_backlog: bool = False,
@@ -616,7 +616,7 @@ class VisibilityService:
         Set visibility sharing permissions for a player.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             player_id: Player ID
             share_inventory: Share inventory levels
             share_backlog: Share backlog levels
@@ -637,8 +637,8 @@ class VisibilityService:
             # Upsert permission
             query = text("""
                 INSERT INTO visibility_permissions
-                (game_id, player_id, share_inventory, share_backlog, share_orders, updated_at)
-                VALUES (:game_id, :player_id, :share_inventory, :share_backlog, :share_orders, NOW())
+                (scenario_id, player_id, share_inventory, share_backlog, share_orders, updated_at)
+                VALUES (:scenario_id, :player_id, :share_inventory, :share_backlog, :share_orders, NOW())
                 ON DUPLICATE KEY UPDATE
                     share_inventory = :share_inventory,
                     share_backlog = :share_backlog,
@@ -646,7 +646,7 @@ class VisibilityService:
                     updated_at = NOW()
             """)
             await self.db.execute(query, {
-                "game_id": game_id,
+                "scenario_id": scenario_id,
                 "player_id": player_id,
                 "share_inventory": share_inventory,
                 "share_backlog": share_backlog,
@@ -671,7 +671,7 @@ class VisibilityService:
 
     async def get_visibility_permissions(
         self,
-        game_id: int
+        scenario_id: int
     ) -> Dict[str, Any]:
         """
         Get visibility permissions for all players in a game.
@@ -697,10 +697,10 @@ class VisibilityService:
                     vp.share_orders
                 FROM players p
                 LEFT JOIN visibility_permissions vp
-                    ON p.id = vp.player_id AND p.game_id = vp.game_id
-                WHERE p.game_id = :game_id
+                    ON p.id = vp.player_id AND p.scenario_id = vp.scenario_id
+                WHERE p.scenario_id = :scenario_id
             """)
-            result = await self.db.execute(query, {"game_id": game_id})
+            result = await self.db.execute(query, {"scenario_id": scenario_id})
             rows = result.fetchall()
 
             players = []
@@ -727,7 +727,7 @@ class VisibilityService:
 
     async def create_visibility_snapshot(
         self,
-        game_id: int,
+        scenario_id: int,
         round_number: int
     ) -> Dict[str, Any]:
         """
@@ -740,7 +740,7 @@ class VisibilityService:
         - Per-player metrics (if shared)
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             round_number: Round number
 
         Returns:
@@ -748,16 +748,16 @@ class VisibilityService:
         """
         try:
             # Calculate health score
-            health = await self.calculate_supply_chain_health(game_id, round_number)
+            health = await self.calculate_supply_chain_health(scenario_id, round_number)
 
             # Detect bottlenecks
-            bottlenecks = await self.detect_bottlenecks(game_id, round_number)
+            bottlenecks = await self.detect_bottlenecks(scenario_id, round_number)
 
             # Measure bullwhip
-            bullwhip = await self.measure_bullwhip_severity(game_id, window_size=10)
+            bullwhip = await self.measure_bullwhip_severity(scenario_id, window_size=10)
 
             # Get shared metrics
-            permissions = await self.get_visibility_permissions(game_id)
+            permissions = await self.get_visibility_permissions(scenario_id)
 
             shared_metrics = {}
             for player in permissions["players"]:
@@ -797,11 +797,11 @@ class VisibilityService:
 
             query = text("""
                 INSERT INTO visibility_snapshots
-                (game_id, round_number, health_score, snapshot_data, created_at)
-                VALUES (:game_id, :round_number, :health_score, :snapshot_data, NOW())
+                (scenario_id, round_number, health_score, snapshot_data, created_at)
+                VALUES (:scenario_id, :round_number, :health_score, :snapshot_data, NOW())
             """)
             result = await self.db.execute(query, {
-                "game_id": game_id,
+                "scenario_id": scenario_id,
                 "round_number": round_number,
                 "health_score": health["health_score"],
                 "snapshot_data": str(snapshot_data)  # JSON as string
@@ -822,14 +822,14 @@ class VisibilityService:
 
     async def get_visibility_snapshots(
         self,
-        game_id: int,
+        scenario_id: int,
         limit: int = 20
     ) -> List[Dict[str, Any]]:
         """
         Get historical visibility snapshots.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             limit: Maximum snapshots to return
 
         Returns:
@@ -844,12 +844,12 @@ class VisibilityService:
                     snapshot_data,
                     created_at
                 FROM visibility_snapshots
-                WHERE game_id = :game_id
+                WHERE scenario_id = :scenario_id
                 ORDER BY round_number DESC
                 LIMIT :limit
             """)
             result = await self.db.execute(query, {
-                "game_id": game_id,
+                "scenario_id": scenario_id,
                 "limit": limit
             })
             rows = result.fetchall()

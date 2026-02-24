@@ -17,12 +17,12 @@ def create_agent_config(
     current_user: models.User = Depends(get_current_active_user)
 ):
     """Create a new agent configuration"""
-    # Verify user has access to the game
-    game = crud.game.get(db, config.game_id)
-    if not game:
-        raise HTTPException(status_code=404, detail="Game not found")
-    
-    if not crud.user.is_superuser(current_user) and not crud.user.has_game_access(current_user.id, game.id, db):
+    # Verify user has access to the scenario
+    scenario = crud.game.get(db, config.scenario_id)
+    if not scenario:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+
+    if not crud.user.is_superuser(current_user) and not crud.user.has_game_access(current_user.id, scenario.id, db):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
     return crud.agent_config.create(db, obj_in=config)
@@ -38,24 +38,24 @@ def read_agent_config(
     if not config:
         raise HTTPException(status_code=404, detail="Agent configuration not found")
     
-    if not crud.user.is_superuser(current_user) and not crud.user.has_game_access(current_user.id, config.game_id, db):
+    if not crud.user.is_superuser(current_user) and not crud.user.has_game_access(current_user.id, config.scenario_id, db):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
     return config
 
 @router.get("/scenarios/{scenario_id}/agent-configs", response_model=List[AgentConfigInDB])
-def read_game_agent_configs(
+def read_scenario_agent_configs(
     scenario_id: int,
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
-    """Get all agent configurations for a game"""
-    if not crud.user.is_superuser(current_user) and not crud.user.has_game_access(current_user.id, game_id, db):
+    """Get all agent configurations for a scenario"""
+    if not crud.user.is_superuser(current_user) and not crud.user.has_game_access(current_user.id, scenario_id, db):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
-    return crud.agent_config.get_multi_by_game(db, game_id=game_id, skip=skip, limit=limit)
+    return crud.agent_config.get_multi_by_game(db, scenario_id=scenario_id, skip=skip, limit=limit)
 
 @router.put("/agent-configs/{config_id}", response_model=AgentConfigInDB)
 def update_agent_config(
@@ -69,7 +69,7 @@ def update_agent_config(
     if not config:
         raise HTTPException(status_code=404, detail="Agent configuration not found")
     
-    if not crud.user.is_superuser(current_user) and not crud.user.has_game_access(current_user.id, config.game_id, db):
+    if not crud.user.is_superuser(current_user) and not crud.user.has_game_access(current_user.id, config.scenario_id, db):
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
     return crud.agent_config.update(db, db_obj=config, obj_in=config_in)
@@ -81,15 +81,15 @@ def get_role_assignments(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
-    """Get all role assignments for a game"""
-    game = crud.game.get(db, game_id)
-    if not game:
-        raise HTTPException(status_code=404, detail="Game not found")
-    
-    if not crud.user.is_superuser(current_user) and not crud.user.has_game_access(current_user.id, game_id, db):
+    """Get all role assignments for a scenario"""
+    scenario = crud.game.get(db, scenario_id)
+    if not scenario:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+
+    if not crud.user.is_superuser(current_user) and not crud.user.has_game_access(current_user.id, scenario_id, db):
         raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    return game.role_assignments or {}
+
+    return scenario.role_assignments or {}
 
 @router.put("/scenarios/{scenario_id}/roles/{role}", response_model=RoleAssignment)
 def update_role_assignment(
@@ -99,39 +99,39 @@ def update_role_assignment(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user)
 ):
-    """Update role assignment for a specific role in a game"""
-    game = crud.game.get(db, game_id)
-    if not game:
-        raise HTTPException(status_code=404, detail="Game not found")
-    
-    if not crud.user.is_superuser(current_user) and not crud.user.has_game_access(current_user.id, game_id, db):
+    """Update role assignment for a specific role in a scenario"""
+    scenario = crud.game.get(db, scenario_id)
+    if not scenario:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+
+    if not crud.user.is_superuser(current_user) and not crud.user.has_game_access(current_user.id, scenario_id, db):
         raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    # If assigning to a user, verify the user exists and is part of the game
+
+    # If assigning to a user, verify the user exists and is part of the scenario
     if not assignment.is_ai and assignment.user_id:
         user = crud.user.get(db, assignment.user_id)
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
-        if not any(u.id == assignment.user_id for u in game.users):
-            raise HTTPException(status_code=400, detail="User is not part of this game")
-    
-    # If assigning to AI, verify the agent config exists and belongs to this game
+        if not any(u.id == assignment.user_id for u in scenario.users):
+            raise HTTPException(status_code=400, detail="User is not part of this scenario")
+
+    # If assigning to AI, verify the agent config exists and belongs to this scenario
     if assignment.is_ai and assignment.agent_config_id:
         agent_config = crud.agent_config.get(db, assignment.agent_config_id)
-        if not agent_config or agent_config.game_id != game_id:
+        if not agent_config or agent_config.scenario_id != scenario_id:
             raise HTTPException(status_code=400, detail="Invalid agent configuration")
     
     # Update the role assignment
-    game.set_role_assignment(
+    scenario.set_role_assignment(
         role=role,
         is_ai=assignment.is_ai,
         agent_config_id=assignment.agent_config_id,
         user_id=assignment.user_id
     )
     
-    db.add(game)
+    db.add(scenario)
     db.commit()
-    db.refresh(game)
+    db.refresh(scenario)
     
     return assignment
 
@@ -142,5 +142,5 @@ def get_available_roles(
     current_user: models.User = Depends(get_current_active_user)
 ):
     """Get all available roles that can be assigned"""
-    # In a real implementation, this would come from game configuration
+    # In a real implementation, this would come from scenario configuration
     return ["retailer", "wholesaler", "distributor", "manufacturer"]

@@ -34,7 +34,7 @@ class ConversationService:
 
     async def send_message(
         self,
-        game_id: int,
+        scenario_id: int,
         player_id: int,
         message: str,
         parent_message_id: Optional[int] = None,
@@ -43,7 +43,7 @@ class ConversationService:
         Send a message in conversation and get AI response.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             player_id: Player ID
             message: User message content
             parent_message_id: Optional parent message for threading
@@ -53,12 +53,12 @@ class ConversationService:
         """
         try:
             # Get game and player
-            game = await self._get_game(game_id)
+            game = await self._get_game(scenario_id)
             player = await self._get_player(player_id)
 
             # Get conversation history
             history = await self.get_conversation_history(
-                game_id, player_id, limit=self.max_context_messages
+                scenario_id, player_id, limit=self.max_context_messages
             )
 
             # Build context snapshot
@@ -66,7 +66,7 @@ class ConversationService:
 
             # Save user message
             user_message = await self._save_message(
-                game_id=game_id,
+                scenario_id=scenario_id,
                 player_id=player_id,
                 role="user",
                 content=message,
@@ -91,7 +91,7 @@ class ConversationService:
 
             # Save AI message
             assistant_message = await self._save_message(
-                game_id=game_id,
+                scenario_id=scenario_id,
                 player_id=player_id,
                 role="assistant",
                 content=ai_response["content"],
@@ -115,7 +115,7 @@ class ConversationService:
 
     async def get_conversation_history(
         self,
-        game_id: int,
+        scenario_id: int,
         player_id: int,
         limit: int = 50,
         include_context: bool = False,
@@ -124,7 +124,7 @@ class ConversationService:
         Get conversation history for a player in a game.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             player_id: Player ID
             limit: Maximum number of messages
             include_context: Whether to include full context snapshots
@@ -134,38 +134,38 @@ class ConversationService:
         """
         # In a real implementation, this would query conversation_messages table
         # For now, we'll return empty list and implement when table is created
-        logger.info(f"Getting conversation history for game {game_id}, player {player_id}")
+        logger.info(f"Getting conversation history for game {scenario_id}, player {player_id}")
         return []
 
-    async def clear_conversation(self, game_id: int, player_id: int) -> bool:
+    async def clear_conversation(self, scenario_id: int, player_id: int) -> bool:
         """
         Clear conversation history for a player.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             player_id: Player ID
 
         Returns:
             True if successful
         """
         # Implementation will mark messages as deleted or archive them
-        logger.info(f"Clearing conversation for game {game_id}, player {player_id}")
+        logger.info(f"Clearing conversation for game {scenario_id}, player {player_id}")
         return True
 
     async def get_conversation_summary(
-        self, game_id: int, player_id: int
+        self, scenario_id: int, player_id: int
     ) -> Dict[str, Any]:
         """
         Get conversation summary with key metrics.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             player_id: Player ID
 
         Returns:
             Summary dict with stats
         """
-        history = await self.get_conversation_history(game_id, player_id)
+        history = await self.get_conversation_history(scenario_id, player_id)
 
         user_messages = [m for m in history if m["role"] == "user"]
         assistant_messages = [m for m in history if m["role"] == "assistant"]
@@ -254,7 +254,7 @@ Respond in JSON format:
         recent_demand = [r.demand for r in reversed(recent_rounds) if r.demand]
 
         return {
-            "game_id": game.id,
+            "scenario_id": game.id,
             "player_id": player.id,
             "current_round": game.current_round,
             "current_inventory": current_round.current_inventory if current_round else 0,
@@ -267,7 +267,7 @@ Respond in JSON format:
 
     async def _save_message(
         self,
-        game_id: int,
+        scenario_id: int,
         player_id: int,
         role: str,
         content: str,
@@ -280,7 +280,7 @@ Respond in JSON format:
         # For now, return a mock message structure
         message = {
             "id": 1,  # Would be auto-generated
-            "game_id": game_id,
+            "scenario_id": scenario_id,
             "player_id": player_id,
             "parent_message_id": parent_message_id,
             "role": role,
@@ -289,17 +289,17 @@ Respond in JSON format:
             "created_at": datetime.utcnow().isoformat(),
         }
 
-        logger.info(f"Saved {role} message for player {player_id} in game {game_id}")
+        logger.info(f"Saved {role} message for player {player_id} in game {scenario_id}")
         return message
 
-    async def _get_game(self, game_id: int) -> Game:
+    async def _get_game(self, scenario_id: int) -> Game:
         """Get game by ID."""
         result = await self.db.execute(
-            select(Game).filter(Game.id == game_id)
+            select(Game).filter(Game.id == scenario_id)
         )
         game = result.scalars().first()
         if not game:
-            raise ValueError(f"Game {game_id} not found")
+            raise ValueError(f"Game {scenario_id} not found")
         return game
 
     async def _get_player(self, player_id: int) -> Player:

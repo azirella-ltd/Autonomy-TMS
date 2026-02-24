@@ -1157,7 +1157,7 @@ async def get_training_history(
 class MonitoringRunRequest(BaseModel):
     """Request for running monitoring checks"""
     check_types: Optional[List[str]] = None  # exceptions, po_recommendations, rebalancing
-    game_id: Optional[int] = None
+    scenario_id: Optional[int] = None
 
 
 class MonitoringResultResponse(BaseModel):
@@ -1193,7 +1193,7 @@ async def run_monitoring_checks(
 
     # For sync endpoint, we use the monitoring service with async-to-sync wrapper
     # In production, this would be properly async
-    game_id = request.game_id if request else None
+    scenario_id = request.scenario_id if request else None
     check_types = request.check_types if request else None
 
     # Create monitoring service (simplified - would use DI in production)
@@ -1210,7 +1210,7 @@ async def run_monitoring_checks(
 @router.get("/monitoring/{config_id}/exceptions", response_model=MonitoringResultResponse)
 async def check_exceptions(
     config_id: int,
-    game_id: Optional[int] = None,
+    scenario_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1239,7 +1239,7 @@ async def check_exceptions(
 @router.get("/monitoring/{config_id}/po", response_model=MonitoringResultResponse)
 async def check_po_needs(
     config_id: int,
-    game_id: Optional[int] = None,
+    scenario_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -1265,7 +1265,7 @@ async def check_po_needs(
 @router.get("/monitoring/{config_id}/rebalancing", response_model=MonitoringResultResponse)
 async def check_rebalancing_needs(
     config_id: int,
-    game_id: Optional[int] = None,
+    scenario_id: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

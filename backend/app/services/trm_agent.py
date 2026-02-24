@@ -1,7 +1,7 @@
 """
-TRM (Tiny Recursive Model) Agent for Beer Game.
+TRM (Tiny Recursive Model) Agent for Simulation.
 
-Provides TRM-based decision making integrated with the Beer Game engine.
+Provides TRM-based decision making integrated with the simulation engine.
 """
 
 import torch
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class TRMAgent:
     """
-    TRM-powered agent for Beer Game decisions.
+    TRM-powered agent for simulation decisions.
 
     Features:
     - Fast inference (<10ms per decision)
@@ -105,8 +105,8 @@ class TRMAgent:
         Compute order quantity for a node using TRM.
 
         Args:
-            node: Beer Game node object
-            context: Game context with state information
+            node: Simulation node object
+            context: Scenario context with state information
 
         Returns:
             order_quantity: Non-negative order quantity
@@ -182,8 +182,8 @@ class TRMAgent:
         Fallback heuristic: Simple base stock policy.
 
         Args:
-            node: Beer Game node
-            context: Game context
+            node: Simulation site node
+            context: Scenario context
 
         Returns:
             order_quantity
@@ -268,8 +268,8 @@ def compute_trm_order(node: Any, context: Dict, model_path: Optional[str] = None
     Compute TRM order (convenience function for agent integration).
 
     Args:
-        node: Beer Game node
-        context: Game context
+        node: Simulation site node
+        context: Scenario context
         model_path: Optional path to TRM checkpoint
 
     Returns:

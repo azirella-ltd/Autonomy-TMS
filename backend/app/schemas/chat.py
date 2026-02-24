@@ -65,7 +65,7 @@ class WhatIfAnalysisRequest(BaseModel):
 class ChatMessageResponse(BaseModel):
     """Chat message response."""
     id: int
-    game_id: int
+    scenario_id: int
     sender_id: str
     sender_name: str
     sender_type: SenderType
@@ -100,7 +100,7 @@ class AgentSuggestionContext(BaseModel):
 class AgentSuggestionResponse(BaseModel):
     """Agent suggestion response."""
     id: int
-    game_id: int
+    scenario_id: int
     round: int
     agent_name: str
     order_quantity: int
@@ -125,7 +125,7 @@ class AgentSuggestionsResponse(BaseModel):
 class WhatIfAnalysisResponse(BaseModel):
     """What-if analysis response."""
     id: int
-    game_id: int
+    scenario_id: int
     round: int
     player_id: int
     question: str
@@ -145,7 +145,7 @@ class WhatIfAnalysisResponse(BaseModel):
 
 class TypingIndicatorEvent(BaseModel):
     """Typing indicator WebSocket event."""
-    game_id: int
+    scenario_id: int
     sender_id: str
     is_typing: bool
 
@@ -165,10 +165,10 @@ class MessageReadEvent(BaseModel):
 class SuggestionReadyEvent(BaseModel):
     """Suggestion ready WebSocket event."""
     suggestion_id: int
-    game_id: int
+    scenario_id: int
 
 
 class AnalysisCompleteEvent(BaseModel):
     """What-if analysis complete WebSocket event."""
     analysis_id: int
-    game_id: int
+    scenario_id: int

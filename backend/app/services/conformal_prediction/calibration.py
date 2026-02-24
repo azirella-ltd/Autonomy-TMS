@@ -25,7 +25,7 @@ class NonconformityScore:
     timestamp: datetime = field(default_factory=datetime.utcnow)
     features: Optional[Dict[str, Any]] = None
     target: str = "default"
-    source: str = "unknown"  # game_id, config_id, etc.
+    source: str = "unknown"  # scenario_id, config_id, etc.
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -92,7 +92,7 @@ class CalibrationStore:
             prediction: Point prediction value
             actual: Actual observed value
             features: Optional feature dictionary
-            source: Source identifier (e.g., game_id)
+            source: Source identifier (e.g., scenario_id)
             timestamp: Timestamp (default: now)
 
         Returns:

@@ -1,10 +1,10 @@
 """
-Site ID Mapper - Beer Game to SC Site Mapping
+Site ID Mapper - Simulation to SC Site Mapping
 
 Maps between site names (strings like "retailer_001") and site IDs (integers)
-for Beer Game Transfer Order creation.
+for Transfer Order creation.
 
-This service ensures Beer Game conforms to SC data model by using
+This service ensures simulation conforms to SC data model by using
 Integer ForeignKeys to site table.
 """
 
@@ -16,9 +16,9 @@ from app.models.sc_entities import Product
 
 class SiteIdMapper:
     """
-    Maps between Beer Game site names and SC site IDs.
+    Maps between simulation site names and SC site IDs.
 
-    The Beer Game uses human-readable names like "retailer_001", but
+    The simulation uses human-readable names like "retailer_001", but
     Transfer Orders must use Integer ForeignKeys to site table.
 
     This mapper provides bidirectional translation:
@@ -111,7 +111,7 @@ class SiteIdMapper:
 
 class ProductIdMapper:
     """
-    Maps between Beer Game product names and SC product IDs.
+    Maps between simulation product names and SC product IDs.
 
     Similar to SiteIdMapper but for products.
     """
@@ -186,7 +186,7 @@ class SimulationIdMapper:
     """
     Combined mapper for both sites and products.
 
-    Convenience wrapper for Beer Game services that need both mappers.
+    Convenience wrapper for simulation services that need both mappers.
     """
 
     def __init__(self, db: Session, config_id: int):

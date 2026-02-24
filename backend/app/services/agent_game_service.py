@@ -1,9 +1,9 @@
-"""Service layer for running fully automated Beer Game simulations."""
+"""Service layer for running fully automated supply chain simulations."""
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -17,9 +17,10 @@ from app.core.demand_patterns import (
 from app.models.scenario import Scenario, ScenarioStatus
 from app.models.participant import Participant, ParticipantRole
 from app.models.supply_chain import ScenarioRound, ParticipantInventory, ParticipantRound
+from app.models.supply_chain_config import TransportationLane, Site
 from app.schemas.scenario import ScenarioCreate, DemandPattern
 
-# Aliases for backwards compatibility
+# Short aliases used throughout this module
 Game = Scenario
 GameStatus = ScenarioStatus
 Player = Participant
@@ -29,25 +30,17 @@ PlayerInventory = ParticipantInventory
 PlayerRound = ParticipantRound
 GameCreate = ScenarioCreate
 
-from .engine import SupplyChainLine, DEFAULT_ORDER_LEAD_TIME, DEFAULT_SHIPMENT_LEAD_TIME
+from .engine import SupplyChainLine, DEFAULT_DEMAND_LEAD_TIME, DEFAULT_SHIPMENT_LEAD_TIME
 from .policy_factory import make_policy
 from .supply_chain_config_service import SupplyChainConfigService
 
 
 class AgentGameService:
-    """Manage Beer Game simulations where every role is controlled by an agent."""
+    """Manage supply chain simulations where every site is controlled by an agent.
 
-    # The role labels come directly from the SupplyChainLine's lane definition so that
-    # "Manufacturer" remains the sole upstream node sending material to the
-    # Distributor. Orders follow the reverse direction of these shipment lanes.
-
-    ROLE_LABELS: Dict[PlayerRole, str] = {
-        PlayerRole[label.upper()]: label for label in SupplyChainLine.role_sequence_names()
-    }
-    ROLE_SEQUENCE: List[PlayerRole] = list(ROLE_LABELS.keys())
-    LABEL_TO_ROLE: Dict[str, PlayerRole] = {
-        label: role for role, label in ROLE_LABELS.items()
-    }
+    The topology (material lanes and site names) is loaded dynamically from
+    the scenario's ``SupplyChainConfig``.  No hardcoded topology assumptions.
+    """
 
     def __init__(self, db_session: Session) -> None:
         self.db = db_session
@@ -55,11 +48,83 @@ class AgentGameService:
         self._supply_chain_service: SupplyChainConfigService | None = None
 
     # ------------------------------------------------------------------
+    # Topology helpers — derive lanes and roles from the SC config
+    # ------------------------------------------------------------------
+
+    def _load_topology(self, game: Game) -> Dict[str, Any]:
+        """Load the supply chain topology from the game's SC config.
+
+        Returns a dict with:
+          - material_lanes: list of (upstream_name, downstream_name) tuples
+          - site_names: list of site names in downstream-to-upstream order
+          - site_roles: dict mapping site name -> ParticipantRole value string
+        """
+        config = game.config or {}
+        cached = config.get("topology")
+        if isinstance(cached, dict) and cached.get("material_lanes"):
+            return cached
+
+        config_id = game.supply_chain_config_id
+        if not config_id:
+            raise ValueError("Game has no supply_chain_config_id")
+
+        lanes = (
+            self.db.query(TransportationLane)
+            .filter(TransportationLane.config_id == config_id)
+            .all()
+        )
+
+        material_lanes: List[Tuple[str, str]] = []
+        for lane in lanes:
+            up = lane.upstream_site
+            down = lane.downstream_site
+            if up and down:
+                material_lanes.append((up.name, down.name))
+
+        if not material_lanes:
+            raise ValueError(f"No transportation lanes found for config {config_id}")
+
+        sites = (
+            self.db.query(Site)
+            .filter(Site.config_id == config_id)
+            .all()
+        )
+
+        site_roles: Dict[str, str] = {}
+        for site in sites:
+            site_type = (site.type or "RETAILER").upper()
+            try:
+                role = PlayerRole(site_type)
+            except (ValueError, AttributeError):
+                role = PlayerRole.RETAILER
+            site_roles[site.name] = role.value
+
+        site_names = SupplyChainLine._derive_role_sequence(material_lanes)
+
+        topology: Dict[str, Any] = {
+            "material_lanes": material_lanes,
+            "site_names": site_names,
+            "site_roles": site_roles,
+        }
+
+        # Cache in game config for subsequent calls
+        config["topology"] = topology
+        game.config = config
+
+        return topology
+
+    @staticmethod
+    def _player_site_name(player: Player) -> str:
+        """Extract the site name from a player created by ``_create_ai_players``."""
+        name = player.name or ""
+        return name[3:] if name.startswith("AI ") else name
+
+    # ------------------------------------------------------------------
     # Game lifecycle helpers
     # ------------------------------------------------------------------
 
     def create_game(self, game_data: GameCreate) -> Game:
-        """Create a new Beer Game and register AI players for every role."""
+        """Create a new scenario and register AI participants for every site."""
 
         supply_chain_config_id = getattr(game_data, "supply_chain_config_id", None)
         if supply_chain_config_id is None:
@@ -72,28 +137,39 @@ class AgentGameService:
             current_round=0,
             max_rounds=game_data.max_rounds,
             demand_pattern=pattern_config,
-            config={"agent_policies": self._default_policy_config()},
+            config={},
             supply_chain_config_id=int(supply_chain_config_id),
         )
         self.db.add(game)
         self.db.commit()
         self.db.refresh(game)
 
-        self._create_ai_players(game.id)
+        topology = self._load_topology(game)
+
+        # Set default policy config now that topology is known
+        config = game.config or {}
+        config["agent_policies"] = self._default_policy_config(topology["site_names"])
+        game.config = config
+
+        self._create_ai_players(game, topology)
+        self.db.commit()
+        self.db.refresh(game)
         return game
 
-    def start_game(self, game_id: int) -> Game:
-        game = self._get_game(game_id)
+    def start_game(self, scenario_id: int) -> Game:
+        game = self._get_game(scenario_id)
         if game.status not in {GameStatus.CREATED, GameStatus.ROUND_COMPLETED}:
             raise ValueError("Game is already in progress or finished")
 
-        config = self._ensure_agent_config(game)
+        topology = self._load_topology(game)
+        config = self._ensure_agent_config(game, topology)
         sim_params = self._load_simulation_parameters(game, config)
         order_lead, ship_lead = self._extract_lead_times(sim_params)
         policies = self._build_policy_map(config)
         base_stocks = self._extract_base_stocks(config)
         steady_demand = self._steady_state_demand(game)
         line = SupplyChainLine(
+            material_lanes=topology["material_lanes"],
             role_policies=policies,
             base_stocks=base_stocks,
             demand_lead_time=order_lead,
@@ -113,8 +189,8 @@ class AgentGameService:
         self.db.refresh(game)
         return game
 
-    def play_round(self, game_id: int) -> Dict[str, Any]:
-        game = self._get_game(game_id)
+    def play_round(self, scenario_id: int) -> Dict[str, Any]:
+        game = self._get_game(scenario_id)
         if game.status not in {
             GameStatus.STARTED,
             GameStatus.ROUND_COMPLETED,
@@ -122,7 +198,8 @@ class AgentGameService:
         }:
             raise ValueError("Game must be started before playing rounds")
 
-        config = self._ensure_agent_config(game)
+        topology = self._load_topology(game)
+        config = self._ensure_agent_config(game, topology)
         state = config.get("agent_engine_state")
         if not state:
             raise ValueError("Game engine state is missing; ensure the game is started")
@@ -136,6 +213,7 @@ class AgentGameService:
         base_stocks = self._extract_base_stocks(config)
         steady_demand = self._steady_state_demand(game)
         line = SupplyChainLine(
+            material_lanes=topology["material_lanes"],
             role_policies=policies,
             base_stocks=base_stocks,
             state=state,
@@ -148,23 +226,25 @@ class AgentGameService:
         config["agent_engine_state"] = line.to_dict()
         game.config = config
 
-        players = self._get_players_in_order(game_id)
+        players = self._get_players_in_order(scenario_id, topology)
         round_record = self._get_or_create_round(game, current_demand)
 
         node_map = {node.name: node for node in line.nodes}
         for player in players:
-            label = self.ROLE_LABELS[player.role]
-            node = node_map[label]
-            node_stats = tick_stats[label]
+            label = self._player_site_name(player)
+            node = node_map.get(label)
+            if node is None:
+                continue
+            node_stats = tick_stats.get(label, {})
 
-            inventory_before = int(node_stats.get("inventory_before", node.inv))
-            inventory_after = int(node_stats.get("inventory_after", node.inv))
+            inventory_before = int(node_stats.get("inventory_before", node.inventory))
+            inventory_after = int(node_stats.get("inventory_after", node.inventory))
             backlog_before = int(node_stats.get("backlog_before", node.backlog))
             backlog_after = int(node_stats.get("backlog_after", node.backlog))
             order_placed = int(node_stats.get("order_placed", 0))
             order_received = int(node_stats.get("incoming_shipment", 0))
 
-            holding_cost = float(max(node.inv, 0))
+            holding_cost = float(max(node.inventory, 0))
             backlog_cost = float(node.backlog * 2)
 
             player_round = (
@@ -205,7 +285,7 @@ class AgentGameService:
             if not inventory:
                 inventory = PlayerInventory(player_id=player.id)
                 self.db.add(inventory)
-            inventory.current_stock = node.inv
+            inventory.current_stock = node.inventory
             inventory.backorders = node.backlog
             inventory.incoming_shipments = list(node.pipeline_shipments)
             inventory.cost = node.cost
@@ -221,12 +301,12 @@ class AgentGameService:
             game.status = GameStatus.ROUND_COMPLETED
 
         self.db.commit()
-        return self.get_game_state(game_id)
+        return self.get_game_state(scenario_id)
 
-    def get_game_state(self, game_id: int) -> Dict[str, Any]:
-        game = self._get_game(game_id)
+    def get_game_state(self, scenario_id: int) -> Dict[str, Any]:
+        game = self._get_game(scenario_id)
 
-        players = self._get_players_in_order(game_id)
+        players = self._get_players_in_order(scenario_id)
         player_states: List[Dict[str, Any]] = []
         for player in players:
             inventory = player.inventory
@@ -244,7 +324,7 @@ class AgentGameService:
             )
 
         return {
-            "game_id": game.id,
+            "scenario_id": game.id,
             "name": game.name,
             "status": game.status,
             "current_round": game.current_round,
@@ -259,15 +339,16 @@ class AgentGameService:
 
     def set_agent_strategy(
         self,
-        game_id: int,
+        scenario_id: int,
         role: str,
         strategy: str,
         params: Optional[Dict[str, Any]] = None,
     ) -> None:
-        game = self._get_game(game_id)
-        config = self._ensure_agent_config(game)
+        game = self._get_game(scenario_id)
+        topology = self._load_topology(game)
+        config = self._ensure_agent_config(game, topology)
 
-        label = self._normalise_role_label(role)
+        label = self._normalise_role_label(role, topology)
 
         existing = config["agent_policies"].get(label, {"policy": "naive", "params": {}})
         merged_params = existing.get("params", {}).copy()
@@ -298,21 +379,27 @@ class AgentGameService:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _default_policy_config(self) -> Dict[str, Dict[str, Any]]:
+    @staticmethod
+    def _default_policy_config(site_names: List[str]) -> Dict[str, Dict[str, Any]]:
         return {
             label: {"policy": "naive", "params": {"base_stock": 20}}
-            for label in self.ROLE_LABELS.values()
+            for label in site_names
         }
 
-    def _ensure_agent_config(self, game: Game) -> Dict[str, Any]:
+    def _ensure_agent_config(self, game: Game, topology: Dict[str, Any] | None = None) -> Dict[str, Any]:
         config = game.config or {}
         if not isinstance(config, dict):
             config = {}
+
+        if topology is None:
+            topology = self._load_topology(game)
+
+        site_names = topology["site_names"]
         policies = config.get("agent_policies")
         if not isinstance(policies, dict) or not policies:
-            policies = self._default_policy_config()
+            policies = self._default_policy_config(site_names)
         else:
-            for label in self.ROLE_LABELS.values():
+            for label in site_names:
                 policies.setdefault(label, {"policy": "naive", "params": {"base_stock": 20}})
         config["agent_policies"] = policies
         game.config = config
@@ -343,7 +430,7 @@ class AgentGameService:
     def _resolve_demand_pattern(
         self, game_data: GameCreate, supply_chain_config_id: int
     ) -> Dict[str, Any]:
-        """Select the demand pattern for an agent-only game.
+        """Select the demand pattern for an agent-only scenario.
 
         If the caller provided a demand pattern, we normalise and use it. When a
         supply chain configuration is linked, we prefer its saved demand pattern
@@ -387,9 +474,9 @@ class AgentGameService:
         ship_lead = sim_params.get("shipping_lead_time") or sim_params.get("supply_leadtime")
 
         try:
-            order_val = int(order_lead) if order_lead is not None else DEFAULT_ORDER_LEAD_TIME
+            order_val = int(order_lead) if order_lead is not None else DEFAULT_DEMAND_LEAD_TIME
         except (TypeError, ValueError):
-            order_val = DEFAULT_ORDER_LEAD_TIME
+            order_val = DEFAULT_DEMAND_LEAD_TIME
 
         try:
             ship_val = int(ship_lead) if ship_lead is not None else DEFAULT_SHIPMENT_LEAD_TIME
@@ -431,54 +518,67 @@ class AgentGameService:
         except (TypeError, ValueError):
             return DEFAULT_CLASSIC_PARAMS["initial_demand"]
 
-    def _create_ai_players(self, game_id: int) -> None:
-        for role in self.ROLE_SEQUENCE:
+    def _create_ai_players(self, game: Game, topology: Dict[str, Any]) -> None:
+        """Create one AI participant per site in the supply chain topology."""
+        site_roles = topology["site_roles"]
+        for site_name in topology["site_names"]:
+            role_value = site_roles.get(site_name, PlayerRole.RETAILER.value)
+            try:
+                role = PlayerRole(role_value)
+            except (ValueError, AttributeError):
+                role = PlayerRole.RETAILER
             player = Player(
-                game_id=game_id,
-                name=f"AI {self.ROLE_LABELS[role]}",
+                scenario_id=game.id,
+                name=f"AI {site_name}",
                 role=role,
                 is_ai=True,
             )
             self.db.add(player)
-        self.db.commit()
 
     def _initialise_inventories(self, game: Game, line: SupplyChainLine) -> None:
         players = self._get_players_in_order(game.id)
         node_map = {node.name: node for node in line.nodes}
         for player in players:
-            node = node_map[self.ROLE_LABELS[player.role]]
+            site_name = self._player_site_name(player)
+            node = node_map.get(site_name)
+            if node is None:
+                continue
             inventory = player.inventory
             if not inventory:
                 inventory = PlayerInventory(player_id=player.id)
                 self.db.add(inventory)
-            inventory.current_stock = node.inv
+            inventory.current_stock = node.inventory
             inventory.backorders = node.backlog
             inventory.incoming_shipments = list(node.pipeline_shipments)
             inventory.cost = node.cost
 
-    def _get_game(self, game_id: int) -> Game:
-        game = self.db.query(Game).filter(Game.id == game_id).first()
+    def _get_game(self, scenario_id: int) -> Game:
+        game = self.db.query(Game).filter(Game.id == scenario_id).first()
         if not game:
             raise ValueError("Game not found")
         return game
 
-    def _get_players_in_order(self, game_id: int) -> List[Player]:
-        players = self.db.query(Player).filter(Player.game_id == game_id).all()
-        players.sort(key=lambda p: self.ROLE_SEQUENCE.index(p.role))
+    def _get_players_in_order(
+        self, scenario_id: int, topology: Dict[str, Any] | None = None
+    ) -> List[Player]:
+        players = self.db.query(Player).filter(Player.scenario_id == scenario_id).all()
+        if topology:
+            site_order = {name: i for i, name in enumerate(topology["site_names"])}
+            players.sort(key=lambda p: site_order.get(self._player_site_name(p), 999))
         return players
 
     def _get_or_create_round(self, game: Game, demand: int) -> GameRound:
         round_record = (
             self.db.query(GameRound)
             .filter(
-                GameRound.game_id == game.id,
+                GameRound.scenario_id == game.id,
                 GameRound.round_number == game.current_round,
             )
             .one_or_none()
         )
         if not round_record:
             round_record = GameRound(
-                game_id=game.id,
+                scenario_id=game.id,
                 round_number=game.current_round,
                 customer_demand=demand,
                 started_at=datetime.utcnow(),
@@ -516,14 +616,26 @@ class AgentGameService:
 
         demand_pattern.pattern = generated
 
-    def _normalise_role_label(self, role: str) -> str:
+    def _normalise_role_label(self, role: str, topology: Dict[str, Any] | None = None) -> str:
+        """Normalise a role string to the canonical site name used in policies."""
         if not role:
             raise ValueError("Role name is required")
         role_clean = role.strip()
-        if role_clean.title() in self.LABEL_TO_ROLE:
-            return role_clean.title()
-        role_upper = role_clean.upper()
-        for enum_role, label in self.ROLE_LABELS.items():
-            if enum_role.name == role_upper:
-                return label
+
+        if topology:
+            site_names = topology["site_names"]
+            # Direct match
+            if role_clean in site_names:
+                return role_clean
+            # Case-insensitive match
+            name_map = {n.lower(): n for n in site_names}
+            if role_clean.lower() in name_map:
+                return name_map[role_clean.lower()]
+            # Match by role type (e.g. "RETAILER" matches a site with that type)
+            site_roles = topology["site_roles"]
+            role_upper = role_clean.upper()
+            for site_name, role_value in site_roles.items():
+                if role_value == role_upper:
+                    return site_name
+
         raise ValueError(f"Unknown role: {role}")

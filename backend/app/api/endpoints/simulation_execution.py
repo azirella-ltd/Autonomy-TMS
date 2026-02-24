@@ -254,7 +254,7 @@ async def execute_round(
     """
     start_time = datetime.utcnow()
 
-    # Get game
+    # Get scenario
     scenario = await db.get(Scenario, request.scenario_id)
     if not scenario:
         raise HTTPException(status_code=404, detail=f"Scenario {request.scenario_id} not found")
@@ -269,7 +269,7 @@ async def execute_round(
         agent_decisions=request.agent_decisions,
     )
 
-    # Update game round
+    # Update scenario round
     scenario.current_round += 1
     await db.commit()
 
@@ -314,7 +314,7 @@ async def list_orders(
     """
     query = select(OutboundOrderLine)
 
-    if game_id is not None:
+    if scenario_id is not None:
         query = query.where(OutboundOrderLine.scenario_id == scenario_id)
 
     if site_id is not None:
@@ -482,7 +482,7 @@ async def list_purchase_orders(
     """
     query = select(PurchaseOrder)
 
-    if game_id is not None:
+    if scenario_id is not None:
         query = query.where(PurchaseOrder.scenario_id == scenario_id)
 
     if supplier_site_id is not None:
@@ -560,7 +560,7 @@ async def list_shipments(
     """
     query = select(TransferOrder)
 
-    if game_id is not None:
+    if scenario_id is not None:
         query = query.where(TransferOrder.scenario_id == scenario_id)
 
     if source_site_id is not None:

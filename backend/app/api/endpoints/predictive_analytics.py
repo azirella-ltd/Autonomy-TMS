@@ -23,7 +23,7 @@ router = APIRouter()
 # Request/Response Models
 class ForecastRequest(BaseModel):
     """Request for demand forecasting."""
-    game_id: int
+    scenario_id: int
     node_id: int
     horizon: int = Field(default=10, ge=1, le=52)
     confidence_level: float = Field(default=0.95, ge=0.5, le=0.99)
@@ -37,7 +37,7 @@ class ForecastResponse(BaseModel):
 
 class BullwhipRequest(BaseModel):
     """Request for bullwhip prediction."""
-    game_id: int
+    scenario_id: int
 
 
 class BullwhipResponse(BaseModel):
@@ -48,7 +48,7 @@ class BullwhipResponse(BaseModel):
 
 class CostTrajectoryRequest(BaseModel):
     """Request for cost trajectory."""
-    game_id: int
+    scenario_id: int
     node_id: int
     horizon: int = Field(default=10, ge=1, le=52)
 
@@ -61,7 +61,7 @@ class CostTrajectoryResponse(BaseModel):
 
 class ExplanationRequest(BaseModel):
     """Request for prediction explanation."""
-    game_id: int
+    scenario_id: int
     node_id: int
     round_number: int
 
@@ -81,7 +81,7 @@ class WhatIfScenario(BaseModel):
 
 class WhatIfRequest(BaseModel):
     """Request for what-if analysis."""
-    game_id: int
+    scenario_id: int
     node_id: int
     scenarios: List[WhatIfScenario]
 
@@ -95,12 +95,12 @@ class WhatIfResponse(BaseModel):
 
 class InsightsReportRequest(BaseModel):
     """Request for comprehensive insights report."""
-    game_id: int
+    scenario_id: int
 
 
 class InsightsReportResponse(BaseModel):
     """Comprehensive insights report."""
-    game_id: int
+    scenario_id: int
     generated_at: str
     demand_forecasts: Dict[str, List[Dict[str, Any]]]
     bullwhip_predictions: List[Dict[str, Any]]
@@ -125,7 +125,7 @@ async def forecast_demand(
 
     try:
         forecasts = await service.forecast_demand(
-            game_id=request.game_id,
+            scenario_id=request.scenario_id,
             node_id=request.node_id,
             horizon=request.horizon,
             confidence_level=request.confidence_level
@@ -167,14 +167,14 @@ async def predict_bullwhip(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Predict bullwhip effect for all nodes in a game.
+    Predict bullwhip effect for all sites in a scenario.
 
     Returns risk levels and contributing factors.
     """
     service = PredictiveAnalyticsService(db)
 
     try:
-        predictions = await service.predict_bullwhip(game_id=request.game_id)
+        predictions = await service.predict_bullwhip(scenario_id=request.scenario_id)
 
         # Convert to dicts
         prediction_dicts = []
@@ -230,7 +230,7 @@ async def forecast_cost_trajectory(
 
     try:
         trajectory = await service.forecast_cost_trajectory(
-            game_id=request.game_id,
+            scenario_id=request.scenario_id,
             node_id=request.node_id,
             horizon=request.horizon
         )
@@ -285,7 +285,7 @@ async def explain_prediction(
 
     try:
         explanation = await service.explain_prediction(
-            game_id=request.game_id,
+            scenario_id=request.scenario_id,
             node_id=request.node_id,
             round_number=request.round_number
         )
@@ -335,7 +335,7 @@ async def analyze_what_if(
         ]
 
         analysis = await service.analyze_what_if(
-            game_id=request.game_id,
+            scenario_id=request.scenario_id,
             node_id=request.node_id,
             scenarios=scenarios_list
         )
@@ -380,7 +380,7 @@ async def generate_insights_report(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Generate comprehensive insights report for a game.
+    Generate comprehensive insights report for a scenario.
 
     Includes demand forecasts, bullwhip predictions, cost trajectories,
     risk assessment, and recommendations.
@@ -388,7 +388,7 @@ async def generate_insights_report(
     service = PredictiveAnalyticsService(db)
 
     try:
-        report = await service.generate_insights_report(game_id=request.game_id)
+        report = await service.generate_insights_report(scenario_id=request.scenario_id)
 
         return InsightsReportResponse(**report)
 

@@ -55,7 +55,7 @@ class GamificationService:
     async def update_player_stats_after_game(
         self,
         player_id: int,
-        game_id: int,
+        scenario_id: int,
         won: bool
     ) -> PlayerStats:
         """Update player stats after game completion."""
@@ -63,7 +63,7 @@ class GamificationService:
 
         # Get game data
         game_result = await self.db.execute(
-            select(Game).where(Game.id == game_id)
+            select(Game).where(Game.id == scenario_id)
         )
         game = game_result.scalar_one_or_none()
 
@@ -74,7 +74,7 @@ class GamificationService:
         player_rounds_result = await self.db.execute(
             select(PlayerRound)
             .where(and_(
-                PlayerRound.game_id == game_id,
+                PlayerRound.scenario_id == scenario_id,
                 PlayerRound.player_id == player_id
             ))
         )
@@ -202,7 +202,7 @@ class GamificationService:
     async def check_achievements(
         self,
         player_id: int,
-        game_id: Optional[int] = None
+        scenario_id: Optional[int] = None
     ) -> AchievementCheckResponse:
         """Check and unlock achievements for a player."""
         stats = await self.get_or_create_player_stats(player_id)
@@ -229,12 +229,12 @@ class GamificationService:
             if achievement.id in unlocked_ids:
                 continue  # Already unlocked
 
-            if await self._check_criteria(player_id, game_id, stats, achievement.criteria):
+            if await self._check_criteria(player_id, scenario_id, stats, achievement.criteria):
                 # Unlock achievement
                 player_achievement = PlayerAchievement(
                     player_id=player_id,
                     achievement_id=achievement.id,
-                    game_id=game_id
+                    scenario_id=scenario_id
                 )
                 self.db.add(player_achievement)
                 newly_unlocked.append(achievement)
@@ -258,7 +258,7 @@ class GamificationService:
     async def _check_criteria(
         self,
         player_id: int,
-        game_id: Optional[int],
+        scenario_id: Optional[int],
         stats: PlayerStats,
         criteria: Dict[str, Any]
     ) -> bool:
@@ -274,11 +274,11 @@ class GamificationService:
                 return False
 
         # Win with cost under threshold
-        if 'win_with_cost_under' in criteria and game_id:
+        if 'win_with_cost_under' in criteria and scenario_id:
             game_result = await self.db.execute(
                 select(func.sum(PlayerRound.round_cost))
                 .where(and_(
-                    PlayerRound.game_id == game_id,
+                    PlayerRound.scenario_id == scenario_id,
                     PlayerRound.player_id == player_id
                 ))
             )
@@ -287,11 +287,11 @@ class GamificationService:
                 return False
 
         # Perfect service rounds
-        if 'perfect_service_rounds' in criteria and game_id:
+        if 'perfect_service_rounds' in criteria and scenario_id:
             rounds_result = await self.db.execute(
                 select(PlayerRound.service_level)
                 .where(and_(
-                    PlayerRound.game_id == game_id,
+                    PlayerRound.scenario_id == scenario_id,
                     PlayerRound.player_id == player_id
                 ))
                 .order_by(PlayerRound.round_id)
@@ -311,11 +311,11 @@ class GamificationService:
                 return False
 
         # Win with average inventory under
-        if 'win_with_avg_inventory_under' in criteria and game_id:
+        if 'win_with_avg_inventory_under' in criteria and scenario_id:
             avg_result = await self.db.execute(
                 select(func.avg(PlayerRound.inventory))
                 .where(and_(
-                    PlayerRound.game_id == game_id,
+                    PlayerRound.scenario_id == scenario_id,
                     PlayerRound.player_id == player_id
                 ))
             )
@@ -324,11 +324,11 @@ class GamificationService:
                 return False
 
         # Zero backlog
-        if 'zero_backlog' in criteria and game_id:
+        if 'zero_backlog' in criteria and scenario_id:
             backlog_result = await self.db.execute(
                 select(func.max(PlayerRound.backlog))
                 .where(and_(
-                    PlayerRound.game_id == game_id,
+                    PlayerRound.scenario_id == scenario_id,
                     PlayerRound.player_id == player_id
                 ))
             )
@@ -347,7 +347,7 @@ class GamificationService:
                 return False
 
         # Win with bullwhip ratio under
-        if 'win_with_bullwhip_under' in criteria and game_id:
+        if 'win_with_bullwhip_under' in criteria and scenario_id:
             # Would need to calculate bullwhip effect from game data
             # Placeholder for now
             pass

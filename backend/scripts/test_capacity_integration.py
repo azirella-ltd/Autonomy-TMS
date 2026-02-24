@@ -207,7 +207,7 @@ async def test_capacity_integration():
 
         # Cleanup
         print("Cleanup:")
-        await db.execute(delete(InboundOrderLine).filter(InboundOrderLine.game_id == scenario.id))
+        await db.execute(delete(InboundOrderLine).filter(InboundOrderLine.scenario_id == scenario.id))
         await db.execute(delete(ProductionCapacity).filter(
             ProductionCapacity.group_id == group.id,
             ProductionCapacity.config_id == config.id

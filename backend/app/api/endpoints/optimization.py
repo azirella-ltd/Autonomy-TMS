@@ -156,7 +156,7 @@ async def get_global_optimization(
     ```
 
     **Algorithm**:
-    1. Retrieve current state for all nodes in game
+    1. Retrieve current state for all sites in scenario
     2. Build multi-node context with inventory, backlog, orders, costs
     3. Call LLM with system-wide optimization prompt
     4. Parse coordinated recommendations
@@ -165,27 +165,27 @@ async def get_global_optimization(
     **Note**: If LLM is unavailable, falls back to heuristic-based stabilization strategy.
     """
     try:
-        # Get game state
+        # Get scenario state
         from sqlalchemy import text
 
         # Get current round
         query = text("""
             SELECT current_round
-            FROM games
-            WHERE id = :game_id
+            FROM scenarios
+            WHERE id = :scenario_id
         """)
-        result = await db.execute(query, {"game_id": game_id})
+        result = await db.execute(query, {"scenario_id": scenario_id})
         row = result.fetchone()
 
         if not row:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Game not found"
+                detail="Scenario not found"
             )
 
         current_round = row.current_round
 
-        # Get all players' state
+        # Get all participants' state
         query = text("""
             SELECT
                 p.id,
@@ -197,13 +197,13 @@ async def get_global_optimization(
                 pr.order_placed,
                 pr.total_cost,
                 pr.service_level
-            FROM players p
-            JOIN player_rounds pr ON p.id = pr.player_id
-            WHERE p.game_id = :game_id
+            FROM participants p
+            JOIN participant_periods pr ON p.id = pr.participant_id
+            WHERE p.scenario_id = :scenario_id
             AND pr.round_number = :round_number
         """)
         result = await db.execute(query, {
-            "game_id": game_id,
+            "scenario_id": scenario_id,
             "round_number": current_round
         })
         rows = result.fetchall()
@@ -211,13 +211,13 @@ async def get_global_optimization(
         if not rows:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="No player data found for current round"
+                detail="No participant data found for current round"
             )
 
-        # Build game state
-        players = []
+        # Build scenario state
+        participants = []
         for row in rows:
-            players.append({
+            participants.append({
                 "role": row.role,
                 "inventory_after": row.inventory_after,
                 "backlog_after": row.backlog_after,
@@ -228,14 +228,14 @@ async def get_global_optimization(
                 "service_level": row.service_level
             })
 
-        game_state = {
+        scenario_state = {
             "current_round": current_round,
-            "players": players
+            "participants": participants
         }
 
         # Generate global optimization
         result = await generate_global_optimization(
-            game_state=game_state,
+            game_state=scenario_state,
             focus_nodes=request.focus_nodes
         )
 

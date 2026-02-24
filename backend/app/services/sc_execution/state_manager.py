@@ -2,7 +2,7 @@
 SC State Manager
 
 Handles state import/export from SC entities.
-The Beer Game absorbs state from SC tables each round.
+The simulation absorbs state from SC tables each round.
 
 Reference: SC State Management
 """
@@ -24,7 +24,7 @@ class SCStateManager:
     - Initialize new games with SC state
     - Export state snapshots for analysis
 
-    The Beer Game uses this to absorb state each round (not custom initialization).
+    The simulation engine uses this to absorb state each round (not custom initialization).
     """
 
     def __init__(self, db: Session):
@@ -38,7 +38,7 @@ class SCStateManager:
 
     def load_game_state(
         self,
-        game_id: int,
+        scenario_id: int,
         round_number: Optional[int] = None
     ) -> Dict[str, Dict]:
         """
@@ -47,14 +47,14 @@ class SCStateManager:
         Returns state for all sites in the game.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             round_number: Round number (optional, for filtering)
 
         Returns:
             Dictionary mapping site_id to state dict
         """
         # Get sites for this game
-        config = self._get_game_config(game_id)
+        config = self._get_game_config(scenario_id)
         sites = self.db.query(Site).filter(
             Site.config_id == config.id
         ).all()
@@ -64,8 +64,8 @@ class SCStateManager:
         for site in sites:
             site_state = self.load_site_state(
                 site.site_id,
-                "cases",  # Beer Game uses single item
-                game_id,
+                "cases",  # simulation may use single item
+                scenario_id,
                 round_number
             )
             game_state[site.site_id] = site_state
@@ -76,7 +76,7 @@ class SCStateManager:
         self,
         site_id: str,
         item_id: str,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
         round_number: Optional[int] = None
     ) -> Dict:
         """
@@ -85,7 +85,7 @@ class SCStateManager:
         Args:
             site_id: Site identifier
             item_id: Item identifier
-            game_id: Game ID (optional)
+            scenario_id: Game ID (optional)
             round_number: Round number (optional)
 
         Returns:
@@ -122,7 +122,7 @@ class SCStateManager:
         state = {
             "site_id": site_id,
             "item_id": item_id,
-            "game_id": game_id,
+            "scenario_id": scenario_id,
             "round_number": round_number,
 
             # SC inv_level fields
@@ -156,7 +156,7 @@ class SCStateManager:
 
     def initialize_game_state(
         self,
-        game_id: int,
+        scenario_id: int,
         config_id: int,
         initial_inventory: float = 12.0
     ) -> None:
@@ -166,7 +166,7 @@ class SCStateManager:
         Creates inv_level records for all sites in the config.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             config_id: Supply chain config ID
             initial_inventory: Initial on_hand_qty for all sites
         """
@@ -220,23 +220,23 @@ class SCStateManager:
 
     def snapshot_state(
         self,
-        game_id: int,
+        scenario_id: int,
         round_number: int
     ) -> Dict:
         """
         Create snapshot of current state for analysis.
 
         Args:
-            game_id: Game ID
+            scenario_id: Game ID
             round_number: Round number
 
         Returns:
             Complete state snapshot
         """
         snapshot = {
-            "game_id": game_id,
+            "scenario_id": scenario_id,
             "round_number": round_number,
-            "sites": self.load_game_state(game_id, round_number),
+            "sites": self.load_game_state(scenario_id, round_number),
             "timestamp": datetime.now().isoformat()
         }
 
@@ -246,13 +246,13 @@ class SCStateManager:
     # Private Helper Methods
     # ========================================================================
 
-    def _get_game_config(self, game_id: int) -> SupplyChainConfig:
+    def _get_game_config(self, scenario_id: int) -> SupplyChainConfig:
         """Get supply chain config for game."""
         from app.models.scenario import Scenario as Game
 
-        game = self.db.query(Game).filter(Game.id == game_id).first()
+        game = self.db.query(Game).filter(Game.id == scenario_id).first()
         if not game:
-            raise ValueError(f"Game {game_id} not found")
+            raise ValueError(f"Game {scenario_id} not found")
 
         config = self.db.query(SupplyChainConfig).filter(
             SupplyChainConfig.id == game.config_id

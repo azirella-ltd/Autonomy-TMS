@@ -29,13 +29,13 @@ class AgentGameDemo:
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json"
         }
-        self.game_id = None
-    
-    def create_game(self) -> Dict[str, Any]:
-        """Create a new agent game."""
-        print("\n=== Creating a new agent game ===")
+        self.scenario_id = None
+
+    def create_scenario(self) -> Dict[str, Any]:
+        """Create a new agent scenario."""
+        print("\n=== Creating a new agent scenario ===")
         game_data = {
-            "name": "AI Agent Demo Game",
+            "name": "AI Agent Demo Scenario",
             "max_rounds": 10,
             "demand_pattern": {
                 "type": "classic",
@@ -55,30 +55,30 @@ class AgentGameDemo:
         response.raise_for_status()
         
         result = response.json()
-        self.game_id = result["game_id"]
-        print(f"Created game with ID: {self.game_id}")
+        self.scenario_id = result["scenario_id"]
+        print(f"Created scenario with ID: {self.scenario_id}")
         return result
-    
-    def start_game(self) -> Dict[str, Any]:
-        """Start the agent game."""
-        if not self.game_id:
-            raise ValueError("No game ID. Create a game first.")
-            
-        print("\n=== Starting the game ===")
+
+    def start_scenario(self) -> Dict[str, Any]:
+        """Start the agent scenario."""
+        if not self.scenario_id:
+            raise ValueError("No scenario ID. Create a scenario first.")
+
+        print("\n=== Starting the scenario ===")
         response = requests.post(
-            f"{BASE_URL}/agent-games/{self.game_id}/start",
+            f"{BASE_URL}/agent-games/{self.scenario_id}/start",
             headers=self.headers
         )
         response.raise_for_status()
         
         result = response.json()
-        print(f"Game started: {result}")
+        print(f"Scenario started: {result}")
         return result
-    
+
     def set_agent_strategies(self) -> None:
         """Set different strategies for each agent."""
-        if not self.game_id:
-            raise ValueError("No game ID. Create a game first.")
+        if not self.scenario_id:
+            raise ValueError("No scenario ID. Create a scenario first.")
             
         print("\n=== Setting agent strategies ===")
         strategies = {
@@ -90,7 +90,7 @@ class AgentGameDemo:
         
         for role, strategy in strategies.items():
             response = requests.put(
-                f"{BASE_URL}/agent-games/{self.game_id}/agent-strategy",
+                f"{BASE_URL}/agent-games/{self.scenario_id}/agent-strategy",
                 params={"role": role, "strategy": strategy},
                 headers=self.headers
             )
@@ -99,12 +99,12 @@ class AgentGameDemo:
     
     def toggle_demand_visibility(self, visible: bool = True) -> None:
         """Toggle demand visibility for agents."""
-        if not self.game_id:
-            raise ValueError("No game ID. Create a game first.")
+        if not self.scenario_id:
+            raise ValueError("No scenario ID. Create a scenario first.")
             
         print(f"\n=== Setting demand visibility to {visible} ===")
         response = requests.put(
-            f"{BASE_URL}/agent-games/{self.game_id}/demand-visibility",
+            f"{BASE_URL}/agent-games/{self.scenario_id}/demand-visibility",
             params={"visible": visible},
             headers=self.headers
         )
@@ -112,12 +112,12 @@ class AgentGameDemo:
         print(f"Demand visibility set to {visible}")
     
     def play_round(self) -> Dict[str, Any]:
-        """Play one round of the game."""
-        if not self.game_id:
-            raise ValueError("No game ID. Create a game first.")
+        """Play one period of the scenario."""
+        if not self.scenario_id:
+            raise ValueError("No scenario ID. Create a scenario first.")
             
         response = requests.post(
-            f"{BASE_URL}/agent-games/{self.game_id}/play-round",
+            f"{BASE_URL}/agent-games/{self.scenario_id}/play-round",
             headers=self.headers
         )
         response.raise_for_status()
@@ -125,25 +125,25 @@ class AgentGameDemo:
         result = response.json()
         return result
     
-    def get_game_state(self) -> Dict[str, Any]:
-        """Get the current game state."""
-        if not self.game_id:
-            raise ValueError("No game ID. Create a game first.")
+    def get_scenario_state(self) -> Dict[str, Any]:
+        """Get the current scenario state."""
+        if not self.scenario_id:
+            raise ValueError("No scenario ID. Create a scenario first.")
             
         response = requests.get(
-            f"{BASE_URL}/agent-games/{self.game_id}/state",
+            f"{BASE_URL}/agent-games/{self.scenario_id}/state",
             headers=self.headers
         )
         response.raise_for_status()
         
         return response.json()
     
-    def print_game_state(self, state: Dict[str, Any] = None) -> None:
-        """Print a formatted view of the game state."""
+    def print_scenario_state(self, state: Dict[str, Any] = None) -> None:
+        """Print a formatted view of the scenario state."""
         if state is None:
-            state = self.get_game_state()
-        
-        print(f"\n=== Game: {state['name']} ===")
+            state = self.get_scenario_state()
+
+        print(f"\n=== Scenario: {state['name']} ===")
         print(f"Status: {state['status']}")
         print(f"Round: {state['current_round']}/{state['max_rounds']}")
         
@@ -159,18 +159,18 @@ class AgentGameDemo:
         print(json.dumps(state['demand_pattern'], indent=2))
 
 def run_demo():
-    """Run the agent game demo."""
+    """Run the agent scenario demo."""
     try:
         print("=== Starting Beer Game Agent Demo ===")
-        print("Creating a game with AI agents...")
-        
+        print("Creating a scenario with AI agents...")
+
         demo = AgentGameDemo()
-        
-        print("\n1. Creating a new game...")
-        demo.create_game()
-        
-        print("\n2. Starting the game...")
-        demo.start_game()
+
+        print("\n1. Creating a new scenario...")
+        demo.create_scenario()
+
+        print("\n2. Starting the scenario...")
+        demo.start_scenario()
         
         print("\n3. Setting agent strategies...")
         demo.set_agent_strategies()
@@ -180,8 +180,8 @@ def run_demo():
         for i in range(3):
             print(f"\n--- Round {i+1} ---")
             demo.play_round()
-            state = demo.get_game_state()
-            demo.print_game_state(state)
+            state = demo.get_scenario_state()
+            demo.print_scenario_state(state)
             time.sleep(1)
         
         print("\n5. Playing next 3 rounds with demand visibility ON")
@@ -189,8 +189,8 @@ def run_demo():
         for i in range(3, 6):
             print(f"\n--- Round {i+1} ---")
             demo.play_round()
-            state = demo.get_game_state()
-            demo.print_game_state(state)
+            state = demo.get_scenario_state()
+            demo.print_scenario_state(state)
             time.sleep(1)
         
         remaining_rounds = 10 - 6
@@ -198,14 +198,14 @@ def run_demo():
         for i in range(6, 10):
             print(f"\n--- Round {i+1} ---")
             demo.play_round()
-            state = demo.get_game_state()
-            demo.print_game_state(state)
+            state = demo.get_scenario_state()
+            demo.print_scenario_state(state)
             time.sleep(1)
         
         print("\n=== Demo completed successfully! ===")
-        print("Game results:")
-        final_state = demo.get_game_state()
-        demo.print_game_state(final_state)
+        print("Scenario results:")
+        final_state = demo.get_scenario_state()
+        demo.print_scenario_state(final_state)
         
     except Exception as e:
         print(f"\n=== Demo failed! ===")

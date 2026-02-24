@@ -629,13 +629,13 @@ def _delete_node_type_games_for_config(session: Session, config: SupplyChainConf
     )
     for game in node_type_games:
         print(f"[info] Removing Node Type game '{game.name}' (id={game.id}) for config '{config.name}'.")
-        session.query(PlayerAction).filter(PlayerAction.game_id == game.id).delete(synchronize_session=False)
-        session.query(SupervisorAction).filter(SupervisorAction.game_id == game.id).delete(
+        session.query(PlayerAction).filter(PlayerAction.scenario_id == game.id).delete(synchronize_session=False)
+        session.query(SupervisorAction).filter(SupervisorAction.scenario_id == game.id).delete(
             synchronize_session=False
         )
-        session.query(AgentConfig).filter(AgentConfig.game_id == game.id).delete(synchronize_session=False)
-        session.query(Player).filter(Player.game_id == game.id).delete(synchronize_session=False)
-        session.query(Round).filter(Round.game_id == game.id).delete(synchronize_session=False)
+        session.query(AgentConfig).filter(AgentConfig.scenario_id == game.id).delete(synchronize_session=False)
+        session.query(Player).filter(Player.scenario_id == game.id).delete(synchronize_session=False)
+        session.query(Round).filter(Round.scenario_id == game.id).delete(synchronize_session=False)
         session.delete(game)
     if node_type_games:
         session.flush()
@@ -3657,7 +3657,7 @@ def configure_human_players_for_game(
 
     existing_players: Dict[str, Player] = {
         _player_node_key(player): player
-        for player in session.query(Player).filter(Player.game_id == game.id).all()
+        for player in session.query(Player).filter(Player.scenario_id == game.id).all()
     }
     required_keys: Set[str] = {slot.key for slot in slots}
     role_assignments: Dict[str, Dict[str, int | bool | None]] = {}
@@ -3667,7 +3667,7 @@ def configure_human_players_for_game(
         player = existing_players.get(slot.key)
         if player is None:
             player = Player(
-                game_id=game.id,
+                scenario_id=game.id,
                 role=_player_role_for_node_type(slot.node_type),
                 name=slot.label,
                 type=ParticipantType.HUMAN,
@@ -3705,7 +3705,7 @@ def configure_human_players_for_game(
         session.delete(player)
 
     # Remove any lingering agent configs from previous runs
-    session.query(AgentConfig).filter(AgentConfig.game_id == game.id).delete(
+    session.query(AgentConfig).filter(AgentConfig.scenario_id == game.id).delete(
         synchronize_session=False
     )
     session.flush()
@@ -3750,10 +3750,10 @@ def ensure_human_game_for_config(
 
     if game and recreate:
         print(f"[info] Recreating human game '{game_name}' (id={game.id}).")
-        session.query(AgentConfig).filter(AgentConfig.game_id == game.id).delete(
+        session.query(AgentConfig).filter(AgentConfig.scenario_id == game.id).delete(
             synchronize_session=False
         )
-        session.query(Player).filter(Player.game_id == game.id).delete(
+        session.query(Player).filter(Player.scenario_id == game.id).delete(
             synchronize_session=False
         )
         session.delete(game)
@@ -3887,7 +3887,7 @@ def ensure_hybrid_human_naive_game(
             # Create human player
             user = _ensure_node_user(session, group, slot)
             player = Player(
-                game_id=game.id,
+                scenario_id=game.id,
                 role=_player_role_for_node_type(slot.node_type),
                 name=slot.label,
                 type=ParticipantType.HUMAN,
@@ -3901,7 +3901,7 @@ def ensure_hybrid_human_naive_game(
         else:
             # Create Naive AI player
             player = Player(
-                game_id=game.id,
+                scenario_id=game.id,
                 role=_player_role_for_node_type(slot.node_type),
                 name=f"{slot.label} (Naive AI)",
                 type=ParticipantType.AI,
@@ -3936,7 +3936,7 @@ def _ensure_default_players(
 
     existing_players = {
         _player_node_key(player): player
-        for player in session.query(Player).filter(Player.game_id == game.id).all()
+        for player in session.query(Player).filter(Player.scenario_id == game.id).all()
     }
 
     print("[info] Ensuring AI players exist for all nodes...")
@@ -3944,7 +3944,7 @@ def _ensure_default_players(
         player = existing_players.get(slot.key)
         if player is None:
             player = Player(
-                game_id=game.id,
+                scenario_id=game.id,
                 role=_player_role_for_node_type(slot.node_type),
                 name=f"{slot.label} (AI)",
                 site_key=slot.key,
@@ -3974,7 +3974,7 @@ def ensure_ai_agents(
     slots = _iter_node_slots(config_payload)
     existing_players = {
         _player_node_key(player): player
-        for player in session.query(Player).filter(Player.game_id == game.id).all()
+        for player in session.query(Player).filter(Player.scenario_id == game.id).all()
     }
     role_assignments: Dict[str, Dict[str, Any]] = {}
 
@@ -3982,7 +3982,7 @@ def ensure_ai_agents(
         player = existing_players.get(slot.key)
         if player is None:
             player = Player(
-                game_id=game.id,
+                scenario_id=game.id,
                 role=_player_role_for_node_type(slot.node_type),
                 name=f"{slot.label} ({agent_type})",
                 site_key=slot.key,
@@ -4001,12 +4001,12 @@ def ensure_ai_agents(
         normalized_slot_key = _normalise_node_key(slot.key)
         agent_config = (
             session.query(AgentConfig)
-            .filter(AgentConfig.game_id == game.id, AgentConfig.role == normalized_slot_key)
+            .filter(AgentConfig.scenario_id == game.id, AgentConfig.role == normalized_slot_key)
             .first()
         )
         if agent_config is None:
             agent_config = AgentConfig(
-                game_id=game.id,
+                scenario_id=game.id,
                 role=normalized_slot_key,
                 agent_type=agent_type,
                 config={},
@@ -4096,16 +4096,16 @@ def _apply_pid_params_to_games(
     if not pid_params:
         return
 
-    game_ids = [
+    scenario_ids = [
         row.id
         for row in session.query(Game.id).filter(Game.supply_chain_config_id == config_id)
     ]
-    if not game_ids:
+    if not scenario_ids:
         return
 
-    for game_id in game_ids:
+    for scenario_id in scenario_ids:
         agent_rows = session.query(AgentConfig).filter(
-            AgentConfig.game_id == game_id,
+            AgentConfig.scenario_id == scenario_id,
             AgentConfig.agent_type == PID_AGENT_STRATEGY,
         )
         for agent_row in agent_rows:
@@ -4361,7 +4361,7 @@ def _configure_game_agents(
     config_payload = _load_game_config_payload(game)
     slots = _iter_node_slots(config_payload)
     existing_assignment_payload = dict(game.role_assignments or {})
-    player_rows = list(session.query(Player).filter(Player.game_id == game.id))
+    player_rows = list(session.query(Player).filter(Player.scenario_id == game.id))
     player_lookup: Dict[int, Player] = {player.id: player for player in player_rows}
     existing_players: Dict[str, Player] = {}
     for assignment_key, payload in existing_assignment_payload.items():
@@ -4425,7 +4425,7 @@ def _configure_game_agents(
         player = existing_players.get(normalised_key)
         if player is None:
             player = Player(
-                game_id=game.id,
+                scenario_id=game.id,
                 name=plan["label"],
                 role=plan["role"],
                 site_key=normalised_key,
@@ -4444,12 +4444,12 @@ def _configure_game_agents(
 
         agent_config = (
             session.query(AgentConfig)
-            .filter(AgentConfig.game_id == game.id, AgentConfig.role == normalised_key)
+            .filter(AgentConfig.scenario_id == game.id, AgentConfig.role == normalised_key)
             .first()
         )
         if agent_config is None:
             agent_config = AgentConfig(
-                game_id=game.id,
+                scenario_id=game.id,
                 role=normalised_key,
                 agent_type=agent_type,
                 config={},
@@ -4549,10 +4549,10 @@ def ensure_autonomy_games(
         if game and recreate:
             print(f"[info] Recreating showcase game '{game_name}' (id={game.id}).")
             # Remove dependent rows before deleting the game so the FK constraints stay happy
-            session.query(AgentConfig).filter(AgentConfig.game_id == game.id).delete(
+            session.query(AgentConfig).filter(AgentConfig.scenario_id == game.id).delete(
                 synchronize_session=False
             )
-            session.query(Player).filter(Player.game_id == game.id).delete(
+            session.query(Player).filter(Player.scenario_id == game.id).delete(
                 synchronize_session=False
             )
             session.delete(game)

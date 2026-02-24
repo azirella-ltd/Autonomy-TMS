@@ -1,7 +1,7 @@
 """
 Reporting API Endpoints
 
-Provides endpoints for game reports, analytics, exports, and trend analysis.
+Provides endpoints for scenario reports, analytics, exports, and trend analysis.
 """
 
 from typing import List, Optional
@@ -21,8 +21,8 @@ router = APIRouter()
 
 
 # Schemas
-class GameReportResponse(BaseModel):
-    """Game report response schema."""
+class ScenarioReportResponse(BaseModel):
+    """Scenario report response schema."""
     scenario_id: int
     generated_at: str
     overview: dict
@@ -39,7 +39,7 @@ class TrendAnalysisResponse(BaseModel):
     player_id: int
     metric: str
     lookback: int
-    games_analyzed: int
+    scenarios_analyzed: int
     data_points: List[dict]
     statistics: dict
     insights: List[str]
@@ -47,9 +47,9 @@ class TrendAnalysisResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class GameComparisonResponse(BaseModel):
-    """Game comparison response schema."""
-    games_compared: int
+class ScenarioComparisonResponse(BaseModel):
+    """Scenario comparison response schema."""
+    scenarios_compared: int
     metrics: List[str]
     comparisons: List[dict]
     best_performers: dict
@@ -59,18 +59,18 @@ class GameComparisonResponse(BaseModel):
 
 # Endpoints
 
-@router.get("/scenarios/{scenario_id}", response_model=GameReportResponse)
-async def get_game_report(
+@router.get("/scenarios/{scenario_id}", response_model=ScenarioReportResponse)
+async def get_scenario_report(
     scenario_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Get comprehensive game report.
+    Get comprehensive scenario report.
 
     Returns detailed analytics including:
-    - Game overview (cost, service level, bullwhip effect)
-    - Player performance comparison
+    - Scenario overview (cost, service level, bullwhip effect)
+    - Participant performance comparison
     - Key insights
     - Actionable recommendations
     - Chart data for visualization
@@ -80,7 +80,7 @@ async def get_game_report(
     service = get_reporting_service(db)
 
     try:
-        report = await service.generate_game_report(game_id)
+        report = await service.generate_scenario_report(scenario_id)
         return report
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -89,7 +89,7 @@ async def get_game_report(
 
 
 @router.get("/scenarios/{scenario_id}/export")
-async def export_game_data(
+async def export_scenario_data(
     scenario_id: int,
     format: str = Query('csv', pattern='^(csv|json|excel)$'),
     include_rounds: bool = Query(True, description="Include round-by-round data"),
@@ -97,7 +97,7 @@ async def export_game_data(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Export game data in specified format.
+    Export scenario data in specified format.
 
     Supported formats:
     - **csv**: Comma-separated values
@@ -111,8 +111,8 @@ async def export_game_data(
     service = get_reporting_service(db)
 
     try:
-        file_content = await service.export_game_data(
-            game_id=game_id,
+        file_content = await service.export_scenario_data(
+            scenario_id=scenario_id,
             format=format,
             include_rounds=include_rounds
         )
@@ -120,13 +120,13 @@ async def export_game_data(
         # Determine content type and filename
         if format == 'csv':
             media_type = 'text/csv'
-            filename = f'game_{game_id}_report.csv'
+            filename = f'scenario_{scenario_id}_report.csv'
         elif format == 'json':
             media_type = 'application/json'
-            filename = f'game_{game_id}_report.json'
+            filename = f'scenario_{scenario_id}_report.json'
         elif format == 'excel':
             media_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            filename = f'game_{game_id}_report.xlsx'
+            filename = f'scenario_{scenario_id}_report.xlsx'
         else:
             raise HTTPException(status_code=400, detail=f"Unsupported format: {format}")
 
@@ -149,21 +149,21 @@ async def export_game_data(
 async def get_player_trends(
     player_id: int,
     metric: str = Query('cost', pattern='^(cost|service_level|inventory|bullwhip)$'),
-    lookback: int = Query(10, ge=1, le=50, description="Number of recent games to analyze"),
+    lookback: int = Query(10, ge=1, le=50, description="Number of recent scenarios to analyze"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Get player performance trends over recent games.
+    Get participant performance trends over recent scenarios.
 
-    Analyzes player's historical performance for specified metric:
-    - **cost**: Total game cost trend
+    Analyzes participant's historical performance for specified metric:
+    - **cost**: Total scenario cost trend
     - **service_level**: Service level performance
     - **inventory**: Average inventory levels
     - **bullwhip**: Order variability (bullwhip effect)
 
     Returns:
-    - Data points for each game
+    - Data points for each scenario
     - Statistical analysis (mean, std, min, max)
     - Trend direction (improving, declining, stable)
     - Insights and recommendations
@@ -183,9 +183,9 @@ async def get_player_trends(
         raise HTTPException(status_code=500, detail=f"Trend analysis failed: {str(e)}")
 
 
-@router.get("/comparisons", response_model=GameComparisonResponse)
-async def compare_games(
-    game_ids: List[int] = Query(..., description="List of game IDs to compare (2-10 games)"),
+@router.get("/comparisons", response_model=ScenarioComparisonResponse)
+async def compare_scenarios(
+    scenario_ids: List[int] = Query(..., description="List of scenario IDs to compare (2-10 scenarios)"),
     metrics: Optional[List[str]] = Query(
         None,
         description="Metrics to compare (default: all)"
@@ -194,7 +194,7 @@ async def compare_games(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Compare performance across multiple games.
+    Compare performance across multiple scenarios.
 
     Provides side-by-side comparison of:
     - Total cost
@@ -210,19 +210,19 @@ async def compare_games(
 
     **Requires authentication**
 
-    **Limitations**: 2-10 games maximum
+    **Limitations**: 2-10 scenarios maximum
     """
     # Validate input
-    if len(game_ids) < 2:
-        raise HTTPException(status_code=400, detail="At least 2 games required for comparison")
-    if len(game_ids) > 10:
-        raise HTTPException(status_code=400, detail="Maximum 10 games allowed for comparison")
+    if len(scenario_ids) < 2:
+        raise HTTPException(status_code=400, detail="At least 2 scenarios required for comparison")
+    if len(scenario_ids) > 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 scenarios allowed for comparison")
 
     service = get_reporting_service(db)
 
     try:
-        comparison = await service.compare_games(
-            game_ids=game_ids,
+        comparison = await service.compare_scenarios(
+            scenario_ids=scenario_ids,
             metrics=metrics
         )
         return comparison
@@ -239,7 +239,7 @@ async def get_player_analytics_summary(
     """
     Get quick analytics summary for a player.
 
-    Returns key metrics across all metrics in a single call.
+    Returns key metrics across all scenarios in a single call.
     Useful for dashboard widgets and quick overviews.
 
     **Requires authentication**
@@ -256,12 +256,12 @@ async def get_player_analytics_summary(
             "cost": {
                 "recent_avg": cost_trends["statistics"].get("mean"),
                 "trend": cost_trends["statistics"].get("trend"),
-                "games_analyzed": cost_trends["games_analyzed"]
+                "scenarios_analyzed": cost_trends["scenarios_analyzed"]
             },
             "service_level": {
                 "recent_avg": service_trends["statistics"].get("mean"),
                 "trend": service_trends["statistics"].get("trend"),
-                "games_analyzed": service_trends["games_analyzed"]
+                "scenarios_analyzed": service_trends["scenarios_analyzed"]
             },
             "quick_insights": cost_trends["insights"][:2] + service_trends["insights"][:2]
         }
@@ -280,9 +280,9 @@ async def reporting_health_check():
         "service": "reporting",
         "status": "healthy",
         "features": [
-            "game_reports",
+            "scenario_reports",
             "data_export",
             "trend_analysis",
-            "game_comparison"
+            "scenario_comparison"
         ]
     }

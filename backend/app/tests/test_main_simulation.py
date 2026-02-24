@@ -18,8 +18,8 @@ from app.simulation.helpers import compute_shipping_outcome, process_ship_queue
 
 
 class DummyGame:
-    def __init__(self, game_id: int = 1, name: str = "Test Game") -> None:
-        self.id = game_id
+    def __init__(self, scenario_id: int = 1, name: str = "Test Scenario") -> None:
+        self.id = scenario_id
         self.name = name
 
 

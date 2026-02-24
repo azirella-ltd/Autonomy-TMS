@@ -177,8 +177,8 @@ class LogContext:
     Context manager for adding temporary context to logs
 
     Usage:
-        with LogContext(user_id=42, game_id=123):
-            logger.info("Game action")  # Will include user_id and game_id
+        with LogContext(user_id=42, scenario_id=123):
+            logger.info("Game action")  # Will include user_id and scenario_id
     """
 
     def __init__(self, **context):
@@ -432,7 +432,7 @@ if __name__ == '__main__':
     logger.info("Application started")
 
     # Logging with context
-    with LogContext(user_id=42, game_id=100):
+    with LogContext(user_id=42, scenario_id=100):
         logger.info("User action performed")
         logger.warning("Potential issue detected")
 
@@ -441,7 +441,7 @@ if __name__ == '__main__':
         "Game created",
         extra={
             'context': {
-                'game_id': 100,
+                'scenario_id': 100,
                 'player_count': 4,
                 'config': 'Default Beer Game'
             }

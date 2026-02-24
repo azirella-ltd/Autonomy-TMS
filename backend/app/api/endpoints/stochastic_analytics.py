@@ -103,7 +103,7 @@ class ScenarioComparisonResponse(BaseModel):
 
 class MonteCarloRequest(BaseModel):
     """Request to run Monte Carlo simulation"""
-    game_id: int
+    scenario_id: int
     num_runs: int = Field(100, ge=10, le=1000, description="Number of simulation runs")
     base_seed: int = Field(42, description="Base random seed")
 
@@ -311,7 +311,7 @@ async def compare_scenarios(
 _monte_carlo_tasks: Dict[str, Dict[str, Any]] = {}
 
 
-def _run_monte_carlo_task(task_id: str, game_id: int, num_runs: int, base_seed: int):
+def _run_monte_carlo_task(task_id: str, scenario_id: int, num_runs: int, base_seed: int):
     """
     Background task that runs Monte Carlo simulation using ParallelMonteCarloRunner.
 
@@ -328,7 +328,7 @@ def _run_monte_carlo_task(task_id: str, game_id: int, num_runs: int, base_seed: 
         )
 
         config = ParallelMonteCarloConfig(
-            game_id=game_id,
+            scenario_id=scenario_id,
             num_runs=num_runs,
             base_seed=base_seed,
         )
@@ -376,7 +376,7 @@ async def start_monte_carlo(
             "status": "pending",
             "progress": 0.0,
             "result": None,
-            "game_id": request.game_id,
+            "scenario_id": request.scenario_id,
             "num_runs": request.num_runs,
         }
 
@@ -384,7 +384,7 @@ async def start_monte_carlo(
         background_tasks.add_task(
             _run_monte_carlo_task,
             task_id,
-            request.game_id,
+            request.scenario_id,
             request.num_runs,
             request.base_seed,
         )

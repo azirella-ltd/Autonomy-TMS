@@ -560,17 +560,40 @@ def _capture_forecast_snapshot(
     period_start: datetime,
     period_end: datetime
 ) -> Dict[str, Any]:
-    """Capture current forecast values as a snapshot."""
-    # Mock implementation - in production, query actual forecasts
+    """Capture current forecast values as a snapshot from the database."""
+    query = db.query(Forecast).filter(
+        Forecast.forecast_date >= period_start.date(),
+        Forecast.forecast_date <= period_end.date(),
+    )
+    if config_id:
+        query = query.filter(Forecast.config_id == config_id)
+    if product_id:
+        query = query.filter(Forecast.product_id == product_id)
+    if site_id:
+        query = query.filter(Forecast.site_id == int(site_id) if str(site_id).isdigit() else None)
+
+    rows = query.order_by(Forecast.product_id, Forecast.site_id, Forecast.forecast_date).all()
+
+    forecasts = []
+    for row in rows:
+        forecasts.append({
+            "forecast_id": row.id,
+            "product_id": row.product_id,
+            "site_id": row.site_id,
+            "forecast_date": row.forecast_date.isoformat() if row.forecast_date else None,
+            "forecast_quantity": row.forecast_quantity,
+            "forecast_p10": row.forecast_p10,
+            "forecast_p50": row.forecast_p50,
+            "forecast_p90": row.forecast_p90,
+            "user_override_quantity": getattr(row, "user_override_quantity", None),
+        })
+
     return {
         "captured_at": datetime.utcnow().isoformat(),
         "config_id": config_id,
         "period_start": period_start.isoformat(),
         "period_end": period_end.isoformat(),
-        "forecasts": [
-            {"product_id": "PROD-001", "site_id": "SITE-ATL", "period": "2026-W05", "quantity": 120},
-            {"product_id": "PROD-001", "site_id": "SITE-CHI", "quantity": 85},
-        ]
+        "forecasts": forecasts,
     }
 
 
@@ -592,12 +615,33 @@ def restore_version(
     if version.is_locked:
         raise HTTPException(status_code=400, detail="Cannot restore from a locked version")
 
-    # Restore forecasts (mock for now)
-    # In production, iterate through version.forecast_data and update forecasts
+    snapshot_forecasts = version.forecast_data.get("forecasts", []) if version.forecast_data else []
+    restored_count = 0
 
-    logger.info(f"Forecast version {version_id} restored by user {current_user.id}")
+    for entry in snapshot_forecasts:
+        fid = entry.get("forecast_id")
+        if not fid:
+            continue
+        row = db.get(Forecast, fid)
+        if not row:
+            continue
+        if "forecast_quantity" in entry and entry["forecast_quantity"] is not None:
+            row.forecast_quantity = entry["forecast_quantity"]
+        if "forecast_p10" in entry and entry["forecast_p10"] is not None:
+            row.forecast_p10 = entry["forecast_p10"]
+        if "forecast_p50" in entry and entry["forecast_p50"] is not None:
+            row.forecast_p50 = entry["forecast_p50"]
+        if "forecast_p90" in entry and entry["forecast_p90"] is not None:
+            row.forecast_p90 = entry["forecast_p90"]
+        if "user_override_quantity" in entry:
+            if hasattr(row, "user_override_quantity"):
+                row.user_override_quantity = entry["user_override_quantity"]
+        restored_count += 1
 
-    return {"success": True, "message": f"Restored {len(version.forecast_data.get('forecasts', []))} forecasts"}
+    db.commit()
+    logger.info(f"Forecast version {version_id} restored by user {current_user.id}: {restored_count} forecasts")
+
+    return {"success": True, "message": f"Restored {restored_count} forecasts from version {version.version_name}"}
 
 
 # ============================================================================

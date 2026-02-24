@@ -134,7 +134,7 @@ const GNNTrainingPanel = ({ selectedConfig }) => {
       const response = await listGNNCheckpoints('./checkpoints');
       const checkpoints = response?.checkpoints || [];
 
-      // Normalize config name to match checkpoint naming (e.g., "Default Beer Game" -> "default_beer_game")
+      // Normalize config name to match checkpoint naming (e.g., "My Config" -> "my_config")
       const normalized = selectedConfig.toLowerCase().replace(/[\s-]+/g, '_');
 
       // Find checkpoints that match the selected config

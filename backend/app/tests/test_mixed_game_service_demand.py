@@ -113,7 +113,7 @@ def test_apply_market_demand_respects_lane_lead_time():
     )
     context = RoundContext(
         round_number=1,
-        game_id=42,
+        scenario_id=42,
         topology=topology,
         node_states={
             "retailer": NodeState(),

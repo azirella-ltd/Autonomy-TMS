@@ -4,7 +4,7 @@ Powell Framework Integration Package
 Connects SiteAgent with existing platform services:
 - Supply plan service (MRP output -> supply plans)
 - ATP service (AATP engine with priority consumption)
-- Scenario service (SiteAgent as Beer Game agent strategy)
+- Scenario service (SiteAgent as simulation agent strategy)
 - Decision service (TRM decisions with audit trail)
 """
 

@@ -14,7 +14,7 @@ class AgentConfigUpdate(AgentConfigBase):
 
 class AgentConfigInDB(AgentConfigBase):
     id: int
-    game_id: int
+    scenario_id: int
 
     class Config:
         from_attributes = True

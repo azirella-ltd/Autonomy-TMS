@@ -16,7 +16,7 @@ Converts DAG simulator output (SimulationResult) to training-ready formats:
      quality, maintenance, subcontracting, forecast_adjustment, safety_stock
    - Inserts into powell_site_agent_decisions for CDC feedback loop
 
-Generalised to N-node topologies (not hardcoded to 4-node Beer Game).
+Generalised to N-node topologies (not hardcoded to 4-node simulation).
 """
 
 from dataclasses import dataclass, field

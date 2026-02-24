@@ -27,9 +27,9 @@ round_re = re.compile(r"^Round\s+(\d+)")
 node_re = re.compile(r"^\s*Node:\s*(.+)$")
 
 
-async def fetch_initial_state(game_id: int) -> Dict[str, Dict[str, Any]]:
+async def fetch_initial_state(scenario_id: int) -> Dict[str, Dict[str, Any]]:
     async with SessionLocal() as session:
-        scenario = await session.get(Scenario, game_id)
+        scenario = await session.get(Scenario, scenario_id)
         if not scenario or not scenario.config:
             return {}
         cfg = dict(scenario.config)
@@ -133,13 +133,13 @@ def build_csv(
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Convert debug log to CSV summary.")
     parser.add_argument("log_path", type=Path, help="Path to debug log")
-    parser.add_argument("--game-id", type=int, default=None, help="Game ID to pull initial_state")
+    parser.add_argument("--scenario-id", type=int, default=None, help="Scenario ID to pull initial_state")
     parser.add_argument("--out", type=Path, default=None, help="Output CSV path (default: log_path with .csv)")
     args = parser.parse_args()
 
     initial_state: Dict[str, Dict[str, Any]] = {}
-    if args.game_id is not None:
-        initial_state = await fetch_initial_state(args.game_id)
+    if args.scenario_id is not None:
+        initial_state = await fetch_initial_state(args.scenario_id)
 
     parsed = parse_log(args.log_path)
     out_path = args.out or args.log_path.with_suffix(".csv")

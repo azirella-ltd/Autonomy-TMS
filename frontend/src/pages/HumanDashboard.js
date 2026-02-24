@@ -94,11 +94,11 @@ const HumanDashboard = () => {
   }, [fetchDashboardData]);
 
   useEffect(() => {
-    if (!dashboardData?.game_id || !dashboardData?.player_id) {
+    if (!dashboardData?.scenario_id || !dashboardData?.player_id) {
       return undefined;
     }
 
-    connect(dashboardData.game_id, dashboardData.player_id);
+    connect(dashboardData.scenario_id, dashboardData.player_id);
 
     const unsubscribe = subscribe((event, payload) => {
       if (event !== 'message') {
@@ -122,7 +122,7 @@ const HumanDashboard = () => {
     return () => {
       unsubscribe();
     };
-  }, [dashboardData?.game_id, dashboardData?.player_id, connect, subscribe, fetchDashboardData]);
+  }, [dashboardData?.scenario_id, dashboardData?.player_id, connect, subscribe, fetchDashboardData]);
 
   useEffect(() => {
     if (!dashboardData?.current_round) {
@@ -154,7 +154,7 @@ const HumanDashboard = () => {
     event.preventDefault();
     setOrderError('');
 
-    if (!dashboardData?.game_id || !dashboardData?.player_id) {
+    if (!dashboardData?.scenario_id || !dashboardData?.player_id) {
       setOrderError('Unable to determine the current game or player.');
       return;
     }
@@ -173,7 +173,7 @@ const HumanDashboard = () => {
     try {
       setIsSubmitting(true);
       await simulationApi.submitOrder(
-        dashboardData.game_id,
+        dashboardData.scenario_id,
         dashboardData.player_id,
         quantityValue,
         orderReason.trim() ? orderReason.trim() : undefined

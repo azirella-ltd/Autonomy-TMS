@@ -144,7 +144,7 @@ const AdminDashboard = () => {
           // For RL, count unique configs by checking if checkpoint names contain config IDs
           // or fall back to counting unique algorithm types
           const rlCheckpoints = rlRes?.checkpoints || [];
-          const knownConfigs = ['default_beer_game', 'case_beer_game', 'six_pack_beer_game', 'bottle_beer_game', 'three_fg_beer_game', 'variable_beer_game', 'complex_sc'];
+          const knownConfigs = ['default_demo', 'case_demo', 'six_pack_demo', 'bottle_demo', 'three_fg_demo', 'variable_demo', 'complex_sc'];
           const rlConfigs = new Set();
           const rlAlgorithms = new Set();
 

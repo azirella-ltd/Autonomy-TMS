@@ -27,7 +27,7 @@ class ChatAPITester:
     def __init__(self):
         self.session = requests.Session()
         self.token = None
-        self.game_id = None
+        self.scenario_id = None
         self.player_id = None
 
     def login(self):
@@ -60,8 +60,8 @@ class ChatAPITester:
         if response.status_code == 200:
             games = response.json()
             if games and len(games) > 0:
-                self.game_id = games[0]["id"]
-                print(f"✓ Using game ID: {self.game_id}")
+                self.scenario_id = games[0]["id"]
+                print(f"✓ Using game ID: {self.scenario_id}")
                 print(f"  Game: {games[0]['name']}")
                 return True
             else:
@@ -84,7 +84,7 @@ class ChatAPITester:
         }
 
         response = self.session.post(
-            f"{API_BASE}/games/{self.game_id}/chat/messages",
+            f"{API_BASE}/scenarios/{self.scenario_id}/chat/messages",
             json=message_data,
         )
 
@@ -105,7 +105,7 @@ class ChatAPITester:
         print("\n=== Testing get messages ===")
 
         response = self.session.get(
-            f"{API_BASE}/games/{self.game_id}/chat/messages",
+            f"{API_BASE}/scenarios/{self.scenario_id}/chat/messages",
             params={"limit": 20}
         )
 
@@ -134,7 +134,7 @@ class ChatAPITester:
         print("\n=== Testing mark messages as read ===")
 
         response = self.session.put(
-            f"{API_BASE}/games/{self.game_id}/chat/messages/read",
+            f"{API_BASE}/scenarios/{self.scenario_id}/chat/messages/read",
             json=message_ids,
         )
 
@@ -152,7 +152,7 @@ class ChatAPITester:
         print("\n=== Testing request suggestion ===")
 
         response = self.session.post(
-            f"{API_BASE}/games/{self.game_id}/chat/request-suggestion",
+            f"{API_BASE}/scenarios/{self.scenario_id}/chat/request-suggestion",
             params={"agent_name": "wholesaler"},
             json={"context": {}},
         )
@@ -179,7 +179,7 @@ class ChatAPITester:
         print("\n=== Testing get suggestions ===")
 
         response = self.session.get(
-            f"{API_BASE}/games/{self.game_id}/chat/suggestions",
+            f"{API_BASE}/scenarios/{self.scenario_id}/chat/suggestions",
             params={"pending_only": True}
         )
 
@@ -207,7 +207,7 @@ class ChatAPITester:
         print("\n=== Testing accept suggestion ===")
 
         response = self.session.put(
-            f"{API_BASE}/games/{self.game_id}/chat/suggestions/{suggestion_id}/accept",
+            f"{API_BASE}/scenarios/{self.scenario_id}/chat/suggestions/{suggestion_id}/accept",
             json={"player_id": 1},  # Assuming player ID 1
         )
 
@@ -228,7 +228,7 @@ class ChatAPITester:
         print("\n=== Testing decline suggestion ===")
 
         response = self.session.put(
-            f"{API_BASE}/games/{self.game_id}/chat/suggestions/{suggestion_id}/decline",
+            f"{API_BASE}/scenarios/{self.scenario_id}/chat/suggestions/{suggestion_id}/decline",
             json={"player_id": 1},
         )
 
@@ -258,7 +258,7 @@ class ChatAPITester:
         }
 
         response = self.session.post(
-            f"{API_BASE}/games/{self.game_id}/chat/what-if",
+            f"{API_BASE}/scenarios/{self.scenario_id}/chat/what-if",
             json=analysis_data,
         )
 

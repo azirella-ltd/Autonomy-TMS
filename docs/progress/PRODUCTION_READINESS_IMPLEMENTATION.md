@@ -1,7 +1,7 @@
 # Production Readiness Implementation Plan
 
 **Created**: 2026-02-24
-**Status**: Items 1-10 Complete
+**Status**: Items 1-10 Complete + Stub Removal Batches 1-2 Complete
 **Priority Items**: 1-3 of 10 identified production gaps
 
 ---
@@ -226,3 +226,74 @@ docker compose exec -T backend python -m pytest tests/ --ignore=tests/test_beer_
 
 ### Item 9 Changes
 - **negotiation_service.py**: `_execute_negotiation()` now modifies game state: `inventory_share` transfers inventory between participant_rounds; `order_adjustment` updates order_upstream; `lead_time`/`price_adjustment` logged as informational agreements
+
+---
+
+## Stub Removal Batch 1
+
+Additional mock/stub code removed after Items 1-10:
+
+| # | Stub | Status | Notes |
+|---|------|--------|-------|
+| S1 | Forecast snapshot capture returns hardcoded mock | **Complete** | Queries real Forecast table; restore updates DB records |
+| S2 | Agent historical performance returns hardcoded 87% | **Complete** | Queries `powell_site_agent_decisions` for real accuracy, overrides, regret rate |
+| S3 | ATP demand forecast returns hardcoded 100 | **Complete** | Falls back to MarketDemand baseline when no history; returns 0 instead of fake data |
+| S4 | Inventory risk falls back to mock data | **Complete** | Removed `_generate_mock_inventory_risks()` and `_generate_mock_recommendations()`; returns empty list when no data |
+| S5 | S&OP simulation returns hardcoded results | **Complete** | Wired to SupplyPlanService.generate_supply_plan() with 200 MC scenarios |
+
+### S1 Changes
+- **forecast_adjustments.py**: `_capture_forecast_snapshot()` queries Forecast table with config/product/site filters; `restore_version()` iterates snapshot and updates Forecast records in DB
+
+### S2 Changes
+- **agent_recommendation_service.py**: `_get_historical_performance()` queries SiteAgentDecision table — counts decisions, overrides (human_feedback not null), accuracy from reward_signal, regret rate from low human_rating; returns zeros when no history
+
+### S3 Changes
+- **atp_service.py**: `_forecast_demand_for_period()` fallback queries MarketDemand for config's base demand (final_demand/initial_demand); returns 0 as last resort
+
+### S4 Changes
+- **recommendations.py**: Removed `_generate_mock_inventory_risks()` (hardcoded Atlanta/Denver mock data) and `_generate_mock_recommendations()` (hardcoded transfer/expedite mock recs); both fallbacks replaced with empty list
+
+### S5 Changes
+- **sop_service.py**: `_run_sop_simulation()` now instantiates SupplyPlanService, runs 200-scenario Monte Carlo, extracts OTIF/inventory/cost metrics from balanced scorecard; added `_empty_simulation_result()` for graceful failure
+
+---
+
+## Stub Removal Batch 2
+
+Additional mock/stub/placeholder code replaced with real DB-backed logic:
+
+| # | Stub | Status | Notes |
+|---|------|--------|-------|
+| S6 | Recommendation impact uses placeholder data | **Complete** | Queries real InvLevel for excess/deficit sites; product weight/cost from Product table |
+| S7 | Sustainability/cost scoring uses hardcoded weights | **Complete** | Looks up product `unit_weight_kg` and `unit_cost` from DB before falling back to defaults |
+| S8 | Business impact uses hardcoded formulas | **Complete** | Wired to SupplyPlanService.generate_supply_plan() with real MC; falls back to heuristic model |
+| S9 | Simulation demand returns hardcoded 4/8 | **Complete** | Queries MarketDemand for config demand pattern (initial/change_week/final); falls back to classic |
+| S10 | Deterministic planner source node returns None | **Complete** | Queries TransportationLane for upstream connection |
+| S11 | Cost calculator record_round_cost is pass | **Complete** | Updates ParticipantRound holding/backorder/total cost via ScenarioRound lookup |
+| S12 | Scenario branching products/BOMs empty | **Complete** | Loads from Product and ProductBom tables via `_load_products()` and `_load_boms()` helpers |
+| S13 | Recommendation decision tracking not persisted | **Complete** | Creates SiteAgentDecision record with human_feedback and human_rating for RL training |
+| S14 | RoundMetric player_id always None | **Complete** | Looks up Participant by scenario_id + node_id via `_get_participant_for_site()` |
+
+### S6-S7 Changes
+- **recommendations_engine.py**: `simulate_recommendation_impact()` now builds rec dict from real InvLevel data via `_build_rec_from_id()`; `_score_sustainability()` and `_score_cost()` look up product weight and unit cost from Product table
+
+### S8 Changes
+- **business_impact_service.py**: `_simulate_scenario()` tries SupplyPlanService with 200 MC scenarios using config_id; falls back to simplified heuristic model on failure
+
+### S9 Changes
+- **simulation_execution_engine.py**: `_get_market_demand()` queries MarketDemand for scenario's config demand pattern; falls back to classic Beer Game pattern
+
+### S10 Changes
+- **deterministic_planner.py**: `_get_source_node()` queries TransportationLane where to_site_id matches, returns from_site_id
+
+### S11 Changes
+- **cost_calculator.py**: `record_round_cost()` finds ScenarioRound, updates ParticipantRound cost fields, commits
+
+### S12 Changes
+- **scenario_branching_service.py**: `_serialize_config()` calls `_load_products()` and `_load_boms()` which query Product and ProductBom tables by config_id
+
+### S13 Changes
+- **recommendations_engine.py**: `track_recommendation_decision()` creates SiteAgentDecision with human_feedback (reason), human_rating (5=accepted, 1=rejected, 3=modified)
+
+### S14 Changes
+- **simulation_execution_engine.py**: Added `_get_participant_for_site()` to look up participant by scenario+site; RoundMetric now uses `scenario_id` instead of `game_id` and populates `participant_id`

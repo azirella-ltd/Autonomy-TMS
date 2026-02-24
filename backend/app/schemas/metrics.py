@@ -57,7 +57,7 @@ class PlayerPerformance(BaseModel):
     round_metrics: List[PlayerRoundMetrics]
 
 class GameMetricsResponse(BaseModel):
-    game_id: int
+    scenario_id: int
     game_name: str
     total_rounds: int
     start_date: datetime

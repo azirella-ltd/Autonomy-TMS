@@ -50,7 +50,7 @@ class ModeSwitchResult:
     previous_mode: str
     new_mode: str
     player_id: int
-    game_id: int
+    scenario_id: int
     round_number: int
     reason: str
     message: str
@@ -67,7 +67,7 @@ class ModeHistory:
     """Historical record of mode switches."""
     id: int
     player_id: int
-    game_id: int
+    scenario_id: int
     round_number: int
     previous_mode: str
     new_mode: str
@@ -94,7 +94,7 @@ class AgentModeService:
     def switch_agent_mode(
         self,
         player_id: int,
-        game_id: int,
+        scenario_id: int,
         new_mode: AgentMode,
         reason: ModeSwitchReason,
         triggered_by: str = "user",
@@ -105,7 +105,7 @@ class AgentModeService:
 
         Args:
             player_id: Player to switch mode for
-            game_id: Game context
+            scenario_id: Game context
             new_mode: Target agent mode
             reason: Reason for switch
             triggered_by: Who initiated switch (user, system, agent)
@@ -120,15 +120,15 @@ class AgentModeService:
         """
         # Fetch player and game
         player = self.db.query(Player).filter_by(
-            id=player_id, game_id=game_id
+            id=player_id, scenario_id=scenario_id
         ).first()
 
         if not player:
-            raise ValueError(f"Player {player_id} not found in game {game_id}")
+            raise ValueError(f"Player {player_id} not found in game {scenario_id}")
 
-        game = self.db.query(Game).filter_by(id=game_id).first()
+        game = self.db.query(Game).filter_by(id=scenario_id).first()
         if not game:
-            raise ValueError(f"Game {game_id} not found")
+            raise ValueError(f"Game {scenario_id} not found")
 
         # Get current mode
         current_mode = player.agent_mode or AgentMode.MANUAL.value
@@ -140,7 +140,7 @@ class AgentModeService:
                 previous_mode=current_mode,
                 new_mode=new_mode.value,
                 player_id=player_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
                 round_number=game.current_round,
                 reason=reason.value,
                 message=f"Mode already set to {new_mode.value}",
@@ -166,7 +166,7 @@ class AgentModeService:
         # Record mode history BEFORE switching
         self._record_mode_history(
             player_id=player_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
             round_number=game.current_round,
             previous_mode=current_mode,
             new_mode=new_mode.value,
@@ -190,7 +190,7 @@ class AgentModeService:
             previous_mode=current_mode,
             new_mode=new_mode.value,
             player_id=player_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
             round_number=game.current_round,
             reason=reason.value,
             message=f"Successfully switched from {current_mode} to {new_mode.value}",
@@ -267,7 +267,7 @@ class AgentModeService:
     def get_mode_history(
         self,
         player_id: Optional[int] = None,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
         limit: int = 50
     ) -> List[ModeHistory]:
         """
@@ -275,7 +275,7 @@ class AgentModeService:
 
         Args:
             player_id: Filter by player (optional)
-            game_id: Filter by game (optional)
+            scenario_id: Filter by game (optional)
             limit: Max records to return
 
         Returns:
@@ -285,8 +285,8 @@ class AgentModeService:
 
         if player_id:
             query = query.filter_by(player_id=player_id)
-        if game_id:
-            query = query.filter_by(game_id=game_id)
+        if scenario_id:
+            query = query.filter_by(scenario_id=scenario_id)
 
         query = query.order_by(AgentModeHistory.timestamp.desc()).limit(limit)
 
@@ -296,7 +296,7 @@ class AgentModeService:
             ModeHistory(
                 id=record.id,
                 player_id=record.player_id,
-                game_id=record.game_id,
+                scenario_id=record.scenario_id,
                 round_number=record.round_number,
                 previous_mode=record.previous_mode,
                 new_mode=record.new_mode,
@@ -308,17 +308,17 @@ class AgentModeService:
             for record in records
         ]
 
-    def get_current_mode_distribution(self, game_id: int) -> Dict[str, int]:
+    def get_current_mode_distribution(self, scenario_id: int) -> Dict[str, int]:
         """
         Get count of players in each mode for a game.
 
         Args:
-            game_id: Game to analyze
+            scenario_id: Game to analyze
 
         Returns:
             Dict with mode counts: {"manual": 2, "copilot": 1, "autonomous": 1}
         """
-        players = self.db.query(Player).filter_by(game_id=game_id).all()
+        players = self.db.query(Player).filter_by(scenario_id=scenario_id).all()
 
         distribution = {
             AgentMode.MANUAL.value: 0,
@@ -398,7 +398,7 @@ class AgentModeService:
     def _record_mode_history(
         self,
         player_id: int,
-        game_id: int,
+        scenario_id: int,
         round_number: int,
         previous_mode: str,
         new_mode: str,
@@ -408,7 +408,7 @@ class AgentModeService:
         """Record mode switch in history table."""
         history_record = AgentModeHistory(
             player_id=player_id,
-            game_id=game_id,
+            scenario_id=scenario_id,
             round_number=round_number,
             previous_mode=previous_mode,
             new_mode=new_mode,
@@ -473,7 +473,7 @@ class AgentModeHistory(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     player_id = Column(Integer, ForeignKey("players.id"), nullable=False, index=True)
-    game_id = Column(Integer, ForeignKey("games.id"), nullable=False, index=True)
+    scenario_id = Column(Integer, ForeignKey("games.id"), nullable=False, index=True)
     round_number = Column(Integer, nullable=False)
     previous_mode = Column(String(20), nullable=False)  # manual, copilot, autonomous
     new_mode = Column(String(20), nullable=False)

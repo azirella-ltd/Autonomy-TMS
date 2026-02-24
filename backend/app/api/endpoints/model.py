@@ -269,21 +269,21 @@ async def get_game_metrics(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Calculate and return detailed performance metrics for a completed game.
+    Calculate and return detailed performance metrics for a completed scenario.
     Includes costs, inventory metrics, and supply chain performance indicators.
     """
     from app.schemas.metrics import (
-        GameMetricsResponse, PlayerPerformance, CostMetrics,
+        ScenarioMetricsResponse, PlayerPerformance, CostMetrics,
         InventoryMetrics, OrderMetrics, ParticipantRoundMetrics, MarginMetrics
     )
     
-    # Get the game
+    # Get the scenario
     result = await db.execute(select(Scenario).where(Scenario.id == scenario_id))
     scenario = result.scalars().first()
     if not scenario:
-        raise HTTPException(status_code=404, detail="Game not found")
-    
-    # Get all rounds for this game
+        raise HTTPException(status_code=404, detail="Scenario not found")
+
+    # Get all rounds for this scenario
     rounds_result = await db.execute(
         select(ScenarioRound)
         .where(ScenarioRound.scenario_id == scenario_id)
@@ -292,15 +292,15 @@ async def get_game_metrics(
     rounds = rounds_result.scalars().all()
     
     if not rounds:
-        raise HTTPException(status_code=400, detail="No rounds found for this game")
-    
-    # Get all players in this game
+        raise HTTPException(status_code=400, detail="No rounds found for this scenario")
+
+    # Get all participants in this scenario
     players_result = await db.execute(select(Participant).where(Participant.scenario_id == scenario_id))
     participants = players_result.scalars().all()
     if not participants:
-        raise HTTPException(status_code=400, detail="No players found for this game")
+        raise HTTPException(status_code=400, detail="No participants found for this scenario")
     
-    # Get all player rounds
+    # Get all participant rounds
     participant_rounds_result = await db.execute(
         select(ParticipantRound)
         .join(ScenarioRound)
@@ -309,16 +309,16 @@ async def get_game_metrics(
     participant_rounds = participant_rounds_result.scalars().all()
     
     if not rounds:
-        raise HTTPException(status_code=400, detail="No rounds completed for this game")
+        raise HTTPException(status_code=400, detail="No rounds completed for this scenario")
     
     participant_performances = []
     total_supply_chain_cost = 0
     total_demand = 0
     
     for participant in participants:
-        participant_rounds_data = [pr for pr in participant_rounds if pr.player_id == participant.id]
+        participant_rounds_data = [pr for pr in participant_rounds if pr.participant_id == participant.id]
         
-        # Get pricing for this player's role from game configuration
+        # Get pricing for this participant's role from scenario configuration
         role = participant.role.lower()
         pricing = scenario.pricing_config.dict()
         role_pricing = pricing.get(role, {})
@@ -408,7 +408,7 @@ async def get_game_metrics(
             
             # Create round metrics with margin data
             round_metric = ParticipantRoundMetrics(
-                round_number=pr.game_round.round_number,
+                round_number=pr.scenario_round.round_number,
                 inventory=pr.inventory_after,
                 backorders=pr.backorder_after,
                 order_placed=pr.order_placed,
@@ -470,7 +470,7 @@ async def get_game_metrics(
         participant_performances.append(participant_perf)
     
     # Calculate overall metrics
-    avg_weekly_demand = total_demand / (len(rounds) * len(participants)) if players and rounds else 0
+    avg_weekly_demand = total_demand / (len(rounds) * len(participants)) if participants and rounds else 0
     
     # Calculate overall bullwhip effect (retailer variance vs manufacturer variance)
     retailer_orders = []
@@ -493,9 +493,9 @@ async def get_game_metrics(
             overall_bullwhip = manufacturer_var / retailer_var if retailer_var > 0 else None
     
     # Prepare final response
-    response = GameMetricsResponse(
-        game_id=scenario.id,
-        game_name=scenario.name,
+    response = ScenarioMetricsResponse(
+        scenario_id=scenario.id,
+        scenario_name=scenario.name,
         total_rounds=len(rounds),
         start_date=rounds[0].created_at if rounds else None,
         end_date=rounds[-1].completed_at if rounds and hasattr(rounds[-1], 'completed_at') else None,
@@ -556,7 +556,7 @@ def load_data(window, horizon):
     else:
         db_url = '{req.db_url or resolve_sync_database_url()}'
         cfg = DbLookupConfig(database_url=db_url, steps_table='{req.steps_table}')
-        return load_sequences_from_db(cfg, params=SimulationParams(), game_ids=None, window=window, horizon=horizon)
+        return load_sequences_from_db(cfg, params=SimulationParams(), scenario_ids=None, window=window, horizon=horizon)
 
 # Run optimization
 optimizer = GNNHyperparameterOptimizer(
@@ -905,7 +905,7 @@ async def explain_prediction(
         # Get player round data
         result = await db.execute(
             select(ParticipantRound).where(
-                ParticipantRound.player_id == req.player_id,
+                ParticipantRound.participant_id == req.player_id,
                 ParticipantRound.round_number == req.round_number
             )
         )
@@ -977,7 +977,7 @@ async def explain_prediction(
             # Save explanation
             output_dir = Path("explanations")
             output_dir.mkdir(parents=True, exist_ok=True)
-            output_path = output_dir / f"lime_game{req.game_id}_player{req.player_id}_round{req.round_number}.json"
+            output_path = output_dir / f"lime_scenario{req.scenario_id}_participant{req.player_id}_round{req.round_number}.json"
             explainer.save_explanation(explanation, str(output_path))
 
             return {
@@ -1005,7 +1005,7 @@ async def explain_prediction(
             # Save explanation
             output_dir = Path("explanations")
             output_dir.mkdir(parents=True, exist_ok=True)
-            output_path = output_dir / f"counterfactual_game{req.game_id}_player{req.player_id}_round{req.round_number}.json"
+            output_path = output_dir / f"counterfactual_scenario{req.scenario_id}_participant{req.player_id}_round{req.round_number}.json"
             explainer.save_explanation(counterfactual, str(output_path))
 
             return {

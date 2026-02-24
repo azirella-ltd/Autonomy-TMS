@@ -157,7 +157,7 @@ class PlayerAchievementBase(BaseModel):
     """Base player achievement schema."""
     player_id: int
     achievement_id: int
-    game_id: Optional[int] = None
+    scenario_id: Optional[int] = None
     progress: Optional[Dict[str, Any]] = None
 
 

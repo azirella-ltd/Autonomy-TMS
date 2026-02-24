@@ -543,15 +543,86 @@ class AgentRecommendationService:
         )
 
     def _get_historical_performance(self, player: Player) -> HistoricalPerformance:
-        """Get agent's historical performance metrics"""
-        # TODO: Query actual historical performance from database (Phase 2.5)
-        # For now, return mock data
-        return HistoricalPerformance(
-            avg_accuracy=0.87,
-            recent_decisions=50,
-            overrides=8,
-            override_regret_rate=0.25,  # 25% of overrides were worse than agent
-        )
+        """Get agent's historical performance metrics from real decision data."""
+        try:
+            from app.models.powell_decision import SiteAgentDecision
+
+            # Build site_key from participant info
+            site_key = f"site_{player.id}"
+
+            # Count recent decisions
+            recent_decisions = (
+                self.db.query(SiteAgentDecision)
+                .filter(SiteAgentDecision.site_key == site_key)
+                .count()
+            )
+
+            if recent_decisions == 0:
+                # No decision history yet — return zeros instead of fake data
+                return HistoricalPerformance(
+                    avg_accuracy=0.0,
+                    recent_decisions=0,
+                    overrides=0,
+                    override_regret_rate=0.0,
+                )
+
+            # Count decisions with human overrides
+            overrides = (
+                self.db.query(SiteAgentDecision)
+                .filter(
+                    SiteAgentDecision.site_key == site_key,
+                    SiteAgentDecision.human_feedback.isnot(None),
+                )
+                .count()
+            )
+
+            # Compute accuracy from decisions that have outcomes
+            decisions_with_outcomes = (
+                self.db.query(SiteAgentDecision)
+                .filter(
+                    SiteAgentDecision.site_key == site_key,
+                    SiteAgentDecision.reward_signal.isnot(None),
+                )
+                .all()
+            )
+
+            if decisions_with_outcomes:
+                # Reward signal is typically -1 to 1; positive = good decision
+                positive = sum(1 for d in decisions_with_outcomes if (d.reward_signal or 0) > 0)
+                avg_accuracy = positive / len(decisions_with_outcomes)
+            else:
+                avg_accuracy = 0.0
+
+            # Override regret rate: overrides where human rating <= 2 (1-5 scale)
+            regret_overrides = 0
+            if overrides > 0:
+                regret_overrides = (
+                    self.db.query(SiteAgentDecision)
+                    .filter(
+                        SiteAgentDecision.site_key == site_key,
+                        SiteAgentDecision.human_feedback.isnot(None),
+                        SiteAgentDecision.human_rating.isnot(None),
+                        SiteAgentDecision.human_rating <= 2,
+                    )
+                    .count()
+                )
+
+            override_regret_rate = regret_overrides / overrides if overrides > 0 else 0.0
+
+            return HistoricalPerformance(
+                avg_accuracy=round(avg_accuracy, 3),
+                recent_decisions=recent_decisions,
+                overrides=overrides,
+                override_regret_rate=round(override_regret_rate, 3),
+            )
+        except Exception as e:
+            logger.warning(f"Error querying historical performance for player {player.id}: {e}")
+            return HistoricalPerformance(
+                avg_accuracy=0.0,
+                recent_decisions=0,
+                overrides=0,
+                override_regret_rate=0.0,
+            )
 
     def _get_agent_type_display(self, strategy: AgentStrategy) -> str:
         """Get display name for agent type"""

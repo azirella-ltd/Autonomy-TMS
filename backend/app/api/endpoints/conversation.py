@@ -103,13 +103,13 @@ async def send_conversation_message(
         # Get conversation service
         conversation_service = get_conversation_service(db)
 
-        # TODO: Verify user has access to this game
-        # For now, we'll use a simple player lookup
+        # TODO: Verify user has access to this scenario
+        # For now, we'll use a simple participant lookup
         # In production, add proper authorization checks
 
         # Send message and get AI response
         result = await conversation_service.send_message(
-            game_id=scenario_id,
+            scenario_id=scenario_id,
             player_id=current_user.id,  # TODO: Map user to player properly
             message=request.message,
             parent_message_id=request.parent_message_id,
@@ -142,17 +142,17 @@ async def get_conversation_history(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Get conversation history for the current player in a game.
+    Get conversation history for the current participant in a scenario.
 
     Returns the most recent messages in reverse chronological order.
     Optionally includes full context snapshots for each message.
 
     **Parameters:**
     - `limit`: Maximum number of messages to return (default: 50, max: 200)
-    - `include_context`: Whether to include full game state context for each message
+    - `include_context`: Whether to include full scenario state context for each message
 
     **Use Cases:**
-    - Display chat history when player rejoins game
+    - Display chat history when participant rejoins scenario
     - Analyze conversation patterns
     - Export conversation for review
     """
@@ -164,7 +164,7 @@ async def get_conversation_history(
 
         # Get conversation history
         messages = await conversation_service.get_conversation_history(
-            game_id=scenario_id,
+            scenario_id=scenario_id,
             player_id=current_user.id,  # TODO: Map user to player properly
             limit=limit,
             include_context=include_context,
@@ -205,7 +205,7 @@ async def clear_conversation(
         conversation_service = get_conversation_service(db)
 
         success = await conversation_service.clear_conversation(
-            game_id=scenario_id,
+            scenario_id=scenario_id,
             player_id=current_user.id,  # TODO: Map user to player properly
         )
 
@@ -247,7 +247,7 @@ async def get_conversation_summary(
         conversation_service = get_conversation_service(db)
 
         summary = await conversation_service.get_conversation_summary(
-            game_id=scenario_id,
+            scenario_id=scenario_id,
             player_id=current_user.id,  # TODO: Map user to player properly
         )
 

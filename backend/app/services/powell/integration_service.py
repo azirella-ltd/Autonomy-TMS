@@ -440,7 +440,7 @@ class PowellIntegrationService:
         self,
         config_id: int,
         recommendation: PORecommendation,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
     ) -> IntegrationResult:
         """
         Execute a PO recommendation by creating the actual PO.
@@ -448,7 +448,7 @@ class PowellIntegrationService:
         Args:
             config_id: Supply chain configuration ID
             recommendation: PO recommendation from TRM
-            game_id: Optional game ID for Beer Game context
+            scenario_id: Optional scenario ID for simulation context
 
         Returns:
             IntegrationResult with created PO details
@@ -469,7 +469,7 @@ class PowellIntegrationService:
                 config_id, recommendation.location_id
             )
 
-            # Get supplier site ID (for inter-company transfers in Beer Game)
+            # Get supplier site ID (for inter-company transfers in simulation)
             supplier_site_id = await self._get_site_id_by_name(
                 config_id, recommendation.supplier.supplier_id
             )
@@ -484,7 +484,7 @@ class PowellIntegrationService:
                 requested_delivery_date=delivery_date,
                 vendor_id=recommendation.supplier.supplier_id,
                 config_id=config_id,
-                game_id=game_id,
+                scenario_id=scenario_id,
             )
 
             await order_mgmt.commit()
@@ -528,7 +528,7 @@ class PowellIntegrationService:
     async def detect_order_exceptions(
         self,
         config_id: int,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
     ) -> IntegrationResult:
         """
         Scan orders for exceptions using OrderTrackingTRM.
@@ -541,7 +541,7 @@ class PowellIntegrationService:
 
         Args:
             config_id: Supply chain configuration ID
-            game_id: Optional game ID for Beer Game context
+            scenario_id: Optional scenario ID for simulation context
 
         Returns:
             IntegrationResult with list of ExceptionDetection
@@ -558,8 +558,8 @@ class PowellIntegrationService:
             exceptions = []
 
             # Get active orders (POs and TOs)
-            active_pos = await self._get_active_purchase_orders(config_id, game_id)
-            active_tos = await self._get_active_transfer_orders(config_id, game_id)
+            active_pos = await self._get_active_purchase_orders(config_id, scenario_id)
+            active_tos = await self._get_active_transfer_orders(config_id, scenario_id)
 
             # Check POs
             for po in active_pos:
@@ -924,7 +924,7 @@ class PowellIntegrationService:
     async def _get_active_purchase_orders(
         self,
         config_id: int,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
     ) -> List[PurchaseOrder]:
         """Get active purchase orders."""
         query = select(PurchaseOrder).where(
@@ -933,8 +933,8 @@ class PowellIntegrationService:
                 PurchaseOrder.status.in_(["APPROVED", "ACKNOWLEDGED", "SHIPPED", "PARTIALLY_SHIPPED"]),
             )
         )
-        if game_id:
-            query = query.where(PurchaseOrder.game_id == game_id)
+        if scenario_id:
+            query = query.where(PurchaseOrder.scenario_id == scenario_id)
 
         result = await self.db.execute(query)
         return list(result.scalars().all())
@@ -942,7 +942,7 @@ class PowellIntegrationService:
     async def _get_active_transfer_orders(
         self,
         config_id: int,
-        game_id: Optional[int] = None,
+        scenario_id: Optional[int] = None,
     ) -> List[TransferOrder]:
         """Get active transfer orders."""
         query = select(TransferOrder).where(
@@ -951,8 +951,8 @@ class PowellIntegrationService:
                 TransferOrder.status == "IN_TRANSIT",
             )
         )
-        if game_id:
-            query = query.where(TransferOrder.game_id == game_id)
+        if scenario_id:
+            query = query.where(TransferOrder.scenario_id == scenario_id)
 
         result = await self.db.execute(query)
         return list(result.scalars().all())

@@ -2282,13 +2282,13 @@ def _ensure_round(db: Session, game: DbGame, round_number: Optional[int] = None)
     number = round_number or (game.current_round or 1)
     existing = (
         db.query(Round)
-        .filter(Round.game_id == game.id, Round.round_number == number)
+        .filter(Round.scenario_id == game.id, Round.round_number == number)
         .first()
     )
     if existing:
         return existing
     round_record = Round(
-        game_id=game.id,
+        scenario_id=game.id,
         round_number=number,
         status="in_progress",
         started_at=datetime.utcnow(),
@@ -2310,7 +2310,7 @@ def _simulation_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
 def _all_players_submitted(db: Session, game: DbGame, round_record: Round) -> bool:
     player_roles = {
         str(player.role.value if hasattr(player.role, "value") else player.role).lower()
-        for player in db.query(Player).filter(Player.game_id == game.id).all()
+        for player in db.query(Player).filter(Player.scenario_id == game.id).all()
     }
     if not player_roles:
         return False
@@ -2319,7 +2319,7 @@ def _all_players_submitted(db: Session, game: DbGame, round_record: Round) -> bo
         db.query(PlayerAction, Player)
         .join(Player, Player.id == PlayerAction.player_id)
         .filter(
-            PlayerAction.game_id == game.id,
+            PlayerAction.scenario_id == game.id,
             PlayerAction.round_id == round_record.id,
             PlayerAction.action_type == "order",
         )
@@ -2824,7 +2824,7 @@ def _finalize_round_if_ready(
     round_number = round_record.round_number
     external_demand = _compute_customer_demand(game, round_number)
 
-    players = db.query(Player).filter(Player.game_id == game.id).all()
+    players = db.query(Player).filter(Player.scenario_id == game.id).all()
     players_by_role = {
         str(player.role.value if hasattr(player.role, "value") else player.role).lower(): player
         for player in players
@@ -2840,7 +2840,7 @@ def _finalize_round_if_ready(
         db.query(PlayerAction, Player)
         .join(Player, Player.id == PlayerAction.player_id)
         .filter(
-            PlayerAction.game_id == game.id,
+            PlayerAction.scenario_id == game.id,
             PlayerAction.round_id == round_record.id,
             PlayerAction.action_type == "order",
         )
@@ -3362,7 +3362,7 @@ def _finalize_round_if_ready(
         action_obj = actions_by_role.get(node_key)
         if action_obj is None:
             action_obj = PlayerAction(
-                game_id=game.id,
+                scenario_id=game.id,
                 round_id=round_record.id,
                 player_id=player.id,
                 action_type="order",
@@ -4112,7 +4112,7 @@ def _finalize_round_if_ready(
 
 
 def _auto_advance_unsupervised_game_sync(
-    game_id: int,
+    scenario_id: int,
     *,
     sleep_seconds: float = 0.35,
     iteration_limit: int = 2048,
@@ -4120,9 +4120,9 @@ def _auto_advance_unsupervised_game_sync(
     session = SyncSessionLocal()
     try:
         service = MixedScenarioService(session)
-        game = session.query(DbGame).filter(DbGame.id == game_id).first()
+        game = session.query(DbGame).filter(DbGame.id == scenario_id).first()
         if not game:
-            logger.warning("Auto-advance aborted: game %s not found", game_id)
+            logger.warning("Auto-advance aborted: game %s not found", scenario_id)
             try:
                 _debug_note(game, "Auto-advance aborted: game not found")
             except Exception:
@@ -4130,7 +4130,7 @@ def _auto_advance_unsupervised_game_sync(
             return
 
         if _get_progression_mode(game) != PROGRESSION_UNSUPERVISED:
-            logger.debug("Game %s is not unsupervised; skipping auto advance", game_id)
+            logger.debug("Game %s is not unsupervised; skipping auto advance", scenario_id)
             _debug_note(
                 game,
                 "Auto-advance skipped: progression mode is not unsupervised",
@@ -4138,9 +4138,9 @@ def _auto_advance_unsupervised_game_sync(
             )
             return
 
-        players = session.query(Player).filter(Player.game_id == game.id).all()
+        players = session.query(Player).filter(Player.scenario_id == game.id).all()
         if not players:
-            logger.warning("Auto-advance aborted: no players for game %s", game_id)
+            logger.warning("Auto-advance aborted: no players for game %s", scenario_id)
             _debug_note(game, "Auto-advance aborted: no players found")
             return
 
@@ -4148,7 +4148,7 @@ def _auto_advance_unsupervised_game_sync(
         if has_human_players:
             logger.info(
                 "Auto-advance skipped for game %s: unsupervised mode requires AI-only players",
-                game_id,
+                scenario_id,
             )
             _debug_note(
                 game,
@@ -4160,7 +4160,7 @@ def _auto_advance_unsupervised_game_sync(
             )
             return
 
-        logger.info("Auto-advance starting for game %s (max_rounds=%s)", game_id, game.max_rounds)
+        logger.info("Auto-advance starting for game %s (max_rounds=%s)", scenario_id, game.max_rounds)
         _debug_note(
             game,
             "Auto-advance starting",
@@ -4173,7 +4173,7 @@ def _auto_advance_unsupervised_game_sync(
             if iteration_limit and iteration > iteration_limit:
                 logger.warning(
                     "Auto-advance stopped for game %s after reaching the iteration limit",
-                    game_id,
+                    scenario_id,
                 )
                 _debug_note(
                     game,
@@ -4183,15 +4183,15 @@ def _auto_advance_unsupervised_game_sync(
                 break
 
             session.expire_all()
-            game = session.query(DbGame).filter(DbGame.id == game_id).first()
+            game = session.query(DbGame).filter(DbGame.id == scenario_id).first()
             if not game:
-                logger.debug("Game %s disappeared mid-run; stopping auto advance", game_id)
+                logger.debug("Game %s disappeared mid-run; stopping auto advance", scenario_id)
                 break
 
             if _get_progression_mode(game) != PROGRESSION_UNSUPERVISED:
                 logger.debug(
                     "Game %s progression mode changed away from unsupervised; stopping",
-                    game_id,
+                    scenario_id,
                 )
                 break
 
@@ -4206,7 +4206,7 @@ def _auto_advance_unsupervised_game_sync(
                     "Auto-advance stopped: start_new_round raised",
                     details={"iteration": iteration, "error": str(exc)},
                 )
-                logger.exception("start_new_round failed for game %s", game_id)
+                logger.exception("start_new_round failed for game %s", scenario_id)
                 break
             if round_record is None:
                 _debug_note(
@@ -4223,42 +4223,42 @@ def _auto_advance_unsupervised_game_sync(
 
             if sleep_seconds:
                 time.sleep(sleep_seconds)
-        logger.info("Auto-advance finished for game %s after %s iterations", game_id, iteration)
+        logger.info("Auto-advance finished for game %s after %s iterations", scenario_id, iteration)
         _debug_note(
             game,
             "Auto-advance finished",
             details={"iterations": iteration, "status": str(game.status)},
         )
     except Exception:
-        logger.exception("Auto-advance failed for game %s", game_id)
+        logger.exception("Auto-advance failed for game %s", scenario_id)
     finally:
         session.close()
 
 
-async def _schedule_unsupervised_autoplay(game_id: int) -> None:
+async def _schedule_unsupervised_autoplay(scenario_id: int) -> None:
     with _AUTO_TASKS_LOCK:
-        existing = _AUTO_ADVANCE_TASKS.get(game_id)
+        existing = _AUTO_ADVANCE_TASKS.get(scenario_id)
         if existing and not existing.done():
             return
 
     async def runner() -> None:
         current_task = asyncio.current_task()
         try:
-            await asyncio.to_thread(_auto_advance_unsupervised_game_sync, game_id)
+            await asyncio.to_thread(_auto_advance_unsupervised_game_sync, scenario_id)
         finally:
             with _AUTO_TASKS_LOCK:
-                if _AUTO_ADVANCE_TASKS.get(game_id) is current_task:
-                    _AUTO_ADVANCE_TASKS.pop(game_id, None)
+                if _AUTO_ADVANCE_TASKS.get(scenario_id) is current_task:
+                    _AUTO_ADVANCE_TASKS.pop(scenario_id, None)
 
     task = asyncio.create_task(runner())
     with _AUTO_TASKS_LOCK:
-        _AUTO_ADVANCE_TASKS[game_id] = task
-    logger.info("Scheduled unsupervised auto-advance for game %s", game_id)
+        _AUTO_ADVANCE_TASKS[scenario_id] = task
+    logger.info("Scheduled unsupervised auto-advance for game %s", scenario_id)
 
 
-def _cancel_unsupervised_autoplay(game_id: int) -> None:
+def _cancel_unsupervised_autoplay(scenario_id: int) -> None:
     with _AUTO_TASKS_LOCK:
-        task = _AUTO_ADVANCE_TASKS.pop(game_id, None)
+        task = _AUTO_ADVANCE_TASKS.pop(scenario_id, None)
     if task and not task.done():
         task.cancel()
         # Cancellation is cooperative; once cancelled, the background task will
@@ -4292,7 +4292,7 @@ def _replay_history_from_rounds(
 
     records = (
         db.query(Round)
-        .filter(Round.game_id == game.id)
+        .filter(Round.scenario_id == game.id)
         .order_by(Round.round_number.asc())
         .all()
     )
@@ -4330,7 +4330,7 @@ def _replay_history_from_rounds(
 
     supply_rounds = (
         db.query(SupplyGameRound)
-        .filter(SupplyGameRound.game_id == game.id)
+        .filter(SupplyGameRound.scenario_id == game.id)
         .filter(SupplyGameRound.round_number > last_recorded_round)
         .order_by(SupplyGameRound.round_number.asc())
         .all()
@@ -4350,7 +4350,7 @@ def _replay_history_from_rounds(
 
     players = {
         player.id: player
-        for player in db.query(Player).filter(Player.game_id == game.id).all()
+        for player in db.query(Player).filter(Player.scenario_id == game.id).all()
     }
 
     rounds_by_id = {round_rec.id: round_rec for round_rec in supply_rounds}
@@ -4804,7 +4804,7 @@ def _compute_game_report(db: Session, game: DbGame) -> Dict[str, Any]:
         products_payload = list(product_catalog_serialized)
 
     return {
-        "game_id": game.id,
+        "scenario_id": game.id,
         "name": game.name,
         "supply_chain_config_id": supply_chain_config_id,
         "supply_chain_name": supply_chain_name,
@@ -4882,8 +4882,8 @@ def _serialize_game(game: DbGame) -> Dict[str, Any]:
     return payload
 
 
-def _get_game_for_user(db: Session, user: Any, game_id: int) -> DbGame:
-    game = db.query(DbGame).filter(DbGame.id == game_id).first()
+def _get_game_for_user(db: Session, user: Any, scenario_id: int) -> DbGame:
+    game = db.query(DbGame).filter(DbGame.id == scenario_id).first()
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
     if _is_system_admin_user(user):
@@ -4959,7 +4959,7 @@ async def create_mixed_scenario(payload: GameCreate, user: Dict[str, Any] = Depe
                 strategy_value = assignment.strategy.value if hasattr(assignment.strategy, "value") else str(assignment.strategy)
 
             player = Player(
-                game_id=game.id,
+                scenario_id=game.id,
                 user_id=None if is_agent else assignment.user_id,
                 name=f"{role_enum_name.title().replace('_', ' ')} ({'AI' if is_agent else 'Human'})",
                 role=PlayerRole[role_enum_name],
@@ -4992,7 +4992,7 @@ def _apply_player_assignments_for_update(
 ) -> None:
     existing_players = {
         (player.role.name if hasattr(player.role, "name") else str(player.role).upper()): player
-        for player in db.query(Player).filter(Player.game_id == game.id).all()
+        for player in db.query(Player).filter(Player.scenario_id == game.id).all()
     }
 
     role_assignments: Dict[str, Dict[str, Any]] = {}
@@ -5009,7 +5009,7 @@ def _apply_player_assignments_for_update(
         player = existing_players.pop(role_enum.name, None)
         if player is None:
             player = Player(
-                game_id=game.id,
+                scenario_id=game.id,
                 role=role_enum,
                 name=role_enum.name.title(),
             )
@@ -5081,15 +5081,15 @@ async def list_mixed_scenarios(user: Dict[str, Any] = Depends(get_current_user))
         db.close()
 
 
-@api.put("/mixed-scenarios/{game_id}")
+@api.put("/mixed-scenarios/{scenario_id}")
 async def update_mixed_scenario(
-    game_id: int,
+    scenario_id: int,
     payload: GameUpdatePayload,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, game_id)
+        game = _get_game_for_user(db, user, scenario_id)
         if game.status not in {DbGameStatus.CREATED}:
             raise HTTPException(
                 status_code=400,
@@ -5136,9 +5136,9 @@ async def update_mixed_scenario(
         db.close()
 
 
-@api.post("/games/{game_id}/players/{player_id}/orders")
+@api.post("/games/{scenario_id}/players/{player_id}/orders")
 async def submit_order(
-    game_id: int,
+    scenario_id: int,
     player_id: int,
     submission: OrderSubmission,
     user: Dict[str, Any] = Depends(get_current_user),
@@ -5148,8 +5148,8 @@ async def submit_order(
         if submission.quantity < 0:
             raise HTTPException(status_code=400, detail="Quantity must be non-negative")
 
-        game = _get_game_for_user(db, user, game_id)
-        player = db.query(Player).filter(Player.id == player_id, Player.game_id == game.id).first()
+        game = _get_game_for_user(db, user, scenario_id)
+        player = db.query(Player).filter(Player.id == player_id, Player.scenario_id == game.id).first()
         if not player:
             raise HTTPException(status_code=404, detail="Player not found for this game")
 
@@ -5160,7 +5160,7 @@ async def submit_order(
         action = (
             db.query(PlayerAction)
             .filter(
-                PlayerAction.game_id == game.id,
+                PlayerAction.scenario_id == game.id,
                 PlayerAction.player_id == player.id,
                 PlayerAction.round_id == round_record.id,
                 PlayerAction.action_type == "order",
@@ -5175,7 +5175,7 @@ async def submit_order(
             action.created_at = timestamp
         else:
             action = PlayerAction(
-                game_id=game.id,
+                scenario_id=game.id,
                 round_id=round_record.id,
                 player_id=player.id,
                 action_type="order",
@@ -5215,7 +5215,7 @@ async def submit_order(
                 for act, p in db.query(PlayerAction, Player)
                 .join(Player, Player.id == PlayerAction.player_id)
                 .filter(
-                    PlayerAction.game_id == game.id,
+                    PlayerAction.scenario_id == game.id,
                     PlayerAction.round_id == round_record.id,
                     PlayerAction.action_type == "order",
                 )
@@ -5226,16 +5226,16 @@ async def submit_order(
         db.close()
 
 
-@api.get("/mixed-scenarios/{game_id}/rounds")
-async def list_rounds(game_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+@api.get("/mixed-scenarios/{scenario_id}/rounds")
+async def list_rounds(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, game_id)
+        game = _get_game_for_user(db, user, scenario_id)
         config = _coerce_game_config(game)
         history = config.get("history", [])
         if not history:
             history = _replay_history_from_rounds(db, game, config)
-        players = db.query(Player).filter(Player.game_id == game.id).all()
+        players = db.query(Player).filter(Player.scenario_id == game.id).all()
         players_by_role = {
             str(p.role.value if hasattr(p.role, "value") else p.role).lower(): p
             for p in players
@@ -5270,19 +5270,19 @@ async def list_rounds(game_id: int, user: Dict[str, Any] = Depends(get_current_u
         db.close()
 
 
-@api.get("/games/{game_id}/rounds")
-async def list_rounds_alias(game_id: int, user: Dict[str, Any] = Depends(get_current_user)):
-    return await list_rounds(game_id, user)
+@api.get("/games/{scenario_id}/rounds")
+async def list_rounds_alias(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+    return await list_rounds(scenario_id, user)
 
 
-@api.get("/mixed-scenarios/{game_id}/rounds/current/status")
-async def current_round_status(game_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+@api.get("/mixed-scenarios/{scenario_id}/rounds/current/status")
+async def current_round_status(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, game_id)
+        game = _get_game_for_user(db, user, scenario_id)
         config = _coerce_game_config(game)
         pending = _pending_orders(config)
-        players = db.query(Player).filter(Player.game_id == game.id).all()
+        players = db.query(Player).filter(Player.scenario_id == game.id).all()
         all_roles = {
             str(p.role.value if hasattr(p.role, "value") else p.role).lower(): p.id
             for p in players
@@ -5290,7 +5290,7 @@ async def current_round_status(game_id: int, user: Dict[str, Any] = Depends(get_
         submitted = {role for role, data in pending.items() if data.get("quantity") is not None}
         outstanding = [role for role in all_roles.keys() if role not in submitted]
         return {
-            "game_id": game.id,
+            "scenario_id": game.id,
             "current_round": game.current_round or 1,
             "progression_mode": _get_progression_mode(game),
             "submitted_roles": list(submitted),
@@ -5300,28 +5300,28 @@ async def current_round_status(game_id: int, user: Dict[str, Any] = Depends(get_
         db.close()
 
 
-@api.get("/games/{game_id}/rounds/current/status")
-async def current_round_status_alias(game_id: int, user: Dict[str, Any] = Depends(get_current_user)):
-    return await current_round_status(game_id, user)
+@api.get("/games/{scenario_id}/rounds/current/status")
+async def current_round_status_alias(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+    return await current_round_status(scenario_id, user)
 
 
-@api.get("/mixed-scenarios/{game_id}/report")
-async def get_game_report(game_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+@api.get("/mixed-scenarios/{scenario_id}/report")
+async def get_game_report(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, game_id)
+        game = _get_game_for_user(db, user, scenario_id)
         return _compute_game_report(db, game)
     finally:
         db.close()
 
 
-@api.get("/mixed-scenarios/{game_id}/state")
-async def get_game_state(game_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+@api.get("/mixed-scenarios/{scenario_id}/state")
+async def get_game_state(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, game_id)
+        game = _get_game_for_user(db, user, scenario_id)
         config = _coerce_game_config(game)
-        players = db.query(Player).filter(Player.game_id == game.id).all()
+        players = db.query(Player).filter(Player.scenario_id == game.id).all()
         players_payload = [
             {
                 "id": player.id,
@@ -5350,13 +5350,13 @@ async def get_game_state(game_id: int, user: Dict[str, Any] = Depends(get_curren
         db.close()
 
 
-@api.get("/games/{game_id}")
-async def get_game(game_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+@api.get("/games/{scenario_id}")
+async def get_game(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, game_id)
+        game = _get_game_for_user(db, user, scenario_id)
         payload = _serialize_game(game)
-        players = db.query(Player).filter(Player.game_id == game.id).all()
+        players = db.query(Player).filter(Player.scenario_id == game.id).all()
         payload["players"] = [
             {
                 "id": player.id,
@@ -5374,12 +5374,12 @@ async def get_game(game_id: int, user: Dict[str, Any] = Depends(get_current_user
         db.close()
 
 
-@api.get("/games/{game_id}/players")
-async def list_players(game_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+@api.get("/games/{scenario_id}/players")
+async def list_players(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, game_id)
-        players = db.query(Player).filter(Player.game_id == game.id).all()
+        game = _get_game_for_user(db, user, scenario_id)
+        players = db.query(Player).filter(Player.scenario_id == game.id).all()
         return [
             {
                 "id": player.id,
@@ -5396,15 +5396,15 @@ async def list_players(game_id: int, user: Dict[str, Any] = Depends(get_current_
         db.close()
 
 
-@api.post("/mixed-scenarios/{game_id}/start")
+@api.post("/mixed-scenarios/{scenario_id}/start")
 async def start_game(
-    game_id: int,
+    scenario_id: int,
     request: Request,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, game_id)
+        game = _get_game_for_user(db, user, scenario_id)
         if game.status == DbGameStatus.FINISHED:
             raise HTTPException(status_code=400, detail="Game is already finished")
         game.started_at = datetime.utcnow()
@@ -5425,7 +5425,7 @@ async def start_game(
             db.commit()
             db.refresh(game)
 
-        players = db.query(Player).filter(Player.game_id == game.id).all()
+        players = db.query(Player).filter(Player.scenario_id == game.id).all()
         human_count = sum(1 for p in players if not getattr(p, "is_ai", False))
         ai_count = len(players) - human_count
         all_ai_players = bool(players) and human_count == 0
@@ -5539,12 +5539,12 @@ async def start_game(
         db.close()
 
 
-@api.post("/mixed-scenarios/{game_id}/stop")
-async def stop_game(game_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+@api.post("/mixed-scenarios/{scenario_id}/stop")
+async def stop_game(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
-        _cancel_unsupervised_autoplay(game_id)
-        game = _get_game_for_user(db, user, game_id)
+        _cancel_unsupervised_autoplay(scenario_id)
+        game = _get_game_for_user(db, user, scenario_id)
         config = _coerce_game_config(game)
         round_record = _ensure_round(db, game, game.current_round or 1)
         pending = _pending_orders(config)
@@ -5567,24 +5567,24 @@ async def stop_game(game_id: int, user: Dict[str, Any] = Depends(get_current_use
         db.close()
 
 
-@api.post("/mixed-scenarios/{game_id}/reset")
-async def reset_game(game_id: int, user: Dict[str, Any] = Depends(get_current_user)):
-    _cancel_unsupervised_autoplay(game_id)
+@api.post("/mixed-scenarios/{scenario_id}/reset")
+async def reset_game(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+    _cancel_unsupervised_autoplay(scenario_id)
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, game_id)
+        game = _get_game_for_user(db, user, scenario_id)
 
         # Remove historical round data
-        round_ids = [rid for (rid,) in db.query(Round.id).filter(Round.game_id == game.id).all()]
+        round_ids = [rid for (rid,) in db.query(Round.id).filter(Round.scenario_id == game.id).all()]
         if round_ids:
-            db.query(PlayerAction).filter(PlayerAction.game_id == game.id).delete(synchronize_session=False)
-        db.query(Round).filter(Round.game_id == game.id).delete(synchronize_session=False)
+            db.query(PlayerAction).filter(PlayerAction.scenario_id == game.id).delete(synchronize_session=False)
+        db.query(Round).filter(Round.scenario_id == game.id).delete(synchronize_session=False)
 
-        sc_round_ids = [rid for (rid,) in db.query(SupplyGameRound.id).filter(SupplyGameRound.game_id == game.id).all()]
+        sc_round_ids = [rid for (rid,) in db.query(SupplyGameRound.id).filter(SupplyGameRound.scenario_id == game.id).all()]
         if sc_round_ids:
             db.query(SupplyPlayerRound).filter(SupplyPlayerRound.round_id.in_(sc_round_ids)).delete(synchronize_session=False)
-        db.query(SupplyGameRound).filter(SupplyGameRound.game_id == game.id).delete(synchronize_session=False)
-        db.query(SupplyOrder).filter(SupplyOrder.game_id == game.id).delete(synchronize_session=False)
+        db.query(SupplyGameRound).filter(SupplyGameRound.scenario_id == game.id).delete(synchronize_session=False)
+        db.query(SupplyOrder).filter(SupplyOrder.scenario_id == game.id).delete(synchronize_session=False)
 
         config = _coerce_game_config(game)
         config["pending_orders"] = {}
@@ -5595,7 +5595,7 @@ async def reset_game(game_id: int, user: Dict[str, Any] = Depends(get_current_us
         node_policies = config.get("node_policies", {})
         sim_params = _simulation_parameters(config)
 
-        players = db.query(Player).filter(Player.game_id == game.id).all()
+        players = db.query(Player).filter(Player.scenario_id == game.id).all()
         for player in players:
             role_key = _role_key(player)
             policy_cfg = MixedScenarioService._policy_for_node(node_policies, role_key)
@@ -5643,11 +5643,11 @@ async def reset_game(game_id: int, user: Dict[str, Any] = Depends(get_current_us
         db.close()
 
 
-@api.post("/mixed-scenarios/{game_id}/next-round")
-async def next_round(game_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+@api.post("/mixed-scenarios/{scenario_id}/next-round")
+async def next_round(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, game_id)
+        game = _get_game_for_user(db, user, scenario_id)
         if _get_progression_mode(game) == PROGRESSION_UNSUPERVISED:
             raise HTTPException(status_code=400, detail="Unsupervised games advance automatically")
 
@@ -5666,11 +5666,11 @@ async def next_round(game_id: int, user: Dict[str, Any] = Depends(get_current_us
         db.close()
 
 
-@api.post("/mixed-scenarios/{game_id}/finish")
-async def finish_game(game_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+@api.post("/mixed-scenarios/{scenario_id}/finish")
+async def finish_game(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
-        game = _get_game_for_user(db, user, game_id)
+        game = _get_game_for_user(db, user, scenario_id)
         config = _coerce_game_config(game)
         round_record = _ensure_round(db, game, game.current_round or 1)
         pending = _pending_orders(config)
