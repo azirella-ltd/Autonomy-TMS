@@ -7,8 +7,10 @@
  * - Row 1 left: Portfolio Treemap (Geography × Product, revenue size, margin color)
  * - Row 1 right: Model Confidence + ROI
  * - Row 2: Supply Chain Sankey (full width)
- * - Row 3: KPI cards (Gross Margin, Capacity, Revenue at Risk, Escalations) + S&OP Worklist
- * - Row 4: Agent Performance Summary
+ * - Row 3: Tier 1 ASSESS (Revenue Growth, EBIT, ROCS, Gross Margin, Cost to Serve)
+ * - Row 3b: Tier 2 DIAGNOSE (POF, C2C, OFCT composites)
+ * - Row 4: S&OP Worklist
+ * - Row 5: Agent Performance Summary
  */
 
 import React, { useState, useEffect } from 'react';
@@ -45,6 +47,8 @@ import {
 import { api } from '../services/api';
 import { Treemap, ResponsiveContainer, Tooltip } from 'recharts';
 import PlanningCascadeSankey from '../components/cascade/PlanningCascadeSankey';
+import GartnerMetricCard from '../components/metrics/GartnerMetricCard';
+import CompositeMetricCard from '../components/metrics/CompositeMetricCard';
 
 // =============================================================================
 // Business Outcome KPI Card
@@ -613,15 +617,24 @@ const ExecutiveDashboard = () => {
   const [data, setData] = useState(null);
   const [planningCycle, setPlanningCycle] = useState('Q3 2025');
   const [conformalStatus, setConformalStatus] = useState(null);
+  const [gartnerMetrics, setGartnerMetrics] = useState(null);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const response = await api.get('/decision-metrics/executive-dashboard', {
-          params: { planning_cycle: planningCycle }
-        });
-        setData(response.data.data);
+        const [dashResponse, metricsResponse] = await Promise.allSettled([
+          api.get('/decision-metrics/executive-dashboard', {
+            params: { planning_cycle: planningCycle }
+          }),
+          api.get('/hierarchical-metrics/dashboard'),
+        ]);
+        if (dashResponse.status === 'fulfilled') {
+          setData(dashResponse.value.data.data);
+        }
+        if (metricsResponse.status === 'fulfilled') {
+          setGartnerMetrics(metricsResponse.value.data);
+        }
         setError(null);
       } catch (err) {
         console.error('Failed to fetch executive dashboard:', err);
@@ -729,49 +742,126 @@ const ExecutiveDashboard = () => {
       {/* Row 2: Supply Chain Sankey (full width) */}
       <PlanningCascadeSankey height={300} />
 
-      {/* Row 3: Supply Chain Performance section */}
+      {/* Row 3: Gartner Tier 1 ASSESS — Strategic Metrics */}
       <div>
-        <h2 className="text-lg font-semibold mb-3">Supply Chain Performance</h2>
-        <div className="grid grid-cols-4 gap-4">
-          <BusinessKPICard
-            title="Gross Margin"
-            value={business_outcomes?.gross_margin?.value || 32.5}
-            unit="%"
-            change={business_outcomes?.gross_margin?.change || 2.1}
-            changeLabel="% vs target"
-            icon={DollarSign}
-            variant="success"
-            action={{ label: 'Improve margin', onClick: () => navigate('/sop-worklist') }}
-          />
-          <BusinessKPICard
-            title="Capacity Utilization"
-            value={business_outcomes?.capacity_utilization?.value || 87}
-            unit="%"
-            change={business_outcomes?.capacity_utilization?.change || -3}
-            changeLabel="% vs plan"
-            icon={Gauge}
-            variant="warning"
-            action={{ label: 'Balance capacity', onClick: () => navigate('/sop-worklist') }}
-          />
-          <BusinessKPICard
-            title="Revenue at Risk"
-            value={`$${((business_outcomes?.revenue_at_risk?.value || 2400000) / 1000000).toFixed(1)}M`}
-            change={business_outcomes?.revenue_at_risk?.change || 5}
-            changeLabel="% of forecast"
-            icon={AlertTriangle}
-            variant="danger"
-            action={{ label: 'Mitigate risk', onClick: () => navigate('/sop-worklist') }}
-          />
-          <BusinessKPICard
-            title="Escalations"
-            value={business_outcomes?.escalations?.value || 12}
-            change={business_outcomes?.escalations?.change || -3}
-            changeLabel=" vs yesterday"
-            icon={Bell}
-            variant="info"
-            action={{ label: 'Resolve escalations', onClick: () => navigate('/sop-worklist') }}
-          />
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="text-lg font-semibold">Tier 1 — ASSESS</h2>
+            <p className="text-xs text-muted-foreground">Strategic performance attributes (SCOR RL/RS/AG/CO/AM)</p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1"
+            onClick={() => navigate('/planning/metrics')}
+          >
+            View Full Metrics <ArrowRight className="h-4 w-4" />
+          </Button>
         </div>
+        {gartnerMetrics?.tiers?.tier1_assess?.metrics ? (
+          <div className="grid grid-cols-5 gap-3">
+            {Object.entries(gartnerMetrics.tiers.tier1_assess.metrics).map(([key, m]) => (
+              <GartnerMetricCard
+                key={key}
+                label={m.label}
+                value={m.value}
+                unit={m.unit}
+                target={m.target}
+                trend={m.trend}
+                benchmark={m.benchmark}
+                status={m.status}
+                tier="tier1"
+                scorCode={m.scor_code}
+                lowerIsBetter={m.lower_is_better}
+                compact
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-5 gap-3">
+            <GartnerMetricCard label="Revenue Growth" value={8.2} unit="%" target={10} trend={1.5} status="warning" tier="tier1" scorCode="RL.1.1" compact />
+            <GartnerMetricCard label="EBIT Margin" value={14.8} unit="%" target={15} trend={0.3} status="warning" tier="tier1" scorCode="CO.1.1" compact />
+            <GartnerMetricCard label="Return on SC Assets" value={18.5} unit="%" target={20} trend={-0.8} status="warning" tier="tier1" scorCode="AM.1.1" compact />
+            <GartnerMetricCard label="Gross Margin" value={business_outcomes?.gross_margin?.value || 32.5} unit="%" target={35} trend={business_outcomes?.gross_margin?.change || 2.1} status="success" tier="tier1" compact />
+            <GartnerMetricCard label="Total Cost to Serve" value={22.3} unit="%" target={20} trend={-0.5} status="warning" tier="tier1" lowerIsBetter compact />
+          </div>
+        )}
+      </div>
+
+      {/* Row 3b: Gartner Tier 2 DIAGNOSE — Composite Metrics */}
+      <div>
+        <h2 className="text-lg font-semibold mb-3">Tier 2 — DIAGNOSE</h2>
+        {gartnerMetrics?.tiers?.tier2_diagnose?.metrics ? (
+          <div className="grid grid-cols-3 gap-4">
+            {Object.entries(gartnerMetrics.tiers.tier2_diagnose.metrics).map(([key, m]) => (
+              <CompositeMetricCard
+                key={key}
+                label={m.label}
+                value={m.value}
+                unit={m.unit}
+                target={m.target}
+                trend={m.trend}
+                benchmark={m.benchmark}
+                status={m.status}
+                scorCode={m.scor_code}
+                formula={m.formula}
+                components={m.components}
+                lowerIsBetter={m.lower_is_better}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-4">
+            <CompositeMetricCard
+              label="Perfect Order Fulfillment"
+              value={91.3}
+              unit="%"
+              target={95}
+              trend={1.2}
+              status="warning"
+              scorCode="RL.1.1"
+              formula="POF = OTD × IF × DF × DA"
+              components={{
+                otd: { label: 'On-Time Delivery', value: 96.2, unit: '%', target: 98 },
+                if: { label: 'In-Full', value: 97.1, unit: '%', target: 99 },
+                df: { label: 'Damage-Free', value: 99.5, unit: '%', target: 99.5 },
+                da: { label: 'Documentation Accuracy', value: 98.1, unit: '%', target: 99 },
+              }}
+            />
+            <CompositeMetricCard
+              label="Cash-to-Cash Cycle"
+              value={42}
+              unit="days"
+              target={35}
+              trend={-2.5}
+              status="warning"
+              scorCode="AM.1.1"
+              formula="C2C = DIO + DSO − DPO"
+              lowerIsBetter
+              components={{
+                dio: { label: 'Days Inventory Outstanding', value: 28, unit: 'days', target: 22 },
+                dso: { label: 'Days Sales Outstanding', value: 34, unit: 'days', target: 30 },
+                dpo: { label: 'Days Payable Outstanding', value: 20, unit: 'days', target: 17 },
+              }}
+            />
+            <CompositeMetricCard
+              label="Order Fulfillment Cycle Time"
+              value={4.2}
+              unit="days"
+              target={3.5}
+              trend={-0.3}
+              status="warning"
+              scorCode="RS.1.1"
+              formula="OFCT = Source + Make + Deliver"
+              lowerIsBetter
+              components={{
+                source: { label: 'Source Cycle Time', value: 1.8, unit: 'days', target: 1.5 },
+                make: { label: 'Make Cycle Time', value: 1.2, unit: 'days', target: 1.0 },
+                deliver: { label: 'Deliver Cycle Time', value: 1.2, unit: 'days', target: 1.0 },
+              }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Row 4: S&OP Worklist (full width table) */}

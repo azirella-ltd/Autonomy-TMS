@@ -5965,6 +5965,10 @@ api.include_router(capabilities_router)  # prefix="/capabilities" defined in rou
 from app.api.endpoints.decision_metrics import router as decision_metrics_router
 api.include_router(decision_metrics_router, prefix="/decision-metrics", tags=["decision-metrics", "powell"])
 
+# Hierarchical Metrics API (Gartner-aligned metrics with hierarchy drill-down)
+from app.api.endpoints.hierarchical_metrics import router as hierarchical_metrics_router
+api.include_router(hierarchical_metrics_router, prefix="/hierarchical-metrics", tags=["metrics", "gartner"])
+
 # Full-Level Pegging & Multi-Stage CTP API
 from app.api.endpoints.pegging import router as pegging_router
 api.include_router(pegging_router, prefix="/pegging", tags=["pegging", "ctp", "planning"])

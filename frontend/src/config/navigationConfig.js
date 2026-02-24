@@ -144,6 +144,13 @@ export const NAVIGATION_CONFIG = [
         requiredCapability: 'view_kpi_monitoring',
       },
       {
+        label: 'Hierarchical Metrics',
+        path: '/planning/metrics',
+        icon: TargetIcon,
+        requiredCapability: 'view_kpi_monitoring',
+        description: 'Gartner hierarchy drill-down by Geography/Product/Time',
+      },
+      {
         label: 'Risk Analysis',
         path: '/analytics/risk',
         icon: RiskIcon,

@@ -1,13 +1,14 @@
 /**
- * KPI Monitoring — Gartner Hierarchy of Supply Chain Metrics
+ * HierarchicalMetricsDashboard — Full drill-down Gartner Hierarchy metrics
  *
- * Tabs: Tier 1 ASSESS | Tier 2 DIAGNOSE | Tier 3 CORRECT | Tier 4 AI Performance
- * HierarchyFilterBar for Geography / Product / Time drill-down
- * All charts use Recharts (consistent with rest of platform)
+ * Dedicated page for navigating all 4 Gartner tiers across
+ * Geography / Product / Time hierarchies with breadcrumb navigation.
+ *
+ * Linked from Executive Dashboard "View Full Metrics" button.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip as RTooltip, ResponsiveContainer, Legend, ReferenceLine,
@@ -27,10 +28,10 @@ import {
   TabsContent,
 } from '../../components/common';
 import {
-  LayoutDashboard,
+  BarChart3,
   TrendingUp,
   RefreshCw,
-  Download,
+  ArrowLeft,
   Bot,
   Target,
   Search,
@@ -43,14 +44,22 @@ import HierarchyFilterBar from '../../components/metrics/HierarchyFilterBar';
 import GartnerMetricCard from '../../components/metrics/GartnerMetricCard';
 import CompositeMetricCard from '../../components/metrics/CompositeMetricCard';
 
-const KPIMonitoring = () => {
+const CATEGORY_LABELS = {
+  demand_planning: 'Demand Planning',
+  inventory: 'Inventory Management',
+  procurement: 'Procurement',
+  manufacturing: 'Manufacturing',
+  fulfillment: 'Fulfillment',
+};
+
+const HierarchicalMetricsDashboard = () => {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'tier1');
   const [metricsData, setMetricsData] = useState(null);
 
-  // Hierarchy state from URL params (bookmarkable)
   const [hierarchy, setHierarchy] = useState({
     site_level: searchParams.get('site_level') || 'company',
     site_key: searchParams.get('site_key') || 'ALL',
@@ -64,23 +73,18 @@ const KPIMonitoring = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.get('/hierarchical-metrics/dashboard', {
-        params: hierarchy,
-      });
+      const response = await api.get('/hierarchical-metrics/dashboard', { params: hierarchy });
       setMetricsData(response.data);
     } catch (err) {
-      console.warn('Hierarchical metrics endpoint not available:', err);
-      setError('Failed to load metrics data. Using fallback.');
+      console.error('Failed to fetch hierarchical metrics:', err);
+      setError('Failed to load metrics data.');
     } finally {
       setLoading(false);
     }
   }, [hierarchy]);
 
-  useEffect(() => {
-    fetchMetrics();
-  }, [fetchMetrics]);
+  useEffect(() => { fetchMetrics(); }, [fetchMetrics]);
 
-  // Sync hierarchy to URL params
   useEffect(() => {
     const params = new URLSearchParams();
     if (activeTab !== 'tier1') params.set('tab', activeTab);
@@ -98,67 +102,33 @@ const KPIMonitoring = () => {
     setHierarchy(prev => ({ ...prev, [levelKey]: level, [keyKey]: key }));
   };
 
-  const handleBreadcrumbClick = (dimension, level, key) => {
-    handleDrillDown(dimension, level, key);
-  };
-
   const tiers = metricsData?.tiers;
 
-  // ── Tier 1 ASSESS ──────────────────────────────────────────────
+  // ── Tier 1 ─────────────────────────────────────────────────────
   const renderTier1 = () => {
     const metrics = tiers?.tier1_assess?.metrics;
-    if (!metrics) return <p className="text-muted-foreground text-sm">No Tier 1 data available.</p>;
+    if (!metrics) return <EmptyState tier="1" />;
 
     return (
       <div className="space-y-6">
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           {Object.entries(metrics).map(([key, m]) => (
-            <GartnerMetricCard
-              key={key}
-              label={m.label}
-              value={m.value}
-              unit={m.unit}
-              target={m.target}
-              trend={m.trend}
-              benchmark={m.benchmark}
-              status={m.status}
-              tier="tier1"
-              scorCode={m.scor_code}
-              lowerIsBetter={m.lower_is_better}
-            />
+            <GartnerMetricCard key={key} {...mapMetricProps(m, 'tier1')} />
           ))}
         </div>
-
-        {/* Trend chart */}
-        {metricsData?.trend_data && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Tier 1 Performance Trend</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={metricsData.trend_data}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="period" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <RTooltip />
-                  <Legend />
-                  <Line type="monotone" dataKey="pof" name="POF %" stroke="#8b5cf6" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="touchless" name="Touchless %" stroke="#06b6d4" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="otif" name="OTIF %" stroke="#22c55e" strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        )}
+        <TrendChart data={metricsData?.trend_data} title="Strategic Performance Trend" lines={[
+          { key: 'pof', name: 'POF %', color: '#8b5cf6' },
+          { key: 'otif', name: 'OTIF %', color: '#22c55e' },
+          { key: 'touchless', name: 'Touchless %', color: '#06b6d4' },
+        ]} />
       </div>
     );
   };
 
-  // ── Tier 2 DIAGNOSE ────────────────────────────────────────────
+  // ── Tier 2 ─────────────────────────────────────────────────────
   const renderTier2 = () => {
     const metrics = tiers?.tier2_diagnose?.metrics;
-    if (!metrics) return <p className="text-muted-foreground text-sm">No Tier 2 data available.</p>;
+    if (!metrics) return <EmptyState tier="2" />;
 
     return (
       <div className="space-y-6">
@@ -180,46 +150,19 @@ const KPIMonitoring = () => {
             />
           ))}
         </div>
-
-        {/* C2C Trend */}
-        {metricsData?.trend_data && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Cash-to-Cash & OFCT Trend</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={metricsData.trend_data}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="period" tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
-                  <RTooltip />
-                  <Legend />
-                  <Line yAxisId="left" type="monotone" dataKey="c2c" name="C2C (days)" stroke="#f59e0b" strokeWidth={2} dot={false} />
-                  <Line yAxisId="right" type="monotone" dataKey="ofct" name="OFCT (days)" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                  <ReferenceLine yAxisId="left" y={35} stroke="#f59e0b" strokeDasharray="3 3" label="C2C Target" />
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        )}
+        <TrendChart data={metricsData?.trend_data} title="Diagnostic Trend" lines={[
+          { key: 'c2c', name: 'C2C (days)', color: '#f59e0b' },
+          { key: 'ofct', name: 'OFCT (days)', color: '#3b82f6' },
+          { key: 'pof', name: 'POF %', color: '#8b5cf6' },
+        ]} />
       </div>
     );
   };
 
-  // ── Tier 3 CORRECT ─────────────────────────────────────────────
+  // ── Tier 3 ─────────────────────────────────────────────────────
   const renderTier3 = () => {
     const categories = tiers?.tier3_correct?.categories;
-    if (!categories) return <p className="text-muted-foreground text-sm">No Tier 3 data available.</p>;
-
-    const CATEGORY_LABELS = {
-      demand_planning: 'Demand Planning',
-      inventory: 'Inventory Management',
-      procurement: 'Procurement',
-      manufacturing: 'Manufacturing',
-      fulfillment: 'Fulfillment',
-    };
+    if (!categories) return <EmptyState tier="3" />;
 
     return (
       <div className="space-y-6">
@@ -230,21 +173,7 @@ const KPIMonitoring = () => {
             </h3>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {Object.entries(catMetrics).map(([metKey, m]) => (
-                <GartnerMetricCard
-                  key={metKey}
-                  label={m.label}
-                  value={m.value}
-                  unit={m.unit}
-                  target={m.target}
-                  trend={m.trend}
-                  benchmark={m.benchmark}
-                  status={m.status}
-                  tier="tier3"
-                  agent={m.agent}
-                  scorCode={m.scor_code}
-                  lowerIsBetter={m.lower_is_better}
-                  compact
-                />
+                <GartnerMetricCard key={metKey} {...mapMetricProps(m, 'tier3')} compact />
               ))}
             </div>
           </div>
@@ -253,41 +182,29 @@ const KPIMonitoring = () => {
     );
   };
 
-  // ── Tier 4 AI PERFORMANCE ──────────────────────────────────────
+  // ── Tier 4 ─────────────────────────────────────────────────────
   const renderTier4 = () => {
     const tier4 = tiers?.tier4_agent;
-    if (!tier4) return <p className="text-muted-foreground text-sm">No Tier 4 data available.</p>;
+    if (!tier4) return <EmptyState tier="4" />;
 
     const { metrics: agentMetrics, per_trm, hive_metrics } = tier4;
 
     return (
       <div className="space-y-6">
-        {/* Summary KPIs */}
         {agentMetrics && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {Object.entries(agentMetrics).map(([key, m]) => (
-              <GartnerMetricCard
-                key={key}
-                label={m.label}
-                value={m.value}
-                unit={m.unit}
-                target={m.target}
-                trend={m.trend}
-                status={m.status}
-                tier="tier4"
-                lowerIsBetter={m.lower_is_better}
-              />
+              <GartnerMetricCard key={key} {...mapMetricProps(m, 'tier4')} />
             ))}
           </div>
         )}
 
-        {/* Per-TRM Agent Table */}
         {per_trm && per_trm.length > 0 && (
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
                 <Bot className="h-4 w-4" />
-                Per-TRM Agent Performance
+                Per-TRM Agent Performance ({per_trm.length} agents)
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -336,7 +253,6 @@ const KPIMonitoring = () => {
           </Card>
         )}
 
-        {/* Hive Metrics */}
         {hive_metrics && (
           <Card>
             <CardHeader className="pb-2">
@@ -359,27 +275,6 @@ const KPIMonitoring = () => {
             </CardContent>
           </Card>
         )}
-
-        {/* Agent performance trend */}
-        {metricsData?.trend_data && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">AI Performance Trend</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={metricsData.trend_data}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis dataKey="period" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <RTooltip />
-                  <Legend />
-                  <Bar dataKey="touchless" name="Touchless %" fill="#06b6d4" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        )}
       </div>
     );
   };
@@ -388,29 +283,31 @@ const KPIMonitoring = () => {
     <div className="max-w-7xl mx-auto px-4 py-6">
       {/* Header */}
       <div className="flex justify-between items-center mb-4">
-        <div className="flex items-center gap-2">
-          <LayoutDashboard className="h-7 w-7 text-primary" />
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
           <div>
-            <h1 className="text-2xl font-bold">KPI Monitoring</h1>
-            <p className="text-xs text-muted-foreground">Gartner Hierarchy of Supply Chain Metrics</p>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <BarChart3 className="h-6 w-6 text-primary" />
+              Hierarchical Metrics
+            </h1>
+            <p className="text-xs text-muted-foreground">
+              Gartner Hierarchy of Supply Chain Metrics — Drill down by Geography, Product, Time
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={fetchMetrics}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="sm">
-            <Download className="h-4 w-4" />
-          </Button>
-        </div>
+        <Button variant="ghost" size="sm" onClick={fetchMetrics}>
+          <RefreshCw className="h-4 w-4" />
+        </Button>
       </div>
 
-      {/* Hierarchy Filter Bar */}
+      {/* Hierarchy Filter */}
       <HierarchyFilterBar
         breadcrumbs={metricsData?.breadcrumbs}
         children={metricsData?.children}
         onDrillDown={handleDrillDown}
-        onBreadcrumbClick={handleBreadcrumbClick}
+        onBreadcrumbClick={handleDrillDown}
       />
 
       {error && (
@@ -420,7 +317,7 @@ const KPIMonitoring = () => {
       )}
 
       {loading ? (
-        <div className="flex justify-center p-12">
+        <div className="flex justify-center p-16">
           <Spinner size="lg" />
         </div>
       ) : (
@@ -428,19 +325,19 @@ const KPIMonitoring = () => {
           <TabsList className="mb-4">
             <TabsTrigger value="tier1" className="flex items-center gap-1.5">
               <Target className="h-4 w-4" />
-              Tier 1 ASSESS
+              ASSESS
             </TabsTrigger>
             <TabsTrigger value="tier2" className="flex items-center gap-1.5">
               <Search className="h-4 w-4" />
-              Tier 2 DIAGNOSE
+              DIAGNOSE
             </TabsTrigger>
             <TabsTrigger value="tier3" className="flex items-center gap-1.5">
               <Wrench className="h-4 w-4" />
-              Tier 3 CORRECT
+              CORRECT
             </TabsTrigger>
             <TabsTrigger value="tier4" className="flex items-center gap-1.5">
               <Bot className="h-4 w-4" />
-              Tier 4 AI
+              AI Performance
             </TabsTrigger>
           </TabsList>
 
@@ -450,17 +347,57 @@ const KPIMonitoring = () => {
           <TabsContent value="tier4">{renderTier4()}</TabsContent>
         </Tabs>
       )}
-
-      {/* Context bar */}
-      {metricsData?.hierarchy_context && (
-        <div className="mt-4 text-xs text-muted-foreground flex items-center gap-4">
-          <span>Context: {metricsData.hierarchy_context.site_level}/{metricsData.hierarchy_context.site_key}</span>
-          <span>{metricsData.hierarchy_context.product_level}/{metricsData.hierarchy_context.product_key}</span>
-          <span>{metricsData.hierarchy_context.time_bucket}/{metricsData.hierarchy_context.time_key}</span>
-        </div>
-      )}
     </div>
   );
 };
 
-export default KPIMonitoring;
+// ── Helpers ────────────────────────────────────────────────────────
+
+const mapMetricProps = (m, tier) => ({
+  label: m.label,
+  value: m.value,
+  unit: m.unit,
+  target: m.target,
+  trend: m.trend,
+  benchmark: m.benchmark,
+  status: m.status,
+  tier,
+  agent: m.agent,
+  scorCode: m.scor_code,
+  lowerIsBetter: m.lower_is_better,
+});
+
+const EmptyState = ({ tier }) => (
+  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+    <BarChart3 className="h-10 w-10 mb-2 opacity-30" />
+    <p className="text-sm">No Tier {tier} data available at this hierarchy level.</p>
+  </div>
+);
+
+const TrendChart = ({ data, title, lines }) => {
+  if (!data || data.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ResponsiveContainer width="100%" height={280}>
+          <LineChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+            <XAxis dataKey="period" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} />
+            <RTooltip />
+            <Legend />
+            {lines.map((l) => (
+              <Line key={l.key} type="monotone" dataKey={l.key} name={l.name} stroke={l.color} strokeWidth={2} dot={false} />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  );
+};
+
+export default HierarchicalMetricsDashboard;

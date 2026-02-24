@@ -78,6 +78,7 @@ import SupplyPlanGeneration from "./pages/planning/SupplyPlanGeneration.jsx";
 import ATPCTPView from "./pages/planning/ATPCTPView.jsx";
 import SourcingAllocation from "./pages/planning/SourcingAllocation.jsx";
 import KPIMonitoring from "./pages/planning/KPIMonitoring.jsx";
+import HierarchicalMetricsDashboard from "./pages/planning/HierarchicalMetricsDashboard.jsx";
 import Recommendations from "./pages/planning/Recommendations.jsx";
 import DemandPlanView from "./pages/planning/DemandPlanView.jsx";
 import CollaborationHub from "./pages/planning/CollaborationHub.jsx";
@@ -501,6 +502,15 @@ const AppContent = () => {
               element={
                 <CapabilityProtectedRoute requiredCapability="view_kpi_monitoring">
                   <KPIMonitoring />
+                </CapabilityProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/planning/metrics"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_kpi_monitoring">
+                  <HierarchicalMetricsDashboard />
                 </CapabilityProtectedRoute>
               }
             />

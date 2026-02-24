@@ -55,6 +55,7 @@ import {
   BarChart,
   Bar,
 } from 'recharts';
+import { Sparkles } from 'lucide-react';
 
 // =============================================================================
 // Summary KPI Card
@@ -415,6 +416,99 @@ const KeyEventsTimeline = ({ events }) => {
 };
 
 // =============================================================================
+// Per-TRM Agent Table
+// =============================================================================
+
+const PerTRMTable = ({ perTrm }) => {
+  if (!perTrm || perTrm.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Bot className="h-5 w-5" />
+          Per-TRM Agent Performance ({perTrm.length} agents)
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-xs text-muted-foreground">
+                <th className="pb-2 pr-4 font-medium">TRM Agent</th>
+                <th className="pb-2 pr-4 font-medium text-right">Score</th>
+                <th className="pb-2 pr-4 font-medium text-right">Touchless %</th>
+                <th className="pb-2 pr-4 font-medium text-right">Override %</th>
+                <th className="pb-2 font-medium text-center">Urgency</th>
+              </tr>
+            </thead>
+            <tbody>
+              {perTrm.map((agent) => (
+                <tr key={agent.agent} className="border-b last:border-0 hover:bg-muted/50">
+                  <td className="py-2.5 pr-4 font-medium flex items-center gap-2">
+                    <Bot className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    {agent.label || agent.agent}
+                  </td>
+                  <td className="py-2.5 pr-4 text-right">
+                    <span className={cn(
+                      'font-mono font-semibold',
+                      agent.score >= 70 ? 'text-green-600' : agent.score >= 40 ? 'text-amber-600' : 'text-red-600',
+                    )}>
+                      {agent.score}
+                    </span>
+                  </td>
+                  <td className="py-2.5 pr-4 text-right font-mono">{agent.touchless_pct}%</td>
+                  <td className="py-2.5 pr-4 text-right font-mono">{agent.override_pct}%</td>
+                  <td className="py-2.5 text-center">
+                    <Badge
+                      variant={agent.urgency === 'low' ? 'success' : agent.urgency === 'medium' ? 'default' : 'destructive'}
+                      className="text-xs"
+                    >
+                      {agent.urgency}
+                    </Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+// =============================================================================
+// Hive Metrics Card
+// =============================================================================
+
+const HiveMetricsCard = ({ hiveMetrics }) => {
+  if (!hiveMetrics) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Sparkles className="h-5 w-5" />
+          Hive Coordination Metrics
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          {Object.entries(hiveMetrics).map(([key, val]) => (
+            <div key={key} className="text-center p-3 bg-muted/30 rounded-lg">
+              <p className="text-2xl font-bold">{typeof val === 'number' ? val.toFixed(2) : val}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+              </p>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+// =============================================================================
 // Main Agent Performance Page
 // =============================================================================
 
@@ -423,16 +517,25 @@ const AgentPerformancePage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [data, setData] = useState(null);
+  const [tier4Data, setTier4Data] = useState(null);
   const [planningCycle, setPlanningCycle] = useState('Q3 2025');
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchData = async () => {
     try {
       setRefreshing(true);
-      const response = await api.get('/decision-metrics/agent-performance', {
-        params: { planning_cycle: planningCycle }
-      });
-      setData(response.data.data);
+      const [perfResponse, metricsResponse] = await Promise.allSettled([
+        api.get('/decision-metrics/agent-performance', {
+          params: { planning_cycle: planningCycle }
+        }),
+        api.get('/hierarchical-metrics/dashboard'),
+      ]);
+      if (perfResponse.status === 'fulfilled') {
+        setData(perfResponse.value.data.data);
+      }
+      if (metricsResponse.status === 'fulfilled') {
+        setTier4Data(metricsResponse.value.data?.tiers?.tier4_agent);
+      }
       setError(null);
     } catch (err) {
       console.error('Failed to fetch agent performance:', err);
@@ -553,6 +656,12 @@ const AgentPerformancePage = () => {
           <KeyEventsTimeline events={key_events} />
         </div>
       </div>
+
+      {/* Per-TRM Agent Performance */}
+      <PerTRMTable perTrm={tier4Data?.per_trm} />
+
+      {/* Hive Coordination Metrics */}
+      <HiveMetricsCard hiveMetrics={tier4Data?.hive_metrics} />
 
       {/* Back to Executive Dashboard */}
       <div className="flex justify-center pt-4">
