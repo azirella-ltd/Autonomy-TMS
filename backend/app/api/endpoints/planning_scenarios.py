@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from app.services.scenario_tree_service import ScenarioTreeService
 from app.services.hive_what_if_engine import HiveWhatIfEngine
+from app.services.authorization_service import AuthorizationService
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,11 @@ def get_tree_service() -> ScenarioTreeService:
 def get_what_if_engine(site_key: str = "default") -> HiveWhatIfEngine:
     """Factory for HiveWhatIfEngine."""
     return HiveWhatIfEngine(site_key=site_key)
+
+
+def get_auth_service() -> AuthorizationService:
+    """Factory for AuthorizationService (in-memory for now)."""
+    return AuthorizationService(db=None)
 
 
 # ---------------------------------------------------------------------------
@@ -158,17 +164,30 @@ def promote_scenario(
     scenario_id: int,
     request: PromoteRequest,
     service: ScenarioTreeService = Depends(get_tree_service),
+    auth_service: AuthorizationService = Depends(get_auth_service),
 ):
-    """Promote a scenario and prune its siblings."""
+    """Promote a scenario and prune its siblings.
+
+    Authorization is checked via the Agentic Authorization Protocol:
+    - High net_benefit → auto-authorized
+    - Borderline → returns 409 with authorization thread ID for human review
+    - Low net_benefit → auto-denied (returns 403)
+    """
     try:
         record = service.promote(
             scenario_id=scenario_id,
             rationale=request.rationale,
             decided_by=request.decided_by,
+            auth_service=auth_service,
         )
         return record.to_dict()
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        detail = str(e)
+        if "requires human review" in detail.lower():
+            raise HTTPException(status_code=409, detail=detail)
+        elif "denied" in detail.lower():
+            raise HTTPException(status_code=403, detail=detail)
+        raise HTTPException(status_code=404, detail=detail)
 
 
 @router.get("/{root_id}/tree")

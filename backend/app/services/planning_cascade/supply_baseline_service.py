@@ -1,15 +1,17 @@
 """
-Master Replenishment Schedule (MRS) Service
+Supply Baseline Service
 
-For distributors (FG only, no MRP/BOM explosion needed).
-Generates the Supply Baseline Pack (SupBP) with candidate replenishment plans.
+Generates the Supply Baseline Pack (SupBP) with candidate supply plans
+for any supply chain topology. BOM explosion is conditionally invoked
+when manufacturer sites with BOM data are present in the config.
 
 In FULL mode:
 - Generates multiple candidates on the service-vs-cost tradeoff frontier
 - Methods: Reorder Point, Periodic Review, EOQ, Service-Maximized, CFA-Optimal
+- Additionally: MRP Standard (when BOM data available)
 
 In INPUT mode:
-- Accepts customer's single replenishment plan as the sole candidate
+- Accepts customer's single supply plan as the sole candidate
 - Still provides validation and risk flagging
 """
 
@@ -78,7 +80,7 @@ class ReplenishmentOrder:
 
 @dataclass
 class CandidatePlan:
-    """A candidate replenishment plan"""
+    """A candidate supply plan"""
     method: str
     orders: List[ReplenishmentOrder]
     projected_inventory: Dict[str, List[float]]  # sku -> daily inventory projection
@@ -111,12 +113,14 @@ class CandidatePlan:
         }
 
 
-class MRSService:
+class SupplyBaselineService:
     """
-    Master Replenishment Schedule Service
+    Supply Baseline Service
 
-    Generates Supply Baseline Pack (SupBP) for distributors.
-    No MRP/BOM explosion - operates directly on finished goods.
+    Generates Supply Baseline Pack (SupBP) for any supply chain topology.
+    BOM explosion is conditionally invoked when the config includes
+    manufacturer sites with BOM data — otherwise operates on finished goods
+    directly via replenishment planning.
     """
 
     def __init__(
@@ -139,11 +143,13 @@ class MRSService:
         supplier_info: Dict[str, List[SupplierInfo]],  # sku -> suppliers
         demand_forecast: Dict[str, List[float]],  # sku -> daily forecast
         customer_plan: Optional[List[Dict[str, Any]]] = None,  # For INPUT mode
+        policy_envelope: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Generate Supply Baseline Pack with candidate plans.
 
-        In FULL mode: Generates 5 candidates with different methods.
+        In FULL mode: Generates 5+ candidates with different methods.
+            If manufacturer sites with BOM data exist, adds MRP Standard candidate.
         In INPUT mode: Uses customer plan as single candidate.
 
         Args:
@@ -154,7 +160,8 @@ class MRSService:
             inventory_state: Current inventory by product
             supplier_info: Supplier info by product
             demand_forecast: Daily demand forecast by product
-            customer_plan: Customer's replenishment plan (INPUT mode)
+            customer_plan: Customer's supply plan (INPUT mode)
+            policy_envelope: Optional policy envelope dict for safety stock targets
 
         Returns:
             SupplyBaselinePack as dict
@@ -171,7 +178,9 @@ class MRSService:
         else:
             # FULL mode - generate multiple candidates
             candidates = self._generate_candidates(
-                inventory_state, supplier_info, demand_forecast
+                inventory_state, supplier_info, demand_forecast,
+                config_id=config_id,
+                policy_envelope=policy_envelope,
             )
             generated_by = PolicySource.AUTONOMY_SIM
             tradeoff_frontier = self._compute_tradeoff_frontier(candidates)
@@ -206,11 +215,68 @@ class MRSService:
             "generated_by": supbp.generated_by.value,
         }
 
+    def _get_safety_factor(
+        self,
+        target_service_level: str,
+        category: str,
+        policy_envelope: Optional[Dict[str, Any]] = None,
+    ) -> float:
+        """
+        Get safety factor from PolicyEnvelope if available, else use defaults.
+
+        Args:
+            target_service_level: "low" (~84%), "medium" (~95%), "high" (~99%)
+            category: Product category for envelope lookup
+            policy_envelope: Optional dict with safety_stock_targets
+        """
+        defaults = {"low": 1.0, "medium": 1.65, "high": 2.33}
+
+        if policy_envelope:
+            ss_targets = policy_envelope.get("safety_stock_targets", {})
+            cat_target = ss_targets.get(category, ss_targets.get("default"))
+            if cat_target is not None:
+                # Convert weeks-of-supply target to approximate z-score
+                # Higher WOS target → higher safety factor
+                wos = float(cat_target)
+                if wos <= 1.0:
+                    return 1.0
+                elif wos <= 2.0:
+                    return 1.65
+                else:
+                    return 2.33
+
+        return defaults.get(target_service_level, 1.65)
+
+    def _has_manufacturer_sites(self, config_id: int) -> bool:
+        """Check if the supply chain config has manufacturer sites with BOM data."""
+        try:
+            from app.models.supply_chain_config import Node
+            from app.models.aws_sc_planning import ProductBOM
+
+            manufacturer_count = self.db.query(Node).filter(
+                Node.config_id == config_id,
+                Node.master_type == "manufacturer",
+            ).count()
+
+            if manufacturer_count == 0:
+                return False
+
+            bom_count = self.db.query(ProductBOM).filter(
+                ProductBOM.config_id == config_id,
+            ).count()
+
+            return bom_count > 0
+        except Exception as e:
+            logger.warning(f"Could not check manufacturer sites: {e}")
+            return False
+
     def _generate_candidates(
         self,
         inventory_state: List[ProductInventoryState],
         supplier_info: Dict[str, List[SupplierInfo]],
         demand_forecast: Dict[str, List[float]],
+        config_id: Optional[int] = None,
+        policy_envelope: Optional[Dict[str, Any]] = None,
     ) -> List[CandidatePlan]:
         """Generate multiple candidate plans with different methods"""
         candidates = []
@@ -220,28 +286,36 @@ class MRSService:
 
         # 1. Reorder Point (R, Q) Policy
         candidates.append(self._generate_reorder_point_plan(
-            inv_by_sku, supplier_info, demand_forecast
+            inv_by_sku, supplier_info, demand_forecast, policy_envelope
         ))
 
         # 2. Periodic Review (s, S) Policy
         candidates.append(self._generate_periodic_review_plan(
-            inv_by_sku, supplier_info, demand_forecast
+            inv_by_sku, supplier_info, demand_forecast, policy_envelope
         ))
 
         # 3. Min Cost (EOQ-based)
         candidates.append(self._generate_min_cost_plan(
-            inv_by_sku, supplier_info, demand_forecast
+            inv_by_sku, supplier_info, demand_forecast, policy_envelope
         ))
 
         # 4. Service Maximized
         candidates.append(self._generate_service_max_plan(
-            inv_by_sku, supplier_info, demand_forecast
+            inv_by_sku, supplier_info, demand_forecast, policy_envelope
         ))
 
         # 5. Parametric CFA (Powell)
         candidates.append(self._generate_cfa_plan(
             inv_by_sku, supplier_info, demand_forecast
         ))
+
+        # 6. MRP Standard (conditionally, when BOM data exists)
+        if config_id is not None and self._has_manufacturer_sites(config_id):
+            mrp_candidate = self._generate_mrp_standard_plan(
+                config_id, inv_by_sku, supplier_info, demand_forecast, policy_envelope
+            )
+            if mrp_candidate is not None:
+                candidates.append(mrp_candidate)
 
         return candidates
 
@@ -250,6 +324,7 @@ class MRSService:
         inv_by_sku: Dict[str, ProductInventoryState],
         supplier_info: Dict[str, List[SupplierInfo]],
         demand_forecast: Dict[str, List[float]],
+        policy_envelope: Optional[Dict[str, Any]] = None,
     ) -> CandidatePlan:
         """
         Generate plan using (R, Q) reorder point policy.
@@ -275,7 +350,7 @@ class MRSService:
             # Calculate reorder point
             avg_demand = sum(forecast) / len(forecast)
             demand_std = inv.demand_std
-            safety_factor = 1.65  # 95% service level
+            safety_factor = self._get_safety_factor("medium", inv.category, policy_envelope)
             safety_stock = safety_factor * demand_std * math.sqrt(lead_time)
             reorder_point = avg_demand * lead_time + safety_stock
 
@@ -333,7 +408,7 @@ class MRSService:
             projected_cost=total_cost,
             projected_otif=projected_otif,
             projected_dos=avg_dos,
-            policy_params={"safety_factor": 1.65, "order_policy": "EOQ"},
+            policy_params={"safety_factor": safety_factor, "order_policy": "EOQ"},
         )
 
     def _generate_periodic_review_plan(
@@ -341,6 +416,7 @@ class MRSService:
         inv_by_sku: Dict[str, ProductInventoryState],
         supplier_info: Dict[str, List[SupplierInfo]],
         demand_forecast: Dict[str, List[float]],
+        policy_envelope: Optional[Dict[str, Any]] = None,
     ) -> CandidatePlan:
         """
         Generate plan using (s, S) periodic review policy.
@@ -362,7 +438,8 @@ class MRSService:
             avg_demand = sum(forecast) / len(forecast)
 
             # Calculate s and S
-            safety_stock = 1.65 * inv.demand_std * math.sqrt(lead_time + review_period)
+            safety_factor = self._get_safety_factor("medium", inv.category, policy_envelope)
+            safety_stock = safety_factor * inv.demand_std * math.sqrt(lead_time + review_period)
             s = avg_demand * lead_time + safety_stock  # Reorder point
             S = avg_demand * (lead_time + review_period) + safety_stock + self._calculate_eoq(inv, primary_supplier)
 
@@ -413,6 +490,7 @@ class MRSService:
         inv_by_sku: Dict[str, ProductInventoryState],
         supplier_info: Dict[str, List[SupplierInfo]],
         demand_forecast: Dict[str, List[float]],
+        policy_envelope: Optional[Dict[str, Any]] = None,
     ) -> CandidatePlan:
         """Generate plan minimizing total cost (lower inventory, lower service)"""
         orders = []
@@ -428,7 +506,7 @@ class MRSService:
             lead_time = primary_supplier.lead_time_days
 
             # Lower safety factor for cost minimization
-            safety_factor = 1.0  # ~84% service level
+            safety_factor = self._get_safety_factor("low", inv.category, policy_envelope)
             safety_stock = safety_factor * inv.demand_std * math.sqrt(lead_time)
             reorder_point = sum(forecast[:lead_time]) + safety_stock if len(forecast) >= lead_time else inv.avg_daily_demand * lead_time + safety_stock
 
@@ -469,7 +547,7 @@ class MRSService:
             projected_cost=self._calculate_total_cost(projected_inventory, inv_by_sku) * 0.85,
             projected_otif=0.88,
             projected_dos=self._calculate_avg_dos(projected_inventory, inv_by_sku) * 0.8,
-            policy_params={"safety_factor": 1.0, "strategy": "cost_minimization"},
+            policy_params={"safety_factor": safety_factor, "strategy": "cost_minimization"},
         )
 
     def _generate_service_max_plan(
@@ -477,6 +555,7 @@ class MRSService:
         inv_by_sku: Dict[str, ProductInventoryState],
         supplier_info: Dict[str, List[SupplierInfo]],
         demand_forecast: Dict[str, List[float]],
+        policy_envelope: Optional[Dict[str, Any]] = None,
     ) -> CandidatePlan:
         """Generate plan maximizing service level (higher inventory, higher cost)"""
         orders = []
@@ -492,7 +571,7 @@ class MRSService:
             lead_time = primary_supplier.lead_time_days
 
             # Higher safety factor for service maximization
-            safety_factor = 2.33  # ~99% service level
+            safety_factor = self._get_safety_factor("high", inv.category, policy_envelope)
             safety_stock = safety_factor * inv.demand_std * math.sqrt(lead_time)
             reorder_point = inv.avg_daily_demand * lead_time + safety_stock
 
@@ -533,7 +612,7 @@ class MRSService:
             projected_cost=self._calculate_total_cost(projected_inventory, inv_by_sku) * 1.25,
             projected_otif=0.99,
             projected_dos=self._calculate_avg_dos(projected_inventory, inv_by_sku) * 1.3,
-            policy_params={"safety_factor": 2.33, "strategy": "service_maximization"},
+            policy_params={"safety_factor": safety_factor, "strategy": "service_maximization"},
         )
 
     def _generate_cfa_plan(
@@ -545,8 +624,8 @@ class MRSService:
         """
         Generate plan using Powell CFA (Cost Function Approximation).
 
-        Uses learned policy parameters θ to balance cost and service.
-        θ = [safety_multiplier, reorder_multiplier, service_weight]
+        Uses learned policy parameters theta to balance cost and service.
+        theta = [safety_multiplier, reorder_multiplier, service_weight]
         """
         # Load or use default learned parameters
         theta = self._load_cfa_parameters()
@@ -590,7 +669,7 @@ class MRSService:
                         order_date=order_date,
                         expected_receipt_date=receipt_date,
                         confidence=0.93,
-                        rationale=f"CFA optimal (θ={theta})",
+                        rationale=f"CFA optimal (theta={theta})",
                     ))
                     current_inv += order_qty
 
@@ -608,6 +687,127 @@ class MRSService:
             projected_dos=self._calculate_avg_dos(projected_inventory, inv_by_sku),
             policy_params=theta,
         )
+
+    def _generate_mrp_standard_plan(
+        self,
+        config_id: int,
+        inv_by_sku: Dict[str, ProductInventoryState],
+        supplier_info: Dict[str, List[SupplierInfo]],
+        demand_forecast: Dict[str, List[float]],
+        policy_envelope: Optional[Dict[str, Any]] = None,
+    ) -> Optional[CandidatePlan]:
+        """
+        Generate plan using standard MRP logic with BOM explosion.
+
+        Only invoked when manufacturer sites with BOM data exist.
+        Reuses NetRequirementsCalculator for BOM explosion logic.
+        """
+        try:
+            from app.services.sc_planning.net_requirements_calculator import NetRequirementsCalculator
+            from app.models.aws_sc_planning import ProductBOM
+            from app.models.supply_chain_config import Node
+
+            # Query BOM data for this config
+            boms = self.db.query(ProductBOM).filter(
+                ProductBOM.config_id == config_id
+            ).all()
+
+            if not boms:
+                return None
+
+            # Build BOM tree: parent_sku -> [(child_sku, qty_per)]
+            bom_tree: Dict[str, List[Tuple[str, float]]] = {}
+            for bom in boms:
+                parent = bom.parent_product_id or bom.product_id
+                child = bom.component_product_id
+                qty_per = bom.quantity_per or 1.0
+                if parent not in bom_tree:
+                    bom_tree[parent] = []
+                bom_tree[parent].append((child, qty_per))
+
+            # Generate FG orders using medium safety factor
+            orders = []
+            projected_inventory = {}
+            component_requirements: Dict[str, float] = {}
+
+            for sku, inv in inv_by_sku.items():
+                forecast = demand_forecast.get(sku, [inv.avg_daily_demand] * self.planning_horizon_days)
+                suppliers = supplier_info.get(sku, [])
+
+                total_demand = sum(forecast)
+                net_requirement = max(0, total_demand - inv.inventory_position)
+
+                # If this FG has BOM children, explode
+                if sku in bom_tree:
+                    for child_sku, qty_per in bom_tree[sku]:
+                        child_req = net_requirement * qty_per
+                        component_requirements[child_sku] = (
+                            component_requirements.get(child_sku, 0) + child_req
+                        )
+
+                # Generate FG replenishment order
+                if net_requirement > 0 and suppliers:
+                    primary_supplier = suppliers[0]
+                    lead_time = primary_supplier.lead_time_days
+                    order_date = date.today()
+                    receipt_date = order_date + timedelta(days=lead_time)
+
+                    orders.append(ReplenishmentOrder(
+                        sku=sku,
+                        supplier_id=primary_supplier.supplier_id,
+                        destination_id="MFG-001",
+                        order_qty=net_requirement,
+                        order_date=order_date,
+                        expected_receipt_date=receipt_date,
+                        confidence=0.90,
+                        rationale=f"MRP net requirement ({net_requirement:.0f})",
+                    ))
+
+                # Project inventory
+                current_inv = inv.inventory_position
+                daily_inv = []
+                avg_demand = sum(forecast) / len(forecast) if forecast else 0
+                for day in range(self.planning_horizon_days):
+                    daily_demand = forecast[day] if day < len(forecast) else avg_demand
+                    current_inv -= daily_demand
+                    daily_inv.append(max(0, current_inv))
+                projected_inventory[sku] = daily_inv
+
+            # Generate component orders from BOM explosion
+            for comp_sku, comp_qty in component_requirements.items():
+                comp_inv = inv_by_sku.get(comp_sku)
+                comp_suppliers = supplier_info.get(comp_sku, [])
+
+                net_comp = comp_qty
+                if comp_inv:
+                    net_comp = max(0, comp_qty - comp_inv.inventory_position)
+
+                if net_comp > 0 and comp_suppliers:
+                    primary = comp_suppliers[0]
+                    orders.append(ReplenishmentOrder(
+                        sku=comp_sku,
+                        supplier_id=primary.supplier_id,
+                        destination_id="MFG-001",
+                        order_qty=net_comp,
+                        order_date=date.today(),
+                        expected_receipt_date=date.today() + timedelta(days=primary.lead_time_days),
+                        confidence=0.88,
+                        rationale=f"BOM explosion component ({net_comp:.0f})",
+                    ))
+
+            return CandidatePlan(
+                method="MRP_STANDARD_V1",
+                orders=orders,
+                projected_inventory=projected_inventory,
+                projected_cost=self._calculate_total_cost(projected_inventory, inv_by_sku),
+                projected_otif=0.93,
+                projected_dos=self._calculate_avg_dos(projected_inventory, inv_by_sku),
+                policy_params={"strategy": "mrp_standard", "bom_levels": len(bom_tree)},
+            )
+
+        except Exception as e:
+            logger.warning(f"MRP standard candidate generation failed: {e}")
+            return None
 
     def _parse_customer_plan(
         self,

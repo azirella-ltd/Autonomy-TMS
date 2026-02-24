@@ -220,6 +220,81 @@ class SiteAgent:
                 f"{list(trms.keys())}"
             )
 
+    def check_authority_boundary(
+        self,
+        trm_name: str,
+        action_type: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Check whether an action requires authorization before execution.
+
+        Uses the authority map to determine if a TRM's proposed action is
+        unilateral, requires authorization, or is forbidden.
+
+        Args:
+            trm_name: TRM name (e.g. "atp_executor", "po_creation").
+            action_type: Action being proposed (e.g. "request_expedite").
+            context: Optional context for logging/audit.
+
+        Returns:
+            Dict with ``category`` (UNILATERAL/REQUIRES_AUTHORIZATION/FORBIDDEN),
+            ``authorized`` (bool), and optionally ``thread_id`` if a review
+            thread was created.
+        """
+        agent_role = _TRM_TO_AGENT_ROLE.get(trm_name)
+        if agent_role is None:
+            return {"category": "UNILATERAL", "authorized": True}
+
+        category = get_action_category(agent_role, action_type)
+
+        if category == ActionCategory.UNILATERAL:
+            return {"category": "UNILATERAL", "authorized": True}
+
+        if category == ActionCategory.FORBIDDEN:
+            logger.warning(
+                f"[{self.site_key}] FORBIDDEN action: {trm_name}/{action_type}"
+            )
+            return {"category": "FORBIDDEN", "authorized": False}
+
+        # REQUIRES_AUTHORIZATION — submit to auth service if available
+        if self.authorization_service is not None:
+            try:
+                thread = self.authorization_service.submit_request(
+                    requesting_agent=f"{agent_role.value}@{self.site_key}",
+                    target_agent="planning_director",
+                    proposed_action={
+                        "action_type": action_type,
+                        "trm_name": trm_name,
+                        "site_key": self.site_key,
+                    },
+                    net_benefit=0.0,
+                    benefit_threshold=0.0,
+                    justification=f"{trm_name} requests {action_type}",
+                    priority="MEDIUM",
+                    site_key=self.site_key,
+                )
+                # Check if auto-resolved
+                if hasattr(thread, 'status'):
+                    status_val = thread.status.value if hasattr(thread.status, 'value') else str(thread.status)
+                    if status_val == "ACCEPTED":
+                        return {"category": "REQUIRES_AUTHORIZATION", "authorized": True, "thread_id": thread.thread_id}
+                    elif status_val == "DENIED":
+                        return {"category": "REQUIRES_AUTHORIZATION", "authorized": False, "thread_id": thread.thread_id}
+
+                # Needs human review
+                return {
+                    "category": "REQUIRES_AUTHORIZATION",
+                    "authorized": False,
+                    "needs_review": True,
+                    "thread_id": thread.thread_id,
+                }
+            except Exception as e:
+                logger.warning(f"Authorization check failed: {e}; defaulting to authorized")
+                return {"category": "REQUIRES_AUTHORIZATION", "authorized": True}
+
+        # No auth service — default to authorized
+        return {"category": "REQUIRES_AUTHORIZATION", "authorized": True}
+
     def _load_model(self):
         """Load TRM model from checkpoint with fallback resolution."""
         checkpoint_path = self.config.model_checkpoint_path

@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db, get_sync_db
 from app.services.planning_cascade import (
     SOPService, SOPMode, SOPParameters, ServiceTierTarget, CategoryPolicy,
-    MRSService, ProductInventoryState, SupplierInfo,
+    SupplyBaselineService, ProductInventoryState, SupplierInfo,
     SupplyAgent, AllocationAgent,
     CascadeOrchestrator, CascadeMode,
 )
@@ -204,8 +204,8 @@ def create_supply_baseline_pack(
     """
     Create a Supply Baseline Pack.
 
-    In FULL mode: Generate multiple candidates via MRS with different parameterizations.
-    In INPUT mode: Accept customer's single MRP output.
+    In FULL mode: Generate multiple candidates with different parameterizations.
+    In INPUT mode: Accept customer's single supply plan.
     """
     from app.models.planning_cascade import PolicyEnvelope
 
@@ -214,7 +214,7 @@ def create_supply_baseline_pack(
     if not envelope:
         raise HTTPException(status_code=404, detail="Policy envelope not found")
 
-    service = MRSService(db, mode=request.mode.upper())
+    service = SupplyBaselineService(db, mode=request.mode.upper())
 
     # For demo, use default inventory state
     # In production, this would come from actual inventory data
@@ -536,7 +536,7 @@ def run_cascade(
     """
     Run the full planning cascade.
 
-    In FULL mode: S&OP simulation + MRS candidates + Agents.
+    In FULL mode: S&OP simulation + Supply Baseline candidates + Agents.
     In INPUT mode: Customer parameters + single plan + Agents.
     """
     mode = CascadeMode.FULL if request.mode.upper() == "FULL" else CascadeMode.INPUT

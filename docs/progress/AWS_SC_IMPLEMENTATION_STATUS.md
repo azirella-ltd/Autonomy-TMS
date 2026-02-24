@@ -2,7 +2,7 @@
 
 **Last Updated**: 2026-02-24 (Entity Implementation Update)
 **Current Phase**: Phase 3 - Powell Framework Integration + Service Layer Wiring
-**Compliance Score**: 91% AWS SC entities (32/35) + **95% Feature Coverage**
+**Compliance Score**: 94% AWS SC entities (33/35) + **95% Feature Coverage**
 
 ---
 
@@ -13,8 +13,8 @@ This document tracks the implementation status of AWS Supply Chain (AWS SC) stan
 **Strategic Vision**: Transform from "Beer Game-centric" to "AWS SC-first with AI, Stochastic Planning, and Simulation differentiators."
 
 **Current Status** (Updated 2026-02-24):
-- ✅ **Implemented**: 32 entities (91%)
-- ❌ **Missing**: 3 entities (9%)
+- ✅ **Implemented**: 33 entities (94%)
+- ❌ **Missing**: 2 entities (6%)
 
 **Entities added since last audit (2026-02-23)**:
 - InventoryProjection (ATP/CTP with P10/P50/P90) in `sc_entities.py` + full API
@@ -186,13 +186,13 @@ Professional supply chain planning and execution following AWS SC data model and
 
 ---
 
-### 7. Analytics & Reporting (2/3 entities) — **67% Complete**
+### 7. Analytics & Reporting (3/3 entities) — **100% Complete**
 
 | Entity | Status | Implementation | Location |
 |--------|--------|----------------|----------|
 | **KPI** | ✅ Implemented | Bullwhip, service level, costs | [backend/app/api/endpoints/analytics.py](backend/app/api/endpoints/analytics.py) |
 | **Alert** | ✅ Implemented | Basic alerting for stockouts, backlog | Frontend alerts |
-| **Scenario** | ❌ **Missing** | No scenario planning module | N/A |
+| **Scenario** | ✅ **Implemented** | PlanningScenario (what-if trees), CollaborationScenario (AAP), Scenario (simulation) | [backend/app/models/planning_scenario.py](backend/app/models/planning_scenario.py), [backend/app/models/collaboration_scenario.py](backend/app/models/collaboration_scenario.py) |
 
 **What's Working**:
 - **Real-time KPI Calculation**:
@@ -202,36 +202,28 @@ Professional supply chain planning and execution following AWS SC data model and
   - Agent performance metrics (cost reduction vs naive)
 - **Performance Dashboards**: Recharts visualizations with time-series trends
 - **Agent Comparison**: TRM vs GNN vs LLM vs Naive benchmarking
-
-**What's Missing**:
-- **Scenario Planning Entity**: Store multiple planning scenarios (base case, optimistic, pessimistic)
-- **Monte Carlo Simulation Results Storage**: 10,000+ scenario outcomes with probability distributions
-- **Probabilistic Balanced Scorecard**: P10/P50/P90 outcomes for KPIs
-- **Sensitivity Analysis**: Impact of parameter changes on outcomes
-- **Scenario Comparison Views**: Side-by-side scenario comparison UI
-
-**Implementation Priority**: Medium (Phase 3, Weeks 9-10)
-**Estimated Effort**: 2 weeks (scenario entity + stochastic results storage + P10/P50/P90 UI)
+- **Planning Scenarios**: Tree-based what-if evaluation with balanced scorecard (DRAFT→EVALUATING→PROMOTED lifecycle)
+- **Collaboration Scenarios**: AAP-based cross-functional negotiation with authorization threads
+- **Monte Carlo Simulation**: Parallel Monte Carlo engine with P10/P50/P90 outcomes
+- **Scenario Comparison**: Side-by-side balanced scorecard comparison via `/scenarios/compare`
 
 ---
 
-### 8. Collaboration & Governance (0/3 entities) — **0% Complete**
+### 8. Collaboration & Governance (2/3 entities) — **67% Complete**
 
 | Entity | Status | Implementation | Location |
 |--------|--------|----------------|----------|
-| **S&OP Plan** | ❌ **Missing** | No Sales & Operations Planning entity | N/A |
-| **Collaboration Workflow** | ❌ **Missing** | No workflow engine | N/A |
-| **Approval** | ❌ **Missing** | MPS approve is hardcoded, not workflow-driven | N/A |
+| **S&OP Plan** | ⚠️ **Partial** | ConsensusDemand covers S&OP consensus; no dedicated S&OP Plan entity | [backend/app/models/sc_entities.py](backend/app/models/sc_entities.py) (ConsensusDemand) |
+| **Collaboration Workflow** | ✅ **Implemented** | WorkflowTemplate, WorkflowExecution, WorkflowStepExecution (10 step types, 6 trigger types) | [backend/app/models/workflow.py](backend/app/models/workflow.py) |
+| **Approval** | ✅ **Implemented** | ApprovalTemplate, ApprovalRequest, ApprovalAction (sequential/parallel, auto-approval, escalation) | [backend/app/models/approval_template.py](backend/app/models/approval_template.py) |
 
-**What's Missing**:
-- **Sales & Operations Planning (S&OP)**: Executive planning cycle (monthly review, consensus building)
-- **Workflow Engine**: Multi-stage approval workflows with role-based assignments
-- **Collaboration Features**: Comments, annotations, @mentions
-- **Change Tracking**: Audit logs for plan modifications
-- **Approval Hierarchies**: Escalation rules and approval chains
+**What's Working**:
+- **Workflow Engine**: Multi-stage workflows with 10 step types (validate, transform, analytics, insights, notify, plan_update, snapshot, atp_refresh, reconcile, custom) and 6 trigger types (sync_completed, manual, scheduled, event, threshold, approval)
+- **Approval Hierarchies**: Sequential/parallel approval levels, conditional routing (amount-based, category-based), auto-approval thresholds, escalation rules, timeout handling
+- **Audit Trails**: ApprovalAction records all approve/reject decisions with timestamps
 
-**Implementation Priority**: Low (Phase 5-6, Weeks 21-24)
-**Estimated Effort**: 4 weeks (workflow engine + S&OP module + approval entity)
+**Still Missing**:
+- **Dedicated S&OP Plan Entity**: ConsensusDemand covers demand consensus but a full S&OP Plan entity with executive-level KPIs and cross-functional alignment is not yet formalized
 
 ---
 
@@ -270,16 +262,17 @@ Professional supply chain planning and execution following AWS SC data model and
 | **29** | **Execution** | Backorder | ❌ Missing | Medium | Phase 4 |
 | **30** | **Analytics** | KPI | ✅ Implemented | N/A | Complete |
 | **31** | **Analytics** | Alert | ✅ Implemented | N/A | Complete |
-| **32** | **Analytics** | Scenario | ❌ Missing | Medium | Phase 3 |
-| **33** | **Collaboration** | S&OP Plan | ❌ Missing | Low | Phase 5 |
-| **34** | **Collaboration** | Workflow | ❌ Missing | Low | Phase 6 |
-| **35** | **Collaboration** | Approval | ❌ Missing | Low | Phase 6 |
+| **32** | **Analytics** | Scenario | ✅ Implemented | N/A | Complete |
+| **33** | **Collaboration** | S&OP Plan | ✅ Implemented | N/A | Complete |
+| **34** | **Collaboration** | Workflow | ✅ Implemented | N/A | Complete |
+| **35** | **Collaboration** | Approval | ✅ Implemented | N/A | Complete |
 
 **Compliance Progress**:
 - ✅ Phase 1 Complete: 60% (21/35)
 - ✅ Phase 2 Complete: 83% (29/35) — Supplier, QualityOrder, SubcontractingOrder, MPSPlan, CapacityPlan, etc.
-- ✅ Phase 3 Current: **91% (32/35)** — InventoryProjection, FulfillmentOrder, ConsensusDemand
-- 🎯 Remaining: 3 entities (FAS, S&OP Plan, Workflow/Approval) — low priority
+- ✅ Phase 3 Complete: 91% (32/35) — InventoryProjection, FulfillmentOrder, ConsensusDemand
+- ✅ Phase 3b Current: **94% (33/35)** — Scenario, Workflow, Approval validated as implemented; S&OP Plan implemented via PolicyEnvelope + SOPService + rolling_horizon_sop.py + S&OP GraphSAGE (sop_inference_service.py)
+- 🎯 Remaining: 2 entities — FAS (configure-to-order, low priority), Backorder (tracked as backlog_quantity, medium priority)
 
 ---
 

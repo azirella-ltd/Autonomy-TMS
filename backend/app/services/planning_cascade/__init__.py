@@ -8,14 +8,14 @@ Implements the architecture from:
 
 Services:
 - SOPService: S&OP policy parameter management and simulation
-- MRSService: Master Replenishment Schedule generation (for distributors)
+- SupplyBaselineService: Supply baseline generation (for any topology)
 - SupplyAgent: Supply Planning Agent (owns Supply Commit)
 - AllocationAgent: Allocation Planning Agent (owns Allocation Commit)
 - CascadeOrchestrator: Orchestrates the full planning cascade
 """
 
 from .sop_service import SOPService, SOPMode, SOPParameters, ServiceTierTarget, CategoryPolicy
-from .mrs_service import MRSService, ProductInventoryState, SupplierInfo
+from .supply_baseline_service import SupplyBaselineService, ProductInventoryState, SupplierInfo
 from .supply_agent import SupplyAgent
 from .allocation_agent import AllocationAgent
 from .cascade_orchestrator import CascadeOrchestrator, CascadeMode
@@ -26,7 +26,7 @@ __all__ = [
     "SOPParameters",
     "ServiceTierTarget",
     "CategoryPolicy",
-    "MRSService",
+    "SupplyBaselineService",
     "ProductInventoryState",
     "SupplierInfo",
     "SupplyAgent",

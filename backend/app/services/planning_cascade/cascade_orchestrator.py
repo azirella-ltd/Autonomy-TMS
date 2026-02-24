@@ -6,7 +6,7 @@ Manages the feed-forward contracts and feed-back signals.
 
 Cascade Flow:
 1. S&OP Layer → Policy Envelope (θ_SOP)
-2. MRS Layer → Supply Baseline Pack (SupBP)
+2. Supply Baseline Layer → Supply Baseline Pack (SupBP)
 3. Supply Agent → Supply Commit (SC)
 4. Allocation Solver → Solver Baseline Pack (SBP)
 5. Allocation Agent → Allocation Commit (AC)
@@ -24,7 +24,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from .sop_service import SOPService, SOPMode, SOPParameters, create_default_sop_parameters_for_food_dist
-from .mrs_service import MRSService, ProductInventoryState, SupplierInfo
+from .supply_baseline_service import SupplyBaselineService, ProductInventoryState, SupplierInfo
 from .supply_agent import SupplyAgent
 from .allocation_agent import AllocationAgent
 
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 class CascadeMode(Enum):
     """Operating mode for the cascade"""
-    FULL = "full"      # All layers (S&OP simulation + MRS candidates + Agents)
+    FULL = "full"      # All layers (S&OP simulation + Supply Baseline candidates + Agents)
     INPUT = "input"    # Agents only (customer provides S&OP params + single plan)
 
 
@@ -59,7 +59,7 @@ class CascadeOrchestrator:
 
     In FULL mode:
     - S&OP simulation generates optimized policy parameters
-    - MRS generates multiple candidate plans
+    - Supply Baseline generates multiple candidate plans (with BOM explosion when applicable)
     - Agents select from candidates and apply policies
 
     In INPUT mode:
@@ -81,7 +81,7 @@ class CascadeOrchestrator:
         # Initialize services
         sop_mode = SOPMode.FULL if mode == CascadeMode.FULL else SOPMode.INPUT
         self.sop_service = SOPService(db, sop_mode)
-        self.mrs_service = MRSService(db, mode="FULL" if mode == CascadeMode.FULL else "INPUT")
+        self.supply_baseline_service = SupplyBaselineService(db, mode="FULL" if mode == CascadeMode.FULL else "INPUT")
         self.supply_agent = SupplyAgent(db)
         self.allocation_agent = AllocationAgent(db)
 
@@ -132,7 +132,7 @@ class CascadeOrchestrator:
         logger.info(f"Step 1 complete: Policy Envelope {policy_envelope['hash'][:8]}")
 
         # =================================================================
-        # Step 2: MRS Layer - Generate Supply Baseline Pack
+        # Step 2: Supply Baseline Layer - Generate Supply Baseline Pack
         # =================================================================
         if inventory_state is None:
             inventory_state = self._get_default_inventory_state(config_id)
@@ -143,7 +143,7 @@ class CascadeOrchestrator:
         if demand_forecast is None:
             demand_forecast = self._get_default_demand_forecast(inventory_state)
 
-        supply_baseline_pack = self.mrs_service.generate_supply_baseline_pack(
+        supply_baseline_pack = self.supply_baseline_service.generate_supply_baseline_pack(
             config_id=config_id,
             group_id=group_id,
             policy_envelope_id=policy_envelope["id"],

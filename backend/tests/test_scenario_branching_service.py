@@ -47,9 +47,9 @@ def db_session():
     Uses the existing PostgreSQL database from the container.
     Each test runs in a transaction that's rolled back after completion.
     """
-    from app.db.session import SessionLocal
+    from app.db.session import sync_session_factory
 
-    session = SessionLocal()
+    session = sync_session_factory()
 
     # Begin a nested transaction
     session.begin_nested()
@@ -155,18 +155,23 @@ def baseline_config(db_session: Session, test_group: Group):
     # Create lanes
     lanes = [
         Lane(config_id=config.id, from_site_id=market_demand.id, to_site_id=retailer.id,
+             capacity=1000,
              demand_lead_time={"type": "deterministic", "value": 0},
              supply_lead_time={"type": "deterministic", "value": 1}),
         Lane(config_id=config.id, from_site_id=retailer.id, to_site_id=wholesaler.id,
+             capacity=1000,
              demand_lead_time={"type": "deterministic", "value": 1},
              supply_lead_time={"type": "deterministic", "value": 2}),
         Lane(config_id=config.id, from_site_id=wholesaler.id, to_site_id=distributor.id,
+             capacity=1000,
              demand_lead_time={"type": "deterministic", "value": 1},
              supply_lead_time={"type": "deterministic", "value": 2}),
         Lane(config_id=config.id, from_site_id=distributor.id, to_site_id=factory.id,
+             capacity=1000,
              demand_lead_time={"type": "deterministic", "value": 1},
              supply_lead_time={"type": "deterministic", "value": 2}),
         Lane(config_id=config.id, from_site_id=factory.id, to_site_id=market_supply.id,
+             capacity=1000,
              demand_lead_time={"type": "deterministic", "value": 1},
              supply_lead_time={"type": "deterministic", "value": 2}),
     ]

@@ -62,7 +62,7 @@ print("\n" + "=" * 60)
 print("TEST 3: MRS Candidate Generation Logic")
 print("=" * 60)
 
-from app.services.planning_cascade.mrs_service import ProductInventoryState
+from app.services.planning_cascade.supply_baseline_service import ProductInventoryState
 
 # Create inventory state from generator data
 inventory_states = [

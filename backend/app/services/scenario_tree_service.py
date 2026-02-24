@@ -20,6 +20,11 @@ from app.models.planning_scenario import (
     ScenarioDecisionRecord,
     ScenarioStatus,
 )
+from app.services.authorization_protocol import (
+    ActionCategory,
+    get_action_category,
+    AgentRole,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -186,23 +191,45 @@ class ScenarioTreeService:
         scenario_id: int,
         rationale: Optional[str] = None,
         decided_by: Optional[str] = None,
+        auth_service=None,
     ) -> ScenarioDecisionRecord:
         """Promote a scenario and prune its siblings.
+
+        When an ``auth_service`` is provided, the promotion is checked
+        against authority boundaries.  High net-benefit promotions are
+        auto-authorized; borderline ones require human review.
 
         Args:
             scenario_id: Scenario to promote.
             rationale: Explanation for the selection.
             decided_by: Decision-maker identifier.
+            auth_service: Optional AuthorizationService for gating.
 
         Returns:
             ScenarioDecisionRecord capturing the decision.
 
         Raises:
-            ValueError: If scenario not found or has no parent.
+            ValueError: If scenario not found, or authorization denied.
         """
         scenario = self._get(scenario_id)
         if scenario is None:
             raise ValueError(f"Scenario {scenario_id} not found")
+
+        # --- Authorization gate ---
+        if auth_service is not None:
+            auth_result = self._check_promote_authority(
+                scenario, auth_service, decided_by,
+            )
+            if auth_result and auth_result.get("needs_review"):
+                raise ValueError(
+                    f"Promotion requires human review. "
+                    f"Authorization thread: {auth_result.get('thread_id')}"
+                )
+            if auth_result and auth_result.get("denied"):
+                raise ValueError(
+                    f"Promotion denied: net_benefit {scenario.net_benefit:.3f} "
+                    f"below threshold"
+                )
 
         # Find siblings (same parent, different ID)
         siblings = self._get_siblings(scenario)
@@ -283,6 +310,72 @@ class ScenarioTreeService:
     def get(self, scenario_id: int) -> Optional[PlanningScenario]:
         """Get a single scenario by ID."""
         return self._get(scenario_id)
+
+    # ------------------------------------------------------------------
+    # Authorization helpers
+    # ------------------------------------------------------------------
+
+    def _check_promote_authority(
+        self,
+        scenario: PlanningScenario,
+        auth_service,
+        decided_by: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Check whether promoting this scenario requires authorization.
+
+        Uses the authorization service auto-resolution logic:
+        - net_benefit >> threshold → auto-authorize (returns None)
+        - net_benefit near threshold → needs human review
+        - net_benefit << threshold → auto-deny
+
+        Returns:
+            None if auto-authorized, or dict with ``needs_review``/``denied`` keys.
+        """
+        benefit_threshold = 0.05  # Minimum net benefit for auto-promotion
+
+        net_benefit = scenario.net_benefit or 0.0
+
+        # High confidence: auto-authorize
+        if net_benefit > benefit_threshold * 2.0:
+            logger.info(
+                f"Scenario {scenario.id} auto-authorized for promotion "
+                f"(net_benefit={net_benefit:.3f} >> threshold={benefit_threshold})"
+            )
+            return None
+
+        # Low confidence: auto-deny
+        if net_benefit < benefit_threshold * 0.5:
+            logger.info(
+                f"Scenario {scenario.id} auto-denied for promotion "
+                f"(net_benefit={net_benefit:.3f} << threshold={benefit_threshold})"
+            )
+            return {"denied": True}
+
+        # Borderline: create authorization thread for human review
+        try:
+            thread = auth_service.submit_request(
+                requesting_agent=decided_by or "scenario_planner",
+                target_agent="planning_director",
+                proposed_action={
+                    "action_type": "promote_scenario",
+                    "scenario_id": scenario.id,
+                    "scenario_name": scenario.name,
+                },
+                balanced_scorecard=scenario.balanced_scorecard,
+                net_benefit=net_benefit,
+                benefit_threshold=benefit_threshold,
+                justification=f"Promote scenario '{scenario.name}' with net_benefit={net_benefit:.3f}",
+                priority="MEDIUM",
+                scenario_id=scenario.id,
+            )
+            logger.info(
+                f"Scenario {scenario.id} promotion requires review "
+                f"(thread_id={thread.thread_id})"
+            )
+            return {"needs_review": True, "thread_id": thread.thread_id}
+        except Exception as e:
+            logger.warning(f"Authorization service error: {e}; auto-authorizing")
+            return None
 
     # ------------------------------------------------------------------
     # Internal helpers

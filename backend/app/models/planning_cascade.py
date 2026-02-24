@@ -48,7 +48,7 @@ class PolicySource(str, enum.Enum):
 class LayerName(str, enum.Enum):
     """Sellable cascade layers"""
     SOP = "sop"                        # S&OP Strategic Planning
-    MRS = "mrs"                        # MRS / Supply Baseline Pack
+    MRS = "mrs"                        # Supply Baseline Layer (unified — BOM explosion conditional on topology)
     SUPPLY_AGENT = "supply_agent"      # Supply Agent (Supply Commit)
     ALLOCATION_AGENT = "allocation_agent"  # Allocation Agent (Allocation Commit)
     EXECUTION = "execution"            # Execution (Foundation + TRM)
