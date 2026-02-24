@@ -83,7 +83,7 @@ async def validate_compliance():
         # Check nodes hierarchical fields
         result = await conn.execute(text(
             "SELECT column_name FROM information_schema.columns "
-            "WHERE table_schema='beer_game' AND table_name='nodes' "
+            "WHERE table_schema='public' AND table_name='nodes' "
             "AND column_name IN ('geo_id', 'segment_id', 'company_id')"
         ))
         node_fields = {row[0] for row in result}
@@ -96,7 +96,7 @@ async def validate_compliance():
         # Check items product_group_id
         result = await conn.execute(text(
             "SELECT column_name FROM information_schema.columns "
-            "WHERE table_schema='beer_game' AND table_name='items' "
+            "WHERE table_schema='public' AND table_name='items' "
             "AND column_name='product_group_id'"
         ))
         validator.check(
@@ -107,7 +107,7 @@ async def validate_compliance():
         # Check inv_policy hierarchical fields
         result = await conn.execute(text(
             "SELECT column_name FROM information_schema.columns "
-            "WHERE table_schema='beer_game' AND table_name='inv_policy' "
+            "WHERE table_schema='public' AND table_name='inv_policy' "
             "AND column_name IN ('product_group_id', 'dest_geo_id', 'segment_id', 'company_id')"
         ))
         inv_policy_fields = {row[0] for row in result}
@@ -126,7 +126,7 @@ async def validate_compliance():
         # Check policy type fields
         result = await conn.execute(text(
             "SELECT column_name FROM information_schema.columns "
-            "WHERE table_schema='beer_game' AND table_name='inv_policy' "
+            "WHERE table_schema='public' AND table_name='inv_policy' "
             "AND column_name IN ('ss_policy', 'ss_days', 'ss_quantity', 'policy_value')"
         ))
         policy_fields = {row[0] for row in result}
@@ -157,7 +157,7 @@ async def validate_compliance():
         # Check vendor_product table
         result = await conn.execute(text(
             "SELECT COUNT(*) FROM information_schema.tables "
-            "WHERE table_schema='beer_game' AND table_name='vendor_product'"
+            "WHERE table_schema='public' AND table_name='vendor_product'"
         ))
         validator.check(
             "VendorProduct table exists",
@@ -167,7 +167,7 @@ async def validate_compliance():
         # Check vendor_product FKs
         result = await conn.execute(text(
             "SELECT constraint_name FROM information_schema.key_column_usage "
-            "WHERE table_schema='beer_game' AND table_name='vendor_product' "
+            "WHERE table_schema='public' AND table_name='vendor_product' "
             "AND referenced_table_name IS NOT NULL"
         ))
         fks = {row[0] for row in result}
@@ -180,7 +180,7 @@ async def validate_compliance():
         # Check sourcing_rules FKs
         result = await conn.execute(text(
             "SELECT column_name FROM information_schema.columns "
-            "WHERE table_schema='beer_game' AND table_name='sourcing_rules' "
+            "WHERE table_schema='public' AND table_name='sourcing_rules' "
             "AND column_name IN ('tpartner_id', 'transportation_lane_id', 'production_process_id')"
         ))
         sr_fk_fields = {row[0] for row in result}
@@ -210,7 +210,7 @@ async def validate_compliance():
         # Check sourcing_schedule table
         result = await conn.execute(text(
             "SELECT COUNT(*) FROM information_schema.tables "
-            "WHERE table_schema='beer_game' AND table_name='sourcing_schedule'"
+            "WHERE table_schema='public' AND table_name='sourcing_schedule'"
         ))
         validator.check(
             "SourcingSchedule table exists",
@@ -220,7 +220,7 @@ async def validate_compliance():
         # Check sourcing_schedule_details table
         result = await conn.execute(text(
             "SELECT COUNT(*) FROM information_schema.tables "
-            "WHERE table_schema='beer_game' AND table_name='sourcing_schedule_details'"
+            "WHERE table_schema='public' AND table_name='sourcing_schedule_details'"
         ))
         validator.check(
             "SourcingScheduleDetails table exists",
@@ -230,7 +230,7 @@ async def validate_compliance():
         # Check schedule detail fields
         result = await conn.execute(text(
             "SELECT column_name FROM information_schema.columns "
-            "WHERE table_schema='beer_game' AND table_name='sourcing_schedule_details' "
+            "WHERE table_schema='public' AND table_name='sourcing_schedule_details' "
             "AND column_name IN ('day_of_week', 'week_of_month', 'schedule_date')"
         ))
         sched_fields = {row[0] for row in result}
@@ -243,7 +243,7 @@ async def validate_compliance():
         # Check order_up_to_level field
         result = await conn.execute(text(
             "SELECT column_name FROM information_schema.columns "
-            "WHERE table_schema='beer_game' AND table_name='inv_policy' "
+            "WHERE table_schema='public' AND table_name='inv_policy' "
             "AND column_name='order_up_to_level'"
         ))
         validator.check(
@@ -260,7 +260,7 @@ async def validate_compliance():
         # Check production_process advanced fields
         result = await conn.execute(text(
             "SELECT column_name FROM information_schema.columns "
-            "WHERE table_schema='beer_game' AND table_name='production_process' "
+            "WHERE table_schema='public' AND table_name='production_process' "
             "AND column_name IN ('frozen_horizon_days', 'setup_time', 'changeover_time', "
             "'changeover_cost', 'min_batch_size', 'max_batch_size')"
         ))
@@ -274,7 +274,7 @@ async def validate_compliance():
         # Check BOM alternate support
         result = await conn.execute(text(
             "SELECT column_name FROM information_schema.columns "
-            "WHERE table_schema='beer_game' AND table_name='product_bom' "
+            "WHERE table_schema='public' AND table_name='product_bom' "
             "AND column_name IN ('alternate_group', 'priority')"
         ))
         bom_fields = {row[0] for row in result}
@@ -304,7 +304,7 @@ async def validate_compliance():
         # Check for data integrity (FK constraints)
         result = await conn.execute(text(
             "SELECT COUNT(*) FROM information_schema.table_constraints "
-            "WHERE table_schema='beer_game' AND constraint_type='FOREIGN KEY' "
+            "WHERE table_schema='public' AND constraint_type='FOREIGN KEY' "
             "AND table_name IN ('vendor_product', 'sourcing_rules', 'sourcing_schedule', "
             "'sourcing_schedule_details', 'inv_policy')"
         ))
@@ -318,7 +318,7 @@ async def validate_compliance():
         # Check indexes for performance
         result = await conn.execute(text(
             "SELECT COUNT(DISTINCT index_name) FROM information_schema.statistics "
-            "WHERE table_schema='beer_game' "
+            "WHERE table_schema='public' "
             "AND table_name IN ('vendor_product', 'sourcing_schedule', 'sourcing_schedule_details')"
         ))
         index_count = result.scalar()

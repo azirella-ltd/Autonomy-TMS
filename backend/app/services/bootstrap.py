@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -22,7 +23,7 @@ DEFAULT_GROUP_LOGO = "/autonomy_logo.svg"
 DEFAULT_ADMIN_USERNAME = "groupadmin"
 DEFAULT_ADMIN_EMAIL = "groupadmin@autonomy.ai"
 DEFAULT_ADMIN_FULL_NAME = "Group Administrator"
-DEFAULT_ADMIN_PASSWORD = "Autonomy@2025"
+DEFAULT_ADMIN_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")
 
 
 def build_default_group_payload() -> GroupCreate:

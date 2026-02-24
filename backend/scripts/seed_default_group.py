@@ -86,7 +86,7 @@ DEFAULT_GROUP_DESCRIPTION = "Default supply chain simulation scenarios"
 DEFAULT_ADMIN_USERNAME = "simulation_admin"
 DEFAULT_ADMIN_EMAIL = "simulation_admin@autonomy.ai"
 DEFAULT_ADMIN_FULL_NAME = "Simulation Administrator"
-DEFAULT_PASSWORD = "Autonomy@2025"
+DEFAULT_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")
 DEFAULT_CONFIG_NAME = "Default Beer Game"
 INVENTORY_CONFIG_NAME = "Default Beer Game"
 DEFAULT_GAME_NAME = "Default Simulation"
@@ -5236,7 +5236,7 @@ def main() -> None:
         print("\n[error] Failed to seed the database. Please check the following:")
         print("1. Make sure the MariaDB container is running")
         print("2. Verify the database credentials in your .env file")
-        print("3. Check that the database 'beer_game' exists and is accessible")
+        print("3. Check that the database 'autonomy' exists and is accessible")
         print(f"\nError details: {exc}")
         raise
 

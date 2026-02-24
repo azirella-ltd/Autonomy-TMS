@@ -50,7 +50,7 @@ DEFAULT_GROUP_DESCRIPTION = "Default Autonomy simulation group"
 DEFAULT_ADMIN_USERNAME = "groupadmin"
 DEFAULT_ADMIN_EMAIL = "groupadmin@autonomy.ai"
 DEFAULT_ADMIN_FULL_NAME = "Group Administrator"
-DEFAULT_PASSWORD = "Autonomy@2025"
+DEFAULT_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")
 DEFAULT_GAME_NAME = "Default Simulation"
 DEFAULT_AGENT_TYPE = "pid_heuristic"
 

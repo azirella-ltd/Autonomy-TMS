@@ -313,11 +313,12 @@ class SAPUserProvisioningService:
                     except KeyError:
                         target_user_type = UserTypeEnum.USER
 
+                    from app.services.bootstrap import DEFAULT_ADMIN_PASSWORD
                     new_user = User(
                         email=email,
                         username=bname.lower(),
                         full_name=full_name,
-                        hashed_password=get_password_hash("Autonomy@2025"),
+                        hashed_password=get_password_hash(DEFAULT_ADMIN_PASSWORD),
                         is_active=True,
                         is_superuser=False,
                         user_type=target_user_type,

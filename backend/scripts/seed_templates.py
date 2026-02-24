@@ -398,8 +398,8 @@ SCENARIO_TEMPLATES = [
         "category": TemplateCategory.SCENARIO,
         "industry": TemplateIndustry.GENERAL,
         "difficulty": TemplateDifficulty.BEGINNER,
-        "description": "Traditional 4-echelon Beer Game with retailer, wholesaler, distributor, and factory. Perfect for learning bullwhip effect.",
-        "short_description": "Traditional 4-echelon game",
+        "description": "Traditional 4-echelon supply chain simulation with retailer, wholesaler, distributor, and factory. Perfect for learning bullwhip effect.",
+        "short_description": "Traditional 4-echelon simulation",
         "configuration": {
             "supply_chain_config_id": 1,
             "num_players": 4,

@@ -651,11 +651,12 @@ class FoodDistConfigGenerator:
         then updating admin with group_id.
         """
         from app.core.security import get_password_hash
+        from app.services.bootstrap import DEFAULT_ADMIN_PASSWORD
 
         # 1. Create admin user first (without group_id initially)
         user = User(
             email=email,
-            hashed_password=get_password_hash("Autonomy@2025"),
+            hashed_password=get_password_hash(DEFAULT_ADMIN_PASSWORD),
             full_name=name,
             is_active=True,
             is_superuser=False,

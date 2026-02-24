@@ -1,7 +1,7 @@
 """
-Convert Beer Game Supply Chain Config to AWS SC Format
+Convert Supply Chain Config to AWS SC Format
 
-This script converts an existing Beer Game SupplyChainConfig to AWS SC entities:
+This script converts an existing SupplyChainConfig to AWS SC entities:
 - InvPolicy (inventory policies for each node)
 - SourcingRules (sourcing relationships between nodes)
 - ProductionProcess (manufacturing processes for factory nodes)
@@ -40,7 +40,7 @@ async def convert_config_to_aws_sc(
     horizon: int = 52
 ):
     """
-    Convert a Beer Game config to AWS SC format
+    Convert a supply chain config to AWS SC format
 
     Args:
         config_name: Name of the SupplyChainConfig to convert
@@ -48,7 +48,7 @@ async def convert_config_to_aws_sc(
         horizon: Number of weeks to forecast
     """
     print("=" * 80)
-    print("Beer Game Config → AWS SC Conversion")
+    print("Supply Chain Config → AWS SC Conversion")
     print("=" * 80)
     print()
 
@@ -97,7 +97,7 @@ async def convert_config_to_aws_sc(
 
         inv_policies_created = 0
 
-        # Get the primary item (Beer Game typically has one item: "Cases")
+        # Get the primary item (simulation configs typically have one item: "Cases")
         if not config.items:
             print("   ❌ No items defined in config")
             return False
@@ -112,7 +112,7 @@ async def convert_config_to_aws_sc(
                 print(f"   ⊗ Skipping {node.name} (market node)")
                 continue
 
-            # Get target inventory from node attributes or default to 12 (Beer Game standard)
+            # Get target inventory from node attributes or default to 12
             attributes = node.attributes or {}
             target_qty = attributes.get('initial_inventory', 12)
             safety_stock = attributes.get('safety_stock', 0)
@@ -128,7 +128,7 @@ async def convert_config_to_aws_sc(
                 safety_stock_qty=float(safety_stock),
                 reorder_point_qty=float(reorder_point),
                 min_qty=0.0,
-                max_qty=9999.0,  # Unlimited for Beer Game
+                max_qty=9999.0,  # Unlimited for simulation
                 review_period_days=7,  # Weekly review
                 is_active='true'
             )
@@ -167,7 +167,7 @@ async def convert_config_to_aws_sc(
             else:
                 sourcing_type = 'transfer'
 
-            # Get lead time (Beer Game uses weeks, AWS SC uses days)
+            # Get lead time (simulation uses weeks, AWS SC uses days)
             lead_time_weeks = lane.lead_time or 2
             lead_time_days = lead_time_weeks * 7
 
@@ -178,7 +178,7 @@ async def convert_config_to_aws_sc(
                 site_id=to_node.id,  # Destination
                 supplier_site_id=from_node.id,  # Source
                 sourcing_type=sourcing_type,
-                allocation_percentage=100.0,  # Beer Game has single sourcing
+                allocation_percentage=100.0,  # Single sourcing for simulation
                 lead_time_days=lead_time_days,
                 transit_time_days=lead_time_days,
                 min_order_qty=0.0,
@@ -217,7 +217,7 @@ async def convert_config_to_aws_sc(
                 # Handle case where it's per-product
                 mfg_leadtime = mfg_leadtime.get(item.name, 2)
 
-            # Get capacity (Beer Game typically has unlimited capacity)
+            # Get capacity (simulation configs typically have unlimited capacity)
             capacity_hours = attributes.get('capacity_hours', 9999)
 
             production_process = ProductionProcess(
@@ -471,7 +471,7 @@ async def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Convert Beer Game config to AWS SC format"
+        description="Convert supply chain config to AWS SC format"
     )
     parser.add_argument(
         '--config-name',

@@ -108,6 +108,7 @@ async def init_db():
             systemadmin_password = (
                 os.getenv("SYSTEMADMIN_PASSWORD")
                 or os.getenv("SUPERADMIN_PASSWORD")
+                or os.getenv("AUTONOMY_DEFAULT_PASSWORD")
                 or "Autonomy@2025"
             )
 

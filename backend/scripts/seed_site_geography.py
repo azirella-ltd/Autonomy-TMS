@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Seed geography data for Beer Game sites using AWS SC DM approach.
+Seed geography data for simulation sites using AWS SC DM approach.
 
 Creates realistic geography records based on site types:
 - Retailers: Major retail/grocery chain locations

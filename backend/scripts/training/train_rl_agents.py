@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 def parse_args():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Train RL agents for The Beer Game")
+    parser = argparse.ArgumentParser(description="Train RL agents for supply chain simulation")
 
     parser.add_argument(
         "--algorithm",

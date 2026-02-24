@@ -23,6 +23,7 @@ Usage:
     docker compose exec backend python scripts/seed_dot_foods_allocation_demo.py
 """
 
+import os
 import sys
 import random
 import hashlib
@@ -64,7 +65,7 @@ from app.services.rbac_service import RBACService, seed_default_permissions
 # Seed for reproducibility
 random.seed(42)
 
-DEFAULT_PASSWORD = "Autonomy@2025"
+DEFAULT_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")
 
 # =============================================================================
 # Customer → Priority Mapping

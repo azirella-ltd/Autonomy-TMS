@@ -27,6 +27,7 @@ Demo Flow:
     4. All Powell dashboards accessible without logout
 """
 
+import os
 import sys
 import asyncio
 from pathlib import Path
@@ -64,7 +65,7 @@ from app.services.rbac_service import RBACService, seed_default_permissions
 
 FOOD_DIST_GROUP_NAME = "Food Dist"
 FOOD_DIST_DESCRIPTION = "Food Dist - America's largest food redistributor. Powell Framework demo."
-DEFAULT_PASSWORD = "Autonomy@2025"
+DEFAULT_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")
 
 # User configurations (Powell-aligned)
 DEMO_USERS = [

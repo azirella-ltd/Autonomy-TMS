@@ -28,6 +28,7 @@ from ..schemas.group import GroupCreate, GroupUpdate
 from ..core.security import get_password_hash
 from app.core.time_buckets import TimeBucket
 from .supply_chain_config_service import SupplyChainConfigService
+from .bootstrap import DEFAULT_ADMIN_PASSWORD
 from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 
 logger = logging.getLogger(__name__)
@@ -249,7 +250,7 @@ class GroupService:
                 self.db.flush()
 
                 group_suffix = f"g{group.id}"
-                player_password_hash = get_password_hash("Autonomy@2025")
+                player_password_hash = get_password_hash(DEFAULT_ADMIN_PASSWORD)
                 default_users = [
                     {
                         "username": f"retailer_{group_suffix}",

@@ -161,7 +161,7 @@ class AgentGameDemo:
 def run_demo():
     """Run the agent scenario demo."""
     try:
-        print("=== Starting Beer Game Agent Demo ===")
+        print("=== Starting Supply Chain Agent Demo ===")
         print("Creating a scenario with AI agents...")
 
         demo = AgentGameDemo()

@@ -25,7 +25,7 @@ def get_or_create_systemadmin(session):
     user = User(
         username="systemadmin",
         email="systemadmin@autonomy.ai",
-        hashed_password=hash_password("Autonomy@2025"),
+        hashed_password=hash_password(os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")),
         full_name="System Admin",
         is_active=True,
         is_superuser=True,

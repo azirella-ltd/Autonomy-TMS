@@ -31,7 +31,7 @@ fi
 
 # Check test database
 echo -n "Checking test database... "
-if mysql -u autonomy_user -pbeer_password -e "USE autonomy_test;" 2>/dev/null; then
+if mysql -u autonomy_user -pautonomy_password -e "USE autonomy_test;" 2>/dev/null; then
     echo -e "${GREEN}✓ Test database exists${NC}"
 else
     echo -e "${YELLOW}⚠ Test database does not exist, creating...${NC}"

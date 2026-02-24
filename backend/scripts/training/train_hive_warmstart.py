@@ -121,7 +121,7 @@ def get_sites_from_config(config_id: int) -> List[dict]:
     except Exception as e:
         logger.warning(f"Could not load sites from DB: {e}")
 
-    # Fallback: default 4-site Beer Game topology
+    # Fallback: default 4-site supply chain topology
     return [
         {"site_id": 1, "site_name": "Retailer", "master_type": "INVENTORY"},
         {"site_id": 2, "site_name": "Wholesaler", "master_type": "INVENTORY"},

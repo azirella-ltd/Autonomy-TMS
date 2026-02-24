@@ -13,7 +13,7 @@ async def verify_schema():
         # Check if vendor_product exists
         result = await conn.execute(text(
             "SELECT COUNT(*) FROM information_schema.tables "
-            "WHERE table_schema = 'beer_game' AND table_name = 'vendor_product'"
+            "WHERE table_schema = 'public' AND table_name = 'vendor_product'"
         ))
         exists = result.scalar() > 0
         print(f"✓ vendor_product table exists: {exists}")
@@ -23,7 +23,7 @@ async def verify_schema():
             result = await conn.execute(text(
                 "SELECT column_name, column_type, is_nullable, column_key "
                 "FROM information_schema.columns "
-                "WHERE table_schema = 'beer_game' AND table_name = 'vendor_product' "
+                "WHERE table_schema = 'public' AND table_name = 'vendor_product' "
                 "ORDER BY ordinal_position"
             ))
             print("\nvendor_product columns:")
@@ -36,7 +36,7 @@ async def verify_schema():
             result = await conn.execute(text(
                 "SELECT constraint_name, column_name, referenced_table_name, referenced_column_name "
                 "FROM information_schema.key_column_usage "
-                "WHERE table_schema = 'beer_game' AND table_name = 'vendor_product' "
+                "WHERE table_schema = 'public' AND table_name = 'vendor_product' "
                 "AND referenced_table_name IS NOT NULL"
             ))
             print("\nvendor_product foreign keys:")
@@ -47,7 +47,7 @@ async def verify_schema():
         result = await conn.execute(text(
             "SELECT column_name, column_type, is_nullable "
             "FROM information_schema.columns "
-            "WHERE table_schema = 'beer_game' AND table_name = 'sourcing_rules' "
+            "WHERE table_schema = 'public' AND table_name = 'sourcing_rules' "
             "AND column_name IN ('tpartner_id', 'transportation_lane_id', 'production_process_id')"
         ))
         print("\nsourcing_rules new FK columns:")
@@ -59,7 +59,7 @@ async def verify_schema():
         result = await conn.execute(text(
             "SELECT constraint_name, column_name, referenced_table_name, referenced_column_name "
             "FROM information_schema.key_column_usage "
-            "WHERE table_schema = 'beer_game' AND table_name = 'sourcing_rules' "
+            "WHERE table_schema = 'public' AND table_name = 'sourcing_rules' "
             "AND referenced_table_name IS NOT NULL "
             "AND column_name IN ('tpartner_id', 'transportation_lane_id', 'production_process_id')"
         ))

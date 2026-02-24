@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Train RL agents for Beer Game using Stable-Baselines3.
+Train RL agents for supply chain simulation using Stable-Baselines3.
 
 Usage:
     python train_rl.py --algorithm PPO --timesteps 1000000 --device cuda
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train RL agent for Beer Game")
+    parser = argparse.ArgumentParser(description="Train RL agent for supply chain simulation")
 
     # Algorithm and training parameters
     parser.add_argument("--algorithm", default="PPO", choices=["PPO", "SAC", "A2C"],

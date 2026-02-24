@@ -74,7 +74,7 @@ async def create_default_environment():
                 group_admin = User(
                     username="groupadmin",
                     email="groupadmin@autonomy.ai",
-                    hashed_password=get_password_hash("Autonomy@2025"),
+                    hashed_password=get_password_hash(os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")),
                     full_name="Group Admin",
                     is_superuser=False,
                     is_active=True
@@ -196,7 +196,7 @@ async def create_default_environment():
                 ai_user = User(
                     username=f"ai_{role}",
                     email=f"ai_{role}@autonomy.ai",
-                    hashed_password=get_password_hash("Autonomy@2025"),
+                    hashed_password=get_password_hash(os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")),
                     full_name=f"AI {role.capitalize()}",
                     is_superuser=False,
                     is_active=True,

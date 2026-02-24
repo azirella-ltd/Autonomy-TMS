@@ -33,7 +33,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     """Schema for creating a new user."""
-    password: str = Field(default='Autonomy@2025', min_length=8, max_length=50)
+    password: str = Field(..., min_length=8, max_length=50)
     is_superuser: Optional[bool] = False
     user_type: Optional[UserTypeEnum] = None
 

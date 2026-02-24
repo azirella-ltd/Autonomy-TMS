@@ -485,10 +485,11 @@ class SyntheticDataGenerator:
     async def _create_admin_user(self, group_id: int) -> User:
         """Create the group administrator user."""
         from app.core.security import get_password_hash
+        from app.services.bootstrap import DEFAULT_ADMIN_PASSWORD
 
         user = User(
             email=self.request.admin_email,
-            hashed_password=get_password_hash("Autonomy@2025"),  # Default password
+            hashed_password=get_password_hash(DEFAULT_ADMIN_PASSWORD),
             full_name=self.request.admin_name,
             is_active=True,
             is_superuser=False,

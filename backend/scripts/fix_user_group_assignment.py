@@ -74,7 +74,7 @@ def main():
                 ).scalars().first()
 
             if not default_group:
-                print("ERROR: No default group found! Creating Beer Game group...")
+                print("ERROR: No default group found! Creating default group...")
                 # Get first user to be admin
                 first_user = users[0] if users else None
                 if not first_user:
@@ -83,12 +83,12 @@ def main():
 
                 default_group = Group(
                     name="Beer Game",
-                    description="Default Beer Game group",
+                    description="Default simulation group",
                     admin_id=first_user.id
                 )
                 db.add(default_group)
                 db.flush()
-                print(f"Created Beer Game group with ID {default_group.id}")
+                print(f"Created default group with ID {default_group.id}")
 
             for user in orphaned:
                 print(f"Assigning {user.email} to group '{default_group.name}' (ID: {default_group.id})")

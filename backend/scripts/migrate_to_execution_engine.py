@@ -1,7 +1,7 @@
 """
 Migration Script: Legacy Engine → Execution Engine
 
-Migrates existing Beer Game data from legacy Node-based engine
+Migrates existing simulation data from legacy Node-based engine
 to new AWS SC execution-based engine with full order lifecycle tracking.
 
 Migration Strategy:
@@ -40,7 +40,7 @@ from app.models.supply_chain_config import Node
 
 
 class LegacyToExecutionMigrator:
-    """Migrates Beer Game data from legacy to execution engine."""
+    """Migrates simulation data from legacy to execution engine."""
 
     def __init__(self, db: AsyncSession, scenario_id: int, dry_run: bool = False):
         self.db = db
@@ -153,7 +153,7 @@ class LegacyToExecutionMigrator:
             # Create inventory level
             inv_level = InventoryLevel(
                 site_id=site_id,
-                product_id="BEER-CASE",  # Default Beer Game product
+                product_id="BEER-CASE",  # Default simulation product
                 quantity=float(pr.inventory),
                 config_id=scenario.supply_chain_config_id if scenario else None,
                 scenario_id=self.scenario_id,
@@ -414,7 +414,7 @@ async def run_migration(scenario_id: int, dry_run: bool = False, validate_only: 
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Migrate Beer Game to Execution Engine")
+    parser = argparse.ArgumentParser(description="Migrate simulation data to Execution Engine")
     parser.add_argument("--scenario-id", type=int, required=True, help="Scenario ID to migrate")
     parser.add_argument("--dry-run", action="store_true", help="Run without committing changes")
     parser.add_argument("--validate", action="store_true", help="Only validate, don't migrate")

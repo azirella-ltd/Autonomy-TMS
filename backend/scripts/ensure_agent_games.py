@@ -1,4 +1,4 @@
-"""Ensure showcase games exist for specific agent strategies (human and AI)."""
+"""Ensure showcase scenarios exist for specific agent strategies (human and AI)."""
 from __future__ import annotations
 
 import json
@@ -20,25 +20,25 @@ from scripts.seed_default_group import (
 SHOWCASE_GAMES = [
     {
         "name": "The Beer Game - Human",
-        "description": "Benchmark Beer Game with human players assigned to each role.",
+        "description": "Benchmark simulation scenario with human participants assigned to each role.",
         "strategy": "human",
         "llm_model": None,
     },
     {
         "name": "The Beer Game - Naiive",
-        "description": "Baseline Beer Game using Naiive agent strategy for all roles.",
+        "description": "Baseline simulation scenario using Naive agent strategy for all roles.",
         "strategy": "naive",
         "llm_model": None,
     },
     {
         "name": "The Beer Game - PID",
-        "description": "Beer Game showcasing the PID heuristic controller across the supply chain.",
+        "description": "Simulation scenario showcasing the PID heuristic controller across the supply chain.",
         "strategy": "pid_heuristic",
         "llm_model": None,
     },
     {
         "name": "The Beer Game - TRM",
-        "description": "Beer Game using TRM (Tiny Recursive Model) agents with 7M parameter neural network and recursive refinement for fast, optimized supply chain decisions.",
+        "description": "Simulation scenario using TRM (Tiny Recursive Model) agents with 7M parameter neural network and recursive refinement for fast, optimized supply chain decisions.",
         "strategy": "trm",
         "llm_model": None,
     },

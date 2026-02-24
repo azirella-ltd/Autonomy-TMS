@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Example SAP Integration Script for Beer Game.
+Example SAP Integration Script for Supply Chain Simulation.
 
 Demonstrates:
 1. Extracting supply chain data from S/4HANA and APO
 2. Mapping to AWS Supply Chain Data Model
-3. Running Beer Game optimization
+3. Running supply chain optimization
 4. Writing results back to SAP
 
 Usage:
@@ -240,7 +240,7 @@ def run_simulation_optimization(aws_data):
     """
     logger.info("=== Running Simulation Optimization ===")
 
-    # TODO: Integrate with Beer Game engine
+    # TODO: Integrate with simulation engine
     # For now, return mock optimization results
 
     import pandas as pd
@@ -328,7 +328,7 @@ def write_results_to_sap(optimization_results, output_dir, connection=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="SAP Integration for Beer Game"
+        description="SAP Integration for Supply Chain Simulation"
     )
     parser.add_argument(
         "--mode",
@@ -366,7 +366,7 @@ def main():
     args = parser.parse_args()
 
     logger.info("=" * 60)
-    logger.info("Beer Game SAP Integration")
+    logger.info("Supply Chain SAP Integration")
     logger.info("=" * 60)
 
     try:

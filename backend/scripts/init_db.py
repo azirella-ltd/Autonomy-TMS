@@ -219,7 +219,7 @@ def init_db():
             {
                 "username": "systemadmin",
                 "email": "systemadmin@autonomy.ai",
-                "password": "Autonomy@2025",
+                "password": os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025"),
                 "full_name": "System Admin",
                 "is_superuser": True,
                 "is_active": True

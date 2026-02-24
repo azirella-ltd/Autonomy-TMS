@@ -282,37 +282,12 @@ COOKIE_COMMON_KWARGS = dict(httponly=True, samesite="lax", secure=False, path="/
 BACKEND_ROOT = Path(__file__).resolve().parent
 CHECKPOINT_ROOT = BACKEND_ROOT / "checkpoints" / "supply_chain_configs"
 
-# ------------------------------------------------------------------------------
-# Minimal in-memory user store (replace with your DB/user service)
-# ------------------------------------------------------------------------------
-# This mirrors your default frontend creds to make dev easy.
-_FAKE_USERS = {
-    # Keyed by email for canonical lookup
-    "systemadmin@autonomy.ai": {
-        "id": 1,
-        "email": "systemadmin@autonomy.ai",
-        "name": "System Admin",
-        "role": "systemadmin",
-        # Dev-only password to simplify getting started
-        "passwords": {"Autonomy@2025", "Autonomy@2025!"},
-        "aliases": {"systemadmin", "superadmin"},
-        "group_id": None,
-        "is_superuser": True,
-        "user_type": "system_admin",
-    }
-}
-
-# Allow default group admin to sign in using the same lightweight auth shim.
-_FAKE_USERS["groupadmin@autonomy.ai"] = {
-    "id": 7,
-    "email": "groupadmin@autonomy.ai",
-    "name": "Group Administrator",
-    "role": "groupadmin",
-    "passwords": {"Autonomy@2025"},
-    "aliases": {"groupadmin", "defaultadmin"},
-    "group_id": 1,
-    "is_superuser": False,
-    "user_type": "group_admin",
+# Username alias map for convenience login (e.g. "systemadmin" → "systemadmin@autonomy.ai")
+_USERNAME_ALIASES = {
+    "systemadmin": "systemadmin@autonomy.ai",
+    "superadmin": "systemadmin@autonomy.ai",
+    "groupadmin": "groupadmin@autonomy.ai",
+    "defaultadmin": "groupadmin@autonomy.ai",
 }
 
 # Logger used across helpers/routes
@@ -379,24 +354,19 @@ def decode_token(token: str) -> Dict[str, Any]:
 # Auth helpers
 # ------------------------------------------------------------------------------
 def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
-    """Authenticate against the database first, falling back to the in-memory dev users."""
+    """Authenticate against the database."""
 
     lookup = (username or "").strip()
     if not lookup:
         return None
 
     # Map common aliases (e.g. "systemadmin") onto their canonical emails
-    alias_match = None
     if "@" not in lookup:
-        token = lookup.lower()
-        for candidate in _FAKE_USERS.values():
-            aliases = {a.lower() for a in candidate.get("aliases", set())}
-            if token in aliases:
-                alias_match = candidate["email"]
-                break
-    canonical = alias_match or lookup
+        canonical = _USERNAME_ALIASES.get(lookup.lower(), lookup)
+    else:
+        canonical = lookup
 
-    # Primary path: validate against persisted users so we pick up real group assignments
+    # Authenticate against persisted users
     session: Optional[Session] = None
     try:
         session = SessionLocal()
@@ -408,25 +378,12 @@ def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
                 if verify_password(password, db_user.hashed_password):
                     return _build_user_payload_from_model(db_user)
             except Exception:
-                # If password verification fails unexpectedly, fall back to dev users
-                pass
+                logger.warning(f"Password verification error for {canonical}")
     finally:
         if session is not None:
             session.close()
 
-    # Development fallback: use in-memory credentials
-    user = _FAKE_USERS.get(canonical) or _FAKE_USERS.get(lookup)
-    if not user:
-        token = lookup.lower()
-        for candidate in _FAKE_USERS.values():
-            if token in {a.lower() for a in candidate.get("aliases", set())}:
-                user = candidate
-                break
-    if not user:
-        return None
-    if password not in user.get("passwords", set()):
-        return None
-    return user
+    return None
 
 def extract_bearer_from_cookie(cookie_val: Optional[str]) -> Optional[str]:
     if not cookie_val:
@@ -477,13 +434,6 @@ async def get_current_user(
     finally:
         if session is not None:
             session.close()
-
-    if user is None:
-        # Fallback to the in-memory dev users if we couldn't resolve via the database
-        for u in _FAKE_USERS.values():
-            if str(u["id"]) == str(sub) or u["email"].lower() == str(sub).lower():
-                user = u
-                break
 
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
@@ -737,12 +687,21 @@ async def refresh(
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
 
-    # Find user
+    # Find user in database
     user = None
-    for u in _FAKE_USERS.values():
-        if str(u["id"]) == str(sub) or u["email"] == sub:
-            user = u
-            break
+    session: Optional[Session] = None
+    try:
+        session = SessionLocal()
+        db_user: Optional[User] = None
+        if str(sub).isdigit():
+            db_user = session.get(User, int(sub))
+        if db_user is None:
+            db_user = session.query(User).filter(User.email == str(sub)).first()
+        if db_user is not None:
+            user = _build_user_payload_from_model(db_user)
+    finally:
+        if session is not None:
+            session.close()
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
