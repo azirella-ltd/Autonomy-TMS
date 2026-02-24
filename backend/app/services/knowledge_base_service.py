@@ -467,13 +467,13 @@ class KnowledgeBaseService:
                 c.chunk_index,
                 c.page_number,
                 c.metadata,
-                1 - (c.embedding <=> :embedding::vector) AS score
+                1 - (c.embedding <=> CAST(:embedding AS vector)) AS score
             FROM kb_chunks c
             JOIN kb_documents d ON c.document_id = d.id
             WHERE d.group_id = :group_id
               AND d.status = 'indexed'
               {category_filter}
-            ORDER BY c.embedding <=> :embedding::vector
+            ORDER BY c.embedding <=> CAST(:embedding AS vector)
             LIMIT :top_k
         """.format(
             category_filter="AND d.category = :category" if category else ""

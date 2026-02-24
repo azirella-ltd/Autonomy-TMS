@@ -75,6 +75,18 @@ services:
       # Knowledge Base (RAG) — separate pgvector database
       - KB_DATABASE_URL=postgresql+psycopg2://${KB_POSTGRESQL_USER:-kb_user}:${KB_POSTGRESQL_PASSWORD:-kb_password}@kb-db:5432/${KB_POSTGRESQL_DATABASE:-autonomy_kb}
       - KB_ASYNC_DATABASE_URL=postgresql+asyncpg://${KB_POSTGRESQL_USER:-kb_user}:${KB_POSTGRESQL_PASSWORD:-kb_password}@kb-db:5432/${KB_POSTGRESQL_DATABASE:-autonomy_kb}
+
+      # RAG / Embedding configuration
+      - LLM_API_BASE=${LLM_API_BASE:-}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_MODEL_NAME=${LLM_MODEL_NAME:-}
+      - EMBEDDING_API_BASE=${EMBEDDING_API_BASE:-}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
+      - EMBEDDING_DIMENSIONS=${EMBEDDING_DIMENSIONS:-768}
+      - RAG_ENABLED=${RAG_ENABLED:-false}
+      - RAG_CHUNK_SIZE=${RAG_CHUNK_SIZE:-1024}
+      - RAG_CHUNK_OVERLAP=${RAG_CHUNK_OVERLAP:-200}
+      - RAG_TOP_K=${RAG_TOP_K:-5}
     ports:
       - "8000:8000"
     volumes:
