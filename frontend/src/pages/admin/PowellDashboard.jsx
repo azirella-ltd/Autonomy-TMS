@@ -846,7 +846,7 @@ const PowellDashboard = () => {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="p-3 border rounded-lg">
-                  <div className="font-medium mb-2">Safety Stock Adjustment</div>
+                  <div className="font-medium mb-2">Inventory Buffer Adjustment</div>
                   <div className="flex items-center gap-2">
                     <span className="text-muted-foreground">Base:</span>
                     <span>100 units</span>

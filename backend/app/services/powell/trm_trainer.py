@@ -207,9 +207,9 @@ class RewardCalculator:
         return base_reward + speed_bonus + cost_bonus
 
     @staticmethod
-    def safety_stock_reward(outcome: Dict[str, Any]) -> float:
+    def inventory_buffer_reward(outcome: Dict[str, Any]) -> float:
         """
-        Safety stock reward: balance stockout prevention vs excess cost
+        Inventory buffer reward: balance stockout prevention vs excess cost
 
         outcome keys:
         - actual_stockout_occurred: boolean
@@ -289,7 +289,7 @@ class RewardCalculator:
             'rebalancing': self.rebalancing_reward,
             'po_creation': self.po_creation_reward,
             'order_tracking': self.order_tracking_reward,
-            'safety_stock': self.safety_stock_reward,
+            'inventory_buffer': self.inventory_buffer_reward,
         }
 
         calculator = calculators.get(trm_type, lambda x: 0.0)

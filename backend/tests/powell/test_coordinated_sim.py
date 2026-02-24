@@ -39,7 +39,7 @@ from app.services.powell.hive_curriculum import (
     MaintenanceSchedulingCurriculum,
     SubcontractingCurriculum,
     ForecastAdjustmentCurriculum,
-    SafetyStockCurriculum,
+    InventoryBufferCurriculum,
     HIVE_CURRICULUM_REGISTRY,
 )
 from app.services.powell.trm_curriculum import CURRICULUM_REGISTRY, CurriculumData, SCConfigData, register_hive_curricula
@@ -76,7 +76,7 @@ class TestCoordinatedSimRunner:
         all_trms = [
             "atp_executor", "rebalancing", "po_creation", "order_tracking",
             "mo_execution", "to_execution", "quality", "maintenance",
-            "subcontracting", "forecast_adj", "safety_stock",
+            "subcontracting", "forecast_adj", "inventory_buffer",
         ]
 
         def factory(period):
@@ -125,7 +125,7 @@ class TestCoordinatedSimRunner:
             assert decision.trm_name in [
                 "atp_executor", "rebalancing", "po_creation", "order_tracking",
                 "mo_execution", "to_execution", "quality", "maintenance",
-                "subcontracting", "forecast_adj", "safety_stock",
+                "subcontracting", "forecast_adj", "inventory_buffer",
             ]
             assert decision.phase in [p.name for p in DecisionCyclePhase]
 
@@ -298,7 +298,7 @@ class TestHiveCurricula:
         ("maintenance", MaintenanceSchedulingCurriculum),
         ("subcontracting", SubcontractingCurriculum),
         ("forecast_adj", ForecastAdjustmentCurriculum),
-        ("safety_stock", SafetyStockCurriculum),
+        ("inventory_buffer", InventoryBufferCurriculum),
     ])
     def curriculum(self, request):
         name, cls = request.param
@@ -354,7 +354,7 @@ class TestCurriculumRegistryIntegration:
         expected = {
             "atp_executor", "rebalancing", "po_creation", "order_tracking",
             "mo_execution", "to_execution", "quality", "maintenance",
-            "subcontracting", "forecast_adj", "safety_stock",
+            "subcontracting", "forecast_adj", "inventory_buffer",
         }
         assert expected.issubset(set(CURRICULUM_REGISTRY.keys()))
 

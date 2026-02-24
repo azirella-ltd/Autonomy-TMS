@@ -138,8 +138,8 @@ TRM_COST_MAPPING = {
         # Loss = forecast error increased (positive = bad)
         "loss": lambda r: max(0, (r.forecast_error_after or 0) - (r.forecast_error_before or 0)),
     },
-    "safety_stock": {
-        "model": "PowellSSDecision",
+    "inventory_buffer": {
+        "model": "PowellBufferDecision",
         "outcome_filter": "was_applied",
         "estimated": lambda r: float(r.adjusted_ss or 0),
         "actual": lambda r: (

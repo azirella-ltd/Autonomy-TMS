@@ -65,9 +65,9 @@ from app.services.powell.engines.order_tracking_engine import (
     OrderTrackingEngine, OrderTrackingConfig,
     OrderSnapshot,
 )
-from app.services.powell.engines.safety_stock_calculator import (
-    SafetyStockCalculator, SafetyStockConfig,
-    DemandStats, SSPolicy, PolicyType,
+from app.services.powell.engines.buffer_calculator import (
+    BufferCalculator, BufferConfig,
+    DemandStats, BufferPolicy, PolicyType,
 )
 from app.models.sc_entities import (
     Forecast,
@@ -117,7 +117,7 @@ class GenerationStats:
     rebalancing_decisions_created: int = 0
     po_decisions_created: int = 0
     order_tracking_decisions_created: int = 0
-    safety_stock_decisions_created: int = 0
+    inventory_buffer_decisions_created: int = 0
     replay_buffer_entries_created: int = 0
 
 
@@ -185,7 +185,7 @@ class SyntheticTRMDataGenerator:
         self.aatp_engine = AATPEngine()
         self.rebalancing_engine = RebalancingEngine()
         self.order_tracking_engine = OrderTrackingEngine()
-        self.ss_calculator = SafetyStockCalculator()
+        self.ss_calculator = BufferCalculator()
 
     async def load_config(self):
         """Load supply chain configuration from database."""
@@ -431,7 +431,7 @@ class SyntheticTRMDataGenerator:
                 elif trm_type == TRMType.ORDER_TRACKING:
                     await self._generate_order_tracking_decision()
                 elif trm_type == TRMType.SAFETY_STOCK:
-                    await self._generate_safety_stock_decision()
+                    await self._generate_inventory_buffer_decision()
 
     async def _generate_atp_decision(self):
         """Generate an ATP decision using AATP engine for expert labels."""
@@ -1121,8 +1121,8 @@ class SyntheticTRMDataGenerator:
         self.db.add(replay_entry)
         self.stats.replay_buffer_entries_created += 1
 
-    async def _generate_safety_stock_decision(self):
-        """Generate a safety stock adjustment decision using SS calculator for expert labels."""
+    async def _generate_inventory_buffer_decision(self):
+        """Generate an inventory buffer adjustment decision using buffer calculator for expert labels."""
         inventory_sites = [s for s in self.sites if s.master_type in ["INVENTORY", "MANUFACTURER"]]
         if not inventory_sites:
             return
@@ -1162,7 +1162,7 @@ class SyntheticTRMDataGenerator:
         baseline_ss = ss_result.safety_stock
         current_dos = inventory / (avg_daily_demand + 1e-6)
 
-        # Expert heuristic adjustment (same logic as SafetyStockTRM._heuristic_evaluate)
+        # Expert heuristic adjustment (same logic as InventoryBufferTRM._heuristic_evaluate)
         multiplier = 1.0
         reason = "no_adjustment"
 
@@ -1227,7 +1227,7 @@ class SyntheticTRMDataGenerator:
         )
         self.db.add(decision)
         await self.db.flush()
-        self.stats.safety_stock_decisions_created += 1
+        self.stats.inventory_buffer_decisions_created += 1
 
         # Outcome (simulated over review period)
         stockout_occurred = random.random() < (0.05 if multiplier >= 1.0 else 0.15)

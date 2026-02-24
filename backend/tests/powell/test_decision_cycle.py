@@ -7,7 +7,7 @@ Covers:
 - Conflict detection in REFLECT phase
 - SiteAgent.execute_decision_cycle() integration
 - 7 remaining TRMs: MO, TO, Quality, Maintenance, Subcontracting,
-  ForecastAdj, SafetyStock — signal emit/read verification
+  ForecastAdj, InventoryBuffer — signal emit/read verification
 """
 
 import pytest
@@ -63,7 +63,7 @@ class TestDecisionCyclePhase:
         """Verify specific TRM → phase assignments per architecture doc."""
         assert get_phase_for_trm("atp_executor") == DecisionCyclePhase.SENSE
         assert get_phase_for_trm("order_tracking") == DecisionCyclePhase.SENSE
-        assert get_phase_for_trm("safety_stock") == DecisionCyclePhase.ASSESS
+        assert get_phase_for_trm("inventory_buffer") == DecisionCyclePhase.ASSESS
         assert get_phase_for_trm("forecast_adj") == DecisionCyclePhase.ASSESS
         assert get_phase_for_trm("quality") == DecisionCyclePhase.ASSESS
         assert get_phase_for_trm("po_creation") == DecisionCyclePhase.ACQUIRE
@@ -183,7 +183,7 @@ class TestConflictDetection:
         values = [0.0] * 11
         directions = ["neutral"] * 11
         values[0] = 0.5  # atp_executor: shortage
-        values[5] = 0.5  # safety_stock: surplus
+        values[5] = 0.5  # inventory_buffer: surplus
         directions[0] = "shortage"
         directions[5] = "surplus"
         snapshot = {"values": values, "directions": directions}
@@ -191,7 +191,7 @@ class TestConflictDetection:
         assert len(conflicts) == 1
         c = conflicts[0]
         assert c["type"] == "shortage_vs_surplus"
-        assert {c["trm_a"], c["trm_b"]} == {"atp_executor", "safety_stock"}
+        assert {c["trm_a"], c["trm_b"]} == {"atp_executor", "inventory_buffer"}
 
     def test_conflict_risk_vs_relief(self):
         values = [0.0] * 11
@@ -561,20 +561,20 @@ class TestForecastAdjSignals:
 
 
 # ============================================================================
-# Safety Stock TRM signal tests
+# Inventory Buffer TRM signal tests
 # ============================================================================
 
 
-class TestSafetyStockSignals:
+class TestInventoryBufferSignals:
 
     def _make_trm(self):
-        from app.services.powell.safety_stock_trm import SafetyStockTRM
-        trm = SafetyStockTRM()
+        from app.services.powell.inventory_buffer_trm import InventoryBufferTRM
+        trm = InventoryBufferTRM()
         trm.signal_bus = HiveSignalBus()
         return trm
 
     def _make_state(self, **overrides):
-        from app.services.powell.safety_stock_trm import SSState
+        from app.services.powell.inventory_buffer_trm import SSState
         defaults = dict(
             product_id="P1", location_id="L1",
             baseline_ss=100.0, baseline_reorder_point=150.0,
@@ -590,23 +590,23 @@ class TestSafetyStockSignals:
         return SSState(**defaults)
 
     def test_no_bus_works(self):
-        from app.services.powell.safety_stock_trm import SafetyStockTRM
-        trm = SafetyStockTRM()
+        from app.services.powell.inventory_buffer_trm import InventoryBufferTRM
+        trm = InventoryBufferTRM()
         rec = trm.evaluate(self._make_state())
         assert rec.product_id == "P1"
 
-    def test_increase_emits_ss_increased(self):
+    def test_increase_emits_buffer_increased(self):
         trm = self._make_trm()
         # High stockout count → SS should increase
         state = self._make_state(recent_stockout_count=3, demand_cv=0.6)
         rec = trm.evaluate(state)
         if rec.multiplier > 1.05:
             signals = trm.signal_bus.active_signals()
-            increased = [s for s in signals if s.signal_type == HiveSignalType.SS_INCREASED]
+            increased = [s for s in signals if s.signal_type == HiveSignalType.BUFFER_INCREASED]
             assert len(increased) >= 1
             assert increased[0].direction == "shortage"
 
-    def test_decrease_emits_ss_decreased(self):
+    def test_decrease_emits_buffer_decreased(self):
         trm = self._make_trm()
         # Excess inventory + seasonal trough → SS should decrease
         state = self._make_state(
@@ -616,7 +616,7 @@ class TestSafetyStockSignals:
         rec = trm.evaluate(state)
         if rec.multiplier < 0.95:
             signals = trm.signal_bus.active_signals()
-            decreased = [s for s in signals if s.signal_type == HiveSignalType.SS_DECREASED]
+            decreased = [s for s in signals if s.signal_type == HiveSignalType.BUFFER_DECREASED]
             assert len(decreased) >= 1
             assert decreased[0].direction == "surplus"
 
@@ -742,11 +742,11 @@ class TestExecuteDecisionCycle:
             agent.signal_bus.urgency.update("atp_executor", 0.7, "shortage")
 
         def assess_executor():
-            agent.signal_bus.urgency.update("safety_stock", 0.6, "surplus")
+            agent.signal_bus.urgency.update("inventory_buffer", 0.6, "surplus")
 
         result = agent.execute_decision_cycle(trm_executors={
             "atp_executor": sense_executor,
-            "safety_stock": assess_executor,
+            "inventory_buffer": assess_executor,
         })
         assert len(result.conflicts_detected) == 1
         conflict = result.conflicts_detected[0]
@@ -834,7 +834,7 @@ class TestCrossTRMCascade:
         executors = {
             "atp_executor": emit_signal(HiveSignalType.ATP_SHORTAGE, "atp_executor", 0.7, "shortage"),
             "order_tracking": emit_signal(HiveSignalType.ORDER_EXCEPTION, "order_tracking", 0.5, "risk"),
-            "safety_stock": emit_signal(HiveSignalType.SS_INCREASED, "safety_stock", 0.4, "shortage"),
+            "inventory_buffer": emit_signal(HiveSignalType.BUFFER_INCREASED, "inventory_buffer", 0.4, "shortage"),
             "forecast_adj": emit_signal(HiveSignalType.FORECAST_ADJUSTED, "forecast_adj", 0.3, "surplus"),
             "quality": emit_signal(HiveSignalType.QUALITY_REJECT, "quality", 0.6, "risk"),
             "po_creation": emit_signal(HiveSignalType.PO_EXPEDITE, "po_creation", 0.5, "shortage"),

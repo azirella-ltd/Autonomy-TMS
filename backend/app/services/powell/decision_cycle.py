@@ -6,7 +6,7 @@ signals are available to later phases within the same cycle.
 
 Phase ordering (from TRM_HIVE_ARCHITECTURE.md Section 2.2):
   1. SENSE    — Demand-side scouts observe (ATP, OrderTracking)
-  2. ASSESS   — Health/risk assessment (SafetyStock, ForecastAdj, Quality)
+  2. ASSESS   — Health/risk assessment (InventoryBuffer, ForecastAdj, Quality)
   3. ACQUIRE  — Supply-side foragers act (PO, Subcontracting)
   4. PROTECT  — Guards secure constraints (Maintenance)
   5. BUILD    — Builders execute (MO, TO)
@@ -58,7 +58,7 @@ TRM_PHASE_MAP: Dict[str, DecisionCyclePhase] = {
     "order_tracking": DecisionCyclePhase.SENSE,
 
     # ASSESS — health and risk
-    "safety_stock": DecisionCyclePhase.ASSESS,
+    "inventory_buffer": DecisionCyclePhase.ASSESS,
     "forecast_adj": DecisionCyclePhase.ASSESS,
     "quality": DecisionCyclePhase.ASSESS,
 

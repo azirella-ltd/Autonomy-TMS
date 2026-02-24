@@ -9,7 +9,7 @@ Covers the 8 TRM services with zero prior test coverage:
 - MaintenanceSchedulingTRM
 - SubcontractingTRM
 - ForecastAdjustmentTRM
-- SafetyStockTRM
+- InventoryBufferTRM
 
 All tests are pure unit tests (no database required).
 """
@@ -79,9 +79,9 @@ from app.services.powell.forecast_adjustment_trm import (
     ForecastAdjustmentTRMConfig,
 )
 
-# ---------- Safety Stock TRM ----------
-from app.services.powell.safety_stock_trm import (
-    SafetyStockTRM,
+# ---------- Inventory Buffer TRM ----------
+from app.services.powell.inventory_buffer_trm import (
+    InventoryBufferTRM,
     SSState,
     SSAdjustment,
     SSAdjustmentReason,
@@ -1258,15 +1258,15 @@ class TestForecastAdjustmentTRM:
 
 
 # ============================================================================
-# Safety Stock TRM Tests
+# Inventory Buffer TRM Tests
 # ============================================================================
 
-class TestSafetyStockTRM:
-    """Tests for SafetyStockTRM service."""
+class TestInventoryBufferTRM:
+    """Tests for InventoryBufferTRM service."""
 
     @pytest.fixture
     def trm(self):
-        return SafetyStockTRM(use_heuristic_fallback=True)
+        return InventoryBufferTRM(use_heuristic_fallback=True)
 
     @pytest.fixture
     def stable_state(self):
@@ -1377,7 +1377,7 @@ class TestSafetyStockTRM:
 
     def test_trm_initialization_defaults(self):
         """Test TRM initializes with defaults."""
-        trm = SafetyStockTRM()
+        trm = InventoryBufferTRM()
         assert trm.min_multiplier == 0.5
         assert trm.max_multiplier == 2.0
         assert trm.use_heuristic_fallback is True
@@ -1385,7 +1385,7 @@ class TestSafetyStockTRM:
 
     def test_trm_initialization_custom_bounds(self):
         """Test TRM with custom multiplier bounds."""
-        trm = SafetyStockTRM(min_multiplier=0.8, max_multiplier=1.5)
+        trm = InventoryBufferTRM(min_multiplier=0.8, max_multiplier=1.5)
         assert trm.min_multiplier == 0.8
         assert trm.max_multiplier == 1.5
 
@@ -1523,7 +1523,7 @@ class TestSafetyStockTRM:
 
     def test_effective_bounds_with_tgnn_multiplier(self):
         """Test effective_bounds property with tGNN multiplier."""
-        trm = SafetyStockTRM(min_multiplier=0.5, max_multiplier=2.0)
+        trm = InventoryBufferTRM(min_multiplier=0.5, max_multiplier=2.0)
         trm.apply_network_context({"safety_stock_multiplier": 1.3})
         lo, hi = trm.effective_bounds
         assert lo == pytest.approx(0.65)  # 0.5 * 1.3
@@ -1531,7 +1531,7 @@ class TestSafetyStockTRM:
 
     def test_apply_network_context_clamped(self):
         """Test that tGNN multiplier is clamped to [0.1, 5.0]."""
-        trm = SafetyStockTRM()
+        trm = InventoryBufferTRM()
         trm.apply_network_context({"safety_stock_multiplier": 10.0})
         assert trm._tgnn_ss_multiplier == 5.0
 
@@ -1540,7 +1540,7 @@ class TestSafetyStockTRM:
 
     def test_no_fallback_returns_no_adjustment(self, stable_state):
         """Test that disabling heuristic returns no adjustment when no model."""
-        trm = SafetyStockTRM(use_heuristic_fallback=False)
+        trm = InventoryBufferTRM(use_heuristic_fallback=False)
         result = trm.evaluate(stable_state)
         assert result.multiplier == 1.0
         assert result.reason == SSAdjustmentReason.NO_ADJUSTMENT

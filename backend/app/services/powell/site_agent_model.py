@@ -532,14 +532,14 @@ class SiteAgentModel(nn.Module):
     # Mapping from legacy task names to recursive head registry keys + node indices
     _TASK_TO_RECURSIVE_HEAD = {
         "atp": "atp_executor",
-        "inventory": "safety_stock",
+        "inventory": "inventory_buffer",
         "po_timing": "po_creation",
     }
 
     # Full TRM type name → node index (matches het_gat_layer.TRM_NODE_INDEX)
     _TRM_NODE_INDEX = {
         "atp_executor": 0, "order_tracking": 1, "po_creation": 2,
-        "rebalancing": 3, "subcontracting": 4, "safety_stock": 5,
+        "rebalancing": 3, "subcontracting": 4, "inventory_buffer": 5,
         "forecast_adj": 6, "quality": 7, "maintenance": 8,
         "mo_execution": 9, "to_execution": 10,
         # Aliases used in RECURSIVE_HEAD_REGISTRY

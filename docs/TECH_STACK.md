@@ -242,7 +242,7 @@ Each TRM head has a corresponding service in `backend/app/services/powell/`:
 | `maintenance_scheduling_trm.py` | Schedule/defer/expedite/outsource |
 | `subcontracting_trm.py` | Internal/external/split routing |
 | `forecast_adjustment_trm.py` | Signal-driven forecast direction and magnitude |
-| `safety_stock_trm.py` | Safety stock level adjustment and reoptimization |
+| `inventory_buffer_trm.py` | Inventory buffer level adjustment and reoptimization |
 
 **AATP Consumption Logic** (critical ordering):
 ```
@@ -279,7 +279,7 @@ A ring buffer of typed signals emitted by TRM agents and consumed by peers withi
 |-------|---------|------|
 | **Scout** (5) | DEMAND_SURGE, DEMAND_DROP, ATP_SHORTAGE, ATP_EXCESS, ORDER_EXCEPTION | Environmental sensing |
 | **Forager** (5) | PO_EXPEDITE, PO_DEFERRED, REBALANCE_INBOUND, REBALANCE_OUTBOUND, SUBCONTRACT_ROUTED | Resource acquisition |
-| **Nurse** (3) | SS_INCREASED, SS_DECREASED, FORECAST_ADJUSTED | Internal state maintenance |
+| **Nurse** (3) | BUFFER_INCREASED, BUFFER_DECREASED, FORECAST_ADJUSTED | Internal state maintenance |
 | **Guard** (4) | QUALITY_REJECT, QUALITY_HOLD, MAINTENANCE_DEFERRED, MAINTENANCE_URGENT | Protection and quality |
 | **Builder** (4) | MO_RELEASED, MO_DELAYED, TO_RELEASED, TO_DELAYED | Production and transport |
 | **tGNN** (4) | NETWORK_SHORTAGE, NETWORK_SURPLUS, PROPAGATION_ALERT, ALLOCATION_REFRESH | Inter-hive network signals |

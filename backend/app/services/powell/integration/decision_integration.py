@@ -153,10 +153,10 @@ class SiteAgentDecisionTracker:
             decision_type="inventory_adjustment",
             timestamp=datetime.utcnow(),
             input_state=current_state,
-            deterministic_result={"safety_stock": deterministic_ss},
+            deterministic_result={"inventory_buffer": deterministic_ss},
             trm_adjustment={"multiplier": trm_multiplier},
             confidence=confidence,
-            final_result={"safety_stock": final_ss}
+            final_result={"inventory_buffer": final_ss}
         )
 
         self._pending_decisions[decision_id] = record
@@ -449,7 +449,7 @@ class SiteAgentDecisionTracker:
         # Reward = service level achieved - excess holding cost
         service_level = outcome.get("service_level", 0.95)
         avg_inventory = outcome.get("avg_inventory", 0)
-        target_ss = record.final_result.get("safety_stock", 100)
+        target_ss = record.final_result.get("inventory_buffer", 100)
 
         holding_penalty = max(0, (avg_inventory - target_ss) / max(target_ss, 1)) * 0.1
         return service_level - holding_penalty

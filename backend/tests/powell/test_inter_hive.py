@@ -6,7 +6,7 @@ Validates that:
 2. InterHiveSignal dataclass creates and serializes correctly
 3. tGNNSiteDirective constructs from GNN output and serializes
 4. HiveFeedbackFeatures computes from urgency/traces/signal_bus
-5. SafetyStockTRM respects tgnn_ss_multiplier bound modulation
+5. InventoryBufferTRM respects tgnn_ss_multiplier bound modulation
 6. SiteAgent.apply_directive() injects typed signals into local bus
 """
 
@@ -27,8 +27,8 @@ from app.services.powell.hive_signal import (
     HiveSignal,
     HiveSignalType,
 )
-from app.services.powell.safety_stock_trm import (
-    SafetyStockTRM,
+from app.services.powell.inventory_buffer_trm import (
+    InventoryBufferTRM,
     SSState,
     SSAdjustment,
     SSAdjustmentReason,
@@ -283,10 +283,10 @@ class TestComputeFeedbackFeatures:
 
 
 # ---------------------------------------------------------------------------
-# 5. SafetyStockTRM tgnn_ss_multiplier
+# 5. InventoryBufferTRM tgnn_ss_multiplier
 # ---------------------------------------------------------------------------
 
-class TestSafetyStockTRMBoundModulation:
+class TestInventoryBufferTRMBoundModulation:
     """Test that tGNN SS multiplier modulates effective bounds."""
 
     def _make_state(self, **overrides) -> SSState:
@@ -305,13 +305,13 @@ class TestSafetyStockTRMBoundModulation:
         return SSState(**defaults)
 
     def test_default_effective_bounds(self):
-        trm = SafetyStockTRM()
+        trm = InventoryBufferTRM()
         lo, hi = trm.effective_bounds
         assert lo == pytest.approx(0.5)
         assert hi == pytest.approx(2.0)
 
     def test_apply_network_context_updates_multiplier(self):
-        trm = SafetyStockTRM()
+        trm = InventoryBufferTRM()
         trm.apply_network_context({"safety_stock_multiplier": 1.5})
         assert trm._tgnn_ss_multiplier == pytest.approx(1.5)
         lo, hi = trm.effective_bounds
@@ -319,17 +319,17 @@ class TestSafetyStockTRMBoundModulation:
         assert hi == pytest.approx(3.0)    # 2.0 * 1.5
 
     def test_apply_network_context_clamps_extreme(self):
-        trm = SafetyStockTRM()
+        trm = InventoryBufferTRM()
         trm.apply_network_context({"safety_stock_multiplier": 100.0})
         assert trm._tgnn_ss_multiplier == pytest.approx(5.0)  # clamped
 
     def test_apply_network_context_ignores_missing(self):
-        trm = SafetyStockTRM()
+        trm = InventoryBufferTRM()
         trm.apply_network_context({"criticality_score": 0.8})
         assert trm._tgnn_ss_multiplier == pytest.approx(1.0)  # unchanged
 
     def test_heuristic_respects_tgnn_bounds(self):
-        trm = SafetyStockTRM(min_multiplier=0.5, max_multiplier=2.0)
+        trm = InventoryBufferTRM(min_multiplier=0.5, max_multiplier=2.0)
         trm.apply_network_context({"safety_stock_multiplier": 1.5})
 
         # Trigger seasonal trough heuristic: multiplier=0.8
@@ -339,7 +339,7 @@ class TestSafetyStockTRMBoundModulation:
         assert result.multiplier >= 0.75
 
     def test_heuristic_clamps_to_upper_bound(self):
-        trm = SafetyStockTRM(min_multiplier=0.5, max_multiplier=2.0)
+        trm = InventoryBufferTRM(min_multiplier=0.5, max_multiplier=2.0)
         trm.apply_network_context({"safety_stock_multiplier": 0.5})
         # Effective max = 1.0
 
@@ -350,7 +350,7 @@ class TestSafetyStockTRMBoundModulation:
         assert result.multiplier == pytest.approx(1.0)
 
     def test_evaluate_returns_adjustment(self):
-        trm = SafetyStockTRM()
+        trm = InventoryBufferTRM()
         state = self._make_state()
         result = trm.evaluate(state)
         assert isinstance(result, SSAdjustment)
@@ -452,7 +452,7 @@ class TestSiteAgentApplyDirective:
                 self.received_params = params
 
         mock = MockTRM()
-        agent._registered_trms["safety_stock"] = mock
+        agent._registered_trms["inventory_buffer"] = mock
 
         directive = tGNNSiteDirective(
             site_key="TEST_SITE",

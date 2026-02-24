@@ -392,7 +392,7 @@ export const NAVIGATION_CONFIG = [
         path: '/planning/execution',
         icon: ExecutionIcon,
         requiredCapability: 'view_execution_dashboard',
-        description: 'Layer 5: MRP, Safety Stock, AATP, TRM agents, feed-back signals',
+        description: 'Layer 5: MRP, Inventory Buffer, AATP, TRM agents, feed-back signals',
       },
       // --- TRM SPECIALIST WORKLISTS ---
       {

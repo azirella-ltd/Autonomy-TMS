@@ -710,9 +710,14 @@ class PowellForecastAdjustmentDecision(HiveSignalMixin, Base):
         }
 
 
-class PowellSSDecision(HiveSignalMixin, Base):
-    """Safety stock adjustment decision history for TRM training and audit trail."""
-    __tablename__ = "powell_safety_stock_decisions"
+class PowellBufferDecision(HiveSignalMixin, Base):
+    """Inventory buffer adjustment decision history for TRM training and audit trail.
+
+    NOTE: Renamed from PowellSSDecision (Feb 2026). Table renamed from
+    powell_safety_stock_decisions to powell_buffer_decisions to reflect
+    that buffers are uncertainty absorbers, not hard MRP demand targets.
+    """
+    __tablename__ = "powell_buffer_decisions"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"), nullable=False)
@@ -745,9 +750,9 @@ class PowellSSDecision(HiveSignalMixin, Base):
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
     __table_args__ = (
-        Index("idx_ss_config", "config_id"),
-        Index("idx_ss_product_loc", "product_id", "location_id"),
-        Index("idx_ss_created", "created_at"),
+        Index("idx_buffer_config", "config_id"),
+        Index("idx_buffer_product_loc", "product_id", "location_id"),
+        Index("idx_buffer_created", "created_at"),
     )
 
     def to_dict(self):
@@ -773,3 +778,7 @@ class PowellSSDecision(HiveSignalMixin, Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             **self._signal_dict(),
         }
+
+
+# Backward-compatible alias
+PowellSSDecision = PowellBufferDecision

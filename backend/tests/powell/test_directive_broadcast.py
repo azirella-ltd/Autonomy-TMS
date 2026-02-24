@@ -41,7 +41,7 @@ class FakeTRM:
         if self.signal_bus:
             self.signal_bus.emit(HiveSignal(
                 source_trm=self.name,
-                signal_type=HiveSignalType.SS_INCREASED,
+                signal_type=HiveSignalType.BUFFER_INCREASED,
                 urgency=0.5,
                 direction="relief",
                 magnitude=50.0,
@@ -67,7 +67,7 @@ def broadcast_service():
     """Service with 3 registered sites."""
     svc = DirectiveBroadcastService()
     for key in ["plant_a", "dc_b", "dc_c"]:
-        svc.register_site(key, make_site(key, ["atp_executor", "safety_stock"]))
+        svc.register_site(key, make_site(key, ["atp_executor", "inventory_buffer"]))
     return svc
 
 
@@ -227,7 +227,7 @@ class TestBroadcast:
         broadcast_service.broadcast(directives)
         # Check that TRMs in plant_a got network context
         agent = broadcast_service._site_agents["plant_a"]
-        ss_trm = agent.get_registered_trm("safety_stock")
+        ss_trm = agent.get_registered_trm("inventory_buffer")
         assert ss_trm is not None
         assert ss_trm.last_network_context is not None
         assert ss_trm.last_network_context["safety_stock_multiplier"] == 1.5

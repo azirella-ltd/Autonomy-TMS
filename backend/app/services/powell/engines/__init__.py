@@ -23,11 +23,11 @@ from .aatp_engine import (
     ATPResult,
     Priority,
 )
-from .safety_stock_calculator import (
-    SafetyStockCalculator,
-    SafetyStockConfig,
-    SSPolicy,
-    SSResult,
+from .buffer_calculator import (
+    BufferCalculator,
+    BufferConfig,
+    BufferPolicy,
+    BufferResult,
     DemandStats,
     PolicyType,
 )
@@ -101,13 +101,17 @@ __all__ = [
     'Order',
     'ATPResult',
     'Priority',
-    # Safety Stock
+    # Inventory Buffer
+    'BufferCalculator',
+    'BufferConfig',
+    'BufferPolicy',
+    'BufferResult',
+    'DemandStats',
+    'PolicyType',
     'SafetyStockCalculator',
     'SafetyStockConfig',
     'SSPolicy',
     'SSResult',
-    'DemandStats',
-    'PolicyType',
     # Rebalancing
     'RebalancingEngine',
     'RebalancingConfig',
@@ -156,3 +160,9 @@ __all__ = [
     'ForecastAdjustmentResult',
     'AdjustmentDirection',
 ]
+
+# Backward-compatible aliases
+SafetyStockCalculator = BufferCalculator
+SafetyStockConfig = BufferConfig
+SSPolicy = BufferPolicy
+SSResult = BufferResult

@@ -1065,7 +1065,7 @@ class TestPORecommendationSerialization:
             recommended_qty=500, min_qty=50, max_qty=1000,
             create_now=True,
             urgency=POUrgency.HIGH,
-            trigger_reason=POTriggerReason.SAFETY_STOCK,
+            trigger_reason=POTriggerReason.INVENTORY_BUFFER,
             expected_receipt_date="2026-03-01",
             expected_cost=5050.0,
             expected_inventory_position_after=535,
@@ -1075,6 +1075,6 @@ class TestPORecommendationSerialization:
         d = rec.to_dict()
         assert d["product_id"] == "SKU-A"
         assert d["urgency"] == "high"
-        assert d["trigger_reason"] == "safety_stock"
+        assert d["trigger_reason"] == "inventory_buffer"
         assert d["create_now"] is True
         assert d["expected_cost"] == 5050.0

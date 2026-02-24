@@ -4,12 +4,12 @@ This module contains the core Scenario model (formerly Alternative/Game).
 
 Terminology (Feb 2026):
 - Game -> Scenario (clean break, no backward compat)
-- Gamification -> Simulation
-- Player -> Participant (in DB/code)
+- Simulation -> Simulation
+- Player -> ScenarioUser (in DB/code)
 - Player -> User (in UI)
 
 The 'scenarios' table stores simulation scenarios. Each scenario has
-participants (human or AI) who take on roles in the supply chain.
+scenario_users (human or AI) who take on roles in the supply chain.
 """
 from enum import Enum
 from datetime import datetime, date
@@ -23,7 +23,7 @@ from app.core.time_buckets import TimeBucket, DEFAULT_START_DATE
 # Import for type checking only to avoid circular imports
 if TYPE_CHECKING:
     from .group import Group
-    from .participant import Participant
+    from .participant import ScenarioUser
     from .user import User
     from .agent_config import AgentConfig
     from .supply_chain import ScenarioRound as SCScenarioRound
@@ -43,7 +43,7 @@ class ScenarioStatus(str, Enum):
 class Scenario(Base):
     """A supply chain simulation/scenario.
 
-    Scenarios represent individual simulation runs where participants
+    Scenarios represent individual simulation runs where scenario users
     (human or AI) take on supply chain roles and make decisions.
     """
     __tablename__ = "scenarios"
@@ -76,16 +76,14 @@ class Scenario(Base):
     # SC Planning Integration
     use_sc_planning: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
-    # DAG Sequential Execution (Phase 1) - Dual-decision gameplay with TO/PO tracking
-    # True = downstream-first execution with fulfillment + replenishment phases
-    # False = legacy single-decision mode (all nodes act simultaneously)
+    # DAG Sequential Execution
     use_dag_sequential: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
 
     # Role assignments: {role: {'is_ai': bool, 'agent_config_id': Optional[int], 'user_id': Optional[int]}}
     role_assignments: Mapped[dict] = mapped_column(JSON, default=dict)
 
     # Relationships
-    participants: Mapped[List["Participant"]] = relationship("Participant", back_populates="scenario", lazy="selectin")
+    scenario_users: Mapped[List["ScenarioUser"]] = relationship("ScenarioUser", back_populates="scenario", lazy="selectin")
     rounds: Mapped[List["Round"]] = relationship("Round", back_populates="scenario", lazy="selectin")
     supply_chain_rounds: Mapped[List["SCScenarioRound"]] = relationship(
         "ScenarioRound", back_populates="scenario", lazy="selectin"
@@ -99,12 +97,12 @@ class Scenario(Base):
         back_populates="scenarios",
     )
 
-    # A2A Collaboration (Phase 7 Sprint 2)
+    # A2A Collaboration
     chat_messages = relationship("ChatMessage", back_populates="scenario", lazy="selectin")
     agent_suggestions = relationship("AgentSuggestion", back_populates="scenario", lazy="selectin")
     what_if_analyses = relationship("WhatIfAnalysis", back_populates="scenario", lazy="selectin")
 
-    # Function assignments (Feb 2026 - expanded role architecture)
+    # Function assignments
     function_assignments: Mapped[List["FunctionAssignment"]] = relationship(
         "FunctionAssignment", back_populates="scenario", lazy="selectin"
     )
@@ -136,42 +134,42 @@ class Scenario(Base):
 
 
 class Round(Base):
-    """A round within a scenario/simulation.
-
-    Note: This is the legacy 'rounds' table. The supply chain module uses
-    ScenarioRound for more detailed round tracking.
-    """
+    """A round within a scenario/simulation."""
     __tablename__ = "rounds"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     scenario_id: Mapped[int] = mapped_column(Integer, ForeignKey("scenarios.id", ondelete="CASCADE"))
     round_number: Mapped[int] = mapped_column(Integer)
-    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending, in_progress, completed
+    status: Mapped[str] = mapped_column(String(20), default="pending")
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     config: Mapped[dict] = mapped_column(JSON, default=dict)
 
     # Relationships
     scenario: Mapped["Scenario"] = relationship("Scenario", back_populates="rounds", lazy="selectin")
-    participant_actions: Mapped[List["ParticipantAction"]] = relationship("ParticipantAction", back_populates="round", lazy="selectin")
+    scenario_user_actions: Mapped[List["ScenarioUserAction"]] = relationship("ScenarioUserAction", back_populates="round", lazy="selectin")
 
 
-class ParticipantAction(Base):
-    """An action taken by a participant during a round.
+class ScenarioUserAction(Base):
+    """An action taken by a scenario user during a round.
 
-    Records decisions made by participants (human or AI) during simulation.
+    Records decisions made by scenario users (human or AI) during simulation.
     """
-    __tablename__ = "participant_actions"
+    __tablename__ = "scenario_user_actions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     scenario_id: Mapped[int] = mapped_column(Integer, ForeignKey("scenarios.id", ondelete="CASCADE"))
     round_id: Mapped[int] = mapped_column(Integer, ForeignKey("rounds.id", ondelete="CASCADE"))
-    participant_id: Mapped[int] = mapped_column(Integer, ForeignKey("participants.id", ondelete="CASCADE"))
+    scenario_user_id: Mapped[int] = mapped_column(Integer, ForeignKey("scenario_users.id", ondelete="CASCADE"))
     action_type: Mapped[str] = mapped_column(String(50))
     quantity: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    round: Mapped["Round"] = relationship("Round", back_populates="participant_actions", lazy="selectin")
-    participant: Mapped["Participant"] = relationship("Participant", back_populates="actions", lazy="selectin")
+    round: Mapped["Round"] = relationship("Round", back_populates="scenario_user_actions", lazy="selectin")
+    scenario_user: Mapped["ScenarioUser"] = relationship("ScenarioUser", back_populates="actions", lazy="selectin")
     scenario: Mapped["Scenario"] = relationship("Scenario", lazy="selectin")
+
+
+# Backward-compatibility aliases (temporary - remove after full migration)
+ParticipantAction = ScenarioUserAction

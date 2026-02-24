@@ -463,13 +463,28 @@ except ImportError:
     # Structured logging module not available, skip middleware
     pass
 
-# Tenant isolation middleware for multi-tenancy - TEMPORARILY DISABLED
-# try:
-#     from app.middleware.tenant_middleware import TenantMiddleware
-#     app.add_middleware(TenantMiddleware, default_subdomain="default")
-# except ImportError:
-#     # Tenant middleware not available, skip middleware
-#     pass
+# Security headers middleware (X-Content-Type-Options, X-Frame-Options, CSP, etc.)
+try:
+    from app.middleware.security_headers import SecurityHeadersMiddleware
+    app.add_middleware(SecurityHeadersMiddleware)
+except ImportError:
+    pass
+
+# CSRF protection middleware (opt-in via ENABLE_CSRF_PROTECTION env var)
+if os.environ.get("ENABLE_CSRF_PROTECTION", "").lower() in ("true", "1"):
+    try:
+        from app.middleware.csrf import CSRFMiddleware
+        app.add_middleware(CSRFMiddleware)
+    except ImportError:
+        pass
+
+# Tenant isolation middleware for multi-tenancy (opt-in via ENABLE_TENANT_MIDDLEWARE env var)
+if os.environ.get("ENABLE_TENANT_MIDDLEWARE", "").lower() in ("true", "1"):
+    try:
+        from app.middleware.tenant_middleware import TenantMiddleware
+        app.add_middleware(TenantMiddleware, default_subdomain="default")
+    except ImportError:
+        pass
 
 # ------------------------------------------------------------------------------
 # Scheduler Startup/Shutdown Events (SAP Data Import Cadence)

@@ -48,9 +48,9 @@ class DemandCollaboration(Base):
 
     # AWS SC Core Fields - Identifiers
     company_id: Mapped[Optional[str]] = mapped_column(String(100), ForeignKey("company.id"))
-    site_id: Mapped[Optional[str]] = mapped_column(String(100), ForeignKey("site.id"))
+    site_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("site.id"))
     product_id: Mapped[Optional[str]] = mapped_column(String(100), ForeignKey("product.id"))
-    tpartner_id: Mapped[Optional[str]] = mapped_column(String(100), ForeignKey("trading_partner.id"))
+    tpartner_id: Mapped[Optional[str]] = mapped_column(String(100), ForeignKey("trading_partners.id"))
 
     # AWS SC Core Fields - Date and Forecast
     collaboration_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)

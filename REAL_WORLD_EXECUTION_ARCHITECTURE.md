@@ -559,7 +559,7 @@ The execution layer now supports **11 specialized AI agents**, each pairing a de
 |--------|--------|-----------|
 | ATP Consumption | AATPEngine | ATPExecutorTRM |
 | PO Creation | MRPEngine | POCreationTRM |
-| Safety Stock | SafetyStockCalculator | SafetyStockTRM |
+| Inventory Buffer | SafetyStockCalculator | InventoryBufferTRM |
 | Inventory Rebalancing | RebalancingEngine | InventoryRebalancingTRM |
 | Order Tracking | OrderTrackingEngine | OrderTrackingTRM |
 | MO Execution | MOExecutionEngine | MOExecutionTRM |

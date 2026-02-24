@@ -35,6 +35,14 @@ When implementing any entity:
 | items | product (table) | AWS SC data model |
 | lane | transportation_lane | AWS SC data model |
 | lanes | transportation_lane (table) | AWS SC data model |
+| SafetyStockTRM | InventoryBufferTRM | TRM/Powell agent layer |
+| safety_stock_trm.py | inventory_buffer_trm.py | TRM source file |
+| powell_safety_stock_decisions | powell_buffer_decisions | Powell decision table |
+| PowellSSDecision | PowellBufferDecision | SQLAlchemy model |
+| SS_INCREASED / SS_DECREASED | BUFFER_INCREASED / BUFFER_DECREASED | HiveSignalType |
+| "safety_stock" (TRM type) | "inventory_buffer" | TRM type identifier |
+
+> **Terminology Note — Inventory Buffer (Feb 2026)**: At the TRM/Powell execution layer, "SafetyStockTRM" has been renamed to **InventoryBufferTRM**. This addresses the DDMRP critique that "safety stock" as a concept causes MRP to treat it as a hard demand target, generating planned orders that compete with real customer demand for upstream capacity. At the TRM level, the inventory buffer is an **uncertainty absorber**, NOT a hard demand target for MRP. Buffer-replenishment planned orders get lower priority than demand-driven orders (soft-buffer netting). **Important**: The AWS SC data model fields (`safety_stock` column, `ss_quantity`, `inv_policy` policy types) remain unchanged for compliance — the rename applies only to TRM agent names, Powell decision tables, and hive signal types.
 
 **Clean Rename**: The old terminology has been fully replaced. There are no backward-compatible aliases.
 - Use `Scenario`, `ScenarioCreate`, `ScenarioState` (not Game*)
@@ -127,14 +135,14 @@ Narrow TRMs (VFA - Value Function Approximation)
      - **MaintenanceSchedulingTRM**: Preventive maintenance scheduling and deferral
      - **SubcontractingTRM**: Make-vs-buy and external manufacturing routing
      - **ForecastAdjustmentTRM**: Signal-driven forecast adjustments (email, voice, market intel)
-     - **SafetyStockTRM**: Safety stock parameter adjustment and reoptimization
+     - **InventoryBufferTRM**: Inventory buffer parameter adjustment and reoptimization *(renamed from SafetyStockTRM — see Terminology Note below)*
    - TRM does NOT do: long-term planning, network-wide optimization, policy parameters
    - **Training**: TRM = model architecture, RL = training method (not alternatives!)
      - Behavioral cloning for warm-start (supervised from experts)
      - RL/VFA fine-tuning (TD learning with actual outcomes)
      - Narrow scope makes RL tractable (small state, fast feedback, clear reward)
      - CGAR curriculum ([arxiv:2511.08653](https://arxiv.org/abs/2511.08653)): Progressive recursion depth during training reduces FLOPs ~40%
-   - Files: `backend/app/services/powell/atp_executor.py`, `inventory_rebalancing_trm.py`, `po_creation_trm.py`, `order_tracking_trm.py`, `mo_execution_trm.py`, `to_execution_trm.py`, `quality_disposition_trm.py`, `maintenance_scheduling_trm.py`, `subcontracting_trm.py`, `forecast_adjustment_trm.py`, `safety_stock_trm.py`, `trm_trainer.py`
+   - Files: `backend/app/services/powell/atp_executor.py`, `inventory_rebalancing_trm.py`, `po_creation_trm.py`, `order_tracking_trm.py`, `mo_execution_trm.py`, `to_execution_trm.py`, `quality_disposition_trm.py`, `maintenance_scheduling_trm.py`, `subcontracting_trm.py`, `forecast_adjustment_trm.py`, `inventory_buffer_trm.py`, `trm_trainer.py`
    - **CDC → Relearning Loop**: Autonomous feedback pipeline for continuous TRM improvement
      - `cdc_monitor.py`: Event-driven metric deviation detection (6 thresholds, rate limiting)
      - `outcome_collector.py`: Computes actual outcomes for decisions after feedback horizon delays (both SiteAgentDecision and all 11 powell_*_decisions tables)
@@ -532,7 +540,7 @@ The Powell SDAM framework constrains TRMs to narrow execution decisions:
 | `MaintenanceSchedulingTRM` | Per asset/work order | Schedule, defer, expedite, outsource |
 | `SubcontractingTRM` | Per make-vs-buy decision | Internal, external, split routing |
 | `ForecastAdjustmentTRM` | Per signal (email/voice/market) | Adjust forecast direction and magnitude |
-| `SafetyStockTRM` | Per product-location | Safety stock level adjustment and reoptimization |
+| `InventoryBufferTRM` | Per product-location | Inventory buffer adjustment and reoptimization |
 
 **Context-Aware Explainability**: All 11 TRM agents and both GNN models support context-aware explanations via `AgentContextExplainer`. Every decision includes authority boundaries, active guardrails, model attribution (gradient saliency for TRMs, attention weights for GNNs), conformal prediction intervals, and counterfactual analysis. Available at VERBOSE/NORMAL/SUCCINCT levels via Ask Why API endpoints.
 
@@ -545,7 +553,7 @@ The Powell SDAM framework constrains TRMs to narrow execution decisions:
 # Example: P=2 order → [2, 5, 4, 3] (skips 1)
 ```
 
-Database tables: `powell_allocations`, `powell_atp_decisions`, `powell_rebalance_decisions`, `powell_po_decisions`, `powell_order_exceptions`, `powell_mo_decisions`, `powell_to_decisions`, `powell_quality_decisions`, `powell_maintenance_decisions`, `powell_subcontracting_decisions`, `powell_forecast_adjustment_decisions`, `powell_safety_stock_decisions`
+Database tables: `powell_allocations`, `powell_atp_decisions`, `powell_rebalance_decisions`, `powell_po_decisions`, `powell_order_exceptions`, `powell_mo_decisions`, `powell_to_decisions`, `powell_quality_decisions`, `powell_maintenance_decisions`, `powell_subcontracting_decisions`, `powell_forecast_adjustment_decisions`, `powell_buffer_decisions`
 
 **CDC → Relearning Feedback Loop** (see [POWELL_APPROACH.md](POWELL_APPROACH.md) Section 5.9.9):
 
@@ -677,7 +685,7 @@ See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
 - `powell_maintenance_decisions`: Maintenance scheduling decisions
 - `powell_subcontracting_decisions`: Subcontracting routing decisions
 - `powell_forecast_adjustment_decisions`: Forecast adjustment decisions
-- `powell_safety_stock_decisions`: Safety stock adjustment decisions
+- `powell_buffer_decisions`: Inventory buffer adjustment decisions
 
 ---
 

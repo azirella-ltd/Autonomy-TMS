@@ -46,7 +46,7 @@ The name "Tiny Recursive Model" comes from the paper ["Less is More: Recursive R
 │    ├─────────────────────────┼──────────────────────────┤   │
 │    │ AATPEngine               │ ATPExecutorTRM           │   │
 │    │ MRPEngine                │ POCreationTRM            │   │
-│    │ SafetyStockCalculator    │ SafetyStockTRM           │   │
+│    │ SafetyStockCalculator    │ InventoryBufferTRM       │   │
 │    │ RebalancingEngine        │ InventoryRebalancingTRM  │   │
 │    │ OrderTrackingEngine      │ OrderTrackingTRM         │   │
 │    │ MOExecutionEngine        │ MOExecutionTRM           │   │
@@ -173,7 +173,9 @@ Implements the 4 AWS SC policy types:
 | Output | `SSResult(safety_stock, reorder_point, order_up_to_level, policy_type)` |
 | Deterministic? | 100% |
 
-**TRM**: `safety_stock_trm.py` — `SafetyStockTRM`
+**TRM**: `inventory_buffer_trm.py` — `InventoryBufferTRM`
+
+> **Note**: Renamed from `SafetyStockTRM` / `safety_stock_trm.py` (Feb 2026). Addresses the DDMRP critique — at the TRM execution layer, this is an **inventory buffer** (uncertainty absorber with soft-buffer netting), not a hard demand target for MRP. The deterministic engine (`SafetyStockCalculator`) retains its name as it implements the AWS SC safety stock calculation.
 
 The TRM learns a **multiplier ∈ [0.5, 2.0]** on top of the engine baseline:
 
@@ -200,7 +202,7 @@ Heuristic rules (used before training):
 | Action space | Continuous: multiplier ∈ [0.5, 2.0] |
 | Reward | `stockout_penalty * 0.4 + dos_target * 0.3 + excess_cost * 0.2 + stability_bonus * 0.1` |
 
-**Delegation**: `SafetyStockTRM._heuristic_evaluate()` calls `self._ss_calculator.compute_safety_stock()` for the baseline, then applies context-dependent multiplier rules.
+**Delegation**: `InventoryBufferTRM._heuristic_evaluate()` calls `self._ss_calculator.compute_safety_stock()` for the baseline, then applies context-dependent multiplier rules.
 
 ---
 
@@ -357,7 +359,7 @@ Training is organized **per site x per TRM type** with a 3-phase progressive cur
 |----------|-------------|----------------|------------|
 | ATPExecutorTRM | Yes | Yes | No |
 | POCreationTRM | Yes | Yes | No |
-| SafetyStockTRM | Yes | Yes | No |
+| InventoryBufferTRM | Yes | Yes | No |
 | InventoryRebalancingTRM | Yes | No | No |
 | OrderTrackingTRM | Yes | Yes | No |
 | MOExecutionTRM | No | Yes | No |
@@ -394,7 +396,7 @@ SiteAgent (per site)
   ├── SharedStateEncoder (common feature extraction)
   ├── ATPExecutorTRM (engine: AATPEngine)
   ├── POCreationTRM (engine: MRPEngine)
-  ├── SafetyStockTRM (engine: SafetyStockCalculator)
+  ├── InventoryBufferTRM (engine: SafetyStockCalculator)
   ├── InventoryRebalancingTRM (engine: RebalancingEngine)
   ├── OrderTrackingTRM (engine: OrderTrackingEngine)
   ├── MOExecutionTRM (engine: MOExecutionEngine)
@@ -438,7 +440,7 @@ The SiteAgent:
 |------|-------|-------------------|
 | `atp_executor.py` | `ATPExecutorTRM` | `AATPEngine` |
 | `po_creation_trm.py` | `POCreationTRM` | `MRPEngine` |
-| `safety_stock_trm.py` | `SafetyStockTRM` | `SafetyStockCalculator` |
+| `inventory_buffer_trm.py` | `InventoryBufferTRM` | `SafetyStockCalculator` |
 | `inventory_rebalancing_trm.py` | `InventoryRebalancingTRM` | `RebalancingEngine` |
 | `order_tracking_trm.py` | `OrderTrackingTRM` | `OrderTrackingEngine` |
 | `mo_execution_trm.py` | `MOExecutionTRM` | `MOExecutionEngine` |

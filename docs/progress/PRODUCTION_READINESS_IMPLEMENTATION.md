@@ -155,7 +155,7 @@ Each TRM service in `backend/app/services/powell/` has a `decide()` or equivalen
 | `TRM_MAINTENANCE` | `maintenance_scheduling_trm.py:MaintenanceSchedulingTRM` | Build state from work order, call `decide()` |
 | `TRM_SUBCONTRACTING` | `subcontracting_trm.py:SubcontractingTRM` | Build state from make-vs-buy context, call `decide()` |
 | `TRM_FORECAST_ADJ` | `forecast_adjustment_trm.py:ForecastAdjustmentTRM` | Build state from signal, call `decide()` |
-| `TRM_SAFETY_STOCK` | `safety_stock_trm.py:SafetyStockTRM` | Build state from inventory policy, call `decide()` |
+| `TRM_INVENTORY_BUFFER` | `inventory_buffer_trm.py:InventoryBufferTRM` | Build state from inventory policy, call `decide()` |
 | `GNN_EXECUTION` | `allocation_service.py:AllocationService` | Run tGNN inference, generate allocations |
 | `GNN_SOOP` | `sop_inference_service.py:SOPInferenceService` | Run S&OP GraphSAGE, output policy parameters |
 

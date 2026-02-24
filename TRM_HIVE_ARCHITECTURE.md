@@ -5,6 +5,8 @@
 **Dependencies**: [POWELL_APPROACH.md](POWELL_APPROACH.md), [TRM_AGENTS_EXPLAINED.md](TRM_AGENTS_EXPLAINED.md), [AGENTIC_AUTHORIZATION_PROTOCOL.md](docs/AGENTIC_AUTHORIZATION_PROTOCOL.md)
 **Related**: Kinaxis RapidResponse concurrent planning architecture (Section 11), Scenario-based agent negotiation (Section 12)
 
+> **Terminology Note — Inventory Buffer (Feb 2026)**: `InventoryBufferTRM` is now `InventoryBufferTRM`. This addresses the DDMRP critique that "safety stock" causes MRP to treat buffer stock as a hard demand target. At the TRM level, the inventory buffer is an **uncertainty absorber** with soft-buffer netting (lower priority than demand-driven orders). Hive signals `BUFFER_INCREASED`/`BUFFER_DECREASED` are now `BUFFER_INCREASED`/`BUFFER_DECREASED`. The AWS SC data model fields (`safety_stock` column, `inv_policy` types) remain unchanged.
+
 ---
 
 ## 1. The Hive Metaphor — Precise Domain Mapping
@@ -17,7 +19,7 @@ A bee colony is one of nature's most studied examples of decentralized intellige
 |---|---|---|
 | **Hive** | Supply Chain Site (DC, Factory, Warehouse) | `SiteAgent` instance (`site_agent.py`) |
 | **Queen** | SiteAgent Coordinator — prioritizes, resolves conflicts, sets policy | SiteAgent orchestrator (`trm_confidence_threshold`, `agent_mode`, CDC trigger handler) |
-| **11 Worker Castes** | 11 Narrow TRM Heads — each with functional specialization | `ATPExecutorTRM` through `SafetyStockTRM` |
+| **11 Worker Castes** | 11 Narrow TRM Heads — each with functional specialization | `ATPExecutorTRM` through `InventoryBufferTRM` |
 | **Waggle Dance** | Intra-Hive Signal Bus — cross-TRM communication | NEW: `HiveSignalBus` (in-memory, per-site) |
 | **Pheromone Trails** | Urgency/Risk Signals — decay over time, influence all workers | NEW: `UrgencyVector` (float[11]) |
 | **Colony Memory** | Decision Log + Replay Buffer | `powell_site_agent_decisions` table + signal context |
@@ -37,7 +39,7 @@ In a bee colony, workers specialize by age and need. In the Hive, TRMs specializ
 |---|---|---|
 | **SCOUTS** (Demand Sensing) | `ATPExecutorTRM`, `OrderTrackingTRM` | Detect demand signals at the hive boundary. First to see incoming orders, first to detect exceptions. |
 | **FORAGERS** (Resource Acquisition) | `POCreationTRM`, `InventoryRebalancingTRM`, `SubcontractingTRM` | Acquire resources from external sources (suppliers, other sites, subcontractors). |
-| **NURSES** (Colony Health) | `SafetyStockTRM`, `ForecastAdjustmentTRM` | Maintain colony health parameters. Adjust buffers and beliefs to keep the hive resilient. |
+| **NURSES** (Colony Health) | `InventoryBufferTRM`, `ForecastAdjustmentTRM` | Maintain colony health parameters. Adjust buffers and beliefs to keep the hive resilient. |
 | **GUARDS** (Production Integrity) | `QualityDispositionTRM`, `MaintenanceSchedulingTRM` | Protect production integrity. Prevent contamination (quality) and breakdown (maintenance). |
 | **BUILDERS** (Execution) | `MOExecutionTRM`, `TOExecutionTRM` | Execute production and logistics. Transform inputs into outputs, move goods through the network. |
 
@@ -62,7 +64,7 @@ Currently, TRM heads execute in isolation within the SiteAgent. The `SharedState
 The critical gap: **no head knows what another head just decided**.
 
 - ATP rejects 3 orders in a row, but POCreationTRM does not know demand is spiking
-- SafetyStockTRM increases buffers, but RebalancingTRM does not know relief is being planned
+- InventoryBufferTRM increases buffers, but RebalancingTRM does not know relief is being planned
 - QualityTRM rejects a batch (reducing available inventory), but ATPExecutorTRM continues promising from the old availability figure
 
 ### 2.2 Signal Data Structure
@@ -115,8 +117,8 @@ class HiveSignalType(str, Enum):
     SUBCONTRACT_ROUTED = "subcontract_routed"  # Work sent to subcontractor
 
     # ── Nurse signals (health) ──
-    SS_INCREASED       = "ss_increased"        # Safety stock raised
-    SS_DECREASED       = "ss_decreased"        # Safety stock lowered
+    BUFFER_INCREASED       = "buffer_increased"        # Inventory buffer raised
+    BUFFER_DECREASED       = "buffer_decreased"        # Inventory buffer lowered
     FORECAST_ADJUSTED  = "forecast_adjusted"   # Forecast changed
 
     # ── Guard signals (integrity) ──
@@ -144,12 +146,12 @@ Each TRM worker produces signals after making decisions and consumes signals bef
 
 | TRM Worker | PRODUCES | CONSUMES |
 |---|---|---|
-| **ATPExecutorTRM** (Scout) | `ATP_SHORTAGE` (on shortfall), `ATP_EXCESS` (low utilization), `DEMAND_SURGE` (high volume), `DEMAND_DROP` (low volume) | `QUALITY_REJECT` (reduces available), `REBALANCE_INBOUND` (relief), `MO_RELEASED` (future supply), `SS_INCREASED` (reserve more), `ALLOCATION_REFRESH` |
+| **ATPExecutorTRM** (Scout) | `ATP_SHORTAGE` (on shortfall), `ATP_EXCESS` (low utilization), `DEMAND_SURGE` (high volume), `DEMAND_DROP` (low volume) | `QUALITY_REJECT` (reduces available), `REBALANCE_INBOUND` (relief), `MO_RELEASED` (future supply), `BUFFER_INCREASED` (reserve more), `ALLOCATION_REFRESH` |
 | **OrderTrackingTRM** (Scout) | `ORDER_EXCEPTION` (late, short, stuck) | `PO_EXPEDITE` (resolution), `TO_DELAYED` (impact), `SUBCONTRACT_ROUTED` (alt source) |
-| **POCreationTRM** (Forager) | `PO_EXPEDITE`, `PO_DEFERRED` | `ATP_SHORTAGE` (urgency up), `DEMAND_SURGE` (order more), `SS_INCREASED` (target higher), `QUALITY_REJECT` (replace), `FORECAST_ADJUSTED` |
+| **POCreationTRM** (Forager) | `PO_EXPEDITE`, `PO_DEFERRED` | `ATP_SHORTAGE` (urgency up), `DEMAND_SURGE` (order more), `BUFFER_INCREASED` (target higher), `QUALITY_REJECT` (replace), `FORECAST_ADJUSTED` |
 | **RebalancingTRM** (Forager) | `REBALANCE_INBOUND`, `REBALANCE_OUTBOUND` | `ATP_SHORTAGE` (pull needed), `ATP_EXCESS` (push possible), `NETWORK_SHORTAGE`, `NETWORK_SURPLUS` |
 | **SubcontractingTRM** (Forager) | `SUBCONTRACT_ROUTED` | `MO_DELAYED` (capacity issue), `MAINTENANCE_URGENT` (asset down), capacity from tGNN |
-| **SafetyStockTRM** (Nurse) | `SS_INCREASED`, `SS_DECREASED` | `ATP_SHORTAGE` (stockout risk), `DEMAND_SURGE` / `DEMAND_DROP`, `PO_DEFERRED` (supply risk), `FORECAST_ADJUSTED` |
+| **InventoryBufferTRM** (Nurse) | `BUFFER_INCREASED`, `BUFFER_DECREASED` | `ATP_SHORTAGE` (stockout risk), `DEMAND_SURGE` / `DEMAND_DROP`, `PO_DEFERRED` (supply risk), `FORECAST_ADJUSTED` |
 | **ForecastAdjTRM** (Nurse) | `FORECAST_ADJUSTED` | `DEMAND_SURGE` / `DEMAND_DROP`, `ORDER_EXCEPTION`, external signals (email, market intel) |
 | **QualityTRM** (Guard) | `QUALITY_REJECT`, `QUALITY_HOLD` | `MO_RELEASED` (incoming batch), `ATP_SHORTAGE` (pressure to accept borderline) |
 | **MaintenanceTRM** (Guard) | `MAINTENANCE_DEFERRED`, `MAINTENANCE_URGENT` | `MO_RELEASED` (schedule around), capacity from tGNN, `QUALITY_REJECT` (asset issue?) |
@@ -256,11 +258,11 @@ When external signals pass the confidence gate, they appear on the signal bus as
 
 | External Source | HiveSignalType | Consumed By | Example |
 |---|---|---|---|
-| Customer email: "doubling our Q2 order" | `DEMAND_SURGE` | POCreationTRM, SafetyStockTRM | Foragers pre-order, Nurses increase buffer |
+| Customer email: "doubling our Q2 order" | `DEMAND_SURGE` | POCreationTRM, InventoryBufferTRM | Foragers pre-order, Nurses increase buffer |
 | Supplier Slack: "factory fire, 3-week delay" | `INBOUND_DELAY` + `FORECAST_ADJUSTED` | POCreationTRM, RebalancingTRM | Foragers find alt source, Rebal pulls from network |
 | Weather API: hurricane approaching | `DISRUPTION` | All TRMs (urgency broadcast) | Colony-wide alertness increase |
 | Market feed: commodity price spike +15% | `FORECAST_ADJUSTED` (cost) | POCreationTRM, SubcontractingTRM | Foragers evaluate make-vs-buy shift |
-| Sales voice note: "ACME confirms expansion" | `DEMAND_SURGE` | POCreationTRM, SafetyStockTRM, MOExecutionTRM | Full colony response to confirmed demand |
+| Sales voice note: "ACME confirms expansion" | `DEMAND_SURGE` | POCreationTRM, InventoryBufferTRM, MOExecutionTRM | Full colony response to confirmed demand |
 
 #### Security Boundary
 
@@ -298,9 +300,9 @@ Phase 1: SENSE (Scouts detect demand/exception signals)
 Phase 2: ASSESS (Nurses evaluate colony health given new signals)
   │
   │  2a. ForecastAdjustmentTRM  ── process external signals + scout signals
-  │  2b. SafetyStockTRM         ── evaluate buffer adequacy
+  │  2b. InventoryBufferTRM         ── evaluate buffer adequacy
   │  │
-  │  Emit: FORECAST_ADJUSTED, SS_INCREASED, SS_DECREASED
+  │  Emit: FORECAST_ADJUSTED, BUFFER_INCREASED, BUFFER_DECREASED
   │
   ▼
 Phase 3: ACQUIRE (Foragers secure resources based on assessed needs)
@@ -350,7 +352,7 @@ Phase 6: REFLECT (Queen evaluates cycle outcome)
 | POCreationTRM | **PROACTIVE** | Scheduled (4h cadence) or signal-triggered |
 | RebalancingTRM | **PROACTIVE** | Scheduled (daily) or signal-triggered |
 | SubcontractingTRM | **PROACTIVE** | Scheduled (daily) or capacity signal |
-| SafetyStockTRM | **PROACTIVE** | Scheduled (weekly) or CDC trigger |
+| InventoryBufferTRM | **PROACTIVE** | Scheduled (weekly) or CDC trigger |
 | ForecastAdjustmentTRM | **PROACTIVE** | External signal arrives or scheduled |
 | MaintenanceSchedulingTRM | **PROACTIVE** | Scheduled + asset condition signals |
 
@@ -491,7 +493,7 @@ The `HybridPlanningModel` (SOPGraphSAGE + ExecutionTemporalGNN) produces per-nod
 
 1. **No coordination signals**: tGNN outputs per-node predictions but does not explicitly encode inter-site coordination needs
 2. **No feedback loop**: TRM consumption patterns do not feed back to tGNN features
-3. **S&OP parameters not consumed**: `safety_stock_multiplier` from SOPGraphSAGE is not read by SiteAgent's SafetyStockTRM
+3. **S&OP parameters not consumed**: `safety_stock_multiplier` from SOPGraphSAGE is not read by SiteAgent's InventoryBufferTRM for buffer sizing
 4. **No disruption propagation awareness**: If Site A's supplier fails, Site B's TRMs do not know until the daily tGNN refresh
 
 ### 5.2 Inter-Hive Communication Channels
@@ -580,7 +582,7 @@ class tGNNSiteDirective:
     structural_embedding: List[float]   # 64-dim embedding
     criticality_score: float            # How important is this site
     bottleneck_risk: float              # Congestion risk
-    safety_stock_multiplier: float      # SS adjustment from network context
+    safety_stock_multiplier: float      # Buffer adjustment from network context
     resilience_score: float             # Network resilience around this site
 
     # From Execution tGNN (daily)
@@ -600,7 +602,7 @@ class tGNNSiteDirective:
 | TRM | tGNN Directive Consumption |
 |---|---|
 | ATPExecutorTRM | `allocation_adjustments` → priority shift; `exception_probability` → threshold adjustment |
-| SafetyStockTRM | `safety_stock_multiplier` → SS target; `resilience_score` → buffer sizing |
+| InventoryBufferTRM | `safety_stock_multiplier` → buffer target; `resilience_score` → buffer sizing |
 | POCreationTRM | `demand_forecast` → order quantity; `propagation_impact` → timing urgency |
 | RebalancingTRM | `LATERAL_SURPLUS/SHORTAGE` signals; `criticality_score` → transfer priority |
 | MOExecutionTRM | `bottleneck_risk` → sequencing priority; `demand_forecast` → production scheduling |
@@ -647,7 +649,7 @@ t=1h: Site A's transactional features at next tGNN run:
 
 t=2h: Site B's Signal Bus receives UPSTREAM_DISRUPTION
       │
-      Site B's SafetyStockTRM READS signal → increases SS multiplier
+      Site B's InventoryBufferTRM READS signal → increases buffer multiplier
       Site B's POCreationTRM READS signal → expedites next PO
       Site B's RebalancingTRM READS signal → checks if Site C has surplus
 
@@ -659,7 +661,7 @@ t=5d: Supplier repairs complete, delivers to Site A
         OrderTrackingTRM: exception resolved
         tGNN detects recovery → propagation_impact declining
         InterHiveSignal: resilience returning to Sites B, C
-        Sites B, C: SafetyStockTRM reads recovery → SS_DECREASED over 2 weeks
+        Sites B, C: InventoryBufferTRM reads recovery → BUFFER_DECREASED over 2 weeks
 ```
 
 ### 5.6 Temporal Cadence Bridge
@@ -762,7 +764,7 @@ Currently disconnected. The proposed connection via `tGNNSiteDirective` (Section
 
 | TRM | What It Reads | How It Changes Behavior |
 |---|---|---|
-| SafetyStockTRM | `safety_stock_multiplier` | Sets upper/lower bounds for TRM adjustment |
+| InventoryBufferTRM | `safety_stock_multiplier` | Sets upper/lower bounds for buffer adjustment |
 | ATPExecutorTRM | `exception_probability`, allocation adjustments | Adjusts partial fill thresholds |
 | POCreationTRM | `demand_forecast`, `propagation_impact` | Timing urgency for new POs |
 | RebalancingTRM | `LATERAL_SURPLUS/SHORTAGE` signals | Identifies transfer opportunities |
@@ -864,12 +866,12 @@ t=1h: tGNN daily features updated (off-cadence CDC trigger)
 
 t=2h: Sites D and E hives respond independently:
       Site D (high urgency):
-        SafetyStockTRM: SS_INCREASED (multiplier=1.5)
+        InventoryBufferTRM: BUFFER_INCREASED (multiplier=1.5)
         POCreationTRM: PO_EXPEDITE to alternate supplier
         RebalancingTRM: pull excess from Site F
         SubcontractingTRM: evaluate external production
       Site E (medium urgency):
-        SafetyStockTRM: SS_INCREASED (multiplier=1.2)
+        InventoryBufferTRM: BUFFER_INCREASED (multiplier=1.2)
         POCreationTRM: schedule forward buy
         (No rebalancing yet — 4 day buffer)
 
@@ -882,7 +884,7 @@ t=5d: Factory repairs complete at Site C
         MOExecutionTRM: backlog clearing begins
         tGNN detects recovery → propagation_impact declining
         InterHiveSignal: UPSTREAM recovery to Sites D, E
-        Sites D, E: SafetyStockTRM → SS_DECREASED (back to 1.0 over 2 weeks)
+        Sites D, E: InventoryBufferTRM → BUFFER_DECREASED (back to 1.0 over 2 weeks)
 ```
 
 ### 7.3 Autonomous Risk Redistribution
@@ -895,11 +897,11 @@ S&OP GraphSAGE computes (weekly):
   Site B: criticality=0.3, resilience=0.8  → LOW RISK (non-critical, robust)
   Site C: criticality=0.7, resilience=0.6  → MEDIUM RISK
 
-Network-level policy: Total SS budget = $10M
+Network-level policy: Total buffer budget = $10M
 
-WITHOUT HIVE: Each site gets equal SS budget ($3.3M each)
+WITHOUT HIVE: Each site gets equal buffer budget ($3.3M each)
 
-WITH HIVE: SS budget allocated by risk-weighted criticality:
+WITH HIVE: Buffer budget allocated by risk-weighted criticality:
   Site A: $5M    (high criticality, low resilience = needs most buffer)
   Site B: $1.5M  (low criticality, high resilience = needs least)
   Site C: $3.5M  (medium both)
@@ -919,7 +921,7 @@ Implementation: S&OP safety_stock_multiplier flows through tGNNSiteDirective:
 | Powell Element | Hive Implementation |
 |---|---|
 | **State (Sₜ)** | Physical state (inventory, backlog, pipeline) + Belief state (conformal intervals) + **Hive state** (urgency_vector, active signals, hive_health_metrics) + **Network state** (tGNNSiteDirective) |
-| **Decision (xₜ)** | Per-TRM narrow decisions within authority bounds: ATP accept/partial/reject, PO create/expedite/defer, SS multiply ×[0.5, 2.0], etc. (bounded adjustments, not raw actions) |
+| **Decision (xₜ)** | Per-TRM narrow decisions within authority bounds: ATP accept/partial/reject, PO create/expedite/defer, buffer multiply ×[0.5, 2.0], etc. (bounded adjustments, not raw actions) |
 | **Exogenous (Wₜ₊₁)** | Customer orders arriving, supplier delivery events, quality inspection results, external signals (email, market intel), **tGNN inter-hive signals** |
 | **Transition (Sᴹ)** | Engine computation (MRP, AATP, Safety Stock) + TRM bounded adjustment + **HiveSignalBus state update** + **Colony memory (decision log) update** |
 | **Objective (min C)** | Multi-objective: service level, cost, OTIF. Computed as reward by OutcomeCollector. Fed back through replay buffer. |
@@ -928,7 +930,7 @@ Implementation: S&OP safety_stock_multiplier flows through tGNNSiteDirective:
 
 | Powell Policy Class | Hive Component | How It Works |
 |---|---|---|
-| **CFA** (Cost Function Approximation) | S&OP GraphSAGE + Deterministic Engines (MRP, AATP, SS) | S&OP computes policy parameters θ (safety_stock_multiplier, criticality) that parameterize ALL hive decisions. Engines implement CFA with fixed formulas parameterized by θ. Updated weekly. |
+| **CFA** (Cost Function Approximation) | S&OP GraphSAGE + Deterministic Engines (MRP, AATP, Buffer) | S&OP computes policy parameters θ (safety_stock_multiplier, criticality) that parameterize ALL hive decisions. Engines implement CFA with fixed formulas parameterized by θ. Updated weekly. |
 | **CFA/VFA Bridge** | Execution tGNN | Generates priority allocations (CFA: parameterized optimization) and propagation predictions (VFA: learned from outcomes). Bridges network-level policy to per-site execution. |
 | **VFA** (Value Function Approximation) | 11 TRM Heads + Colony Memory | Each TRM learns a narrow value function through RL/TD. State = shared_embedding + **signal_context** + **tGNN_directive**. Action = bounded adjustment. Reward = outcome from collector. Replay buffer enriched with signal context for learning coordination patterns. |
 | **PFA** (Policy Function Approximation) | Base-stock rules in engines | Deterministic engines implement PFA (reorder point, EOQ, safety stock formulas). TRM VFA learns **when to deviate** from PFA baselines. |
@@ -987,7 +989,7 @@ Powell's belief state `Sᵇₜ` captures what we believe about uncertain quantit
 1. Extend `ExecutionTemporalGNN` input features from 8 to 16 dimensions
 2. Add `InterHiveSignal` generation from tGNN output post-processing
 3. Implement `tGNNSiteDirective` and cache at each SiteAgent
-4. Wire `safety_stock_multiplier` from S&OP to SafetyStockTRM bounds
+4. Wire `safety_stock_multiplier` from S&OP to InventoryBufferTRM buffer bounds
 5. Implement CDC-triggered off-cadence tGNN refresh
 
 ### Phase 4: Feedback Loops (2-3 weeks)
@@ -1030,7 +1032,7 @@ Each TRM worker caste maps to specific AAP agent authority boundaries:
 |---|---|---|---|---|
 | **Scouts** | ATPExecutorTRM, OrderTrackingTRM | SO/ATP Agent | Reallocate within priority tier, partial fill within policy | Logistics (expedite), Inventory (cross-DC transfer) |
 | **Foragers** | POCreationTRM, RebalancingTRM, SubcontractingTRM | Supply Agent, Procurement Agent | Select supplier within approved list, adjust PO timing | Procurement (new supplier), Logistics (freight mode), S&OP (policy exception) |
-| **Nurses** | SafetyStockTRM, ForecastAdjustmentTRM | Inventory Agent, Demand Agent | Adjust SS within policy bounds, revise forecast within confidence band | S&OP (SS exception), Finance (working capital impact) |
+| **Nurses** | InventoryBufferTRM, ForecastAdjustmentTRM | Inventory Agent, Demand Agent | Adjust buffer within policy bounds, revise forecast within confidence band | S&OP (buffer exception), Finance (working capital impact) |
 | **Guards** | QualityDispositionTRM, MaintenanceSchedulingTRM | Quality Agent, Maintenance Agent | Place material on hold, schedule PM within window | Plant (production rerun), Finance (write-off), Supply (return to vendor) |
 | **Builders** | MOExecutionTRM, TOExecutionTRM | Plant Agent, Logistics Agent | Schedule within approved plan, sequence within rules | Supply (rush order insertion), Quality (release hold), Maintenance (schedule around) |
 
@@ -1079,7 +1081,7 @@ RESOLUTION → FEEDS BACK TO HIVE
      │  Procurement Agent: AUTHORIZE (concentration limit still met)
      │  PO placed with secondary supplier
      │  EMIT: PO_EXPEDITE (urgency=0.7, direction="relief", eta=5d)
-     │  Signal propagates to ATPExecutorTRM, SafetyStockTRM via Signal Bus
+     │  Signal propagates to ATPExecutorTRM, InventoryBufferTRM via Signal Bus
 ```
 
 ### 10.4 Inter-Hive Coordination via AAP
@@ -1111,9 +1113,9 @@ CONDITION: Can resolve within unilateral authority?
               Site B's Inventory Agent → Site A's Inventory Agent:
               "Transfer 500 units SKU-X, cost $3,200, ETA 2 days"
               │
-              Site A evaluates: "500 units depletes my SS to 60% (RED)"
+              Site A evaluates: "500 units depletes my buffer to 60% (RED)"
               │
-              COUNTER_OFFER: "Transfer 300 units (SS stays at 80%)"
+              COUNTER_OFFER: "Transfer 300 units (buffer stays at 80%)"
               │
               Board Service auto-joins Finance Agent (tag: expedite_cost)
               Finance Agent: AUTHORIZE ($3,200 within budget)
@@ -1324,7 +1326,7 @@ EMBEDDED SCENARIO WORKFLOW:
 |---|---|---|---|
 | **Scouts** | Demand surge detected | Order promises, allocation priorities | "What if we prioritize strategic customers and partial-fill standard?" |
 | **Foragers** | Supply shortage | PO quantities, supplier selection, rebalancing targets | "What if we expedite from Supplier B instead of waiting for Supplier A?" |
-| **Nurses** | Forecast deviation | Safety stock levels, forecast adjustments | "What if we increase SS by 20% for the next 2 weeks?" |
+| **Nurses** | Forecast deviation | Inventory buffer levels, forecast adjustments | "What if we increase buffer by 20% for the next 2 weeks?" |
 | **Guards** | Quality reject | Disposition (scrap vs rework), maintenance timing | "What if we rework instead of scrap? Cost vs. time impact?" |
 | **Builders** | Capacity constraint | Production sequence, transfer routing | "What if we split MO-456 across two lines?" |
 
@@ -1333,12 +1335,12 @@ EMBEDDED SCENARIO WORKFLOW:
 When an agent creates a scenario and modifies variables, the what-if engine propagates the changes through the Hive:
 
 ```
-SafetyStockTRM creates scenario: "Increase SS for SKU-A from 100 to 150"
+InventoryBufferTRM creates scenario: "Increase buffer for SKU-A from 100 to 150"
      │
      ▼
 WHAT-IF ENGINE propagates through hive:
      │
-     ├── POCreationTRM: higher SS target → earlier reorder point
+     ├── POCreationTRM: higher buffer target → earlier reorder point
      │   Impact: PO timing moves forward 2 days, $1,200 additional holding cost
      │
      ├── ATPExecutorTRM: more reserved stock → fewer units available for orders
@@ -1412,7 +1414,7 @@ Phase 4: NEGOTIATE (AAP + Scenario Evidence)
      │  Target agent can:
      │  ├── AUTHORIZE: Accept scenario as-is
      │  ├── COUNTER_SCENARIO: Create their own branch with modifications
-     │  │   (e.g., "I'll accept the SS increase but at 130, not 150")
+     │  │   (e.g., "I'll accept the buffer increase but at 130, not 150")
      │  │   → Both scorecards shown side-by-side
      │  ├── DENY: Reject with reasoning
      │  └── ESCALATE: Route to human with both scenarios + scorecards
@@ -1432,20 +1434,20 @@ Phase 5: CONSENSUS (Scenario Promotion)
      │  - Human selects or creates hybrid → feeds back to agent learning
 ```
 
-### 12.3 Scenario Negotiation Example: Safety Stock Dispute
+### 12.3 Scenario Negotiation Example: Inventory Buffer Dispute
 
 ```
-SITUATION: Site A's fill rate is declining. SafetyStockTRM wants to increase
-SS, but the increase would consume working capital that Finance Agent manages.
+SITUATION: Site A's fill rate is declining. InventoryBufferTRM wants to increase
+the inventory buffer, but the increase would consume working capital that Finance Agent manages.
 
 Step 1: DETECT
-  SafetyStockTRM reads HiveSignals:
+  InventoryBufferTRM reads HiveSignals:
     - 5× ATP_SHORTAGE in last 24h (urgency_vector[0] = 0.8)
     - fill_rate_7d: 0.89 (below 0.92 target)
     - backlog_trend_7d: +15% (increasing)
 
 Step 2: BRANCH
-  SafetyStockTRM creates PlanningScenario "SS-2026-0223-001":
+  InventoryBufferTRM creates PlanningScenario "BUF-2026-0223-001":
     parent: LIVE
     variable_deltas: {
       "safety_stock.SKU-A.DC-East": 100 → 150 (+50%),
@@ -1461,12 +1463,12 @@ Step 3: EVALUATE
     NET BENEFIT: +$75K
 
   Authority check:
-    SafetyStockTRM authority: adjust SS within ±20% of policy → 50% exceeds
+    InventoryBufferTRM authority: adjust buffer within ±20% of policy → 50% exceeds
     Requires authorization: Finance Agent (working capital impact > $25K threshold)
 
 Step 4: NEGOTIATE
-  SafetyStockTRM → Finance Agent (via AuthorizationRequest):
-    "Scenario SS-2026-0223-001: Increase SS for 2 SKUs at DC-East.
+  InventoryBufferTRM → Finance Agent (via AuthorizationRequest):
+    "Scenario BUF-2026-0223-001: Increase buffer for 2 SKUs at DC-East.
      Working capital impact: +$45K. Net benefit: +$75K.
      Revenue at risk reduced by $120K."
 
@@ -1475,7 +1477,7 @@ Step 4: NEGOTIATE
     $45K increase → $1.765M (98% of budget) → AMBER but within cap
     No competing capital requests this week
 
-  Finance Agent: COUNTER_SCENARIO "SS-2026-0223-002":
+  Finance Agent: COUNTER_SCENARIO "BUF-2026-0223-002":
     "Authorize $30K (SKU-A to 140, SKU-B to 240). Phase remaining
      $15K based on next week's fill rate data."
     variable_deltas: {
@@ -1484,14 +1486,14 @@ Step 4: NEGOTIATE
     }
     NET BENEFIT: +$62K (slightly lower, but budget stays at 97%)
 
-  SafetyStockTRM evaluates counter-scenario:
+  InventoryBufferTRM evaluates counter-scenario:
     fill_rate improves to 92.5% (meets target)
     NET BENEFIT still positive (+$62K)
     → ACCEPT_COUNTER
 
 Step 5: CONSENSUS
-  Scenario "SS-2026-0223-002" promoted to LIVE
-  SafetyStockTRM emits: SS_INCREASED (SKU-A: +40%, SKU-B: +20%)
+  Scenario "BUF-2026-0223-002" promoted to LIVE
+  InventoryBufferTRM emits: BUFFER_INCREASED (SKU-A: +40%, SKU-B: +20%)
   POCreationTRM reads signal → adjusts reorder quantities
   Decision recorded with scenario chain for RL training
 ```
@@ -1548,15 +1550,15 @@ When agents can't reach consensus, humans see pre-digested scenario comparisons:
 ```
 ESCALATION: Scenario Disagreement
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Thread: AT-2026-0223-001
-From: SafetyStockTRM (Inventory Agent)
+Thread: BUF-2026-0223-001
+From: InventoryBufferTRM (Inventory Agent)
 To: Finance Agent
 Status: COUNTER_REJECTED → ESCALATED
 
 LIVE STATE                    SCENARIO A (Inventory)        SCENARIO B (Finance)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SS SKU-A: 100                 SS SKU-A: 150 (+50%)          SS SKU-A: 120 (+20%)
-SS SKU-B: 200                 SS SKU-B: 260 (+30%)          SS SKU-B: 220 (+10%)
+Buffer SKU-A: 100             Buffer SKU-A: 150 (+50%)      Buffer SKU-A: 120 (+20%)
+Buffer SKU-B: 200             Buffer SKU-B: 260 (+30%)      Buffer SKU-B: 220 (+10%)
 
 FINANCIAL                     FINANCIAL                     FINANCIAL
 Working Capital: $1.72M       Working Capital: $1.77M       Working Capital: $1.74M
@@ -1782,7 +1784,7 @@ class ScenarioTreeService:
         become the new production state. Dispatches each delta to the
         appropriate engine/service:
 
-          "safety_stock.*"    → SafetyStockTRM.apply_override()
+          "inventory_buffer.*" → InventoryBufferTRM.apply_override()
           "allocation.*"      → AllocationService.update()
           "forecast.*"        → ForecastAdjustmentTRM.apply()
           "po.*"              → POCreationTRM.apply()
@@ -1854,8 +1856,8 @@ STEP 3 — promote(B) (auto-triggered by Step 2):
       promoted: B  (now carrying merged B + B.2 + B.2.1 deltas)
       pruned:   [A, C]  (and all their subtrees: A.1, A.2)
       rationale: "B addresses the critical ATP shortage with combined
-                  SS increase + supplier diversification. A focused only
-                  on SS. C was still in draft."
+                  buffer increase + supplier diversification. A focused only
+                  on buffer. C was still in draft."
       scorecards: {B: {...}, A: {...}, C: {...}}
 
     Actions:
@@ -1938,7 +1940,7 @@ promote(scenario)
 | **Authority boundary intuition** | authorization success/deny rates | "Working capital requests >$30K get denied 40% of the time. Pre-split into phased increases." |
 | **Scorecard weighting** | which quadrant drove the winning choice | "At this site, Customer metrics outweigh Financial when urgency > 0.7." |
 | **Pruned-scenario value** | pruned scenario scorecards vs actual | "Scenarios I rejected actually had better outcomes 15% of the time — my evaluation is biased toward cost reduction." |
-| **Human override patterns** | is_expert_decision records | "Humans consistently override my SS decisions when backlog_trend > +20%. Adjust threshold." |
+| **Human override patterns** | is_expert_decision records | "Humans consistently override my buffer decisions when backlog_trend > +20%. Adjust threshold." |
 
 #### 12.7.5 Partial Promotion (Selective Delta Merge)
 
@@ -2004,7 +2006,7 @@ CONTEXT
 Site: DC-East (Distribution Center)
 Problem: Key supplier (Supplier Alpha) notifies of 2-week delay
          on SKU-X (high-velocity item, 500 units/week demand)
-Current state: 3 weeks of SS on hand, but fill rate will drop
+Current state: 3 weeks of buffer on hand, but fill rate will drop
                to ~80% by week 3 without intervention
 
 ═══════════════════════════════════════════════════════════════════
@@ -2020,10 +2022,10 @@ OrderTrackingTRM (Scout) detects:
     payload: {po_id: "PO-8842", sku: "SKU-X", delay_days: 14, qty: 1000}
 
 UrgencyVector updates: [0.75, 0.3, 0.6, 0.1, 0.1, 0.4, 0.2, 0.1, 0.1, 0.3, 0.4]
-                        ↑ATP  ↑OT  ↑PO       ...              ↑FcstAdj ↑SS
+                        ↑ATP  ↑OT  ↑PO       ...              ↑FcstAdj ↑Buf
 
 POCreationTRM (Forager) reads INBOUND_DELAY signal → raises own urgency
-SafetyStockTRM (Nurse) reads INBOUND_DELAY signal → begins evaluation
+InventoryBufferTRM (Nurse) reads INBOUND_DELAY signal → begins evaluation
 ATPExecutorTRM (Scout) reads INBOUND_DELAY signal → flags at-risk orders
 
 ═══════════════════════════════════════════════════════════════════
@@ -2036,16 +2038,16 @@ PHASE 2: BRANCH — Three agents create scenarios from LIVE
                │              │              │
           ┌────▼────┐    ┌───▼────┐    ┌────▼────┐
           │  SC-A   │    │  SC-B  │    │  SC-C   │
-          │(PO-TRM) │    │(SS-TRM)│    │(Rebal)  │
+          │(PO-TRM) │    │(BufTRM)│    │(Rebal)  │
           │Expedite │    │+Buffer │    │Transfer │
-          │SupplrB  │    │+30%SS  │    │from West│
+          │SupplrB  │    │+30%Buf │    │from West│
           └─────────┘    └───┬────┘    └─────────┘
                              │
                         ┌────┼────┐
                         │         │
                    ┌────▼──┐ ┌───▼───┐
                    │ SC-B1 │ │ SC-B2 │
-                   │+20%SS │ │+30%SS │
+                   │+20%Buf│ │+30%Buf│
                    │+Exped │ │+Fcst↓ │
                    └───────┘ └───────┘
 
@@ -2058,7 +2060,7 @@ SC-A: POCreationTRM creates "Expedite-SupplierB"
     "po.SKU-X.DC-East.premium": 4200,   // $4.2K expedite premium
   }
 
-SC-B: SafetyStockTRM creates "Buffer-Increase"
+SC-B: InventoryBufferTRM creates "Buffer-Increase"
   depth: 0, parent: LIVE
   variable_deltas: {
     "safety_stock.SKU-X.DC-East": 150 → 195 (+30%),
@@ -2072,10 +2074,10 @@ SC-C: RebalancingTRM creates "Transfer-from-West"
   }
 
 ═══════════════════════════════════════════════════════════════════
-PHASE 2b: BRANCH DEEPER — SafetyStockTRM explores sub-options
+PHASE 2b: BRANCH DEEPER — InventoryBufferTRM explores sub-options
 ═══════════════════════════════════════════════════════════════════
 
-SafetyStockTRM branches from SC-B to explore two refinements:
+InventoryBufferTRM branches from SC-B to explore two refinements:
 
 SC-B1: "Buffer + Expedite Combo" (child of SC-B)
   depth: 1, parent: SC-B
@@ -2086,8 +2088,8 @@ SC-B1: "Buffer + Expedite Combo" (child of SC-B)
     "po.SKU-X.DC-East.expedite": true,
     "po.SKU-X.DC-East.premium": 2100,
   }
-  // Note: SS delta relative to parent SC-B is -25 (195→170)
-  // Effective vs LIVE: SS 150→170 (+13%) AND partial expedite
+  // Note: buffer delta relative to parent SC-B is -25 (195→170)
+  // Effective vs LIVE: buffer 150→170 (+13%) AND partial expedite
 
 SC-B2: "Buffer + Demand Dampening" (child of SC-B)
   depth: 1, parent: SC-B
@@ -2096,7 +2098,7 @@ SC-B2: "Buffer + Demand Dampening" (child of SC-B)
     "forecast_adj.SKU-X.DC-East.magnitude": -15,  // dampen demand signal
     "forecast_adj.SKU-X.DC-East.duration_weeks": 3,
   }
-  // SS stays at parent's +30%, but dampened forecast reduces pressure
+  // Buffer stays at parent's +30%, but dampened forecast reduces pressure
 
 ═══════════════════════════════════════════════════════════════════
 PHASE 3: EVALUATE — What-if engine scores all scenarios
@@ -2132,7 +2134,7 @@ POCreationTRM shares SC-A with Procurement Agent:
   Procurement evaluates → Supplier Beta concentration = 28% → within 30% cap
   → AUTHORIZE
 
-SafetyStockTRM shares SC-B1 with Procurement + Finance Agents:
+InventoryBufferTRM shares SC-B1 with Procurement + Finance Agents:
   Procurement: Partial expedite from Beta → AUTHORIZE
   Finance: $5.9K within budget → AUTHORIZE
   SC-B1 status → APPROVED
@@ -2153,7 +2155,7 @@ SiteAgent (Queen) reviews approved scenarios:
   SC-C': APPROVED, net benefit +$15K  (useful but insufficient alone)
 
 SiteAgent selects SC-B1 (depth 1 child of SC-B):
-  Rationale: "SC-B1 combines SS buffer increase (+13% ongoing
+  Rationale: "SC-B1 combines inventory buffer increase (+13% ongoing
   resilience) with targeted partial expedite. SC-A is $3K better
   short-term but provides no ongoing resilience improvement.
   SC-B1 addresses both the immediate shortage AND the structural
@@ -2196,12 +2198,12 @@ Step 2: promote(SC-B) — depth 0 → LIVE (auto-triggered)
     }
     rationale: "SC-B (with SC-B1 refinement) selected over SC-A despite
                 $3K lower net benefit. SC-B provides structural resilience
-                (SS increase persists beyond disruption). SC-A is a
+                (buffer increase persists beyond disruption). SC-A is a
                 one-time fix. Strategic quadrant favors SC-B."
     confidence: 0.78
     difficulty: COMPLEX
     expected_outcome: {fill_rate_4w: 0.94, cost_delta: -5900,
-                       ss_improvement: +13%, supplier_diversification: true}
+                       buffer_improvement: +13%, supplier_diversification: true}
 
   Actions:
     apply_to_live(SC-B)  → production state updated:
@@ -2212,7 +2214,7 @@ Step 2: promote(SC-B) — depth 0 → LIVE (auto-triggered)
     SC-B.status = PROMOTED
 
     HiveSignalBus emits:
-      SS_INCREASED (SKU-X, +13%, source: scenario promotion)
+      BUFFER_INCREASED (SKU-X, +13%, source: scenario promotion)
       PO_EXPEDITE (SKU-X, 400 units, Supplier Beta, ETA 5 days)
 
 ═══════════════════════════════════════════════════════════════════
@@ -2231,7 +2233,7 @@ Learning signals extracted:
   1. Agent's scenario evaluation was well-calibrated (outcome_delta small)
   2. Agent correctly valued structural resilience over one-time fix
   3. The pruned SC-A (expedite-only) would have scored: actual fill_rate 0.95
-     → SC-A would have been slightly better short-term, but SS increase
+     → SC-A would have been slightly better short-term, but buffer increase
        from SC-B prevented a second shortage event in week 6
   4. Decision difficulty was correctly classified as COMPLEX
 
@@ -2248,7 +2250,7 @@ Replay buffer entry created with:
 FINAL STATE — Tree archived for learning
 ═══════════════════════════════════════════════════════════════════
 
-    LIVE STATE  ← SS: 170, PO to Supplier Beta in flight
+    LIVE STATE  ← Buffer: 170, PO to Supplier Beta in flight
       ├── SC-A  (PRUNED → ARCHIVED, superseded_by=SC-B)
       ├── SC-B  (PROMOTED → ARCHIVED)
       │   ├── SC-B1  (PROMOTED → ARCHIVED)
@@ -2266,7 +2268,7 @@ FINAL STATE — Tree archived for learning
 
 | Risk | Mitigation |
 |---|---|
-| **Signal cascade loops** (ATP→PO→SS→ATP...) | Decay mechanism (half_life) prevents infinite loops. Cycle phases enforce ordering. Max 50 signals per cycle. |
+| **Signal cascade loops** (ATP→PO→Buffer→ATP...) | Decay mechanism (half_life) prevents infinite loops. Cycle phases enforce ordering. Max 50 signals per cycle. |
 | **State space explosion** (too many signals for TRM to learn from) | Urgency vector is fixed at 11 dims. Signal bus summary (not raw signals) fed to TRM. Pheromone decay keeps active signals bounded. |
 | **Stale tGNN signals** (daily cadence too slow) | CDC monitor detects when local signals diverge from tGNN predictions. Triggers off-cadence tGNN refresh. |
 | **Signal noise** | Confidence-gated emission: only signals with TRM confidence > 0.7 are emitted. Low-confidence signals are logged but not propagated. |
@@ -2344,9 +2346,9 @@ The hive's 11 TRMs are **heterogeneous agents with different input/output shapes
 
 ### 14.3 Why This Hybrid
 
-**Why not pure MoE?** Mixture-of-Experts assumes homogeneous input → different expert pathways. Our 11 TRMs have *different* input shapes (ATP needs order context, PO needs supplier context, SS needs demand history). MoE routing adds complexity without solving the heterogeneity problem. However, the PEER insight (millions of tiny experts > few large experts) validates our choice of 11 tiny specialized models over 1 large general model.
+**Why not pure MoE?** Mixture-of-Experts assumes homogeneous input → different expert pathways. Our 11 TRMs have *different* input shapes (ATP needs order context, PO needs supplier context, buffer needs demand history). MoE routing adds complexity without solving the heterogeneity problem. However, the PEER insight (millions of tiny experts > few large experts) validates our choice of 11 tiny specialized models over 1 large general model.
 
-**Why not pure CTDE (MAPPO/QMIX)?** CTDE is a training paradigm, not an inference architecture. We use CTDE principles already — our centralized training (BC → CQL → TD) with decentralized execution (per-head inference) aligns with MAPPO. But QMIX's value factorization doesn't apply because our TRM heads have different action spaces (discrete actions for ATP, continuous multiplier for SS).
+**Why not pure CTDE (MAPPO/QMIX)?** CTDE is a training paradigm, not an inference architecture. We use CTDE principles already — our centralized training (BC → CQL → TD) with decentralized execution (per-head inference) aligns with MAPPO. But QMIX's value factorization doesn't apply because our TRM heads have different action spaces (discrete actions for ATP, continuous multiplier for buffer).
 
 **Why stigmergy as the coordination layer?** Research on S-MADRL demonstrates that stigmergic (pheromone-based) coordination scales better than explicit messaging (MADDPG, MAPPO collapse beyond 3-4 agents, S-MADRL scales to 8+). Our UrgencyVector is exactly a virtual pheromone field — 11 slots, each updated atomically, read by all. The key insight from [S-MADRL](https://arxiv.org/html/2510.03592v1): agents self-organize into asymmetric workload distributions that reduce congestion. This maps to our caste system where different TRMs naturally specialize.
 
@@ -2444,10 +2446,10 @@ class HiveHetGAT(nn.Module):
 | Source Caste | Target Caste | Key Signals | Edge Semantics |
 |---|---|---|---|
 | SCOUT → FORAGER | `ATP_SHORTAGE` → triggers PO | "We need resources" |
-| SCOUT → NURSE | `DEMAND_SURGE` → triggers SS review | "Health check needed" |
+| SCOUT → NURSE | `DEMAND_SURGE` → triggers buffer review | "Health check needed" |
 | FORAGER → SCOUT | `PO_EXPEDITE` → relief signal | "Help is coming" |
 | FORAGER → BUILDER | `REBALANCE_OUTBOUND` → TO needed | "Move this" |
-| NURSE → FORAGER | `SS_INCREASED` → higher targets | "Order more" |
+| NURSE → FORAGER | `BUFFER_INCREASED` → higher buffer targets | "Order more" |
 | NURSE → SCOUT | `FORECAST_ADJUSTED` → recalibrate | "Expect different demand" |
 | GUARD → SCOUT | `QUALITY_REJECT` → reduced availability | "We lost inventory" |
 | GUARD → BUILDER | `MAINTENANCE_URGENT` → asset down | "Can't produce" |
@@ -2749,7 +2751,7 @@ For each MultiHeadTrace in dataset:
        └── Backprop through HetGAT (shared gradients)
 ```
 
-**Key insight**: This is where stigmergic coordination emerges. The model learns that when ATP emits a SHORTAGE signal (urgency=0.8), POCreationTRM should respond with expedite, SafetyStockTRM should increase buffers, and RebalancingTRM should look for cross-site transfers. These patterns only appear in multi-head traces.
+**Key insight**: This is where stigmergic coordination emerges. The model learns that when ATP emits a SHORTAGE signal (urgency=0.8), POCreationTRM should respond with expedite, InventoryBufferTRM should increase buffers, and RebalancingTRM should look for cross-site transfers. These patterns only appear in multi-head traces.
 
 #### Phase 3: Stochastic Stress-Testing (3-5 days compute)
 
@@ -3192,7 +3194,7 @@ For each simulation period:
 |---|---|
 | ATP rejects 3 orders in a row | PO reads urgency[ATP]=0.8 → expedites next order |
 | Quality rejects batch (urgency[Quality]=0.9) | ATP reads high quality urgency → reduces available inventory promises |
-| SafetyStock increases buffer (emits SS_INCREASED) | Rebalancing reads signal → checks if sister sites can provide |
+| SafetyStock increases buffer (emits BUFFER_INCREASED) | Rebalancing reads signal → checks if sister sites can provide |
 | MO delayed by maintenance (urgency[Maintenance]=0.7) | TO reads delay signal → reroutes to alternate production site |
 
 Each pattern emerges from multi-head simulation traces — they cannot be learned from isolated decision logs.
@@ -3389,7 +3391,7 @@ Output per site:
   structural_embedding[64]    — encodes network position and connectivity
   criticality_score           — how important is this site to overall network
   bottleneck_risk             — congestion/capacity constraint risk
-  safety_stock_multiplier     — SS adjustment from network context
+  safety_stock_multiplier     — buffer adjustment from network context
   resilience_score            — how well the network absorbs disruption at this site
   concentration_risk          — supplier/customer concentration vulnerability
 ```
@@ -3424,14 +3426,14 @@ tGNNSiteDirective per site (cached in SiteAgent)
 SiteAgent unpacks directive into:
     ├── InterHiveSignals → injected into HiveSignalBus
     ├── allocation_adjustments → fed to AllocationService
-    ├── safety_stock_multiplier → bounds for SafetyStockTRM
+    ├── safety_stock_multiplier → buffer bounds for InventoryBufferTRM
     ├── demand_forecast → input feature for ForecastAdjustmentTRM
     └── exception_probability → threshold for ATPExecutorTRM
 
 Individual TRM heads read signals and features:
     ├── ATPExecutorTRM sees: allocation adjustment + exception probability
     ├── POCreationTRM sees: demand forecast + propagation impact
-    ├── SafetyStockTRM sees: SS multiplier bounds + resilience score
+    ├── InventoryBufferTRM sees: buffer multiplier bounds + resilience score
     └── RebalancingTRM sees: LATERAL_SURPLUS/SHORTAGE inter-hive signals
 ```
 
@@ -3592,7 +3594,7 @@ In production, the coordination stack maps to concrete deployment infrastructure
 │ │ Deterministic│ │ │ │ Deterministic│ │ │ │ Deterministic│ │
 │ │ Engines:     │ │ │ │ Engines:     │ │ │ │ Engines:     │ │
 │ │ MRP, AATP,   │ │ │ │ MRP, AATP,   │ │ │ │ MRP, AATP,   │ │
-│ │ SS, Capacity │ │ │ │ SS, Capacity │ │ │ │ SS, Capacity │ │
+│ │ Buf, Capacity│ │ │ │ Buf, Capacity│ │ │ │ Buf, Capacity│ │
 │ │              │ │ │ │              │ │ │ │              │ │
 │ │ CDC Monitor  │ │ │ │ CDC Monitor  │ │ │ │ CDC Monitor  │ │
 │ │ Outcome      │ │ │ │ Outcome      │ │ │ │ Outcome      │ │

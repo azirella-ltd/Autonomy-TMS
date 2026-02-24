@@ -43,7 +43,7 @@ class GrossRequirement:
     item_id: str
     required_date: date
     quantity: float
-    source: str  # "demand", "forecast", "dependent", "safety_stock"
+    source: str  # "demand", "forecast", "dependent", "inventory_buffer"
     priority: int = 3  # 1=highest, 5=lowest
 
 

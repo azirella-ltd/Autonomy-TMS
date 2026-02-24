@@ -222,7 +222,7 @@ The TRM architecture is deployed as **11 specialized execution agents**, each pa
 |-----------|--------|---------------|---------------|
 | `ATPExecutorTRM` | `AATPEngine` | Per order, <10ms | AATP consumption with priority sequence |
 | `POCreationTRM` | `MRPEngine` | Per product-location | PO timing and quantity |
-| `SafetyStockTRM` | `SafetyStockCalculator` | Per product-site | Safety stock level adjustments |
+| `InventoryBufferTRM` | `SafetyStockCalculator` | Per product-site | Inventory buffer level adjustments |
 | `InventoryRebalancingTRM` | `RebalancingEngine` | Cross-location, daily | Transfer recommendations |
 | `OrderTrackingTRM` | `OrderTrackingEngine` | Per order, continuous | Exception detection and actions |
 | `MOExecutionTRM` | `MOExecutionEngine` | Per production order | Release, sequence, split, expedite, defer |

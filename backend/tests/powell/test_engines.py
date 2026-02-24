@@ -20,9 +20,9 @@ from app.services.powell.engines import (
     Order,
     ATPResult,
     Priority,
-    SafetyStockCalculator,
-    SafetyStockConfig,
-    SSPolicy,
+    BufferCalculator,
+    BufferConfig,
+    BufferPolicy,
     SSResult,
     DemandStats,
     PolicyType,
@@ -313,12 +313,12 @@ class TestAATPEngine:
         assert result.shortage_qty == 50
 
 
-class TestSafetyStockCalculator:
-    """Tests for Safety Stock Calculator"""
+class TestBufferCalculator:
+    """Tests for Buffer Calculator"""
 
     @pytest.fixture
     def ss_calculator(self):
-        return SafetyStockCalculator("SITE001")
+        return BufferCalculator("SITE001")
 
     @pytest.fixture
     def demand_stats(self):
@@ -331,7 +331,7 @@ class TestSafetyStockCalculator:
 
     def test_abs_level_policy(self, ss_calculator, demand_stats):
         """Test fixed safety stock policy"""
-        policy = SSPolicy(
+        policy = BufferPolicy(
             policy_type=PolicyType.ABS_LEVEL,
             fixed_quantity=500,
         )
@@ -347,7 +347,7 @@ class TestSafetyStockCalculator:
 
     def test_doc_dem_policy(self, ss_calculator, demand_stats):
         """Test days of coverage (demand) policy"""
-        policy = SSPolicy(
+        policy = BufferPolicy(
             policy_type=PolicyType.DOC_DEM,
             days_of_coverage=14,
         )
@@ -362,7 +362,7 @@ class TestSafetyStockCalculator:
 
     def test_service_level_policy(self, ss_calculator, demand_stats):
         """Test service level policy"""
-        policy = SSPolicy(
+        policy = BufferPolicy(
             policy_type=PolicyType.SL,
             target_service_level=0.95,
         )
@@ -377,7 +377,7 @@ class TestSafetyStockCalculator:
 
     def test_bounds_applied(self, ss_calculator, demand_stats):
         """Test min/max bounds are applied"""
-        policy = SSPolicy(
+        policy = BufferPolicy(
             policy_type=PolicyType.ABS_LEVEL,
             fixed_quantity=100,
             min_ss=200,  # Higher than fixed
@@ -393,7 +393,7 @@ class TestSafetyStockCalculator:
 
     def test_seasonal_factor(self, ss_calculator, demand_stats):
         """Test seasonal factor multiplier"""
-        policy = SSPolicy(
+        policy = BufferPolicy(
             policy_type=PolicyType.ABS_LEVEL,
             fixed_quantity=100,
             seasonal_factor=1.5,  # Peak season
@@ -458,7 +458,7 @@ class TestEngineIntegration:
 
     def test_ss_to_mrp_flow(self):
         """Test safety stock feeds into MRP as requirement"""
-        ss_calc = SafetyStockCalculator("SITE001")
+        ss_calc = BufferCalculator("SITE001")
 
         stats = DemandStats(
             avg_daily_demand=50,
@@ -467,7 +467,7 @@ class TestEngineIntegration:
             lead_time_days=5,
         )
 
-        policy = SSPolicy(
+        policy = BufferPolicy(
             policy_type=PolicyType.SL,
             target_service_level=0.95,
         )

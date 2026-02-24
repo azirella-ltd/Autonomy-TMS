@@ -13,7 +13,7 @@ TRMs covered:
   - MaintenanceSchedulingCurriculum (maintenance)
   - SubcontractingCurriculum (subcontracting)
   - ForecastAdjustmentCurriculum (forecast_adj)
-  - SafetyStockCurriculum   (safety_stock)
+  - InventoryBufferCurriculum   (inventory_buffer)
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ QUALITY_STATE_DIM = 12
 MAINTENANCE_STATE_DIM = 13
 SUBCONTRACTING_STATE_DIM = 16
 FORECAST_ADJ_STATE_DIM = 15
-SAFETY_STOCK_STATE_DIM = 14
+INVENTORY_BUFFER_STATE_DIM = 14
 
 
 # ---------------------------------------------------------------------------
@@ -688,11 +688,11 @@ class ForecastAdjustmentCurriculum(TRMCurriculumBase):
 
 
 # ---------------------------------------------------------------------------
-# Safety Stock Curriculum
+# Inventory Buffer Curriculum
 # ---------------------------------------------------------------------------
 
-class SafetyStockCurriculum(TRMCurriculumBase):
-    """Curriculum for Safety Stock adjustment decisions.
+class InventoryBufferCurriculum(TRMCurriculumBase):
+    """Curriculum for Inventory Buffer adjustment decisions.
 
     State: [current_ss_norm, demand_mean_norm, demand_cv,
             lead_time_mean_norm, lead_time_cv, service_level_target,
@@ -707,11 +707,11 @@ class SafetyStockCurriculum(TRMCurriculumBase):
 
     @property
     def state_dim(self) -> int:
-        return SAFETY_STOCK_STATE_DIM
+        return INVENTORY_BUFFER_STATE_DIM
 
     @property
     def trm_type(self) -> str:
-        return "safety_stock"
+        return "inventory_buffer"
 
     def generate(self, phase: int, num_samples: int) -> CurriculumData:
         n = num_samples
@@ -805,5 +805,5 @@ HIVE_CURRICULUM_REGISTRY = {
     "maintenance": MaintenanceSchedulingCurriculum,
     "subcontracting": SubcontractingCurriculum,
     "forecast_adj": ForecastAdjustmentCurriculum,
-    "safety_stock": SafetyStockCurriculum,
+    "inventory_buffer": InventoryBufferCurriculum,
 }

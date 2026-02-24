@@ -147,7 +147,7 @@ DPO = Average Payables / COGS per day
 | **C2C Cycle** | DIO + DSO - DPO | 20-60 days |
 
 **Powell Mapping**:
-- **SafetyStockTRM**: Direct lever on DIO (safety stock = largest component)
+- **InventoryBufferTRM**: Direct lever on DIO (inventory buffer = largest component)
 - **POCreationTRM**: Payment timing decisions affect DPO
 - **InventoryRebalancingTRM**: Redistributes inventory to reduce total DIO
 - **S&OP GraphSAGE**: Sets target DIO via safety_stock_multiplier
@@ -209,22 +209,22 @@ Operational metrics that enable root-cause analysis and surgical corrective acti
 
 | Metric | Formula | Target | TRM Agent |
 |--------|---------|--------|-----------|
-| **Inventory Turns** | Annual COGS / Avg Inventory | Industry dependent | SafetyStockTRM |
-| **Days of Supply (DOS)** | On-Hand / Avg Daily Demand | Per segment | SafetyStockTRM |
+| **Inventory Turns** | Annual COGS / Avg Inventory | Industry dependent | InventoryBufferTRM |
+| **Days of Supply (DOS)** | On-Hand / Avg Daily Demand | Per segment | InventoryBufferTRM |
 | **Inventory Accuracy (IRA)** | Correct counts / Total counted | > 99% | — (warehouse) |
-| **Safety Stock Coverage** | SS On-Hand / SS Target × 100% | 90-110% | SafetyStockTRM |
+| **Safety Stock Coverage** | SS On-Hand / SS Target × 100% | 90-110% | InventoryBufferTRM |
 | **Excess Inventory %** | Excess value / Total value | < 5% | InventoryRebalancingTRM |
 | **Dead Stock %** | No-movement value / Total value | < 2% | InventoryRebalancingTRM |
-| **Inventory by Zone** | % of SKUs in Red/Yellow/Green buffer zone | Green > 70% | SafetyStockTRM |
+| **Inventory by Zone** | % of SKUs in Red/Yellow/Green buffer zone | Green > 70% | InventoryBufferTRM |
 | **Rebalance Efficiency** | Transferred units that reduced stockouts / Total transferred | > 80% | InventoryRebalancingTRM |
 
 **Powell Cascade**:
 - S&OP GraphSAGE sets `safety_stock_multiplier` (0.5-2.0) per site
-- SafetyStockTRM adjusts safety stock levels within this policy envelope
+- InventoryBufferTRM adjusts inventory buffer levels within this policy envelope
 - InventoryRebalancingTRM cross-location transfers when DOS imbalance detected
 - CDC trigger: `INVENTORY_LOW` (<70% target), `INVENTORY_HIGH` (>150% target)
 
-**Hive Signal Types**: `SS_INCREASED`, `SS_DECREASED` (Nurse), `REBALANCE_INBOUND`, `REBALANCE_OUTBOUND` (Forager)
+**Hive Signal Types**: `BUFFER_INCREASED`, `BUFFER_DECREASED` (Nurse), `REBALANCE_INBOUND`, `REBALANCE_OUTBOUND` (Forager)
 
 ---
 
@@ -410,7 +410,7 @@ Metrics unique to AI-agent-driven supply chains. These measure the quality, trus
 | **OrderTrackingTRM** | SENSE | Exception rate, exception resolution time, auto-resolution % | POF, rescheduling rate |
 | **POCreationTRM** | ACQUIRE | Supplier OTD, PO cycle time, material availability | DIO, manufacturing schedule adherence |
 | **SubcontractingTRM** | ACQUIRE | Subcontract delivery accuracy, cost variance | Capacity utilization, OFCT |
-| **SafetyStockTRM** | ASSESS | DOS, inventory turns, safety stock coverage, inventory by zone | C2C, DIO, service level |
+| **InventoryBufferTRM** | ASSESS | DOS, inventory turns, safety stock coverage, inventory by zone | C2C, DIO, service level |
 | **ForecastAdjustmentTRM** | ASSESS | Forecast accuracy (WMAPE), bias, FVA, signal response latency | All downstream metrics (forecast drives everything) |
 | **QualityDispositionTRM** | ASSESS | FPY, scrap rate, rework rate, cost of quality | OEE quality component, return rate, POF |
 | **MaintenanceSchedulingTRM** | PROTECT | PM compliance, MTBF, MTTR | OEE availability, schedule adherence |
@@ -497,7 +497,7 @@ OTIF < 95% target
 │   ├── Promise too aggressive? → Check ATPExecutorTRM: promise accuracy
 │   └── Supplier late? → Check POCreationTRM: supplier OTD
 └── In-Full component low?
-    ├── Inventory shortage? → Check SafetyStockTRM: DOS, SS coverage
+    ├── Inventory shortage? → Check InventoryBufferTRM: DOS, buffer coverage
     ├── Allocation mismatch? → Check AATP utilization, allocation vs actual
     ├── Quality rejection? → Check QualityDispositionTRM: FPY, rejection rate
     └── Forecast miss? → Check ForecastAdjustmentTRM: WMAPE, bias
@@ -509,7 +509,7 @@ OTIF < 95% target
 C2C > target
 ├── DIO too high?
 │   ├── Excess inventory? → InventoryRebalancingTRM: excess %, dead stock
-│   ├── Safety stock too high? → SafetyStockTRM: SS multiplier vs actual service
+│   ├── Buffer too high? → InventoryBufferTRM: buffer multiplier vs actual service
 │   ├── Slow movers? → ABC-XYZ segmentation review
 │   └── Forecast over-bias? → ForecastAdjustmentTRM: positive bias
 ├── DSO too high?

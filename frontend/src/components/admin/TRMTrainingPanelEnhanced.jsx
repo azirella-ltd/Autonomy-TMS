@@ -66,7 +66,7 @@ const PhaseDot = ({ status }) => {
 const TRM_LABELS = {
   atp_executor: 'ATP',
   po_creation: 'PO',
-  safety_stock: 'SS',
+  inventory_buffer: 'IB',
   rebalancing: 'Rebal',
   order_tracking: 'OT',
 };
@@ -74,7 +74,7 @@ const TRM_LABELS = {
 const TRM_FULL_NAMES = {
   atp_executor: 'ATP Executor',
   po_creation: 'PO Creation',
-  safety_stock: 'Safety Stock',
+  inventory_buffer: 'Inventory Buffer',
   rebalancing: 'Inventory Rebalancing',
   order_tracking: 'Order Tracking',
 };

@@ -6,7 +6,7 @@ Replaces ParticipantRound for execution-based simulations.
 
 Terminology (Feb 2026):
 # Terminology: scenario_id (was game_id)
-- player_id -> participant_id
+- player_id -> scenario_user_id
 """
 
 from sqlalchemy import (
@@ -38,7 +38,7 @@ class RoundMetric(Base):
     scenario_id = Column(Integer, ForeignKey("scenarios.id", ondelete="CASCADE"), nullable=False)
     round_number = Column(Integer, nullable=False)
     site_id = Column(Integer, ForeignKey("site.id", ondelete="CASCADE"), nullable=False)
-    participant_id = Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True)
+    scenario_user_id = Column(Integer, ForeignKey("scenario_users.id", ondelete="SET NULL"), nullable=True)
 
     # Inventory metrics
     inventory = Column(Double, server_default=text("0.0"), nullable=False)
@@ -72,7 +72,7 @@ class RoundMetric(Base):
         Index('idx_round_metric_scenario', 'scenario_id'),
         Index('idx_round_metric_round', 'scenario_id', 'round_number'),
         Index('idx_round_metric_site', 'site_id'),
-        Index('idx_round_metric_participant', 'participant_id'),
+        Index('idx_round_metric_scenario_user', 'scenario_user_id'),
     )
 
     def __repr__(self):
@@ -94,7 +94,7 @@ class RoundMetric(Base):
             'scenario_id': self.scenario_id,
             'round_number': self.round_number,
             'site_id': self.site_id,
-            'participant_id': self.participant_id,
+            'scenario_user_id': self.scenario_user_id,
             'inventory': self.inventory,
             'backlog': self.backlog,
             'pipeline_qty': self.pipeline_qty,

@@ -4928,7 +4928,7 @@ ContextAwareExplanation (unified dataclass)
 | MaintenanceSchedulingTRM | Schedule within window | Defer critical (Plant Manager), outsource (Procurement) |
 | SubcontractingTRM | Select from approved vendors | New vendor (Procurement), IP-sensitive (Legal) |
 | ForecastAdjustmentTRM | Minor adjustments (<5%) | Large adjustments (Demand Manager) |
-| SafetyStockTRM | Adjust within ±20% of policy | Exceed bounds (S&OP), critical items (VP) |
+| InventoryBufferTRM | Adjust buffer within ±20% of policy | Exceed bounds (S&OP), critical items (VP) |
 
 ##### 5.15.4 Explanation Templates
 

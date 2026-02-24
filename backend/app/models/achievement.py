@@ -2,11 +2,11 @@
 Achievement models for gamification/simulation system.
 
 Terminology (Feb 2026):
-- player_id -> participant_id
+- player_id -> scenario_user_id
 # Terminology: scenario_id (was game_id)
-- PlayerStats -> ParticipantStats
-- PlayerAchievement -> ParticipantAchievement
-- PlayerBadge -> ParticipantBadge
+- PlayerStats -> ScenarioUserStats
+- PlayerAchievement -> ScenarioUserAchievement
+- PlayerBadge -> ScenarioUserBadge
 """
 from sqlalchemy import (
     Column, Integer, String, Text, Enum, Boolean, DECIMAL,
@@ -46,7 +46,7 @@ class Achievement(Base):
     )
 
     # Relationships
-    participant_achievements = relationship("ParticipantAchievement", back_populates="achievement")
+    scenario_user_achievements = relationship("ScenarioUserAchievement", back_populates="achievement")
     notifications = relationship("AchievementNotification", back_populates="achievement")
 
     __table_args__ = (
@@ -56,11 +56,11 @@ class Achievement(Base):
     )
 
 
-class ParticipantStats(Base):
-    """Aggregate participant (user) statistics across all simulations."""
-    __tablename__ = "participant_stats"
+class ScenarioUserStats(Base):
+    """Aggregate scenario user statistics across all simulations."""
+    __tablename__ = "scenario_user_stats"
 
-    participant_id = Column(Integer, ForeignKey('participants.id', ondelete='CASCADE'), primary_key=True)
+    scenario_user_id = Column(Integer, ForeignKey('scenario_users.id', ondelete='CASCADE'), primary_key=True)
     total_scenarios_played = Column(Integer, nullable=False, default=0)
     total_scenarios_won = Column(Integer, nullable=False, default=0)
     total_rounds_played = Column(Integer, nullable=False, default=0)
@@ -72,7 +72,7 @@ class ParticipantStats(Base):
     worst_simulation_score = Column(DECIMAL(15, 2), nullable=True)
     total_achievements_unlocked = Column(Integer, nullable=False, default=0)
     total_points = Column(Integer, nullable=False, default=0)
-    participant_level = Column(Integer, nullable=False, default=1)
+    scenario_user_level = Column(Integer, nullable=False, default=1)
     experience_points = Column(Integer, nullable=False, default=0)
     consecutive_wins = Column(Integer, nullable=False, default=0)
     longest_win_streak = Column(Integer, nullable=False, default=0)
@@ -87,30 +87,30 @@ class ParticipantStats(Base):
 
     __table_args__ = (
         Index('idx_total_points', 'total_points', postgresql_ops={'total_points': 'DESC'}),
-        Index('idx_participant_level', 'participant_level', postgresql_ops={'participant_level': 'DESC'}),
+        Index('idx_scenario_user_level', 'scenario_user_level', postgresql_ops={'scenario_user_level': 'DESC'}),
         Index('idx_scenarios_played', 'total_scenarios_played', postgresql_ops={'total_scenarios_played': 'DESC'}),
         Index('idx_scenarios_won', 'total_scenarios_won', postgresql_ops={'total_scenarios_won': 'DESC'}),
     )
 
 
-class ParticipantAchievement(Base):
-    """Tracks participant (user) achievement unlocks."""
-    __tablename__ = "participant_achievements"
+class ScenarioUserAchievement(Base):
+    """Tracks scenario user achievement unlocks."""
+    __tablename__ = "scenario_user_achievements"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    participant_id = Column(Integer, ForeignKey('participants.id', ondelete='CASCADE'), nullable=False)
+    scenario_user_id = Column(Integer, ForeignKey('scenario_users.id', ondelete='CASCADE'), nullable=False)
     achievement_id = Column(Integer, ForeignKey('achievements.id', ondelete='CASCADE'), nullable=False)
     scenario_id = Column(Integer, ForeignKey('scenarios.id', ondelete='SET NULL'), nullable=True)
     unlocked_at = Column(TIMESTAMP, server_default=func.current_timestamp())
     progress = Column(JSON, nullable=True, comment='Progress data for multi-step achievements')
 
     # Relationships
-    achievement = relationship("Achievement", back_populates="participant_achievements")
+    achievement = relationship("Achievement", back_populates="scenario_user_achievements")
     # Scenario relationship removed - use foreign key access
 
     __table_args__ = (
-        Index('unique_participant_achievement', 'participant_id', 'achievement_id', unique=True),
-        Index('idx_participant_unlocked', 'participant_id', 'unlocked_at'),
+        Index('unique_scenario_user_achievement', 'scenario_user_id', 'achievement_id', unique=True),
+        Index('idx_scenario_user_unlocked', 'scenario_user_id', 'unlocked_at'),
         Index('idx_achievement_count', 'achievement_id'),
         Index('idx_scenario_achievements', 'scenario_id'),
     )
@@ -156,7 +156,7 @@ class LeaderboardEntry(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     leaderboard_id = Column(Integer, ForeignKey('leaderboards.id', ondelete='CASCADE'), nullable=False)
-    participant_id = Column(Integer, ForeignKey('participants.id', ondelete='CASCADE'), nullable=False)
+    scenario_user_id = Column(Integer, ForeignKey('scenario_users.id', ondelete='CASCADE'), nullable=False)
     rank = Column(Integer, nullable=False)
     score = Column(DECIMAL(15, 2), nullable=False)
     entry_metadata = Column('metadata', JSON, nullable=True, comment='Additional data')
@@ -168,21 +168,20 @@ class LeaderboardEntry(Base):
 
     # Relationships
     leaderboard = relationship("Leaderboard", back_populates="entries")
-    # Participant relationship removed - use foreign key access
 
     __table_args__ = (
-        Index('unique_leaderboard_participant', 'leaderboard_id', 'participant_id', unique=True),
+        Index('unique_leaderboard_scenario_user', 'leaderboard_id', 'scenario_user_id', unique=True),
         Index('idx_leaderboard_rank', 'leaderboard_id', 'rank'),
-        Index('idx_participant_leaderboards', 'participant_id'),
+        Index('idx_scenario_user_leaderboards', 'scenario_user_id'),
     )
 
 
-class ParticipantBadge(Base):
-    """Special badges earned by participants (users)."""
-    __tablename__ = "participant_badges"
+class ScenarioUserBadge(Base):
+    """Special badges earned by scenario users."""
+    __tablename__ = "scenario_user_badges"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    participant_id = Column(Integer, ForeignKey('participants.id', ondelete='CASCADE'), nullable=False)
+    scenario_user_id = Column(Integer, ForeignKey('scenario_users.id', ondelete='CASCADE'), nullable=False)
     badge_name = Column(String(255), nullable=False)
     badge_description = Column(Text, nullable=True)
     badge_icon = Column(String(100), default='badge')
@@ -193,17 +192,17 @@ class ParticipantBadge(Base):
     # No relationships - use foreign key access
 
     __table_args__ = (
-        Index('idx_participant_badges', 'participant_id', 'is_displayed'),
-        Index('idx_active_badges', 'participant_id', 'expires_at'),
+        Index('idx_scenario_user_badges', 'scenario_user_id', 'is_displayed'),
+        Index('idx_active_badges', 'scenario_user_id', 'expires_at'),
     )
 
 
 class AchievementNotification(Base):
-    """Queue of achievement notifications for participants (users)."""
+    """Queue of achievement notifications for scenario users."""
     __tablename__ = "achievement_notifications"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    participant_id = Column(Integer, ForeignKey('participants.id', ondelete='CASCADE'), nullable=False)
+    scenario_user_id = Column(Integer, ForeignKey('scenario_users.id', ondelete='CASCADE'), nullable=False)
     achievement_id = Column(Integer, ForeignKey('achievements.id', ondelete='CASCADE'), nullable=False)
     notification_type = Column(
         Enum('unlock', 'progress', 'milestone', name='notification_type'),
@@ -218,11 +217,10 @@ class AchievementNotification(Base):
 
     # Relationships
     achievement = relationship("Achievement", back_populates="notifications")
-    # Participant relationship removed - use foreign key access
 
     __table_args__ = (
-        Index('idx_participant_unread', 'participant_id', 'is_read', 'created_at'),
-        Index('idx_participant_unshown', 'participant_id', 'is_shown', 'created_at'),
+        Index('idx_scenario_user_unread', 'scenario_user_id', 'is_read', 'created_at'),
+        Index('idx_scenario_user_unshown', 'scenario_user_id', 'is_shown', 'created_at'),
     )
 
 
@@ -232,6 +230,9 @@ class AchievementNotification(Base):
 # These aliases allow existing code to continue working during migration.
 # All new code should use the new names.
 
-PlayerStats = ParticipantStats
-PlayerAchievement = ParticipantAchievement
-PlayerBadge = ParticipantBadge
+ParticipantStats = ScenarioUserStats
+ParticipantAchievement = ScenarioUserAchievement
+ParticipantBadge = ScenarioUserBadge
+PlayerStats = ScenarioUserStats
+PlayerAchievement = ScenarioUserAchievement
+PlayerBadge = ScenarioUserBadge

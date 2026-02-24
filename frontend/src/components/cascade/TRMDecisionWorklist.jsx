@@ -36,7 +36,7 @@ const REASON_CODES = [
   { value: 'QUALITY_CONCERN', label: 'Quality Concern' },
   { value: 'COST_OPTIMIZATION', label: 'Cost Optimization' },
   { value: 'SERVICE_LEVEL', label: 'Service Level Priority' },
-  { value: 'SAFETY_STOCK', label: 'Safety Stock Adjustment' },
+  { value: 'INVENTORY_BUFFER', label: 'Inventory Buffer Adjustment' },
   { value: 'DEMAND_CHANGE', label: 'Demand Change' },
   { value: 'EXPEDITE_REQUIRED', label: 'Expedite Required' },
   { value: 'RISK_MITIGATION', label: 'Risk Mitigation' },

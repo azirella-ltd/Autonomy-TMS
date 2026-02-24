@@ -656,28 +656,19 @@ def run_detection(
     """
     Run exception detection for a given period.
 
-    This simulates checking forecast vs actual and creating exceptions
-    where variance exceeds threshold. In production, this would query
-    actual forecast and demand data.
+    Compares forecast (P50) vs actual demand (OutboundOrderLine) and creates
+    ForecastException records where variance exceeds detection rule thresholds.
     """
-    # In a real implementation, this would:
-    # 1. Query forecast data for the period
-    # 2. Query actual demand data for the period
-    # 3. Calculate variance for each product/site/period
-    # 4. Apply detection rules
-    # 5. Create exceptions where rules are triggered
+    from app.services.forecast_exception_detector import ForecastExceptionDetector
 
-    # For now, return a mock response
-    return {
-        "status": "completed",
-        "period": {
-            "start": data.period_start.isoformat(),
-            "end": data.period_end.isoformat(),
-        },
-        "threshold_percent": data.threshold_percent,
-        "exceptions_created": 0,
-        "message": "Detection run completed. Connect to forecast and demand data to enable automatic detection.",
-    }
+    detector = ForecastExceptionDetector(db)
+    return detector.run_detection(
+        config_id=data.config_id,
+        period_start=data.period_start,
+        period_end=data.period_end,
+        threshold_percent=data.threshold_percent,
+        product_ids=data.product_ids,
+    )
 
 
 @router.get("/my-assigned")

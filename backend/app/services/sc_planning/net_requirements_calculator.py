@@ -10,6 +10,9 @@ Key Features:
 4. Multi-sourcing with priority and ratio allocation
 5. Lead time offsetting
 6. Supply plan generation (PO/TO/MO requests)
+7. Soft-buffer netting: buffer-replenishment orders get lower priority
+   than demand-driven orders (prevents buffer from competing with real
+   demand for upstream capacity — the DDMRP critique of traditional MRP)
 
 Reference: https://docs.[removed]
 """
@@ -115,7 +118,18 @@ class NetRequirementsCalculator:
         scenario_id: Optional[int]
     ) -> List[SupplyPlan]:
         """
-        Perform time-phased inventory projection and netting
+        Perform time-phased inventory projection and netting.
+
+        Implements **soft-buffer netting**: when projected inventory drops below
+        the target (buffer) level but remains above zero, a buffer-replenishment
+        order is created at lower priority than demand-driven orders.  This
+        prevents the inventory buffer from competing with real customer demand
+        for upstream capacity — addressing the classic DDMRP critique of
+        traditional MRP where safety stock acts as a hard demand target.
+
+        Supply plan priority mapping:
+          - demand_driven (projected_inventory < 0): priority 1-2
+          - buffer_replenishment (0 <= projected < target): priority 4-5
 
         Args:
             product_id: Product identifier
@@ -124,7 +138,7 @@ class NetRequirementsCalculator:
             opening_inventory: Current on-hand inventory
             scheduled_receipts: Scheduled receipts by date
             net_demand: Net demand data
-            target_inventory: Target inventory level
+            target_inventory: Target inventory level (buffer + cycle stock)
             scenario_id: Optional game ID
 
         Returns:
@@ -150,6 +164,21 @@ class NetRequirementsCalculator:
             if projected_inventory < target_inventory:
                 net_requirement = target_inventory - projected_inventory
 
+                # --- Soft-buffer netting ---
+                # Split net requirement into demand-driven vs buffer-replenishment.
+                # Demand-driven: the portion needed to avoid an actual stockout
+                #   (projected_inventory < 0 → real demand unmet).
+                # Buffer-replenishment: the portion needed to restore buffer
+                #   (0 ≤ projected < target → no stockout but buffer eroded).
+                if projected_inventory < 0:
+                    demand_driven_qty = abs(projected_inventory)
+                    buffer_qty = target_inventory  # restore buffer fully
+                    replenishment_type = "demand_driven"
+                else:
+                    demand_driven_qty = 0.0
+                    buffer_qty = net_requirement
+                    replenishment_type = "buffer_replenishment"
+
                 # Generate supply plan based on sourcing rules
                 plan = await self.generate_supply_plan(
                     product_id, site_id, period_date,
@@ -158,6 +187,12 @@ class NetRequirementsCalculator:
                 )
 
                 if plan:
+                    # Tag the plan with replenishment type for downstream
+                    # priority-aware scheduling (TRM/AATP can read this).
+                    plan.replenishment_type = replenishment_type
+                    plan.demand_driven_qty = demand_driven_qty
+                    plan.buffer_qty = buffer_qty
+
                     supply_plans.append(plan)
                     # Update projected inventory with planned order
                     projected_inventory += plan.planned_order_quantity

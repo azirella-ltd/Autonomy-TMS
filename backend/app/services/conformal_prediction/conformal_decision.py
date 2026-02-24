@@ -117,7 +117,7 @@ class ConformalDecisionWrapper:
         "maintenance_scheduling": 0.20,  # 20% of maintenance cost
         "subcontracting": 0.20,  # 20% make-vs-buy cost differential
         "forecast_adjustment": 0.25,  # 25% forecast error increase
-        "safety_stock": 0.15,  # 15% of holding/stockout cost
+        "inventory_buffer": 0.15,  # 15% of holding/stockout cost
     }
 
     # Minimum calibration set size for reliable bounds

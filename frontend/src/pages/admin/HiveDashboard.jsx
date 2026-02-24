@@ -61,7 +61,7 @@ const TRM_CASTE_MAP = {
   po_creation: 'forager',
   inventory_rebalancing: 'forager',
   subcontracting: 'forager',
-  safety_stock: 'nurse',
+  inventory_buffer: 'nurse',
   forecast_adjustment: 'nurse',
   quality_disposition: 'guard',
   maintenance_scheduling: 'guard',

@@ -178,13 +178,17 @@ from .cdc_monitor import (
     CDCMonitor,
 )
 
-# Safety Stock TRM (Phase 5 - Narrow TRM)
-from .safety_stock_trm import (
-    SSAdjustmentReason,
-    SSState,
-    SSAdjustment,
-    SafetyStockTRM,
+# Inventory Buffer TRM (Phase 5 - Narrow TRM)
+from .inventory_buffer_trm import (
+    BufferAdjustmentReason,
+    BufferState,
+    BufferAdjustment,
+    InventoryBufferTRM,
 )
+SSAdjustmentReason = BufferAdjustmentReason
+SSState = BufferState
+SSAdjustment = BufferAdjustment
+SafetyStockTRM = InventoryBufferTRM
 
 # Deterministic Engines (Section 5.13)
 from .engines import (
@@ -199,8 +203,8 @@ from .engines import (
     Order as EngineOrder,
     ATPResult as EngineATPResult,
     Priority,
-    SafetyStockCalculator,
-    SafetyStockConfig,
+    BufferCalculator,
+    BufferConfig,
     SSPolicy,
     SSResult,
     DemandStats,
@@ -215,6 +219,8 @@ from .engines import (
     OrderSnapshot,
     ExceptionResult,
 )
+SafetyStockCalculator = BufferCalculator
+SafetyStockConfig = BufferConfig
 
 # SiteAgent Model (Section 5.12 - Shared Encoder + Heads)
 from .site_agent_model import (
@@ -387,11 +393,11 @@ __all__ = [
     "TriggerEvent",
     "CDCConfig",
     "CDCMonitor",
-    # Safety Stock TRM (Phase 5 - Narrow TRM)
-    "SSAdjustmentReason",
-    "SSState",
-    "SSAdjustment",
-    "SafetyStockTRM",
+    # Inventory Buffer TRM (Phase 5 - Narrow TRM)
+    "BufferAdjustmentReason",
+    "BufferState",
+    "BufferAdjustment",
+    "InventoryBufferTRM",
     # Deterministic Engines (Section 5.13)
     "MRPEngine",
     "MRPConfig",
@@ -404,8 +410,8 @@ __all__ = [
     "EngineOrder",
     "EngineATPResult",
     "Priority",
-    "SafetyStockCalculator",
-    "SafetyStockConfig",
+    "BufferCalculator",
+    "BufferConfig",
     "SSPolicy",
     "SSResult",
     "DemandStats",
@@ -449,4 +455,11 @@ __all__ = [
     "SiteAgentDecisionTracker",
     "SiteAgentPolicy",
     "create_site_agent_for_scenario",
+    # Backward-compatible aliases
+    "SafetyStockTRM",
+    "SafetyStockCalculator",
+    "SafetyStockConfig",
+    "SSAdjustmentReason",
+    "SSState",
+    "SSAdjustment",
 ]

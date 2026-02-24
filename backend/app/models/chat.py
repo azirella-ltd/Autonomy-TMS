@@ -4,9 +4,9 @@ Phase 7 Sprint 2
 
 Terminology (Feb 2026):
 # Terminology: scenario_id (was game_id)
-- player_id -> participant_id
+- player_id -> scenario_user_id
 - Game -> Scenario
-- Player -> Participant
+- Player -> ScenarioUser (in code), User (in UI)
 """
 
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, Enum, JSON, Float
@@ -97,7 +97,7 @@ class AgentSuggestion(Base):
 
     # Decision tracking
     accepted = Column(Boolean, nullable=True)  # None = pending, True = accepted, False = declined
-    participant_id = Column(Integer, ForeignKey("participants.id"), nullable=True)
+    scenario_user_id = Column(Integer, ForeignKey("scenario_users.id"), nullable=True)
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -105,7 +105,7 @@ class AgentSuggestion(Base):
 
     # Relationships
     scenario = relationship("Scenario", back_populates="agent_suggestions")
-    participant = relationship("Participant", back_populates="agent_suggestions")
+    scenario_user = relationship("ScenarioUser", back_populates="agent_suggestions")
 
     def __repr__(self):
         return f"<AgentSuggestion(id={self.id}, agent={self.agent_name}, quantity={self.order_quantity}, confidence={self.confidence})>"
@@ -124,7 +124,7 @@ class WhatIfAnalysis(Base):
     round = Column(Integer, nullable=False)
 
     # Request
-    participant_id = Column(Integer, ForeignKey("participants.id"), nullable=False)
+    scenario_user_id = Column(Integer, ForeignKey("scenario_users.id"), nullable=False)
     question = Column(Text, nullable=False)
     scenario_data = Column(JSON, nullable=False)  # Hypothetical order quantities (renamed from 'scenario' to avoid conflict)
 
@@ -141,7 +141,7 @@ class WhatIfAnalysis(Base):
 
     # Relationships
     scenario = relationship("Scenario", back_populates="what_if_analyses")
-    participant = relationship("Participant", back_populates="what_if_analyses")
+    scenario_user = relationship("ScenarioUser", back_populates="what_if_analyses")
 
     def __repr__(self):
         return f"<WhatIfAnalysis(id={self.id}, scenario_id={self.scenario_id}, question={self.question[:50]})>"

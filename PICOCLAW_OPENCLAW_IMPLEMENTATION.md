@@ -1385,7 +1385,7 @@ OpenClaw captures: "ACME doubled their Q2 order"
   → Forecast adjusted, override captured (is_expert_decision=true)
   → HiveSignalBus emits: FORECAST_ADJUSTED (direction=up, magnitude=35%)
   → POCreationTRM reads signal → adjusts reorder quantities
-  → SafetyStockTRM reads signal → evaluates buffer adequacy
+  → InventoryBufferTRM reads signal → evaluates buffer adequacy
 ```
 
 ### 5.7 Channel-to-Signal Source Mapping

@@ -127,12 +127,12 @@ def compute_feedback_features(
                         break
         features.exception_rate = exception_count / n
 
-        # SS adjustment direction: look at safety_stock TRM urgency direction
+        # Buffer adjustment direction: look at inventory_buffer TRM urgency direction
         ss_dirs = []
         for trace in recent_traces:
             decisions = getattr(trace, "decisions", [])
             for d in decisions:
-                if getattr(d, "trm_name", "") == "safety_stock":
+                if getattr(d, "trm_name", "") == "inventory_buffer":
                     u_after = getattr(d, "urgency_after", 0.0)
                     u_before = getattr(d, "urgency_before", 0.0)
                     if u_after > u_before + 0.01:

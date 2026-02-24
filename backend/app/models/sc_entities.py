@@ -476,7 +476,10 @@ class ProductionProcess(Base):
     SC Entity: production_process
     """
     __tablename__ = "production_process"
-    __table_args__ = {"extend_existing": True}
+    __table_args__ = (
+        Index("idx_production_process_site", "site_id"),
+        Index("idx_production_process_config", "config_id"),
+    )
 
     id = Column(String(100), primary_key=True)
     description = Column(String(500))

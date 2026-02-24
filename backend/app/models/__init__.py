@@ -3,7 +3,7 @@
 Terminology (Feb 2026):
 - Game -> Scenario
 - Alternative -> Scenario (intermediate step now complete)
-- Player -> Participant
+- Player -> ScenarioUser (in DB/code), User (in UI)
 - Gamification -> Simulation
 """
 import logging
@@ -35,8 +35,10 @@ from .group import Group, GroupMode, ClockMode
 
 # 3. Models that depend on User
 from .participant import (
-    Participant, ParticipantRole, ParticipantType, ParticipantStrategy, AgentMode,
-    FunctionCategory, ParticipantFunction
+    ScenarioUser, ScenarioUserRole, ScenarioUserType, ScenarioUserStrategy, AgentMode,
+    FunctionCategory, ScenarioUserFunction,
+    # Backward compatibility aliases
+    Participant, ParticipantRole, ParticipantType, ParticipantStrategy, ParticipantFunction,
 )
 
 # 3b. Function Assignments (Feb 2026 - expanded role architecture)
@@ -44,12 +46,16 @@ from .function_assignment import FunctionAssignment
 
 # 3. Scenario-related models
 from .supervisor_action import SupervisorAction
-from .scenario import Scenario, ScenarioStatus, Round, ParticipantAction
+from .scenario import Scenario, ScenarioStatus, Round, ScenarioUserAction, ParticipantAction
 from .agent_config import AgentConfig
 from .auth_models import PasswordHistory, PasswordResetToken
 from .session import TokenBlacklist, UserSession
 # Supply chain models
-from .supply_chain import ParticipantInventory, Order, ScenarioRound, ParticipantRound, RoundPhase, UpstreamOrderType
+from .supply_chain import (
+    ScenarioUserInventory, Order, ScenarioRound, ScenarioUserPeriod, RoundPhase, UpstreamOrderType,
+    # Backward compatibility aliases
+    ParticipantInventory, ParticipantRound,
+)
 from .round_metric import RoundMetric
 from app.core.time_buckets import TimeBucket
 
@@ -141,8 +147,10 @@ from .chat import ChatMessage, AgentSuggestion, WhatIfAnalysis, MessageType, Sen
 
 # 6. Simulation/Gamification models (Phase 7 Sprint 5)
 from .achievement import (
-    Achievement, ParticipantStats, ParticipantAchievement, Leaderboard,
-    LeaderboardEntry, ParticipantBadge, AchievementNotification
+    Achievement, ScenarioUserStats, ScenarioUserAchievement, Leaderboard,
+    LeaderboardEntry, ScenarioUserBadge, AchievementNotification,
+    # Backward compatibility aliases
+    ParticipantStats, ParticipantAchievement, ParticipantBadge,
 )
 
 # 7. Enterprise Features - Option 1
@@ -298,11 +306,11 @@ from .sap_user_import import SAPUserImportLog, SAPRoleMapping
 
 # Verify all models are properly registered
 registered_tables = set(Base.metadata.tables.keys())
-# Updated terminology: scenarios, participants, participant_actions
+# Updated terminology: scenarios, scenario_users, scenario_user_actions
 expected_tables = {
-    'users', 'refresh_tokens', 'participants', 'password_history',
+    'users', 'refresh_tokens', 'scenario_users', 'password_history',
     'password_reset_tokens', 'token_blacklist', 'user_sessions',
-    'scenarios', 'rounds', 'participant_actions', 'user_scenarios', 'groups'
+    'scenarios', 'rounds', 'scenario_user_actions', 'user_scenarios', 'groups'
 }
 
 missing_tables = expected_tables - registered_tables
@@ -368,7 +376,18 @@ __all__ = [
     'Scenario',
     'ScenarioStatus',
     'ScenarioRound',
-    # Participant terminology
+    # ScenarioUser terminology (was Participant)
+    'ScenarioUser',
+    'ScenarioUserRole',
+    'ScenarioUserType',
+    'ScenarioUserStrategy',
+    'ScenarioUserAction',
+    'ScenarioUserInventory',
+    'ScenarioUserPeriod',
+    'FunctionCategory',
+    'ScenarioUserFunction',
+    'FunctionAssignment',
+    # Backward compatibility aliases
     'Participant',
     'ParticipantRole',
     'ParticipantType',
@@ -376,9 +395,7 @@ __all__ = [
     'ParticipantAction',
     'ParticipantInventory',
     'ParticipantRound',
-    'FunctionCategory',
     'ParticipantFunction',
-    'FunctionAssignment',
     'AgentConfig',
     'PasswordHistory',
     'PasswordResetToken',
@@ -397,12 +414,16 @@ __all__ = [
     'MessageType',
     'SenderType',
     'Achievement',
-    'ParticipantStats',
-    'ParticipantAchievement',
-    'ParticipantBadge',
+    'ScenarioUserStats',
+    'ScenarioUserAchievement',
+    'ScenarioUserBadge',
     'Leaderboard',
     'LeaderboardEntry',
     'AchievementNotification',
+    # Backward compatibility aliases
+    'ParticipantStats',
+    'ParticipantAchievement',
+    'ParticipantBadge',
     # Option 1: Enterprise Features
     'Tenant',
     'SSOProvider',

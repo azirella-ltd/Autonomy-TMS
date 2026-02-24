@@ -61,7 +61,7 @@ TRM_OUTCOME_DELAY = {
     "maintenance": timedelta(days=7),
     "subcontracting": timedelta(days=14),
     "forecast_adjustment": timedelta(days=30),
-    "safety_stock": timedelta(days=14),
+    "inventory_buffer": timedelta(days=14),
 }
 
 # Minimum delay before we even attempt outcome collection
@@ -223,7 +223,8 @@ class OutcomeCollectorService:
             if not inv:
                 return None
 
-            final_ss = (decision.final_result or {}).get("safety_stock", 100)
+            final_ss = (decision.final_result or {}).get("inventory_buffer",
+                        (decision.final_result or {}).get("safety_stock", 100))
             on_hand = float(inv.on_hand_qty or 0)
             stockout = on_hand <= 0
 
@@ -355,7 +356,7 @@ class OutcomeCollectorService:
             ("maintenance", self._collect_maintenance_outcomes),
             ("subcontracting", self._collect_subcontracting_outcomes),
             ("forecast_adjustment", self._collect_forecast_adjustment_outcomes),
-            ("safety_stock", self._collect_safety_stock_outcomes),
+            ("inventory_buffer", self._collect_inventory_buffer_outcomes),
         ]
 
         for trm_type, collector_fn in collectors:
@@ -623,15 +624,15 @@ class OutcomeCollectorService:
                 result["failed"] += 1
         return result
 
-    def _collect_safety_stock_outcomes(self, cutoff: datetime, now: datetime) -> Dict[str, Any]:
-        """Collect outcomes for powell_safety_stock_decisions."""
-        from app.models.powell_decisions import PowellSSDecision
+    def _collect_inventory_buffer_outcomes(self, cutoff: datetime, now: datetime) -> Dict[str, Any]:
+        """Collect outcomes for powell_inventory_buffer_decisions."""
+        from app.models.powell_decisions import PowellBufferDecision
         from app.models.sc_entities import InvLevel
 
-        decisions = self.db.query(PowellSSDecision).filter(
-            PowellSSDecision.was_applied.is_(None),
-            PowellSSDecision.created_at < cutoff,
-            PowellSSDecision.created_at > now - timedelta(days=60),
+        decisions = self.db.query(PowellBufferDecision).filter(
+            PowellBufferDecision.was_applied.is_(None),
+            PowellBufferDecision.created_at < cutoff,
+            PowellBufferDecision.created_at > now - timedelta(days=60),
         ).limit(200).all()
 
         result = {"found": len(decisions), "computed": 0, "failed": 0}

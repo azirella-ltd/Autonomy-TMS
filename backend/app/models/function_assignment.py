@@ -7,7 +7,7 @@ COPILOT, AUTONOMOUS).
 Terminology (Feb 2026):
 # Terminology: scenario_id (was game_id)
 - Game -> Scenario
-- player -> participant
+- player -> scenario_user
 """
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING
@@ -15,11 +15,11 @@ from sqlalchemy import Integer, String, DateTime, Enum as SQLEnum, ForeignKey, B
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
-from .participant import ParticipantFunction, AgentMode
+from .participant import ScenarioUserFunction, AgentMode
 
 if TYPE_CHECKING:
     from .scenario import Scenario
-    from .participant import Participant
+    from .participant import ScenarioUser
 
 
 class FunctionAssignment(Base):
@@ -40,8 +40,8 @@ class FunctionAssignment(Base):
     scenario_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("scenarios.id", ondelete="CASCADE"), nullable=False
     )
-    participant_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False
+    scenario_user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("scenario_users.id", ondelete="CASCADE"), nullable=False
     )
     site_key: Mapped[str] = mapped_column(
         String(100), nullable=False, index=True,
@@ -49,8 +49,8 @@ class FunctionAssignment(Base):
     )
 
     # Function assignment
-    function: Mapped[ParticipantFunction] = mapped_column(
-        SQLEnum(ParticipantFunction), nullable=False,
+    function: Mapped[ScenarioUserFunction] = mapped_column(
+        SQLEnum(ScenarioUserFunction), nullable=False,
         comment="The planning or execution function assigned"
     )
 
@@ -94,8 +94,8 @@ class FunctionAssignment(Base):
     scenario: Mapped["Scenario"] = relationship(
         "Scenario", back_populates="function_assignments", lazy="selectin"
     )
-    participant: Mapped["Participant"] = relationship(
-        "Participant", back_populates="function_assignments", lazy="selectin"
+    scenario_user: Mapped["ScenarioUser"] = relationship(
+        "ScenarioUser", back_populates="function_assignments", lazy="selectin"
     )
 
     # Unique constraint: one participant per function per site per scenario

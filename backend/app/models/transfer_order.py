@@ -118,7 +118,7 @@ class TransferOrderLineItem(Base):
 
     # Line details
     line_number = Column(Integer, nullable=False)
-    product_id = Column(String(100), ForeignKey("product.id"), nullable=False)  # SC standard: Integer ForeignKey
+    product_id = Column(String(100), ForeignKey("product.id"), nullable=False)
 
     # Quantities
     quantity = Column(Double, nullable=False)

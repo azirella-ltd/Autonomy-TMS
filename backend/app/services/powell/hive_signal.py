@@ -50,8 +50,11 @@ class HiveSignalType(str, Enum):
     SUBCONTRACT_ROUTED = "subcontract_routed"
 
     # -- Nurse signals (health) --
-    SS_INCREASED = "ss_increased"
-    SS_DECREASED = "ss_decreased"
+    BUFFER_INCREASED = "buffer_increased"
+    BUFFER_DECREASED = "buffer_decreased"
+    # Backward-compatible aliases
+    SS_INCREASED = "buffer_increased"
+    SS_DECREASED = "buffer_decreased"
     FORECAST_ADJUSTED = "forecast_adjusted"
 
     # -- Guard signals (integrity) --
@@ -85,7 +88,7 @@ FORAGER_SIGNALS: FrozenSet[HiveSignalType] = frozenset({
     HiveSignalType.SUBCONTRACT_ROUTED,
 })
 NURSE_SIGNALS: FrozenSet[HiveSignalType] = frozenset({
-    HiveSignalType.SS_INCREASED, HiveSignalType.SS_DECREASED,
+    HiveSignalType.BUFFER_INCREASED, HiveSignalType.BUFFER_DECREASED,
     HiveSignalType.FORECAST_ADJUSTED,
 })
 GUARD_SIGNALS: FrozenSet[HiveSignalType] = frozenset({
@@ -197,7 +200,7 @@ class UrgencyVector:
         "po_creation": 2,
         "rebalancing": 3,
         "subcontracting": 4,
-        "safety_stock": 5,
+        "inventory_buffer": 5,
         "forecast_adj": 6,
         "quality": 7,
         "maintenance": 8,

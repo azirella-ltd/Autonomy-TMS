@@ -333,7 +333,7 @@ class User(Base):
         lazy='selectin'
     )
 
-    participants: Mapped[List["Participant"]] = relationship("Participant", back_populates="user", lazy="selectin")
+    scenario_users: Mapped[List["ScenarioUser"]] = relationship("ScenarioUser", back_populates="user", lazy="selectin")
     sessions: Mapped[List["UserSession"]] = relationship(
         "UserSession", 
         back_populates="user", 

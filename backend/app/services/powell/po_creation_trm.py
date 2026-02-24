@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 class POTriggerReason(Enum):
     """Reason for PO creation"""
     REORDER_POINT = "reorder_point"  # Hit reorder point
-    SAFETY_STOCK = "safety_stock"  # Below safety stock
+    INVENTORY_BUFFER = "inventory_buffer"  # Below inventory buffer level
     FORECAST_DRIVEN = "forecast_driven"  # Anticipated demand
     SCHEDULED = "scheduled"  # Regular replenishment cycle
     EXPEDITE = "expedite"  # Emergency order
@@ -374,9 +374,9 @@ class POCreationTRM:
         if inv_pos.available <= 0:
             return True, POTriggerReason.EXPEDITE, POUrgency.CRITICAL
 
-        # High: below safety stock
+        # High: below inventory buffer level
         if inv_pos.inventory_position < inv_pos.safety_stock:
-            return True, POTriggerReason.SAFETY_STOCK, POUrgency.HIGH
+            return True, POTriggerReason.INVENTORY_BUFFER, POUrgency.HIGH
 
         # Normal: at or below reorder point
         if inv_pos.inventory_position <= inv_pos.reorder_point:
@@ -554,7 +554,7 @@ class POCreationTRM:
         # Trigger reason
         if trigger_reason == POTriggerReason.EXPEDITE:
             parts.append(f"CRITICAL: Available inventory ({inv_pos.available:.0f}) at critical level")
-        elif trigger_reason == POTriggerReason.SAFETY_STOCK:
+        elif trigger_reason == POTriggerReason.INVENTORY_BUFFER:
             parts.append(f"Below safety stock ({inv_pos.inventory_position:.0f} < {inv_pos.safety_stock:.0f})")
         elif trigger_reason == POTriggerReason.REORDER_POINT:
             parts.append(f"At reorder point ({inv_pos.inventory_position:.0f} <= {inv_pos.reorder_point:.0f})")

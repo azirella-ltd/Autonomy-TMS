@@ -2,7 +2,7 @@
 SiteAgent - Unified Execution Orchestrator
 
 The SiteAgent is the execution-level orchestrator that combines:
-- Deterministic engines (MRP, AATP, Safety Stock)
+- Deterministic engines (MRP, AATP, Inventory Buffer)
 - Learned TRM heads (exception handling, adjustments)
 - CDC monitoring (event-driven replanning)
 
@@ -25,7 +25,7 @@ import logging
 from .engines import (
     MRPEngine, MRPConfig, GrossRequirement, PlannedOrder,
     AATPEngine, AATPConfig, Order, ATPResult, Priority,
-    SafetyStockCalculator, SafetyStockConfig, SSPolicy, DemandStats
+    BufferCalculator, BufferConfig, BufferPolicy, DemandStats
 )
 from .cdc_monitor import CDCMonitor, CDCConfig, SiteMetrics, TriggerEvent, ReplanAction
 from .site_agent_model import SiteAgentModel, SiteAgentModelConfig
@@ -60,7 +60,7 @@ _TRM_TO_AGENT_ROLE: Dict[str, AgentRole] = {
     "maintenance_scheduling": AgentRole.MAINTENANCE,
     "subcontracting": AgentRole.PROCUREMENT,
     "forecast_adjustment": AgentRole.DEMAND,
-    "safety_stock": AgentRole.INVENTORY,
+    "inventory_buffer": AgentRole.INVENTORY,
 }
 
 
@@ -72,7 +72,7 @@ class SiteAgentConfig:
     # Engine configs
     mrp_config: MRPConfig = field(default_factory=MRPConfig)
     aatp_config: AATPConfig = field(default_factory=AATPConfig)
-    ss_config: SafetyStockConfig = field(default_factory=SafetyStockConfig)
+    ss_config: BufferConfig = field(default_factory=BufferConfig)
 
     # Model config
     model_config: SiteAgentModelConfig = field(default_factory=SiteAgentModelConfig)
@@ -139,7 +139,7 @@ class SiteAgent:
         # Initialize deterministic engines (100% code)
         self.mrp_engine = MRPEngine(config.site_key, config.mrp_config)
         self.aatp_engine = AATPEngine(config.site_key, config.aatp_config)
-        self.ss_calculator = SafetyStockCalculator(config.site_key, config.ss_config)
+        self.ss_calculator = BufferCalculator(config.site_key, config.ss_config)
 
         # Initialize TRM model (learned)
         self.model: Optional[SiteAgentModel] = None
@@ -514,7 +514,7 @@ class SiteAgent:
 
         Flow:
         1. MRPEngine computes net requirements
-        2. SafetyStockCalculator provides targets
+        2. BufferCalculator provides targets
         3. POTimingHead adjusts timing/expedite decisions
         """
         # Step 1: Deterministic MRP
@@ -783,8 +783,8 @@ class SiteAgent:
                     HiveSignalType.QUALITY_HOLD,
                     HiveSignalType.REBALANCE_INBOUND,
                     HiveSignalType.MO_RELEASED,
-                    HiveSignalType.SS_INCREASED,
-                    HiveSignalType.SS_DECREASED,
+                    HiveSignalType.BUFFER_INCREASED,
+                    HiveSignalType.BUFFER_DECREASED,
                 },
             )
             return {"signals": [s.to_dict() for s in signals], "count": len(signals)}

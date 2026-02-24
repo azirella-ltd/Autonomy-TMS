@@ -604,7 +604,7 @@ class TRMSiteTrainer:
                  "state_days_of_supply", "state_demand_forecast"],
                 ["order_qty"],
             ),
-            "safety_stock": (
+            "inventory_buffer": (
                 SafetyStockDecisionLog,
                 ["state_baseline_ss", "state_current_dos",
                  "state_current_on_hand", "state_demand_cv",

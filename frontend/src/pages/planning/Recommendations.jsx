@@ -260,7 +260,7 @@ const Recommendations = () => {
                   <SelectItem value="ALL">All Types</SelectItem>
                   <SelectItem value="rebalance">Rebalance</SelectItem>
                   <SelectItem value="expedite">Expedite</SelectItem>
-                  <SelectItem value="safety_stock">Safety Stock</SelectItem>
+                  <SelectItem value="inventory_buffer">Inventory Buffer</SelectItem>
                 </SelectContent>
               </Select>
             </div>
