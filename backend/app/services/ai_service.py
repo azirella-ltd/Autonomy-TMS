@@ -2,14 +2,14 @@ import random
 from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
-from app.models.participant import Participant, ParticipantRole
+from app.models.scenario_user import ScenarioUser, ScenarioUserRole
 from app.models.scenario import Scenario
-from app.models.supply_chain import ParticipantInventory, ScenarioRound, ParticipantRound
-from app.schemas.scenario import ParticipantState, ScenarioState
+from app.models.supply_chain import ScenarioUserInventory, ScenarioRound, ScenarioUserPeriod
+from app.schemas.scenario import ScenarioUserState, ScenarioState
 
 
 class AIService:
-    """Service for AI participant decision making in simulation scenarios."""
+    """Service for AI scenario_user decision making in simulation scenarios."""
     
     # AI difficulty levels
     class Difficulty:
@@ -20,39 +20,39 @@ class AIService:
     def __init__(self, db: Session):
         self.db = db
     
-    def make_decision(self, participant: Participant, scenario_state: ScenarioState) -> int:
+    def make_decision(self, scenario_user: ScenarioUser, scenario_state: ScenarioState) -> int:
         """
         Make a decision on how many units to order based on the current scenario state.
 
         Args:
-            participant: The AI participant making the decision
+            scenario_user: The AI scenario_user making the decision
             scenario_state: Current state of the scenario
 
         Returns:
             int: Number of units to order
         """
-        # Get the participant's state
-        participant_state = next((p for p in scenario_state.players if p.id == participant.id), None)
+        # Get the scenario_user's state
+        participant_state = next((p for p in scenario_state.scenario_users if p.id == scenario_user.id), None)
         if not participant_state:
             return 0
 
         # Get the current period
-        current_round = self._get_current_round(participant.scenario_id)
+        current_round = self._get_current_round(scenario_user.scenario_id)
         if not current_round:
             return 0
 
         # Get historical data
-        history = self._get_participant_history(participant.id, current_round.round_number)
+        history = self._get_participant_history(scenario_user.id, current_round.round_number)
 
         # Make decision based on difficulty level
-        if participant.is_ai == "easy":
+        if scenario_user.is_ai == "easy":
             return self._easy_ai(participant_state, history)
-        elif participant.is_ai == "hard":
+        elif scenario_user.is_ai == "hard":
             return self._hard_ai(participant_state, history, scenario_state)
         else:  # medium is default
             return self._medium_ai(participant_state, history)
     
-    def _easy_ai(self, participant_state: ParticipantState, history: List[Dict]) -> int:
+    def _easy_ai(self, participant_state: ScenarioUserState, history: List[Dict]) -> int:
         """Easy AI: Makes random decisions within a reasonable range."""
 
         # Random order between 0 and 2x the average of last 3 orders
@@ -62,17 +62,17 @@ class AIService:
             return random.randint(0, int(avg_order * 2))
         return random.randint(0, 8)  # Default range if not enough history
     
-    def _medium_ai(self, participant_state: ParticipantState, history: List[Dict]) -> int:
+    def _medium_ai(self, participant_state: ScenarioUserState, history: List[Dict]) -> int:
         """
         Medium AI: Uses a basic strategy considering current inventory and recent demand.
         Implements a simple base stock policy.
         """
         # Base stock level depends on role (further upstream needs to keep more inventory)
         role_multiplier = {
-            ParticipantRole.RETAILER: 1.0,
-            ParticipantRole.WHOLESALER: 1.2,
-            ParticipantRole.DISTRIBUTOR: 1.5,
-            ParticipantRole.MANUFACTURER: 2.0
+            ScenarioUserRole.RETAILER: 1.0,
+            ScenarioUserRole.WHOLESALER: 1.2,
+            ScenarioUserRole.DISTRIBUTOR: 1.5,
+            ScenarioUserRole.MANUFACTURER: 2.0
         }
         
         base_stock = 12 * role_multiplier.get(participant_state.role, 1.0)
@@ -99,7 +99,7 @@ class AIService:
         
         return order_quantity
     
-    def _hard_ai(self, participant_state: ParticipantState, history: List[Dict], scenario_state: ScenarioState) -> int:
+    def _hard_ai(self, participant_state: ScenarioUserState, history: List[Dict], scenario_state: ScenarioState) -> int:
         """
         Hard AI: Implements an advanced strategy with demand forecasting and bullwhip effect mitigation.
         Uses exponential smoothing for demand forecasting and considers supply chain position.
@@ -154,13 +154,13 @@ class AIService:
             
         return forecast
     
-    def _get_position_factor(self, role: ParticipantRole) -> float:
+    def _get_position_factor(self, role: ScenarioUserRole) -> float:
         """Get a factor based on position in supply chain to adjust for bullwhip effect."""
         return {
-            ParticipantRole.RETAILER: 1.0,
-            ParticipantRole.WHOLESALER: 1.1,
-            ParticipantRole.DISTRIBUTOR: 1.3,
-            ParticipantRole.MANUFACTURER: 1.5
+            ScenarioUserRole.RETAILER: 1.0,
+            ScenarioUserRole.WHOLESALER: 1.1,
+            ScenarioUserRole.DISTRIBUTOR: 1.3,
+            ScenarioUserRole.MANUFACTURER: 1.5
         }.get(role, 1.0)
     
     def _calculate_safety_stock(self, history: List[Dict]) -> float:
@@ -187,12 +187,12 @@ class AIService:
             ScenarioRound.round_number.desc()
         ).first()
     
-    def _get_participant_history(self, participant_id: int, current_round: int, limit: int = 10) -> List[Dict]:
-        """Get the participant's order history."""
-        history = self.db.query(ParticipantRound, ScenarioRound).join(
-            ScenarioRound, ParticipantRound.round_id == ScenarioRound.id
+    def _get_participant_history(self, scenario_user_id: int, current_round: int, limit: int = 10) -> List[Dict]:
+        """Get the scenario_user's order history."""
+        history = self.db.query(ScenarioUserPeriod, ScenarioRound).join(
+            ScenarioRound, ScenarioUserPeriod.round_id == ScenarioRound.id
         ).filter(
-            ParticipantRound.player_id == participant_id,
+            ScenarioUserPeriod.scenario_user_id == scenario_user_id,
             ScenarioRound.round_number < current_round
         ).order_by(
             ScenarioRound.round_number.desc()

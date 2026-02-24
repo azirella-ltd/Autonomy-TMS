@@ -2,7 +2,7 @@
 
 Terminology (Feb 2026):
 - Game -> Scenario
-- Player -> Participant
+- ScenarioUser -> ScenarioUser
 - Round -> Period
 """
 from pydantic import BaseModel, Field
@@ -25,8 +25,8 @@ class TimeSeriesPoint(BaseModel):
         populate_by_name = True
 
 
-class ParticipantMetrics(BaseModel):
-    """Key performance metrics for a participant."""
+class ScenarioUserMetrics(BaseModel):
+    """Key performance metrics for a scenario_user."""
 
     current_inventory: float = Field(..., description="Current inventory level")
     inventory_change: float = Field(0, description="Percentage change in inventory from last period")
@@ -44,13 +44,13 @@ class DashboardResponse(BaseModel):
     """Dashboard data response model."""
 
     scenario_id: int = Field(..., alias="scenario_id", description="Identifier of the active scenario")
-    participant_id: int = Field(..., alias="player_id", description="Identifier of the participant viewing the dashboard")
+    scenario_user_id: int = Field(..., alias="scenario_user_id", description="Identifier of the scenario_user viewing the dashboard")
     scenario_name: str = Field(..., alias="game_name", description="Name of the current scenario")
     current_period: int = Field(..., alias="current_round", description="Current period number in the scenario")
     max_periods: int = Field(..., alias="max_rounds", description="Total number of periods configured for the scenario")
-    participant_role: str = Field(..., alias="player_role", description="Participant's role in the scenario")
-    metrics: ParticipantMetrics = Field(..., description="Participant performance metrics")
-    time_series: List[TimeSeriesPoint] = Field(..., description="Time series data for the participant")
+    participant_role: str = Field(..., alias="player_role", description="ScenarioUser's role in the scenario")
+    metrics: ScenarioUserMetrics = Field(..., description="ScenarioUser performance metrics")
+    time_series: List[TimeSeriesPoint] = Field(..., description="Time series data for the scenario_user")
     last_updated: str = Field(..., description="ISO timestamp of when the data was last updated")
 
     class Config:

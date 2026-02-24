@@ -13,26 +13,26 @@ export const formatDuration = (seconds) => {
 
 /**
  * Calculates the current score based on game state
- * @param {Object} player - The player object
+ * @param {Object} scenarioUser - The scenarioUser object
  * @param {Object} game - The game object
  * @returns {number} The calculated score
  */
-export const calculateScore = (player, game) => {
-  if (!player || !game) return 0;
+export const calculateScore = (scenarioUser, game) => {
+  if (!scenarioUser || !game) return 0;
   
   // Base score on inventory, backlog, and other factors
   let score = 0;
   
   // Points for inventory (up to a certain limit)
   const maxInventoryScore = 100;
-  const inventoryScore = Math.min(player.inventory || 0, 20) * 2; // 2 points per unit up to 20
+  const inventoryScore = Math.min(scenarioUser.inventory || 0, 20) * 2; // 2 points per unit up to 20
   score += Math.min(inventoryScore, maxInventoryScore);
   
   // Penalty for backlog
-  score -= (player.backlog || 0) * 5;
+  score -= (scenarioUser.backlog || 0) * 5;
   
   // Bonus for completing orders
-  score += (player.orders_completed || 0) * 10;
+  score += (scenarioUser.orders_completed || 0) * 10;
   
   // Bonus for game completion
   if (game.status === 'completed') {
@@ -43,17 +43,17 @@ export const calculateScore = (player, game) => {
 };
 
 /**
- * Determines if a player can place an order
- * @param {Object} player - The player object
+ * Determines if a scenarioUser can place an order
+ * @param {Object} scenarioUser - The scenarioUser object
  * @param {number} amount - The amount to order
  * @returns {Object} { isValid: boolean, message: string }
  */
-export const validateOrder = (player, amount) => {
+export const validateOrder = (scenarioUser, amount) => {
   if (isNaN(amount) || amount < 0) {
     return { isValid: false, message: 'Please enter a valid positive number' };
   }
   
-  if (amount > (player.inventory || 0) + (player.incoming_order || 0) + 10) {
+  if (amount > (scenarioUser.inventory || 0) + (scenarioUser.incoming_order || 0) + 10) {
     return { 
       isValid: false, 
       message: 'Order exceeds maximum allowed amount' 
@@ -64,8 +64,8 @@ export const validateOrder = (player, amount) => {
 };
 
 /**
- * Gets the color for a player based on their position or ID
- * @param {number} index - Player index or position
+ * Gets the color for a scenarioUser based on their position or ID
+ * @param {number} index - ScenarioUser index or position
  * @returns {string} Tailwind CSS color class
  */
 export const getPlayerColor = (index) => {
@@ -102,7 +102,7 @@ export const getGameStatusBadge = (status) => {
   switch (status) {
     case 'waiting':
       return { 
-        text: 'Waiting for players', 
+        text: 'Waiting for scenarioUsers', 
         color: 'bg-yellow-100 text-yellow-800' 
       };
     case 'in_progress':
@@ -162,24 +162,24 @@ export const getRoundTimeRemaining = (game) => {
 };
 
 /**
- * Sorts players by score (descending)
- * @param {Array} players - Array of player objects
- * @returns {Array} Sorted array of players
+ * Sorts scenarioUsers by score (descending)
+ * @param {Array} scenarioUsers - Array of scenarioUser objects
+ * @returns {Array} Sorted array of scenarioUsers
  */
-export const sortPlayersByScore = (players = []) => {
-  return [...players].sort((a, b) => (b.score || 0) - (a.score || 0));
+export const sortPlayersByScore = (scenarioUsers = []) => {
+  return [...scenarioUsers].sort((a, b) => (b.score || 0) - (a.score || 0));
 };
 
 /**
- * Gets the current player's position in the game
+ * Gets the current scenarioUser's position in the game
  * @param {Object} game - The game object
  * @param {string} userId - The current user's ID
- * @returns {number} The player's position (1-based)
+ * @returns {number} The scenarioUser's position (1-based)
  */
 export const getPlayerPosition = (game, userId) => {
-  if (!game?.players?.length || !userId) return 0;
+  if (!game?.scenarioUsers?.length || !userId) return 0;
   
-  const sortedPlayers = sortPlayersByScore(game.players);
+  const sortedPlayers = sortPlayersByScore(game.scenarioUsers);
   return sortedPlayers.findIndex(p => p.user_id === userId) + 1;
 };
 

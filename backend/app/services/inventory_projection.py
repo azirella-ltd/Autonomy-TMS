@@ -8,7 +8,7 @@ from app.services.engine import Node
 
 
 def project_start_of_next_round_inventory(node: Node) -> int:
-    """Estimate the stock level players should see before the next round begins."""
+    """Estimate the stock level scenario_users should see before the next round begins."""
 
     try:
         base_inventory = int(getattr(node, "inventory", 0))

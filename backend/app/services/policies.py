@@ -83,7 +83,7 @@ class NaiveEchoPolicy(OrderPolicy):
 
 
 class FixedOrderPolicy(OrderPolicy):
-    """Return a predetermined order quantity supplied by external players."""
+    """Return a predetermined order quantity supplied by external scenario_users."""
 
     def __init__(self, quantity: int = 0) -> None:
         self.quantity = max(0, int(quantity))

@@ -63,7 +63,7 @@ class RLHFTrainingExample:
     feedback_action: str  # accepted, modified, rejected, overridden
 
     # Metadata (required)
-    player_id: int
+    scenario_user_id: int
     scenario_id: int
     agent_type: str  # llm, gnn, trm
     timestamp: str
@@ -81,7 +81,7 @@ class RLHFTrainingExample:
 @dataclass
 class FeedbackSession:
     """Aggregate feedback from a gameplay session."""
-    player_id: int
+    scenario_user_id: int
     scenario_id: int
     num_decisions: int
     num_accepted: int
@@ -109,7 +109,7 @@ class RLHFDataCollector:
 
     def record_feedback(
         self,
-        player_id: int,
+        scenario_user_id: int,
         scenario_id: int,
         round_number: int,
         agent_type: str,
@@ -123,7 +123,7 @@ class RLHFDataCollector:
         Record human feedback on AI recommendation.
 
         Args:
-            player_id: Player who made decision
+            scenario_user_id: ScenarioUser who made decision
             scenario_id: Game context
             round_number: Round number
             agent_type: Type of AI agent (llm, gnn, trm)
@@ -141,7 +141,7 @@ class RLHFDataCollector:
 
         # Create feedback record
         feedback = RLHFFeedback(
-            player_id=player_id,
+            scenario_user_id=scenario_user_id,
             scenario_id=scenario_id,
             round_number=round_number,
             agent_type=agent_type,
@@ -161,7 +161,7 @@ class RLHFDataCollector:
         self.db.refresh(feedback)
 
         logger.info(
-            f"Recorded RLHF feedback: player={player_id}, round={round_number}, "
+            f"Recorded RLHF feedback: scenario_user={scenario_user_id}, round={round_number}, "
             f"ai_suggestion={ai_suggestion}, human_decision={human_decision}, "
             f"action={feedback_action.value}"
         )
@@ -250,7 +250,7 @@ class RLHFDataCollector:
                 ai_outcome=feedback.ai_outcome,
                 human_outcome=feedback.human_outcome,
                 preference_label=feedback.preference_label,
-                player_id=feedback.player_id,
+                scenario_user_id=feedback.scenario_user_id,
                 scenario_id=feedback.scenario_id,
                 agent_type=feedback.agent_type,
                 timestamp=feedback.timestamp.isoformat()
@@ -260,27 +260,27 @@ class RLHFDataCollector:
 
     def get_feedback_session_summary(
         self,
-        player_id: int,
+        scenario_user_id: int,
         scenario_id: int
     ) -> FeedbackSession:
         """
-        Get aggregate feedback summary for a player's game session.
+        Get aggregate feedback summary for a scenario_user's game session.
 
         Args:
-            player_id: Player ID
+            scenario_user_id: ScenarioUser ID
             scenario_id: Game ID
 
         Returns:
             FeedbackSession with aggregate metrics
         """
         feedbacks = self.db.query(RLHFFeedback).filter_by(
-            player_id=player_id,
+            scenario_user_id=scenario_user_id,
             scenario_id=scenario_id
         ).all()
 
         if not feedbacks:
             return FeedbackSession(
-                player_id=player_id,
+                scenario_user_id=scenario_user_id,
                 scenario_id=scenario_id,
                 num_decisions=0,
                 num_accepted=0,
@@ -313,7 +313,7 @@ class RLHFDataCollector:
         performance_improvement = sum(improvements) / len(improvements) if improvements else None
 
         return FeedbackSession(
-            player_id=player_id,
+            scenario_user_id=scenario_user_id,
             scenario_id=scenario_id,
             num_decisions=num_decisions,
             num_accepted=num_accepted,
@@ -485,7 +485,7 @@ class RLHFFeedback(Base):
     __tablename__ = "rlhf_feedback"
 
     id = Column(Integer, primary_key=True, index=True)
-    player_id = Column(Integer, ForeignKey("players.id"), nullable=False, index=True)
+    scenario_user_id = Column(Integer, ForeignKey("scenario_users.id"), nullable=False, index=True)
     scenario_id = Column(Integer, ForeignKey("games.id"), nullable=False, index=True)
     round_number = Column(Integer, nullable=False)
 

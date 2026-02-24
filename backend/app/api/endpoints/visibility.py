@@ -86,21 +86,21 @@ class VisibilityPermissionsRequest(BaseModel):
 
 class VisibilityPermissionsResponse(BaseModel):
     """Response containing visibility permissions."""
-    player_id: int
+    scenario_user_id: int
     permissions: dict
     updated_at: str
 
 
 class PlayerVisibilityPermissions(BaseModel):
-    """Player with visibility permissions."""
-    player_id: int
+    """ScenarioUser with visibility permissions."""
+    scenario_user_id: int
     role: str
     permissions: dict
 
 
 class AllVisibilityPermissionsResponse(BaseModel):
-    """Response containing all player permissions."""
-    players: List[PlayerVisibilityPermissions]
+    """Response containing all scenario_user permissions."""
+    scenario_users: List[PlayerVisibilityPermissions]
 
 
 class SnapshotResponse(BaseModel):
@@ -327,7 +327,7 @@ async def set_visibility_permissions(
     """
     Set visibility sharing permissions.
 
-    Players can opt-in to share their metrics with other players:
+    ScenarioUsers can opt-in to share their metrics with other scenario_users:
     - **Inventory levels**: Current stock on hand
     - **Backlog levels**: Unfulfilled customer orders
     - **Order quantities**: Orders placed to suppliers
@@ -339,7 +339,7 @@ async def set_visibility_permissions(
 
     **Privacy**:
     - Sharing is opt-in and granular per metric type
-    - Players control what they share
+    - ScenarioUsers control what they share
     - Can be changed at any time
 
     **Example Request**:
@@ -354,7 +354,7 @@ async def set_visibility_permissions(
     **Example Response**:
     ```json
     {
-      "player_id": 123,
+      "scenario_user_id": 123,
       "permissions": {
         "share_inventory": true,
         "share_backlog": false,
@@ -367,12 +367,12 @@ async def set_visibility_permissions(
     try:
         visibility_service = get_visibility_service(db)
 
-        # TODO: Map current_user to player_id properly
-        player_id = current_user.id
+        # TODO: Map current_user to scenario_user_id properly
+        scenario_user_id = current_user.id
 
         result = await visibility_service.set_visibility_permission(
             scenario_id=scenario_id,
-            player_id=player_id,
+            scenario_user_id=scenario_user_id,
             share_inventory=request.share_inventory,
             share_backlog=request.share_backlog,
             share_orders=request.share_orders
@@ -394,22 +394,22 @@ async def get_visibility_permissions(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Get visibility permissions for all participants.
+    Get visibility permissions for all scenario_users.
 
-    Returns sharing preferences for each participant in the scenario.
-    Only shows participants who have opted in to share at least one metric.
+    Returns sharing preferences for each scenario_user in the scenario.
+    Only shows scenario_users who have opted in to share at least one metric.
 
     **Use Cases**:
     - Display "shared metrics" dashboard
-    - Show which players are participating in information sharing
+    - Show which scenario_users are participating in information sharing
     - Enable visibility-based features
 
     **Example Response**:
     ```json
     {
-      "players": [
+      "scenario_users": [
         {
-          "player_id": 123,
+          "scenario_user_id": 123,
           "role": "RETAILER",
           "permissions": {
             "share_inventory": true,
@@ -418,7 +418,7 @@ async def get_visibility_permissions(
           }
         },
         {
-          "player_id": 124,
+          "scenario_user_id": 124,
           "role": "WHOLESALER",
           "permissions": {
             "share_inventory": false,
@@ -458,7 +458,7 @@ async def create_visibility_snapshot(
     - Health score
     - Bottleneck count
     - Bullwhip severity
-    - Shared player metrics (if opted in)
+    - Shared scenario_user metrics (if opted in)
 
     Snapshots enable:
     - Historical trend analysis

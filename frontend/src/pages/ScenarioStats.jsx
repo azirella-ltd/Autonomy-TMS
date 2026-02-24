@@ -52,8 +52,8 @@ const ScenarioStats = () => {
       try {
         setIsLoading(true);
         
-        // Fetch player stats
-        const statsResponse = await simulationApi.getPlayerStats();
+        // Fetch scenarioUser stats
+        const statsResponse = await simulationApi.getScenarioUserStats();
         setStats(statsResponse);
         
         // Fetch game history
@@ -101,14 +101,14 @@ const ScenarioStats = () => {
       .slice(-10);
     
     recentGames.forEach(game => {
-      const player = game.players?.find(p => p.user_id === user?.id);
-      if (!player) return;
+      const scenarioUser = game.scenarioUsers?.find(p => p.user_id === user?.id);
+      if (!scenarioUser) return;
       
       const gameDate = new Date(game.ended_at || game.created_at);
       labels.push(format(gameDate, 'MMM d'));
-      scores.push(player.score || 0);
-      inventories.push(player.inventory || 0);
-      backlogs.push(player.backlog || 0);
+      scores.push(scenarioUser.score || 0);
+      inventories.push(scenarioUser.inventory || 0);
+      backlogs.push(scenarioUser.backlog || 0);
     });
     
     return {
@@ -267,8 +267,8 @@ const ScenarioStats = () => {
 
   // Game history item
   const GameHistoryItem = ({ game }) => {
-    const player = game.players?.find(p => p.user_id === user?.id);
-    if (!player) return null;
+    const scenarioUser = game.scenarioUsers?.find(p => p.user_id === user?.id);
+    if (!scenarioUser) return null;
     
     const isWinner = game.winner_id === user?.id;
     const gameDate = new Date(game.ended_at || game.created_at);
@@ -299,13 +299,13 @@ const ScenarioStats = () => {
             <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
               <dt className="text-sm font-medium text-gray-500">Score</dt>
               <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                {player.score || 0} points
+                {scenarioUser.score || 0} points
               </dd>
             </div>
             <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
               <dt className="text-sm font-medium text-gray-500">Position</dt>
               <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                #{player.position || 'N/A'} of {game.players?.length || 0} players
+                #{scenarioUser.position || 'N/A'} of {game.scenarioUsers?.length || 0} scenarioUsers
               </dd>
             </div>
             <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">

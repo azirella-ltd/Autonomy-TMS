@@ -138,11 +138,11 @@ const CreateGameFromConfig = () => {
         const newGame = await gameService.createGame({
           ...gameConfig,
           player_assignments: [
-            // Default player assignments can be added here or configured by the user
-            { role: 'retailer', player_type: 'human' },
-            { role: 'wholesaler', player_type: 'ai' },
-            { role: 'distributor', player_type: 'ai' },
-            { role: 'manufacturer', player_type: 'ai' },
+            // Default scenarioUser assignments can be added here or configured by the user
+            { role: 'retailer', scenario_user_type: 'human' },
+            { role: 'wholesaler', scenario_user_type: 'ai' },
+            { role: 'distributor', scenario_user_type: 'ai' },
+            { role: 'manufacturer', scenario_user_type: 'ai' },
           ]
         });
         enqueueSnackbar('Game created successfully!', { variant: 'success' });

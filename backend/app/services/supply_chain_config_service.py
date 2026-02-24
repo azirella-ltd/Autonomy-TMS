@@ -368,7 +368,7 @@ class SupplyChainConfigService:
                 "Missing demand patterns for item/market pairs: " + missing_str
             )
         
-        # Map site types to player roles
+        # Map site types to scenario_user roles
         role_mapping = {
             "retailer": "retailer",
             "wholesaler": "wholesaler",

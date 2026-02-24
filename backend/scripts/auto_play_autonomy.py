@@ -27,8 +27,8 @@ try:
     from scripts.export_round_history import export_scenario as export_round_history
 except ImportError:  # pragma: no cover - fallback when executed from package root
     from export_round_history import export_scenario as export_round_history
-from app.models.scenario import Scenario, ScenarioStatus as DbScenarioStatus, ParticipantAction
-from app.models.participant import Participant
+from app.models.scenario import Scenario, ScenarioStatus as DbScenarioStatus, ScenarioUserAction
+from app.models.scenario_user import ScenarioUser
 from app.services.agents import (
     AgentDecision,
     AgentManager,
@@ -41,8 +41,8 @@ from app.services.llm_payload import build_llm_decision_payload
 ROLES = ["retailer", "wholesaler", "distributor", "manufacturer"]
 
 
-def _role_key(player: Participant) -> str:
-    return str(player.role.value if hasattr(player.role, "value") else player.role).lower()
+def _role_key(scenario_user: ScenarioUser) -> str:
+    return str(scenario_user.role.value if hasattr(scenario_user.role, "value") else scenario_user.role).lower()
 
 
 def _agent_type_for(role: str) -> AgentType:
@@ -59,8 +59,8 @@ def _agent_type_for(role: str) -> AgentType:
     return mapping[role]
 
 
-def _strategy_for(player: Participant) -> AgentStrategyEnum:
-    raw = (player.ai_strategy or "autonomy_dtce").lower()
+def _strategy_for(scenario_user: ScenarioUser) -> AgentStrategyEnum:
+    raw = (scenario_user.ai_strategy or "autonomy_dtce").lower()
     try:
         return AgentStrategyEnum(raw)
     except ValueError:
@@ -94,13 +94,13 @@ def auto_play_autonomy_scenarios() -> None:
         scenarios = session.query(Scenario).order_by(Scenario.id).all()
 
         for scenario in scenarios:
-            # Only auto-play unsupervised scenarios where all players are AI
+            # Only auto-play unsupervised scenarios where all scenario_users are AI
             config = _coerce_scenario_config(scenario)
             progression = str(config.get("progression_mode", "")).lower()
-            players = session.query(Participant).filter(Participant.scenario_id == scenario.id).all()
+            scenario_users = session.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).all()
             if progression != "unsupervised":
                 continue
-            if any(not p.is_ai for p in players):
+            if any(not p.is_ai for p in scenario_users):
                 continue
 
             print(f"=== Simulating scenario {scenario.id}: {scenario.name} ===")
@@ -124,21 +124,21 @@ def auto_play_autonomy_scenarios() -> None:
                 session.commit()
 
             agent_manager = AgentManager()
-            players = session.query(Participant).filter(Participant.scenario_id == scenario.id).all()
+            scenario_users = session.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).all()
             overrides = config.get('autonomy_overrides') or {}
             info_sharing = config.get('info_sharing') or {}
             full_visibility = str(info_sharing.get('visibility', '')).lower() == 'full'
 
-            for player in players:
-                if not player.is_ai:
+            for scenario_user in scenario_users:
+                if not scenario_user.is_ai:
                     continue
-                role_key = _role_key(player)
+                role_key = _role_key(scenario_user)
                 agent_type = _agent_type_for(role_key)
-                strategy = _strategy_for(player)
+                strategy = _strategy_for(scenario_user)
                 agent_manager.set_agent_strategy(
                     agent_type,
                     strategy,
-                    llm_model=player.llm_model,
+                    llm_model=scenario_user.llm_model,
                     override_pct=overrides.get(role_key),
                 )
 
@@ -163,13 +163,13 @@ def auto_play_autonomy_scenarios() -> None:
                 sim_state = config.get('simulation_state', {})
                 now_iso = datetime.utcnow().isoformat() + 'Z'
 
-                for player in players:
-                    if not player.is_ai:
+                for scenario_user in scenario_users:
+                    if not scenario_user.is_ai:
                         continue
-                    role_key = _role_key(player)
+                    role_key = _role_key(scenario_user)
                     agent = agent_manager.get_agent(_agent_type_for(role_key))
 
-                    inventory_record = player.inventory
+                    inventory_record = scenario_user.inventory
                     inventory_value = inventory_record.current_stock if inventory_record else 0
                     backlog_value = inventory_record.backorders if inventory_record else 0
                     incoming_shipments = (
@@ -198,7 +198,7 @@ def auto_play_autonomy_scenarios() -> None:
                         'previous_orders': list(previous_orders_by_role.values()),
                         'previous_orders_by_role': previous_orders_by_role,
                     }
-                    strategy_enum = _strategy_for(player)
+                    strategy_enum = _strategy_for(scenario_user)
                     llm_payload = None
                     if strategy_enum in (
                         AgentStrategyEnum.LLM,
@@ -216,7 +216,7 @@ def auto_play_autonomy_scenarios() -> None:
                             upstream_data['llm_payload_error'] = str(exc)
                         else:
                             upstream_data['llm_payload'] = llm_payload
-                    visible_demand = demand if (player.can_see_demand or role_key == 'retailer' or full_visibility) else None
+                    visible_demand = demand if (scenario_user.can_see_demand or role_key == 'retailer' or full_visibility) else None
 
                     decision = agent.make_decision(
                         current_round=round_record.round_number,
@@ -235,20 +235,20 @@ def auto_play_autonomy_scenarios() -> None:
                     except (TypeError, ValueError):
                         quantity = 0
 
-                    action = session.query(ParticipantAction).filter(
-                        ParticipantAction.scenario_id == scenario.id,
-                        ParticipantAction.round_id == round_record.id,
-                        ParticipantAction.player_id == player.id,
-                        ParticipantAction.action_type == 'order',
+                    action = session.query(ScenarioUserAction).filter(
+                        ScenarioUserAction.scenario_id == scenario.id,
+                        ScenarioUserAction.round_id == round_record.id,
+                        ScenarioUserAction.scenario_user_id == scenario_user.id,
+                        ScenarioUserAction.action_type == 'order',
                     ).first()
                     if action:
                         action.quantity = quantity
                         action.created_at = datetime.utcnow()
                     else:
-                        action = ParticipantAction(
+                        action = ScenarioUserAction(
                             scenario_id=scenario.id,
                             round_id=round_record.id,
-                            player_id=player.id,
+                            scenario_user_id=scenario_user.id,
                             action_type='order',
                             quantity=quantity,
                             created_at=datetime.utcnow(),
@@ -257,7 +257,7 @@ def auto_play_autonomy_scenarios() -> None:
 
                     explanation = decision_comment or agent.get_last_explanation_comment()
                     pending[role_key] = {
-                        'player_id': player.id,
+                        'scenario_user_id': scenario_user.id,
                         'quantity': quantity,
                         'comment': explanation or f'Autonomy decision: order {quantity} units.',
                         'submitted_at': now_iso,

@@ -2,8 +2,8 @@ from sqlalchemy.orm import Session
 from typing import Dict, Any, List, Optional
 
 from ..models.scenario import Scenario, ScenarioStatus
-from ..models.participant import Participant
-from ..models.supply_chain import ParticipantRound, ScenarioRound
+from ..models.scenario_user import ScenarioUser
+from ..models.supply_chain import ScenarioUserPeriod, ScenarioRound
 
 
 def _active_statuses() -> List[ScenarioStatus]:
@@ -21,8 +21,8 @@ def get_active_scenario_for_user(db: Session, user_id: int) -> Optional[Scenario
 
     return (
         db.query(Scenario)
-        .join(Participant, Participant.scenario_id == Scenario.id)
-        .filter(Participant.user_id == user_id, Scenario.status.in_(_active_statuses()))
+        .join(ScenarioUser, ScenarioUser.scenario_id == Scenario.id)
+        .filter(ScenarioUser.user_id == user_id, Scenario.status.in_(_active_statuses()))
         .order_by(Scenario.created_at.desc())
         .first()
     )
@@ -36,29 +36,29 @@ def _fallback_numeric(value: Optional[float]) -> float:
     return float(value or 0)
 
 
-def get_participant_metrics(db: Session, participant_id: int, scenario_id: int) -> Dict[str, Any]:
-    """Calculate key metrics for a participant in a specific scenario."""
+def get_participant_metrics(db: Session, scenario_user_id: int, scenario_id: int) -> Dict[str, Any]:
+    """Calculate key metrics for a scenario_user in a specific scenario."""
 
-    participant = (
-        db.query(Participant)
-        .filter(Participant.id == participant_id, Participant.scenario_id == scenario_id)
+    scenario_user = (
+        db.query(ScenarioUser)
+        .filter(ScenarioUser.id == scenario_user_id, ScenarioUser.scenario_id == scenario_id)
         .first()
     )
-    if not participant:
+    if not scenario_user:
         return {}
 
-    participant_rounds = (
-        db.query(ParticipantRound)
-        .join(ScenarioRound, ParticipantRound.round_id == ScenarioRound.id)
-        .filter(ParticipantRound.participant_id == participant_id, ScenarioRound.scenario_id == scenario_id)
+    scenario_user_periods = (
+        db.query(ScenarioUserPeriod)
+        .join(ScenarioRound, ScenarioUserPeriod.round_id == ScenarioRound.id)
+        .filter(ScenarioUserPeriod.scenario_user_id == scenario_user_id, ScenarioRound.scenario_id == scenario_id)
         .order_by(ScenarioRound.round_number.asc())
         .all()
     )
 
-    if not participant_rounds:
-        current_inventory = _fallback_numeric(getattr(participant, "current_inventory", getattr(participant, "inventory", 0)))
-        backlog = _fallback_numeric(getattr(participant, "current_backlog", getattr(participant, "backlog", 0)))
-        total_cost = _fallback_numeric(getattr(participant, "total_cost", getattr(participant, "cost", 0)))
+    if not scenario_user_periods:
+        current_inventory = _fallback_numeric(getattr(scenario_user, "current_inventory", getattr(scenario_user, "inventory", 0)))
+        backlog = _fallback_numeric(getattr(scenario_user, "current_backlog", getattr(scenario_user, "backlog", 0)))
+        total_cost = _fallback_numeric(getattr(scenario_user, "total_cost", getattr(scenario_user, "cost", 0)))
         return {
             "current_inventory": current_inventory,
             "inventory_change": 0,
@@ -69,8 +69,8 @@ def get_participant_metrics(db: Session, participant_id: int, scenario_id: int) 
             "service_level_change": 0,
         }
 
-    latest_round = participant_rounds[-1]
-    previous_round = participant_rounds[-2] if len(participant_rounds) > 1 else None
+    latest_round = scenario_user_periods[-1]
+    previous_round = scenario_user_periods[-2] if len(scenario_user_periods) > 1 else None
 
     current_inventory = _fallback_numeric(
         getattr(latest_round, "inventory_after", None)
@@ -92,13 +92,13 @@ def get_participant_metrics(db: Session, participant_id: int, scenario_id: int) 
         else getattr(latest_round, "backorders_before", None)
     )
 
-    total_cost = sum(_fallback_numeric(pr.total_cost) for pr in participant_rounds)
-    avg_weekly_cost = total_cost / len(participant_rounds) if participant_rounds else 0
+    total_cost = sum(_fallback_numeric(pr.total_cost) for pr in scenario_user_periods)
+    avg_weekly_cost = total_cost / len(scenario_user_periods) if scenario_user_periods else 0
 
-    fulfilled_rounds = [1 if _fallback_numeric(pr.backorders_after) == 0 else 0 for pr in participant_rounds]
-    service_level = sum(fulfilled_rounds) / len(participant_rounds) if participant_rounds else 1.0
-    if len(participant_rounds) > 1:
-        previous_service_level = sum(fulfilled_rounds[:-1]) / (len(participant_rounds) - 1)
+    fulfilled_rounds = [1 if _fallback_numeric(pr.backorders_after) == 0 else 0 for pr in scenario_user_periods]
+    service_level = sum(fulfilled_rounds) / len(scenario_user_periods) if scenario_user_periods else 1.0
+    if len(scenario_user_periods) > 1:
+        previous_service_level = sum(fulfilled_rounds[:-1]) / (len(scenario_user_periods) - 1)
     else:
         previous_service_level = service_level
     service_level_change = service_level - previous_service_level
@@ -118,8 +118,8 @@ def get_participant_metrics(db: Session, participant_id: int, scenario_id: int) 
 get_player_metrics = get_participant_metrics
 
 
-def get_time_series_metrics(db: Session, participant_id: int, scenario_id: int, role: str) -> List[Dict[str, Any]]:
-    """Build a period-by-period time series for the requested participant."""
+def get_time_series_metrics(db: Session, scenario_user_id: int, scenario_id: int, role: str) -> List[Dict[str, Any]]:
+    """Build a period-by-period time series for the requested scenario_user."""
 
     rounds = (
         db.query(ScenarioRound)
@@ -128,13 +128,13 @@ def get_time_series_metrics(db: Session, participant_id: int, scenario_id: int, 
         .all()
     )
 
-    participant_rounds = (
-        db.query(ParticipantRound)
-        .join(ScenarioRound, ParticipantRound.round_id == ScenarioRound.id)
-        .filter(ParticipantRound.participant_id == participant_id, ScenarioRound.scenario_id == scenario_id)
+    scenario_user_periods = (
+        db.query(ScenarioUserPeriod)
+        .join(ScenarioRound, ScenarioUserPeriod.round_id == ScenarioRound.id)
+        .filter(ScenarioUserPeriod.scenario_user_id == scenario_user_id, ScenarioRound.scenario_id == scenario_id)
         .all()
     )
-    rounds_by_id = {pr.round_id: pr for pr in participant_rounds}
+    rounds_by_id = {pr.round_id: pr for pr in scenario_user_periods}
 
     series: List[Dict[str, Any]] = []
     for round_ in rounds:

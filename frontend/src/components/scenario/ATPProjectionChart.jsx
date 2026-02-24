@@ -9,7 +9,7 @@
  *
  * Props:
  * - gameId: Game ID
- * - playerId: Player ID
+ * - scenarioUserId: ScenarioUser ID
  * - currentRound: Current round number
  * - periods: Number of future periods to project (default 8)
  */
@@ -47,7 +47,7 @@ import { cn } from '../../lib/utils/cn';
 
 const ATPProjectionChart = ({
   gameId,
-  playerId,
+  scenarioUserId,
   currentRound,
   periods = 8,
 }) => {
@@ -58,7 +58,7 @@ const ATPProjectionChart = ({
 
   useEffect(() => {
     fetchATPProjection();
-  }, [gameId, playerId, currentRound, periods]);
+  }, [gameId, scenarioUserId, currentRound, periods]);
 
   const fetchATPProjection = async () => {
     setLoading(true);
@@ -66,7 +66,7 @@ const ATPProjectionChart = ({
 
     try {
       const response = await api.get(
-        `/mixed-scenarios/${gameId}/atp-projection/${playerId}?periods=${periods}`
+        `/mixed-scenarios/${gameId}/atp-projection/${scenarioUserId}?periods=${periods}`
       );
 
       const projectionData = response.data;

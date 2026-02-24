@@ -18,7 +18,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.models.participant import Participant
+from app.models.scenario_user import ScenarioUser
 
 from app.models.decision_proposal import DecisionProposal, ProposalStatus
 from app.models.authority_definition import AuthorityDefinition, AuthorityLevel
@@ -31,7 +31,7 @@ class AuthorityCheckResult:
     """Result of authority check for override decision"""
     override_approved: bool  # True if within authority, False if requires approval
     requires_approval: bool  # True if exceeds authority threshold
-    authority_level: str  # Participant's authority level (OPERATOR, SUPERVISOR, MANAGER, EXECUTIVE)
+    authority_level: str  # ScenarioUser's authority level (OPERATOR, SUPERVISOR, MANAGER, EXECUTIVE)
     threshold_exceeded: bool  # True if override percentage > threshold
     override_percentage: float  # Percentage difference from agent recommendation
     threshold_percentage: float  # Authority threshold percentage
@@ -53,7 +53,7 @@ class AuthorityCheckService:
 
     def check_override_authority(
         self,
-        participant: Participant,
+        scenario_user: ScenarioUser,
         agent_qty: int,
         human_qty: int,
         action_type: str,  # "fulfillment" or "replenishment"
@@ -62,7 +62,7 @@ class AuthorityCheckService:
         Check if human override of agent recommendation exceeds authority level.
 
         Args:
-            participant: Participant making the decision
+            scenario_user: ScenarioUser making the decision
             agent_qty: Agent's recommended quantity
             human_qty: Human's chosen quantity
             action_type: Type of decision ("fulfillment" or "replenishment")
@@ -70,10 +70,10 @@ class AuthorityCheckService:
         Returns:
             AuthorityCheckResult with approval status and threshold info
         """
-        # Get participant's authority level
-        # TODO: Link to actual authority_definitions table when Participant model is extended
+        # Get scenario_user's authority level
+        # TODO: Link to actual authority_definitions table when ScenarioUser model is extended
         # For Phase 2, use simple role-based mapping
-        authority_level = self._get_authority_level_from_role(participant)
+        authority_level = self._get_authority_level_from_role(scenario_user)
 
         # Calculate override percentage
         if agent_qty == 0:
@@ -90,7 +90,7 @@ class AuthorityCheckService:
         requires_approval = threshold_exceeded
 
         logger.info(
-            f"Authority check for participant {participant.id}: "
+            f"Authority check for scenario_user {scenario_user.id}: "
             f"agent={agent_qty}, human={human_qty}, "
             f"override={override_pct:.1f}%, threshold={threshold_pct:.1f}%, "
             f"requires_approval={requires_approval}"
@@ -101,7 +101,7 @@ class AuthorityCheckService:
         if requires_approval:
             try:
                 proposal = self.create_override_proposal(
-                    participant=participant,
+                    scenario_user=scenario_user,
                     agent_qty=agent_qty,
                     human_qty=human_qty,
                     action_type=action_type,
@@ -127,7 +127,7 @@ class AuthorityCheckService:
 
     def create_override_proposal(
         self,
-        participant: Participant,
+        scenario_user: ScenarioUser,
         agent_qty: int,
         human_qty: int,
         action_type: str,
@@ -137,7 +137,7 @@ class AuthorityCheckService:
         Create a decision proposal for an override that exceeds authority.
 
         Args:
-            participant: Participant making the decision
+            scenario_user: ScenarioUser making the decision
             agent_qty: Agent's recommended quantity
             human_qty: Human's chosen quantity
             action_type: Type of decision ("fulfillment" or "replenishment")
@@ -147,11 +147,11 @@ class AuthorityCheckService:
             Created DecisionProposal instance
         """
         # Build proposal title and description
-        title = f"{action_type.capitalize()} Override: {participant.role} Round {participant.scenario.current_round}"
+        title = f"{action_type.capitalize()} Override: {scenario_user.role} Round {scenario_user.scenario.current_round}"
         description = (
-            f"Participant {participant.id} ({participant.role}) wants to override agent recommendation.\n"
+            f"ScenarioUser {scenario_user.id} ({scenario_user.role}) wants to override agent recommendation.\n"
             f"Agent recommended: {agent_qty} units\n"
-            f"Participant wants: {human_qty} units\n"
+            f"ScenarioUser wants: {human_qty} units\n"
             f"Override: {override_pct:.1f}% (exceeds authority threshold)\n"
             f"Action type: {action_type}\n"
         )
@@ -160,14 +160,14 @@ class AuthorityCheckService:
         proposal = DecisionProposal(
             title=title,
             description=description,
-            scenario_id=participant.scenario_id,
-            created_by=participant.user_id if hasattr(participant, "user_id") else None,
+            scenario_id=scenario_user.scenario_id,
+            created_by=scenario_user.user_id if hasattr(scenario_user, "user_id") else None,
             status=ProposalStatus.PENDING.value,  # Use .value since model field is string
             decision_type=f"override_{action_type}",
             proposal_metadata={
-                "participant_id": participant.id,
-                "participant_role": participant.role,
-                "round_number": participant.scenario.current_round,
+                "scenario_user_id": scenario_user.id,
+                "participant_role": scenario_user.role,
+                "round_number": scenario_user.scenario.current_round,
                 "agent_qty": agent_qty,
                 "human_qty": human_qty,
                 "override_pct": override_pct,
@@ -191,7 +191,7 @@ class AuthorityCheckService:
         Calculate the override threshold percentage for a given authority level.
 
         Args:
-            authority_level: Participant's authority level
+            authority_level: ScenarioUser's authority level
 
         Returns:
             Threshold percentage (e.g., 20.0 means 20% deviation allowed)
@@ -206,9 +206,9 @@ class AuthorityCheckService:
 
         return thresholds.get(authority_level, 20.0)  # Default to 20% (OPERATOR)
 
-    def _get_authority_level_from_role(self, participant: Participant) -> AuthorityLevel:
+    def _get_authority_level_from_role(self, scenario_user: ScenarioUser) -> AuthorityLevel:
         """
-        Get authority level from participant role (temporary implementation).
+        Get authority level from scenario_user role (temporary implementation).
 
         TODO: Phase 2.5 - Link to actual authority_definitions table
         """
@@ -221,7 +221,7 @@ class AuthorityCheckService:
             "manufacturer": AuthorityLevel.EXECUTIVE,
         }
 
-        return role_mapping.get(participant.role.lower(), AuthorityLevel.OPERATOR)
+        return role_mapping.get(scenario_user.role.lower(), AuthorityLevel.OPERATOR)
 
 
 # Factory function for creating service instances

@@ -14,7 +14,7 @@
  *
  * Props:
  * - gameId: Game ID
- * - playerId: Player ID
+ * - scenarioUserId: ScenarioUser ID
  * - coverage: Target coverage (default 0.90)
  * - method: Conformal method (split, quantile, adaptive)
  */
@@ -63,7 +63,7 @@ import { cn } from '../../lib/utils/cn';
 
 const ConformalATPChart = ({
   gameId,
-  playerId,
+  scenarioUserId,
   coverage: initialCoverage = 0.90,
   method: initialMethod = 'adaptive',
 }) => {
@@ -75,10 +75,10 @@ const ConformalATPChart = ({
 
   useEffect(() => {
     fetchConformalATP();
-  }, [gameId, playerId, coverage, method]);
+  }, [gameId, scenarioUserId, coverage, method]);
 
   const fetchConformalATP = async () => {
-    if (!gameId || !playerId) return;
+    if (!gameId || !scenarioUserId) return;
 
     setLoading(true);
     setError(null);
@@ -86,7 +86,7 @@ const ConformalATPChart = ({
     try {
       const data = await simulationApi.getConformalATP(
         gameId,
-        playerId,
+        scenarioUserId,
         coverage,
         method
       );

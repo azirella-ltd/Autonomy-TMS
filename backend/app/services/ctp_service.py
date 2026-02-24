@@ -22,34 +22,34 @@ from datetime import datetime
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models.participant import Participant
+from app.models.scenario_user import ScenarioUser
 from app.models.scenario import Scenario
-from app.models.supply_chain import ScenarioRound, ParticipantInventory
+from app.models.supply_chain import ScenarioRound, ScenarioUserInventory
 from app.models.sc_entities import ProductBom as ProductBOM, Product, SourcingRules, InvLevel
 from app.models.supply_chain_config import Node
 
 # Aliases for backwards compatibility
-Player = Participant
+ScenarioUser = ScenarioUser
 Game = Scenario
-GameRound = ScenarioRound
-PlayerInventory = ParticipantInventory
+ScenarioRound = ScenarioRound
+ScenarioUserInventory = ScenarioUserInventory
 from .atp_service import ATPService, get_atp_service
 
 logger = logging.getLogger(__name__)
 
 
-def _get_player_node(db: Session, player: Player, game: Game) -> Optional[Node]:
+def _get_player_node(db: Session, scenario_user: ScenarioUser, game: Game) -> Optional[Node]:
     """
-    Look up the Node for a player based on their site_key.
+    Look up the Node for a scenario_user based on their site_key.
 
-    The player's site_key maps to a node in the game's supply chain config.
+    The scenario_user's site_key maps to a node in the game's supply chain config.
     """
-    if not player.site_key or not game.supply_chain_config_id:
+    if not scenario_user.site_key or not game.supply_chain_config_id:
         return None
 
     node = db.query(Node).filter(
         Node.config_id == game.supply_chain_config_id,
-        Node.dag_type == player.site_key
+        Node.dag_type == scenario_user.site_key
     ).first()
 
     return node
@@ -159,9 +159,9 @@ class CTPService:
 
     def calculate_current_ctp(
         self,
-        player: Player,
+        scenario_user: ScenarioUser,
         game: Game,
-        current_round: Optional[GameRound],
+        current_round: Optional[ScenarioRound],
         product_id: str,
     ) -> CTPResult:
         """
@@ -177,7 +177,7 @@ class CTPService:
         5. Return minimum of capacity and component constraints
 
         Args:
-            player: Player instance (manufacturer node)
+            scenario_user: ScenarioUser instance (manufacturer node)
             game: Game instance
             current_round: Current game round (can be None)
             product_id: AWS SC Product ID (string)
@@ -186,9 +186,9 @@ class CTPService:
             CTPResult with capacity breakdown and component constraints
         """
         # Step 1: Get production capacity from node configuration
-        node = _get_player_node(self.db, player, game)
+        node = _get_player_node(self.db, scenario_user, game)
         if not node:
-            logger.warning(f"No node found for player {player.id} (site_key={player.site_key})")
+            logger.warning(f"No node found for scenario_user {scenario_user.id} (site_key={scenario_user.site_key})")
             # Return zero CTP if no node configured
             return CTPResult(
                 production_capacity=0,
@@ -203,7 +203,7 @@ class CTPService:
         capacity = self._get_production_capacity(node)
 
         # Step 2: Get current production commitments
-        commitments = self._get_production_commitments(player, current_round)
+        commitments = self._get_production_commitments(scenario_user, current_round)
 
         # Available capacity after commitments
         available_capacity = max(0, capacity - commitments)
@@ -214,7 +214,7 @@ class CTPService:
 
         # Step 4: BOM explosion - check component ATP
         component_constraints = self._check_component_atp(
-            player, game, current_round, product_id, available_after_yield
+            scenario_user, game, current_round, product_id, available_after_yield
         )
 
         # Step 5: Calculate final CTP (minimum of capacity and component constraints)
@@ -237,7 +237,7 @@ class CTPService:
             constrained_by = None
 
         logger.info(
-            f"CTP calculation for player {player.id} (product {product_id}): "
+            f"CTP calculation for scenario_user {scenario_user.id} (product {product_id}): "
             f"capacity={capacity}, commitments={commitments}, yield={yield_rate:.2f}, "
             f"CTP={ctp}, constrained_by={constrained_by}"
         )
@@ -255,9 +255,9 @@ class CTPService:
 
     def calculate_probabilistic_ctp(
         self,
-        player: Player,
+        scenario_user: ScenarioUser,
         game: Game,
-        current_round: Optional[GameRound],
+        current_round: Optional[ScenarioRound],
         product_id: str,
         n_simulations: int = 100,
     ) -> ProbabilisticCTPResult:
@@ -274,7 +274,7 @@ class CTPService:
         - Lower yield → less CTP (pessimistic)
 
         Args:
-            player: Player instance (manufacturer node)
+            scenario_user: ScenarioUser instance (manufacturer node)
             game: Game instance
             current_round: Current game round
             product_id: AWS SC Product ID (string, e.g., "FG-001")
@@ -287,9 +287,9 @@ class CTPService:
         from app.services.sc_planning.stochastic_sampler import StochasticSampler
 
         # Get node for capacity lookup
-        node = _get_player_node(self.db, player, game)
+        node = _get_player_node(self.db, scenario_user, game)
         if not node:
-            logger.warning(f"No node found for player {player.id}")
+            logger.warning(f"No node found for scenario_user {scenario_user.id}")
             return ProbabilisticCTPResult(
                 production_capacity=0,
                 current_commitments=0,
@@ -311,7 +311,7 @@ class CTPService:
 
         # Get base values (deterministic)
         capacity = self._get_production_capacity(node)
-        commitments = self._get_production_commitments(player, current_round)
+        commitments = self._get_production_commitments(scenario_user, current_round)
         base_yield = self._get_yield_rate(node)
         base_lead_time = self._get_production_lead_time(node)
 
@@ -343,7 +343,7 @@ class CTPService:
 
             # Check component constraints (use base calculation)
             component_constraints = self._check_component_atp(
-                player, game, current_round, product_id, available_after_yield
+                scenario_user, game, current_round, product_id, available_after_yield
             )
 
             # Calculate CTP for this simulation
@@ -369,11 +369,11 @@ class CTPService:
         cap_p90 = int(np.percentile(cap_array, 90))
 
         # Determine primary constraint
-        base_result = self.calculate_current_ctp(player, game, current_round, product_id)
+        base_result = self.calculate_current_ctp(scenario_user, game, current_round, product_id)
         constrained_by = base_result.constrained_by
 
         logger.info(
-            f"Probabilistic CTP for player {player.id}: "
+            f"Probabilistic CTP for scenario_user {scenario_user.id}: "
             f"P10={ctp_p10}, P50={ctp_p50}, P90={ctp_p90} "
             f"(yield mean={np.mean(yield_array):.3f}, std={np.std(yield_array):.3f})"
         )
@@ -399,9 +399,9 @@ class CTPService:
 
     def project_ctp_multi_period(
         self,
-        player: Player,
+        scenario_user: ScenarioUser,
         game: Game,
-        current_round: GameRound,
+        current_round: ScenarioRound,
         item_id: int,
         periods: int = 8,
     ) -> List[CTPPeriod]:
@@ -414,7 +414,7 @@ class CTPService:
         - Maintenance windows (capacity reductions) - NOT YET IMPLEMENTED
 
         Args:
-            player: Player instance (manufacturer)
+            scenario_user: ScenarioUser instance (manufacturer)
             game: Game instance
             current_round: Current game round
             item_id: Item ID to produce
@@ -425,9 +425,9 @@ class CTPService:
         """
         projections = []
 
-        node = _get_player_node(self.db, player, game)
+        node = _get_player_node(self.db, scenario_user, game)
         if not node:
-            logger.warning(f"No node found for player {player.id} (site_key={player.site_key})")
+            logger.warning(f"No node found for scenario_user {scenario_user.id} (site_key={scenario_user.site_key})")
             return []  # Return empty projections if no node
         capacity = self._get_production_capacity(node)
         yield_rate = self._get_yield_rate(node)
@@ -515,7 +515,7 @@ class CTPService:
             )
 
         logger.info(
-            f"CTP projection for player {player.id} (item {item_id}): "
+            f"CTP projection for scenario_user {scenario_user.id} (item {item_id}): "
             f"{periods} periods generated"
         )
 
@@ -523,9 +523,9 @@ class CTPService:
 
     def calculate_promise_date(
         self,
-        player: Player,
+        scenario_user: ScenarioUser,
         game: Game,
-        current_round: GameRound,
+        current_round: ScenarioRound,
         item_id: int,
         quantity: int,
     ) -> PromiseDateResult:
@@ -538,7 +538,7 @@ class CTPService:
         3. Account for production lead time + shipping lead time
 
         Args:
-            player: Player instance (manufacturer)
+            scenario_user: ScenarioUser instance (manufacturer)
             game: Game instance
             current_round: Current game round
             item_id: Item ID to produce
@@ -549,11 +549,11 @@ class CTPService:
         """
         # Get current CTP
         ctp_result = self.calculate_current_ctp(
-            player, game, current_round, item_id
+            scenario_user, game, current_round, item_id
         )
 
         # Get lead times
-        node = _get_player_node(self.db, player, game)
+        node = _get_player_node(self.db, scenario_user, game)
         production_lead_time = self._get_production_lead_time(node)
         shipping_lead_time = self._get_shipping_lead_time(node)
         total_lead_time = production_lead_time + shipping_lead_time
@@ -579,7 +579,7 @@ class CTPService:
             # Need to find future period with sufficient CTP
             # Project CTP forward
             projection = self.project_ctp_multi_period(
-                player, game, current_round, item_id, periods=8
+                scenario_user, game, current_round, item_id, periods=8
             )
 
             # Find first period where CTP >= quantity
@@ -630,7 +630,7 @@ class CTPService:
                     )
 
         logger.info(
-            f"Promise date for player {player.id}: quantity={quantity}, "
+            f"Promise date for scenario_user {scenario_user.id}: quantity={quantity}, "
             f"earliest_date={earliest_date}, confidence={confidence:.2f}"
         )
 
@@ -690,17 +690,17 @@ class CTPService:
         return 0.95
 
     def _get_production_commitments(
-        self, player: Player, current_round: GameRound
+        self, scenario_user: ScenarioUser, current_round: ScenarioRound
     ) -> int:
         """Get current production commitments (WIP + scheduled).
 
         Sums planned_quantity from ProductionOrder records that are
-        PLANNED, RELEASED, or IN_PROGRESS for this player's site.
+        PLANNED, RELEASED, or IN_PROGRESS for this scenario_user's site.
         """
         try:
             from app.models.production_order import ProductionOrder
 
-            node = _get_player_node(self.db, player, current_round.game)
+            node = _get_player_node(self.db, scenario_user, current_round.game)
             if not node:
                 return 0
 
@@ -741,20 +741,20 @@ class CTPService:
 
     def _get_component_atp(
         self,
-        player: Player,
+        scenario_user: ScenarioUser,
         game: Game,
         component_product_id: str,
-        current_round: GameRound,
+        current_round: ScenarioRound,
     ) -> int:
         """
         Get component ATP from supplier nodes.
 
         Phase 4 Implementation:
         1. First try SC-compliant path: SourcingRules → InvLevel
-        2. Fallback to simulation path: Lanes → Players → PlayerInventory
+        2. Fallback to simulation path: Lanes → ScenarioUsers → ScenarioUserInventory
 
         Args:
-            player: The manufacturer player requesting the component
+            scenario_user: The manufacturer scenario_user requesting the component
             game: Current game
             component_product_id: Product ID of the component
             current_round: Current game round
@@ -765,9 +765,9 @@ class CTPService:
         total_component_atp = 0
 
         # Get manufacturer's node for site lookup
-        manufacturer_node = _get_player_node(self.db, player, game)
+        manufacturer_node = _get_player_node(self.db, scenario_user, game)
         if not manufacturer_node:
-            logger.warning(f"No node found for manufacturer player {player.id}")
+            logger.warning(f"No node found for manufacturer scenario_user {scenario_user.id}")
             return 10000  # Fallback to unlimited if no node config
 
         # Try SC-compliant path first: SourcingRules
@@ -816,30 +816,30 @@ class CTPService:
         except Exception as e:
             logger.debug(f"SC-compliant path failed for component ATP: {e}")
 
-        # Fallback to simulation path: Check upstream players in the same scenario
+        # Fallback to simulation path: Check upstream scenario_users in the same scenario
         try:
-            # Find upstream players (component suppliers) in the same game
+            # Find upstream scenario_users (component suppliers) in the same game
             # For simulation, component suppliers are typically "component_supplier" or similar node types
             upstream_players = (
-                self.db.query(Player)
+                self.db.query(ScenarioUser)
                 .filter(
-                    Player.scenario_id == game.id,
-                    Player.id != player.id,  # Exclude the manufacturer
+                    ScenarioUser.scenario_id == game.id,
+                    ScenarioUser.id != scenario_user.id,  # Exclude the manufacturer
                 )
                 .all()
             )
 
             for upstream_player in upstream_players:
-                # Check if this player has the component in their inventory
+                # Check if this scenario_user has the component in their inventory
                 if upstream_player.inventory and upstream_player.inventory.current_stock:
-                    # For simplicity, assume all upstream players can supply components
+                    # For simplicity, assume all upstream scenario_users can supply components
                     # In a real implementation, you'd check item types and supply chains
                     upstream_atp = max(0, upstream_player.inventory.current_stock - 50)  # Reserve safety stock
                     total_component_atp += upstream_atp
 
             if total_component_atp > 0:
                 logger.info(
-                    f"Component {component_product_id} total ATP from upstream players: {total_component_atp}"
+                    f"Component {component_product_id} total ATP from upstream scenario_users: {total_component_atp}"
                 )
                 return total_component_atp
 
@@ -855,9 +855,9 @@ class CTPService:
 
     def _check_component_atp(
         self,
-        player: Player,
+        scenario_user: ScenarioUser,
         game: Game,
-        current_round: GameRound,
+        current_round: ScenarioRound,
         item_id: str,  # Now uses string product_id (SC compliant)
         max_producible_from_capacity: int,
     ) -> List[ComponentConstraint]:
@@ -903,7 +903,7 @@ class CTPService:
 
             # Find component supplier and calculate their ATP
             component_atp = self._get_component_atp(
-                player=player,
+                scenario_user=scenario_user,
                 game=game,
                 component_product_id=component_product_id,
                 current_round=current_round
@@ -937,7 +937,7 @@ class CTPService:
     def save_probabilistic_ctp(
         self,
         game: Game,
-        player: Player,
+        scenario_user: ScenarioUser,
         result: ProbabilisticCTPResult,
         current_round: int,
         product_id: str,
@@ -947,7 +947,7 @@ class CTPService:
 
         Args:
             game: Game instance
-            player: Player instance
+            scenario_user: ScenarioUser instance
             result: ProbabilisticCTPResult from calculate_probabilistic_ctp
             current_round: Current round number
             product_id: AWS SC Product ID (string)
@@ -959,10 +959,10 @@ class CTPService:
             from datetime import date
             from app.models.inventory_projection import CtpProjection
 
-            # Get node for player
-            node = _get_player_node(self.db, player, game)
+            # Get node for scenario_user
+            node = _get_player_node(self.db, scenario_user, game)
             if not node:
-                logger.warning(f"Cannot save CTP - no node for player {player.id}")
+                logger.warning(f"Cannot save CTP - no node for scenario_user {scenario_user.id}")
                 return None
 
             # Create CTP projection record
@@ -997,7 +997,7 @@ class CTPService:
             self.db.refresh(ctp_record)
 
             logger.info(
-                f"Saved probabilistic CTP record {ctp_record.id} for player {player.id}: "
+                f"Saved probabilistic CTP record {ctp_record.id} for scenario_user {scenario_user.id}: "
                 f"P10={result.ctp_p10}, P50={result.ctp_p50}, P90={result.ctp_p90}"
             )
 

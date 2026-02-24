@@ -2,29 +2,29 @@ import React, { useState, useEffect } from 'react'
 import { TrophyIcon, SparklesIcon } from '@heroicons/react/24/solid'
 import { toast } from 'react-toastify'
 
-const PlayerProfileBadge = ({ playerId, compact = false }) => {
+const ScenarioUserProfileBadge = ({ scenarioUserId, compact = false }) => {
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (playerId) {
+    if (scenarioUserId) {
       fetchStats()
       // Poll for updates every 30 seconds
       const interval = setInterval(fetchStats, 30000)
       return () => clearInterval(interval)
     }
-  }, [playerId])
+  }, [scenarioUserId])
 
   const fetchStats = async () => {
     try {
-      const response = await fetch(`/api/v1/gamification/players/${playerId}/stats`, {
+      const response = await fetch(`/api/v1/gamification/scenarioUsers/${scenarioUserId}/stats`, {
         credentials: 'include'
       })
-      if (!response.ok) throw new Error('Failed to fetch player stats')
+      if (!response.ok) throw new Error('Failed to fetch scenarioUser stats')
       const data = await response.json()
       setStats(data)
     } catch (error) {
-      console.error('Error fetching player stats:', error)
+      console.error('Error fetching scenarioUser stats:', error)
     } finally {
       setLoading(false)
     }
@@ -39,15 +39,15 @@ const PlayerProfileBadge = ({ playerId, compact = false }) => {
     ) : null
   }
 
-  const levelProgress = ((stats.total_points % ((stats.player_level) ** 2 * 10)) / ((stats.player_level) ** 2 * 10)) * 100
-  const nextLevelPoints = (stats.player_level) ** 2 * 10
+  const levelProgress = ((stats.total_points % ((stats.scenario_user_level) ** 2 * 10)) / ((stats.scenario_user_level) ** 2 * 10)) * 100
+  const nextLevelPoints = (stats.scenario_user_level) ** 2 * 10
 
   if (compact) {
     // Compact version for header/toolbar
     return (
       <div className="flex items-center space-x-2 px-3 py-1.5 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full text-white shadow-md">
         <SparklesIcon className="h-4 w-4" />
-        <span className="font-bold text-sm">Lvl {stats.player_level}</span>
+        <span className="font-bold text-sm">Lvl {stats.scenario_user_level}</span>
         <span className="text-xs opacity-90">•</span>
         <TrophyIcon className="h-4 w-4" />
         <span className="font-medium text-sm">{stats.total_points}</span>
@@ -62,10 +62,10 @@ const PlayerProfileBadge = ({ playerId, compact = false }) => {
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center">
           <div className="h-12 w-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg">
-            {stats.player_level}
+            {stats.scenario_user_level}
           </div>
           <div className="ml-3">
-            <div className="text-lg font-bold text-gray-900">Level {stats.player_level}</div>
+            <div className="text-lg font-bold text-gray-900">Level {stats.scenario_user_level}</div>
             <div className="text-sm text-gray-600 flex items-center">
               <TrophyIcon className="h-4 w-4 mr-1 text-yellow-500" />
               {stats.total_points} points
@@ -81,7 +81,7 @@ const PlayerProfileBadge = ({ playerId, compact = false }) => {
       {/* Progress Bar */}
       <div className="space-y-1">
         <div className="flex justify-between text-xs text-gray-600">
-          <span>{Math.floor(levelProgress)}% to Level {stats.player_level + 1}</span>
+          <span>{Math.floor(levelProgress)}% to Level {stats.scenario_user_level + 1}</span>
           <span>{stats.total_points % nextLevelPoints} / {nextLevelPoints} pts</span>
         </div>
         <div className="w-full bg-gray-200 rounded-full h-2.5">
@@ -115,4 +115,4 @@ const PlayerProfileBadge = ({ playerId, compact = false }) => {
   )
 }
 
-export default PlayerProfileBadge
+export default ScenarioUserProfileBadge

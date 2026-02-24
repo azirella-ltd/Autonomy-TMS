@@ -93,7 +93,7 @@ def bootstrap_system(args: argparse.Namespace) -> None:
         )
         if llm_available:
             logger.info(
-                "Autonomy LLM probe succeeded; default AI players will use the LLM strategy (%s).",
+                "Autonomy LLM probe succeeded; default AI scenario_users will use the LLM strategy (%s).",
                 args.llm_model or "auto",
             )
         else:

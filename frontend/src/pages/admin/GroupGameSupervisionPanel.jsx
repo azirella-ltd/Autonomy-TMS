@@ -364,16 +364,16 @@ const GroupGameSupervisionPanel = ({
   }, [autoProgress]);
 
   const checkModelRequirements = (game) => {
-    const players = game.players || [];
+    const scenarioUsers = game.scenarioUsers || [];
     const gnnStrategies = ['ml_forecast', 'gnn', 'autonomy', 'dtce'];
     const trmStrategies = ['trm', 'tiny_recursive'];
     const llmStrategies = ['llm', 'llm_balanced', 'llm_conservative', 'llm_aggressive',
                           'llm_adaptive', 'llm_supervised', 'llm_global'];
 
-    const agentsRequiringTraining = players
-      .filter(player => player.is_ai)
-      .filter(player => {
-        const strategy = String(player.ai_strategy || '').toLowerCase();
+    const agentsRequiringTraining = scenarioUsers
+      .filter(scenarioUser => scenarioUser.is_ai)
+      .filter(scenarioUser => {
+        const strategy = String(scenarioUser.ai_strategy || '').toLowerCase();
         const requiresGNN = gnnStrategies.some(s => strategy.includes(s));
         const requiresTRM = trmStrategies.some(s => strategy.includes(s));
         const isLLM = llmStrategies.some(s => strategy.includes(s));
@@ -389,13 +389,13 @@ const GroupGameSupervisionPanel = ({
       };
     }
 
-    const needsGNN = agentsRequiringTraining.some(player => {
-      const strategy = String(player.ai_strategy || '').toLowerCase();
+    const needsGNN = agentsRequiringTraining.some(scenarioUser => {
+      const strategy = String(scenarioUser.ai_strategy || '').toLowerCase();
       return gnnStrategies.some(s => strategy.includes(s));
     });
 
-    const needsTRM = agentsRequiringTraining.some(player => {
-      const strategy = String(player.ai_strategy || '').toLowerCase();
+    const needsTRM = agentsRequiringTraining.some(scenarioUser => {
+      const strategy = String(scenarioUser.ai_strategy || '').toLowerCase();
       return trmStrategies.some(s => strategy.includes(s));
     });
 
@@ -806,7 +806,7 @@ const GroupGameSupervisionPanel = ({
                         </p>
                         {(() => {
                           if (!nodeState) return null;
-                          const rawName = nodeState.player_name || nodeState.display_name;
+                          const rawName = nodeState.scenario_user_name || nodeState.display_name;
                           const role = nodeState.player_role
                             ? nodeState.player_role.toLowerCase().replace(/_/g, ' ')
                             : null;
@@ -834,7 +834,7 @@ const GroupGameSupervisionPanel = ({
                           }
                           return (
                             <p className="text-xs text-muted-foreground mb-2">
-                              Acting player: {parts.join(' • ')}
+                              Acting scenarioUser: {parts.join(' • ')}
                             </p>
                           );
                         })()}

@@ -84,7 +84,7 @@ class VisibilityService:
                 row = result.fetchone()
                 round_number = row.latest_round if row and row.latest_round else 1
 
-            # Get player round metrics
+            # Get scenario_user round metrics
             query = text("""
                 SELECT
                     pr.inventory_after,
@@ -95,8 +95,8 @@ class VisibilityService:
                     pr.total_cost,
                     pr.service_level,
                     p.role
-                FROM player_rounds pr
-                JOIN players p ON pr.player_id = p.id
+                FROM scenario_user_periods pr
+                JOIN scenario_users p ON pr.scenario_user_id = p.id
                 WHERE p.scenario_id = :scenario_id
                 AND pr.round_number = :round_number
             """)
@@ -231,8 +231,8 @@ class VisibilityService:
             # Get last 5 rounds of orders
             query = text("""
                 SELECT pr.order_placed
-                FROM player_rounds pr
-                JOIN players p ON pr.player_id = p.id
+                FROM scenario_user_periods pr
+                JOIN scenario_users p ON pr.scenario_user_id = p.id
                 WHERE p.scenario_id = :scenario_id
                 AND pr.round_number BETWEEN :start_round AND :end_round
                 ORDER BY pr.round_number DESC
@@ -391,7 +391,7 @@ class VisibilityService:
                 row = result.fetchone()
                 round_number = row.latest_round if row and row.latest_round else 1
 
-            # Get player metrics
+            # Get scenario_user metrics
             query = text("""
                 SELECT
                     p.role,
@@ -400,8 +400,8 @@ class VisibilityService:
                     pr.service_level,
                     pr.order_placed,
                     pr.total_cost
-                FROM player_rounds pr
-                JOIN players p ON pr.player_id = p.id
+                FROM scenario_user_periods pr
+                JOIN scenario_users p ON pr.scenario_user_id = p.id
                 WHERE p.scenario_id = :scenario_id
                 AND pr.round_number = :round_number
             """)
@@ -511,8 +511,8 @@ class VisibilityService:
                     p.role,
                     pr.round_number,
                     pr.order_placed
-                FROM player_rounds pr
-                JOIN players p ON pr.player_id = p.id
+                FROM scenario_user_periods pr
+                JOIN scenario_users p ON pr.scenario_user_id = p.id
                 WHERE p.scenario_id = :scenario_id
                 ORDER BY p.role, pr.round_number DESC
                 LIMIT :limit
@@ -607,24 +607,24 @@ class VisibilityService:
     async def set_visibility_permission(
         self,
         scenario_id: int,
-        player_id: int,
+        scenario_user_id: int,
         share_inventory: bool = False,
         share_backlog: bool = False,
         share_orders: bool = False
     ) -> Dict[str, Any]:
         """
-        Set visibility sharing permissions for a player.
+        Set visibility sharing permissions for a scenario_user.
 
         Args:
             scenario_id: Game ID
-            player_id: Player ID
+            scenario_user_id: ScenarioUser ID
             share_inventory: Share inventory levels
             share_backlog: Share backlog levels
             share_orders: Share order quantities
 
         Returns:
             {
-                "player_id": 123,
+                "scenario_user_id": 123,
                 "permissions": {
                     "share_inventory": true,
                     "share_backlog": false,
@@ -637,8 +637,8 @@ class VisibilityService:
             # Upsert permission
             query = text("""
                 INSERT INTO visibility_permissions
-                (scenario_id, player_id, share_inventory, share_backlog, share_orders, updated_at)
-                VALUES (:scenario_id, :player_id, :share_inventory, :share_backlog, :share_orders, NOW())
+                (scenario_id, scenario_user_id, share_inventory, share_backlog, share_orders, updated_at)
+                VALUES (:scenario_id, :scenario_user_id, :share_inventory, :share_backlog, :share_orders, NOW())
                 ON DUPLICATE KEY UPDATE
                     share_inventory = :share_inventory,
                     share_backlog = :share_backlog,
@@ -647,7 +647,7 @@ class VisibilityService:
             """)
             await self.db.execute(query, {
                 "scenario_id": scenario_id,
-                "player_id": player_id,
+                "scenario_user_id": scenario_user_id,
                 "share_inventory": share_inventory,
                 "share_backlog": share_backlog,
                 "share_orders": share_orders
@@ -655,7 +655,7 @@ class VisibilityService:
             await self.db.commit()
 
             return {
-                "player_id": player_id,
+                "scenario_user_id": scenario_user_id,
                 "permissions": {
                     "share_inventory": share_inventory,
                     "share_backlog": share_backlog,
@@ -674,13 +674,13 @@ class VisibilityService:
         scenario_id: int
     ) -> Dict[str, Any]:
         """
-        Get visibility permissions for all players in a game.
+        Get visibility permissions for all scenario_users in a game.
 
         Returns:
             {
-                "players": [
+                "scenario_users": [
                     {
-                        "player_id": 123,
+                        "scenario_user_id": 123,
                         "role": "RETAILER",
                         "permissions": {...}
                     }
@@ -690,23 +690,23 @@ class VisibilityService:
         try:
             query = text("""
                 SELECT
-                    p.id as player_id,
+                    p.id as scenario_user_id,
                     p.role,
                     vp.share_inventory,
                     vp.share_backlog,
                     vp.share_orders
-                FROM players p
+                FROM scenario_users p
                 LEFT JOIN visibility_permissions vp
-                    ON p.id = vp.player_id AND p.scenario_id = vp.scenario_id
+                    ON p.id = vp.scenario_user_id AND p.scenario_id = vp.scenario_id
                 WHERE p.scenario_id = :scenario_id
             """)
             result = await self.db.execute(query, {"scenario_id": scenario_id})
             rows = result.fetchall()
 
-            players = []
+            scenario_users = []
             for row in rows:
-                players.append({
-                    "player_id": row.player_id,
+                scenario_users.append({
+                    "scenario_user_id": row.scenario_user_id,
                     "role": row.role,
                     "permissions": {
                         "share_inventory": row.share_inventory or False,
@@ -715,7 +715,7 @@ class VisibilityService:
                     }
                 })
 
-            return {"players": players}
+            return {"scenario_users": scenario_users}
 
         except Exception as e:
             logger.error(f"Failed to get visibility permissions: {e}", exc_info=True)
@@ -737,7 +737,7 @@ class VisibilityService:
         - Supply chain health score
         - Bottleneck status
         - Bullwhip severity
-        - Per-player metrics (if shared)
+        - Per-scenario_user metrics (if shared)
 
         Args:
             scenario_id: Game ID
@@ -760,32 +760,32 @@ class VisibilityService:
             permissions = await self.get_visibility_permissions(scenario_id)
 
             shared_metrics = {}
-            for player in permissions["players"]:
-                if any(player["permissions"].values()):
-                    # Get player metrics
+            for scenario_user in permissions["scenario_users"]:
+                if any(scenario_user["permissions"].values()):
+                    # Get scenario_user metrics
                     query = text("""
                         SELECT inventory_after, backlog_after, order_placed
-                        FROM player_rounds pr
-                        WHERE pr.player_id = :player_id
+                        FROM scenario_user_periods pr
+                        WHERE pr.scenario_user_id = :scenario_user_id
                         AND pr.round_number = :round_number
                     """)
                     result = await self.db.execute(query, {
-                        "player_id": player["player_id"],
+                        "scenario_user_id": scenario_user["scenario_user_id"],
                         "round_number": round_number
                     })
                     row = result.fetchone()
 
                     if row:
                         metrics = {}
-                        if player["permissions"]["share_inventory"]:
+                        if scenario_user["permissions"]["share_inventory"]:
                             metrics["inventory"] = row.inventory_after
-                        if player["permissions"]["share_backlog"]:
+                        if scenario_user["permissions"]["share_backlog"]:
                             metrics["backlog"] = row.backlog_after
-                        if player["permissions"]["share_orders"]:
+                        if scenario_user["permissions"]["share_orders"]:
                             metrics["order"] = row.order_placed
 
                         if metrics:
-                            shared_metrics[player["role"]] = metrics
+                            shared_metrics[scenario_user["role"]] = metrics
 
             # Store snapshot
             snapshot_data = {

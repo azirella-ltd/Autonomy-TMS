@@ -5,7 +5,7 @@ from enum import Enum
 class WebSocketMessageType(str, Enum):
     AUTH = "auth"
     GAME_STATE = "game_state"
-    PLAYER_ACTION = "player_action"
+    SCENARIO_USER_ACTION = "scenario_user_action"
     CHAT = "chat"
     ERROR = "error"
     NOTIFICATION = "notification"
@@ -26,9 +26,9 @@ class GameStateMessage(WebSocketMessage):
     type: WebSocketMessageType = WebSocketMessageType.GAME_STATE
     data: Dict[str, Any] = Field(..., description="Complete game state")
 
-class PlayerActionMessage(WebSocketMessage):
-    """Player action message schema"""
-    type: WebSocketMessageType = WebSocketMessageType.PLAYER_ACTION
+class ScenarioUserActionMessage(WebSocketMessage):
+    """Scenario user action message schema"""
+    type: WebSocketMessageType = WebSocketMessageType.SCENARIO_USER_ACTION
     data: Dict[str, Any] = Field(..., description="Action details")
 
 class ChatMessage(WebSocketMessage):
@@ -45,3 +45,10 @@ class NotificationMessage(WebSocketMessage):
     """Notification message schema"""
     type: WebSocketMessageType = WebSocketMessageType.NOTIFICATION
     data: Dict[str, Any] = Field(..., description="Notification details")
+
+
+# =============================================================================
+# Backward Compatibility Aliases (DEPRECATED - will be removed in future)
+# =============================================================================
+
+PlayerActionMessage = ScenarioUserActionMessage

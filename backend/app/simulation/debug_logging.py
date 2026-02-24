@@ -160,15 +160,15 @@ def append_debug_round_log(
     for entry in entries:
         node_name = entry.get("node") or "unknown"
         lines.append(f"  Node: {node_name}")
-        player_info = entry.get("player") or {}
+        player_info = entry.get("scenario_user") or {}
         if player_info:
-            player_label = player_info.get("name") or "Unnamed player"
-            player_id = player_info.get("id")
-            player_type = "AI" if player_info.get("is_ai") else "Human"
-            if player_id is not None:
-                lines.append(f"    Player: {player_label} (ID: {player_id}, {player_type})")
+            player_label = player_info.get("name") or "Unnamed scenario_user"
+            scenario_user_id = player_info.get("id")
+            scenario_user_type = "AI" if player_info.get("is_ai") else "Human"
+            if scenario_user_id is not None:
+                lines.append(f"    ScenarioUser: {player_label} (ID: {scenario_user_id}, {scenario_user_type})")
             else:
-                lines.append(f"    Player: {player_label} ({player_type})")
+                lines.append(f"    ScenarioUser: {player_label} ({scenario_user_type})")
         info_sent = entry.get("info_sent")
         lines.append("    Info provided:")
         lines.append(_format_debug_block(info_sent))

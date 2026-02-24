@@ -20,7 +20,7 @@ from scripts.seed_default_group import (
 SHOWCASE_GAMES = [
     {
         "name": "The Beer Game - Human",
-        "description": "Benchmark simulation scenario with human participants assigned to each role.",
+        "description": "Benchmark simulation scenario with human scenario_users assigned to each role.",
         "strategy": "human",
         "llm_model": None,
     },

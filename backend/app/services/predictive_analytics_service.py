@@ -26,15 +26,15 @@ except ImportError:
     SHAP_AVAILABLE = False
     logging.warning("SHAP not available. Install with: pip install shap")
 
-from app.models.supply_chain import ScenarioRound, ParticipantRound
+from app.models.supply_chain import ScenarioRound, ScenarioUserPeriod
 from app.models.scenario import Scenario
-from app.models.participant import Participant
+from app.models.scenario_user import ScenarioUser
 
 # Aliases for backwards compatibility
-GameRound = ScenarioRound
-PlayerRound = ParticipantRound
+ScenarioRound = ScenarioRound
+ScenarioUserPeriod = ScenarioUserPeriod
 Game = Scenario
-Player = Participant
+ScenarioUser = ScenarioUser
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +110,7 @@ class PredictiveAnalyticsService:
 
         Args:
             scenario_id: Game ID
-            node_id: Node/Player ID
+            node_id: Node/ScenarioUser ID
             horizon: Number of rounds to forecast
             confidence_level: Confidence level for bounds (default 0.95)
 
@@ -177,16 +177,16 @@ class PredictiveAnalyticsService:
         Returns:
             predictions: Bullwhip predictions per node
         """
-        # Get all players in game
-        stmt = select(Player).where(Player.scenario_id == scenario_id)
+        # Get all scenario_users in game
+        stmt = select(ScenarioUser).where(ScenarioUser.scenario_id == scenario_id)
         result = await self.db.execute(stmt)
-        players = result.scalars().all()
+        scenario_users = result.scalars().all()
 
         predictions = []
 
-        for player in players:
+        for scenario_user in scenario_users:
             # Get historical orders and demands
-            historical = await self._get_historical_data(scenario_id, player.id, lookback=20)
+            historical = await self._get_historical_data(scenario_id, scenario_user.id, lookback=20)
 
             if len(historical) < 10:
                 continue
@@ -222,13 +222,13 @@ class PredictiveAnalyticsService:
             contributing_factors = {
                 "order_variability": std_placed / (np.mean(orders_placed) + 1e-6),
                 "demand_variability": std_received / (np.mean(orders_received) + 1e-6),
-                "lead_time_effect": 0.1 * (player.lead_time if hasattr(player, 'lead_time') else 2),
+                "lead_time_effect": 0.1 * (scenario_user.lead_time if hasattr(scenario_user, 'lead_time') else 2),
                 "inventory_policy": 0.05  # Placeholder
             }
 
             prediction = BullwhipPrediction(
-                node_id=player.id,
-                node_role=player.role,
+                node_id=scenario_user.id,
+                node_role=scenario_user.role,
                 current_ratio=current_ratio,
                 predicted_ratio=predicted_ratio,
                 risk_level=risk_level,
@@ -249,7 +249,7 @@ class PredictiveAnalyticsService:
 
         Args:
             scenario_id: Game ID
-            node_id: Node/Player ID
+            node_id: Node/ScenarioUser ID
             horizon: Forecast horizon
 
         Returns:
@@ -319,7 +319,7 @@ class PredictiveAnalyticsService:
 
         Args:
             scenario_id: Game ID
-            node_id: Node/Player ID
+            node_id: Node/ScenarioUser ID
             round_number: Round number to explain
 
         Returns:
@@ -424,7 +424,7 @@ class PredictiveAnalyticsService:
 
         Args:
             scenario_id: Game ID
-            node_id: Node/Player ID
+            node_id: Node/ScenarioUser ID
             scenarios: List of scenarios to test
                 Each scenario: {"name": "...", "changes": {"inventory": 20, ...}}
 
@@ -481,17 +481,17 @@ class PredictiveAnalyticsService:
     async def _get_historical_data(
         self,
         scenario_id: int,
-        player_id: int,
+        scenario_user_id: int,
         lookback: int = 20
     ) -> List[Dict[str, Any]]:
-        """Get historical data for a player."""
+        """Get historical data for a scenario_user."""
         stmt = (
-            select(PlayerRound)
+            select(ScenarioUserPeriod)
             .where(and_(
-                PlayerRound.scenario_id == scenario_id,
-                PlayerRound.player_id == player_id
+                ScenarioUserPeriod.scenario_id == scenario_id,
+                ScenarioUserPeriod.scenario_user_id == scenario_user_id
             ))
-            .order_by(PlayerRound.round_number.desc())
+            .order_by(ScenarioUserPeriod.round_number.desc())
             .limit(lookback)
         )
 
@@ -511,7 +511,7 @@ class PredictiveAnalyticsService:
                 "holding_cost": round_data.holding_cost,
                 "backlog_cost": round_data.backlog_cost,
                 "total_cost": round_data.total_cost,
-                "role": round_data.player.role if hasattr(round_data, 'player') else "Unknown"
+                "role": round_data.scenario_user.role if hasattr(round_data, 'scenario_user') else "Unknown"
             })
 
         return data
@@ -576,10 +576,10 @@ class PredictiveAnalyticsService:
         Returns:
             report: Comprehensive analytics report
         """
-        # Get all players
-        stmt = select(Player).where(Player.scenario_id == scenario_id)
+        # Get all scenario_users
+        stmt = select(ScenarioUser).where(ScenarioUser.scenario_id == scenario_id)
         result = await self.db.execute(stmt)
-        players = result.scalars().all()
+        scenario_users = result.scalars().all()
 
         insights = {
             "scenario_id": scenario_id,
@@ -591,13 +591,13 @@ class PredictiveAnalyticsService:
             "recommendations": []
         }
 
-        # Demand forecasts for each player
-        for player in players:
+        # Demand forecasts for each scenario_user
+        for scenario_user in scenario_users:
             try:
-                forecast = await self.forecast_demand(scenario_id, player.id, horizon=10)
-                insights["demand_forecasts"][player.role] = [asdict(f) for f in forecast]
+                forecast = await self.forecast_demand(scenario_id, scenario_user.id, horizon=10)
+                insights["demand_forecasts"][scenario_user.role] = [asdict(f) for f in forecast]
             except Exception as e:
-                logger.error(f"Forecast failed for player {player.id}: {e}")
+                logger.error(f"Forecast failed for scenario_user {scenario_user.id}: {e}")
 
         # Bullwhip predictions
         try:
@@ -607,12 +607,12 @@ class PredictiveAnalyticsService:
             logger.error(f"Bullwhip prediction failed: {e}")
 
         # Cost trajectories
-        for player in players:
+        for scenario_user in scenario_users:
             try:
-                trajectory = await self.forecast_cost_trajectory(scenario_id, player.id, horizon=10)
-                insights["cost_trajectories"][player.role] = asdict(trajectory)
+                trajectory = await self.forecast_cost_trajectory(scenario_id, scenario_user.id, horizon=10)
+                insights["cost_trajectories"][scenario_user.role] = asdict(trajectory)
             except Exception as e:
-                logger.error(f"Cost trajectory failed for player {player.id}: {e}")
+                logger.error(f"Cost trajectory failed for scenario_user {scenario_user.id}: {e}")
 
         # Risk assessment
         insights["risk_assessment"] = self._assess_overall_risk(insights)

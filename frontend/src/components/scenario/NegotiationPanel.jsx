@@ -15,14 +15,14 @@ import simulationApi from "../../services/api";
  * NegotiationPanel Component
  * Phase 7 Sprint 4 - Feature 4: Agent Negotiation
  *
- * Enables inter-player negotiations with:
+ * Enables inter-scenarioUser negotiations with:
  * - Proposal creation (order adjustment, lead time, inventory share, price adjustment)
  * - Accept/reject/counter workflow
  * - AI-mediated suggestion generation
  * - Impact simulation
  * - Negotiation messaging
  */
-const NegotiationPanel = ({ scenarioId, playerRole, currentPlayerId }) => {
+const NegotiationPanel = ({ scenarioId, scenarioUserRole, currentPlayerId }) => {
   const [negotiations, setNegotiations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -54,7 +54,7 @@ const NegotiationPanel = ({ scenarioId, playerRole, currentPlayerId }) => {
 
   const createNegotiation = async () => {
     if (!targetPlayer) {
-      toast.error("Please select a target player");
+      toast.error("Please select a target scenarioUser");
       return;
     }
 
@@ -62,7 +62,7 @@ const NegotiationPanel = ({ scenarioId, playerRole, currentPlayerId }) => {
       setIsCreating(true);
 
       const proposalData = {
-        target_player_id: parseInt(targetPlayer),
+        target_scenario_user_id: parseInt(targetPlayer),
         negotiation_type: negotiationType,
         proposal: proposal,
         message: message || undefined,
@@ -165,17 +165,17 @@ const NegotiationPanel = ({ scenarioId, playerRole, currentPlayerId }) => {
           </button>
         </div>
 
-        {/* Target Player */}
+        {/* Target ScenarioUser */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Target Player
+            Target ScenarioUser
           </label>
           <select
             value={targetPlayer}
             onChange={(e) => setTargetPlayer(e.target.value)}
             className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
           >
-            <option value="">Select player...</option>
+            <option value="">Select scenarioUser...</option>
             <option value="1">Retailer</option>
             <option value="2">Wholesaler</option>
             <option value="3">Distributor</option>
@@ -480,7 +480,7 @@ const NegotiationPanel = ({ scenarioId, playerRole, currentPlayerId }) => {
           <HandshakeIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
           <p className="text-gray-600 mb-2">No negotiations yet</p>
           <p className="text-sm text-gray-400 mb-4">
-            Start negotiating with other players to optimize the supply chain
+            Start negotiating with other scenarioUsers to optimize the supply chain
           </p>
           <button
             onClick={() => setShowCreateForm(true)}

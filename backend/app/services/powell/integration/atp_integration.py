@@ -344,7 +344,7 @@ class SiteAgentATPAdapter:
             sorted_demands = demands
 
         return self._legacy_atp_service.allocate_to_customers(
-            player=None,  # Not needed for allocation logic
+            scenario_user=None,  # Not needed for allocation logic
             demands=sorted_demands,
             available_atp=int(total_atp),
             allocation_method=allocation_method,

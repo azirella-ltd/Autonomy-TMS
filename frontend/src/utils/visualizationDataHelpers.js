@@ -1,25 +1,25 @@
 // Utility functions to transform game data for visualization components
 
 /**
- * Transform players data to sites format for 3D/geospatial visualizations
- * @param {Array} players - Array of player objects from game state
+ * Transform scenarioUsers data to sites format for 3D/geospatial visualizations
+ * @param {Array} scenarioUsers - Array of scenarioUser objects from game state
  * @param {Object} supplyChainConfig - Supply chain configuration with site metadata
  * @returns {Array} Array of site objects with id, role, name, location
  */
-export function transformPlayersToSites(players, supplyChainConfig = null) {
-  if (!players || !Array.isArray(players)) return [];
+export function transformPlayersToSites(scenarioUsers, supplyChainConfig = null) {
+  if (!scenarioUsers || !Array.isArray(scenarioUsers)) return [];
 
-  return players.map((player) => {
+  return scenarioUsers.map((scenarioUser) => {
     const site = {
-      id: player.player_id || player.id,
-      name: player.player_name || player.name || `Player ${player.player_id}`,
-      role: player.role || player.sc_site_type || player.sc_node_type || 'unknown',
+      id: scenarioUser.scenario_user_id || scenarioUser.id,
+      name: scenarioUser.scenario_user_name || scenarioUser.name || `ScenarioUser ${scenarioUser.scenario_user_id}`,
+      role: scenarioUser.role || scenarioUser.sc_site_type || scenarioUser.sc_node_type || 'unknown',
     };
 
     // Add location data if available from supply chain config
     if (supplyChainConfig?.sites) {
       const configSite = supplyChainConfig.sites.find(
-        (n) => n.id === player.site_id || n.name === player.site_name
+        (n) => n.id === scenarioUser.site_id || n.name === scenarioUser.site_name
       );
       if (configSite && configSite.location) {
         site.latitude = configSite.location.latitude;
@@ -30,7 +30,7 @@ export function transformPlayersToSites(players, supplyChainConfig = null) {
 
     // Fallback: Generate approximate locations based on role
     if (!site.latitude || !site.longitude) {
-      const generatedLocation = generateLocationByRole(site.role, player.player_id);
+      const generatedLocation = generateLocationByRole(site.role, scenarioUser.scenario_user_id);
       site.latitude = generatedLocation.latitude;
       site.longitude = generatedLocation.longitude;
       site.location = generatedLocation.name;
@@ -45,13 +45,13 @@ export const transformPlayersToNodes = transformPlayersToSites;
 
 /**
  * Generate approximate geographic locations based on supply chain role
- * @param {string} role - Player role (retailer, wholesaler, distributor, factory, supplier)
- * @param {number} playerId - Player ID for variation
+ * @param {string} role - ScenarioUser role (retailer, wholesaler, distributor, factory, supplier)
+ * @param {number} scenarioUserId - ScenarioUser ID for variation
  * @returns {Object} Location with latitude, longitude, name
  */
-function generateLocationByRole(role, playerId = 0) {
+function generateLocationByRole(role, scenarioUserId = 0) {
   const roleNormalized = (role || '').toLowerCase();
-  const variation = (playerId % 5) * 2; // Add variation for multiple sites of same role
+  const variation = (scenarioUserId % 5) * 2; // Add variation for multiple sites of same role
 
   // Approximate US locations by supply chain tier
   const locations = {
@@ -93,33 +93,33 @@ function generateLocationByRole(role, playerId = 0) {
   };
 
   const roleLocations = locations[roleNormalized] || locations.retailer;
-  return roleLocations[playerId % roleLocations.length];
+  return roleLocations[scenarioUserId % roleLocations.length];
 }
 
 /**
  * Transform connections/lanes to edges format for visualizations
- * @param {Array} players - Array of player objects
+ * @param {Array} scenarioUsers - Array of scenarioUser objects
  * @param {Object} supplyChainConfig - Supply chain configuration with lanes
  * @returns {Array} Array of edge objects with from, to, flowSpeed
  */
-export function transformConnectionsToEdges(players, supplyChainConfig = null) {
-  if (!players || !Array.isArray(players)) return [];
+export function transformConnectionsToEdges(scenarioUsers, supplyChainConfig = null) {
+  if (!scenarioUsers || !Array.isArray(scenarioUsers)) return [];
 
   const edges = [];
 
-  // Method 1: Extract from player upstream/downstream relationships
-  players.forEach((player) => {
-    if (player.upstream_player_id) {
+  // Method 1: Extract from scenarioUser upstream/downstream relationships
+  scenarioUsers.forEach((scenarioUser) => {
+    if (scenarioUser.upstream_scenario_user_id) {
       edges.push({
-        from: player.player_id || player.id,
-        to: player.upstream_player_id,
+        from: scenarioUser.scenario_user_id || scenarioUser.id,
+        to: scenarioUser.upstream_scenario_user_id,
         flowSpeed: 1,
       });
     }
-    if (player.downstream_player_id) {
+    if (scenarioUser.downstream_scenario_user_id) {
       edges.push({
-        from: player.downstream_player_id,
-        to: player.player_id || player.id,
+        from: scenarioUser.downstream_scenario_user_id,
+        to: scenarioUser.scenario_user_id || scenarioUser.id,
         flowSpeed: 1,
       });
     }
@@ -128,14 +128,14 @@ export function transformConnectionsToEdges(players, supplyChainConfig = null) {
   // Method 2: Extract from supply chain config lanes
   if (supplyChainConfig && supplyChainConfig.lanes) {
     supplyChainConfig.lanes.forEach((lane) => {
-      // Find player IDs that correspond to these sites
-      const fromPlayer = players.find((p) => p.site_id === lane.from_site_id);
-      const toPlayer = players.find((p) => p.site_id === lane.to_site_id);
+      // Find scenarioUser IDs that correspond to these sites
+      const fromPlayer = scenarioUsers.find((p) => p.site_id === lane.from_site_id);
+      const toPlayer = scenarioUsers.find((p) => p.site_id === lane.to_site_id);
 
       if (fromPlayer && toPlayer) {
         edges.push({
-          from: fromPlayer.player_id || fromPlayer.id,
-          to: toPlayer.player_id || toPlayer.id,
+          from: fromPlayer.scenario_user_id || fromPlayer.id,
+          to: toPlayer.scenario_user_id || toPlayer.id,
           flowSpeed: 1,
         });
       }
@@ -153,22 +153,22 @@ export function transformConnectionsToEdges(players, supplyChainConfig = null) {
 
 /**
  * Build inventory data object for current game state
- * @param {Array} players - Array of player objects with current state
- * @returns {Object} Inventory data keyed by player ID
+ * @param {Array} scenarioUsers - Array of scenarioUser objects with current state
+ * @returns {Object} Inventory data keyed by scenarioUser ID
  */
-export function buildInventoryData(players) {
-  if (!players || !Array.isArray(players)) return {};
+export function buildInventoryData(scenarioUsers) {
+  if (!scenarioUsers || !Array.isArray(scenarioUsers)) return {};
 
   const inventoryData = {};
 
-  players.forEach((player) => {
-    const playerId = player.player_id || player.id;
-    inventoryData[playerId] = {
-      inventory: player.inventory_end ?? player.inventory ?? 0,
-      backlog: player.backlog ?? 0,
-      cost: player.total_cost ?? player.cost ?? 0,
-      order_placed: player.order_placed ?? player.last_order ?? 0,
-      incoming_order: player.incoming_order ?? player.demand ?? 0,
+  scenarioUsers.forEach((scenarioUser) => {
+    const scenarioUserId = scenarioUser.scenario_user_id || scenarioUser.id;
+    inventoryData[scenarioUserId] = {
+      inventory: scenarioUser.inventory_end ?? scenarioUser.inventory ?? 0,
+      backlog: scenarioUser.backlog ?? 0,
+      cost: scenarioUser.total_cost ?? scenarioUser.cost ?? 0,
+      order_placed: scenarioUser.order_placed ?? scenarioUser.last_order ?? 0,
+      incoming_order: scenarioUser.incoming_order ?? scenarioUser.demand ?? 0,
     };
   });
 
@@ -177,21 +177,21 @@ export function buildInventoryData(players) {
 
 /**
  * Identify active flows based on recent order activity
- * @param {Array} players - Array of player objects with order data
+ * @param {Array} scenarioUsers - Array of scenarioUser objects with order data
  * @param {number} threshold - Minimum order quantity to consider flow active
  * @returns {Array} Array of edge IDs (e.g., ["1-2", "2-3"]) with active flows
  */
-export function identifyActiveFlows(players, threshold = 1) {
-  if (!players || !Array.isArray(players)) return [];
+export function identifyActiveFlows(scenarioUsers, threshold = 1) {
+  if (!scenarioUsers || !Array.isArray(scenarioUsers)) return [];
 
   const activeFlows = [];
 
-  players.forEach((player) => {
-    const playerId = player.player_id || player.id;
-    const orderPlaced = player.order_placed ?? player.last_order ?? 0;
+  scenarioUsers.forEach((scenarioUser) => {
+    const scenarioUserId = scenarioUser.scenario_user_id || scenarioUser.id;
+    const orderPlaced = scenarioUser.order_placed ?? scenarioUser.last_order ?? 0;
 
-    if (orderPlaced >= threshold && player.upstream_player_id) {
-      activeFlows.push(`${playerId}-${player.upstream_player_id}`);
+    if (orderPlaced >= threshold && scenarioUser.upstream_scenario_user_id) {
+      activeFlows.push(`${scenarioUserId}-${scenarioUser.upstream_scenario_user_id}`);
     }
   });
 
@@ -201,14 +201,14 @@ export function identifyActiveFlows(players, threshold = 1) {
 /**
  * Transform game history (rounds) for TimelineVisualization
  * @param {Array} rounds - Array of round objects from game history
- * @returns {Array} Formatted game history with player data per round
+ * @returns {Array} Formatted game history with scenarioUser data per round
  */
 export function transformGameHistory(rounds) {
   if (!rounds || !Array.isArray(rounds)) return [];
 
   return rounds.map((round) => ({
     round_number: round.round_number,
-    players: round.players || round.player_rounds || [],
+    scenarioUsers: round.scenarioUsers || round.player_rounds || [],
     timestamp: round.created_at || round.timestamp,
   }));
 }
@@ -228,13 +228,13 @@ export function extractVisualizationData(gameState) {
     };
   }
 
-  const players = gameState.players || [];
+  const scenarioUsers = gameState.scenarioUsers || [];
   const supplyChainConfig = gameState.supply_chain_config || null;
 
-  const sites = transformPlayersToSites(players, supplyChainConfig);
-  const edges = transformConnectionsToEdges(players, supplyChainConfig);
-  const inventoryData = buildInventoryData(players);
-  const activeFlows = identifyActiveFlows(players);
+  const sites = transformPlayersToSites(scenarioUsers, supplyChainConfig);
+  const edges = transformConnectionsToEdges(scenarioUsers, supplyChainConfig);
+  const inventoryData = buildInventoryData(scenarioUsers);
+  const activeFlows = identifyActiveFlows(scenarioUsers);
 
   return {
     sites,

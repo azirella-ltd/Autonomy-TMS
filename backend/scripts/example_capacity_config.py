@@ -304,7 +304,7 @@ async def example_4_scenario_configuration():
             config={
                 'use_capacity_constraints': True,  # Enable capacity constraints
                 'capacity_reset_period': 1,  # Reset every round (weekly)
-                'show_capacity_warnings': True  # Notify players of capacity issues
+                'show_capacity_warnings': True  # Notify scenario_users of capacity issues
             }
         )
 
@@ -323,7 +323,7 @@ async def example_4_scenario_configuration():
         print("  1. Check capacity limits when creating work orders")
         print("  2. Queue orders that exceed capacity")
         print("  3. Reset capacity counters every round (weekly)")
-        print("  4. Warn players when capacity is exceeded")
+        print("  4. Warn scenario_users when capacity is exceeded")
         print()
 
         # Note: Don't actually create the scenario in this example

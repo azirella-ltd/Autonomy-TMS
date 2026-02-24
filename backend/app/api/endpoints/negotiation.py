@@ -2,7 +2,7 @@
 Negotiation API Endpoints
 Phase 7 Sprint 4 - Feature 4: Agent Negotiation
 
-Provides REST API for inter-player negotiations with AI mediation.
+Provides REST API for inter-scenario_user negotiations with AI mediation.
 """
 
 from typing import List, Optional
@@ -24,7 +24,7 @@ router = APIRouter(prefix="/negotiations", tags=["negotiations"])
 
 class CreateNegotiationRequest(BaseModel):
     """Request to create a new negotiation."""
-    target_player_id: int = Field(..., description="Player receiving the proposal")
+    target_scenario_user_id: int = Field(..., description="ScenarioUser receiving the proposal")
     negotiation_type: str = Field(..., description="order_adjustment, lead_time, inventory_share, price_adjustment")
     proposal: dict = Field(..., description="Proposal details")
     message: Optional[str] = Field(None, description="Optional message to recipient")
@@ -32,7 +32,7 @@ class CreateNegotiationRequest(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "target_player_id": 456,
+                "target_scenario_user_id": 456,
                 "negotiation_type": "inventory_share",
                 "proposal": {
                     "units": 30,
@@ -188,13 +188,13 @@ async def create_negotiation(
     try:
         negotiation_service = get_negotiation_service(db)
 
-        # TODO: Map current_user to player_id properly
+        # TODO: Map current_user to scenario_user_id properly
         initiator_id = current_user.id
 
         result = await negotiation_service.create_negotiation(
             scenario_id=scenario_id,
             initiator_id=initiator_id,
-            target_id=request.target_player_id,
+            target_id=request.target_scenario_user_id,
             negotiation_type=request.negotiation_type,
             proposal=request.proposal,
             message=request.message
@@ -232,7 +232,7 @@ async def respond_to_negotiation(
     **When Accepting**:
     - Proposal is executed immediately
     - Scenario state is modified (inventory, orders, etc.)
-    - Both participants are notified
+    - Both scenario_users are notified
 
     **When Countering**:
     - Original proposal remains pending
@@ -270,7 +270,7 @@ async def respond_to_negotiation(
     try:
         negotiation_service = get_negotiation_service(db)
 
-        # TODO: Map current_user to player_id properly
+        # TODO: Map current_user to scenario_user_id properly
         responder_id = current_user.id
 
         result = await negotiation_service.respond_to_negotiation(
@@ -304,9 +304,9 @@ async def get_player_negotiations(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Get negotiations for the current player.
+    Get negotiations for the current scenario_user.
 
-    Returns negotiations where the player is either the initiator or target.
+    Returns negotiations where the scenario_user is either the initiator or target.
 
     **Query Parameters**:
     - `status_filter`: Filter by status (pending, accepted, rejected, countered, expired)
@@ -344,12 +344,12 @@ async def get_player_negotiations(
     try:
         negotiation_service = get_negotiation_service(db)
 
-        # TODO: Map current_user to player_id properly
-        player_id = current_user.id
+        # TODO: Map current_user to scenario_user_id properly
+        scenario_user_id = current_user.id
 
         negotiations = await negotiation_service.get_player_negotiations(
             scenario_id=scenario_id,
-            player_id=player_id,
+            scenario_user_id=scenario_user_id,
             status_filter=status_filter,
             limit=limit
         )
@@ -424,10 +424,10 @@ async def get_negotiation_messages(
         )
 
 
-@router.get("/scenarios/{scenario_id}/suggest/{target_player_id}", response_model=NegotiationSuggestionResponse)
+@router.get("/scenarios/{scenario_id}/suggest/{target_scenario_user_id}", response_model=NegotiationSuggestionResponse)
 async def get_negotiation_suggestion(
     scenario_id: int,
-    target_player_id: int,
+    target_scenario_user_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -437,7 +437,7 @@ async def get_negotiation_suggestion(
     Analyzes current scenario state and suggests mutually beneficial proposals.
 
     **Algorithm**:
-    1. Retrieve current state for both players
+    1. Retrieve current state for both scenario_users
     2. Identify complementary needs (excess/deficit)
     3. Calculate expected benefits
     4. Generate proposal with rationale
@@ -479,13 +479,13 @@ async def get_negotiation_suggestion(
     try:
         negotiation_service = get_negotiation_service(db)
 
-        # TODO: Map current_user to player_id properly
-        player_id = current_user.id
+        # TODO: Map current_user to scenario_user_id properly
+        scenario_user_id = current_user.id
 
         suggestion = await negotiation_service.generate_negotiation_suggestion(
             scenario_id=scenario_id,
-            player_id=player_id,
-            target_player_id=target_player_id
+            scenario_user_id=scenario_user_id,
+            target_scenario_user_id=target_scenario_user_id
         )
 
         return NegotiationSuggestionResponse(**suggestion)

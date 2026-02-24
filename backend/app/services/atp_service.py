@@ -20,15 +20,15 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.models.participant import Participant
+from app.models.scenario_user import ScenarioUser
 from app.models.scenario import Scenario
-from app.models.supply_chain import ScenarioRound, ParticipantRound
+from app.models.supply_chain import ScenarioRound, ScenarioUserPeriod
 
 # Aliases for backwards compatibility
-Player = Participant
+ScenarioUser = ScenarioUser
 Game = Scenario
-GameRound = ScenarioRound
-PlayerRound = ParticipantRound
+ScenarioRound = ScenarioRound
+ScenarioUserPeriod = ScenarioUserPeriod
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
 from app.models.supply_chain_config import TransportationLane
 
@@ -187,20 +187,20 @@ class ATPService:
 
     def calculate_current_atp(
         self,
-        player: Player,
+        scenario_user: ScenarioUser,
         game: Game,
-        current_round: GameRound,
+        current_round: ScenarioRound,
         include_safety_stock: bool = True,
         use_sap_bridge: bool = False,
         sap_bridge: Optional[Any] = None,
     ) -> ATPResult:
         """
-        Calculate single-period ATP for player node.
+        Calculate single-period ATP for scenario_user node.
 
         ATP = On-Hand + Scheduled Receipts - Allocated - Safety Stock
 
         Args:
-            player: Player instance (inventory node)
+            scenario_user: ScenarioUser instance (inventory node)
             game: Game instance
             current_round: Current game round
             include_safety_stock: Whether to reserve safety stock (default True)
@@ -213,9 +213,9 @@ class ATPService:
         # SAP Bridge integration: If enabled, query SAP for real-time ATP
         if use_sap_bridge and sap_bridge:
             try:
-                # Get SAP plant and material mapping from player/node
-                sap_plant = self._get_sap_plant(player, game)
-                sap_material = self._get_sap_material(player, game)
+                # Get SAP plant and material mapping from scenario_user/node
+                sap_plant = self._get_sap_plant(scenario_user, game)
+                sap_material = self._get_sap_material(scenario_user, game)
 
                 if sap_plant and sap_material:
                     from datetime import date
@@ -231,29 +231,29 @@ class ATPService:
                 # Fall through to local calculation
 
         # On-hand inventory
-        on_hand = player.inventory.current_stock if player.inventory else 0 or 0
+        on_hand = scenario_user.inventory.current_stock if scenario_user.inventory else 0 or 0
 
         # Handle case where game hasn't started (no current round)
         round_number = current_round.round_number if current_round else 0
 
         # Scheduled receipts = in-transit shipments arriving this round
         scheduled_receipts = self._get_scheduled_receipts(
-            player, round_number, game
+            scenario_user, round_number, game
         )
 
         # Allocated orders = downstream commitments already promised
         allocated_orders = self._get_allocated_orders(
-            player, round_number, game
+            scenario_user, round_number, game
         )
 
         # Safety stock from inventory policy
-        safety_stock = self._get_safety_stock(player, game) if include_safety_stock else 0
+        safety_stock = self._get_safety_stock(scenario_user, game) if include_safety_stock else 0
 
         # Calculate ATP (cannot be negative)
         atp = max(0, on_hand + scheduled_receipts - allocated_orders - safety_stock)
 
         logger.debug(
-            f"ATP calculation for player {player.id} (round {round_number}): "
+            f"ATP calculation for scenario_user {scenario_user.id} (round {round_number}): "
             f"on_hand={on_hand}, receipts={scheduled_receipts}, allocated={allocated_orders}, "
             f"safety_stock={safety_stock}, ATP={atp}"
         )
@@ -269,9 +269,9 @@ class ATPService:
 
     def calculate_probabilistic_atp(
         self,
-        player: Player,
+        scenario_user: ScenarioUser,
         game: Game,
-        current_round: GameRound,
+        current_round: ScenarioRound,
         n_simulations: int = 100,
         include_safety_stock: bool = True,
     ) -> ProbabilisticATPResult:
@@ -286,7 +286,7 @@ class ATPService:
         - Some shipments may arrive later → lower ATP (pessimistic)
 
         Args:
-            player: Player instance (inventory node)
+            scenario_user: ScenarioUser instance (inventory node)
             game: Game instance
             current_round: Current game round
             n_simulations: Number of Monte Carlo runs (default 100)
@@ -299,22 +299,22 @@ class ATPService:
         from app.services.sc_planning.stochastic_sampler import StochasticSampler
 
         # On-hand inventory (deterministic)
-        on_hand = player.inventory.current_stock if player.inventory else 0 or 0
+        on_hand = scenario_user.inventory.current_stock if scenario_user.inventory else 0 or 0
 
         # Handle case where game hasn't started
         round_number = current_round.round_number if current_round else 0
 
         # Allocated orders (deterministic - already committed)
-        allocated_orders = self._get_allocated_orders(player, round_number, game)
+        allocated_orders = self._get_allocated_orders(scenario_user, round_number, game)
 
         # Safety stock (deterministic policy)
-        safety_stock = self._get_safety_stock(player, game) if include_safety_stock else 0
+        safety_stock = self._get_safety_stock(scenario_user, game) if include_safety_stock else 0
 
         # Initialize stochastic sampler with game seed
         sampler = StochasticSampler(scenario_id=game.id)
 
-        # Get lanes feeding into this player's node for lead time distributions
-        lanes = self._get_upstream_lanes(player, game)
+        # Get lanes feeding into this scenario_user's node for lead time distributions
+        lanes = self._get_upstream_lanes(scenario_user, game)
 
         # Run Monte Carlo simulation
         receipt_samples = []
@@ -334,11 +334,11 @@ class ATPService:
                 # If lead time is longer, they may not arrive yet
                 # This is a simplified model - in reality you'd track individual shipments
                 if sampled_lt <= 1:  # Arriving this round
-                    receipts = self._get_scheduled_receipts(player, round_number, game)
+                    receipts = self._get_scheduled_receipts(scenario_user, round_number, game)
                     total_receipts += receipts
                 else:
                     # Partial receipt based on lead time distribution
-                    base_receipts = self._get_scheduled_receipts(player, round_number, game)
+                    base_receipts = self._get_scheduled_receipts(scenario_user, round_number, game)
                     # Scale receipts by probability of arrival
                     arrival_prob = max(0.0, 1.0 - (sampled_lt - 1) * 0.2)
                     total_receipts += int(base_receipts * arrival_prob)
@@ -362,7 +362,7 @@ class ATPService:
         lt_stddev = float(np.std(lt_array))
 
         logger.info(
-            f"Probabilistic ATP for player {player.id}: "
+            f"Probabilistic ATP for scenario_user {scenario_user.id}: "
             f"P10={atp_p10}, P50={atp_p50}, P90={atp_p90} "
             f"(LT mean={lt_mean:.2f}, std={lt_stddev:.2f})"
         )
@@ -383,18 +383,18 @@ class ATPService:
             timestamp=datetime.utcnow().isoformat(),
         )
 
-    def _get_upstream_lanes(self, player: Player, game: Game) -> List[TransportationLane]:
-        """Get transportation lanes feeding into this player's site"""
+    def _get_upstream_lanes(self, scenario_user: ScenarioUser, game: Game) -> List[TransportationLane]:
+        """Get transportation lanes feeding into this scenario_user's site"""
         try:
             from app.models.supply_chain_config import Node
 
-            # Get player's site
-            if not player.site_key or not game.supply_chain_config_id:
+            # Get scenario_user's site
+            if not scenario_user.site_key or not game.supply_chain_config_id:
                 return []
 
             node = self.db.query(Node).filter(
                 Node.config_id == game.supply_chain_config_id,
-                Node.dag_type == player.site_key
+                Node.dag_type == scenario_user.site_key
             ).first()
 
             if not node:
@@ -430,9 +430,9 @@ class ATPService:
 
     def project_atp_multi_period(
         self,
-        player: Player,
+        scenario_user: ScenarioUser,
         game: Game,
-        current_round: GameRound,
+        current_round: ScenarioRound,
         periods: int = 8,
     ) -> List[ATPPeriod]:
         """
@@ -444,7 +444,7 @@ class ATPService:
         - Planned allocations (future commitments)
 
         Args:
-            player: Player instance
+            scenario_user: ScenarioUser instance
             game: Game instance
             current_round: Current game round
             periods: Number of future periods to project (default 8)
@@ -455,25 +455,25 @@ class ATPService:
         projections = []
 
         # Initialize with current inventory
-        current_inventory = player.inventory.current_stock if player.inventory else 0 or 0
+        current_inventory = scenario_user.inventory.current_stock if scenario_user.inventory else 0 or 0
         cumulative_atp = 0
 
         # Get safety stock once (constant across periods)
-        safety_stock = self._get_safety_stock(player)
+        safety_stock = self._get_safety_stock(scenario_user)
 
         for period_offset in range(1, periods + 1):
             future_round = current_round.round_number + period_offset
 
             # Get scheduled receipts for this period
-            receipts = self._get_scheduled_receipts(player, future_round)
+            receipts = self._get_scheduled_receipts(scenario_user, future_round)
 
             # Forecast demand for this period
             forecasted_demand = self._forecast_demand_for_period(
-                player, game, current_round, period_offset
+                scenario_user, game, current_round, period_offset
             )
 
             # Get planned allocations (future confirmed orders)
-            planned_allocations = self._get_allocated_orders(player, future_round)
+            planned_allocations = self._get_allocated_orders(scenario_user, future_round)
 
             # Calculate ending inventory (starting + receipts - demand)
             ending_inventory = current_inventory + receipts - forecasted_demand
@@ -501,7 +501,7 @@ class ATPService:
             current_inventory = ending_inventory
 
         logger.info(
-            f"ATP projection for player {player.id}: {periods} periods generated, "
+            f"ATP projection for scenario_user {scenario_user.id}: {periods} periods generated, "
             f"cumulative ATP = {cumulative_atp}"
         )
 
@@ -509,7 +509,7 @@ class ATPService:
 
     def allocate_to_customers(
         self,
-        player: Player,
+        scenario_user: ScenarioUser,
         demands: List[CustomerDemand],
         available_atp: int,
         allocation_method: str = "proportional",
@@ -523,7 +523,7 @@ class ATPService:
         3. FCFS: First-come-first-served (order of demands list)
 
         Args:
-            player: Player instance (supplier node)
+            scenario_user: ScenarioUser instance (supplier node)
             demands: List of CustomerDemand objects
             available_atp: Total ATP to allocate
             allocation_method: "priority", "proportional", or "fcfs"
@@ -571,18 +571,18 @@ class ATPService:
 
     # --- Helper Methods ---
 
-    def _get_player_node_id(self, player: Player, game: Game) -> Optional[int]:
-        """Look up the Node ID for a player based on their site_key."""
+    def _get_player_node_id(self, scenario_user: ScenarioUser, game: Game) -> Optional[int]:
+        """Look up the Node ID for a scenario_user based on their site_key."""
         from app.models.supply_chain_config import Node
-        if not player.site_key or not game.supply_chain_config_id:
+        if not scenario_user.site_key or not game.supply_chain_config_id:
             return None
         node = self.db.query(Node).filter(
             Node.config_id == game.supply_chain_config_id,
-            Node.dag_type == player.site_key
+            Node.dag_type == scenario_user.site_key
         ).first()
         return node.id if node else None
 
-    def _get_scheduled_receipts(self, player: Player, round_number: int, game: Game = None, product_id: str = None) -> int:
+    def _get_scheduled_receipts(self, scenario_user: ScenarioUser, round_number: int, game: Game = None, product_id: str = None) -> int:
         """
         Get total scheduled receipts arriving in specified round.
 
@@ -590,7 +590,7 @@ class ATPService:
         quantities from TOs with multiple items.
 
         Args:
-            player: Player instance
+            scenario_user: ScenarioUser instance
             round_number: Round number to check
             game: Game instance (optional, used for node lookup)
             product_id: Optional product ID to filter by (for multi-product ATP)
@@ -599,8 +599,8 @@ class ATPService:
             Total quantity scheduled to arrive in this round
         """
         try:
-            # Get node ID for this player
-            node_id = self._get_player_node_id(player, game) if game else None
+            # Get node ID for this scenario_user
+            node_id = self._get_player_node_id(scenario_user, game) if game else None
             if not node_id:
                 return 0  # No node configured, return 0 receipts
 
@@ -628,7 +628,7 @@ class ATPService:
             logger.warning(f"Error getting scheduled receipts: {e}")
             return 0  # Return 0 on error (e.g., schema mismatch)
 
-    def _get_allocated_orders(self, player: Player, round_number: int, game: Game = None, product_id: str = None) -> int:
+    def _get_allocated_orders(self, scenario_user: ScenarioUser, round_number: int, game: Game = None, product_id: str = None) -> int:
         """
         Get total allocated orders (downstream commitments) for specified round.
 
@@ -636,7 +636,7 @@ class ATPService:
         quantities from TOs with multiple items.
 
         Args:
-            player: Player instance
+            scenario_user: ScenarioUser instance
             round_number: Round number to check
             game: Game instance (optional, used for node lookup)
             product_id: Optional product ID to filter by (for multi-product ATP)
@@ -645,8 +645,8 @@ class ATPService:
             Total quantity allocated/committed from this node
         """
         try:
-            # Get node ID for this player
-            node_id = self._get_player_node_id(player, game) if game else None
+            # Get node ID for this scenario_user
+            node_id = self._get_player_node_id(scenario_user, game) if game else None
             if not node_id:
                 return 0  # No node configured, return 0 allocated
 
@@ -674,9 +674,9 @@ class ATPService:
             logger.warning(f"Error getting allocated orders: {e}")
             return 0  # Return 0 on error (e.g., schema mismatch)
 
-    def _get_safety_stock(self, player: Player, game: Game = None) -> int:
+    def _get_safety_stock(self, scenario_user: ScenarioUser, game: Game = None) -> int:
         """
-        Get safety stock reserve for player node.
+        Get safety stock reserve for scenario_user node.
 
         Logic:
         1. Try to find InvPolicy for the node (site_id match)
@@ -685,7 +685,7 @@ class ATPService:
         4. If no policy found, use default 10% of current stock or 100 units minimum
 
         Args:
-            player: Player instance
+            scenario_user: ScenarioUser instance
 
         Returns:
             Safety stock quantity (integer)
@@ -695,7 +695,7 @@ class ATPService:
             from app.models.sc_entities import InvPolicy
 
             # Query by site_id (node_id maps to site in AWS SC model)
-            node_id = self._get_player_node_id(player, game) if game else None
+            node_id = self._get_player_node_id(scenario_user, game) if game else None
             policy = None
             if node_id:
                 policy = (
@@ -711,17 +711,17 @@ class ATPService:
                 if policy.ss_policy == "abs_level" and policy.ss_quantity:
                     # Absolute level - fixed quantity
                     ss = int(policy.ss_quantity)
-                    logger.debug(f"Safety stock for player {player.id}: {ss} (abs_level policy)")
+                    logger.debug(f"Safety stock for scenario_user {scenario_user.id}: {ss} (abs_level policy)")
                     return ss
 
                 elif policy.ss_policy in ("doc_dem", "doc_fcst") and policy.ss_days:
                     # Days of coverage - calculate from average demand
-                    historical = self._get_historical_demand(player, periods=4)
+                    historical = self._get_historical_demand(scenario_user, periods=4)
                     if historical:
                         avg_daily_demand = sum(historical) / len(historical)
                         ss = int(avg_daily_demand * policy.ss_days)
                         logger.debug(
-                            f"Safety stock for player {player.id}: {ss} "
+                            f"Safety stock for scenario_user {scenario_user.id}: {ss} "
                             f"({policy.ss_days} days coverage)"
                         )
                         return ss
@@ -729,7 +729,7 @@ class ATPService:
                 elif policy.ss_policy == "sl" and policy.service_level:
                     # Service level based - use z-score calculation
                     # For simplicity, use linear approximation: 95% SL ≈ 1.65 std devs
-                    historical = self._get_historical_demand(player, periods=8)
+                    historical = self._get_historical_demand(scenario_user, periods=8)
                     if historical and len(historical) >= 2:
                         import statistics
                         std_dev = statistics.stdev(historical)
@@ -738,7 +738,7 @@ class ATPService:
                         }.get(round(policy.service_level, 2), 1.65)
                         ss = int(z_score * std_dev)
                         logger.debug(
-                            f"Safety stock for player {player.id}: {ss} "
+                            f"Safety stock for scenario_user {scenario_user.id}: {ss} "
                             f"(service level {policy.service_level})"
                         )
                         return ss
@@ -747,15 +747,15 @@ class ATPService:
             logger.warning(f"Error getting safety stock policy: {e}")
 
         # Fallback: 10% of current stock or 100 units minimum
-        default_ss = max(100, int((player.inventory.current_stock if player.inventory else 0 or 0) * 0.1))
-        logger.debug(f"Safety stock for player {player.id}: {default_ss} (default)")
+        default_ss = max(100, int((scenario_user.inventory.current_stock if scenario_user.inventory else 0 or 0) * 0.1))
+        logger.debug(f"Safety stock for scenario_user {scenario_user.id}: {default_ss} (default)")
         return default_ss
 
     def _forecast_demand_for_period(
         self,
-        player: Player,
+        scenario_user: ScenarioUser,
         game: Game,
-        current_round: GameRound,
+        current_round: ScenarioRound,
         period_offset: int,
     ) -> int:
         """
@@ -767,7 +767,7 @@ class ATPService:
         3. If insufficient history, use baseline demand from config
 
         Args:
-            player: Player instance
+            scenario_user: ScenarioUser instance
             game: Game instance
             current_round: Current game round
             period_offset: How many periods ahead to forecast
@@ -776,7 +776,7 @@ class ATPService:
             Forecasted demand (integer)
         """
         # Get historical demand (last 4 rounds)
-        historical_demand = self._get_historical_demand(player, periods=4)
+        historical_demand = self._get_historical_demand(scenario_user, periods=4)
 
         if historical_demand:
             # Use simple moving average
@@ -807,37 +807,37 @@ class ATPService:
         # Last resort: 0 (no data available)
         return 0
 
-    def _get_historical_demand(self, player: Player, periods: int = 4) -> List[int]:
+    def _get_historical_demand(self, scenario_user: ScenarioUser, periods: int = 4) -> List[int]:
         """
-        Get historical demand for player (last N periods).
+        Get historical demand for scenario_user (last N periods).
 
-        Queries player_rounds table for order_received values (incoming demand
+        Queries scenario_user_periods table for order_received values (incoming demand
         from downstream nodes) for the most recent N completed rounds.
 
         Args:
-            player: Player instance
+            scenario_user: ScenarioUser instance
             periods: Number of historical periods to retrieve
 
         Returns:
             List of demand values (order_received) from recent rounds
         """
         try:
-            # Query PlayerRound joined with GameRound to get historical demand
+            # Query ScenarioUserPeriod joined with ScenarioRound to get historical demand
             # order_received = incoming orders from downstream (demand)
             historical_rounds = (
-                self.db.query(PlayerRound)
-                .join(GameRound, PlayerRound.round_id == GameRound.id)
+                self.db.query(ScenarioUserPeriod)
+                .join(ScenarioRound, ScenarioUserPeriod.round_id == ScenarioRound.id)
                 .filter(
-                    PlayerRound.player_id == player.id,
-                    GameRound.is_completed == True,  # Only completed rounds
+                    ScenarioUserPeriod.scenario_user_id == scenario_user.id,
+                    ScenarioRound.is_completed == True,  # Only completed rounds
                 )
-                .order_by(GameRound.round_number.desc())
+                .order_by(ScenarioRound.round_number.desc())
                 .limit(periods)
                 .all()
             )
 
             if not historical_rounds:
-                logger.debug(f"No historical demand data for player {player.id}")
+                logger.debug(f"No historical demand data for scenario_user {scenario_user.id}")
                 return []
 
             # Extract order_received values (demand from downstream)
@@ -847,7 +847,7 @@ class ATPService:
             demands.reverse()
 
             logger.debug(
-                f"Historical demand for player {player.id}: {demands} "
+                f"Historical demand for scenario_user {scenario_user.id}: {demands} "
                 f"(last {len(demands)} periods)"
             )
 
@@ -855,7 +855,7 @@ class ATPService:
 
         except Exception as e:
             logger.warning(
-                f"Error getting historical demand for player {player.id}: {e}",
+                f"Error getting historical demand for scenario_user {scenario_user.id}: {e}",
                 exc_info=True
             )
             return []
@@ -999,7 +999,7 @@ class ATPService:
     def save_probabilistic_atp(
         self,
         game: Game,
-        player: Player,
+        scenario_user: ScenarioUser,
         result: ProbabilisticATPResult,
         current_round: int,
     ) -> int:
@@ -1008,7 +1008,7 @@ class ATPService:
 
         Args:
             game: Game instance
-            player: Player instance
+            scenario_user: ScenarioUser instance
             result: ProbabilisticATPResult from calculate_probabilistic_atp
             current_round: Current round number
 
@@ -1019,10 +1019,10 @@ class ATPService:
             from datetime import date
             from app.models.inventory_projection import AtpProjection
 
-            # Get node ID for player
-            node_id = self._get_player_node_id(player, game)
+            # Get node ID for scenario_user
+            node_id = self._get_player_node_id(scenario_user, game)
             if not node_id:
-                logger.warning(f"Cannot save ATP - no node ID for player {player.id}")
+                logger.warning(f"Cannot save ATP - no node ID for scenario_user {scenario_user.id}")
                 return None
 
             # Get product ID (default to "CASE" for simulation)
@@ -1056,7 +1056,7 @@ class ATPService:
             self.db.refresh(atp_record)
 
             logger.info(
-                f"Saved probabilistic ATP record {atp_record.id} for player {player.id}: "
+                f"Saved probabilistic ATP record {atp_record.id} for scenario_user {scenario_user.id}: "
                 f"P10={result.atp_p10}, P50={result.atp_p50}, P90={result.atp_p90}"
             )
 
@@ -1071,15 +1071,15 @@ class ATPService:
     # SAP Integration Helper Methods
     # =========================================================================
 
-    def _get_sap_plant(self, player: Player, game: Game) -> Optional[str]:
+    def _get_sap_plant(self, scenario_user: ScenarioUser, game: Game) -> Optional[str]:
         """
-        Get SAP plant code for player node.
+        Get SAP plant code for scenario_user node.
 
         Looks up the Node model for sap_plant_code field.
         Falls back to site_key if SAP mapping not configured.
 
         Args:
-            player: Player instance
+            scenario_user: ScenarioUser instance
             game: Game instance
 
         Returns:
@@ -1088,7 +1088,7 @@ class ATPService:
         try:
             from app.models.supply_chain_config import Node
 
-            # Get node from player's site_key and game config
+            # Get node from scenario_user's site_key and game config
             if not game or not game.supply_chain_config_id:
                 return None
 
@@ -1096,7 +1096,7 @@ class ATPService:
                 self.db.query(Node)
                 .filter(
                     Node.supply_chain_config_id == game.supply_chain_config_id,
-                    Node.node_key == player.site_key
+                    Node.node_key == scenario_user.site_key
                 )
                 .first()
             )
@@ -1105,20 +1105,20 @@ class ATPService:
                 # Try SAP plant code first, fall back to node_key
                 return getattr(node, 'sap_plant_code', None) or node.node_key
 
-            return player.site_key
+            return scenario_user.site_key
 
         except Exception as e:
-            logger.debug(f"Could not get SAP plant for player {player.id}: {e}")
+            logger.debug(f"Could not get SAP plant for scenario_user {scenario_user.id}: {e}")
             return None
 
-    def _get_sap_material(self, player: Player, game: Game) -> Optional[str]:
+    def _get_sap_material(self, scenario_user: ScenarioUser, game: Game) -> Optional[str]:
         """
-        Get SAP material number for player's primary item.
+        Get SAP material number for scenario_user's primary item.
 
         For simulation, this is typically "CASE" or the primary finished good.
 
         Args:
-            player: Player instance
+            scenario_user: ScenarioUser instance
             game: Game instance
 
         Returns:

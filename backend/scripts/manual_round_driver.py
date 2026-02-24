@@ -176,14 +176,14 @@ class ManualRoundDebugger:
 
 def _print_state(state: Dict[str, Any]) -> None:
     print(f"\nRound {state['current_round']}/{state['max_rounds']}  status={state['status']}")
-    print("Players:")
-    for player in state.get("players", []):
+    print("ScenarioUsers:")
+    for scenario_user in state.get("scenario_users", []):
         snapshot = PlayerSnapshot(
-            role=player["role"],
-            inventory=int(player.get("inventory", 0)),
-            backlog=int(player.get("backlog", 0)),
-            incoming_shipments=player.get("incoming_shipments", []),
-            cost=float(player.get("cost", 0.0)),
+            role=scenario_user["role"],
+            inventory=int(scenario_user.get("inventory", 0)),
+            backlog=int(scenario_user.get("backlog", 0)),
+            incoming_shipments=scenario_user.get("incoming_shipments", []),
+            cost=float(scenario_user.get("cost", 0.0)),
         )
         print("  " + _format_player_snapshot(snapshot))
 

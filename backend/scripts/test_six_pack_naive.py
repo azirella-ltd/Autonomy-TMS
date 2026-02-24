@@ -14,7 +14,7 @@ backend_path = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_path))
 
 from app.models.scenario import Scenario, ScenarioStatus as DbScenarioStatus
-from app.models.participant import Participant
+from app.models.scenario_user import ScenarioUser
 from app.services.mixed_game_service import MixedGameService
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,12 +31,12 @@ async def find_target_scenario(session: AsyncSession) -> Scenario | None:
 
 
 async def force_ai_participants(session: AsyncSession, scenario: Scenario) -> None:
-    """Ensure all participants are AI."""
+    """Ensure all scenario_users are AI."""
     result = await session.execute(
-        select(Participant).where(Participant.scenario_id == scenario.id)
+        select(ScenarioUser).where(ScenarioUser.scenario_id == scenario.id)
     )
-    participants = result.scalars().all()
-    for p in participants:
+    scenario_users = result.scalars().all()
+    for p in scenario_users:
         p.is_ai = True
         session.add(p)
     await session.commit()

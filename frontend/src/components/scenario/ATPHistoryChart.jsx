@@ -6,7 +6,7 @@
  *
  * Props:
  * - scenarioId: Scenario ID
- * - playerId: Player ID
+ * - scenarioUserId: ScenarioUser ID
  * - showCTP: Whether to show CTP history (for manufacturers)
  */
 
@@ -46,7 +46,7 @@ import { cn } from '../../lib/utils/cn';
 
 const ATPHistoryChart = ({
   scenarioId,
-  playerId,
+  scenarioUserId,
   showCTP = false,
   limit = 20,
 }) => {
@@ -57,16 +57,16 @@ const ATPHistoryChart = ({
 
   useEffect(() => {
     fetchHistory();
-  }, [scenarioId, playerId, limit]);
+  }, [scenarioId, scenarioUserId, limit]);
 
   const fetchHistory = async () => {
-    if (!scenarioId || !playerId) return;
+    if (!scenarioId || !scenarioUserId) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      const data = await simulationApi.getATPHistory(scenarioId, playerId, limit);
+      const data = await simulationApi.getATPHistory(scenarioId, scenarioUserId, limit);
       setHistoryData(data);
     } catch (err) {
       console.error('Error fetching ATP/CTP history:', err);

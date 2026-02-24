@@ -12,8 +12,8 @@ class UserService:
     """Service layer for user management."""
 
     TYPE_ALIASES = {
-        "player": UserTypeEnum.USER,
-        "players": UserTypeEnum.USER,
+        "scenario_user": UserTypeEnum.USER,
+        "scenario_users": UserTypeEnum.USER,
         "user": UserTypeEnum.USER,
         "users": UserTypeEnum.USER,
         "groupadmin": UserTypeEnum.GROUP_ADMIN,
@@ -226,12 +226,12 @@ class UserService:
             .order_by(models.User.username.asc())
         )
         users = query.all()
-        players = [user for user in users if self._get_user_type(user) == UserTypeEnum.USER]
+        scenario_users = [user for user in users if self._get_user_type(user) == UserTypeEnum.USER]
 
         if skip or (limit is not None and limit >= 0):
             end = skip + limit if limit is not None else None
-            return players[skip:end]
-        return players
+            return scenario_users[skip:end]
+        return scenario_users
 
     def list_accessible_users(
         self,
@@ -417,7 +417,7 @@ class UserService:
             if user_update.group_id is not None and user_update.group_id != current_user.group_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Group admins cannot change a player's group",
+                    detail="Group admins cannot change a scenario_user's group",
                 )
 
             if user_update.user_type and self._normalize_type(user_update.user_type) != UserTypeEnum.USER:
@@ -648,7 +648,7 @@ class UserService:
         if can_group_admin_delete and replacement_admin_id is not None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Replacement admin is not required when deleting a player",
+                detail="Replacement admin is not required when deleting a scenario_user",
             )
 
         promoted_user: Optional[models.User] = None

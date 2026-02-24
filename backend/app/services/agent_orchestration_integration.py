@@ -39,11 +39,11 @@ from app.services.rlhf_data_collector import (
     RLHFDataCollector,
     FeedbackAction
 )
-from app.models.participant import Participant
+from app.models.scenario_user import ScenarioUser
 from app.models.scenario import Scenario
 
 # Aliases for backwards compatibility
-Player = Participant
+ScenarioUser = ScenarioUser
 Game = Scenario
 
 logger = logging.getLogger(__name__)
@@ -111,7 +111,7 @@ class AgentOrchestrationIntegration:
 
     def make_ensemble_decision(
         self,
-        player: Player,
+        scenario_user: ScenarioUser,
         game: Game,
         agent_decisions: List[Dict[str, Any]],
         game_state: Dict[str, Any]
@@ -120,7 +120,7 @@ class AgentOrchestrationIntegration:
         Make ensemble consensus decision and record metadata.
 
         Args:
-            player: Player making decision
+            scenario_user: ScenarioUser making decision
             game: Game context
             agent_decisions: List of agent decision dicts
             game_state: Current game state context
@@ -159,7 +159,7 @@ class AgentOrchestrationIntegration:
         }
 
         logger.info(
-            f"Ensemble decision for player {player.id} in game {game.id}: "
+            f"Ensemble decision for scenario_user {scenario_user.id} in game {game.id}: "
             f"decision={ensemble_result.final_decision}, "
             f"confidence={ensemble_result.confidence:.2f}, "
             f"agreement={ensemble_result.agreement_score:.2f}"
@@ -169,7 +169,7 @@ class AgentOrchestrationIntegration:
 
     def record_performance_and_learn(
         self,
-        player: Player,
+        scenario_user: ScenarioUser,
         game: Game,
         round_number: int,
         agent_type: str,
@@ -180,7 +180,7 @@ class AgentOrchestrationIntegration:
         Record agent performance and update weights via learning.
 
         Args:
-            player: Player who made decision
+            scenario_user: ScenarioUser who made decision
             game: Game context
             round_number: Round number
             agent_type: Agent type that made decision (llm, gnn, trm, ensemble)
@@ -199,11 +199,11 @@ class AgentOrchestrationIntegration:
 
         # Record performance
         performance_metrics = PerformanceMetrics(
-            player_id=player.id,
+            scenario_user_id=scenario_user.id,
             scenario_id=game.id,
             round_number=round_number,
             agent_type=agent_type,
-            agent_mode=player.agent_mode or "manual",
+            agent_mode=scenario_user.agent_mode or "manual",
             total_cost=total_cost,
             holding_cost=holding_cost,
             shortage_cost=shortage_cost,
@@ -243,7 +243,7 @@ class AgentOrchestrationIntegration:
 
     def record_copilot_feedback(
         self,
-        player: Player,
+        scenario_user: ScenarioUser,
         game: Game,
         round_number: int,
         agent_type: str,
@@ -257,7 +257,7 @@ class AgentOrchestrationIntegration:
         Record RLHF feedback when human overrides AI suggestion in copilot mode.
 
         Args:
-            player: Player who made decision
+            scenario_user: ScenarioUser who made decision
             game: Game context
             round_number: Round number
             agent_type: AI agent type (llm, gnn, trm)
@@ -271,7 +271,7 @@ class AgentOrchestrationIntegration:
             Feedback record ID
         """
         feedback_id = self.rlhf_collector.record_feedback(
-            player_id=player.id,
+            scenario_user_id=scenario_user.id,
             scenario_id=game.id,
             round_number=round_number,
             agent_type=agent_type,
@@ -283,7 +283,7 @@ class AgentOrchestrationIntegration:
         )
 
         logger.info(
-            f"Recorded RLHF feedback for player {player.id} round {round_number}: "
+            f"Recorded RLHF feedback for scenario_user {scenario_user.id} round {round_number}: "
             f"ai_suggested={ai_suggestion}, human_chose={human_decision}, "
             f"feedback_id={feedback_id}"
         )

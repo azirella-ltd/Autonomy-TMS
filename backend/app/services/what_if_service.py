@@ -14,8 +14,8 @@ from sqlalchemy import select, desc
 
 from app.models.chat import WhatIfAnalysis
 from app.models.scenario import Scenario
-from app.models.participant import Participant
-from app.models.supply_chain import ParticipantRound
+from app.models.scenario_user import ScenarioUser
+from app.models.supply_chain import ScenarioUserPeriod
 
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ class WhatIfAnalysisService:
             sim_result = await self._simulate_scenario(
                 scenario_id=analysis.scenario_id,
                 round=analysis.round,
-                player_id=analysis.player_id,
+                scenario_user_id=analysis.scenario_user_id,
                 scenario=analysis.scenario,
             )
 
@@ -122,7 +122,7 @@ class WhatIfAnalysisService:
         self,
         scenario_id: int,
         round: int,
-        player_id: int,
+        scenario_user_id: int,
         scenario: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
@@ -134,7 +134,7 @@ class WhatIfAnalysisService:
         Args:
             scenario_id: Scenario ID
             round: Current period
-            player_id: Participant ID
+            scenario_user_id: ScenarioUser ID
             scenario: Scenario parameters (order_quantity, etc.)
 
         Returns:
@@ -147,26 +147,26 @@ class WhatIfAnalysisService:
         if not scenario_obj:
             raise ValueError(f"Scenario {scenario_id} not found")
 
-        # Get participant
+        # Get scenario_user
         participant_result = await self.db.execute(
-            select(Participant).filter(Participant.id == player_id)
+            select(ScenarioUser).filter(ScenarioUser.id == scenario_user_id)
         )
-        participant = participant_result.scalars().first()
+        scenario_user = participant_result.scalars().first()
 
-        if not participant:
-            raise ValueError(f"Participant {player_id} not found")
+        if not scenario_user:
+            raise ValueError(f"ScenarioUser {scenario_user_id} not found")
 
-        # Get latest participant period
+        # Get latest scenario_user period
         round_result = await self.db.execute(
-            select(ParticipantRound)
-            .filter(ParticipantRound.player_id == participant.id)
-            .order_by(desc(ParticipantRound.round))
+            select(ScenarioUserPeriod)
+            .filter(ScenarioUserPeriod.scenario_user_id == scenario_user.id)
+            .order_by(desc(ScenarioUserPeriod.round))
             .limit(1)
         )
         current_round = round_result.scalars().first()
 
         if not current_round:
-            raise ValueError(f"No periods found for participant {participant.id}")
+            raise ValueError(f"No periods found for scenario_user {scenario_user.id}")
 
         # Extract scenario parameters
         order_quantity = scenario.get('order_quantity', 0)
@@ -174,9 +174,9 @@ class WhatIfAnalysisService:
 
         # Get recent demand for projection
         recent_rounds_result = await self.db.execute(
-            select(ParticipantRound)
-            .filter(ParticipantRound.player_id == participant.id)
-            .order_by(desc(ParticipantRound.round))
+            select(ScenarioUserPeriod)
+            .filter(ScenarioUserPeriod.scenario_user_id == scenario_user.id)
+            .order_by(desc(ScenarioUserPeriod.round))
             .limit(5)
         )
         recent_rounds = list(recent_rounds_result.scalars().all())
@@ -191,7 +191,7 @@ class WhatIfAnalysisService:
 
         # Simple projection (1-round ahead)
         # Assumes order arrives with lead time and demand continues at projected rate
-        lead_time = participant.lead_time if hasattr(participant, 'lead_time') else 2
+        lead_time = scenario_user.lead_time if hasattr(scenario_user, 'lead_time') else 2
 
         # Calculate next round state
         incoming = order_quantity  # Simplified: ignoring lead time for what-if
@@ -273,7 +273,7 @@ class WhatIfAnalysisService:
                 kb_section = f"\nRelevant Supply Chain Knowledge:\n{kb_context}\nUse the above knowledge to inform your analysis.\n"
 
             # Build analysis prompt
-            prompt = f"""You are a supply chain advisor analyzing a "what-if" scenario for a participant in a supply chain simulation.
+            prompt = f"""You are a supply chain advisor analyzing a "what-if" scenario for a scenario_user in a supply chain simulation.
 
 User Question: {question}
 {kb_section}

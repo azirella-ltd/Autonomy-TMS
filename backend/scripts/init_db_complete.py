@@ -13,7 +13,7 @@ from app.models.user import User
 from app.core.security import get_password_hash
 
 # Import all models to ensure they are registered with SQLAlchemy
-from app.models import user, scenario, participant, refresh_token
+from app.models import user, scenario, scenario_user, refresh_token
 from app.models.supply_chain import Round  # Import Round from supply_chain
 
 def init_db():

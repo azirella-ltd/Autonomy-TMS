@@ -16,7 +16,7 @@
  * Terminology update (Feb 2026):
  * - Gamification -> Simulation (section name)
  * - Games -> Scenarios (feature name)
- * - Players -> Users/Participants (UI display)
+ * - ScenarioUsers -> Users/ScenarioUsers (UI display)
  * - Rounds -> Periods (time periods)
  */
 
@@ -1032,11 +1032,11 @@ export const LEARNING_NAVIGATION = [
     adminOnly: true,
     items: [
       {
-        label: 'Participants',
+        label: 'Users',
         path: '/admin/users',
         icon: PeopleIcon,
         requiredCapability: 'view_users',
-        description: 'Manage learning participants',
+        description: 'Manage learning users',
       },
       {
         label: 'Scenario Configurations',

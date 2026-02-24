@@ -60,7 +60,7 @@ const FEATURES = [
   { value: 'stochastic', label: 'Stochastic Demand', description: 'Variable demand patterns' },
   { value: 'monte_carlo', label: 'Monte Carlo Simulation', description: 'Risk analysis' },
   { value: 'multi_tier', label: 'Multi-Tier Network', description: '3+ echelons' },
-  { value: 'ai_agents', label: 'AI Agents', description: 'Automated players' }
+  { value: 'ai_agents', label: 'AI Agents', description: 'Automated scenarioUsers' }
 ];
 
 const steps = ['Select Industry', 'Choose Template', 'Configure & Launch'];
@@ -235,8 +235,8 @@ const QuickStartWizard = ({ open, onClose, onComplete }) => {
               </div>
             </div>
 
-            {/* Number of Players */}
-            <FormField label="Number of Players" className="mb-4">
+            {/* Number of ScenarioUsers */}
+            <FormField label="Number of ScenarioUsers" className="mb-4">
               <Input
                 type="number"
                 value={numPlayers}
@@ -370,7 +370,7 @@ const QuickStartWizard = ({ open, onClose, onComplete }) => {
                         <span className="font-medium">{difficulty}</span>
                       </div>
                       <div className="flex justify-between text-sm">
-                        <span>Players:</span>
+                        <span>ScenarioUsers:</span>
                         <span className="font-medium">{numPlayers}</span>
                       </div>
                       <div className="flex justify-between text-sm">

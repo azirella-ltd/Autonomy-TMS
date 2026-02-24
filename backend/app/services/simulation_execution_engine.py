@@ -507,15 +507,15 @@ class SimulationExecutionEngine:
             fill_rate = (orders_fulfilled / orders_received) if orders_received > 0 else 1.0
             service_level = fill_rate  # Simplified for simulation
 
-            # Look up participant assigned to this site
-            participant_id = await self._get_participant_for_site(scenario_id, site.id)
+            # Look up scenario_user assigned to this site
+            scenario_user_id = await self._get_participant_for_site(scenario_id, site.id)
 
             # Create RoundMetric
             metric = RoundMetric(
                 scenario_id=scenario_id,
                 round_number=current_round,
                 site_id=site.id,
-                participant_id=participant_id,
+                scenario_user_id=scenario_user_id,
                 inventory=inventory,
                 backlog=backlog,
                 pipeline_qty=pipeline_qty,
@@ -642,13 +642,13 @@ class SimulationExecutionEngine:
         return 4.0 if round_number <= 4 else 8.0
 
     async def _get_participant_for_site(self, scenario_id: int, site_id: int) -> Optional[int]:
-        """Look up the participant assigned to a site in this scenario."""
+        """Look up the scenario_user assigned to a site in this scenario."""
         try:
-            from app.models.participant import Participant
+            from app.models.scenario_user import ScenarioUser
             result = await self.db.execute(
-                select(Participant.id).where(and_(
-                    Participant.scenario_id == scenario_id,
-                    Participant.node_id == site_id,
+                select(ScenarioUser.id).where(and_(
+                    ScenarioUser.scenario_id == scenario_id,
+                    ScenarioUser.node_id == site_id,
                 )).limit(1)
             )
             row = result.scalar_one_or_none()

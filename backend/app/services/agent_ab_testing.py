@@ -142,17 +142,17 @@ class AgentABTesting:
         self,
         test_id: int,
         scenario_id: int,
-        player_id: Optional[int] = None
+        scenario_user_id: Optional[int] = None
     ) -> str:
         """
-        Assign game/player to a test variant.
+        Assign game/scenario_user to a test variant.
 
         Uses round-robin assignment for balanced distribution.
 
         Args:
             test_id: Test ID
             scenario_id: Game ID
-            player_id: Player ID (optional, for player-level tests)
+            scenario_user_id: ScenarioUser ID (optional, for scenario_user-level tests)
 
         Returns:
             Assigned variant name ("control", "variant_a", etc.)
@@ -180,7 +180,7 @@ class AgentABTesting:
         assignment = ABTestAssignment(
             test_id=test_id,
             scenario_id=scenario_id,
-            player_id=player_id,
+            scenario_user_id=scenario_user_id,
             variant=variant,
             config=config,
             assigned_at=datetime.utcnow()
@@ -380,13 +380,13 @@ class ABTest(Base):
 
 
 class ABTestAssignment(Base):
-    """Assignment of game/player to test variant."""
+    """Assignment of game/scenario_user to test variant."""
     __tablename__ = "ab_test_assignments"
 
     id = Column(Integer, primary_key=True, index=True)
     test_id = Column(Integer, ForeignKey("ab_tests.id"), nullable=False, index=True)
     scenario_id = Column(Integer, ForeignKey("games.id"), nullable=False, index=True)
-    player_id = Column(Integer, ForeignKey("players.id"), nullable=True, index=True)
+    scenario_user_id = Column(Integer, ForeignKey("scenario_users.id"), nullable=True, index=True)
 
     variant = Column(String(20), nullable=False, index=True)
     config = Column(JSON, nullable=False)

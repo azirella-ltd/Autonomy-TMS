@@ -19,7 +19,7 @@ class MessageType(str, Enum):
 
 class SenderType(str, Enum):
     """Message sender types."""
-    PLAYER = "player"
+    PLAYER = "scenario_user"
     AGENT = "agent"
 
 
@@ -28,9 +28,9 @@ class SenderType(str, Enum):
 
 class ChatMessageCreate(BaseModel):
     """Create a new chat message."""
-    sender_id: str = Field(..., description="Sender ID (player:1 or agent:wholesaler)")
+    sender_id: str = Field(..., description="Sender ID (scenario_user:1 or agent:wholesaler)")
     sender_name: str = Field(..., description="Display name of sender")
-    sender_type: SenderType = Field(..., description="Player or agent")
+    sender_type: SenderType = Field(..., description="ScenarioUser or agent")
     recipient_id: Optional[str] = Field(None, description="Recipient ID (optional for broadcast)")
     content: str = Field(..., min_length=1, max_length=2000, description="Message content")
     type: MessageType = Field(MessageType.TEXT, description="Message type")
@@ -49,12 +49,12 @@ class AgentSuggestionRequest(BaseModel):
 
 class AgentSuggestionDecision(BaseModel):
     """Accept or decline a suggestion."""
-    player_id: int = Field(..., description="Player making the decision")
+    scenario_user_id: int = Field(..., description="ScenarioUser making the decision")
 
 
 class WhatIfAnalysisRequest(BaseModel):
     """Request what-if analysis."""
-    player_id: int = Field(..., description="Player requesting analysis")
+    scenario_user_id: int = Field(..., description="ScenarioUser requesting analysis")
     question: str = Field(..., min_length=1, max_length=500, description="Hypothetical question")
     scenario: Dict[str, Any] = Field(..., description="Hypothetical scenario (order quantities, etc.)")
 
@@ -108,7 +108,7 @@ class AgentSuggestionResponse(BaseModel):
     rationale: str
     context: Dict[str, Any]  # Changed to Dict to allow extended context
     accepted: Optional[bool]
-    player_id: Optional[int]
+    scenario_user_id: Optional[int]
     created_at: datetime
     decided_at: Optional[datetime]
 
@@ -127,7 +127,7 @@ class WhatIfAnalysisResponse(BaseModel):
     id: int
     scenario_id: int
     round: int
-    player_id: int
+    scenario_user_id: int
     question: str
     scenario: Dict[str, Any]
     result: Optional[Dict[str, Any]]

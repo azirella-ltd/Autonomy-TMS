@@ -2,14 +2,14 @@
  * Agent Mode Selector Component
  *
  * Phase 4: Multi-Agent Orchestration
- * Allows players to dynamically switch between manual, copilot, and autonomous modes
+ * Allows scenarioUsers to dynamically switch between manual, copilot, and autonomous modes
  * during active gameplay.
  *
  * Migrated to Autonomy UI Kit (shadcn/ui + Tailwind CSS + lucide-react)
  *
  * Props:
  * - gameId: Game ID
- * - playerId: Player ID
+ * - scenarioUserId: ScenarioUser ID
  * - currentMode: Current agent mode
  * - onModeChange: Callback when mode changes successfully
  */
@@ -46,7 +46,7 @@ import { api } from '../../services/api';
 
 const AgentModeSelector = ({
   gameId,
-  playerId,
+  scenarioUserId,
   currentMode = 'manual',
   onModeChange,
 }) => {
@@ -140,7 +140,7 @@ const AgentModeSelector = ({
 
     try {
       const response = await api.post(`/mixed-scenarios/${gameId}/switch-mode`, {
-        player_id: playerId,
+        scenario_user_id: scenarioUserId,
         new_mode: selectedMode,
         reason: 'user_request',
         force: false,
@@ -177,7 +177,7 @@ const AgentModeSelector = ({
     setLoadingHistory(true);
     try {
       const response = await api.get(
-        `/mixed-scenarios/${gameId}/mode-history/${playerId}?limit=10`
+        `/mixed-scenarios/${gameId}/mode-history/${scenarioUserId}?limit=10`
       );
       setModeHistory(response.data.history || []);
     } catch (err) {

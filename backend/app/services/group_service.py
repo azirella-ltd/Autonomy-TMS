@@ -9,10 +9,10 @@ from ..models import (
     SupplyChainConfig,
     Scenario as Game,
     ScenarioStatus as GameStatus,
-    Participant as Player,
-    ParticipantRole as PlayerRole,
-    ParticipantType as PlayerType,
-    ParticipantStrategy as PlayerStrategy,
+    ScenarioUser as ScenarioUser,
+    ScenarioUserRole as PlayerRole,
+    ScenarioUserType as PlayerType,
+    ScenarioUserStrategy as PlayerStrategy,
 )
 from ..models.user import UserTypeEnum
 from ..models.supply_chain_config import (
@@ -294,9 +294,9 @@ class GroupService:
                     self.db.flush()
                     player_users.append((user, spec["role"], spec["full_name"]))
 
-                players = []
+                scenario_users = []
                 for user_obj, role_enum, display_name in player_users:
-                    player = Player(
+                    scenario_user = ScenarioUser(
                         scenario_id=game.id,
                         user_id=user_obj.id,
                         name=display_name,
@@ -306,9 +306,9 @@ class GroupService:
                         is_ai=True,
                         ai_strategy="naive",
                     )
-                    players.append(player)
+                    scenario_users.append(scenario_user)
 
-                self.db.add_all(players)
+                self.db.add_all(scenario_users)
 
                 game.role_assignments = {
                     role_enum.value: {

@@ -2,8 +2,8 @@
 Pattern Analysis Service
 Phase 7 Sprint 4 - Feature 2
 
-Tracks suggestion outcomes, detects player patterns, and measures AI effectiveness.
-Provides insights into player behavior and AI recommendation quality.
+Tracks suggestion outcomes, detects scenario_user patterns, and measures AI effectiveness.
+Provides insights into scenario_user behavior and AI recommendation quality.
 """
 
 import logging
@@ -14,17 +14,17 @@ from sqlalchemy import select, func, desc, and_
 import statistics
 
 from app.models.scenario import Scenario
-from app.models.participant import Participant
+from app.models.scenario_user import ScenarioUser
 
 # Aliases for backwards compatibility
 Game = Scenario
-Player = Participant
+ScenarioUser = ScenarioUser
 
 logger = logging.getLogger(__name__)
 
 
 class PatternAnalysisService:
-    """Service for analyzing player patterns and AI suggestion outcomes."""
+    """Service for analyzing scenario_user patterns and AI suggestion outcomes."""
 
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -41,9 +41,9 @@ class PatternAnalysisService:
 
         Args:
             suggestion_id: ID of the suggestion
-            accepted: Whether player accepted the suggestion
+            accepted: Whether scenario_user accepted the suggestion
             actual_order_placed: The actual order quantity placed
-            modified_quantity: If player modified, what they changed it to
+            modified_quantity: If scenario_user modified, what they changed it to
 
         Returns:
             Outcome record with performance metrics
@@ -113,10 +113,10 @@ class PatternAnalysisService:
         return round(performance_score, 2)
 
     async def get_player_patterns(
-        self, player_id: int, scenario_id: int
+        self, scenario_user_id: int, scenario_id: int
     ) -> Dict[str, Any]:
         """
-        Get detected patterns for a player in a game.
+        Get detected patterns for a scenario_user in a game.
 
         Analyzes:
         - Acceptance rate
@@ -125,7 +125,7 @@ class PatternAnalysisService:
         - Risk tolerance
 
         Args:
-            player_id: Player ID
+            scenario_user_id: ScenarioUser ID
             scenario_id: Game ID
 
         Returns:
@@ -135,7 +135,7 @@ class PatternAnalysisService:
         # For now, return mock data structure
 
         patterns = {
-            "player_id": player_id,
+            "scenario_user_id": scenario_user_id,
             "scenario_id": scenario_id,
             "pattern_type": "balanced",  # conservative, aggressive, balanced, reactive
             "acceptance_rate": 0.75,  # 75% of suggestions accepted
@@ -144,7 +144,7 @@ class PatternAnalysisService:
             "total_suggestions": 20,
             "total_accepted": 15,
             "insights": [
-                "Player tends to accept suggestions with >70% confidence",
+                "ScenarioUser tends to accept suggestions with >70% confidence",
                 "Prefers conservative recommendations during high volatility",
                 "Frequently modifies orders downward by 10-20%",
             ],
@@ -158,7 +158,7 @@ class PatternAnalysisService:
         """
         Measure AI suggestion effectiveness for a game.
 
-        Compares AI-suggested orders vs player-chosen orders
+        Compares AI-suggested orders vs scenario_user-chosen orders
         to determine which performs better.
 
         Args:
@@ -209,7 +209,7 @@ class PatternAnalysisService:
             },
             "insights": [
                 "AI suggestions with >80% confidence perform 12% better on average",
-                "Players who consistently follow AI recommendations save $5.70 per round",
+                "ScenarioUsers who consistently follow AI recommendations save $5.70 per round",
                 "Conservative suggestions (during high volatility) have 92% acceptance rate",
                 "AI is well-calibrated: high confidence correlates with good outcomes",
             ],
@@ -220,7 +220,7 @@ class PatternAnalysisService:
     async def get_suggestion_history(
         self,
         scenario_id: int,
-        player_id: Optional[int] = None,
+        scenario_user_id: Optional[int] = None,
         limit: int = 50,
     ) -> List[Dict[str, Any]]:
         """
@@ -228,7 +228,7 @@ class PatternAnalysisService:
 
         Args:
             scenario_id: Game ID
-            player_id: Optional player filter
+            scenario_user_id: Optional scenario_user filter
             limit: Maximum number of records
 
         Returns:
@@ -282,7 +282,7 @@ class PatternAnalysisService:
         self, acceptance_rate: float, avg_modification: float, recent_suggestions: List[Dict]
     ) -> str:
         """
-        Detect player pattern type based on behavior.
+        Detect scenario_user pattern type based on behavior.
 
         Args:
             acceptance_rate: Percentage of suggestions accepted (0-1)
@@ -312,14 +312,14 @@ class PatternAnalysisService:
         return "balanced"
 
     async def get_acceptance_trends(
-        self, scenario_id: int, player_id: int, window: int = 10
+        self, scenario_id: int, scenario_user_id: int, window: int = 10
     ) -> Dict[str, Any]:
         """
         Get acceptance rate trends over time.
 
         Args:
             scenario_id: Game ID
-            player_id: Player ID
+            scenario_user_id: ScenarioUser ID
             window: Rolling window size for trend calculation
 
         Returns:
@@ -329,7 +329,7 @@ class PatternAnalysisService:
         # For now, return mock trend data
 
         trends = {
-            "player_id": player_id,
+            "scenario_user_id": scenario_user_id,
             "scenario_id": scenario_id,
             "window_size": window,
             "current_acceptance_rate": 0.75,
@@ -346,33 +346,33 @@ class PatternAnalysisService:
             "insights": [
                 "Acceptance rate improving over time (+8% from start)",
                 "Strong correlation between confidence and acceptance",
-                "Player learning to trust AI recommendations",
+                "ScenarioUser learning to trust AI recommendations",
             ],
         }
 
         return trends
 
     async def generate_insights(
-        self, scenario_id: int, player_id: Optional[int] = None
+        self, scenario_id: int, scenario_user_id: Optional[int] = None
     ) -> List[str]:
         """
         Generate actionable insights from pattern analysis.
 
         Args:
             scenario_id: Game ID
-            player_id: Optional player filter
+            scenario_user_id: Optional scenario_user filter
 
         Returns:
             List of insight strings
         """
         patterns = await self.get_player_patterns(
-            player_id, scenario_id
-        ) if player_id else None
+            scenario_user_id, scenario_id
+        ) if scenario_user_id else None
         effectiveness = await self.get_ai_effectiveness(scenario_id)
 
         insights = []
 
-        # Player-specific insights
+        # ScenarioUser-specific insights
         if patterns:
             if patterns["acceptance_rate"] > 0.8:
                 insights.append(

@@ -229,7 +229,7 @@ const Simulation = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <ParameterSlider
                         label="Order lead time (weeks)"
-                        description="Time for players to receive orders"
+                        description="Time for scenarioUsers to receive orders"
                         value={config.orderLeadTime}
                         min={0}
                         max={8}
@@ -259,7 +259,7 @@ const Simulation = () => {
                       />
                       <ParameterSlider
                         label="Initial inventory"
-                        description="Starting inventory for each player"
+                        description="Starting inventory for each scenarioUser"
                         value={config.initialInventory}
                         min={0}
                         max={50}
@@ -299,7 +299,7 @@ const Simulation = () => {
                   <div className="space-y-4">
                     <ToggleControl
                       label="Enable information sharing"
-                      description="Share customer demand updates with all players"
+                      description="Share customer demand updates with all scenarioUsers"
                       checked={config.infoSharing}
                       onChange={handleToggleChange('infoSharing')}
                     />
@@ -333,13 +333,13 @@ const Simulation = () => {
                     />
                     <ToggleControl
                       label="Pipeline inventory sharing"
-                      description="Show upstream orders and shipments to all players"
+                      description="Show upstream orders and shipments to all scenarioUsers"
                       checked={config.pipelineInventory}
                       onChange={handleToggleChange('pipelineInventory')}
                     />
                     <ToggleControl
                       label="Centralized demand forecast"
-                      description="Share a central demand forecast with each player"
+                      description="Share a central demand forecast with each scenarioUser"
                       checked={config.centralizedForecast}
                       onChange={handleToggleChange('centralizedForecast')}
                     />

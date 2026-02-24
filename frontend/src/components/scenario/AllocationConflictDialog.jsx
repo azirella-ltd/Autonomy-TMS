@@ -9,7 +9,7 @@
  * - open: Boolean to control dialog visibility
  * - onClose: Callback when dialog is closed
  * - gameId: Game ID
- * - playerId: Player ID (supplier node)
+ * - scenarioUserId: ScenarioUser ID (supplier node)
  * - customers: Array of customer demands
  * - availableATP: Available ATP to allocate
  * - onAllocationComplete: Callback with allocation result
@@ -46,7 +46,7 @@ const AllocationConflictDialog = ({
   open,
   onClose,
   gameId,
-  playerId,
+  scenarioUserId,
   customers = [],
   availableATP = 0,
   onAllocationComplete,
@@ -144,7 +144,7 @@ const AllocationConflictDialog = ({
 
     try {
       const response = await api.post(`/mixed-scenarios/${gameId}/allocate-atp`, {
-        player_id: playerId,
+        scenario_user_id: scenarioUserId,
         demands: customers.map(c => ({
           customer_id: c.customer_id,
           customer_name: c.customer_name,

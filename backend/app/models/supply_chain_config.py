@@ -449,7 +449,7 @@ class DecisionProposal(Base):
     2. Operational simulation-based override proposals (Phase 2 Copilot Mode):
        - Override of agent recommendations in supply chain simulation
        - Uses alternative_id for simulation linkage, decision_type for override type
-       - metadata stores participant context (participant_id, role, round, quantities)
+       - metadata stores scenario user context (scenario_user_id, role, period, quantities)
 
     Examples:
     - Strategic: Network redesign, acquisition scenarios, operating model changes

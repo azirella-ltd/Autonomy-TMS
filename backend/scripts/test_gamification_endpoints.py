@@ -60,9 +60,9 @@ async def test_gamification():
             print(f"   Points per level: {service.points_per_level}")
 
             # Test level calculation
-            level_1 = service.calculate_player_level(0)
-            level_2 = service.calculate_player_level(10)
-            level_3 = service.calculate_player_level(100)
+            level_1 = service.calculate_scenario_user_level(0)
+            level_2 = service.calculate_scenario_user_level(10)
+            level_3 = service.calculate_scenario_user_level(100)
             print(f"   Level at 0 points: {level_1}")
             print(f"   Level at 10 points: {level_2}")
             print(f"   Level at 100 points: {level_3}")
@@ -74,27 +74,27 @@ async def test_gamification():
             print(f"❌ Error with service: {e}")
             return
 
-        # Test 4: Test getting/creating player stats
-        print("\n4. Testing Player Stats")
+        # Test 4: Test getting/creating scenario_user stats
+        print("\n4. Testing ScenarioUser Stats")
         print("-" * 80)
         try:
-            # Use player_id 1 (should exist from seed data)
-            stats = await service.get_or_create_player_stats(player_id=1)
-            print(f"✅ Player stats retrieved/created for player_id=1")
+            # Use scenario_user_id 1 (should exist from seed data)
+            stats = await service.get_or_create_scenario_user_stats(scenario_user_id=1)
+            print(f"✅ ScenarioUser stats retrieved/created for scenario_user_id=1")
             print(f"   Games played: {stats.total_games_played}")
             print(f"   Games won: {stats.total_games_won}")
             print(f"   Total points: {stats.total_points}")
-            print(f"   Player level: {stats.player_level}")
+            print(f"   ScenarioUser level: {stats.scenario_user_level}")
             print(f"   Achievements unlocked: {stats.total_achievements_unlocked}")
         except Exception as e:
-            print(f"❌ Error with player stats: {e}")
+            print(f"❌ Error with scenario_user stats: {e}")
             return
 
         # Test 5: Test achievement checking logic
         print("\n5. Testing Achievement Checking")
         print("-" * 80)
         try:
-            result = await service.check_achievements(player_id=1, scenario_id=None)
+            result = await service.check_achievements(scenario_user_id=1, scenario_id=None)
             print(f"✅ Achievement check completed")
             print(f"   Newly unlocked: {len(result.newly_unlocked)}")
             print(f"   Points earned: {result.total_points_earned}")

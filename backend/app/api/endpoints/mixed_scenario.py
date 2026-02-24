@@ -17,10 +17,10 @@ from app.schemas.scenario import (
     ScenarioInDBBase
 )
 from app.models.scenario import Scenario as ScenarioModel
-from app.models.participant import Participant
+from app.models.scenario_user import ScenarioUser
 from app.models.supply_chain import ScenarioRound
 from app.models.supply_chain_config import Node
-from app.schemas.participant import ParticipantAssignment, ParticipantResponse
+from app.schemas.scenario_user import ScenarioUserAssignment, ScenarioUserResponse
 from app.services.llm_agent import AutonomyLLMError
 from app.services.mixed_scenario_service import MixedScenarioService
 from app.services.agent_recommendation_service import (
@@ -111,13 +111,13 @@ def get_mixed_scenario_service(db: Session = Depends(get_sync_db)) -> MixedScena
     return MixedScenarioService(db)
 
 
-def _get_participant_node(db: Session, participant: Participant, scenario: ScenarioModel) -> Optional[Node]:
-    """Look up the Node for a participant based on their site_key."""
-    if not participant.site_key or not scenario.supply_chain_config_id:
+def _get_participant_node(db: Session, scenario_user: ScenarioUser, scenario: ScenarioModel) -> Optional[Node]:
+    """Look up the Node for a scenario_user based on their site_key."""
+    if not scenario_user.site_key or not scenario.supply_chain_config_id:
         return None
     return db.query(Node).filter(
         Node.config_id == scenario.supply_chain_config_id,
-        Node.dag_type == participant.site_key
+        Node.dag_type == scenario_user.site_key
     ).first()
 
 @router.post("/scenarios/", response_model=ScenarioSchema, status_code=status.HTTP_201_CREATED)
@@ -127,9 +127,9 @@ def create_mixed_game(
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
 ):
     """
-    Create a new game with mixed human and AI participants.
+    Create a new game with mixed human and AI scenario_users.
     
-    - **participant_assignments**: List of participant assignments specifying which roles are human/AI
+    - **scenario_user_assignments**: List of scenario_user assignments specifying which roles are human/AI
     - **demand_pattern**: Configuration for customer demand pattern
     - **max_rounds**: Total number of rounds in the game
     """
@@ -269,7 +269,7 @@ def update_game(
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
 ):
-    """Update a game's core configuration, demand pattern, and participant assignments."""
+    """Update a game's core configuration, demand pattern, and scenario_user assignments."""
     try:
         scenario_service.update_game(scenario_id, payload)
         return scenario_service.get_scenario_state(scenario_id)
@@ -316,7 +316,7 @@ def list_games(
 
 class FulfillmentDecisionRequest(BaseModel):
     """Request body for fulfillment decision"""
-    participant_id: int
+    scenario_user_id: int
     fulfill_qty: int
     # Phase 2: Copilot mode metadata (optional)
     ai_recommendation: Optional[int] = None  # AI's suggested quantity
@@ -327,7 +327,7 @@ class FulfillmentDecisionRequest(BaseModel):
 
 class ReplenishmentDecisionRequest(BaseModel):
     """Request body for replenishment decision"""
-    participant_id: int
+    scenario_user_id: int
     order_qty: int
     # Phase 2: Copilot mode metadata (optional)
     ai_recommendation: Optional[int] = None  # AI's suggested quantity
@@ -347,13 +347,13 @@ async def submit_fulfillment_decision(
     """
     Submit fulfillment decision for current round (ATP-based shipment).
 
-    DAG Sequential Execution - Phase 1: Participants fulfill downstream orders
+    DAG Sequential Execution - Phase 1: ScenarioUsers fulfill downstream orders
     in downstream→upstream order. Creates TransferOrder and updates inventory.
 
     Args:
         scenario_id: Scenario ID
         round_number: Current round number
-        request: Fulfillment decision (participant_id, fulfill_qty)
+        request: Fulfillment decision (scenario_user_id, fulfill_qty)
 
     Returns:
         {
@@ -366,7 +366,7 @@ async def submit_fulfillment_decision(
         }
     """
     from app.models.scenario import Scenario
-    from app.models.participant import Participant
+    from app.models.scenario_user import ScenarioUser
     from app.models.supply_chain import ScenarioRound, RoundPhase
     from app.api.endpoints.websocket import (
         broadcast_fulfillment_completed,
@@ -406,10 +406,10 @@ async def submit_fulfillment_decision(
                 detail=f"Round is in {round_obj.current_phase} phase, expected FULFILLMENT"
             )
 
-        # Get participant
-        participant = scenario_service.db.query(Participant).filter_by(id=request.participant_id).first()
-        if not participant or participant.scenario_id != scenario_id:
-            raise HTTPException(status_code=404, detail="Participant not found")
+        # Get scenario_user
+        scenario_user = scenario_service.db.query(ScenarioUser).filter_by(id=request.scenario_user_id).first()
+        if not scenario_user or scenario_user.scenario_id != scenario_id:
+            raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Phase 2: RLHF data collection and authority check (if copilot mode)
         rlhf_feedback_id = None
@@ -425,16 +425,16 @@ async def submit_fulfillment_decision(
 
             # Build game state for RLHF context
             scenario_state = {
-                "inventory": participant.current_stock,
-                "backlog": participant.backlog_units or 0,
-                "pipeline": participant.pipeline_orders or 0,
-                "incoming_order": participant.incoming_order or 0,
-                "role": participant.role,
+                "inventory": scenario_user.current_stock,
+                "backlog": scenario_user.backlog_units or 0,
+                "pipeline": scenario_user.pipeline_orders or 0,
+                "incoming_order": scenario_user.incoming_order or 0,
+                "role": scenario_user.role,
                 "round": round_number,
             }
 
             rlhf_feedback_id = rlhf_collector.record_feedback(
-                participant_id=participant.id,
+                scenario_user_id=scenario_user.id,
                 scenario_id=scenario_id,
                 round_number=round_number,
                 agent_type=request.ai_agent_type or "unknown",
@@ -449,7 +449,7 @@ async def submit_fulfillment_decision(
             if request.fulfill_qty != request.ai_recommendation:
                 authority_service = get_authority_check_service(scenario_service.db)
                 authority_check_result = authority_service.check_override_authority(
-                    participant=participant,
+                    scenario_user=scenario_user,
                     agent_qty=request.ai_recommendation,
                     human_qty=request.fulfill_qty,
                     action_type="fulfillment",
@@ -457,7 +457,7 @@ async def submit_fulfillment_decision(
 
         # Phase 3: ATP validation before fulfillment
         atp_warning = None
-        current_atp = scenario_service._calculate_atp(participant)
+        current_atp = scenario_service._calculate_atp(scenario_user)
 
         if request.fulfill_qty > current_atp:
             atp_warning = {
@@ -468,32 +468,32 @@ async def submit_fulfillment_decision(
                 "shortfall": request.fulfill_qty - current_atp,
             }
             logger.warning(
-                f"ATP warning for participant {participant.id}: "
+                f"ATP warning for scenario_user {scenario_user.id}: "
                 f"fulfillment {request.fulfill_qty} > ATP {current_atp}"
             )
 
         # Process fulfillment decision
         transfer_order = scenario_service._process_node_fulfillment_decision(
-            scenario, round_obj, participant, request.fulfill_qty
+            scenario, round_obj, scenario_user, request.fulfill_qty
         )
 
         if not transfer_order:
             raise HTTPException(status_code=500, detail="Failed to create transfer order")
 
         # Calculate updated ATP
-        updated_atp = scenario_service._calculate_atp(participant)
+        updated_atp = scenario_service._calculate_atp(scenario_user)
 
-        # Get participant counts for broadcast
-        all_participants = scenario_service.db.query(Participant).filter_by(scenario_id=scenario_id).all()
+        # Get scenario_user counts for broadcast
+        all_participants = scenario_service.db.query(ScenarioUser).filter_by(scenario_id=scenario_id).all()
         total_participants = len(all_participants)
 
-        # Count participants who have submitted fulfillment
-        from app.models.supply_chain import ParticipantRound
+        # Count scenario_users who have submitted fulfillment
+        from app.models.supply_chain import ScenarioUserPeriod
         fulfilled_count = (
-            scenario_service.db.query(ParticipantRound)
+            scenario_service.db.query(ScenarioUserPeriod)
             .filter(
-                ParticipantRound.round_id == round_obj.id,
-                ParticipantRound.fulfillment_submitted_at.isnot(None)
+                ScenarioUserPeriod.round_id == round_obj.id,
+                ScenarioUserPeriod.fulfillment_submitted_at.isnot(None)
             )
             .count()
         )
@@ -501,8 +501,8 @@ async def submit_fulfillment_decision(
         # Broadcast fulfillment completed
         await broadcast_fulfillment_completed(
             scenario_id=scenario_id,
-            participant_id=participant.id,
-            participant_role=participant.assignment_key or participant.role,
+            scenario_user_id=scenario_user.id,
+            participant_role=scenario_user.assignment_key or scenario_user.role,
             fulfill_qty=request.fulfill_qty,
             participants_completed=fulfilled_count,
             total_participants=total_participants,
@@ -514,7 +514,7 @@ async def submit_fulfillment_decision(
         )
 
         if ready_to_transition:
-            # Broadcast all participants ready before transition
+            # Broadcast all scenario_users ready before transition
             await broadcast_all_participants_ready(
                 scenario_id=scenario_id,
                 round_number=round_number,
@@ -536,10 +536,10 @@ async def submit_fulfillment_decision(
             # Process autonomous agents' replenishment decisions
             scenario_service._process_autonomous_agent_replenishment(scenario, round_obj, all_participants)
 
-        # Get awaiting participants (those who haven't submitted)
+        # Get awaiting scenario_users (those who haven't submitted)
         submitted_participants = (
-            scenario_service.db.query(ParticipantRound.participant_id)
-            .filter(ParticipantRound.round_id == round_obj.id)
+            scenario_service.db.query(ScenarioUserPeriod.scenario_user_id)
+            .filter(ScenarioUserPeriod.round_id == round_obj.id)
             .all()
         )
         submitted_ids = {p[0] for p in submitted_participants}
@@ -552,7 +552,7 @@ async def submit_fulfillment_decision(
         response = {
             "success": True,
             "transfer_order_id": transfer_order.id,
-            "updated_inventory": participant.current_stock,
+            "updated_inventory": scenario_user.current_stock,
             "updated_atp": updated_atp,
             "phase": round_obj.current_phase.value,
             "awaiting_participants": awaiting,
@@ -595,13 +595,13 @@ async def submit_replenishment_decision(
     """
     Submit replenishment decision for current round (upstream order).
 
-    DAG Sequential Execution - Phase 2: Participants order from upstream suppliers.
-    Creates TransferOrder/PurchaseOrder and updates participant state.
+    DAG Sequential Execution - Phase 2: ScenarioUsers order from upstream suppliers.
+    Creates TransferOrder/PurchaseOrder and updates scenario_user state.
 
     Args:
         scenario_id: Scenario ID
         round_number: Current round number
-        request: Replenishment decision (participant_id, order_qty)
+        request: Replenishment decision (scenario_user_id, order_qty)
 
     Returns:
         {
@@ -613,7 +613,7 @@ async def submit_replenishment_decision(
         }
     """
     from app.models.scenario import Scenario
-    from app.models.participant import Participant
+    from app.models.scenario_user import ScenarioUser
     from app.models.supply_chain import ScenarioRound, RoundPhase
     from app.api.endpoints.websocket import (
         broadcast_replenishment_completed,
@@ -654,10 +654,10 @@ async def submit_replenishment_decision(
                 detail=f"Round is in {round_obj.current_phase} phase, expected REPLENISHMENT"
             )
 
-        # Get participant
-        participant = scenario_service.db.query(Participant).filter_by(id=request.participant_id).first()
-        if not participant or participant.scenario_id != scenario_id:
-            raise HTTPException(status_code=404, detail="Participant not found")
+        # Get scenario_user
+        scenario_user = scenario_service.db.query(ScenarioUser).filter_by(id=request.scenario_user_id).first()
+        if not scenario_user or scenario_user.scenario_id != scenario_id:
+            raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Phase 2: RLHF data collection and authority check (if copilot mode)
         rlhf_feedback_id = None
@@ -673,16 +673,16 @@ async def submit_replenishment_decision(
 
             # Build game state for RLHF context
             scenario_state = {
-                "inventory": participant.current_stock,
-                "backlog": participant.backlog_units or 0,
-                "pipeline": participant.pipeline_orders or 0,
-                "incoming_order": participant.incoming_order or 0,
-                "role": participant.role,
+                "inventory": scenario_user.current_stock,
+                "backlog": scenario_user.backlog_units or 0,
+                "pipeline": scenario_user.pipeline_orders or 0,
+                "incoming_order": scenario_user.incoming_order or 0,
+                "role": scenario_user.role,
                 "round": round_number,
             }
 
             rlhf_feedback_id = rlhf_collector.record_feedback(
-                participant_id=participant.id,
+                scenario_user_id=scenario_user.id,
                 scenario_id=scenario_id,
                 round_number=round_number,
                 agent_type=request.ai_agent_type or "unknown",
@@ -697,7 +697,7 @@ async def submit_replenishment_decision(
             if request.order_qty != request.ai_recommendation:
                 authority_service = get_authority_check_service(scenario_service.db)
                 authority_check_result = authority_service.check_override_authority(
-                    participant=participant,
+                    scenario_user=scenario_user,
                     agent_qty=request.ai_recommendation,
                     human_qty=request.order_qty,
                     action_type="replenishment",
@@ -705,23 +705,23 @@ async def submit_replenishment_decision(
 
         # Process replenishment decision
         transfer_order = scenario_service._process_node_replenishment_decision(
-            scenario, round_obj, participant, request.order_qty
+            scenario, round_obj, scenario_user, request.order_qty
         )
 
         if not transfer_order:
             raise HTTPException(status_code=500, detail="Failed to create transfer order")
 
-        # Get participant counts for broadcast
-        all_participants = scenario_service.db.query(Participant).filter_by(scenario_id=scenario_id).all()
+        # Get scenario_user counts for broadcast
+        all_participants = scenario_service.db.query(ScenarioUser).filter_by(scenario_id=scenario_id).all()
         total_participants = len(all_participants)
 
-        # Count participants who have submitted replenishment
-        from app.models.supply_chain import ParticipantRound
+        # Count scenario_users who have submitted replenishment
+        from app.models.supply_chain import ScenarioUserPeriod
         replenished_count = (
-            scenario_service.db.query(ParticipantRound)
+            scenario_service.db.query(ScenarioUserPeriod)
             .filter(
-                ParticipantRound.round_id == round_obj.id,
-                ParticipantRound.replenishment_submitted_at.isnot(None)
+                ScenarioUserPeriod.round_id == round_obj.id,
+                ScenarioUserPeriod.replenishment_submitted_at.isnot(None)
             )
             .count()
         )
@@ -729,8 +729,8 @@ async def submit_replenishment_decision(
         # Broadcast replenishment completed
         await broadcast_replenishment_completed(
             scenario_id=scenario_id,
-            participant_id=participant.id,
-            participant_role=participant.assignment_key or participant.role,
+            scenario_user_id=scenario_user.id,
+            participant_role=scenario_user.assignment_key or scenario_user.role,
             order_qty=request.order_qty,
             participants_completed=replenished_count,
             total_participants=total_participants,
@@ -743,7 +743,7 @@ async def submit_replenishment_decision(
 
         round_completed = False
         if ready_to_transition:
-            # Broadcast all participants ready before transition
+            # Broadcast all scenario_users ready before transition
             await broadcast_all_participants_ready(
                 scenario_id=scenario_id,
                 round_number=round_number,
@@ -804,22 +804,22 @@ async def submit_replenishment_decision(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/scenarios/{scenario_id}/pipeline/{participant_id}")
+@router.get("/scenarios/{scenario_id}/pipeline/{scenario_user_id}")
 def get_pipeline(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
 ):
     """
-    Get pipeline (in-transit shipments) for a participant.
+    Get pipeline (in-transit shipments) for a scenario_user.
 
-    Returns all shipments currently in transit to the participant with
+    Returns all shipments currently in transit to the scenario_user with
     expected arrival times.
 
     Args:
         scenario_id: Scenario ID
-        participant_id: Participant ID
+        scenario_user_id: ScenarioUser ID
 
     Returns:
         {
@@ -837,15 +837,15 @@ def get_pipeline(
             ]
         }
     """
-    from app.models.participant import Participant
+    from app.models.scenario_user import ScenarioUser
     from app.models.transfer_order import TransferOrder
     from app.models.scenario import Scenario
 
     try:
-        # Get participant
-        participant = scenario_service.db.query(Participant).filter_by(id=participant_id).first()
-        if not participant or participant.scenario_id != scenario_id:
-            raise HTTPException(status_code=404, detail="Participant not found")
+        # Get scenario_user
+        scenario_user = scenario_service.db.query(ScenarioUser).filter_by(id=scenario_user_id).first()
+        if not scenario_user or scenario_user.scenario_id != scenario_id:
+            raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Get game for current round
         scenario = scenario_service.db.query(Scenario).filter_by(id=scenario_id).first()
@@ -863,7 +863,7 @@ def get_pipeline(
             .outerjoin(TransferOrderLineItem, TransferOrder.id == TransferOrderLineItem.to_id)
             .filter(
                 TransferOrder.scenario_id == scenario_id,
-                TransferOrder.destination_site_id == participant.site_key,  # Use site_key for node reference
+                TransferOrder.destination_site_id == scenario_user.site_key,  # Use site_key for node reference
                 TransferOrder.status == "IN_TRANSIT"
             )
             .group_by(TransferOrder.id)
@@ -905,10 +905,10 @@ def get_pipeline(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/scenarios/{scenario_id}/recommendations/fulfillment/{participant_id}")
+@router.get("/scenarios/{scenario_id}/recommendations/fulfillment/{scenario_user_id}")
 def get_fulfillment_recommendation(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service),
     recommendation_service: AgentRecommendationService = Depends(get_agent_recommendation_service)
@@ -921,7 +921,7 @@ def get_fulfillment_recommendation(
 
     Args:
         scenario_id: Scenario ID
-        participant_id: Participant ID
+        scenario_user_id: ScenarioUser ID
 
     Returns:
         {
@@ -958,16 +958,16 @@ def get_fulfillment_recommendation(
             "timestamp": "2026-01-27T15:30:00"
         }
     """
-    from app.models.participant import Participant
+    from app.models.scenario_user import ScenarioUser
     from app.models.scenario import Scenario
     from app.models.supply_chain import ScenarioRound
     from dataclasses import asdict
 
     try:
-        # Get participant
-        participant = scenario_service.db.query(Participant).filter_by(id=participant_id).first()
-        if not participant or participant.scenario_id != scenario_id:
-            raise HTTPException(status_code=404, detail="Participant not found")
+        # Get scenario_user
+        scenario_user = scenario_service.db.query(ScenarioUser).filter_by(id=scenario_user_id).first()
+        if not scenario_user or scenario_user.scenario_id != scenario_id:
+            raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Get game
         scenario = scenario_service.db.query(Scenario).filter_by(id=scenario_id).first()
@@ -987,16 +987,16 @@ def get_fulfillment_recommendation(
             raise HTTPException(status_code=404, detail="Current round not found")
 
         # Calculate ATP
-        atp = scenario_service._calculate_atp(participant)
+        atp = scenario_service._calculate_atp(scenario_user)
 
         # Calculate demand (incoming order + backlog)
-        demand = (participant.incoming_order or 0) + (participant.backlog or 0)
-        backlog = participant.backlog or 0
+        demand = (scenario_user.incoming_order or 0) + (scenario_user.backlog or 0)
+        backlog = scenario_user.backlog or 0
 
         # Get recommendation from service
         recommendation = recommendation_service.get_fulfillment_recommendation(
             game=scenario,
-            participant=participant,
+            scenario_user=scenario_user,
             current_round=current_round,
             atp=atp,
             demand=demand,
@@ -1013,10 +1013,10 @@ def get_fulfillment_recommendation(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/scenarios/{scenario_id}/recommendations/replenishment/{participant_id}")
+@router.get("/scenarios/{scenario_id}/recommendations/replenishment/{scenario_user_id}")
 def get_replenishment_recommendation(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service),
     recommendation_service: AgentRecommendationService = Depends(get_agent_recommendation_service)
@@ -1029,7 +1029,7 @@ def get_replenishment_recommendation(
 
     Args:
         scenario_id: Scenario ID
-        participant_id: Participant ID
+        scenario_user_id: ScenarioUser ID
 
     Returns:
         {
@@ -1066,16 +1066,16 @@ def get_replenishment_recommendation(
             "timestamp": "2026-01-27T15:35:00"
         }
     """
-    from app.models.participant import Participant
+    from app.models.scenario_user import ScenarioUser
     from app.models.scenario import Scenario, ScenarioRound
     from app.models.transfer_order import TransferOrder
     from dataclasses import asdict
 
     try:
-        # Get participant
-        participant = scenario_service.db.query(Participant).filter_by(id=participant_id).first()
-        if not participant or participant.scenario_id != scenario_id:
-            raise HTTPException(status_code=404, detail="Participant not found")
+        # Get scenario_user
+        scenario_user = scenario_service.db.query(ScenarioUser).filter_by(id=scenario_user_id).first()
+        if not scenario_user or scenario_user.scenario_id != scenario_id:
+            raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Get game
         scenario = scenario_service.db.query(Scenario).filter_by(id=scenario_id).first()
@@ -1099,7 +1099,7 @@ def get_replenishment_recommendation(
             scenario_service.db.query(TransferOrder)
             .filter(
                 TransferOrder.scenario_id == scenario_id,
-                TransferOrder.destination_site_id == participant.site_id,
+                TransferOrder.destination_site_id == scenario_user.site_id,
                 TransferOrder.status == "IN_TRANSIT"
             )
             .all()
@@ -1117,16 +1117,16 @@ def get_replenishment_recommendation(
         # Get demand history (last N rounds)
         # TODO: Implement proper demand history tracking
         # For now, use a simple heuristic based on incoming_order
-        demand_history = [participant.incoming_order or 100] * 5  # Mock data
+        demand_history = [scenario_user.incoming_order or 100] * 5  # Mock data
 
         # Get recommendation from service
         recommendation = recommendation_service.get_replenishment_recommendation(
             game=scenario,
-            participant=participant,
+            scenario_user=scenario_user,
             current_round=current_round,
-            current_inventory=participant.current_stock,
+            current_inventory=scenario_user.current_stock,
             pipeline=pipeline,
-            backlog=participant.backlog or 0,
+            backlog=scenario_user.backlog or 0,
             demand_history=demand_history,
         )
 
@@ -1144,23 +1144,23 @@ def get_replenishment_recommendation(
 # Phase 3: ATP/CTP Endpoints
 # ========================================
 
-@router.get("/scenarios/{scenario_id}/atp/{participant_id}")
+@router.get("/scenarios/{scenario_id}/atp/{scenario_user_id}")
 async def get_current_atp(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     include_safety_stock: bool = True,
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service),
     atp_service: ATPService = Depends(get_atp_service)
 ):
     """
-    Get real-time ATP (Available to Promise) for participant node.
+    Get real-time ATP (Available to Promise) for scenario_user node.
 
     ATP = On-Hand Inventory + Scheduled Receipts - Allocated Orders - Safety Stock
 
     Args:
         scenario_id: Scenario ID
-        participant_id: Participant ID
+        scenario_user_id: ScenarioUser ID
         include_safety_stock: Whether to reserve safety stock (default True)
 
     Returns:
@@ -1179,12 +1179,12 @@ async def get_current_atp(
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
 
-        # Get participant
-        participant = scenario_service.db.query(Participant).filter_by(
-            id=participant_id, scenario_id=scenario_id
+        # Get scenario_user
+        scenario_user = scenario_service.db.query(ScenarioUser).filter_by(
+            id=scenario_user_id, scenario_id=scenario_id
         ).first()
-        if not participant:
-            raise HTTPException(status_code=404, detail="Participant not found")
+        if not scenario_user:
+            raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Get current round (may be None if game hasn't started)
         current_round = None
@@ -1195,7 +1195,7 @@ async def get_current_atp(
 
         # Calculate ATP
         atp_result = atp_service.calculate_current_atp(
-            participant=participant,
+            scenario_user=scenario_user,
             game=scenario,
             current_round=current_round,
             include_safety_stock=include_safety_stock
@@ -1211,10 +1211,10 @@ async def get_current_atp(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/scenarios/{scenario_id}/atp-projection/{participant_id}")
+@router.get("/scenarios/{scenario_id}/atp-projection/{scenario_user_id}")
 async def get_atp_projection(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     periods: int = 8,
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service),
@@ -1230,7 +1230,7 @@ async def get_atp_projection(
 
     Args:
         scenario_id: Scenario ID
-        participant_id: Participant ID
+        scenario_user_id: ScenarioUser ID
         periods: Number of future periods to project (default 8, max 12)
 
     Returns:
@@ -1261,12 +1261,12 @@ async def get_atp_projection(
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
 
-        # Get participant
-        participant = scenario_service.db.query(Participant).filter_by(
-            id=participant_id, scenario_id=scenario_id
+        # Get scenario_user
+        scenario_user = scenario_service.db.query(ScenarioUser).filter_by(
+            id=scenario_user_id, scenario_id=scenario_id
         ).first()
-        if not participant:
-            raise HTTPException(status_code=404, detail="Participant not found")
+        if not scenario_user:
+            raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Get current round
         current_round = scenario_service.db.query(ScenarioRound).filter_by(
@@ -1281,7 +1281,7 @@ async def get_atp_projection(
 
         # Project ATP
         projection = atp_service.project_atp_multi_period(
-            participant=participant,
+            scenario_user=scenario_user,
             game=scenario,
             current_round=current_round,
             periods=periods
@@ -1297,10 +1297,10 @@ async def get_atp_projection(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/scenarios/{scenario_id}/atp-probabilistic/{participant_id}")
+@router.get("/scenarios/{scenario_id}/atp-probabilistic/{scenario_user_id}")
 async def get_probabilistic_atp(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     n_simulations: int = 100,
     include_safety_stock: bool = True,
     current_user: User = Depends(get_current_user_sync),
@@ -1315,7 +1315,7 @@ async def get_probabilistic_atp(
 
     Args:
         scenario_id: Scenario ID
-        participant_id: Participant ID
+        scenario_user_id: ScenarioUser ID
         n_simulations: Number of Monte Carlo runs (default 100, max 1000)
         include_safety_stock: Whether to reserve safety stock (default True)
 
@@ -1349,12 +1349,12 @@ async def get_probabilistic_atp(
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
 
-        # Get participant
-        participant = scenario_service.db.query(Participant).filter_by(
-            id=participant_id, scenario_id=scenario_id
+        # Get scenario_user
+        scenario_user = scenario_service.db.query(ScenarioUser).filter_by(
+            id=scenario_user_id, scenario_id=scenario_id
         ).first()
-        if not participant:
-            raise HTTPException(status_code=404, detail="Participant not found")
+        if not scenario_user:
+            raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Get current round (may be None if game hasn't started)
         current_round = None
@@ -1365,7 +1365,7 @@ async def get_probabilistic_atp(
 
         # Calculate probabilistic ATP
         prob_atp_result = atp_service.calculate_probabilistic_atp(
-            participant=participant,
+            scenario_user=scenario_user,
             game=scenario,
             current_round=current_round,
             n_simulations=n_simulations,
@@ -1382,10 +1382,10 @@ async def get_probabilistic_atp(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/scenarios/{scenario_id}/atp-history/{participant_id}")
+@router.get("/scenarios/{scenario_id}/atp-history/{scenario_user_id}")
 async def get_atp_history(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     limit: int = 20,
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
@@ -1398,13 +1398,13 @@ async def get_atp_history(
 
     Args:
         scenario_id: Scenario ID
-        participant_id: Participant ID
+        scenario_user_id: ScenarioUser ID
         limit: Maximum records to return (default 20)
 
     Returns:
         {
-            "participant_id": 3,
-            "participant_name": "Distributor",
+            "scenario_user_id": 3,
+            "scenario_user_name": "Distributor",
             "history": [
                 {
                     "round": 1,
@@ -1443,17 +1443,17 @@ async def get_atp_history(
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
 
-        # Get participant
-        participant = scenario_service.db.query(Participant).filter_by(
-            id=participant_id, scenario_id=scenario_id
+        # Get scenario_user
+        scenario_user = scenario_service.db.query(ScenarioUser).filter_by(
+            id=scenario_user_id, scenario_id=scenario_id
         ).first()
-        if not participant:
-            raise HTTPException(status_code=404, detail="Participant not found")
+        if not scenario_user:
+            raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Look up node from supply chain config
-        node = _get_participant_node(scenario_service.db, participant, game)
+        node = _get_participant_node(scenario_service.db, scenario_user, game)
 
-        # Query historical ATP projections for this game/participant
+        # Query historical ATP projections for this game/scenario_user
         atp_records = []
         if node:
             atp_query = (
@@ -1482,7 +1482,7 @@ async def get_atp_history(
                     "timestamp": record.created_at.isoformat() if record.created_at else None
                 })
 
-        # Query historical CTP projections for this game/participant (if manufacturer)
+        # Query historical CTP projections for this game/scenario_user (if manufacturer)
         ctp_records = []
         if node:
             ctp_query = (
@@ -1513,8 +1513,8 @@ async def get_atp_history(
                 })
 
         return {
-            "participant_id": participant.id,
-            "participant_name": participant.name,
+            "scenario_user_id": scenario_user.id,
+            "scenario_user_name": scenario_user.name,
             "node_id": node.id if node else None,
             "node_name": node.name if node else None,
             "current_round": scenario.current_round,
@@ -1529,10 +1529,10 @@ async def get_atp_history(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/scenarios/{scenario_id}/ctp/{participant_id}")
+@router.get("/scenarios/{scenario_id}/ctp/{scenario_user_id}")
 async def get_current_ctp(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     item_id: int,
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service),
@@ -1545,7 +1545,7 @@ async def get_current_ctp(
 
     Args:
         scenario_id: Scenario ID
-        participant_id: Participant ID (must be manufacturer node)
+        scenario_user_id: ScenarioUser ID (must be manufacturer node)
         item_id: Item ID to produce
 
     Returns:
@@ -1575,22 +1575,22 @@ async def get_current_ctp(
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
 
-        # Get participant
-        participant = scenario_service.db.query(Participant).filter_by(
-            id=participant_id, scenario_id=scenario_id
+        # Get scenario_user
+        scenario_user = scenario_service.db.query(ScenarioUser).filter_by(
+            id=scenario_user_id, scenario_id=scenario_id
         ).first()
-        if not participant:
-            raise HTTPException(status_code=404, detail="Participant not found")
+        if not scenario_user:
+            raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Look up node from supply chain config
-        node = _get_participant_node(scenario_service.db, participant, game)
+        node = _get_participant_node(scenario_service.db, scenario_user, game)
         if not node:
             raise HTTPException(
                 status_code=400,
-                detail=f"No node configured for participant {participant.name} (site_key={participant.site_key})"
+                detail=f"No node configured for scenario_user {scenario_user.name} (site_key={scenario_user.site_key})"
             )
 
-        # Verify participant is manufacturer (check master_type or dag_type for factory)
+        # Verify scenario_user is manufacturer (check master_type or dag_type for factory)
         is_manufacturer = (
             node.master_type and node.master_type.upper() == "MANUFACTURER"
         ) or (
@@ -1616,7 +1616,7 @@ async def get_current_ctp(
 
         # Calculate CTP
         ctp_result = ctp_service.calculate_current_ctp(
-            participant=participant,
+            scenario_user=scenario_user,
             game=scenario,
             current_round=current_round,
             item_id=item_id
@@ -1632,10 +1632,10 @@ async def get_current_ctp(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/scenarios/{scenario_id}/ctp-probabilistic/{participant_id}")
+@router.get("/scenarios/{scenario_id}/ctp-probabilistic/{scenario_user_id}")
 async def get_probabilistic_ctp(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     product_id: str,
     n_simulations: int = 100,
     current_user: User = Depends(get_current_user_sync),
@@ -1652,7 +1652,7 @@ async def get_probabilistic_ctp(
 
     Args:
         scenario_id: Scenario ID
-        participant_id: Participant ID (must be manufacturer node)
+        scenario_user_id: ScenarioUser ID (must be manufacturer node)
         product_id: AWS SC Product ID (string, e.g., "FG-001")
         n_simulations: Number of Monte Carlo simulations (default 100)
 
@@ -1682,22 +1682,22 @@ async def get_probabilistic_ctp(
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
 
-        # Get participant
-        participant = scenario_service.db.query(Participant).filter_by(
-            id=participant_id, scenario_id=scenario_id
+        # Get scenario_user
+        scenario_user = scenario_service.db.query(ScenarioUser).filter_by(
+            id=scenario_user_id, scenario_id=scenario_id
         ).first()
-        if not participant:
-            raise HTTPException(status_code=404, detail="Participant not found")
+        if not scenario_user:
+            raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Look up node from supply chain config
-        node = _get_participant_node(scenario_service.db, participant, game)
+        node = _get_participant_node(scenario_service.db, scenario_user, game)
         if not node:
             raise HTTPException(
                 status_code=400,
-                detail=f"No node configured for participant {participant.name} (site_key={participant.site_key})"
+                detail=f"No node configured for scenario_user {scenario_user.name} (site_key={scenario_user.site_key})"
             )
 
-        # Verify participant is manufacturer
+        # Verify scenario_user is manufacturer
         is_manufacturer = (
             node.master_type and node.master_type.upper() == "MANUFACTURER"
         ) or (
@@ -1720,7 +1720,7 @@ async def get_probabilistic_ctp(
 
         # Calculate probabilistic CTP
         ctp_result = ctp_service.calculate_probabilistic_ctp(
-            participant=participant,
+            scenario_user=scenario_user,
             game=scenario,
             current_round=current_round,
             product_id=product_id,
@@ -1737,10 +1737,10 @@ async def get_probabilistic_ctp(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/scenarios/{scenario_id}/pipeline-visualization/{participant_id}")
+@router.get("/scenarios/{scenario_id}/pipeline-visualization/{scenario_user_id}")
 async def get_pipeline_visualization(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     n_simulations: int = 100,
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
@@ -1753,13 +1753,13 @@ async def get_pipeline_visualization(
 
     Args:
         scenario_id: Scenario ID
-        participant_id: Participant ID
+        scenario_user_id: ScenarioUser ID
         n_simulations: Number of simulations for probability estimation (default 100)
 
     Returns:
         {
-            "participant_id": 3,
-            "participant_name": "Distributor",
+            "scenario_user_id": 3,
+            "scenario_user_name": "Distributor",
             "current_round": 5,
             "pipeline_total": 150,
             "shipments": [
@@ -1811,26 +1811,26 @@ async def get_pipeline_visualization(
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
 
-        # Get participant
-        participant = scenario_service.db.query(Participant).filter_by(
-            id=participant_id, scenario_id=scenario_id
+        # Get scenario_user
+        scenario_user = scenario_service.db.query(ScenarioUser).filter_by(
+            id=scenario_user_id, scenario_id=scenario_id
         ).first()
-        if not participant:
-            raise HTTPException(status_code=404, detail="Participant not found")
+        if not scenario_user:
+            raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Look up node from supply chain config
-        node = _get_participant_node(scenario_service.db, participant, game)
+        node = _get_participant_node(scenario_service.db, scenario_user, game)
         if not node:
             raise HTTPException(
                 status_code=400,
-                detail=f"No node configured for participant {participant.name} (site_key={participant.site_key})"
+                detail=f"No node configured for scenario_user {scenario_user.name} (site_key={scenario_user.site_key})"
             )
 
         # Check if game has started
         if scenario.current_round is None or scenario.current_round < 1:
             return {
-                "participant_id": participant.id,
-                "participant_name": participant.name,
+                "scenario_user_id": scenario_user.id,
+                "scenario_user_name": scenario_user.name,
                 "current_round": 0,
                 "pipeline_total": 0,
                 "shipments": [],
@@ -1840,13 +1840,13 @@ async def get_pipeline_visualization(
                 "timestamp": datetime.utcnow().isoformat()
             }
 
-        # Get the participant's pipeline state from game config engine_state
+        # Get the scenario_user's pipeline state from game config engine_state
         # The engine_state stores pipeline_shipments per node by dag_type or site_key
         pipeline_shipments = []
         if scenario.config and isinstance(scenario.config, dict):
             engine_state = scenario.config.get("engine_state", {})
             # Try to find node state by site_key (e.g., "factory", "distributor")
-            site_key = participant.site_key or node.dag_type or node.name.lower().replace(" ", "_")
+            site_key = scenario_user.site_key or node.dag_type or node.name.lower().replace(" ", "_")
             node_state = engine_state.get(site_key, {})
             pipeline_shipments = node_state.get("pipeline_shipments", [])
 
@@ -1977,8 +1977,8 @@ async def get_pipeline_visualization(
             }
 
         return {
-            "participant_id": participant.id,
-            "participant_name": participant.name,
+            "scenario_user_id": scenario_user.id,
+            "scenario_user_name": scenario_user.name,
             "current_round": scenario.current_round,
             "pipeline_total": sum(pipeline_shipments) if pipeline_shipments else 0,
             "shipments": shipments,
@@ -2000,10 +2000,10 @@ async def get_pipeline_visualization(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/scenarios/{scenario_id}/atp-conformal/{participant_id}")
+@router.get("/scenarios/{scenario_id}/atp-conformal/{scenario_user_id}")
 async def get_conformal_atp(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     coverage: float = 0.90,
     method: str = "adaptive",
     current_user: User = Depends(get_current_user_sync),
@@ -2028,7 +2028,7 @@ async def get_conformal_atp(
 
     Args:
         scenario_id: Scenario ID
-        participant_id: Participant ID
+        scenario_user_id: ScenarioUser ID
         coverage: Target coverage probability (default 0.90 = 90%)
         method: Conformal method (split, quantile, adaptive)
 
@@ -2075,12 +2075,12 @@ async def get_conformal_atp(
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
 
-        # Get participant
-        participant = scenario_service.db.query(Participant).filter_by(
-            id=participant_id, scenario_id=scenario_id
+        # Get scenario_user
+        scenario_user = scenario_service.db.query(ScenarioUser).filter_by(
+            id=scenario_user_id, scenario_id=scenario_id
         ).first()
-        if not participant:
-            raise HTTPException(status_code=404, detail="Participant not found")
+        if not scenario_user:
+            raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Get current round (may be None if game hasn't started)
         current_round = None
@@ -2091,7 +2091,7 @@ async def get_conformal_atp(
 
         # First, calculate the current point estimate using probabilistic ATP
         prob_atp_result = atp_service.calculate_probabilistic_atp(
-            participant=participant,
+            scenario_user=scenario_user,
             game=scenario,
             current_round=current_round,
             n_simulations=100,
@@ -2109,7 +2109,7 @@ async def get_conformal_atp(
         # Load historical prediction-actual pairs for calibration
         # Query from inventory projections or round history
         from app.models.inventory_projection import AtpProjection
-        node = _get_participant_node(scenario_service.db, participant, game)
+        node = _get_participant_node(scenario_service.db, scenario_user, game)
 
         historical_predictions = []
         historical_actuals = []
@@ -2141,7 +2141,7 @@ async def get_conformal_atp(
         # Also use engine state history if available
         if scenario.config and 'engine_state' in scenario.config:
             engine_state = scenario.config['engine_state']
-            node_name = participant.site_key or participant.name
+            node_name = scenario_user.site_key or scenario_user.name
 
             # Get inventory history for this node
             for node_key, node_state in engine_state.get('nodes', {}).items():
@@ -2198,10 +2198,10 @@ async def get_conformal_atp(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/scenarios/{scenario_id}/atp-conformal/{participant_id}/calibrate")
+@router.post("/scenarios/{scenario_id}/atp-conformal/{scenario_user_id}/calibrate")
 async def calibrate_conformal_atp(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     predictions: List[float] = Body(..., embed=True),
     actuals: List[float] = Body(..., embed=True),
     coverage: float = 0.90,
@@ -2217,7 +2217,7 @@ async def calibrate_conformal_atp(
 
     Args:
         scenario_id: Scenario ID
-        participant_id: Participant ID
+        scenario_user_id: ScenarioUser ID
         predictions: List of historical point predictions
         actuals: List of corresponding actual values
         coverage: Target coverage (default 0.90)
@@ -2252,12 +2252,12 @@ async def calibrate_conformal_atp(
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
 
-        # Validate participant exists
-        participant = scenario_service.db.query(Participant).filter_by(
-            id=participant_id, scenario_id=scenario_id
+        # Validate scenario_user exists
+        scenario_user = scenario_service.db.query(ScenarioUser).filter_by(
+            id=scenario_user_id, scenario_id=scenario_id
         ).first()
-        if not participant:
-            raise HTTPException(status_code=404, detail="Participant not found")
+        if not scenario_user:
+            raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Create and calibrate predictor
         atp_conformal = ATPConformalPredictor(
@@ -2285,10 +2285,10 @@ async def calibrate_conformal_atp(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/scenarios/{scenario_id}/demand-conformal/{participant_id}")
+@router.get("/scenarios/{scenario_id}/demand-conformal/{scenario_user_id}")
 async def get_conformal_demand_forecast(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     horizon: int = 1,
     coverage: float = 0.90,
     current_user: User = Depends(get_current_user_sync),
@@ -2303,7 +2303,7 @@ async def get_conformal_demand_forecast(
 
     Args:
         scenario_id: Scenario ID
-        participant_id: Participant ID
+        scenario_user_id: ScenarioUser ID
         horizon: Forecast horizon in rounds (default 1)
         coverage: Target coverage probability (default 0.90)
 
@@ -2342,17 +2342,17 @@ async def get_conformal_demand_forecast(
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
 
-        # Get participant
-        participant = scenario_service.db.query(Participant).filter_by(
-            id=participant_id, scenario_id=scenario_id
+        # Get scenario_user
+        scenario_user = scenario_service.db.query(ScenarioUser).filter_by(
+            id=scenario_user_id, scenario_id=scenario_id
         ).first()
-        if not participant:
-            raise HTTPException(status_code=404, detail="Participant not found")
+        if not scenario_user:
+            raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Get demand history from engine state
         demand_history = []
         forecast_history = []
-        node_name = participant.site_key or participant.name
+        node_name = scenario_user.site_key or scenario_user.name
 
         if scenario.config and 'engine_state' in scenario.config:
             engine_state = scenario.config['engine_state']
@@ -2432,10 +2432,10 @@ async def get_conformal_demand_forecast(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/scenarios/{scenario_id}/lead-time-conformal/{participant_id}")
+@router.get("/scenarios/{scenario_id}/lead-time-conformal/{scenario_user_id}")
 async def get_conformal_lead_time(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     coverage: float = 0.90,
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
@@ -2448,7 +2448,7 @@ async def get_conformal_lead_time(
 
     Args:
         scenario_id: Scenario ID
-        participant_id: Participant ID
+        scenario_user_id: ScenarioUser ID
         coverage: Target coverage probability (default 0.90)
 
     Returns:
@@ -2487,19 +2487,19 @@ async def get_conformal_lead_time(
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
 
-        # Get participant
-        participant = scenario_service.db.query(Participant).filter_by(
-            id=participant_id, scenario_id=scenario_id
+        # Get scenario_user
+        scenario_user = scenario_service.db.query(ScenarioUser).filter_by(
+            id=scenario_user_id, scenario_id=scenario_id
         ).first()
-        if not participant:
-            raise HTTPException(status_code=404, detail="Participant not found")
+        if not scenario_user:
+            raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
-        # Get node for this participant
-        node = _get_participant_node(scenario_service.db, participant, game)
+        # Get node for this scenario_user
+        node = _get_participant_node(scenario_service.db, scenario_user, game)
         if not node:
             raise HTTPException(
                 status_code=400,
-                detail=f"No node configured for participant {participant.name}"
+                detail=f"No node configured for scenario_user {scenario_user.name}"
             )
 
         # Get upstream lane for lead time info
@@ -2586,7 +2586,7 @@ class CustomerDemandRequest(BaseModel):
 
 class AllocateATPRequest(BaseModel):
     """Request body for ATP allocation"""
-    participant_id: int
+    scenario_user_id: int
     demands: List[CustomerDemandRequest]
     allocation_method: str = "proportional"  # priority, proportional, fcfs
 
@@ -2610,7 +2610,7 @@ async def allocate_atp_to_customers(
     Args:
         scenario_id: Scenario ID
         request: {
-            "participant_id": 3,
+            "scenario_user_id": 3,
             "demands": [
                 {"customer_id": 1, "customer_name": "Customer A", "demand": 300, "priority": 1},
                 {"customer_id": 2, "customer_name": "Customer B", "demand": 300, "priority": 2}
@@ -2651,12 +2651,12 @@ async def allocate_atp_to_customers(
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
 
-        # Get participant
-        participant = scenario_service.db.query(Participant).filter_by(
-            id=request.participant_id, scenario_id=scenario_id
+        # Get scenario_user
+        scenario_user = scenario_service.db.query(ScenarioUser).filter_by(
+            id=request.scenario_user_id, scenario_id=scenario_id
         ).first()
-        if not participant:
-            raise HTTPException(status_code=404, detail="Participant not found")
+        if not scenario_user:
+            raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Get current round
         current_round = scenario_service.db.query(ScenarioRound).filter_by(
@@ -2665,7 +2665,7 @@ async def allocate_atp_to_customers(
 
         # Calculate current ATP
         atp_result = atp_service.calculate_current_atp(
-            participant=participant,
+            scenario_user=scenario_user,
             game=scenario,
             current_round=current_round,
             include_safety_stock=True
@@ -2684,7 +2684,7 @@ async def allocate_atp_to_customers(
 
         # Allocate ATP
         allocation_result = atp_service.allocate_to_customers(
-            participant=participant,
+            scenario_user=scenario_user,
             demands=demands,
             available_atp=atp_result.atp,
             allocation_method=request.allocation_method
@@ -2700,10 +2700,10 @@ async def allocate_atp_to_customers(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/scenarios/{scenario_id}/promise-date/{participant_id}")
+@router.get("/scenarios/{scenario_id}/promise-date/{scenario_user_id}")
 async def calculate_promise_date(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     item_id: int,
     quantity: int,
     current_user: User = Depends(get_current_user_sync),
@@ -2721,7 +2721,7 @@ async def calculate_promise_date(
 
     Args:
         scenario_id: Scenario ID
-        participant_id: Participant ID (manufacturer)
+        scenario_user_id: ScenarioUser ID (manufacturer)
         item_id: Item ID to produce
         quantity: Quantity requested
 
@@ -2754,19 +2754,19 @@ async def calculate_promise_date(
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
 
-        # Get participant
-        participant = scenario_service.db.query(Participant).filter_by(
-            id=participant_id, scenario_id=scenario_id
+        # Get scenario_user
+        scenario_user = scenario_service.db.query(ScenarioUser).filter_by(
+            id=scenario_user_id, scenario_id=scenario_id
         ).first()
-        if not participant:
-            raise HTTPException(status_code=404, detail="Participant not found")
+        if not scenario_user:
+            raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
-        # Verify participant is manufacturer
-        node = _get_participant_node(scenario_service.db, participant, game)
+        # Verify scenario_user is manufacturer
+        node = _get_participant_node(scenario_service.db, scenario_user, game)
         if not node:
             raise HTTPException(
                 status_code=400,
-                detail="Participant node not found in supply chain config"
+                detail="ScenarioUser node not found in supply chain config"
             )
 
         # Check if node is a manufacturer (master_type or dag_type)
@@ -2793,7 +2793,7 @@ async def calculate_promise_date(
 
         # Calculate promise date
         promise_result = ctp_service.calculate_promise_date(
-            participant=participant,
+            scenario_user=scenario_user,
             game=scenario,
             current_round=current_round,
             item_id=item_id,
@@ -2816,7 +2816,7 @@ async def calculate_promise_date(
 
 class SwitchModeRequest(BaseModel):
     """Request model for switching agent mode."""
-    participant_id: int
+    scenario_user_id: int
     new_mode: str  # "manual", "copilot", or "autonomous"
     reason: Optional[str] = "user_request"
     force: bool = False
@@ -2824,7 +2824,7 @@ class SwitchModeRequest(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "participant_id": 1,
+                "scenario_user_id": 1,
                 "new_mode": "copilot",
                 "reason": "user_request",
                 "force": False
@@ -2837,7 +2837,7 @@ class ModeSwitchResponse(BaseModel):
     success: bool
     previous_mode: str
     new_mode: str
-    participant_id: int
+    scenario_user_id: int
     scenario_id: int
     round_number: int
     reason: str
@@ -2855,7 +2855,7 @@ def switch_agent_mode(
     mode_service: AgentModeService = Depends(get_agent_mode_service)
 ):
     """
-    Switch a participant's agent mode during active gameplay.
+    Switch a scenario_user's agent mode during active gameplay.
 
     **Phase 4: Multi-Agent Orchestration**
 
@@ -2873,7 +2873,7 @@ def switch_agent_mode(
     **Example**:
     ```json
     {
-      "participant_id": 1,
+      "scenario_user_id": 1,
       "new_mode": "copilot",
       "reason": "user_request"
     }
@@ -2884,16 +2884,16 @@ def switch_agent_mode(
     - Recorded in agent_mode_history for RLHF training
     """
     try:
-        # Validate game exists and participant has access
+        # Validate game exists and scenario_user has access
         scenario = scenario_service.db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
 
-        participant = scenario_service.db.query(Participant).filter_by(
-            id=request.participant_id, scenario_id=scenario_id
+        scenario_user = scenario_service.db.query(ScenarioUser).filter_by(
+            id=request.scenario_user_id, scenario_id=scenario_id
         ).first()
-        if not participant:
-            raise HTTPException(status_code=404, detail="Participant not found")
+        if not scenario_user:
+            raise HTTPException(status_code=404, detail="ScenarioUser not found")
 
         # Validate new_mode
         try:
@@ -2912,7 +2912,7 @@ def switch_agent_mode(
 
         # Perform mode switch
         result = mode_service.switch_agent_mode(
-            participant_id=request.participant_id,
+            scenario_user_id=request.scenario_user_id,
             scenario_id=scenario_id,
             new_mode=new_mode_enum,
             reason=reason_enum,
@@ -2924,7 +2924,7 @@ def switch_agent_mode(
             success=result.success,
             previous_mode=result.previous_mode,
             new_mode=result.new_mode,
-            participant_id=result.participant_id,
+            scenario_user_id=result.scenario_user_id,
             scenario_id=result.scenario_id,
             round_number=result.round_number,
             reason=result.reason,
@@ -2945,16 +2945,16 @@ def switch_agent_mode(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/scenarios/{scenario_id}/mode-history/{participant_id}")
+@router.get("/scenarios/{scenario_id}/mode-history/{scenario_user_id}")
 def get_mode_history(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     limit: int = 50,
     current_user: User = Depends(get_current_user_sync),
     mode_service: AgentModeService = Depends(get_agent_mode_service)
 ):
     """
-    Get agent mode switch history for a participant.
+    Get agent mode switch history for a scenario_user.
 
     **Phase 4: Multi-Agent Orchestration**
 
@@ -2975,14 +2975,14 @@ def get_mode_history(
             limit = 100
 
         history = mode_service.get_mode_history(
-            participant_id=participant_id,
+            scenario_user_id=scenario_user_id,
             scenario_id=scenario_id,
             limit=limit
         )
 
         return {
             "scenario_id": scenario_id,
-            "participant_id": participant_id,
+            "scenario_user_id": scenario_user_id,
             "count": len(history),
             "history": [
                 {
@@ -3014,11 +3014,11 @@ def get_mode_distribution(
     mode_service: AgentModeService = Depends(get_agent_mode_service)
 ):
     """
-    Get current mode distribution across all participants in a game.
+    Get current mode distribution across all scenario_users in a game.
 
     **Phase 4: Multi-Agent Orchestration**
 
-    Returns count of participants in each mode:
+    Returns count of scenario_users in each mode:
     - manual: Human-controlled
     - copilot: AI-assisted
     - autonomous: AI-controlled
@@ -3083,7 +3083,7 @@ def get_mode_distribution(
 class SetAgentWeightsRequest(BaseModel):
     """Request model for manually setting agent weights."""
     weights: Dict[str, float]  # {"llm": 0.5, "gnn": 0.3, "trm": 0.2}
-    context_type: str = "game"  # "game", "participant", or "config"
+    context_type: str = "game"  # "game", "scenario_user", or "config"
 
     class Config:
         json_schema_extra = {
@@ -3138,7 +3138,7 @@ def set_agent_weights(
 
     **Context Types**:
     - **game**: Weights apply to entire game
-    - **participant**: Weights per participant (personalized)
+    - **scenario_user**: Weights per scenario_user (personalized)
     - **config**: Weights per supply chain configuration
 
     **Example Request**:
@@ -3550,7 +3550,7 @@ def get_decision_comparison(
             "round_number": 15,
             "comparisons": [
                 {
-                    "participant_id": 1,
+                    "scenario_user_id": 1,
                     "participant_role": "retailer",
                     "ai_suggestion": 120,
                     "ai_confidence": 0.85,
@@ -3572,7 +3572,7 @@ def get_decision_comparison(
         }
     """
     from app.services.rlhf_data_collector import RLHFFeedback, get_rlhf_data_collector
-    from app.models.participant import Participant
+    from app.models.scenario_user import ScenarioUser
 
     try:
         # Get all RLHF feedback for this round
@@ -3597,14 +3597,14 @@ def get_decision_comparison(
                 }
             }
 
-        # Get participant info
-        participant_ids = [f.participant_id for f in feedbacks]
-        participants = (
-            scenario_service.db.query(Participant)
-            .filter(Participant.id.in_(participant_ids))
+        # Get scenario_user info
+        scenario_user_ids = [f.scenario_user_id for f in feedbacks]
+        scenario_users = (
+            scenario_service.db.query(ScenarioUser)
+            .filter(ScenarioUser.id.in_(scenario_user_ids))
             .all()
         )
-        participant_map = {p.id: p for p in participants}
+        participant_map = {p.id: p for p in scenario_users}
 
         # Build comparison list
         comparisons = []
@@ -3614,11 +3614,11 @@ def get_decision_comparison(
         total_cost_savings = 0.0
 
         for feedback in feedbacks:
-            participant = participant_map.get(feedback.participant_id)
-            participant_role = participant.role if participant else "unknown"
+            scenario_user = participant_map.get(feedback.scenario_user_id)
+            participant_role = scenario_user.role if scenario_user else "unknown"
 
             comparison = {
-                "participant_id": feedback.participant_id,
+                "scenario_user_id": feedback.scenario_user_id,
                 "participant_role": participant_role,
                 "ai_suggestion": feedback.ai_suggestion,
                 "ai_confidence": feedback.ai_confidence,
@@ -3667,18 +3667,18 @@ def get_decision_comparison(
 @router.get("/scenarios/{scenario_id}/rlhf-feedback-summary")
 def get_rlhf_feedback_summary(
     scenario_id: int,
-    participant_id: Optional[int] = None,
+    scenario_user_id: Optional[int] = None,
     current_user: User = Depends(get_current_user_sync),
     scenario_service: MixedScenarioService = Depends(get_mixed_scenario_service)
 ):
     """
-    Get RLHF feedback summary for a game or participant.
+    Get RLHF feedback summary for a game or scenario_user.
 
     Returns aggregate stats on AI vs human decision performance.
 
     Args:
         scenario_id: Scenario ID
-        participant_id: Optional participant ID to filter by
+        scenario_user_id: Optional scenario_user ID to filter by
 
     Returns:
         {
@@ -3705,8 +3705,8 @@ def get_rlhf_feedback_summary(
             RLHFFeedback.scenario_id == scenario_id
         )
 
-        if participant_id:
-            query = query.filter(RLHFFeedback.participant_id == participant_id)
+        if scenario_user_id:
+            query = query.filter(RLHFFeedback.scenario_user_id == scenario_user_id)
 
         feedbacks = query.all()
 

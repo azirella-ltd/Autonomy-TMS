@@ -27,11 +27,11 @@ import statistics
 import logging
 
 from app.models.base import Base
-from app.models.participant import Participant
+from app.models.scenario_user import ScenarioUser
 from app.models.scenario import Scenario
 
 # Aliases for backwards compatibility
-Player = Participant
+ScenarioUser = ScenarioUser
 Game = Scenario
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PerformanceMetrics:
     """Snapshot of agent performance metrics."""
-    player_id: int
+    scenario_user_id: int
     scenario_id: int
     round_number: int
     agent_type: str
@@ -112,7 +112,7 @@ class AgentPerformanceTracker:
         performance_metrics: PerformanceMetrics
     ) -> int:
         """
-        Record performance metrics for a player in a round.
+        Record performance metrics for a scenario_user in a round.
 
         Args:
             performance_metrics: Performance snapshot
@@ -122,7 +122,7 @@ class AgentPerformanceTracker:
         """
         # Create performance log record
         performance_log = AgentPerformanceLog(
-            player_id=performance_metrics.player_id,
+            scenario_user_id=performance_metrics.scenario_user_id,
             scenario_id=performance_metrics.scenario_id,
             round_number=performance_metrics.round_number,
             agent_type=performance_metrics.agent_type,
@@ -151,7 +151,7 @@ class AgentPerformanceTracker:
 
     def get_agent_performance_summary(
         self,
-        player_id: Optional[int] = None,
+        scenario_user_id: Optional[int] = None,
         scenario_id: Optional[int] = None,
         agent_type: Optional[str] = None,
         min_rounds: int = 5
@@ -160,7 +160,7 @@ class AgentPerformanceTracker:
         Get aggregate performance summary.
 
         Args:
-            player_id: Filter by player
+            scenario_user_id: Filter by scenario_user
             scenario_id: Filter by game
             agent_type: Filter by agent type (llm, gnn, trm)
             min_rounds: Minimum rounds for statistical significance
@@ -170,8 +170,8 @@ class AgentPerformanceTracker:
         """
         query = self.db.query(AgentPerformanceLog)
 
-        if player_id:
-            query = query.filter_by(player_id=player_id)
+        if scenario_user_id:
+            query = query.filter_by(scenario_user_id=scenario_user_id)
         if scenario_id:
             query = query.filter_by(scenario_id=scenario_id)
         if agent_type:
@@ -271,21 +271,21 @@ class AgentPerformanceTracker:
 
     def get_performance_trends(
         self,
-        player_id: int,
+        scenario_user_id: int,
         window_size: int = 10
     ) -> Dict[str, Any]:
         """
         Get performance trends over time (rolling window).
 
         Args:
-            player_id: Player to analyze
+            scenario_user_id: ScenarioUser to analyze
             window_size: Rolling window size in rounds
 
         Returns:
             Dict with trend data (improving, stable, degrading)
         """
         logs = self.db.query(AgentPerformanceLog).filter_by(
-            player_id=player_id
+            scenario_user_id=scenario_user_id
         ).order_by(AgentPerformanceLog.round_number).all()
 
         if len(logs) < window_size * 2:
@@ -330,21 +330,21 @@ class AgentPerformanceTracker:
 
     def detect_performance_anomalies(
         self,
-        player_id: int,
+        scenario_user_id: int,
         threshold_std: float = 2.0
     ) -> List[Dict[str, Any]]:
         """
         Detect performance anomalies (outliers).
 
         Args:
-            player_id: Player to analyze
+            scenario_user_id: ScenarioUser to analyze
             threshold_std: Standard deviations for anomaly detection
 
         Returns:
             List of anomalous rounds with details
         """
         logs = self.db.query(AgentPerformanceLog).filter_by(
-            player_id=player_id
+            scenario_user_id=scenario_user_id
         ).all()
 
         if len(logs) < 10:
@@ -378,22 +378,22 @@ class AgentPerformanceTracker:
         metric: str = "total_cost"
     ) -> List[Dict[str, Any]]:
         """
-        Get player leaderboard sorted by performance metric.
+        Get scenario_user leaderboard sorted by performance metric.
 
         Args:
             scenario_id: Game to analyze
             metric: Metric to sort by (total_cost, service_level, etc.)
 
         Returns:
-            List of players with aggregate metrics, sorted by performance
+            List of scenario_users with aggregate metrics, sorted by performance
         """
-        # Get all players in game
-        players = self.db.query(Player).filter_by(scenario_id=scenario_id).all()
+        # Get all scenario_users in game
+        scenario_users = self.db.query(ScenarioUser).filter_by(scenario_id=scenario_id).all()
 
         leaderboard = []
-        for player in players:
+        for scenario_user in scenario_users:
             summary = self.get_agent_performance_summary(
-                player_id=player.id,
+                scenario_user_id=scenario_user.id,
                 scenario_id=scenario_id
             )
 
@@ -401,10 +401,10 @@ class AgentPerformanceTracker:
                 continue
 
             leaderboard.append({
-                "player_id": player.id,
-                "player_name": player.user.username if player.user else f"Player {player.id}",
-                "agent_type": player.agent_config.agent_type if player.agent_config else "manual",
-                "agent_mode": player.agent_mode or "manual",
+                "scenario_user_id": scenario_user.id,
+                "scenario_user_name": scenario_user.user.username if scenario_user.user else f"ScenarioUser {scenario_user.id}",
+                "agent_type": scenario_user.agent_config.agent_type if scenario_user.agent_config else "manual",
+                "agent_mode": scenario_user.agent_mode or "manual",
                 **summary
             })
 
@@ -434,7 +434,7 @@ class AgentPerformanceLog(Base):
     __tablename__ = "agent_performance_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    player_id = Column(Integer, ForeignKey("players.id"), nullable=False, index=True)
+    scenario_user_id = Column(Integer, ForeignKey("scenario_users.id"), nullable=False, index=True)
     scenario_id = Column(Integer, ForeignKey("games.id"), nullable=False, index=True)
     round_number = Column(Integer, nullable=False, index=True)
 

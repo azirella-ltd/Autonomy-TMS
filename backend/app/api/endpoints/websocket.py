@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_sync_db as get_db
 from app.models.scenario import Scenario
-from app.models.participant import Participant
+from app.models.scenario_user import ScenarioUser
 from app.schemas.scenario import ScenarioState
 from app.services.mixed_scenario_service import MixedScenarioService
 
@@ -20,26 +20,26 @@ class ConnectionManager:
         self.active_connections: Dict[int, Dict[int, WebSocket]] = {}
         self.lock = asyncio.Lock()
     
-    async def connect(self, scenario_id: int, participant_id: int, websocket: WebSocket):
-        """Register a new WebSocket connection for a player in a game."""
+    async def connect(self, scenario_id: int, scenario_user_id: int, websocket: WebSocket):
+        """Register a new WebSocket connection for a scenario_user in a game."""
         await websocket.accept()
         
         async with self.lock:
             if scenario_id not in self.active_connections:
                 self.active_connections[scenario_id] = {}
-            self.active_connections[scenario_id][participant_id] = websocket
+            self.active_connections[scenario_id][scenario_user_id] = websocket
     
-    def disconnect(self, scenario_id: int, participant_id: int):
-        """Remove a WebSocket connection when a player disconnects."""
+    def disconnect(self, scenario_id: int, scenario_user_id: int):
+        """Remove a WebSocket connection when a scenario_user disconnects."""
         if scenario_id in self.active_connections:
-            if player_id in self.active_connections[scenario_id]:
-                del self.active_connections[scenario_id][participant_id]
+            if scenario_user_id in self.active_connections[scenario_id]:
+                del self.active_connections[scenario_id][scenario_user_id]
                 # Clean up empty game rooms
                 if not self.active_connections[scenario_id]:
                     del self.active_connections[scenario_id]
     
     async def broadcast_game_state(self, scenario_id: int, scenario_state: ScenarioState):
-        """Send the current game state to all connected players in a game."""
+        """Send the current game state to all connected scenario_users in a game."""
         if scenario_id not in self.active_connections:
             return
             
@@ -50,7 +50,7 @@ class ConnectionManager:
         
         # Create a list of tasks to send messages to all connected clients
         tasks = []
-        for participant_id, connection in list(self.active_connections[scenario_id].items()):
+        for scenario_user_id, connection in list(self.active_connections[scenario_id].items()):
             try:
                 tasks.append(
                     asyncio.create_task(
@@ -59,31 +59,31 @@ class ConnectionManager:
                 )
             except Exception as e:
                 # If sending fails, the connection is likely dead
-                print(f"Error sending to player {player_id}: {e}")
-                self.disconnect(scenario_id, player_id)
+                print(f"Error sending to scenario_user {scenario_user_id}: {e}")
+                self.disconnect(scenario_id, scenario_user_id)
         
         # Wait for all sends to complete
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
     
-    async def send_personal_message(self, participant_id: int, scenario_id: int, message: dict):
-        """Send a message to a specific player in a game."""
+    async def send_personal_message(self, scenario_user_id: int, scenario_id: int, message: dict):
+        """Send a message to a specific scenario_user in a game."""
         if scenario_id in self.active_connections:
-            if player_id in self.active_connections[scenario_id]:
+            if scenario_user_id in self.active_connections[scenario_id]:
                 try:
-                    await self.active_connections[scenario_id][participant_id].send_json(message)
+                    await self.active_connections[scenario_id][scenario_user_id].send_json(message)
                 except Exception as e:
-                    print(f"Error sending to player {player_id}: {e}")
-                    self.disconnect(scenario_id, player_id)
+                    print(f"Error sending to scenario_user {scenario_user_id}: {e}")
+                    self.disconnect(scenario_id, scenario_user_id)
 
     async def broadcast_to_game(self, scenario_id: int, message: dict):
-        """Broadcast a message to all connected players in a game."""
+        """Broadcast a message to all connected scenario_users in a game."""
         if scenario_id not in self.active_connections:
             return
 
         # Create tasks to send messages to all connected clients
         tasks = []
-        for participant_id, connection in list(self.active_connections[scenario_id].items()):
+        for scenario_user_id, connection in list(self.active_connections[scenario_id].items()):
             try:
                 tasks.append(
                     asyncio.create_task(
@@ -91,8 +91,8 @@ class ConnectionManager:
                     )
                 )
             except Exception as e:
-                print(f"Error sending to player {player_id}: {e}")
-                self.disconnect(scenario_id, player_id)
+                print(f"Error sending to scenario_user {scenario_user_id}: {e}")
+                self.disconnect(scenario_id, scenario_user_id)
 
         # Wait for all sends to complete
         if tasks:
@@ -120,8 +120,8 @@ async def broadcast_phase_change(
         round_number: Current round number
         new_phase: New phase name ('fulfillment', 'replenishment', 'completed')
         phase_started_at: ISO timestamp when phase started
-        players_completed: Number of players who have completed current phase
-        total_players: Total players in game
+        players_completed: Number of scenario_users who have completed current phase
+        total_players: Total scenario_users in game
     """
     message = {
         "type": "round_phase_change",
@@ -136,61 +136,61 @@ async def broadcast_phase_change(
     await manager.broadcast_to_game(scenario_id, message)
 
 
-async def broadcast_player_action_required(
+async def broadcast_scenario_user_action_required(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     round_number: int,
     phase: str,
     action_type: str,
     context: dict = None
 ):
     """
-    Notify a specific player that action is required.
+    Notify a specific scenario_user that action is required.
 
     Args:
         scenario_id: Game ID
-        player_id: Player who needs to act
+        scenario_user_id: ScenarioUser who needs to act
         round_number: Current round
         phase: Current phase
         action_type: 'fulfillment_decision' or 'replenishment_decision'
         context: Additional context (ATP, demand, etc.)
     """
     message = {
-        "type": "player_action_required",
+        "type": "scenario_user_action_required",
         "scenario_id": scenario_id,
-        "participant_id": participant_id,
+        "scenario_user_id": scenario_user_id,
         "round_number": round_number,
         "phase": phase,
         "action_type": action_type,
         "context": context or {},
     }
 
-    await manager.send_personal_message(participant_id, scenario_id, message)
+    await manager.send_personal_message(scenario_user_id, scenario_id, message)
 
 
 async def broadcast_fulfillment_completed(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     participant_role: str,
     fulfill_qty: int,
     players_completed: int,
     total_players: int
 ):
     """
-    Broadcast when a player submits their fulfillment decision.
+    Broadcast when a scenario_user submits their fulfillment decision.
 
     Args:
         scenario_id: Game ID
-        player_id: Player who submitted
-        player_role: Player's role (e.g., 'Retailer')
+        scenario_user_id: ScenarioUser who submitted
+        player_role: ScenarioUser's role (e.g., 'Retailer')
         fulfill_qty: Quantity fulfilled
-        players_completed: Total players who have completed fulfillment
-        total_players: Total players in game
+        players_completed: Total scenario_users who have completed fulfillment
+        total_players: Total scenario_users in game
     """
     message = {
         "type": "fulfillment_completed",
         "scenario_id": scenario_id,
-        "participant_id": participant_id,
+        "scenario_user_id": scenario_user_id,
         "participant_role": participant_role,
         "fulfill_qty": fulfill_qty,
         "players_completed": players_completed,
@@ -202,27 +202,27 @@ async def broadcast_fulfillment_completed(
 
 async def broadcast_replenishment_completed(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     participant_role: str,
     order_qty: int,
     players_completed: int,
     total_players: int
 ):
     """
-    Broadcast when a player submits their replenishment order.
+    Broadcast when a scenario_user submits their replenishment order.
 
     Args:
         scenario_id: Game ID
-        player_id: Player who submitted
-        player_role: Player's role (e.g., 'Wholesaler')
+        scenario_user_id: ScenarioUser who submitted
+        player_role: ScenarioUser's role (e.g., 'Wholesaler')
         order_qty: Quantity ordered
-        players_completed: Total players who have completed replenishment
-        total_players: Total players in game
+        players_completed: Total scenario_users who have completed replenishment
+        total_players: Total scenario_users in game
     """
     message = {
         "type": "replenishment_completed",
         "scenario_id": scenario_id,
-        "participant_id": participant_id,
+        "scenario_user_id": scenario_user_id,
         "participant_role": participant_role,
         "order_qty": order_qty,
         "players_completed": players_completed,
@@ -264,7 +264,7 @@ async def broadcast_all_players_ready(
     phase: str
 ):
     """
-    Broadcast when all players have completed their actions for a phase.
+    Broadcast when all scenario_users have completed their actions for a phase.
 
     Args:
         scenario_id: Game ID
@@ -276,7 +276,7 @@ async def broadcast_all_players_ready(
         "scenario_id": scenario_id,
         "round_number": round_number,
         "phase": phase,
-        "message": f"All players ready. Transitioning from {phase} phase.",
+        "message": f"All scenario_users ready. Transitioning from {phase} phase.",
     }
 
     await manager.broadcast_to_game(scenario_id, message)
@@ -286,7 +286,7 @@ async def broadcast_all_players_ready(
 
 async def broadcast_agent_recommendation_ready(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     phase: str,
     recommendation: dict
 ):
@@ -295,63 +295,63 @@ async def broadcast_agent_recommendation_ready(
 
     Args:
         scenario_id: Game ID
-        player_id: Player ID who received recommendation
+        scenario_user_id: ScenarioUser ID who received recommendation
         phase: Phase type ("fulfillment" or "replenishment")
         recommendation: RecommendationResult dict
     """
     message = {
         "type": "agent_recommendation_ready",
         "scenario_id": scenario_id,
-        "participant_id": participant_id,
+        "scenario_user_id": scenario_user_id,
         "phase": phase,
         "recommendation": recommendation,
     }
 
-    # Send only to the specific player
-    await manager.send_personal_message(participant_id, scenario_id, message)
+    # Send only to the specific scenario_user
+    await manager.send_personal_message(scenario_user_id, scenario_id, message)
 
 
 async def send_override_requires_approval(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     proposal_id: int,
     authority_check: dict
 ):
     """
-    Notify player that their override requires approval.
+    Notify scenario_user that their override requires approval.
 
     Args:
         scenario_id: Game ID
-        player_id: Player ID who needs approval
+        scenario_user_id: ScenarioUser ID who needs approval
         proposal_id: Decision proposal ID
         authority_check: AuthorityCheckResult dict
     """
     message = {
         "type": "override_requires_approval",
         "scenario_id": scenario_id,
-        "participant_id": participant_id,
+        "scenario_user_id": scenario_user_id,
         "proposal_id": proposal_id,
         "message": "Your override exceeds authority level. Waiting for manager approval.",
         "game_paused": True,
         "authority_check": authority_check,
     }
 
-    # Send to the specific player
-    await manager.send_personal_message(participant_id, scenario_id, message)
+    # Send to the specific scenario_user
+    await manager.send_personal_message(scenario_user_id, scenario_id, message)
 
     # Notify managers in the game
     await manager.broadcast_to_game(scenario_id, {
         "type": "approval_requested",
         "scenario_id": scenario_id,
-        "participant_id": participant_id,
+        "scenario_user_id": scenario_user_id,
         "proposal_id": proposal_id,
-        "message": f"Player {player_id} requested approval for override",
+        "message": f"ScenarioUser {scenario_user_id} requested approval for override",
     })
 
 
 async def broadcast_override_approved(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     proposal_id: int,
     approved_by: str
 ):
@@ -360,27 +360,27 @@ async def broadcast_override_approved(
 
     Args:
         scenario_id: Game ID
-        player_id: Player ID whose override was approved
+        scenario_user_id: ScenarioUser ID whose override was approved
         proposal_id: Decision proposal ID
         approved_by: Manager who approved
     """
     message = {
         "type": "override_approved",
         "scenario_id": scenario_id,
-        "participant_id": participant_id,
+        "scenario_user_id": scenario_user_id,
         "proposal_id": proposal_id,
         "approved_by": approved_by,
         "message": "Override approved. Proceeding with your decision.",
         "game_resumed": True,
     }
 
-    # Broadcast to all players in the game
+    # Broadcast to all scenario_users in the game
     await manager.broadcast_to_game(scenario_id, message)
 
 
 async def broadcast_override_rejected(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     proposal_id: int,
     rejected_by: str,
     agent_recommendation: dict
@@ -390,7 +390,7 @@ async def broadcast_override_rejected(
 
     Args:
         scenario_id: Game ID
-        player_id: Player ID whose override was rejected
+        scenario_user_id: ScenarioUser ID whose override was rejected
         proposal_id: Decision proposal ID
         rejected_by: Manager who rejected
         agent_recommendation: Agent's original recommendation to use instead
@@ -398,7 +398,7 @@ async def broadcast_override_rejected(
     message = {
         "type": "override_rejected",
         "scenario_id": scenario_id,
-        "participant_id": participant_id,
+        "scenario_user_id": scenario_user_id,
         "proposal_id": proposal_id,
         "rejected_by": rejected_by,
         "message": "Override rejected. Using agent recommendation.",
@@ -406,7 +406,7 @@ async def broadcast_override_rejected(
         "fallback_recommendation": agent_recommendation,
     }
 
-    # Broadcast to all players in the game
+    # Broadcast to all scenario_users in the game
     await manager.broadcast_to_game(scenario_id, message)
 
 
@@ -414,7 +414,7 @@ async def broadcast_override_rejected(
 
 async def broadcast_atp_threshold_breach(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     current_atp: int,
     threshold: int,
     severity: str = "warning"
@@ -424,7 +424,7 @@ async def broadcast_atp_threshold_breach(
 
     Args:
         scenario_id: Game ID
-        player_id: Player ID with low ATP
+        scenario_user_id: ScenarioUser ID with low ATP
         current_atp: Current ATP value
         threshold: Safety stock threshold
         severity: "warning" or "error"
@@ -432,20 +432,20 @@ async def broadcast_atp_threshold_breach(
     message = {
         "type": "atp_threshold_breach",
         "scenario_id": scenario_id,
-        "participant_id": participant_id,
+        "scenario_user_id": scenario_user_id,
         "current_atp": current_atp,
         "threshold": threshold,
         "message": f"ATP below safety threshold ({current_atp} < {threshold}). Consider expediting replenishment.",
         "severity": severity,
     }
 
-    # Send only to the specific player
-    await manager.send_personal_message(participant_id, scenario_id, message)
+    # Send only to the specific scenario_user
+    await manager.send_personal_message(scenario_user_id, scenario_id, message)
 
 
 async def broadcast_ctp_capacity_constraint(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     demand: int,
     available_ctp: int,
     shortfall: int
@@ -455,7 +455,7 @@ async def broadcast_ctp_capacity_constraint(
 
     Args:
         scenario_id: Game ID
-        player_id: Player ID (manufacturer)
+        scenario_user_id: ScenarioUser ID (manufacturer)
         demand: Requested production quantity
         available_ctp: Available CTP
         shortfall: Shortfall (demand - CTP)
@@ -463,7 +463,7 @@ async def broadcast_ctp_capacity_constraint(
     message = {
         "type": "ctp_capacity_constraint",
         "scenario_id": scenario_id,
-        "participant_id": participant_id,
+        "scenario_user_id": scenario_user_id,
         "demand": demand,
         "available_ctp": available_ctp,
         "shortfall": shortfall,
@@ -471,13 +471,13 @@ async def broadcast_ctp_capacity_constraint(
         "severity": "error",
     }
 
-    # Send only to the specific player
-    await manager.send_personal_message(participant_id, scenario_id, message)
+    # Send only to the specific scenario_user
+    await manager.send_personal_message(scenario_user_id, scenario_id, message)
 
 
 async def broadcast_allocation_conflict(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     total_demand: int,
     available_atp: int,
     customers: List[dict]
@@ -487,7 +487,7 @@ async def broadcast_allocation_conflict(
 
     Args:
         scenario_id: Game ID
-        player_id: Player ID (supplier node)
+        scenario_user_id: ScenarioUser ID (supplier node)
         total_demand: Total demand from all customers
         available_atp: Available ATP
         customers: List of customer demands [{"customer_id": 1, "demand": 300}, ...]
@@ -495,7 +495,7 @@ async def broadcast_allocation_conflict(
     message = {
         "type": "allocation_conflict",
         "scenario_id": scenario_id,
-        "participant_id": participant_id,
+        "scenario_user_id": scenario_user_id,
         "total_demand": total_demand,
         "available_atp": available_atp,
         "customers": customers,
@@ -503,13 +503,13 @@ async def broadcast_allocation_conflict(
         "severity": "warning",
     }
 
-    # Send only to the specific player
-    await manager.send_personal_message(participant_id, scenario_id, message)
+    # Send only to the specific scenario_user
+    await manager.send_personal_message(scenario_user_id, scenario_id, message)
 
 
 async def broadcast_atp_projection_update(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     projection: List[dict]
 ):
     """
@@ -517,23 +517,23 @@ async def broadcast_atp_projection_update(
 
     Args:
         scenario_id: Game ID
-        player_id: Player ID
+        scenario_user_id: ScenarioUser ID
         projection: List of ATPPeriod dicts
     """
     message = {
         "type": "atp_projection_update",
         "scenario_id": scenario_id,
-        "participant_id": participant_id,
+        "scenario_user_id": scenario_user_id,
         "projection": projection,
     }
 
-    # Send only to the specific player
-    await manager.send_personal_message(participant_id, scenario_id, message)
+    # Send only to the specific scenario_user
+    await manager.send_personal_message(scenario_user_id, scenario_id, message)
 
 
 async def broadcast_component_constraint(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     component_name: str,
     required: int,
     available: int,
@@ -544,7 +544,7 @@ async def broadcast_component_constraint(
 
     Args:
         scenario_id: Game ID
-        player_id: Player ID (manufacturer)
+        scenario_user_id: ScenarioUser ID (manufacturer)
         component_name: Name of constrained component
         required: Required quantity
         available: Available component ATP
@@ -553,7 +553,7 @@ async def broadcast_component_constraint(
     message = {
         "type": "component_constraint",
         "scenario_id": scenario_id,
-        "participant_id": participant_id,
+        "scenario_user_id": scenario_user_id,
         "component_name": component_name,
         "required": required,
         "available": available,
@@ -562,48 +562,48 @@ async def broadcast_component_constraint(
         "severity": "warning",
     }
 
-    # Send only to the specific player
-    await manager.send_personal_message(participant_id, scenario_id, message)
+    # Send only to the specific scenario_user
+    await manager.send_personal_message(scenario_user_id, scenario_id, message)
 
 
-@router.websocket("/ws/games/{scenario_id}/players/{player_id}")
+@router.websocket("/ws/games/{scenario_id}/scenario_users/{scenario_user_id}")
 async def websocket_endpoint(
     websocket: WebSocket,
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     db: Session = Depends(get_db)
 ):
     """
     WebSocket endpoint for real-time game updates.
     
-    - Connects a player to the game's WebSocket room
+    - Connects a scenario_user to the game's WebSocket room
     - Sends the current game state on connection
-    - Broadcasts updates to all players when the game state changes
+    - Broadcasts updates to all scenario_users when the game state changes
     """
-    # Verify the game and player exist
+    # Verify the game and scenario_user exist
     game = db.query(Game).filter(Game.id == scenario_id).first()
     if not game:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
     
-    player = db.query(Player).filter(
-        Player.id == participant_id,
-        Player.scenario_id == scenario_id
+    scenario_user = db.query(ScenarioUser).filter(
+        ScenarioUser.id == scenario_user_id,
+        ScenarioUser.scenario_id == scenario_id
     ).first()
     
-    if not player:
+    if not scenario_user:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
     
     # Add the connection to the manager
-    await manager.connect(scenario_id, participant_id, websocket)
+    await manager.connect(scenario_id, scenario_user_id, websocket)
     
     # Send the current game state
     game_service = MixedScenarioService(db)
     try:
         game_state = game_service.get_game_state(scenario_id)
         await manager.send_personal_message(
-            participant_id,
+            scenario_user_id,
             scenario_id,
             {
                 "type": "game_state",
@@ -641,7 +641,7 @@ async def websocket_endpoint(
                 
     finally:
         # Clean up the connection when done
-        manager.disconnect(scenario_id, player_id)
+        manager.disconnect(scenario_id, scenario_user_id)
 
 # Add the WebSocket router to the API router
-router.websocket_route("/ws/games/{scenario_id}/players/{player_id}", name="game_ws")(websocket_endpoint)
+router.websocket_route("/ws/games/{scenario_id}/scenario_users/{scenario_user_id}", name="game_ws")(websocket_endpoint)

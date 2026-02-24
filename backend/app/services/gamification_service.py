@@ -1,5 +1,5 @@
 """
-Gamification Service - Achievement system, player stats, leaderboards.
+Gamification Service - Achievement system, scenario_user stats, leaderboards.
 """
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, and_, or_, func, desc, text
@@ -8,20 +8,20 @@ from datetime import datetime, timedelta
 import math
 
 from app.models.achievement import (
-    Achievement, PlayerStats, PlayerAchievement, Leaderboard,
-    LeaderboardEntry, PlayerBadge, AchievementNotification
+    Achievement, ScenarioUserStats, ScenarioUserAchievement, Leaderboard,
+    LeaderboardEntry, ScenarioUserBadge, AchievementNotification
 )
-from app.models.participant import Participant
+from app.models.scenario_user import ScenarioUser
 from app.models.scenario import Scenario, Round as ScenarioRound
-from app.models.supply_chain import ParticipantRound
+from app.models.supply_chain import ScenarioUserPeriod
 
 # Aliases for backwards compatibility
-Player = Participant
+ScenarioUser = ScenarioUser
 Game = Scenario
-GameRound = ScenarioRound
-PlayerRound = ParticipantRound
+ScenarioRound = ScenarioRound
+ScenarioUserPeriod = ScenarioUserPeriod
 from app.schemas.gamification import (
-    AchievementCheckResponse, PlayerProgressResponse,
+    AchievementCheckResponse, ScenarioUserProgressResponse,
     LeaderboardResponse, LeaderboardEntryWithPlayer
 )
 
@@ -37,29 +37,29 @@ class GamificationService:
     # PLAYER STATS MANAGEMENT
     # ========================================================================
 
-    async def get_or_create_player_stats(self, player_id: int) -> PlayerStats:
-        """Get player stats, creating if doesn't exist."""
+    async def get_or_create_scenario_user_stats(self, scenario_user_id: int) -> ScenarioUserStats:
+        """Get scenario_user stats, creating if doesn't exist."""
         result = await self.db.execute(
-            select(PlayerStats).where(PlayerStats.player_id == player_id)
+            select(ScenarioUserStats).where(ScenarioUserStats.scenario_user_id == scenario_user_id)
         )
         stats = result.scalar_one_or_none()
 
         if not stats:
-            stats = PlayerStats(player_id=player_id)
+            stats = ScenarioUserStats(scenario_user_id=scenario_user_id)
             self.db.add(stats)
             await self.db.commit()
             await self.db.refresh(stats)
 
         return stats
 
-    async def update_player_stats_after_game(
+    async def update_scenario_user_stats_after_game(
         self,
-        player_id: int,
+        scenario_user_id: int,
         scenario_id: int,
         won: bool
-    ) -> PlayerStats:
-        """Update player stats after game completion."""
-        stats = await self.get_or_create_player_stats(player_id)
+    ) -> ScenarioUserStats:
+        """Update scenario_user stats after game completion."""
+        stats = await self.get_or_create_scenario_user_stats(scenario_user_id)
 
         # Get game data
         game_result = await self.db.execute(
@@ -70,24 +70,24 @@ class GamificationService:
         if not game:
             return stats
 
-        # Get player's game performance
-        player_rounds_result = await self.db.execute(
-            select(PlayerRound)
+        # Get scenario_user's game performance
+        scenario_user_periods_result = await self.db.execute(
+            select(ScenarioUserPeriod)
             .where(and_(
-                PlayerRound.scenario_id == scenario_id,
-                PlayerRound.player_id == player_id
+                ScenarioUserPeriod.scenario_id == scenario_id,
+                ScenarioUserPeriod.scenario_user_id == scenario_user_id
             ))
         )
-        player_rounds = player_rounds_result.scalars().all()
+        scenario_user_periods = scenario_user_periods_result.scalars().all()
 
-        if not player_rounds:
+        if not scenario_user_periods:
             return stats
 
         # Calculate metrics
-        total_cost = sum(pr.round_cost for pr in player_rounds if pr.round_cost)
-        total_rounds = len(player_rounds)
-        avg_inventory = sum(pr.inventory for pr in player_rounds) / total_rounds if total_rounds > 0 else 0
-        service_levels = [pr.service_level for pr in player_rounds if pr.service_level is not None]
+        total_cost = sum(pr.round_cost for pr in scenario_user_periods if pr.round_cost)
+        total_rounds = len(scenario_user_periods)
+        avg_inventory = sum(pr.inventory for pr in scenario_user_periods) / total_rounds if total_rounds > 0 else 0
+        service_levels = [pr.service_level for pr in scenario_user_periods if pr.service_level is not None]
         avg_service_level = sum(service_levels) / len(service_levels) if service_levels else None
 
         # Update stats
@@ -126,24 +126,24 @@ class GamificationService:
 
         return stats
 
-    def calculate_player_level(self, total_points: int) -> int:
-        """Calculate player level from total points."""
+    def calculate_scenario_user_level(self, total_points: int) -> int:
+        """Calculate scenario_user level from total points."""
         return int(math.floor(math.sqrt(total_points / self.points_per_level))) + 1
 
     def points_for_next_level(self, current_level: int) -> int:
         """Calculate points needed for next level."""
         return ((current_level) ** 2) * self.points_per_level
 
-    async def get_player_progress(self, player_id: int) -> Optional[PlayerProgressResponse]:
-        """Get complete player progress including stats, achievements, badges."""
-        stats = await self.get_or_create_player_stats(player_id)
+    async def get_player_progress(self, scenario_user_id: int) -> Optional[ScenarioUserProgressResponse]:
+        """Get complete scenario_user progress including stats, achievements, badges."""
+        stats = await self.get_or_create_scenario_user_stats(scenario_user_id)
 
         # Get unlocked achievements with details
         achievements_result = await self.db.execute(
-            select(PlayerAchievement, Achievement)
+            select(ScenarioUserAchievement, Achievement)
             .join(Achievement)
-            .where(PlayerAchievement.player_id == player_id)
-            .order_by(PlayerAchievement.unlocked_at.desc())
+            .where(ScenarioUserAchievement.scenario_user_id == scenario_user_id)
+            .order_by(ScenarioUserAchievement.unlocked_at.desc())
         )
         achievements = []
         for pa, ach in achievements_result.all():
@@ -154,9 +154,9 @@ class GamificationService:
 
         # Get badges
         badges_result = await self.db.execute(
-            select(PlayerBadge)
-            .where(PlayerBadge.player_id == player_id)
-            .order_by(PlayerBadge.earned_at.desc())
+            select(ScenarioUserBadge)
+            .where(ScenarioUserBadge.scenario_user_id == scenario_user_id)
+            .order_by(ScenarioUserBadge.earned_at.desc())
         )
         badges = badges_result.scalars().all()
 
@@ -165,7 +165,7 @@ class GamificationService:
             select(AchievementNotification, Achievement)
             .join(Achievement)
             .where(and_(
-                AchievementNotification.player_id == player_id,
+                AchievementNotification.scenario_user_id == scenario_user_id,
                 AchievementNotification.is_read == False
             ))
             .order_by(AchievementNotification.created_at.desc())
@@ -179,7 +179,7 @@ class GamificationService:
             })
 
         # Calculate progress to next level
-        current_level = stats.player_level
+        current_level = stats.scenario_user_level
         next_level_points = self.points_for_next_level(current_level)
         current_level_points = self.points_for_next_level(current_level - 1) if current_level > 1 else 0
         progress = (
@@ -201,12 +201,12 @@ class GamificationService:
 
     async def check_achievements(
         self,
-        player_id: int,
+        scenario_user_id: int,
         scenario_id: Optional[int] = None
     ) -> AchievementCheckResponse:
-        """Check and unlock achievements for a player."""
-        stats = await self.get_or_create_player_stats(player_id)
-        old_level = stats.player_level
+        """Check and unlock achievements for a scenario_user."""
+        stats = await self.get_or_create_scenario_user_stats(scenario_user_id)
+        old_level = stats.scenario_user_level
 
         # Get all active achievements
         achievements_result = await self.db.execute(
@@ -216,8 +216,8 @@ class GamificationService:
 
         # Get already unlocked achievements
         unlocked_result = await self.db.execute(
-            select(PlayerAchievement.achievement_id)
-            .where(PlayerAchievement.player_id == player_id)
+            select(ScenarioUserAchievement.achievement_id)
+            .where(ScenarioUserAchievement.scenario_user_id == scenario_user_id)
         )
         unlocked_ids = {row[0] for row in unlocked_result.all()}
 
@@ -229,10 +229,10 @@ class GamificationService:
             if achievement.id in unlocked_ids:
                 continue  # Already unlocked
 
-            if await self._check_criteria(player_id, scenario_id, stats, achievement.criteria):
+            if await self._check_criteria(scenario_user_id, scenario_id, stats, achievement.criteria):
                 # Unlock achievement
-                player_achievement = PlayerAchievement(
-                    player_id=player_id,
+                player_achievement = ScenarioUserAchievement(
+                    scenario_user_id=scenario_user_id,
                     achievement_id=achievement.id,
                     scenario_id=scenario_id
                 )
@@ -244,7 +244,7 @@ class GamificationService:
             await self.db.commit()
 
         # Check for level up
-        new_level = stats.player_level
+        new_level = stats.scenario_user_level
         level_up = new_level > old_level
 
         return AchievementCheckResponse(
@@ -257,9 +257,9 @@ class GamificationService:
 
     async def _check_criteria(
         self,
-        player_id: int,
+        scenario_user_id: int,
         scenario_id: Optional[int],
-        stats: PlayerStats,
+        stats: ScenarioUserStats,
         criteria: Dict[str, Any]
     ) -> bool:
         """Check if achievement criteria are met."""
@@ -276,10 +276,10 @@ class GamificationService:
         # Win with cost under threshold
         if 'win_with_cost_under' in criteria and scenario_id:
             game_result = await self.db.execute(
-                select(func.sum(PlayerRound.round_cost))
+                select(func.sum(ScenarioUserPeriod.round_cost))
                 .where(and_(
-                    PlayerRound.scenario_id == scenario_id,
-                    PlayerRound.player_id == player_id
+                    ScenarioUserPeriod.scenario_id == scenario_id,
+                    ScenarioUserPeriod.scenario_user_id == scenario_user_id
                 ))
             )
             total_cost = game_result.scalar() or 0
@@ -289,12 +289,12 @@ class GamificationService:
         # Perfect service rounds
         if 'perfect_service_rounds' in criteria and scenario_id:
             rounds_result = await self.db.execute(
-                select(PlayerRound.service_level)
+                select(ScenarioUserPeriod.service_level)
                 .where(and_(
-                    PlayerRound.scenario_id == scenario_id,
-                    PlayerRound.player_id == player_id
+                    ScenarioUserPeriod.scenario_id == scenario_id,
+                    ScenarioUserPeriod.scenario_user_id == scenario_user_id
                 ))
-                .order_by(PlayerRound.round_id)
+                .order_by(ScenarioUserPeriod.round_id)
             )
             service_levels = [row[0] for row in rounds_result.all()]
 
@@ -313,10 +313,10 @@ class GamificationService:
         # Win with average inventory under
         if 'win_with_avg_inventory_under' in criteria and scenario_id:
             avg_result = await self.db.execute(
-                select(func.avg(PlayerRound.inventory))
+                select(func.avg(ScenarioUserPeriod.inventory))
                 .where(and_(
-                    PlayerRound.scenario_id == scenario_id,
-                    PlayerRound.player_id == player_id
+                    ScenarioUserPeriod.scenario_id == scenario_id,
+                    ScenarioUserPeriod.scenario_user_id == scenario_user_id
                 ))
             )
             avg_inventory = avg_result.scalar() or 0
@@ -326,10 +326,10 @@ class GamificationService:
         # Zero backlog
         if 'zero_backlog' in criteria and scenario_id:
             backlog_result = await self.db.execute(
-                select(func.max(PlayerRound.backlog))
+                select(func.max(ScenarioUserPeriod.backlog))
                 .where(and_(
-                    PlayerRound.scenario_id == scenario_id,
-                    PlayerRound.player_id == player_id
+                    ScenarioUserPeriod.scenario_id == scenario_id,
+                    ScenarioUserPeriod.scenario_user_id == scenario_user_id
                 ))
             )
             max_backlog = backlog_result.scalar() or 0
@@ -341,9 +341,9 @@ class GamificationService:
             if stats.consecutive_wins < criteria['consecutive_wins']:
                 return False
 
-        # Player level
-        if 'player_level' in criteria:
-            if stats.player_level < criteria['player_level']:
+        # ScenarioUser level
+        if 'scenario_user_level' in criteria:
+            if stats.scenario_user_level < criteria['scenario_user_level']:
                 return False
 
         # Win with bullwhip ratio under
@@ -362,7 +362,7 @@ class GamificationService:
         self,
         leaderboard_id: int,
         limit: int = 50,
-        player_id: Optional[int] = None
+        scenario_user_id: Optional[int] = None
     ) -> Optional[LeaderboardResponse]:
         """Get leaderboard with entries."""
         # Get leaderboard
@@ -374,24 +374,24 @@ class GamificationService:
         if not leaderboard:
             return None
 
-        # Get entries with player details
+        # Get entries with scenario_user details
         entries_result = await self.db.execute(
             select(
                 LeaderboardEntry,
-                Player.email.label('player_name'),
-                Player.role
+                ScenarioUser.email.label('scenario_user_name'),
+                ScenarioUser.role
             )
-            .join(Player, LeaderboardEntry.player_id == Player.id)
+            .join(ScenarioUser, LeaderboardEntry.scenario_user_id == ScenarioUser.id)
             .where(LeaderboardEntry.leaderboard_id == leaderboard_id)
             .order_by(LeaderboardEntry.rank)
             .limit(limit)
         )
 
         entries = []
-        for entry, player_name, player_role in entries_result.all():
+        for entry, scenario_user_name, player_role in entries_result.all():
             entries.append(LeaderboardEntryWithPlayer(
                 **entry.__dict__,
-                player_name=player_name,
+                scenario_user_name=scenario_user_name,
                 player_role=player_role
             ))
 
@@ -402,15 +402,15 @@ class GamificationService:
         )
         total_entries = count_result.scalar()
 
-        # Get requesting player's rank if provided
+        # Get requesting scenario_user's rank if provided
         player_rank = None
         player_entry = None
-        if player_id:
+        if scenario_user_id:
             rank_result = await self.db.execute(
                 select(LeaderboardEntry)
                 .where(and_(
                     LeaderboardEntry.leaderboard_id == leaderboard_id,
-                    LeaderboardEntry.player_id == player_id
+                    LeaderboardEntry.scenario_user_id == scenario_user_id
                 ))
             )
             player_entry_obj = rank_result.scalar_one_or_none()
@@ -436,9 +436,9 @@ class GamificationService:
         if not leaderboard:
             return
 
-        # Get all player stats
+        # Get all scenario_user stats
         stats_result = await self.db.execute(
-            select(PlayerStats)
+            select(ScenarioUserStats)
         )
         all_stats = stats_result.scalars().all()
 
@@ -458,7 +458,7 @@ class GamificationService:
                 score = float(stats.avg_service_level or 0)
 
             if score is not None:
-                player_scores.append((stats.player_id, score))
+                player_scores.append((stats.scenario_user_id, score))
 
         # Sort and assign ranks
         ascending = metric == 'avg_cost'  # Lower is better for costs
@@ -470,10 +470,10 @@ class GamificationService:
         )
 
         # Insert new entries
-        for rank, (player_id, score) in enumerate(player_scores, start=1):
+        for rank, (scenario_user_id, score) in enumerate(player_scores, start=1):
             entry = LeaderboardEntry(
                 leaderboard_id=leaderboard_id,
-                player_id=player_id,
+                scenario_user_id=scenario_user_id,
                 rank=rank,
                 score=score
             )
@@ -496,14 +496,14 @@ class GamificationService:
 
     async def get_unread_notifications(
         self,
-        player_id: int,
+        scenario_user_id: int,
         limit: int = 10
     ) -> List[AchievementNotification]:
-        """Get unread notifications for a player."""
+        """Get unread notifications for a scenario_user."""
         result = await self.db.execute(
             select(AchievementNotification)
             .where(and_(
-                AchievementNotification.player_id == player_id,
+                AchievementNotification.scenario_user_id == scenario_user_id,
                 AchievementNotification.is_read == False
             ))
             .order_by(AchievementNotification.created_at.desc())

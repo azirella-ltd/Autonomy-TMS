@@ -16,7 +16,7 @@ import simulationApi from "../../services/api";
  *
  * Displays AI-powered order suggestions with reasoning, confidence, and what-if analysis.
  */
-const AISuggestion = ({ scenarioId, playerRole, onAcceptSuggestion }) => {
+const AISuggestion = ({ scenarioId, scenarioUserRole, onAcceptSuggestion }) => {
   const [suggestion, setSuggestion] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showWhatIf, setShowWhatIf] = useState(false);
@@ -31,7 +31,7 @@ const AISuggestion = ({ scenarioId, playerRole, onAcceptSuggestion }) => {
       setIsLoading(true);
       setSuggestion(null);
 
-      const response = await simulationApi.requestAISuggestion(scenarioId, playerRole.toLowerCase(), {
+      const response = await simulationApi.requestAISuggestion(scenarioId, scenarioUserRole.toLowerCase(), {
         priority,
         notes: "User requested suggestion from game interface",
       });
@@ -403,14 +403,14 @@ const AISuggestion = ({ scenarioId, playerRole, onAcceptSuggestion }) => {
               <div
                 key={role}
                 className={`p-3 rounded-lg border-2 ${
-                  role === playerRole
+                  role === scenarioUserRole
                     ? "bg-indigo-50 border-indigo-300"
                     : "bg-gray-50 border-gray-200"
                 }`}
               >
                 <div className="text-xs font-medium text-gray-600 mb-1">
                   {role}
-                  {role === playerRole && (
+                  {role === scenarioUserRole && (
                     <span className="ml-1 text-indigo-600">(You)</span>
                   )}
                 </div>
@@ -418,7 +418,7 @@ const AISuggestion = ({ scenarioId, playerRole, onAcceptSuggestion }) => {
                   {rec.order}
                 </div>
                 <div className="text-xs text-gray-600">{rec.reasoning}</div>
-                {role === playerRole && (
+                {role === scenarioUserRole && (
                   <button
                     onClick={() => onAcceptSuggestion(rec.order)}
                     className="mt-2 w-full px-2 py-1 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-700"

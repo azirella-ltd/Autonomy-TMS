@@ -14,13 +14,13 @@ import simulationApi from "../../services/api";
  * Phase 7 Sprint 4 - Feature 2: Pattern Analysis
  *
  * Displays AI suggestion analytics including:
- * - Player behavior patterns
+ * - ScenarioUser behavior patterns
  * - AI effectiveness metrics
  * - Suggestion history
  * - Acceptance trends
  * - Generated insights
  */
-const AIAnalytics = ({ scenarioId, playerRole }) => {
+const AIAnalytics = ({ scenarioId, scenarioUserRole }) => {
   const [patterns, setPatterns] = useState(null);
   const [effectiveness, setEffectiveness] = useState(null);
   const [history, setHistory] = useState([]);
@@ -172,7 +172,7 @@ const AIAnalytics = ({ scenarioId, playerRole }) => {
 
               <div className="text-center p-3 bg-gray-50 rounded-lg">
                 <div className="text-xs font-medium text-gray-600 mb-1">
-                  Player Modified
+                  ScenarioUser Modified
                 </div>
                 <div className="text-2xl font-bold text-gray-900">
                   {player_modified.avg_performance_score?.toFixed(1) || "N/A"}

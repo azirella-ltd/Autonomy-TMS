@@ -741,23 +741,23 @@ def _build_multi_node_context(
     }
 
     # Extract node data
-    players = game_state.get("players", [])
+    scenario_users = game_state.get("scenario_users", [])
 
-    for player in players:
-        role = player.get("role", "UNKNOWN")
+    for scenario_user in scenario_users:
+        role = scenario_user.get("role", "UNKNOWN")
 
         # Filter if focus_nodes specified
         if focus_nodes and role not in focus_nodes:
             continue
 
         context["nodes"][role] = {
-            "inventory": player.get("inventory_after", 0),
-            "backlog": player.get("backlog_after", 0),
-            "incoming": player.get("incoming_shipment", 0),
-            "outgoing": player.get("outgoing_shipment", 0),
-            "last_order": player.get("order_placed", 0),
-            "total_cost": player.get("total_cost", 0),
-            "service_level": player.get("service_level", 0.0)
+            "inventory": scenario_user.get("inventory_after", 0),
+            "backlog": scenario_user.get("backlog_after", 0),
+            "incoming": scenario_user.get("incoming_shipment", 0),
+            "outgoing": scenario_user.get("outgoing_shipment", 0),
+            "last_order": scenario_user.get("order_placed", 0),
+            "total_cost": scenario_user.get("total_cost", 0),
+            "service_level": scenario_user.get("service_level", 0.0)
         }
 
     return context
@@ -795,23 +795,23 @@ def _fallback_global_optimization(
     focus_nodes: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """Heuristic-based global optimization fallback."""
-    players = game_state.get("players", [])
+    scenario_users = game_state.get("scenario_users", [])
 
     # Simple heuristic: stabilize orders across supply chain
     recommendations = {}
 
     # Calculate average order across nodes
-    orders = [p.get("order_placed", 0) for p in players if p.get("order_placed", 0) > 0]
+    orders = [p.get("order_placed", 0) for p in scenario_users if p.get("order_placed", 0) > 0]
     avg_order = sum(orders) / len(orders) if orders else 50
 
-    for player in players:
-        role = player.get("role", "UNKNOWN")
+    for scenario_user in scenario_users:
+        role = scenario_user.get("role", "UNKNOWN")
 
         if focus_nodes and role not in focus_nodes:
             continue
 
-        inventory = player.get("inventory_after", 0)
-        backlog = player.get("backlog_after", 0)
+        inventory = scenario_user.get("inventory_after", 0)
+        backlog = scenario_user.get("backlog_after", 0)
 
         # Simple ordering logic
         if backlog > 20:

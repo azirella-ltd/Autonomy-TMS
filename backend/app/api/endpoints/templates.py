@@ -230,8 +230,8 @@ def quick_start_wizard(
     # Build response with next steps
     next_steps = [
         "Review the recommended template configuration",
-        f"Customize game settings for {request.num_players} players",
-        "Invite players or assign AI agents",
+        f"Customize game settings for {request.num_players} scenario_users",
+        "Invite scenario_users or assign AI agents",
         "Start your simulation"
     ]
 

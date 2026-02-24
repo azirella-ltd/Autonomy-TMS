@@ -185,7 +185,7 @@ async def get_global_optimization(
 
         current_round = row.current_round
 
-        # Get all participants' state
+        # Get all scenario_users' state
         query = text("""
             SELECT
                 p.id,
@@ -197,8 +197,8 @@ async def get_global_optimization(
                 pr.order_placed,
                 pr.total_cost,
                 pr.service_level
-            FROM participants p
-            JOIN participant_periods pr ON p.id = pr.participant_id
+            FROM scenario_users p
+            JOIN scenario_user_periods pr ON p.id = pr.scenario_user_id
             WHERE p.scenario_id = :scenario_id
             AND pr.round_number = :round_number
         """)
@@ -211,13 +211,13 @@ async def get_global_optimization(
         if not rows:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="No participant data found for current round"
+                detail="No scenario_user data found for current round"
             )
 
         # Build scenario state
-        participants = []
+        scenario_users = []
         for row in rows:
-            participants.append({
+            scenario_users.append({
                 "role": row.role,
                 "inventory_after": row.inventory_after,
                 "backlog_after": row.backlog_after,
@@ -230,7 +230,7 @@ async def get_global_optimization(
 
         scenario_state = {
             "current_round": current_round,
-            "participants": participants
+            "scenario_users": scenario_users
         }
 
         # Generate global optimization

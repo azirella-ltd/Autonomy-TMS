@@ -34,6 +34,7 @@ from app.models.authorization_models import (
     AuthorizationPriority,
     ThreadStatus,
 )
+from app.services.authorization_protocol import AgentRole, ActionCategory
 
 logger = logging.getLogger(__name__)
 
@@ -530,3 +531,135 @@ class AuthorizationService:
         if self.db is not None:
             return self.db.query(AuthorizationThread).all()
         return list(self._threads.values())
+
+    # ------------------------------------------------------------------
+    # Agent Authorization with Authority Boundaries
+    # ------------------------------------------------------------------
+
+    def create_agent_authorization_request(
+        self,
+        agent_role: str,
+        action_type: str,
+        site_key: str,
+        proposed_action: Optional[Dict[str, Any]] = None,
+        net_benefit: float = 0.0,
+        benefit_threshold: float = 0.0,
+        justification: Optional[str] = None,
+        evidence: Optional[Dict[str, Any]] = None,
+        priority: str = "MEDIUM",
+    ) -> Dict[str, Any]:
+        """Create an authorization request using authority boundaries.
+
+        Looks up the agent's authority boundary, classifies the action,
+        and either auto-authorizes (UNILATERAL), routes to the correct
+        target (REQUIRES_AUTHORIZATION), or rejects (FORBIDDEN).
+
+        Returns:
+            Dict with 'category', 'decision', and optionally 'thread'.
+        """
+        from app.services.powell.authority_boundaries import (
+            check_action_category,
+            get_required_target,
+        )
+
+        try:
+            role = AgentRole(agent_role)
+        except ValueError:
+            return {"category": "unknown_role", "decision": "DENY", "reason": f"Unknown role: {agent_role}"}
+
+        category = check_action_category(role, action_type)
+
+        if category == ActionCategory.UNILATERAL:
+            logger.info(f"UNILATERAL: {agent_role}/{action_type} at {site_key}")
+            return {
+                "category": "unilateral",
+                "decision": "AUTHORIZE",
+                "reason": "Action is within agent's unilateral authority",
+            }
+
+        if category == ActionCategory.FORBIDDEN:
+            logger.warning(f"FORBIDDEN: {agent_role}/{action_type} at {site_key}")
+            return {
+                "category": "forbidden",
+                "decision": "DENY",
+                "reason": "Action is forbidden for this agent role",
+            }
+
+        # REQUIRES_AUTHORIZATION — route to target agent
+        target = get_required_target(role, action_type)
+        target_agent = target.target_agent.value if target else "unknown"
+        sla_minutes = target.sla_minutes if target else 240
+
+        # Auto-approve if no contention and flag is set
+        if target and target.auto_approve_if_no_contention and net_benefit > benefit_threshold:
+            logger.info(
+                f"AUTO-APPROVE (no contention): {agent_role}/{action_type} → {target_agent}"
+            )
+            return {
+                "category": "requires_authorization",
+                "decision": "AUTHORIZE",
+                "reason": f"Auto-approved (no contention, net_benefit={net_benefit:.2f})",
+                "target_agent": target_agent,
+            }
+
+        # Create thread via submit_request
+        thread = self.submit_request(
+            requesting_agent=agent_role,
+            target_agent=target_agent,
+            proposed_action=proposed_action or {"action_type": action_type},
+            net_benefit=net_benefit,
+            benefit_threshold=benefit_threshold,
+            justification=justification,
+            evidence=evidence,
+            priority=priority,
+            site_key=site_key,
+        )
+
+        decision = None
+        if thread.final_decision:
+            decision = thread.final_decision.value
+
+        return {
+            "category": "requires_authorization",
+            "decision": decision,
+            "thread_id": thread.thread_id,
+            "target_agent": target_agent,
+            "sla_minutes": sla_minutes,
+            "status": thread.status.value if thread.status else None,
+        }
+
+    def escalate_to_human(
+        self,
+        thread_id: str,
+        reason: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Escalate a thread for human review and format for OpenClaw.
+
+        Returns:
+            Formatted escalation dict from EscalationFormatter.
+        """
+        thread = self._get_thread(thread_id)
+        if thread is None:
+            raise ValueError(f"Thread {thread_id} not found")
+
+        # Mark as escalated
+        self.escalate(thread_id, reason=reason)
+
+        # Format for human delivery
+        try:
+            from app.services.escalation_formatter import EscalationFormatter
+            from app.services.hive_what_if_engine import HiveWhatIfEngine
+
+            engine = HiveWhatIfEngine(
+                site_key=getattr(thread, "site_key", "default") or "default"
+            )
+            formatter = EscalationFormatter(what_if_engine=engine)
+            return formatter.format_escalation(thread)
+        except Exception as e:
+            logger.warning(f"Escalation formatting failed: {e}")
+            return {
+                "type": "authorization_escalation",
+                "thread_id": thread_id,
+                "summary": f"Authorization requires human review: {reason or 'No details'}",
+                "escalation_reason": reason or "Escalated for human review",
+            }

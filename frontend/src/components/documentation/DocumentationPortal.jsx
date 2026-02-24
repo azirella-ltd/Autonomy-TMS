@@ -107,7 +107,7 @@ The bullwhip effect is a phenomenon where small fluctuations in demand at the re
 
 1. Create a new game or use a template
 2. Configure your supply chain network
-3. Assign players or AI agents
+3. Assign scenarioUsers or AI agents
 4. Run simulations and analyze results
     `,
     tags: ['basics', 'overview'],
@@ -141,7 +141,7 @@ Select an industry vertical:
 
 ## Step 4: Configure & Launch
 
-- Set number of players (1-10)
+- Set number of scenarioUsers (1-10)
 - Enable optional features (Monte Carlo, AI agents)
 - Review template and launch
 

@@ -32,7 +32,7 @@ class ConversationMessageResponse(BaseModel):
     """Response containing message data."""
     id: int
     scenario_id: int
-    player_id: int
+    scenario_user_id: int
     parent_message_id: Optional[int]
     role: str
     content: str
@@ -55,7 +55,7 @@ class ConversationHistoryResponse(BaseModel):
     messages: List[ConversationMessageResponse]
     total_count: int
     scenario_id: int
-    player_id: int
+    scenario_user_id: int
 
 
 class ConversationSummaryResponse(BaseModel):
@@ -104,13 +104,13 @@ async def send_conversation_message(
         conversation_service = get_conversation_service(db)
 
         # TODO: Verify user has access to this scenario
-        # For now, we'll use a simple participant lookup
+        # For now, we'll use a simple scenario_user lookup
         # In production, add proper authorization checks
 
         # Send message and get AI response
         result = await conversation_service.send_message(
             scenario_id=scenario_id,
-            player_id=current_user.id,  # TODO: Map user to player properly
+            scenario_user_id=current_user.id,  # TODO: Map user to scenario_user properly
             message=request.message,
             parent_message_id=request.parent_message_id,
         )
@@ -142,7 +142,7 @@ async def get_conversation_history(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Get conversation history for the current participant in a scenario.
+    Get conversation history for the current scenario_user in a scenario.
 
     Returns the most recent messages in reverse chronological order.
     Optionally includes full context snapshots for each message.
@@ -152,7 +152,7 @@ async def get_conversation_history(
     - `include_context`: Whether to include full scenario state context for each message
 
     **Use Cases:**
-    - Display chat history when participant rejoins scenario
+    - Display chat history when scenario_user rejoins scenario
     - Analyze conversation patterns
     - Export conversation for review
     """
@@ -165,7 +165,7 @@ async def get_conversation_history(
         # Get conversation history
         messages = await conversation_service.get_conversation_history(
             scenario_id=scenario_id,
-            player_id=current_user.id,  # TODO: Map user to player properly
+            scenario_user_id=current_user.id,  # TODO: Map user to scenario_user properly
             limit=limit,
             include_context=include_context,
         )
@@ -174,7 +174,7 @@ async def get_conversation_history(
             messages=[ConversationMessageResponse(**msg) for msg in messages],
             total_count=len(messages),
             scenario_id=scenario_id,
-            player_id=current_user.id,
+            scenario_user_id=current_user.id,
         )
 
     except Exception as e:
@@ -191,7 +191,7 @@ async def clear_conversation(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Clear conversation history for the current player.
+    Clear conversation history for the current scenario_user.
 
     This removes all conversation messages but preserves system metadata.
     Useful for:
@@ -206,7 +206,7 @@ async def clear_conversation(
 
         success = await conversation_service.clear_conversation(
             scenario_id=scenario_id,
-            player_id=current_user.id,  # TODO: Map user to player properly
+            scenario_user_id=current_user.id,  # TODO: Map user to scenario_user properly
         )
 
         if not success:
@@ -248,7 +248,7 @@ async def get_conversation_summary(
 
         summary = await conversation_service.get_conversation_summary(
             scenario_id=scenario_id,
-            player_id=current_user.id,  # TODO: Map user to player properly
+            scenario_user_id=current_user.id,  # TODO: Map user to scenario_user properly
         )
 
         return ConversationSummaryResponse(**summary)

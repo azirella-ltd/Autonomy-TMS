@@ -1,15 +1,15 @@
 /**
  * Decision Phase Indicator Component
  *
- * Displays current round phase and player completion status for DAG sequential execution.
+ * Displays current round phase and scenarioUser completion status for DAG sequential execution.
  * Shows visual progress through: Waiting → Fulfillment → Replenishment → Completed
  *
  * Migrated to Autonomy UI Kit (shadcn/ui + Tailwind CSS + lucide-react)
  *
  * Props:
  * - phase: Current phase ('waiting', 'fulfillment', 'replenishment', 'completed')
- * - playersCompleted: Number of players who have submitted their decision
- * - totalPlayers: Total number of players in the game
+ * - playersCompleted: Number of scenarioUsers who have submitted their decision
+ * - totalPlayers: Total number of scenarioUsers in the game
  * - currentRound: Current round number
  * - phaseStartedAt: Timestamp when current phase started (optional)
  */
@@ -54,7 +54,7 @@ const DecisionPhaseIndicator = ({
       bgClass: 'bg-primary/10',
       textClass: 'text-primary',
       borderClass: 'border-l-primary',
-      description: 'Players fulfill downstream orders (ATP-based)',
+      description: 'ScenarioUsers fulfill downstream orders (ATP-based)',
     },
     {
       key: 'replenishment',
@@ -65,7 +65,7 @@ const DecisionPhaseIndicator = ({
       bgClass: 'bg-blue-100 dark:bg-blue-950/30',
       textClass: 'text-blue-600 dark:text-blue-400',
       borderClass: 'border-l-blue-500',
-      description: 'Players order from upstream suppliers',
+      description: 'ScenarioUsers order from upstream suppliers',
     },
     {
       key: 'completed',
@@ -203,13 +203,13 @@ const DecisionPhaseIndicator = ({
             })}
           </div>
 
-          {/* Player completion status (only show during active phases) */}
+          {/* ScenarioUser completion status (only show during active phases) */}
           {(phase === 'fulfillment' || phase === 'replenishment') && (
             <div className="space-y-2">
               <div className="flex items-center gap-3">
                 <PeopleIcon className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">
-                  Players Completed: <strong className="text-foreground">{playersCompleted}</strong> / {totalPlayers}
+                  ScenarioUsers Completed: <strong className="text-foreground">{playersCompleted}</strong> / {totalPlayers}
                 </span>
                 <span className="text-xs text-muted-foreground">
                   ({completionPercentage.toFixed(0)}%)
@@ -229,7 +229,7 @@ const DecisionPhaseIndicator = ({
           {phase === 'completed' && (
             <div className="p-3 bg-emerald-100 dark:bg-emerald-950/30 rounded-lg text-center">
               <p className="text-sm text-emerald-700 dark:text-emerald-300">
-                All players have submitted their decisions. Processing round results...
+                All scenarioUsers have submitted their decisions. Processing round results...
               </p>
             </div>
           )}

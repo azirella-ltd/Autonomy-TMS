@@ -15,10 +15,10 @@ class WebSocketService {
    * Connect to the WebSocket server
    * @param {string} gameId - The ID of the game to connect to
    * @param {string} accessToken - The user's access token for authentication
-   * @param {string} playerId - The ID of the player connecting
+   * @param {string} scenarioUserId - The ID of the scenarioUser connecting
    */
-  connect(scenarioId, accessToken, playerId = '1') {
-    console.log('[WebSocket] Initializing connection...', { scenarioId, playerId });
+  connect(scenarioId, accessToken, scenarioUserId = '1') {
+    console.log('[WebSocket] Initializing connection...', { scenarioId, scenarioUserId });
 
     // Clear any existing reconnection timeout
     if (this.reconnectTimeout) {
@@ -37,19 +37,19 @@ class WebSocketService {
       throw new Error('Access token is required to connect to WebSocket');
     }
 
-    if (!playerId) {
-      console.warn('No player ID provided, using default (1)');
-      playerId = '1';
+    if (!scenarioUserId) {
+      console.warn('No scenarioUser ID provided, using default (1)');
+      scenarioUserId = '1';
     }
 
     // Store connection parameters for reconnection
-    this.connectionParams = { scenarioId, accessToken, playerId };
+    this.connectionParams = { scenarioId, accessToken, scenarioUserId };
     
     try {
       // Use relative URL for WebSocket connection
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsHost = window.location.host;
-      const wsPath = `/ws/scenarios/${scenarioId}/players/${playerId}`;
+      const wsPath = `/ws/scenarios/${scenarioId}/scenarioUsers/${scenarioUserId}`;
       
       // Encode the token to handle special characters
       const encodedToken = encodeURIComponent(accessToken);
@@ -151,7 +151,7 @@ class WebSocketService {
           this.connect(
             this.connectionParams.gameId,
             this.connectionParams.accessToken,
-            this.connectionParams.playerId
+            this.connectionParams.scenarioUserId
           );
         }
       }, delay);

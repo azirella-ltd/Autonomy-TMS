@@ -66,7 +66,7 @@ const normalizeClassicSummary = (pattern = {}) => {
   return ` (Initial: ${initial}, Change Week: ${changeWeek}, Final: ${final})`;
 };
 
-// Terminology (Feb 2026): Game -> Scenario, Player -> User (in UI)
+// Terminology (Feb 2026): Game -> Scenario, ScenarioUser -> User (in UI)
 const ScenariosList = () => {
   const [scenarios, setScenarios] = useState([]);
   const [loading, setLoading] = useState(true);

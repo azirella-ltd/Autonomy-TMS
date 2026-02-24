@@ -11,9 +11,9 @@ import json
 
 from app.db.session import get_db
 from app.models.scenario import Scenario
-from app.models.participant import Participant
-from app.models.supply_chain import ScenarioRound, ParticipantRound
-from app.schemas.scenario import ParticipantPeriod as ParticipantPeriodSchema
+from app.models.scenario_user import ScenarioUser
+from app.models.supply_chain import ScenarioRound, ScenarioUserPeriod
+from app.schemas.scenario import ScenarioUserPeriod as ScenarioUserPeriodSchema
 
 router = APIRouter()
 
@@ -189,7 +189,7 @@ class EvaluateAgentRequest(BaseModel):
 class ExplainPredictionRequest(BaseModel):
     """Request for model prediction explanation"""
     scenario_id: int
-    player_id: int
+    scenario_user_id: int
     round_number: int
     method: str = "lime"  # 'lime', 'attention', 'counterfactual'
     num_features: Optional[int] = None
@@ -273,8 +273,8 @@ async def get_game_metrics(
     Includes costs, inventory metrics, and supply chain performance indicators.
     """
     from app.schemas.metrics import (
-        ScenarioMetricsResponse, PlayerPerformance, CostMetrics,
-        InventoryMetrics, OrderMetrics, ParticipantRoundMetrics, MarginMetrics
+        ScenarioMetricsResponse, ScenarioUserPerformance, CostMetrics,
+        InventoryMetrics, OrderMetrics, ScenarioUserPeriodMetrics, MarginMetrics
     )
     
     # Get the scenario
@@ -294,19 +294,19 @@ async def get_game_metrics(
     if not rounds:
         raise HTTPException(status_code=400, detail="No rounds found for this scenario")
 
-    # Get all participants in this scenario
-    players_result = await db.execute(select(Participant).where(Participant.scenario_id == scenario_id))
-    participants = players_result.scalars().all()
-    if not participants:
-        raise HTTPException(status_code=400, detail="No participants found for this scenario")
+    # Get all scenario_users in this scenario
+    players_result = await db.execute(select(ScenarioUser).where(ScenarioUser.scenario_id == scenario_id))
+    scenario_users = players_result.scalars().all()
+    if not scenario_users:
+        raise HTTPException(status_code=400, detail="No scenario_users found for this scenario")
     
-    # Get all participant rounds
-    participant_rounds_result = await db.execute(
-        select(ParticipantRound)
+    # Get all scenario_user rounds
+    scenario_user_periods_result = await db.execute(
+        select(ScenarioUserPeriod)
         .join(ScenarioRound)
         .where(ScenarioRound.scenario_id == scenario_id)
     )
-    participant_rounds = participant_rounds_result.scalars().all()
+    scenario_user_periods = scenario_user_periods_result.scalars().all()
     
     if not rounds:
         raise HTTPException(status_code=400, detail="No rounds completed for this scenario")
@@ -315,11 +315,11 @@ async def get_game_metrics(
     total_supply_chain_cost = 0
     total_demand = 0
     
-    for participant in participants:
-        participant_rounds_data = [pr for pr in participant_rounds if pr.participant_id == participant.id]
+    for scenario_user in scenario_users:
+        scenario_user_periods_data = [pr for pr in scenario_user_periods if pr.scenario_user_id == scenario_user.id]
         
-        # Get pricing for this participant's role from scenario configuration
-        role = participant.role.lower()
+        # Get pricing for this scenario_user's role from scenario configuration
+        role = scenario_user.role.lower()
         pricing = scenario.pricing_config.dict()
         role_pricing = pricing.get(role, {})
         
@@ -339,27 +339,27 @@ async def get_game_metrics(
             )
         
         # Calculate cost metrics
-        total_cost = sum(pr.total_cost for pr in participant_rounds_data if pr.total_cost)
-        holding_cost = sum(pr.holding_cost for pr in participant_rounds_data if pr.holding_cost)
-        backorder_cost = sum(pr.backorder_cost for pr in participant_rounds_data if pr.backorder_cost)
+        total_cost = sum(pr.total_cost for pr in scenario_user_periods_data if pr.total_cost)
+        holding_cost = sum(pr.holding_cost for pr in scenario_user_periods_data if pr.holding_cost)
+        backorder_cost = sum(pr.backorder_cost for pr in scenario_user_periods_data if pr.backorder_cost)
         operational_cost = holding_cost + backorder_cost
         
         # Calculate inventory metrics
-        avg_inventory = sum(pr.inventory_after for pr in participant_rounds_data) / len(rounds) if rounds else 0
-        stockout_weeks = sum(1 for pr in participant_rounds_data if pr.backorder_after > 0)
+        avg_inventory = sum(pr.inventory_after for pr in scenario_user_periods_data) / len(rounds) if rounds else 0
+        stockout_weeks = sum(1 for pr in scenario_user_periods_data if pr.backorder_after > 0)
         
         # Calculate order metrics
-        orders = [pr.order_placed for pr in participant_rounds_data if pr.order_placed is not None]
+        orders = [pr.order_placed for pr in scenario_user_periods_data if pr.order_placed is not None]
         avg_order = sum(orders) / len(orders) if orders else 0
         
         # Calculate demand (for retailer) or orders received (for others)
-        demands = [pr.order_received if participant.role != "retailer" else pr.order_placed 
-                  for pr in participant_rounds_data if pr.order_received is not None]
+        demands = [pr.order_received if scenario_user.role != "retailer" else pr.order_placed 
+                  for pr in scenario_user_periods_data if pr.order_received is not None]
         avg_demand = sum(demands) / len(demands) if demands else 0
         total_demand += avg_demand * len(demands)
         
         # Calculate service level (percentage of demand met from stock)
-        service_level = (1 - (stockout_weeks / len(participant_rounds_data))) * 100 if participant_rounds_data else 0
+        service_level = (1 - (stockout_weeks / len(scenario_user_periods_data))) * 100 if scenario_user_periods_data else 0
         
         # Calculate inventory turns (annualized)
         inventory_turns = (total_cost / avg_inventory) * 52 if avg_inventory > 0 else 0
@@ -373,7 +373,7 @@ async def get_game_metrics(
         
         # Calculate bullwhip effect (if not retailer)
         bullwhip_effect = None
-        if participant.role != "retailer" and demands and orders:
+        if scenario_user.role != "retailer" and demands and orders:
             demand_variance = (sum((d - avg_demand) ** 2 for d in demands) / len(demands)) ** 2
             order_variance = (sum((o - avg_order) ** 2 for o in orders) / len(orders)) ** 2
             if demand_variance > 0:
@@ -387,8 +387,8 @@ async def get_game_metrics(
         
         # Prepare round metrics with margin calculations
         round_metrics = []
-        for pr in participant_rounds:
-            # Calculate units sold (orders received for this player)
+        for pr in scenario_user_periods:
+            # Calculate units sold (orders received for this scenario_user)
             units_sold = pr.order_received if pr.order_received is not None else 0
             
             # Calculate revenue and costs
@@ -407,7 +407,7 @@ async def get_game_metrics(
             total_margin_erosion += margin_erosion
             
             # Create round metrics with margin data
-            round_metric = ParticipantRoundMetrics(
+            round_metric = ScenarioUserPeriodMetrics(
                 round_number=pr.scenario_round.round_number,
                 inventory=pr.inventory_after,
                 backorders=pr.backorder_after,
@@ -427,13 +427,13 @@ async def get_game_metrics(
         total_supply_chain_cost += total_cost
         
         # Calculate average margin erosion
-        avg_margin_erosion = total_margin_erosion / len(participant_rounds) if participant_rounds else 0
+        avg_margin_erosion = total_margin_erosion / len(scenario_user_periods) if scenario_user_periods else 0
         
-        # Create player performance object
-        participant_perf = PlayerPerformance(
-            player_id=participant.id,
-            player_name=participant.name,
-            role=participant.role,
+        # Create scenario_user performance object
+        participant_perf = ScenarioUserPerformance(
+            scenario_user_id=scenario_user.id,
+            scenario_user_name=scenario_user.name,
+            role=scenario_user.role,
             total_cost=total_cost,
             total_revenue=total_revenue,
             total_gross_margin=total_gross_margin,
@@ -443,7 +443,7 @@ async def get_game_metrics(
                 total_cost=total_cost,
                 holding_cost=holding_cost,
                 backorder_cost=backorder_cost,
-                average_weekly_cost=total_cost / len(participant_rounds) if participant_rounds else 0,
+                average_weekly_cost=total_cost / len(scenario_user_periods) if scenario_user_periods else 0,
                 operational_cost=operational_cost
             ),
             margin_metrics=MarginMetrics(
@@ -470,17 +470,17 @@ async def get_game_metrics(
         participant_performances.append(participant_perf)
     
     # Calculate overall metrics
-    avg_weekly_demand = total_demand / (len(rounds) * len(participants)) if participants and rounds else 0
+    avg_weekly_demand = total_demand / (len(rounds) * len(scenario_users)) if scenario_users and rounds else 0
     
     # Calculate overall bullwhip effect (retailer variance vs manufacturer variance)
     retailer_orders = []
     manufacturer_orders = []
     
-    for player in participant_performances:
-        if participant.role == "retailer":
-            retailer_orders = [m.order_placed for m in player.round_metrics]
-        elif participant.role == "manufacturer":
-            manufacturer_orders = [m.order_placed for m in player.round_metrics]
+    for scenario_user in participant_performances:
+        if scenario_user.role == "retailer":
+            retailer_orders = [m.order_placed for m in scenario_user.round_metrics]
+        elif scenario_user.role == "manufacturer":
+            manufacturer_orders = [m.order_placed for m in scenario_user.round_metrics]
     
     overall_bullwhip = None
     if retailer_orders and manufacturer_orders and len(retailer_orders) == len(manufacturer_orders):
@@ -499,7 +499,7 @@ async def get_game_metrics(
         total_rounds=len(rounds),
         start_date=rounds[0].created_at if rounds else None,
         end_date=rounds[-1].completed_at if rounds and hasattr(rounds[-1], 'completed_at') else None,
-        players=participant_performances,
+        scenario_users=participant_performances,
         total_supply_chain_cost=total_supply_chain_cost,
         average_weekly_demand=avg_weekly_demand,
         bullwhip_effect=overall_bullwhip
@@ -896,29 +896,29 @@ async def explain_prediction(
     Returns human-readable explanations with feature contributions.
     """
     from app.services.explainability_service import ExplainabilityService
-    from app.models.supply_chain import ParticipantRound
+    from app.models.supply_chain import ScenarioUserPeriod
     from sqlalchemy import select
 
     explainer = ExplainabilityService()
 
     try:
-        # Get player round data
+        # Get scenario_user round data
         result = await db.execute(
-            select(ParticipantRound).where(
-                ParticipantRound.participant_id == req.player_id,
-                ParticipantRound.round_number == req.round_number
+            select(ScenarioUserPeriod).where(
+                ScenarioUserPeriod.scenario_user_id == req.scenario_user_id,
+                ScenarioUserPeriod.round_number == req.round_number
             )
         )
-        player_round = result.scalar_one_or_none()
+        scenario_user_period = result.scalar_one_or_none()
 
-        if not player_round:
+        if not scenario_user_period:
             raise HTTPException(
                 status_code=404,
-                detail=f"Player round not found: player_id={req.player_id}, round={req.round_number}"
+                detail=f"ScenarioUser round not found: scenario_user_id={req.scenario_user_id}, round={req.round_number}"
             )
 
-        # Extract features from player round
-        state = player_round.state if hasattr(player_round, 'state') else {}
+        # Extract features from scenario_user round
+        state = scenario_user_period.state if hasattr(scenario_user_period, 'state') else {}
 
         feature_names = [
             "inventory",
@@ -977,7 +977,7 @@ async def explain_prediction(
             # Save explanation
             output_dir = Path("explanations")
             output_dir.mkdir(parents=True, exist_ok=True)
-            output_path = output_dir / f"lime_scenario{req.scenario_id}_participant{req.player_id}_round{req.round_number}.json"
+            output_path = output_dir / f"lime_scenario{req.scenario_id}_participant{req.scenario_user_id}_round{req.round_number}.json"
             explainer.save_explanation(explanation, str(output_path))
 
             return {
@@ -1005,7 +1005,7 @@ async def explain_prediction(
             # Save explanation
             output_dir = Path("explanations")
             output_dir.mkdir(parents=True, exist_ok=True)
-            output_path = output_dir / f"counterfactual_scenario{req.scenario_id}_participant{req.player_id}_round{req.round_number}.json"
+            output_path = output_dir / f"counterfactual_scenario{req.scenario_id}_participant{req.scenario_user_id}_round{req.round_number}.json"
             explainer.save_explanation(counterfactual, str(output_path))
 
             return {

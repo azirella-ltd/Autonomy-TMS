@@ -20,7 +20,7 @@ from sqlalchemy.orm import selectinload
 
 from app.db.session import SessionLocal, async_session_factory
 from app.models.scenario import Scenario
-from app.models.participant import Participant
+from app.models.scenario_user import ScenarioUser
 from app.models.group import Group
 from app.models.supply_chain_config import SupplyChainConfig
 from app.services.mixed_scenario_service import MixedScenarioService
@@ -162,21 +162,21 @@ async def test_aws_sc_mode_async():
         print(f"  use_aws_sc_planning: {scenario.use_aws_sc_planning}")
         print()
 
-        # Create test players for each node
+        # Create test scenario_users for each node
         await db.refresh(config, ['nodes'])
-        print(f"Creating {len(config.nodes)} test players...")
+        print(f"Creating {len(config.nodes)} test scenario_users...")
 
         # Initialize node states in scenario config
         nodes_state = {}
         for node in config.nodes:
             if node.type not in ['market_supply', 'market_demand']:
-                player = Participant(
+                scenario_user = ScenarioUser(
                     scenario_id=scenario.id,
                     role=node.name,
                     is_ai=True,
                     ai_strategy="naive"
                 )
-                db.add(player)
+                db.add(scenario_user)
 
                 # Initialize node state
                 nodes_state[node.name] = {
@@ -186,7 +186,7 @@ async def test_aws_sc_mode_async():
                     "order_history": []
                 }
 
-                print(f"  ✓ Created player: {node.name}")
+                print(f"  ✓ Created scenario_user: {node.name}")
 
         # Update scenario config with node states
         scenario.config["nodes"] = nodes_state

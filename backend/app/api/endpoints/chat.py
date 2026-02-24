@@ -105,9 +105,9 @@ async def send_chat_message(
     Send a new chat message.
 
     **Request Body:**
-    - `sender_id`: Sender ID (e.g., "player:1" or "agent:wholesaler")
+    - `sender_id`: Sender ID (e.g., "scenario_user:1" or "agent:wholesaler")
     - `sender_name`: Display name
-    - `sender_type`: "player" or "agent"
+    - `sender_type`: "scenario_user" or "agent"
     - `recipient_id`: Optional recipient ID (omit for broadcast)
     - `content`: Message content (1-2000 characters)
     - `type`: Message type ("text", "suggestion", "question", "analysis")
@@ -117,7 +117,7 @@ async def send_chat_message(
     - Created message with ID and timestamp
 
     **WebSocket Broadcast:**
-    - Emits `chat:new_message` event to all scenario participants
+    - Emits `chat:new_message` event to all scenario scenario_users
     """
     try:
         message = await chat_service.create_message(
@@ -352,7 +352,7 @@ async def accept_agent_suggestion(
     - `suggestion_id`: ID of the suggestion to accept
 
     **Request Body:**
-    - `player_id`: ID of the player accepting the suggestion
+    - `scenario_user_id`: ID of the scenario_user accepting the suggestion
 
     **Returns:**
     - Updated suggestion with `accepted: true` and timestamp
@@ -364,7 +364,7 @@ async def accept_agent_suggestion(
         suggestion = await chat_service.accept_suggestion(
             scenario_id=scenario_id,
             suggestion_id=suggestion_id,
-            player_id=decision.player_id,
+            scenario_user_id=decision.scenario_user_id,
         )
 
         # Broadcast decision
@@ -408,7 +408,7 @@ async def decline_agent_suggestion(
     - `suggestion_id`: ID of the suggestion to decline
 
     **Request Body:**
-    - `player_id`: ID of the player declining the suggestion
+    - `scenario_user_id`: ID of the scenario_user declining the suggestion
 
     **Returns:**
     - Updated suggestion with `accepted: false` and timestamp
@@ -417,7 +417,7 @@ async def decline_agent_suggestion(
         suggestion = await chat_service.decline_suggestion(
             scenario_id=scenario_id,
             suggestion_id=suggestion_id,
-            player_id=decision.player_id,
+            scenario_user_id=decision.scenario_user_id,
         )
 
         # Broadcast decision
@@ -461,7 +461,7 @@ async def run_what_if_analysis(
     Run a what-if analysis.
 
     **Request Body:**
-    - `player_id`: Player requesting the analysis
+    - `scenario_user_id`: ScenarioUser requesting the analysis
     - `question`: Hypothetical question (e.g., "What if I order 50 units?")
     - `scenario`: Scenario parameters (order quantities, etc.)
 

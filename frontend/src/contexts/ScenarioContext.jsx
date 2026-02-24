@@ -7,7 +7,7 @@ import simulationApi from '../services/api';
 const ScenarioContext = createContext({
   // Scenario state
   scenario: null,
-  currentParticipant: null,
+  currentScenarioUser: null,
   isScenarioOwner: false,
   isScenarioActive: false,
   isLoading: true,
@@ -17,7 +17,7 @@ const ScenarioContext = createContext({
   startScenario: async () => {},
   endScenario: async () => {},
   leaveScenario: async () => {},
-  setParticipantReady: async () => {},
+  setScenarioUserReady: async () => {},
   sendChatMessage: async () => {},
 
   // UI state
@@ -44,20 +44,20 @@ export const ScenarioProvider = ({ children }) => {
   const [chatMessages, setChatMessages] = useState([]);
 
   // Derived state
-  const currentParticipant = scenario?.participants?.find(p => p.user_id === user?.id);
+  const currentScenarioUser = scenario?.scenarioUsers?.find(p => p.user_id === user?.id);
   const isScenarioOwner = scenario?.created_by === user?.id;
   const isScenarioActive = scenario?.status === 'in_progress';
 
-  // Connect to WebSocket when scenario and participant are loaded
+  // Connect to WebSocket when scenario and scenarioUser are loaded
   useEffect(() => {
-    if (scenarioId && currentParticipant?.id && isConnected === false) {
-      // Connect to WebSocket with scenario ID and participant ID
-      const connected = connect(scenarioId, currentParticipant.id);
+    if (scenarioId && currentScenarioUser?.id && isConnected === false) {
+      // Connect to WebSocket with scenario ID and scenarioUser ID
+      const connected = connect(scenarioId, currentScenarioUser.id);
       if (!connected) {
         console.error('Failed to connect to WebSocket');
       }
     }
-  }, [scenarioId, currentParticipant?.id, isConnected, connect]);
+  }, [scenarioId, currentScenarioUser?.id, isConnected, connect]);
 
   // Fetch scenario data
   const fetchScenario = useCallback(async () => {
@@ -110,8 +110,8 @@ export const ScenarioProvider = ({ children }) => {
           setScenario(prevScenario => ({
             ...prevScenario,
             ...data.scenario,
-            // Preserve participants array if not provided in update
-            participants: data.scenario.participants || prevScenario?.participants || []
+            // Preserve scenarioUsers array if not provided in update
+            scenarioUsers: data.scenario.scenarioUsers || prevScenario?.scenarioUsers || []
           }));
           break;
 
@@ -201,14 +201,14 @@ export const ScenarioProvider = ({ children }) => {
     }
   };
 
-  const setParticipantReady = async (isReady) => {
+  const setScenarioUserReady = async (isReady) => {
     if (!scenarioId) return false;
 
     try {
-      await simulationApi.setParticipantReady(scenarioId, { is_ready: isReady });
+      await simulationApi.setScenarioUserReady(scenarioId, { is_ready: isReady });
       return true;
     } catch (error) {
-      console.error('Failed to set participant ready status:', error);
+      console.error('Failed to set scenarioUser ready status:', error);
       setError('Failed to update ready status');
       return false;
     }
@@ -239,7 +239,7 @@ export const ScenarioProvider = ({ children }) => {
   const value = {
     // Scenario state
     scenario,
-    currentParticipant,
+    currentScenarioUser,
     isScenarioOwner,
     isScenarioActive,
     isLoading,
@@ -249,7 +249,7 @@ export const ScenarioProvider = ({ children }) => {
     startScenario,
     endScenario,
     leaveScenario,
-    setParticipantReady,
+    setScenarioUserReady,
     sendChatMessage,
 
     // UI state

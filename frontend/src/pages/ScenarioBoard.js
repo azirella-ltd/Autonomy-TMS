@@ -109,8 +109,8 @@ const ScenarioBoard = () => {
   ]);
 
   const playerOptions = useMemo(
-    () => (Array.isArray(gameDetails?.players) ? gameDetails.players : []),
-    [gameDetails?.players]
+    () => (Array.isArray(gameDetails?.scenarioUsers) ? gameDetails.scenarioUsers : []),
+    [gameDetails?.scenarioUsers]
   );
   const isReadOnlyView =
     !assignedPlayerId || viewingPlayerId !== assignedPlayerId;
@@ -118,7 +118,7 @@ const ScenarioBoard = () => {
   const handleRoleSelection = useCallback(
     (playerIdValue) => {
       const selected = playerOptions.find(
-        (player) => String(player.id) === String(playerIdValue)
+        (scenarioUser) => String(scenarioUser.id) === String(playerIdValue)
       );
       if (selected) {
         setViewingPlayerId(selected.id);
@@ -176,7 +176,7 @@ const ScenarioBoard = () => {
           // Update derived state
           if (state.current_round) {
             setIsPlayerTurn(
-              state.current_round.current_player_id === state.player_id
+              state.current_round.current_scenario_user_id === state.scenario_user_id
             );
           }
 
@@ -226,7 +226,7 @@ const ScenarioBoard = () => {
       return;
     }
     const selected = playerOptions.find(
-      (player) => player.id === viewingPlayerId
+      (scenarioUser) => scenarioUser.id === viewingPlayerId
     );
     if (selected && selected.role !== viewingRole) {
       setViewingRole(selected.role);
@@ -240,8 +240,8 @@ const ScenarioBoard = () => {
         const games = await simulationApi.getGames();
         const associated = (games || []).filter((g) => {
           const createdByUser = g.created_by === user?.id;
-          const isPlayer = Array.isArray(g.players)
-            ? g.players.some((p) => p.user_id === user?.id)
+          const isPlayer = Array.isArray(g.scenarioUsers)
+            ? g.scenarioUsers.some((p) => p.user_id === user?.id)
             : false;
           return createdByUser || isPlayer;
         });
@@ -269,7 +269,7 @@ const ScenarioBoard = () => {
           const history = rounds
             .map((r) => {
               const pr = (r.player_rounds || []).find(
-                (p) => p.player_id === viewingPlayerId
+                (p) => p.scenario_user_id === viewingPlayerId
               );
               if (!pr) return null;
               const formattedDate = formatTimePeriodDate(
@@ -306,10 +306,10 @@ const ScenarioBoard = () => {
         const game = await simulationApi.getGame(scenarioId);
         setGameDetails(game);
 
-        const players = Array.isArray(game.players) ? game.players : [];
+        const scenarioUsers = Array.isArray(game.scenarioUsers) ? game.scenarioUsers : [];
         const currentUserId = user?.id;
         const assignedPlayer =
-          players.find((p) => p.user_id === currentUserId) || null;
+          scenarioUsers.find((p) => p.user_id === currentUserId) || null;
 
         if (assignedPlayer) {
           setAssignedRole(assignedPlayer.role);
@@ -320,7 +320,7 @@ const ScenarioBoard = () => {
           setIsPlayerTurn(game.current_player_turn === assignedPlayer.role);
         } else {
           const existingViewer =
-            players.find((p) => p.id === viewingPlayerId) || players[0] || null;
+            scenarioUsers.find((p) => p.id === viewingPlayerId) || scenarioUsers[0] || null;
           setAssignedRole("");
           setAssignedPlayerId(null);
           setIsPlayerTurn(false);
@@ -449,7 +449,7 @@ const ScenarioBoard = () => {
     return `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   }, []);
 
-  // Check if it's the player's turn
+  // Check if it's the scenarioUser's turn
   useEffect(() => {
     if (!assignedRole || !gameState) {
       if (isPlayerTurn) {
@@ -494,7 +494,7 @@ const ScenarioBoard = () => {
       const history = rounds
         .map((r) => {
           const pr = (r.player_rounds || []).find(
-            (p) => p.player_id === assignedPlayerId
+            (p) => p.scenario_user_id === assignedPlayerId
           );
           if (!pr) return null;
           return {
@@ -615,9 +615,9 @@ const ScenarioBoard = () => {
                             placeholder="Select role"
                             className="mt-1"
                           >
-                            {playerOptions.map((player) => (
-                              <SelectOption key={player.id} value={player.id}>
-                                {formatRoleLabel(player.role)}
+                            {playerOptions.map((scenarioUser) => (
+                              <SelectOption key={scenarioUser.id} value={scenarioUser.id}>
+                                {formatRoleLabel(scenarioUser.role)}
                               </SelectOption>
                             ))}
                           </Select>
@@ -640,7 +640,7 @@ const ScenarioBoard = () => {
                 <div className="w-full lg:w-[400px]">
                   <RoundTimer
                     scenarioId={scenarioId}
-                    playerId={viewingPlayerId}
+                    scenarioUserId={viewingPlayerId}
                     roundNumber={gameState?.current_round || 1}
                     onOrderSubmit={handleOrderSubmit}
                     isPlayerTurn={viewingIsCurrent}

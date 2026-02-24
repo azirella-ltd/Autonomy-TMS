@@ -45,7 +45,7 @@ describe('RoundTimer', () => {
     render(
       <RoundTimer
         gameId={123}
-        playerId={456}
+        scenarioUserId={456}
         roundNumber={1}
         onOrderSubmit={jest.fn()}
         isPlayerTurn={false}

@@ -7,7 +7,7 @@ from ... import models, schemas
 from ...crud import crud_dashboard as crud
 from ...db.session import get_sync_db as get_db
 from ...core.security import get_current_active_user
-from ...models.participant import Participant
+from ...models.scenario_user import ScenarioUser
 from ...models.scenario import Scenario, ScenarioStatus
 
 # Router for dashboard endpoints
@@ -22,31 +22,31 @@ async def get_user_scenarios(
     Get all active scenarios for the current user.
     Returns a list of scenarios with basic info (id, name, status, role).
     """
-    # Get all scenarios where user is a participant
+    # Get all scenarios where user is a scenario_user
     scenarios = (
         db.query(Scenario)
-        .join(Participant, Participant.scenario_id == Scenario.id)
-        .filter(Participant.user_id == current_user.id)
+        .join(ScenarioUser, ScenarioUser.scenario_id == Scenario.id)
+        .filter(ScenarioUser.user_id == current_user.id)
         .all()
     )
 
     if not scenarios:
         return []
 
-    # Get participant roles for each scenario
+    # Get scenario_user roles for each scenario
     result = []
     for scenario in scenarios:
-        participant = (
-            db.query(Participant)
+        scenario_user = (
+            db.query(ScenarioUser)
             .filter(
-                Participant.user_id == current_user.id,
-                Participant.scenario_id == scenario.id
+                ScenarioUser.user_id == current_user.id,
+                ScenarioUser.scenario_id == scenario.id
             )
             .first()
         )
 
-        if participant:
-            role_value = getattr(participant.role, "name", str(participant.role)).upper()
+        if scenario_user:
+            role_value = getattr(scenario_user.role, "name", str(scenario_user.role)).upper()
             result.append({
                 "id": scenario.id,
                 "name": scenario.name,
@@ -66,8 +66,8 @@ async def get_human_dashboard(
     current_user: models.User = Depends(get_current_active_user)
 ):
     """
-    Get dashboard data for a human participant.
-    Returns scenario info, participant role, current period, and metrics.
+    Get dashboard data for a human scenario_user.
+    Returns scenario info, scenario_user role, current period, and metrics.
 
     If scenario_id is provided, returns data for that specific scenario.
     Otherwise, returns data for the most recent active scenario.
@@ -80,19 +80,19 @@ async def get_human_dashboard(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Scenario with ID {scenario_id} not found"
             )
-        # Verify user is a participant in this scenario
+        # Verify user is a scenario_user in this scenario
         player_check = (
-            db.query(Participant)
+            db.query(ScenarioUser)
             .filter(
-                Participant.user_id == current_user.id,
-                Participant.scenario_id == scenario_id
+                ScenarioUser.user_id == current_user.id,
+                ScenarioUser.scenario_id == scenario_id
             )
             .first()
         )
         if not player_check:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="You are not a participant in this scenario"
+                detail="You are not a scenario_user in this scenario"
             )
     else:
         active_scenario = crud.get_active_scenario_for_user(db, user_id=current_user.id)
@@ -102,31 +102,31 @@ async def get_human_dashboard(
                 detail="No active scenario found for the user"
             )
     
-    # Get participant's role in the scenario
-    player = (
-        db.query(Participant)
+    # Get scenario_user's role in the scenario
+    scenario_user = (
+        db.query(ScenarioUser)
         .filter(
-            Participant.user_id == current_user.id,
-            Participant.scenario_id == active_scenario.id,
+            ScenarioUser.user_id == current_user.id,
+            ScenarioUser.scenario_id == active_scenario.id,
         )
         .first()
     )
 
-    if not player:
+    if not scenario_user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Participant data not found for this scenario"
+            detail="ScenarioUser data not found for this scenario"
         )
     
     # Get scenario metrics
-    metrics = crud.get_player_metrics(db, player_id=player.id, scenario_id=active_scenario.id)
+    metrics = crud.get_player_metrics(db, scenario_user_id=scenario_user.id, scenario_id=active_scenario.id)
     
-    # Get time series data for the player
-    role_value = getattr(player.role, "name", str(player.role)).upper()
+    # Get time series data for the scenario_user
+    role_value = getattr(scenario_user.role, "name", str(scenario_user.role)).upper()
 
     time_series = crud.get_time_series_metrics(
         db,
-        player_id=player.id,
+        scenario_user_id=scenario_user.id,
         scenario_id=active_scenario.id,
         role=role_value,
     )
@@ -149,7 +149,7 @@ async def get_human_dashboard(
     # Create the response model
     return schemas.DashboardResponse(
         scenario_id=active_scenario.id,
-        player_id=player.id,
+        scenario_user_id=scenario_user.id,
         scenario_name=active_scenario.name,
         current_round=active_scenario.current_round,
         max_rounds=active_scenario.max_rounds,

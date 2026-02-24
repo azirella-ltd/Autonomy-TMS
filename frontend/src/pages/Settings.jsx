@@ -478,7 +478,7 @@ const Settings = () => {
 
                   <SettingControl
                     label="Allow friend requests"
-                    description="Let other players send you friend requests"
+                    description="Let other scenarioUsers send you friend requests"
                   >
                     <ToggleSwitch
                       checked={settings.privacy.allowFriendRequests}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seed the default Autonomy group, configuration, and scenarios with AI participants."""
+"""Seed the default Autonomy group, configuration, and scenarios with AI scenario_users."""
 
 from __future__ import annotations
 
@@ -54,11 +54,11 @@ from app.models import (
     Site,
     Node,  # Deprecated alias for Site
     NodeType,
-    Participant,
-    ParticipantAction,
-    ParticipantRole,
-    ParticipantStrategy,
-    ParticipantType,
+    ScenarioUser,
+    ScenarioUserAction,
+    ScenarioUserRole,
+    ScenarioUserStrategy,
+    ScenarioUserType,
     Round,
     SupplyChainConfig,
     SupplyChainTrainingArtifact,
@@ -153,7 +153,7 @@ COMPLEX_ADMIN_EMAIL = "complex_sc_admin@autonomy.ai"
 COMPLEX_ADMIN_FULL_NAME = "Complex SC Administrator"
 COMPLEX_HUMAN_GAME_NAME = "Complex SC Human Game"
 COMPLEX_HUMAN_GAME_DESCRIPTION = (
-    "Multi-region Complex_SC scenario configured for human players."
+    "Multi-region Complex_SC scenario configured for human scenario_users."
 )
 
 COMPLEX_SC_CONFIG_NAME = "Complex_SC"
@@ -443,7 +443,7 @@ def resolve_default_agent_strategy(
     preferred_strategy: Optional[str] = None,
     preferred_llm_model: Optional[str] = None,
 ) -> Tuple[str, Optional[str], Optional[str]]:
-    """Determine which agent strategy to assign to default AI players."""
+    """Determine which agent strategy to assign to default AI scenario_users."""
 
     if preferred_strategy:
         strategy = preferred_strategy.strip().lower()
@@ -461,11 +461,11 @@ def resolve_default_agent_strategy(
         available, detail = False, "Autonomy LLM unavailable (dependencies missing)"
     if available:
         llm_model = preferred_llm_model or DEFAULT_LLM_MODEL
-        logger.info("Autonomy LLM available; default AI players will use the LLM strategy (%s).", llm_model)
+        logger.info("Autonomy LLM available; default AI scenario_users will use the LLM strategy (%s).", llm_model)
         return "llm", llm_model, None
 
     logger.warning(
-        "Autonomy LLM unavailable (%s); default AI players will use '%s' strategy instead.",
+        "Autonomy LLM unavailable (%s); default AI scenario_users will use '%s' strategy instead.",
         detail,
         DEFAULT_AGENT_TYPE,
     )
@@ -608,11 +608,11 @@ def _player_role_for_node_type(node_type: Optional[str]) -> PlayerRole:
     return mapping.get(canonical, PlayerRole.MANUFACTURER)
 
 
-def _player_node_key(player: Player) -> str:
-    node_key = getattr(player, "site_key", None)
+def _player_node_key(scenario_user: ScenarioUser) -> str:
+    node_key = getattr(scenario_user, "site_key", None)
     if node_key:
         return _normalise_node_key(node_key)
-    role_value = getattr(player.role, "value", player.role)
+    role_value = getattr(scenario_user.role, "value", scenario_user.role)
     return _normalise_node_key(role_value)
 
 
@@ -634,7 +634,7 @@ def _delete_node_type_games_for_config(session: Session, config: SupplyChainConf
             synchronize_session=False
         )
         session.query(AgentConfig).filter(AgentConfig.scenario_id == game.id).delete(synchronize_session=False)
-        session.query(Player).filter(Player.scenario_id == game.id).delete(synchronize_session=False)
+        session.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).delete(synchronize_session=False)
         session.query(Round).filter(Round.scenario_id == game.id).delete(synchronize_session=False)
         session.delete(game)
     if node_type_games:
@@ -3648,29 +3648,29 @@ def configure_human_players_for_game(
     group: Group,
     game: Game,
 ) -> None:
-    """Ensure the default game uses human players mapped to role-specific accounts."""
+    """Ensure the default game uses human scenario_users mapped to role-specific accounts."""
 
     config_payload = _load_game_config_payload(game)
     slots = _iter_node_slots(config_payload)
     if not slots:
         raise ValueError("Game configuration does not define any playable nodes.")
 
-    existing_players: Dict[str, Player] = {
-        _player_node_key(player): player
-        for player in session.query(Player).filter(Player.scenario_id == game.id).all()
+    existing_players: Dict[str, ScenarioUser] = {
+        _player_node_key(scenario_user): scenario_user
+        for scenario_user in session.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
     }
     required_keys: Set[str] = {slot.key for slot in slots}
     role_assignments: Dict[str, Dict[str, int | bool | None]] = {}
 
     for slot in slots:
         user = _ensure_node_user(session, group, slot)
-        player = existing_players.get(slot.key)
-        if player is None:
-            player = Player(
+        scenario_user = existing_players.get(slot.key)
+        if scenario_user is None:
+            scenario_user = ScenarioUser(
                 scenario_id=game.id,
                 role=_player_role_for_node_type(slot.node_type),
                 name=slot.label,
-                type=ParticipantType.HUMAN,
+                type=ScenarioUserType.HUMAN,
                 strategy=PlayerStrategy.MANUAL,
                 is_ai=False,
                 ai_strategy=None,
@@ -3679,17 +3679,17 @@ def configure_human_players_for_game(
                 site_key=slot.key,
             )
         else:
-            player.role = _player_role_for_node_type(slot.node_type)
-            player.name = slot.label
-            player.type = ParticipantType.HUMAN
-            player.strategy = PlayerStrategy.MANUAL
-            player.is_ai = False
-            player.ai_strategy = None
-            player.can_see_demand = slot.can_see_demand
-            player.user_id = user.id
-            player.llm_model = None
-            player.site_key = slot.key
-        session.add(player)
+            scenario_user.role = _player_role_for_node_type(slot.node_type)
+            scenario_user.name = slot.label
+            scenario_user.type = ScenarioUserType.HUMAN
+            scenario_user.strategy = PlayerStrategy.MANUAL
+            scenario_user.is_ai = False
+            scenario_user.ai_strategy = None
+            scenario_user.can_see_demand = slot.can_see_demand
+            scenario_user.user_id = user.id
+            scenario_user.llm_model = None
+            scenario_user.site_key = slot.key
+        session.add(scenario_user)
         session.flush()
 
         role_assignments[slot.key] = {
@@ -3699,10 +3699,10 @@ def configure_human_players_for_game(
             "node_type": slot.node_type,
         }
 
-    for key, player in existing_players.items():
+    for key, scenario_user in existing_players.items():
         if key in required_keys:
             continue
-        session.delete(player)
+        session.delete(scenario_user)
 
     # Remove any lingering agent configs from previous runs
     session.query(AgentConfig).filter(AgentConfig.scenario_id == game.id).delete(
@@ -3725,7 +3725,7 @@ def configure_human_players_for_game(
     session.flush()
 
     print(
-        "[success] Configured human players for nodes: "
+        "[success] Configured human scenario_users for nodes: "
         + ", ".join(slot.label for slot in slots)
     )
 
@@ -3753,7 +3753,7 @@ def ensure_human_game_for_config(
         session.query(AgentConfig).filter(AgentConfig.scenario_id == game.id).delete(
             synchronize_session=False
         )
-        session.query(Player).filter(Player.scenario_id == game.id).delete(
+        session.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).delete(
             synchronize_session=False
         )
         session.delete(game)
@@ -3825,7 +3825,7 @@ def ensure_hybrid_human_naive_game(
     recreate: bool = False,
 ) -> Game:
     """
-    Create a hybrid scenario with one human participant at specified site and Naive AI agents at all other sites.
+    Create a hybrid scenario with one human scenario_user at specified site and Naive AI agents at all other sites.
 
     Args:
         session: Database session
@@ -3833,7 +3833,7 @@ def ensure_hybrid_human_naive_game(
         config: Supply chain configuration
         game_name: Name of the game
         description: Game description
-        human_site_key: Node key where human player will be assigned (e.g., "retailer", "wholesaler")
+        human_site_key: Node key where human scenario_user will be assigned (e.g., "retailer", "wholesaler")
         demand_pattern_override: Optional demand pattern override
         recreate: If True, delete and recreate the game
 
@@ -3876,35 +3876,35 @@ def ensure_hybrid_human_naive_game(
     if not slots:
         raise ValueError(f"Game configuration for '{game_name}' does not define any playable nodes.")
 
-    # Create players
-    print(f"[info] Creating hybrid players for game '{game_name}'...")
+    # Create scenario_users
+    print(f"[info] Creating hybrid scenario_users for game '{game_name}'...")
     for slot in slots:
         # Skip Market Demand and Market Supply sites
         if slot.node_type in [NodeType.MARKET_DEMAND, NodeType.MARKET_SUPPLY]:
             continue
 
         if slot.key == human_site_key:
-            # Create human player
+            # Create human scenario_user
             user = _ensure_node_user(session, group, slot)
-            player = Player(
+            scenario_user = ScenarioUser(
                 scenario_id=game.id,
                 role=_player_role_for_node_type(slot.node_type),
                 name=slot.label,
-                type=ParticipantType.HUMAN,
+                type=ScenarioUserType.HUMAN,
                 strategy=PlayerStrategy.MANUAL,
                 is_ai=False,
                 user_id=user.id,
                 site_key=slot.key,
                 can_see_demand=slot.can_see_demand,
             )
-            print(f"[success] Created human player for {slot.label} (user: {user.email})")
+            print(f"[success] Created human scenario_user for {slot.label} (user: {user.email})")
         else:
-            # Create Naive AI player
-            player = Player(
+            # Create Naive AI scenario_user
+            scenario_user = ScenarioUser(
                 scenario_id=game.id,
                 role=_player_role_for_node_type(slot.node_type),
                 name=f"{slot.label} (Naive AI)",
-                type=ParticipantType.AI,
+                type=ScenarioUserType.AI,
                 strategy=PlayerStrategy.MANUAL,
                 is_ai=True,
                 ai_strategy="naive",
@@ -3912,9 +3912,9 @@ def ensure_hybrid_human_naive_game(
                 site_key=slot.key,
                 can_see_demand=slot.can_see_demand,
             )
-            print(f"[success] Created Naive AI player for {slot.label}")
+            print(f"[success] Created Naive AI scenario_user for {slot.label}")
 
-        session.add(player)
+        session.add(scenario_user)
 
     session.flush()
     print(f"[success] Created hybrid scenario '{game_name}' with human at {human_site_key}")
@@ -3928,35 +3928,35 @@ def _ensure_default_players(
     llm_model: Optional[str],
     llm_strategy: Optional[str] = None,
 ) -> None:
-    """Create placeholder AI players if none exist for the game."""
+    """Create placeholder AI scenario_users if none exist for the game."""
     config_payload = _load_game_config_payload(game)
     slots = _iter_node_slots(config_payload)
     if not slots:
         raise ValueError("Game configuration does not define any playable nodes.")
 
     existing_players = {
-        _player_node_key(player): player
-        for player in session.query(Player).filter(Player.scenario_id == game.id).all()
+        _player_node_key(scenario_user): scenario_user
+        for scenario_user in session.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
     }
 
-    print("[info] Ensuring AI players exist for all nodes...")
+    print("[info] Ensuring AI scenario_users exist for all nodes...")
     for slot in slots:
-        player = existing_players.get(slot.key)
-        if player is None:
-            player = Player(
+        scenario_user = existing_players.get(slot.key)
+        if scenario_user is None:
+            scenario_user = ScenarioUser(
                 scenario_id=game.id,
                 role=_player_role_for_node_type(slot.node_type),
                 name=f"{slot.label} (AI)",
                 site_key=slot.key,
             )
-        player.type = ParticipantType.AI
-        player.is_ai = True
-        player.ai_strategy = agent_type
-        player.strategy = PlayerStrategy.MANUAL
-        player.user_id = None
-        player.can_see_demand = slot.can_see_demand
-        player.llm_model = llm_model or DEFAULT_LLM_MODEL if agent_type.startswith("llm") else None
-        session.add(player)
+        scenario_user.type = ScenarioUserType.AI
+        scenario_user.is_ai = True
+        scenario_user.ai_strategy = agent_type
+        scenario_user.strategy = PlayerStrategy.MANUAL
+        scenario_user.user_id = None
+        scenario_user.can_see_demand = slot.can_see_demand
+        scenario_user.llm_model = llm_model or DEFAULT_LLM_MODEL if agent_type.startswith("llm") else None
+        session.add(scenario_user)
     session.flush()
 
 
@@ -3973,29 +3973,29 @@ def ensure_ai_agents(
     config_payload = _load_game_config_payload(game)
     slots = _iter_node_slots(config_payload)
     existing_players = {
-        _player_node_key(player): player
-        for player in session.query(Player).filter(Player.scenario_id == game.id).all()
+        _player_node_key(scenario_user): scenario_user
+        for scenario_user in session.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
     }
     role_assignments: Dict[str, Dict[str, Any]] = {}
 
     for slot in slots:
-        player = existing_players.get(slot.key)
-        if player is None:
-            player = Player(
+        scenario_user = existing_players.get(slot.key)
+        if scenario_user is None:
+            scenario_user = ScenarioUser(
                 scenario_id=game.id,
                 role=_player_role_for_node_type(slot.node_type),
                 name=f"{slot.label} ({agent_type})",
                 site_key=slot.key,
             )
-        player.is_ai = True
-        player.type = ParticipantType.AI
-        player.ai_strategy = agent_type
-        player.strategy = PlayerStrategy.MANUAL
-        player.user_id = None
-        player.llm_model = llm_model or DEFAULT_LLM_MODEL if agent_type.startswith("llm") else None
-        player.can_see_demand = slot.can_see_demand
-        player.role = _player_role_for_node_type(slot.node_type)
-        session.add(player)
+        scenario_user.is_ai = True
+        scenario_user.type = ScenarioUserType.AI
+        scenario_user.ai_strategy = agent_type
+        scenario_user.strategy = PlayerStrategy.MANUAL
+        scenario_user.user_id = None
+        scenario_user.llm_model = llm_model or DEFAULT_LLM_MODEL if agent_type.startswith("llm") else None
+        scenario_user.can_see_demand = slot.can_see_demand
+        scenario_user.role = _player_role_for_node_type(slot.node_type)
+        session.add(scenario_user)
         session.flush()
 
         normalized_slot_key = _normalise_node_key(slot.key)
@@ -4334,12 +4334,12 @@ def _run_post_seed_tasks(
 def _purge_existing_games(session: Session) -> None:
     """Remove all game records and related AI configurations."""
 
-    print("[info] Removing existing games, players, and agent configurations...")
+    print("[info] Removing existing games, scenario_users, and agent configurations...")
     session.query(PlayerAction).delete(synchronize_session=False)
     session.query(Round).delete(synchronize_session=False)
     session.query(SupervisorAction).delete(synchronize_session=False)
     session.query(AgentConfig).delete(synchronize_session=False)
-    session.query(Player).delete(synchronize_session=False)
+    session.query(ScenarioUser).delete(synchronize_session=False)
     session.query(Game).delete(synchronize_session=False)
     session.flush()
     session.expire_all()
@@ -4356,28 +4356,28 @@ def _configure_game_agents(
     can_see_demand_all: bool = False,
     assignment_scope: str = "node",
 ) -> None:
-    """Ensure players and agent configs exist for a game using the specified agent type."""
+    """Ensure scenario_users and agent configs exist for a game using the specified agent type."""
 
     config_payload = _load_game_config_payload(game)
     slots = _iter_node_slots(config_payload)
     existing_assignment_payload = dict(game.role_assignments or {})
-    player_rows = list(session.query(Player).filter(Player.scenario_id == game.id))
-    player_lookup: Dict[int, Player] = {player.id: player for player in player_rows}
-    existing_players: Dict[str, Player] = {}
+    player_rows = list(session.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id))
+    player_lookup: Dict[int, ScenarioUser] = {scenario_user.id: scenario_user for scenario_user in player_rows}
+    existing_players: Dict[str, ScenarioUser] = {}
     for assignment_key, payload in existing_assignment_payload.items():
         key = _normalise_node_key(assignment_key)
         if not key:
             continue
-        pid = payload.get("player_id")
+        pid = payload.get("scenario_user_id")
         if pid is None:
             continue
-        player = player_lookup.get(pid)
-        if player:
-            existing_players[key] = player
+        scenario_user = player_lookup.get(pid)
+        if scenario_user:
+            existing_players[key] = scenario_user
     if not existing_players:
         existing_players = {
-            _player_node_key(player): player
-            for player in player_rows
+            _player_node_key(scenario_user): scenario_user
+            for scenario_user in player_rows
         }
 
     assignments: Dict[str, Dict[str, Optional[int]]] = {}
@@ -4422,24 +4422,24 @@ def _configure_game_agents(
         normalised_key = _normalise_node_key(assignment_key)
         if not normalised_key:
             normalised_key = plan["node_keys"][0]
-        player = existing_players.get(normalised_key)
-        if player is None:
-            player = Player(
+        scenario_user = existing_players.get(normalised_key)
+        if scenario_user is None:
+            scenario_user = ScenarioUser(
                 scenario_id=game.id,
                 name=plan["label"],
                 role=plan["role"],
                 site_key=normalised_key,
             )
 
-        player.type = ParticipantType.AI
-        player.is_ai = True
-        player.ai_strategy = agent_type
-        player.strategy = PlayerStrategy.MANUAL
-        player.user_id = None
-        player.can_see_demand = plan["can_see_demand"]
-        player.llm_model = llm_model or DEFAULT_LLM_MODEL if is_llm_variant else None
-        player.role = plan["role"]
-        session.add(player)
+        scenario_user.type = ScenarioUserType.AI
+        scenario_user.is_ai = True
+        scenario_user.ai_strategy = agent_type
+        scenario_user.strategy = PlayerStrategy.MANUAL
+        scenario_user.user_id = None
+        scenario_user.can_see_demand = plan["can_see_demand"]
+        scenario_user.llm_model = llm_model or DEFAULT_LLM_MODEL if is_llm_variant else None
+        scenario_user.role = plan["role"]
+        session.add(scenario_user)
         session.flush()
 
         agent_config = (
@@ -4476,7 +4476,7 @@ def _configure_game_agents(
             "strategy": agent_type,
             "node_type": plan["role"].value if hasattr(plan["role"], "value") else str(plan["role"]),
             "node_keys": plan["node_keys"],
-            "player_id": player.id,
+            "scenario_user_id": scenario_user.id,
         }
 
         player_assignments_payload.append(
@@ -4484,7 +4484,7 @@ def _configure_game_agents(
                 "role": plan["role"].value if hasattr(plan["role"], "value") else str(plan["role"]),
                 "assignment_key": normalised_key,
                 "node_keys": plan["node_keys"],
-                "player_type": ParticipantType.AI.value,
+                "scenario_user_type": ScenarioUserType.AI.value,
                 "strategy": agent_type,
                 "can_see_demand": plan["can_see_demand"],
                 "llm_model": llm_model,
@@ -4492,10 +4492,10 @@ def _configure_game_agents(
             }
         )
 
-    for key, player in existing_players.items():
+    for key, scenario_user in existing_players.items():
         if key in assignments:
             continue
-        session.delete(player)
+        session.delete(scenario_user)
 
     if override_pct is not None:
         overrides = {plan["assignment_key"]: override_pct for plan in plans}
@@ -4552,7 +4552,7 @@ def ensure_autonomy_games(
             session.query(AgentConfig).filter(AgentConfig.scenario_id == game.id).delete(
                 synchronize_session=False
             )
-            session.query(Player).filter(Player.scenario_id == game.id).delete(
+            session.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).delete(
                 synchronize_session=False
             )
             session.delete(game)
@@ -5166,7 +5166,7 @@ def parse_args() -> argparse.Namespace:
         help="Regenerate the SimPy dataset even if cached output exists.",
     )
     parser.add_argument(
-        "--use-human-players",
+        "--use-human-scenario_users",
         action="store_true",
         help="Assign the default simulation to human accounts instead of AI agents.",
     )

@@ -94,11 +94,11 @@ const HumanDashboard = () => {
   }, [fetchDashboardData]);
 
   useEffect(() => {
-    if (!dashboardData?.scenario_id || !dashboardData?.player_id) {
+    if (!dashboardData?.scenario_id || !dashboardData?.scenario_user_id) {
       return undefined;
     }
 
-    connect(dashboardData.scenario_id, dashboardData.player_id);
+    connect(dashboardData.scenario_id, dashboardData.scenario_user_id);
 
     const unsubscribe = subscribe((event, payload) => {
       if (event !== 'message') {
@@ -122,7 +122,7 @@ const HumanDashboard = () => {
     return () => {
       unsubscribe();
     };
-  }, [dashboardData?.scenario_id, dashboardData?.player_id, connect, subscribe, fetchDashboardData]);
+  }, [dashboardData?.scenario_id, dashboardData?.scenario_user_id, connect, subscribe, fetchDashboardData]);
 
   useEffect(() => {
     if (!dashboardData?.current_round) {
@@ -154,8 +154,8 @@ const HumanDashboard = () => {
     event.preventDefault();
     setOrderError('');
 
-    if (!dashboardData?.scenario_id || !dashboardData?.player_id) {
-      setOrderError('Unable to determine the current game or player.');
+    if (!dashboardData?.scenario_id || !dashboardData?.scenario_user_id) {
+      setOrderError('Unable to determine the current game or scenarioUser.');
       return;
     }
 
@@ -174,7 +174,7 @@ const HumanDashboard = () => {
       setIsSubmitting(true);
       await simulationApi.submitOrder(
         dashboardData.scenario_id,
-        dashboardData.player_id,
+        dashboardData.scenario_user_id,
         quantityValue,
         orderReason.trim() ? orderReason.trim() : undefined
       );
@@ -468,7 +468,7 @@ const HumanDashboard = () => {
               <div>
                 <h1 className="text-2xl font-bold">{game_name || 'My Game'}</h1>
                 <p className="text-muted-foreground mt-1">
-                  Welcome back, {user?.username || 'Player'}
+                  Welcome back, {user?.username || 'ScenarioUser'}
                 </p>
               </div>
               <div className="text-right">

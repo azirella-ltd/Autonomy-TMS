@@ -220,7 +220,7 @@ const GroupGameConfigPanel = ({
           <div className="text-center py-12">
             <p className="text-muted-foreground mb-2">No games found for your group yet.</p>
             <p className="text-sm text-muted-foreground">
-              Configure a new mixed game to get your players started.
+              Configure a new mixed game to get your scenarioUsers started.
             </p>
           </div>
         ) : (

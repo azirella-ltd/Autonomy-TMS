@@ -52,6 +52,16 @@ class EvaluateRequest(BaseModel):
     site_key: str = "default"
 
 
+class WhatIfRequest(BaseModel):
+    """Evaluate a proposed action via the what-if engine before authorization."""
+    action_type: str
+    variable_deltas: Optional[dict] = None
+    site_key: str = "default"
+    num_periods: int = Field(default=12, ge=1, le=104)
+    agent_role: Optional[str] = None
+    description: Optional[str] = None
+
+
 class PromoteRequest(BaseModel):
     rationale: Optional[str] = None
     decided_by: Optional[str] = None
@@ -223,3 +233,25 @@ def get_scenario(
     if scenario is None:
         raise HTTPException(status_code=404, detail=f"Scenario {scenario_id} not found")
     return scenario.to_dict()
+
+
+@router.post("/what-if")
+def evaluate_what_if(request: WhatIfRequest):
+    """Evaluate a proposed action via the what-if engine before authorization.
+
+    Returns a balanced scorecard showing the projected impact of the action.
+    Use this to pre-evaluate before submitting an authorization request.
+    """
+    engine = get_what_if_engine(request.site_key)
+    scorecard = engine.evaluate(
+        variable_deltas=request.variable_deltas,
+        num_periods=request.num_periods,
+    )
+    return {
+        "action_type": request.action_type,
+        "agent_role": request.agent_role,
+        "description": request.description,
+        "site_key": request.site_key,
+        "num_periods": request.num_periods,
+        "balanced_scorecard": scorecard,
+    }

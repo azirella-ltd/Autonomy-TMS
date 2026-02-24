@@ -5,9 +5,9 @@ Migrates existing simulation data from legacy Node-based engine
 to new AWS SC execution-based engine with full order lifecycle tracking.
 
 Migration Strategy:
-1. Read PlayerRound records (legacy state)
+1. Read ScenarioUserPeriod records (legacy state)
 2. Generate OutboundOrderLine, PurchaseOrder, TransferOrder equivalents
-3. Create RoundMetric records from PlayerRound data
+3. Create RoundMetric records from ScenarioUserPeriod data
 4. Validate data integrity
 5. Enable parallel testing mode
 
@@ -31,7 +31,7 @@ from sqlalchemy import select, and_
 
 from app.core.config import settings
 from app.models.scenario import Scenario
-from app.models.supply_chain import ParticipantRound
+from app.models.supply_chain import ScenarioUserPeriod
 from app.models.sc_entities import OutboundOrderLine, InventoryLevel
 from app.models.purchase_order import PurchaseOrder, PurchaseOrderLineItem
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
@@ -107,18 +107,18 @@ class LegacyToExecutionMigrator:
         self.log(f"Scenario: {scenario.name}, Status: {scenario.status}, Rounds: {scenario.current_round}")
         return scenario
 
-    async def _load_legacy_data(self) -> List[ParticipantRound]:
-        """Load all ParticipantRound records for the scenario."""
+    async def _load_legacy_data(self) -> List[ScenarioUserPeriod]:
+        """Load all ScenarioUserPeriod records for the scenario."""
         result = await self.db.execute(
-            select(ParticipantRound)
-            .where(ParticipantRound.scenario_round_id == self.scenario_id)
-            .order_by(ParticipantRound.scenario_round_id)
+            select(ScenarioUserPeriod)
+            .where(ScenarioUserPeriod.scenario_round_id == self.scenario_id)
+            .order_by(ScenarioUserPeriod.scenario_round_id)
         )
         return list(result.scalars().all())
 
-    async def _migrate_inventory_levels(self, legacy_data: List[ParticipantRound]) -> Dict[str, Any]:
+    async def _migrate_inventory_levels(self, legacy_data: List[ScenarioUserPeriod]) -> Dict[str, Any]:
         """
-        Migrate inventory levels from ParticipantRound to InventoryLevel.
+        Migrate inventory levels from ScenarioUserPeriod to InventoryLevel.
 
         Uses latest round's inventory as starting point.
         """
@@ -168,7 +168,7 @@ class LegacyToExecutionMigrator:
 
         return {'inventory_levels_created': inventory_count}
 
-    async def _reconstruct_orders(self, legacy_data: List[ParticipantRound], scenario: Scenario) -> Dict[str, Any]:
+    async def _reconstruct_orders(self, legacy_data: List[ScenarioUserPeriod], scenario: Scenario) -> Dict[str, Any]:
         """
         Reconstruct orders from legacy state changes.
 
@@ -211,7 +211,7 @@ class LegacyToExecutionMigrator:
                     self.db.add(order)
                     orders_created += 1
 
-                # Reconstruct PO if order was placed (from PlayerRound.order_placed)
+                # Reconstruct PO if order was placed (from ScenarioUserPeriod.order_placed)
                 if hasattr(pr, 'order_placed') and pr.order_placed and pr.order_placed > 0:
                     po = PurchaseOrder(
                         po_number=f"MIGRATED-PO-{self.scenario_id}-{round_num}-{pr.site_id}",
@@ -251,9 +251,9 @@ class LegacyToExecutionMigrator:
             'transfer_orders_created': tos_created,
         }
 
-    async def _migrate_round_metrics(self, legacy_data: List[ParticipantRound]) -> Dict[str, Any]:
+    async def _migrate_round_metrics(self, legacy_data: List[ScenarioUserPeriod]) -> Dict[str, Any]:
         """
-        Migrate ParticipantRound data to RoundMetric records.
+        Migrate ScenarioUserPeriod data to RoundMetric records.
 
         Direct 1:1 mapping of legacy metrics.
         """
@@ -279,7 +279,7 @@ class LegacyToExecutionMigrator:
                 scenario_id=self.scenario_id,
                 round_number=pr.round_number,
                 site_id=pr.site_id,
-                player_id=pr.player_id,
+                scenario_user_id=pr.scenario_user_id,
                 inventory=float(pr.inventory),
                 backlog=float(pr.backlog),
                 pipeline_qty=0.0,  # Not tracked in legacy

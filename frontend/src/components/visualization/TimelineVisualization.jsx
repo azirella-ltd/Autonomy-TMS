@@ -85,41 +85,41 @@ const TimelineVisualization = ({ gameHistory, nodes, edges }) => {
   const inventoryData = {}
   const activeFlows = []
 
-  if (currentRoundData.players) {
-    currentRoundData.players.forEach((player) => {
-      inventoryData[player.player_id] = {
-        inventory: player.inventory_end || 0,
-        backlog: player.backlog || 0,
-        cost: player.total_cost || 0,
-        order_placed: player.order_placed || 0,
+  if (currentRoundData.scenarioUsers) {
+    currentRoundData.scenarioUsers.forEach((scenarioUser) => {
+      inventoryData[scenarioUser.scenario_user_id] = {
+        inventory: scenarioUser.inventory_end || 0,
+        backlog: scenarioUser.backlog || 0,
+        cost: scenarioUser.total_cost || 0,
+        order_placed: scenarioUser.order_placed || 0,
       }
 
       // Mark active flows (nodes that placed orders)
-      if (player.order_placed > 0 && player.upstream_player_id) {
-        activeFlows.push(`${player.player_id}-${player.upstream_player_id}`)
+      if (scenarioUser.order_placed > 0 && scenarioUser.upstream_scenario_user_id) {
+        activeFlows.push(`${scenarioUser.scenario_user_id}-${scenarioUser.upstream_scenario_user_id}`)
       }
     })
   }
 
   // Get statistics for current round
   const getTotalCost = () => {
-    if (!currentRoundData.players) return 0
-    return currentRoundData.players.reduce((sum, p) => sum + (p.total_cost || 0), 0)
+    if (!currentRoundData.scenarioUsers) return 0
+    return currentRoundData.scenarioUsers.reduce((sum, p) => sum + (p.total_cost || 0), 0)
   }
 
   const getTotalInventory = () => {
-    if (!currentRoundData.players) return 0
-    return currentRoundData.players.reduce((sum, p) => sum + (p.inventory_end || 0), 0)
+    if (!currentRoundData.scenarioUsers) return 0
+    return currentRoundData.scenarioUsers.reduce((sum, p) => sum + (p.inventory_end || 0), 0)
   }
 
   const getTotalBacklog = () => {
-    if (!currentRoundData.players) return 0
-    return currentRoundData.players.reduce((sum, p) => sum + (p.backlog || 0), 0)
+    if (!currentRoundData.scenarioUsers) return 0
+    return currentRoundData.scenarioUsers.reduce((sum, p) => sum + (p.backlog || 0), 0)
   }
 
   const getSelectedNodeData = () => {
-    if (!selectedNode || !currentRoundData.players) return null
-    return currentRoundData.players.find((p) => p.player_id === selectedNode.id)
+    if (!selectedNode || !currentRoundData.scenarioUsers) return null
+    return currentRoundData.scenarioUsers.find((p) => p.scenario_user_id === selectedNode.id)
   }
 
   const selectedNodeData = getSelectedNodeData()

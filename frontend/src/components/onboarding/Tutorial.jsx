@@ -102,7 +102,7 @@ const Tutorial = ({ runTutorial, onComplete }) => {
         <div>
           <h3 className="text-lg font-bold mb-2">Negotiate with Partners 🤝</h3>
           <p>
-            Collaborate with other players in the supply chain. Propose negotiations
+            Collaborate with other scenarioUsers in the supply chain. Propose negotiations
             to adjust order quantities, share information, or coordinate strategies
             for better overall performance.
           </p>
@@ -132,7 +132,7 @@ const Tutorial = ({ runTutorial, onComplete }) => {
           <p>
             Track your achievements, earn points, and level up as you play.
             Complete challenges to unlock badges and compete on leaderboards
-            with other players.
+            with other scenarioUsers.
           </p>
         </div>
       ),

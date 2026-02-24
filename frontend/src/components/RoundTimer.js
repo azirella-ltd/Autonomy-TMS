@@ -12,7 +12,7 @@ import {
 
 const RoundTimer = ({
   gameId,
-  playerId,
+  scenarioUserId,
   roundNumber,
   onOrderSubmit,
   isPlayerTurn,
@@ -83,11 +83,11 @@ const RoundTimer = ({
         const status = await simulationApi.getRoundStatus(gameId);
         setRoundEndsAt(new Date(status.ends_at));
 
-        // Check if player has already submitted
-        if (status.submitted_players?.some((p) => p.id === playerId)) {
+        // Check if scenarioUser has already submitted
+        if (status.submitted_players?.some((p) => p.id === scenarioUserId)) {
           setHasSubmitted(true);
           const playerOrder = status.submitted_players.find(
-            (p) => p.id === playerId
+            (p) => p.id === scenarioUserId
           );
           if (playerOrder) {
             setOrderQuantity(playerOrder.quantity);
@@ -108,7 +108,7 @@ const RoundTimer = ({
         clearInterval(timerRef.current);
       }
     };
-  }, [gameId, playerId, roundNumber, onCommentChange]);
+  }, [gameId, scenarioUserId, roundNumber, onCommentChange]);
 
   // Set up timer
   useEffect(() => {

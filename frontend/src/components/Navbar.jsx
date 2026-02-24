@@ -228,7 +228,7 @@ const Navbar = () => {
       return [
         { name: "Dashboard", path: "/admin", icon: DashboardIcon },
         { name: "Scenarios", path: "/games", icon: GamesIcon },
-        { name: "Players", path: "/players", icon: PlayersIcon },
+        { name: "ScenarioUsers", path: "/scenarioUsers", icon: PlayersIcon },
         { name: "Analytics", path: "/analytics", icon: AnalyticsIcon },
       ];
     }
@@ -237,7 +237,7 @@ const Navbar = () => {
     return [
       { name: "Dashboard", path: "/dashboard", icon: DashboardIcon },
       { name: "Games", path: "/games", icon: GamesIcon },
-      { name: "Players", path: "/players", icon: PlayersIcon },
+      { name: "ScenarioUsers", path: "/scenarioUsers", icon: PlayersIcon },
       { name: "Analytics", path: "/analytics", icon: AnalyticsIcon },
     ];
   };

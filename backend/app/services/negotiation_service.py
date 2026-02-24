@@ -2,7 +2,7 @@
 Negotiation Service
 Phase 7 Sprint 4 - Feature 4: Agent Negotiation
 
-Enables players to negotiate with each other for:
+Enables scenario_users to negotiate with each other for:
 - Order quantity adjustments
 - Lead time modifications
 - Inventory sharing/reallocation
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class NegotiationService:
     """
-    Service for inter-player negotiations with AI mediation.
+    Service for inter-scenario_user negotiations with AI mediation.
 
     Features:
     - Create negotiation proposals
@@ -60,8 +60,8 @@ class NegotiationService:
 
         Args:
             scenario_id: Game ID
-            initiator_id: Player initiating negotiation
-            target_id: Player receiving proposal
+            initiator_id: ScenarioUser initiating negotiation
+            target_id: ScenarioUser receiving proposal
             negotiation_type: Type of negotiation
             proposal: Proposal details (JSON)
             message: Optional message to recipient
@@ -81,10 +81,10 @@ class NegotiationService:
             if negotiation_type not in valid_types:
                 raise ValueError(f"Invalid negotiation type: {negotiation_type}")
 
-            # Validate players exist and are in same game
+            # Validate scenario_users exist and are in same game
             query = text("""
                 SELECT COUNT(*) as count
-                FROM players
+                FROM scenario_users
                 WHERE scenario_id = :scenario_id
                 AND id IN (:initiator_id, :target_id)
             """)
@@ -95,7 +95,7 @@ class NegotiationService:
             })
             row = result.fetchone()
             if row.count != 2:
-                raise ValueError("Both players must be in the same game")
+                raise ValueError("Both scenario_users must be in the same game")
 
             # Calculate expiry time
             expires_at = datetime.utcnow() + timedelta(hours=self.default_expiry_hours)
@@ -161,7 +161,7 @@ class NegotiationService:
         - Service levels
         """
         try:
-            # Get current state for both players
+            # Get current state for both scenario_users
             query = text("""
                 SELECT
                     p.id,
@@ -170,8 +170,8 @@ class NegotiationService:
                     pr.backlog_after,
                     pr.total_cost,
                     pr.service_level
-                FROM players p
-                JOIN player_rounds pr ON p.id = pr.player_id
+                FROM scenario_users p
+                JOIN scenario_user_periods pr ON p.id = pr.scenario_user_id
                 WHERE p.id IN (:initiator_id, :target_id)
                 AND pr.round_number = (
                     SELECT MAX(round_number) FROM rounds WHERE scenario_id = :scenario_id
@@ -348,7 +348,7 @@ class NegotiationService:
 
         Args:
             negotiation_id: Negotiation ID
-            responder_id: Player responding
+            responder_id: ScenarioUser responding
             action: Response action
             counter_proposal: New proposal if counter-offering
             message: Optional message
@@ -383,7 +383,7 @@ class NegotiationService:
 
             # Verify responder is the target
             if row.target_id != responder_id:
-                raise ValueError("Only the target player can respond")
+                raise ValueError("Only the target scenario_user can respond")
 
             # Check if still pending
             if row.status != "pending":
@@ -466,8 +466,8 @@ class NegotiationService:
                 if transfer_qty > 0:
                     # Deduct from initiator inventory
                     await self.db.execute(text("""
-                        UPDATE participant_rounds SET inventory = GREATEST(0, inventory - :qty)
-                        WHERE participant_id = :pid
+                        UPDATE scenario_user_periods SET inventory = GREATEST(0, inventory - :qty)
+                        WHERE scenario_user_id = :pid
                         AND round_id = (
                             SELECT id FROM scenario_rounds WHERE scenario_id = :gid
                             ORDER BY round_number DESC LIMIT 1
@@ -479,8 +479,8 @@ class NegotiationService:
                     })
                     # Add to target inventory
                     await self.db.execute(text("""
-                        UPDATE participant_rounds SET inventory = inventory + :qty
-                        WHERE participant_id = :pid
+                        UPDATE scenario_user_periods SET inventory = inventory + :qty
+                        WHERE scenario_user_id = :pid
                         AND round_id = (
                             SELECT id FROM scenario_rounds WHERE scenario_id = :gid
                             ORDER BY round_number DESC LIMIT 1
@@ -493,15 +493,15 @@ class NegotiationService:
                     await self.db.commit()
                     logger.info(
                         f"Inventory share executed: {transfer_qty} units from "
-                        f"player {negotiation.initiator_id} to {negotiation.target_id}"
+                        f"scenario_user {negotiation.initiator_id} to {negotiation.target_id}"
                     )
 
             elif neg_type == "order_adjustment":
                 new_qty = proposal.get("new_order_quantity", proposal.get("quantity"))
                 if new_qty is not None:
                     await self.db.execute(text("""
-                        UPDATE participant_rounds SET order_upstream = :qty
-                        WHERE participant_id = :pid
+                        UPDATE scenario_user_periods SET order_upstream = :qty
+                        WHERE scenario_user_id = :pid
                         AND round_id = (
                             SELECT id FROM scenario_rounds WHERE scenario_id = :gid
                             ORDER BY round_number DESC LIMIT 1
@@ -513,7 +513,7 @@ class NegotiationService:
                     })
                     await self.db.commit()
                     logger.info(
-                        f"Order adjustment executed: player {negotiation.target_id} "
+                        f"Order adjustment executed: scenario_user {negotiation.target_id} "
                         f"order set to {new_qty}"
                     )
 
@@ -545,16 +545,16 @@ class NegotiationService:
     async def get_player_negotiations(
         self,
         scenario_id: int,
-        player_id: int,
+        scenario_user_id: int,
         status_filter: Optional[str] = None,
         limit: int = 20
     ) -> List[Dict[str, Any]]:
         """
-        Get negotiations for a player (as initiator or target).
+        Get negotiations for a scenario_user (as initiator or target).
 
         Args:
             scenario_id: Game ID
-            player_id: Player ID
+            scenario_user_id: ScenarioUser ID
             status_filter: Filter by status (pending, accepted, rejected, countered, expired)
             limit: Maximum negotiations to return
 
@@ -562,7 +562,7 @@ class NegotiationService:
             List of negotiations with details
         """
         try:
-            where_clause = "WHERE n.scenario_id = :scenario_id AND (n.initiator_id = :player_id OR n.target_id = :player_id)"
+            where_clause = "WHERE n.scenario_id = :scenario_id AND (n.initiator_id = :scenario_user_id OR n.target_id = :scenario_user_id)"
             if status_filter:
                 where_clause += " AND n.status = :status_filter"
 
@@ -581,14 +581,14 @@ class NegotiationService:
                     n.initiator_id,
                     n.target_id
                 FROM negotiations n
-                JOIN players initiator ON n.initiator_id = initiator.id
-                JOIN players target ON n.target_id = target.id
+                JOIN scenario_users initiator ON n.initiator_id = initiator.id
+                JOIN scenario_users target ON n.target_id = target.id
                 {where_clause}
                 ORDER BY n.created_at DESC
                 LIMIT :limit
             """)
 
-            params = {"scenario_id": scenario_id, "player_id": player_id, "limit": limit}
+            params = {"scenario_id": scenario_id, "scenario_user_id": scenario_user_id, "limit": limit}
             if status_filter:
                 params["status_filter"] = status_filter
 
@@ -608,14 +608,14 @@ class NegotiationService:
                     "responded_at": row.responded_at.isoformat() if row.responded_at else None,
                     "initiator_role": row.initiator_role,
                     "target_role": row.target_role,
-                    "is_initiator": row.initiator_id == player_id,
-                    "is_target": row.target_id == player_id
+                    "is_initiator": row.initiator_id == scenario_user_id,
+                    "is_target": row.target_id == scenario_user_id
                 })
 
             return negotiations
 
         except Exception as e:
-            logger.error(f"Failed to get player negotiations: {e}", exc_info=True)
+            logger.error(f"Failed to get scenario_user negotiations: {e}", exc_info=True)
             raise
 
     async def get_negotiation_messages(
@@ -637,7 +637,7 @@ class NegotiationService:
                     nm.created_at,
                     p.role as sender_role
                 FROM negotiation_messages nm
-                JOIN players p ON nm.sender_id = p.id
+                JOIN scenario_users p ON nm.sender_id = p.id
                 WHERE nm.negotiation_id = :negotiation_id
                 ORDER BY nm.created_at ASC
             """)
@@ -690,8 +690,8 @@ class NegotiationService:
     async def generate_negotiation_suggestion(
         self,
         scenario_id: int,
-        player_id: int,
-        target_player_id: int
+        scenario_user_id: int,
+        target_scenario_user_id: int
     ) -> Dict[str, Any]:
         """
         Generate AI-mediated negotiation suggestion.
@@ -700,8 +700,8 @@ class NegotiationService:
 
         Args:
             scenario_id: Game ID
-            player_id: Player requesting suggestion
-            target_player_id: Potential negotiation partner
+            scenario_user_id: ScenarioUser requesting suggestion
+            target_scenario_user_id: Potential negotiation partner
 
         Returns:
             {
@@ -713,7 +713,7 @@ class NegotiationService:
             }
         """
         try:
-            # Get current state for both players
+            # Get current state for both scenario_users
             query = text("""
                 SELECT
                     p.id,
@@ -723,25 +723,25 @@ class NegotiationService:
                     pr.order_placed,
                     pr.total_cost,
                     pr.service_level
-                FROM players p
-                JOIN player_rounds pr ON p.id = pr.player_id
-                WHERE p.id IN (:player_id, :target_player_id)
+                FROM scenario_users p
+                JOIN scenario_user_periods pr ON p.id = pr.scenario_user_id
+                WHERE p.id IN (:scenario_user_id, :target_scenario_user_id)
                 AND pr.round_number = (
                     SELECT MAX(round_number) FROM rounds WHERE scenario_id = :scenario_id
                 )
             """)
             result = await self.db.execute(query, {
                 "scenario_id": scenario_id,
-                "player_id": player_id,
-                "target_player_id": target_player_id
+                "scenario_user_id": scenario_user_id,
+                "target_scenario_user_id": target_scenario_user_id
             })
             rows = result.fetchall()
 
             if len(rows) != 2:
                 return {"error": "Insufficient data for suggestion"}
 
-            player_state = next((r for r in rows if r.id == player_id), None)
-            target_state = next((r for r in rows if r.id == target_player_id), None)
+            player_state = next((r for r in rows if r.id == scenario_user_id), None)
+            target_state = next((r for r in rows if r.id == target_scenario_user_id), None)
 
             # Analyze states and suggest negotiation
             suggestion = self._analyze_and_suggest(player_state, target_state)
@@ -760,7 +760,7 @@ class NegotiationService:
         """Analyze states and generate negotiation suggestion."""
         # Simple heuristic-based suggestions
 
-        # Scenario 1: Player has excess inventory, target has backlog
+        # Scenario 1: ScenarioUser has excess inventory, target has backlog
         if player_state.inventory_after > 50 and target_state.backlog_after > 20:
             return {
                 "suggested_type": "inventory_share",
@@ -777,7 +777,7 @@ class NegotiationService:
                 }
             }
 
-        # Scenario 2: Target has excess, player has backlog
+        # Scenario 2: Target has excess, scenario_user has backlog
         if target_state.inventory_after > 50 and player_state.backlog_after > 20:
             return {
                 "suggested_type": "inventory_share",
@@ -802,7 +802,7 @@ class NegotiationService:
                     "quantity_change": 10,
                     "commitment_rounds": 3
                 },
-                "rationale": "Both players have high costs. Coordinating orders can reduce bullwhip effect and stabilize supply chain.",
+                "rationale": "Both scenario_users have high costs. Coordinating orders can reduce bullwhip effect and stabilize supply chain.",
                 "confidence": 0.65,
                 "expected_benefit": {
                     "cost_reduction": 8,

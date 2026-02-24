@@ -149,14 +149,14 @@ class CostCalculator:
         site_costs: Dict
     ) -> None:
         """
-        Record costs for a round by updating ParticipantRound records.
+        Record costs for a round by updating ScenarioUserPeriod records.
 
         Args:
             scenario_id: Game ID (scenario_id)
             round_number: Round number
             site_costs: Cost dictionary from calculate_game_cost()
         """
-        from app.models.supply_chain import ScenarioRound, ParticipantRound
+        from app.models.supply_chain import ScenarioRound, ScenarioUserPeriod
 
         scenario_round = (
             self.db.query(ScenarioRound)
@@ -169,11 +169,11 @@ class CostCalculator:
         if not scenario_round:
             return
 
-        # Update each participant's cost in this round
+        # Update each scenario_user's cost in this round
         for site_cost in site_costs.get("site_costs", []):
             pr = (
-                self.db.query(ParticipantRound)
-                .filter(ParticipantRound.scenario_round_id == scenario_round.id)
+                self.db.query(ScenarioUserPeriod)
+                .filter(ScenarioUserPeriod.scenario_round_id == scenario_round.id)
                 .first()
             )
             if pr:

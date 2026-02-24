@@ -51,7 +51,7 @@ import EdgeAgentSecurity from "./pages/admin/EdgeAgentSecurity.jsx";
 import HiveDashboard from "./pages/admin/HiveDashboard.jsx";
 import AuthorizationProtocolBoard from "./pages/admin/AuthorizationProtocolBoard.jsx";
 import KnowledgeBase from "./pages/admin/KnowledgeBase.jsx";
-import Players from "./pages/Players.jsx";
+import ScenarioUsers from "./pages/ScenarioUsers.jsx";
 import DebugBanner from "./components/DebugBanner.jsx";
 import AnalyticsDashboard from "./pages/AnalyticsDashboard.jsx";
 import SystemDashboard from "./components/monitoring/SystemDashboard";
@@ -1063,13 +1063,13 @@ const AppContent = () => {
             />
 
             <Route
-              path="/players"
-              element={<Players />}
+              path="/scenarioUsers"
+              element={<ScenarioUsers />}
             />
-            {/* New terminology route (Feb 2026): /users -> Players page */}
+            {/* New terminology route (Feb 2026): /users -> ScenarioUsers page */}
             <Route
               path="/users"
-              element={<Players />}
+              element={<ScenarioUsers />}
             />
 
             <Route

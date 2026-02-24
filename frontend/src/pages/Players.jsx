@@ -44,8 +44,8 @@ const agentStrategyLabels = {
   PID_HEURISTIC: 'Heuristic - PID',
 };
 
-const resolveStrategyLabel = (player) => {
-  const raw = player?.agent_type ?? player?.ai_strategy ?? player?.strategy;
+const resolveStrategyLabel = (scenarioUser) => {
+  const raw = scenarioUser?.agent_type ?? scenarioUser?.ai_strategy ?? scenarioUser?.strategy;
   if (!raw) {
     return '';
   }
@@ -63,7 +63,7 @@ const PlayersPage = () => {
   const [users, setUsers] = useState([]);
   const [selectedGameId, setSelectedGameId] = useState('');
   const [loading, setLoading] = useState(true);
-  const [players, setPlayers] = useState([]);
+  const [scenarioUsers, setPlayers] = useState([]);
 
   const [form, setForm] = useState({
     name: '',
@@ -76,7 +76,7 @@ const PlayersPage = () => {
   const fetchPlayers = useCallback(async (gameId) => {
     if (!gameId) return;
     try {
-      const data = await simulationApi.getPlayers(gameId);
+      const data = await simulationApi.getScenarioUsers(gameId);
       setPlayers(data);
     } catch (e) {
       console.error(e);
@@ -126,7 +126,7 @@ const PlayersPage = () => {
         name: form.name || `${form.role} (${form.type === 'human' ? 'Human' : 'Agent'})`,
         role: form.role,
         is_ai: form.type !== 'human',
-        player_type: form.type === 'human' ? 'human' : 'agent',
+        scenario_user_type: form.type === 'human' ? 'human' : 'agent',
         agent_type: form.type !== 'human' ? form.agent_type : undefined,
         user_id: form.type === 'human' ? Number(form.user_id) || null : null,
       };
@@ -139,7 +139,7 @@ const PlayersPage = () => {
       fetchPlayers(selectedGameId);
     } catch (e) {
       console.error(e);
-      const msg = e?.response?.data?.detail || 'Failed to add player';
+      const msg = e?.response?.data?.detail || 'Failed to add scenarioUser';
       toast.error(msg);
     }
   };
@@ -177,7 +177,7 @@ const PlayersPage = () => {
   return (
     <PageLayout title="Users">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-foreground">Players</h1>
+        <h1 className="text-2xl font-bold text-foreground">ScenarioUsers</h1>
         <Button
           as={Link}
           to="/games"
@@ -232,9 +232,9 @@ const PlayersPage = () => {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Add Player Form */}
+            {/* Add ScenarioUser Form */}
             <div>
-              <h3 className="text-lg font-semibold text-foreground mb-4">Add Player</h3>
+              <h3 className="text-lg font-semibold text-foreground mb-4">Add ScenarioUser</h3>
               <div className="space-y-4">
                 <FormField label="Role">
                   <Select
@@ -303,26 +303,26 @@ const PlayersPage = () => {
                 </FormField>
 
                 <Button onClick={handleAdd} className="w-full">
-                  Add Player
+                  Add ScenarioUser
                 </Button>
               </div>
             </div>
 
-            {/* Current Players */}
+            {/* Current ScenarioUsers */}
             <div>
-              <h3 className="text-lg font-semibold text-foreground mb-4">Current Players</h3>
-              {players.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No players yet for this game.</p>
+              <h3 className="text-lg font-semibold text-foreground mb-4">Current ScenarioUsers</h3>
+              {scenarioUsers.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No scenarioUsers yet for this game.</p>
               ) : (
                 <div className="space-y-3">
-                  {players.map(p => (
+                  {scenarioUsers.map(p => (
                     <div
                       key={p.id}
                       className="border border-border rounded-lg p-4 bg-card"
                     >
                       <div className="flex items-center justify-between flex-wrap gap-2">
                         <div className="flex items-center gap-2">
-                          {p.player_type === 'agent' || p.is_ai ? (
+                          {p.scenario_user_type === 'agent' || p.is_ai ? (
                             <Bot className="h-5 w-5 text-primary" />
                           ) : (
                             <User className="h-5 w-5 text-muted-foreground" />
@@ -333,7 +333,7 @@ const PlayersPage = () => {
                           {p.role.toLowerCase()}
                         </span>
                         <span className="text-sm text-muted-foreground">
-                          {p.player_type === 'agent' || p.is_ai
+                          {p.scenario_user_type === 'agent' || p.is_ai
                             ? `AI${resolveStrategyLabel(p)}`
                             : 'Human'}
                         </span>

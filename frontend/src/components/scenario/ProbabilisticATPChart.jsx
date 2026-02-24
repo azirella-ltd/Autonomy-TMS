@@ -7,7 +7,7 @@
  *
  * Props:
  * - gameId: Game ID
- * - playerId: Player ID
+ * - scenarioUserId: ScenarioUser ID
  * - nSimulations: Number of Monte Carlo simulations (default 100)
  */
 
@@ -46,7 +46,7 @@ import { cn } from '../../lib/utils/cn';
 
 const ProbabilisticATPChart = ({
   gameId,
-  playerId,
+  scenarioUserId,
   nSimulations = 100,
 }) => {
   const [atpData, setAtpData] = useState(null);
@@ -55,10 +55,10 @@ const ProbabilisticATPChart = ({
 
   useEffect(() => {
     fetchProbabilisticATP();
-  }, [gameId, playerId, nSimulations]);
+  }, [gameId, scenarioUserId, nSimulations]);
 
   const fetchProbabilisticATP = async () => {
-    if (!gameId || !playerId) return;
+    if (!gameId || !scenarioUserId) return;
 
     setLoading(true);
     setError(null);
@@ -66,7 +66,7 @@ const ProbabilisticATPChart = ({
     try {
       const data = await simulationApi.getATPProbabilistic(
         gameId,
-        playerId,
+        scenarioUserId,
         nSimulations
       );
       setAtpData(data);

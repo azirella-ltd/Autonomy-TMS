@@ -232,17 +232,17 @@ def save_synthetic_game(db: Session, game_data: Dict[str, Any]) -> models.Game:
     )
     game = crud.game.create(db, obj_in=game_in)
     
-    # Create players (AI players)
+    # Create scenario_users (AI scenario_users)
     roles = ["retailer", "wholesaler", "distributor", "manufacturer"]
     for i, role in enumerate(roles):
         player_in = schemas.PlayerCreate(
-            user_id=None,  # AI player
+            user_id=None,  # AI scenario_user
             scenario_id=game.id,
             role=role,
             is_ai=True,
             ai_strategy="synthetic_data"
         )
-        crud.player.create(db, obj_in=player_in)
+        crud.scenario_user.create(db, obj_in=player_in)
     
     # Create rounds and decisions
     for round_num, round_data in enumerate(game_data["rounds"], 1):
@@ -254,12 +254,12 @@ def save_synthetic_game(db: Session, game_data: Dict[str, Any]) -> models.Game:
         db_round = crud.round.create(db, obj_in=round_in)
         
         for decision in round_data["decisions"]:
-            player = crud.player.get_by_game_and_role(
+            scenario_user = crud.scenario_user.get_by_game_and_role(
                 db, scenario_id=game.id, role=decision["role"]
             )
             decision_in = schemas.DecisionCreate(
                 round_id=db_round.id,
-                player_id=player.id,
+                scenario_user_id=scenario_user.id,
                 role=decision["role"],
                 order_quantity=decision["order_quantity"],
                 current_inventory=decision["inventory"],

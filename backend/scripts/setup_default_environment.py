@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Script to set up the default environment with a group admin, default group,
-supply chain configuration, and a scenario with AI participants.
+supply chain configuration, and a scenario with AI scenario_users.
 """
 import asyncio
 import sys
@@ -41,7 +41,7 @@ from app.models.supply_chain_config import SupplyChainConfig, Node, Lane, Market
 from app.models.compatibility import Item
 from app.models.sc_entities import InvPolicy as ProductSiteConfig
 from app.models.scenario import Scenario, ScenarioStatus
-from app.models.participant import Participant, ParticipantRole
+from app.models.scenario_user import ScenarioUser, ScenarioUserRole
 from app.core.security import get_password_hash
 from datetime import datetime
 
@@ -125,10 +125,10 @@ async def create_default_environment():
                 # Create nodes
                 nodes = [
                     {"name": "Market Supply", "node_type": NodeType.MARKET_SUPPLY, "position_x": -1, "position_y": 0, "role": None},
-                    {"name": "Manufacturer", "node_type": NodeType.MANUFACTURER, "position_x": 0, "position_y": 0, "role": ParticipantRole.MANUFACTURER},
-                    {"name": "Distributor", "node_type": NodeType.DISTRIBUTOR, "position_x": 1, "position_y": 0, "role": ParticipantRole.DISTRIBUTOR},
-                    {"name": "Wholesaler", "node_type": NodeType.WHOLESALER, "position_x": 2, "position_y": 0, "role": ParticipantRole.WHOLESALER},
-                    {"name": "Retailer", "node_type": NodeType.RETAILER, "position_x": 3, "position_y": 0, "role": ParticipantRole.RETAILER},
+                    {"name": "Manufacturer", "node_type": NodeType.MANUFACTURER, "position_x": 0, "position_y": 0, "role": ScenarioUserRole.MANUFACTURER},
+                    {"name": "Distributor", "node_type": NodeType.DISTRIBUTOR, "position_x": 1, "position_y": 0, "role": ScenarioUserRole.DISTRIBUTOR},
+                    {"name": "Wholesaler", "node_type": NodeType.WHOLESALER, "position_x": 2, "position_y": 0, "role": ScenarioUserRole.WHOLESALER},
+                    {"name": "Retailer", "node_type": NodeType.RETAILER, "position_x": 3, "position_y": 0, "role": ScenarioUserRole.RETAILER},
                     {"name": "Market Demand", "node_type": NodeType.MARKET_DEMAND, "position_x": 4, "position_y": 0, "role": None},
                 ]
                 
@@ -205,7 +205,7 @@ async def create_default_environment():
                 db.add(ai_user)
                 await db.flush()
                 ai_users[role] = ai_user
-                logger.info(f"✅ Created AI player: {ai_user.username}")
+                logger.info(f"✅ Created AI scenario_user: {ai_user.username}")
             
             # Check if default scenario exists
             result = await db.execute(
@@ -217,7 +217,7 @@ async def create_default_environment():
                 # Create default scenario
                 default_scenario = Scenario(
                     name="Default Simulation",
-                    description="Default simulation with AI participants",
+                    description="Default simulation with AI scenario_users",
                     max_rounds=50,
                     current_round=0,
                     status=ScenarioStatus.CREATED,
@@ -228,16 +228,16 @@ async def create_default_environment():
                 db.add(default_scenario)
                 await db.flush()
                 
-                # Create participants for the scenario
+                # Create scenario_users for the scenario
                 for role, user in ai_users.items():
-                    player = Participant(
+                    scenario_user = ScenarioUser(
                         scenario_id=default_scenario.id,
                         user_id=user.id,
-                        role=ParticipantRole[role.upper()],
+                        role=ScenarioUserRole[role.upper()],
                         is_ai=True,
                         strategy="naive"  # Simple ordering strategy
                     )
-                    db.add(player)
+                    db.add(scenario_user)
                 
                 logger.info(f"✅ Created default scenario: {default_scenario.name}")
             

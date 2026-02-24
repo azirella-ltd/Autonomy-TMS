@@ -50,8 +50,8 @@ class Game(Base):
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
     
     # Relationships
-    players = relationship("Player", back_populates="game")
-    rounds = relationship("GameRound", back_populates="game")
+    scenario_users = relationship("ScenarioUser", back_populates="game")
+    rounds = relationship("ScenarioRound", back_populates="game")
     users = relationship("User", secondary="user_games", back_populates="games")
 
 class User(Base):
@@ -78,50 +78,50 @@ user_games = Table(
     Column('scenario_id', Integer, ForeignKey('games.id'), primary_key=True)
 )
 
-class Player(Base):
-    __tablename__ = "players"
+class ScenarioUser(Base):
+    __tablename__ = "scenario_users"
     
     id = Column(Integer, primary_key=True, index=True)
     scenario_id = Column(Integer, ForeignKey("games.id"), nullable=False)
-    user_id = Column(Integer, nullable=True)  # Null for AI players
+    user_id = Column(Integer, nullable=True)  # Null for AI scenario_users
     role = Column(Enum(PlayerRole), nullable=False)
     name = Column(String(100), nullable=False)
     is_ai = Column(Boolean, default=False)
     
     # Relationships
-    game = relationship("Game", back_populates="players")
-    inventory = relationship("PlayerInventory", back_populates="player", uselist=False)
-    orders = relationship("Order", back_populates="player")
-    player_rounds = relationship("PlayerRound", back_populates="player")
+    game = relationship("Game", back_populates="scenario_users")
+    inventory = relationship("ScenarioUserInventory", back_populates="scenario_user", uselist=False)
+    orders = relationship("Order", back_populates="scenario_user")
+    scenario_user_periods = relationship("ScenarioUserPeriod", back_populates="scenario_user")
 
-class PlayerInventory(Base):
+class ScenarioUserInventory(Base):
     __tablename__ = "player_inventory"
     
     id = Column(Integer, primary_key=True, index=True)
-    player_id = Column(Integer, ForeignKey("players.id"), nullable=False)
+    scenario_user_id = Column(Integer, ForeignKey("scenario_users.id"), nullable=False)
     current_stock = Column(Integer, default=12)
     incoming_shipments = Column(JSON, default=[])
     backorders = Column(Integer, default=0)
     cost = Column(Float, default=0.0)
     
     # Relationships
-    player = relationship("Player", back_populates="inventory")
+    scenario_user = relationship("ScenarioUser", back_populates="inventory")
 
 class Order(Base):
     __tablename__ = "orders"
     
     id = Column(Integer, primary_key=True, index=True)
     scenario_id = Column(Integer, ForeignKey("games.id"), nullable=False)
-    player_id = Column(Integer, ForeignKey("players.id"), nullable=False)
+    scenario_user_id = Column(Integer, ForeignKey("scenario_users.id"), nullable=False)
     round_number = Column(Integer, nullable=False)
     quantity = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     
     # Relationships
-    player = relationship("Player", back_populates="orders")
+    scenario_user = relationship("ScenarioUser", back_populates="orders")
     game = relationship("Game")
 
-class GameRound(Base):
+class ScenarioRound(Base):
     __tablename__ = "game_rounds"
     
     id = Column(Integer, primary_key=True, index=True)
@@ -132,13 +132,13 @@ class GameRound(Base):
     
     # Relationships
     game = relationship("Game", back_populates="rounds")
-    player_rounds = relationship("PlayerRound", back_populates="game_round")
+    scenario_user_periods = relationship("ScenarioUserPeriod", back_populates="game_round")
 
-class PlayerRound(Base):
-    __tablename__ = "player_rounds"
+class ScenarioUserPeriod(Base):
+    __tablename__ = "scenario_user_periods"
     
     id = Column(Integer, primary_key=True, index=True)
-    player_id = Column(Integer, ForeignKey("players.id"), nullable=False)
+    scenario_user_id = Column(Integer, ForeignKey("scenario_users.id"), nullable=False)
     round_id = Column(Integer, ForeignKey("game_rounds.id"), nullable=False)
     order_placed = Column(Integer, nullable=False)
     order_received = Column(Integer, nullable=False)
@@ -151,8 +151,8 @@ class PlayerRound(Base):
     total_cost = Column(Float, default=0.0)
     
     # Relationships
-    player = relationship("Player", back_populates="player_rounds")
-    game_round = relationship("GameRound", back_populates="player_rounds")
+    scenario_user = relationship("ScenarioUser", back_populates="scenario_user_periods")
+    game_round = relationship("ScenarioRound", back_populates="scenario_user_periods")
 
 class Product(Base):
     __tablename__ = "products"

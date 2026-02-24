@@ -37,19 +37,19 @@ from app.services.bootstrap import build_default_group_payload, ensure_default_g
 from app.schemas.group import GroupCreate, GroupUpdate, Group as GroupSchema
 from app.schemas.scenario import ScenarioCreate, PricingConfig, NodePolicy, DemandPattern
 from app.schemas.supply_chain_config import SupplyChainConfigUpdate
-from app.schemas.participant import ParticipantAssignment, ParticipantType as ParticipantTypeSchema
+from app.schemas.scenario_user import ScenarioUserAssignment, ScenarioUserType as ScenarioUserTypeSchema
 from app.db.session import sync_engine
-from app.models.scenario import Scenario as DbScenario, ScenarioStatus as DbScenarioStatus, Round, ParticipantAction
-from app.models.participant import Participant, ParticipantRole, ParticipantStrategy, ParticipantType as ParticipantModelType
+from app.models.scenario import Scenario as DbScenario, ScenarioStatus as DbScenarioStatus, Round, ScenarioUserAction
+from app.models.scenario_user import ScenarioUser, ScenarioUserRole, ScenarioUserStrategy, ScenarioUserType as ScenarioUserModelType
 
 # Local aliases for backward compatibility within this file (main.py is 62K lines)
 DbGame = DbScenario
 DbGameStatus = DbScenarioStatus
 GameCreate = ScenarioCreate
-PlayerAssignment = ParticipantAssignment
-PlayerTypeSchema = ParticipantTypeSchema
-Player = Participant
-PlayerModelType = ParticipantModelType
+PlayerAssignment = ScenarioUserAssignment
+PlayerTypeSchema = ScenarioUserTypeSchema
+ScenarioUser = ScenarioUser
+PlayerModelType = ScenarioUserModelType
 from app.models.supply_chain_config import (
     SupplyChainConfig,
     Node,
@@ -69,15 +69,15 @@ SupplyLaneModel = Lane  # AWS SC TransportationLane model
 SupplyMarketModel = Market
 SupplyMarketDemandModel = MarketDemand
 from app.models.supply_chain import (
-    ParticipantInventory,
+    ScenarioUserInventory,
     Order as SupplyOrder,
     ScenarioRound as SupplyScenarioRound,
-    ParticipantRound as SupplyParticipantRound,
+    ScenarioUserPeriod as SupplyScenarioUserPeriod,
 )
 # Local aliases for backward compatibility within this file
-PlayerInventory = ParticipantInventory
-SupplyGameRound = SupplyScenarioRound
-SupplyPlayerRound = SupplyParticipantRound
+ScenarioUserInventory = ScenarioUserInventory
+SupplyScenarioRound = SupplyScenarioRound
+SupplyScenarioUserPeriod = SupplyScenarioUserPeriod
 from app.models.user import User, UserTypeEnum
 from app.core.security import verify_password
 from app.services.agents import (
@@ -312,7 +312,7 @@ class MeResponse(BaseModel):
 
 
 class OrderSubmission(BaseModel):
-    player_id: int
+    scenario_user_id: int
     quantity: int
     comment: Optional[str] = None
 
@@ -2142,8 +2142,8 @@ _AUTO_ADVANCE_TASKS: Dict[int, asyncio.Task] = {}
 _AUTO_TASKS_LOCK = threading.Lock()
 
 
-def _role_key(player: Player) -> str:
-    return str(player.role.value if hasattr(player.role, "value") else player.role).lower()
+def _role_key(scenario_user: ScenarioUser) -> str:
+    return str(scenario_user.role.value if hasattr(scenario_user.role, "value") else scenario_user.role).lower()
 
 
 def _agent_type_for_role(role: str) -> AgentType:
@@ -2159,8 +2159,8 @@ def _agent_type_for_role(role: str) -> AgentType:
     return mapping[role]
 
 
-def _strategy_for_player(player: Player) -> AgentStrategyEnum:
-    raw = (player.ai_strategy or "autonomy_dtce").lower()
+def _strategy_for_player(scenario_user: ScenarioUser) -> AgentStrategyEnum:
+    raw = (scenario_user.ai_strategy or "autonomy_dtce").lower()
     try:
         return AgentStrategyEnum(raw)
     except ValueError:
@@ -2297,15 +2297,15 @@ def _simulation_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
 
 def _all_players_submitted(db: Session, game: DbGame, round_record: Round) -> bool:
     player_roles = {
-        str(player.role.value if hasattr(player.role, "value") else player.role).lower()
-        for player in db.query(Player).filter(Player.scenario_id == game.id).all()
+        str(scenario_user.role.value if hasattr(scenario_user.role, "value") else scenario_user.role).lower()
+        for scenario_user in db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
     }
     if not player_roles:
         return False
 
     actions = (
-        db.query(PlayerAction, Player)
-        .join(Player, Player.id == PlayerAction.player_id)
+        db.query(PlayerAction, ScenarioUser)
+        .join(ScenarioUser, ScenarioUser.id == PlayerAction.scenario_user_id)
         .filter(
             PlayerAction.scenario_id == game.id,
             PlayerAction.round_id == round_record.id,
@@ -2314,8 +2314,8 @@ def _all_players_submitted(db: Session, game: DbGame, round_record: Round) -> bo
         .all()
     )
     submitted_roles = {
-        str(player.role.value if hasattr(player.role, "value") else player.role).lower()
-        for _, player in actions
+        str(scenario_user.role.value if hasattr(scenario_user.role, "value") else scenario_user.role).lower()
+        for _, scenario_user in actions
         if _.quantity is not None
     }
     return player_roles.issubset(submitted_roles)
@@ -2812,10 +2812,10 @@ def _finalize_round_if_ready(
     round_number = round_record.round_number
     external_demand = _compute_customer_demand(game, round_number)
 
-    players = db.query(Player).filter(Player.scenario_id == game.id).all()
+    scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
     players_by_role = {
-        str(player.role.value if hasattr(player.role, "value") else player.role).lower(): player
-        for player in players
+        str(scenario_user.role.value if hasattr(scenario_user.role, "value") else scenario_user.role).lower(): scenario_user
+        for scenario_user in scenario_users
     }
 
     agent_manager = AgentManager()
@@ -2825,8 +2825,8 @@ def _finalize_round_if_ready(
     full_visibility = str(info_sharing_cfg.get("visibility", "")).lower() == "full"
 
     actions = (
-        db.query(PlayerAction, Player)
-        .join(Player, Player.id == PlayerAction.player_id)
+        db.query(PlayerAction, ScenarioUser)
+        .join(ScenarioUser, ScenarioUser.id == PlayerAction.scenario_user_id)
         .filter(
             PlayerAction.scenario_id == game.id,
             PlayerAction.round_id == round_record.id,
@@ -2837,11 +2837,11 @@ def _finalize_round_if_ready(
 
     orders_by_role = {}
     actions_by_role = {}
-    for action, player in actions:
-        role_key = str(player.role.value if hasattr(player.role, "value") else player.role).lower()
+    for action, scenario_user in actions:
+        role_key = str(scenario_user.role.value if hasattr(scenario_user.role, "value") else scenario_user.role).lower()
         pending_entry = pending.get(role_key, {}) if pending else {}
         orders_by_role[role_key] = {
-            "player_id": player.id,
+            "scenario_user_id": scenario_user.id,
             "quantity": int(action.quantity or 0),
             "comment": pending_entry.get("comment"),
             "submitted_at": pending_entry.get("submitted_at") or action.created_at.isoformat() + "Z",
@@ -3130,7 +3130,7 @@ def _finalize_round_if_ready(
                     }
                 )
 
-        player = players_by_role.get(node_key)
+        scenario_user = players_by_role.get(node_key)
         agent_type = ROLE_TO_AGENT_TYPE.get(node_key)
         order_qty = 0
         decision_comment: Optional[str] = None
@@ -3151,11 +3151,11 @@ def _finalize_round_if_ready(
 
         # Holding/backlog costs for other nodes will be finalised after shipments are scheduled.
 
-        if player is None:
+        if scenario_user is None:
             continue
 
         existing_entry = orders_by_role.get(node_key)
-        if existing_entry and not bool(getattr(player, "is_ai", False)):
+        if existing_entry and not bool(getattr(scenario_user, "is_ai", False)):
             try:
                 order_qty = max(0, int(existing_entry.get("quantity") or 0))
             except (TypeError, ValueError):
@@ -3165,7 +3165,7 @@ def _finalize_round_if_ready(
                 order_qty = 0
             else:
                 if node_key not in configured_agents:
-                    strategy_value = (player.ai_strategy or "naive").lower()
+                    strategy_value = (scenario_user.ai_strategy or "naive").lower()
                     try:
                         strategy_enum = AgentStrategyEnum(strategy_value)
                     except ValueError:
@@ -3177,9 +3177,9 @@ def _finalize_round_if_ready(
                     agent_manager.set_agent_strategy(
                         agent_type,
                         strategy_enum,
-                        llm_model=player.llm_model,
+                        llm_model=scenario_user.llm_model,
                         override_pct=override_pct,
-                        llm_strategy=getattr(player, "llm_strategy", None),
+                        llm_strategy=getattr(scenario_user, "llm_strategy", None),
                     )
                     configured_agents.add(node_key)
                 agent = agent_manager.get_agent(agent_type) if agent_type else None
@@ -3214,7 +3214,7 @@ def _finalize_round_if_ready(
                 observed_demand = incoming_now
                 if node_key in market_demand_nodes:
                     current_demand_value = int(external_demand)
-                elif player.can_see_demand or full_visibility:
+                elif scenario_user.can_see_demand or full_visibility:
                     current_demand_value = observed_demand
                 else:
                     current_demand_value = None
@@ -3279,12 +3279,12 @@ def _finalize_round_if_ready(
         )
 
         entry = orders_by_role.get(node_key, {
-            "player_id": player.id,
+            "scenario_user_id": scenario_user.id,
             "quantity": order_qty,
             "comment": None,
             "submitted_at": orders_timestamp_iso,
         })
-        entry["player_id"] = player.id
+        entry["scenario_user_id"] = scenario_user.id
         entry["quantity"] = order_qty
         entry.setdefault("submitted_at", orders_timestamp_iso)
         if decision_comment:
@@ -3293,7 +3293,7 @@ def _finalize_round_if_ready(
 
         reply_payload = {
             "type": "agent_decision"
-            if bool(getattr(player, "is_ai", False))
+            if bool(getattr(scenario_user, "is_ai", False))
             else "human_input",
             "order_quantity": order_qty,
             "submitted_at": entry.get("submitted_at"),
@@ -3332,14 +3332,14 @@ def _finalize_round_if_ready(
             }
 
         player_info = {
-            "id": getattr(player, "id", None),
-            "name": getattr(player, "name", None),
-            "is_ai": bool(getattr(player, "is_ai", False)),
+            "id": getattr(scenario_user, "id", None),
+            "name": getattr(scenario_user, "name", None),
+            "is_ai": bool(getattr(scenario_user, "is_ai", False)),
         }
 
         debug_entry = {
             "node": node_key,
-            "player": player_info,
+            "scenario_user": player_info,
             "info_sent": info_payload,
             "reply": reply_payload,
         }
@@ -3352,7 +3352,7 @@ def _finalize_round_if_ready(
             action_obj = PlayerAction(
                 scenario_id=game.id,
                 round_id=round_record.id,
-                player_id=player.id,
+                scenario_user_id=scenario_user.id,
                 action_type="order",
                 quantity=order_qty,
                 created_at=timestamp,
@@ -3551,7 +3551,7 @@ def _finalize_round_if_ready(
         orders_by_role.setdefault(
             role,
             {
-                "player_id": players_by_role.get(role).id if players_by_role.get(role) else None,
+                "scenario_user_id": players_by_role.get(role).id if players_by_role.get(role) else None,
                 "quantity": engine.get(role, {}).get("last_order", 0),
                 "comment": None,
                 "submitted_at": orders_timestamp_iso,
@@ -3561,13 +3561,13 @@ def _finalize_round_if_ready(
     for node in all_nodes:
         if node in round_debug_entries:
             continue
-        player = players_by_role.get(node)
-        if not player:
+        scenario_user = players_by_role.get(node)
+        if not scenario_user:
             continue
         recorded = orders_by_role.get(node, {})
         reply_payload = {
             "type": "human_input"
-            if not bool(getattr(player, "is_ai", False))
+            if not bool(getattr(scenario_user, "is_ai", False))
             else "recorded_order",
             "order_quantity": int(recorded.get("quantity") or 0),
             "submitted_at": recorded.get("submitted_at"),
@@ -3576,7 +3576,7 @@ def _finalize_round_if_ready(
             reply_payload["comment"] = recorded["comment"]
         info_payload = {
             "current_round": round_number,
-            "note": "Order received from player submission",
+            "note": "Order received from scenario_user submission",
             "observed_demand": int(incoming_orders_map.get(node, 0)),
             "inventory_before": int(
                 pre_inventory.get(node, engine.get(node, {}).get("inventory", 0))
@@ -3587,10 +3587,10 @@ def _finalize_round_if_ready(
         }
         debug_entry = {
             "node": node,
-            "player": {
-                "id": getattr(player, "id", None),
-                "name": getattr(player, "name", None),
-                "is_ai": bool(getattr(player, "is_ai", False)),
+            "scenario_user": {
+                "id": getattr(scenario_user, "id", None),
+                "name": getattr(scenario_user, "name", None),
+                "is_ai": bool(getattr(scenario_user, "is_ai", False)),
             },
             "info_sent": info_payload,
             "reply": reply_payload,
@@ -3609,7 +3609,7 @@ def _finalize_round_if_ready(
     if not market_entry:
         market_entry = {
             "node": "market",
-            "player": {"name": "Market Demand", "is_ai": False},
+            "scenario_user": {"name": "Market Demand", "is_ai": False},
             "info_sent": {
                 "current_round": round_number,
                 "external_demand": market_demand_value,
@@ -4126,24 +4126,24 @@ def _auto_advance_unsupervised_game_sync(
             )
             return
 
-        players = session.query(Player).filter(Player.scenario_id == game.id).all()
-        if not players:
-            logger.warning("Auto-advance aborted: no players for game %s", scenario_id)
-            _debug_note(game, "Auto-advance aborted: no players found")
+        scenario_users = session.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
+        if not scenario_users:
+            logger.warning("Auto-advance aborted: no scenario_users for game %s", scenario_id)
+            _debug_note(game, "Auto-advance aborted: no scenario_users found")
             return
 
-        has_human_players = any(not p.is_ai for p in players)
+        has_human_players = any(not p.is_ai for p in scenario_users)
         if has_human_players:
             logger.info(
-                "Auto-advance skipped for game %s: unsupervised mode requires AI-only players",
+                "Auto-advance skipped for game %s: unsupervised mode requires AI-only scenario_users",
                 scenario_id,
             )
             _debug_note(
                 game,
-                "Auto-advance skipped: human players present",
+                "Auto-advance skipped: human scenario_users present",
                 details={
-                    "ai_players": sum(1 for p in players if p.is_ai),
-                    "human_players": sum(1 for p in players if not p.is_ai),
+                    "ai_players": sum(1 for p in scenario_users if p.is_ai),
+                    "human_players": sum(1 for p in scenario_users if not p.is_ai),
                 },
             )
             return
@@ -4317,10 +4317,10 @@ def _replay_history_from_rounds(
             last_recorded_round = max(last_recorded_round, record.round_number)
 
     supply_rounds = (
-        db.query(SupplyGameRound)
-        .filter(SupplyGameRound.scenario_id == game.id)
-        .filter(SupplyGameRound.round_number > last_recorded_round)
-        .order_by(SupplyGameRound.round_number.asc())
+        db.query(SupplyScenarioRound)
+        .filter(SupplyScenarioRound.scenario_id == game.id)
+        .filter(SupplyScenarioRound.round_number > last_recorded_round)
+        .order_by(SupplyScenarioRound.round_number.asc())
         .all()
     )
     if not supply_rounds:
@@ -4336,9 +4336,9 @@ def _replay_history_from_rounds(
         if normalized_key:
             node_types[normalized_key] = MixedScenarioService._normalise_node_type(node_type)
 
-    players = {
-        player.id: player
-        for player in db.query(Player).filter(Player.scenario_id == game.id).all()
+    scenario_users = {
+        scenario_user.id: scenario_user
+        for scenario_user in db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
     }
 
     rounds_by_id = {round_rec.id: round_rec for round_rec in supply_rounds}
@@ -4354,23 +4354,23 @@ def _replay_history_from_rounds(
             "node_type_summaries": {},
         }
 
-    player_rounds = (
-        db.query(SupplyPlayerRound)
-        .filter(SupplyPlayerRound.round_id.in_(rounds_by_id.keys()))
-        .order_by(SupplyPlayerRound.round_id.asc(), SupplyPlayerRound.id.asc())
+    scenario_user_periods = (
+        db.query(SupplyScenarioUserPeriod)
+        .filter(SupplyScenarioUserPeriod.round_id.in_(rounds_by_id.keys()))
+        .order_by(SupplyScenarioUserPeriod.round_id.asc(), SupplyScenarioUserPeriod.id.asc())
         .all()
     )
 
-    for pr in player_rounds:
+    for pr in scenario_user_periods:
         entry = entry_map.get(pr.round_id)
         if not entry:
             continue
-        player = players.get(pr.player_id)
-        if not player:
+        scenario_user = scenario_users.get(pr.scenario_user_id)
+        if not scenario_user:
             continue
         node_key = _normalize_node_key(
-            getattr(player, "node_key", None)
-            or getattr(player.role, "value", player.role)
+            getattr(scenario_user, "node_key", None)
+            or getattr(scenario_user.role, "value", scenario_user.role)
         )
         if not node_key:
             continue
@@ -4933,7 +4933,7 @@ async def create_mixed_scenario(payload: GameCreate, user: Dict[str, Any] = Depe
         }
 
         for assignment in payload.player_assignments:
-            is_agent = assignment.player_type == PlayerTypeSchema.AGENT
+            is_agent = assignment.scenario_user_type == PlayerTypeSchema.AGENT
             role_value_raw = assignment.role.value if hasattr(assignment.role, "value") else str(assignment.role)
             role_key = role_value_raw.lower()
             role_enum_name = role_enum_map.get(role_key)
@@ -4946,7 +4946,7 @@ async def create_mixed_scenario(payload: GameCreate, user: Dict[str, Any] = Depe
             if assignment.strategy is not None:
                 strategy_value = assignment.strategy.value if hasattr(assignment.strategy, "value") else str(assignment.strategy)
 
-            player = Player(
+            scenario_user = ScenarioUser(
                 scenario_id=game.id,
                 user_id=None if is_agent else assignment.user_id,
                 name=f"{role_enum_name.title().replace('_', ' ')} ({'AI' if is_agent else 'Human'})",
@@ -4957,7 +4957,7 @@ async def create_mixed_scenario(payload: GameCreate, user: Dict[str, Any] = Depe
                 llm_model=assignment.llm_model if is_agent else None,
                 strategy=PlayerStrategy.MANUAL,
             )
-            db.add(player)
+            db.add(scenario_user)
 
         _ensure_simulation_state(config)
         _save_game_config(db, game, config)
@@ -4979,8 +4979,8 @@ def _apply_player_assignments_for_update(
     config: Dict[str, Any],
 ) -> None:
     existing_players = {
-        (player.role.name if hasattr(player.role, "name") else str(player.role).upper()): player
-        for player in db.query(Player).filter(Player.scenario_id == game.id).all()
+        (scenario_user.role.name if hasattr(scenario_user.role, "name") else str(scenario_user.role).upper()): scenario_user
+        for scenario_user in db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
     }
 
     role_assignments: Dict[str, Dict[str, Any]] = {}
@@ -4994,15 +4994,15 @@ def _apply_player_assignments_for_update(
             raise HTTPException(status_code=400, detail=f"Unsupported role: {role_value}")
 
         role_enum = PlayerRole[role_enum_name]
-        player = existing_players.pop(role_enum.name, None)
-        if player is None:
-            player = Player(
+        scenario_user = existing_players.pop(role_enum.name, None)
+        if scenario_user is None:
+            scenario_user = ScenarioUser(
                 scenario_id=game.id,
                 role=role_enum,
                 name=role_enum.name.title(),
             )
 
-        is_agent = assignment.player_type == PlayerTypeSchema.AGENT
+        is_agent = assignment.scenario_user_type == PlayerTypeSchema.AGENT
         strategy_value = None
         if assignment.strategy is not None:
             strategy_value = (
@@ -5011,15 +5011,15 @@ def _apply_player_assignments_for_update(
                 else str(assignment.strategy)
             )
 
-        player.is_ai = is_agent
-        player.type = PlayerModelType.AI if is_agent else PlayerModelType.HUMAN
-        player.ai_strategy = strategy_value if is_agent else None
-        player.can_see_demand = assignment.can_see_demand
-        player.user_id = None if is_agent else assignment.user_id
-        player.llm_model = assignment.llm_model if is_agent and assignment.llm_model else None
-        player.name = f"{role_enum.name.title()} ({'AI' if is_agent else 'Human'})"
-        player.strategy = PlayerStrategy.MANUAL
-        db.add(player)
+        scenario_user.is_ai = is_agent
+        scenario_user.type = PlayerModelType.AI if is_agent else PlayerModelType.HUMAN
+        scenario_user.ai_strategy = strategy_value if is_agent else None
+        scenario_user.can_see_demand = assignment.can_see_demand
+        scenario_user.user_id = None if is_agent else assignment.user_id
+        scenario_user.llm_model = assignment.llm_model if is_agent and assignment.llm_model else None
+        scenario_user.name = f"{role_enum.name.title()} ({'AI' if is_agent else 'Human'})"
+        scenario_user.strategy = PlayerStrategy.MANUAL
+        db.add(scenario_user)
 
         role_assignments[role_key] = {
             "is_ai": is_agent,
@@ -5124,10 +5124,10 @@ async def update_mixed_scenario(
         db.close()
 
 
-@api.post("/games/{scenario_id}/players/{player_id}/orders")
+@api.post("/games/{scenario_id}/scenario_users/{scenario_user_id}/orders")
 async def submit_order(
     scenario_id: int,
-    player_id: int,
+    scenario_user_id: int,
     submission: OrderSubmission,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -5137,19 +5137,19 @@ async def submit_order(
             raise HTTPException(status_code=400, detail="Quantity must be non-negative")
 
         game = _get_game_for_user(db, user, scenario_id)
-        player = db.query(Player).filter(Player.id == player_id, Player.scenario_id == game.id).first()
-        if not player:
-            raise HTTPException(status_code=404, detail="Player not found for this game")
+        scenario_user = db.query(ScenarioUser).filter(ScenarioUser.id == scenario_user_id, ScenarioUser.scenario_id == game.id).first()
+        if not scenario_user:
+            raise HTTPException(status_code=404, detail="ScenarioUser not found for this game")
 
         config = _coerce_game_config(game)
         round_record = _ensure_round(db, game)
 
-        # Record player action for auditing
+        # Record scenario_user action for auditing
         action = (
             db.query(PlayerAction)
             .filter(
                 PlayerAction.scenario_id == game.id,
-                PlayerAction.player_id == player.id,
+                PlayerAction.scenario_user_id == scenario_user.id,
                 PlayerAction.round_id == round_record.id,
                 PlayerAction.action_type == "order",
             )
@@ -5165,17 +5165,17 @@ async def submit_order(
             action = PlayerAction(
                 scenario_id=game.id,
                 round_id=round_record.id,
-                player_id=player.id,
+                scenario_user_id=scenario_user.id,
                 action_type="order",
                 quantity=submission.quantity,
                 created_at=timestamp,
             )
             db.add(action)
 
-        role_key = str(player.role.value if hasattr(player.role, "value") else player.role).lower()
+        role_key = str(scenario_user.role.value if hasattr(scenario_user.role, "value") else scenario_user.role).lower()
         pending_snapshot = _pending_orders(config)
         pending_snapshot[role_key] = {
-            "player_id": player.id,
+            "scenario_user_id": scenario_user.id,
             "quantity": submission.quantity,
             "comment": submission.comment,
             "submitted_at": timestamp.isoformat() + "Z",
@@ -5197,11 +5197,11 @@ async def submit_order(
             "auto_advanced": auto_advanced,
             "pending_orders": {
                 str(p.role.value if hasattr(p.role, "value") else p.role).lower(): {
-                    "player_id": p.id,
+                    "scenario_user_id": p.id,
                     "quantity": act.quantity,
                 }
-                for act, p in db.query(PlayerAction, Player)
-                .join(Player, Player.id == PlayerAction.player_id)
+                for act, p in db.query(PlayerAction, ScenarioUser)
+                .join(ScenarioUser, ScenarioUser.id == PlayerAction.scenario_user_id)
                 .filter(
                     PlayerAction.scenario_id == game.id,
                     PlayerAction.round_id == round_record.id,
@@ -5223,21 +5223,21 @@ async def list_rounds(scenario_id: int, user: Dict[str, Any] = Depends(get_curre
         history = config.get("history", [])
         if not history:
             history = _replay_history_from_rounds(db, game, config)
-        players = db.query(Player).filter(Player.scenario_id == game.id).all()
+        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
         players_by_role = {
             str(p.role.value if hasattr(p.role, "value") else p.role).lower(): p
-            for p in players
+            for p in scenario_users
         }
 
         rounds_payload = []
         for entry in history:
             round_number = entry.get("round")
-            player_rounds = []
-            for role, player in players_by_role.items():
+            scenario_user_periods = []
+            for role, scenario_user in players_by_role.items():
                 order_info = entry.get("orders", {}).get(role, {})
-                player_rounds.append(
+                scenario_user_periods.append(
                     {
-                        "player_id": player.id,
+                        "scenario_user_id": scenario_user.id,
                         "role": role.upper(),
                         "order_placed": order_info.get("quantity", 0),
                         "inventory_after": entry.get("inventory_positions", {}).get(role, 0),
@@ -5250,7 +5250,7 @@ async def list_rounds(scenario_id: int, user: Dict[str, Any] = Depends(get_curre
                 {
                     "round_number": round_number,
                     "demand": entry.get("demand", 0),
-                    "player_rounds": player_rounds,
+                    "scenario_user_periods": scenario_user_periods,
                 }
             )
         return rounds_payload
@@ -5270,10 +5270,10 @@ async def current_round_status(scenario_id: int, user: Dict[str, Any] = Depends(
         game = _get_game_for_user(db, user, scenario_id)
         config = _coerce_game_config(game)
         pending = _pending_orders(config)
-        players = db.query(Player).filter(Player.scenario_id == game.id).all()
+        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
         all_roles = {
             str(p.role.value if hasattr(p.role, "value") else p.role).lower(): p.id
-            for p in players
+            for p in scenario_users
         }
         submitted = {role for role, data in pending.items() if data.get("quantity") is not None}
         outstanding = [role for role in all_roles.keys() if role not in submitted]
@@ -5309,17 +5309,17 @@ async def get_game_state(scenario_id: int, user: Dict[str, Any] = Depends(get_cu
     try:
         game = _get_game_for_user(db, user, scenario_id)
         config = _coerce_game_config(game)
-        players = db.query(Player).filter(Player.scenario_id == game.id).all()
+        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
         players_payload = [
             {
-                "id": player.id,
-                "role": player.role.value if hasattr(player.role, "value") else player.role,
-                "user_id": player.user_id,
-                "is_ai": bool(player.is_ai),
-                "ai_strategy": player.ai_strategy,
-                "can_see_demand": bool(player.can_see_demand),
+                "id": scenario_user.id,
+                "role": scenario_user.role.value if hasattr(scenario_user.role, "value") else scenario_user.role,
+                "user_id": scenario_user.user_id,
+                "is_ai": bool(scenario_user.is_ai),
+                "ai_strategy": scenario_user.ai_strategy,
+                "can_see_demand": bool(scenario_user.can_see_demand),
             }
-            for player in players
+            for scenario_user in scenario_users
         ]
         round_record = _ensure_round(db, game, game.current_round or 1)
         pending = _pending_orders(config)
@@ -5332,7 +5332,7 @@ async def get_game_state(scenario_id: int, user: Dict[str, Any] = Depends(get_cu
             "round": round_record.round_number,
             "pending_orders": pending,
             "history": history,
-            "players": players_payload,
+            "scenario_users": players_payload,
         }
     finally:
         db.close()
@@ -5344,41 +5344,41 @@ async def get_game(scenario_id: int, user: Dict[str, Any] = Depends(get_current_
     try:
         game = _get_game_for_user(db, user, scenario_id)
         payload = _serialize_game(game)
-        players = db.query(Player).filter(Player.scenario_id == game.id).all()
-        payload["players"] = [
+        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
+        payload["scenario_users"] = [
             {
-                "id": player.id,
-                "name": player.name,
-                "role": player.role.value if hasattr(player.role, "value") else player.role,
-                "user_id": player.user_id,
-                "is_ai": bool(player.is_ai),
-                "ai_strategy": player.ai_strategy,
-                "can_see_demand": bool(player.can_see_demand),
+                "id": scenario_user.id,
+                "name": scenario_user.name,
+                "role": scenario_user.role.value if hasattr(scenario_user.role, "value") else scenario_user.role,
+                "user_id": scenario_user.user_id,
+                "is_ai": bool(scenario_user.is_ai),
+                "ai_strategy": scenario_user.ai_strategy,
+                "can_see_demand": bool(scenario_user.can_see_demand),
             }
-            for player in players
+            for scenario_user in scenario_users
         ]
         return payload
     finally:
         db.close()
 
 
-@api.get("/games/{scenario_id}/players")
+@api.get("/games/{scenario_id}/scenario_users")
 async def list_players(scenario_id: int, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
         game = _get_game_for_user(db, user, scenario_id)
-        players = db.query(Player).filter(Player.scenario_id == game.id).all()
+        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
         return [
             {
-                "id": player.id,
-                "name": player.name,
-                "role": player.role.value if hasattr(player.role, "value") else player.role,
-                "user_id": player.user_id,
-                "is_ai": bool(player.is_ai),
-                "ai_strategy": player.ai_strategy,
-                "can_see_demand": bool(player.can_see_demand),
+                "id": scenario_user.id,
+                "name": scenario_user.name,
+                "role": scenario_user.role.value if hasattr(scenario_user.role, "value") else scenario_user.role,
+                "user_id": scenario_user.user_id,
+                "is_ai": bool(scenario_user.is_ai),
+                "ai_strategy": scenario_user.ai_strategy,
+                "can_see_demand": bool(scenario_user.can_see_demand),
             }
-            for player in players
+            for scenario_user in scenario_users
         ]
     finally:
         db.close()
@@ -5413,10 +5413,10 @@ async def start_game(
             db.commit()
             db.refresh(game)
 
-        players = db.query(Player).filter(Player.scenario_id == game.id).all()
-        human_count = sum(1 for p in players if not getattr(p, "is_ai", False))
-        ai_count = len(players) - human_count
-        all_ai_players = bool(players) and human_count == 0
+        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
+        human_count = sum(1 for p in scenario_users if not getattr(p, "is_ai", False))
+        ai_count = len(scenario_users) - human_count
+        all_ai_players = bool(scenario_users) and human_count == 0
         # If the game is AI-only and progression mode isn't set, default to unsupervised so it can autoplay.
         if _get_progression_mode(game) != PROGRESSION_UNSUPERVISED and all_ai_players:
             config["progression_mode"] = PROGRESSION_UNSUPERVISED
@@ -5568,10 +5568,10 @@ async def reset_game(scenario_id: int, user: Dict[str, Any] = Depends(get_curren
             db.query(PlayerAction).filter(PlayerAction.scenario_id == game.id).delete(synchronize_session=False)
         db.query(Round).filter(Round.scenario_id == game.id).delete(synchronize_session=False)
 
-        sc_round_ids = [rid for (rid,) in db.query(SupplyGameRound.id).filter(SupplyGameRound.scenario_id == game.id).all()]
+        sc_round_ids = [rid for (rid,) in db.query(SupplyScenarioRound.id).filter(SupplyScenarioRound.scenario_id == game.id).all()]
         if sc_round_ids:
-            db.query(SupplyPlayerRound).filter(SupplyPlayerRound.round_id.in_(sc_round_ids)).delete(synchronize_session=False)
-        db.query(SupplyGameRound).filter(SupplyGameRound.scenario_id == game.id).delete(synchronize_session=False)
+            db.query(SupplyScenarioUserPeriod).filter(SupplyScenarioUserPeriod.round_id.in_(sc_round_ids)).delete(synchronize_session=False)
+        db.query(SupplyScenarioRound).filter(SupplyScenarioRound.scenario_id == game.id).delete(synchronize_session=False)
         db.query(SupplyOrder).filter(SupplyOrder.scenario_id == game.id).delete(synchronize_session=False)
 
         config = _coerce_game_config(game)
@@ -5583,22 +5583,22 @@ async def reset_game(scenario_id: int, user: Dict[str, Any] = Depends(get_curren
         node_policies = config.get("node_policies", {})
         sim_params = _simulation_parameters(config)
 
-        players = db.query(Player).filter(Player.scenario_id == game.id).all()
-        for player in players:
-            role_key = _role_key(player)
+        scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).all()
+        for scenario_user in scenario_users:
+            role_key = _role_key(scenario_user)
             policy_cfg = MixedScenarioService._policy_for_node(node_policies, role_key)
             init_inventory = int(policy_cfg.get("init_inventory", sim_params.get("initial_inventory", 12)))
             supply_lead = int(policy_cfg.get("supply_leadtime", sim_params.get("shipping_lead_time", 2)))
             incoming = [0] * max(1, supply_lead)
 
             inventory = (
-                db.query(PlayerInventory)
-                .filter(PlayerInventory.player_id == player.id)
+                db.query(ScenarioUserInventory)
+                .filter(ScenarioUserInventory.scenario_user_id == scenario_user.id)
                 .first()
             )
             if inventory is None:
-                inventory = PlayerInventory(
-                    player_id=player.id,
+                inventory = ScenarioUserInventory(
+                    scenario_user_id=scenario_user.id,
                     current_stock=init_inventory,
                     incoming_shipments=incoming,
                     backorders=0,
@@ -5611,8 +5611,8 @@ async def reset_game(scenario_id: int, user: Dict[str, Any] = Depends(get_curren
                 inventory.backorders = 0
                 inventory.cost = 0.0
 
-            player.last_order = None
-            player.is_ready = False
+            scenario_user.last_order = None
+            scenario_user.is_ready = False
 
         _ensure_simulation_state(config)
         _save_game_config(db, game, config)
@@ -5642,7 +5642,7 @@ async def next_round(scenario_id: int, user: Dict[str, Any] = Depends(get_curren
         config = _coerce_game_config(game)
         round_record = _ensure_round(db, game, game.current_round or 1)
         if not _all_players_submitted(db, game, round_record):
-            raise HTTPException(status_code=400, detail="All players must submit orders before advancing")
+            raise HTTPException(status_code=400, detail="All scenario_users must submit orders before advancing")
 
         if not _finalize_round_if_ready(db, game, config, round_record, force=True):
             raise HTTPException(status_code=400, detail="Unable to advance round")
@@ -5862,7 +5862,7 @@ from app.api.endpoints.mixed_scenario import router as mixed_scenario_router
 api.include_router(mixed_scenario_router)  # Mixed scenario router has /mixed-scenarios prefix in routes
 
 # New terminology: Mixed Alternative endpoints (Feb 2026)
-# These endpoints use the new Alternative/Participant terminology
+# These endpoints use the new Alternative/ScenarioUser terminology
 # while maintaining backward compatibility with the existing mixed-scenarios routes
 # mixed_alternative.py removed - consolidated into mixed_scenario.py
 

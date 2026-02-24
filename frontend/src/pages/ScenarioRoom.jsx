@@ -25,7 +25,7 @@ import AIAnalytics from "../components/scenario/AIAnalytics";
 import NegotiationPanel from "../components/scenario/NegotiationPanel";
 import AchievementsPanel from "../components/scenario/AchievementsPanel";
 import LeaderboardPanel from "../components/scenario/LeaderboardPanel";
-import PlayerProfileBadge from "../components/scenario/PlayerProfileBadge";
+import ScenarioUserProfileBadge from "../components/scenario/ScenarioUserProfileBadge";
 import ReportsPanel from "../components/scenario/ReportsPanel";
 import FulfillmentForm from "../components/scenario/FulfillmentForm";
 import ReplenishmentForm from "../components/scenario/ReplenishmentForm";
@@ -166,15 +166,15 @@ const ScenarioRoom = () => {
             toast.info(`Round phase: ${data.phase}`);
             break;
 
-          case "player_action_required":
-            // DAG Sequential: Notify player it's their turn
+          case "scenario_user_action_required":
+            // DAG Sequential: Notify scenarioUser it's their turn
             toast.info(`Action required: ${data.action}`);
             break;
 
           case "fulfillment_completed":
-            // DAG Sequential: Player submitted fulfillment
+            // DAG Sequential: ScenarioUser submitted fulfillment
             setPlayersCompleted((prev) => prev + 1);
-            if (data.player_id !== currentPlayer?.id) {
+            if (data.scenario_user_id !== currentPlayer?.id) {
               toast.success(`${data.node_key} completed fulfillment`);
             }
             break;
@@ -211,12 +211,12 @@ const ScenarioRoom = () => {
           case "override_approved":
             // Phase 2 Copilot: Manager approved override
             console.log("Override approved:", data);
-            if (data.player_id === currentPlayer?.id) {
+            if (data.scenario_user_id === currentPlayer?.id) {
               toast.success(data.message);
               setPendingApproval(false);
               setOverrideDialogOpen(false);
             } else {
-              toast.info(`Player ${data.player_id}'s override was approved`);
+              toast.info(`ScenarioUser ${data.scenario_user_id}'s override was approved`);
             }
             // Refresh game state
             fetchGame();
@@ -225,12 +225,12 @@ const ScenarioRoom = () => {
           case "override_rejected":
             // Phase 2 Copilot: Manager rejected override
             console.log("Override rejected:", data);
-            if (data.player_id === currentPlayer?.id) {
+            if (data.scenario_user_id === currentPlayer?.id) {
               toast.error(data.message);
               setPendingApproval(false);
               setOverrideDialogOpen(false);
             } else {
-              toast.info(`Player ${data.player_id}'s override was rejected`);
+              toast.info(`ScenarioUser ${data.scenario_user_id}'s override was rejected`);
             }
             // Refresh game state
             fetchGame();
@@ -397,7 +397,7 @@ const ScenarioRoom = () => {
       const response = await simulationApi.post(
         `/mixed-scenarios/${scenarioId}/rounds/${game.current_round}/fulfillment`,
         {
-          player_id: currentPlayer.id,
+          scenario_user_id: currentPlayer.id,
           fulfill_qty: fulfillQty,
         }
       );
@@ -434,7 +434,7 @@ const ScenarioRoom = () => {
       const response = await simulationApi.post(
         `/mixed-scenarios/${scenarioId}/rounds/${game.current_round}/replenishment`,
         {
-          player_id: currentPlayer.id,
+          scenario_user_id: currentPlayer.id,
           order_qty: orderQty,
         }
       );
@@ -508,17 +508,17 @@ const ScenarioRoom = () => {
     );
   }
 
-  const currentPlayer = game.players.find((p) => p.user_id === user.id);
+  const currentPlayer = game.scenarioUsers.find((p) => p.user_id === user.id);
   const isGameMaster = game.created_by === user.id;
   const isGameActive = game.status === "in_progress";
   const isPlayerReady = currentPlayer?.is_ready;
   const allPlayersReady =
-    game.players.every((p) => p.is_ready) && game.players.length >= 2;
+    game.scenarioUsers.every((p) => p.is_ready) && game.scenarioUsers.length >= 2;
 
   // Tab configuration
   const tabs = [
     { id: "chat", label: "Chat", icon: MessageCircle },
-    { id: "players", label: "Users", icon: Users },
+    { id: "scenarioUsers", label: "Users", icon: Users },
     { id: "stats", label: "Stats", icon: BarChart3 },
     { id: "atpctp", label: "ATP/CTP", icon: TrendingUp },
     { id: "ai", label: "AI", icon: Sparkles },
@@ -549,24 +549,24 @@ const ScenarioRoom = () => {
             <div className="space-y-4 max-w-md mx-auto">
               <div className="bg-muted/50 p-4 rounded-lg">
                 <h3 className="font-medium mb-2">
-                  Users ({game.players.length}/{game.max_players})
+                  Users ({game.scenarioUsers.length}/{game.max_players})
                 </h3>
                 <ul className="space-y-2">
-                  {game.players.map((player) => (
+                  {game.scenarioUsers.map((scenarioUser) => (
                     <li
-                      key={player.id}
+                      key={scenarioUser.id}
                       className="flex items-center justify-between"
                     >
                       <span
                         className={cn(
-                          player.is_ready ? "text-emerald-600" : "text-muted-foreground"
+                          scenarioUser.is_ready ? "text-emerald-600" : "text-muted-foreground"
                         )}
                       >
-                        {player.username}
-                        {player.is_ready && " \u2713"}
-                        {player.user_id === game.created_by && " \uD83D\uDC51"}
+                        {scenarioUser.username}
+                        {scenarioUser.is_ready && " \u2713"}
+                        {scenarioUser.user_id === game.created_by && " \uD83D\uDC51"}
                       </span>
-                      {player.user_id === user.id && !isPlayerReady && (
+                      {scenarioUser.user_id === user.id && !isPlayerReady && (
                         <Button
                           size="sm"
                           variant="default"
@@ -617,7 +617,7 @@ const ScenarioRoom = () => {
             <DecisionPhaseIndicator
               phase={roundPhase}
               playersCompleted={playersCompleted}
-              totalPlayers={game.players.length}
+              totalPlayers={game.scenarioUsers.length}
               currentRound={game.current_round}
               phaseStartedAt={game.phase_started_at}
             />
@@ -638,7 +638,7 @@ const ScenarioRoom = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Player's inventory and orders */}
+            {/* ScenarioUser's inventory and orders */}
             <div className="md:col-span-2 space-y-6">
               <div className="bg-muted/50 p-4 rounded-lg">
                 <h3 className="font-medium mb-3">Your Supply Chain</h3>
@@ -677,7 +677,7 @@ const ScenarioRoom = () => {
                         backlog={currentPlayer?.backlog || 0}
                         agentMode={currentPlayer?.agent_mode || 'manual'}
                         scenarioId={scenarioId}
-                        playerId={currentPlayer?.id}
+                        scenarioUserId={currentPlayer?.id}
                         onSubmit={handleFulfillmentSubmit}
                         disabled={isSubmitting || pendingApproval}
                       />
@@ -692,7 +692,7 @@ const ScenarioRoom = () => {
                         currentRound={game.current_round}
                         agentMode={currentPlayer?.agent_mode || 'manual'}
                         scenarioId={scenarioId}
-                        playerId={currentPlayer?.id}
+                        scenarioUserId={currentPlayer?.id}
                         onSubmit={handleReplenishmentSubmit}
                         disabled={isSubmitting || pendingApproval}
                       />
@@ -719,7 +719,7 @@ const ScenarioRoom = () => {
                           <DecisionComparisonPanel
                             roundResults={roundComparisonResults}
                             currentRound={lastComparedRound || game.current_round - 1}
-                            playerId={currentPlayer?.id}
+                            scenarioUserId={currentPlayer?.id}
                           />
                         )}
                       </div>
@@ -797,7 +797,7 @@ const ScenarioRoom = () => {
                       <ul className="space-y-1">
                         {game.recent_orders.map((order, idx) => (
                           <li key={idx} className="text-sm">
-                            <span className="font-medium">{order.player}:</span>{" "}
+                            <span className="font-medium">{order.scenarioUser}:</span>{" "}
                             Ordered {order.amount} units
                           </li>
                         ))}
@@ -810,16 +810,16 @@ const ScenarioRoom = () => {
               </Card>
             </div>
 
-            {/* Players list */}
+            {/* ScenarioUsers list */}
             <div className="bg-muted/50 p-4 rounded-lg">
-              <h3 className="font-medium mb-3">Players</h3>
+              <h3 className="font-medium mb-3">ScenarioUsers</h3>
               <ul className="space-y-3">
-                {game.players.map((player) => (
+                {game.scenarioUsers.map((scenarioUser) => (
                   <li
-                    key={player.id}
+                    key={scenarioUser.id}
                     className={cn(
                       "p-3 rounded",
-                      player.user_id === user.id
+                      scenarioUser.user_id === user.id
                         ? "bg-primary/10 border border-primary/20"
                         : "bg-card"
                     )}
@@ -827,19 +827,19 @@ const ScenarioRoom = () => {
                     <div className="flex justify-between items-center">
                       <div>
                         <span className="font-medium">
-                          {player.username}
-                          {player.user_id === game.created_by && " \uD83D\uDC51"}
+                          {scenarioUser.username}
+                          {scenarioUser.user_id === game.created_by && " \uD83D\uDC51"}
                         </span>
                         <p className="text-sm text-muted-foreground">
-                          Score: {player.score || 0}
+                          Score: {scenarioUser.score || 0}
                         </p>
                       </div>
                       <div className="text-right">
                         <div className="text-sm">
-                          Inv: {player.inventory || 0}
+                          Inv: {scenarioUser.inventory || 0}
                         </div>
                         <div className="text-sm text-muted-foreground">
-                          Bklog: {player.backlog || 0}
+                          Bklog: {scenarioUser.backlog || 0}
                         </div>
                       </div>
                     </div>
@@ -954,36 +954,36 @@ const ScenarioRoom = () => {
               </Card>
             )}
 
-            {activeTab === "players" && (
+            {activeTab === "scenarioUsers" && (
               <Card variant="outlined" padding="default">
                 <CardContent>
                   <h3 className="font-medium mb-3">
-                    Players ({game.players.length}/{game.max_players})
+                    ScenarioUsers ({game.scenarioUsers.length}/{game.max_players})
                   </h3>
                   <ul className="space-y-2">
-                    {game.players.map((player) => (
+                    {game.scenarioUsers.map((scenarioUser) => (
                       <li
-                        key={player.id}
+                        key={scenarioUser.id}
                         className="flex items-center justify-between p-2 hover:bg-muted/50 rounded transition-colors"
                       >
                         <div className="flex items-center">
                           <div
                             className={cn(
                               "h-2 w-2 rounded-full mr-2",
-                              player.is_online ? "bg-emerald-500" : "bg-muted-foreground/30"
+                              scenarioUser.is_online ? "bg-emerald-500" : "bg-muted-foreground/30"
                             )}
                           ></div>
                           <span
                             className={cn(
-                              player.user_id === user.id && "font-medium text-primary"
+                              scenarioUser.user_id === user.id && "font-medium text-primary"
                             )}
                           >
-                            {player.username}
-                            {player.user_id === game.created_by && " \uD83D\uDC51"}
+                            {scenarioUser.username}
+                            {scenarioUser.user_id === game.created_by && " \uD83D\uDC51"}
                           </span>
                         </div>
                         <span className="text-sm text-muted-foreground">
-                          {player.score || 0} pts
+                          {scenarioUser.score || 0} pts
                         </span>
                       </li>
                     ))}
@@ -1069,17 +1069,17 @@ const ScenarioRoom = () => {
                         Leaderboard
                       </h4>
                       <ol className="space-y-2">
-                        {[...game.players]
+                        {[...game.scenarioUsers]
                           .sort((a, b) => (b.score || 0) - (a.score || 0))
                           .slice(0, 3)
-                          .map((player, idx) => (
-                            <li key={player.id} className="flex items-center">
+                          .map((scenarioUser, idx) => (
+                            <li key={scenarioUser.id} className="flex items-center">
                               <span className="text-muted-foreground w-6">
                                 {idx + 1}.
                               </span>
-                              <span className="flex-1">{player.username}</span>
+                              <span className="flex-1">{scenarioUser.username}</span>
                               <span className="font-medium">
-                                {player.score || 0} pts
+                                {scenarioUser.score || 0} pts
                               </span>
                             </li>
                           ))}
@@ -1126,14 +1126,14 @@ const ScenarioRoom = () => {
                 {/* Probabilistic ATP Chart */}
                 <ProbabilisticATPChart
                   scenarioId={parseInt(scenarioId)}
-                  playerId={currentPlayer?.id}
+                  scenarioUserId={currentPlayer?.id}
                   nSimulations={100}
                 />
 
                 {/* Probabilistic Pipeline Chart */}
                 <ProbabilisticPipelineChart
                   scenarioId={parseInt(scenarioId)}
-                  playerId={currentPlayer?.id}
+                  scenarioUserId={currentPlayer?.id}
                   currentRound={game?.current_round}
                   nSimulations={100}
                 />
@@ -1141,7 +1141,7 @@ const ScenarioRoom = () => {
                 {/* ATP/CTP Historical Trend Chart */}
                 <ATPHistoryChart
                   scenarioId={parseInt(scenarioId)}
-                  playerId={currentPlayer?.id}
+                  scenarioUserId={currentPlayer?.id}
                   showCTP={currentPlayer?.role === "MANUFACTURER"}
                   limit={20}
                 />
@@ -1157,7 +1157,7 @@ const ScenarioRoom = () => {
                   </p>
                   <ConformalATPChart
                     scenarioId={parseInt(scenarioId)}
-                    playerId={currentPlayer?.id}
+                    scenarioUserId={currentPlayer?.id}
                     coverage={0.90}
                     method="adaptive"
                   />
@@ -1169,7 +1169,7 @@ const ScenarioRoom = () => {
               <div className="max-h-[600px] overflow-y-auto">
                 <AISuggestion
                   scenarioId={scenarioId}
-                  playerRole={currentPlayer?.role || "RETAILER"}
+                  scenarioUserRole={currentPlayer?.role || "RETAILER"}
                   onAcceptSuggestion={(orderQty) => {
                     setOrderAmount(orderQty.toString());
                     setActiveTab("game");
@@ -1182,7 +1182,7 @@ const ScenarioRoom = () => {
               <div>
                 <AIAnalytics
                   scenarioId={scenarioId}
-                  playerRole={currentPlayer?.role || "RETAILER"}
+                  scenarioUserRole={currentPlayer?.role || "RETAILER"}
                 />
               </div>
             )}
@@ -1191,7 +1191,7 @@ const ScenarioRoom = () => {
               <div className="h-[600px]">
                 <AIConversation
                   scenarioId={scenarioId}
-                  playerRole={currentPlayer?.role || "RETAILER"}
+                  scenarioUserRole={currentPlayer?.role || "RETAILER"}
                 />
               </div>
             )}
@@ -1206,7 +1206,7 @@ const ScenarioRoom = () => {
               <div>
                 <NegotiationPanel
                   scenarioId={scenarioId}
-                  playerRole={currentPlayer?.role || "RETAILER"}
+                  scenarioUserRole={currentPlayer?.role || "RETAILER"}
                   currentPlayerId={currentPlayer?.id || user?.id}
                 />
               </div>
@@ -1216,7 +1216,7 @@ const ScenarioRoom = () => {
               <div>
                 <AchievementsPanel
                   scenarioId={scenarioId}
-                  playerId={currentPlayer?.id || user?.id}
+                  scenarioUserId={currentPlayer?.id || user?.id}
                 />
               </div>
             )}
@@ -1224,7 +1224,7 @@ const ScenarioRoom = () => {
             {activeTab === "leaderboard" && (
               <div>
                 <LeaderboardPanel
-                  playerId={currentPlayer?.id || user?.id}
+                  scenarioUserId={currentPlayer?.id || user?.id}
                 />
               </div>
             )}

@@ -28,7 +28,7 @@ export const WebSocketProvider = ({ children }) => {
   }, []);
 
   // Handle WebSocket connection
-  const connect = useCallback((gameId, playerId) => {
+  const connect = useCallback((gameId, scenarioUserId) => {
     if (!isAuthenticated || !accessToken) {
       console.error('Cannot connect to WebSocket: User is not authenticated');
       return false;
@@ -46,7 +46,7 @@ export const WebSocketProvider = ({ children }) => {
 
     try {
       gameIdRef.current = gameId;
-      webSocketService.connect(gameId, accessToken, playerId);
+      webSocketService.connect(gameId, accessToken, scenarioUserId);
       return true;
     } catch (error) {
       console.error('Failed to connect to WebSocket:', error);

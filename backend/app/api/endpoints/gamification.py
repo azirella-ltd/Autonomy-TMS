@@ -1,5 +1,5 @@
 """
-Gamification API endpoints - Achievements, leaderboards, player stats.
+Gamification API endpoints - Achievements, leaderboards, scenario_user stats.
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,10 +11,10 @@ from app.models.user import User, UserTypeEnum
 from app.services.gamification_service import get_gamification_service
 from app.schemas.gamification import (
     Achievement, AchievementCreate, AchievementUpdate,
-    PlayerStats, PlayerStatsUpdate,
-    PlayerProgressResponse, AchievementCheckResponse,
+    ScenarioUserStats, ScenarioUserStatsUpdate,
+    ScenarioUserProgressResponse, AchievementCheckResponse,
     Leaderboard, LeaderboardCreate, LeaderboardUpdate, LeaderboardResponse,
-    PlayerBadge, AchievementNotification
+    ScenarioUserBadge, AchievementNotification
 )
 
 router = APIRouter()
@@ -24,48 +24,48 @@ router = APIRouter()
 # PLAYER STATS ENDPOINTS
 # ============================================================================
 
-@router.get("/players/{player_id}/stats", response_model=PlayerStats)
-async def get_player_stats(
-    player_id: int,
+@router.get("/scenario_users/{scenario_user_id}/stats", response_model=ScenarioUserStats)
+async def get_scenario_user_stats(
+    scenario_user_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get player statistics."""
+    """Get scenario_user statistics."""
     service = get_gamification_service(db)
-    stats = await service.get_or_create_player_stats(player_id)
+    stats = await service.get_or_create_scenario_user_stats(scenario_user_id)
     return stats
 
 
-@router.get("/players/{player_id}/progress", response_model=PlayerProgressResponse)
+@router.get("/scenario_users/{scenario_user_id}/progress", response_model=ScenarioUserProgressResponse)
 async def get_player_progress(
-    player_id: int,
+    scenario_user_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get complete player progress including stats, achievements, badges."""
+    """Get complete scenario_user progress including stats, achievements, badges."""
     service = get_gamification_service(db)
-    progress = await service.get_player_progress(player_id)
+    progress = await service.get_player_progress(scenario_user_id)
 
     if not progress:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Player not found"
+            detail="ScenarioUser not found"
         )
 
     return progress
 
 
-@router.post("/players/{player_id}/scenarios/{scenario_id}/complete", response_model=PlayerStats)
+@router.post("/scenario_users/{scenario_user_id}/scenarios/{scenario_id}/complete", response_model=ScenarioUserStats)
 async def update_stats_after_scenario(
-    player_id: int,
+    scenario_user_id: int,
     scenario_id: int,
-    won: bool = Query(..., description="Whether participant won the scenario"),
+    won: bool = Query(..., description="Whether scenario_user won the scenario"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Update participant stats after scenario completion."""
+    """Update scenario_user stats after scenario completion."""
     service = get_gamification_service(db)
-    stats = await service.update_player_stats_after_game(player_id, scenario_id, won)
+    stats = await service.update_scenario_user_stats_after_game(scenario_user_id, scenario_id, won)
     return stats
 
 
@@ -183,41 +183,41 @@ async def update_achievement(
     return result.scalar_one()
 
 
-@router.post("/players/{player_id}/check-achievements", response_model=AchievementCheckResponse)
+@router.post("/scenario_users/{scenario_user_id}/check-achievements", response_model=AchievementCheckResponse)
 async def check_player_achievements(
-    player_id: int,
+    scenario_user_id: int,
     scenario_id: Optional[int] = Query(None, description="Scenario ID to check achievements for"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Check and unlock achievements for a player."""
+    """Check and unlock achievements for a scenario_user."""
     service = get_gamification_service(db)
-    result = await service.check_achievements(player_id, scenario_id)
+    result = await service.check_achievements(scenario_user_id, scenario_id)
     return result
 
 
-@router.get("/players/{player_id}/achievements", response_model=List[dict])
+@router.get("/scenario_users/{scenario_user_id}/achievements", response_model=List[dict])
 async def get_player_achievements(
-    player_id: int,
+    scenario_user_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get all achievements unlocked by a player."""
+    """Get all achievements unlocked by a scenario_user."""
     from sqlalchemy import select
-    from app.models.achievement import PlayerAchievement, Achievement as AchievementModel
+    from app.models.achievement import ScenarioUserAchievement, Achievement as AchievementModel
 
     result = await db.execute(
-        select(PlayerAchievement, AchievementModel)
+        select(ScenarioUserAchievement, AchievementModel)
         .join(AchievementModel)
-        .where(PlayerAchievement.player_id == player_id)
-        .order_by(PlayerAchievement.unlocked_at.desc())
+        .where(ScenarioUserAchievement.scenario_user_id == scenario_user_id)
+        .order_by(ScenarioUserAchievement.unlocked_at.desc())
     )
 
     achievements = []
     for pa, ach in result.all():
         achievements.append({
             'id': pa.id,
-            'player_id': pa.player_id,
+            'scenario_user_id': pa.scenario_user_id,
             'achievement_id': pa.achievement_id,
             'scenario_id': pa.scenario_id,
             'unlocked_at': pa.unlocked_at,
@@ -256,13 +256,13 @@ async def get_all_leaderboards(
 async def get_leaderboard(
     leaderboard_id: int,
     limit: int = Query(50, ge=1, le=500, description="Number of entries to return"),
-    player_id: Optional[int] = Query(None, description="Player ID to highlight"),
+    scenario_user_id: Optional[int] = Query(None, description="ScenarioUser ID to highlight"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Get leaderboard with entries."""
     service = get_gamification_service(db)
-    leaderboard = await service.get_leaderboard(leaderboard_id, limit, player_id)
+    leaderboard = await service.get_leaderboard(leaderboard_id, limit, scenario_user_id)
 
     if not leaderboard:
         raise HTTPException(
@@ -317,16 +317,16 @@ async def update_leaderboard_rankings(
 # NOTIFICATION ENDPOINTS
 # ============================================================================
 
-@router.get("/players/{player_id}/notifications", response_model=List[AchievementNotification])
+@router.get("/scenario_users/{scenario_user_id}/notifications", response_model=List[AchievementNotification])
 async def get_player_notifications(
-    player_id: int,
+    scenario_user_id: int,
     limit: int = Query(10, ge=1, le=100, description="Number of notifications to return"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get unread achievement notifications for a player."""
+    """Get unread achievement notifications for a scenario_user."""
     service = get_gamification_service(db)
-    notifications = await service.get_unread_notifications(player_id, limit)
+    notifications = await service.get_unread_notifications(scenario_user_id, limit)
     return notifications
 
 
@@ -356,20 +356,20 @@ async def mark_notification_shown(
 # BADGE ENDPOINTS
 # ============================================================================
 
-@router.get("/players/{player_id}/badges", response_model=List[PlayerBadge])
+@router.get("/scenario_users/{scenario_user_id}/badges", response_model=List[ScenarioUserBadge])
 async def get_player_badges(
-    player_id: int,
+    scenario_user_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get all badges earned by a player."""
+    """Get all badges earned by a scenario_user."""
     from sqlalchemy import select
-    from app.models.achievement import PlayerBadge as PlayerBadgeModel
+    from app.models.achievement import ScenarioUserBadge as ScenarioUserBadgeModel
 
     result = await db.execute(
-        select(PlayerBadgeModel)
-        .where(PlayerBadgeModel.player_id == player_id)
-        .order_by(PlayerBadgeModel.earned_at.desc())
+        select(ScenarioUserBadgeModel)
+        .where(ScenarioUserBadgeModel.scenario_user_id == scenario_user_id)
+        .order_by(ScenarioUserBadgeModel.earned_at.desc())
     )
     badges = result.scalars().all()
     return badges

@@ -42,7 +42,7 @@ function GroupPlayerManagement() {
   const parsedGroupId = typeof rawGroupId === 'number' ? rawGroupId : Number(rawGroupId);
   const groupId = Number.isFinite(parsedGroupId) ? parsedGroupId : null;
 
-  const [players, setPlayers] = useState([]);
+  const [scenarioUsers, setPlayers] = useState([]);
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -88,7 +88,7 @@ function GroupPlayerManagement() {
       setPlayers(filtered);
       return filtered;
     } catch (error) {
-      console.error('Error loading players:', error);
+      console.error('Error loading scenarioUsers:', error);
       setPlayers([]);
       throw error;
     }
@@ -132,8 +132,8 @@ function GroupPlayerManagement() {
     setEditorOpen(true);
   };
 
-  const handleEditUser = (player) => {
-    setSelectedUser(player);
+  const handleEditUser = (scenarioUser) => {
+    setSelectedUser(scenarioUser);
     setEditorOpen(true);
   };
 
@@ -164,13 +164,13 @@ function GroupPlayerManagement() {
     }
   };
 
-  const handleDeleteUser = async (player) => {
-    if (!player) return;
-    const confirmMessage = `Are you sure you want to delete ${player.username || 'this user'}?`;
+  const handleDeleteUser = async (scenarioUser) => {
+    if (!scenarioUser) return;
+    const confirmMessage = `Are you sure you want to delete ${scenarioUser.username || 'this user'}?`;
     if (!window.confirm(confirmMessage)) return;
 
     try {
-      await api.delete(`/users/${player.id}/`);
+      await api.delete(`/users/${scenarioUser.id}/`);
       toast.success('User deleted');
       await loadPlayers();
     } catch (error) {
@@ -235,21 +235,21 @@ function GroupPlayerManagement() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {players.length === 0 ? (
+            {scenarioUsers.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center">
                   <span className="text-muted-foreground">No users found for your group yet.</span>
                 </TableCell>
               </TableRow>
             ) : (
-              players.map((player) => {
-                const type = resolveUserType(player);
-                const capCount = Array.isArray(player.capabilities) ? player.capabilities.length : 0;
+              scenarioUsers.map((scenarioUser) => {
+                const type = resolveUserType(scenarioUser);
+                const capCount = Array.isArray(scenarioUser.capabilities) ? scenarioUser.capabilities.length : 0;
                 return (
-                  <TableRow key={player.id}>
-                    <TableCell>{player.username}</TableCell>
-                    <TableCell>{player.email}</TableCell>
-                    <TableCell>{groupMap[player.group_id] || '—'}</TableCell>
+                  <TableRow key={scenarioUser.id}>
+                    <TableCell>{scenarioUser.username}</TableCell>
+                    <TableCell>{scenarioUser.email}</TableCell>
+                    <TableCell>{groupMap[scenarioUser.group_id] || '—'}</TableCell>
                     <TableCell>
                       <Badge variant={type === 'user' ? 'success' : 'secondary'}>
                         {type === 'user' ? 'User' : type === 'groupadmin' ? 'Group Admin' : 'User'}
@@ -272,7 +272,7 @@ function GroupPlayerManagement() {
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="ghost" size="sm" onClick={() => handleEditUser(player)}>
+                            <Button variant="ghost" size="sm" onClick={() => handleEditUser(scenarioUser)}>
                               <Pencil className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
@@ -282,7 +282,7 @@ function GroupPlayerManagement() {
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleDeleteUser(player)}>
+                            <Button variant="ghost" size="sm" className="text-destructive" onClick={() => handleDeleteUser(scenarioUser)}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>

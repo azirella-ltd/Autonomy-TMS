@@ -11,11 +11,11 @@ from sqlalchemy import desc, select, update
 
 from app.models.chat import ChatMessage, AgentSuggestion, WhatIfAnalysis, MessageType, SenderType
 from app.models.scenario import Scenario
-from app.models.participant import Participant
+from app.models.scenario_user import ScenarioUser
 
 # Aliases for backwards compatibility
 Game = Scenario
-Player = Participant
+ScenarioUser = ScenarioUser
 from app.schemas.chat import (
     ChatMessageCreate,
     AgentSuggestionRequest,
@@ -283,7 +283,7 @@ class ChatService:
         self,
         scenario_id: int,
         suggestion_id: int,
-        player_id: int,
+        scenario_user_id: int,
     ) -> AgentSuggestion:
         """
         Accept an agent suggestion.
@@ -291,7 +291,7 @@ class ChatService:
         Args:
             scenario_id: Game ID
             suggestion_id: Suggestion ID
-            player_id: Player accepting the suggestion
+            scenario_user_id: ScenarioUser accepting the suggestion
 
         Returns:
             Updated suggestion
@@ -308,14 +308,14 @@ class ChatService:
             raise ValueError(f"Suggestion {suggestion_id} not found in game {scenario_id}")
 
         suggestion.accepted = True
-        suggestion.player_id = player_id
+        suggestion.scenario_user_id = scenario_user_id
         suggestion.decided_at = datetime.utcnow()
 
         await self.db.commit()
         await self.db.refresh(suggestion)
 
         logger.info(
-            f"Player {player_id} accepted suggestion {suggestion_id} in game {scenario_id}"
+            f"ScenarioUser {scenario_user_id} accepted suggestion {suggestion_id} in game {scenario_id}"
         )
 
         return suggestion
@@ -324,7 +324,7 @@ class ChatService:
         self,
         scenario_id: int,
         suggestion_id: int,
-        player_id: int,
+        scenario_user_id: int,
     ) -> AgentSuggestion:
         """
         Decline an agent suggestion.
@@ -332,7 +332,7 @@ class ChatService:
         Args:
             scenario_id: Game ID
             suggestion_id: Suggestion ID
-            player_id: Player declining the suggestion
+            scenario_user_id: ScenarioUser declining the suggestion
 
         Returns:
             Updated suggestion
@@ -349,14 +349,14 @@ class ChatService:
             raise ValueError(f"Suggestion {suggestion_id} not found in game {scenario_id}")
 
         suggestion.accepted = False
-        suggestion.player_id = player_id
+        suggestion.scenario_user_id = scenario_user_id
         suggestion.decided_at = datetime.utcnow()
 
         await self.db.commit()
         await self.db.refresh(suggestion)
 
         logger.info(
-            f"Player {player_id} declined suggestion {suggestion_id} in game {scenario_id}"
+            f"ScenarioUser {scenario_user_id} declined suggestion {suggestion_id} in game {scenario_id}"
         )
 
         return suggestion
@@ -386,7 +386,7 @@ class ChatService:
         analysis = WhatIfAnalysis(
             scenario_id=scenario_id,
             round=game.current_round,
-            player_id=analysis_data.player_id,
+            scenario_user_id=analysis_data.scenario_user_id,
             question=analysis_data.question,
             scenario=analysis_data.scenario,
         )
@@ -396,7 +396,7 @@ class ChatService:
         await self.db.refresh(analysis)
 
         logger.info(
-            f"Created what-if analysis {analysis.id} for player {analysis_data.player_id} in game {scenario_id}"
+            f"Created what-if analysis {analysis.id} for scenario_user {analysis_data.scenario_user_id} in game {scenario_id}"
         )
 
         # TODO: Trigger async analysis processing
@@ -454,30 +454,30 @@ class ChatService:
         Returns:
             Dictionary with comprehensive game context
         """
-        from app.models.supply_chain import PlayerRound
+        from app.models.supply_chain import ScenarioUserPeriod
         from sqlalchemy import func
 
         # Get game
         game_result = await self.db.execute(select(Game).filter(Game.id == scenario_id))
         game = game_result.scalars().first()
 
-        # Get player for this agent role
+        # Get scenario_user for this agent role
         player_result = await self.db.execute(
-            select(Player).filter(
-                Player.scenario_id == scenario_id,
-                Player.role == agent_name.upper()
+            select(ScenarioUser).filter(
+                ScenarioUser.scenario_id == scenario_id,
+                ScenarioUser.role == agent_name.upper()
             )
         )
-        player = player_result.scalars().first()
+        scenario_user = player_result.scalars().first()
 
-        if not player:
-            raise ValueError(f"No player found for agent {agent_name} in game {scenario_id}")
+        if not scenario_user:
+            raise ValueError(f"No scenario_user found for agent {agent_name} in game {scenario_id}")
 
-        # Get recent player rounds (last 10)
+        # Get recent scenario_user rounds (last 10)
         rounds_result = await self.db.execute(
-            select(PlayerRound)
-            .filter(PlayerRound.player_id == player.id)
-            .order_by(desc(PlayerRound.round))
+            select(ScenarioUserPeriod)
+            .filter(ScenarioUserPeriod.scenario_user_id == scenario_user.id)
+            .order_by(desc(ScenarioUserPeriod.round))
             .limit(10)
         )
         recent_rounds = list(rounds_result.scalars().all())
@@ -552,8 +552,8 @@ class ChatService:
 
         # Pipeline orders (orders placed but not yet received)
         pipeline_orders = []
-        if current_round and hasattr(player, 'lead_time') and player.lead_time:
-            lead_time = player.lead_time
+        if current_round and hasattr(scenario_user, 'lead_time') and scenario_user.lead_time:
+            lead_time = scenario_user.lead_time
             # Look back through recent rounds within lead time
             for r in recent_rounds[:lead_time]:
                 if hasattr(r, 'order_placed') and r.order_placed:
@@ -577,7 +577,7 @@ class ChatService:
             "current_inventory": current_round.current_inventory if current_round else 0,
             "current_backlog": current_round.current_backlog if current_round else 0,
             "incoming_shipment": incoming_shipment,
-            "lead_time": player.lead_time if hasattr(player, 'lead_time') else 2,
+            "lead_time": scenario_user.lead_time if hasattr(scenario_user, 'lead_time') else 2,
 
             # Pipeline
             "pipeline_orders": pipeline_orders,
@@ -633,7 +633,7 @@ class ChatService:
 
         Args:
             scenario_id: Game ID
-            user_id: User ID (player:1)
+            user_id: User ID (scenario_user:1)
 
         Returns:
             Number of unread messages

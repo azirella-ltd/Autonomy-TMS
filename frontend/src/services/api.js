@@ -4,7 +4,7 @@
  *
  * Terminology (Feb 2026):
  * - Game -> Scenario (simulation scenario)
- * - Player -> Participant (in code) / User (in UI)
+ * - ScenarioUser -> ScenarioUser (in code) / User (in UI)
  * - Round -> Period (time period)
  * - Gamification -> Simulation
  *
@@ -243,19 +243,19 @@ export const simulationApi = {
   },
 
   // ==========================================================================
-  // Participant Management (formerly "Players")
+  // ScenarioUser Management (formerly "ScenarioUsers")
   // ==========================================================================
-  async getParticipants(scenarioId) {
-    const { data } = await http.get(`/scenarios/${scenarioId}/players`);
+  async getScenarioUsers(scenarioId) {
+    const { data } = await http.get(`/scenarios/${scenarioId}/scenarioUsers`);
     return data;
   },
-  async addParticipant(scenarioId, participant) {
-    const { data } = await http.post(`/scenarios/${scenarioId}/players`, participant);
+  async addScenarioUser(scenarioId, scenarioUser) {
+    const { data } = await http.post(`/scenarios/${scenarioId}/scenarioUsers`, scenarioUser);
     return data;
   },
 
-  async submitOrder(scenarioId, participantId, quantity, comment) {
-    const { data } = await http.post(`/scenarios/${scenarioId}/players/${participantId}/orders`, { quantity, comment });
+  async submitOrder(scenarioId, scenarioUserId, quantity, comment) {
+    const { data } = await http.post(`/scenarios/${scenarioId}/scenarioUsers/${scenarioUserId}/orders`, { quantity, comment });
     return data;
   },
 
@@ -642,9 +642,9 @@ export const simulationApi = {
   // ==========================================================================
   // Pattern Analysis
   // ==========================================================================
-  async getParticipantPatterns(scenarioId, participantId = null) {
-    const url = participantId
-      ? `/analytics/scenarios/${scenarioId}/players/${participantId}/patterns`
+  async getScenarioUserPatterns(scenarioId, scenarioUserId = null) {
+    const url = scenarioUserId
+      ? `/analytics/scenarios/${scenarioId}/scenarioUsers/${scenarioUserId}/patterns`
       : `/analytics/scenarios/${scenarioId}/patterns`;
     const { data } = await http.get(url);
     return data;
@@ -662,9 +662,9 @@ export const simulationApi = {
     return data;
   },
 
-  async getInsights(scenarioId, participantId = null) {
-    const url = participantId
-      ? `/analytics/scenarios/${scenarioId}/players/${participantId}/insights`
+  async getInsights(scenarioId, scenarioUserId = null) {
+    const url = scenarioUserId
+      ? `/analytics/scenarios/${scenarioId}/scenarioUsers/${scenarioUserId}/insights`
       : `/analytics/scenarios/${scenarioId}/insights`;
     const { data } = await http.get(url);
     return data;
@@ -683,7 +683,7 @@ export const simulationApi = {
     return data;
   },
 
-  async getParticipantNegotiations(scenarioId, statusFilter = null, limit = 20) {
+  async getScenarioUserNegotiations(scenarioId, statusFilter = null, limit = 20) {
     const params = { limit };
     if (statusFilter) params.status_filter = statusFilter;
     const { data } = await http.get(`/negotiations/scenarios/${scenarioId}/list`, { params });
@@ -695,8 +695,8 @@ export const simulationApi = {
     return data;
   },
 
-  async getNegotiationSuggestion(scenarioId, targetParticipantId) {
-    const { data } = await http.get(`/negotiations/scenarios/${scenarioId}/suggest/${targetParticipantId}`);
+  async getNegotiationSuggestion(scenarioId, targetScenarioUserId) {
+    const { data } = await http.get(`/negotiations/scenarios/${scenarioId}/suggest/${targetScenarioUserId}`);
     return data;
   },
 
@@ -714,19 +714,19 @@ export const simulationApi = {
   // Simulation System (formerly "Gamification")
   // ==========================================================================
 
-  // Participant Stats (formerly Player Stats)
-  async getParticipantStats(participantId) {
-    const { data } = await http.get(`/gamification/players/${participantId}/stats`);
+  // ScenarioUser Stats (formerly ScenarioUser Stats)
+  async getScenarioUserStats(scenarioUserId) {
+    const { data } = await http.get(`/gamification/scenarioUsers/${scenarioUserId}/stats`);
     return data;
   },
 
-  async getParticipantProgress(participantId) {
-    const { data } = await http.get(`/gamification/players/${participantId}/progress`);
+  async getScenarioUserProgress(scenarioUserId) {
+    const { data } = await http.get(`/gamification/scenarioUsers/${scenarioUserId}/progress`);
     return data;
   },
 
-  async updateStatsAfterScenario(participantId, scenarioId, won) {
-    const { data } = await http.post(`/gamification/players/${participantId}/scenarios/${scenarioId}/complete?won=${won}`);
+  async updateStatsAfterScenario(scenarioUserId, scenarioId, won) {
+    const { data } = await http.post(`/gamification/scenarioUsers/${scenarioUserId}/scenarios/${scenarioId}/complete?won=${won}`);
     return data;
   },
 
@@ -741,16 +741,16 @@ export const simulationApi = {
     return data;
   },
 
-  async checkParticipantAchievements(participantId, scenarioId = null) {
+  async checkScenarioUserAchievements(scenarioUserId, scenarioId = null) {
     const url = scenarioId
-      ? `/gamification/players/${participantId}/check-achievements?scenario_id=${scenarioId}`
-      : `/gamification/players/${participantId}/check-achievements`;
+      ? `/gamification/scenarioUsers/${scenarioUserId}/check-achievements?scenario_id=${scenarioId}`
+      : `/gamification/scenarioUsers/${scenarioUserId}/check-achievements`;
     const { data } = await http.post(url);
     return data;
   },
 
-  async getParticipantAchievements(participantId) {
-    const { data } = await http.get(`/gamification/players/${participantId}/achievements`);
+  async getScenarioUserAchievements(scenarioUserId) {
+    const { data } = await http.get(`/gamification/scenarioUsers/${scenarioUserId}/achievements`);
     return data;
   },
 
@@ -760,17 +760,17 @@ export const simulationApi = {
     return data;
   },
 
-  async getLeaderboard(leaderboardId, limit = 50, participantId = null) {
-    const url = participantId
-      ? `/gamification/leaderboards/${leaderboardId}?limit=${limit}&player_id=${participantId}`
+  async getLeaderboard(leaderboardId, limit = 50, scenarioUserId = null) {
+    const url = scenarioUserId
+      ? `/gamification/leaderboards/${leaderboardId}?limit=${limit}&scenario_user_id=${scenarioUserId}`
       : `/gamification/leaderboards/${leaderboardId}?limit=${limit}`;
     const { data } = await http.get(url);
     return data;
   },
 
   // Notifications
-  async getParticipantNotifications(participantId, limit = 10) {
-    const { data } = await http.get(`/gamification/players/${participantId}/notifications?limit=${limit}`);
+  async getScenarioUserNotifications(scenarioUserId, limit = 10) {
+    const { data } = await http.get(`/gamification/scenarioUsers/${scenarioUserId}/notifications?limit=${limit}`);
     return data;
   },
 
@@ -783,8 +783,8 @@ export const simulationApi = {
   },
 
   // Badges
-  async getParticipantBadges(participantId) {
-    const { data} = await http.get(`/gamification/players/${participantId}/badges`);
+  async getScenarioUserBadges(scenarioUserId) {
+    const { data} = await http.get(`/gamification/scenarioUsers/${scenarioUserId}/badges`);
     return data;
   },
 
@@ -804,9 +804,9 @@ export const simulationApi = {
     return response.data;
   },
 
-  async getParticipantTrends(participantId, metric = 'cost', lookback = 10) {
+  async getScenarioUserTrends(scenarioUserId, metric = 'cost', lookback = 10) {
     const { data } = await http.get(
-      `/reports/trends/${participantId}?metric=${metric}&lookback=${lookback}`
+      `/reports/trends/${scenarioUserId}?metric=${metric}&lookback=${lookback}`
     );
     return data;
   },
@@ -820,22 +820,22 @@ export const simulationApi = {
     return data;
   },
 
-  async getParticipantAnalyticsSummary(participantId) {
-    const { data } = await http.get(`/reports/analytics/summary/${participantId}`);
+  async getScenarioUserAnalyticsSummary(scenarioUserId) {
+    const { data } = await http.get(`/reports/analytics/summary/${scenarioUserId}`);
     return data;
   },
 
   // ==========================================================================
   // ATP/CTP Probabilistic endpoints
   // ==========================================================================
-  async getATP(scenarioId, participantId) {
-    const { data } = await http.get(`/mixed-scenarios/${scenarioId}/atp/${participantId}`);
+  async getATP(scenarioId, scenarioUserId) {
+    const { data } = await http.get(`/mixed-scenarios/${scenarioId}/atp/${scenarioUserId}`);
     return data;
   },
 
-  async getATPProbabilistic(scenarioId, participantId, nSimulations = 100, includeSafetyStock = true) {
+  async getATPProbabilistic(scenarioId, scenarioUserId, nSimulations = 100, includeSafetyStock = true) {
     const { data } = await http.get(
-      `/mixed-scenarios/${scenarioId}/atp-probabilistic/${participantId}`,
+      `/mixed-scenarios/${scenarioId}/atp-probabilistic/${scenarioUserId}`,
       {
         params: {
           n_simulations: nSimulations,
@@ -846,17 +846,17 @@ export const simulationApi = {
     return data;
   },
 
-  async getCTP(scenarioId, participantId, productId) {
+  async getCTP(scenarioId, scenarioUserId, productId) {
     const { data } = await http.get(
-      `/mixed-scenarios/${scenarioId}/ctp/${participantId}`,
+      `/mixed-scenarios/${scenarioId}/ctp/${scenarioUserId}`,
       { params: { product_id: productId } }
     );
     return data;
   },
 
-  async getCTPProbabilistic(scenarioId, participantId, productId, nSimulations = 100) {
+  async getCTPProbabilistic(scenarioId, scenarioUserId, productId, nSimulations = 100) {
     const { data } = await http.get(
-      `/mixed-scenarios/${scenarioId}/ctp-probabilistic/${participantId}`,
+      `/mixed-scenarios/${scenarioId}/ctp-probabilistic/${scenarioUserId}`,
       {
         params: {
           product_id: productId,
@@ -867,35 +867,35 @@ export const simulationApi = {
     return data;
   },
 
-  async getPipelineVisualization(scenarioId, participantId, nSimulations = 100) {
+  async getPipelineVisualization(scenarioId, scenarioUserId, nSimulations = 100) {
     const { data } = await http.get(
-      `/mixed-scenarios/${scenarioId}/pipeline-visualization/${participantId}`,
+      `/mixed-scenarios/${scenarioId}/pipeline-visualization/${scenarioUserId}`,
       { params: { n_simulations: nSimulations } }
     );
     return data;
   },
 
-  async getATPHistory(scenarioId, participantId, limit = 20) {
+  async getATPHistory(scenarioId, scenarioUserId, limit = 20) {
     const { data } = await http.get(
-      `/mixed-scenarios/${scenarioId}/atp-history/${participantId}`,
+      `/mixed-scenarios/${scenarioId}/atp-history/${scenarioUserId}`,
       { params: { limit } }
     );
     return data;
   },
 
-  async getATPProjection(scenarioId, participantId, periods = 8) {
+  async getATPProjection(scenarioId, scenarioUserId, periods = 8) {
     const { data } = await http.get(
-      `/mixed-scenarios/${scenarioId}/atp-projection/${participantId}`,
+      `/mixed-scenarios/${scenarioId}/atp-projection/${scenarioUserId}`,
       { params: { periods } }
     );
     return data;
   },
 
-  async allocateATP(scenarioId, participantId, demands, allocationMethod = 'proportional') {
+  async allocateATP(scenarioId, scenarioUserId, demands, allocationMethod = 'proportional') {
     const { data } = await http.post(
       `/mixed-scenarios/${scenarioId}/allocate-atp`,
       {
-        player_id: participantId,
+        scenario_user_id: scenarioUserId,
         demands,
         allocation_method: allocationMethod,
       }
@@ -906,34 +906,34 @@ export const simulationApi = {
   // ==========================================================================
   // Conformal Prediction Endpoints
   // ==========================================================================
-  async getConformalATP(scenarioId, participantId, coverage = 0.90, method = 'adaptive') {
+  async getConformalATP(scenarioId, scenarioUserId, coverage = 0.90, method = 'adaptive') {
     const { data } = await http.get(
-      `/mixed-scenarios/${scenarioId}/atp-conformal/${participantId}`,
+      `/mixed-scenarios/${scenarioId}/atp-conformal/${scenarioUserId}`,
       { params: { coverage, method } }
     );
     return data;
   },
 
-  async calibrateConformalATP(scenarioId, participantId, predictions, actuals, coverage = 0.90, method = 'adaptive') {
+  async calibrateConformalATP(scenarioId, scenarioUserId, predictions, actuals, coverage = 0.90, method = 'adaptive') {
     const { data } = await http.post(
-      `/mixed-scenarios/${scenarioId}/atp-conformal/${participantId}/calibrate`,
+      `/mixed-scenarios/${scenarioId}/atp-conformal/${scenarioUserId}/calibrate`,
       { predictions, actuals },
       { params: { coverage, method } }
     );
     return data;
   },
 
-  async getConformalDemand(scenarioId, participantId, horizon = 1, coverage = 0.90) {
+  async getConformalDemand(scenarioId, scenarioUserId, horizon = 1, coverage = 0.90) {
     const { data } = await http.get(
-      `/mixed-scenarios/${scenarioId}/demand-conformal/${participantId}`,
+      `/mixed-scenarios/${scenarioId}/demand-conformal/${scenarioUserId}`,
       { params: { horizon, coverage } }
     );
     return data;
   },
 
-  async getConformalLeadTime(scenarioId, participantId, coverage = 0.90) {
+  async getConformalLeadTime(scenarioId, scenarioUserId, coverage = 0.90) {
     const { data } = await http.get(
-      `/mixed-scenarios/${scenarioId}/lead-time-conformal/${participantId}`,
+      `/mixed-scenarios/${scenarioId}/lead-time-conformal/${scenarioUserId}`,
       { params: { coverage } }
     );
     return data;
@@ -982,11 +982,11 @@ simulationApi.nextRound = simulationApi.nextPeriod;
 simulationApi.getRounds = simulationApi.getPeriods;
 simulationApi.getRoundStatus = simulationApi.getPeriodStatus;
 
-// Participant aliases (Player -> Participant)
-simulationApi.getPlayers = simulationApi.getParticipants;
-simulationApi.addPlayer = simulationApi.addParticipant;
-simulationApi.getPlayerStats = simulationApi.getParticipantStats;
-simulationApi.getPlayerProgress = simulationApi.getParticipantProgress;
+// ScenarioUser aliases (ScenarioUser -> ScenarioUser)
+simulationApi.getScenarioUsers = simulationApi.getScenarioUsers;
+simulationApi.addPlayer = simulationApi.addScenarioUser;
+simulationApi.getScenarioUserStats = simulationApi.getScenarioUserStats;
+simulationApi.getPlayerProgress = simulationApi.getScenarioUserProgress;
 
 // Backward-compatible named export
 export const mixedGameApi = simulationApi;

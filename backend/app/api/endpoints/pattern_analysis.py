@@ -2,7 +2,7 @@
 Pattern Analysis API Endpoints
 Phase 7 Sprint 4 - Feature 2
 
-Tracks suggestion outcomes and analyzes participant patterns.
+Tracks suggestion outcomes and analyzes scenario_user patterns.
 """
 
 from typing import List, Optional
@@ -39,8 +39,8 @@ class PerformanceScoreRequest(BaseModel):
 
 
 class PlayerPatternsResponse(BaseModel):
-    """Player pattern analysis response."""
-    player_id: int
+    """ScenarioUser pattern analysis response."""
+    scenario_user_id: int
     scenario_id: int
     pattern_type: str
     acceptance_rate: float
@@ -89,7 +89,7 @@ class SuggestionHistoryResponse(BaseModel):
 
 class AcceptanceTrendsResponse(BaseModel):
     """Acceptance rate trends response."""
-    player_id: int
+    scenario_user_id: int
     scenario_id: int
     window_size: int
     current_acceptance_rate: float
@@ -102,7 +102,7 @@ class AcceptanceTrendsResponse(BaseModel):
 class InsightsResponse(BaseModel):
     """Generated insights response."""
     scenario_id: int
-    player_id: Optional[int]
+    scenario_user_id: Optional[int]
     insights: List[str]
 
 
@@ -120,7 +120,7 @@ async def track_suggestion_outcome(
     """
     Track the outcome of an AI suggestion.
 
-    Records whether the player accepted, rejected, or modified
+    Records whether the scenario_user accepted, rejected, or modified
     the suggestion, and what they actually ordered.
 
     This data feeds into pattern analysis and effectiveness metrics.
@@ -160,7 +160,7 @@ async def calculate_performance_score(
     Calculate performance score for a suggestion outcome.
 
     Called after round completes to evaluate how well the
-    suggestion (or player's modification) performed.
+    suggestion (or scenario_user's modification) performed.
 
     **Score Formula**:
     - 40% cost efficiency (lower costs = better)
@@ -186,20 +186,20 @@ async def calculate_performance_score(
         )
 
 
-@router.get("/scenarios/{scenario_id}/players/{player_id}/patterns", response_model=PlayerPatternsResponse)
+@router.get("/scenarios/{scenario_id}/scenario_users/{scenario_user_id}/patterns", response_model=PlayerPatternsResponse)
 async def get_player_patterns(
     scenario_id: int,
-    player_id: int,
+    scenario_user_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Get detected patterns for a player.
+    Get detected patterns for a scenario_user.
 
-    Analyzes player behavior to identify:
+    Analyzes scenario_user behavior to identify:
     - **Pattern Type**: conservative, aggressive, balanced, reactive
     - **Acceptance Rate**: % of suggestions accepted
-    - **Modification Behavior**: How much player adjusts recommendations
+    - **Modification Behavior**: How much scenario_user adjusts recommendations
     - **Risk Tolerance**: low, moderate, high
     - **Preferences**: Preferred priorities and strategies
 
@@ -212,7 +212,7 @@ async def get_player_patterns(
     try:
         service = get_pattern_analysis_service(db)
 
-        patterns = await service.get_player_patterns(player_id, scenario_id)
+        patterns = await service.get_player_patterns(scenario_user_id, scenario_id)
 
         return PlayerPatternsResponse(**patterns)
 
@@ -232,7 +232,7 @@ async def get_ai_effectiveness(
     """
     Measure AI suggestion effectiveness for a scenario.
 
-    Compares outcomes when players:
+    Compares outcomes when scenario_users:
     - Accept AI suggestions vs reject them
     - Follow recommendations vs modify them
 
@@ -264,7 +264,7 @@ async def get_ai_effectiveness(
 @router.get("/scenarios/{scenario_id}/suggestion-history", response_model=SuggestionHistoryResponse)
 async def get_suggestion_history(
     scenario_id: int,
-    player_id: Optional[int] = None,
+    scenario_user_id: Optional[int] = None,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -293,7 +293,7 @@ async def get_suggestion_history(
 
         history = await service.get_suggestion_history(
             scenario_id=scenario_id,
-            player_id=player_id,
+            scenario_user_id=scenario_user_id,
             limit=limit,
         )
 
@@ -310,10 +310,10 @@ async def get_suggestion_history(
         )
 
 
-@router.get("/scenarios/{scenario_id}/players/{player_id}/trends", response_model=AcceptanceTrendsResponse)
+@router.get("/scenarios/{scenario_id}/scenario_users/{scenario_user_id}/trends", response_model=AcceptanceTrendsResponse)
 async def get_acceptance_trends(
     scenario_id: int,
-    player_id: int,
+    scenario_user_id: int,
     window: int = 10,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -321,7 +321,7 @@ async def get_acceptance_trends(
     """
     Get acceptance rate trends over time.
 
-    Tracks how player's acceptance behavior changes:
+    Tracks how scenario_user's acceptance behavior changes:
     - Rolling window averages
     - Trend direction (increasing, decreasing, stable)
     - Confidence correlation
@@ -333,14 +333,14 @@ async def get_acceptance_trends(
     **Insights**:
     - "Acceptance rate improving over time"
     - "Strong correlation between confidence and acceptance"
-    - "Player learning to trust AI"
+    - "ScenarioUser learning to trust AI"
     """
     try:
         service = get_pattern_analysis_service(db)
 
         trends = await service.get_acceptance_trends(
             scenario_id=scenario_id,
-            player_id=player_id,
+            scenario_user_id=scenario_user_id,
             window=window,
         )
 
@@ -356,7 +356,7 @@ async def get_acceptance_trends(
 @router.get("/scenarios/{scenario_id}/insights", response_model=InsightsResponse)
 async def get_insights(
     scenario_id: int,
-    player_id: Optional[int] = None,
+    scenario_user_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -364,7 +364,7 @@ async def get_insights(
     Generate actionable insights from pattern analysis.
 
     Provides human-readable insights based on:
-    - Player patterns
+    - ScenarioUser patterns
     - AI effectiveness
     - Acceptance trends
     - Performance comparisons
@@ -376,19 +376,19 @@ async def get_insights(
     - "AI suggestions with >80% confidence perform 12% better"
 
     **Parameters**:
-    - `player_id`: Optional - if provided, includes player-specific insights
+    - `scenario_user_id`: Optional - if provided, includes scenario_user-specific insights
     """
     try:
         service = get_pattern_analysis_service(db)
 
         insights = await service.generate_insights(
             scenario_id=scenario_id,
-            player_id=player_id,
+            scenario_user_id=scenario_user_id,
         )
 
         return InsightsResponse(
             scenario_id=scenario_id,
-            player_id=player_id,
+            scenario_user_id=scenario_user_id,
             insights=insights,
         )
 

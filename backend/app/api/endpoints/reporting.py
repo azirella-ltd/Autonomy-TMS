@@ -36,7 +36,7 @@ class ScenarioReportResponse(BaseModel):
 
 class TrendAnalysisResponse(BaseModel):
     """Trend analysis response schema."""
-    player_id: int
+    scenario_user_id: int
     metric: str
     lookback: int
     scenarios_analyzed: int
@@ -70,7 +70,7 @@ async def get_scenario_report(
 
     Returns detailed analytics including:
     - Scenario overview (cost, service level, bullwhip effect)
-    - Participant performance comparison
+    - ScenarioUser performance comparison
     - Key insights
     - Actionable recommendations
     - Chart data for visualization
@@ -145,18 +145,18 @@ async def export_scenario_data(
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
 
 
-@router.get("/trends/{player_id}", response_model=TrendAnalysisResponse)
+@router.get("/trends/{scenario_user_id}", response_model=TrendAnalysisResponse)
 async def get_player_trends(
-    player_id: int,
+    scenario_user_id: int,
     metric: str = Query('cost', pattern='^(cost|service_level|inventory|bullwhip)$'),
     lookback: int = Query(10, ge=1, le=50, description="Number of recent scenarios to analyze"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Get participant performance trends over recent scenarios.
+    Get scenario_user performance trends over recent scenarios.
 
-    Analyzes participant's historical performance for specified metric:
+    Analyzes scenario_user's historical performance for specified metric:
     - **cost**: Total scenario cost trend
     - **service_level**: Service level performance
     - **inventory**: Average inventory levels
@@ -174,7 +174,7 @@ async def get_player_trends(
 
     try:
         trends = await service.get_trend_analysis(
-            player_id=player_id,
+            scenario_user_id=scenario_user_id,
             metric=metric,
             lookback=lookback
         )
@@ -230,14 +230,14 @@ async def compare_scenarios(
         raise HTTPException(status_code=500, detail=f"Comparison failed: {str(e)}")
 
 
-@router.get("/analytics/summary/{player_id}")
+@router.get("/analytics/summary/{scenario_user_id}")
 async def get_player_analytics_summary(
-    player_id: int,
+    scenario_user_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Get quick analytics summary for a player.
+    Get quick analytics summary for a scenario_user.
 
     Returns key metrics across all scenarios in a single call.
     Useful for dashboard widgets and quick overviews.
@@ -248,11 +248,11 @@ async def get_player_analytics_summary(
 
     try:
         # Get trends for multiple metrics
-        cost_trends = await service.get_trend_analysis(player_id, 'cost', 5)
-        service_trends = await service.get_trend_analysis(player_id, 'service_level', 5)
+        cost_trends = await service.get_trend_analysis(scenario_user_id, 'cost', 5)
+        service_trends = await service.get_trend_analysis(scenario_user_id, 'service_level', 5)
 
         return {
-            "player_id": player_id,
+            "scenario_user_id": scenario_user_id,
             "cost": {
                 "recent_avg": cost_trends["statistics"].get("mean"),
                 "trend": cost_trends["statistics"].get("trend"),

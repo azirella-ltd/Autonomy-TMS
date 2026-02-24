@@ -232,7 +232,7 @@ export function AuthProvider({ children }) {
       return userType === 'groupadmin' || userType === 'systemadmin';
     }
 
-    if (normalized === 'player' || normalized === 'user') {
+    if (normalized === 'scenarioUser' || normalized === 'user') {
       return userType === 'user';
     }
 

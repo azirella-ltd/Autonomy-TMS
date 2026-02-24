@@ -13,7 +13,7 @@
  * - currentInventory: Current on-hand inventory
  * - agentMode: 'manual', 'copilot', or 'autonomous'
  * - gameId: Game ID for fetching recommendations
- * - playerId: Player ID for fetching recommendations
+ * - scenarioUserId: ScenarioUser ID for fetching recommendations
  * - currentRound: Current round number (for ATP projection)
  * - onSubmit: Callback with fulfill_qty
  */
@@ -51,7 +51,7 @@ const FulfillmentForm = ({
   backlog = 0,
   agentMode = 'manual',
   gameId,
-  playerId,
+  scenarioUserId,
   currentRound,
   onSubmit,
   disabled = false,
@@ -67,14 +67,14 @@ const FulfillmentForm = ({
   // Fetch agent recommendation in copilot mode
   useEffect(() => {
     const fetchRecommendation = async () => {
-      if (agentMode !== 'copilot' || !gameId || !playerId) {
+      if (agentMode !== 'copilot' || !gameId || !scenarioUserId) {
         return;
       }
 
       setLoadingRecommendation(true);
       try {
         const response = await api.get(
-          `/mixed-scenarios/${gameId}/recommendations/fulfillment/${playerId}`
+          `/mixed-scenarios/${gameId}/recommendations/fulfillment/${scenarioUserId}`
         );
         setRecommendation(response.data);
 
@@ -91,7 +91,7 @@ const FulfillmentForm = ({
     };
 
     fetchRecommendation();
-  }, [agentMode, gameId, playerId]);
+  }, [agentMode, gameId, scenarioUserId]);
 
   // Initialize with full demand if ATP allows (manual mode fallback)
   useEffect(() => {
@@ -377,11 +377,11 @@ const FulfillmentForm = ({
           )}
 
           {/* Phase 3: ATP Projection Chart (Collapsible) */}
-          {gameId && playerId && currentRound && showATPProjection && (
+          {gameId && scenarioUserId && currentRound && showATPProjection && (
             <div className="border rounded-lg p-4 bg-muted/30">
               <ATPProjectionChart
                 gameId={gameId}
-                playerId={playerId}
+                scenarioUserId={scenarioUserId}
                 currentRound={currentRound}
                 periods={8}
               />

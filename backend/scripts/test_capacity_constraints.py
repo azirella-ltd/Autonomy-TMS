@@ -156,7 +156,7 @@ async def test_within_capacity(scenario_id: int):
             'Factory': 15.0      # Well under 50 limit
         }
 
-        print("Player orders:")
+        print("ScenarioUser orders:")
         for role, qty in player_orders.items():
             print(f"  {role}: {qty} units")
         print()
@@ -212,7 +212,7 @@ async def test_exceed_capacity(scenario_id: int):
             'Factory': 60.0      # Exceeds 50 limit (no overflow)
         }
 
-        print("Player orders:")
+        print("ScenarioUser orders:")
         for role, qty in player_orders.items():
             print(f"  {role}: {qty} units")
         print()

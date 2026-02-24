@@ -9,15 +9,15 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.models.scenario import Scenario
-from app.models.participant import Participant
-from app.models.supply_chain import ParticipantInventory, ParticipantRound, ScenarioRound
+from app.models.scenario_user import ScenarioUser
+from app.models.supply_chain import ScenarioUserInventory, ScenarioUserPeriod, ScenarioRound
 
 # Aliases for backwards compatibility
 Game = Scenario
-Player = Participant
-PlayerInventory = ParticipantInventory
-PlayerRound = ParticipantRound
-GameRound = ScenarioRound
+ScenarioUser = ScenarioUser
+ScenarioUserInventory = ScenarioUserInventory
+ScenarioUserPeriod = ScenarioUserPeriod
+ScenarioRound = ScenarioRound
 
 # Mapping between backend role identifiers and the labels expected by the Autonomy LLM
 ROLE_NAME_MAP = {
@@ -371,12 +371,12 @@ def build_llm_decision_payload(
 
     engine_state = _coerce_dict(config_raw.get("engine_state", {}))
 
-    player_round_rows = (
-        db.query(PlayerRound, Player, GameRound)
-        .join(Player, PlayerRound.player_id == Player.id)
-        .join(GameRound, PlayerRound.round_id == GameRound.id)
-        .filter(Player.scenario_id == game.id)
-        .order_by(GameRound.round_number.asc())
+    scenario_user_period_rows = (
+        db.query(ScenarioUserPeriod, ScenarioUser, ScenarioRound)
+        .join(ScenarioUser, ScenarioUserPeriod.scenario_user_id == ScenarioUser.id)
+        .join(ScenarioRound, ScenarioUserPeriod.round_id == ScenarioRound.id)
+        .filter(ScenarioUser.scenario_id == game.id)
+        .order_by(ScenarioRound.round_number.asc())
         .all()
     )
 
@@ -389,7 +389,7 @@ def build_llm_decision_payload(
     history_by_role: Dict[str, List[Dict[str, Any]]] = {}
     orders_by_role_round: Dict[str, Dict[int, int]] = {}
 
-    for round_rec, player_obj, game_round in player_round_rows:
+    for round_rec, player_obj, game_round in scenario_user_period_rows:
         role_name = str(player_obj.role.value if hasattr(player_obj.role, "value") else player_obj.role).lower()
         round_number = _safe_int(getattr(game_round, "round_number", 0))
 
@@ -420,19 +420,19 @@ def build_llm_decision_payload(
         history_by_role.setdefault(role_name, []).append(entry)
 
     players_with_inventory = (
-        db.query(Player, PlayerInventory)
-        .outerjoin(PlayerInventory, PlayerInventory.player_id == Player.id)
-        .filter(Player.scenario_id == game.id)
+        db.query(ScenarioUser, ScenarioUserInventory)
+        .outerjoin(ScenarioUserInventory, ScenarioUserInventory.scenario_user_id == ScenarioUser.id)
+        .filter(ScenarioUser.scenario_id == game.id)
         .all()
     )
 
     roles_section: Dict[str, Dict[str, Any]] = {}
     role_key_to_raw: Dict[str, str] = {}
-    for player, inventory in players_with_inventory:
-        if not player or not getattr(player, "role", None):
+    for scenario_user, inventory in players_with_inventory:
+        if not scenario_user or not getattr(scenario_user, "role", None):
             continue
 
-        role_name_raw = str(player.role.value if hasattr(player.role, "value") else player.role).lower()
+        role_name_raw = str(scenario_user.role.value if hasattr(scenario_user.role, "value") else scenario_user.role).lower()
         role_key = ROLE_NAME_MAP.get(role_name_raw, role_name_raw)
 
         inventory_obj = inventory

@@ -2,20 +2,20 @@ import React, { useState, useEffect } from 'react'
 import { TrophyIcon, CheckCircleIcon, LockClosedIcon } from '@heroicons/react/24/outline'
 import { toast } from 'react-toastify'
 
-const AchievementsPanel = ({ scenarioId, playerId }) => {
+const AchievementsPanel = ({ scenarioId, scenarioUserId }) => {
   const [achievements, setAchievements] = useState([])
   const [allAchievements, setAllAchievements] = useState([])
-  const [playerStats, setPlayerStats] = useState(null)
+  const [scenarioUserStats, setScenarioUserStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all') // all, unlocked, locked
   const [categoryFilter, setCategoryFilter] = useState('all')
 
   useEffect(() => {
-    if (playerId) {
+    if (scenarioUserId) {
       fetchAchievements()
-      fetchPlayerStats()
+      fetchScenarioUserStats()
     }
-  }, [playerId])
+  }, [scenarioUserId])
 
   const fetchAchievements = async () => {
     try {
@@ -29,13 +29,13 @@ const AchievementsPanel = ({ scenarioId, playerId }) => {
       const allData = await allResponse.json()
       setAllAchievements(allData)
 
-      // Fetch player's unlocked achievements
-      const playerResponse = await fetch(`/api/v1/gamification/players/${playerId}/achievements`, {
+      // Fetch scenarioUser's unlocked achievements
+      const playerResponse = await fetch(`/api/v1/gamification/scenarioUsers/${scenarioUserId}/achievements`, {
         credentials: 'include'
       })
-      if (!playerResponse.ok) throw new Error('Failed to fetch player achievements')
-      const playerData = await playerResponse.json()
-      setAchievements(playerData)
+      if (!playerResponse.ok) throw new Error('Failed to fetch scenarioUser achievements')
+      const scenarioUserData = await playerResponse.json()
+      setAchievements(scenarioUserData)
     } catch (error) {
       console.error('Error fetching achievements:', error)
       toast.error('Failed to load achievements')
@@ -44,23 +44,23 @@ const AchievementsPanel = ({ scenarioId, playerId }) => {
     }
   }
 
-  const fetchPlayerStats = async () => {
+  const fetchScenarioUserStats = async () => {
     try {
-      const response = await fetch(`/api/v1/gamification/players/${playerId}/stats`, {
+      const response = await fetch(`/api/v1/gamification/scenarioUsers/${scenarioUserId}/stats`, {
         credentials: 'include'
       })
-      if (!response.ok) throw new Error('Failed to fetch player stats')
+      if (!response.ok) throw new Error('Failed to fetch scenarioUser stats')
       const data = await response.json()
-      setPlayerStats(data)
+      setScenarioUserStats(data)
     } catch (error) {
-      console.error('Error fetching player stats:', error)
+      console.error('Error fetching scenarioUser stats:', error)
     }
   }
 
   const checkForNewAchievements = async () => {
     try {
       const response = await fetch(
-        `/api/v1/gamification/players/${playerId}/check-achievements?scenario_id=${scenarioId}`,
+        `/api/v1/gamification/scenarioUsers/${scenarioUserId}/check-achievements?scenario_id=${scenarioId}`,
         {
           method: 'POST',
           credentials: 'include'
@@ -86,7 +86,7 @@ const AchievementsPanel = ({ scenarioId, playerId }) => {
 
         // Refresh data
         await fetchAchievements()
-        await fetchPlayerStats()
+        await fetchScenarioUserStats()
       }
 
       if (data.level_up) {
@@ -144,17 +144,17 @@ const AchievementsPanel = ({ scenarioId, playerId }) => {
 
   return (
     <div className="space-y-6">
-      {/* Player Stats Header */}
-      {playerStats && (
+      {/* ScenarioUser Stats Header */}
+      {scenarioUserStats && (
         <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-lg p-6 text-white">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-2xl font-bold flex items-center">
                 <TrophyIcon className="h-8 w-8 mr-2" />
-                Level {playerStats.player_level}
+                Level {scenarioUserStats.scenario_user_level}
               </h2>
               <p className="text-indigo-100 mt-1">
-                {playerStats.total_points} points • {playerStats.total_achievements_unlocked} achievements
+                {scenarioUserStats.total_points} points • {scenarioUserStats.total_achievements_unlocked} achievements
               </p>
             </div>
             <button
@@ -168,16 +168,16 @@ const AchievementsPanel = ({ scenarioId, playerId }) => {
           {/* Progress Bar */}
           <div className="mt-4">
             <div className="flex justify-between text-sm mb-1">
-              <span>Level {playerStats.player_level}</span>
-              <span>Level {playerStats.player_level + 1}</span>
+              <span>Level {scenarioUserStats.scenario_user_level}</span>
+              <span>Level {scenarioUserStats.scenario_user_level + 1}</span>
             </div>
             <div className="w-full bg-indigo-700 rounded-full h-3">
               <div
                 className="bg-white rounded-full h-3 transition-all duration-500"
                 style={{
                   width: `${Math.min(
-                    (playerStats.total_points % ((playerStats.player_level) ** 2 * 10)) /
-                    ((playerStats.player_level) ** 2 * 10) * 100,
+                    (scenarioUserStats.total_points % ((scenarioUserStats.scenario_user_level) ** 2 * 10)) /
+                    ((scenarioUserStats.scenario_user_level) ** 2 * 10) * 100,
                     100
                   )}%`
                 }}

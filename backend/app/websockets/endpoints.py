@@ -16,11 +16,11 @@ from . import manager
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-@router.websocket("/ws/games/{scenario_id}/players/{player_id}")
+@router.websocket("/ws/games/{scenario_id}/scenario_users/{scenario_user_id}")
 async def websocket_endpoint(
     websocket: WebSocket,
     scenario_id: int,
-    player_id: int,
+    scenario_user_id: int,
     token: str = None,
     db: AsyncSession = Depends(get_db)
 ):
@@ -29,20 +29,20 @@ async def websocket_endpoint(
     user = None
     
     # Log connection attempt
-    logger.info(f"WebSocket connection attempt - Game: {scenario_id}, Player: {player_id}, Client: {client_id}")
+    logger.info(f"WebSocket connection attempt - Game: {scenario_id}, ScenarioUser: {scenario_user_id}, Client: {client_id}")
     
     try:
         # Accept the WebSocket connection first
         await websocket.accept()
-        logger.info(f"WebSocket connection accepted - Game: {scenario_id}, Player: {player_id}, Client: {client_id}")
+        logger.info(f"WebSocket connection accepted - Game: {scenario_id}, ScenarioUser: {scenario_user_id}, Client: {client_id}")
         
         # Authenticate the user using the token if provided
         if token:
             try:
                 user = await get_current_user(token)
-                logger.info(f"Authenticated WebSocket connection - User: {user.id}, Game: {scenario_id}, Player: {player_id}")
+                logger.info(f"Authenticated WebSocket connection - User: {user.id}, Game: {scenario_id}, ScenarioUser: {scenario_user_id}")
                 
-                # Verify the player ID matches the authenticated user if needed
+                # Verify the scenario_user ID matches the authenticated user if needed
                 # This is a good place to add additional authorization checks
                 
             except Exception as e:
@@ -54,11 +54,11 @@ async def websocket_endpoint(
                 )
                 return
         else:
-            logger.warning(f"Unauthenticated WebSocket connection - Game: {scenario_id}, Player: {player_id}")
+            logger.warning(f"Unauthenticated WebSocket connection - Game: {scenario_id}, ScenarioUser: {scenario_user_id}")
         
         # Register the connection with the manager
-        await manager.connect(websocket, scenario_id, client_id, player_id=player_id, db=db)
-        logger.info(f"WebSocket connection registered with manager - Game: {scenario_id}, Player: {player_id}, Client: {client_id}")
+        await manager.connect(websocket, scenario_id, client_id, scenario_user_id=scenario_user_id, db=db)
+        logger.info(f"WebSocket connection registered with manager - Game: {scenario_id}, ScenarioUser: {scenario_user_id}, Client: {client_id}")
         
         # Main message loop
         while True:
@@ -122,7 +122,7 @@ async def handle_order_message(scenario_id: int, client_id: str, user: Optional[
     from ..services.mixed_scenario_service import MixedScenarioService
     from sqlalchemy import select
     from ..models.scenario import Scenario as Game
-    from ..models.participant import Participant as Player
+    from ..models.scenario_user import ScenarioUser as ScenarioUser
     
     try:
         game_service = MixedScenarioService(db)
@@ -134,17 +134,17 @@ async def handle_order_message(scenario_id: int, client_id: str, user: Optional[
             logger.error(f"Game {scenario_id} not found")
             return
             
-        # Get player
+        # Get scenario_user
         result = await db.execute(
-            select(Player).filter(
-                Player.scenario_id == scenario_id,
-                Player.user_id == user.id
+            select(ScenarioUser).filter(
+                ScenarioUser.scenario_id == scenario_id,
+                ScenarioUser.user_id == user.id
             )
         )
-        player = result.scalars().first()
+        scenario_user = result.scalars().first()
         
-        if not player:
-            logger.error(f"Player not found in game {scenario_id}")
+        if not scenario_user:
+            logger.error(f"ScenarioUser not found in game {scenario_id}")
             return
             
         order_quantity = message.get("quantity")

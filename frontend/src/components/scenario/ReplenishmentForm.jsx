@@ -15,7 +15,7 @@
  * - currentRound: Current round number
  * - agentMode: 'manual', 'copilot', or 'autonomous'
  * - gameId: Game ID for fetching recommendations
- * - playerId: Player ID for fetching recommendations
+ * - scenarioUserId: ScenarioUser ID for fetching recommendations
  * - nodeType: Node type ('manufacturer', 'inventory', etc.)
  * - itemId: Item ID (for CTP calculation on manufacturers)
  * - onSubmit: Callback with order_qty
@@ -61,7 +61,7 @@ const ReplenishmentForm = ({
   currentRound = 1,
   agentMode = 'manual',
   gameId,
-  playerId,
+  scenarioUserId,
   nodeType = 'inventory',
   itemId = 1,
   onSubmit,
@@ -97,14 +97,14 @@ const ReplenishmentForm = ({
   // Fetch agent recommendation in copilot mode
   useEffect(() => {
     const fetchRecommendation = async () => {
-      if (agentMode !== 'copilot' || !gameId || !playerId) {
+      if (agentMode !== 'copilot' || !gameId || !scenarioUserId) {
         return;
       }
 
       setLoadingRecommendation(true);
       try {
         const response = await api.get(
-          `/mixed-scenarios/${gameId}/recommendations/replenishment/${playerId}`
+          `/mixed-scenarios/${gameId}/recommendations/replenishment/${scenarioUserId}`
         );
         setRecommendation(response.data);
 
@@ -121,7 +121,7 @@ const ReplenishmentForm = ({
     };
 
     fetchRecommendation();
-  }, [agentMode, gameId, playerId]);
+  }, [agentMode, gameId, scenarioUserId]);
 
   // Initialize with recommended order (manual mode fallback)
   useEffect(() => {
@@ -133,14 +133,14 @@ const ReplenishmentForm = ({
   // Phase 3: Fetch CTP data for manufacturer nodes
   useEffect(() => {
     const fetchCTP = async () => {
-      if (nodeType !== 'manufacturer' || !gameId || !playerId || !itemId) {
+      if (nodeType !== 'manufacturer' || !gameId || !scenarioUserId || !itemId) {
         return;
       }
 
       setLoadingCTP(true);
       try {
         const response = await api.get(
-          `/mixed-scenarios/${gameId}/ctp/${playerId}?item_id=${itemId}`
+          `/mixed-scenarios/${gameId}/ctp/${scenarioUserId}?item_id=${itemId}`
         );
         setCtpData(response.data);
       } catch (err) {
@@ -152,7 +152,7 @@ const ReplenishmentForm = ({
     };
 
     fetchCTP();
-  }, [nodeType, gameId, playerId, itemId, currentRound]);
+  }, [nodeType, gameId, scenarioUserId, itemId, currentRound]);
 
   const handleQuantityChange = (event) => {
     const value = parseInt(event.target.value, 10);

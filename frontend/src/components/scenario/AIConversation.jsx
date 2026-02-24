@@ -15,7 +15,7 @@ import simulationApi from "../../services/api";
  * Enables contextual, multi-turn conversations with AI assistant.
  * The AI remembers previous messages and provides follow-up responses.
  */
-const AIConversation = ({ scenarioId, playerRole }) => {
+const AIConversation = ({ scenarioId, scenarioUserRole }) => {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -182,7 +182,7 @@ const AIConversation = ({ scenarioId, playerRole }) => {
           <SparklesIcon className="h-5 w-5 text-indigo-600" />
           <h3 className="font-semibold text-gray-900">AI Conversation</h3>
           <span className="text-xs text-gray-500">
-            ({playerRole})
+            ({scenarioUserRole})
           </span>
         </div>
 

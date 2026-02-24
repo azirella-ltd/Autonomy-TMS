@@ -136,7 +136,7 @@ const ScenarioLobby = () => {
                           <p className="ml-2 flex-shrink-0 text-xs text-gray-500">
                             {game.status === 'waiting' ? (
                               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                Waiting for players
+                                Waiting for scenarioUsers
                               </span>
                             ) : game.status === 'in_progress' ? (
                               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -153,7 +153,7 @@ const ScenarioLobby = () => {
                           <div className="flex items-center text-sm text-gray-500">
                             <UserGroupIcon className="flex-shrink-0 mr-1.5 h-5 w-5 text-gray-400" />
                             <p>
-                              {game.players.length}/{game.max_players} players
+                              {game.scenarioUsers.length}/{game.max_players} scenarioUsers
                             </p>
                           </div>
                           {game.status === 'in_progress' && (

@@ -147,7 +147,7 @@ const Dashboard = () => {
   const [selectedGameId, setSelectedGameId] = useState(null);
   const [gamesLoading, setGamesLoading] = useState(true);
 
-  // Redirect players to their active game board
+  // Redirect scenarioUsers to their active game board
   useEffect(() => {
     if (user && user.user_type === 'USER') {
       const fetchAndRedirect = async () => {

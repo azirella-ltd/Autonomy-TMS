@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add AI participants to Complex_SC showcase scenarios that have no participants."""
+"""Add AI scenario_users to Complex_SC showcase scenarios that have no scenario_users."""
 
 import sys
 from pathlib import Path
@@ -11,7 +11,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from sqlalchemy.orm import Session
 from app.db.base_class import SessionLocal
-from app.models import Game, Player, PlayerType, PlayerStrategy, PlayerRole
+from app.models import Game, ScenarioUser, PlayerType, PlayerStrategy, PlayerRole
 from app.models.supply_chain_config import NodeType
 from typing import Dict, Any
 import json
@@ -30,7 +30,7 @@ def _load_game_config_payload(game: Game) -> Dict[str, Any]:
 
 
 def _player_role_for_node_type(node_type_str: str) -> PlayerRole:
-    """Map node type string to player role."""
+    """Map node type string to scenario_user role."""
     # Map common node types to roles
     node_type_upper = node_type_str.upper()
     if "RETAIL" in node_type_upper:
@@ -48,13 +48,13 @@ def _player_role_for_node_type(node_type_str: str) -> PlayerRole:
 
 
 def add_players_to_game(session: Session, game: Game, agent_type: str = "naive") -> None:
-    """Add AI participants to a scenario based on its supply chain config."""
+    """Add AI scenario_users to a scenario based on its supply chain config."""
     print(f"\n[info] Processing scenario {game.id}: {game.name}")
 
-    # Check if players already exist
-    existing_player_count = session.query(Player).filter(Player.scenario_id == game.id).count()
-    if existing_player_count > 0:
-        print(f"  [skip] Scenario already has {existing_player_count} participants")
+    # Check if scenario_users already exist
+    existing_scenario_user_count = session.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).count()
+    if existing_scenario_user_count > 0:
+        print(f"  [skip] Scenario already has {existing_scenario_user_count} scenario_users")
         return
 
     # Get the supply chain config to find all sites
@@ -81,13 +81,13 @@ def add_players_to_game(session: Session, game: Game, agent_type: str = "naive")
 
     print(f"  [info] Found {len(nodes)} nodes in config")
 
-    # Create a player for each node that's playable (has master_type = inventory or manufacturer)
+    # Create a scenario_user for each node that's playable (has master_type = inventory or manufacturer)
     playable_master_types = {"inventory", "manufacturer"}
 
     created_count = 0
     for node in nodes:
         if node.master_type in playable_master_types:
-            player = Player(
+            scenario_user = ScenarioUser(
                 scenario_id=game.id,
                 role=_player_role_for_node_type(node.type),
                 name=f"{node.name} ({agent_type})",
@@ -99,12 +99,12 @@ def add_players_to_game(session: Session, game: Game, agent_type: str = "naive")
                 user_id=None,
                 can_see_demand=False,
             )
-            session.add(player)
+            session.add(scenario_user)
             created_count += 1
-            print(f"    [+] Created player for {node.name} (type: {node.type}, master_type: {node.master_type})")
+            print(f"    [+] Created scenario_user for {node.name} (type: {node.type}, master_type: {node.master_type})")
 
     session.flush()
-    print(f"  [success] Created {created_count} participants for scenario {game.id}")
+    print(f"  [success] Created {created_count} scenario_users for scenario {game.id}")
 
 
 def main():

@@ -10,7 +10,7 @@
  * Props:
  * - roundResults: Array of decision comparisons for the round
  * - currentRound: Round number
- * - playerId: Current player ID (to highlight their comparison)
+ * - scenarioUserId: Current scenarioUser ID (to highlight their comparison)
  */
 
 import React, { useState } from 'react';
@@ -49,7 +49,7 @@ import { cn } from '../../lib/utils/cn';
 const DecisionComparisonPanel = ({
   roundResults = [],
   currentRound,
-  playerId,
+  scenarioUserId,
 }) => {
   const [expanded, setExpanded] = useState(true);
 
@@ -213,7 +213,7 @@ const DecisionComparisonPanel = ({
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/50">
-                      <TableHead>Player</TableHead>
+                      <TableHead>ScenarioUser</TableHead>
                       <TableHead className="text-center">
                         <div className="flex items-center justify-center gap-1">
                           <AgentIcon className="h-4 w-4" />
@@ -233,7 +233,7 @@ const DecisionComparisonPanel = ({
                   </TableHeader>
                   <TableBody>
                     {roundResults.map((result, idx) => {
-                      const isCurrentPlayer = result.player_id === playerId;
+                      const isCurrentPlayer = result.scenario_user_id === scenarioUserId;
                       return (
                         <TableRow
                           key={idx}

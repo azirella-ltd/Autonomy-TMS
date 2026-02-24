@@ -148,12 +148,12 @@ class AgentGameDemo:
         print(f"Round: {state['current_round']}/{state['max_rounds']}")
         
         print("\nPlayers:")
-        for player in state['players']:
-            print(f"\n{player['role'].upper()} ({player['name']}):")
-            print(f"  Inventory: {player['inventory']}")
-            print(f"  Backlog: {player['backlog']}")
-            print(f"  Incoming: {player.get('incoming_shipment', 'N/A')}")
-            print(f"  Outgoing: {player.get('outgoing_shipment', 'N/A')}")
+        for scenario_user in state['scenario_users']:
+            print(f"\n{scenario_user['role'].upper()} ({scenario_user['name']}):")
+            print(f"  Inventory: {scenario_user['inventory']}")
+            print(f"  Backlog: {scenario_user['backlog']}")
+            print(f"  Incoming: {scenario_user.get('incoming_shipment', 'N/A')}")
+            print(f"  Outgoing: {scenario_user.get('outgoing_shipment', 'N/A')}")
         
         print("\nDemand Pattern:")
         print(json.dumps(state['demand_pattern'], indent=2))

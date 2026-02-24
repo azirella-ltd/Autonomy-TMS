@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { AlertTriangle } from 'lucide-react';
 
 /**
- * PlayGame - Redirects players to their active game
+ * PlayGame - Redirects scenarioUsers to their active game
  * This is the landing page for USER user type
  */
 const PlayGame = () => {

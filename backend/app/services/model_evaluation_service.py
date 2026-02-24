@@ -118,7 +118,7 @@ class ModelEvaluationService:
         """
         from app.services.agent_game_service import AgentGameService
         from app.models.scenario import Scenario as Game
-        from app.models.supply_chain import ScenarioRound as GameRound
+        from app.models.supply_chain import ScenarioRound as ScenarioRound
 
         # Storage for trial results
         total_costs = []
@@ -162,9 +162,9 @@ class ModelEvaluationService:
 
                 # Get all rounds
                 rounds_result = await self.db.execute(
-                    select(GameRound)
-                    .where(GameRound.scenario_id == game.id)
-                    .order_by(GameRound.round_number)
+                    select(ScenarioRound)
+                    .where(ScenarioRound.scenario_id == game.id)
+                    .order_by(ScenarioRound.round_number)
                 )
                 rounds = rounds_result.scalars().all()
 

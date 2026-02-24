@@ -28,7 +28,7 @@ class ChatAPITester:
         self.session = requests.Session()
         self.token = None
         self.scenario_id = None
-        self.player_id = None
+        self.scenario_user_id = None
 
     def login(self):
         """Authenticate and get access token."""
@@ -76,9 +76,9 @@ class ChatAPITester:
         print("\n=== Testing send message ===")
 
         message_data = {
-            "sender_id": f"player:1",
-            "sender_name": "Test Player",
-            "sender_type": "player",
+            "sender_id": f"scenario_user:1",
+            "sender_name": "Test ScenarioUser",
+            "sender_type": "scenario_user",
             "content": "Hello agents! Can you help me with my order?",
             "type": "text"
         }
@@ -208,7 +208,7 @@ class ChatAPITester:
 
         response = self.session.put(
             f"{API_BASE}/scenarios/{self.scenario_id}/chat/suggestions/{suggestion_id}/accept",
-            json={"player_id": 1},  # Assuming player ID 1
+            json={"scenario_user_id": 1},  # Assuming scenario_user ID 1
         )
 
         if response.status_code == 200:
@@ -229,7 +229,7 @@ class ChatAPITester:
 
         response = self.session.put(
             f"{API_BASE}/scenarios/{self.scenario_id}/chat/suggestions/{suggestion_id}/decline",
-            json={"player_id": 1},
+            json={"scenario_user_id": 1},
         )
 
         if response.status_code == 200:
@@ -249,7 +249,7 @@ class ChatAPITester:
         print("\n=== Testing what-if analysis ===")
 
         analysis_data = {
-            "player_id": 1,
+            "scenario_user_id": 1,
             "question": "What if I order 50 units instead of 40?",
             "scenario": {
                 "order_quantity": 50,

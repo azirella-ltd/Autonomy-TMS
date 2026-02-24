@@ -1,0 +1,14 @@
+{
+  "site_key": "${SITE_KEY}",
+  "site_name": "${SITE_NAME}",
+  "site_type": "${SITE_TYPE}",
+  "region": "${REGION}",
+  "heartbeat_mode": "deterministic",
+  "heartbeat_interval_minutes": 30,
+  "digest_interval_hours": 4,
+  "alert_channel": "#${SITE_KEY}-alerts",
+  "escalation_contact": "@supply-planner",
+  "api_base": "${API_BASE}",
+  "llm_api_base": "${LLM_API_BASE}",
+  "llm_model": "${LLM_MODEL}"
+}

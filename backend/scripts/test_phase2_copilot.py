@@ -3,7 +3,7 @@
 Phase 2 Copilot Mode End-to-End Test Script
 
 Tests the complete copilot workflow:
-1. Create a scenario with copilot mode participants
+1. Create a scenario with copilot mode scenario_users
 2. Test RLHF data collection on human overrides
 3. Test authority check and DecisionProposal creation
 4. Verify preference label updates
@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy.orm import Session
 from app.db.session import sync_session_factory
-from app.models.participant import Participant, AgentMode
+from app.models.scenario_user import ScenarioUser, AgentMode
 from app.models.scenario import Scenario, ScenarioStatus
 from app.models.supply_chain_config import SupplyChainConfig
 from app.models.decision_proposal import DecisionProposal, ProposalStatus
@@ -185,21 +185,21 @@ def test_decision_proposal_model(db: Session):
 
 
 def test_participant_agent_mode(db: Session):
-    """Test Participant model has agent_mode field"""
-    print_header("Test 6: Participant Agent Mode Field")
+    """Test ScenarioUser model has agent_mode field"""
+    print_header("Test 6: ScenarioUser Agent Mode Field")
 
     try:
         from sqlalchemy import inspect
-        mapper = inspect(Participant)
+        mapper = inspect(ScenarioUser)
         columns = {c.key for c in mapper.columns}
 
         if 'agent_mode' not in columns:
-            print_result("Participant.agent_mode field", False, "Missing agent_mode column")
+            print_result("ScenarioUser.agent_mode field", False, "Missing agent_mode column")
             return False
 
-        print_result("Participant.agent_mode field", True, "Field exists")
+        print_result("ScenarioUser.agent_mode field", True, "Field exists")
     except Exception as e:
-        print_result("Participant.agent_mode field", False, str(e))
+        print_result("ScenarioUser.agent_mode field", False, str(e))
         return False
 
     return True
@@ -215,7 +215,7 @@ def test_rlhf_feedback_model(db: Session):
         columns = {c.key for c in mapper.columns}
 
         required_columns = {
-            'id', 'scenario_id', 'player_id', 'round_number',
+            'id', 'scenario_id', 'scenario_user_id', 'round_number',
             'ai_suggestion', 'human_decision', 'feedback_action',
             'preference_label', 'ai_outcome', 'human_outcome'
         }
@@ -246,17 +246,17 @@ def test_integration_with_existing_scenario(db: Session):
 
     print_result("Find existing scenario", True, f"Scenario ID: {scenario.id}, Status: {scenario.status}")
 
-    # Check for participants
-    participants = db.query(Participant).filter(Participant.scenario_id == scenario.id).all()
-    if not participants:
-        print_result("Find participants", False, "No participants in scenario")
+    # Check for scenario_users
+    scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario.id).all()
+    if not scenario_users:
+        print_result("Find scenario_users", False, "No scenario_users in scenario")
         return True
 
-    print_result("Find participants", True, f"Found {len(participants)} participants")
+    print_result("Find scenario_users", True, f"Found {len(scenario_users)} scenario_users")
 
-    # Check participant agent modes
-    copilot_participants = [p for p in participants if p.agent_mode == AgentMode.COPILOT]
-    print(f"  INFO: {len(copilot_participants)}/{len(participants)} participants in COPILOT mode")
+    # Check scenario_user agent modes
+    copilot_participants = [p for p in scenario_users if p.agent_mode == AgentMode.COPILOT]
+    print(f"  INFO: {len(copilot_participants)}/{len(scenario_users)} scenario_users in COPILOT mode")
 
     # Check for RLHF feedback
     feedback_count = db.query(RLHFFeedback).filter(RLHFFeedback.scenario_id == scenario.id).count()
@@ -286,7 +286,7 @@ def run_all_tests():
         results.append(("Agent Mode Service", test_agent_mode_service(db)))
         results.append(("RLHF Data Collector", test_rlhf_data_collector(db)))
         results.append(("DecisionProposal Model", test_decision_proposal_model(db)))
-        results.append(("Participant Agent Mode", test_participant_agent_mode(db)))
+        results.append(("ScenarioUser Agent Mode", test_participant_agent_mode(db)))
         results.append(("RLHF Feedback Model", test_rlhf_feedback_model(db)))
         results.append(("Integration Test", test_integration_with_existing_scenario(db)))
 
@@ -304,7 +304,7 @@ def run_all_tests():
         if failed == 0:
             print("\n  🎉 All Phase 2 tests passed!")
             print("\n  Next steps:")
-            print("  1. Create a scenario with copilot mode participants")
+            print("  1. Create a scenario with copilot mode scenario_users")
             print("  2. Play rounds with human overrides")
             print("  3. Verify RLHF data collection")
             print("  4. Check decision-comparison endpoint")

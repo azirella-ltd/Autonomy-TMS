@@ -6,8 +6,8 @@ enabling The simulation to use SC planning logic as a special case.
 
 Concept Mapping:
 - simulation Node     → SC Site (product_id, site_id)
-- Player Inventory   → SC InvLevel (on_hand_qty)
-- Player Order       → SC Supply Plan (PO/TO request)
+- ScenarioUser Inventory   → SC InvLevel (on_hand_qty)
+- ScenarioUser Order       → SC Supply Plan (PO/TO request)
 - Round              → SC Planning Period
 - Demand Pattern     → SC Forecast
 
@@ -21,11 +21,11 @@ from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.scenario import Scenario
-from app.models.participant import Participant
+from app.models.scenario_user import ScenarioUser
 
 # Aliases for backwards compatibility
 Game = Scenario
-Player = Participant
+ScenarioUser = ScenarioUser
 from app.models.supply_chain_config import SupplyChainConfig, Node
 from app.models.sc_entities import Product
 from app.models.sc_entities import (
@@ -65,7 +65,7 @@ class SimulationToSCAdapter:
         """
         Sync current game inventory to inv_level table
 
-        Reads player inventory from game state and writes to inv_level
+        Reads scenario_user inventory from game state and writes to inv_level
         so SC planner can see current on-hand quantities.
 
         Args:
@@ -76,11 +76,11 @@ class SimulationToSCAdapter:
         """
         print(f"  Syncing inventory levels for round {round_number}...")
 
-        # Get all players in this game
+        # Get all scenario_users in this game
         result = await self.db.execute(
-            select(Player).filter(Player.scenario_id == self.game.id)
+            select(ScenarioUser).filter(ScenarioUser.scenario_id == self.game.id)
         )
-        players = result.scalars().all()
+        scenario_users = result.scalars().all()
 
         # Get config data
         await self.db.refresh(self.config, ['nodes', 'items'])
@@ -96,12 +96,12 @@ class SimulationToSCAdapter:
         records_created = 0
         snapshot_date = self.game.start_date + timedelta(days=round_number * 7)
 
-        # For each player, create inv_level record
-        for player in players:
-            # Get player's node
-            node = next((n for n in self.config.nodes if n.name == player.role), None)
+        # For each scenario_user, create inv_level record
+        for scenario_user in scenario_users:
+            # Get scenario_user's node
+            node = next((n for n in self.config.nodes if n.name == scenario_user.role), None)
             if not node:
-                print(f"    Warning: No node found for player role {player.role}")
+                print(f"    Warning: No node found for scenario_user role {scenario_user.role}")
                 continue
 
             # Get item (simulation typically has 1 item: "Cases" or similar)
@@ -111,9 +111,9 @@ class SimulationToSCAdapter:
 
             item = self.config.items[0]  # Use first item
 
-            # Get player's current inventory from game state
+            # Get scenario_user's current inventory from game state
             # This depends on how game state is stored - check game.config
-            inventory_qty = self._get_player_inventory(player, round_number)
+            inventory_qty = self._get_player_inventory(scenario_user, round_number)
 
             # Create InvLevel record
             inv_level = InvLevel(
@@ -134,19 +134,19 @@ class SimulationToSCAdapter:
             self.db.add(inv_level)
             records_created += 1
 
-            print(f"    OK {player.role}: on_hand={inventory_qty}")
+            print(f"    OK {scenario_user.role}: on_hand={inventory_qty}")
 
         await self.db.commit()
         print(f"  OK Created {records_created} inv_level records")
 
         return records_created
 
-    def _get_player_inventory(self, player: Player, round_number: int) -> float:
+    def _get_player_inventory(self, scenario_user: ScenarioUser, round_number: int) -> float:
         """
-        Extract player's current inventory from game state
+        Extract scenario_user's current inventory from game state
 
         Args:
-            player: Player instance
+            scenario_user: ScenarioUser instance
             round_number: Current round
 
         Returns:
@@ -156,7 +156,7 @@ class SimulationToSCAdapter:
         # Structure: game.config['nodes'][role]['inventory']
         game_config = self.game.config or {}
         nodes_state = game_config.get('nodes', {})
-        player_state = nodes_state.get(player.role, {})
+        player_state = nodes_state.get(scenario_user.role, {})
 
         # Get inventory (default to 12 for simulation initial state)
         inventory = player_state.get('inventory', 12)
@@ -299,20 +299,20 @@ class SimulationToSCAdapter:
         supply_plans: List[SupplyPlan],
     ) -> Dict[str, float]:
         """
-        Convert SC supply plans to simulation player orders
+        Convert SC supply plans to simulation scenario_user orders
 
         Maps:
-        - po_request (Purchase Order) -> Player order to upstream supplier
-        - to_request (Transfer Order) -> Player order to upstream DC
+        - po_request (Purchase Order) -> ScenarioUser order to upstream supplier
+        - to_request (Transfer Order) -> ScenarioUser order to upstream DC
         - mo_request (Manufacturing Order) -> Production order at factory
 
         Args:
             supply_plans: List of SupplyPlan recommendations from SC planner
 
         Returns:
-            Dict mapping player role -> order quantity for this round
+            Dict mapping scenario_user role -> order quantity for this round
         """
-        print(f"  Converting {len(supply_plans)} supply plans to player orders...")
+        print(f"  Converting {len(supply_plans)} supply plans to scenario_user orders...")
 
         player_orders = {}
 
@@ -320,16 +320,16 @@ class SimulationToSCAdapter:
         await self.db.refresh(self.config, ['nodes'])
         node_id_to_name = {n.id: n.name for n in self.config.nodes}
 
-        # Group supply plans by destination site (player)
+        # Group supply plans by destination site (scenario_user)
         for plan in supply_plans:
-            # Get the player role for this destination site
+            # Get the scenario_user role for this destination site
             role = node_id_to_name.get(plan.destination_site_id)
 
             if not role:
                 print(f"    Warning: No role found for site_id {plan.destination_site_id}")
                 continue
 
-            # Aggregate orders for this player
+            # Aggregate orders for this scenario_user
             if role not in player_orders:
                 player_orders[role] = 0
 
@@ -338,32 +338,32 @@ class SimulationToSCAdapter:
             print(f"    OK {role}: order {plan.planned_order_quantity} "
                   f"(type={plan.plan_type}, from site={plan.source_site_id})")
 
-        print(f"  OK Converted to {len(player_orders)} player orders")
+        print(f"  OK Converted to {len(player_orders)} scenario_user orders")
 
         return player_orders
 
     async def get_current_inventory(self, role: str) -> float:
         """
-        Get current inventory for a player/node
+        Get current inventory for a scenario_user/node
 
         Args:
-            role: Player role (node name)
+            role: ScenarioUser role (node name)
 
         Returns:
             Current inventory quantity
         """
         result = await self.db.execute(
-            select(Player).filter(
-                Player.scenario_id == self.game.id,
-                Player.role == role,
+            select(ScenarioUser).filter(
+                ScenarioUser.scenario_id == self.game.id,
+                ScenarioUser.role == role,
             )
         )
-        player = result.scalar_one_or_none()
+        scenario_user = result.scalar_one_or_none()
 
-        if not player:
+        if not scenario_user:
             return 0.0
 
-        return self._get_player_inventory(player, self.game.current_round)
+        return self._get_player_inventory(scenario_user, self.game.current_round)
 
     async def record_actual_demand(
         self,
@@ -378,7 +378,7 @@ class SimulationToSCAdapter:
         with actuals in the demand processing step.
 
         Args:
-            role: Player role (typically Retailer)
+            role: ScenarioUser role (typically Retailer)
             demand_qty: Actual demand quantity
             period_date: Date of the demand
         """

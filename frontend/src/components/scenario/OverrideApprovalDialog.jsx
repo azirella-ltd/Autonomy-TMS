@@ -353,7 +353,7 @@ const OverrideApprovalDialog = ({
           </>
         )}
 
-        {/* Player Actions */}
+        {/* ScenarioUser Actions */}
         {!canApprove && approvalStatus === 'pending' && (
           <Button onClick={onClose} variant="outline" disabled={submitting}>
             Wait for Approval

@@ -8,7 +8,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { toast } from 'react-toastify'
 
-const LeaderboardPanel = ({ playerId }) => {
+const LeaderboardPanel = ({ scenarioUserId }) => {
   const [leaderboards, setLeaderboards] = useState([])
   const [selectedLeaderboard, setSelectedLeaderboard] = useState(null)
   const [leaderboardData, setLeaderboardData] = useState(null)
@@ -22,7 +22,7 @@ const LeaderboardPanel = ({ playerId }) => {
     if (selectedLeaderboard) {
       fetchLeaderboardData(selectedLeaderboard.id)
     }
-  }, [selectedLeaderboard, playerId])
+  }, [selectedLeaderboard, scenarioUserId])
 
   const fetchLeaderboards = async () => {
     try {
@@ -46,8 +46,8 @@ const LeaderboardPanel = ({ playerId }) => {
 
   const fetchLeaderboardData = async (leaderboardId) => {
     try {
-      const url = playerId
-        ? `/api/v1/gamification/leaderboards/${leaderboardId}?limit=50&player_id=${playerId}`
+      const url = scenarioUserId
+        ? `/api/v1/gamification/leaderboards/${leaderboardId}?limit=50&scenario_user_id=${scenarioUserId}`
         : `/api/v1/gamification/leaderboards/${leaderboardId}?limit=50`
 
       const response = await fetch(url, {
@@ -164,14 +164,14 @@ const LeaderboardPanel = ({ playerId }) => {
               <span className="ml-1">
                 Ranked by: {selectedLeaderboard.metric.replace(/_/g, ' ')}
               </span>
-              <span className="ml-4">• {leaderboardData.total_entries} players</span>
+              <span className="ml-4">• {leaderboardData.total_entries} scenarioUsers</span>
             </div>
 
-            {/* Player's Rank */}
-            {leaderboardData.player_rank && (
+            {/* ScenarioUser's Rank */}
+            {leaderboardData.scenario_user_rank && (
               <div className="mt-4 bg-white bg-opacity-20 rounded-lg p-3">
                 <p className="text-sm font-medium">Your Rank</p>
-                <p className="text-2xl font-bold">#{leaderboardData.player_rank}</p>
+                <p className="text-2xl font-bold">#{leaderboardData.scenario_user_rank}</p>
               </div>
             )}
           </div>
@@ -185,7 +185,7 @@ const LeaderboardPanel = ({ playerId }) => {
                     Rank
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Player
+                    ScenarioUser
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Score
@@ -194,7 +194,7 @@ const LeaderboardPanel = ({ playerId }) => {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {leaderboardData.entries.map((entry) => {
-                  const isCurrentPlayer = entry.player_id === playerId
+                  const isCurrentPlayer = entry.scenario_user_id === scenarioUserId
                   const medal = getRankMedal(entry.rank)
 
                   return (
@@ -218,15 +218,15 @@ const LeaderboardPanel = ({ playerId }) => {
                         </div>
                       </td>
 
-                      {/* Player */}
+                      {/* ScenarioUser */}
                       <td className="px-6 py-4">
                         <div className="flex items-center">
                           <div className="flex-shrink-0 h-10 w-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold">
-                            {entry.player_name ? entry.player_name[0].toUpperCase() : '?'}
+                            {entry.scenario_user_name ? entry.scenario_user_name[0].toUpperCase() : '?'}
                           </div>
                           <div className="ml-4">
                             <div className="text-sm font-medium text-gray-900">
-                              {entry.player_name || `Player ${entry.player_id}`}
+                              {entry.scenario_user_name || `ScenarioUser ${entry.scenario_user_id}`}
                               {isCurrentPlayer && (
                                 <span className="ml-2 px-2 py-1 text-xs bg-indigo-600 text-white rounded-full">
                                   You

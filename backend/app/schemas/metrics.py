@@ -27,8 +27,8 @@ class OrderMetrics(BaseModel):
     order_variability: float  # Coefficient of variation
     bullwhip_effect: Optional[float]  # Variance ratio between orders and demand
 
-class PlayerRoundMetrics(BaseModel):
-    round_number: int
+class ScenarioUserPeriodMetrics(BaseModel):
+    period_number: int
     inventory: int
     backorders: int
     order_placed: int
@@ -41,9 +41,9 @@ class PlayerRoundMetrics(BaseModel):
     net_margin: float = 0.0
     margin_erosion: float = 0.0  # Percentage of margin lost to costs
 
-class PlayerPerformance(BaseModel):
-    player_id: int
-    player_name: str
+class ScenarioUserPerformance(BaseModel):
+    scenario_user_id: int
+    scenario_user_name: str
     role: str
     total_cost: float
     total_revenue: float = 0.0
@@ -54,15 +54,24 @@ class PlayerPerformance(BaseModel):
     margin_metrics: MarginMetrics
     inventory_metrics: InventoryMetrics
     order_metrics: OrderMetrics
-    round_metrics: List[PlayerRoundMetrics]
+    period_metrics: List[ScenarioUserPeriodMetrics]
 
-class GameMetricsResponse(BaseModel):
+class ScenarioMetricsResponse(BaseModel):
     scenario_id: int
-    game_name: str
-    total_rounds: int
+    scenario_name: str
+    total_periods: int
     start_date: datetime
     end_date: Optional[datetime]
-    players: List[PlayerPerformance]
+    scenario_users: List[ScenarioUserPerformance]
     total_supply_chain_cost: float
     average_weekly_demand: float
     bullwhip_effect: Optional[float]  # Overall supply chain bullwhip effect
+
+
+# =============================================================================
+# Backward Compatibility Aliases (DEPRECATED - will be removed in future)
+# =============================================================================
+
+PlayerRoundMetrics = ScenarioUserPeriodMetrics
+PlayerPerformance = ScenarioUserPerformance
+GameMetricsResponse = ScenarioMetricsResponse

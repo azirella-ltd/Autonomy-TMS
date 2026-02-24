@@ -5,25 +5,25 @@ from datetime import datetime
 
 from app.db.session import get_sync_db
 from app.models.scenario import Scenario as ScenarioModel
-from app.models.participant import Participant
-from app.models.supply_chain import ScenarioRound, ParticipantRound
+from app.models.scenario_user import ScenarioUser
+from app.models.supply_chain import ScenarioRound, ScenarioUserPeriod
 from app.schemas.scenario import (
     ScenarioCreate, ScenarioUpdate,
-    ParticipantCreate, ParticipantUpdate, Participant as ParticipantSchema,
-    ScenarioState, OrderCreate, OrderResponse, ParticipantPeriod as ParticipantPeriodSchema,
+    ScenarioUserCreate, ScenarioUserUpdate, ScenarioUser as ScenarioUserSchema,
+    ScenarioState, OrderCreate, OrderResponse, ScenarioUserPeriod as ScenarioUserPeriodSchema,
     ScenarioPeriod as ScenarioPeriodSchema,
     DemandPattern
 )
 from app.core.demand_patterns import normalize_demand_pattern, DEFAULT_DEMAND_PATTERN
 from app.services.llm_agent import AutonomyLLMError
 
-class ParticipantResponse(ParticipantSchema):
-    """Response model for participant data."""
+class ScenarioUserResponse(ScenarioUserSchema):
+    """Response model for scenario_user data."""
     class Config:
         from_attributes = True
 
-class ParticipantPeriodResponse(ParticipantPeriodSchema):
-    """Response model for participant period data."""
+class ScenarioUserPeriodResponse(ScenarioUserPeriodSchema):
+    """Response model for scenario_user period data."""
     class Config:
         from_attributes = True
 
@@ -302,21 +302,21 @@ def get_scenario_state(
             detail=str(e)
         )
 
-# Participant endpoints
-@router.post("/{scenario_id}/participants", response_model=ParticipantResponse, status_code=status.HTTP_201_CREATED)
+# ScenarioUser endpoints
+@router.post("/{scenario_id}/scenario_users", response_model=ScenarioUserResponse, status_code=status.HTTP_201_CREATED)
 def add_participant(
     scenario_id: int,
-    participant_in: ParticipantCreate,
+    participant_in: ScenarioUserCreate,
     db: Session = Depends(get_sync_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Add a participant to a scenario.
+    Add a scenario_user to a scenario.
     """
     scenario_service = MixedScenarioService(db)
     try:
-        participant = scenario_service.add_player(scenario_id, participant_in)
-        return ParticipantResponse.model_validate(participant)
+        scenario_user = scenario_service.add_player(scenario_id, participant_in)
+        return ScenarioUserResponse.model_validate(scenario_user)
     except AutonomyLLMError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -328,46 +328,46 @@ def add_participant(
             detail=str(e)
         )
 
-@router.get("/{scenario_id}/participants", response_model=List[ParticipantResponse])
+@router.get("/{scenario_id}/scenario_users", response_model=List[ScenarioUserResponse])
 def list_participants(
     scenario_id: int,
     db: Session = Depends(get_sync_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
-    List all participants in a scenario.
+    List all scenario_users in a scenario.
     """
-    participants = db.query(Participant).filter(Participant.scenario_id == scenario_id).all()
-    return [ParticipantResponse.model_validate(participant) for participant in participants]
+    scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario_id).all()
+    return [ScenarioUserResponse.model_validate(scenario_user) for scenario_user in scenario_users]
 
-@router.get("/{scenario_id}/participants/{participant_id}", response_model=ParticipantResponse)
+@router.get("/{scenario_id}/scenario_users/{scenario_user_id}", response_model=ScenarioUserResponse)
 def get_participant(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     db: Session = Depends(get_sync_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Get a participant by ID.
+    Get a scenario_user by ID.
     """
-    participant = db.query(Participant).filter(
-        Participant.id == participant_id,
-        Participant.scenario_id == scenario_id
+    scenario_user = db.query(ScenarioUser).filter(
+        ScenarioUser.id == scenario_user_id,
+        ScenarioUser.scenario_id == scenario_id
     ).first()
 
-    if not participant:
+    if not scenario_user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Participant not found"
+            detail="ScenarioUser not found"
         )
 
-    return ParticipantResponse.from_orm(participant)
+    return ScenarioUserResponse.from_orm(scenario_user)
 
 # Order endpoints
-@router.post("/scenarios/{scenario_id}/participants/{participant_id}/orders", response_model=ParticipantPeriodResponse)
+@router.post("/scenarios/{scenario_id}/scenario_users/{scenario_user_id}/orders", response_model=ScenarioUserPeriodResponse)
 async def submit_order(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     order_in: OrderCreate,
     db: Session = Depends(get_sync_db),
     current_user: dict = Depends(get_current_user)
@@ -375,12 +375,12 @@ async def submit_order(
     """
     Submit or update an order for the current round.
 
-    Participants can submit or update their order for the current round until the round ends.
+    ScenarioUsers can submit or update their order for the current round until the round ends.
     If the round time expires, any unsubmitted orders will be set to zero.
     """
     scenario_service = MixedScenarioService(db)
     try:
-        participant_round = scenario_service.submit_order(scenario_id, participant_id, order_in.quantity, order_in.comment)
+        participant_round = scenario_service.submit_order(scenario_id, scenario_user_id, order_in.quantity, order_in.comment)
         return participant_round
     except AutonomyLLMError as exc:
         raise HTTPException(
@@ -482,19 +482,19 @@ async def get_round_submission_status(
     if not current_round:
         raise HTTPException(status_code=404, detail="Current round not found")
 
-    # Get all participants in the scenario
-    participants = db.query(Participant).filter(Participant.scenario_id == scenario_id).all()
-    total_participants = len(participants)
+    # Get all scenario_users in the scenario
+    scenario_users = db.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario_id).all()
+    total_participants = len(scenario_users)
 
-    # Get participants who have submitted for the current round
-    submitted_participants = db.query(ParticipantRound).filter(
-        ParticipantRound.round_id == current_round.id
+    # Get scenario_users who have submitted for the current round
+    submitted_participants = db.query(ScenarioUserPeriod).filter(
+        ScenarioUserPeriod.round_id == current_round.id
     ).all()
     submitted_count = len(submitted_participants)
 
-    # Get list of participants who haven't submitted yet
-    submitted_participant_ids = [p.participant_id for p in submitted_participants]
-    pending_participants = [p for p in participants if p.id not in submitted_participant_ids]
+    # Get list of scenario_users who haven't submitted yet
+    submitted_scenario_user_ids = [p.scenario_user_id for p in submitted_participants]
+    pending_participants = [p for p in scenario_users if p.id not in submitted_scenario_user_ids]
 
     return {
         "scenario_id": scenario_id,
@@ -507,16 +507,16 @@ async def get_round_submission_status(
         "all_submitted": current_round.is_completed
     }
 
-# Participant Round endpoints
-@router.get("/{scenario_id}/participants/{participant_id}/current-round", response_model=ParticipantPeriodResponse)
+# ScenarioUser Round endpoints
+@router.get("/{scenario_id}/scenario_users/{scenario_user_id}/current-round", response_model=ScenarioUserPeriodResponse)
 def get_participant_current_round(
     scenario_id: int,
-    participant_id: int,
+    scenario_user_id: int,
     db: Session = Depends(get_sync_db),
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Get the current round for a participant.
+    Get the current round for a scenario_user.
     """
     # Get the current scenario round
     scenario = db.query(ScenarioModel).filter(ScenarioModel.id == scenario_id).first()
@@ -537,16 +537,16 @@ def get_participant_current_round(
             detail="Current round not found"
         )
 
-    # Get the participant's round
-    participant_round = db.query(ParticipantRound).filter(
-        ParticipantRound.participant_id == participant_id,
-        ParticipantRound.round_id == current_round.id
+    # Get the scenario_user's round
+    participant_round = db.query(ScenarioUserPeriod).filter(
+        ScenarioUserPeriod.scenario_user_id == scenario_user_id,
+        ScenarioUserPeriod.round_id == current_round.id
     ).first()
 
     if not participant_round:
-        # If the participant hasn't taken their turn yet, create a new participant round
-        participant_round = ParticipantRound(
-            participant_id=participant_id,
+        # If the scenario_user hasn't taken their turn yet, create a new scenario_user round
+        participant_round = ScenarioUserPeriod(
+            scenario_user_id=scenario_user_id,
             round_id=current_round.id,
             order_placed=0,  # Default to 0, will be updated when order is placed
             order_received=0,

@@ -2,7 +2,7 @@
  * Role Assignment Component
  *
  * Manages role assignments for games, allowing switching between
- * human and AI-controlled players.
+ * human and AI-controlled scenarioUsers.
  */
 
 import React, { useState, useEffect } from 'react';

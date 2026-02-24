@@ -9,7 +9,7 @@ Key Architectural Change (Phase 2 Refactor):
 - NEW: simulation uses SC Execution (work orders → order fulfillment)
 
 Concept Mapping for EXECUTION:
-- Player places order       → InboundOrderLine (quantity_submitted)
+- ScenarioUser places order       → InboundOrderLine (quantity_submitted)
 - Order in transit          → InboundOrderLine (status='open', expected_delivery_date)
 - Shipment arrives          → InboundOrderLine (quantity_received, order_receive_date)
 - Customer demand hits      → OutboundOrderLine (quantity_delivered)
@@ -36,11 +36,11 @@ from sqlalchemy import select, delete, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.scenario import Scenario
-from app.models.participant import Participant
+from app.models.scenario_user import ScenarioUser
 
 # Aliases for backwards compatibility
 Game = Scenario
-Player = Participant
+ScenarioUser = ScenarioUser
 from app.models.supply_chain_config import SupplyChainConfig, Node, TransportationLane
 from app.models.sc_entities import Product
 from app.models.sc_entities import (
@@ -64,9 +64,9 @@ class SimulationExecutionAdapter:
     This class manages the execution lifecycle:
     1. Sync current game state (inventory, backlog) → inv_level
     2. Record customer demand → outbound_order_line
-    3. Create player orders → inbound_order_line (work orders)
+    3. Create scenario_user orders → inbound_order_line (work orders)
     4. Process order deliveries → update quantity_received, inventory
-    5. Extract orders from work orders → player orders for game engine
+    5. Extract orders from work orders → scenario_user orders for game engine
     """
 
     def __init__(self, game: Game, db: AsyncSession, use_cache: bool = True):
@@ -106,7 +106,7 @@ class SimulationExecutionAdapter:
         """
         Sync current game inventory to inv_level table (execution snapshot)
 
-        Reads player inventory from game state and writes to inv_level
+        Reads scenario_user inventory from game state and writes to inv_level
         so SC can track on-hand quantities during execution.
 
         Args:
@@ -117,11 +117,11 @@ class SimulationExecutionAdapter:
         """
         print(f"  Syncing inventory levels for round {round_number}...")
 
-        # Get all players in this game
+        # Get all scenario_users in this game
         result = await self.db.execute(
-            select(Player).filter(Player.scenario_id == self.game.id)
+            select(ScenarioUser).filter(ScenarioUser.scenario_id == self.game.id)
         )
-        players = result.scalars().all()
+        scenario_users = result.scalars().all()
 
         # Get config data
         await self.db.refresh(self.config, ['nodes', 'items'])
@@ -137,12 +137,12 @@ class SimulationExecutionAdapter:
         records_created = 0
         snapshot_date = self.game.start_date + timedelta(days=round_number * 7)
 
-        # For each player, create inv_level record
-        for player in players:
-            # Get player's node
-            node = next((n for n in self.config.nodes if n.name == player.role), None)
+        # For each scenario_user, create inv_level record
+        for scenario_user in scenario_users:
+            # Get scenario_user's node
+            node = next((n for n in self.config.nodes if n.name == scenario_user.role), None)
             if not node:
-                print(f"    ⚠️  No node found for player role {player.role}")
+                print(f"    ⚠️  No node found for scenario_user role {scenario_user.role}")
                 continue
 
             # Get item (simulation typically has 1 item: "Cases")
@@ -152,9 +152,9 @@ class SimulationExecutionAdapter:
 
             item = self.config.items[0]
 
-            # Get player's current inventory and backlog from game state
+            # Get scenario_user's current inventory and backlog from game state
             inventory_qty, backlog_qty = self._get_player_inventory_and_backlog(
-                player, round_number
+                scenario_user, round_number
             )
 
             # Calculate in-transit quantity from open inbound orders
@@ -179,7 +179,7 @@ class SimulationExecutionAdapter:
             self.db.add(inv_level)
             records_created += 1
 
-            print(f"    ✓ {player.role}: on_hand={inventory_qty}, backlog={backlog_qty}, "
+            print(f"    ✓ {scenario_user.role}: on_hand={inventory_qty}, backlog={backlog_qty}, "
                   f"in_transit={in_transit_qty}")
 
         await self.db.commit()
@@ -218,14 +218,14 @@ class SimulationExecutionAdapter:
 
     def _get_player_inventory_and_backlog(
         self,
-        player: Player,
+        scenario_user: ScenarioUser,
         round_number: int
     ) -> Tuple[float, float]:
         """
-        Extract player's current inventory and backlog from game state
+        Extract scenario_user's current inventory and backlog from game state
 
         Args:
-            player: Player instance
+            scenario_user: ScenarioUser instance
             round_number: Current round
 
         Returns:
@@ -233,7 +233,7 @@ class SimulationExecutionAdapter:
         """
         game_config = self.game.config or {}
         nodes_state = game_config.get('nodes', {})
-        player_state = nodes_state.get(player.role, {})
+        player_state = nodes_state.get(scenario_user.role, {})
 
         inventory = player_state.get('inventory', 12)
         backlog = player_state.get('backlog', 0)
@@ -257,7 +257,7 @@ class SimulationExecutionAdapter:
         This is execution data, not planning data.
 
         Args:
-            role: Player role (typically Retailer)
+            role: ScenarioUser role (typically Retailer)
             demand_qty: Actual demand quantity
             round_number: Current game round
         """
@@ -315,9 +315,9 @@ class SimulationExecutionAdapter:
         round_number: int
     ) -> int:
         """
-        Create inbound work orders (TO/MO/PO) from player order decisions
+        Create inbound work orders (TO/MO/PO) from scenario_user order decisions
 
-        This is the PRIMARY execution method: player orders become work orders.
+        This is the PRIMARY execution method: scenario_user orders become work orders.
 
         Args:
             player_orders: Dict mapping role → order quantity
@@ -342,7 +342,7 @@ class SimulationExecutionAdapter:
             if order_qty <= 0:
                 continue
 
-            # Get node for this player
+            # Get node for this scenario_user
             node = next((n for n in self.config.nodes if n.name == role), None)
             if not node:
                 print(f"    ⚠️  No node found for role {role}")
@@ -427,7 +427,7 @@ class SimulationExecutionAdapter:
         """
         Create inbound work orders using batch insert (PHASE 3 - Performance optimization)
 
-        This method is 10-20x faster than create_work_orders() for multi-player games
+        This method is 10-20x faster than create_work_orders() for multi-scenario_user games
         because it uses a single batch insert instead of individual inserts.
 
         Args:
@@ -667,27 +667,27 @@ class SimulationExecutionAdapter:
 
     async def get_current_inventory(self, role: str) -> float:
         """
-        Get current inventory for a player/node
+        Get current inventory for a scenario_user/node
 
         Args:
-            role: Player role (node name)
+            role: ScenarioUser role (node name)
 
         Returns:
             Current inventory quantity
         """
         result = await self.db.execute(
-            select(Player).filter(
-                Player.scenario_id == self.game.id,
-                Player.role == role
+            select(ScenarioUser).filter(
+                ScenarioUser.scenario_id == self.game.id,
+                ScenarioUser.role == role
             )
         )
-        player = result.scalar_one_or_none()
+        scenario_user = result.scalar_one_or_none()
 
-        if not player:
+        if not scenario_user:
             return 0.0
 
         inventory, _ = self._get_player_inventory_and_backlog(
-            player, self.game.current_round
+            scenario_user, self.game.current_round
         )
         return inventory
 
@@ -888,7 +888,7 @@ class SimulationExecutionAdapter:
         Build a single work order object (helper method)
 
         Args:
-            role: Player role
+            role: ScenarioUser role
             quantity: Order quantity
             item: Item object
             node: Destination node

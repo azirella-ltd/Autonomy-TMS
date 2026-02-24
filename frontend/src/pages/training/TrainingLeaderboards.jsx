@@ -2,7 +2,7 @@
  * Training Leaderboards Page
  *
  * Displays leaderboards for learning mode users to track their
- * performance against other participants.
+ * performance against other scenarioUsers.
  *
  * NOTE: This is named "Training" for the route path, but it's part of
  * the Learning group experience (user education), not AI model training.
@@ -21,12 +21,12 @@ const TrainingLeaderboards = () => {
       <div>
         <h1 className="text-2xl font-bold text-foreground">Leaderboards</h1>
         <p className="text-muted-foreground mt-1">
-          See how you rank against other participants in your learning group
+          See how you rank against other scenarioUsers in your learning group
         </p>
       </div>
 
       {/* Leaderboard Content */}
-      <LeaderboardPanel playerId={user?.id} />
+      <LeaderboardPanel scenarioUserId={user?.id} />
     </div>
   );
 };

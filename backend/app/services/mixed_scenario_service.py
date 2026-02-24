@@ -18,20 +18,20 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.models.scenario import Scenario, ScenarioStatus as ScenarioStatusDB
-from app.models.participant import Participant, ParticipantRole, ParticipantType as ParticipantTypeDB, ParticipantStrategy as ParticipantStrategyDB
-from app.models.supply_chain import ParticipantInventory, Order, ScenarioRound, ParticipantRound
+from app.models.scenario_user import ScenarioUser, ScenarioUserRole, ScenarioUserType as ScenarioUserTypeDB, ScenarioUserStrategy as ScenarioUserStrategyDB
+from app.models.supply_chain import ScenarioUserInventory, Order, ScenarioRound, ScenarioUserPeriod
 
 # Aliases for backwards compatibility
 Game = Scenario
 GameStatus = ScenarioStatusDB
 GameStatusDB = ScenarioStatusDB
-Player = Participant
-PlayerRole = ParticipantRole
-PlayerTypeDB = ParticipantTypeDB
-PlayerStrategyDB = ParticipantStrategyDB
-PlayerInventory = ParticipantInventory
-GameRound = ScenarioRound
-PlayerRound = ParticipantRound
+ScenarioUser = ScenarioUser
+PlayerRole = ScenarioUserRole
+PlayerTypeDB = ScenarioUserTypeDB
+PlayerStrategyDB = ScenarioUserStrategyDB
+ScenarioUserInventory = ScenarioUserInventory
+ScenarioRound = ScenarioRound
+ScenarioUserPeriod = ScenarioUserPeriod
 from app.models.supply_chain_config import SupplyChainConfig, TransportationLane
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
 from app.models.agent_config import AgentConfig
@@ -47,24 +47,24 @@ from app.core.time_buckets import (
 )
 from app.schemas.scenario import (
     ScenarioCreate,
-    ParticipantCreate,
+    ScenarioUserCreate,
     ScenarioState,
-    ParticipantState,
+    ScenarioUserState,
     ScenarioStatus,
     ScenarioInDBBase,
 )
-from app.schemas.participant import ParticipantAssignment, ParticipantType, ParticipantStrategy
+from app.schemas.scenario_user import ScenarioUserAssignment, ScenarioUserType, ScenarioUserStrategy
 
 # Aliases for backwards compatibility
 GameCreate = ScenarioCreate
-PlayerCreate = ParticipantCreate
+PlayerCreate = ScenarioUserCreate
 GameState = ScenarioState
-PlayerState = ParticipantState
+PlayerState = ScenarioUserState
 GameStatus = ScenarioStatus
 GameInDBBase = ScenarioInDBBase
-PlayerAssignment = ParticipantAssignment
-PlayerType = ParticipantType
-PlayerStrategy = ParticipantStrategy
+PlayerAssignment = ScenarioUserAssignment
+PlayerType = ScenarioUserType
+PlayerStrategy = ScenarioUserStrategy
 from app.schemas.simulation import (
     OrderRequest,
     Shipment,
@@ -128,7 +128,7 @@ def read_system_cfg():
         return None
 
 class MixedScenarioService:
-    """Service for managing games with mixed human and AI players."""
+    """Service for managing games with mixed human and AI scenario_users."""
     
     def __init__(self, db: Session):
         self.db = db
@@ -919,13 +919,13 @@ class MixedScenarioService:
         return canonical
 
     @staticmethod
-    def _player_node_key(player: Player) -> str:
-        if player is None:
+    def _player_node_key(scenario_user: ScenarioUser) -> str:
+        if scenario_user is None:
             return ""
-        site_key = getattr(player, "site_key", None)
+        site_key = getattr(scenario_user, "site_key", None)
         if site_key:
             return MixedScenarioService._canonical_role(site_key)
-        role_value = getattr(player.role, "value", player.role)
+        role_value = getattr(scenario_user.role, "value", scenario_user.role)
         return MixedScenarioService._canonical_role(role_value)
 
     @staticmethod
@@ -2232,14 +2232,14 @@ class MixedScenarioService:
         demand_inputs: Dict[str, int] = defaultdict(int)
         demand_item_inputs: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
-        # Identify nodes controlled by AI players so we don't double-plan orders:
+        # Identify nodes controlled by AI scenario_users so we don't double-plan orders:
         # deterministic replenishment here plus agent decisions later can over-order.
         ai_nodes: Set[str] = set()
         for assignment in context.config.get("player_assignments", []) or []:
             if not isinstance(assignment, Mapping):
                 continue
-            player_type = assignment.get("player_type") or assignment.get("type") or assignment.get("strategy")
-            is_ai = str(player_type or "").upper() in {"AI", "AGENT"} or bool(assignment.get("is_ai"))
+            scenario_user_type = assignment.get("scenario_user_type") or assignment.get("type") or assignment.get("strategy")
+            is_ai = str(scenario_user_type or "").upper() in {"AI", "AGENT"} or bool(assignment.get("is_ai"))
             if not is_ai:
                 continue
             keys = assignment.get("node_keys") or [assignment.get("assignment_key") or assignment.get("role")]
@@ -2351,7 +2351,7 @@ class MixedScenarioService:
                 }
             )
 
-            # 4. Replenishment orders are deferred to players/agents; no automatic orders here.
+            # 4. Replenishment orders are deferred to scenario_users/agents; no automatic orders here.
             # End trace placeholder; final inventory will be set in history block
             state.debug_trace.append(
                 {
@@ -2778,13 +2778,13 @@ class MixedScenarioService:
     def _create_transfer_order(
         self,
         scenario_id: int,
-        player_id: int,
+        scenario_user_id: int,
         source_site_id: int,
         destination_site_id: int,
         quantity: int,
         lead_time: int,
         round_number: int,
-        source_player_round_id: Optional[int] = None,
+        source_scenario_user_period_id: Optional[int] = None,
         product_id: str = "DEFAULT",
     ) -> TransferOrder:
         """
@@ -2795,13 +2795,13 @@ class MixedScenarioService:
 
         Args:
             scenario_id: Game ID
-            player_id: Player placing order (destination player)
+            scenario_user_id: ScenarioUser placing order (destination scenario_user)
             source_site_id: Source site ID
             destination_site_id: Destination site ID
             quantity: Order quantity
             lead_time: Lead time in rounds (from TransportationLane.supply_lead_time['value'])
             round_number: Current round number
-            source_player_round_id: PlayerRound ID that created this TO (bidirectional link)
+            source_scenario_user_period_id: ScenarioUserPeriod ID that created this TO (bidirectional link)
             product_id: Product ID (default: "DEFAULT")
 
         Returns:
@@ -2839,7 +2839,7 @@ class MixedScenarioService:
             scenario_id=scenario_id,
             order_round=round_number,
             arrival_round=arrival_round,
-            source_player_round_id=source_player_round_id,
+            source_scenario_user_period_id=source_scenario_user_period_id,
         )
 
         self.db.add(transfer_order)
@@ -2876,7 +2876,7 @@ class MixedScenarioService:
         Updates:
         - Status → 'RECEIVED'
         - actual_delivery_date → current date
-        - PlayerRound.order_received += quantity (handled by caller)
+        - ScenarioUserPeriod.order_received += quantity (handled by caller)
 
         Args:
             scenario_id: Game ID
@@ -2887,7 +2887,7 @@ class MixedScenarioService:
 
         Notes:
             - Uses idx_to_game_arrival index for fast queries
-            - Caller must update PlayerRound.order_received
+            - Caller must update ScenarioUserPeriod.order_received
         """
         # Query arriving TOs using index-optimized query
         arriving_orders = (
@@ -4250,7 +4250,7 @@ class MixedScenarioService:
             lane_views
         )
         
-        # 4. Create or reuse GameRound record
+        # 4. Create or reuse ScenarioRound record
         # We need to calculate period start/end
         bucket = normalize_time_bucket(getattr(game, "time_bucket", TimeBucket.WEEK))
         start_date = getattr(game, "start_date", None)
@@ -4268,12 +4268,12 @@ class MixedScenarioService:
         game.current_period_start = period_start
         
         round_record = (
-            self.db.query(GameRound)
-            .filter(GameRound.scenario_id == game.id, GameRound.round_number == round_number)
+            self.db.query(ScenarioRound)
+            .filter(ScenarioRound.scenario_id == game.id, ScenarioRound.round_number == round_number)
             .first()
         )
         if not round_record:
-            round_record = GameRound(
+            round_record = ScenarioRound(
                 scenario_id=game.id,
                 round_number=round_number,
                 customer_demand=demand_value,
@@ -5896,7 +5896,7 @@ class MixedScenarioService:
             "group_id": group_id,
             "config": config,
             "progression_mode": progression_mode,
-            "players": [],
+            "scenario_users": [],
         }
 
         if supply_chain_config_id is not None:
@@ -5925,7 +5925,7 @@ class MixedScenarioService:
             return GameInDBBase.model_validate(payload)
     
     def create_game(self, game_data: GameCreate, created_by: int = None) -> Game:
-        """Create a new game with mixed human/agent players.
+        """Create a new game with mixed human/agent scenario_users.
 
         Persists extended configuration into Game.config JSON to avoid schema changes.
         """
@@ -6011,7 +6011,7 @@ class MixedScenarioService:
             # Non-fatal: older schemas may not have these columns
             pass
         
-        # Create players based on assignments
+        # Create scenario_users based on assignments
         # Validate node policies against system ranges (if provided/persisted)
         sys_cfg = read_system_cfg()
         rng = sys_cfg.dict() if sys_cfg else {}
@@ -6036,8 +6036,8 @@ class MixedScenarioService:
         cfg = game.config if game.config else {}
 
         for i, assignment in enumerate(game_data.player_assignments):
-            is_ai = assignment.player_type == PlayerType.AGENT
-            player = Player(
+            is_ai = assignment.scenario_user_type == PlayerType.AGENT
+            scenario_user = ScenarioUser(
                 scenario_id=game.id,
                 role=assignment.role,
                 name=f"{assignment.role.capitalize()} ({'AI' if is_ai else 'Human'})",
@@ -6047,18 +6047,18 @@ class MixedScenarioService:
                 llm_model=assignment.llm_model if is_ai else None,
                 user_id=assignment.user_id if not is_ai else None
             )
-            self.db.add(player)
+            self.db.add(scenario_user)
 
-            # Initialize inventory for the player
-            inventory = PlayerInventory(
-                player=player,
+            # Initialize inventory for the scenario_user
+            inventory = ScenarioUserInventory(
+                scenario_user=scenario_user,
                 current_stock=12,
                 incoming_shipments=[],
                 backorders=0
             )
             self.db.add(inventory)
 
-            # Initialize AI agent if this is an AI player
+            # Initialize AI agent if this is an AI scenario_user
             if is_ai:
                 try:
                     agent_type = AgentType(assignment.role.lower())
@@ -6128,16 +6128,16 @@ class MixedScenarioService:
         self.db.refresh(game)
         return game
 
-    def add_player(self, scenario_id: int, player_data: PlayerCreate) -> Player:
-        """Add a human or AI participant to an existing game."""
+    def add_player(self, scenario_id: int, player_data: PlayerCreate) -> ScenarioUser:
+        """Add a human or AI scenario_user to an existing game."""
 
         game = self.db.query(Game).filter(Game.id == scenario_id).first()
         if not game:
             raise ValueError("Game not found")
 
         existing = (
-            self.db.query(Player)
-            .filter(Player.scenario_id == scenario_id, Player.role == PlayerRole[player_data.role.name])
+            self.db.query(ScenarioUser)
+            .filter(ScenarioUser.scenario_id == scenario_id, ScenarioUser.role == PlayerRole[player_data.role.name])
             .first()
         )
         if existing:
@@ -6145,7 +6145,7 @@ class MixedScenarioService:
 
         is_ai = bool(player_data.is_ai)
         db_role = PlayerRole[player_data.role.name]
-        player = Player(
+        scenario_user = ScenarioUser(
             scenario_id=scenario_id,
             user_id=player_data.user_id,
             role=db_role,
@@ -6155,7 +6155,7 @@ class MixedScenarioService:
             is_ai=is_ai,
             ai_strategy=("naive" if is_ai else None),
         )
-        self.db.add(player)
+        self.db.add(scenario_user)
 
         cfg = dict(getattr(game, "config", {}) or {})
         node_policies = cfg.get("node_policies") or {}
@@ -6166,8 +6166,8 @@ class MixedScenarioService:
         except (TypeError, ValueError):
             initial_inventory = 12
 
-        inventory = PlayerInventory(
-            player=player,
+        inventory = ScenarioUserInventory(
+            scenario_user=scenario_user,
             current_stock=initial_inventory,
             incoming_shipments=[],
             backorders=0,
@@ -6179,7 +6179,7 @@ class MixedScenarioService:
         assignments.append(
             {
                 "role": player_data.role.value,
-                "player_type": "AGENT" if is_ai else "HUMAN",
+                "scenario_user_type": "AGENT" if is_ai else "HUMAN",
                 "user_id": player_data.user_id,
                 "strategy": "NAIVE" if is_ai else None,
                 "can_see_demand": False,
@@ -6215,8 +6215,8 @@ class MixedScenarioService:
                 pass
 
         self.db.commit()
-        self.db.refresh(player)
-        return player
+        self.db.refresh(scenario_user)
+        return scenario_user
 
     def update_game(self, scenario_id: int, payload: Dict[str, Any]) -> Game:
         game = (
@@ -6378,29 +6378,29 @@ class MixedScenarioService:
     def submit_order(
         self,
         scenario_id: int,
-        player_id: int,
+        scenario_user_id: int,
         order_quantity: int,
         comment: Optional[str] = None,
-    ) -> PlayerRound:
-        """Record or update a player's order for the active round."""
+    ) -> ScenarioUserPeriod:
+        """Record or update a scenario_user's order for the active round."""
 
         game = self.db.query(Game).filter(Game.id == scenario_id).first()
         if not game or MixedScenarioService._map_status_to_schema(game.status) != GameStatus.IN_PROGRESS:
             raise ValueError("Game is not in progress")
 
-        player = (
-            self.db.query(Player)
-            .filter(Player.id == player_id, Player.scenario_id == scenario_id)
+        scenario_user = (
+            self.db.query(ScenarioUser)
+            .filter(ScenarioUser.id == scenario_user_id, ScenarioUser.scenario_id == scenario_id)
             .first()
         )
-        if not player:
-            raise ValueError("Player not found for this game")
+        if not scenario_user:
+            raise ValueError("ScenarioUser not found for this game")
 
         current_round = (
-            self.db.query(GameRound)
+            self.db.query(ScenarioRound)
             .filter(
-                GameRound.scenario_id == scenario_id,
-                GameRound.round_number == game.current_round,
+                ScenarioRound.scenario_id == scenario_id,
+                ScenarioRound.round_number == game.current_round,
             )
             .first()
         )
@@ -6411,30 +6411,30 @@ class MixedScenarioService:
             raise ValueError("Order quantity must be non-negative")
 
         inventory = (
-            self.db.query(PlayerInventory)
-            .filter(PlayerInventory.player_id == player_id)
+            self.db.query(ScenarioUserInventory)
+            .filter(ScenarioUserInventory.scenario_user_id == scenario_user_id)
             .first()
         )
 
-        player_round = (
-            self.db.query(PlayerRound)
+        scenario_user_period = (
+            self.db.query(ScenarioUserPeriod)
             .filter(
-                PlayerRound.player_id == player_id,
-                PlayerRound.round_id == current_round.id,
+                ScenarioUserPeriod.scenario_user_id == scenario_user_id,
+                ScenarioUserPeriod.round_id == current_round.id,
             )
             .first()
         )
 
         comment = self._truncate_comment(comment)
 
-        if player_round:
-            player_round.order_placed = order_quantity
-            player_round.comment = comment
+        if scenario_user_period:
+            scenario_user_period.order_placed = order_quantity
+            scenario_user_period.comment = comment
         else:
             starting_stock = getattr(inventory, "current_stock", 0) if inventory else 0
             starting_backlog = getattr(inventory, "backorders", 0) if inventory else 0
-            player_round = PlayerRound(
-                player_id=player_id,
+            scenario_user_period = ScenarioUserPeriod(
+                scenario_user_id=scenario_user_id,
                 round_id=current_round.id,
                 order_placed=order_quantity,
                 order_received=0,
@@ -6444,13 +6444,13 @@ class MixedScenarioService:
                 backorders_after=starting_backlog,
                 comment=comment,
             )
-            self.db.add(player_round)
+            self.db.add(scenario_user_period)
 
-        player.last_order = order_quantity
+        scenario_user.last_order = order_quantity
 
         self.db.commit()
-        self.db.refresh(player_round)
-        return player_round
+        self.db.refresh(scenario_user_period)
+        return scenario_user_period
 
     def _apply_player_updates(
         self,
@@ -6464,12 +6464,12 @@ class MixedScenarioService:
                 for entry in assignments_payload
             ]
         except ValidationError as exc:
-            raise ValueError(f"Invalid player assignments: {exc}") from exc
+            raise ValueError(f"Invalid scenario_user assignments: {exc}") from exc
 
         if not assignments:
-            raise ValueError("At least one player assignment is required")
+            raise ValueError("At least one scenario_user assignment is required")
 
-        player_lookup: Dict[int, Player] = {player.id: player for player in list(game.players or [])}
+        player_lookup: Dict[int, ScenarioUser] = {scenario_user.id: scenario_user for scenario_user in list(game.scenario_users or [])}
         prior_assignments, role_assignments_upgraded = self._upgrade_json_value(
             getattr(game, "role_assignments", {}) or {},
             dict,
@@ -6478,19 +6478,19 @@ class MixedScenarioService:
             field_name="role_assignments",
             game=game,
         )
-        assignment_to_player: Dict[str, Player] = {}
+        assignment_to_player: Dict[str, ScenarioUser] = {}
         for assignment_key, payload in prior_assignments.items():
-            player_id = payload.get("player_id")
-            if not player_id:
+            scenario_user_id = payload.get("scenario_user_id")
+            if not scenario_user_id:
                 continue
-            player = player_lookup.get(player_id)
-            if player:
-                assignment_to_player[self._normalise_key(assignment_key)] = player
+            scenario_user = player_lookup.get(scenario_user_id)
+            if scenario_user:
+                assignment_to_player[self._normalise_key(assignment_key)] = scenario_user
         if not assignment_to_player:
             assignment_to_player = {
-                self._normalise_key(getattr(player.role, "value", player.role)):
-                    player
-                for player in list(game.players or [])
+                self._normalise_key(getattr(scenario_user.role, "value", scenario_user.role)):
+                    scenario_user
+                for scenario_user in list(game.scenario_users or [])
             }
 
         seen_assignments: Set[str] = set()
@@ -6526,7 +6526,7 @@ class MixedScenarioService:
                     "role": assignment.role.value,
                     "assignment_key": assignment_key,
                     "node_keys": coverage_nodes,
-                    "player_type": assignment.player_type.value,
+                    "scenario_user_type": assignment.scenario_user_type.value,
                     "user_id": assignment.user_id,
                     "strategy": assignment.strategy.value if assignment.strategy else None,
                     "can_see_demand": assignment.can_see_demand,
@@ -6536,16 +6536,16 @@ class MixedScenarioService:
             )
 
             db_role = PlayerRole[assignment.role.name]
-            is_ai = assignment.player_type == PlayerType.AGENT
+            is_ai = assignment.scenario_user_type == PlayerType.AGENT
             strategy_value = (
                 assignment.strategy.value
                 if assignment.strategy is not None
                 else None
             )
 
-            player = assignment_to_player.get(assignment_key)
-            if player is None:
-                player = Player(
+            scenario_user = assignment_to_player.get(assignment_key)
+            if scenario_user is None:
+                scenario_user = ScenarioUser(
                     scenario_id=game.id,
                     role=db_role,
                     name=f"{assignment.role.value.title()} ({'AI' if is_ai else 'Human'})",
@@ -6556,29 +6556,29 @@ class MixedScenarioService:
                     user_id=assignment.user_id if not is_ai else None,
                     type=PlayerTypeDB.AI if is_ai else PlayerTypeDB.HUMAN,
                 )
-                player.strategy = (
-                    PlayerStrategyDB.MANUAL if not is_ai else player.strategy
+                scenario_user.strategy = (
+                    PlayerStrategyDB.MANUAL if not is_ai else scenario_user.strategy
                 )
-                self.db.add(player)
+                self.db.add(scenario_user)
                 self.db.flush()
-                assignment_to_player[assignment_key] = player
+                assignment_to_player[assignment_key] = scenario_user
             else:
-                player.role = db_role
-                player.name = f"{assignment.role.value.title()} ({'AI' if is_ai else 'Human'})"
-                player.is_ai = is_ai
-                player.type = PlayerTypeDB.AI if is_ai else PlayerTypeDB.HUMAN
-                player.ai_strategy = strategy_value if is_ai else None
-                player.can_see_demand = assignment.can_see_demand
-                player.llm_model = assignment.llm_model if is_ai else None
-                player.user_id = assignment.user_id if not is_ai else None
+                scenario_user.role = db_role
+                scenario_user.name = f"{assignment.role.value.title()} ({'AI' if is_ai else 'Human'})"
+                scenario_user.is_ai = is_ai
+                scenario_user.type = PlayerTypeDB.AI if is_ai else PlayerTypeDB.HUMAN
+                scenario_user.ai_strategy = strategy_value if is_ai else None
+                scenario_user.can_see_demand = assignment.can_see_demand
+                scenario_user.llm_model = assignment.llm_model if is_ai else None
+                scenario_user.user_id = assignment.user_id if not is_ai else None
                 if not is_ai:
-                    player.strategy = PlayerStrategyDB.MANUAL
+                    scenario_user.strategy = PlayerStrategyDB.MANUAL
 
-            player.node_key = coverage_nodes[0] if coverage_nodes else None
+            scenario_user.node_key = coverage_nodes[0] if coverage_nodes else None
 
-            if not player.inventory:
-                inventory = PlayerInventory(
-                    player=player,
+            if not scenario_user.inventory:
+                inventory = ScenarioUserInventory(
+                    scenario_user=scenario_user,
                     current_stock=12,
                     incoming_shipments=[],
                     backorders=0,
@@ -6586,8 +6586,8 @@ class MixedScenarioService:
                 self.db.add(inventory)
 
             role_assignments[assignment_key] = {
-                "player_id": player.id,
-                "player_type": assignment.player_type.value,
+                "scenario_user_id": scenario_user.id,
+                "scenario_user_type": assignment.scenario_user_type.value,
                 "strategy": strategy_value if is_ai else None,
                 "user_id": assignment.user_id if not is_ai else None,
                 "can_see_demand": assignment.can_see_demand,
@@ -6631,13 +6631,13 @@ class MixedScenarioService:
             else:
                 overrides.pop(assignment_key, None)
 
-        # Remove players no longer present (only for games not yet started)
-        for assignment_key, player in list(assignment_to_player.items()):
+        # Remove scenario_users no longer present (only for games not yet started)
+        for assignment_key, scenario_user in list(assignment_to_player.items()):
             if assignment_key in seen_assignments:
                 continue
             overrides.pop(assignment_key, None)
             if game.status == GameStatusDB.CREATED:
-                self.db.delete(player)
+                self.db.delete(scenario_user)
 
         cfg["player_assignments"] = config_assignments
         if overrides:
@@ -6687,7 +6687,7 @@ class MixedScenarioService:
 
         # If the game was restarted but has lingering rounds/history, clear them.
         existing_rounds = (
-            self.db.query(GameRound).filter(GameRound.scenario_id == game.id).all()
+            self.db.query(ScenarioRound).filter(ScenarioRound.scenario_id == game.id).all()
         )
         if existing_rounds:
             for r in existing_rounds:
@@ -7004,16 +7004,16 @@ class MixedScenarioService:
         
         progression_mode = str(cfg.get("progression_mode") or "supervised").lower()
 
-        # If every participant is an AI but the progression mode was not set to
+        # If every scenario_user is an AI but the progression mode was not set to
         # unsupervised, automatically enable auto-play so seeded showcase games
         # don't stall after the first round.
         if progression_mode != "unsupervised":
-            players = (
-                self.db.query(Player)
-                .filter(Player.scenario_id == game.id)
+            scenario_users = (
+                self.db.query(ScenarioUser)
+                .filter(ScenarioUser.scenario_id == game.id)
                 .all()
             )
-            if players and all(p.is_ai for p in players):
+            if scenario_users and all(p.is_ai for p in scenario_users):
                 progression_mode = "unsupervised"
                 cfg["progression_mode"] = progression_mode
                 flag_modified(game, "config")
@@ -7084,12 +7084,12 @@ class MixedScenarioService:
     ) -> None:
         """Advance an AI-only unsupervised game until completion."""
 
-        players = (
-            self.db.query(Player)
-            .filter(Player.scenario_id == game.id)
+        scenario_users = (
+            self.db.query(ScenarioUser)
+            .filter(ScenarioUser.scenario_id == game.id)
             .all()
         )
-        if any(not player.is_ai for player in players):
+        if any(not scenario_user.is_ai for scenario_user in scenario_users):
             return
 
         iterations = 0
@@ -7120,7 +7120,7 @@ class MixedScenarioService:
             if sleep_seconds:
                 time.sleep(sleep_seconds)
     
-    def start_new_round(self, game: Union[int, Game]) -> Optional[GameRound]:
+    def start_new_round(self, game: Union[int, Game]) -> Optional[ScenarioRound]:
         """
         Advance the game to the next round.
 
@@ -7131,22 +7131,22 @@ class MixedScenarioService:
 
         DAG Sequential Mode (Phase 1):
         1. Initialize round in FULFILLMENT phase
-        2. Players fulfill downstream orders (ATP-based) in downstream→upstream order
+        2. ScenarioUsers fulfill downstream orders (ATP-based) in downstream→upstream order
         3. Transition to REPLENISHMENT phase when all fulfilled
-        4. Players order from upstream
+        4. ScenarioUsers order from upstream
         5. Transition to COMPLETED, advance round
 
         SC Mode:
         1. Sync game state to SC tables (inventory, forecast)
         2. Run SC 3-step planning process
-        3. Convert supply plans to player orders
+        3. Convert supply plans to scenario_user orders
         4. Update game state
 
         Legacy Mode:
         1. Initialize round context and load state
         2. Preprocess queues (arrivals, matured orders)
         3. Process node echelon (demand, fulfillment, replenishment)
-        4. Trigger AI players
+        4. Trigger AI scenario_users
         5. Finalize round (persist state)
         """
         # 1. Resolve Game Object
@@ -7171,7 +7171,7 @@ class MixedScenarioService:
         else:
             return self._start_round_legacy(game_obj)
 
-    def _start_round_legacy(self, game_obj: Game) -> Optional[GameRound]:
+    def _start_round_legacy(self, game_obj: Game) -> Optional[ScenarioRound]:
         """
         Legacy Simulation Engine round processing.
 
@@ -7180,10 +7180,10 @@ class MixedScenarioService:
         total_rounds = game_obj.max_rounds or 50  # Default
 
         # Determine target round based on existing round records
-        latest_round: Optional[GameRound] = (
-            self.db.query(GameRound)
-            .filter(GameRound.scenario_id == game_obj.id)
-            .order_by(GameRound.round_number.desc())
+        latest_round: Optional[ScenarioRound] = (
+            self.db.query(ScenarioRound)
+            .filter(ScenarioRound.scenario_id == game_obj.id)
+            .order_by(ScenarioRound.round_number.desc())
             .first()
         )
         if latest_round:
@@ -7230,7 +7230,7 @@ class MixedScenarioService:
         # Process Node Echelon
         self._process_node_echelon(context)
 
-        # AI Players
+        # AI ScenarioUsers
         if context.round_record:
             self.process_ai_players(game_obj, context.round_record, context)
 
@@ -7239,14 +7239,14 @@ class MixedScenarioService:
 
         return context.round_record
 
-    def _start_round_sc_planning(self, game_obj: Game) -> Optional[GameRound]:
+    def _start_round_sc_planning(self, game_obj: Game) -> Optional[ScenarioRound]:
         """
         Supply Chain Planning Mode round processing.
 
         Uses SC 3-step planning process instead of legacy engine:
         1. Sync game state to SC tables (inventory, forecast)
         2. Run SupplyChainPlanner (demand → targets → net requirements)
-        3. Convert supply plans to player orders
+        3. Convert supply plans to scenario_user orders
         4. Update game state and persist
 
         This method bridges simulation concepts to SC Data Model using
@@ -7268,10 +7268,10 @@ class MixedScenarioService:
 
         # Determine target round
         total_rounds = game_obj.max_rounds or 50
-        latest_round: Optional[GameRound] = (
-            self.db.query(GameRound)
-            .filter(GameRound.scenario_id == game_obj.id)
-            .order_by(GameRound.round_number.desc())
+        latest_round: Optional[ScenarioRound] = (
+            self.db.query(ScenarioRound)
+            .filter(ScenarioRound.scenario_id == game_obj.id)
+            .order_by(ScenarioRound.round_number.desc())
             .first()
         )
 
@@ -7300,7 +7300,7 @@ class MixedScenarioService:
 
         return round_record
 
-    async def _run_sc_planning_async(self, game_obj: Game, target_round: int) -> Optional[GameRound]:
+    async def _run_sc_planning_async(self, game_obj: Game, target_round: int) -> Optional[ScenarioRound]:
         """
         Async helper for SC EXECUTION workflow (REFACTORED for execution, not planning).
 
@@ -7312,7 +7312,7 @@ class MixedScenarioService:
         1. Sync current game state (inventory, backlog) → inv_level
         2. Record customer demand → outbound_order_line
         3. Process deliveries from previous orders → update inventory
-        4. Get player orders from agents/humans → inbound_order_line (work orders)
+        4. Get scenario_user orders from agents/humans → inbound_order_line (work orders)
         5. Execute simulation round with simulation engine
         6. Create work orders for next round
         """
@@ -7364,11 +7364,11 @@ class MixedScenarioService:
             # In future, this could be replaced with SC logic
             logger.info(f"  Step 5: Running game simulation...")
 
-            # Get player orders (from agents/humans)
+            # Get scenario_user orders (from agents/humans)
             # For now, use naive strategy as placeholder
             # TODO: Replace with actual agent/human decision logic
             player_orders = await self._get_player_orders_for_round(game, target_round, db)
-            logger.info(f"  ✓ Got {len(player_orders)} player orders")
+            logger.info(f"  ✓ Got {len(player_orders)} scenario_user orders")
 
             # Step 6: Create Work Orders (Phase 3: Sprint 1 batch + Sprint 2 capacity + Sprint 3 aggregation)
             # Check game configuration flags
@@ -7416,11 +7416,11 @@ class MixedScenarioService:
                 work_orders_created = await adapter.create_work_orders_batch(player_orders, target_round)
                 logger.info(f"  ✓ Created {work_orders_created} work orders (BATCH)")
 
-            # Step 7: Create GameRound record
-            logger.info(f"  Step 7: Creating GameRound record...")
-            from app.models.supply_chain import GameRound as GameRoundModel
+            # Step 7: Create ScenarioRound record
+            logger.info(f"  Step 7: Creating ScenarioRound record...")
+            from app.models.supply_chain import ScenarioRound as ScenarioRoundModel
 
-            game_round = GameRoundModel(
+            game_round = ScenarioRoundModel(
                 scenario_id=game.id,
                 round_number=target_round,
                 started_at=datetime.utcnow(),
@@ -7446,13 +7446,13 @@ class MixedScenarioService:
             # Return the game round (sync session will need to re-query it)
             return game_round
 
-    def _start_round_dag_sequential(self, game_obj: Game) -> Optional[GameRound]:
+    def _start_round_dag_sequential(self, game_obj: Game) -> Optional[ScenarioRound]:
         """
         DAG-ordered sequential round execution (Phase 1 implementation).
 
-        Replaces simultaneous player actions with sequential downstream→upstream processing:
-        1. FULFILLMENT phase: Players fulfill downstream orders (ATP-based), downstream acts first
-        2. REPLENISHMENT phase: Players order from upstream (after receiving POs)
+        Replaces simultaneous scenario_user actions with sequential downstream→upstream processing:
+        1. FULFILLMENT phase: ScenarioUsers fulfill downstream orders (ATP-based), downstream acts first
+        2. REPLENISHMENT phase: ScenarioUsers order from upstream (after receiving POs)
         3. COMPLETED phase: Round finished, advance to next round
 
         This mirrors real supply chain workflows where demand flows upstream and
@@ -7462,17 +7462,17 @@ class MixedScenarioService:
             game_obj: Game instance with use_dag_sequential=True
 
         Returns:
-            GameRound record or None if game finished
+            ScenarioRound record or None if game finished
         """
         from app.models.supply_chain import RoundPhase
 
         total_rounds = game_obj.max_rounds or 50
 
         # Determine target round
-        latest_round: Optional[GameRound] = (
-            self.db.query(GameRound)
-            .filter(GameRound.scenario_id == game_obj.id)
-            .order_by(GameRound.round_number.desc())
+        latest_round: Optional[ScenarioRound] = (
+            self.db.query(ScenarioRound)
+            .filter(ScenarioRound.scenario_id == game_obj.id)
+            .order_by(ScenarioRound.round_number.desc())
             .first()
         )
 
@@ -7494,7 +7494,7 @@ class MixedScenarioService:
         game_obj.current_round = target_round
 
         # Create new round with FULFILLMENT phase
-        round_record = GameRound(
+        round_record = ScenarioRound(
             scenario_id=game_obj.id,
             round_number=target_round,
             customer_demand=0,  # Will be set later
@@ -7509,27 +7509,27 @@ class MixedScenarioService:
         # Process transfer order arrivals for this round
         self._process_transfer_order_arrivals(game_obj.id, target_round)
 
-        # Initialize player rounds (create skeleton records)
-        players = self.db.query(Player).filter(Player.scenario_id == game_obj.id).all()
-        for player in players:
-            player_round = PlayerRound(
-                player_id=player.id,
+        # Initialize scenario_user rounds (create skeleton records)
+        scenario_users = self.db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game_obj.id).all()
+        for scenario_user in scenario_users:
+            scenario_user_period = ScenarioUserPeriod(
+                scenario_user_id=scenario_user.id,
                 round_id=round_record.id,
                 order_placed=0,
                 order_received=0,
-                inventory_before=player.current_stock,
-                inventory_after=player.current_stock,
-                backorders_before=player.backorders,
-                backorders_after=player.backorders,
+                inventory_before=scenario_user.current_stock,
+                inventory_after=scenario_user.current_stock,
+                backorders_before=scenario_user.backorders,
+                backorders_after=scenario_user.backorders,
             )
-            self.db.add(player_round)
+            self.db.add(scenario_user_period)
 
         self.db.commit()
 
         logger.info(f"✅ DAG Sequential Round {target_round} initialized - Phase: FULFILLMENT")
 
         # Auto-process autonomous agents' fulfillment decisions
-        self._process_autonomous_agent_fulfillment(game_obj, round_record, players)
+        self._process_autonomous_agent_fulfillment(game_obj, round_record, scenario_users)
 
         # Broadcast phase change via WebSocket (best-effort, non-blocking)
         try:
@@ -7551,8 +7551,8 @@ class MixedScenarioService:
     def _process_autonomous_agent_fulfillment(
         self,
         game_obj: Game,
-        round_obj: GameRound,
-        players: List[Player]
+        round_obj: ScenarioRound,
+        scenario_users: List[ScenarioUser]
     ) -> None:
         """
         Auto-process fulfillment decisions for autonomous AI agents.
@@ -7564,62 +7564,62 @@ class MixedScenarioService:
         Args:
             game_obj: Game instance
             round_obj: Current round
-            players: List of players in the game
+            scenario_users: List of scenario_users in the game
         """
-        from app.models.participant import AgentMode
+        from app.models.scenario_user import AgentMode
         from app.services.agents import SimulationAgent, AgentType, AgentStrategy
 
-        for player in players:
-            # Check if player is autonomous AI
-            if player.agent_mode != AgentMode.AUTONOMOUS:
+        for scenario_user in scenario_users:
+            # Check if scenario_user is autonomous AI
+            if scenario_user.agent_mode != AgentMode.AUTONOMOUS:
                 continue
 
-            if not player.is_ai:
+            if not scenario_user.is_ai:
                 continue
 
             # Get agent strategy from config
-            strategy = self._get_agent_strategy(game_obj, player)
+            strategy = self._get_agent_strategy(game_obj, scenario_user)
             if not strategy:
                 strategy = AgentStrategy.NAIVE  # Default fallback
 
             # Create agent instance with config-specific model path
-            agent_type = self._get_agent_type_from_role(player.role)
+            agent_type = self._get_agent_type_from_role(scenario_user.role)
             # Get the trained model path from the supply chain config
             config_model_path = getattr(
                 game_obj.supply_chain_config, "trained_model_path", None
             ) if game_obj.supply_chain_config else None
             agent = SimulationAgent(
-                agent_id=player.id,
+                agent_id=scenario_user.id,
                 agent_type=agent_type,
                 strategy=strategy,
-                initial_inventory=player.current_stock,
-                initial_backlog=player.backorders,
+                initial_inventory=scenario_user.current_stock,
+                initial_backlog=scenario_user.backorders,
                 model_path=config_model_path,
             )
 
             # Calculate fulfillment decision based on available inventory (ATP)
-            atp = self._calculate_atp(player)
+            atp = self._calculate_atp(scenario_user)
             # Simple fulfillment: ship whatever we can to meet downstream demand
-            fulfill_qty = min(atp, player.backorders) if player.backorders > 0 else 0
+            fulfill_qty = min(atp, scenario_user.backorders) if scenario_user.backorders > 0 else 0
 
             # If no backlog, still process the decision with zero fulfillment
-            # This marks the player as having submitted their fulfillment
+            # This marks the scenario_user as having submitted their fulfillment
             self._process_node_fulfillment_decision(
-                game_obj, round_obj, player, fulfill_qty
+                game_obj, round_obj, scenario_user, fulfill_qty
             )
 
             logger.info(
-                f"🤖 Autonomous agent {player.role} auto-fulfilled {fulfill_qty} units"
+                f"🤖 Autonomous agent {scenario_user.role} auto-fulfilled {fulfill_qty} units"
             )
 
-        # Check if all players have submitted and transition phase
+        # Check if all scenario_users have submitted and transition phase
         self._check_and_transition_fulfillment_phase(game_obj, round_obj)
 
     def _process_autonomous_agent_replenishment(
         self,
         game_obj: Game,
-        round_obj: GameRound,
-        players: List[Player]
+        round_obj: ScenarioRound,
+        scenario_users: List[ScenarioUser]
     ) -> None:
         """
         Auto-process replenishment decisions for autonomous AI agents.
@@ -7630,45 +7630,45 @@ class MixedScenarioService:
         Args:
             game_obj: Game instance
             round_obj: Current round
-            players: List of players in the game
+            scenario_users: List of scenario_users in the game
         """
-        from app.models.participant import AgentMode
+        from app.models.scenario_user import AgentMode
         from app.services.agents import SimulationAgent, AgentType, AgentStrategy
 
-        for player in players:
-            # Check if player is autonomous AI
-            if player.agent_mode != AgentMode.AUTONOMOUS:
+        for scenario_user in scenario_users:
+            # Check if scenario_user is autonomous AI
+            if scenario_user.agent_mode != AgentMode.AUTONOMOUS:
                 continue
 
-            if not player.is_ai:
+            if not scenario_user.is_ai:
                 continue
 
             # Get agent strategy from config
-            strategy = self._get_agent_strategy(game_obj, player)
+            strategy = self._get_agent_strategy(game_obj, scenario_user)
             if not strategy:
                 strategy = AgentStrategy.NAIVE
 
             # Create agent instance with config-specific model path
-            agent_type = self._get_agent_type_from_role(player.role)
+            agent_type = self._get_agent_type_from_role(scenario_user.role)
             # Get the trained model path from the supply chain config
             config_model_path = getattr(
                 game_obj.supply_chain_config, "trained_model_path", None
             ) if game_obj.supply_chain_config else None
             agent = SimulationAgent(
-                agent_id=player.id,
+                agent_id=scenario_user.id,
                 agent_type=agent_type,
                 strategy=strategy,
-                initial_inventory=player.current_stock,
-                initial_backlog=player.backorders,
+                initial_inventory=scenario_user.current_stock,
+                initial_backlog=scenario_user.backorders,
                 model_path=config_model_path,
             )
 
-            # Get player's local state for decision making
+            # Get scenario_user's local state for decision making
             local_state = {
-                "inventory": player.current_stock,
-                "backlog": player.backorders,
-                "incoming_shipments": list(getattr(player, 'pipeline_shipments', None) or []),
-                "node_key": player.assignment_key,
+                "inventory": scenario_user.current_stock,
+                "backlog": scenario_user.backorders,
+                "incoming_shipments": list(getattr(scenario_user, 'pipeline_shipments', None) or []),
+                "node_key": scenario_user.assignment_key,
             }
 
             # Make agent decision
@@ -7681,25 +7681,25 @@ class MixedScenarioService:
 
             # Process replenishment order
             self._process_node_replenishment_decision(
-                game_obj, round_obj, player, decision.quantity
+                game_obj, round_obj, scenario_user, decision.quantity
             )
 
             logger.info(
-                f"🤖 Autonomous agent {player.role} auto-ordered {decision.quantity} units "
+                f"🤖 Autonomous agent {scenario_user.role} auto-ordered {decision.quantity} units "
                 f"(reason: {decision.reason})"
             )
 
-        # Check if all players have submitted and transition to COMPLETED
+        # Check if all scenario_users have submitted and transition to COMPLETED
         self._check_and_transition_replenishment_phase(game_obj, round_obj)
 
-    def _get_agent_strategy(self, game_obj: Game, player: Player):
-        """Get the agent strategy for a player from game config."""
+    def _get_agent_strategy(self, game_obj: Game, scenario_user: ScenarioUser):
+        """Get the agent strategy for a scenario_user from game config."""
         from app.services.agents import AgentStrategy
 
-        # Check player's ai_strategy field
-        if player.ai_strategy:
+        # Check scenario_user's ai_strategy field
+        if scenario_user.ai_strategy:
             try:
-                return AgentStrategy(player.ai_strategy.lower())
+                return AgentStrategy(scenario_user.ai_strategy.lower())
             except ValueError:
                 pass
 
@@ -7707,7 +7707,7 @@ class MixedScenarioService:
         config = game_obj.config or {}
         assignments = config.get("player_assignments", [])
         for assignment in assignments:
-            if assignment.get("role") == player.role:
+            if assignment.get("role") == scenario_user.role:
                 strategy_str = assignment.get("strategy") or assignment.get("ai_strategy")
                 if strategy_str:
                     try:
@@ -7718,7 +7718,7 @@ class MixedScenarioService:
         return None
 
     def _get_agent_type_from_role(self, role: str):
-        """Convert player role to AgentType enum."""
+        """Convert scenario_user role to AgentType enum."""
         from app.services.agents import AgentType
 
         role_map = {
@@ -7734,9 +7734,9 @@ class MixedScenarioService:
     def _check_and_transition_fulfillment_phase(
         self,
         game_obj: Game,
-        round_obj: GameRound
+        round_obj: ScenarioRound
     ) -> None:
-        """Check if all players completed fulfillment and transition to replenishment."""
+        """Check if all scenario_users completed fulfillment and transition to replenishment."""
         from app.models.supply_chain import RoundPhase
 
         if self._check_phase_transition(
@@ -7746,15 +7746,15 @@ class MixedScenarioService:
             self._transition_phase(game_obj, round_obj, RoundPhase.REPLENISHMENT)
 
             # Process autonomous agents' replenishment decisions
-            players = self.db.query(Player).filter(Player.scenario_id == game_obj.id).all()
-            self._process_autonomous_agent_replenishment(game_obj, round_obj, players)
+            scenario_users = self.db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game_obj.id).all()
+            self._process_autonomous_agent_replenishment(game_obj, round_obj, scenario_users)
 
     def _check_and_transition_replenishment_phase(
         self,
         game_obj: Game,
-        round_obj: GameRound
+        round_obj: ScenarioRound
     ) -> None:
-        """Check if all players completed replenishment and transition to completed."""
+        """Check if all scenario_users completed replenishment and transition to completed."""
         from app.models.supply_chain import RoundPhase
 
         if self._check_phase_transition(
@@ -7766,20 +7766,20 @@ class MixedScenarioService:
     def _process_node_fulfillment_decision(
         self,
         game_obj: Game,
-        round_obj: GameRound,
-        player: Player,
+        round_obj: ScenarioRound,
+        scenario_user: ScenarioUser,
         fulfill_qty: int
     ) -> Optional[TransferOrder]:
         """
-        Process a player's fulfillment decision (ATP-based shipment).
+        Process a scenario_user's fulfillment decision (ATP-based shipment).
 
         Called when human/agent submits fulfillment quantity for downstream customer.
-        Creates TransferOrder and updates player state.
+        Creates TransferOrder and updates scenario_user state.
 
         Args:
             game_obj: Game instance
             round_obj: Current round
-            player: Player making decision
+            scenario_user: ScenarioUser making decision
             fulfill_qty: Quantity to ship downstream
 
         Returns:
@@ -7789,75 +7789,75 @@ class MixedScenarioService:
         from app.models.supply_chain_config import TransportationLane
 
         # Validate ATP
-        current_atp = self._calculate_atp(player)
+        current_atp = self._calculate_atp(scenario_user)
         if fulfill_qty > current_atp:
             logger.warning(
-                f"Player {player.id} attempted to ship {fulfill_qty} but ATP is {current_atp}"
+                f"ScenarioUser {scenario_user.id} attempted to ship {fulfill_qty} but ATP is {current_atp}"
             )
             # Allow but log warning (business decision to allow over-commitment)
 
         # Get downstream site ID from topology
         config = game_obj.supply_chain_config
-        node_key = player.assignment_key  # e.g., "retailer", "wholesaler"
+        node_key = scenario_user.assignment_key  # e.g., "retailer", "wholesaler"
 
         # Find downstream transportation lane
         downstream_lane = (
             self.db.query(TransportationLane)
             .filter(
                 TransportationLane.config_id == config.id,
-                TransportationLane.from_site_id == player.site_id
+                TransportationLane.from_site_id == scenario_user.site_id
             )
             .first()
         )
 
         if not downstream_lane:
-            logger.error(f"No downstream transportation lane found for player {player.id}")
+            logger.error(f"No downstream transportation lane found for scenario_user {scenario_user.id}")
             return None
 
         # Get lead time
         lead_time = self._get_lane_lead_time(
             config.id,
-            player.site_id,
+            scenario_user.site_id,
             downstream_lane.to_site_id
         )
 
         # Create transfer order
         transfer_order = self._create_transfer_order(
             scenario_id=game_obj.id,
-            player_id=player.id,
-            source_site_id=player.site_id,
+            scenario_user_id=scenario_user.id,
+            source_site_id=scenario_user.site_id,
             destination_site_id=downstream_lane.to_site_id,
             quantity=fulfill_qty,
             lead_time=lead_time,
             round_number=round_obj.round_number,
-            source_player_round_id=None,  # Will link PlayerRound after creation
+            source_scenario_user_period_id=None,  # Will link ScenarioUserPeriod after creation
         )
 
-        # Update player state
-        player.current_stock -= fulfill_qty
+        # Update scenario_user state
+        scenario_user.current_stock -= fulfill_qty
 
-        # Update player round record
-        player_round = (
-            self.db.query(PlayerRound)
+        # Update scenario_user round record
+        scenario_user_period = (
+            self.db.query(ScenarioUserPeriod)
             .filter(
-                PlayerRound.player_id == player.id,
-                PlayerRound.round_id == round_obj.id
+                ScenarioUserPeriod.scenario_user_id == scenario_user.id,
+                ScenarioUserPeriod.round_id == round_obj.id
             )
             .first()
         )
 
-        if player_round:
-            player_round.inventory_after = player.current_stock
-            player_round.fulfillment_qty = fulfill_qty
-            player_round.fulfillment_submitted_at = datetime.datetime.utcnow()
-            # Link transfer order back to player round for bidirectional tracking
+        if scenario_user_period:
+            scenario_user_period.inventory_after = scenario_user.current_stock
+            scenario_user_period.fulfillment_qty = fulfill_qty
+            scenario_user_period.fulfillment_submitted_at = datetime.datetime.utcnow()
+            # Link transfer order back to scenario_user round for bidirectional tracking
             if transfer_order:
-                transfer_order.source_player_round_id = player_round.id
+                transfer_order.source_scenario_user_period_id = scenario_user_period.id
 
         self.db.commit()
 
         logger.info(
-            f"✅ Player {player.id} fulfilled {fulfill_qty} units → "
+            f"✅ ScenarioUser {scenario_user.id} fulfilled {fulfill_qty} units → "
             f"TO {transfer_order.id} (arrives round {transfer_order.arrival_round})"
         )
 
@@ -7866,20 +7866,20 @@ class MixedScenarioService:
     def _process_node_replenishment_decision(
         self,
         game_obj: Game,
-        round_obj: GameRound,
-        player: Player,
+        round_obj: ScenarioRound,
+        scenario_user: ScenarioUser,
         order_qty: int
     ) -> Optional[TransferOrder]:
         """
-        Process a player's replenishment decision (upstream order).
+        Process a scenario_user's replenishment decision (upstream order).
 
         Called when human/agent submits order quantity for upstream supplier.
-        Creates TransferOrder/PurchaseOrder and updates player state.
+        Creates TransferOrder/PurchaseOrder and updates scenario_user state.
 
         Args:
             game_obj: Game instance
             round_obj: Current round
-            player: Player making decision
+            scenario_user: ScenarioUser making decision
             order_qty: Quantity to order from upstream
 
         Returns:
@@ -7896,78 +7896,78 @@ class MixedScenarioService:
             self.db.query(TransportationLane)
             .filter(
                 TransportationLane.config_id == config.id,
-                TransportationLane.to_site_id == player.site_id
+                TransportationLane.to_site_id == scenario_user.site_id
             )
             .first()
         )
 
         if not upstream_lane:
-            logger.error(f"No upstream lane found for player {player.id} (likely terminal supplier)")
+            logger.error(f"No upstream lane found for scenario_user {scenario_user.id} (likely terminal supplier)")
             return None
 
         # Get lead time
         lead_time = self._get_lane_lead_time(
             config.id,
             upstream_lane.from_site_id,
-            player.site_id
+            scenario_user.site_id
         )
 
         # Create transfer order (represents PO/MO)
         transfer_order = self._create_transfer_order(
             scenario_id=game_obj.id,
-            player_id=player.id,
+            scenario_user_id=scenario_user.id,
             source_site_id=upstream_lane.from_site_id,
-            destination_site_id=player.site_id,
+            destination_site_id=scenario_user.site_id,
             quantity=order_qty,
             lead_time=lead_time,
             round_number=round_obj.round_number,
-            source_player_round_id=None,
+            source_scenario_user_period_id=None,
         )
 
-        # Update player round record
-        player_round = (
-            self.db.query(PlayerRound)
+        # Update scenario_user round record
+        scenario_user_period = (
+            self.db.query(ScenarioUserPeriod)
             .filter(
-                PlayerRound.player_id == player.id,
-                PlayerRound.round_id == round_obj.id
+                ScenarioUserPeriod.scenario_user_id == scenario_user.id,
+                ScenarioUserPeriod.round_id == round_obj.id
             )
             .first()
         )
 
-        if player_round:
-            player_round.order_placed = order_qty
-            player_round.replenishment_qty = order_qty
-            player_round.replenishment_submitted_at = datetime.datetime.utcnow()
-            player_round.upstream_order_id = transfer_order.id
-            player_round.upstream_order_type = UpstreamOrderType.TO
+        if scenario_user_period:
+            scenario_user_period.order_placed = order_qty
+            scenario_user_period.replenishment_qty = order_qty
+            scenario_user_period.replenishment_submitted_at = datetime.datetime.utcnow()
+            scenario_user_period.upstream_order_id = transfer_order.id
+            scenario_user_period.upstream_order_type = UpstreamOrderType.TO
 
         self.db.commit()
 
         logger.info(
-            f"✅ Player {player.id} ordered {order_qty} units → "
+            f"✅ ScenarioUser {scenario_user.id} ordered {order_qty} units → "
             f"TO {transfer_order.id} (arrives round {transfer_order.arrival_round})"
         )
 
         return transfer_order
 
-    def _calculate_atp(self, player: Player) -> int:
+    def _calculate_atp(self, scenario_user: ScenarioUser) -> int:
         """
-        Calculate Available to Promise (ATP) for a player.
+        Calculate Available to Promise (ATP) for a scenario_user.
 
         ATP = Current Inventory - Committed Orders
 
         Args:
-            player: Player instance
+            scenario_user: ScenarioUser instance
 
         Returns:
             ATP quantity (can be negative if over-committed)
         """
         # Simple ATP calculation for Phase 1
         # Phase 3 will integrate full ATP/CTP from planning workflows
-        atp = player.current_stock
+        atp = scenario_user.current_stock
 
-        # Subtract committed TOs not yet shipped (Phase 1: from player pipeline)
-        committed = sum(getattr(player, 'pipeline_shipments', None) or [])
+        # Subtract committed TOs not yet shipped (Phase 1: from scenario_user pipeline)
+        committed = sum(getattr(scenario_user, 'pipeline_shipments', None) or [])
         atp -= committed
 
         return max(0, atp)
@@ -7975,7 +7975,7 @@ class MixedScenarioService:
     def _check_phase_transition(
         self,
         game_obj: Game,
-        round_obj: GameRound,
+        round_obj: ScenarioRound,
         from_phase: str,
         to_phase: str
     ) -> bool:
@@ -7995,42 +7995,42 @@ class MixedScenarioService:
         """
         from app.models.supply_chain import RoundPhase
 
-        # Get all players in game
-        players = self.db.query(Player).filter(Player.scenario_id == game_obj.id).all()
-        player_count = len(players)
+        # Get all scenario_users in game
+        scenario_users = self.db.query(ScenarioUser).filter(ScenarioUser.scenario_id == game_obj.id).all()
+        scenario_user_count = len(scenario_users)
 
         if from_phase == RoundPhase.FULFILLMENT and to_phase == RoundPhase.REPLENISHMENT:
-            # Check if all players have submitted fulfillment decisions
+            # Check if all scenario_users have submitted fulfillment decisions
             # Using explicit fulfillment_submitted_at timestamp
             fulfilled_count = (
-                self.db.query(PlayerRound)
+                self.db.query(ScenarioUserPeriod)
                 .filter(
-                    PlayerRound.round_id == round_obj.id,
-                    PlayerRound.fulfillment_submitted_at.isnot(None)
+                    ScenarioUserPeriod.round_id == round_obj.id,
+                    ScenarioUserPeriod.fulfillment_submitted_at.isnot(None)
                 )
                 .count()
             )
-            return fulfilled_count >= player_count
+            return fulfilled_count >= scenario_user_count
 
         elif from_phase == RoundPhase.REPLENISHMENT and to_phase == RoundPhase.COMPLETED:
-            # Check if all players have submitted replenishment orders
+            # Check if all scenario_users have submitted replenishment orders
             # Using explicit replenishment_submitted_at timestamp
             replenished_count = (
-                self.db.query(PlayerRound)
+                self.db.query(ScenarioUserPeriod)
                 .filter(
-                    PlayerRound.round_id == round_obj.id,
-                    PlayerRound.replenishment_submitted_at.isnot(None)
+                    ScenarioUserPeriod.round_id == round_obj.id,
+                    ScenarioUserPeriod.replenishment_submitted_at.isnot(None)
                 )
                 .count()
             )
-            return replenished_count >= player_count
+            return replenished_count >= scenario_user_count
 
         return False
 
     def _transition_phase(
         self,
         game_obj: Game,
-        round_obj: GameRound,
+        round_obj: ScenarioRound,
         new_phase: str
     ) -> None:
         """
@@ -8085,7 +8085,7 @@ class MixedScenarioService:
     def _update_rlhf_preference_labels(
         self,
         game_obj: Game,
-        round_obj: GameRound
+        round_obj: ScenarioRound
     ) -> None:
         """
         Phase 2: Update RLHF preference labels after round completes.
@@ -8119,29 +8119,29 @@ class MixedScenarioService:
                 f"{len(feedbacks)} feedback records"
             )
 
-            # Get player round results for outcome comparison
-            from app.models.supply_chain import PlayerRound
-            player_rounds = (
-                self.db.query(PlayerRound)
-                .filter(PlayerRound.round_id == round_obj.id)
+            # Get scenario_user round results for outcome comparison
+            from app.models.supply_chain import ScenarioUserPeriod
+            scenario_user_periods = (
+                self.db.query(ScenarioUserPeriod)
+                .filter(ScenarioUserPeriod.round_id == round_obj.id)
                 .all()
             )
-            player_round_map = {pr.player_id: pr for pr in player_rounds}
+            scenario_user_period_map = {pr.scenario_user_id: pr for pr in scenario_user_periods}
 
             rlhf_collector = get_rlhf_data_collector(self.db)
 
             for feedback in feedbacks:
-                player_round = player_round_map.get(feedback.player_id)
-                if not player_round:
+                scenario_user_period = scenario_user_period_map.get(feedback.scenario_user_id)
+                if not scenario_user_period:
                     continue
 
                 # Calculate outcomes for both AI and human decisions
-                # Human outcome: actual results from the player round
+                # Human outcome: actual results from the scenario_user round
                 human_outcome = {
-                    "total_cost": player_round.cost or 0,
-                    "service_level": self._calculate_service_level(player_round),
-                    "inventory_after": player_round.inventory_after_shipments or 0,
-                    "backlog_after": player_round.backlog or 0,
+                    "total_cost": scenario_user_period.cost or 0,
+                    "service_level": self._calculate_service_level(scenario_user_period),
+                    "inventory_after": scenario_user_period.inventory_after_shipments or 0,
+                    "backlog_after": scenario_user_period.backlog or 0,
                 }
 
                 # AI outcome: simulate what would have happened with AI suggestion
@@ -8178,12 +8178,12 @@ class MixedScenarioService:
             logger.error(f"Failed to update RLHF preference labels: {e}", exc_info=True)
             # Don't fail the round completion due to RLHF errors
 
-    def _calculate_service_level(self, player_round: "PlayerRound") -> float:
-        """Calculate service level for a player round."""
-        demand = player_round.demand_received or 0
+    def _calculate_service_level(self, scenario_user_period: "ScenarioUserPeriod") -> float:
+        """Calculate service level for a scenario_user round."""
+        demand = scenario_user_period.demand_received or 0
         if demand == 0:
             return 1.0
-        fulfilled = player_round.quantity_shipped or 0
+        fulfilled = scenario_user_period.quantity_shipped or 0
         return min(1.0, fulfilled / demand) if demand > 0 else 1.0
 
     def _get_current_demand(self, game: Game, round_number: int) -> float:
@@ -8227,7 +8227,7 @@ class MixedScenarioService:
         db
     ) -> Dict[str, float]:
         """
-        Get player order decisions for this round
+        Get scenario_user order decisions for this round
 
         This is a placeholder that uses naive strategy.
         TODO: Integrate with actual agent/human decision logic
@@ -8241,19 +8241,19 @@ class MixedScenarioService:
             Dict mapping role → order quantity
         """
         from sqlalchemy import select
-        from app.models.participant import Participant as Player
+        from app.models.scenario_user import ScenarioUser as ScenarioUser
 
         result = await db.execute(
-            select(Player).filter(Player.scenario_id == game.id)
+            select(ScenarioUser).filter(ScenarioUser.scenario_id == game.id)
         )
-        players = result.scalars().all()
+        scenario_users = result.scalars().all()
 
         player_orders = {}
         demand = self._get_current_demand(game, round_number)
 
         # Naive strategy: order = demand
-        for player in players:
-            player_orders[player.role] = demand
+        for scenario_user in scenario_users:
+            player_orders[scenario_user.role] = demand
 
         return player_orders
 
@@ -8320,18 +8320,18 @@ class MixedScenarioService:
 
 
 
-    def process_ai_players(self, game: Game, game_round: GameRound, context: RoundContext) -> None:
-        """Process AI players' moves for the current round."""
-        players = self.db.query(Player).filter(
-            Player.scenario_id == game.id,
-            Player.is_ai == True
+    def process_ai_players(self, game: Game, game_round: ScenarioRound, context: RoundContext) -> None:
+        """Process AI scenario_users' moves for the current round."""
+        scenario_users = self.db.query(ScenarioUser).filter(
+            ScenarioUser.scenario_id == game.id,
+            ScenarioUser.is_ai == True
         ).all()
 
-        if not players:
+        if not scenario_users:
             return
 
-        # 1. Resolve Player Mappings
-        node_to_players = self._resolve_player_mappings(game, players, context)
+        # 1. Resolve ScenarioUser Mappings
+        node_to_players = self._resolve_player_mappings(game, scenario_users, context)
         
         # 2. Determine Processing Order (Downstream to Upstream)
         # This ensures downstream demand is available for upstream agents
@@ -8342,7 +8342,7 @@ class MixedScenarioService:
                 
         # 3. Process Each Node
         for node_key in processing_nodes:
-            # Skip if not assigned to any player
+            # Skip if not assigned to any scenario_user
             assigned_players = node_to_players.get(node_key)
             if not assigned_players:
                 continue
@@ -8352,11 +8352,11 @@ class MixedScenarioService:
             if node_type in {"market_demand", "market_supply"}:
                 continue
                 
-            # Process for each player assigned (usually one)
-            for player in assigned_players:
+            # Process for each scenario_user assigned (usually one)
+            for scenario_user in assigned_players:
                 self._process_single_agent(
                     node_key, 
-                    player, 
+                    scenario_user, 
                     game, 
                     game_round, 
                     context
@@ -8365,15 +8365,15 @@ class MixedScenarioService:
     def _process_single_agent(
         self, 
         node_key: str, 
-        player: Player, 
+        scenario_user: ScenarioUser, 
         game: Game, 
-        game_round: GameRound, 
+        game_round: ScenarioRound, 
         context: RoundContext
     ) -> None:
         """Process decision for a single AI agent."""
         agent_type = self._agent_type_for_node(context.topology.node_types.get(node_key))
         agent = self.agent_manager.get_agent(agent_type)
-        desired_strategy = player.ai_strategy or getattr(player, "strategy", None)
+        desired_strategy = scenario_user.ai_strategy or getattr(scenario_user, "strategy", None)
         if agent and desired_strategy:
             try:
                 strategy_enum = (
@@ -8384,18 +8384,18 @@ class MixedScenarioService:
                 self.agent_manager.set_agent_strategy(
                     agent_type,
                     strategy_enum,
-                    llm_model=getattr(player, "llm_model", None),
+                    llm_model=getattr(scenario_user, "llm_model", None),
                 )
             except Exception:  # noqa: BLE001
                 logger.debug(
-                    "Unable to set strategy %s for agent %s (player %s)",
+                    "Unable to set strategy %s for agent %s (scenario_user %s)",
                     desired_strategy,
                     agent_type,
-                    getattr(player, "id", "?"),
+                    getattr(scenario_user, "id", "?"),
                 )
 
         if not agent:
-            logger.warning(f"No agent found for player {player.id} (role={player.role})")
+            logger.warning(f"No agent found for scenario_user {scenario_user.id} (role={scenario_user.role})")
             return
 
         # Build state for agent
@@ -8657,7 +8657,7 @@ class MixedScenarioService:
         node_state: NodeState,
         upstream_node: str,
         quantity: int,
-        game_round: GameRound,
+        game_round: ScenarioRound,
         current_round_number: int,
     ) -> None:
         """Place a single order to a specific upstream supplier.
@@ -8684,7 +8684,7 @@ class MixedScenarioService:
         if not primary_item_id:
             # Final fallback: log warning and return without placing order
             logger.warning(
-                f"Player order from {node_key} to {upstream_node}: Cannot determine product ID. "
+                f"ScenarioUser order from {node_key} to {upstream_node}: Cannot determine product ID. "
                 f"No products in config items list and no upstream inventory. Skipping order."
             )
             return  # Exit early without placing order
@@ -8712,21 +8712,21 @@ class MixedScenarioService:
         node_state.on_order_by_item[primary_item_id] = node_state.on_order_by_item.get(primary_item_id, 0) + quantity
         node_state.on_order = sum(max(0, int(v)) for v in node_state.on_order_by_item.values())
 
-        # Capture order details for debug traces/history so logs reflect player/agent actions
+        # Capture order details for debug traces/history so logs reflect scenario_user/agent actions
         created_entries = list(getattr(node_state, "debug_created_orders", []) or [])
         created_entries.append({"product_id": primary_item_id, "quantity": quantity})
         node_state.debug_created_orders = created_entries
         node_state.debug_orders_created = getattr(node_state, "debug_orders_created", 0) + quantity
         node_state.debug_trace.append(
             {
-                "step": "Player Order",
+                "step": "ScenarioUser Order",
                 "orders_created": quantity,
                 "orders_created_detail": list(created_entries),
             }
         )
 
-    def _resolve_player_mappings(self, game: Game, players: List[Player], context: RoundContext) -> Dict[str, List[Player]]:
-        """Map players to nodes based on configuration and assignments."""
+    def _resolve_player_mappings(self, game: Game, scenario_users: List[ScenarioUser], context: RoundContext) -> Dict[str, List[ScenarioUser]]:
+        """Map scenario_users to nodes based on configuration and assignments."""
         cfg = game.config or {}
         
         # 1. Build Assignment Lookup (Role -> [Node])
@@ -8746,35 +8746,35 @@ class MixedScenarioService:
             for node_key in coverage:
                 node_assignment_lookup[node_key].append(assignment_key)
 
-        # 2. Build Player Lookup (Role -> [Player])
-        player_index: Dict[int, Player] = {player.id: player for player in players}
-        assignment_players: Dict[str, List[Player]] = defaultdict(list)
+        # 2. Build ScenarioUser Lookup (Role -> [ScenarioUser])
+        player_index: Dict[int, ScenarioUser] = {scenario_user.id: scenario_user for scenario_user in scenario_users}
+        assignment_players: Dict[str, List[ScenarioUser]] = defaultdict(list)
         for raw_key, payload in (getattr(game, "role_assignments", {}) or {}).items():
             assignment_key = MixedScenarioService._canonical_role(raw_key)
             if not assignment_key:
                 continue
-            player_id = payload.get("player_id")
-            if not player_id:
+            scenario_user_id = payload.get("scenario_user_id")
+            if not scenario_user_id:
                 continue
-            player = player_index.get(player_id)
-            if player:
-                assignment_players[assignment_key].append(player)
+            scenario_user = player_index.get(scenario_user_id)
+            if scenario_user:
+                assignment_players[assignment_key].append(scenario_user)
 
-        # 3. Map Nodes to Players
-        captured_player_ids: Set[int] = {
-            player.id
+        # 3. Map Nodes to ScenarioUsers
+        captured_scenario_user_ids: Set[int] = {
+            scenario_user.id
             for bundle in assignment_players.values()
-            for player in bundle
+            for scenario_user in bundle
         }
-        legacy_node_to_players: Dict[str, List[Player]] = defaultdict(list)
-        for player in players:
-            if player.id in captured_player_ids:
+        legacy_node_to_players: Dict[str, List[ScenarioUser]] = defaultdict(list)
+        for scenario_user in scenario_users:
+            if scenario_user.id in captured_scenario_user_ids:
                 continue
-            node_key = MixedScenarioService._player_node_key(player)
+            node_key = MixedScenarioService._player_node_key(scenario_user)
             if node_key:
-                legacy_node_to_players[node_key].append(player)
+                legacy_node_to_players[node_key].append(scenario_user)
 
-        node_to_players: Dict[str, List[Player]] = defaultdict(list)
+        node_to_players: Dict[str, List[ScenarioUser]] = defaultdict(list)
         for node in context.topology.all_nodes:
             canonical_node = MixedScenarioService._canonical_role(node)
             if not canonical_node:
@@ -8791,27 +8791,27 @@ class MixedScenarioService:
         for node_key, assigned in list(node_to_players.items()):
             if not assigned:
                 continue
-            unique: List[Player] = []
+            unique: List[ScenarioUser] = []
             seen_ids: Set[int] = set()
-            for player in assigned:
-                if player.id in seen_ids:
+            for scenario_user in assigned:
+                if scenario_user.id in seen_ids:
                     continue
-                seen_ids.add(player.id)
-                unique.append(player)
+                seen_ids.add(scenario_user.id)
+                unique.append(scenario_user)
             node_to_players[node_key] = unique
         return node_to_players
     
-    def complete_round(self, game_round: GameRound) -> None:
-        """Complete the current round, updating player inventories and costs."""
-        # Get all player rounds for this game round
-        player_rounds = self.db.query(PlayerRound).filter(
-            PlayerRound.round_id == game_round.id
+    def complete_round(self, game_round: ScenarioRound) -> None:
+        """Complete the current round, updating scenario_user inventories and costs."""
+        # Get all scenario_user rounds for this game round
+        scenario_user_periods = self.db.query(ScenarioUserPeriod).filter(
+            ScenarioUserPeriod.round_id == game_round.id
         ).all()
         
-        for pr in player_rounds:
-            # Get player's inventory
-            inventory = self.db.query(PlayerInventory).filter(
-                PlayerInventory.player_id == pr.player_id
+        for pr in scenario_user_periods:
+            # Get scenario_user's inventory
+            inventory = self.db.query(ScenarioUserInventory).filter(
+                ScenarioUserInventory.scenario_user_id == pr.scenario_user_id
             ).first()
             
             # Update inventory based on orders received
@@ -8835,11 +8835,11 @@ class MixedScenarioService:
         game_round.completed_at = timestamp
         self.db.commit()
     
-    def get_current_round(self, scenario_id: int) -> Optional[GameRound]:
+    def get_current_round(self, scenario_id: int) -> Optional[ScenarioRound]:
         """Get the current round for a game."""
-        return self.db.query(GameRound).filter(
-            GameRound.scenario_id == scenario_id,
-            GameRound.ended_at.is_(None)
+        return self.db.query(ScenarioRound).filter(
+            ScenarioRound.scenario_id == scenario_id,
+            ScenarioRound.ended_at.is_(None)
         ).first()
 
     @staticmethod
@@ -9019,9 +9019,9 @@ class MixedScenarioService:
         config_history_payload = MixedScenarioService._json_clone(cfg.get("history") or [])
         config_history_observed_types: Set[str] = set()
         rounds = (
-            self.db.query(GameRound)
-            .filter(GameRound.scenario_id == scenario_id)
-            .order_by(GameRound.round_number.asc())
+            self.db.query(ScenarioRound)
+            .filter(ScenarioRound.scenario_id == scenario_id)
+            .order_by(ScenarioRound.round_number.asc())
             .all()
         )
 
@@ -9057,7 +9057,7 @@ class MixedScenarioService:
             first = rounds[0]
             placeholder_start = compute_period_start(start_date, 0, bucket)
             placeholder_end = compute_period_end(placeholder_start, bucket)
-            placeholder = GameRound(
+            placeholder = ScenarioRound(
                 scenario_id=first.scenario_id,
                 round_number=1,
                 customer_demand=first.customer_demand,
@@ -9096,16 +9096,16 @@ class MixedScenarioService:
                 }
             )
 
-        player_round_records = (
-            self.db.query(PlayerRound, GameRound, Player)
-            .join(GameRound, PlayerRound.round_id == GameRound.id)
-            .join(Player, PlayerRound.player_id == Player.id)
-            .filter(GameRound.scenario_id == scenario_id)
-            .order_by(GameRound.round_number.asc())
+        scenario_user_period_records = (
+            self.db.query(ScenarioUserPeriod, ScenarioRound, ScenarioUser)
+            .join(ScenarioRound, ScenarioUserPeriod.round_id == ScenarioRound.id)
+            .join(ScenarioUser, ScenarioUserPeriod.scenario_user_id == ScenarioUser.id)
+            .filter(ScenarioRound.scenario_id == scenario_id)
+            .order_by(ScenarioRound.round_number.asc())
             .all()
         )
 
-        for player_round, round_obj, player in player_round_records:
+        for scenario_user_period, round_obj, scenario_user in scenario_user_period_records:
             entry = ensure_history_entry(round_obj.round_number)
             entry.setdefault("orders", {})
             entry.setdefault("node_orders", {})
@@ -9120,19 +9120,19 @@ class MixedScenarioService:
             if entry.get("period_end") is None and round_obj.period_end:
                 entry["period_end"] = round_obj.period_end.isoformat()
 
-            node_key = MixedScenarioService._player_node_key(player)
+            node_key = MixedScenarioService._player_node_key(scenario_user)
             if not node_key:
-                node_key = MixedScenarioService._normalise_key(getattr(player.role, "value", player.role))
+                node_key = MixedScenarioService._normalise_key(getattr(scenario_user.role, "value", scenario_user.role))
             node_type = node_types_map.get(node_key) or MixedScenarioService._normalise_node_type(
-                getattr(player.role, "value", player.role)
+                getattr(scenario_user.role, "value", scenario_user.role)
             )
             if node_type:
                 observed_node_types.add(node_type)
-            display_name = getattr(player, "name", None) or node_display_names.get(
+            display_name = getattr(scenario_user, "name", None) or node_display_names.get(
                 node_key, node_key.replace("_", " ").title()
             )
 
-            comment_value = player_round.comment
+            comment_value = scenario_user_period.comment
             if isinstance(comment_value, dict):
                 comment_text = comment_value.get("text")
                 if not comment_text:
@@ -9143,49 +9143,49 @@ class MixedScenarioService:
                 comment_text = str(comment_value)
 
             order_info = {
-                "quantity": player_round.order_placed,
-                "received": player_round.order_received,
-                "inventory_before": player_round.inventory_before,
-                "inventory_after": player_round.inventory_after,
-                "backorders_before": player_round.backorders_before,
-                "backorders_after": player_round.backorders_after,
-                "holding_cost": float(player_round.holding_cost or 0.0),
-                "backorder_cost": float(player_round.backorder_cost or 0.0),
-                "total_cost": float(player_round.total_cost or 0.0),
+                "quantity": scenario_user_period.order_placed,
+                "received": scenario_user_period.order_received,
+                "inventory_before": scenario_user_period.inventory_before,
+                "inventory_after": scenario_user_period.inventory_after,
+                "backorders_before": scenario_user_period.backorders_before,
+                "backorders_after": scenario_user_period.backorders_after,
+                "holding_cost": float(scenario_user_period.holding_cost or 0.0),
+                "backorder_cost": float(scenario_user_period.backorder_cost or 0.0),
+                "total_cost": float(scenario_user_period.total_cost or 0.0),
                 "comment": comment_text,
-                "submitted_at": getattr(player_round, "updated_at", None),
+                "submitted_at": getattr(scenario_user_period, "updated_at", None),
             }
 
             entry["orders"][node_key] = order_info
             entry.setdefault("node_orders", {})[node_key] = dict(order_info)
-            # PlayerRound does not track on-order quantities; approximate inventory
+            # ScenarioUserPeriod does not track on-order quantities; approximate inventory
             # position as on-hand minus backlog to reflect negative positions when backlogged.
-            ip_net = int(player_round.inventory_after or 0) - int(player_round.backorders_after or 0)
+            ip_net = int(scenario_user_period.inventory_after or 0) - int(scenario_user_period.backorders_after or 0)
             entry["inventory_positions"][node_key] = ip_net
             entry.setdefault("inventory_positions_with_pipeline", {})[node_key] = ip_net
-            entry["backlogs"][node_key] = player_round.backorders_after
+            entry["backlogs"][node_key] = scenario_user_period.backorders_after
             entry["total_cost"] = float(entry.get("total_cost", 0.0)) + order_info["total_cost"]
 
             entry.setdefault("node_states", {})[node_key] = {
-                "inventory_before": player_round.inventory_before,
-                "inventory_after": player_round.inventory_after,
-                "backlog_before": player_round.backorders_before,
-                "backlog_after": player_round.backorders_after,
+                "inventory_before": scenario_user_period.inventory_before,
+                "inventory_after": scenario_user_period.inventory_after,
+                "backlog_before": scenario_user_period.backorders_before,
+                "backlog_after": scenario_user_period.backorders_after,
                 "holding_cost": order_info["holding_cost"],
                 "backlog_cost": order_info["backorder_cost"],
                 "total_cost": order_info["total_cost"],
                 "type": node_type,
                 "display_name": display_name,
-                "player_id": player.id,
-                "player_name": getattr(player, "name", None),
-                "player_role": getattr(player.role, "value", getattr(player.role, "name", None)),
-                "is_ai": bool(getattr(player, "is_ai", False)),
-                "player_strategy": getattr(player, "ai_strategy", None) or getattr(player, "strategy", None),
-                "player_label": f"{getattr(player, 'name', display_name)}",
+                "scenario_user_id": scenario_user.id,
+                "scenario_user_name": getattr(scenario_user, "name", None),
+                "player_role": getattr(scenario_user.role, "value", getattr(scenario_user.role, "name", None)),
+                "is_ai": bool(getattr(scenario_user, "is_ai", False)),
+                "player_strategy": getattr(scenario_user, "ai_strategy", None) or getattr(scenario_user, "strategy", None),
+                "player_label": f"{getattr(scenario_user, 'name', display_name)}",
             }
 
             order_series[node_type or node_key].append(
-                {"round": round_obj.round_number, "quantity": player_round.order_placed}
+                {"round": round_obj.round_number, "quantity": scenario_user_period.order_placed}
             )
 
             totals_entry = role_totals.setdefault(
@@ -9200,8 +9200,8 @@ class MixedScenarioService:
                     "nodes": set(),
                 },
             )
-            totals_entry["inventory"] = player_round.inventory_after
-            totals_entry["backlog"] = player_round.backorders_after
+            totals_entry["inventory"] = scenario_user_period.inventory_after
+            totals_entry["backlog"] = scenario_user_period.backorders_after
             totals_entry["holding_cost"] += order_info["holding_cost"]
             totals_entry["backorder_cost"] += order_info["backorder_cost"]
             totals_entry["total_cost"] += order_info["total_cost"]
@@ -9775,7 +9775,7 @@ class MixedScenarioService:
         start_date = game_record.get("start_date") or DEFAULT_START_DATE
         current_period_start = game_record.get("current_period_start")
         
-        # Get all players for the game, including node mappings and strategies
+        # Get all scenario_users for the game, including node mappings and strategies
         players_query = """
             SELECT p.id,
                    p.name,
@@ -9786,8 +9786,8 @@ class MixedScenarioService:
                    COALESCE(pi.current_stock, 0) as current_stock,
                    COALESCE(pi.incoming_shipments, '[]') as incoming_shipments,
                    COALESCE(pi.backorders, 0) as backorders
-            FROM players p
-            LEFT JOIN player_inventories pi ON p.id = pi.player_id
+            FROM scenario_users p
+            LEFT JOIN player_inventories pi ON p.id = pi.scenario_user_id
             WHERE p.scenario_id = :scenario_id
         """
         players_rows = list(self.db.execute(text(players_query), {"scenario_id": scenario_id}).mappings())
@@ -9813,14 +9813,14 @@ class MixedScenarioService:
 
             node_key = MixedScenarioService._normalise_key(row.get("node_key") or role_token)
             meta_payload = {
-                "player_id": row.get("id"),
-                "player_name": row.get("name"),
+                "scenario_user_id": row.get("id"),
+                "scenario_user_name": row.get("name"),
                 "player_role": role_token,
                 "player_strategy": row.get("ai_strategy"),
                 "is_ai": bool(row.get("is_ai")),
             }
-            if meta_payload["player_id"] is not None:
-                player_lookup[meta_payload["player_id"]] = meta_payload
+            if meta_payload["scenario_user_id"] is not None:
+                player_lookup[meta_payload["scenario_user_id"]] = meta_payload
             if node_key and node_key not in node_player_map:
                 node_player_map[node_key] = meta_payload
 
@@ -9923,9 +9923,9 @@ class MixedScenarioService:
                 return direct
             assignment = role_assignments_raw.get(canonical)
             if assignment:
-                player_id = assignment.get("player_id")
-                if player_id in player_lookup:
-                    return player_lookup[player_id]
+                scenario_user_id = assignment.get("scenario_user_id")
+                if scenario_user_id in player_lookup:
+                    return player_lookup[scenario_user_id]
             return None
 
         history_payload: List[Dict[str, Any]] = []
@@ -10003,7 +10003,7 @@ class MixedScenarioService:
             current_round=game_record["current_round"],
             max_rounds=game_record["max_rounds"],
             progression_mode=progression_mode,
-            players=player_states,
+            scenario_users=player_states,
             current_demand=None,  # Will be set by the round
             round_started_at=None,  # Will be set by the round
             round_ends_at=None,  # Will be set by the round

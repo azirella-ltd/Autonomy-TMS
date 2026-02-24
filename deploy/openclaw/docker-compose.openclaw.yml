@@ -1,0 +1,39 @@
+# OpenClaw Chat Interface for Autonomy Platform
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f deploy/openclaw/docker-compose.openclaw.yml up -d openclaw
+#
+# Prerequisites:
+#   - Autonomy backend running (make up)
+#   - LLM service running (make up-llm) OR external LLM endpoint configured
+#   - Service account token created via:
+#     POST /api/v1/edge-agents/picoclaw/service-accounts
+#     {"name": "openclaw-gateway", "scope": "global"}
+
+services:
+  openclaw:
+    image: openclaw/openclaw:latest
+    container_name: autonomy-openclaw
+    command: gateway
+    volumes:
+      - ./deploy/openclaw/workspace:/root/.openclaw/workspace:ro
+      - ./deploy/openclaw/openclaw.json:/root/.openclaw/openclaw.json:ro
+    environment:
+      - LLM_API_BASE=${LLM_API_BASE:-http://vllm:8000/v1}
+      - LLM_API_KEY=${LLM_API_KEY:-not-needed}
+      - LLM_MODEL=${LLM_MODEL_NAME:-qwen3-8b}
+      - AUTONOMY_API_BASE=${AUTONOMY_API_BASE:-http://backend:8000}
+      - OPENCLAW_SERVICE_TOKEN=${OPENCLAW_SERVICE_TOKEN}
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
+      - TEAMS_WEBHOOK_URL=${TEAMS_WEBHOOK_URL:-}
+    networks:
+      - autonomy-network
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    mem_limit: 256m
+
+networks:
+  autonomy-network:
+    external: true

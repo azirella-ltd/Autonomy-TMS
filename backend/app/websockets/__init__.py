@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from ..models.scenario import Scenario as Game, ScenarioStatus as GameStatus
-from ..models.participant import Participant as Player
+from ..models.scenario_user import ScenarioUser as ScenarioUser
 from ..services.mixed_scenario_service import MixedScenarioService
 from ..db.session import get_db
 
@@ -16,7 +16,7 @@ class ConnectionManager:
         self.active_connections: Dict[int, Dict[str, WebSocket]] = {}
         self.game_rooms: Dict[int, set] = {}
 
-    async def connect(self, websocket: WebSocket, scenario_id: int, client_id: str, player_id: int = None, db: AsyncSession = None):
+    async def connect(self, websocket: WebSocket, scenario_id: int, client_id: str, scenario_user_id: int = None, db: AsyncSession = None):
         await websocket.accept()
         if scenario_id not in self.active_connections:
             self.active_connections[scenario_id] = {}
@@ -24,7 +24,7 @@ class ConnectionManager:
         
         self.active_connections[scenario_id][client_id] = {
             'websocket': websocket,
-            'player_id': player_id
+            'scenario_user_id': scenario_user_id
         }
         self.game_rooms[scenario_id].add(client_id)
         
@@ -37,7 +37,7 @@ class ConnectionManager:
             await self.broadcast({
                 "type": "player_connected",
                 "client_id": client_id,
-                "player_id": player_id,
+                "scenario_user_id": scenario_user_id,
                 "timestamp": datetime.utcnow().isoformat()
             }, scenario_id, exclude_client_id=client_id)
             

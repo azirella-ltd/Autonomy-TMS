@@ -19,14 +19,14 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.models.participant import Participant
+from app.models.scenario_user import ScenarioUser
 from app.models.scenario import Scenario
 from app.models.supply_chain import ScenarioRound
 
 # Aliases for backwards compatibility
-Player = Participant
+ScenarioUser = ScenarioUser
 Game = Scenario
-GameRound = ScenarioRound
+ScenarioRound = ScenarioRound
 from app.models.transfer_order import TransferOrder
 from app.models.group import Group
 from app.models.explainability import ExplainabilityLevel
@@ -108,8 +108,8 @@ class AgentRecommendationService:
     def get_fulfillment_recommendation(
         self,
         game: Game,
-        player: Player,
-        current_round: GameRound,
+        scenario_user: ScenarioUser,
+        current_round: ScenarioRound,
         atp: int,
         demand: int,
         backlog: int = 0,
@@ -119,7 +119,7 @@ class AgentRecommendationService:
 
         Args:
             game: Game instance
-            player: Player instance with agent configuration
+            scenario_user: ScenarioUser instance with agent configuration
             current_round: Current game round
             atp: Available to Promise quantity
             demand: Downstream demand (including backlog)
@@ -128,9 +128,9 @@ class AgentRecommendationService:
         Returns:
             RecommendationResult with agent's recommended fulfillment quantity
         """
-        # Get agent strategy from player configuration
-        agent_strategy = self._get_agent_strategy(player)
-        agent_type = self._get_agent_type_enum(player)
+        # Get agent strategy from scenario_user configuration
+        agent_strategy = self._get_agent_strategy(scenario_user)
+        agent_type = self._get_agent_type_enum(scenario_user)
 
         # Get config-specific model path
         model_path = getattr(
@@ -138,7 +138,7 @@ class AgentRecommendationService:
         ) if game.supply_chain_config else None
 
         # Create agent instance with model path
-        agent = self._create_agent(player, agent_strategy, model_path=model_path)
+        agent = self._create_agent(scenario_user, agent_strategy, model_path=model_path)
 
         # Calculate agent decision
         # For fulfillment, agent should consider ATP constraints
@@ -147,7 +147,7 @@ class AgentRecommendationService:
 
         # Let agent adjust based on strategy
         context = {
-            "inventory": player.current_stock,
+            "inventory": scenario_user.current_stock,
             "backlog": backlog,
             "demand": demand,
             "atp": atp,
@@ -167,7 +167,7 @@ class AgentRecommendationService:
             recommended_qty = base_recommendation
 
         # Generate reasoning based on explainability level
-        explainability = self._get_explainability_level(player)
+        explainability = self._get_explainability_level(scenario_user)
         if explainability == ExplainabilityLevel.VERBOSE:
             reasoning = self._generate_fulfillment_reasoning_verbose(
                 agent_strategy, recommended_qty, atp, demand, backlog
@@ -182,14 +182,14 @@ class AgentRecommendationService:
             )
 
         # Calculate confidence score
-        confidence = self._calculate_confidence_score(player, agent_strategy)
+        confidence = self._calculate_confidence_score(scenario_user, agent_strategy)
 
         # Generate alternative scenarios
         alternatives = self._generate_fulfillment_alternatives(atp, demand, recommended_qty)
 
         # Calculate impact previews
         impact_if_accept = self._calculate_fulfillment_impact(
-            inventory=player.current_stock,
+            inventory=scenario_user.current_stock,
             fulfill_qty=recommended_qty,
             demand=demand,
             backlog=backlog,
@@ -198,18 +198,18 @@ class AgentRecommendationService:
         # Impact if human overrides to ship full demand
         override_qty = demand if recommended_qty != demand else atp
         impact_if_override = self._calculate_fulfillment_impact(
-            inventory=player.current_stock,
+            inventory=scenario_user.current_stock,
             fulfill_qty=override_qty,
             demand=demand,
             backlog=backlog,
         )
 
         # Get historical performance
-        historical_perf = self._get_historical_performance(player)
+        historical_perf = self._get_historical_performance(scenario_user)
 
         # Build result
         result = RecommendationResult(
-            agent_id=f"{agent_strategy.value}_agent_{player.id}",
+            agent_id=f"{agent_strategy.value}_agent_{scenario_user.id}",
             agent_type=self._get_agent_type_display(agent_strategy),
             quantity=recommended_qty,
             reasoning=reasoning,
@@ -222,7 +222,7 @@ class AgentRecommendationService:
         )
 
         logger.info(
-            f"Fulfillment recommendation for player {player.id}: {recommended_qty} units "
+            f"Fulfillment recommendation for scenario_user {scenario_user.id}: {recommended_qty} units "
             f"(confidence: {confidence:.2f})"
         )
 
@@ -231,8 +231,8 @@ class AgentRecommendationService:
     def get_replenishment_recommendation(
         self,
         game: Game,
-        player: Player,
-        current_round: GameRound,
+        scenario_user: ScenarioUser,
+        current_round: ScenarioRound,
         current_inventory: int,
         pipeline: List[Dict[str, Any]],
         backlog: int = 0,
@@ -243,7 +243,7 @@ class AgentRecommendationService:
 
         Args:
             game: Game instance
-            player: Player instance with agent configuration
+            scenario_user: ScenarioUser instance with agent configuration
             current_round: Current game round
             current_inventory: Current on-hand inventory
             pipeline: List of in-transit shipments
@@ -254,7 +254,7 @@ class AgentRecommendationService:
             RecommendationResult with agent's recommended order quantity
         """
         # Get agent strategy
-        agent_strategy = self._get_agent_strategy(player)
+        agent_strategy = self._get_agent_strategy(scenario_user)
 
         # Calculate base stock policy recommendation
         demand_history = demand_history or []
@@ -288,7 +288,7 @@ class AgentRecommendationService:
             recommended_qty = base_recommendation
 
         # Generate reasoning based on explainability level
-        explainability = self._get_explainability_level(player)
+        explainability = self._get_explainability_level(scenario_user)
         if explainability == ExplainabilityLevel.VERBOSE:
             reasoning = self._generate_replenishment_reasoning_verbose(
                 agent_strategy, recommended_qty, base_stock_target,
@@ -305,7 +305,7 @@ class AgentRecommendationService:
             )
 
         # Calculate confidence
-        confidence = self._calculate_confidence_score(player, agent_strategy)
+        confidence = self._calculate_confidence_score(scenario_user, agent_strategy)
 
         # Generate alternatives
         alternatives = self._generate_replenishment_alternatives(base_recommendation, recommended_qty)
@@ -330,10 +330,10 @@ class AgentRecommendationService:
         )
 
         # Historical performance
-        historical_perf = self._get_historical_performance(player)
+        historical_perf = self._get_historical_performance(scenario_user)
 
         result = RecommendationResult(
-            agent_id=f"{agent_strategy.value}_agent_{player.id}",
+            agent_id=f"{agent_strategy.value}_agent_{scenario_user.id}",
             agent_type=self._get_agent_type_display(agent_strategy),
             quantity=recommended_qty,
             reasoning=reasoning,
@@ -346,7 +346,7 @@ class AgentRecommendationService:
         )
 
         logger.info(
-            f"Replenishment recommendation for player {player.id}: {recommended_qty} units "
+            f"Replenishment recommendation for scenario_user {scenario_user.id}: {recommended_qty} units "
             f"(confidence: {confidence:.2f})"
         )
 
@@ -354,42 +354,42 @@ class AgentRecommendationService:
 
     # --- Helper Methods ---
 
-    def _get_agent_strategy(self, player: Player) -> AgentStrategy:
-        """Get agent strategy from player configuration"""
+    def _get_agent_strategy(self, scenario_user: ScenarioUser) -> AgentStrategy:
+        """Get agent strategy from scenario_user configuration"""
         # Default to naive if not configured
-        strategy_name = getattr(player, "agent_strategy", "naive")
+        strategy_name = getattr(scenario_user, "agent_strategy", "naive")
         try:
             return AgentStrategy(strategy_name)
         except ValueError:
             return AgentStrategy.NAIVE
 
-    def _get_agent_type_enum(self, player: Player) -> AgentType:
-        """Get agent type enum from player role"""
+    def _get_agent_type_enum(self, scenario_user: ScenarioUser) -> AgentType:
+        """Get agent type enum from scenario_user role"""
         role_mapping = {
             "retailer": AgentType.RETAILER,
             "wholesaler": AgentType.WHOLESALER,
             "distributor": AgentType.DISTRIBUTOR,
             "manufacturer": AgentType.MANUFACTURER,
         }
-        return role_mapping.get(player.role.lower(), AgentType.RETAILER)
+        return role_mapping.get(scenario_user.role.lower(), AgentType.RETAILER)
 
     def _create_agent(
         self,
-        player: Player,
+        scenario_user: ScenarioUser,
         strategy: AgentStrategy,
         model_path: Optional[str] = None
     ) -> SimulationAgent:
-        """Create agent instance for player with config-specific model path."""
-        agent_type = self._get_agent_type_enum(player)
+        """Create agent instance for scenario_user with config-specific model path."""
+        agent_type = self._get_agent_type_enum(scenario_user)
         return SimulationAgent(
-            agent_id=player.id,
+            agent_id=scenario_user.id,
             agent_type=agent_type,
             strategy=strategy,
-            initial_inventory=player.current_stock,
+            initial_inventory=scenario_user.current_stock,
             model_path=model_path,
         )
 
-    def _calculate_confidence_score(self, player: Player, strategy: AgentStrategy) -> float:
+    def _calculate_confidence_score(self, scenario_user: ScenarioUser, strategy: AgentStrategy) -> float:
         """
         Calculate confidence score based on agent type and historical performance.
 
@@ -542,13 +542,13 @@ class AgentRecommendationService:
             cost_impact=cost_impact,
         )
 
-    def _get_historical_performance(self, player: Player) -> HistoricalPerformance:
+    def _get_historical_performance(self, scenario_user: ScenarioUser) -> HistoricalPerformance:
         """Get agent's historical performance metrics from real decision data."""
         try:
             from app.models.powell_decision import SiteAgentDecision
 
-            # Build site_key from participant info
-            site_key = f"site_{player.id}"
+            # Build site_key from scenario_user info
+            site_key = f"site_{scenario_user.id}"
 
             # Count recent decisions
             recent_decisions = (
@@ -616,7 +616,7 @@ class AgentRecommendationService:
                 override_regret_rate=round(override_regret_rate, 3),
             )
         except Exception as e:
-            logger.warning(f"Error querying historical performance for player {player.id}: {e}")
+            logger.warning(f"Error querying historical performance for scenario_user {scenario_user.id}: {e}")
             return HistoricalPerformance(
                 avg_accuracy=0.0,
                 recent_decisions=0,
@@ -636,21 +636,21 @@ class AgentRecommendationService:
         }
         return mapping.get(strategy, "HEURISTIC")
 
-    def _get_explainability_level(self, player: Player) -> ExplainabilityLevel:
+    def _get_explainability_level(self, scenario_user: ScenarioUser) -> ExplainabilityLevel:
         """
-        Get effective explainability level for player.
+        Get effective explainability level for scenario_user.
 
         Priority: User override > Group default > NORMAL
         """
         # Check user-level override first
-        if hasattr(player, 'user') and player.user:
-            user_override = getattr(player.user, 'explainability_level_override', None)
+        if hasattr(scenario_user, 'user') and scenario_user.user:
+            user_override = getattr(scenario_user.user, 'explainability_level_override', None)
             if user_override is not None:
                 return user_override
 
         # Fall back to group default
-        if hasattr(player, 'user') and player.user and player.user.group_id:
-            group = self.db.query(Group).filter(Group.id == player.user.group_id).first()
+        if hasattr(scenario_user, 'user') and scenario_user.user and scenario_user.user.group_id:
+            group = self.db.query(Group).filter(Group.id == scenario_user.user.group_id).first()
             if group and hasattr(group, 'explainability_level'):
                 return group.explainability_level
 

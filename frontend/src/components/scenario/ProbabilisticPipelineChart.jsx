@@ -9,7 +9,7 @@
  *
  * Props:
  * - gameId: Game ID
- * - playerId: Player ID
+ * - scenarioUserId: ScenarioUser ID
  * - currentRound: Current round number
  * - nSimulations: Number of Monte Carlo simulations (default 100)
  */
@@ -51,7 +51,7 @@ import { cn } from '../../lib/utils/cn';
 
 const ProbabilisticPipelineChart = ({
   gameId,
-  playerId,
+  scenarioUserId,
   currentRound: propCurrentRound,
   nSimulations = 100,
 }) => {
@@ -61,10 +61,10 @@ const ProbabilisticPipelineChart = ({
 
   useEffect(() => {
     fetchPipelineVisualization();
-  }, [gameId, playerId, nSimulations]);
+  }, [gameId, scenarioUserId, nSimulations]);
 
   const fetchPipelineVisualization = async () => {
-    if (!gameId || !playerId) return;
+    if (!gameId || !scenarioUserId) return;
 
     setLoading(true);
     setError(null);
@@ -72,7 +72,7 @@ const ProbabilisticPipelineChart = ({
     try {
       const data = await simulationApi.getPipelineVisualization(
         gameId,
-        playerId,
+        scenarioUserId,
         nSimulations
       );
       setPipelineData(data);

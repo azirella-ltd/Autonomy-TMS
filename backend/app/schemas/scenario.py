@@ -2,7 +2,7 @@
 
 Terminology (Feb 2026):
 - Game -> Scenario
-- Player -> Participant (in API/code)
+- Player -> ScenarioUser (in API/code)
 - Player -> User (in UI)
 - Gamification -> Simulation
 - Round -> Period (in user-facing contexts)
@@ -15,6 +15,9 @@ from pydantic import BaseModel, Field, ConfigDict, validator, root_validator
 
 from app.core.time_buckets import TimeBucket, DEFAULT_START_DATE
 from .participant import (
+    ScenarioUserAssignment, ScenarioUserResponse, ScenarioUserUpdate, ScenarioUserRole,
+    ScenarioUser, ScenarioUserCreate,
+    # Backward compatibility aliases
     ParticipantAssignment, ParticipantResponse, ParticipantUpdate, ParticipantRole,
     Participant, ParticipantCreate,
 )
@@ -161,7 +164,7 @@ class ScenarioBase(BaseModel):
 
 class ScenarioCreate(ScenarioBase):
     """Schema for creating a new scenario."""
-    participant_assignments: List[ParticipantAssignment] = Field(
+    scenario_user_assignments: List[ScenarioUserAssignment] = Field(
         ...,
         min_length=1,
         max_length=4,
@@ -219,7 +222,7 @@ class ScenarioInDBBase(ScenarioBase):
     created_by: Optional[int] = Field(None, description="User ID of the scenario creator")
     group_id: Optional[int] = Field(None, description="Owning group ID for the scenario")
     config: Dict[str, Any] = Field(default_factory=dict, description="Raw configuration blob")
-    participants: List[ParticipantResponse] = Field(default_factory=list)
+    scenario_users: List[ScenarioUserResponse] = Field(default_factory=list)
     time_bucket: TimeBucket = Field(TimeBucket.WEEK, description="Time aggregation unit for the simulation")
     start_date: date = Field(default_factory=lambda: DEFAULT_START_DATE)
     current_period_start: Optional[date] = Field(
@@ -240,11 +243,11 @@ class ScenarioInDB(ScenarioInDBBase):
     pass
 
 
-class ParticipantState(BaseModel):
-    """Current state of a participant in a scenario."""
+class ScenarioUserState(BaseModel):
+    """Current state of a scenario user in a scenario."""
     id: int
     name: str
-    role: ParticipantRole
+    role: ScenarioUserRole
     is_ai: bool
     current_stock: int
     incoming_shipments: List[Dict[str, Any]] = []
@@ -254,8 +257,8 @@ class ParticipantState(BaseModel):
 
 
 class ScenarioState(ScenarioInDBBase):
-    """Extended scenario state with participant states and current period information."""
-    participants: List[ParticipantState] = Field(default_factory=list)
+    """Extended scenario state with scenario user states and current period information."""
+    scenario_users: List[ScenarioUserState] = Field(default_factory=list)
     current_demand: Optional[int] = Field(None, description="Current period's customer demand")
     period_started_at: Optional[datetime] = Field(None, description="When the current period started")
     period_ends_at: Optional[datetime] = Field(None, description="When the current period will end")
@@ -281,7 +284,7 @@ class OrderResponse(BaseModel):
     """Schema for order response."""
     id: int
     scenario_id: int
-    participant_id: int
+    scenario_user_id: int
     period_number: int
     quantity: int
     created_at: datetime
@@ -289,8 +292,8 @@ class OrderResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-class ParticipantPeriodBase(BaseModel):
-    """Base schema for participant period data."""
+class ScenarioUserPeriodBase(BaseModel):
+    """Base schema for scenario user period data."""
     order_placed: int = Field(..., ge=0)
     order_received: int = Field(0, ge=0)
     inventory_before: int = Field(0, ge=0)
@@ -300,18 +303,18 @@ class ParticipantPeriodBase(BaseModel):
     holding_cost: float = Field(0.0, ge=0)
     backorder_cost: float = Field(0.0, ge=0)
     total_cost: float = Field(0.0, ge=0)
-    comment: Optional[str] = Field(None, description="Participant's comment for this period")
+    comment: Optional[str] = Field(None, description="Scenario user's comment for this period")
 
 
-class ParticipantPeriodCreate(ParticipantPeriodBase):
-    """Schema for creating participant period data."""
+class ScenarioUserPeriodCreate(ScenarioUserPeriodBase):
+    """Schema for creating scenario user period data."""
     pass
 
 
-class ParticipantPeriod(ParticipantPeriodBase):
-    """Complete participant period schema."""
+class ScenarioUserPeriod(ScenarioUserPeriodBase):
+    """Complete scenario user period schema."""
     id: int
-    participant_id: int
+    scenario_user_id: int
     period_id: int
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
@@ -337,7 +340,7 @@ class ScenarioPeriod(ScenarioPeriodBase):
     id: int
     scenario_id: int
     created_at: datetime
-    participant_periods: List[ParticipantPeriod] = Field(default_factory=list)
+    scenario_user_periods: List[ScenarioUserPeriod] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
@@ -372,10 +375,10 @@ class Period(PeriodBase):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 
-class ParticipantActionBase(BaseModel):
-    """Base model for participant actions."""
+class ScenarioUserActionBase(BaseModel):
+    """Base model for scenario user actions."""
     scenario_id: int
-    participant_id: int
+    scenario_user_id: int
     period_id: int
     action_type: str
     quantity: int
@@ -384,19 +387,19 @@ class ParticipantActionBase(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-class ParticipantActionCreate(ParticipantActionBase):
-    """Model for creating a new participant action."""
+class ScenarioUserActionCreate(ScenarioUserActionBase):
+    """Model for creating a new scenario user action."""
     pass
 
 
-class ParticipantActionUpdate(BaseModel):
-    """Model for updating a participant action."""
+class ScenarioUserActionUpdate(BaseModel):
+    """Model for updating a scenario user action."""
     action_type: Optional[str] = None
     quantity: Optional[int] = None
 
 
-class ParticipantAction(ParticipantActionBase):
-    """Complete participant action model with database-specific fields."""
+class ScenarioUserAction(ScenarioUserActionBase):
+    """Complete scenario user action model with database-specific fields."""
     id: int
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
@@ -420,18 +423,25 @@ __all__ = [
     'Scenario',
     'ScenarioInDB',
     'ScenarioState',
-    # Participant schemas (re-exported)
+    # ScenarioUser schemas
+    'ScenarioUser',
+    'ScenarioUserCreate',
+    'ScenarioUserAssignment',
+    'ScenarioUserResponse',
+    'ScenarioUserUpdate',
+    'ScenarioUserRole',
+    'ScenarioUserState',
+    # Backward compatibility aliases
     'Participant',
     'ParticipantCreate',
     'ParticipantAssignment',
     'ParticipantResponse',
     'ParticipantUpdate',
     'ParticipantRole',
-    'ParticipantState',
     # Period schemas
-    'ParticipantPeriodBase',
-    'ParticipantPeriodCreate',
-    'ParticipantPeriod',
+    'ScenarioUserPeriodBase',
+    'ScenarioUserPeriodCreate',
+    'ScenarioUserPeriod',
     'ScenarioPeriodBase',
     'ScenarioPeriodCreate',
     'ScenarioPeriod',
@@ -440,11 +450,25 @@ __all__ = [
     'PeriodUpdate',
     'Period',
     # Action schemas
-    'ParticipantActionBase',
-    'ParticipantActionCreate',
-    'ParticipantActionUpdate',
-    'ParticipantAction',
+    'ScenarioUserActionBase',
+    'ScenarioUserActionCreate',
+    'ScenarioUserActionUpdate',
+    'ScenarioUserAction',
     # Order schemas
     'OrderCreate',
     'OrderResponse',
 ]
+
+
+# =============================================================================
+# Backward Compatibility Aliases (DEPRECATED - will be removed in future)
+# =============================================================================
+
+ParticipantState = ScenarioUserState
+ParticipantPeriodBase = ScenarioUserPeriodBase
+ParticipantPeriodCreate = ScenarioUserPeriodCreate
+ParticipantPeriod = ScenarioUserPeriod
+ParticipantActionBase = ScenarioUserActionBase
+ParticipantActionCreate = ScenarioUserActionCreate
+ParticipantActionUpdate = ScenarioUserActionUpdate
+ParticipantAction = ScenarioUserAction

@@ -19,6 +19,7 @@ import os
 import httpx
 
 from app.db.session import get_db
+from app.api.deps import get_current_user_or_service_account, ServiceAccountUser
 from app.services.edge_agent_service import EdgeAgentService
 from app.services.signal_ingestion_service import SignalIngestionService
 
@@ -143,8 +144,16 @@ async def remove_instance(site_key: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/picoclaw/fleet/instances/{site_key}/heartbeat")
-async def record_heartbeat(site_key: str, data: HeartbeatData, db: AsyncSession = Depends(get_db)):
-    """Record a heartbeat from a PicoClaw instance."""
+async def record_heartbeat(
+    site_key: str,
+    data: HeartbeatData,
+    db: AsyncSession = Depends(get_db),
+    _auth=Depends(get_current_user_or_service_account),
+):
+    """Record a heartbeat from a PicoClaw instance.
+
+    Accepts both human JWT tokens and PicoClaw service account tokens.
+    """
     svc = EdgeAgentService(db)
     result = await svc.record_heartbeat(site_key, data.model_dump())
     if not result:
@@ -494,7 +503,11 @@ signal_router = APIRouter(prefix="/signals", tags=["Signal Ingestion"])
 
 
 @signal_router.post("/ingest")
-async def ingest_signal(data: SignalIngest, db: AsyncSession = Depends(get_db)):
+async def ingest_signal(
+    data: SignalIngest,
+    db: AsyncSession = Depends(get_db),
+    _auth=Depends(get_current_user_or_service_account),
+):
     """
     Ingest an external signal through the confidence-gated pipeline.
 

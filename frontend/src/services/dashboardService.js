@@ -63,7 +63,7 @@ export const getHumanDashboard = async (gameId = null) => {
         current_round: 5,
         max_rounds: 12,
         player_role: 'RETAILER',
-        player_id: 1,
+        scenario_user_id: 1,
         metrics: {
           current_inventory: 42,
           inventory_change: 5.5,
@@ -94,7 +94,7 @@ export const getHumanDashboard = async (gameId = null) => {
 /**
  * Format time series data for chart display
  * @param {Array} timeSeries - Array of TimeSeriesPoint objects from API
- * @param {string} role - Player's role in the game
+ * @param {string} role - ScenarioUser's role in the game
  * @returns {Array} Formatted data for chart
  */
 export const formatChartData = (timeSeries, role) => {

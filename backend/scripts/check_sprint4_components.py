@@ -141,7 +141,7 @@ def main():
     if api_file.exists():
         content = api_file.read_text()
         methods = [
-            ("getPlayerPatterns", "Pattern analysis - get player patterns"),
+            ("getPlayerPatterns", "Pattern analysis - get scenario_user patterns"),
             ("getAIEffectiveness", "Pattern analysis - get AI effectiveness"),
             ("getSuggestionHistory", "Pattern analysis - get suggestion history"),
             ("getInsights", "Pattern analysis - get insights"),
