@@ -43,11 +43,11 @@ def create_sample_bom_data(db: Session):
 
     # Create sample products
     products = [
-        Product(id='FG-001', description='Finished Good - Beer Case', product_type='finished_good', base_uom='EA', is_active='true'),
+        Product(id='FG-001', description='Finished Good - Standard Case', product_type='finished_good', base_uom='EA', is_active='true'),
         Product(id='FG-002', description='Finished Good - Six Pack', product_type='component', base_uom='EA', is_active='true'),
         Product(id='COMP-001', description='Aluminum Can', product_type='raw_material', base_uom='EA', is_active='true'),
         Product(id='COMP-002', description='Cardboard Box', product_type='raw_material', base_uom='EA', is_active='true'),
-        Product(id='COMP-003', description='Beer (Liquid)', product_type='raw_material', base_uom='L', is_active='true'),
+        Product(id='COMP-003', description='Liquid (Bulk)', product_type='raw_material', base_uom='L', is_active='true'),
     ]
 
     for product in products:
@@ -58,10 +58,10 @@ def create_sample_bom_data(db: Session):
 
     # Create BOM structure
     boms = [
-        # Level 1: Beer Case contains 4 Six Packs and 1 Cardboard Box
+        # Level 1: Standard Case contains 4 Six Packs and 1 Cardboard Box
         ProductBom(product_id='FG-001', component_product_id='FG-002', component_quantity=4, scrap_percentage=2.0, is_key_material='false'),
         ProductBom(product_id='FG-001', component_product_id='COMP-002', component_quantity=1, scrap_percentage=5.0, is_key_material='true'),
-        # Level 2: Six Pack contains 6 Cans and Beer
+        # Level 2: Six Pack contains 6 Cans and Liquid
         ProductBom(product_id='FG-002', component_product_id='COMP-001', component_quantity=6, scrap_percentage=1.0, is_key_material='true'),
         ProductBom(product_id='FG-002', component_product_id='COMP-003', component_quantity=2.0, scrap_percentage=0.5, is_key_material='true'),
     ]
