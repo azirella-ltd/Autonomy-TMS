@@ -19,7 +19,7 @@ from main import app
 
 
 # Test database setup
-TEST_DATABASE_URL = settings.MARIADB_DATABASE_URL.replace("beer_game", "beer_game_test")
+TEST_DATABASE_URL = settings.DATABASE_URL.replace("beer_game", "beer_game_test")
 test_engine = create_engine(TEST_DATABASE_URL)
 TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 
@@ -179,9 +179,9 @@ class TestGameCreationWorkflow:
         game_data = {
             "name": "Integration Test Game",
             "supply_chain_config_id": config_id,
-            "max_rounds": 24
+            "max_periods": 24
         }
-        response = await client.post("/api/v1/mixed-games/", json=game_data, headers=headers)
+        response = await client.post("/api/v1/mixed-scenarios/", json=game_data, headers=headers)
         assert response.status_code == 201
         game = response.json()
         game_id = game["id"]
@@ -193,18 +193,18 @@ class TestGameCreationWorkflow:
             "agent_strategy": "naive"
         }
         response = await client.post(
-            f"/api/v1/mixed-games/{game_id}/players",
+            f"/api/v1/mixed-scenarios/{game_id}/players",
             json=player_data,
             headers=headers
         )
         assert response.status_code == 201
 
         # Step 5: Start game
-        response = await client.post(f"/api/v1/mixed-games/{game_id}/start", headers=headers)
+        response = await client.post(f"/api/v1/mixed-scenarios/{game_id}/start", headers=headers)
         assert response.status_code == 200
 
         # Step 6: Verify game state
-        response = await client.get(f"/api/v1/mixed-games/{game_id}/state", headers=headers)
+        response = await client.get(f"/api/v1/mixed-scenarios/{game_id}/state", headers=headers)
         assert response.status_code == 200
         state = response.json()
         assert state["status"] == "active"
@@ -286,18 +286,18 @@ class TestConcurrentAccessWorkflow:
         game_data = {
             "name": "Concurrent Test Game",
             "supply_chain_config_id": 1,
-            "max_rounds": 24
+            "max_periods": 24
         }
-        response = await client.post("/api/v1/mixed-games/", json=game_data, headers=headers)
+        response = await client.post("/api/v1/mixed-scenarios/", json=game_data, headers=headers)
         game_id = response.json()["id"]
 
         # Start game
-        await client.post(f"/api/v1/mixed-games/{game_id}/start", headers=headers)
+        await client.post(f"/api/v1/mixed-scenarios/{game_id}/start", headers=headers)
 
         # Simulate 10 concurrent reads
         tasks = []
         for _ in range(10):
-            task = client.get(f"/api/v1/mixed-games/{game_id}/state", headers=headers)
+            task = client.get(f"/api/v1/mixed-scenarios/{game_id}/state", headers=headers)
             tasks.append(task)
 
         responses = await asyncio.gather(*tasks)
@@ -326,11 +326,11 @@ class TestErrorRecoveryWorkflow:
         headers = {"Authorization": f"Bearer {token}"}
 
         # Try to access non-existent game
-        response = await client.get("/api/v1/mixed-games/99999/state", headers=headers)
+        response = await client.get("/api/v1/mixed-scenarios/99999/state", headers=headers)
         assert response.status_code == 404
 
         # Try to start game that doesn't exist
-        response = await client.post("/api/v1/mixed-games/99999/start", headers=headers)
+        response = await client.post("/api/v1/mixed-scenarios/99999/start", headers=headers)
         assert response.status_code == 404
 
     @pytest.mark.asyncio

@@ -19,10 +19,10 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.sc_entities import OutboundOrderLine, InventoryLevel
+from app.models.sc_entities import OutboundOrderLine, InvLevel, Product
 from app.models.purchase_order import PurchaseOrder, PurchaseOrderLineItem
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
-from app.models.supply_chain_config import Node, SupplyChainConfig, Item
+from app.models.supply_chain_config import Site, SupplyChainConfig
 from app.models.scenario import Scenario
 from app.services.order_management_service import OrderManagementService
 from app.services.fulfillment_service import FulfillmentService
@@ -49,19 +49,19 @@ async def test_config(db_session: AsyncSession):
 @pytest.fixture
 async def test_sites(db_session: AsyncSession, test_config):
     """Create test sites (Retailer, Wholesaler, Market Demand)."""
-    retailer = Node(
+    retailer = Site(
         name="Test Retailer",
         sc_node_type="Retailer",
         master_type="INVENTORY",
         config_id=test_config.id,
     )
-    wholesaler = Node(
+    wholesaler = Site(
         name="Test Wholesaler",
         sc_node_type="Wholesaler",
         master_type="INVENTORY",
         config_id=test_config.id,
     )
-    market_demand = Node(
+    market_demand = Site(
         name="Test Customer",
         sc_node_type="Market Demand",
         master_type="MARKET_DEMAND",
@@ -84,9 +84,9 @@ async def test_sites(db_session: AsyncSession, test_config):
 @pytest.fixture
 async def test_product(db_session: AsyncSession, test_config):
     """Create test product."""
-    product = Item(
-        product_id="BEER-CASE",
-        name="Beer Case",
+    product = Product(
+        id="BEER-CASE",
+        description="Beer Case",
         config_id=test_config.id,
     )
     db_session.add(product)
@@ -101,7 +101,7 @@ async def test_scenario(db_session: AsyncSession, test_config):
         name="Test Scenario",
         config_id=test_config.id,
         current_round=1,
-        status="IN_PROGRESS",
+        status="STARTED",
     )
     db_session.add(scenario)
     await db_session.flush()
@@ -112,21 +112,21 @@ async def test_scenario(db_session: AsyncSession, test_config):
 @pytest.fixture
 async def test_inventory(db_session: AsyncSession, test_sites, test_product, test_config, test_scenario):
     """Create initial inventory levels."""
-    retailer_inv = InventoryLevel(
+    retailer_inv = InvLevel(
         site_id=test_sites['retailer'].id,
-        product_id=test_product.product_id,
-        quantity=100.0,
+        product_id=test_product.id,
+        on_hand_qty=100.0,
         config_id=test_config.id,
         scenario_id=test_scenario.id,
-        as_of_date=date.today(),
+        inventory_date=date.today(),
     )
-    wholesaler_inv = InventoryLevel(
+    wholesaler_inv = InvLevel(
         site_id=test_sites['wholesaler'].id,
-        product_id=test_product.product_id,
-        quantity=200.0,
+        product_id=test_product.id,
+        on_hand_qty=200.0,
         config_id=test_config.id,
         scenario_id=test_scenario.id,
-        as_of_date=date.today(),
+        inventory_date=date.today(),
     )
 
     db_session.add_all([retailer_inv, wholesaler_inv])
@@ -150,7 +150,7 @@ async def test_create_customer_order(db_session: AsyncSession, test_sites, test_
     order = await order_mgmt.create_customer_order(
         order_id="ORDER-001",
         line_number=1,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         site_id=test_sites['retailer'].id,
         ordered_quantity=50.0,
         requested_delivery_date=date.today() + timedelta(weeks=1),
@@ -186,7 +186,7 @@ async def test_get_unfulfilled_orders_fifo_priority(db_session: AsyncSession, te
         order = OutboundOrderLine(
             order_id=order_id,
             line_number=1,
-            product_id=test_product.product_id,
+            product_id=test_product.id,
             site_id=test_sites['retailer'].id,
             ordered_quantity=10.0,
             requested_delivery_date=date.today() + timedelta(weeks=1),
@@ -226,7 +226,7 @@ async def test_update_order_fulfillment(db_session: AsyncSession, test_sites, te
     order = await order_mgmt.create_customer_order(
         order_id="ORDER-001",
         line_number=1,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         site_id=test_sites['retailer'].id,
         ordered_quantity=100.0,
         requested_delivery_date=date.today() + timedelta(weeks=1),
@@ -265,7 +265,7 @@ async def test_create_and_fulfill_purchase_order(db_session: AsyncSession, test_
         po_number="PO-001",
         supplier_site_id=test_sites['wholesaler'].id,
         destination_site_id=test_sites['retailer'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         quantity=75.0,
         requested_delivery_date=date.today() + timedelta(weeks=1),
         config_id=test_config.id,
@@ -299,7 +299,7 @@ async def test_transfer_order_lifecycle(db_session: AsyncSession, test_sites, te
         to_number="TO-001",
         source_site_id=test_sites['wholesaler'].id,
         destination_site_id=test_sites['retailer'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         quantity=50.0,
         estimated_delivery_date=date.today() + timedelta(weeks=1),
         config_id=test_config.id,
@@ -339,7 +339,7 @@ async def test_atp_calculation(db_session: AsyncSession, test_sites, test_produc
 
     atp = await fulfillment.calculate_available_to_ship(
         site_id=test_sites['retailer'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         config_id=test_config.id,
         scenario_id=test_scenario.id,
     )
@@ -359,7 +359,7 @@ async def test_fulfill_customer_orders_fifo(db_session: AsyncSession, test_sites
         await order_mgmt.create_customer_order(
             order_id=f"ORDER-00{i+1}",
             line_number=1,
-            product_id=test_product.product_id,
+            product_id=test_product.id,
             site_id=test_sites['retailer'].id,
             ordered_quantity=30.0,
             requested_delivery_date=date.today() + timedelta(weeks=1),
@@ -383,7 +383,7 @@ async def test_fulfill_customer_orders_fifo(db_session: AsyncSession, test_sites
     # Fulfill orders (ATP = 100, total demand = 90)
     result = await fulfillment.fulfill_customer_orders_fifo(
         site_id=test_sites['retailer'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         scenario_id=test_scenario.id,
         config_id=test_config.id,
         current_round=1,
@@ -398,7 +398,7 @@ async def test_fulfill_customer_orders_fifo(db_session: AsyncSession, test_sites
     # Check inventory reduced
     inv = await fulfillment.get_inventory_level(
         site_id=test_sites['retailer'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         config_id=test_config.id,
         scenario_id=test_scenario.id,
     )
@@ -415,7 +415,7 @@ async def test_fulfill_with_insufficient_inventory(db_session: AsyncSession, tes
     await order_mgmt.create_customer_order(
         order_id="ORDER-001",
         line_number=1,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         site_id=test_sites['retailer'].id,
         ordered_quantity=150.0,  # > 100 available
         requested_delivery_date=date.today() + timedelta(weeks=1),
@@ -436,7 +436,7 @@ async def test_fulfill_with_insufficient_inventory(db_session: AsyncSession, tes
     # Fulfill (should only ship 100)
     result = await fulfillment.fulfill_customer_orders_fifo(
         site_id=test_sites['retailer'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         scenario_id=test_scenario.id,
         config_id=test_config.id,
         current_round=1,
@@ -458,7 +458,7 @@ async def test_fulfill_purchase_orders(db_session: AsyncSession, test_sites, tes
         po_number="PO-001",
         supplier_site_id=test_sites['wholesaler'].id,
         destination_site_id=test_sites['retailer'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         quantity=80.0,
         requested_delivery_date=date.today() + timedelta(weeks=1),
         config_id=test_config.id,
@@ -469,7 +469,7 @@ async def test_fulfill_purchase_orders(db_session: AsyncSession, test_sites, tes
     # Fulfill PO from Wholesaler's inventory
     result = await fulfillment.fulfill_purchase_orders(
         supplier_site_id=test_sites['wholesaler'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         scenario_id=test_scenario.id,
         config_id=test_config.id,
         current_round=1,
@@ -486,7 +486,7 @@ async def test_fulfill_purchase_orders(db_session: AsyncSession, test_sites, tes
     # Check Wholesaler inventory reduced
     inv = await fulfillment.get_inventory_level(
         site_id=test_sites['wholesaler'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         config_id=test_config.id,
         scenario_id=test_scenario.id,
     )
@@ -504,7 +504,7 @@ async def test_receive_shipments(db_session: AsyncSession, test_sites, test_prod
         to_number="TO-001",
         source_site_id=test_sites['wholesaler'].id,
         destination_site_id=test_sites['retailer'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         quantity=50.0,
         estimated_delivery_date=date.today() + timedelta(weeks=1),
         config_id=test_config.id,
@@ -516,7 +516,7 @@ async def test_receive_shipments(db_session: AsyncSession, test_sites, test_prod
     # Initial Retailer inventory
     initial_inv = await fulfillment.get_inventory_level(
         site_id=test_sites['retailer'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         config_id=test_config.id,
         scenario_id=test_scenario.id,
     )
@@ -536,7 +536,7 @@ async def test_receive_shipments(db_session: AsyncSession, test_sites, test_prod
     # Check inventory increased
     final_inv = await fulfillment.get_inventory_level(
         site_id=test_sites['retailer'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         config_id=test_config.id,
         scenario_id=test_scenario.id,
     )
@@ -557,7 +557,7 @@ async def test_calculate_atp_with_components(db_session: AsyncSession, test_site
     order = await order_mgmt.create_customer_order(
         order_id="ORDER-001",
         line_number=1,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         site_id=test_sites['retailer'].id,
         ordered_quantity=30.0,
         requested_delivery_date=date.today() + timedelta(weeks=1),
@@ -573,7 +573,7 @@ async def test_calculate_atp_with_components(db_session: AsyncSession, test_site
         to_number="TO-001",
         source_site_id=test_sites['wholesaler'].id,
         destination_site_id=test_sites['retailer'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         quantity=20.0,
         estimated_delivery_date=date.today() + timedelta(weeks=1),
         config_id=test_config.id,
@@ -587,7 +587,7 @@ async def test_calculate_atp_with_components(db_session: AsyncSession, test_site
     # Calculate ATP
     atp_data = await atp_service.calculate_atp(
         site_id=test_sites['retailer'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         config_id=test_config.id,
         scenario_id=test_scenario.id,
         current_round=1,
@@ -609,7 +609,7 @@ async def test_calculate_promise_date_immediate(db_session: AsyncSession, test_s
 
     promise = await atp_service.calculate_promise_date(
         site_id=test_sites['retailer'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         requested_quantity=50.0,
         requested_date=date.today() + timedelta(weeks=1),
         config_id=test_config.id,
@@ -630,7 +630,7 @@ async def test_calculate_promise_date_insufficient(db_session: AsyncSession, tes
 
     promise = await atp_service.calculate_promise_date(
         site_id=test_sites['retailer'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         requested_quantity=150.0,  # > 100 available
         requested_date=date.today() + timedelta(weeks=1),
         config_id=test_config.id,
@@ -651,7 +651,7 @@ async def test_check_fulfillment_feasibility(db_session: AsyncSession, test_site
     # Should be feasible
     feasible = await atp_service.check_fulfillment_feasibility(
         site_id=test_sites['retailer'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         required_quantity=80.0,
         config_id=test_config.id,
         scenario_id=test_scenario.id,
@@ -661,7 +661,7 @@ async def test_check_fulfillment_feasibility(db_session: AsyncSession, test_site
     # Should not be feasible
     not_feasible = await atp_service.check_fulfillment_feasibility(
         site_id=test_sites['retailer'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         required_quantity=150.0,
         config_id=test_config.id,
         scenario_id=test_scenario.id,
@@ -691,7 +691,7 @@ async def test_end_to_end_order_fulfillment_cycle(db_session: AsyncSession, test
     order = await order_mgmt.create_customer_order(
         order_id="ORDER-E2E-001",
         line_number=1,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         site_id=test_sites['retailer'].id,
         ordered_quantity=40.0,
         requested_delivery_date=date.today() + timedelta(weeks=1),
@@ -703,7 +703,7 @@ async def test_end_to_end_order_fulfillment_cycle(db_session: AsyncSession, test
     # Step 2: Check ATP and promise
     promise = await atp_service.calculate_promise_date(
         site_id=test_sites['retailer'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         requested_quantity=40.0,
         requested_date=date.today() + timedelta(weeks=1),
         config_id=test_config.id,
@@ -722,7 +722,7 @@ async def test_end_to_end_order_fulfillment_cycle(db_session: AsyncSession, test
     # Step 3: Fulfill order
     result = await fulfillment.fulfill_customer_orders_fifo(
         site_id=test_sites['retailer'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         scenario_id=test_scenario.id,
         config_id=test_config.id,
         current_round=1,
@@ -741,7 +741,7 @@ async def test_end_to_end_order_fulfillment_cycle(db_session: AsyncSession, test
     # Check inventory reduced
     inv = await fulfillment.get_inventory_level(
         site_id=test_sites['retailer'].id,
-        product_id=test_product.product_id,
+        product_id=test_product.id,
         config_id=test_config.id,
         scenario_id=test_scenario.id,
     )

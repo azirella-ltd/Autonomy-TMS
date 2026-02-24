@@ -1514,3 +1514,191 @@ class ConsensusDemand(Base):
         Index('idx_consensus_demand_lookup', 'product_id', 'site_id', 'period_start'),
         UniqueConstraint('product_id', 'site_id', 'period_start', 'version', name='uq_consensus_demand'),
     )
+
+
+# ============================================================================
+# SC Entity: Backorder
+# ============================================================================
+
+class Backorder(Base):
+    """
+    Backorder tracking with lifecycle management.
+
+    SC Entity: backorder
+
+    Formalizes unfulfilled demand that was not met by available inventory.
+    Each backorder is linked to the original outbound order line and tracks
+    the full lifecycle: CREATED → ALLOCATED → PARTIALLY_FULFILLED → FULFILLED → CLOSED.
+
+    Backorders are distinct from backlog_quantity on OutboundOrderLine:
+    - OutboundOrderLine.backlog_quantity is a running balance
+    - Backorder is a formal entity with lifecycle, priority, and aging
+
+    SC Core Fields:
+    - company_id, order_id, product_id, site_id, backorder_quantity
+    - status, requested_delivery_date, expected_fill_date
+
+    Extensions:
+    - aging_days: Days since backorder creation
+    - priority: Inherited from originating order
+    - allocated_supply_plan_id: Link to planned supply
+    """
+    __tablename__ = "backorder"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(String(100), ForeignKey("company.id"))
+    backorder_id = Column(String(100), unique=True, nullable=False, index=True)
+
+    # Order reference
+    order_id = Column(String(100), nullable=False, index=True)
+    order_line_id = Column(Integer, ForeignKey("outbound_order_line.id"))
+
+    # Product and location
+    product_id = Column(String(100), ForeignKey("product.id"), nullable=False)
+    site_id = Column(Integer, ForeignKey("site.id"), nullable=False)
+    customer_id = Column(String(100))  # FK to trading_partner
+
+    # Quantities
+    backorder_quantity = Column(Double, nullable=False)
+    allocated_quantity = Column(Double, server_default=text("0"))
+    fulfilled_quantity = Column(Double, server_default=text("0"))
+
+    # Lifecycle: CREATED → ALLOCATED → PARTIALLY_FULFILLED → FULFILLED → CLOSED → CANCELLED
+    status = Column(String(20), nullable=False, server_default=text("'CREATED'"))
+
+    # Dates
+    requested_delivery_date = Column(Date)
+    expected_fill_date = Column(Date)  # When supply is expected
+    created_date = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    allocated_date = Column(DateTime)
+    fulfilled_date = Column(DateTime)
+    closed_date = Column(DateTime)
+
+    # Priority (Extension: inherited from originating order)
+    priority = Column(Integer, server_default=text("3"))  # 1=highest, 5=lowest
+    priority_code = Column(String(20), server_default=text("'STANDARD'"))
+
+    # Aging (Extension)
+    aging_days = Column(Integer, server_default=text("0"))
+
+    # Supply linkage (Extension)
+    allocated_supply_plan_id = Column(Integer)  # FK to supply_plan
+    supply_commit_id = Column(Integer)  # FK to planning cascade supply commit
+
+    # Config/scenario context
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    scenario_id = Column(Integer, ForeignKey("scenarios.id"))
+
+    # Source tracking
+    source = Column(String(100))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    # Relationships
+    product = relationship("Product")
+    site = relationship("Site")
+    config = relationship("SupplyChainConfig")
+
+    __table_args__ = (
+        Index('idx_backorder_lookup', 'product_id', 'site_id', 'status'),
+        Index('idx_backorder_order', 'order_id'),
+        Index('idx_backorder_priority', 'priority', 'created_date'),
+        Index('idx_backorder_aging', 'aging_days', 'status'),
+    )
+
+
+# ============================================================================
+# SC Entity: FinalAssemblySchedule (FAS)
+# ============================================================================
+
+class FinalAssemblySchedule(Base):
+    """
+    Final Assembly Schedule for configure-to-order (CTO) and assemble-to-order (ATO) products.
+
+    SC Entity: final_assembly_schedule
+
+    The FAS bridges between MPS (which plans common sub-assemblies at an aggregate
+    level) and customer orders that specify the exact configuration. The FAS is
+    created when a customer order for a CTO/ATO product is received, and it
+    schedules the final assembly operations to meet the promised delivery date.
+
+    Key concepts:
+    - MPS plans at the option/module level (e.g., "laptop base model")
+    - FAS plans at the configured product level (e.g., "laptop with 16GB RAM + 1TB SSD")
+    - FAS consumes MPS planned orders for common components
+    - Lead time = final assembly time (typically short, 1-5 days)
+
+    SC Core Fields:
+    - company_id, product_id, site_id, order_id
+    - configuration, assembly_quantity, assembly_date
+
+    Extensions:
+    - option_selections: JSON of selected options/features
+    - mps_consumption: Links to MPS planned orders consumed
+    """
+    __tablename__ = "final_assembly_schedule"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(String(100), ForeignKey("company.id"))
+    fas_id = Column(String(100), unique=True, nullable=False, index=True)
+
+    # Order reference (the customer order driving FAS)
+    order_id = Column(String(100), nullable=False, index=True)
+    order_line_id = Column(String(100))
+
+    # Product (the configured end-product)
+    product_id = Column(String(100), ForeignKey("product.id"), nullable=False)
+    base_product_id = Column(String(100), ForeignKey("product.id"))  # MPS-planned base model
+    site_id = Column(Integer, ForeignKey("site.id"), nullable=False)
+
+    # Configuration (Extension: JSON of selected options)
+    option_selections = Column(JSON)  # e.g., {"ram": "16GB", "storage": "1TB_SSD", "color": "silver"}
+    configuration_code = Column(String(200))  # Encoded config string
+
+    # Schedule
+    assembly_quantity = Column(Double, nullable=False)
+    assembly_start_date = Column(Date, nullable=False)
+    assembly_end_date = Column(Date, nullable=False)
+    promised_delivery_date = Column(Date)
+
+    # Lead times
+    assembly_lead_time_days = Column(Integer, server_default=text("1"))
+    testing_lead_time_days = Column(Integer, server_default=text("0"))
+
+    # Lifecycle: PLANNED → RELEASED → IN_PROGRESS → COMPLETED → SHIPPED → CLOSED
+    status = Column(String(20), nullable=False, server_default=text("'PLANNED'"))
+
+    # MPS consumption (Extension: which MPS orders this FAS consumes)
+    mps_consumption = Column(JSON)  # [{"mps_order_id": "...", "product_id": "...", "qty": ...}]
+
+    # BOM for final assembly (Extension: only the final-level BOM, not full explosion)
+    assembly_bom = Column(JSON)  # [{"component_id": "...", "qty": ..., "available": true}]
+
+    # Capacity
+    production_process_id = Column(String(100), ForeignKey("production_process.id"))
+    work_center_id = Column(String(100))
+    estimated_hours = Column(Double)
+
+    # Priority
+    priority = Column(Integer, server_default=text("3"))
+
+    # Config/scenario context
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+
+    # Source tracking
+    source = Column(String(100))
+    created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+
+    # Relationships
+    product = relationship("Product", foreign_keys=[product_id])
+    base_product = relationship("Product", foreign_keys=[base_product_id])
+    site = relationship("Site")
+    production_process = relationship("ProductionProcess")
+    config = relationship("SupplyChainConfig")
+
+    __table_args__ = (
+        Index('idx_fas_lookup', 'product_id', 'site_id', 'status'),
+        Index('idx_fas_order', 'order_id'),
+        Index('idx_fas_schedule', 'assembly_start_date', 'assembly_end_date'),
+    )

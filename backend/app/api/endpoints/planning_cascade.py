@@ -30,6 +30,198 @@ from app.services.planning_cascade import (
 
 router = APIRouter()
 
+import logging
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# DB Data Loading Helpers
+# =============================================================================
+
+def _load_planning_data_from_db(
+    db: Session,
+    config_id: int,
+):
+    """
+    Load inventory state, supplier info, and demand forecast from DB.
+
+    Returns:
+        Tuple of (inventory_state, supplier_info, demand_forecast)
+
+    Raises:
+        HTTPException 422 if no product data exists for the config.
+    """
+    from app.models.sc_entities import Product, InvLevel, InvPolicy, Forecast, SourcingRules
+    from sqlalchemy import func as sqla_func
+
+    products = db.query(Product).filter(Product.config_id == config_id).all()
+    if not products:
+        raise HTTPException(
+            status_code=422,
+            detail=f"No products found for config_id={config_id}. "
+            "Seed product data via synthetic data generator or supply chain config."
+        )
+
+    inventory_state = []
+    supplier_info = {}
+    demand_forecast = {}
+
+    for product in products:
+        # Latest inventory level
+        inv = db.query(InvLevel).filter(
+            InvLevel.product_id == product.id,
+            InvLevel.config_id == config_id,
+        ).order_by(InvLevel.inventory_date.desc().nullslast()).first()
+
+        on_hand = float(inv.on_hand_qty or 0) if inv else 0.0
+        in_transit = float(inv.in_transit_qty or 0) if inv else 0.0
+        committed = float(inv.allocated_qty or 0) if inv else 0.0
+
+        # Demand statistics
+        demand_stats = db.query(
+            sqla_func.avg(Forecast.forecast_quantity).label("avg_demand"),
+            sqla_func.stddev(Forecast.forecast_quantity).label("demand_std"),
+        ).filter(
+            Forecast.product_id == product.id,
+            Forecast.config_id == config_id,
+        ).first()
+
+        avg_demand = float(demand_stats.avg_demand or 0) if demand_stats and demand_stats.avg_demand else 0.0
+        demand_std = float(demand_stats.demand_std or 0) if demand_stats and demand_stats.demand_std else 0.0
+
+        # Min order qty
+        policy = db.query(InvPolicy).filter(
+            InvPolicy.product_id == product.id,
+            InvPolicy.config_id == config_id,
+        ).first()
+        min_order_qty = float(policy.min_order_quantity or 1) if policy and policy.min_order_quantity else 1.0
+
+        pis = ProductInventoryState(
+            sku=product.id,
+            category=product.category or "default",
+            on_hand=on_hand,
+            in_transit=in_transit,
+            committed=committed,
+            avg_daily_demand=avg_demand,
+            demand_std=demand_std,
+            unit_cost=float(product.unit_cost or 0),
+            min_order_qty=min_order_qty,
+        )
+        inventory_state.append(pis)
+
+        # Supplier info from sourcing rules
+        rules = db.query(SourcingRules).filter(
+            SourcingRules.product_id == product.id,
+            SourcingRules.config_id == config_id,
+            SourcingRules.sourcing_rule_type == "buy",
+        ).order_by(SourcingRules.sourcing_priority).all()
+
+        if rules:
+            supplier_info[product.id] = [
+                SupplierInfo(
+                    supplier_id=rule.tpartner_id or f"from-site-{rule.from_site_id}",
+                    lead_time_days=7.0,
+                    lead_time_variability=0.2,
+                    reliability=float(rule.sourcing_ratio or 0.95),
+                    min_order_value=float(rule.min_quantity or 0) * float(product.unit_cost or 1),
+                    unit_cost=float(product.unit_cost or 0),
+                )
+                for rule in rules
+            ]
+        else:
+            # Fallback: try VendorProduct
+            try:
+                from app.models.supplier import VendorProduct, VendorLeadTime
+                vps = db.query(VendorProduct).filter(
+                    VendorProduct.product_id == product.id,
+                    VendorProduct.is_active == "true",
+                ).all()
+                if vps:
+                    supplier_info[product.id] = []
+                    for vp in vps:
+                        lt = db.query(VendorLeadTime).filter(
+                            VendorLeadTime.tpartner_id == vp.tpartner_id,
+                            VendorLeadTime.product_id == product.id,
+                        ).first()
+                        lead_time = float(lt.lead_time_days) if lt else 7.0
+                        variability = (
+                            float(lt.lead_time_variability_days or 0) / lead_time
+                            if lt and lt.lead_time_variability_days and lead_time > 0
+                            else 0.2
+                        )
+                        supplier_info[product.id].append(SupplierInfo(
+                            supplier_id=vp.tpartner_id,
+                            lead_time_days=lead_time,
+                            lead_time_variability=variability,
+                            reliability=0.95,
+                            min_order_value=float(vp.minimum_order_quantity or 0) * float(vp.vendor_unit_cost),
+                            unit_cost=float(vp.vendor_unit_cost),
+                        ))
+            except Exception:
+                pass
+
+        # Demand forecast
+        forecast_rows = db.query(Forecast).filter(
+            Forecast.product_id == product.id,
+            Forecast.config_id == config_id,
+        ).order_by(Forecast.forecast_date).limit(28).all()
+
+        if forecast_rows:
+            daily = [float(r.forecast_quantity or 0) for r in forecast_rows]
+            while len(daily) < 28:
+                daily.append(daily[-1] if daily else avg_demand)
+            demand_forecast[product.id] = daily
+        else:
+            demand_forecast[product.id] = [avg_demand for _ in range(28)]
+
+    return inventory_state, supplier_info, demand_forecast
+
+
+def _load_demand_by_segment_from_db(db: Session, config_id: int) -> Dict[str, Dict[str, float]]:
+    """Load demand by customer segment from DB, falling back to proportional split."""
+    from app.models.sc_entities import Product, OutboundOrderLine, Forecast
+    from sqlalchemy import func as sqla_func
+
+    priority_to_segment = {
+        "VIP": "strategic",
+        "HIGH": "strategic",
+        "STANDARD": "standard",
+        "LOW": "transactional",
+    }
+    segments = ["strategic", "standard", "transactional"]
+    result: Dict[str, Dict[str, float]] = {seg: {} for seg in segments}
+
+    products = db.query(Product).filter(Product.config_id == config_id).all()
+
+    for product in products:
+        rows = db.query(
+            OutboundOrderLine.priority_code,
+            sqla_func.sum(OutboundOrderLine.ordered_quantity).label("total_qty"),
+        ).filter(
+            OutboundOrderLine.product_id == product.id,
+            OutboundOrderLine.config_id == config_id,
+        ).group_by(OutboundOrderLine.priority_code).all()
+
+        if rows:
+            for row in rows:
+                seg = priority_to_segment.get(row.priority_code, "standard")
+                result[seg][product.id] = result[seg].get(product.id, 0) + float(row.total_qty or 0)
+        else:
+            # Proportional fallback from forecast avg
+            demand_stats = db.query(
+                sqla_func.avg(Forecast.forecast_quantity),
+            ).filter(
+                Forecast.product_id == product.id,
+                Forecast.config_id == config_id,
+            ).scalar()
+            avg_demand = float(demand_stats or 10)
+            total_demand = avg_demand * 7
+            result["strategic"][product.id] = total_demand * 0.30
+            result["standard"][product.id] = total_demand * 0.50
+            result["transactional"][product.id] = total_demand * 0.20
+
+    return result
+
 
 # =============================================================================
 # Pydantic Models
@@ -216,39 +408,10 @@ def create_supply_baseline_pack(
 
     service = SupplyBaselineService(db, mode=request.mode.upper())
 
-    # For demo, use default inventory state
-    # In production, this would come from actual inventory data
-    inventory_state = [
-        ProductInventoryState(
-            sku=f"SKU-{i:03d}",
-            category="default",
-            on_hand=500,
-            in_transit=100,
-            committed=50,
-            avg_daily_demand=30,
-            demand_std=10,
-            unit_cost=10.0,
-            min_order_qty=50,
-        )
-        for i in range(1, 11)
-    ]
-
-    supplier_info = {
-        p.sku: [SupplierInfo(
-            supplier_id="SUPPLIER-001",
-            lead_time_days=5,
-            lead_time_variability=0.2,
-            reliability=0.95,
-            min_order_value=1000,
-            unit_cost=10.0,
-        )]
-        for p in inventory_state
-    }
-
-    demand_forecast = {
-        p.sku: [p.avg_daily_demand for _ in range(28)]
-        for p in inventory_state
-    }
+    # Load real data from DB
+    inventory_state, supplier_info, demand_forecast = _load_planning_data_from_db(
+        db, request.config_id
+    )
 
     customer_plan = None
     if request.customer_plan:
@@ -336,17 +499,18 @@ def generate_supply_commit(
         "supplier_concentration_limits": envelope.supplier_concentration_limits,
     }
 
-    # Dummy inventory state for demo
+    # Load inventory state from SupBP's config
+    inventory_state_list, _, _ = _load_planning_data_from_db(db, supbp.config_id)
     inventory_state = {
-        f"SKU-{i:03d}": {
-            "inventory_position": 550,
-            "avg_daily_demand": 30,
-            "demand_std": 10,
-            "unit_cost": 10.0,
-            "min_order_qty": 50,
-            "category": "default",
+        p.sku: {
+            "inventory_position": p.inventory_position,
+            "avg_daily_demand": p.avg_daily_demand,
+            "demand_std": p.demand_std,
+            "unit_cost": p.unit_cost,
+            "min_order_qty": p.min_order_qty,
+            "category": p.category,
         }
-        for i in range(1, 11)
+        for p in inventory_state_list
     }
 
     try:
@@ -447,12 +611,8 @@ def generate_allocation_commit(
         "allocation_reserves": envelope.allocation_reserves,
     }
 
-    # Dummy demand by segment
-    demand_by_segment = {
-        "strategic": {f"SKU-{i:03d}": 50 for i in range(1, 11)},
-        "standard": {f"SKU-{i:03d}": 100 for i in range(1, 11)},
-        "transactional": {f"SKU-{i:03d}": 30 for i in range(1, 11)},
-    }
+    # Load demand by segment from DB
+    demand_by_segment = _load_demand_by_segment_from_db(db, supply_commit.config_id)
 
     try:
         commit = agent.generate_allocation_commit(

@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services.mixed_game_service import MixedGameService
+from app.services.mixed_scenario_service import MixedScenarioService as MixedGameService
 
 
 def test_build_market_item_profiles_produces_item_baselines():
@@ -134,7 +134,7 @@ def test_seed_order_queue_includes_detail_breakdown():
         quantity=10,
         detail_breakdown={"alpha": 6, "beta": 3, "gamma": 1},
         default_downstream="__self__",
-        item_id="widget",
+        product_id="widget",
     )
 
     queue = state["inbound_demand"]
@@ -144,7 +144,7 @@ def test_seed_order_queue_includes_detail_breakdown():
     assert entry["quantity"] == 10
     assert entry["order_priority"] == 1
     assert entry["downstream"] == "__self__"
-    assert entry["item_id"] == "widget"
+    assert entry["product_id"] == "widget"
     assert "breakdown" not in entry
 
 
@@ -265,8 +265,8 @@ def test_record_startup_notice_adds_message_and_logs(monkeypatch):
         captured["ensure_called"] = True
         return "dummy_path"
 
-    monkeypatch.setattr("app.services.mixed_game_service.append_debug_error", fake_append)
-    monkeypatch.setattr("app.services.mixed_game_service.ensure_debug_log_file", fake_ensure)
+    monkeypatch.setattr("app.services.mixed_scenario_service.append_debug_error", fake_append)
+    monkeypatch.setattr("app.services.mixed_scenario_service.ensure_debug_log_file", fake_ensure)
 
     cfg = {"debug_logging": {"enabled": True}}
     game = SimpleNamespace(id=11, name="Startup Notices")
