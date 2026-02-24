@@ -183,8 +183,9 @@ class RecursiveTRMHead(nn.Module):
         R = R or self.config.num_refinement_steps
 
         # Initialize
-        answer = self.initial_answer_proj(head_input)        # [B, answer_dim]
-        scratchpad = self.initial_scratchpad_proj(head_input) # [B, hidden_dim]
+        initial_answer = self.initial_answer_proj(head_input)  # [B, answer_dim]
+        answer = initial_answer
+        scratchpad = self.initial_scratchpad_proj(head_input)  # [B, hidden_dim]
 
         steps_taken = R
         for step in range(R):
@@ -197,6 +198,11 @@ class RecursiveTRMHead(nn.Module):
                 if (conf > self.config.halt_threshold).all():
                     steps_taken = step + 1
                     break
+
+        # Residual skip from initial answer — gradient highway through
+        # the recursive refinement loop (standard practice for deep
+        # recursive architectures to prevent gradient vanishing)
+        answer = answer + 0.01 * initial_answer
 
         # Final confidence
         confidence = torch.sigmoid(self.confidence_head(scratchpad))
