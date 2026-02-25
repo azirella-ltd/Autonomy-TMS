@@ -41,7 +41,7 @@ from .participant import (
 )
 
 from .agent_config import AgentConfig, AgentConfigCreate, AgentConfigUpdate, AgentConfigInDBBase as AgentConfigInDB
-from .dashboard import DashboardResponse, ParticipantMetrics, TimeSeriesPoint
+from .dashboard import DashboardResponse, ScenarioUserMetrics as ParticipantMetrics, TimeSeriesPoint
 from .group import Group, GroupCreate, GroupUpdate
 # AWS SC DM compliant schema imports
 from .supply_chain_config import (

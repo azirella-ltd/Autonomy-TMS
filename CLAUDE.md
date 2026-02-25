@@ -1126,7 +1126,7 @@ Use these books as references when writing executive summaries, competitive posi
 
 ## External Agent Runtimes & Self-Hosted LLM
 
-**Status**: PROPOSED (2026-02-19)
+**Status**: IMPLEMENTED (2026-02-24)
 
 The platform supports integration with external agent runtimes (PicoClaw, OpenClaw) as thin orchestration layers wrapping the existing REST API. A self-hosted LLM (Qwen 3 via vLLM) eliminates dependency on external LLM providers for data sovereignty.
 
@@ -1142,11 +1142,44 @@ The platform supports integration with external agent runtimes (PicoClaw, OpenCl
 - **Self-Hosted LLM**: Qwen 3 8B via vLLM — 96.5% tool calling accuracy, OpenAI-compatible API, 8GB VRAM minimum
 - **Docker**: `docker-compose.llm.yml` overlay adds vLLM service to existing stack
 
-**Implementation Files**:
+**Deployment Commands**:
+```bash
+# OpenClaw (chat-based planning interface)
+make openclaw-setup       # Validate workspace config
+make openclaw-up          # Start OpenClaw container
+make openclaw-down        # Stop OpenClaw container
+make openclaw-logs        # Tail OpenClaw logs
+
+# PicoClaw (edge CDC monitoring fleet)
+make picoclaw-workspaces  # Generate per-site workspaces from config
+make picoclaw-fleet       # Generate fleet docker-compose.picoclaw.yml
+make picoclaw-up          # Start PicoClaw CDC fleet
+make picoclaw-down        # Stop PicoClaw fleet
+make picoclaw-logs        # Tail PicoClaw fleet logs
+make picoclaw-status      # Show fleet container status
+```
+
+**Backend Implementation Files**:
 - `backend/app/models/edge_agents.py` — 13 SQLAlchemy models (PicoClaw instances/heartbeats/alerts, service accounts, OpenClaw config/channels/skills/sessions, ingested signals, correlations, source reliability, security checklist, activity log)
 - `backend/app/services/edge_agent_service.py` — Fleet management, gateway config, security checklist CRUD
 - `backend/app/services/signal_ingestion_service.py` — Confidence-gated signal pipeline (sanitize → rate limit → dedup → score → gate → correlate)
-- `backend/app/api/endpoints/edge_agents.py` — REST API: `/edge-agents/*` + `/signals/*` (40+ endpoints)
+- `backend/app/services/authorization_service.py` — Authorization with authority boundaries (`create_agent_authorization_request`, `escalate_to_human`)
+- `backend/app/services/escalation_formatter.py` — Tier 2 (agent) → Tier 3 (human) escalation bridge with ranked alternatives
+- `backend/app/services/powell/authority_boundaries.py` — Per-agent action classification (12 roles) with target routing and SLA
+- `backend/app/api/deps.py` — Service account auth middleware (`get_current_user_or_service_account`)
+- `backend/app/api/endpoints/edge_agents.py` — REST API: `/edge-agents/*` + `/signals/*` (40+ endpoints, service account auth)
+- `backend/app/api/endpoints/planning_scenarios.py` — `POST /scenarios/what-if` for pre-authorization evaluation
+
+**Deployment Files**:
+- `deploy/openclaw/workspace/SOUL.md` — OpenClaw agent persona
+- `deploy/openclaw/workspace/skills/` — 9 skills (supply-plan-query, atp-check, override-decision, ask-why, kpi-dashboard, signal-capture, escalate-authorization, voice-signal, email-signal)
+- `deploy/openclaw/openclaw.json` — LLM provider config + channel stubs
+- `deploy/openclaw/docker-compose.openclaw.yml` — OpenClaw container definition
+- `deploy/picoclaw/templates/` — HEARTBEAT.sh, DIGEST.sh, MARKET_SIGNAL.sh, config.json.template, IDENTITY.md.template, SOUL.md, skills/
+- `deploy/picoclaw/generate_workspaces.py` — Per-site workspace generator from supply chain config
+- `deploy/picoclaw/generate_fleet_compose.py` — Fleet Docker Compose generator
+
+**Frontend Files**:
 - `frontend/src/pages/admin/PicoClawManagement.jsx` — Fleet dashboard, alerts, CDC config, service accounts
 - `frontend/src/pages/admin/OpenClawManagement.jsx` — Gateway overview, skills, channels, LLM config
 - `frontend/src/pages/admin/SignalIngestionDashboard.jsx` — Signal monitoring, review queue, source reliability, correlations
