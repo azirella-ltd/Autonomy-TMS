@@ -9,7 +9,7 @@ REST API for SiteAgent operations:
 """
 
 from datetime import date, datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel, Field
@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 from app.db.session import get_db
 from app.api.deps import get_current_user
 from app.models.user import User
+from app.services.decision_governance_service import DecisionGovernanceService
+from app.models.decision_governance import DecisionGovernancePolicy, GuardrailDirective
 from app.services.powell import (
     SiteAgent,
     SiteAgentConfig,
@@ -1098,6 +1100,410 @@ async def get_gnn_status(
 
 
 # ============================================================================
+# GNN Directive Review — Human Override at Network Level
+# ============================================================================
+
+class GNNDirectiveReviewRequest(BaseModel):
+    """Review (accept/override/reject) a GNN-generated directive."""
+    action: str = Field(..., description="ACCEPTED | OVERRIDDEN | REJECTED")
+    override_values: Optional[Dict[str, Any]] = Field(None, description="Override values (required if OVERRIDDEN)")
+    reason_code: Optional[str] = Field(None, description="Override reason code")
+    reason_text: Optional[str] = Field(None, description="Override reason text")
+
+
+class PolicyEnvelopeOverrideRequest(BaseModel):
+    """Override a single parameter in a PolicyEnvelope."""
+    parameter_path: str = Field(..., description="e.g. 'safety_stock_targets.frozen'")
+    override_value: Any = Field(..., description="New value for this parameter")
+    reason_code: Optional[str] = None
+    reason_text: Optional[str] = None
+
+
+@router.get("/gnn/directives")
+async def list_gnn_directives(
+    status: Optional[str] = Query(None, description="Filter by status (PROPOSED, ACCEPTED, etc.)"),
+    site_key: Optional[str] = Query(None),
+    directive_scope: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    List GNN-generated directives with their review status.
+
+    Used by the S&OP Director to see pending directives that need review.
+    """
+    from app.models.gnn_directive_review import GNNDirectiveReview
+
+    query = db.query(GNNDirectiveReview).order_by(GNNDirectiveReview.created_at.desc())
+
+    if status:
+        query = query.filter(GNNDirectiveReview.status == status)
+    if site_key:
+        query = query.filter(GNNDirectiveReview.site_key == site_key)
+    if directive_scope:
+        query = query.filter(GNNDirectiveReview.directive_scope == directive_scope)
+
+    directives = query.limit(limit).all()
+
+    return {
+        "success": True,
+        "data": [d.to_dict() for d in directives],
+        "count": len(directives),
+    }
+
+
+@router.post("/gnn/directives/{directive_id}/review")
+async def review_gnn_directive(
+    directive_id: int,
+    request: GNNDirectiveReviewRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Review a GNN directive — Accept, Override, or Reject.
+
+    For OVERRIDDEN: provide override_values with the same structure as proposed_values.
+    The OutcomeCollector will later compute counterfactual comparison and feed
+    the Bayesian posterior system.
+    """
+    from app.models.gnn_directive_review import GNNDirectiveReview
+
+    directive = db.query(GNNDirectiveReview).filter(
+        GNNDirectiveReview.id == directive_id,
+    ).first()
+
+    if not directive:
+        raise HTTPException(status_code=404, detail=f"Directive {directive_id} not found")
+
+    if directive.status not in ("PROPOSED", "AUTO_APPLIED"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Directive already reviewed (status={directive.status})",
+        )
+
+    action = request.action.upper()
+    if action not in ("ACCEPTED", "OVERRIDDEN", "REJECTED"):
+        raise HTTPException(status_code=400, detail="action must be ACCEPTED, OVERRIDDEN, or REJECTED")
+
+    if action == "OVERRIDDEN" and not request.override_values:
+        raise HTTPException(status_code=400, detail="override_values required when action is OVERRIDDEN")
+
+    directive.status = action
+    directive.reviewed_by = current_user.id
+    directive.reviewed_at = datetime.utcnow()
+
+    if action == "OVERRIDDEN":
+        directive.override_values = request.override_values
+        directive.override_reason_code = request.reason_code
+        directive.override_reason_text = request.reason_text
+
+    if action in ("ACCEPTED", "OVERRIDDEN"):
+        directive.applied_at = datetime.utcnow()
+
+    db.commit()
+
+    return {
+        "success": True,
+        "directive_id": directive_id,
+        "status": action,
+        "message": f"Directive {action.lower()}. "
+                   + ("Override effectiveness will be tracked after outcome measurement."
+                      if action == "OVERRIDDEN" else ""),
+    }
+
+
+@router.get("/gnn/directives/{directive_id}/ask-why")
+async def ask_why_gnn_directive(
+    directive_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Explain why the GNN generated this directive for a specific site.
+
+    Returns model inputs, confidence, and key factors that drove the recommendation.
+    """
+    from app.models.gnn_directive_review import GNNDirectiveReview
+
+    directive = db.query(GNNDirectiveReview).filter(
+        GNNDirectiveReview.id == directive_id,
+    ).first()
+
+    if not directive:
+        raise HTTPException(status_code=404, detail=f"Directive {directive_id} not found")
+
+    # Build explanation from proposed values and model metadata
+    explanation = {
+        "directive_id": directive.id,
+        "site_key": directive.site_key,
+        "scope": directive.directive_scope,
+        "model_type": directive.model_type,
+        "model_confidence": directive.model_confidence,
+        "proposed_values": directive.proposed_values,
+        "reasoning": [],
+    }
+
+    pv = directive.proposed_values or {}
+
+    if directive.directive_scope == "sop_policy":
+        explanation["reasoning"] = _explain_sop_policy(pv, directive.site_key)
+    elif directive.directive_scope == "execution_directive":
+        explanation["reasoning"] = _explain_execution_directive(pv, directive.site_key)
+    elif directive.directive_scope == "allocation_refresh":
+        explanation["reasoning"] = _explain_allocation_refresh(pv, directive.site_key)
+
+    # Include outcome data if available
+    if directive.override_delta is not None:
+        explanation["outcome"] = {
+            "proposed_outcome_metric": directive.proposed_outcome_metric,
+            "actual_outcome_metric": directive.actual_outcome_metric,
+            "override_delta": directive.override_delta,
+            "override_classification": directive.override_classification,
+        }
+
+    return {"success": True, "data": explanation}
+
+
+@router.get("/gnn/override-effectiveness")
+async def get_gnn_override_effectiveness(
+    days: int = Query(default=90, ge=7, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get override effectiveness metrics for GNN-level directives.
+
+    Returns breakdown by directive scope (sop_policy, execution_directive, allocation_refresh).
+    """
+    from app.models.gnn_directive_review import GNNDirectiveReview
+    from sqlalchemy import func, case
+    from datetime import timedelta
+
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    # Overridden directives
+    base_q = db.query(GNNDirectiveReview).filter(
+        GNNDirectiveReview.status == "OVERRIDDEN",
+        GNNDirectiveReview.created_at > cutoff,
+    )
+
+    total = base_q.count()
+    classified = base_q.filter(GNNDirectiveReview.override_classification.isnot(None))
+    beneficial = classified.filter(GNNDirectiveReview.override_classification == "BENEFICIAL").count()
+    neutral = classified.filter(GNNDirectiveReview.override_classification == "NEUTRAL").count()
+    detrimental = classified.filter(GNNDirectiveReview.override_classification == "DETRIMENTAL").count()
+    classified_total = beneficial + neutral + detrimental
+    pending = total - classified_total
+
+    effectiveness_rate = (beneficial / classified_total * 100) if classified_total > 0 else 0.0
+
+    net_delta = db.query(func.sum(GNNDirectiveReview.override_delta)).filter(
+        GNNDirectiveReview.status == "OVERRIDDEN",
+        GNNDirectiveReview.override_delta.isnot(None),
+        GNNDirectiveReview.created_at > cutoff,
+    ).scalar() or 0.0
+
+    # By scope breakdown
+    scope_rows = db.query(
+        GNNDirectiveReview.directive_scope,
+        func.count(GNNDirectiveReview.id).label("count"),
+        func.sum(case(
+            (GNNDirectiveReview.override_classification == "BENEFICIAL", 1), else_=0
+        )).label("beneficial"),
+        func.sum(case(
+            (GNNDirectiveReview.override_classification == "NEUTRAL", 1), else_=0
+        )).label("neutral"),
+        func.sum(case(
+            (GNNDirectiveReview.override_classification == "DETRIMENTAL", 1), else_=0
+        )).label("detrimental"),
+        func.coalesce(func.sum(GNNDirectiveReview.override_delta), 0.0).label("net_delta"),
+    ).filter(
+        GNNDirectiveReview.status == "OVERRIDDEN",
+        GNNDirectiveReview.created_at > cutoff,
+    ).group_by(GNNDirectiveReview.directive_scope).all()
+
+    by_scope = {}
+    for row in scope_rows:
+        ct = int(row.beneficial or 0) + int(row.neutral or 0) + int(row.detrimental or 0)
+        by_scope[row.directive_scope] = {
+            "total": row.count,
+            "beneficial": int(row.beneficial or 0),
+            "neutral": int(row.neutral or 0),
+            "detrimental": int(row.detrimental or 0),
+            "effectiveness_rate": (int(row.beneficial or 0) / ct * 100) if ct > 0 else 0.0,
+            "net_delta": float(row.net_delta),
+        }
+
+    # All directives summary (not just overridden)
+    all_directives = db.query(
+        GNNDirectiveReview.status,
+        func.count(GNNDirectiveReview.id),
+    ).filter(
+        GNNDirectiveReview.created_at > cutoff,
+    ).group_by(GNNDirectiveReview.status).all()
+
+    status_summary = {row[0]: row[1] for row in all_directives}
+
+    return {
+        "success": True,
+        "data": {
+            "total_overridden": total,
+            "effectiveness_rate": effectiveness_rate,
+            "net_reward_delta": float(net_delta),
+            "beneficial_count": beneficial,
+            "neutral_count": neutral,
+            "detrimental_count": detrimental,
+            "pending_count": pending,
+            "by_scope": by_scope,
+            "status_summary": status_summary,
+        },
+    }
+
+
+@router.post("/gnn/policy-envelope/{envelope_id}/override-parameter")
+async def override_policy_envelope_parameter(
+    envelope_id: int,
+    request: PolicyEnvelopeOverrideRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Override a single parameter in a PolicyEnvelope before it propagates downstream.
+
+    Captures the override for Bayesian posterior tracking.
+    """
+    from app.models.planning_cascade import PolicyEnvelope
+    from app.models.gnn_directive_review import PolicyEnvelopeOverride
+
+    envelope = db.query(PolicyEnvelope).filter(PolicyEnvelope.id == envelope_id).first()
+    if not envelope:
+        raise HTTPException(status_code=404, detail=f"PolicyEnvelope {envelope_id} not found")
+
+    # Navigate the parameter path to get original value
+    parts = request.parameter_path.split(".")
+    original = None
+    if len(parts) == 2:
+        field_name, key = parts
+        field_data = getattr(envelope, field_name, None)
+        if isinstance(field_data, dict):
+            original = field_data.get(key)
+    elif len(parts) == 1:
+        original = getattr(envelope, parts[0], None)
+
+    override = PolicyEnvelopeOverride(
+        policy_envelope_id=envelope_id,
+        config_id=envelope.config_id,
+        parameter_path=request.parameter_path,
+        original_value=original,
+        override_value=request.override_value,
+        override_by=current_user.id,
+        reason_code=request.reason_code,
+        reason_text=request.reason_text,
+    )
+    db.add(override)
+
+    # Apply the override to the envelope
+    if len(parts) == 2:
+        field_name, key = parts
+        field_data = getattr(envelope, field_name, None)
+        if isinstance(field_data, dict):
+            updated = dict(field_data)
+            updated[key] = request.override_value
+            setattr(envelope, field_name, updated)
+    elif len(parts) == 1:
+        setattr(envelope, parts[0], request.override_value)
+
+    db.commit()
+
+    return {
+        "success": True,
+        "override_id": override.id,
+        "parameter_path": request.parameter_path,
+        "original_value": original,
+        "override_value": request.override_value,
+        "message": "Parameter overridden. Effectiveness will be tracked after downstream outcomes are measured.",
+    }
+
+
+def _explain_sop_policy(pv: dict, site_key: str) -> List[Dict[str, str]]:
+    """Build explanation reasons for S&OP policy directive."""
+    reasons = []
+    crit = pv.get("criticality_score", 0.5)
+    if crit > 0.7:
+        reasons.append({
+            "factor": "High Criticality",
+            "detail": f"Site {site_key} has criticality score {crit:.2f} (>0.7), indicating high network importance.",
+        })
+    bottleneck = pv.get("bottleneck_risk", 0.3)
+    if bottleneck > 0.5:
+        reasons.append({
+            "factor": "Bottleneck Risk",
+            "detail": f"Bottleneck risk of {bottleneck:.2f} — limited alternatives for this site's throughput.",
+        })
+    ssm = pv.get("safety_stock_multiplier", 1.0)
+    if ssm != 1.0:
+        direction = "increased" if ssm > 1.0 else "decreased"
+        reasons.append({
+            "factor": "Safety Stock Adjustment",
+            "detail": f"Safety stock multiplier {direction} to {ssm:.2f}x based on network risk analysis.",
+        })
+    if not reasons:
+        reasons.append({
+            "factor": "Standard Parameters",
+            "detail": f"Site {site_key} parameters within normal ranges. No elevated risk detected.",
+        })
+    return reasons
+
+
+def _explain_execution_directive(pv: dict, site_key: str) -> List[Dict[str, str]]:
+    """Build explanation reasons for execution directive."""
+    reasons = []
+    exc_prob = pv.get("exception_probability", 0.1)
+    if exc_prob > 0.3:
+        reasons.append({
+            "factor": "High Exception Probability",
+            "detail": f"Exception probability of {exc_prob:.1%} — model predicts elevated disruption risk.",
+        })
+    demand = pv.get("demand_forecast", [])
+    if demand:
+        avg = sum(demand) / len(demand) if demand else 0
+        reasons.append({
+            "factor": "Demand Forecast",
+            "detail": f"Forecasted demand: {len(demand)}-period horizon, average {avg:.0f} units/period.",
+        })
+    confidence = pv.get("confidence", 0.5)
+    reasons.append({
+        "factor": "Model Confidence",
+        "detail": f"Execution tGNN confidence: {confidence:.1%} for site {site_key}.",
+    })
+    return reasons
+
+
+def _explain_allocation_refresh(pv: dict, site_key: str) -> List[Dict[str, str]]:
+    """Build explanation reasons for allocation refresh."""
+    reasons = []
+    allocs = pv.get("priority_allocations", {})
+    if allocs:
+        reasons.append({
+            "factor": "Priority Allocations",
+            "detail": f"Updated allocations across {len(allocs)} priority tiers.",
+        })
+    version = pv.get("allocation_version")
+    if version:
+        reasons.append({
+            "factor": "Allocation Version",
+            "detail": f"Refresh version {version} — based on latest tGNN inference cycle.",
+        })
+    if not reasons:
+        reasons.append({
+            "factor": "Standard Refresh",
+            "detail": "Periodic allocation refresh from tGNN inference cycle.",
+        })
+    return reasons
+
+
+# ============================================================================
 # Override Tracking & Effectiveness Endpoints
 # ============================================================================
 
@@ -1280,3 +1686,393 @@ async def get_override_effectiveness(
         by_trm_type=by_trm_type,
         trend=trend,
     )
+
+
+# =====================================================================
+# Decision Governance — AIIO Gating, Worklist, Directives
+# =====================================================================
+
+
+# ----- Governance Request/Response Models -----
+
+class GovernanceResolveRequest(BaseModel):
+    """Resolve a held INSPECT decision."""
+    resolution: Literal["approve", "reject", "override"]
+    reason: Optional[str] = None
+    override_action: Optional[Dict[str, Any]] = None
+    override_reason: Optional[str] = Field(
+        default=None, description="Required when resolution == 'override'")
+
+
+class GovernancePolicyCreateRequest(BaseModel):
+    """Create or update a governance policy."""
+    action_type: Optional[str] = None
+    category: Optional[str] = None
+    agent_id: Optional[str] = None
+    automate_below: float = 20.0
+    inform_below: float = 50.0
+    hold_minutes: int = 60
+    max_hold_minutes: int = 1440
+    auto_apply_on_expiry: bool = True
+    escalate_after_minutes: int = 480
+    weight_financial: float = 0.30
+    weight_scope: float = 0.20
+    weight_reversibility: float = 0.20
+    weight_confidence: float = 0.15
+    weight_override_rate: float = 0.15
+    name: Optional[str] = None
+    description: Optional[str] = None
+    priority: int = 100
+
+
+class GovernancePolicyUpdateRequest(BaseModel):
+    """Update fields on an existing governance policy."""
+    automate_below: Optional[float] = None
+    inform_below: Optional[float] = None
+    hold_minutes: Optional[int] = None
+    max_hold_minutes: Optional[int] = None
+    auto_apply_on_expiry: Optional[bool] = None
+    escalate_after_minutes: Optional[int] = None
+    weight_financial: Optional[float] = None
+    weight_scope: Optional[float] = None
+    weight_reversibility: Optional[float] = None
+    weight_confidence: Optional[float] = None
+    weight_override_rate: Optional[float] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+    priority: Optional[int] = None
+
+
+class DirectiveCreateRequest(BaseModel):
+    """Capture an executive guardrail directive."""
+    source_user_id: int = Field(..., description="Executive who issued the directive")
+    source_channel: Literal["voice", "email", "slack", "teams", "chat", "manual"]
+    source_signal_id: Optional[int] = None
+    received_at: datetime
+    raw_content: str = Field(..., min_length=1, description="Original text/transcript")
+    objective: str = Field(..., min_length=1, description="What the executive wants")
+    context: Optional[str] = None
+    reason: Optional[str] = None
+    comment: Optional[str] = None
+    extracted_parameters: Optional[Dict[str, Any]] = None
+    affected_scope: Optional[Dict[str, Any]] = None
+    effective_from: Optional[datetime] = None
+    effective_until: Optional[datetime] = None
+    extraction_confidence: Optional[float] = None
+    extraction_model: Optional[str] = None
+
+
+class DirectiveReviewRequest(BaseModel):
+    """Apply or reject a guardrail directive."""
+    action: Literal["apply", "reject"]
+    review_comment: Optional[str] = Field(
+        default=None, description="Required when action == 'reject'")
+
+
+# ----- Governance Worklist -----
+
+@router.get("/governance/pending")
+def get_governance_pending(
+    customer_id: int = Query(...),
+    limit: int = Query(default=50, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Governance worklist — INSPECT decisions awaiting human review.
+
+    Returns actions ordered by urgency (nearest hold_until first,
+    then highest impact_score).
+    """
+    actions = DecisionGovernanceService.get_pending_decisions(
+        db, customer_id, limit=limit, offset=offset,
+    )
+    return {
+        "pending": [a.to_dict() for a in actions],
+        "count": len(actions),
+    }
+
+
+@router.post("/governance/{action_id}/resolve")
+def resolve_governance_decision(
+    action_id: int,
+    body: GovernanceResolveRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Resolve a held INSPECT decision: approve, reject, or override.
+
+    - **approve**: Execute the decision as proposed.
+    - **reject**: Cancel the decision (reason required).
+    - **override**: Execute with modifications (override_reason required).
+
+    All resolutions record user_id, timestamp, and reason for full audit.
+    """
+    try:
+        action = DecisionGovernanceService.resolve_decision(
+            db=db,
+            action_id=action_id,
+            user_id=current_user.id,
+            resolution=body.resolution,
+            reason=body.reason,
+            override_action=body.override_action,
+            override_reason=body.override_reason,
+        )
+        db.commit()
+        return action.to_dict()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ----- Governance Policies CRUD -----
+
+@router.get("/governance/policies")
+def list_governance_policies(
+    customer_id: int = Query(...),
+    include_inactive: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List governance policies for a customer."""
+    query = db.query(DecisionGovernancePolicy).filter(
+        DecisionGovernancePolicy.customer_id == customer_id,
+    )
+    if not include_inactive:
+        query = query.filter(DecisionGovernancePolicy.is_active == True)
+
+    policies = query.order_by(
+        DecisionGovernancePolicy.priority.asc(),
+        DecisionGovernancePolicy.action_type.asc(),
+    ).all()
+
+    return {"policies": [p.to_dict() for p in policies]}
+
+
+@router.post("/governance/policies")
+def create_governance_policy(
+    customer_id: int = Query(...),
+    body: GovernancePolicyCreateRequest = ...,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create a new governance policy for a customer."""
+    policy = DecisionGovernancePolicy(
+        customer_id=customer_id,
+        action_type=body.action_type,
+        category=body.category,
+        agent_id=body.agent_id,
+        automate_below=body.automate_below,
+        inform_below=body.inform_below,
+        hold_minutes=body.hold_minutes,
+        max_hold_minutes=body.max_hold_minutes,
+        auto_apply_on_expiry=body.auto_apply_on_expiry,
+        escalate_after_minutes=body.escalate_after_minutes,
+        weight_financial=body.weight_financial,
+        weight_scope=body.weight_scope,
+        weight_reversibility=body.weight_reversibility,
+        weight_confidence=body.weight_confidence,
+        weight_override_rate=body.weight_override_rate,
+        name=body.name,
+        description=body.description,
+        priority=body.priority,
+        is_active=True,
+        created_by=current_user.id,
+    )
+    db.add(policy)
+    db.commit()
+    db.refresh(policy)
+    return policy.to_dict()
+
+
+@router.put("/governance/policies/{policy_id}")
+def update_governance_policy(
+    policy_id: int,
+    body: GovernancePolicyUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update an existing governance policy."""
+    policy = db.query(DecisionGovernancePolicy).filter_by(id=policy_id).first()
+    if not policy:
+        raise HTTPException(status_code=404, detail="Policy not found")
+
+    update_data = body.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(policy, field, value)
+
+    db.commit()
+    db.refresh(policy)
+    return policy.to_dict()
+
+
+@router.delete("/governance/policies/{policy_id}")
+def deactivate_governance_policy(
+    policy_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Deactivate (soft-delete) a governance policy."""
+    policy = db.query(DecisionGovernancePolicy).filter_by(id=policy_id).first()
+    if not policy:
+        raise HTTPException(status_code=404, detail="Policy not found")
+
+    policy.is_active = False
+    db.commit()
+    return {"status": "deactivated", "policy_id": policy_id}
+
+
+# ----- Governance Stats -----
+
+@router.get("/governance/stats")
+def get_governance_stats(
+    customer_id: int = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Governance metrics dashboard.
+
+    Returns: total_governed, mode distribution, pending count,
+    avg impact score, auto-apply rate, human resolve rate,
+    avg resolution time, override count.
+    """
+    stats = DecisionGovernanceService.get_governance_stats(db, customer_id)
+    return stats
+
+
+# ----- Guardrail Directives -----
+
+@router.get("/governance/directives")
+def list_guardrail_directives(
+    customer_id: int = Query(...),
+    status: Optional[str] = Query(default=None, description="Filter: PENDING|APPLIED|REJECTED|EXPIRED"),
+    limit: int = Query(default=50, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    List guardrail directives for a customer.
+
+    Executive instructions captured from voice, email, Slack, Teams, chat,
+    or manual entry — each with full provenance (who, when, channel,
+    raw content) and extracted structured fields.
+    """
+    query = db.query(GuardrailDirective).filter(
+        GuardrailDirective.customer_id == customer_id,
+    )
+    if status:
+        query = query.filter(GuardrailDirective.status == status)
+
+    directives = query.order_by(
+        GuardrailDirective.received_at.desc(),
+    ).offset(offset).limit(limit).all()
+
+    total = db.query(GuardrailDirective).filter(
+        GuardrailDirective.customer_id == customer_id,
+        *([GuardrailDirective.status == status] if status else []),
+    ).count()
+
+    return {
+        "directives": [d.to_dict() for d in directives],
+        "total": total,
+    }
+
+
+@router.get("/governance/directives/{directive_id}")
+def get_guardrail_directive(
+    directive_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get a single guardrail directive with full provenance."""
+    directive = db.query(GuardrailDirective).filter_by(id=directive_id).first()
+    if not directive:
+        raise HTTPException(status_code=404, detail="Directive not found")
+    return directive.to_dict()
+
+
+@router.post("/governance/directives")
+def create_guardrail_directive(
+    customer_id: int = Query(...),
+    body: DirectiveCreateRequest = ...,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Capture an executive guardrail directive.
+
+    Records the full provenance: who issued it, when, via which channel,
+    the original text/transcript, and the extracted objective, context,
+    reason, and parsed governance parameters.
+
+    The directive starts as PENDING until reviewed and applied/rejected.
+    """
+    directive = GuardrailDirective(
+        customer_id=customer_id,
+        source_user_id=body.source_user_id,
+        source_channel=body.source_channel,
+        source_signal_id=body.source_signal_id,
+        received_at=body.received_at,
+        raw_content=body.raw_content,
+        objective=body.objective,
+        context=body.context,
+        reason=body.reason,
+        comment=body.comment,
+        extracted_parameters=body.extracted_parameters,
+        affected_scope=body.affected_scope,
+        effective_from=body.effective_from,
+        effective_until=body.effective_until,
+        extraction_confidence=body.extraction_confidence,
+        extraction_model=body.extraction_model,
+        status="PENDING",
+    )
+    db.add(directive)
+    db.commit()
+    db.refresh(directive)
+    return directive.to_dict()
+
+
+@router.post("/governance/directives/{directive_id}/review")
+def review_guardrail_directive(
+    directive_id: int,
+    body: DirectiveReviewRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Review a guardrail directive: apply or reject.
+
+    - **apply**: Creates a governance policy from the directive's
+      extracted_parameters. Links the new policy back to the directive.
+    - **reject**: Marks directive as REJECTED (review_comment required).
+
+    Records reviewer user_id, timestamp, and review comment for full audit.
+    """
+    try:
+        if body.action == "apply":
+            directive = DecisionGovernanceService.apply_directive(
+                db=db,
+                directive_id=directive_id,
+                reviewer_user_id=current_user.id,
+                review_comment=body.review_comment,
+            )
+        elif body.action == "reject":
+            if not body.review_comment:
+                raise ValueError("Review comment is required when rejecting a directive")
+            directive = DecisionGovernanceService.reject_directive(
+                db=db,
+                directive_id=directive_id,
+                reviewer_user_id=current_user.id,
+                review_comment=body.review_comment,
+            )
+        else:
+            raise ValueError(f"Invalid action: {body.action}")
+
+        db.commit()
+        return directive.to_dict()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

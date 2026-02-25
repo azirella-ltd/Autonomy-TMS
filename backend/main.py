@@ -504,6 +504,7 @@ async def startup_event():
         from app.services.sync_scheduler_service import SyncSchedulerService
         from app.services.retention_jobs import register_retention_jobs
         from app.services.powell.relearning_jobs import register_relearning_jobs
+        from app.services.powell.governance_jobs import register_governance_jobs
         from app.db.session import sync_session_factory
         from app.models import SyncJobConfig
         from app.core.config import settings
@@ -520,6 +521,9 @@ async def startup_event():
 
             # Register Powell relearning loop jobs (outcome collection, CDT calibration, CDC retraining)
             register_relearning_jobs(scheduler_service)
+
+            # Register governance sweeper jobs (auto-apply, escalation, directive expiry)
+            register_governance_jobs(scheduler_service)
 
             # Batch calibrate CDT wrappers from historical decision data
             try:

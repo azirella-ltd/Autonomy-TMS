@@ -23,10 +23,11 @@ import {
   Spinner,
   FormField,
 } from '../../components/common';
-import { GraduationCap, Database, FlaskConical, ChevronRight, Settings2 } from 'lucide-react';
+import { GraduationCap, Database, FlaskConical, ChevronRight, Settings2, ClipboardCheck } from 'lucide-react';
 import GNNTrainingPanel from '../../components/admin/GNNTrainingPanel';
 import GNNModelManager from '../../components/admin/GNNModelManager';
 import GNNTestPanel from '../../components/admin/GNNTestPanel';
+import GNNDirectiveReview from '../../components/admin/GNNDirectiveReview';
 import { getSupplyChainConfigs } from '../../services/supplyChainConfigService';
 
 const GNNDashboard = () => {
@@ -137,6 +138,13 @@ const GNNDashboard = () => {
               <FlaskConical className="h-4 w-4" />
               Testing
             </TabsTrigger>
+            <TabsTrigger
+              value="directive-review"
+              className="flex items-center gap-2 rounded-none border-b-2 border-transparent data-[state=active]:border-primary"
+            >
+              <ClipboardCheck className="h-4 w-4" />
+              Directive Review
+            </TabsTrigger>
           </TabsList>
         </Tabs>
       </Card>
@@ -144,6 +152,7 @@ const GNNDashboard = () => {
       {currentTab === 'training' && <GNNTrainingPanel selectedConfig={selectedConfig} />}
       {currentTab === 'models' && <GNNModelManager selectedConfig={selectedConfig} />}
       {currentTab === 'testing' && <GNNTestPanel selectedConfig={selectedConfig} />}
+      {currentTab === 'directive-review' && <GNNDirectiveReview />}
     </div>
   );
 };

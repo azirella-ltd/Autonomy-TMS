@@ -479,8 +479,16 @@ class SiteAgentDecisionTracker:
         improvement = post_kpi - pre_kpi
         return improvement - replan_cost * 0.01
 
+    # Map decision_type to action_type for governance
+    _DECISION_TYPE_TO_ACTION_TYPE = {
+        "atp_exception": "atp_execution",
+        "inventory_adjustment": "inventory_buffer",
+        "po_timing": "po_creation",
+        "cdc_trigger": "order_tracking",
+    }
+
     def _persist_decision(self, record: TRMDecisionRecord) -> None:
-        """Persist decision to database."""
+        """Persist decision to database, with optional governance gating."""
         try:
             from app.models.powell_decision import SiteAgentDecision
 
@@ -518,10 +526,81 @@ class SiteAgentDecisionTracker:
                 )
                 self.db.add(decision)
 
+                # Create governance-tracked AgentAction for non-trivial decisions
+                self._create_governance_action(record)
+
             self.db.commit()
         except Exception as e:
             logger.warning(f"Failed to persist decision {record.decision_id}: {e}")
             self.db.rollback()
+
+    def _create_governance_action(self, record: TRMDecisionRecord) -> None:
+        """
+        Create a corresponding AgentAction with governance gating.
+
+        For each TRM decision, create an AgentAction that flows through
+        the DecisionGovernanceService for impact scoring and AIIO mode
+        assignment. High-impact decisions get INSPECT mode with a hold
+        window for human review.
+        """
+        try:
+            from app.models.agent_action import (
+                AgentAction, ActionMode, ActionCategory, ExecutionResult,
+            )
+            from app.services.decision_governance_service import DecisionGovernanceService
+
+            action_type = self._DECISION_TYPE_TO_ACTION_TYPE.get(
+                record.decision_type, record.decision_type,
+            )
+
+            # Map decision_type to ActionCategory
+            category_map = {
+                "atp_exception": ActionCategory.ALLOCATION,
+                "inventory_adjustment": ActionCategory.INVENTORY,
+                "po_timing": ActionCategory.PROCUREMENT,
+                "cdc_trigger": ActionCategory.MONITORING,
+            }
+            category = category_map.get(
+                record.decision_type, ActionCategory.GENERAL,
+            )
+
+            # Build title from decision context
+            title = f"{action_type}: {record.site_key}"
+            if record.final_result:
+                detail = str(record.final_result)[:100]
+                title = f"{action_type}: {detail}"
+
+            action = AgentAction(
+                customer_id=record.input_state.get("customer_id") or
+                             record.input_state.get("config_id"),
+                action_type=action_type,
+                category=category,
+                title=title[:200],
+                explanation=f"TRM decision {record.decision_id}",
+                agent_id=f"site_agent:{record.site_key}",
+                site_key=record.site_key,
+                confidence_level=record.confidence,
+                estimated_impact=record.final_result,
+                execution_result=ExecutionResult.SUCCESS,
+                action_mode=ActionMode.AUTOMATE,  # Default; governance will adjust
+            )
+
+            # Apply governance gate — scores impact, assigns mode, sets hold
+            customer_id = (
+                record.input_state.get("customer_id") or
+                record.input_state.get("config_id")
+            )
+            if customer_id:
+                DecisionGovernanceService.gate_decision(self.db, action, customer_id)
+
+            self.db.add(action)
+
+        except Exception as e:
+            # Governance gating is non-blocking — log and continue
+            logger.debug(
+                "Governance action creation skipped for %s: %s",
+                record.decision_id, e,
+            )
 
     def _update_persisted_outcome(
         self,

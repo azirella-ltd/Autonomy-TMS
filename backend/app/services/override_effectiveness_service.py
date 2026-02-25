@@ -59,6 +59,15 @@ TIER_MAP: Dict[str, int] = {
     "maintenance_scheduling": 3,
     "subcontracting": 3,
     "cdc_trigger": 3,
+
+    # GNN-level override scopes (Layer 2 multi-site coordination)
+    # S&OP GraphSAGE: weekly cadence, policy parameters — Tier 2
+    # (statistical counterfactual via site-window BSC comparison)
+    "gnn_sop_policy": 2,
+    # Execution tGNN: daily cadence — Tier 2 (matched-pair on site metrics)
+    "gnn_execution_directive": 2,
+    # Allocation refresh: daily — Tier 1 (direct fill-rate counterfactual)
+    "gnn_allocation_refresh": 1,
 }
 
 # Override delta thresholds for display labels (secondary to Bayesian weight)

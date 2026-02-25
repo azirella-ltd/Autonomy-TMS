@@ -31,9 +31,10 @@ from .planning_hierarchy import SiteHierarchyLevel, ProductHierarchyLevel, TimeB
 
 
 class ActionMode(str, Enum):
-    """How the agent handled this action - agent-initiated modes."""
-    AUTOMATE = "automate"  # Executed automatically, no notification
-    INFORM = "inform"      # Executed, user notified for acknowledgment
+    """How the agent handled this action - AIIO modes."""
+    AUTOMATE = "automate"  # Execute immediately, no notification
+    INFORM = "inform"      # Execute immediately, notify user for acknowledgment
+    INSPECT = "inspect"    # Hold for review window before execution
 
 
 class ActionCategory(str, Enum):
@@ -93,7 +94,7 @@ class AgentAction(Base):
     action_mode: Mapped[ActionMode] = mapped_column(
         SAEnum(ActionMode, name="action_mode_enum"),
         nullable=False,
-        comment="AUTOMATE or INFORM - how agent handled this action"
+        comment="AUTOMATE, INFORM, or INSPECT - how agent handled this action"
     )
     action_type: Mapped[str] = mapped_column(
         String(100),
@@ -205,6 +206,50 @@ class AgentAction(Base):
     execution_details: Mapped[Optional[Dict]] = mapped_column(
         JSON,
         comment="Additional execution details: {entities_affected, transaction_ids, etc.}"
+    )
+
+    # =========================================================================
+    # GOVERNANCE — Pre-execution review gate (INSPECT mode)
+    # =========================================================================
+
+    governance_policy_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("decision_governance_policies.id", ondelete="SET NULL"),
+        comment="Policy that determined this action's AIIO mode"
+    )
+    impact_score: Mapped[Optional[float]] = mapped_column(
+        Float,
+        comment="Composite impact score 0-100 from governance scoring"
+    )
+    impact_breakdown: Mapped[Optional[Dict]] = mapped_column(
+        JSON,
+        comment="{financial, scope, reversibility, confidence, override_rate} — per-dimension scores"
+    )
+    hold_until: Mapped[Optional[datetime]] = mapped_column(
+        DateTime,
+        comment="INSPECT: decision held until this time; auto-applies or expires after"
+    )
+    escalated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime,
+        comment="When decision was escalated due to no response within escalation window"
+    )
+    resolved_by: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("users.id"),
+        comment="User who approved/rejected/overrode during INSPECT hold"
+    )
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime,
+        comment="When the INSPECT decision was resolved (approved/rejected/overridden)"
+    )
+    resolution_reason: Mapped[Optional[str]] = mapped_column(
+        Text,
+        comment="Why the reviewer approved/rejected — mandatory for reject, optional for approve"
+    )
+    guardrail_directive_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("guardrail_directives.id", ondelete="SET NULL"),
+        comment="Executive directive that influenced this decision's governance"
     )
 
     # User interaction tracking (for INFORM mode)
@@ -342,6 +387,7 @@ class AgentAction(Base):
     customer = relationship("Customer")
     acknowledger = relationship("User", foreign_keys=[acknowledged_by])
     overrider = relationship("User", foreign_keys=[overridden_by])
+    resolver = relationship("User", foreign_keys=[resolved_by])
     belief_state = relationship("PowellBeliefState", foreign_keys=[belief_state_id])
 
     __table_args__ = (
@@ -349,6 +395,7 @@ class AgentAction(Base):
         Index('idx_agent_action_hierarchy', 'site_key', 'product_key', 'time_key'),
         Index('idx_agent_action_mode', 'action_mode', 'is_acknowledged'),
         Index('idx_agent_action_category', 'category', 'customer_id'),
+        Index('idx_agent_action_governance', 'action_mode', 'hold_until', 'execution_result'),
     )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -400,6 +447,16 @@ class AgentAction(Base):
             "outcome_within_interval": self.outcome_within_interval,
             "outcome_measured_at": self.outcome_measured_at.isoformat() if self.outcome_measured_at else None,
             "belief_state_id": self.belief_state_id,
+            # Governance fields
+            "governance_policy_id": self.governance_policy_id,
+            "impact_score": self.impact_score,
+            "impact_breakdown": self.impact_breakdown,
+            "hold_until": self.hold_until.isoformat() if self.hold_until else None,
+            "escalated_at": self.escalated_at.isoformat() if self.escalated_at else None,
+            "resolved_by": self.resolved_by,
+            "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
+            "resolution_reason": self.resolution_reason,
+            "guardrail_directive_id": self.guardrail_directive_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -424,6 +481,11 @@ class AgentAction(Base):
             "is_acknowledged": self.is_acknowledged,
             "is_overridden": self.is_overridden,
             "agent_id": self.agent_id,
+            # Governance summary
+            "impact_score": self.impact_score,
+            "hold_until": self.hold_until.isoformat() if self.hold_until else None,
+            "resolved_by": self.resolved_by,
+            "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
             # Key conformal prediction fields for summary view
             "predicted_outcome": self.predicted_outcome,
             "prediction_interval_lower": self.prediction_interval_lower,

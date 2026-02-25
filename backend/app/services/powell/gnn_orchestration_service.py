@@ -135,6 +135,17 @@ class GNNOrchestrationService:
             result["errors"].append("No GNN outputs available for broadcast")
             return result
 
+        # --- Step 3.5: Persist directives for human review ---
+        try:
+            reviews_created = await self._persist_directive_reviews(
+                gnn_outputs, sop_analysis, exec_output,
+            )
+            result["reviews_created"] = reviews_created
+            logger.info(f"Persisted {reviews_created} GNN directive reviews for human review")
+        except Exception as e:
+            logger.warning(f"Failed to persist directive reviews: {e}")
+            result["errors"].append(f"review_persistence: {e}")
+
         # --- Step 4+5: Generate directives and broadcast ---
         try:
             from app.services.powell.directive_broadcast_service import (
@@ -256,6 +267,77 @@ class GNNOrchestrationService:
                     adjacency.setdefault(tgt, []).append(src)
 
         return adjacency
+
+    async def _persist_directive_reviews(
+        self,
+        gnn_outputs: Dict[str, Dict[str, Any]],
+        sop_analysis,
+        exec_output,
+    ) -> int:
+        """
+        Persist GNN outputs as GNNDirectiveReview rows with status=PROPOSED.
+
+        Creates one row per site per directive scope (sop_policy and/or
+        execution_directive), allowing humans to review before application.
+
+        Returns count of review rows created.
+        """
+        from app.models.gnn_directive_review import GNNDirectiveReview
+        from datetime import timedelta
+
+        count = 0
+        now = datetime.utcnow()
+
+        for site_key, values in gnn_outputs.items():
+            # S&OP policy parameters (if S&OP analysis was available)
+            sop_keys = {
+                "criticality_score", "bottleneck_risk", "concentration_risk",
+                "resilience_score", "safety_stock_multiplier",
+            }
+            sop_values = {k: v for k, v in values.items() if k in sop_keys}
+            if sop_values and sop_analysis:
+                review = GNNDirectiveReview(
+                    config_id=self.config_id,
+                    site_key=site_key,
+                    directive_scope="sop_policy",
+                    proposed_values=sop_values,
+                    model_type="sop_graphsage",
+                    model_confidence=sop_values.get("resilience_score", 0.5),
+                    status="PROPOSED",
+                    expires_at=now + timedelta(hours=24),
+                )
+                self.db.add(review)
+                count += 1
+
+            # Execution directives (if Execution tGNN was available)
+            exec_keys = {
+                "demand_forecast", "exception_probability",
+                "order_recommendation", "confidence", "propagation_impact",
+            }
+            exec_values = {k: v for k, v in values.items() if k in exec_keys}
+            if exec_values and exec_output:
+                review = GNNDirectiveReview(
+                    config_id=self.config_id,
+                    site_key=site_key,
+                    directive_scope="execution_directive",
+                    proposed_values=exec_values,
+                    model_type="execution_tgnn",
+                    model_confidence=exec_values.get("confidence", 0.5),
+                    status="PROPOSED",
+                    expires_at=now + timedelta(hours=12),
+                )
+                self.db.add(review)
+                count += 1
+
+        try:
+            self.db.flush()
+            self.db.commit()
+        except Exception as e:
+            logger.error(f"Failed to persist directive reviews: {e}")
+            self.db.rollback()
+            raise
+
+        return count
 
     async def _register_site_agents(self, broadcast_svc) -> None:
         """Register any active SiteAgents with the broadcast service."""

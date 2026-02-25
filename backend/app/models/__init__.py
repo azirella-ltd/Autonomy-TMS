@@ -306,6 +306,16 @@ from .override_effectiveness import (
     OverrideEffectivenessPosterior, CausalMatchPair,
 )
 
+# 24c. GNN Directive Review — Human Override at Network Level
+from .gnn_directive_review import (
+    GNNDirectiveReview, PolicyEnvelopeOverride,
+)
+
+# 24d. Decision Governance — AIIO Impact-Based Gating & Executive Directives
+from .decision_governance import (
+    DecisionGovernancePolicy, GuardrailDirective,
+)
+
 # 25. Collaboration Scenarios (Agentic Authorization Protocol demo data)
 from .collaboration_scenario import CollaborationScenario
 
@@ -582,6 +592,12 @@ __all__ = [
     # Override Effectiveness — Bayesian Posteriors
     'OverrideEffectivenessPosterior',
     'CausalMatchPair',
+    # GNN Directive Review — Human Override at Network Level
+    'GNNDirectiveReview',
+    'PolicyEnvelopeOverride',
+    # Decision Governance — AIIO Impact-Based Gating & Executive Directives
+    'DecisionGovernancePolicy',
+    'GuardrailDirective',
 ]
 
 # Note: SQLAlchemy will configure mappers lazily when first used.
