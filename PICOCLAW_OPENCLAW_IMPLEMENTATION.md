@@ -4,6 +4,8 @@
 **Status**: PROPOSED
 **Dependencies**: Self-hosted LLM (vLLM + Qwen 3), Autonomy REST API (existing)
 
+> **Usage Guide**: For practical setup, deployment, and day-to-day usage instructions, see [docs/PICOCLAW_OPENCLAW_GUIDE.md](docs/PICOCLAW_OPENCLAW_GUIDE.md). This document covers the detailed implementation roadmap, enterprise-scale analysis, and security risk matrix.
+
 ---
 
 ## Table of Contents

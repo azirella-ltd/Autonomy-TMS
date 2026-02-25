@@ -1131,6 +1131,7 @@ Use these books as references when writing executive summaries, competitive posi
 The platform supports integration with external agent runtimes (PicoClaw, OpenClaw) as thin orchestration layers wrapping the existing REST API. A self-hosted LLM (Qwen 3 via vLLM) eliminates dependency on external LLM providers for data sovereignty.
 
 **Key Documentation**:
+- [docs/PICOCLAW_OPENCLAW_GUIDE.md](docs/PICOCLAW_OPENCLAW_GUIDE.md) - **Usage Guide**: Quick start, deployment, Make targets, admin UI pages, skills reference, security checklist, troubleshooting
 - [PICOCLAW_OPENCLAW_IMPLEMENTATION.md](PICOCLAW_OPENCLAW_IMPLEMENTATION.md) - **Implementation Roadmap**: 5-phase plan covering OpenClaw chat interface, PicoClaw edge CDC monitors, multi-agent authorization protocol, simulation swarm, and **channel context capture** (email/Slack/voice/market data signal ingestion into ForecastAdjustmentTRM). Includes comprehensive security risk matrix with CVE tracking (7+ OpenClaw CVEs documented), supply chain attack analysis (ClawHavoc), deployment checklist, and hardening requirements.
 - [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md#external-agent-runtimes-picoclaw--openclaw) - **Integration Details**: PicoClaw/OpenClaw workspace configuration, security considerations, Docker Compose deployment
 - [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md#self-hosted-llm-configuration) - **Self-Hosted LLM**: Qwen 3 model selection, vLLM serving, GPU sharing strategy, Docker Compose overlay

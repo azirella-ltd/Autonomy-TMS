@@ -1509,7 +1509,9 @@ python backend/scripts/training/train_rl.py --evaluate --checkpoint best/best_mo
 
 ## External Agent Runtimes (PicoClaw & OpenClaw)
 
-**Last Updated**: 2026-02-21
+**Last Updated**: 2026-02-25
+
+> **Usage Guide**: For deployment and configuration instructions, see [docs/PICOCLAW_OPENCLAW_GUIDE.md](docs/PICOCLAW_OPENCLAW_GUIDE.md).
 
 In addition to the built-in agent types above, Autonomy supports **external agent runtimes** that wrap the platform's REST APIs as thin orchestration layers. These do not replace the core computation (TRM, GNN, MRP engines) — they provide alternative interfaces for edge monitoring, chat-based planning, and inter-agent communication.
 

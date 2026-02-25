@@ -73,7 +73,7 @@ endif
 
 DOCKER_COMPOSE_CMD = $(strip $(COMPOSE_ENV) $(DOCKER_COMPOSE))
 
-.PHONY: up gpu-up up-dev down ps logs reload reload-backend reload-frontend seed reset-admin help init-env proxy-up proxy-down proxy-restart proxy-recreate proxy-logs proxy-url seed-default-group seed-demo-configs seed-three-fg-demo seed-variable-demo all_demo_configs build-create-users db-bootstrap db-reset rebuild-db reseed-db rebuild-gpu train-gnn llm-check generate-site-agent-data train-site-agent train-site-agent-full eval-site-agent test-powell test-engines test-site-agent test-food-dist test-food-dist-trm generate-food-dist train-and-test-food-dist train-and-test-food-dist-quick train-and-test-food-dist-gpu up-llm up-llm-ollama ollama-pull-models openclaw-setup openclaw-up openclaw-down openclaw-logs picoclaw-workspaces picoclaw-fleet picoclaw-up picoclaw-down picoclaw-logs picoclaw-status
+.PHONY: up gpu-up up-dev down ps logs reload reload-backend reload-frontend seed reset-admin help init-env proxy-up proxy-down proxy-restart proxy-recreate proxy-logs proxy-url seed-default-group seed-demo-configs seed-three-fg-demo seed-variable-demo all_demo_configs build-create-users db-bootstrap db-reset rebuild-db reseed-db rebuild-gpu train-gnn llm-check generate-site-agent-data train-site-agent train-site-agent-full eval-site-agent test-powell test-engines test-site-agent test-food-dist test-food-dist-trm generate-food-dist train-and-test-food-dist train-and-test-food-dist-quick train-and-test-food-dist-gpu up-llm up-llm-ollama ollama-pull-models openclaw-setup openclaw-up openclaw-down openclaw-logs picoclaw-workspaces picoclaw-fleet picoclaw-up picoclaw-down picoclaw-logs picoclaw-status aws-init aws-plan aws-apply aws-destroy sap-start sap-stop sap-status
 
 # =========================================================================
 # LOCAL LLM TARGETS (vLLM + Ollama for RAG)
@@ -413,6 +413,15 @@ help:
         echo "  make picoclaw-down       - stop PicoClaw fleet"; \
         echo "  make picoclaw-logs       - tail PicoClaw fleet logs"; \
         echo "  make picoclaw-status     - show fleet container status"; \
+        echo ""; \
+        echo "AWS Deployment (Autonomy + SAP):"; \
+        echo "  make aws-init      - initialize Terraform in deploy/aws/"; \
+        echo "  make aws-plan      - plan AWS infrastructure changes"; \
+        echo "  make aws-apply     - apply AWS infrastructure"; \
+        echo "  make aws-destroy   - tear down all AWS resources"; \
+        echo "  make sap-start     - start SAP S/4HANA instance"; \
+        echo "  make sap-stop      - stop SAP S/4HANA instance"; \
+        echo "  make sap-status    - check SAP instance state and session cost"; \
         echo ""; \
         echo "Advanced Training:"; \
         echo "  make train-setup   - create Python venv and install training deps"; \
@@ -802,3 +811,44 @@ picoclaw-status:
 	else \
 		echo "   No fleet compose found. Run: make picoclaw-fleet"; \
 	fi
+
+# =========================================================================
+# AWS DEPLOYMENT TARGETS (Autonomy + SAP S/4HANA)
+# =========================================================================
+
+SAP_INSTANCE_ID ?= $(shell cd deploy/aws && terraform output -raw sap_instance_id 2>/dev/null || echo "")
+
+# Initialize Terraform
+aws-init:
+	@echo "\n[+] Initializing Terraform..."
+	cd deploy/aws && terraform init
+	@echo "\n[✓] Terraform initialized. Copy terraform.tfvars.example → terraform.tfvars and customize."
+
+# Plan deployment
+aws-plan:
+	@echo "\n[+] Planning AWS deployment..."
+	cd deploy/aws && terraform plan
+
+# Apply deployment
+aws-apply:
+	@echo "\n[+] Applying AWS deployment..."
+	cd deploy/aws && terraform apply
+	@echo "\n[✓] Deployment complete. Outputs:"
+	@cd deploy/aws && terraform output
+
+# Destroy all AWS resources
+aws-destroy:
+	@echo "\n[!] This will destroy ALL AWS resources (Autonomy + SAP)."
+	cd deploy/aws && terraform destroy
+
+# Start SAP instance
+sap-start:
+	@deploy/aws/sap-start.sh $(SAP_INSTANCE_ID)
+
+# Stop SAP instance
+sap-stop:
+	@deploy/aws/sap-stop.sh $(SAP_INSTANCE_ID)
+
+# Check SAP instance status
+sap-status:
+	@deploy/aws/sap-status.sh $(SAP_INSTANCE_ID)

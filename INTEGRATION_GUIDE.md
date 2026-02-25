@@ -1260,7 +1260,9 @@ main().catch(console.error);
 
 ## External Agent Runtimes (PicoClaw & OpenClaw)
 
-**Last Updated**: 2026-02-19
+**Last Updated**: 2026-02-25
+
+> **Usage Guide**: For a complete quick-start guide with deployment instructions, Make targets, admin UI pages, and troubleshooting, see [docs/PICOCLAW_OPENCLAW_GUIDE.md](docs/PICOCLAW_OPENCLAW_GUIDE.md).
 
 Autonomy supports integration with external agent runtime frameworks that wrap the platform's REST APIs. These runtimes act as **thin orchestration layers** — they do not replace the core Powell computation (TRM, GNN, MRP engines) but provide alternative interfaces for edge monitoring, chat-based planning, and inter-agent communication.
 
