@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.db.session import async_session_factory
 from app.models.supply_chain_config import SupplyChainConfig
-from app.models.group import Group
+from app.models.customer import Customer
 from app.models.scenario import Scenario
 from app.services.mixed_scenario_service import MixedScenarioService
 
@@ -26,7 +26,7 @@ async def test_integrated_performance():
     print()
 
     async with async_session_factory() as db:
-        # Get config and group
+        # Get config and customer
         result = await db.execute(
             select(SupplyChainConfig).filter(
                 SupplyChainConfig.name.like("%Default%")
@@ -34,22 +34,22 @@ async def test_integrated_performance():
         )
         config = result.scalar_one_or_none()
 
-        result = await db.execute(select(Group).filter(Group.id == 2))
-        group = result.scalar_one_or_none()
+        result = await db.execute(select(Customer).filter(Customer.id == 2))
+        customer = result.scalar_one_or_none()
 
-        if not config or not group:
-            print("❌ Config or group not found")
+        if not config or not customer:
+            print("❌ Config or customer not found")
             return False
 
         print(f"✓ Using config: {config.name} (ID: {config.id})")
-        print(f"✓ Using group: {group.name} (ID: {group.id})")
+        print(f"✓ Using customer: {customer.name} (ID: {customer.id})")
         print()
 
         # Create test scenario with AWS SC enabled
         print("Creating test scenario with AWS SC execution enabled...")
         scenario = Scenario(
             name="Phase 3 Integration Test",
-            group_id=group.id,
+            customer_id=customer.id,
             supply_chain_config_id=config.id,
             use_aws_sc_planning=True,  # Enable Phase 3 optimizations
             max_rounds=5,

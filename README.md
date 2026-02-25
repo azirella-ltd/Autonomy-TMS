@@ -66,11 +66,12 @@ Three complementary AI approaches that achieve 20-35% cost reduction vs. naive p
 - **Training**: 5-phase curriculum learning (simple → complex supply chains)
 - **Use Cases**: Real-time operational decisions, high-volume scenarios
 
-#### GNN Agent (Graph Neural Network)
-- **Architecture**: 128M parameters, GAT + TCN (temporal convolution)
-- **Performance**: 85-92% demand prediction accuracy
-- **Training**: SimPy-generated game data with temporal message passing
-- **Use Cases**: Network-wide coordination, demand forecasting
+#### GNN Agent — Two-Tier Architecture
+- **S&OP GraphSAGE** (~2M params): Network structure analysis, risk scoring, bottleneck detection. Updates weekly/monthly. Powell CFA.
+- **Execution tGNN** (~128M params): Priority allocations, demand forecasting (85-92% accuracy), exception detection. Updates daily. Powell CFA/VFA bridge.
+- **Shared Foundation**: S&OP structural embeddings cached and consumed by Execution tGNN
+- **Training**: Two-tier process via `train_planning_execution.py` (S&OP → Execution → Hybrid)
+- **Use Cases**: Network-wide coordination, demand forecasting, priority allocations for AATP
 
 #### LLM Agent (GPT-4 Multi-Agent Orchestration)
 - **Architecture**: Site agents + Supervisor agent + Global planner

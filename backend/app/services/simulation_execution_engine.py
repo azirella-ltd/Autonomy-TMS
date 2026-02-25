@@ -355,7 +355,7 @@ class SimulationExecutionEngine:
                 quantity=order_qty,
                 requested_delivery_date=date.today() + timedelta(weeks=2),
                 config_id=config_id,
-                group_id=None,
+                customer_id=None,
                 scenario_id=scenario_id,
                 order_round=current_round,
             )

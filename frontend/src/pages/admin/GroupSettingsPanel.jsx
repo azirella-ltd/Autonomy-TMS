@@ -1,7 +1,7 @@
 /**
- * Group Settings Panel
+ * Customer Settings Panel
  *
- * Production group configuration settings including:
+ * Production customer configuration settings including:
  * - Planning Hierarchy Levels (Product, Geography, Time)
  * - Data Sources (SAP, etc.)
  * - Data Import Cadence
@@ -306,7 +306,7 @@ const GroupSettingsPanel = ({
         <div className="mb-6">
           <h2 className="text-xl font-bold mb-1 flex items-center gap-2">
             <Settings className="h-5 w-5" />
-            Group Settings
+            Customer Settings
           </h2>
           <p className="text-muted-foreground">
             Configure planning hierarchies, data integration, and event-based replanning thresholds.

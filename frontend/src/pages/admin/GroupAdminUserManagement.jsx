@@ -1,7 +1,7 @@
 /**
- * Group Admin User Management
+ * Customer Admin User Management
  *
- * Allows Group Admins to manage users within their own group and assign
+ * Allows Customer Admins to manage users within their own organization and assign
  * granular functional area capabilities based on UI_UX_REQUIREMENTS.md
  */
 
@@ -72,11 +72,11 @@ const GroupAdminUserManagement = () => {
   }, [user, navigate, isSystemAdmin, isGroupAdmin, canViewUsers, capLoading]);
 
   const loadUsers = useCallback(async () => {
-    if (!user?.group_id) return;
+    if (!user?.customer_id) return;
 
     try {
       setLoading(true);
-      const response = await api.get(`/groups/${user.group_id}/users`);
+      const response = await api.get(`/customers/${user.customer_id}/users`);
       setUsers(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error('Error loading users:', error);
@@ -85,7 +85,7 @@ const GroupAdminUserManagement = () => {
     } finally {
       setLoading(false);
     }
-  }, [user?.group_id]);
+  }, [user?.customer_id]);
 
   useEffect(() => {
     loadUsers();
@@ -119,7 +119,7 @@ const GroupAdminUserManagement = () => {
       } else {
         await api.post('/users', {
           ...userData,
-          group_id: user.group_id,
+          customer_id: user.customer_id,
           user_type: 'USER',
         });
         toast.success('User created successfully');
@@ -208,7 +208,7 @@ const GroupAdminUserManagement = () => {
       {/* Info Alert */}
       <Alert variant="info" className="mb-6">
         <p className="text-sm">
-          As a Group Admin, you can create and manage users within your organization.
+          As a Customer Admin, you can create and manage users within your organization.
           Assign granular capabilities to control access to specific functional areas
           (Planning, Execution, AI & Agents, Analytics, etc.).
         </p>

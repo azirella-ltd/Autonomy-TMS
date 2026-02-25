@@ -743,7 +743,7 @@ async def trigger_retraining(
 
     pipeline_id = str(uuid.uuid4())
 
-    svc = CDCRetrainingService(db=db, site_key=site_key, group_id=0)
+    svc = CDCRetrainingService(db=db, site_key=site_key, customer_id=0)
 
     # Quick pre-check
     if not svc.evaluate_retraining_need(skip_trigger_check=True):
@@ -804,7 +804,7 @@ async def trigger_retraining(
         from app.db.session import SessionLocal
         bg_db = SessionLocal()
         try:
-            bg_svc = CDCRetrainingService(db=bg_db, site_key=site_key, group_id=0)
+            bg_svc = CDCRetrainingService(db=bg_db, site_key=site_key, customer_id=0)
             result = bg_svc.execute_retraining(trigger_event=manual_trigger)
             if result and result.final_loss < float("inf"):
                 logger.info(

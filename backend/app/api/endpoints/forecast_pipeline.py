@@ -178,7 +178,7 @@ def list_configs(
     db: Session = Depends(get_sync_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
-    q = db.query(ForecastPipelineConfig).filter(ForecastPipelineConfig.group_id == current_user.group_id)
+    q = db.query(ForecastPipelineConfig).filter(ForecastPipelineConfig.customer_id == current_user.customer_id)
     if config_id is not None:
         q = q.filter(ForecastPipelineConfig.config_id == config_id)
     items = q.order_by(ForecastPipelineConfig.updated_at.desc()).all()
@@ -203,7 +203,7 @@ def create_config(
     item = ForecastPipelineConfig(
         name=payload.name,
         description=payload.description,
-        group_id=current_user.group_id,
+        customer_id=current_user.customer_id,
         config_id=payload.config_id,
         time_bucket=payload.time_bucket,
         forecast_horizon=payload.forecast_horizon,
@@ -253,7 +253,7 @@ def update_config(
         db.query(ForecastPipelineConfig)
         .filter(
             ForecastPipelineConfig.id == config_id,
-            ForecastPipelineConfig.group_id == current_user.group_id,
+            ForecastPipelineConfig.customer_id == current_user.customer_id,
         )
         .first()
     )
@@ -293,7 +293,7 @@ def list_runs(
     db: Session = Depends(get_sync_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
-    q = db.query(ForecastPipelineRun).filter(ForecastPipelineRun.group_id == current_user.group_id)
+    q = db.query(ForecastPipelineRun).filter(ForecastPipelineRun.customer_id == current_user.customer_id)
     if pipeline_config_id is not None:
         q = q.filter(ForecastPipelineRun.pipeline_config_id == pipeline_config_id)
     rows = q.order_by(ForecastPipelineRun.created_at.desc()).limit(limit).all()
@@ -326,7 +326,7 @@ def create_run(
         db.query(ForecastPipelineConfig)
         .filter(
             ForecastPipelineConfig.id == payload.pipeline_config_id,
-            ForecastPipelineConfig.group_id == current_user.group_id,
+            ForecastPipelineConfig.customer_id == current_user.customer_id,
             ForecastPipelineConfig.is_active.is_(True),
         )
         .first()
@@ -336,7 +336,7 @@ def create_run(
 
     run = ForecastPipelineRun(
         pipeline_config_id=cfg.id,
-        group_id=cfg.group_id,
+        customer_id=cfg.customer_id,
         config_id=cfg.config_id,
         status="pending",
         created_by_id=current_user.id,
@@ -362,7 +362,7 @@ def execute_run(
         db.query(ForecastPipelineRun)
         .filter(
             ForecastPipelineRun.id == run_id,
-            ForecastPipelineRun.group_id == current_user.group_id,
+            ForecastPipelineRun.customer_id == current_user.customer_id,
         )
         .first()
     )
@@ -390,7 +390,7 @@ def get_run(
         db.query(ForecastPipelineRun)
         .filter(
             ForecastPipelineRun.id == run_id,
-            ForecastPipelineRun.group_id == current_user.group_id,
+            ForecastPipelineRun.customer_id == current_user.customer_id,
         )
         .first()
     )
@@ -422,7 +422,7 @@ def publish_run(
         db.query(ForecastPipelineRun)
         .filter(
             ForecastPipelineRun.id == run_id,
-            ForecastPipelineRun.group_id == current_user.group_id,
+            ForecastPipelineRun.customer_id == current_user.customer_id,
         )
         .first()
     )
@@ -447,7 +447,7 @@ def get_publish_log(
         db.query(ForecastPipelineRun)
         .filter(
             ForecastPipelineRun.id == run_id,
-            ForecastPipelineRun.group_id == current_user.group_id,
+            ForecastPipelineRun.customer_id == current_user.customer_id,
         )
         .first()
     )

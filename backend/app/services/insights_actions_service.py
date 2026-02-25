@@ -82,17 +82,17 @@ class InsightsActionsService:
     5. Hierarchy drill-down navigation
     """
 
-    def __init__(self, db: AsyncSession, group_id: int, user: Optional[User] = None):
+    def __init__(self, db: AsyncSession, customer_id: int, user: Optional[User] = None):
         """
         Initialize the service.
 
         Args:
             db: Database session
-            group_id: Group ID for filtering
+            customer_id: Customer ID for filtering
             user: Current user (for scope filtering)
         """
         self.db = db
-        self.group_id = group_id
+        self.customer_id = customer_id
         self.user = user
 
         # Cache for hierarchy lookups
@@ -112,7 +112,7 @@ class InsightsActionsService:
         # Load site hierarchy
         result = await self.db.execute(
             select(SiteHierarchyNode).where(
-                SiteHierarchyNode.group_id == self.group_id
+                SiteHierarchyNode.customer_id == self.customer_id
             )
         )
         for node in result.scalars().all():
@@ -127,7 +127,7 @@ class InsightsActionsService:
         # Load product hierarchy
         result = await self.db.execute(
             select(ProductHierarchyNode).where(
-                ProductHierarchyNode.group_id == self.group_id
+                ProductHierarchyNode.customer_id == self.customer_id
             )
         )
         for node in result.scalars().all():
@@ -197,7 +197,7 @@ class InsightsActionsService:
         GROUP_ADMIN has full access.
         Other users are filtered by their site_scope and product_scope.
         """
-        filters = [AgentAction.group_id == self.group_id]
+        filters = [AgentAction.customer_id == self.customer_id]
 
         if not self.user:
             return and_(*filters)
@@ -463,7 +463,7 @@ class InsightsActionsService:
             Created AgentAction record
         """
         action = AgentAction(
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             action_mode=action_data.action_mode,
             action_type=action_data.action_type,
             category=action_data.category,
@@ -812,8 +812,8 @@ class InsightsActionsService:
 
 def create_insights_service(
     db: AsyncSession,
-    group_id: int,
+    customer_id: int,
     user: Optional[User] = None
 ) -> InsightsActionsService:
     """Create an insights actions service instance."""
-    return InsightsActionsService(db, group_id, user)
+    return InsightsActionsService(db, customer_id, user)

@@ -2,7 +2,7 @@
 Claude-powered Synthetic Data Generation Wizard
 
 A conversational AI wizard that guides system administrators through
-creating synthetic supply chain data for new groups/companies.
+creating synthetic supply chain data for new customers/companies.
 
 The wizard follows a structured conversation flow:
 1. Welcome & Archetype Selection
@@ -66,7 +66,7 @@ class WizardState:
     # Collected data
     archetype: Optional[CompanyArchetype] = None
     company_name: Optional[str] = None
-    group_name: Optional[str] = None
+    customer_name: Optional[str] = None
     admin_email: Optional[str] = None
     admin_name: Optional[str] = None
 
@@ -104,7 +104,7 @@ class WizardState:
             "current_step": self.current_step.value,
             "archetype": self.archetype.value if self.archetype else None,
             "company_name": self.company_name,
-            "group_name": self.group_name,
+            "customer_name": self.customer_name,
             "admin_email": self.admin_email,
             "admin_name": self.admin_name,
             "num_sites": self.num_sites,
@@ -134,7 +134,7 @@ class WizardState:
         if data.get("archetype"):
             state.archetype = CompanyArchetype(data["archetype"])
         state.company_name = data.get("company_name")
-        state.group_name = data.get("group_name")
+        state.customer_name = data.get("customer_name")
         state.admin_email = data.get("admin_email")
         state.admin_name = data.get("admin_name")
 
@@ -174,7 +174,7 @@ WIZARD_SYSTEM_PROMPT = """You are a friendly and knowledgeable Supply Chain Conf
 
 ## Conversation Context
 You are helping the user configure a synthetic supply chain for testing. The data generated will include:
-- Groups (organizations)
+- Customers (organizations)
 - Users and administrators
 - Supply chain configurations (nodes, lanes, items)
 - Forecasts and inventory policies
@@ -258,7 +258,7 @@ Once confirmed, explain what defaults come with their choice and ask for company
     WizardStep.COMPANY_DETAILS: """
 Collect basic company information:
 - Company name (will be used for the supply chain config name)
-- Group name (organization name, often same as company)
+- Customer name (organization name, often same as company)
 - Admin email (must be valid email format)
 - Admin name (full name of the group administrator)
 
@@ -306,7 +306,7 @@ Explain each agent type briefly and recommend based on archetype.
 Show a complete summary of all configuration settings.
 Ask the user to confirm or make any changes.
 List everything that will be created:
-- Group and admin user
+- Customer and admin user
 - Supply chain config with X nodes, Y lanes
 - Z products across N categories
 - Forecasts for M months
@@ -324,7 +324,7 @@ This step is transitional - data generation happens in the backend.
 
     WizardStep.COMPLETE: """
 Generation is complete! Summarize what was created:
-- Group ID and name
+- Customer ID and name
 - Admin user credentials (remind them of default password)
 - Supply chain config ID
 - Counts of nodes, lanes, products, forecasts, policies
@@ -417,8 +417,8 @@ class SyntheticDataWizard:
             config_items.append(f"- Archetype: {state.archetype.value}")
         if state.company_name:
             config_items.append(f"- Company Name: {state.company_name}")
-        if state.group_name:
-            config_items.append(f"- Group Name: {state.group_name}")
+        if state.customer_name:
+            config_items.append(f"- Customer Name: {state.customer_name}")
         if state.admin_email:
             config_items.append(f"- Admin Email: {state.admin_email}")
         if state.admin_name:
@@ -596,8 +596,8 @@ class SyntheticDataWizard:
         # Company details
         if "company_name" in extracted:
             state.company_name = extracted["company_name"]
-        if "group_name" in extracted:
-            state.group_name = extracted["group_name"]
+        if "customer_name" in extracted:
+            state.customer_name = extracted["customer_name"]
         if "admin_email" in extracted:
             state.admin_email = extracted["admin_email"]
         if "admin_name" in extracted:
@@ -697,8 +697,8 @@ class SyntheticDataWizard:
             errors.append("Company archetype is required")
         if not state.company_name:
             errors.append("Company name is required")
-        if not state.group_name:
-            errors.append("Group name is required")
+        if not state.customer_name:
+            errors.append("Customer name is required")
         if not state.admin_email:
             errors.append("Admin email is required")
         if not state.admin_name:
@@ -713,7 +713,7 @@ class SyntheticDataWizard:
     def build_generation_request(self, state: WizardState) -> GenerationRequest:
         """Build a GenerationRequest from the wizard state."""
         return GenerationRequest(
-            group_name=state.group_name,
+            customer_name=state.customer_name,
             archetype=state.archetype,
             company_name=state.company_name,
             admin_email=state.admin_email,
@@ -759,7 +759,7 @@ class SyntheticDataWizard:
             # Update state
             state.current_step = WizardStep.COMPLETE
             state.result = {
-                "group_id": result.group_id,
+                "customer_id": result.customer_id,
                 "config_id": result.config_id,
                 "admin_user_id": result.admin_user_id,
                 "nodes_created": result.nodes_created,

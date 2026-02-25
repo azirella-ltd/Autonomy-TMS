@@ -46,9 +46,9 @@ def list_planning_cycles(
     status_filter: Optional[CycleStatus] = Query(None, alias="status"),
     include_archived: bool = False,
 ):
-    """List planning cycles for the user's group."""
+    """List planning cycles for the user's customer."""
     query = db.query(PlanningCycle).filter(
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     )
 
     if cycle_type:
@@ -78,16 +78,16 @@ def create_planning_cycle(
     current_user: User = Depends(deps.get_current_active_user),
 ):
     """Create a new planning cycle."""
-    # Verify user has access to the group
-    if cycle_in.group_id != current_user.group_id:
+    # Verify user has access to the customer
+    if cycle_in.customer_id != current_user.customer_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot create cycle for a different group"
+            detail="Cannot create cycle for a different customer"
         )
 
     service = PlanningCycleService(db)
     cycle = service.create_cycle(
-        group_id=cycle_in.group_id,
+        customer_id=cycle_in.customer_id,
         name=cycle_in.name,
         cycle_type=cycle_in.cycle_type,
         period_start=cycle_in.period_start,
@@ -109,7 +109,7 @@ def get_planning_cycle(
     """Get a specific planning cycle."""
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not cycle:
@@ -131,7 +131,7 @@ def update_planning_cycle(
     """Update a planning cycle."""
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not cycle:
@@ -168,7 +168,7 @@ def update_cycle_status(
     """Update the status of a planning cycle."""
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not cycle:
@@ -203,7 +203,7 @@ def delete_planning_cycle(
     """Delete a planning cycle (only draft cycles can be deleted)."""
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not cycle:
@@ -240,7 +240,7 @@ def list_cycle_snapshots(
     # Verify cycle access
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not cycle:
@@ -282,7 +282,7 @@ def create_snapshot(
     # Verify cycle access
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not cycle:
@@ -325,7 +325,7 @@ def get_snapshot(
     # Verify cycle access
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not cycle:
@@ -371,7 +371,7 @@ def get_snapshot_chain(
     # Verify cycle access
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not cycle:
@@ -425,7 +425,7 @@ def get_snapshot_deltas(
     # Verify cycle access
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not cycle:
@@ -464,7 +464,7 @@ def compare_snapshots(
     # Verify cycle access
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not cycle:
@@ -512,9 +512,9 @@ def get_retention_stats(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
-    """Get retention statistics for the user's group."""
+    """Get retention statistics for the user's customer."""
     service = RetentionService(db)
-    stats = service.get_retention_stats(group_id=current_user.group_id)
+    stats = service.get_retention_stats(customer_id=current_user.customer_id)
     return RetentionStatsResponse(**stats)
 
 

@@ -169,7 +169,7 @@ async def create_fulfillment_order(
     order: FulfillmentOrderCreate,
 ):
     """Create a new fulfillment order."""
-    company_id = current_user.group_id
+    company_id = current_user.customer_id
 
     # Check for duplicate fulfillment_order_id
     existing = await db.execute(
@@ -214,7 +214,7 @@ async def bulk_create_fulfillment_orders(
     orders: List[FulfillmentOrderCreate],
 ):
     """Bulk create fulfillment orders."""
-    company_id = current_user.group_id
+    company_id = current_user.customer_id
     created = []
 
     for order in orders:
@@ -259,7 +259,7 @@ async def list_fulfillment_orders(
 ):
     """List fulfillment orders with optional filtering."""
     query = select(FulfillmentOrder).where(
-        FulfillmentOrder.company_id == current_user.group_id
+        FulfillmentOrder.company_id == current_user.customer_id
     )
 
     if site_id is not None:
@@ -297,7 +297,7 @@ async def list_overdue_orders(
     now = datetime.utcnow()
     query = select(FulfillmentOrder).where(
         and_(
-            FulfillmentOrder.company_id == current_user.group_id,
+            FulfillmentOrder.company_id == current_user.customer_id,
             FulfillmentOrder.promised_date < now,
             FulfillmentOrder.status.notin_(["DELIVERED", "CLOSED"]),
         )
@@ -316,7 +316,7 @@ async def fulfillment_summary(
     site_id: Optional[int] = Query(None),
 ):
     """Get fulfillment summary statistics."""
-    base_filter = [FulfillmentOrder.company_id == current_user.group_id]
+    base_filter = [FulfillmentOrder.company_id == current_user.customer_id]
     if site_id is not None:
         base_filter.append(FulfillmentOrder.site_id == site_id)
 
@@ -382,7 +382,7 @@ async def get_fulfillment_order(
         select(FulfillmentOrder).where(
             and_(
                 FulfillmentOrder.id == fulfillment_id,
-                FulfillmentOrder.company_id == current_user.group_id,
+                FulfillmentOrder.company_id == current_user.customer_id,
             )
         )
     )
@@ -402,7 +402,7 @@ async def allocate_fulfillment_order(
     body: FulfillmentAllocate,
 ):
     """Allocate inventory to a fulfillment order."""
-    fo = await _get_order(db, fulfillment_id, current_user.group_id)
+    fo = await _get_order(db, fulfillment_id, current_user.customer_id)
     _validate_transition(fo.status, "ALLOCATED")
 
     fo.status = "ALLOCATED"
@@ -426,7 +426,7 @@ async def pick_fulfillment_order(
     fulfillment_id: int,
 ):
     """Mark fulfillment order as picked."""
-    fo = await _get_order(db, fulfillment_id, current_user.group_id)
+    fo = await _get_order(db, fulfillment_id, current_user.customer_id)
     _validate_transition(fo.status, "PICKED")
 
     fo.status = "PICKED"
@@ -449,7 +449,7 @@ async def pack_fulfillment_order(
     pack_station: Optional[str] = Query(None),
 ):
     """Mark fulfillment order as packed."""
-    fo = await _get_order(db, fulfillment_id, current_user.group_id)
+    fo = await _get_order(db, fulfillment_id, current_user.customer_id)
     _validate_transition(fo.status, "PACKED")
 
     fo.status = "PACKED"
@@ -473,7 +473,7 @@ async def ship_fulfillment_order(
     body: FulfillmentShip,
 ):
     """Mark fulfillment order as shipped with carrier details."""
-    fo = await _get_order(db, fulfillment_id, current_user.group_id)
+    fo = await _get_order(db, fulfillment_id, current_user.customer_id)
     _validate_transition(fo.status, "SHIPPED")
 
     fo.status = "SHIPPED"
@@ -499,7 +499,7 @@ async def deliver_fulfillment_order(
     body: FulfillmentDeliver,
 ):
     """Confirm delivery of a fulfillment order."""
-    fo = await _get_order(db, fulfillment_id, current_user.group_id)
+    fo = await _get_order(db, fulfillment_id, current_user.customer_id)
     _validate_transition(fo.status, "DELIVERED")
 
     fo.status = "DELIVERED"
@@ -522,7 +522,7 @@ async def update_fulfillment_order(
     body: FulfillmentOrderUpdate,
 ):
     """Update fulfillment order fields."""
-    fo = await _get_order(db, fulfillment_id, current_user.group_id)
+    fo = await _get_order(db, fulfillment_id, current_user.customer_id)
 
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(fo, field, value)
@@ -542,7 +542,7 @@ async def cancel_fulfillment_order(
     fulfillment_id: int,
 ):
     """Cancel (close) a fulfillment order."""
-    fo = await _get_order(db, fulfillment_id, current_user.group_id)
+    fo = await _get_order(db, fulfillment_id, current_user.customer_id)
     if fo.status == "CLOSED":
         raise HTTPException(status_code=400, detail="Order is already closed")
 

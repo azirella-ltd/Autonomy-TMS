@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate synthetic TRM training data for Food Dist group.
+Generate synthetic TRM training data for Food Dist customer.
 
 Usage:
     docker compose exec backend python scripts/generate_food_dist_training_data.py
@@ -14,28 +14,28 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sqlalchemy import select
 from app.db.session import async_session_factory
 from app.models.supply_chain_config import SupplyChainConfig
-from app.models.group import Group
+from app.models.customer import Customer
 
 
 async def generate_training_data():
     """Generate synthetic training data for Food Dist."""
     async with async_session_factory() as db:
-        # Find Food Dist group and config
+        # Find Food Dist customer and config
         result = await db.execute(
-            select(Group).where(Group.name == "Food Dist")
+            select(Customer).where(Customer.name == "Food Dist")
         )
-        group = result.scalar_one_or_none()
+        customer = result.scalar_one_or_none()
 
-        if not group:
-            print("ERROR: Food Dist group not found")
+        if not customer:
+            print("ERROR: Food Dist customer not found")
             return
 
-        print(f"Found Food Dist group: id={group.id}")
+        print(f"Found Food Dist customer: id={customer.id}")
 
         # Find supply chain config
         result = await db.execute(
             select(SupplyChainConfig).where(
-                SupplyChainConfig.group_id == group.id
+                SupplyChainConfig.customer_id == customer.id
             )
         )
         config = result.scalar_one_or_none()
@@ -57,7 +57,7 @@ async def generate_training_data():
         stats = await generate_synthetic_trm_data(
             db=db,
             config_id=config.id,
-            group_id=group.id,
+            customer_id=customer.id,
             num_days=365,
             num_orders_per_day=50,
             num_decisions_per_day=20,

@@ -45,16 +45,16 @@ def test_step_1_create_inventory_projections():
         # Get test product and site
         product = conn.execute(text("SELECT id FROM items LIMIT 1")).fetchone()
         site = conn.execute(text("SELECT id FROM nodes WHERE type = 'retailer' LIMIT 1")).fetchone()
-        group = conn.execute(text("SELECT id FROM groups LIMIT 1")).fetchone()
+        customer = conn.execute(text("SELECT id FROM customers LIMIT 1")).fetchone()
         user = conn.execute(text("SELECT id FROM users LIMIT 1")).fetchone()
 
-        if not all([product, site, group, user]):
-            print_error("Missing test data (product, site, group, or user)")
+        if not all([product, site, customer, user]):
+            print_error("Missing test data (product, site, customer, or user)")
             return None
 
         product_id = product[0]
         site_id = site[0]
-        company_id = group[0]
+        company_id = customer[0]
         user_id = user[0]
 
         # Create 13 weeks of projections

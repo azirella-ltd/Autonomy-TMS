@@ -38,12 +38,12 @@ function GroupPlayerManagement() {
   const navigate = useNavigate();
   const { isGroupAdmin, user } = useAuth();
   const systemAdmin = isSystemAdminUser(user);
-  const rawGroupId = user?.group_id;
-  const parsedGroupId = typeof rawGroupId === 'number' ? rawGroupId : Number(rawGroupId);
-  const groupId = Number.isFinite(parsedGroupId) ? parsedGroupId : null;
+  const rawCustomerId = user?.customer_id;
+  const parsedCustomerId = typeof rawCustomerId === 'number' ? rawCustomerId : Number(rawCustomerId);
+  const customerId = Number.isFinite(parsedCustomerId) ? parsedCustomerId : null;
 
   const [scenarioUsers, setPlayers] = useState([]);
-  const [groups, setGroups] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editorOpen, setEditorOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -58,21 +58,21 @@ function GroupPlayerManagement() {
     }
   }, [isGroupAdmin, navigate, systemAdmin]);
 
-  const loadGroups = useCallback(async () => {
+  const loadCustomers = useCallback(async () => {
     try {
       const response = await api.get('/groups');
       const data = Array.isArray(response.data) ? response.data : [];
-      setGroups(data);
+      setCustomers(data);
       return data;
     } catch (error) {
-      console.error('Error loading groups:', error);
-      setGroups([]);
+      console.error('Error loading customers:', error);
+      setCustomers([]);
       throw error;
     }
   }, []);
 
   const loadPlayers = useCallback(async () => {
-    if (!groupId) {
+    if (!customerId) {
       setPlayers([]);
       return [];
     }
@@ -83,7 +83,7 @@ function GroupPlayerManagement() {
       });
       const data = Array.isArray(response.data) ? response.data : [];
       const filtered = data.filter(
-        (item) => resolveUserType(item) === 'user' && item.group_id === groupId,
+        (item) => resolveUserType(item) === 'user' && item.customer_id === customerId,
       );
       setPlayers(filtered);
       return filtered;
@@ -92,7 +92,7 @@ function GroupPlayerManagement() {
       setPlayers([]);
       throw error;
     }
-  }, [groupId]);
+  }, [customerId]);
 
   useEffect(() => {
     if (!isGroupAdmin || systemAdmin) {
@@ -100,7 +100,7 @@ function GroupPlayerManagement() {
       return;
     }
 
-    if (!groupId) {
+    if (!customerId) {
       setLoading(false);
       return;
     }
@@ -108,7 +108,7 @@ function GroupPlayerManagement() {
     const fetchAll = async () => {
       setLoading(true);
       try {
-        await Promise.all([loadGroups(), loadPlayers()]);
+        await Promise.all([loadCustomers(), loadPlayers()]);
       } catch (error) {
         toast.error('Failed to load user information');
       } finally {
@@ -117,15 +117,15 @@ function GroupPlayerManagement() {
     };
 
     fetchAll();
-  }, [groupId, isGroupAdmin, systemAdmin, loadGroups, loadPlayers]);
+  }, [customerId, isGroupAdmin, systemAdmin, loadCustomers, loadPlayers]);
 
-  const groupMap = useMemo(() => {
+  const customerMap = useMemo(() => {
     const map = {};
-    (groups || []).forEach((group) => {
-      map[group.id] = group.name;
+    (customers || []).forEach((c) => {
+      map[c.id] = c.name;
     });
     return map;
-  }, [groups]);
+  }, [customers]);
 
   const handleCreateUser = () => {
     setSelectedUser(null);
@@ -138,9 +138,9 @@ function GroupPlayerManagement() {
   };
 
   const handleSaveUser = async (userData) => {
-    if (!groupId) {
-      toast.error('Your account is not linked to a group. Please contact your system administrator.');
-      throw new Error('No group ID');
+    if (!customerId) {
+      toast.error('Your account is not linked to a customer. Please contact your system administrator.');
+      throw new Error('No customer ID');
     }
 
     try {
@@ -150,7 +150,7 @@ function GroupPlayerManagement() {
       } else {
         await api.post('/users', {
           ...userData,
-          group_id: groupId,
+          group_id: customerId,
           user_type: userData.user_type || 'USER',
         });
         toast.success('User created successfully');
@@ -183,11 +183,11 @@ function GroupPlayerManagement() {
     return null;
   }
 
-  if (!groupId) {
+  if (!customerId) {
     return (
       <div className="flex justify-center items-center min-h-[60vh]">
         <Alert variant="warning">
-          Your account is not linked to a group. Ask a system administrator to assign you before managing users.
+          Your account is not linked to a customer. Ask a system administrator to assign you before managing users.
         </Alert>
       </div>
     );
@@ -207,7 +207,7 @@ function GroupPlayerManagement() {
         <div>
           <h1 className="text-2xl font-semibold">User Management</h1>
           <p className="text-sm text-muted-foreground">
-            Manage users and assign capabilities within your group.
+            Manage users and assign capabilities within your customer.
           </p>
         </div>
         <Button onClick={handleCreateUser} leftIcon={<Plus className="h-4 w-4" />}>
@@ -238,7 +238,7 @@ function GroupPlayerManagement() {
             {users.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center">
-                  <span className="text-muted-foreground">No users found for your group yet.</span>
+                  <span className="text-muted-foreground">No users found for your customer yet.</span>
                 </TableCell>
               </TableRow>
             ) : (
@@ -249,10 +249,10 @@ function GroupPlayerManagement() {
                   <TableRow key={user.id}>
                     <TableCell>{user.username}</TableCell>
                     <TableCell>{user.email}</TableCell>
-                    <TableCell>{groupMap[user.group_id] || '—'}</TableCell>
+                    <TableCell>{customerMap[user.customer_id] || '—'}</TableCell>
                     <TableCell>
                       <Badge variant={type === 'user' ? 'success' : 'secondary'}>
-                        {type === 'user' ? 'User' : type === 'groupadmin' ? 'Group Admin' : 'User'}
+                        {type === 'user' ? 'User' : type === 'groupadmin' ? 'Customer Admin' : 'User'}
                       </Badge>
                     </TableCell>
                     <TableCell>

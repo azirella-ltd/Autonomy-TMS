@@ -1552,6 +1552,295 @@ TRM inference uses <10ms bursts; vLLM serving is longer but intermittent. They c
 
 ---
 
+## Physical Two-Machine Deployment
+
+**Last Updated**: 2026-02-25
+
+For development and small-scale production, Autonomy can run across two physical machines — separating LLM inference from ML training/inference. This eliminates GPU contention between the memory-hungry LLM and the latency-sensitive TRM agents.
+
+### Architecture
+
+```
+┌───────────────────────────────┐       LAN / Tailscale       ┌───────────────────────────────┐
+│  Machine A — Language         │◄────────────────────────────►│  Machine B — Neural           │
+│  (Mac Mini M4 Pro, 24GB)      │                              │  (Linux, RTX 4060 8GB)        │
+│                               │                              │                               │
+│  Ollama :11434                │                              │  FastAPI Backend :8000         │
+│   ├─ Qwen 3 8B (Q8, ~8.5GB)  │                              │  PostgreSQL :5432              │
+│   └─ nomic-embed-text (~0.8GB)│                              │  pgAdmin :5050                 │
+│                               │                              │                               │
+│  OpenClaw :3001               │                              │  PyTorch / CUDA                │
+│  PicoClaw fleet               │                              │   ├─ 11 TRM agents (<10ms)     │
+│  Frontend :3000               │                              │   ├─ Execution tGNN (daily)    │
+│  Nginx proxy :8088            │                              │   └─ S&OP GraphSAGE (weekly)   │
+│                               │                              │                               │
+│  Serves: chat, NL interaction,│                              │  TRM Decision API :8001        │
+│  signal ingestion, alerts     │                              │                               │
+└───────────────────────────────┘                              └───────────────────────────────┘
+```
+
+### Why this split works
+
+| Concern | Benefit |
+|---|---|
+| **No GPU contention** | LLM generation (variable KV cache) can't starve TRMs of their <10ms latency budget |
+| **Right-sized hardware** | Machine A needs VRAM for LLM weights; Machine B needs CUDA for PyTorch training |
+| **Powell layer alignment** | Machine A = orchestration/NL (AAP Layer 3-4); Machine B = execution/decisions (Layer 1-2) |
+| **Independent scaling** | More users → upgrade Machine A; more sites/products → upgrade Machine B |
+| **Unified memory advantage** | Apple Silicon's unified memory makes the full 24GB available to models (unlike discrete GPUs) |
+
+### Hardware recommendations
+
+#### Machine A — Language (Mac Mini)
+
+| Model | Memory | LLM Capacity | Verdict |
+|---|---|---|---|
+| M4 16GB | 16GB unified | Qwen 3 8B Q4 + embeddings | Functional but tight |
+| **M4 Pro 24GB** | **24GB unified** | **Qwen 3 8B Q8 + embeddings + headroom** | **Recommended** |
+| M4 Pro 48GB | 48GB unified | Qwen 3 14B+ or multiple models | Future-proof |
+
+Ollama has first-class Apple Silicon / Metal support. The M4 Pro 24GB runs Qwen 3 8B at Q8 quantization (~8.5GB) plus nomic-embed-text (~0.8GB) with ample headroom for OpenClaw and PicoClaw processes.
+
+#### Machine B — Neural (existing Linux box)
+
+- **GPU**: NVIDIA RTX 4060 (8GB VRAM) — freed entirely for ML workloads
+- **TRM inference**: All 11 TRMs total ~308MB of weights (11 × 7M params × 4 bytes)
+- **Training**: Full CUDA availability for TRM curriculum, GNN training, behavioral cloning
+- **Note**: With no LLM competing for VRAM, the RTX 4060 has ample capacity for all ML workloads
+
+### Networking
+
+#### Option 1: Tailscale (recommended)
+
+Tailscale provides encrypted WireGuard tunnels with stable hostnames. Free for personal use. Works across networks — the Mac Mini can sit anywhere.
+
+```bash
+# Install on both machines
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+
+# Machines become reachable as:
+#   mac-mini (100.x.x.x)
+#   linux-box (100.x.x.x)
+```
+
+#### Option 2: LAN static IPs
+
+If both machines are on the same network, assign static IPs and reference them directly. Simpler but less portable.
+
+### Docker Compose configuration
+
+#### Machine B — Neural (Linux box)
+
+Use the existing `docker-compose.yml` with the LLM endpoint pointed at Machine A:
+
+```bash
+# .env on Machine B
+LLM_API_BASE=http://mac-mini:11434/v1    # Tailscale hostname
+LLM_API_KEY=not-needed
+LLM_MODEL_NAME=qwen3-8b
+EMBEDDING_API_BASE=http://mac-mini:11434/v1
+```
+
+No `docker-compose.llm.yml` overlay needed — the LLM runs on Machine A.
+
+#### Machine A — Language (Mac Mini)
+
+Create `docker-compose.language.yml`:
+
+```yaml
+version: "3.8"
+
+services:
+  ollama:
+    image: ollama/ollama
+    container_name: autonomy-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  openclaw:
+    image: openclaw/openclaw:latest
+    container_name: autonomy-openclaw
+    ports:
+      - "3001:3001"
+    environment:
+      - AUTONOMY_API_BASE=http://linux-box:8000/api   # Tailscale hostname
+      - LLM_PROVIDER_URL=http://ollama:11434/v1
+      - LLM_MODEL=qwen3-8b
+    volumes:
+      - ./deploy/openclaw/workspace:/workspace:ro
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: autonomy-frontend
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  proxy:
+    image: nginx:alpine
+    container_name: autonomy-proxy
+    ports:
+      - "8088:80"
+    volumes:
+      - ./proxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+```
+
+**Nginx config** — The proxy on Machine A forwards `/api/*` to Machine B:
+
+```nginx
+# proxy/nginx.language.conf
+upstream backend {
+    server linux-box:8000;  # Tailscale hostname for Machine B
+}
+
+server {
+    listen 80;
+
+    location /api/ {
+        proxy_pass http://backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location / {
+        proxy_pass http://frontend:3000;
+        proxy_set_header Host $host;
+    }
+
+    location /ws/ {
+        proxy_pass http://backend;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```
+
+### Model setup on Machine A
+
+```bash
+# One-time: pull models
+ollama pull qwen3:8b
+ollama pull nomic-embed-text
+
+# Verify
+ollama list
+```
+
+### Makefile targets
+
+Add to the project `Makefile` for cross-machine orchestration:
+
+```makefile
+# --- Physical Two-Machine Deployment ---
+MACHINE_A_HOST ?= mac-mini          # Tailscale hostname or IP
+MACHINE_A_PATH ?= ~/autonomy       # Project path on Machine A
+
+deploy-language:
+	ssh $(MACHINE_A_HOST) "cd $(MACHINE_A_PATH) && docker compose -f docker-compose.language.yml up -d"
+
+deploy-neural:
+	docker compose up -d
+
+deploy-all: deploy-neural deploy-language
+
+stop-language:
+	ssh $(MACHINE_A_HOST) "cd $(MACHINE_A_PATH) && docker compose -f docker-compose.language.yml down"
+
+stop-all: stop-language
+	docker compose down
+
+status-all:
+	@echo "=== Machine B — Neural (local) ==="
+	@docker compose ps
+	@echo ""
+	@echo "=== Machine A — Language ($(MACHINE_A_HOST)) ==="
+	@ssh $(MACHINE_A_HOST) "cd $(MACHINE_A_PATH) && docker compose -f docker-compose.language.yml ps"
+
+logs-language:
+	ssh $(MACHINE_A_HOST) "cd $(MACHINE_A_PATH) && docker compose -f docker-compose.language.yml logs -f"
+
+logs-ollama:
+	ssh $(MACHINE_A_HOST) "cd $(MACHINE_A_PATH) && docker compose -f docker-compose.language.yml logs -f ollama"
+```
+
+### Component placement summary
+
+| Component | Machine A (Language) | Machine B (Neural) | Communication |
+|---|---|---|---|
+| PostgreSQL | | X | Direct (local) |
+| FastAPI backend | | X | LLM calls → Machine A |
+| Frontend + Nginx | X | | Proxies `/api/*` → Machine B |
+| Ollama (LLM + embeddings) | X | | `:11434` over Tailscale |
+| OpenClaw | X | | Calls Machine B REST API |
+| PicoClaw fleet | X | | Heartbeats → Machine B API |
+| TRM inference (11 agents) | | X | Local, <10ms |
+| tGNN / GraphSAGE | | X | Local |
+| TRM/GNN training | | X | CUDA, local |
+| pgAdmin | | X | Browser access |
+
+### Key design constraint
+
+**All cross-machine communication goes through the REST API** — OpenClaw and PicoClaw on Machine A call `/api/v1/*` and `/edge-agents/*` endpoints on Machine B. No direct database connections across machines. This is already how the architecture works; the two-machine split doesn't change any application code.
+
+### Day-to-day workflow
+
+```bash
+# Start everything
+make deploy-all
+
+# Check both machines
+make status-all
+
+# Develop backend/ML on Machine B (local)
+cd backend && uvicorn main:app --reload
+
+# Mac Mini runs headless — SSH when needed
+ssh mac-mini
+
+# Retrain TRMs on Machine B (full GPU available)
+make train-gnn
+
+# Tail LLM logs from Machine B
+make logs-ollama
+
+# Stop everything
+make stop-all
+```
+
+### Migration path to production
+
+This two-machine physical setup maps directly to cloud deployment:
+
+| Physical | Cloud equivalent |
+|---|---|
+| Mac Mini (Language) | `g5.xlarge` (A10G 24GB) or CPU instance + managed LLM endpoint |
+| Linux box (Neural) | `g4dn.xlarge` (T4 16GB) for training+inference |
+| Tailscale | VPC peering or private subnet |
+| `docker-compose.language.yml` | ECS task definition or EC2 user data |
+
+The same Docker Compose files, environment variables, and Makefile targets work in both environments — only hostnames and hardware change.
+
+---
+
 ## Further Reading
 
 - [API_REFERENCE.md](API_REFERENCE.md) - Complete API documentation (coming soon)

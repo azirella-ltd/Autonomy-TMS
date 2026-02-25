@@ -76,43 +76,43 @@ const STATUS_COLORS = {
 // AllocationWorklistPage
 // ---------------------------------------------------------------------------
 
-const AllocationWorklistPage = ({ configId: propConfigId, groupId: propGroupId }) => {
+const AllocationWorklistPage = ({ configId: propConfigId, customerId: propCustomerId }) => {
   const { user } = useAuth();
 
-  // Auto-resolve configId and groupId from user's group when not provided as props
+  // Auto-resolve configId and customerId from user's customer when not provided as props
   const [resolvedConfigId, setResolvedConfigId] = useState(propConfigId || null);
-  const [resolvedGroupId, setResolvedGroupId] = useState(propGroupId || user?.group_id || null);
+  const [resolvedCustomerId, setResolvedCustomerId] = useState(propCustomerId || user?.customer_id || null);
 
   useEffect(() => {
     if (propConfigId) { setResolvedConfigId(propConfigId); return; }
-    if (propGroupId) setResolvedGroupId(propGroupId);
-    else if (user?.group_id) setResolvedGroupId(user.group_id);
+    if (propCustomerId) setResolvedCustomerId(propCustomerId);
+    else if (user?.customer_id) setResolvedCustomerId(user.customer_id);
 
-    // Fetch group's first SC config when configId not provided
+    // Fetch customer's first SC config when configId not provided
     const resolveConfig = async () => {
       try {
         const configs = await getSupplyChainConfigs();
         if (configs?.length > 0) {
-          // Pick the first config belonging to the user's group (or the first active one)
-          const userGroupId = propGroupId || user?.group_id;
-          const groupConfig = userGroupId
-            ? configs.find(c => c.group_id === userGroupId)
+          // Pick the first config belonging to the user's customer (or the first active one)
+          const userCustomerId = propCustomerId || user?.customer_id;
+          const customerConfig = userCustomerId
+            ? configs.find(c => c.customer_id === userCustomerId)
             : null;
           const activeConfig = configs.find(c => c.is_active);
-          const picked = groupConfig || activeConfig || configs[0];
+          const picked = customerConfig || activeConfig || configs[0];
           setResolvedConfigId(picked.id);
-          if (picked.group_id) setResolvedGroupId(picked.group_id);
+          if (picked.customer_id) setResolvedCustomerId(picked.customer_id);
         }
       } catch (err) {
         console.error('Failed to resolve SC config:', err);
-        setError('Failed to determine supply chain configuration. Check that your group has an active config.');
+        setError('Failed to determine supply chain configuration. Check that your customer has an active config.');
       }
     };
     resolveConfig();
-  }, [propConfigId, propGroupId, user?.group_id]);
+  }, [propConfigId, propCustomerId, user?.customer_id]);
 
   const configId = resolvedConfigId;
-  const groupId = resolvedGroupId;
+  const customerId = resolvedCustomerId;
 
   // Layer license / mode
   const [mode, setMode] = useState(null); // 'active' | 'input' | 'disabled'
@@ -145,7 +145,7 @@ const AllocationWorklistPage = ({ configId: propConfigId, groupId: propGroupId }
     const loadMode = async () => {
       try {
         setModeLoading(true);
-        const licenses = await getLayerLicenses(groupId);
+        const licenses = await getLayerLicenses(customerId);
         const allocLayer = licenses?.layers?.allocation_agent
           || licenses?.allocation_agent;
         if (allocLayer) {
@@ -162,13 +162,13 @@ const AllocationWorklistPage = ({ configId: propConfigId, groupId: propGroupId }
         setModeLoading(false);
       }
     };
-    if (groupId) {
+    if (customerId) {
       loadMode();
     } else {
       setMode('active');
       setModeLoading(false);
     }
-  }, [groupId]);
+  }, [customerId]);
 
   // -------------------------------------------------------------------------
   // Load worklist when tab 0 is active and mode is ACTIVE
@@ -776,7 +776,7 @@ const AllocationWorklistPage = ({ configId: propConfigId, groupId: propGroupId }
       {/* TAB 3 - Allocation Timeline                                       */}
       {/* ================================================================= */}
       {activeTab === 3 && (
-        <AllocationTimelineTab configId={configId} groupId={groupId} />
+        <AllocationTimelineTab configId={configId} customerId={customerId} />
       )}
     </Box>
   );

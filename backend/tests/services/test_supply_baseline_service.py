@@ -208,7 +208,7 @@ class TestInputMode:
         with pytest.raises(ValueError, match="Customer plan required"):
             input_service.generate_supply_baseline_pack(
                 config_id=1,
-                group_id=1,
+                customer_id=1,
                 policy_envelope_id=1,
                 policy_envelope_hash="abc123",
                 inventory_state=[],

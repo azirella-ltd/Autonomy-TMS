@@ -72,7 +72,7 @@ const changedSx = (current, original) => {
 // Component
 // ---------------------------------------------------------------------------
 
-const SOPPolicyPage = ({ configId, groupId }) => {
+const SOPPolicyPage = ({ configId, customerId }) => {
   // -- UI state
   const [activeTab, setActiveTab] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -113,7 +113,7 @@ const SOPPolicyPage = ({ configId, groupId }) => {
   useEffect(() => {
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [configId, groupId]);
+  }, [configId, customerId]);
 
   const loadAll = async () => {
     setLoading(true);
@@ -126,7 +126,7 @@ const SOPPolicyPage = ({ configId, groupId }) => {
 
   const loadLayerMode = async () => {
     try {
-      const data = await getLayerLicenses(groupId);
+      const data = await getLayerLicenses(customerId);
       const sopMode = data?.layers?.sop?.mode || 'input';
       setLayerMode(sopMode);
     } catch (err) {
@@ -258,7 +258,7 @@ const SOPPolicyPage = ({ configId, groupId }) => {
     try {
       const payload = {
         config_id: configId,
-        group_id: groupId,
+        customer_id: customerId,
         mode: layerMode === 'active' ? 'ACTIVE' : 'INPUT',
         service_tiers: serviceTiers,
         category_policies: categoryPolicies,

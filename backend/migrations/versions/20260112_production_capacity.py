@@ -52,7 +52,7 @@ def upgrade():
         sa.Column('overflow_cost_multiplier', mysql.DOUBLE(), server_default='1.5', nullable=True),
 
         # Multi-tenancy and time range
-        sa.Column('group_id', sa.Integer(), nullable=True),
+        sa.Column('customer_id', sa.Integer(), nullable=True),
         sa.Column('config_id', sa.Integer(), nullable=True),
         sa.Column('effective_start_date', sa.Date(), nullable=True),
         sa.Column('effective_end_date', sa.Date(), nullable=True),
@@ -67,13 +67,13 @@ def upgrade():
         # Foreign keys
         sa.ForeignKeyConstraint(['site_id'], ['nodes.id'], ),
         sa.ForeignKeyConstraint(['product_id'], ['items.id'], ),
-        sa.ForeignKeyConstraint(['group_id'], ['groups.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['customer_id'], ['groups.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['config_id'], ['supply_chain_configs.id'], ),
     )
 
     # Create indexes for performance
     op.create_index('idx_capacity_site_product', 'production_capacity', ['site_id', 'product_id'])
-    op.create_index('idx_capacity_group_config', 'production_capacity', ['group_id', 'config_id'])
+    op.create_index('idx_capacity_group_config', 'production_capacity', ['customer_id', 'config_id'])
     op.create_index('idx_capacity_config', 'production_capacity', ['config_id'])
     op.create_index('idx_capacity_type', 'production_capacity', ['capacity_type'])
 

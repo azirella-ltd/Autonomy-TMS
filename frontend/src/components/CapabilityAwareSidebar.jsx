@@ -14,7 +14,7 @@ import { IconButton, Badge } from './common';
 import { cn } from '../lib/utils/cn';
 import { useAuth } from '../contexts/AuthContext';
 import { useCapabilities } from '../hooks/useCapabilities';
-import { useGroupMode } from '../hooks/useGroupMode';
+import { useCustomerMode } from '../hooks/useCustomerMode';
 import { getFilteredNavigation } from '../config/navigationConfig';
 import { isSystemAdmin, isGroupAdmin as checkIsGroupAdmin } from '../utils/authUtils';
 
@@ -54,7 +54,7 @@ const Tooltip = ({ children, title, placement = 'right' }) => {
 const CapabilityAwareSidebar = ({ open, onToggle }) => {
   const { user } = useAuth();
   const { hasCapability, loading: capabilitiesLoading } = useCapabilities();
-  const { groupMode, loading: groupModeLoading } = useGroupMode();
+  const { customerMode, loading: customerModeLoading } = useCustomerMode();
   const [expandedSections, setExpandedSections] = useState({});
   const navigate = useNavigate();
   const location = useLocation();
@@ -62,11 +62,11 @@ const CapabilityAwareSidebar = ({ open, onToggle }) => {
   const isSysAdmin = isSystemAdmin(user);
   const isGrpAdmin = checkIsGroupAdmin(user);
 
-  // Get filtered navigation based on user capabilities and group mode
+  // Get filtered navigation based on user capabilities and customer mode
   const navigation = useMemo(() => {
-    if (capabilitiesLoading || groupModeLoading) return [];
-    return getFilteredNavigation(hasCapability, isSysAdmin, isGrpAdmin, groupMode);
-  }, [hasCapability, isSysAdmin, isGrpAdmin, capabilitiesLoading, groupModeLoading, groupMode]);
+    if (capabilitiesLoading || customerModeLoading) return [];
+    return getFilteredNavigation(hasCapability, isSysAdmin, isGrpAdmin, customerMode);
+  }, [hasCapability, isSysAdmin, isGrpAdmin, capabilitiesLoading, customerModeLoading, customerMode]);
 
   const handleSectionToggle = (sectionId) => {
     setExpandedSections((prev) => ({

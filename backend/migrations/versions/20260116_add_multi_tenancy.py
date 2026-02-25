@@ -59,8 +59,8 @@ def upgrade():
         sa.Column('updated_at', sa.DateTime(), nullable=True),
         sa.Column('deleted_at', sa.DateTime(), nullable=True),
         sa.Column('owner_id', sa.Integer(), nullable=True),
-        sa.Column('group_id', sa.Integer(), nullable=True),
-        sa.ForeignKeyConstraint(['group_id'], ['groups.id'], ),
+        sa.Column('customer_id', sa.Integer(), nullable=True),
+        sa.ForeignKeyConstraint(['customer_id'], ['groups.id'], ),
         sa.ForeignKeyConstraint(['owner_id'], ['users.id'], ),
         sa.PrimaryKeyConstraint('id')
     )

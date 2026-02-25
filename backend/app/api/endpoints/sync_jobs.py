@@ -43,9 +43,9 @@ def list_sync_configs(
     data_type: Optional[SyncDataType] = None,
     is_enabled: Optional[bool] = None,
 ):
-    """List sync job configurations for the user's group."""
+    """List sync job configurations for the user's customer."""
     query = db.query(SyncJobConfig).filter(
-        SyncJobConfig.group_id == current_user.group_id
+        SyncJobConfig.customer_id == current_user.customer_id
     )
 
     if data_type:
@@ -73,16 +73,16 @@ async def create_sync_config(
     current_user: User = Depends(deps.get_current_active_user),
 ):
     """Create a new sync job configuration."""
-    # Verify user has access to the group
-    if config_in.group_id != current_user.group_id:
+    # Verify user has access to the customer
+    if config_in.customer_id != current_user.customer_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot create config for a different group"
+            detail="Cannot create config for a different customer"
         )
 
     # Create config
     config = SyncJobConfig(
-        group_id=config_in.group_id,
+        customer_id=config_in.customer_id,
         name=config_in.name,
         data_type=config_in.data_type,
         cron_expression=config_in.cron_expression,
@@ -126,7 +126,7 @@ def get_sync_config(
     """Get a specific sync job configuration."""
     config = db.query(SyncJobConfig).filter(
         SyncJobConfig.id == config_id,
-        SyncJobConfig.group_id == current_user.group_id
+        SyncJobConfig.customer_id == current_user.customer_id
     ).first()
 
     if not config:
@@ -148,7 +148,7 @@ async def update_sync_config(
     """Update a sync job configuration."""
     config = db.query(SyncJobConfig).filter(
         SyncJobConfig.id == config_id,
-        SyncJobConfig.group_id == current_user.group_id
+        SyncJobConfig.customer_id == current_user.customer_id
     ).first()
 
     if not config:
@@ -189,7 +189,7 @@ def delete_sync_config(
     """Delete a sync job configuration."""
     config = db.query(SyncJobConfig).filter(
         SyncJobConfig.id == config_id,
-        SyncJobConfig.group_id == current_user.group_id
+        SyncJobConfig.customer_id == current_user.customer_id
     ).first()
 
     if not config:
@@ -220,7 +220,7 @@ async def trigger_sync_job(
     """Manually trigger a sync job."""
     config = db.query(SyncJobConfig).filter(
         SyncJobConfig.id == config_id,
-        SyncJobConfig.group_id == current_user.group_id
+        SyncJobConfig.customer_id == current_user.customer_id
     ).first()
 
     if not config:
@@ -263,7 +263,7 @@ async def enable_sync_config(
     """Enable a sync job configuration."""
     config = db.query(SyncJobConfig).filter(
         SyncJobConfig.id == config_id,
-        SyncJobConfig.group_id == current_user.group_id
+        SyncJobConfig.customer_id == current_user.customer_id
     ).first()
 
     if not config:
@@ -297,7 +297,7 @@ def disable_sync_config(
     """Disable a sync job configuration."""
     config = db.query(SyncJobConfig).filter(
         SyncJobConfig.id == config_id,
-        SyncJobConfig.group_id == current_user.group_id
+        SyncJobConfig.customer_id == current_user.customer_id
     ).first()
 
     if not config:
@@ -335,9 +335,9 @@ def list_sync_executions(
     config_id: Optional[int] = None,
     status_filter: Optional[SyncStatus] = Query(None, alias="status"),
 ):
-    """List sync job executions for the user's group."""
+    """List sync job executions for the user's customer."""
     query = db.query(SyncJobExecution).join(SyncJobConfig).filter(
-        SyncJobConfig.group_id == current_user.group_id
+        SyncJobConfig.customer_id == current_user.customer_id
     )
 
     if config_id:
@@ -374,7 +374,7 @@ def get_sync_execution(
     """Get a specific sync job execution."""
     execution = db.query(SyncJobExecution).join(SyncJobConfig).filter(
         SyncJobExecution.id == execution_id,
-        SyncJobConfig.group_id == current_user.group_id
+        SyncJobConfig.customer_id == current_user.customer_id
     ).first()
 
     if not execution:
@@ -397,7 +397,7 @@ def get_sync_execution_tables(
     """Get table-level results for a sync execution."""
     execution = db.query(SyncJobExecution).join(SyncJobConfig).filter(
         SyncJobExecution.id == execution_id,
-        SyncJobConfig.group_id == current_user.group_id
+        SyncJobConfig.customer_id == current_user.customer_id
     ).first()
 
     if not execution:
@@ -441,7 +441,7 @@ async def create_configs_from_defaults(
     current_user: User = Depends(deps.get_current_active_user),
     data_types: Optional[List[SyncDataType]] = None,
 ):
-    """Create sync configs from default cadences for the user's group."""
+    """Create sync configs from default cadences for the user's customer."""
     created_configs = []
 
     types_to_create = data_types if data_types else list(DEFAULT_SYNC_CADENCES.keys())
@@ -454,7 +454,7 @@ async def create_configs_from_defaults(
 
         # Check if config already exists
         existing = db.query(SyncJobConfig).filter(
-            SyncJobConfig.group_id == current_user.group_id,
+            SyncJobConfig.customer_id == current_user.customer_id,
             SyncJobConfig.data_type == data_type
         ).first()
 
@@ -462,7 +462,7 @@ async def create_configs_from_defaults(
             continue
 
         config = SyncJobConfig(
-            group_id=current_user.group_id,
+            customer_id=current_user.customer_id,
             name=f"Default {data_type.value.replace('_', ' ').title()} Sync",
             data_type=data_type,
             cron_expression=defaults["cron"],

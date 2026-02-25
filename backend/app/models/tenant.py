@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from .sso_provider import SSOProvider
     from .game import Game
     from .supply_chain_config import SupplyChainConfig
-    from .group import Group
+    from .customer import Customer
     from .audit_log import AuditLog
 
 
@@ -127,7 +127,7 @@ class Tenant(Base):
     owner_id = Column(Integer, ForeignKey('users.id', use_alter=True, name='fk_tenant_owner'), nullable=True)  # Primary account owner
 
     # Legacy Group Mapping (for backward compatibility)
-    group_id = Column(Integer, ForeignKey('groups.id'), nullable=True, unique=True)
+    customer_id = Column(Integer, ForeignKey('customers.id'), nullable=True, unique=True)
 
     # Relationships
     owner = relationship("User", foreign_keys=[owner_id], back_populates="owned_tenants")
@@ -136,7 +136,7 @@ class Tenant(Base):
     # supply_chain_configs = relationship("SupplyChainConfig", back_populates="tenant")  # TODO: Add back_populates to SupplyChainConfig model
     sso_providers = relationship("SSOProvider", back_populates="tenant")
     audit_logs = relationship("AuditLog", back_populates="tenant")
-    # group = relationship("Group", foreign_keys=[group_id], uselist=False)  # TODO: Add back_populates to Group model
+    # customer = relationship("Customer", foreign_keys=[customer_id], uselist=False)  # TODO: Add back_populates to Customer model
 
     def __repr__(self):
         return f"<Tenant {self.name} ({self.subdomain})>"

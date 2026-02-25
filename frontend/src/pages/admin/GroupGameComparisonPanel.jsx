@@ -63,7 +63,7 @@ const GroupGameComparisonPanel = ({
 
     const filteredByGroup = games.filter((game) => {
       if (!game) return false;
-      const targetGroup = game.group_id ?? game?.config?.group_id ?? null;
+      const targetGroup = game.customer_id ?? game?.config?.customer_id ?? null;
       if (groupId != null) {
         if (targetGroup != null && Number.isFinite(Number(targetGroup))) {
           return Number(targetGroup) === Number(groupId);
@@ -200,9 +200,9 @@ const GroupGameComparisonPanel = ({
       <CardContent className="p-4 md:p-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>
-            <h2 className="text-lg font-bold">Completed Game Comparison</h2>
+            <h2 className="text-lg font-bold">Completed Scenario Comparison</h2>
             <p className="text-sm text-muted-foreground">
-              Select completed games and generate a ranked cost summary to review performance across sessions.
+              Select completed scenarios and generate a ranked cost summary to review performance across sessions.
             </p>
           </div>
           <div className="flex gap-2">
@@ -232,9 +232,9 @@ const GroupGameComparisonPanel = ({
           </div>
         ) : completedGames.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-muted-foreground mb-2">No completed games yet.</p>
+            <p className="text-muted-foreground mb-2">No completed scenarios yet.</p>
             <p className="text-sm text-muted-foreground">
-              Once games are completed, you can compare their cost performance here.
+              Once scenarios are completed, you can compare their cost performance here.
             </p>
           </div>
         ) : (

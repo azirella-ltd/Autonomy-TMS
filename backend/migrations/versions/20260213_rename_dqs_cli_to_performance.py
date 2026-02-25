@@ -45,7 +45,7 @@ def upgrade():
         except Exception:
             pass
         op.create_index('ix_performance_metrics_group_period', 'performance_metrics',
-                        ['group_id', 'period_start', 'period_type'])
+                        ['customer_id', 'period_start', 'period_type'])
 
     # =========================================================================
     # Rename columns in agent_decision_metrics
@@ -83,7 +83,7 @@ def downgrade():
         except Exception:
             pass
         op.create_index('ix_dqs_metrics_group_period', 'dqs_metrics',
-                        ['group_id', 'period_start', 'period_type'])
+                        ['customer_id', 'period_start', 'period_type'])
 
     if 'agent_decision_metrics' in existing_tables:
         existing_cols = [c['name'] for c in inspector.get_columns('agent_decision_metrics')]

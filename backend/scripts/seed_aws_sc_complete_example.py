@@ -123,7 +123,7 @@ async def seed_hierarchical_policies(db, config_id: int, items: list, nodes: lis
         await db.commit()
         print(f"  ✓ Updated {len(nodes[:3])} nodes with geo/segment/company fields")
 
-    # Update items with product groups
+    # Update items with product customers
     if len(items) >= 2:
         items[0].product_group_id = "BEVERAGES"
         items[1].product_group_id = "BEVERAGES" if len(items) > 1 else None

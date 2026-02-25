@@ -30,15 +30,15 @@ import PowellDashboard from "./pages/admin/PowellDashboard.jsx";
 import Users from "./pages/Users";
 import AdminUserManagement from "./pages/admin/UserManagement.js";
 import SystemAdminUserManagement from "./pages/admin/SystemAdminUserManagement.jsx";
-import GroupAdminUserManagement from "./pages/admin/GroupAdminUserManagement.jsx";
-import GroupManagement from "./pages/admin/GroupManagement.jsx";
+import CustomerAdminUserManagement from "./pages/admin/CustomerAdminUserManagement.jsx";
+import CustomerManagement from "./pages/admin/CustomerManagement.jsx";
 import Settings from "./pages/Settings";
 import SystemConfig from "./pages/SystemConfig.jsx";
 import Unauthorized from "./pages/Unauthorized";
 import SupplyChainConfigList from "./components/supply-chain-config/SupplyChainConfigList";
 import SupplyChainConfigForm from "./components/supply-chain-config/SupplyChainConfigForm";
-import GroupSupplyChainConfigList from "./pages/admin/GroupSupplyChainConfigList.jsx";
-import GroupSupplyChainConfigForm from "./pages/admin/GroupSupplyChainConfigForm.jsx";
+import CustomerSupplyChainConfigList from "./pages/admin/CustomerSupplyChainConfigList.jsx";
+import CustomerSupplyChainConfigForm from "./pages/admin/CustomerSupplyChainConfigForm.jsx";
 import ScenarioTreeManager from "./pages/admin/ScenarioTreeManager.jsx";
 import { ScenarioComparison } from "./components/stochastic";
 import SyntheticDataWizard from "./pages/admin/SyntheticDataWizard.jsx";
@@ -389,35 +389,35 @@ const AppContent = () => {
               element={<ExceptionWorkflows />}
             />
             <Route
-              path="/admin/groups"
-              element={<GroupManagement />}
+              path="/admin/customers"
+              element={<CustomerManagement />}
             />
             <Route
               path="/admin/users"
               element={<AdminUserManagement />}
             />
             <Route
-              path="/admin/group/users"
-              element={<GroupAdminUserManagement />}
+              path="/admin/customer/users"
+              element={<CustomerAdminUserManagement />}
             />
             <Route
               path="/system/users"
               element={<SystemAdminUserManagement />}
             />
             <Route
-              path="/admin/group/supply-chain-configs"
-              element={<GroupSupplyChainConfigList />}
+              path="/admin/customer/supply-chain-configs"
+              element={<CustomerSupplyChainConfigList />}
             />
             <Route
-              path="/admin/group/supply-chain-configs/new"
-              element={<GroupSupplyChainConfigForm />}
+              path="/admin/customer/supply-chain-configs/new"
+              element={<CustomerSupplyChainConfigForm />}
             />
             <Route
-              path="/admin/group/supply-chain-configs/edit/:id"
-              element={<GroupSupplyChainConfigForm />}
+              path="/admin/customer/supply-chain-configs/edit/:id"
+              element={<CustomerSupplyChainConfigForm />}
             />
             <Route
-              path="/admin/group/supply-chain-configs/:configId/scenarios"
+              path="/admin/customer/supply-chain-configs/:configId/scenarios"
               element={<ScenarioTreeManager />}
             />
             <Route
@@ -429,7 +429,7 @@ const AppContent = () => {
               }
             />
             <Route
-              path="/admin/group/planning-hierarchy"
+              path="/admin/customer/planning-hierarchy"
               element={<PlanningHierarchyConfig />}
             />
             <Route

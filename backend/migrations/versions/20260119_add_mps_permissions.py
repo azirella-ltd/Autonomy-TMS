@@ -88,7 +88,7 @@ def upgrade():
     # Assign MPS permissions to GROUP_ADMIN role
     # First, check if roles table exists
     if 'roles' in inspector.get_table_names():
-        # Get Group Admin role ID
+        # Get Customer Admin role ID
         group_admin_role = conn.execute(
             sa.text("SELECT id FROM roles WHERE slug = 'group-admin' LIMIT 1")
         ).fetchone()
@@ -101,7 +101,7 @@ def upgrade():
                 sa.text("SELECT id FROM permissions WHERE name LIKE 'mps.%'")
             ).fetchall()
 
-            # Assign each permission to Group Admin role
+            # Assign each permission to Customer Admin role
             for perm_id_tuple in mps_perm_ids:
                 perm_id = perm_id_tuple[0]
 
@@ -122,11 +122,11 @@ def upgrade():
                         """),
                         {'role_id': role_id, 'perm_id': perm_id, 'created_at': datetime.utcnow()}
                     )
-                    print(f"✅ Assigned permission {perm_id} to Group Admin role")
+                    print(f"✅ Assigned permission {perm_id} to Customer Admin role")
                 else:
-                    print(f"⏭️  Permission {perm_id} already assigned to Group Admin role")
+                    print(f"⏭️  Permission {perm_id} already assigned to Customer Admin role")
         else:
-            print("⚠️  Group Admin role not found. Permissions created but not assigned.")
+            print("⚠️  Customer Admin role not found. Permissions created but not assigned.")
     else:
         print("⚠️  Roles table does not exist. Permissions created but not assigned.")
 

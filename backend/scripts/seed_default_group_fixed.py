@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seed the default Autonomy group, configuration, and scenario with AI scenario_users."""
+"""Seed the default Autonomy customer, configuration, and scenario with AI scenario_users."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ print(f"Using database at: {DATABASE_URL}")
 try:
     from app.db.base_class import Base, engine, SessionLocal
     from app.models import (
-        Group,
+        Customer,
         Game,
         GameStatus,
         ScenarioUser,
@@ -35,9 +35,9 @@ try:
         User,
     )
     from app.models.agent_config import AgentConfig
-    from app.schemas.group import GroupCreate
+    from app.schemas.customer import CustomerCreate
     from app.schemas.user import UserCreate
-    from app.services.group_service import GroupService
+    from app.services.customer_service import CustomerService
     from scripts.seed_default_group import ensure_supply_chain_config
 except ImportError as e:
     print(f"Error importing application modules: {e}")
@@ -45,26 +45,26 @@ except ImportError as e:
     sys.exit(1)
 
 # Constants
-DEFAULT_GROUP_NAME = "Default TBG"
-DEFAULT_GROUP_DESCRIPTION = "Default Autonomy simulation group"
+DEFAULT_CUSTOMER_NAME = "Default TBG"
+DEFAULT_CUSTOMER_DESCRIPTION = "Default Autonomy simulation customer"
 DEFAULT_ADMIN_USERNAME = "groupadmin"
 DEFAULT_ADMIN_EMAIL = "groupadmin@autonomy.ai"
-DEFAULT_ADMIN_FULL_NAME = "Group Administrator"
+DEFAULT_ADMIN_FULL_NAME = "Customer Administrator"
 DEFAULT_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")
 DEFAULT_GAME_NAME = "Default Simulation"
 DEFAULT_AGENT_TYPE = "pid_heuristic"
 
-def ensure_group(session: Session) -> Tuple[Group, bool]:
-    """Create the default group and admin if they do not already exist."""
-    existing_group = session.query(Group).filter(Group.name == DEFAULT_GROUP_NAME).first()
+def ensure_customer(session: Session) -> Tuple[Customer, bool]:
+    """Create the default customer and admin if they do not already exist."""
+    existing_customer = session.query(Customer).filter(Customer.name == DEFAULT_CUSTOMER_NAME).first()
     
-    if existing_group:
-        print(f"Group '{DEFAULT_GROUP_NAME}' already exists with ID: {existing_group.id}")
-        return existing_group, False
+    if existing_customer:
+        print(f"Customer '{DEFAULT_CUSTOMER_NAME}' already exists with ID: {existing_customer.id}")
+        return existing_customer, False
     
-    print(f"Creating new group: {DEFAULT_GROUP_NAME}")
-    
-    # Create the group admin user using raw SQL to avoid ORM issues with missing columns
+    print(f"Creating new customer: {DEFAULT_CUSTOMER_NAME}")
+
+    # Create the customer admin user using raw SQL to avoid ORM issues with missing columns
     from passlib.context import CryptContext
     from sqlalchemy import text
     
@@ -107,43 +107,43 @@ def ensure_group(session: Session) -> Tuple[Group, bool]:
         user_id = result.scalar()
         print(f"Created new admin user with ID: {user_id}")
     
-    # Create a simple user object with just the ID for the group creation
+    # Create a simple user object with just the ID for the customer creation
     class SimpleUser:
         def __init__(self, user_id):
             self.id = user_id
     
     admin_user = SimpleUser(user_id)
     
-    # Create the group
-    group = Group(
-        name=DEFAULT_GROUP_NAME,
-        description=DEFAULT_GROUP_DESCRIPTION,
+    # Create the customer
+    customer = Customer(
+        name=DEFAULT_CUSTOMER_NAME,
+        description=DEFAULT_CUSTOMER_DESCRIPTION,
         admin_id=admin_user.id,
     )
-    session.add(group)
-    session.flush()  # Get the group ID
+    session.add(customer)
+    session.flush()  # Get the customer ID
     
-    # Update the admin user's group_id
+    # Update the admin user's customer_id
     session.execute(
-        text("UPDATE users SET group_id = :group_id WHERE id = :user_id"),
-        {'group_id': group.id, 'user_id': admin_user.id}
+        text("UPDATE users SET customer_id = :customer_id WHERE id = :user_id"),
+        {'customer_id': customer.id, 'user_id': admin_user.id}
     )
     
     # Commit all changes
     session.commit()
     
-    print(f"Created group '{group.name}' with ID: {group.id}")
+    print(f"Created customer '{customer.name}' with ID: {customer.id}")
     print(f"Created admin user with ID: {admin_user.id}")
     print("Database seeding completed successfully!")
-    
-    return group, True
 
-def ensure_default_game(session: Session, group: Group) -> Game:
-    """Ensure the default scenario exists for the supplied group."""
-    sc_config = ensure_supply_chain_config(session, group)
+    return customer, True
+
+def ensure_default_game(session: Session, customer: Customer) -> Game:
+    """Ensure the default scenario exists for the supplied customer."""
+    sc_config = ensure_supply_chain_config(session, customer)
     existing_game = session.query(Game).filter(
         Game.name == DEFAULT_GAME_NAME,
-        Game.group_id == group.id
+        Game.customer_id == customer.id
     ).first()
 
     if existing_game:
@@ -158,8 +158,8 @@ def ensure_default_game(session: Session, group: Group) -> Game:
     game = Game(
         name=DEFAULT_GAME_NAME,
         status=GameStatus.CREATED,
-        group_id=group.id,
-        created_by=group.created_by,
+        customer_id=customer.id,
+        created_by=customer.created_by,
         max_rounds=52,  # Default number of periods
         supply_chain_config_id=sc_config.id,
     )
@@ -262,8 +262,8 @@ def main():
         print("Ensuring database tables exist...")
         Base.metadata.create_all(bind=db.connection().engine)
         
-        # Create the default group and admin user
-        group, created = ensure_group(db)
+        # Create the default customer and admin user
+        customer, created = ensure_customer(db)
         
         # For now, skip scenario creation since the scenarios table doesn't exist yet
         print("Skipping scenario creation - scenarios table does not exist yet")

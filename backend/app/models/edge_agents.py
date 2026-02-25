@@ -9,7 +9,7 @@ Tables:
   - edge_picoclaw_heartbeats: Heartbeat log for each instance
   - edge_picoclaw_alerts: CDC alerts from PicoClaw fleet
   - edge_service_accounts: JWT service accounts for PicoClaw auth
-  - edge_openclaw_config: OpenClaw gateway configuration (singleton per group)
+  - edge_openclaw_config: OpenClaw gateway configuration (singleton per customer)
   - edge_openclaw_channels: Configured messaging channels
   - edge_openclaw_skills: Installed skill toggles
   - edge_openclaw_sessions: Session activity log
@@ -43,7 +43,7 @@ class EdgePicoClawInstance(Base):
     site_name = Column(String(200), nullable=True)
     site_type = Column(String(50), nullable=True)  # warehouse, factory, dc, etc.
     region = Column(String(100), nullable=True)
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=True)
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=True)
 
     # Configuration
     mode = Column(String(50), nullable=False, default="deterministic")  # deterministic, hybrid
@@ -72,7 +72,7 @@ class EdgePicoClawInstance(Base):
 
     __table_args__ = (
         Index("idx_pico_status", "status"),
-        Index("idx_pico_group", "group_id"),
+        Index("idx_pico_customer", "customer_id"),
     )
 
     def to_dict(self):
@@ -189,7 +189,7 @@ class EdgeServiceAccount(Base):
     name = Column(String(200), nullable=False)
     scope = Column(String(20), nullable=False, default="site")  # site, region, global
     site_key = Column(String(100), nullable=True)  # Null for region/global
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=True)
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=True)
 
     # Token info (store hash, not plaintext)
     token_hash = Column(String(256), nullable=True)
@@ -230,7 +230,7 @@ class EdgeOpenClawConfig(Base):
     __tablename__ = "edge_openclaw_config"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=True, unique=True)
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=True, unique=True)
 
     # LLM provider
     provider = Column(String(50), nullable=False, default="vllm")  # vllm, openai, anthropic
@@ -269,7 +269,7 @@ class EdgeOpenClawChannel(Base):
     channel_id = Column(String(50), nullable=False, unique=True)  # slack, teams, whatsapp, telegram, email
     name = Column(String(100), nullable=False)
     channel_type = Column(String(50), nullable=False)
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=True)
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=True)
 
     # Config (stored as JSON to support channel-specific fields)
     config = Column(JSON, nullable=True)  # {bot_token, workspace, webhook_secret, etc.}
@@ -304,7 +304,7 @@ class EdgeOpenClawSkill(Base):
     category = Column(String(50), nullable=False)  # planning, execution, governance, etc.
     description = Column(Text, nullable=True)
     enabled = Column(Boolean, nullable=False, default=True)
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=True)
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=True)
 
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
@@ -367,7 +367,7 @@ class EdgeIngestedSignal(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     signal_id = Column(String(64), nullable=False, unique=True, index=True)
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=True)
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=True)
 
     # Source
     channel = Column(String(50), nullable=False)  # slack, teams, whatsapp, etc.
@@ -487,7 +487,7 @@ class EdgeSourceReliability(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     source = Column(String(50), nullable=False, unique=True, index=True)
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=True)
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=True)
 
     default_weight = Column(Float, nullable=False, default=0.5)
     learned_weight = Column(Float, nullable=True)  # Updated from outcome feedback
@@ -537,7 +537,7 @@ class EdgeSecurityChecklist(Base):
     checked = Column(Boolean, nullable=False, default=False)
     checked_by = Column(String(100), nullable=True)
     checked_at = Column(DateTime, nullable=True)
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=True)
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=True)
 
     def to_dict(self):
         return {

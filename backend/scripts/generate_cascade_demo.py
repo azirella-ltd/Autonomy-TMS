@@ -37,7 +37,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy import func
 
 from app.db.session import sync_engine
-from app.models.group import Group
+from app.models.customer import Customer
 from app.models.supply_chain_config import SupplyChainConfig, Site
 from app.models.planning_cascade import AllocationCommit, CommitStatus
 from app.models.powell_allocation import PowellAllocation
@@ -130,7 +130,7 @@ def get_dc_site_id(db: Session, config_id: int) -> str:
 # Step 1: Run Planning Cascade
 # ===================================================================
 
-def step1_run_cascade(db: Session, config_id: int, group_id: int, user_id: int):
+def step1_run_cascade(db: Session, config_id: int, customer_id: int, user_id: int):
     """Run the full planning cascade for Food Dist."""
     print("\n  Running Planning Cascade (S&OP → MRS → SupplyAgent → AllocationAgent)...")
     from app.services.planning_cascade.cascade_orchestrator import (
@@ -167,7 +167,7 @@ def step1_run_cascade(db: Session, config_id: int, group_id: int, user_id: int):
     db.flush()
 
     orchestrator = CascadeOrchestrator(db, mode=CascadeMode.FULL, agent_mode="copilot")
-    result = orchestrator.run_cascade_for_food_dist(config_id, group_id, user_id)
+    result = orchestrator.run_cascade_for_food_dist(config_id, customer_id, user_id)
 
     print(f"    Policy Envelope: {result.policy_envelope.get('hash', 'N/A')[:12]}...")
     print(f"    Supply Commit:   {result.supply_commit.get('hash', 'N/A')[:12]}... ({result.total_orders} orders)")
@@ -557,14 +557,14 @@ def main():
         # ------------- Prerequisites -------------
         print("\n0. Validating prerequisites...")
 
-        group = db.query(Group).filter(Group.name == "Food Dist").first()
-        if not group:
-            print("ERROR: 'Food Dist' group not found. Run seed_dot_foods_demo.py first.")
+        customer = db.query(Customer).filter(Customer.name == "Food Dist").first()
+        if not customer:
+            print("ERROR: 'Food Dist' customer not found. Run seed_dot_foods_demo.py first.")
             sys.exit(1)
-        print(f"   Group: {group.name} (id={group.id})")
+        print(f"   Customer: {customer.name} (id={customer.id})")
 
         config = db.query(SupplyChainConfig).filter(
-            SupplyChainConfig.group_id == group.id
+            SupplyChainConfig.customer_id == customer.id
         ).first()
         if not config:
             print("ERROR: No SC config for Food Dist. Run seed_dot_foods_demo.py first.")
@@ -582,7 +582,7 @@ def main():
         print("\n" + "-" * 60)
         print("Step 1: Planning Cascade")
         print("-" * 60)
-        cascade_result = step1_run_cascade(db, config.id, group.id, user_id)
+        cascade_result = step1_run_cascade(db, config.id, customer.id, user_id)
 
         # ------------- Step 2: Materialize Allocations -------------
         print("\n" + "-" * 60)

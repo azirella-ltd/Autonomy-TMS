@@ -50,7 +50,7 @@ class DecisionService:
     def record_decision(
         self,
         cycle_id: int,
-        group_id: int,
+        customer_id: int,
         category: DecisionCategory,
         action: DecisionAction,
         original_value: Dict[str, Any],
@@ -74,7 +74,7 @@ class DecisionService:
 
         Args:
             cycle_id: Planning cycle ID
-            group_id: Group ID
+            customer_id: Customer ID
             category: Decision category
             action: Decision action type
             original_value: Value before decision
@@ -118,7 +118,7 @@ class DecisionService:
         decision = PlanningDecision(
             cycle_id=cycle_id,
             snapshot_id=cycle.current_snapshot_id,
-            group_id=group_id,
+            customer_id=customer_id,
             decision_code=decision_code,
             category=category,
             action=action,
@@ -466,14 +466,14 @@ class DecisionService:
 
     def get_pending_approvals(
         self,
-        group_id: int,
+        customer_id: int,
         approval_level: Optional[str] = None
     ) -> List[PlanningDecision]:
         """
         Get decisions pending approval.
 
         Args:
-            group_id: Group ID
+            customer_id: Customer ID
             approval_level: Filter by approval level
 
         Returns:
@@ -481,7 +481,7 @@ class DecisionService:
         """
         query = self.db.query(PlanningDecision).filter(
             and_(
-                PlanningDecision.group_id == group_id,
+                PlanningDecision.customer_id == customer_id,
                 PlanningDecision.status == DecisionStatus.PENDING_APPROVAL
             )
         )

@@ -100,7 +100,7 @@ def _make_po(**overrides) -> SimpleNamespace:
         supplier_site_id=2,
         destination_site_id=1,
         config_id=1,
-        group_id=None,
+        customer_id=None,
         status="APPROVED",
         order_date=_date(0),
         requested_delivery_date=_date(7),
@@ -141,7 +141,7 @@ def _make_to(**overrides) -> SimpleNamespace:
         order_round=1,
         arrival_round=2,
         source_po_id=None,
-        group_id=None,
+        customer_id=None,
         line_items=[line],
     )
     defaults.update(overrides)
@@ -504,7 +504,7 @@ class TestFulfillCustomerOrdersFIFO:
         # Track order updates
         update_calls = []
 
-        async def mock_update_order(order_id, shipped_quantity, promised_delivery_date=None, group_id=None):
+        async def mock_update_order(order_id, shipped_quantity, promised_delivery_date=None, customer_id=None):
             for o in orders:
                 if o.id == order_id:
                     o.shipped_quantity += shipped_quantity
@@ -567,7 +567,7 @@ class TestFulfillCustomerOrdersFIFO:
         )
         fulfillment.calculate_available_to_ship = AsyncMock(return_value=100.0)
 
-        async def mock_update_order(order_id, shipped_quantity, promised_delivery_date=None, group_id=None):
+        async def mock_update_order(order_id, shipped_quantity, promised_delivery_date=None, customer_id=None):
             order.shipped_quantity += shipped_quantity
             order.backlog_quantity = max(0, order.ordered_quantity - order.shipped_quantity)
             if order.shipped_quantity >= order.ordered_quantity:
@@ -944,7 +944,7 @@ class TestEndToEndOrderFulfillmentCycle:
 
         created_to = _make_to(id=1, quantity=40.0, destination_site_id=3, arrival_round=2)
 
-        async def mock_update_order(order_id, shipped_quantity, promised_delivery_date=None, group_id=None):
+        async def mock_update_order(order_id, shipped_quantity, promised_delivery_date=None, customer_id=None):
             order.shipped_quantity += shipped_quantity
             order.backlog_quantity = max(0, order.ordered_quantity - order.shipped_quantity)
             if order.shipped_quantity >= order.ordered_quantity:

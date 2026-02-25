@@ -117,7 +117,7 @@ async def create_resource_capacity(
     capacity: ResourceCapacityCreate
 ):
     """Create resource capacity record"""
-    company_id = current_user.group_id
+    company_id = current_user.customer_id
 
     # Calculate remaining capacity
     effective_available = capacity.available_capacity_hours * capacity.capacity_efficiency
@@ -157,7 +157,7 @@ async def bulk_create_resource_capacity(
     capacities: List[ResourceCapacityCreate]
 ):
     """Bulk create resource capacity records"""
-    company_id = current_user.group_id
+    company_id = current_user.customer_id
     created_count = 0
 
     for capacity in capacities:

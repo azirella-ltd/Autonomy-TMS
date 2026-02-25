@@ -49,9 +49,9 @@ def list_decisions(
     action: Optional[DecisionAction] = None,
     created_by: Optional[int] = None,
 ):
-    """List planning decisions for the user's group."""
+    """List planning decisions for the user's customer."""
     query = db.query(PlanningDecision).join(PlanningCycle).filter(
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     )
 
     if cycle_id:
@@ -88,7 +88,7 @@ def create_decision(
     # Verify cycle access
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == decision_in.cycle_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not cycle:
@@ -141,7 +141,7 @@ def get_decision(
     """Get a specific planning decision."""
     decision = db.query(PlanningDecision).join(PlanningCycle).filter(
         PlanningDecision.id == decision_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not decision:
@@ -163,7 +163,7 @@ def update_decision(
     """Update a planning decision (only draft decisions can be updated)."""
     decision = db.query(PlanningDecision).join(PlanningCycle).filter(
         PlanningDecision.id == decision_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not decision:
@@ -197,7 +197,7 @@ def delete_decision(
     """Delete a planning decision (only draft decisions can be deleted)."""
     decision = db.query(PlanningDecision).join(PlanningCycle).filter(
         PlanningDecision.id == decision_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not decision:
@@ -229,7 +229,7 @@ def submit_decision(
     """Submit a draft decision for approval."""
     decision = db.query(PlanningDecision).join(PlanningCycle).filter(
         PlanningDecision.id == decision_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not decision:
@@ -276,7 +276,7 @@ def approve_decision(
     """Approve a pending decision."""
     decision = db.query(PlanningDecision).join(PlanningCycle).filter(
         PlanningDecision.id == decision_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not decision:
@@ -308,7 +308,7 @@ def reject_decision(
     """Reject a pending decision."""
     decision = db.query(PlanningDecision).join(PlanningCycle).filter(
         PlanningDecision.id == decision_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not decision:
@@ -338,7 +338,7 @@ def apply_decision(
     """Apply an approved decision to create a new snapshot."""
     decision = db.query(PlanningDecision).join(PlanningCycle).filter(
         PlanningDecision.id == decision_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not decision:
@@ -375,7 +375,7 @@ def revert_decision(
     """Revert an applied decision."""
     decision = db.query(PlanningDecision).join(PlanningCycle).filter(
         PlanningDecision.id == decision_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not decision:
@@ -415,7 +415,7 @@ def list_decision_comments(
     """List comments for a decision."""
     decision = db.query(PlanningDecision).join(PlanningCycle).filter(
         PlanningDecision.id == decision_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not decision:
@@ -441,7 +441,7 @@ def add_decision_comment(
     """Add a comment to a decision."""
     decision = db.query(PlanningDecision).join(PlanningCycle).filter(
         PlanningDecision.id == decision_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not decision:
@@ -474,7 +474,7 @@ def get_decision_history(
     """Get the history of a decision."""
     decision = db.query(PlanningDecision).join(PlanningCycle).filter(
         PlanningDecision.id == decision_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not decision:
@@ -507,7 +507,7 @@ def get_cycle_decision_stats(
     # Verify cycle access
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.group_id == current_user.group_id
+        PlanningCycle.customer_id == current_user.customer_id
     ).first()
 
     if not cycle:

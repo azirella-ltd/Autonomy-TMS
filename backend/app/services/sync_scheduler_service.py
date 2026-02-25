@@ -173,7 +173,7 @@ class SyncSchedulerService:
         Returns:
             Job ID string
         """
-        job_id = f"sync_{config.group_id}_{config.data_type.value}"
+        job_id = f"sync_{config.customer_id}_{config.data_type.value}"
 
         # Remove existing job if present
         existing_job = self._scheduler.get_job(job_id)
@@ -201,7 +201,7 @@ class SyncSchedulerService:
                 trigger=trigger,
                 id=job_id,
                 args=[config.id],
-                name=f"SAP Sync: {config.data_type.value} (Group {config.group_id})",
+                name=f"SAP Sync: {config.data_type.value} (Customer {config.customer_id})",
                 replace_existing=True
             )
 
@@ -224,7 +224,7 @@ class SyncSchedulerService:
             db: Database session
             config: Sync job configuration
         """
-        job_id = config.apscheduler_job_id or f"sync_{config.group_id}_{config.data_type.value}"
+        job_id = config.apscheduler_job_id or f"sync_{config.customer_id}_{config.data_type.value}"
 
         if self._scheduler.get_job(job_id):
             self._scheduler.remove_job(job_id)
@@ -639,13 +639,13 @@ class SyncSchedulerService:
         logger.warning(f"Job missed: {event.job_id}, scheduled_run_time: {event.scheduled_run_time}")
 
 
-def seed_default_sync_configs(db: Session, group_id: int) -> List[SyncJobConfig]:
+def seed_default_sync_configs(db: Session, customer_id: int) -> List[SyncJobConfig]:
     """
-    Seed default sync job configurations for a group.
+    Seed default sync job configurations for a customer.
 
     Args:
         db: Database session
-        group_id: Group ID to create configs for
+        customer_id: Customer ID to create configs for
 
     Returns:
         List of created SyncJobConfig records
@@ -655,7 +655,7 @@ def seed_default_sync_configs(db: Session, group_id: int) -> List[SyncJobConfig]
     for data_type, defaults in DEFAULT_SYNC_CADENCES.items():
         # Check if config already exists
         existing = db.query(SyncJobConfig).filter(
-            SyncJobConfig.group_id == group_id,
+            SyncJobConfig.customer_id == customer_id,
             SyncJobConfig.data_type == data_type
         ).first()
 
@@ -663,7 +663,7 @@ def seed_default_sync_configs(db: Session, group_id: int) -> List[SyncJobConfig]
             continue
 
         config = SyncJobConfig(
-            group_id=group_id,
+            customer_id=customer_id,
             data_type=data_type,
             name=defaults.get('name', f"{data_type.value} Sync"),
             cron_expression=defaults['cron'],
@@ -678,5 +678,5 @@ def seed_default_sync_configs(db: Session, group_id: int) -> List[SyncJobConfig]
 
     db.commit()
 
-    logger.info(f"Seeded {len(configs)} default sync configs for group {group_id}")
+    logger.info(f"Seeded {len(configs)} default sync configs for customer {customer_id}")
     return configs

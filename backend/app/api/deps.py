@@ -140,17 +140,21 @@ async def get_current_active_user(
     return current_user
 
 
-async def require_group_admin(
+async def require_customer_admin(
     current_user: User = Depends(get_current_active_user),
 ) -> User:
-    """Ensure user is a group admin or system admin."""
+    """Ensure user is a customer admin or system admin."""
     if current_user.user_type not in (UserTypeEnum.GROUP_ADMIN, UserTypeEnum.SYSTEM_ADMIN):
         if not getattr(current_user, "is_superuser", False):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Requires group admin privileges",
+                detail="Requires customer admin privileges",
             )
     return current_user
+
+
+# Backward-compatible alias
+require_group_admin = require_customer_admin
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +172,7 @@ class ServiceAccountUser:
     name: str
     scope: str  # "site", "region", "global"
     site_key: Optional[str] = None
-    group_id: Optional[int] = None
+    customer_id: Optional[int] = None
     # User-compatible attributes
     email: str = "service-account@edge"
     is_active: bool = True
@@ -213,7 +217,7 @@ async def _lookup_service_account(
         name=sa.name,
         scope=sa.scope,
         site_key=sa.site_key,
-        group_id=sa.group_id,
+        customer_id=sa.customer_id,
     )
 
 

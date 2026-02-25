@@ -77,7 +77,7 @@ async def seed_hierarchical_policies():
         print()
 
         # Update items with product_group_id
-        print("Adding product groups to items...")
+        print("Adding product customers to items...")
         for idx, item in enumerate(items):
             item.product_group_id = (idx % 3) + 1  # Groups 1, 2, 3
         await db.commit()

@@ -63,7 +63,7 @@ const EMPTY_ORDER = {
 // Component
 // ---------------------------------------------------------------------------
 
-const SupplyWorklistPage = ({ configId, groupId }) => {
+const SupplyWorklistPage = ({ configId, customerId }) => {
   // Tab state
   const [activeTab, setActiveTab] = useState(0);
 
@@ -91,7 +91,7 @@ const SupplyWorklistPage = ({ configId, groupId }) => {
   const loadMode = useCallback(async () => {
     try {
       setModeLoading(true);
-      const licenses = await getLayerLicenses(groupId);
+      const licenses = await getLayerLicenses(customerId);
       const supplyLayer = licenses?.layers?.supply_agent || licenses?.supply_agent;
       if (supplyLayer) {
         setMode(supplyLayer.mode || supplyLayer);
@@ -106,7 +106,7 @@ const SupplyWorklistPage = ({ configId, groupId }) => {
     } finally {
       setModeLoading(false);
     }
-  }, [groupId]);
+  }, [customerId]);
 
   // ---------------------------------------------------------------------------
   // Load worklist items (ACTIVE mode)

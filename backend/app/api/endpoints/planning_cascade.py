@@ -245,7 +245,7 @@ class CategoryPolicyInput(BaseModel):
 class PolicyEnvelopeCreate(BaseModel):
     """Create policy envelope request"""
     config_id: int
-    group_id: int
+    customer_id: int
     mode: str = Field("INPUT", description="FULL or INPUT")
     service_tiers: List[ServiceTierTargetInput]
     category_policies: List[CategoryPolicyInput]
@@ -267,7 +267,7 @@ class CustomerPlanOrder(BaseModel):
 class SupplyBaselinePackCreate(BaseModel):
     """Create SupBP request"""
     config_id: int
-    group_id: int
+    customer_id: int
     policy_envelope_id: int
     mode: str = Field("FULL", description="FULL or INPUT")
     customer_plan: Optional[List[CustomerPlanOrder]] = None
@@ -288,7 +288,7 @@ class AllocationCommitReview(BaseModel):
 class CascadeRunRequest(BaseModel):
     """Run full cascade request"""
     config_id: int
-    group_id: int
+    customer_id: int
     mode: str = Field("INPUT", description="FULL or INPUT")
     agent_mode: str = Field("copilot", description="copilot or autonomous")
     use_food_dist_defaults: bool = False
@@ -297,7 +297,7 @@ class CascadeRunRequest(BaseModel):
 class FeedBackSignalCreate(BaseModel):
     """Create feed-back signal request"""
     config_id: int
-    group_id: int
+    customer_id: int
     signal_type: str
     metric_name: str
     metric_value: float
@@ -351,7 +351,7 @@ def create_policy_envelope(
     try:
         envelope = service.create_policy_envelope(
             config_id=request.config_id,
-            group_id=request.group_id,
+            customer_id=request.customer_id,
             params=params,
         )
         return envelope
@@ -430,7 +430,7 @@ def create_supply_baseline_pack(
     try:
         supbp = service.generate_supply_baseline_pack(
             config_id=request.config_id,
-            group_id=request.group_id,
+            customer_id=request.customer_id,
             policy_envelope_id=request.policy_envelope_id,
             policy_envelope_hash=envelope.hash,
             inventory_state=inventory_state,
@@ -516,7 +516,7 @@ def generate_supply_commit(
     try:
         commit = agent.generate_supply_commit(
             config_id=supbp.config_id,
-            group_id=supbp.group_id,
+            customer_id=supbp.customer_id,
             supply_baseline_pack_id=supbp.id,
             supply_baseline_pack_hash=supbp.hash,
             policy_envelope=policy_envelope,
@@ -617,7 +617,7 @@ def generate_allocation_commit(
     try:
         commit = agent.generate_allocation_commit(
             config_id=supply_commit.config_id,
-            group_id=supply_commit.group_id,
+            customer_id=supply_commit.customer_id,
             supply_commit_id=supply_commit.id,
             supply_commit_hash=supply_commit.hash,
             policy_envelope=policy_envelope,
@@ -711,13 +711,13 @@ def run_cascade(
         if request.use_food_dist_defaults:
             result = orchestrator.run_cascade_for_food_dist(
                 config_id=request.config_id,
-                group_id=request.group_id,
+                customer_id=request.customer_id,
                 user_id=user_id,
             )
         else:
             result = orchestrator.run_cascade(
                 config_id=request.config_id,
-                group_id=request.group_id,
+                customer_id=request.customer_id,
                 user_id=user_id,
             )
 
@@ -763,7 +763,7 @@ def create_feed_back_signal(
     try:
         signal = orchestrator.record_feed_back_signal(
             config_id=request.config_id,
-            group_id=request.group_id,
+            customer_id=request.customer_id,
             signal_type=request.signal_type,
             metric_name=request.metric_name,
             metric_value=request.metric_value,
@@ -858,15 +858,15 @@ class LayerLicenseUpdate(BaseModel):
     package_tier: Optional[str] = None
 
 
-@router.get("/layer-license/{group_id}", tags=["License"])
+@router.get("/layer-license/{customer_id}", tags=["License"])
 async def get_layer_licenses(
-    group_id: int,
+    customer_id: int,
     db: Session = Depends(get_db),
 ):
-    """Get all layer licenses for a group"""
+    """Get all layer licenses for a customer"""
     from app.models.planning_cascade import LayerLicense, LayerName, LayerMode
 
-    result = await db.execute(select(LayerLicense).where(LayerLicense.group_id == group_id))
+    result = await db.execute(select(LayerLicense).where(LayerLicense.customer_id == customer_id))
     licenses = result.scalars().all()
 
     # Build full map with defaults for missing layers
@@ -889,17 +889,17 @@ async def get_layer_licenses(
             "expires_at": lic.expires_at.isoformat() if lic.expires_at else None,
         }
 
-    return {"group_id": group_id, "layers": layer_map}
+    return {"customer_id": customer_id, "layers": layer_map}
 
 
-@router.put("/layer-license/{group_id}", tags=["License"])
+@router.put("/layer-license/{customer_id}", tags=["License"])
 def update_layer_license(
-    group_id: int,
+    customer_id: int,
     request: LayerLicenseUpdate,
     user_id: Optional[int] = None,
     db: Session = Depends(get_sync_db),
 ):
-    """Set layer mode for a group (admin only)"""
+    """Set layer mode for a customer (admin only)"""
     from app.models.planning_cascade import LayerLicense, LayerName, LayerMode
     from datetime import datetime
 
@@ -910,7 +910,7 @@ def update_layer_license(
         raise HTTPException(status_code=400, detail=str(e))
 
     existing = db.query(LayerLicense).filter_by(
-        group_id=group_id, layer=layer_name
+        customer_id=customer_id, layer=layer_name
     ).first()
 
     if existing:
@@ -921,7 +921,7 @@ def update_layer_license(
             existing.activated_at = datetime.utcnow()
     else:
         new_license = LayerLicense(
-            group_id=group_id,
+            customer_id=customer_id,
             layer=layer_name,
             mode=layer_mode,
             package_tier=request.package_tier,
@@ -931,18 +931,18 @@ def update_layer_license(
         db.add(new_license)
 
     db.commit()
-    return {"status": "ok", "group_id": group_id, "layer": request.layer, "mode": request.mode}
+    return {"status": "ok", "customer_id": customer_id, "layer": request.layer, "mode": request.mode}
 
 
-@router.put("/layer-license/{group_id}/package/{tier}", tags=["License"])
+@router.put("/layer-license/{customer_id}/package/{tier}", tags=["License"])
 def set_package_tier(
-    group_id: int,
+    customer_id: int,
     tier: str,
     user_id: Optional[int] = None,
     db: Session = Depends(get_sync_db),
 ):
     """
-    Set a package tier for a group, automatically configuring all layer modes.
+    Set a package tier for a customer, automatically configuring all layer modes.
 
     Tiers:
     - foundation: execution=active, all others=input
@@ -992,7 +992,7 @@ def set_package_tier(
 
     for layer_name, mode in config.items():
         existing = db.query(LayerLicense).filter_by(
-            group_id=group_id, layer=layer_name
+            customer_id=customer_id, layer=layer_name
         ).first()
 
         if existing:
@@ -1003,7 +1003,7 @@ def set_package_tier(
                 existing.activated_at = now
         else:
             db.add(LayerLicense(
-                group_id=group_id,
+                customer_id=customer_id,
                 layer=layer_name,
                 mode=mode,
                 package_tier=tier,
@@ -1012,7 +1012,7 @@ def set_package_tier(
             ))
 
     db.commit()
-    return {"status": "ok", "group_id": group_id, "tier": tier, "layers": {k.value: v.value for k, v in config.items()}}
+    return {"status": "ok", "customer_id": customer_id, "tier": tier, "layers": {k.value: v.value for k, v in config.items()}}
 
 
 # =============================================================================
@@ -1399,7 +1399,7 @@ async def get_trm_decisions(
     decision_type = trm_to_decision_type[trm_type]
 
     stmt = select(AgentDecision).where(
-        AgentDecision.group_id == config_id,  # config_id used as group context
+        AgentDecision.customer_id == config_id,  # config_id used as group context
         AgentDecision.decision_type == decision_type,
     )
 
@@ -1592,7 +1592,7 @@ async def get_trm_decision_detail(
         "reviewed_by": decision.user_id,
         "reviewed_at": decision.action_timestamp.isoformat() if decision.action_timestamp else None,
         "created_at": decision.created_at.isoformat() if decision.created_at else None,
-        "group_id": decision.group_id,
+        "customer_id": decision.customer_id,
     }
 
 
@@ -1625,7 +1625,7 @@ async def get_trm_summary(
     decision_type = trm_to_decision_type[trm_type]
 
     base_filters = [
-        AgentDecision.group_id == config_id,
+        AgentDecision.customer_id == config_id,
         AgentDecision.decision_type == decision_type,
     ]
 
@@ -1745,8 +1745,8 @@ async def _write_to_replay_buffer(
     reward = 1.0 if action == "accept" else -0.5
 
     entry = TRMReplayBuffer(
-        group_id=decision.group_id,
-        config_id=decision.group_id,  # Use group_id as config context
+        customer_id=decision.customer_id,
+        config_id=decision.customer_id,  # Use customer_id as config context
         trm_type=_trm_type_from_decision_type(decision.decision_type),
         decision_log_id=decision.id,
         decision_log_table="agent_decisions",

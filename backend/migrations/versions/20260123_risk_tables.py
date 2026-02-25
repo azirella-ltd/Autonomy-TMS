@@ -66,7 +66,7 @@ def upgrade():
         sa.Column('description', sa.Text(), nullable=True),
         # Ownership
         sa.Column('created_by', sa.Integer(), sa.ForeignKey('users.id'), nullable=False, index=True),
-        sa.Column('group_id', sa.Integer(), sa.ForeignKey('groups.id'), nullable=True, index=True),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id'), nullable=True, index=True),
         # Monitoring configuration
         sa.Column('config_id', sa.Integer(), sa.ForeignKey('supply_chain_configs.id'), nullable=True),
         # Filters (JSON)

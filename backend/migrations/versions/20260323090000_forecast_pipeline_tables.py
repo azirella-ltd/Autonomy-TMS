@@ -22,7 +22,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column("name", sa.String(length=120), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
-        sa.Column("group_id", sa.Integer(), sa.ForeignKey("groups.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("customer_id", sa.Integer(), sa.ForeignKey("groups.id", ondelete="CASCADE"), nullable=False),
         sa.Column("config_id", sa.Integer(), sa.ForeignKey("supply_chain_configs.id"), nullable=False),
         sa.Column("time_bucket", sa.String(length=10), nullable=False, server_default="W"),
         sa.Column("forecast_horizon", sa.Integer(), nullable=False, server_default="8"),
@@ -37,14 +37,14 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
     )
-    op.create_index("ix_forecast_pipeline_config_group_id", "forecast_pipeline_config", ["group_id"])
+    op.create_index("ix_forecast_pipeline_config_group_id", "forecast_pipeline_config", ["customer_id"])
     op.create_index("ix_forecast_pipeline_config_config_id", "forecast_pipeline_config", ["config_id"])
 
     op.create_table(
         "forecast_pipeline_run",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column("pipeline_config_id", sa.Integer(), sa.ForeignKey("forecast_pipeline_config.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("group_id", sa.Integer(), sa.ForeignKey("groups.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("customer_id", sa.Integer(), sa.ForeignKey("groups.id", ondelete="CASCADE"), nullable=False),
         sa.Column("config_id", sa.Integer(), sa.ForeignKey("supply_chain_configs.id"), nullable=False),
         sa.Column("status", sa.String(length=30), nullable=False, server_default="pending"),
         sa.Column("error_message", sa.Text(), nullable=True),
@@ -58,7 +58,7 @@ def upgrade() -> None:
         sa.Column("records_processed", sa.Integer(), nullable=True),
     )
     op.create_index("ix_forecast_pipeline_run_pipeline_config_id", "forecast_pipeline_run", ["pipeline_config_id"])
-    op.create_index("ix_forecast_pipeline_run_group_id", "forecast_pipeline_run", ["group_id"])
+    op.create_index("ix_forecast_pipeline_run_group_id", "forecast_pipeline_run", ["customer_id"])
     op.create_index("ix_forecast_pipeline_run_config_id", "forecast_pipeline_run", ["config_id"])
 
     op.create_table(

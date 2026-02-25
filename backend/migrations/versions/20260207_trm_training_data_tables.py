@@ -46,7 +46,7 @@ def upgrade():
     op.create_table(
         'trm_atp_decision_log',
         sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column('group_id', sa.Integer(), nullable=False),
+        sa.Column('customer_id', sa.Integer(), nullable=False),
         sa.Column('config_id', sa.Integer(), nullable=False),
         sa.Column('site_id', sa.Integer(), nullable=True),
         sa.Column('product_id', sa.Integer(), nullable=True),
@@ -75,12 +75,12 @@ def upgrade():
         sa.Column('ai_recommendation', postgresql.JSON(astext_type=sa.Text()), nullable=True),
         sa.Column('ai_confidence', sa.Float(), nullable=True),
         sa.Column('created_at', sa.DateTime(), default=sa.func.now()),
-        sa.ForeignKeyConstraint(['group_id'], ['groups.id']),
+        sa.ForeignKeyConstraint(['customer_id'], ['groups.id']),
         sa.ForeignKeyConstraint(['config_id'], ['supply_chain_configs.id']),
         sa.ForeignKeyConstraint(['decision_maker_id'], ['users.id']),
         sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_atp_decision_group_date', 'trm_atp_decision_log', ['group_id', 'decision_date'])
+    op.create_index('idx_atp_decision_group_date', 'trm_atp_decision_log', ['customer_id', 'decision_date'])
     op.create_index('idx_atp_decision_site', 'trm_atp_decision_log', ['site_id'])
     op.create_index('idx_atp_decision_product', 'trm_atp_decision_log', ['product_id'])
     op.create_index('idx_atp_decision_date', 'trm_atp_decision_log', ['decision_date'])
@@ -117,7 +117,7 @@ def upgrade():
     op.create_table(
         'trm_rebalancing_decision_log',
         sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column('group_id', sa.Integer(), nullable=False),
+        sa.Column('customer_id', sa.Integer(), nullable=False),
         sa.Column('config_id', sa.Integer(), nullable=False),
         sa.Column('product_id', sa.Integer(), nullable=True),
         sa.Column('decision_date', sa.Date(), nullable=False),
@@ -138,12 +138,12 @@ def upgrade():
         sa.Column('ai_recommendation', postgresql.JSON(astext_type=sa.Text()), nullable=True),
         sa.Column('ai_confidence', sa.Float(), nullable=True),
         sa.Column('created_at', sa.DateTime(), default=sa.func.now()),
-        sa.ForeignKeyConstraint(['group_id'], ['groups.id']),
+        sa.ForeignKeyConstraint(['customer_id'], ['groups.id']),
         sa.ForeignKeyConstraint(['config_id'], ['supply_chain_configs.id']),
         sa.ForeignKeyConstraint(['decision_maker_id'], ['users.id']),
         sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_rebalancing_decision_group', 'trm_rebalancing_decision_log', ['group_id'])
+    op.create_index('idx_rebalancing_decision_group', 'trm_rebalancing_decision_log', ['customer_id'])
     op.create_index('idx_rebalancing_decision_product', 'trm_rebalancing_decision_log', ['product_id'])
     op.create_index('idx_rebalancing_decision_date', 'trm_rebalancing_decision_log', ['decision_date'])
 
@@ -176,7 +176,7 @@ def upgrade():
     op.create_table(
         'trm_po_decision_log',
         sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column('group_id', sa.Integer(), nullable=False),
+        sa.Column('customer_id', sa.Integer(), nullable=False),
         sa.Column('config_id', sa.Integer(), nullable=False),
         sa.Column('site_id', sa.Integer(), nullable=True),
         sa.Column('product_id', sa.Integer(), nullable=True),
@@ -205,12 +205,12 @@ def upgrade():
         sa.Column('ai_recommendation', postgresql.JSON(astext_type=sa.Text()), nullable=True),
         sa.Column('ai_confidence', sa.Float(), nullable=True),
         sa.Column('created_at', sa.DateTime(), default=sa.func.now()),
-        sa.ForeignKeyConstraint(['group_id'], ['groups.id']),
+        sa.ForeignKeyConstraint(['customer_id'], ['groups.id']),
         sa.ForeignKeyConstraint(['config_id'], ['supply_chain_configs.id']),
         sa.ForeignKeyConstraint(['decision_maker_id'], ['users.id']),
         sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_po_decision_group', 'trm_po_decision_log', ['group_id'])
+    op.create_index('idx_po_decision_group', 'trm_po_decision_log', ['customer_id'])
     op.create_index('idx_po_decision_site', 'trm_po_decision_log', ['site_id'])
     op.create_index('idx_po_decision_product', 'trm_po_decision_log', ['product_id'])
     op.create_index('idx_po_decision_date', 'trm_po_decision_log', ['decision_date'])
@@ -243,7 +243,7 @@ def upgrade():
     op.create_table(
         'trm_order_tracking_decision_log',
         sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column('group_id', sa.Integer(), nullable=False),
+        sa.Column('customer_id', sa.Integer(), nullable=False),
         sa.Column('config_id', sa.Integer(), nullable=False),
         sa.Column('order_id', sa.String(100), nullable=False),
         sa.Column('order_type', sa.String(50), nullable=True),
@@ -269,12 +269,12 @@ def upgrade():
         sa.Column('ai_recommendation', postgresql.JSON(astext_type=sa.Text()), nullable=True),
         sa.Column('ai_confidence', sa.Float(), nullable=True),
         sa.Column('created_at', sa.DateTime(), default=sa.func.now()),
-        sa.ForeignKeyConstraint(['group_id'], ['groups.id']),
+        sa.ForeignKeyConstraint(['customer_id'], ['groups.id']),
         sa.ForeignKeyConstraint(['config_id'], ['supply_chain_configs.id']),
         sa.ForeignKeyConstraint(['decision_maker_id'], ['users.id']),
         sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_order_tracking_decision_group', 'trm_order_tracking_decision_log', ['group_id'])
+    op.create_index('idx_order_tracking_decision_group', 'trm_order_tracking_decision_log', ['customer_id'])
     op.create_index('idx_order_tracking_decision_order', 'trm_order_tracking_decision_log', ['order_id'])
     op.create_index('idx_order_tracking_decision_date', 'trm_order_tracking_decision_log', ['decision_date'])
 
@@ -304,7 +304,7 @@ def upgrade():
     op.create_table(
         'trm_replay_buffer',
         sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column('group_id', sa.Integer(), nullable=False),
+        sa.Column('customer_id', sa.Integer(), nullable=False),
         sa.Column('config_id', sa.Integer(), nullable=False),
         sa.Column('trm_type', sa.String(50), nullable=False),
         sa.Column('decision_log_id', sa.Integer(), nullable=True),
@@ -325,11 +325,11 @@ def upgrade():
         sa.Column('created_at', sa.DateTime(), default=sa.func.now()),
         sa.Column('times_sampled', sa.Integer(), default=0),
         sa.Column('last_sampled_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['group_id'], ['groups.id']),
+        sa.ForeignKeyConstraint(['customer_id'], ['groups.id']),
         sa.ForeignKeyConstraint(['config_id'], ['supply_chain_configs.id']),
         sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_replay_buffer_group', 'trm_replay_buffer', ['group_id'])
+    op.create_index('idx_replay_buffer_group', 'trm_replay_buffer', ['customer_id'])
     op.create_index('idx_replay_buffer_trm_type_date', 'trm_replay_buffer', ['trm_type', 'transition_date'])
     op.create_index('idx_replay_buffer_priority', 'trm_replay_buffer', ['trm_type', 'priority'])
     op.create_index('idx_replay_buffer_expert', 'trm_replay_buffer', ['is_expert'])

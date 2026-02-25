@@ -30,7 +30,7 @@ const BASE_FORM = {
   username: '',
   email: '',
   password: '',
-  groupId: '',
+  customerId: '',
 };
 
 const parseErrorMessage = (error, fallback) => {
@@ -49,7 +49,7 @@ function SystemAdminUserManagement() {
   const systemAdmin = isSystemAdminUser(user);
 
   const [admins, setAdmins] = useState([]);
-  const [groups, setGroups] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -62,15 +62,15 @@ function SystemAdminUserManagement() {
     }
   }, [systemAdmin, navigate]);
 
-  const loadGroups = useCallback(async () => {
+  const loadCustomers = useCallback(async () => {
     try {
       const response = await api.get('/groups');
       const data = Array.isArray(response.data) ? response.data : [];
-      setGroups(data);
+      setCustomers(data);
       return data;
     } catch (error) {
-      console.error('Error loading groups:', error);
-      setGroups([]);
+      console.error('Error loading customers:', error);
+      setCustomers([]);
       throw error;
     }
   }, []);
@@ -83,7 +83,7 @@ function SystemAdminUserManagement() {
       setAdmins(filtered);
       return filtered;
     } catch (error) {
-      console.error('Error loading group administrators:', error);
+      console.error('Error loading customer administrators:', error);
       setAdmins([]);
       throw error;
     }
@@ -97,7 +97,7 @@ function SystemAdminUserManagement() {
     const fetchAll = async () => {
       setLoading(true);
       try {
-        await Promise.all([loadGroups(), loadAdmins()]);
+        await Promise.all([loadCustomers(), loadAdmins()]);
       } catch (error) {
         toast.error('Failed to load user information');
       } finally {
@@ -106,20 +106,20 @@ function SystemAdminUserManagement() {
     };
 
     fetchAll();
-  }, [systemAdmin, loadGroups, loadAdmins]);
+  }, [systemAdmin, loadCustomers, loadAdmins]);
 
-  const groupMap = useMemo(() => {
+  const customerMap = useMemo(() => {
     const map = {};
-    (groups || []).forEach((group) => {
-      map[group.id] = group.name;
+    (customers || []).forEach((c) => {
+      map[c.id] = c.name;
     });
     return map;
-  }, [groups]);
+  }, [customers]);
 
   const handleOpenDialog = () => {
-    const defaultGroupId = groups.length === 1 ? String(groups[0].id) : '';
+    const defaultCustomerId = customers.length === 1 ? String(customers[0].id) : '';
     setEditingUser(null);
-    setForm({ ...BASE_FORM, groupId: defaultGroupId });
+    setForm({ ...BASE_FORM, customerId: defaultCustomerId });
     setDialogOpen(true);
   };
 
@@ -136,7 +136,7 @@ function SystemAdminUserManagement() {
       username: admin.username || '',
       email: admin.email || '',
       password: '',
-      groupId: admin.group_id ? String(admin.group_id) : '',
+      customerId: admin.customer_id ? String(admin.customer_id) : '',
     });
     setDialogOpen(true);
   };
@@ -147,22 +147,22 @@ function SystemAdminUserManagement() {
     const trimmedUsername = form.username.trim();
     const trimmedEmail = form.email.trim();
     const trimmedPassword = form.password.trim();
-    const trimmedGroup = form.groupId.trim();
+    const trimmedCustomer = form.customerId.trim();
 
     if (!trimmedUsername || !trimmedEmail) {
       toast.error('Username and email are required.');
       return;
     }
 
-    if (!trimmedGroup) {
-      toast.error('Please select a group for this administrator.');
+    if (!trimmedCustomer) {
+      toast.error('Please select a customer for this administrator.');
       return;
     }
 
     const payload = {
       username: trimmedUsername,
       email: trimmedEmail,
-      group_id: Number(trimmedGroup),
+      customer_id: Number(trimmedCustomer),
       user_type: 'GROUP_ADMIN',
     };
 
@@ -180,10 +180,10 @@ function SystemAdminUserManagement() {
     try {
       if (editingUser) {
         await api.put(`/users/${editingUser.id}`, payload);
-        toast.success('Group administrator updated successfully');
+        toast.success('Customer administrator updated successfully');
       } else {
         await api.post('/users', payload);
-        toast.success('Group administrator created successfully');
+        toast.success('Customer administrator created successfully');
       }
 
       handleCloseDialog();
@@ -198,12 +198,12 @@ function SystemAdminUserManagement() {
 
   const handleDeleteUser = async (admin) => {
     if (!admin) return;
-    const confirmMessage = `Are you sure you want to delete ${admin.username || 'this group administrator'}?`;
+    const confirmMessage = `Are you sure you want to delete ${admin.username || 'this customer administrator'}?`;
     if (!window.confirm(confirmMessage)) return;
 
     try {
       await api.delete(`/users/${admin.id}`);
-      toast.success('Group administrator deleted');
+      toast.success('Customer administrator deleted');
       await loadAdmins();
     } catch (error) {
       const message = parseErrorMessage(error, 'Failed to delete administrator');
@@ -227,13 +227,13 @@ function SystemAdminUserManagement() {
     <div className="max-w-5xl mx-auto my-8">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-semibold">Group Administrator Management</h1>
+          <h1 className="text-2xl font-semibold">Customer Administrator Management</h1>
           <p className="text-sm text-muted-foreground">
-            Create and manage group administrators across the platform.
+            Create and manage customer administrators across the platform.
           </p>
         </div>
         <Button onClick={handleOpenDialog} leftIcon={<Plus className="h-4 w-4" />}>
-          Add Group Admin
+          Add Customer Admin
         </Button>
       </div>
 
@@ -243,7 +243,7 @@ function SystemAdminUserManagement() {
             <TableRow>
               <TableHead className="font-semibold">Username</TableHead>
               <TableHead className="font-semibold">Email</TableHead>
-              <TableHead className="font-semibold">Group</TableHead>
+              <TableHead className="font-semibold">Customer</TableHead>
               <TableHead className="font-semibold">Type</TableHead>
               <TableHead className="text-right font-semibold">Actions</TableHead>
             </TableRow>
@@ -252,7 +252,7 @@ function SystemAdminUserManagement() {
             {admins.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center">
-                  <span className="text-muted-foreground">No group administrators found yet.</span>
+                  <span className="text-muted-foreground">No customer administrators found yet.</span>
                 </TableCell>
               </TableRow>
             ) : (
@@ -260,9 +260,9 @@ function SystemAdminUserManagement() {
                 <TableRow key={admin.id}>
                   <TableCell>{admin.username}</TableCell>
                   <TableCell>{admin.email}</TableCell>
-                  <TableCell>{groupMap[admin.group_id] || '—'}</TableCell>
+                  <TableCell>{customerMap[admin.customer_id] || '—'}</TableCell>
                   <TableCell>
-                    <Badge>Group Admin</Badge>
+                    <Badge>Customer Admin</Badge>
                   </TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="sm" onClick={() => handleEditUser(admin)}>
@@ -282,7 +282,7 @@ function SystemAdminUserManagement() {
       <Modal
         isOpen={dialogOpen}
         onClose={handleCloseDialog}
-        title={editingUser ? 'Edit Group Admin' : 'Add Group Admin'}
+        title={editingUser ? 'Edit Customer Admin' : 'Add Customer Admin'}
         size="md"
         footer={
           <div className="flex justify-end gap-2">
@@ -290,7 +290,7 @@ function SystemAdminUserManagement() {
               Cancel
             </Button>
             <Button type="submit" form="admin-form" disabled={saving}>
-              {saving ? 'Saving…' : editingUser ? 'Save Changes' : 'Add Group Admin'}
+              {saving ? 'Saving…' : editingUser ? 'Save Changes' : 'Add Customer Admin'}
             </Button>
           </div>
         }
@@ -328,25 +328,25 @@ function SystemAdminUserManagement() {
             />
           </div>
           <div>
-            <Label htmlFor="group">Group</Label>
+            <Label htmlFor="customer">Customer</Label>
             <Select
-              value={form.groupId}
-              onValueChange={(value) => setForm((prev) => ({ ...prev, groupId: value }))}
+              value={form.customerId}
+              onValueChange={(value) => setForm((prev) => ({ ...prev, customerId: value }))}
             >
-              <SelectTrigger id="group">
-                <SelectValue placeholder="Select a group" />
+              <SelectTrigger id="customer">
+                <SelectValue placeholder="Select a customer" />
               </SelectTrigger>
               <SelectContent>
-                {groups.map((group) => (
-                  <SelectItem key={group.id} value={String(group.id)}>
-                    {group.name}
+                {customers.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    {c.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {groups.length === 0 && (
+            {customers.length === 0 && (
               <p className="text-sm text-muted-foreground mt-1">
-                No groups available. Create a group before adding administrators.
+                No customers available. Create a customer before adding administrators.
               </p>
             )}
           </div>

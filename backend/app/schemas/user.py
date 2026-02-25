@@ -28,7 +28,7 @@ class UserBase(BaseModel):
     username: Optional[str] = Field(None, min_length=3, max_length=50, pattern="^[a-zA-Z0-9_-]+$")
     email: EmailStr
     full_name: Optional[str] = Field(None, max_length=100)
-    group_id: Optional[int] = None
+    customer_id: Optional[int] = None
     user_type: UserTypeEnum = Field(default=UserTypeEnum.USER)
 
 class UserCreate(UserBase):
@@ -76,7 +76,7 @@ class UserUpdate(BaseModel):
     password: Optional[str] = Field(None, min_length=8, max_length=50)
     is_active: Optional[bool] = None
     is_superuser: Optional[bool] = None
-    group_id: Optional[int] = None
+    customer_id: Optional[int] = None
     user_type: Optional[UserTypeEnum] = None
 
     @validator('user_type', pre=True)

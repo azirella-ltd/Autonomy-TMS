@@ -41,7 +41,7 @@ def create_user(
     email,
     password="StrongPass1!",
     user_type=UserTypeEnum.USER,
-    group_id=None,
+    customer_id=None,
     is_superuser=False,
 ):
     user = models.User(
@@ -52,65 +52,65 @@ def create_user(
         is_active=True,
         is_superuser=is_superuser,
         user_type=user_type,
-        group_id=group_id,
+        customer_id=customer_id,
     )
     session.add(user)
     session.flush()
     return user
 
 
-def create_group_with_admin(session, name, username, email):
+def create_customer_with_admin(session, name, username, email):
     admin_user = create_user(
         session,
         username=username,
         email=email,
         user_type=UserTypeEnum.GROUP_ADMIN,
     )
-    group = models.Group(
+    customer = models.Customer(
         name=name,
         description=None,
         logo=None,
         admin_id=admin_user.id,
     )
-    session.add(group)
+    session.add(customer)
     session.flush()
-    admin_user.group_id = group.id
+    admin_user.customer_id = customer.id
     session.commit()
     session.refresh(admin_user)
-    session.refresh(group)
-    return group, admin_user
+    session.refresh(customer)
+    return customer, admin_user
 
 
-def create_player(session, group, username, email):
+def create_player(session, customer, username, email):
     player = create_user(
         session,
         username=username,
         email=email,
         user_type=UserTypeEnum.USER,
-        group_id=group.id,
+        customer_id=customer.id,
     )
     session.commit()
     session.refresh(player)
     return player
 
 
-def test_group_admin_lists_only_players_in_their_group(db_session):
-    group_a, admin_a = create_group_with_admin(db_session, "Group A", "admin_a", "admin_a@example.com")
-    group_b, _ = create_group_with_admin(db_session, "Group B", "admin_b", "admin_b@example.com")
+def test_group_admin_lists_only_players_in_their_customer(db_session):
+    customer_a, admin_a = create_customer_with_admin(db_session, "Customer A", "admin_a", "admin_a@example.com")
+    customer_b, _ = create_customer_with_admin(db_session, "Customer B", "admin_b", "admin_b@example.com")
 
-    player_a1 = create_player(db_session, group_a, "player_a1", "player_a1@example.com")
-    player_a2 = create_player(db_session, group_a, "player_a2", "player_a2@example.com")
-    create_player(db_session, group_b, "player_b1", "player_b1@example.com")
+    player_a1 = create_player(db_session, customer_a, "player_a1", "player_a1@example.com")
+    player_a2 = create_player(db_session, customer_a, "player_a2", "player_a2@example.com")
+    create_player(db_session, customer_b, "player_b1", "player_b1@example.com")
 
     service = UserService(db_session)
     players = service.list_accessible_users(current_user=admin_a, limit=10)
 
     assert {player.id for player in players} == {player_a1.id, player_a2.id}
-    assert all(player.group_id == group_a.id for player in players)
+    assert all(player.customer_id == customer_a.id for player in players)
 
 
-def test_group_admin_create_player_defaults_to_group_and_type(db_session):
-    group, admin = create_group_with_admin(db_session, "Group A", "admin", "admin@example.com")
+def test_group_admin_create_player_defaults_to_customer_and_type(db_session):
+    customer, admin = create_customer_with_admin(db_session, "Customer A", "admin", "admin@example.com")
     service = UserService(db_session)
 
     new_player = service.create_user(
@@ -122,13 +122,13 @@ def test_group_admin_create_player_defaults_to_group_and_type(db_session):
         admin,
     )
 
-    assert new_player.group_id == group.id
+    assert new_player.customer_id == customer.id
     assert service.get_user_type(new_player) == UserTypeEnum.USER
     assert new_player.is_superuser is False
 
 
 def test_group_admin_cannot_create_non_player(db_session):
-    _, admin = create_group_with_admin(db_session, "Group A", "admin", "admin@example.com")
+    _, admin = create_customer_with_admin(db_session, "Customer A", "admin", "admin@example.com")
     service = UserService(db_session)
 
     with pytest.raises(HTTPException) as exc:
@@ -145,9 +145,9 @@ def test_group_admin_cannot_create_non_player(db_session):
     assert exc.value.status_code == status.HTTP_403_FORBIDDEN
 
 
-def test_group_admin_updates_player_in_group(db_session):
-    group, admin = create_group_with_admin(db_session, "Group A", "admin", "admin@example.com")
-    player = create_player(db_session, group, "player", "player@example.com")
+def test_group_admin_updates_player_in_customer(db_session):
+    customer, admin = create_customer_with_admin(db_session, "Customer A", "admin", "admin@example.com")
+    player = create_player(db_session, customer, "player", "player@example.com")
     service = UserService(db_session)
 
     updated = service.update_user(
@@ -159,10 +159,10 @@ def test_group_admin_updates_player_in_group(db_session):
     assert updated.email == "updated@example.com"
 
 
-def test_group_admin_cannot_update_player_in_other_group(db_session):
-    _, admin = create_group_with_admin(db_session, "Group A", "admin", "admin@example.com")
-    other_group, _ = create_group_with_admin(db_session, "Group B", "other_admin", "other_admin@example.com")
-    other_player = create_player(db_session, other_group, "player_b", "player_b@example.com")
+def test_group_admin_cannot_update_player_in_other_customer(db_session):
+    _, admin = create_customer_with_admin(db_session, "Customer A", "admin", "admin@example.com")
+    other_customer, _ = create_customer_with_admin(db_session, "Customer B", "other_admin", "other_admin@example.com")
+    other_player = create_player(db_session, other_customer, "player_b", "player_b@example.com")
     service = UserService(db_session)
 
     with pytest.raises(HTTPException) as exc:
@@ -175,9 +175,9 @@ def test_group_admin_cannot_update_player_in_other_group(db_session):
     assert exc.value.status_code == status.HTTP_403_FORBIDDEN
 
 
-def test_group_admin_deletes_player_in_group(db_session):
-    group, admin = create_group_with_admin(db_session, "Group A", "admin", "admin@example.com")
-    player = create_player(db_session, group, "player", "player@example.com")
+def test_group_admin_deletes_player_in_customer(db_session):
+    customer, admin = create_customer_with_admin(db_session, "Customer A", "admin", "admin@example.com")
+    player = create_player(db_session, customer, "player", "player@example.com")
     service = UserService(db_session)
 
     response = service.delete_user(player.id, admin)
@@ -186,10 +186,10 @@ def test_group_admin_deletes_player_in_group(db_session):
     assert db_session.get(models.User, player.id) is None
 
 
-def test_group_admin_cannot_delete_player_in_other_group(db_session):
-    _, admin = create_group_with_admin(db_session, "Group A", "admin", "admin@example.com")
-    other_group, _ = create_group_with_admin(db_session, "Group B", "other_admin", "other_admin@example.com")
-    other_player = create_player(db_session, other_group, "player_b", "player_b@example.com")
+def test_group_admin_cannot_delete_player_in_other_customer(db_session):
+    _, admin = create_customer_with_admin(db_session, "Customer A", "admin", "admin@example.com")
+    other_customer, _ = create_customer_with_admin(db_session, "Customer B", "other_admin", "other_admin@example.com")
+    other_player = create_player(db_session, other_customer, "player_b", "player_b@example.com")
     service = UserService(db_session)
 
     with pytest.raises(HTTPException) as exc:

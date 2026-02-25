@@ -51,7 +51,7 @@ class TurnaroundOrder(Base):
 
     # Configuration
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"))
 
     # AWS SC Compliance fields
     company_id = Column(String(100))  # SC: company identifier
@@ -159,7 +159,7 @@ class TurnaroundOrder(Base):
         Index('idx_turn_reason', 'return_reason_code'),
         Index('idx_turn_disposition', 'disposition'),
         Index('idx_turn_config', 'config_id'),
-        Index('idx_turn_group', 'group_id'),
+        Index('idx_turn_customer', 'customer_id'),
         Index('idx_turn_company', 'company_id'),
         Index('idx_turn_order_date', 'order_date'),
     )

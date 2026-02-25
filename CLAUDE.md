@@ -28,7 +28,11 @@ When implementing any entity:
 | play_round | execute_period | Function name |
 | game_id | scenario_id | Database/API field |
 | player_id/participant_id | scenario_user_id | Database/API field |
-| Training Group | Learning Group | Group mode for user education |
+| Group | Customer | Organization/tenant boundary |
+| group_id | customer_id | Database/API field |
+| GroupMode | CustomerMode | Operating mode enum |
+| GroupService | CustomerService | Backend service |
+| Training Group | Learning Customer | Customer in education mode |
 | node | site | AWS SC data model |
 | nodes | site (table) | AWS SC data model |
 | item | product | AWS SC data model |
@@ -50,23 +54,23 @@ When implementing any entity:
 - Use `Period`, `ScenarioUserPeriod` (not Round*, GameRound)
 - Frontend uses `simulationApi` with methods like `createScenario()`, `getScenarioUsers()`
 
-### Group Modes vs AI Model Training
+### Customer Modes vs AI Model Training
 
 **CRITICAL DISTINCTION**: Do not confuse these two uses of "training":
 
 | Term | Meaning | Examples |
 |------|---------|----------|
-| **Learning Group** | Group mode for end-user education | Users run scenarios to learn how AI agents work, understand supply chain dynamics |
-| **AI Model Training** | Process of training ML models | TRM training, GNN training, RL training - happens in BOTH Learning and Production groups |
+| **Learning Customer** | Customer in education mode | Users run scenarios to learn how AI agents work, understand supply chain dynamics |
+| **AI Model Training** | Process of training ML models | TRM training, GNN training, RL training - happens in BOTH Learning and Production customers |
 
-- **Learning Group** (`GroupMode.LEARNING`): Simplified navigation, game-like clock (turn-based/timed), focused on user education and building confidence with AI agents
-- **Production Group** (`GroupMode.PRODUCTION`): Full navigation, real data integration, real planning workflows
+- **Learning Customer** (`CustomerMode.LEARNING`): Simplified navigation, game-like clock (turn-based/timed), focused on user education and building confidence with AI agents
+- **Production Customer** (`CustomerMode.PRODUCTION`): Full navigation, real data integration, real planning workflows
 
-**Both group types support AI model training**:
-- Learning Groups need to train agents for educational scenarios
-- Production Groups need to train agents for real-world decision making
+**Both customer modes support AI model training**:
+- Learning customers need to train agents for educational scenarios
+- Production customers need to train agents for real-world decision making
 
-The group mode determines the **user experience**, not whether AI models can be trained.
+The customer mode determines the **user experience**, not whether AI models can be trained.
 
 ---
 
@@ -395,7 +399,7 @@ make proxy-logs
 
 **Core Services** (`services/`):
 - `supply_chain_config_service.py`: DAG-based supply chain configuration
-- `group_service.py`: Group and session management
+- `customer_service.py`: Customer and session management
 - `auth_service.py`: JWT authentication and authorization
 - `conformal_orchestrator.py`: Automatic conformal prediction feedback loop for demand, lead time, price, yield, and service level (forecast load hooks, multi-entity actuals observation, drift monitoring, scheduled recalibration, suite ↔ DB persistence)
 - `agent_context_explainer.py`: Context-aware explainability orchestrator — authority boundaries, guardrails, policy parameters, conformal intervals, feature attribution, counterfactuals for all 11 TRM agents and both GNN models
@@ -417,7 +421,7 @@ make proxy-logs
 - `scenario.py`: Scenario, Period, ScenarioUserAction (simulation module)
 - `participant.py`: ScenarioUser, ScenarioUserRole, ScenarioUserPeriod (simulation module)
 - `agent_config.py`: AgentConfig, AgentScenarioConfig
-- `group.py`: Group model (company equivalent)
+- `customer.py`: Customer model (Autonomy customer/tenant)
 - `user.py`: User, Role, Permission
 - `rbac.py`: Role-Based Access Control
 - `gnn/`: GNN model definitions
@@ -451,7 +455,7 @@ make proxy-logs
 - `GNNDashboard.jsx`: GNN training interface
 - `ModelSetup.jsx`: Model configuration
 - `UserManagement.jsx`: User administration
-- `GroupManagement.jsx`: Group/company management
+- `CustomerManagement.jsx`: Customer management
 
 **Components** (`components/`):
 - `supply-chain-config/`: Network configuration UI with D3-Sankey diagrams
@@ -661,7 +665,7 @@ See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
 
 **Organization Tables**:
 - `users`: User accounts with role-based access
-- `groups`: Organizations/companies (equivalent to AWS SC `company`)
+- `customers`: Autonomy customers/tenants (equivalent to AWS SC `company`)
 - `roles`: RBAC roles
 - `permissions`: Granular permissions
 - `user_roles`: Role assignments
@@ -890,7 +894,7 @@ POST /api/v1/synthetic-data/wizard/sessions/{session_id}/generate
 - **Manufacturer**: Multi-tier production (Plants → Sub-Assy → Component), 160 SKUs, autonomous mode
 
 **What Gets Created**:
-- Group (organization) and admin user
+- Customer (organization) and admin user
 - Supply chain config with sites, transportation lanes, products
 - Site and product hierarchies (Company→Region→Country→Site, Category→Family→Group→Product)
 - Forecasts with P10/P50/P90 percentiles

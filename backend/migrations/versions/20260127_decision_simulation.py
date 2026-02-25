@@ -113,7 +113,7 @@ def upgrade():
         sa.Column('id', sa.Integer, primary_key=True, autoincrement=True),
 
         # Scope
-        sa.Column('group_id', sa.Integer, nullable=False),
+        sa.Column('customer_id', sa.Integer, nullable=False),
         sa.Column('config_id', sa.Integer, nullable=True),  # Null = applies to all configs in group
 
         # Agent/User scope
@@ -137,14 +137,14 @@ def upgrade():
         sa.Column('created_by', sa.Integer, nullable=True),
 
         # Foreign keys
-        sa.ForeignKeyConstraint(['group_id'], ['groups.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['customer_id'], ['groups.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['config_id'], ['supply_chain_configs.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['created_by'], ['users.id'], ondelete='SET NULL'),
     )
 
     # Create indexes for authority_definitions
-    op.create_index('idx_authority_group', 'authority_definitions', ['group_id'])
+    op.create_index('idx_authority_group', 'authority_definitions', ['customer_id'])
     op.create_index('idx_authority_config', 'authority_definitions', ['config_id'])
     op.create_index('idx_authority_action', 'authority_definitions', ['action_type'])
     op.create_index('idx_authority_agent', 'authority_definitions', ['agent_id'])

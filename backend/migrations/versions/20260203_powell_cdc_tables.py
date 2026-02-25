@@ -26,7 +26,7 @@ def upgrade():
         'powell_cdc_trigger_log',
         sa.Column('id', sa.BigInteger(), autoincrement=True, nullable=False),
         sa.Column('site_key', sa.String(100), nullable=False),
-        sa.Column('group_id', sa.Integer(), nullable=True),
+        sa.Column('customer_id', sa.Integer(), nullable=True),
         sa.Column('triggered_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.Column('reasons', sa.JSON(), nullable=False),  # ["demand_deviation", "inventory_low"]
         sa.Column('action_taken', sa.String(50), nullable=False),  # "full_cfa", "allocation", "param_adj"
@@ -39,7 +39,7 @@ def upgrade():
         sa.Column('execution_duration_ms', sa.Integer(), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.PrimaryKeyConstraint('id'),
-        sa.ForeignKeyConstraint(['group_id'], ['groups.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['customer_id'], ['groups.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['approved_by'], ['users.id'], ondelete='SET NULL'),
     )
 
@@ -51,7 +51,7 @@ def upgrade():
     op.create_index(
         'ix_powell_cdc_trigger_log_group_triggered',
         'powell_cdc_trigger_log',
-        ['group_id', 'triggered_at']
+        ['customer_id', 'triggered_at']
     )
     op.create_index(
         'ix_powell_cdc_trigger_log_severity',
@@ -64,7 +64,7 @@ def upgrade():
         'powell_cdc_thresholds',
         sa.Column('id', sa.BigInteger(), autoincrement=True, nullable=False),
         sa.Column('site_key', sa.String(100), nullable=False),
-        sa.Column('group_id', sa.Integer(), nullable=True),
+        sa.Column('customer_id', sa.Integer(), nullable=True),
         sa.Column('threshold_type', sa.String(50), nullable=False),
         # Types: demand_deviation, inventory_ratio_low, inventory_ratio_high,
         #        service_level_drop, lead_time_increase, backlog_growth_days,
@@ -78,7 +78,7 @@ def upgrade():
         sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.Column('updated_at', sa.DateTime(), nullable=True, onupdate=sa.func.now()),
         sa.PrimaryKeyConstraint('id'),
-        sa.ForeignKeyConstraint(['group_id'], ['groups.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['customer_id'], ['groups.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['created_by'], ['users.id'], ondelete='SET NULL'),
         sa.UniqueConstraint('site_key', 'threshold_type', 'effective_from',
                            name='uk_powell_cdc_thresholds_site_type_date'),
@@ -95,7 +95,7 @@ def upgrade():
         'powell_site_agent_checkpoints',
         sa.Column('id', sa.BigInteger(), autoincrement=True, nullable=False),
         sa.Column('site_key', sa.String(100), nullable=False),
-        sa.Column('group_id', sa.Integer(), nullable=True),
+        sa.Column('customer_id', sa.Integer(), nullable=True),
         sa.Column('checkpoint_name', sa.String(100), nullable=False),  # "final", "bc_best", "epoch_50"
         sa.Column('checkpoint_path', sa.String(500), nullable=False),
         sa.Column('model_config', sa.JSON(), nullable=False),  # SiteAgentModelConfig
@@ -108,7 +108,7 @@ def upgrade():
         sa.Column('activated_at', sa.DateTime(), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.PrimaryKeyConstraint('id'),
-        sa.ForeignKeyConstraint(['group_id'], ['groups.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['customer_id'], ['groups.id'], ondelete='CASCADE'),
     )
 
     op.create_index(
@@ -122,7 +122,7 @@ def upgrade():
         'powell_site_agent_decisions',
         sa.Column('id', sa.BigInteger(), autoincrement=True, nullable=False),
         sa.Column('site_key', sa.String(100), nullable=False),
-        sa.Column('group_id', sa.Integer(), nullable=True),
+        sa.Column('customer_id', sa.Integer(), nullable=True),
         sa.Column('decision_type', sa.String(50), nullable=False),  # "atp", "inventory", "po_timing"
         sa.Column('decision_timestamp', sa.DateTime(), nullable=False, server_default=sa.func.now()),
 
@@ -154,7 +154,7 @@ def upgrade():
 
         sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.PrimaryKeyConstraint('id'),
-        sa.ForeignKeyConstraint(['group_id'], ['groups.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['customer_id'], ['groups.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['checkpoint_id'], ['powell_site_agent_checkpoints.id'],
                                ondelete='SET NULL'),
         sa.ForeignKeyConstraint(['override_by'], ['users.id'], ondelete='SET NULL'),

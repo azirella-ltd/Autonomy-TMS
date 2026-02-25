@@ -30,7 +30,7 @@ import { Shield, TrendingUp, DollarSign, Star, Download } from 'lucide-react';
 import AnalyticsSummaryCard from './AnalyticsSummaryCard';
 import simulationApi from '../../services/api';
 
-const PolicyEffectiveness = ({ configId, groupId }) => {
+const PolicyEffectiveness = ({ configId, customerId }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [metrics, setMetrics] = useState(null);
@@ -38,13 +38,13 @@ const PolicyEffectiveness = ({ configId, groupId }) => {
 
   useEffect(() => {
     fetchMetrics();
-  }, [configId, groupId]);
+  }, [configId, customerId]);
 
   const fetchMetrics = async () => {
     setLoading(true);
     setError(null);
 
-    const result = await simulationApi.getPolicyEffectiveness(configId, groupId);
+    const result = await simulationApi.getPolicyEffectiveness(configId, customerId);
 
     if (result.success) {
       setMetrics(result.data);
@@ -133,7 +133,7 @@ const PolicyEffectiveness = ({ configId, groupId }) => {
   const chartData = prepareChartData();
 
   const handleExportCSV = () => {
-    simulationApi.exportPoliciesCSV(configId, groupId);
+    simulationApi.exportPoliciesCSV(configId, customerId);
   };
 
   return (

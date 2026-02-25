@@ -301,11 +301,11 @@ def receive_external_demand_plan(
             imported_count += 1
 
         product_site_pairs = list({(str(fi.product_id), int(fi.site_id)) for fi in demand_plan.forecasts if str(fi.site_id).isdigit()})
-        if product_site_pairs and getattr(current_user, "group_id", None):
+        if product_site_pairs and getattr(current_user, "customer_id", None):
             background_tasks.add_task(
                 _trigger_conformal_forecast_hook,
                 product_site_pairs=product_site_pairs,
-                group_id=current_user.group_id,
+                customer_id=current_user.customer_id,
             )
 
         return {
@@ -429,11 +429,11 @@ def apply_forecast_overrides(
         for o in request.overrides
         if str(o.site_id).isdigit()
     ]
-    if product_site_pairs and getattr(current_user, "group_id", None):
+    if product_site_pairs and getattr(current_user, "customer_id", None):
         background_tasks.add_task(
             _trigger_conformal_forecast_hook,
             product_site_pairs=list(set(product_site_pairs)),
-            group_id=current_user.group_id,
+            customer_id=current_user.customer_id,
         )
 
     return ForecastOverrideResponse(
@@ -447,7 +447,7 @@ def apply_forecast_overrides(
 
 async def _trigger_conformal_forecast_hook(
     product_site_pairs: List[Tuple[str, int]],
-    group_id: int,
+    customer_id: int,
 ) -> None:
     """Background task: notify conformal orchestrator of forecast load."""
     from app.db.session import async_session_factory
@@ -458,7 +458,7 @@ async def _trigger_conformal_forecast_hook(
             return
         async with async_session_factory() as db:
             orchestrator = ConformalOrchestrator.get_instance()
-            result = await orchestrator.on_forecasts_loaded(db, product_site_pairs, group_id)
+            result = await orchestrator.on_forecasts_loaded(db, product_site_pairs, customer_id)
             await db.commit()
             logger.info(f"Conformal forecast hook: {result}")
     except Exception as exc:

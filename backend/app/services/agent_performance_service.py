@@ -42,7 +42,7 @@ class AgentPerformanceService:
 
     def generate_demo_performance_metrics(
         self,
-        group_id: int,
+        customer_id: int,
         months: int = 12,
         start_date: Optional[datetime] = None
     ) -> List[PerformanceMetric]:
@@ -105,7 +105,7 @@ class AgentPerformanceService:
 
             # Create overall metric
             metric = PerformanceMetric(
-                group_id=group_id,
+                customer_id=customer_id,
                 period_start=period_start,
                 period_end=period_end,
                 period_type="monthly",
@@ -143,7 +143,7 @@ class AgentPerformanceService:
                 cat_agent_decisions = int(cat_decisions * (cat_automation / 100))
 
                 cat_metric = PerformanceMetric(
-                    group_id=group_id,
+                    customer_id=customer_id,
                     period_start=period_start,
                     period_end=period_end,
                     period_type="monthly",
@@ -160,7 +160,7 @@ class AgentPerformanceService:
 
         return metrics
 
-    def generate_demo_sop_worklist(self, group_id: int) -> List[SOPWorklistItem]:
+    def generate_demo_sop_worklist(self, customer_id: int) -> List[SOPWorklistItem]:
         """
         Generate demo S&OP worklist items matching the screenshot pattern.
         """
@@ -295,7 +295,7 @@ class AgentPerformanceService:
         for item_data in worklist_items:
             status = item_data.pop("status", DecisionStatus.PENDING)
             item = SOPWorklistItem(
-                group_id=group_id,
+                customer_id=customer_id,
                 status=status,
                 **item_data
             )
@@ -309,7 +309,7 @@ class AgentPerformanceService:
 
     def get_executive_dashboard_data(
         self,
-        group_id: int,
+        customer_id: int,
         planning_cycle: Optional[str] = None
     ) -> Dict[str, Any]:
         """
@@ -319,7 +319,7 @@ class AgentPerformanceService:
         """
         # For demo, generate if no data exists
         metrics = self.db.query(PerformanceMetric).filter(
-            PerformanceMetric.group_id == group_id,
+            PerformanceMetric.customer_id == customer_id,
             PerformanceMetric.category.is_(None)
         ).order_by(PerformanceMetric.period_start.desc()).limit(12).all()
 
@@ -560,7 +560,7 @@ class AgentPerformanceService:
 
         return trends
 
-    def get_sop_worklist_summary(self, group_id: int) -> Dict[str, Any]:
+    def get_sop_worklist_summary(self, customer_id: int) -> Dict[str, Any]:
         """Get S&OP worklist summary KPIs for the dashboard cards."""
         return {
             "gross_margin": {
@@ -597,13 +597,13 @@ class AgentPerformanceService:
 
     def get_sop_worklist_items(
         self,
-        group_id: int,
+        customer_id: int,
         status: Optional[str] = None,
         category: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Get S&OP worklist items."""
         query = self.db.query(SOPWorklistItem).filter(
-            SOPWorklistItem.group_id == group_id
+            SOPWorklistItem.customer_id == customer_id
         )
 
         if status:
@@ -625,7 +625,7 @@ class AgentPerformanceService:
 
         if not items:
             # Return demo data
-            demo_items = self.generate_demo_sop_worklist(group_id)
+            demo_items = self.generate_demo_sop_worklist(customer_id)
             return [item.to_dict() for item in demo_items]
 
         return [item.to_dict() for item in items]

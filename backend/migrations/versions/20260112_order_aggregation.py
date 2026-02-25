@@ -65,7 +65,7 @@ def upgrade():
         sa.Column('priority', sa.Integer(), server_default='100', nullable=True),
 
         # Multi-tenancy
-        sa.Column('group_id', sa.Integer(), nullable=True),
+        sa.Column('customer_id', sa.Integer(), nullable=True),
         sa.Column('config_id', sa.Integer(), nullable=True),
 
         # Effective date range
@@ -83,14 +83,14 @@ def upgrade():
         sa.ForeignKeyConstraint(['from_site_id'], ['nodes.id'], ),
         sa.ForeignKeyConstraint(['to_site_id'], ['nodes.id'], ),
         sa.ForeignKeyConstraint(['product_id'], ['items.id'], ),
-        sa.ForeignKeyConstraint(['group_id'], ['groups.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['customer_id'], ['groups.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['config_id'], ['supply_chain_configs.id'], ),
     )
 
     # Create indexes for order_aggregation_policy
     op.create_index('idx_agg_policy_sites', 'order_aggregation_policy', ['from_site_id', 'to_site_id'])
     op.create_index('idx_agg_policy_product', 'order_aggregation_policy', ['product_id'])
-    op.create_index('idx_agg_policy_group_config', 'order_aggregation_policy', ['group_id', 'config_id'])
+    op.create_index('idx_agg_policy_group_config', 'order_aggregation_policy', ['customer_id', 'config_id'])
     op.create_index('idx_agg_policy_active', 'order_aggregation_policy', ['is_active'])
 
     print("✓ Created order_aggregation_policy table")
@@ -130,7 +130,7 @@ def upgrade():
         sa.Column('status', sa.String(length=20), server_default='pending', nullable=True),
 
         # Multi-tenancy
-        sa.Column('group_id', sa.Integer(), nullable=True),
+        sa.Column('customer_id', sa.Integer(), nullable=True),
         sa.Column('config_id', sa.Integer(), nullable=True),
 
         # Timestamps
@@ -146,7 +146,7 @@ def upgrade():
         sa.ForeignKeyConstraint(['from_site_id'], ['nodes.id'], ),
         sa.ForeignKeyConstraint(['to_site_id'], ['nodes.id'], ),
         sa.ForeignKeyConstraint(['product_id'], ['items.id'], ),
-        sa.ForeignKeyConstraint(['group_id'], ['groups.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['customer_id'], ['groups.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['config_id'], ['supply_chain_configs.id'], ),
     )
 

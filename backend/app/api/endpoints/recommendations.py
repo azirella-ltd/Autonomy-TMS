@@ -19,7 +19,7 @@ from enum import Enum
 from app.db.session import get_sync_db
 from app.api import deps
 from app.models.user import User
-from app.models.group import Group
+from app.models.customer import Customer
 from app.models.sc_entities import InvLevel, InvPolicy, Product, Forecast
 from app.models.supply_chain_config import Site
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
@@ -171,9 +171,9 @@ def get_recommendations_dashboard(
     """
     # Determine agent mode from user's group settings
     agent_mode = AgentMode.COPILOT  # default
-    if current_user.group_id:
-        group = db.query(Group).filter(Group.id == current_user.group_id).first()
-        if group and group.mode and group.mode.value == "learning":
+    if current_user.customer_id:
+        customer = db.query(Customer).filter(Customer.id == current_user.customer_id).first()
+        if customer and customer.mode and customer.mode.value == "learning":
             agent_mode = AgentMode.COPILOT
         # Production groups also default to copilot unless overridden
 

@@ -96,7 +96,7 @@ class PowellTrainingConfig(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # Ownership
-    group_id: Mapped[int] = mapped_column(Integer, ForeignKey("groups.id"), nullable=False, index=True)
+    customer_id: Mapped[int] = mapped_column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
     config_id: Mapped[int] = mapped_column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False)
 
     name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -461,7 +461,7 @@ class TRMBaseModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    group_id: Mapped[int] = mapped_column(Integer, ForeignKey("groups.id"), nullable=False, index=True)
+    customer_id: Mapped[int] = mapped_column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
     master_type: Mapped[str] = mapped_column(String(50), nullable=False)
     trm_type: Mapped[str] = mapped_column(
         SAEnum(TRMType, name="trm_type_enum", create_constraint=False),
@@ -480,6 +480,6 @@ class TRMBaseModel(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (
-        UniqueConstraint('group_id', 'master_type', 'trm_type',
-                         name='uq_base_model_group_type'),
+        UniqueConstraint('customer_id', 'master_type', 'trm_type',
+                         name='uq_base_model_customer_type'),
     )

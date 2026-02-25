@@ -21,7 +21,7 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.append(str(BACKEND_ROOT))
 
 from app.core.config import settings
-from app.models import Group
+from app.models import Customer
 from app.models.supply_chain_config import (
     Item,
     ProductSiteConfig,

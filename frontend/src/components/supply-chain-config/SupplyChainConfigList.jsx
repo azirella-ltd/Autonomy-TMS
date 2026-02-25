@@ -232,7 +232,7 @@ const SupplyChainConfigList = ({
       const { id, created_at, updated_at, is_active, ...configData } = config;
       await api.post('/supply-chain-config', {
         ...configData,
-        group_id: config.group_id ?? configData.group_id ?? null,
+        customer_id: config.customer_id ?? configData.customer_id ?? null,
         name: `${config.name} (Copy)`,
         is_active: false,
       });
@@ -496,7 +496,7 @@ const SupplyChainConfigList = ({
           <div>
             <h2 className="text-lg font-bold">{title}</h2>
             <p className="text-sm text-muted-foreground">
-              Manage the supply chain setups available for your group&apos;s games.
+              Manage the supply chain setups available for your customer&apos;s scenarios.
             </p>
           </div>
           {!readOnly && (

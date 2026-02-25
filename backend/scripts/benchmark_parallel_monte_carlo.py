@@ -36,7 +36,7 @@ async def create_test_runs(num_runs: int = 2) -> list[int]:
         for i in range(num_runs):
             run = MonteCarloRun(
                 config_id=1,  # Assuming Default TBG config exists
-                group_id=1,
+                customer_id=1,
                 num_scenarios=0,  # Will be set by engine
                 status=SimulationStatus.PENDING,
                 start_date=date.today(),
@@ -53,7 +53,7 @@ async def create_test_runs(num_runs: int = 2) -> list[int]:
 async def benchmark_sequential(
     run_id: int,
     config_id: int,
-    group_id: int,
+    customer_id: int,
     num_scenarios: int,
     planning_horizon_weeks: int
 ) -> float:
@@ -65,7 +65,7 @@ async def benchmark_sequential(
     engine = MonteCarloEngine(
         run_id=run_id,
         config_id=config_id,
-        group_id=group_id,
+        customer_id=customer_id,
         num_scenarios=num_scenarios,
         random_seed=42
     )
@@ -83,7 +83,7 @@ async def benchmark_sequential(
 async def benchmark_parallel(
     run_id: int,
     config_id: int,
-    group_id: int,
+    customer_id: int,
     num_scenarios: int,
     planning_horizon_weeks: int,
     num_workers: int = None
@@ -96,7 +96,7 @@ async def benchmark_parallel(
     engine = ParallelMonteCarloEngine(
         run_id=run_id,
         config_id=config_id,
-        group_id=group_id,
+        customer_id=customer_id,
         num_scenarios=num_scenarios,
         random_seed=42,
         num_workers=num_workers
@@ -183,7 +183,7 @@ async def main(args):
     print(f"Scenarios:        {args.scenarios}")
     print(f"Planning Horizon: {args.horizon} weeks")
     print(f"Config ID:        {args.config_id}")
-    print(f"Group ID:         {args.group_id}")
+    print(f"Customer ID:         {args.customer_id}")
     print(f"CPU Cores:        {mp.cpu_count()}")
     print("="*80)
 
@@ -196,7 +196,7 @@ async def main(args):
     seq_time = await benchmark_sequential(
         run_id=run_ids[0],
         config_id=args.config_id,
-        group_id=args.group_id,
+        customer_id=args.customer_id,
         num_scenarios=args.scenarios,
         planning_horizon_weeks=args.horizon
     )
@@ -205,7 +205,7 @@ async def main(args):
     par_time = await benchmark_parallel(
         run_id=run_ids[1],
         config_id=args.config_id,
-        group_id=args.group_id,
+        customer_id=args.customer_id,
         num_scenarios=args.scenarios,
         planning_horizon_weeks=args.horizon,
         num_workers=args.workers
@@ -240,10 +240,10 @@ if __name__ == "__main__":
         help="Supply chain config ID (default: 1)"
     )
     parser.add_argument(
-        "--group-id",
+        "--customer-id",
         type=int,
         default=1,
-        help="Group ID (default: 1)"
+        help="Customer ID (default: 1)"
     )
     parser.add_argument(
         "--workers",

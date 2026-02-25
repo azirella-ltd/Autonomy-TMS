@@ -120,7 +120,7 @@ class RBACService:
             name: Role name (e.g., "Demand Planner")
             slug: URL-safe slug (e.g., "demand-planner")
             description: Human-readable description
-            tenant_id: Tenant/group ID (None for global roles)
+            tenant_id: Tenant/customer ID (None for global roles)
             permission_names: List of permission names to assign
             is_system: Whether this is a system role
 
@@ -280,7 +280,7 @@ class RBACService:
         Args:
             user_id: User ID
             capability_names: List of capability names (e.g., ["view_mps", "manage_mps"])
-            tenant_id: Tenant/group ID
+            tenant_id: Tenant/customer ID
 
         Returns:
             True if successful, False otherwise

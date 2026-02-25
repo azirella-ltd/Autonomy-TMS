@@ -198,7 +198,7 @@ async def split_order(
                         status='DRAFT',
                         order_date=datetime.utcnow(),
                         config_id=original_order.config_id,
-                        group_id=original_order.group_id,
+                        customer_id=original_order.customer_id,
                         created_at=datetime.utcnow(),
                         notes=f"Split from order {request.order_id}"
                     )
@@ -392,7 +392,7 @@ async def consolidate_orders(
             status='DRAFT',
             order_date=datetime.utcnow(),
             config_id=orders[0].config_id,
-            group_id=orders[0].group_id,
+            customer_id=orders[0].customer_id,
             expected_delivery_date=request.target_ship_date,
             created_at=datetime.utcnow(),
             notes=f"Consolidated from orders: {', '.join(request.order_ids)}"
@@ -455,7 +455,7 @@ async def consolidate_orders(
             status='DRAFT',
             order_date=datetime.utcnow(),
             config_id=orders[0].config_id,
-            group_id=orders[0].group_id,
+            customer_id=orders[0].customer_id,
             created_at=datetime.utcnow(),
             notes=f"Consolidated from orders: {', '.join(request.order_ids)}"
         )

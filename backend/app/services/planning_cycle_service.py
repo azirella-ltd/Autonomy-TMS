@@ -49,7 +49,7 @@ class PlanningCycleService:
 
     def create_cycle(
         self,
-        group_id: int,
+        customer_id: int,
         name: str,
         cycle_type: CycleType,
         period_start: date,
@@ -63,7 +63,7 @@ class PlanningCycleService:
         Create a new planning cycle.
 
         Args:
-            group_id: Group ID
+            customer_id: Customer ID
             name: Cycle name
             cycle_type: Type of cycle (weekly, monthly, etc.)
             period_start: Period start date
@@ -82,16 +82,16 @@ class PlanningCycleService:
         # Check for duplicate
         existing = self.db.query(PlanningCycle).filter(
             and_(
-                PlanningCycle.group_id == group_id,
+                PlanningCycle.customer_id == customer_id,
                 PlanningCycle.code == code
             )
         ).first()
 
         if existing:
-            raise ValueError(f"Planning cycle with code {code} already exists for this group")
+            raise ValueError(f"Planning cycle with code {code} already exists for this customer")
 
         cycle = PlanningCycle(
-            group_id=group_id,
+            customer_id=customer_id,
             name=name,
             code=code,
             cycle_type=cycle_type,
@@ -169,12 +169,12 @@ class PlanningCycleService:
 
         return cycle
 
-    def get_active_cycle(self, group_id: int) -> Optional[PlanningCycle]:
+    def get_active_cycle(self, customer_id: int) -> Optional[PlanningCycle]:
         """
-        Get the active planning cycle for a group.
+        Get the active planning cycle for a customer.
 
         Args:
-            group_id: Group ID
+            customer_id: Customer ID
 
         Returns:
             Active cycle or None
@@ -187,7 +187,7 @@ class PlanningCycleService:
 
         return self.db.query(PlanningCycle).filter(
             and_(
-                PlanningCycle.group_id == group_id,
+                PlanningCycle.customer_id == customer_id,
                 PlanningCycle.status.in_(active_statuses)
             )
         ).order_by(PlanningCycle.created_at.desc()).first()

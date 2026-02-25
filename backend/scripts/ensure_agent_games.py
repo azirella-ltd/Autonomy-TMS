@@ -47,7 +47,7 @@ SHOWCASE_GAMES = [
 def ensure_agent_game(
     session,
     service: SupplyChainConfigService,
-    group,
+    customer,
     config,
     *,
     name: str,
@@ -58,7 +58,7 @@ def ensure_agent_game(
 ) -> None:
     scenario = (
         session.query(Scenario)
-        .filter(Scenario.group_id == group.id, Scenario.name == name)
+        .filter(Scenario.customer_id == customer.id, Scenario.name == name)
         .first()
     )
     is_human = strategy == "human"
@@ -76,8 +76,8 @@ def ensure_agent_game(
         scenario = Scenario(
             name=name,
             description=description,
-            created_by=group.admin_id,
-            group_id=group.id,
+            created_by=customer.admin_id,
+            customer_id=customer.id,
             status=ScenarioStatus.CREATED,
             max_rounds=base_config.get("max_rounds", 40),
             config=base_config,
@@ -100,7 +100,7 @@ def ensure_agent_game(
         scenario.status = ScenarioStatus.CREATED
 
     if is_human:
-        configure_human_players_for_game(session, group, scenario)
+        configure_human_players_for_game(session, customer, scenario)
         # Ensure autonomy strategy fields are cleared for human-controlled scenarios.
         if isinstance(scenario.config, str):
             try:
@@ -129,15 +129,15 @@ def main() -> None:
     Session = sessionmaker(bind=sync_engine, autoflush=False, autocommit=False)
     session = Session()
     try:
-        group, _ = ensure_group(session)
-        config = ensure_supply_chain_config(session, group)
+        customer, _ = ensure_customer(session)
+        config = ensure_supply_chain_config(session, customer)
         service = SupplyChainConfigService(session)
 
         for spec in SHOWCASE_GAMES:
             ensure_agent_game(
                 session,
                 service,
-                group,
+                customer,
                 config,
                 name=spec["name"],
                 description=spec["description"],

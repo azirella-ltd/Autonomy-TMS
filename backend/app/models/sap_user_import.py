@@ -24,7 +24,7 @@ class SAPUserImportLog(Base):
     __tablename__ = "sap_user_import_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"),
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"),
                       nullable=False, index=True)
     connection_id = Column(Integer, nullable=True)
 
@@ -51,7 +51,7 @@ class SAPUserImportLog(Base):
     def to_dict(self):
         return {
             "id": self.id,
-            "group_id": self.group_id,
+            "customer_id": self.customer_id,
             "connection_id": self.connection_id,
             "filter_config": self.filter_config,
             "role_mapping_config": self.role_mapping_config,
@@ -81,7 +81,7 @@ class SAPRoleMapping(Base):
     __tablename__ = "sap_role_mappings"
 
     id = Column(Integer, primary_key=True, index=True)
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"),
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"),
                       nullable=False, index=True)
 
     agr_name_pattern = Column(String(100), nullable=False)
@@ -100,14 +100,14 @@ class SAPRoleMapping(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (
-        UniqueConstraint("group_id", "agr_name_pattern",
-                         name="uq_sap_role_mapping_group_pattern"),
+        UniqueConstraint("customer_id", "agr_name_pattern",
+                         name="uq_sap_role_mapping_customer_pattern"),
     )
 
     def to_dict(self):
         return {
             "id": self.id,
-            "group_id": self.group_id,
+            "customer_id": self.customer_id,
             "agr_name_pattern": self.agr_name_pattern,
             "pattern_type": self.pattern_type,
             "powell_role": self.powell_role,

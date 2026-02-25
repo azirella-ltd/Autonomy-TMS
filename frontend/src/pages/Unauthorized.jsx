@@ -33,7 +33,7 @@ const Unauthorized = () => {
             {requiredCapability}
           </Badge>
           <p className="text-sm mt-4">
-            Please contact your Group Admin to request access.
+            Please contact your Customer Admin to request access.
           </p>
         </Alert>
       )}

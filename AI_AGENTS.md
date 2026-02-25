@@ -10,7 +10,7 @@ Autonomy's AI agents replace or assist human planners in supply chain decision-m
 
 **Key Insight**: Different AI architectures excel at different tasks:
 - **TRM**: Fast operational decisions (<10ms)
-- **GNN**: Network-wide coordination with temporal awareness
+- **GNN**: Network-wide coordination via two-tier architecture (S&OP GraphSAGE + Execution tGNN)
 - **LLM**: Strategic planning with natural language explainability
 - **RL**: Policy learning through trial-and-error interaction
 
@@ -26,7 +26,8 @@ Autonomy's AI agents replace or assist human planners in supply chain decision-m
 | Agent | Parameters | Inference Time | Accuracy vs. Optimal | Use Case | Explainability |
 |-------|-----------|----------------|---------------------|----------|----------------|
 | **TRM** | 7M | <10ms | 90-95% | Real-time ops | Medium-High (context-aware) |
-| **GNN** | 128M | ~50ms | 85-92% demand pred | Network coordination | Medium-High (attention + context) |
+| **S&OP GraphSAGE** | ~2M | ~200ms (weekly) | Network risk scoring | Policy parameters θ | Medium-High (attention + context) |
+| **Execution tGNN** | ~128M | ~50ms (daily) | 85-92% demand pred | Allocations + directives | Medium-High (attention + context) |
 | **LLM** | 175B+ (GPT-4) | ~2s | 85-90% | Strategic planning | High (natural language) |
 | **RL (PPO)** | 2M | ~5ms | 75-90% | Policy learning | Low (black box) |
 | **Naive** | 0 | <1ms | Baseline (0%) | Benchmark | High (simple rule) |
@@ -242,16 +243,15 @@ See [TRM_AGENTS_EXPLAINED.md](TRM_AGENTS_EXPLAINED.md) for full architecture, tr
 
 ### Architecture
 
-**Purpose**: Network-wide supply chain coordination with temporal awareness.
+**Purpose**: Network-wide supply chain coordination through a **two-tier architecture** separating strategic analysis from operational execution.
 
-**Model Design**:
-- **Type**: Graph Attention Network (GAT) + Temporal Convolutional Network (TCN)
-- **Size**: 128M parameters
+**Two-Tier Design**:
+- **S&OP GraphSAGE** (~2M params): Medium-term structural analysis — network risk, bottleneck detection, safety stock multipliers. Updates weekly/monthly. Powell CFA.
+- **Execution tGNN** (~128M params): Short-term operational decisions — demand forecasts, order recommendations, exception detection. Updates daily. Powell CFA/VFA bridge.
 - **Graph Structure**: Supply chain DAG (graph nodes = sites, graph edges = transportation lanes)
-- **Temporal Processing**: 52-week history window, 1-week forecast horizon
-- **Message Passing**: 3 layers of graph attention
+- **Shared Foundation**: S&OP structural embeddings [N, 64] cached and consumed by Execution tGNN
 
-**Key Innovation**: Combines spatial (network) and temporal (history) information through graph attention mechanism.
+**Key Innovation**: Separating slowly-changing structural context from fast-changing transactional dynamics. S&OP answers "what's the network structure?", Execution answers "given that structure, what decisions do we make now?"
 
 ### Two-Tier Architecture (S&OP + Execution)
 
@@ -332,194 +332,212 @@ python scripts/training/train_planning_execution.py --mode execution --sop-check
 python scripts/training/train_planning_execution.py --mode hybrid --epochs 100
 ```
 
-### Architecture Details
+### Integration: GNN → TRM Pipeline
 
-**Files**:
-- `backend/app/models/gnn/supply_chain_gnn.py` - GNN model definition
-- `backend/scripts/training/train_gnn.py` - Training script
-- `backend/app/services/agents.py` - Agent integration (line 125-155)
+The two-tier GNN architecture doesn't operate in isolation — its outputs flow through the AllocationService and SiteAgent to drive all 11 TRM execution decisions.
 
-**Model Structure**:
-```python
-class SupplyChainTemporalGNN(nn.Module):
-    """
-    Temporal Graph Neural Network for supply chain planning.
-
-    Architecture:
-    - Node Features: [inventory, backlog, pipeline, demand_history]
-    - Edge Features: [lead_time, capacity, cost]
-    - Graph Attention: 3 layers, 8 heads, 128-dim
-    - Temporal: TCN with 52-week receptive field
-    - Output: Demand forecast (1-week ahead)
-    """
-
-    def __init__(
-        self,
-        node_feature_dim=64,
-        edge_feature_dim=16,
-        hidden_dim=128,
-        num_gat_layers=3,
-        num_heads=8
-    ):
-        super().__init__()
-
-        # Node feature encoder
-        self.node_encoder = nn.Linear(node_feature_dim, hidden_dim)
-
-        # Edge feature encoder
-        self.edge_encoder = nn.Linear(edge_feature_dim, hidden_dim)
-
-        # Graph Attention layers
-        self.gat_layers = nn.ModuleList([
-            GATConv(
-                in_channels=hidden_dim,
-                out_channels=hidden_dim // num_heads,
-                heads=num_heads,
-                edge_dim=hidden_dim,
-                dropout=0.1
-            )
-            for _ in range(num_gat_layers)
-        ])
-
-        # Temporal convolution for demand history
-        self.tcn = TemporalConvNet(
-            num_inputs=hidden_dim,
-            num_channels=[128, 128, 64],
-            kernel_size=5,
-            dropout=0.1
-        )
-
-        # Output projection
-        self.output = nn.Linear(64, 1)  # Forecast 1-week ahead
-
-    def forward(self, node_features, edge_index, edge_features, demand_history):
-        """
-        node_features: [num_nodes, node_feature_dim]
-        edge_index: [2, num_edges]
-        edge_features: [num_edges, edge_feature_dim]
-        demand_history: [num_nodes, seq_len]
-
-        Returns: [num_nodes, 1] demand forecasts
-        """
-        # Encode node features
-        x = self.node_encoder(node_features)
-
-        # Encode edge features
-        edge_attr = self.edge_encoder(edge_features)
-
-        # Graph attention message passing
-        for gat_layer in self.gat_layers:
-            x = gat_layer(x, edge_index, edge_attr)
-            x = F.elu(x)
-
-        # Temporal processing of demand history
-        temporal_features = self.tcn(demand_history.unsqueeze(1))
-
-        # Combine graph and temporal features
-        combined = x + temporal_features[:, -1, :]
-
-        # Forecast demand
-        forecast = self.output(combined)
-
-        return torch.relu(forecast)
+**End-to-End Data Flow**:
+```
+S&OP GraphSAGE (weekly/monthly)
+  → structural_embeddings [N, 64] (cached, detached)
+  → criticality, bottleneck_risk, safety_stock_multiplier
+      ↓
+Execution tGNN (daily)
+  ← transactional features [8] + hive feedback [8] + structural [64]
+  → tGNNSiteDirective per site
+      ↓
+AllocationService
+  → Priority × Product × Location allocations (powell_allocations table)
+      ↓
+SiteAgent (11 TRM heads)
+  ├─ ATPExecutorTRM reads: exception_probability, confidence
+  ├─ POCreationTRM reads: demand_forecast, safety_stock_multiplier
+  ├─ InventoryRebalancingTRM reads: lateral signals, allocation_adjustment
+  ├─ OrderTrackingTRM reads: exception_probability, propagation_impact
+  ├─ ForecastAdjustmentTRM reads: demand_forecast, inter_hive_signals
+  └─ ... (6 more TRM heads)
+      ↓
+HiveFeedbackFeatures [8 dims]
+  → fed back to next Execution tGNN cycle (closes the loop)
 ```
 
-### Training: SimPy-Generated Scenario Data
+**tGNNSiteDirective** — the per-site output that SiteAgent consumes:
+
+| Field | Source | Consumed By |
+|-------|--------|-------------|
+| `criticality_score` | S&OP GraphSAGE (cached) | All TRMs (priority weighting) |
+| `bottleneck_risk` | S&OP GraphSAGE (cached) | MOExecutionTRM, MaintenanceSchedulingTRM |
+| `concentration_risk` | S&OP GraphSAGE (cached) | POCreationTRM, SubcontractingTRM |
+| `resilience_score` | S&OP GraphSAGE (cached) | SafetyStockTRM |
+| `safety_stock_multiplier` | S&OP GraphSAGE (cached) | SafetyStockTRM, POCreationTRM |
+| `demand_forecast` | Execution tGNN (daily) | POCreationTRM, ForecastAdjustmentTRM |
+| `exception_probability` | Execution tGNN (daily) | ATPExecutorTRM, OrderTrackingTRM |
+| `propagation_impact` | Execution tGNN (daily) | OrderTrackingTRM, TOExecutionTRM |
+| `order_recommendation` | Execution tGNN (daily) | POCreationTRM |
+| `confidence` | Execution tGNN (daily) | All TRMs (decision gating) |
+| `inter_hive_signals` | Execution tGNN (daily) | Routing-dependent TRMs |
+
+**Inter-Hive Signal Types** (generated by Execution tGNN):
+- `UPSTREAM_DISRUPTION`: Shortage propagating downstream
+- `DOWNSTREAM_SURGE`: Demand surge detected
+- `LATERAL_SURPLUS`: Inventory available at peer site
+- `LATERAL_SHORTAGE`: Shortage at peer requiring rebalancing
+- `ALLOCATION_REBALANCE`: Priority allocations changed
+- `BOTTLENECK_FORMING`: Site becoming bottleneck
+- `RESILIENCE_WARNING`: Network resilience degrading
+- `BULLWHIP_DETECTED`: Demand amplification detected
+
+**Hive Feedback Loop** — TRM execution metrics feed back to enrich the next Execution tGNN cycle:
+
+The Execution tGNN accepts 8 base transactional features, but can expand to 16 dimensions by incorporating hive feedback from the previous cycle:
+
+| Feature (base 8) | Feature (hive feedback 8) |
+|-------------------|---------------------------|
+| `current_inventory` | `net_urgency` (mean UrgencyVector) |
+| `current_backlog` | `shortage_density` (fraction TRM slots with shortage) |
+| `incoming_orders` | `allocation_utilization` (consumed / total AATP) |
+| `outgoing_shipments` | `cross_priority_rate` (fraction ATP from lower priorities) |
+| `orders_placed` | `trm_override_rate` (% human overrides, 7d window) |
+| `actual_lead_time` | `fill_rate_7d` (7-day rolling fulfillment) |
+| `capacity_used` | `cdc_severity` (max CDC trigger severity, 24h) |
+| `demand_signal` | `backlog_velocity` (d(backlog)/dt) |
+
+**AATP Consumption** — the AllocationService manages priority-based allocation consumption:
+```
+Consumption sequence for order at priority P:
+1. Own tier (P) first
+2. Bottom-up from lowest priority (5→4→3→...)
+3. Stop at own tier (cannot consume above)
+Example: P=2 order with 5 priorities → sequence [2, 5, 4, 3] (skips P1)
+```
+
+**Files**:
+- `backend/app/models/gnn/planning_execution_gnn.py` — Two-tier models, HiveFeedbackFeatures, tGNNSiteDirective
+- `backend/app/services/powell/inter_hive_signal.py` — Inter-hive signal primitives
+- `backend/app/services/powell/directive_broadcast_service.py` — Directive broadcasting to SiteAgents
+- `backend/app/services/powell/allocation_service.py` — Priority allocation management
+- `backend/app/services/powell/site_agent.py` — SiteAgent with 11 TRM heads
+
+### Training: Two-Tier Process
+
+Each tier trains independently with different data characteristics and cadences.
+
+**S&OP GraphSAGE Training**:
+- **Data**: Structural features from network topology (12 dimensions: avg_lead_time, lead_time_cv, capacity, capacity_utilization, unit_cost, reliability, num_suppliers, num_customers, inventory_turns, service_level, holding_cost, position)
+- **Edge features**: 6 dimensions (lead_time_avg, lead_time_std, cost_per_unit, capacity, reliability, relationship_strength)
+- **Labels**: Historical risk events, bottleneck occurrences, network disruptions
+- **Refresh**: Retrained when network topology changes significantly
+
+**Execution tGNN Training**:
+- **Data**: Transactional time-series from SimPy/Beer Game scenarios (8-16 dimensions per node per timestep)
+- **Edge features**: 4 dimensions (current_lead_time, utilization, in_transit, recent_reliability)
+- **Labels**: Optimal decisions from expert traces, behavioral cloning warm-start
+- **Refresh**: Continuous improvement via CDC relearning loop
 
 **Data Generation**:
 ```bash
-# Generate 128 scenario runs with 64 timesteps each
+# Generate SimPy training data
 make generate-simpy-data CONFIG_NAME="Default TBG" \
-  SIMPY_NUM_RUNS=128 \
-  SIMPY_TIMESTEPS=64 \
-  SIMPY_WINDOW=52 \
-  SIMPY_HORIZON=1
+  SIMPY_NUM_RUNS=128 SIMPY_TIMESTEPS=64
+
+# Train both tiers
+python scripts/training/train_planning_execution.py --mode hybrid --epochs 100
+
+# Train S&OP only
+python scripts/training/train_planning_execution.py --mode sop --epochs 100
+
+# Train Execution only (requires trained S&OP checkpoint)
+python scripts/training/train_planning_execution.py --mode execution \
+  --sop-checkpoint checkpoints/sop_model.pt
 ```
+
+**Digital Twin Training Pipeline** (5-phase cold-start from simulation):
+
+| Phase | Description | Data Source | Records |
+|-------|-------------|-------------|---------|
+| 1 | Individual BC warm-start | Curriculum scenarios | ~2M |
+| 2 | Multi-head coordinated traces | SimPy/Beer Game | ~10M |
+| 3 | Stochastic stress-testing | Monte Carlo scenarios | ~20M |
+| 4 | Copilot calibration | Human override replay | ~4M |
+| 5 | Autonomous CDC relearning | Production outcomes | ~10M |
+
+Total: ~46M synthetic records, ~7-10 days compute. Stigmergic-only variant: ~10M records, ~5-8 days.
+
+See [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 15 for full pipeline specification.
 
 **Files**:
-- `backend/scripts/dataset/generate_simpy_dataset.py` - SimPy simulation
-- `backend/app/simulation/simpy_beer_game.py` - Beer Game simulation
+- `backend/scripts/training/train_planning_execution.py` — Two-tier training script
+- `backend/scripts/dataset/generate_simpy_dataset.py` — SimPy data generation
+- `backend/app/simulation/simpy_beer_game.py` — Beer Game simulation
 
-**Training Process**:
-1. **Simulate Scenarios**: Run SimPy simulation with various agent strategies
-2. **Extract Graphs**: Convert scenario state to PyTorch Geometric graph tensors
-3. **Train GNN**: Supervised learning on (state, optimal_action) pairs
-4. **Validate**: Test on held-out scenarios
+### Message Passing: Tier-Specific Differences
 
-**Training Script**:
-```bash
-make train-gnn CONFIG_NAME="Default TBG" \
-  TRAIN_EPOCHS=50 \
-  TRAIN_DEVICE=cuda
+The two tiers use fundamentally different message passing architectures, reflecting their different time horizons and objectives.
+
+**S&OP GraphSAGE** (static structural analysis):
+```
+For each of 3 GATv2Conv layers:
+  1. Each site encodes its 12 structural features → 64-dim embedding
+  2. Edge features (6-dim) encode lane characteristics
+  3. GATv2 attention: 4 heads compute weighted neighbor aggregation
+  4. GraphNorm + residual connection per layer
+  5. No temporal component — processes a single structural snapshot
 ```
 
-Or manually:
-```bash
-cd backend
-python scripts/training/train_gnn.py \
-  --config-name "Default TBG" \
-  --epochs 50 \
-  --batch-size 32 \
-  --learning-rate 0.001 \
-  --device cuda \
-  --checkpoint checkpoints/gnn/best_model.pth
+**Execution tGNN** (temporal transactional analysis):
+```
+For each timestep in the history window:
+  1. Concatenate: transactional features [8-16] + structural embeddings [64]
+     → combined feature vector [72-80] per node
+  2. Spatial: 2-layer GATv2Conv processes the graph at this timestep
+
+After spatial processing across all timesteps:
+  3. Temporal: 2-layer GRU aggregates the sequence of spatial embeddings
+  4. Temporal Attention: MultiheadAttention identifies influential periods
+  5. Output heads: 5 specialized projections (orders, forecasts, exceptions, etc.)
 ```
 
-### Message Passing Mechanism
+**Key Benefit**: S&OP embeddings are **detached** (no gradient flow) and cached. This means the Execution tGNN can run at daily/real-time speed without recomputing the expensive structural analysis. Downstream sites can "see" upstream structural context (criticality, bottleneck risk) through the cached embeddings, and transactional dynamics (inventory, orders) through the spatial message passing.
 
-**How GNN Coordinates Network**:
-```python
-# At each timestep:
-# 1. Each site broadcasts its state to neighbors
-for site in graph.sites:
-    message = {
-        "inventory": site.inventory,
-        "backlog": site.backlog,
-        "pipeline": site.pipeline_shipments,
-        "demand_history": site.demand_history[-52:]
-    }
-    for neighbor in site.neighbors:
-        neighbor.receive_message(message)
+### Multi-Site Coordination Stack
 
-# 2. Each site aggregates incoming messages with attention
-for site in graph.sites:
-    # Attention weights: Which neighbors are most relevant?
-    attention_weights = compute_attention(
-        query=site.state,
-        keys=[msg.state for msg in site.messages]
-    )
+The GNN system operates as **Layer 2** of a 4-layer coordination stack that enables multi-site decision-making without TRMs ever calling across sites directly.
 
-    # Weighted sum of neighbor states
-    aggregated = sum(
-        weight * msg.state
-        for weight, msg in zip(attention_weights, site.messages)
-    )
+| Layer | Scope | Latency | Mechanism |
+|-------|-------|---------|-----------|
+| **1 — Intra-Hive** | Within single site | <10ms | UrgencyVector + HiveSignalBus between 11 TRM heads |
+| **2 — tGNN Inter-Hive** | Full network graph | Daily | S&OP GraphSAGE + Execution tGNN → per-site tGNNSiteDirective |
+| **3 — AAP Cross-Authority** | Between sites | Seconds-minutes | AuthorizationRequest/Response for transfers, priority overrides, capacity sharing |
+| **4 — S&OP Consensus Board** | All functional agents | Weekly | Policy parameters θ negotiated by functional agents |
 
-    # Update site representation
-    site.hidden_state = update(site.state, aggregated)
+**Key Principle**: TRMs never call across sites. All cross-site information flows through the tGNN directive (Layer 2) or AAP authorization (Layer 3).
 
-# 3. Each site makes decision based on aggregated info
-for site in graph.sites:
-    site.order_quantity = gnn_model.predict(site.hidden_state)
-```
-
-**Key Benefit**: Downstream sites can "see" upstream inventory levels through message passing, enabling better coordination.
+See [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 16 for full coordination stack specification and [AGENTIC_AUTHORIZATION_PROTOCOL.md](docs/AGENTIC_AUTHORIZATION_PROTOCOL.md) for AAP protocol details.
 
 ### Performance
 
-**Demand Prediction Accuracy**: 85-92% (compared to actual demand)
+**Per-Tier Metrics**:
 
-**Cost Reduction vs. Naive**: 20-25%
+| Metric | S&OP GraphSAGE | Execution tGNN |
+|--------|----------------|----------------|
+| **Inference time** | ~200ms (weekly, amortized) | ~50ms (daily, all nodes) |
+| **Accuracy** | Network risk scoring | 85-92% demand prediction |
+| **Parameters** | ~2M | ~128M |
+| **Update frequency** | Weekly/monthly | Daily/real-time |
+| **Scalability** | O(edges), handles 50+ sites | O(edges × window), handles 50+ sites |
 
-**Inference Speed**: ~50ms per network (all nodes simultaneously)
+**End-to-End** (combined GNN + TRM system):
+- **Cost Reduction vs. Naive**: 20-35%
+- **Service Level**: >95% OTIF maintained
+- **Latency**: S&OP weekly batch + daily tGNN inference + <10ms per TRM decision
 
 **Trade-offs**:
-- ✅ Network-aware decisions
-- ✅ Temporal pattern recognition
-- ✅ Handles variable network topologies
-- ⚠️ Medium explainability (can visualize attention weights)
-- ❌ Requires graph data structure
-- ❌ Longer inference than TRM
+- Network-aware decisions through structural embeddings
+- Temporal pattern recognition via GRU + attention
+- Handles variable network topologies (DAG-based)
+- Closed-loop feedback via HiveFeedbackFeatures
+- Medium-High explainability (GAT attention weights + context-aware explanations)
+- Requires graph data structure (PyTorch Geometric)
 
 ---
 

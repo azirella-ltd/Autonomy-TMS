@@ -115,7 +115,7 @@ class PeggingService:
         quantity: float,
         priority: int,
         config_id: int,
-        group_id: int,
+        customer_id: int,
         demand_type: str = "customer_order",
         chain_id: Optional[str] = None,
     ) -> SupplyDemandPegging:
@@ -129,7 +129,7 @@ class PeggingService:
             chain_id = uuid.uuid4().hex[:64]
 
         pegging = SupplyDemandPegging(
-            group_id=group_id,
+            customer_id=customer_id,
             config_id=config_id,
             product_id=product_id,
             site_id=site_id,
@@ -164,7 +164,7 @@ class PeggingService:
         source_site_id: int,
         quantity: float,
         config_id: int,
-        group_id: int,
+        customer_id: int,
         upstream_pegging_id: Optional[int] = None,
         chain_id: Optional[str] = None,
         chain_depth: int = 1,
@@ -186,7 +186,7 @@ class PeggingService:
         }
 
         pegging = SupplyDemandPegging(
-            group_id=group_id,
+            customer_id=customer_id,
             config_id=config_id,
             product_id=product_id,
             site_id=destination_site_id,
@@ -222,7 +222,7 @@ class PeggingService:
         site_id: int,
         quantity: float,
         config_id: int,
-        group_id: int,
+        customer_id: int,
         parent_demand_type: str = "customer_order",
         parent_demand_id: str = "",
         upstream_pegging_id: Optional[int] = None,
@@ -240,7 +240,7 @@ class PeggingService:
             chain_id = uuid.uuid4().hex[:64]
 
         pegging = SupplyDemandPegging(
-            group_id=group_id,
+            customer_id=customer_id,
             config_id=config_id,
             product_id=component_id,
             site_id=site_id,
@@ -273,7 +273,7 @@ class PeggingService:
         source_site_id: Optional[int],
         quantity: float,
         config_id: int,
-        group_id: int,
+        customer_id: int,
         demand_pegging_ids: Optional[List[int]] = None,
         chain_id: Optional[str] = None,
         chain_depth: int = 1,
@@ -298,7 +298,7 @@ class PeggingService:
             upstream_id = demand_pegging_ids[0]
 
         pegging = SupplyDemandPegging(
-            group_id=group_id,
+            customer_id=customer_id,
             config_id=config_id,
             product_id=product_id,
             site_id=site_id,
@@ -330,7 +330,7 @@ class PeggingService:
         to_site_id: int,
         quantity: float,
         config_id: int,
-        group_id: int,
+        customer_id: int,
         upstream_pegging_id: Optional[int] = None,
         chain_id: Optional[str] = None,
         chain_depth: int = 1,
@@ -342,7 +342,7 @@ class PeggingService:
             chain_id = uuid.uuid4().hex[:64]
 
         pegging = SupplyDemandPegging(
-            group_id=group_id,
+            customer_id=customer_id,
             config_id=config_id,
             product_id=product_id,
             site_id=to_site_id,
@@ -377,7 +377,7 @@ class PeggingService:
         priority: int,
         consumption_detail: List[Dict],
         config_id: Optional[int] = None,
-        group_id: Optional[int] = None,
+        customer_id: Optional[int] = None,
         pegging_id: Optional[int] = None,
     ) -> AATPConsumptionRecord:
         """
@@ -394,7 +394,7 @@ class PeggingService:
             consumption_detail=consumption_detail,
             pegging_id=pegging_id,
             config_id=config_id,
-            group_id=group_id,
+            customer_id=customer_id,
         )
         self.db.add(record)
         self.db.flush()
@@ -594,7 +594,7 @@ class PeggingService:
         )
 
     def get_unpegged_demand(
-        self, config_id: int, group_id: int
+        self, config_id: int, customer_id: int
     ) -> List[Dict]:
         """
         Find all demand that is not yet pegged to supply.
@@ -620,7 +620,7 @@ class PeggingService:
         return [{
             "pegged_count": len(pegged_set),
             "config_id": config_id,
-            "group_id": group_id,
+            "customer_id": customer_id,
         }]
 
     # -----------------------------------------------------------------------

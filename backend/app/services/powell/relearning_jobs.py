@@ -197,7 +197,7 @@ def _run_cdc_retraining() -> None:
 
         for site_key in site_keys:
             try:
-                svc = CDCRetrainingService(db=db, site_key=site_key, group_id=0)
+                svc = CDCRetrainingService(db=db, site_key=site_key, customer_id=0)
                 if svc.evaluate_retraining_need():
                     result = svc.execute_retraining()
                     if result and result.final_loss < float("inf"):

@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from .session import UserSession
     from .auth_models import PasswordHistory, PasswordResetToken
     from .user import RefreshToken
-    from .group import Group
+    from .customer import Customer
     from .sso_provider import UserSSOMapping
     from .tenant import Tenant
     from .rbac import Role
@@ -98,7 +98,7 @@ class UserBase(BaseModel):
     full_name: Optional[str] = None
     is_active: bool = True
     is_superuser: bool = False
-    group_id: Optional[int] = None
+    customer_id: Optional[int] = None
     user_type: UserTypeEnum = Field(default=UserTypeEnum.USER)
     powell_role: Optional[PowellRoleEnum] = Field(
         default=None,
@@ -169,7 +169,7 @@ class User(Base):
     locked_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     mfa_secret: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
-    group_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=True)
+    customer_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=True)
     tenant_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
 
     # Powell Framework Role - determines landing page for Production group users
@@ -315,7 +315,7 @@ class User(Base):
             "full_name": self.full_name,
             "is_active": self.is_active,
             "is_superuser": self.is_superuser,
-            "group_id": self.group_id,
+            "customer_id": self.customer_id,
             "user_type": self.user_type.value,
             "site_scope": self.site_scope,
             "product_scope": self.product_scope,
@@ -355,9 +355,9 @@ class User(Base):
         cascade="all, delete-orphan"
     )
     
-    group: Mapped[Optional["Group"]] = relationship("Group", back_populates="users", foreign_keys=[group_id])
-    admin_of_group: Mapped[Optional["Group"]] = relationship(
-        "Group", back_populates="admin", uselist=False, foreign_keys="Group.admin_id"
+    customer: Mapped[Optional["Customer"]] = relationship("Customer", back_populates="users", foreign_keys=[customer_id])
+    admin_of_customer: Mapped[Optional["Customer"]] = relationship(
+        "Customer", back_populates="admin", uselist=False, foreign_keys="Customer.admin_id"
     )
 
     # Tenant relationship (multi-tenancy)

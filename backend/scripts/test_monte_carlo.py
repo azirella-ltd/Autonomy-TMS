@@ -44,7 +44,7 @@ async def test_basic_simulation():
         # Create a test run
         test_run = MonteCarloRun(
             supply_chain_config_id=config.id,
-            group_id=config.group_id,
+            customer_id=config.customer_id,
             name="Test Simulation",
             description="Automated test of Monte Carlo implementation",
             num_scenarios=10,  # Small number for quick test
@@ -72,7 +72,7 @@ async def test_basic_simulation():
         engine = MonteCarloEngine(
             run_id=test_run.id,
             config_id=config.id,
-            group_id=config.group_id,
+            customer_id=config.customer_id,
             num_scenarios=10,
             random_seed=42
         )

@@ -41,7 +41,7 @@ export const useGroupMode = () => {
       }
 
       // System admins without a group default to production mode
-      if (!user.group_id) {
+      if (!user.customer_id) {
         setGroup(null);
         setLoading(false);
         return;

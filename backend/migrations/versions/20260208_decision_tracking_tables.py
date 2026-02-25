@@ -38,7 +38,7 @@ def upgrade():
             sa.Column('id', sa.Integer, primary_key=True, autoincrement=True),
 
             # Context
-            sa.Column('group_id', sa.Integer, sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=False, index=True),
+            sa.Column('customer_id', sa.Integer, sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=False, index=True),
             sa.Column('user_id', sa.Integer, sa.ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True),
 
             # Decision identification - using String for simplicity
@@ -96,8 +96,8 @@ def upgrade():
         )
 
         # Create compound indexes
-        op.create_index('ix_agent_decisions_group_status', 'agent_decisions', ['group_id', 'status'])
-        op.create_index('ix_agent_decisions_group_type_cycle', 'agent_decisions', ['group_id', 'decision_type', 'planning_cycle'])
+        op.create_index('ix_agent_decisions_group_status', 'agent_decisions', ['customer_id', 'status'])
+        op.create_index('ix_agent_decisions_group_type_cycle', 'agent_decisions', ['customer_id', 'decision_type', 'planning_cycle'])
         op.create_index('ix_agent_decisions_user_status', 'agent_decisions', ['user_id', 'status'])
 
     # =========================================================================
@@ -108,7 +108,7 @@ def upgrade():
             'dqs_metrics',
             sa.Column('id', sa.Integer, primary_key=True, autoincrement=True),
 
-            sa.Column('group_id', sa.Integer, sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=False, index=True),
+            sa.Column('customer_id', sa.Integer, sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=False, index=True),
 
             # Time period
             sa.Column('period_start', sa.DateTime, nullable=False, index=True),
@@ -146,7 +146,7 @@ def upgrade():
             sa.Column('created_at', sa.DateTime, nullable=False, server_default=sa.text('NOW()')),
         )
 
-        op.create_index('ix_dqs_metrics_group_period', 'dqs_metrics', ['group_id', 'period_start', 'period_type'])
+        op.create_index('ix_dqs_metrics_group_period', 'dqs_metrics', ['customer_id', 'period_start', 'period_type'])
 
     # =========================================================================
     # Create sop_worklist_items Table
@@ -156,7 +156,7 @@ def upgrade():
             'sop_worklist_items',
             sa.Column('id', sa.Integer, primary_key=True, autoincrement=True),
 
-            sa.Column('group_id', sa.Integer, sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=False, index=True),
+            sa.Column('customer_id', sa.Integer, sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=False, index=True),
 
             # Item identification
             sa.Column('item_code', sa.String(50), nullable=False, index=True),
@@ -195,7 +195,7 @@ def upgrade():
             sa.Column('updated_at', sa.DateTime, nullable=False, server_default=sa.text('NOW()')),
         )
 
-        op.create_index('ix_sop_worklist_group_status', 'sop_worklist_items', ['group_id', 'status'])
+        op.create_index('ix_sop_worklist_group_status', 'sop_worklist_items', ['customer_id', 'status'])
 
 
 def downgrade():

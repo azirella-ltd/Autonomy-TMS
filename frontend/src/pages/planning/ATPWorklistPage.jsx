@@ -240,12 +240,12 @@ const ATPWorklistPage = () => {
   const { hasCapability, loading: capLoading } = useCapabilities();
   const { user } = useAuth();
 
-  // Resolve configId from user's group (TRM decisions endpoint uses group_id)
-  const [configId, setConfigId] = useState(user?.group_id || null);
+  // Resolve configId from user's customer (TRM decisions endpoint uses customer_id)
+  const [configId, setConfigId] = useState(user?.customer_id || null);
 
   useEffect(() => {
-    if (user?.group_id) setConfigId(user.group_id);
-  }, [user?.group_id]);
+    if (user?.customer_id) setConfigId(user.customer_id);
+  }, [user?.customer_id]);
 
   const canManage = !capLoading && hasCapability('manage_atp_worklist');
 

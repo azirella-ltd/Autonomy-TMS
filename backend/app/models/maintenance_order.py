@@ -43,7 +43,7 @@ class MaintenanceOrder(Base):
     # Sites and configuration
     site_id = Column(Integer, ForeignKey("site.id"), nullable=False)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"))
 
     # AWS SC Compliance fields
     company_id = Column(String(100))  # SC: company identifier
@@ -136,7 +136,7 @@ class MaintenanceOrder(Base):
         Index('idx_maint_priority', 'priority'),
         Index('idx_maint_scheduled_date', 'scheduled_start_date'),
         Index('idx_maint_config', 'config_id'),
-        Index('idx_maint_group', 'group_id'),
+        Index('idx_maint_customer', 'customer_id'),
         Index('idx_maint_company', 'company_id'),
         Index('idx_maint_technician', 'assigned_technician_id'),
     )

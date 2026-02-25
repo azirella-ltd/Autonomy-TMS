@@ -1,7 +1,7 @@
 /**
  * User Role & Capability Management
  *
- * Allows group admins to assign roles and customize capabilities for users in their group.
+ * Allows customer admins to assign roles and customize capabilities for users in their customer organization.
  */
 
 import { useState, useEffect } from 'react';
@@ -121,9 +121,9 @@ const UserRoleManagement = () => {
     collaboration: {
       label: 'Collaboration',
       capabilities: [
-        { id: 'view_groups', label: 'View Groups', description: 'View groups' },
-        { id: 'create_group', label: 'Create Groups', description: 'Create new groups' },
-        { id: 'manage_groups', label: 'Manage Groups', description: 'Full group management' },
+        { id: 'view_groups', label: 'View Customers', description: 'View customers' },
+        { id: 'create_group', label: 'Create Customers', description: 'Create new customers' },
+        { id: 'manage_groups', label: 'Manage Customers', description: 'Full customer management' },
         { id: 'view_players', label: 'View ScenarioUsers', description: 'View users' },
         { id: 'manage_players', label: 'Manage ScenarioUsers', description: 'Manage users' },
         { id: 'view_users', label: 'View Users', description: 'View users' },
@@ -136,8 +136,8 @@ const UserRoleManagement = () => {
 
   const roleTemplates = {
     GROUP_ADMIN: {
-      label: 'Group Admin',
-      description: 'Full access to group management and game creation',
+      label: 'Customer Admin',
+      description: 'Full access to customer management and scenario creation',
       capabilities: [
         'view_dashboard', 'view_analytics', 'view_sc_analytics',
         'view_insights',
@@ -274,7 +274,7 @@ const UserRoleManagement = () => {
         <div>
           <h1 className="text-2xl font-bold">User Role & Capability Management</h1>
           <p className="text-sm text-muted-foreground">
-            Assign roles and customize capabilities for users in your group
+            Assign roles and customize capabilities for users in your customer organization
           </p>
         </div>
       </div>
@@ -330,7 +330,7 @@ const UserRoleManagement = () => {
             </Card>
             <Card>
               <CardContent className="pt-4">
-                <p className="text-sm text-muted-foreground">Group Admins</p>
+                <p className="text-sm text-muted-foreground">Customer Admins</p>
                 <p className="text-3xl font-bold text-primary">
                   {users.filter(u => u.user_type === 'GROUP_ADMIN').length}
                 </p>
@@ -356,7 +356,7 @@ const UserRoleManagement = () => {
 
           <Card>
             <CardContent className="p-6">
-              <h2 className="text-lg font-semibold mb-4">Users in Your Group</h2>
+              <h2 className="text-lg font-semibold mb-4">Users in Your Organization</h2>
               <Table>
                 <TableHeader>
                   <TableRow>

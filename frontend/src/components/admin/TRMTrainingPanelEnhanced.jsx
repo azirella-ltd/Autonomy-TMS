@@ -107,9 +107,9 @@ const TRMTrainingPanelEnhanced = () => {
       setConfigsLoading(true);
       try {
         // Load from Powell training configs API
-        const groupId = user?.group_id || 1;
+        const customerId = user?.customer_id || 1;
         const response = await api.get('/powell-training/configs', {
-          params: { group_id: groupId, include_inactive: false }
+          params: { group_id: customerId, include_inactive: false }
         });
         const configs = response.data || [];
         setPowellConfigs(configs);
@@ -143,7 +143,7 @@ const TRMTrainingPanelEnhanced = () => {
       }
     };
     loadConfigs();
-  }, [user?.group_id]);
+  }, [user?.customer_id]);
 
   // Load sites when config changes
   const loadSites = useCallback(async () => {

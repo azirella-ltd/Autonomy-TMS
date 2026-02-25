@@ -69,7 +69,7 @@ def upgrade():
         sa.Column('lead_time_days', sa.Integer(), nullable=True),
 
         # Multi-tenancy and game context
-        sa.Column('group_id', sa.Integer(), nullable=True),
+        sa.Column('customer_id', sa.Integer(), nullable=True),
         sa.Column('config_id', sa.Integer(), nullable=True),
         sa.Column('game_id', sa.Integer(), nullable=True),
         sa.Column('round_number', sa.Integer(), nullable=True),
@@ -86,14 +86,14 @@ def upgrade():
         sa.ForeignKeyConstraint(['to_site_id'], ['nodes.id'], ),
         sa.ForeignKeyConstraint(['from_site_id'], ['nodes.id'], ),
         sa.ForeignKeyConstraint(['tpartner_id'], ['trading_partner.id'], ),
-        sa.ForeignKeyConstraint(['group_id'], ['groups.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['customer_id'], ['groups.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['config_id'], ['supply_chain_configs.id'], ),
         sa.ForeignKeyConstraint(['game_id'], ['games.id'], ),
     )
 
     # Create indexes
     op.create_index('idx_inbound_order_lookup', 'inbound_order_line', ['product_id', 'to_site_id', 'expected_delivery_date'])
-    op.create_index('idx_inbound_order_group_config', 'inbound_order_line', ['group_id', 'config_id'])
+    op.create_index('idx_inbound_order_group_config', 'inbound_order_line', ['customer_id', 'config_id'])
     op.create_index('idx_inbound_order_config', 'inbound_order_line', ['config_id'])
     op.create_index('idx_inbound_order_game_round', 'inbound_order_line', ['game_id', 'round_number'])
     op.create_index('idx_inbound_order_status', 'inbound_order_line', ['status'])

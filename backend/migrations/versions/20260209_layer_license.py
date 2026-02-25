@@ -17,7 +17,7 @@ def upgrade():
     op.create_table(
         'layer_license',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column('group_id', sa.Integer(), sa.ForeignKey('groups.id'), nullable=False),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id'), nullable=False),
         sa.Column('layer', sa.Enum('sop', 'mrs', 'supply_agent', 'allocation_agent', 'execution',
                                     name='layername'), nullable=False),
         sa.Column('mode', sa.Enum('active', 'input', 'disabled', name='layermode'),
@@ -30,8 +30,8 @@ def upgrade():
         sa.Column('updated_by', sa.Integer(), sa.ForeignKey('users.id'), nullable=True),
     )
     op.create_index('ix_layer_license_group_layer', 'layer_license',
-                     ['group_id', 'layer'], unique=True)
-    op.create_index('ix_layer_license_group_id', 'layer_license', ['group_id'])
+                     ['customer_id', 'layer'], unique=True)
+    op.create_index('ix_layer_license_group_id', 'layer_license', ['customer_id'])
 
 
 def downgrade():

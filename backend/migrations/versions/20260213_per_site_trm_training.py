@@ -97,7 +97,7 @@ def upgrade():
     op.create_table(
         'trm_base_model',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column('group_id', sa.Integer(), sa.ForeignKey('groups.id'),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id'),
                   nullable=False, index=True),
         sa.Column('master_type', sa.String(50), nullable=False),
         sa.Column('trm_type', sa.String(50), nullable=False),
@@ -111,7 +111,7 @@ def upgrade():
         sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.Column('updated_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
 
-        sa.UniqueConstraint('group_id', 'master_type', 'trm_type',
+        sa.UniqueConstraint('customer_id', 'master_type', 'trm_type',
                             name='uq_base_model_group_type'),
     )
 

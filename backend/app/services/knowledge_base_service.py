@@ -248,9 +248,9 @@ class KnowledgeBaseService:
     Async-first design. All database operations go through the injected session.
     """
 
-    def __init__(self, db: AsyncSession, group_id: int):
+    def __init__(self, db: AsyncSession, customer_id: int):
         self.db = db
-        self.group_id = group_id
+        self.customer_id = customer_id
         self._embedding_service: Optional[EmbeddingService] = None
 
     @property
@@ -294,7 +294,7 @@ class KnowledgeBaseService:
 
         # Create document record
         doc = KBDocument(
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             uploaded_by=uploaded_by,
             title=title or filename,
             filename=filename,
@@ -378,7 +378,7 @@ class KnowledgeBaseService:
             # and refresh can trigger greenlet errors with mixed sync/async sessions)
             result = {
                 "id": doc.id,
-                "group_id": doc.group_id,
+                "customer_id": doc.customer_id,
                 "uploaded_by": doc.uploaded_by,
                 "title": doc.title,
                 "filename": doc.filename,
@@ -423,8 +423,8 @@ class KnowledgeBaseService:
         status: Optional[str] = None,
         category: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """List all documents for the group."""
-        stmt = select(KBDocument).where(KBDocument.group_id == self.group_id)
+        """List all documents for the customer."""
+        stmt = select(KBDocument).where(KBDocument.customer_id == self.customer_id)
         if status:
             stmt = stmt.where(KBDocument.status == status)
         if category:
@@ -439,7 +439,7 @@ class KnowledgeBaseService:
         """Get a single document by ID."""
         stmt = select(KBDocument).where(
             KBDocument.id == document_id,
-            KBDocument.group_id == self.group_id,
+            KBDocument.customer_id == self.customer_id,
         )
         result = await self.db.execute(stmt)
         doc = result.scalar_one_or_none()
@@ -449,7 +449,7 @@ class KnowledgeBaseService:
         """Delete a document and all its chunks."""
         stmt = select(KBDocument).where(
             KBDocument.id == document_id,
-            KBDocument.group_id == self.group_id,
+            KBDocument.customer_id == self.customer_id,
         )
         result = await self.db.execute(stmt)
         doc = result.scalar_one_or_none()
@@ -509,7 +509,7 @@ class KnowledgeBaseService:
                 1 - (c.embedding <=> CAST(:embedding AS vector)) AS score
             FROM kb_chunks c
             JOIN kb_documents d ON c.document_id = d.id
-            WHERE d.group_id = :group_id
+            WHERE d.customer_id = :customer_id
               AND d.status = 'indexed'
               {category_filter}
             ORDER BY c.embedding <=> CAST(:embedding AS vector)
@@ -520,7 +520,7 @@ class KnowledgeBaseService:
 
         params: Dict[str, Any] = {
             "embedding": embedding_str,
-            "group_id": self.group_id,
+            "customer_id": self.customer_id,
             "top_k": top_k,
         }
         if category:
@@ -586,18 +586,18 @@ class KnowledgeBaseService:
     # ------------------------------------------------------------------
 
     async def get_status(self) -> Dict[str, Any]:
-        """Get knowledge base statistics for the group."""
+        """Get knowledge base statistics for the customer."""
         doc_count = await self.db.execute(
-            select(func.count(KBDocument.id)).where(KBDocument.group_id == self.group_id)
+            select(func.count(KBDocument.id)).where(KBDocument.customer_id == self.customer_id)
         )
         chunk_count = await self.db.execute(
             select(func.count(KBChunk.id)).join(KBDocument).where(
-                KBDocument.group_id == self.group_id
+                KBDocument.customer_id == self.customer_id
             )
         )
         indexed_count = await self.db.execute(
             select(func.count(KBDocument.id)).where(
-                KBDocument.group_id == self.group_id,
+                KBDocument.customer_id == self.customer_id,
                 KBDocument.status == "indexed",
             )
         )

@@ -92,7 +92,7 @@ class WorkflowTemplateBase(BaseModel):
 
 class WorkflowTemplateCreate(WorkflowTemplateBase):
     """Schema for creating a workflow template."""
-    group_id: int = Field(..., gt=0, description="Group this template belongs to")
+    customer_id: int = Field(..., gt=0, description="Customer this template belongs to")
 
     class Config:
         json_schema_extra = {
@@ -100,7 +100,7 @@ class WorkflowTemplateCreate(WorkflowTemplateBase):
                 "name": "Post-Sync Analytics Pipeline",
                 "description": "Run analytics after SAP data sync",
                 "trigger_type": "post_sync",
-                "group_id": 1,
+                "customer_id": 1,
                 "is_enabled": True,
                 "steps": [
                     {
@@ -144,7 +144,7 @@ class WorkflowTemplateUpdate(BaseModel):
 class WorkflowTemplateResponse(WorkflowTemplateBase):
     """Schema for workflow template response."""
     id: int
-    group_id: int
+    customer_id: int
     created_at: datetime
     updated_at: Optional[datetime] = None
     created_by_id: Optional[int] = None

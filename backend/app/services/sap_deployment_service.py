@@ -64,7 +64,7 @@ class MappingStatus(str, Enum):
 class SAPConnectionConfig:
     """Configuration for SAP system connection."""
     id: Optional[int] = None
-    group_id: int = 0
+    customer_id: int = 0
     name: str = ""
     system_type: SAPSystemType = SAPSystemType.S4HANA
     connection_method: ConnectionMethod = ConnectionMethod.CSV
@@ -93,7 +93,7 @@ class SAPConnectionConfig:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
-            "group_id": self.group_id,
+            "customer_id": self.customer_id,
             "name": self.name,
             "system_type": self.system_type.value,
             "connection_method": self.connection_method.value,
@@ -189,8 +189,8 @@ class FieldMapping:
 
 @dataclass
 class DeploymentStatus:
-    """Overall deployment status for a group."""
-    group_id: int
+    """Overall deployment status for a customer."""
+    customer_id: int
     phase: DeploymentPhase
 
     # Connection status
@@ -222,7 +222,7 @@ class DeploymentStatus:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "group_id": self.group_id,
+            "customer_id": self.customer_id,
             "phase": self.phase.value,
             "connection_configured": self.connection_configured,
             "connection_tested": self.connection_tested,
@@ -926,9 +926,9 @@ class SAPDeploymentService:
     5. Deploying to production
     """
 
-    def __init__(self, db: AsyncSession, group_id: int):
+    def __init__(self, db: AsyncSession, customer_id: int):
         self.db = db
-        self.group_id = group_id
+        self.customer_id = customer_id
         self._connections: Dict[int, SAPConnectionConfig] = {}
         self._table_configs: Dict[int, SAPTableConfig] = {}
         self._field_mappings: Dict[int, List[FieldMapping]] = {}
@@ -946,7 +946,7 @@ class SAPDeploymentService:
     ) -> SAPConnectionConfig:
         """Create a new SAP connection configuration."""
         config = SAPConnectionConfig(
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             name=name,
             system_type=system_type,
             connection_method=connection_method,
@@ -995,8 +995,8 @@ class SAPDeploymentService:
             return False, str(e)
 
     async def get_connections(self) -> List[SAPConnectionConfig]:
-        """Get all connections for this group."""
-        return [c for c in self._connections.values() if c.group_id == self.group_id]
+        """Get all connections for this customer."""
+        return [c for c in self._connections.values() if c.customer_id == self.customer_id]
 
     # -------------------------------------------------------------------------
     # Table Discovery and Configuration
@@ -1169,9 +1169,9 @@ class SAPDeploymentService:
     # -------------------------------------------------------------------------
 
     async def get_deployment_status(self) -> DeploymentStatus:
-        """Get overall deployment status for this group."""
+        """Get overall deployment status for this customer."""
         status = DeploymentStatus(
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             phase=DeploymentPhase.DISCOVERY,
         )
 
@@ -1272,6 +1272,6 @@ class SAPDeploymentService:
 
 
 # Convenience function
-def create_deployment_service(db: AsyncSession, group_id: int) -> SAPDeploymentService:
-    """Create a deployment service for a group."""
-    return SAPDeploymentService(db, group_id)
+def create_deployment_service(db: AsyncSession, customer_id: int) -> SAPDeploymentService:
+    """Create a deployment service for a customer."""
+    return SAPDeploymentService(db, customer_id)

@@ -58,7 +58,7 @@ def print_step(step: int, total: int, description: str):
 async def step1_generate_config(db, skip: bool = False):
     """Step 1: Generate Food Dist configuration."""
     from app.models.supply_chain_config import SupplyChainConfig
-    from app.models.group import Group
+    from app.models.customer import Customer
 
     # Check if config exists
     existing = db.query(SupplyChainConfig).filter(
@@ -71,10 +71,10 @@ async def step1_generate_config(db, skip: bool = False):
             print("  Skipping generation (--skip-generate)")
             return existing
 
-        # Check for associated group
-        group = db.query(Group).filter(Group.name.ilike("%Food Dist%")).first()
-        if group:
-            print(f"  Found group: {group.name} (ID: {group.id})")
+        # Check for associated customer
+        customer = db.query(Customer).filter(Customer.name.ilike("%Food Dist%")).first()
+        if customer:
+            print(f"  Found customer: {customer.name} (ID: {customer.id})")
 
         return existing
 

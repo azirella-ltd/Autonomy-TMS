@@ -130,12 +130,12 @@ class MultiStageCTPService:
         self,
         db: Session,
         config_id: int,
-        group_id: int,
+        customer_id: int,
         pegging_service: Optional[PeggingService] = None,
     ):
         self.db = db
         self.config_id = config_id
-        self.group_id = group_id
+        self.customer_id = customer_id
         self.pegging_service = pegging_service or PeggingService(db)
 
         # Caches (valid for one CTP batch)
@@ -266,7 +266,7 @@ class MultiStageCTPService:
             quantity=quantity,
             priority=priority,
             config_id=self.config_id,
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             chain_id=chain_id,
         )
 
@@ -280,7 +280,7 @@ class MultiStageCTPService:
                 source_site_id=preview.get("source_site_id", site_id),
                 quantity=preview.get("quantity", quantity),
                 config_id=self.config_id,
-                group_id=self.group_id,
+                customer_id=self.customer_id,
                 upstream_pegging_id=prev_pegging_id,
                 chain_id=chain_id,
                 chain_depth=i,

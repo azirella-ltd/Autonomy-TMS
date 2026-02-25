@@ -14,13 +14,13 @@ const BASE = '/planning-cascade';
 // Layer License
 // =============================================================================
 
-export const getLayerLicenses = async (groupId) => {
-  const res = await api.get(`${BASE}/layer-license/${groupId}`);
+export const getLayerLicenses = async (customerId) => {
+  const res = await api.get(`${BASE}/layer-license/${customerId}`);
   return res.data;
 };
 
-export const updateLayerLicense = async (groupId, layer, mode, packageTier = null) => {
-  const res = await api.put(`${BASE}/layer-license/${groupId}`, {
+export const updateLayerLicense = async (customerId, layer, mode, packageTier = null) => {
+  const res = await api.put(`${BASE}/layer-license/${customerId}`, {
     layer,
     mode,
     package_tier: packageTier,
@@ -28,9 +28,9 @@ export const updateLayerLicense = async (groupId, layer, mode, packageTier = nul
   return res.data;
 };
 
-export const setPackageTier = async (groupId, tier, userId = null) => {
+export const setPackageTier = async (customerId, tier, userId = null) => {
   const res = await api.put(
-    `${BASE}/layer-license/${groupId}/package/${tier}`,
+    `${BASE}/layer-license/${customerId}/package/${tier}`,
     null,
     { params: { user_id: userId } }
   );

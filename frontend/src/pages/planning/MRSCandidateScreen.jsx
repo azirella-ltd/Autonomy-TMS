@@ -92,7 +92,7 @@ const CANDIDATE_METHODS = {
   },
 };
 
-const MRSCandidateScreen = ({ configId, groupId, policyEnvelopeId, mode = 'INPUT' }) => {
+const MRSCandidateScreen = ({ configId, customerId, policyEnvelopeId, mode = 'INPUT' }) => {
   const [loading, setLoading] = useState(true);
   const [supBP, setSupBP] = useState(null);
   const [selectedCandidate, setSelectedCandidate] = useState(null);
@@ -130,7 +130,7 @@ const MRSCandidateScreen = ({ configId, groupId, policyEnvelopeId, mode = 'INPUT
       setLoading(true);
       const response = await api.post('/planning-cascade/supply-baseline-pack', {
         config_id: configId,
-        group_id: groupId,
+        customer_id: customerId,
         policy_envelope_id: policyEnvelopeId,
       });
       setSupBP(response.data);
@@ -149,7 +149,7 @@ const MRSCandidateScreen = ({ configId, groupId, policyEnvelopeId, mode = 'INPUT
       setLoading(true);
       const response = await api.post('/planning-cascade/supply-baseline-pack', {
         config_id: configId,
-        group_id: groupId,
+        customer_id: customerId,
         policy_envelope_id: policyEnvelopeId,
         customer_plan: planData,
       });

@@ -28,7 +28,7 @@ def upgrade():
     op.create_index('idx_games_created_at', 'games', ['created_at'], unique=False)
     op.create_index('idx_games_status', 'games', ['status'], unique=False)
     op.create_index('idx_games_supply_chain_config_id', 'games', ['supply_chain_config_id'], unique=False)
-    op.create_index('idx_games_group_id', 'games', ['group_id'], unique=False)
+    op.create_index('idx_games_group_id', 'games', ['customer_id'], unique=False)
 
     # Players table indexes
     op.create_index('idx_players_game_id', 'players', ['game_id'], unique=False)
@@ -52,7 +52,7 @@ def upgrade():
 
     # Supply chain configs table indexes
     op.create_index('idx_supply_chain_configs_name', 'supply_chain_configs', ['name'], unique=False)
-    op.create_index('idx_supply_chain_configs_group_id', 'supply_chain_configs', ['group_id'], unique=False)
+    op.create_index('idx_supply_chain_configs_group_id', 'supply_chain_configs', ['customer_id'], unique=False)
 
     # Users table indexes
     op.create_index('idx_users_email', 'users', ['email'], unique=True)
@@ -64,21 +64,21 @@ def upgrade():
     # Agent configs table indexes (if exists)
     try:
         op.create_index('idx_agent_configs_strategy', 'agent_configs', ['strategy'], unique=False)
-        op.create_index('idx_agent_configs_group_id', 'agent_configs', ['group_id'], unique=False)
+        op.create_index('idx_agent_configs_group_id', 'agent_configs', ['customer_id'], unique=False)
     except Exception:
         pass  # Table may not exist
 
     print("\n✅ Performance indexes created successfully!")
     print("\nIndexes added:")
-    print("  - Games: created_at, status, supply_chain_config_id, group_id")
+    print("  - Games: created_at, status, supply_chain_config_id, customer_id")
     print("  - Players: game_id, user_id, role")
     print("  - Rounds: game_id, round_number, composite (game_id, round_number)")
     print("  - Player Rounds: player_id, round_id, composite (player_id, round_id)")
     print("  - Player Actions: player_id, round_id, created_at")
-    print("  - Supply Chain Configs: name, group_id")
+    print("  - Supply Chain Configs: name, customer_id")
     print("  - Users: email (unique), role_id")
     print("  - Groups: name")
-    print("  - Agent Configs: strategy, group_id")
+    print("  - Agent Configs: strategy, customer_id")
     print("\nExpected Performance Improvement:")
     print("  - Game queries: 30-50% faster")
     print("  - Player/Round joins: 40-60% faster")

@@ -25,7 +25,7 @@ from app.models.supply_chain_config import (
     Market,
     MarketDemand,
 )
-from app.models.group import Group
+from app.models.customer import Customer
 from app.core.time_buckets import TimeBucket
 from app.services.scenario_branching_service import (
     ScenarioBranchingService,
@@ -87,7 +87,7 @@ def _make_lane(config_id, from_id, to_id, lane_id=None, capacity=1000,
 def _make_config(
     config_id,
     name,
-    group_id=1,
+    customer_id=1,
     parent_config_id=None,
     base_config_id=None,
     scenario_type=ScenarioType.BASELINE,
@@ -106,7 +106,7 @@ def _make_config(
     config.id = config_id
     config.name = name
     config.description = f"Description for {name}"
-    config.group_id = group_id
+    config.customer_id = customer_id
     config.parent_config_id = parent_config_id
     config.base_config_id = base_config_id
     config.scenario_type = scenario_type
@@ -183,7 +183,7 @@ def baseline_config(baseline_nodes, baseline_lanes):
     return _make_config(
         config_id=100,
         name="TBG Root",
-        group_id=1,
+        customer_id=1,
         scenario_type=ScenarioType.BASELINE,
         uses_delta_storage=False,
         nodes=baseline_nodes,
@@ -374,7 +374,7 @@ class TestScenarioBranching:
         assert child.scenario_type == ScenarioType.WORKING
         assert child.uses_delta_storage is True
         assert child.branched_at is not None
-        assert child.group_id == baseline_config.group_id
+        assert child.customer_id == baseline_config.customer_id
 
         # Verify lineage entries were added (self + parent ancestor)
         lineage_entries = [o for o in added_objects if isinstance(o, ConfigLineage)]
@@ -386,7 +386,7 @@ class TestScenarioBranching:
         """Test nested branching: Root → Case → Six-Pack."""
         # First create a case_tbg mock
         case_tbg = _make_config(
-            config_id=200, name="Case TBG", group_id=1,
+            config_id=200, name="Case TBG", customer_id=1,
             parent_config_id=100, base_config_id=100,
             scenario_type=ScenarioType.WORKING, uses_delta_storage=True,
         )
@@ -438,7 +438,7 @@ class TestScenarioBranching:
     def test_update_scenario_create_node(self, mock_session, baseline_config):
         """Test creating a new node via delta."""
         child = _make_config(
-            config_id=200, name="Case TBG", group_id=1,
+            config_id=200, name="Case TBG", customer_id=1,
             parent_config_id=100, base_config_id=100,
             scenario_type=ScenarioType.WORKING, uses_delta_storage=True,
         )
@@ -484,7 +484,7 @@ class TestScenarioBranching:
         retailer = baseline_nodes[1]  # index 1 is the Retailer
 
         child = _make_config(
-            config_id=200, name="Modified TBG", group_id=1,
+            config_id=200, name="Modified TBG", customer_id=1,
             parent_config_id=100, base_config_id=100,
             scenario_type=ScenarioType.WORKING, uses_delta_storage=True,
         )
@@ -521,7 +521,7 @@ class TestScenarioBranching:
         factory = baseline_nodes[4]  # index 4 is Factory
 
         child = _make_config(
-            config_id=200, name="Simplified TBG", group_id=1,
+            config_id=200, name="Simplified TBG", customer_id=1,
             parent_config_id=100, base_config_id=100,
             scenario_type=ScenarioType.WORKING, uses_delta_storage=True,
         )
@@ -552,7 +552,7 @@ class TestScenarioBranching:
     def test_get_effective_config_no_deltas(self, mock_session, baseline_config):
         """Test getting effective config for branch with no deltas (inherits all from parent)."""
         child = _make_config(
-            config_id=200, name="Case TBG", group_id=1,
+            config_id=200, name="Case TBG", customer_id=1,
             parent_config_id=100, base_config_id=100,
             scenario_type=ScenarioType.WORKING, uses_delta_storage=True,
         )
@@ -591,7 +591,7 @@ class TestScenarioBranching:
     def test_get_effective_config_with_create_delta(self, mock_session, baseline_config):
         """Test effective config merges create deltas."""
         child = _make_config(
-            config_id=200, name="Case TBG", group_id=1,
+            config_id=200, name="Case TBG", customer_id=1,
             parent_config_id=100, base_config_id=100,
             scenario_type=ScenarioType.WORKING, uses_delta_storage=True,
         )
@@ -637,7 +637,7 @@ class TestScenarioBranching:
         retailer = baseline_nodes[1]
 
         child = _make_config(
-            config_id=200, name="Modified TBG", group_id=1,
+            config_id=200, name="Modified TBG", customer_id=1,
             parent_config_id=100, base_config_id=100,
             scenario_type=ScenarioType.WORKING, uses_delta_storage=True,
         )
@@ -693,7 +693,7 @@ class TestScenarioBranching:
         factory = baseline_nodes[4]
 
         child = _make_config(
-            config_id=200, name="Simplified TBG", group_id=1,
+            config_id=200, name="Simplified TBG", customer_id=1,
             parent_config_id=100, base_config_id=100,
             scenario_type=ScenarioType.WORKING, uses_delta_storage=True,
         )
@@ -730,7 +730,7 @@ class TestScenarioBranching:
     def test_rollback_scenario(self, mock_session, baseline_config):
         """Test rolling back all deltas."""
         child = _make_config(
-            config_id=200, name="Working TBG", group_id=1,
+            config_id=200, name="Working TBG", customer_id=1,
             parent_config_id=100, base_config_id=100,
             scenario_type=ScenarioType.WORKING, uses_delta_storage=True,
         )
@@ -770,7 +770,7 @@ class TestScenarioBranching:
     def test_commit_scenario_not_implemented(self, mock_session, baseline_config):
         """Test commit scenario (note: full materialization logic may be incomplete)."""
         child = _make_config(
-            config_id=200, name="Working TBG", group_id=1,
+            config_id=200, name="Working TBG", customer_id=1,
             parent_config_id=100, base_config_id=100,
             scenario_type=ScenarioType.WORKING, uses_delta_storage=True,
         )
@@ -823,7 +823,7 @@ class TestScenarioBranching:
         """Test diffing two configurations."""
         # Branch A: adds Node A
         branch_a = _make_config(
-            config_id=200, name="Branch A", group_id=1,
+            config_id=200, name="Branch A", customer_id=1,
             parent_config_id=100, base_config_id=100,
             scenario_type=ScenarioType.WORKING, uses_delta_storage=True,
         )
@@ -839,7 +839,7 @@ class TestScenarioBranching:
 
         # Branch B: adds Node B
         branch_b = _make_config(
-            config_id=300, name="Branch B", group_id=1,
+            config_id=300, name="Branch B", customer_id=1,
             parent_config_id=100, base_config_id=100,
             scenario_type=ScenarioType.WORKING, uses_delta_storage=True,
         )
@@ -891,7 +891,7 @@ class TestScenarioBranching:
         for i, cid in enumerate([201, 202, 203, 204]):
             parent_id = 100 if i == 0 else (200 + i)
             configs[cid] = _make_config(
-                config_id=cid, name=f"Level {i+1}", group_id=1,
+                config_id=cid, name=f"Level {i+1}", customer_id=1,
                 parent_config_id=parent_id, base_config_id=100,
                 scenario_type=ScenarioType.WORKING, uses_delta_storage=True,
             )
@@ -985,7 +985,7 @@ class TestScenarioBranchingEdgeCases:
         retailer = baseline_nodes[1]
 
         child = _make_config(
-            config_id=200, name="Multi-Update TBG", group_id=1,
+            config_id=200, name="Multi-Update TBG", customer_id=1,
             parent_config_id=100, base_config_id=100,
             scenario_type=ScenarioType.WORKING, uses_delta_storage=True,
         )

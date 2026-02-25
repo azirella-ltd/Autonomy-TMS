@@ -1,14 +1,14 @@
 /**
  * Training Compare Page
  *
- * Allows users to compare performance across multiple completed games.
- * Reuses the GroupGameComparisonPanel component.
+ * Allows users to compare performance across multiple completed scenarios.
+ * Reuses the CustomerScenarioComparisonPanel component.
  */
 
 import React, { useState, useEffect } from 'react';
 import simulationApi from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
-import GroupGameComparisonPanel from '../admin/GroupGameComparisonPanel';
+import CustomerScenarioComparisonPanel from '../admin/CustomerScenarioComparisonPanel';
 import {
   Card,
   CardContent,
@@ -66,12 +66,12 @@ const TrainingCompare = () => {
       )}
 
       {/* Comparison Panel */}
-      <GroupGameComparisonPanel
+      <CustomerScenarioComparisonPanel
         games={games}
         loading={loading}
         error={error}
         onRefresh={fetchGames}
-        groupId={user?.group_id}
+        customerId={user?.customer_id}
         currentUserId={user?.id}
         selectedSupplyChainId="all"
       />

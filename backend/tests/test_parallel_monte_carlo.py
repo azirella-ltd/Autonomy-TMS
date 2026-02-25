@@ -28,7 +28,7 @@ class TestScenarioConfig:
         config = ScenarioConfig(
             scenario_num=1,
             config_id=1,
-            group_id=1,
+            customer_id=1,
             start_date=date(2026, 1, 1),
             planning_horizon_weeks=52,
             random_seed=42,
@@ -46,7 +46,7 @@ class TestScenarioConfig:
         config = ScenarioConfig(
             scenario_num=1,
             config_id=1,
-            group_id=1,
+            customer_id=1,
             start_date=date(2026, 1, 1),
             planning_horizon_weeks=52,
             random_seed=42,
@@ -241,7 +241,7 @@ class TestRunScenarioWorker:
         config = ScenarioConfig(
             scenario_num=1,
             config_id=1,
-            group_id=1,
+            customer_id=1,
             start_date=date(2026, 1, 1),
             planning_horizon_weeks=4,
             random_seed=42,
@@ -259,7 +259,7 @@ class TestRunScenarioWorker:
         config = ScenarioConfig(
             scenario_num=1,
             config_id=99999,  # Non-existent config
-            group_id=1,
+            customer_id=1,
             start_date=date(2026, 1, 1),
             planning_horizon_weeks=4,
             random_seed=42,
@@ -285,7 +285,7 @@ class TestParallelMonteCarloEngine:
         engine = ParallelMonteCarloEngine(
             run_id=1,
             config_id=1,
-            group_id=1,
+            customer_id=1,
             num_scenarios=100,
             random_seed=42,
             num_workers=4
@@ -303,7 +303,7 @@ class TestParallelMonteCarloEngine:
         engine = ParallelMonteCarloEngine(
             run_id=1,
             config_id=1,
-            group_id=1,
+            customer_id=1,
             num_scenarios=100,
             num_workers=None  # Auto-detect
         )
@@ -317,7 +317,7 @@ class TestParallelMonteCarloEngine:
         engine = ParallelMonteCarloEngine(
             run_id=1,
             config_id=1,
-            group_id=1,
+            customer_id=1,
             num_scenarios=2,  # Only 2 scenarios
             num_workers=100   # Request 100 workers
         )
@@ -332,7 +332,7 @@ class TestParallelMonteCarloEngine:
         engine = ParallelMonteCarloEngine(
             run_id=1,
             config_id=1,
-            group_id=1,
+            customer_id=1,
             num_scenarios=10,
             num_workers=2
         )
@@ -356,7 +356,7 @@ class TestParallelMonteCarloEngine:
         engine = ParallelMonteCarloEngine(
             run_id=1,
             config_id=1,
-            group_id=1,
+            customer_id=1,
             num_scenarios=5,
             num_workers=2
         )
@@ -445,7 +445,7 @@ class TestEdgeCases:
         engine = ParallelMonteCarloEngine(
             run_id=1,
             config_id=1,
-            group_id=1,
+            customer_id=1,
             num_scenarios=1,
             num_workers=None
         )
@@ -491,7 +491,7 @@ class TestEdgeCases:
         engine = ParallelMonteCarloEngine(
             run_id=1,
             config_id=1,
-            group_id=1,
+            customer_id=1,
             num_scenarios=10000,
             num_workers=None
         )
@@ -517,7 +517,7 @@ class TestIntegration:
         config = ScenarioConfig(
             scenario_num=1,
             config_id=1,
-            group_id=1,
+            customer_id=1,
             start_date=date(2026, 1, 1),
             planning_horizon_weeks=4,
             random_seed=42,

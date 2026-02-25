@@ -22,7 +22,7 @@ class ScenarioConfig:
     """Configuration for a single scenario run (picklable)"""
     scenario_num: int
     config_id: int
-    group_id: int
+    customer_id: int
     start_date: date
     planning_horizon_weeks: int
     random_seed: int
@@ -277,7 +277,7 @@ class ParallelMonteCarloEngine:
         self,
         run_id: int,
         config_id: int,
-        group_id: int,
+        customer_id: int,
         num_scenarios: int = 1000,
         random_seed: Optional[int] = None,
         num_workers: Optional[int] = None
@@ -288,14 +288,14 @@ class ParallelMonteCarloEngine:
         Args:
             run_id: MonteCarloRun ID for storing results
             config_id: Supply chain configuration ID
-            group_id: Group ID for multi-tenancy
+            customer_id: Customer ID for multi-tenancy
             num_scenarios: Number of scenarios to simulate
             random_seed: Random seed for reproducibility
             num_workers: Number of parallel workers (None = auto-detect)
         """
         self.run_id = run_id
         self.config_id = config_id
-        self.group_id = group_id
+        self.customer_id = customer_id
         self.num_scenarios = num_scenarios
         self.random_seed = random_seed or 42
 
@@ -345,7 +345,7 @@ class ParallelMonteCarloEngine:
         engine = MonteCarloEngine(
             run_id=self.run_id,
             config_id=self.config_id,
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             num_scenarios=self.num_scenarios,
             random_seed=self.random_seed
         )
@@ -437,7 +437,7 @@ class ParallelMonteCarloEngine:
             config = ScenarioConfig(
                 scenario_num=scenario_num,
                 config_id=self.config_id,
-                group_id=self.group_id,
+                customer_id=self.customer_id,
                 start_date=start_date,
                 planning_horizon_weeks=planning_horizon_weeks,
                 random_seed=self.random_seed + scenario_num,
@@ -517,7 +517,7 @@ class ParallelMonteCarloEngine:
 def compare_sequential_vs_parallel(
     run_id: int,
     config_id: int,
-    group_id: int,
+    customer_id: int,
     num_scenarios: int = 100,
     planning_horizon_weeks: int = 52
 ) -> Dict[str, Any]:
@@ -527,7 +527,7 @@ def compare_sequential_vs_parallel(
     Args:
         run_id: MonteCarloRun ID
         config_id: Supply chain config ID
-        group_id: Group ID
+        customer_id: Customer ID
         num_scenarios: Number of scenarios to run
         planning_horizon_weeks: Planning horizon
 
@@ -552,7 +552,7 @@ def compare_sequential_vs_parallel(
     seq_engine = MonteCarloEngine(
         run_id=run_id,
         config_id=config_id,
-        group_id=group_id,
+        customer_id=customer_id,
         num_scenarios=num_scenarios,
         random_seed=42
     )
@@ -566,7 +566,7 @@ def compare_sequential_vs_parallel(
     par_engine = ParallelMonteCarloEngine(
         run_id=run_id + 1,  # Different run ID
         config_id=config_id,
-        group_id=group_id,
+        customer_id=customer_id,
         num_scenarios=num_scenarios,
         random_seed=42
     )

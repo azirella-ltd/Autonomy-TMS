@@ -1,13 +1,13 @@
-"""Add group_id to AWS SC planning tables for multi-tenancy
+"""Add customer_id to AWS SC planning tables for multi-tenancy
 
 Revision ID: 20260111_aws_sc_multi_tenancy
 Revises: 20260110_advanced_features
 Create Date: 2026-01-11
 
 This migration enables multi-tenant support for AWS Supply Chain planning entities
-by adding group_id foreign keys to all planning tables. This allows multiple games
+by adding customer_id foreign keys to all planning tables. This allows multiple games
 and digital twin simulations to share the same supply chain configurations while
-maintaining proper data isolation by group.
+maintaining proper data isolation by customer.
 
 Architecture Vision:
 - Make The Beer Game a special case of AWS SC Data Model
@@ -33,7 +33,7 @@ Tables Modified:
 15. trading_partner - Trading partners (vendors/suppliers)
 
 Note: All tables except inv_level and trading_partner already have config_id.
-      This migration adds group_id to all tables for complete multi-tenancy support.
+      This migration adds customer_id to all tables for complete multi-tenancy support.
 """
 
 from alembic import op
@@ -47,10 +47,10 @@ depends_on = None
 
 
 def upgrade():
-    """Add group_id and missing config_id columns to AWS SC planning tables"""
+    """Add customer_id and missing config_id columns to AWS SC planning tables"""
 
     # ========================================================================
-    # TABLES THAT ALREADY HAVE config_id - Add group_id only
+    # TABLES THAT ALREADY HAVE config_id - Add customer_id only
     # ========================================================================
 
     tables_with_config_id = [
@@ -70,31 +70,31 @@ def upgrade():
     ]
 
     for table_name in tables_with_config_id:
-        # Add group_id column (nullable initially for backwards compatibility)
+        # Add customer_id column (nullable initially for backwards compatibility)
         op.add_column(
             table_name,
-            sa.Column('group_id', sa.Integer(), nullable=True)
+            sa.Column('customer_id', sa.Integer(), nullable=True)
         )
 
-        # Create foreign key to groups table
+        # Create foreign key to customers table
         op.create_foreign_key(
             f'fk_{table_name}_group',
             table_name,
             'groups',
-            ['group_id'],
+            ['customer_id'],
             ['id'],
             ondelete='CASCADE'
         )
 
-        # Create composite index on (group_id, config_id) for fast lookups
+        # Create composite index on (customer_id, config_id) for fast lookups
         op.create_index(
             f'idx_{table_name}_group_config',
             table_name,
-            ['group_id', 'config_id']
+            ['customer_id', 'config_id']
         )
 
     # ========================================================================
-    # inv_level - Add both group_id and config_id
+    # inv_level - Add both customer_id and config_id
     # ========================================================================
 
     # Add config_id to inv_level
@@ -110,16 +110,16 @@ def upgrade():
         ['id']
     )
 
-    # Add group_id to inv_level
+    # Add customer_id to inv_level
     op.add_column(
         'inv_level',
-        sa.Column('group_id', sa.Integer(), nullable=True)
+        sa.Column('customer_id', sa.Integer(), nullable=True)
     )
     op.create_foreign_key(
         'fk_inv_level_group',
         'inv_level',
         'groups',
-        ['group_id'],
+        ['customer_id'],
         ['id'],
         ondelete='CASCADE'
     )
@@ -128,11 +128,11 @@ def upgrade():
     op.create_index(
         'idx_inv_level_group_config',
         'inv_level',
-        ['group_id', 'config_id']
+        ['customer_id', 'config_id']
     )
 
     # ========================================================================
-    # trading_partner - Add both group_id and config_id
+    # trading_partner - Add both customer_id and config_id
     # ========================================================================
 
     # Add config_id to trading_partner
@@ -148,16 +148,16 @@ def upgrade():
         ['id']
     )
 
-    # Add group_id to trading_partner
+    # Add customer_id to trading_partner
     op.add_column(
         'trading_partner',
-        sa.Column('group_id', sa.Integer(), nullable=True)
+        sa.Column('customer_id', sa.Integer(), nullable=True)
     )
     op.create_foreign_key(
         'fk_trading_partner_group',
         'trading_partner',
         'groups',
-        ['group_id'],
+        ['customer_id'],
         ['id'],
         ondelete='CASCADE'
     )
@@ -166,12 +166,12 @@ def upgrade():
     op.create_index(
         'idx_trading_partner_group_config',
         'trading_partner',
-        ['group_id', 'config_id']
+        ['customer_id', 'config_id']
     )
 
 
 def downgrade():
-    """Remove group_id and config_id columns"""
+    """Remove customer_id and config_id columns"""
 
     # ========================================================================
     # Reverse all changes
@@ -193,22 +193,22 @@ def downgrade():
         'sourcing_schedule_details',
     ]
 
-    # Remove group_id from tables that already had config_id
+    # Remove customer_id from tables that already had config_id
     for table_name in tables_with_config_id:
         op.drop_index(f'idx_{table_name}_group_config', table_name)
         op.drop_constraint(f'fk_{table_name}_group', table_name, type_='foreignkey')
-        op.drop_column(table_name, 'group_id')
+        op.drop_column(table_name, 'customer_id')
 
     # Remove from inv_level
     op.drop_index('idx_inv_level_group_config', 'inv_level')
     op.drop_constraint('fk_inv_level_group', 'inv_level', type_='foreignkey')
-    op.drop_column('inv_level', 'group_id')
+    op.drop_column('inv_level', 'customer_id')
     op.drop_constraint('fk_inv_level_config', 'inv_level', type_='foreignkey')
     op.drop_column('inv_level', 'config_id')
 
     # Remove from trading_partner
     op.drop_index('idx_trading_partner_group_config', 'trading_partner')
     op.drop_constraint('fk_trading_partner_group', 'trading_partner', type_='foreignkey')
-    op.drop_column('trading_partner', 'group_id')
+    op.drop_column('trading_partner', 'customer_id')
     op.drop_constraint('fk_trading_partner_config', 'trading_partner', type_='foreignkey')
     op.drop_column('trading_partner', 'config_id')

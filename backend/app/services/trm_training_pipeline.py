@@ -222,7 +222,7 @@ class TRMTrainingDataGenerator:
 
     async def generate_behavioral_cloning_data(
         self,
-        group_id: int,
+        customer_id: int,
         lookback_days: int = 90,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
@@ -239,7 +239,7 @@ class TRMTrainingDataGenerator:
         result = await self.db.execute(
             select(AgentAction)
             .where(
-                AgentAction.group_id == group_id,
+                AgentAction.customer_id == customer_id,
                 AgentAction.agent_id == self.config.agent_id,
                 AgentAction.execution_result == ExecutionResult.SUCCESS,
                 AgentAction.executed_at >= cutoff,
@@ -453,7 +453,7 @@ class TRMTrainingPipeline:
 
     async def train(
         self,
-        group_id: int,
+        customer_id: int,
         stages: Optional[List[CurriculumStage]] = None,
     ) -> Dict[str, Any]:
         """
@@ -473,7 +473,7 @@ class TRMTrainingPipeline:
         # Phase 1: Behavioral Cloning
         logger.info(f"Phase 1: Behavioral cloning for {self.config.name}")
         bc_states, bc_actions, bc_rewards = await self.data_generator.generate_behavioral_cloning_data(
-            group_id
+            customer_id
         )
         if len(bc_states) > 0:
             bc_accuracy = self._train_supervised(bc_states, bc_actions, bc_rewards)
@@ -526,7 +526,7 @@ class TRMTrainingPipeline:
 
     async def evaluate(
         self,
-        group_id: int,
+        customer_id: int,
         test_size: int = 100,
     ) -> Dict[str, float]:
         """Evaluate model on holdout data."""
@@ -556,15 +556,15 @@ class TRMTrainingPipeline:
 
 async def train_all_trm_agents(
     db: AsyncSession,
-    group_id: int,
+    customer_id: int,
 ) -> Dict[str, Any]:
-    """Train all TRM agents for a group."""
+    """Train all TRM agents for a customer."""
     results = {}
 
     for agent_id, config in TRM_CONFIGS.items():
         logger.info(f"Training {config.name}...")
         pipeline = TRMTrainingPipeline(db, config)
-        metrics = await pipeline.train(group_id)
+        metrics = await pipeline.train(customer_id)
         results[agent_id] = metrics
 
     return results

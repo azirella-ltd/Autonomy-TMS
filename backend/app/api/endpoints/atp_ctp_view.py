@@ -308,7 +308,7 @@ async def calculate_atp_ctp_endpoint(
     Returns:
         List of ATP/CTP projections for each week
     """
-    company_id = current_user.group_id
+    company_id = current_user.customer_id
 
     # Verify product and site exist
     product_stmt = select(Product).where(Product.id == request.product_id)
@@ -384,7 +384,7 @@ async def bulk_calculate_atp_ctp(
     Returns:
         Summary of calculation task
     """
-    company_id = current_user.group_id
+    company_id = current_user.customer_id
 
     total_calculations = len(request.product_ids) * len(request.site_ids)
     completed = 0

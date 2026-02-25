@@ -1,7 +1,7 @@
 /**
  * Planning Hierarchy Configuration
  *
- * Group administrator interface for configuring planning hierarchies.
+ * Customer administrator interface for configuring planning hierarchies.
  * Allows setting hierarchy levels for different planning types (S&OP, MPS, MRP, etc.)
  */
 
@@ -136,13 +136,13 @@ export default function PlanningHierarchyConfig() {
     description: ''
   });
 
-  // Get current user's group_id from localStorage or context
-  const groupId = localStorage.getItem('groupId') || 1;
+  // Get current user's customer_id from localStorage or context
+  const customerId = localStorage.getItem('customerId') || 1;
 
   const fetchConfigs = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await api.get(`/planning-hierarchy/configs?group_id=${groupId}`);
+      const response = await api.get(`/planning-hierarchy/configs?customer_id=${customerId}`);
       setConfigs(response.data);
     } catch (err) {
       setError('Failed to load planning configurations');
@@ -150,7 +150,7 @@ export default function PlanningHierarchyConfig() {
     } finally {
       setLoading(false);
     }
-  }, [groupId]);
+  }, [customerId]);
 
   const fetchTemplates = useCallback(async () => {
     try {
@@ -163,7 +163,7 @@ export default function PlanningHierarchyConfig() {
 
   const fetchSupplyChainConfigs = useCallback(async () => {
     try {
-      const response = await api.get(`/supply-chain-config/?group_id=${groupId}`);
+      const response = await api.get(`/supply-chain-config/?customer_id=${customerId}`);
       const items = response.data.items || response.data || [];
       // Sort: root baseline configs first
       items.sort((a, b) => {
@@ -175,7 +175,7 @@ export default function PlanningHierarchyConfig() {
     } catch (err) {
       console.error('Failed to load supply chain configs:', err);
     }
-  }, [groupId]);
+  }, [customerId]);
 
   useEffect(() => {
     fetchConfigs();
@@ -239,7 +239,7 @@ export default function PlanningHierarchyConfig() {
         await api.put(`/planning-hierarchy/configs/${editingConfig.id}`, formData);
         setSuccess('Configuration updated successfully');
       } else {
-        await api.post(`/planning-hierarchy/configs?group_id=${groupId}`, formData);
+        await api.post(`/planning-hierarchy/configs?customer_id=${customerId}`, formData);
         setSuccess('Configuration created successfully');
       }
       handleCloseDialog();
@@ -265,7 +265,7 @@ export default function PlanningHierarchyConfig() {
   const handleApplyTemplate = async (templateCode) => {
     try {
       await api.post(
-        `/planning-hierarchy/configs/from-template/${templateCode}?group_id=${groupId}`
+        `/planning-hierarchy/configs/from-template/${templateCode}?customer_id=${customerId}`
       );
       setSuccess(`Template "${templateCode}" applied successfully`);
       setTemplateDialogOpen(false);
@@ -281,7 +281,7 @@ export default function PlanningHierarchyConfig() {
     }
     try {
       const response = await api.post(
-        `/planning-hierarchy/configs/initialize-defaults/${groupId}`
+        `/planning-hierarchy/configs/initialize-defaults/${customerId}`
       );
       setSuccess(response.data.message);
       fetchConfigs();
@@ -447,7 +447,7 @@ export default function PlanningHierarchyConfig() {
       {/* AI Training Tab */}
       {mainTab === 1 && (
         <AITrainingConfig
-          groupId={groupId}
+          customerId={customerId}
           hierarchyConfigs={configs}
           supplyChainConfigs={supplyChainConfigs}
         />

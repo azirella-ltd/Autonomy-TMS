@@ -12,7 +12,7 @@ Usage:
 
 Options:
     --config-name "Default Beer Game"  (default: "Default Beer Game")
-    --group-name "Default Group" (default: "Default Group")
+    --customer-name "Default Customer" (default: "Default Customer")
     --horizon 52                 (default: 52 weeks)
 """
 
@@ -25,7 +25,7 @@ from sqlalchemy.orm import selectinload
 
 from app.db.session import SessionLocal, async_session_factory
 from app.models.supply_chain_config import SupplyChainConfig, Node, Lane, Item
-from app.models.group import Group
+from app.models.customer import Customer
 from app.models.aws_sc_planning import (
     InvPolicy,
     SourcingRules,
@@ -36,7 +36,7 @@ from app.models.aws_sc_planning import (
 
 async def convert_config_to_aws_sc(
     config_name: str = "Default Beer Game",
-    group_name: str = "Default Group",
+    customer_name: str = "Default Customer",
     horizon: int = 52
 ):
     """
@@ -44,7 +44,7 @@ async def convert_config_to_aws_sc(
 
     Args:
         config_name: Name of the SupplyChainConfig to convert
-        group_name: Name of the Group to use
+        customer_name: Name of the Customer to use
         horizon: Number of weeks to forecast
     """
     print("=" * 80)
@@ -54,7 +54,7 @@ async def convert_config_to_aws_sc(
 
     async with async_session_factory() as db:
         # ================================================================
-        # 1. Load Configuration and Group
+        # 1. Load Configuration and Customer
         # ================================================================
         print(f"1. Loading configuration: {config_name}")
 
@@ -79,15 +79,15 @@ async def convert_config_to_aws_sc(
         print(f"   ✓ Items: {len(config.items)}")
         print()
 
-        # Load group
-        result = await db.execute(select(Group).filter(Group.name == group_name))
-        group = result.scalar_one_or_none()
+        # Load customer
+        result = await db.execute(select(Customer).filter(Customer.name == customer_name))
+        customer = result.scalar_one_or_none()
 
-        if not group:
-            print(f"❌ Group '{group_name}' not found")
+        if not customer:
+            print(f"❌ Customer '{customer_name}' not found")
             return False
 
-        print(f"   ✓ Group ID: {group.id}")
+        print(f"   ✓ Customer ID: {customer.id}")
         print()
 
         # ================================================================
@@ -119,7 +119,7 @@ async def convert_config_to_aws_sc(
             reorder_point = attributes.get('reorder_point', 0)
 
             inv_policy = InvPolicy(
-                group_id=group.id,
+                customer_id=customer.id,
                 config_id=config.id,
                 product_id=item.id,
                 site_id=node.id,
@@ -172,7 +172,7 @@ async def convert_config_to_aws_sc(
             lead_time_days = lead_time_weeks * 7
 
             sourcing_rule = SourcingRules(
-                group_id=group.id,
+                customer_id=customer.id,
                 config_id=config.id,
                 product_id=item.id,
                 site_id=to_node.id,  # Destination
@@ -221,7 +221,7 @@ async def convert_config_to_aws_sc(
             capacity_hours = attributes.get('capacity_hours', 9999)
 
             production_process = ProductionProcess(
-                group_id=group.id,
+                customer_id=customer.id,
                 config_id=config.id,
                 product_id=item.id,
                 site_id=node.id,
@@ -274,7 +274,7 @@ async def convert_config_to_aws_sc(
                 demand_qty = _get_demand_for_week(demand_pattern, week)
 
                 forecast = Forecast(
-                    group_id=group.id,
+                    customer_id=customer.id,
                     config_id=config.id,
                     product_id=item.id,
                     site_id=retailer_node.id,
@@ -315,7 +315,7 @@ async def convert_config_to_aws_sc(
         print("Conversion Summary")
         print("=" * 80)
         print(f"Config:              {config.name} (ID: {config.id})")
-        print(f"Group:               {group.name} (ID: {group.id})")
+        print(f"Customer:            {customer.name} (ID: {customer.id})")
         print(f"InvPolicy:           {inv_policies_created} records")
         print(f"SourcingRules:       {sourcing_rules_created} records")
         print(f"ProductionProcess:   {production_processes_created} records")
@@ -326,7 +326,7 @@ async def convert_config_to_aws_sc(
         print("Next steps:")
         print("1. Create a scenario with use_aws_sc_planning=True")
         print("2. Set scenario.supply_chain_config_id = {config.id}")
-        print("3. Set scenario.group_id = {group.id}")
+        print("3. Set scenario.customer_id = {customer.id}")
         print("4. Start the scenario and observe AWS SC planning in action!")
         print("=" * 80)
 
@@ -372,13 +372,13 @@ def _get_demand_for_week(demand_pattern: dict, week: int) -> float:
         return 4.0
 
 
-async def verify_conversion(config_name: str, group_name: str):
+async def verify_conversion(config_name: str, customer_name: str):
     """
     Verify that the conversion was successful
 
     Args:
         config_name: Name of the config
-        group_name: Name of the group
+        customer_name: Name of the customer
     """
     print()
     print("=" * 80)
@@ -387,23 +387,23 @@ async def verify_conversion(config_name: str, group_name: str):
     print()
 
     async with async_session_factory() as db:
-        # Get config and group
+        # Get config and customer
         result = await db.execute(
             select(SupplyChainConfig).filter(SupplyChainConfig.name == config_name)
         )
         config = result.scalar_one_or_none()
 
-        result = await db.execute(select(Group).filter(Group.name == group_name))
-        group = result.scalar_one_or_none()
+        result = await db.execute(select(Customer).filter(Customer.name == customer_name))
+        customer = result.scalar_one_or_none()
 
-        if not config or not group:
-            print("❌ Config or group not found")
+        if not config or not customer:
+            print("❌ Config or customer not found")
             return False
 
         # Count records
         inv_policy_count = await db.execute(
             select(InvPolicy).filter(
-                InvPolicy.group_id == group.id,
+                InvPolicy.customer_id == customer.id,
                 InvPolicy.config_id == config.id
             )
         )
@@ -411,7 +411,7 @@ async def verify_conversion(config_name: str, group_name: str):
 
         sourcing_rules_count = await db.execute(
             select(SourcingRules).filter(
-                SourcingRules.group_id == group.id,
+                SourcingRules.customer_id == customer.id,
                 SourcingRules.config_id == config.id
             )
         )
@@ -419,7 +419,7 @@ async def verify_conversion(config_name: str, group_name: str):
 
         production_process_count = await db.execute(
             select(ProductionProcess).filter(
-                ProductionProcess.group_id == group.id,
+                ProductionProcess.customer_id == customer.id,
                 ProductionProcess.config_id == config.id
             )
         )
@@ -427,14 +427,14 @@ async def verify_conversion(config_name: str, group_name: str):
 
         forecast_count = await db.execute(
             select(Forecast).filter(
-                Forecast.group_id == group.id,
+                Forecast.customer_id == customer.id,
                 Forecast.config_id == config.id
             )
         )
         forecast_count = len(forecast_count.scalars().all())
 
         print(f"Config: {config.name} (ID: {config.id})")
-        print(f"Group:  {group.name} (ID: {group.id})")
+        print(f"Customer:  {customer.name} (ID: {customer.id})")
         print()
         print(f"InvPolicy:         {inv_policy_count:3d} records")
         print(f"SourcingRules:     {sourcing_rules_count:3d} records")
@@ -479,9 +479,9 @@ async def main():
         help='Name of the SupplyChainConfig to convert'
     )
     parser.add_argument(
-        '--group-name',
-        default='Default Group',
-        help='Name of the Group to use'
+        '--customer-name',
+        default='Default Customer',
+        help='Name of the Customer to use'
     )
     parser.add_argument(
         '--horizon',
@@ -498,16 +498,16 @@ async def main():
     args = parser.parse_args()
 
     if args.verify_only:
-        success = await verify_conversion(args.config_name, args.group_name)
+        success = await verify_conversion(args.config_name, args.customer_name)
     else:
         success = await convert_config_to_aws_sc(
             config_name=args.config_name,
-            group_name=args.group_name,
+            customer_name=args.customer_name,
             horizon=args.horizon
         )
 
         if success:
-            await verify_conversion(args.config_name, args.group_name)
+            await verify_conversion(args.config_name, args.customer_name)
 
     sys.exit(0 if success else 1)
 

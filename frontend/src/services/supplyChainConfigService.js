@@ -280,7 +280,7 @@ export const DEFAULT_CONFIG = {
   name: '',
   description: '',
   is_active: false,
-  group_id: null,
+  customer_id: null,
   time_bucket: 'week',
   site_type_definitions: DEFAULT_SITE_TYPE_DEFINITIONS,
 };

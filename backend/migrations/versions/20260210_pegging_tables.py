@@ -46,7 +46,7 @@ def upgrade():
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
 
         # Ownership
-        sa.Column('group_id', sa.Integer(), sa.ForeignKey('groups.id'), nullable=False),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id'), nullable=False),
         sa.Column('config_id', sa.Integer(), sa.ForeignKey('supply_chain_configs.id'), nullable=False),
 
         # Product & site
@@ -90,7 +90,7 @@ def upgrade():
     op.create_index('ix_pegging_supply', 'supply_demand_pegging', ['supply_type', 'supply_id'])
     op.create_index('ix_pegging_product_site', 'supply_demand_pegging', ['product_id', 'site_id'])
     op.create_index('ix_pegging_config_active', 'supply_demand_pegging', ['config_id', 'is_active'])
-    op.create_index('ix_pegging_group', 'supply_demand_pegging', ['group_id'])
+    op.create_index('ix_pegging_group', 'supply_demand_pegging', ['customer_id'])
 
     # 2. aatp_consumption_record
     op.create_table(
@@ -108,7 +108,7 @@ def upgrade():
                   sa.ForeignKey('supply_demand_pegging.id'), nullable=True),
         sa.Column('config_id', sa.Integer(),
                   sa.ForeignKey('supply_chain_configs.id'), nullable=True),
-        sa.Column('group_id', sa.Integer(),
+        sa.Column('customer_id', sa.Integer(),
                   sa.ForeignKey('groups.id'), nullable=True),
         sa.Column('consumed_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
     )

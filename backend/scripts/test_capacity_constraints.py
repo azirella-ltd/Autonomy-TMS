@@ -18,7 +18,7 @@ from sqlalchemy import select, delete
 
 from app.db.session import async_session_factory
 from app.models.supply_chain_config import SupplyChainConfig
-from app.models.group import Group
+from app.models.customer import Customer
 from app.models.scenario import Scenario
 from app.models.aws_sc_planning import InboundOrderLine, ProductionCapacity
 from app.services.sc_planning.simulation_execution_adapter import SimulationExecutionAdapter
@@ -32,7 +32,7 @@ async def setup_test_scenario():
     print()
 
     async with async_session_factory() as db:
-        # Get config and group
+        # Get config and customer
         result = await db.execute(
             select(SupplyChainConfig).filter(
                 SupplyChainConfig.name.like("%Default%")
@@ -40,17 +40,17 @@ async def setup_test_scenario():
         )
         config = result.scalar_one_or_none()
 
-        result = await db.execute(select(Group).filter(Group.id == 2))
-        group = result.scalar_one_or_none()
+        result = await db.execute(select(Customer).filter(Customer.id == 2))
+        customer = result.scalar_one_or_none()
 
-        if not config or not group:
-            print("❌ Config or group not found")
+        if not config or not customer:
+            print("❌ Config or customer not found")
             return None
 
         # Create test scenario
         scenario = Scenario(
             name="Capacity Test Scenario",
-            group_id=group.id,
+            customer_id=customer.id,
             supply_chain_config_id=config.id,
             use_aws_sc_planning=True,
             max_rounds=10,
@@ -85,7 +85,7 @@ async def setup_test_scenario():
                     capacity_type='production',
                     capacity_period='week',
                     allow_overflow=False,  # Strict limit
-                    group_id=group.id,
+                    customer_id=customer.id,
                     config_id=config.id
                 )
                 capacities.append(capacity)
@@ -100,7 +100,7 @@ async def setup_test_scenario():
                     capacity_type='transfer',
                     capacity_period='week',
                     allow_overflow=False,
-                    group_id=group.id,
+                    customer_id=customer.id,
                     config_id=config.id
                 )
                 capacities.append(capacity)
@@ -116,7 +116,7 @@ async def setup_test_scenario():
                     capacity_period='week',
                     allow_overflow=True,  # Overflow with penalty
                     overflow_cost_multiplier=1.5,
-                    group_id=group.id,
+                    customer_id=customer.id,
                     config_id=config.id
                 )
                 capacities.append(capacity)
@@ -362,7 +362,7 @@ async def test_capacity_reset(scenario_id: int):
         # Check capacity is used
         result = await db.execute(
             select(ProductionCapacity).filter(
-                ProductionCapacity.group_id == scenario.group_id
+                ProductionCapacity.customer_id == scenario.customer_id
             )
         )
         capacities_before = result.scalars().all()
@@ -379,7 +379,7 @@ async def test_capacity_reset(scenario_id: int):
         # Check capacity is reset
         result = await db.execute(
             select(ProductionCapacity).filter(
-                ProductionCapacity.group_id == scenario.group_id
+                ProductionCapacity.customer_id == scenario.customer_id
             )
         )
         capacities_after = result.scalars().all()
@@ -477,7 +477,7 @@ async def cleanup_test_scenario(scenario_id: int):
             # Delete capacity constraints
             result = await db.execute(
                 delete(ProductionCapacity).filter(
-                    ProductionCapacity.group_id == scenario.group_id,
+                    ProductionCapacity.customer_id == scenario.customer_id,
                     ProductionCapacity.config_id == scenario.supply_chain_config_id
                 )
             )

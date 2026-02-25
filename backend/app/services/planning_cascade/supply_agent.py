@@ -66,7 +66,7 @@ class SupplyAgent:
     def generate_supply_commit(
         self,
         config_id: int,
-        group_id: int,
+        customer_id: int,
         supply_baseline_pack_id: int,
         supply_baseline_pack_hash: str,
         policy_envelope: Dict[str, Any],
@@ -78,7 +78,7 @@ class SupplyAgent:
 
         Args:
             config_id: Supply chain config ID
-            group_id: Group ID
+            customer_id: Customer ID
             supply_baseline_pack_id: SupBP ID
             supply_baseline_pack_hash: Hash for feed-forward contract
             policy_envelope: Active policy envelope
@@ -145,7 +145,7 @@ class SupplyAgent:
         # Create Supply Commit
         supply_commit = SupplyCommit(
             config_id=config_id,
-            group_id=group_id,
+            customer_id=customer_id,
             supply_baseline_pack_id=supply_baseline_pack_id,
             supply_baseline_pack_hash=supply_baseline_pack_hash,
             selected_method=selected_method,

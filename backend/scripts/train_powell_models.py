@@ -39,7 +39,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy import text
 
 from app.db.session import sync_engine
-from app.models.group import Group
+from app.models.customer import Customer
 from app.models.supply_chain_config import SupplyChainConfig
 
 logging.basicConfig(
@@ -56,7 +56,7 @@ CHECKPOINT_DIR.mkdir(exist_ok=True)
 # Phase A — Setup: create / upsert training config rows
 # ===================================================================
 
-def phase_a_setup(db: Session, config_id: int, group_id: int):
+def phase_a_setup(db: Session, config_id: int, customer_id: int):
     """Create PowellTrainingConfig + 4 TRMTrainingConfig rows if missing."""
     from app.models.powell_training_config import (
         PowellTrainingConfig, TRMTrainingConfig, TrainingRun,
@@ -69,14 +69,14 @@ def phase_a_setup(db: Session, config_id: int, group_id: int):
     # Check for existing config
     ptc = db.query(PowellTrainingConfig).filter(
         PowellTrainingConfig.config_id == config_id,
-        PowellTrainingConfig.group_id == group_id,
+        PowellTrainingConfig.customer_id == customer_id,
     ).first()
 
     if ptc:
         print(f"  Found existing PowellTrainingConfig (id={ptc.id})")
     else:
         ptc = PowellTrainingConfig(
-            group_id=group_id,
+            customer_id=customer_id,
             config_id=config_id,
             name="Food Dist Training",
             description="Auto-created by train_powell_models.py",
@@ -173,7 +173,7 @@ def _ensure_tables_exist(db: Session):
         """
         CREATE TABLE IF NOT EXISTS powell_training_config (
             id SERIAL PRIMARY KEY,
-            group_id INTEGER NOT NULL REFERENCES groups(id),
+            customer_id INTEGER NOT NULL REFERENCES groups(id),
             config_id INTEGER NOT NULL REFERENCES supply_chain_configs(id),
             name VARCHAR(100) NOT NULL,
             description TEXT,
@@ -679,14 +679,14 @@ def main():
         # ------------- Prerequisites -------------
         print("\n0. Validating prerequisites...")
 
-        group = db.query(Group).filter(Group.name == "Food Dist").first()
-        if not group:
-            print("ERROR: 'Food Dist' group not found. Run seed_dot_foods_demo.py first.")
+        customer = db.query(Customer).filter(Customer.name == "Food Dist").first()
+        if not customer:
+            print("ERROR: 'Food Dist' customer not found. Run seed_dot_foods_demo.py first.")
             sys.exit(1)
-        print(f"   Group: {group.name} (id={group.id})")
+        print(f"   Customer: {customer.name} (id={customer.id})")
 
         config = db.query(SupplyChainConfig).filter(
-            SupplyChainConfig.group_id == group.id
+            SupplyChainConfig.customer_id == customer.id
         ).first()
         if not config:
             print("ERROR: No SC config for Food Dist. Run seed_dot_foods_demo.py first.")
@@ -697,7 +697,7 @@ def main():
         print("\n" + "-" * 60)
         print("Phase A: Setup Training Config")
         print("-" * 60)
-        powell_config_id, run_id = phase_a_setup(db, config.id, group.id)
+        powell_config_id, run_id = phase_a_setup(db, config.id, customer.id)
 
         # ---- Phase B ----
         print("\n" + "-" * 60)

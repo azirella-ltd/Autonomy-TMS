@@ -207,7 +207,7 @@ class ConditionState:
     condition_type: ConditionType
     entity_type: str          # product, site, order, etc.
     entity_id: str
-    group_id: int
+    customer_id: int
 
     # Status
     is_active: bool = True
@@ -272,14 +272,14 @@ class ConditionMonitorService:
 
     async def check_conditions(
         self,
-        group_id: int,
+        customer_id: int,
         condition_types: Optional[List[ConditionType]] = None,
     ) -> List[ConditionState]:
         """
         Check for conditions across all entities.
 
         Args:
-            group_id: Group to check
+            customer_id: Customer to check
             condition_types: Specific conditions to check (all if None)
 
         Returns:
@@ -295,7 +295,7 @@ class ConditionMonitorService:
 
             # Check this condition type
             conditions = await self._check_condition_type(
-                group_id=group_id,
+                customer_id=customer_id,
                 condition_type=condition_type,
                 config=config,
             )
@@ -303,7 +303,7 @@ class ConditionMonitorService:
 
         # Check for network-wide patterns
         network_conditions = await self._detect_network_patterns(
-            group_id=group_id,
+            customer_id=customer_id,
             conditions=detected,
         )
         detected.extend(network_conditions)
@@ -313,7 +313,7 @@ class ConditionMonitorService:
             self._update_severity(condition, CONDITION_CONFIGS[condition.condition_type])
 
         logger.info(
-            f"Condition check for group {group_id}: "
+            f"Condition check for customer {customer_id}: "
             f"{len(detected)} active conditions"
         )
 
@@ -321,7 +321,7 @@ class ConditionMonitorService:
 
     async def _check_condition_type(
         self,
-        group_id: int,
+        customer_id: int,
         condition_type: ConditionType,
         config: ConditionConfig,
     ) -> List[ConditionState]:
@@ -329,21 +329,21 @@ class ConditionMonitorService:
         conditions = []
 
         if condition_type == ConditionType.ATP_SHORTFALL:
-            conditions = await self._check_atp_shortfall(group_id, config)
+            conditions = await self._check_atp_shortfall(customer_id, config)
         elif condition_type == ConditionType.INVENTORY_BELOW_SAFETY:
-            conditions = await self._check_inventory_below_safety(group_id, config)
+            conditions = await self._check_inventory_below_safety(customer_id, config)
         elif condition_type == ConditionType.CAPACITY_OVERLOAD:
-            conditions = await self._check_capacity_overload(group_id, config)
+            conditions = await self._check_capacity_overload(customer_id, config)
         elif condition_type == ConditionType.ORDER_PAST_DUE:
-            conditions = await self._check_orders_past_due(group_id, config)
+            conditions = await self._check_orders_past_due(customer_id, config)
         elif condition_type == ConditionType.FORECAST_DEVIATION:
-            conditions = await self._check_forecast_deviation(group_id, config)
+            conditions = await self._check_forecast_deviation(customer_id, config)
 
         return conditions
 
     async def _check_atp_shortfall(
         self,
-        group_id: int,
+        customer_id: int,
         config: ConditionConfig,
     ) -> List[ConditionState]:
         """Check for ATP shortfall — active allocations with no available qty."""
@@ -352,9 +352,9 @@ class ConditionMonitorService:
 
         conditions = []
         try:
-            # Get config_ids belonging to this group
+            # Get config_ids belonging to this customer
             config_ids_q = select(SupplyChainConfig.id).where(
-                SupplyChainConfig.group_id == group_id
+                SupplyChainConfig.customer_id == customer_id
             )
 
             # Find product/location combos where available ATP <= 0
@@ -387,7 +387,7 @@ class ConditionMonitorService:
                     condition_type=ConditionType.ATP_SHORTFALL,
                     entity_type="product_site",
                     entity_id=f"{row.product_id}_{row.location_id}",
-                    group_id=group_id,
+                    customer_id=customer_id,
                     current_value=float(row.available),
                     threshold_value=config.threshold_value,
                     deviation=float(config.threshold_value - row.available),
@@ -397,13 +397,13 @@ class ConditionMonitorService:
                     },
                 ))
         except Exception as e:
-            logger.warning(f"ATP shortfall check failed for group {group_id}: {e}")
+            logger.warning(f"ATP shortfall check failed for customer {customer_id}: {e}")
 
         return conditions
 
     async def _check_inventory_below_safety(
         self,
-        group_id: int,
+        customer_id: int,
         config: ConditionConfig,
     ) -> List[ConditionState]:
         """Check for inventory below safety stock (abs_level policies)."""
@@ -413,7 +413,7 @@ class ConditionMonitorService:
         conditions = []
         try:
             config_ids_q = select(SupplyChainConfig.id).where(
-                SupplyChainConfig.group_id == group_id
+                SupplyChainConfig.customer_id == customer_id
             )
 
             # Join inv_level with inv_policy on product+site, filter abs_level policies
@@ -442,7 +442,7 @@ class ConditionMonitorService:
                     condition_type=ConditionType.INVENTORY_BELOW_SAFETY,
                     entity_type="product_site",
                     entity_id=f"{row.product_id}_{row.site_id}",
-                    group_id=group_id,
+                    customer_id=customer_id,
                     current_value=float(row.on_hand_qty),
                     threshold_value=float(row.ss_quantity * config.threshold_value),
                     deviation=float(row.ss_quantity * config.threshold_value - row.on_hand_qty),
@@ -454,13 +454,13 @@ class ConditionMonitorService:
                     },
                 ))
         except Exception as e:
-            logger.warning(f"Inventory below safety check failed for group {group_id}: {e}")
+            logger.warning(f"Inventory below safety check failed for customer {customer_id}: {e}")
 
         return conditions
 
     async def _check_capacity_overload(
         self,
-        group_id: int,
+        customer_id: int,
         config: ConditionConfig,
     ) -> List[ConditionState]:
         """Check for capacity overload — utilization > threshold."""
@@ -471,7 +471,7 @@ class ConditionMonitorService:
         conditions = []
         try:
             config_ids_q = select(SupplyChainConfig.id).where(
-                SupplyChainConfig.group_id == group_id
+                SupplyChainConfig.customer_id == customer_id
             )
 
             # Sum planned MO hours vs capacity per site/process
@@ -508,7 +508,7 @@ class ConditionMonitorService:
                         condition_type=ConditionType.CAPACITY_OVERLOAD,
                         entity_type="site_process",
                         entity_id=f"{row.site_id}_{row.process_id}",
-                        group_id=group_id,
+                        customer_id=customer_id,
                         current_value=round(utilization, 3),
                         threshold_value=config.threshold_value,
                         deviation=round(utilization - config.threshold_value, 3),
@@ -520,13 +520,13 @@ class ConditionMonitorService:
                         },
                     ))
         except Exception as e:
-            logger.warning(f"Capacity overload check failed for group {group_id}: {e}")
+            logger.warning(f"Capacity overload check failed for customer {customer_id}: {e}")
 
         return conditions
 
     async def _check_orders_past_due(
         self,
-        group_id: int,
+        customer_id: int,
         config: ConditionConfig,
     ) -> List[ConditionState]:
         """Check for orders past their delivery date."""
@@ -537,7 +537,7 @@ class ConditionMonitorService:
         conditions = []
         try:
             config_ids_q = select(SupplyChainConfig.id).where(
-                SupplyChainConfig.group_id == group_id
+                SupplyChainConfig.customer_id == customer_id
             )
 
             today = date_type.today()
@@ -559,7 +559,7 @@ class ConditionMonitorService:
                         condition_type=ConditionType.ORDER_PAST_DUE,
                         entity_type="order",
                         entity_id=f"{row.order_id}_{row.line_number}",
-                        group_id=group_id,
+                        customer_id=customer_id,
                         current_value=float(days_past),
                         threshold_value=config.threshold_value,
                         deviation=float(days_past - config.threshold_value),
@@ -573,13 +573,13 @@ class ConditionMonitorService:
                         },
                     ))
         except Exception as e:
-            logger.warning(f"Orders past due check failed for group {group_id}: {e}")
+            logger.warning(f"Orders past due check failed for customer {customer_id}: {e}")
 
         return conditions
 
     async def _check_forecast_deviation(
         self,
-        group_id: int,
+        customer_id: int,
         config: ConditionConfig,
     ) -> List[ConditionState]:
         """Check for significant forecast vs actual demand deviations."""
@@ -590,7 +590,7 @@ class ConditionMonitorService:
         conditions = []
         try:
             config_ids_q = select(SupplyChainConfig.id).where(
-                SupplyChainConfig.group_id == group_id
+                SupplyChainConfig.customer_id == customer_id
             )
 
             today = date_type.today()
@@ -646,7 +646,7 @@ class ConditionMonitorService:
                         condition_type=ConditionType.FORECAST_DEVIATION,
                         entity_type="product",
                         entity_id=str(row.product_id),
-                        group_id=group_id,
+                        customer_id=customer_id,
                         current_value=round(deviation, 4),
                         threshold_value=config.threshold_value,
                         deviation=round(deviation - config.threshold_value, 4),
@@ -658,7 +658,7 @@ class ConditionMonitorService:
                         },
                     ))
         except Exception as e:
-            logger.warning(f"Forecast deviation check failed for group {group_id}: {e}")
+            logger.warning(f"Forecast deviation check failed for customer {customer_id}: {e}")
 
         return conditions
 
@@ -668,7 +668,7 @@ class ConditionMonitorService:
 
     async def _detect_network_patterns(
         self,
-        group_id: int,
+        customer_id: int,
         conditions: List[ConditionState],
     ) -> List[ConditionState]:
         """Detect patterns that span multiple sites/entities."""
@@ -706,7 +706,7 @@ class ConditionMonitorService:
                     condition_type=ConditionType.MULTI_SITE_SHORTFALL,
                     entity_type="product",
                     entity_id=product_id,
-                    group_id=group_id,
+                    customer_id=customer_id,
                     current_value=len(unique_sites),
                     threshold_value=config.threshold_value,
                     context={
@@ -827,7 +827,7 @@ class ConditionMonitorService:
 
     async def check_plan_deviation(
         self,
-        group_id: int,
+        customer_id: int,
         current_state: Dict[str, Any],
         previous_plan: Dict[str, Any],
     ) -> Dict[str, Any]:
@@ -838,7 +838,7 @@ class ConditionMonitorService:
         to what the plan predicted and trigger based on deviation.
 
         Args:
-            group_id: Group to check
+            customer_id: Customer to check
             current_state: Current system state
             previous_plan: The previous plan's predictions
 

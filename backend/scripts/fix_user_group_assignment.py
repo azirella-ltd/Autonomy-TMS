@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fix user-group assignments by ensuring all users have a group_id."""
+"""Fix user-customer assignments by ensuring all users have a customer_id."""
 
 import sys
 from pathlib import Path
@@ -13,7 +13,7 @@ from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 from app.models.user import User
-from app.models.group import Group
+from app.models.customer import Customer
 
 def main():
     # Create database connection
@@ -26,95 +26,95 @@ def main():
 
         print("\n=== User Status ===")
         for user in users:
-            group = db.execute(select(Group).where(Group.id == user.group_id)).scalars().first() if user.group_id else None
+            customer = db.execute(select(Customer).where(Customer.id == user.customer_id)).scalars().first() if user.customer_id else None
             print(f"User: {user.email} ({user.username})")
             print(f"  ID: {user.id}")
             print(f"  User Type: {user.user_type}")
-            print(f"  Group ID: {user.group_id}")
-            print(f"  Group: {group.name if group else 'NONE'}")
+            print(f"  Customer ID: {user.customer_id}")
+            print(f"  Customer: {customer.name if customer else 'NONE'}")
             print()
 
-        # Get all groups
-        groups = db.execute(select(Group)).scalars().all()
+        # Get all customers
+        customers = db.execute(select(Customer)).scalars().all()
 
-        print("\n=== Groups ===")
-        for group in groups:
-            admin = db.execute(select(User).where(User.id == group.admin_id)).scalars().first() if group.admin_id else None
-            print(f"Group: {group.name}")
-            print(f"  ID: {group.id}")
-            print(f"  Admin ID: {group.admin_id}")
+        print("\n=== Customers ===")
+        for customer in customers:
+            admin = db.execute(select(User).where(User.id == customer.admin_id)).scalars().first() if customer.admin_id else None
+            print(f"Customer: {customer.name}")
+            print(f"  ID: {customer.id}")
+            print(f"  Admin ID: {customer.admin_id}")
             print(f"  Admin: {admin.email if admin else 'NONE'}")
 
-            # Count users in this group
-            users_in_group = db.execute(
-                select(User).where(User.group_id == group.id)
+            # Count users in this customer
+            users_in_customer = db.execute(
+                select(User).where(User.customer_id == customer.id)
             ).scalars().all()
-            print(f"  Users in group: {len(users_in_group)}")
-            for u in users_in_group:
+            print(f"  Users in customer: {len(users_in_customer)}")
+            for u in users_in_customer:
                 print(f"    - {u.email} ({u.user_type})")
             print()
 
-        # Fix orphaned users (users without a group)
+        # Fix orphaned users (users without a customer)
         orphaned = db.execute(
-            select(User).where(User.group_id.is_(None))
+            select(User).where(User.customer_id.is_(None))
         ).scalars().all()
 
         if orphaned:
             print("\n=== Fixing Orphaned Users ===")
 
-            # Get or create default group
-            default_group = db.execute(
-                select(Group).where(Group.name == "Beer Game")
+            # Get or create default customer
+            default_customer = db.execute(
+                select(Customer).where(Customer.name == "Beer Game")
             ).scalars().first()
 
-            if not default_group:
-                # Try Autonomy group
-                default_group = db.execute(
-                    select(Group).where(Group.name == "Autonomy")
+            if not default_customer:
+                # Try Autonomy customer
+                default_customer = db.execute(
+                    select(Customer).where(Customer.name == "Autonomy")
                 ).scalars().first()
 
-            if not default_group:
-                print("ERROR: No default group found! Creating default group...")
+            if not default_customer:
+                print("ERROR: No default customer found! Creating default customer...")
                 # Get first user to be admin
                 first_user = users[0] if users else None
                 if not first_user:
-                    print("ERROR: No users found! Cannot create group.")
+                    print("ERROR: No users found! Cannot create customer.")
                     return
 
-                default_group = Group(
+                default_customer = Customer(
                     name="Beer Game",
-                    description="Default simulation group",
+                    description="Default simulation customer",
                     admin_id=first_user.id
                 )
-                db.add(default_group)
+                db.add(default_customer)
                 db.flush()
-                print(f"Created default group with ID {default_group.id}")
+                print(f"Created default customer with ID {default_customer.id}")
 
             for user in orphaned:
-                print(f"Assigning {user.email} to group '{default_group.name}' (ID: {default_group.id})")
-                user.group_id = default_group.id
+                print(f"Assigning {user.email} to customer '{default_customer.name}' (ID: {default_customer.id})")
+                user.customer_id = default_customer.id
                 db.add(user)
 
             db.commit()
             print(f"Fixed {len(orphaned)} orphaned users")
         else:
-            print("\n✅ No orphaned users found - all users are assigned to groups")
+            print("\n✅ No orphaned users found - all users are assigned to customers")
 
-        # Verify group admin assignments
-        print("\n=== Verifying Group Admin Assignments ===")
-        for group in groups:
-            if group.admin_id:
-                admin = db.execute(select(User).where(User.id == group.admin_id)).scalars().first()
-                if admin and admin.group_id != group.id:
-                    print(f"⚠️  Group '{group.name}' admin '{admin.email}' is in wrong group!")
-                    print(f"   Admin's group_id: {admin.group_id}, Expected: {group.id}")
+        # Verify customer admin assignments
+        print("\n=== Verifying Customer Admin Assignments ===")
+        for customer in customers:
+            if customer.admin_id:
+                admin = db.execute(select(User).where(User.id == customer.admin_id)).scalars().first()
+                if admin and admin.customer_id != customer.id:
+                    print(f"⚠️  Customer '{customer.name}' admin '{admin.email}' is in wrong customer!")
+                    print(f"   Admin's customer_id: {admin.customer_id}, Expected: {customer.id}")
                     print(f"   Fixing...")
-                    admin.group_id = group.id
+                    admin.customer_id = customer.id
                     db.add(admin)
                     db.commit()
                     print(f"   ✅ Fixed!")
                 elif admin:
-                    print(f"✅ Group '{group.name}' admin '{admin.email}' correctly assigned")
+                    print(f"✅ Customer '{customer.name}' admin '{admin.email}' correctly assigned")
 
 if __name__ == "__main__":
     main()

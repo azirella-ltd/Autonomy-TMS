@@ -136,7 +136,7 @@ class SupplyBaselineService:
     def generate_supply_baseline_pack(
         self,
         config_id: int,
-        group_id: int,
+        customer_id: int,
         policy_envelope_id: int,
         policy_envelope_hash: str,
         inventory_state: List[ProductInventoryState],
@@ -154,7 +154,7 @@ class SupplyBaselineService:
 
         Args:
             config_id: Supply chain config ID
-            group_id: Group ID
+            customer_id: Customer ID
             policy_envelope_id: Linked policy envelope
             policy_envelope_hash: Hash for feed-forward contract
             inventory_state: Current inventory by product
@@ -188,7 +188,7 @@ class SupplyBaselineService:
         # Create SupBP record
         supbp = SupplyBaselinePack(
             config_id=config_id,
-            group_id=group_id,
+            customer_id=customer_id,
             policy_envelope_id=policy_envelope_id,
             policy_envelope_hash=policy_envelope_hash,
             generated_by=generated_by,

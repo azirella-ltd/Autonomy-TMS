@@ -1,11 +1,11 @@
 /**
- * Group Supply Chain Config List
+ * Customer Supply Chain Config List
  *
- * Page for viewing and managing supply chain configurations within a group.
+ * Page for viewing and managing supply chain configurations within a customer.
  * Accessible to:
- * - System admins (full access, all groups)
- * - Group admins (their group only)
- * - Users with view_sc_configs capability (their group only, read access)
+ * - System admins (full access, all customers)
+ * - Customer admins (their customer only)
+ * - Users with view_sc_configs capability (their customer only, read access)
  */
 
 import { Navigate, useLocation } from 'react-router-dom';
@@ -27,12 +27,12 @@ const GroupSupplyChainConfigList = () => {
 
   // Access allowed if:
   // 1. System admin (full access)
-  // 2. Group admin of their group
-  // 3. User with view_sc_configs capability (can view their group's configs)
+  // 2. Customer admin of their customer
+  // 3. User with view_sc_configs capability (can view their customer's configs)
   const canViewScConfigs = hasCapability('view_sc_configs');
   const canAccess = user?.is_superuser || isGroupAdmin || canViewScConfigs;
 
-  // Can edit if system admin or group admin
+  // Can edit if system admin or customer admin
   const canEdit = user?.is_superuser || isGroupAdmin;
 
   if (authLoading || capLoading) {
@@ -59,16 +59,16 @@ const GroupSupplyChainConfigList = () => {
     return <Navigate to="/unauthorized" replace />;
   }
 
-  const rawGroupId = user?.group_id;
-  const parsedGroupId = typeof rawGroupId === 'number' ? rawGroupId : Number(rawGroupId);
-  const restrictToGroupId = Number.isFinite(parsedGroupId) ? parsedGroupId : null;
+  const rawCustomerId = user?.customer_id;
+  const parsedCustomerId = typeof rawCustomerId === 'number' ? rawCustomerId : Number(rawCustomerId);
+  const restrictToCustomerId = Number.isFinite(parsedCustomerId) ? parsedCustomerId : null;
 
-  // Non-system-admins must be assigned to a group
-  if (!isSystemAdmin && !restrictToGroupId) {
+  // Non-system-admins must be assigned to a customer
+  if (!isSystemAdmin && !restrictToCustomerId) {
     return (
       <div className="flex justify-center items-center min-h-[50vh]">
         <Alert variant="warning">
-          You must be assigned to a group before you can view supply chain configurations.
+          You must be assigned to a customer before you can view supply chain configurations.
         </Alert>
       </div>
     );
@@ -77,14 +77,14 @@ const GroupSupplyChainConfigList = () => {
   return (
     <div className="flex flex-col gap-8">
       <SupplyChainConfigList
-        title={isSystemAdmin ? "All Supply Chain Configurations" : "My Group's Supply Chain Configurations"}
-        basePath="/admin/group/supply-chain-configs"
-        restrictToGroupId={isSystemAdmin ? null : restrictToGroupId}
+        title={isSystemAdmin ? "All Supply Chain Configurations" : "My Supply Chain Configurations"}
+        basePath="/admin/customer/supply-chain-configs"
+        restrictToGroupId={isSystemAdmin ? null : restrictToCustomerId}
         enableTraining={canEdit}
         readOnly={!canEdit}
       />
       <SupplyChainConfigSankey
-        restrictToGroupId={isSystemAdmin ? null : restrictToGroupId}
+        restrictToGroupId={isSystemAdmin ? null : restrictToCustomerId}
       />
       {canEdit && <TrainingPanel />}
     </div>

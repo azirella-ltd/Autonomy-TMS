@@ -1,4 +1,4 @@
-"""add groups table and group relationships
+"""add customers table and customer relationships
 
 Revision ID: 20240912120000
 Revises: 20240910152000
@@ -32,53 +32,53 @@ def upgrade():
 
     if _is_sqlite(op):
         with op.batch_alter_table('users') as batch_op:
-            batch_op.add_column(sa.Column('group_id', sa.Integer(), nullable=True))
+            batch_op.add_column(sa.Column('customer_id', sa.Integer(), nullable=True))
             batch_op.create_foreign_key(
-                'fk_users_group', 'groups', ['group_id'], ['id'], ondelete='CASCADE'
+                'fk_users_group', 'groups', ['customer_id'], ['id'], ondelete='CASCADE'
             )
 
         with op.batch_alter_table('supply_chain_configs') as batch_op:
-            batch_op.add_column(sa.Column('group_id', sa.Integer(), nullable=True))
+            batch_op.add_column(sa.Column('customer_id', sa.Integer(), nullable=True))
             batch_op.create_foreign_key(
-                'fk_scc_group', 'groups', ['group_id'], ['id'], ondelete='CASCADE'
+                'fk_scc_group', 'groups', ['customer_id'], ['id'], ondelete='CASCADE'
             )
 
         with op.batch_alter_table('games') as batch_op:
-            batch_op.add_column(sa.Column('group_id', sa.Integer(), nullable=True))
+            batch_op.add_column(sa.Column('customer_id', sa.Integer(), nullable=True))
             batch_op.create_foreign_key(
-                'fk_games_group', 'groups', ['group_id'], ['id'], ondelete='CASCADE'
+                'fk_games_group', 'groups', ['customer_id'], ['id'], ondelete='CASCADE'
             )
     else:
-        op.add_column('users', sa.Column('group_id', sa.Integer(), nullable=True))
-        op.create_foreign_key('fk_users_group', 'users', 'groups', ['group_id'], ['id'], ondelete='CASCADE')
+        op.add_column('users', sa.Column('customer_id', sa.Integer(), nullable=True))
+        op.create_foreign_key('fk_users_group', 'users', 'groups', ['customer_id'], ['id'], ondelete='CASCADE')
 
-        op.add_column('supply_chain_configs', sa.Column('group_id', sa.Integer(), nullable=True))
-        op.create_foreign_key('fk_scc_group', 'supply_chain_configs', 'groups', ['group_id'], ['id'], ondelete='CASCADE')
+        op.add_column('supply_chain_configs', sa.Column('customer_id', sa.Integer(), nullable=True))
+        op.create_foreign_key('fk_scc_group', 'supply_chain_configs', 'groups', ['customer_id'], ['id'], ondelete='CASCADE')
 
-        op.add_column('games', sa.Column('group_id', sa.Integer(), nullable=True))
-        op.create_foreign_key('fk_games_group', 'games', 'groups', ['group_id'], ['id'], ondelete='CASCADE')
+        op.add_column('games', sa.Column('customer_id', sa.Integer(), nullable=True))
+        op.create_foreign_key('fk_games_group', 'games', 'groups', ['customer_id'], ['id'], ondelete='CASCADE')
 
 def downgrade():
     if _is_sqlite(op):
         with op.batch_alter_table('games') as batch_op:
             batch_op.drop_constraint('fk_games_group', type_='foreignkey')
-            batch_op.drop_column('group_id')
+            batch_op.drop_column('customer_id')
 
         with op.batch_alter_table('supply_chain_configs') as batch_op:
             batch_op.drop_constraint('fk_scc_group', type_='foreignkey')
-            batch_op.drop_column('group_id')
+            batch_op.drop_column('customer_id')
 
         with op.batch_alter_table('users') as batch_op:
             batch_op.drop_constraint('fk_users_group', type_='foreignkey')
-            batch_op.drop_column('group_id')
+            batch_op.drop_column('customer_id')
     else:
         op.drop_constraint('fk_games_group', 'games', type_='foreignkey')
-        op.drop_column('games', 'group_id')
+        op.drop_column('games', 'customer_id')
 
         op.drop_constraint('fk_scc_group', 'supply_chain_configs', type_='foreignkey')
-        op.drop_column('supply_chain_configs', 'group_id')
+        op.drop_column('supply_chain_configs', 'customer_id')
 
         op.drop_constraint('fk_users_group', 'users', type_='foreignkey')
-        op.drop_column('users', 'group_id')
+        op.drop_column('users', 'customer_id')
 
     op.drop_table('groups')

@@ -49,7 +49,7 @@ from app.models.scenario import Scenario
 from app.models.agent_config import AgentConfig
 from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 from app.services.supply_chain_config_service import SupplyChainConfigService
-from app.services.group_service import DEFAULT_SITE_TYPE_DEFINITIONS
+from app.services.customer_service import DEFAULT_SITE_TYPE_DEFINITIONS
 
 router = APIRouter()
 
@@ -79,8 +79,8 @@ class RegisterRequest(UserCreate):
     pass
 
 
-def _normalize_group_admin_context(user: User) -> None:
-    """Ensure group admins surface their managed group relationship."""
+def _normalize_customer_admin_context(user: User) -> None:
+    """Ensure customer admins surface their managed customer relationship."""
 
     if not user:
         return
@@ -95,13 +95,13 @@ def _normalize_group_admin_context(user: User) -> None:
     if user_type != UserTypeEnum.GROUP_ADMIN:
         return
 
-    group_id = getattr(user, "group_id", None)
-    if group_id not in (None, 0):
+    customer_id = getattr(user, "customer_id", None)
+    if customer_id not in (None, 0):
         return
 
-    admin_group = getattr(user, "admin_of_group", None)
-    if admin_group is not None:
-        user.group_id = admin_group.id
+    admin_customer = getattr(user, "admin_of_customer", None)
+    if admin_customer is not None:
+        user.customer_id = admin_customer.id
 
 
 def _ensure_default_setup_sync(db: Session, user: User) -> None:
@@ -125,16 +125,16 @@ def _ensure_default_setup_sync(db: Session, user: User) -> None:
     )
 
     if config is None:
-        # Create base configuration - group_id required per AWS SC DM
-        # Use user's group_id if available, otherwise skip creation
-        if not user.group_id:
-            logger.warning(f"Cannot create default config for user {user.id} - no group_id assigned")
+        # Create base configuration - customer_id required per AWS SC DM
+        # Use user's customer_id if available, otherwise skip creation
+        if not user.customer_id:
+            logger.warning(f"Cannot create default config for user {user.id} - no customer_id assigned")
             return
         config = SupplyChainConfig(
             name="Default Supply Chain",
             is_active=True,
             created_by=user.id,
-            group_id=user.group_id,  # Required field
+            customer_id=user.customer_id,  # Required field
             site_type_definitions=deepcopy(DEFAULT_SITE_TYPE_DEFINITIONS),
         )
         db.add(config)
@@ -372,7 +372,7 @@ async def login(
     set_csrf_cookie(response)
 
     # Attach group context for admins so frontend receives group assignments
-    _normalize_group_admin_context(user)
+    _normalize_customer_admin_context(user)
 
     # Return access token and user info
     return TokenResponse(
@@ -449,7 +449,7 @@ async def read_users_me(current_user: User = Depends(get_current_active_user)):
 
     Requires authentication.
     """
-    _normalize_group_admin_context(current_user)
+    _normalize_customer_admin_context(current_user)
     return current_user
 
 

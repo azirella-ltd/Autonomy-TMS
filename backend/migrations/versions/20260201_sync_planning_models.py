@@ -43,7 +43,7 @@ def upgrade() -> None:
         sa.Column('name', sa.String(100), nullable=False),
         sa.Column('code', sa.String(50), nullable=False),
         sa.Column('description', sa.Text(), nullable=True),
-        sa.Column('group_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=True),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=True),
         sa.Column('is_global', sa.Boolean(), default=False),
         sa.Column('trigger_types', sa.JSON(), nullable=True),
         sa.Column('trigger_data_types', sa.JSON(), nullable=True),
@@ -64,9 +64,9 @@ def upgrade() -> None:
         sa.Column('created_by', sa.Integer(), sa.ForeignKey('users.id', ondelete='SET NULL'), nullable=True),
         sa.Column('updated_by', sa.Integer(), sa.ForeignKey('users.id', ondelete='SET NULL'), nullable=True),
     )
-    op.create_index('ix_workflow_template_code_group', 'workflow_templates', ['code', 'group_id'], unique=True)
+    op.create_index('ix_workflow_template_code_group', 'workflow_templates', ['code', 'customer_id'], unique=True)
     op.create_index('ix_workflow_template_active', 'workflow_templates', ['is_active'])
-    op.create_index('ix_workflow_templates_group_id', 'workflow_templates', ['group_id'])
+    op.create_index('ix_workflow_templates_group_id', 'workflow_templates', ['customer_id'])
 
     # ==================================================
     # Sync Job Configs Table
@@ -74,7 +74,7 @@ def upgrade() -> None:
     op.create_table(
         'sync_job_configs',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column('group_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=False),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=False),
         sa.Column('data_type', sa.String(50), nullable=False),
         sa.Column('name', sa.String(100), nullable=True),
         sa.Column('description', sa.Text(), nullable=True),
@@ -101,9 +101,9 @@ def upgrade() -> None:
         sa.Column('created_by', sa.Integer(), sa.ForeignKey('users.id', ondelete='SET NULL'), nullable=True),
         sa.Column('updated_by', sa.Integer(), sa.ForeignKey('users.id', ondelete='SET NULL'), nullable=True),
     )
-    op.create_index('ix_sync_job_config_group_type', 'sync_job_configs', ['group_id', 'data_type'], unique=True)
+    op.create_index('ix_sync_job_config_group_type', 'sync_job_configs', ['customer_id', 'data_type'], unique=True)
     op.create_index('ix_sync_job_config_enabled', 'sync_job_configs', ['is_enabled'])
-    op.create_index('ix_sync_job_configs_group_id', 'sync_job_configs', ['group_id'])
+    op.create_index('ix_sync_job_configs_group_id', 'sync_job_configs', ['customer_id'])
     op.create_index('ix_sync_job_configs_data_type', 'sync_job_configs', ['data_type'])
 
     # ==================================================
@@ -116,7 +116,7 @@ def upgrade() -> None:
         sa.Column('code', sa.String(50), nullable=False),
         sa.Column('cycle_type', sa.String(20), nullable=False),
         sa.Column('description', sa.Text(), nullable=True),
-        sa.Column('group_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=False),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=False),
         sa.Column('config_id', sa.Integer(), sa.ForeignKey('supply_chain_configs.id', ondelete='SET NULL'), nullable=True),
         sa.Column('period_start', sa.Date(), nullable=False),
         sa.Column('period_end', sa.Date(), nullable=False),
@@ -146,10 +146,10 @@ def upgrade() -> None:
         sa.Column('updated_at', sa.DateTime(), nullable=False, server_default=sa.func.now(), onupdate=sa.func.now()),
         sa.Column('created_by', sa.Integer(), sa.ForeignKey('users.id', ondelete='SET NULL'), nullable=True),
     )
-    op.create_index('ix_planning_cycle_group_period', 'planning_cycles', ['group_id', 'period_start', 'period_end'])
-    op.create_index('ix_planning_cycle_group_code', 'planning_cycles', ['group_id', 'code'], unique=True)
+    op.create_index('ix_planning_cycle_group_period', 'planning_cycles', ['customer_id', 'period_start', 'period_end'])
+    op.create_index('ix_planning_cycle_group_code', 'planning_cycles', ['customer_id', 'code'], unique=True)
     op.create_index('ix_planning_cycle_status', 'planning_cycles', ['status'])
-    op.create_index('ix_planning_cycles_group_id', 'planning_cycles', ['group_id'])
+    op.create_index('ix_planning_cycles_group_id', 'planning_cycles', ['customer_id'])
 
     # ==================================================
     # Planning Snapshots Table
@@ -227,7 +227,7 @@ def upgrade() -> None:
         sa.Column('trigger_source_id', sa.Integer(), nullable=True),
         sa.Column('trigger_source_type', sa.String(50), nullable=True),
         sa.Column('trigger_metadata', sa.JSON(), nullable=True),
-        sa.Column('group_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=True),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=True),
         sa.Column('planning_cycle_id', sa.Integer(), sa.ForeignKey('planning_cycles.id', ondelete='SET NULL'), nullable=True),
         sa.Column('status', sa.String(30), default='pending', nullable=False),
         sa.Column('current_step', sa.Integer(), default=0),
@@ -246,7 +246,7 @@ def upgrade() -> None:
         sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
     )
     op.create_index('ix_workflow_exec_status_created', 'workflow_executions', ['status', 'created_at'])
-    op.create_index('ix_workflow_exec_group_created', 'workflow_executions', ['group_id', 'created_at'])
+    op.create_index('ix_workflow_exec_group_created', 'workflow_executions', ['customer_id', 'created_at'])
     op.create_index('ix_workflow_exec_template_status', 'workflow_executions', ['template_id', 'status'])
     op.create_index('ix_workflow_exec_trigger', 'workflow_executions', ['trigger_type', 'trigger_source_type', 'trigger_source_id'])
     op.create_index('ix_workflow_executions_template_code', 'workflow_executions', ['template_code'])
@@ -403,7 +403,7 @@ def upgrade() -> None:
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column('cycle_id', sa.Integer(), sa.ForeignKey('planning_cycles.id', ondelete='CASCADE'), nullable=False),
         sa.Column('snapshot_id', sa.Integer(), sa.ForeignKey('planning_snapshots.id', ondelete='SET NULL'), nullable=True),
-        sa.Column('group_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=False),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=False),
         sa.Column('decision_code', sa.String(50), nullable=False),
         sa.Column('category', sa.String(30), nullable=False),
         sa.Column('action', sa.String(20), nullable=False),
@@ -459,7 +459,7 @@ def upgrade() -> None:
     op.create_index('ix_decision_reason_code', 'planning_decisions', ['reason_code'])
     op.create_index('ix_decision_assigned', 'planning_decisions', ['assigned_to', 'status'])
     op.create_index('ix_planning_decisions_cycle_id', 'planning_decisions', ['cycle_id'])
-    op.create_index('ix_planning_decisions_group_id', 'planning_decisions', ['group_id'])
+    op.create_index('ix_planning_decisions_group_id', 'planning_decisions', ['customer_id'])
     op.create_index('ix_planning_decisions_decision_code', 'planning_decisions', ['decision_code'])
     op.create_index('ix_planning_decisions_recommendation_id', 'planning_decisions', ['recommendation_id'])
     op.create_index('ix_planning_decisions_category', 'planning_decisions', ['category'])

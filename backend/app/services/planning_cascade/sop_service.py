@@ -148,7 +148,7 @@ class SOPService:
     def create_policy_envelope(
         self,
         config_id: int,
-        group_id: int,
+        customer_id: int,
         params: SOPParameters,
         user_id: Optional[int] = None,
     ) -> Dict[str, Any]:
@@ -160,7 +160,7 @@ class SOPService:
 
         Args:
             config_id: Supply chain config ID
-            group_id: Group/company ID
+            customer_id: Customer/company ID
             params: S&OP parameters
             user_id: User creating the envelope
 
@@ -182,7 +182,7 @@ class SOPService:
 
         envelope = PolicyEnvelope(
             config_id=config_id,
-            group_id=group_id,
+            customer_id=customer_id,
             generated_by=generated_by,
             safety_stock_targets=envelope_data["safety_stock_targets"],
             otif_floors=envelope_data["otif_floors"],
@@ -525,7 +525,7 @@ class SOPService:
             "id": envelope.id,
             "hash": envelope.hash,
             "config_id": envelope.config_id,
-            "group_id": envelope.group_id,
+            "customer_id": envelope.customer_id,
             "generated_by": envelope.generated_by.value,
             "safety_stock_targets": envelope.safety_stock_targets,
             "otif_floors": envelope.otif_floors,

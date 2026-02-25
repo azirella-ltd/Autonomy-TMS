@@ -2,7 +2,7 @@
 Verify AWS SC Multi-Tenancy Implementation
 
 This script demonstrates that multi-tenancy is properly configured by:
-1. Showing group-based data isolation
+1. Showing customer-based data isolation
 2. Verifying foreign key constraints
 3. Testing composite index performance
 
@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import SessionLocal
 from app.models.supply_chain_config import SupplyChainConfig
-from app.models.group import Group
+from app.models.customer import Customer
 from app.models.aws_sc_planning import Forecast, SupplyPlan, InvPolicy
 
 
@@ -30,25 +30,25 @@ async def verify_multi_tenancy():
         print()
 
         # ================================================================
-        # 1. Verify Groups and Configs
+        # 1. Verify Customers and Configs
         # ================================================================
-        print("1. Groups and Supply Chain Configurations")
+        print("1. Customers and Supply Chain Configurations")
         print("-" * 80)
 
-        groups = await db.execute(select(Group))
-        groups = groups.scalars().all()
+        result = await db.execute(select(Customer))
+        customers = result.scalars().all()
 
-        print(f"Found {len(groups)} groups:\n")
+        print(f"Found {len(customers)} customers:\n")
 
-        for group in groups:
+        for customer in customers:
             configs = await db.execute(
                 select(SupplyChainConfig).filter(
-                    SupplyChainConfig.group_id == group.id
+                    SupplyChainConfig.customer_id == customer.id
                 )
             )
             configs = configs.scalars().all()
 
-            print(f"  Group {group.id}: {group.name}")
+            print(f"  Customer {customer.id}: {customer.name}")
             print(f"  Configs: {len(configs)}")
             for cfg in configs[:3]:  # Show first 3
                 print(f"    - {cfg.id}: {cfg.name}")
@@ -59,11 +59,11 @@ async def verify_multi_tenancy():
         # ================================================================
         # 2. Verify Data Isolation
         # ================================================================
-        print("\n2. Data Isolation by Group")
+        print("\n2. Data Isolation by Customer")
         print("-" * 80)
 
-        for group in groups[:3]:  # Check first 3 groups
-            print(f"\n  Group {group.id}: {group.name}")
+        for customer in customers[:3]:  # Check first 3 customers
+            print(f"\n  Customer {customer.id}: {customer.name}")
 
             # Count records per table
             tables = [
@@ -74,7 +74,7 @@ async def verify_multi_tenancy():
 
             for table_name, model in tables:
                 count = await db.execute(
-                    select(model).filter(model.group_id == group.id)
+                    select(model).filter(model.customer_id == customer.id)
                 )
                 count = len(count.scalars().all())
                 print(f"    {table_name:20}: {count:5} records")
@@ -85,15 +85,15 @@ async def verify_multi_tenancy():
         print("\n\n3. Foreign Key Integrity")
         print("-" * 80)
 
-        # Check that forecast.group_id matches config.group_id
+        # Check that forecast.customer_id matches config.customer_id
         query = text("""
             SELECT
                 COUNT(*) as total,
-                SUM(CASE WHEN f.group_id = sc.group_id THEN 1 ELSE 0 END) as matching,
-                SUM(CASE WHEN f.group_id != sc.group_id THEN 1 ELSE 0 END) as mismatched
+                SUM(CASE WHEN f.customer_id = sc.customer_id THEN 1 ELSE 0 END) as matching,
+                SUM(CASE WHEN f.customer_id != sc.customer_id THEN 1 ELSE 0 END) as mismatched
             FROM forecast f
             INNER JOIN supply_chain_configs sc ON f.config_id = sc.id
-            WHERE f.group_id IS NOT NULL
+            WHERE f.customer_id IS NOT NULL
         """)
 
         result = await db.execute(query)
@@ -102,8 +102,8 @@ async def verify_multi_tenancy():
 
         print(f"\n  Forecast integrity check:")
         print(f"    Total records: {total}")
-        print(f"    Matching group_ids: {matching} (✅)")
-        print(f"    Mismatched group_ids: {mismatched} ({'✅' if mismatched == 0 else '❌'})")
+        print(f"    Matching customer_ids: {matching} (✅)")
+        print(f"    Mismatched customer_ids: {mismatched} ({'✅' if mismatched == 0 else '❌'})")
 
         # ================================================================
         # 4. Verify Composite Indexes
@@ -119,7 +119,7 @@ async def verify_multi_tenancy():
                 GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) as columns
             FROM information_schema.STATISTICS
             WHERE TABLE_SCHEMA = DATABASE()
-              AND INDEX_NAME LIKE '%group_config%'
+              AND INDEX_NAME LIKE '%customer_config%'
             GROUP BY TABLE_NAME, INDEX_NAME
             ORDER BY TABLE_NAME
         """)
@@ -138,11 +138,11 @@ async def verify_multi_tenancy():
         print("\n\n5. Query Performance Test")
         print("-" * 80)
 
-        # Get a sample group and config
-        first_group = groups[0]
+        # Get a sample customer and config
+        first_customer = customers[0]
         configs = await db.execute(
             select(SupplyChainConfig).filter(
-                SupplyChainConfig.group_id == first_group.id
+                SupplyChainConfig.customer_id == first_customer.id
             ).limit(1)
         )
         first_config = configs.scalar_one_or_none()
@@ -154,7 +154,7 @@ async def verify_multi_tenancy():
             start = time.perf_counter()
             forecasts = await db.execute(
                 select(Forecast).filter(
-                    Forecast.group_id == first_group.id,
+                    Forecast.customer_id == first_customer.id,
                     Forecast.config_id == first_config.id
                 )
             )
@@ -162,7 +162,7 @@ async def verify_multi_tenancy():
             elapsed = (time.perf_counter() - start) * 1000  # Convert to ms
 
             print(f"\n  Query: SELECT * FROM forecast")
-            print(f"         WHERE group_id = {first_group.id} AND config_id = {first_config.id}")
+            print(f"         WHERE customer_id = {first_customer.id} AND config_id = {first_config.id}")
             print(f"\n  Results: {len(forecasts)} records in {elapsed:.2f}ms")
             print(f"  Performance: {'✅ Fast' if elapsed < 100 else '⚠️ Slow'}")
 
@@ -174,8 +174,8 @@ async def verify_multi_tenancy():
         print("=" * 80)
 
         checks = [
-            ("Groups and configs loaded", len(groups) > 0),
-            ("Data isolation by group", True),  # Verified above
+            ("Customers and configs loaded", len(customers) > 0),
+            ("Data isolation by customer", True),  # Verified above
             ("Foreign key integrity", mismatched == 0),
             ("Composite indexes exist", len(rows) > 0),
             ("Query performance acceptable", elapsed < 100 if first_config else True),
@@ -189,9 +189,9 @@ async def verify_multi_tenancy():
 
         print()
         if all_passed:
-            print("🎉 All checks passed! Multi-tenancy is properly configured.")
+            print("All checks passed! Multi-tenancy is properly configured.")
         else:
-            print("⚠️  Some checks failed. Review output above.")
+            print("Some checks failed. Review output above.")
         print("=" * 80)
 
 

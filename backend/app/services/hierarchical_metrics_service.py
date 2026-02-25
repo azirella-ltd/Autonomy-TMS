@@ -285,7 +285,7 @@ class HierarchicalMetricsService:
 
     def get_dashboard_metrics(
         self,
-        group_id: int,
+        customer_id: int,
         site_level: str = "company",
         site_key: Optional[str] = None,
         product_level: str = "category",

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Seed only the Variable simulation group and its scenarios."""
+"""Seed only the Variable simulation customer and its scenarios."""
 
 from __future__ import annotations
 
 from scripts.seed_default_group import (
-    VARIABLE_BEER_GAME_GROUP_NAME,
+    VARIABLE_BEER_GAME_CUSTOMER_NAME,
     build_seed_options_from_args,
     get_config_specs,
     parse_args,
@@ -12,7 +12,7 @@ from scripts.seed_default_group import (
     session_factory_from_settings,
 )
 
-VARIABLE_BEER_GAME_CONFIG_NAMES = [VARIABLE_BEER_GAME_GROUP_NAME]
+VARIABLE_BEER_GAME_CONFIG_NAMES = [VARIABLE_BEER_GAME_CUSTOMER_NAME]
 
 
 def main() -> None:

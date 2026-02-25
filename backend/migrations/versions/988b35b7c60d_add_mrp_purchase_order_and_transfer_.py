@@ -26,7 +26,7 @@ def upgrade() -> None:
         sa.Column('run_id', sa.String(length=100), nullable=False),
         sa.Column('mps_plan_id', sa.Integer(), nullable=True),
         sa.Column('config_id', sa.Integer(), nullable=True),
-        sa.Column('group_id', sa.Integer(), nullable=True),
+        sa.Column('customer_id', sa.Integer(), nullable=True),
         sa.Column('status', sa.String(length=20), nullable=False),
         sa.Column('explode_bom_levels', sa.Integer(), nullable=True),
         sa.Column('total_components', sa.Integer(), nullable=True),
@@ -41,14 +41,14 @@ def upgrade() -> None:
         sa.Column('error_message', sa.Text(), nullable=True),
         sa.ForeignKeyConstraint(['config_id'], ['supply_chain_configs.id'], ),
         sa.ForeignKeyConstraint(['created_by_id'], ['users.id'], ),
-        sa.ForeignKeyConstraint(['group_id'], ['groups.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['customer_id'], ['groups.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['mps_plan_id'], ['mps_plans.id'], ),
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index('idx_mrp_run_id', 'mrp_run', ['run_id'], unique=True)
     op.create_index('idx_mrp_mps_plan', 'mrp_run', ['mps_plan_id'], unique=False)
     op.create_index('idx_mrp_status', 'mrp_run', ['status'], unique=False)
-    op.create_index('idx_mrp_group', 'mrp_run', ['group_id'], unique=False)
+    op.create_index('idx_mrp_group', 'mrp_run', ['customer_id'], unique=False)
     op.create_index('idx_mrp_created_at', 'mrp_run', ['created_at'], unique=False)
 
     # Create MRP Requirement table
@@ -123,7 +123,7 @@ def upgrade() -> None:
         sa.Column('supplier_site_id', sa.Integer(), nullable=True),
         sa.Column('destination_site_id', sa.Integer(), nullable=False),
         sa.Column('config_id', sa.Integer(), nullable=True),
-        sa.Column('group_id', sa.Integer(), nullable=True),
+        sa.Column('customer_id', sa.Integer(), nullable=True),
         sa.Column('status', sa.String(length=20), nullable=False),
         sa.Column('order_date', sa.Date(), nullable=False),
         sa.Column('requested_delivery_date', sa.Date(), nullable=False),
@@ -146,7 +146,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['config_id'], ['supply_chain_configs.id'], ),
         sa.ForeignKeyConstraint(['created_by_id'], ['users.id'], ),
         sa.ForeignKeyConstraint(['destination_site_id'], ['nodes.id'], ),
-        sa.ForeignKeyConstraint(['group_id'], ['groups.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['customer_id'], ['groups.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['received_by_id'], ['users.id'], ),
         sa.ForeignKeyConstraint(['supplier_site_id'], ['nodes.id'], ),
         sa.PrimaryKeyConstraint('id')
@@ -157,7 +157,7 @@ def upgrade() -> None:
     op.create_index('idx_po_status', 'purchase_order', ['status'], unique=False)
     op.create_index('idx_po_order_date', 'purchase_order', ['order_date'], unique=False)
     op.create_index('idx_po_config', 'purchase_order', ['config_id'], unique=False)
-    op.create_index('idx_po_group', 'purchase_order', ['group_id'], unique=False)
+    op.create_index('idx_po_group', 'purchase_order', ['customer_id'], unique=False)
     op.create_index('idx_po_mrp_run', 'purchase_order', ['mrp_run_id'], unique=False)
 
     # Create Purchase Order Line Item table
@@ -194,7 +194,7 @@ def upgrade() -> None:
         sa.Column('source_site_id', sa.Integer(), nullable=False),
         sa.Column('destination_site_id', sa.Integer(), nullable=False),
         sa.Column('config_id', sa.Integer(), nullable=True),
-        sa.Column('group_id', sa.Integer(), nullable=True),
+        sa.Column('customer_id', sa.Integer(), nullable=True),
         sa.Column('status', sa.String(length=20), nullable=False),
         sa.Column('shipment_date', sa.Date(), nullable=False),
         sa.Column('estimated_delivery_date', sa.Date(), nullable=False),
@@ -223,7 +223,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['config_id'], ['supply_chain_configs.id'], ),
         sa.ForeignKeyConstraint(['created_by_id'], ['users.id'], ),
         sa.ForeignKeyConstraint(['destination_site_id'], ['nodes.id'], ),
-        sa.ForeignKeyConstraint(['group_id'], ['groups.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['customer_id'], ['groups.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['picked_by_id'], ['users.id'], ),
         sa.ForeignKeyConstraint(['received_by_id'], ['users.id'], ),
         sa.ForeignKeyConstraint(['released_by_id'], ['users.id'], ),
@@ -237,7 +237,7 @@ def upgrade() -> None:
     op.create_index('idx_to_status', 'transfer_order', ['status'], unique=False)
     op.create_index('idx_to_shipment_date', 'transfer_order', ['shipment_date'], unique=False)
     op.create_index('idx_to_config', 'transfer_order', ['config_id'], unique=False)
-    op.create_index('idx_to_group', 'transfer_order', ['group_id'], unique=False)
+    op.create_index('idx_to_group', 'transfer_order', ['customer_id'], unique=False)
     op.create_index('idx_to_mrp_run', 'transfer_order', ['mrp_run_id'], unique=False)
     op.create_index('idx_to_lane', 'transfer_order', ['source_site_id', 'destination_site_id'], unique=False)
 

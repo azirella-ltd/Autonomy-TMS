@@ -114,11 +114,11 @@ def ensure_groups_table() -> None:
             sa.ForeignKeyConstraint(["admin_id"], ["users.id"], ondelete="CASCADE"),
         )
 
-    if not _column_exists("users", "group_id"):
-        op.add_column("users", sa.Column("group_id", sa.Integer(), nullable=True))
+    if not _column_exists("users", "customer_id"):
+        op.add_column("users", sa.Column("customer_id", sa.Integer(), nullable=True))
     if not _fk_exists("users", "fk_users_group"):
         op.create_foreign_key(
-            "fk_users_group", "users", "groups", ["group_id"], ["id"], ondelete="CASCADE"
+            "fk_users_group", "users", "groups", ["customer_id"], ["id"], ondelete="CASCADE"
         )
 
 
@@ -176,8 +176,8 @@ def ensure_games_table() -> None:
     if _table_exists("games"):
         if not _column_exists("games", "created_by"):
             op.add_column("games", sa.Column("created_by", sa.Integer(), nullable=True))
-        if not _column_exists("games", "group_id"):
-            op.add_column("games", sa.Column("group_id", sa.Integer(), nullable=True))
+        if not _column_exists("games", "customer_id"):
+            op.add_column("games", sa.Column("customer_id", sa.Integer(), nullable=True))
         if not _column_exists("games", "round_time_limit"):
             op.add_column("games", sa.Column("round_time_limit", sa.Integer(), nullable=False, server_default="60"))
         if not _column_exists("games", "current_round_ends_at"):
@@ -199,12 +199,12 @@ def ensure_games_table() -> None:
         sa.Column("started_at", sa.DateTime(), nullable=True),
         sa.Column("finished_at", sa.DateTime(), nullable=True),
         sa.Column("config", sa.JSON(), nullable=True),
-        sa.Column("group_id", sa.Integer(), nullable=True),
+        sa.Column("customer_id", sa.Integer(), nullable=True),
         sa.Column("role_assignments", sa.JSON(), nullable=True),
         sa.Column("round_time_limit", sa.Integer(), nullable=False, server_default="60"),
         sa.Column("current_round_ends_at", sa.DateTime(), nullable=True),
         sa.ForeignKeyConstraint(["created_by"], ["users.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["group_id"], ["groups.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["customer_id"], ["groups.id"], ondelete="CASCADE"),
     )
 def ensure_players_table() -> None:
     ensure_users_table()
@@ -584,7 +584,7 @@ def downgrade() -> None:
         if _fk_exists("games", "fk_games_created_by_users"):
             op.drop_constraint("fk_games_created_by_users", "games", type_="foreignkey")
 
-    if _column_exists("users", "group_id") and _fk_exists("users", "fk_users_group"):
+    if _column_exists("users", "customer_id") and _fk_exists("users", "fk_users_group"):
         op.drop_constraint("fk_users_group", "users", type_="foreignkey")
 
     if _table_exists("groups"):

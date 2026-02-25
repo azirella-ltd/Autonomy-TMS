@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seed the default Autonomy group, configuration, and scenarios with AI scenario_users."""
+"""Seed the default Autonomy customer, configuration, and scenarios with AI scenario_users."""
 
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ from app.models import (
     AgentConfig,
     Scenario,
     ScenarioStatus,
-    Group,
+    Customer,
     TransportationLane as Lane,  # Import as Lane for backwards compatibility
     Market,
     MarketDemand,
@@ -81,7 +81,7 @@ from app.core.time_buckets import TimeBucket, DEFAULT_START_DATE
 # Temporarily disabled - requires migration to Product model
 # from backend.scripts.create_regional_sc_config import ensure_multi_region_config
 
-DEFAULT_GROUP_NAME = "Beer Game"
+DEFAULT_CUSTOMER_NAME = "Beer Game"
 DEFAULT_GROUP_DESCRIPTION = "Default supply chain simulation scenarios"
 DEFAULT_ADMIN_USERNAME = "simulation_admin"
 DEFAULT_ADMIN_EMAIL = "simulation_admin@autonomy.ai"
@@ -101,7 +101,7 @@ TRM_AGENT_GAME_NAME = "TRM Agent Showcase"
 TRM_AGENT_DESCRIPTION = "Showcase scenario using TRM (Tiny Recursive Model) agents with 7M parameter neural network and recursive refinement for fast, optimized supply chain decisions."
 TRM_AGENT_STRATEGY = "trm"
 
-# Dedicated group metadata for alternative DAG templates
+# Dedicated customer metadata for alternative DAG templates
 SIX_PACK_GROUP_NAME = "Six-Pack Beer Game"
 SIX_PACK_GROUP_DESCRIPTION = "Six-Pack supply chain simulation template"
 SIX_PACK_ADMIN_USERNAME = "sixpack_admin"
@@ -120,31 +120,31 @@ MULTI_ITEM_ADMIN_USERNAME = "multisix_admin"
 MULTI_ITEM_ADMIN_EMAIL = "multisix_admin@autonomy.ai"
 MULTI_ITEM_ADMIN_FULL_NAME = "Multi-Product SixPack Administrator"
 
-THREE_FG_GROUP_NAME = "Three FG Beer Game"
+THREE_FG_CUSTOMER_NAME = "Three FG Beer Game"
 THREE_FG_GROUP_DESCRIPTION = "Three finished-goods simulation template"
 THREE_FG_ADMIN_USERNAME = "ThreeFG_admin"
 THREE_FG_ADMIN_EMAIL = "ThreeFG_admin@autonomy.ai"
 THREE_FG_ADMIN_FULL_NAME = "Three FG Simulation Administrator"
 
-VARIABLE_BEER_GAME_GROUP_NAME = "Variable Beer Game"
+VARIABLE_BEER_GAME_CUSTOMER_NAME = "Variable Beer Game"
 VARIABLE_BEER_GAME_GROUP_DESCRIPTION = "Lognormal-demand simulation with three finished goods"
 VARIABLE_BEER_GAME_ADMIN_USERNAME = "VarSimulation_admin"
 VARIABLE_BEER_GAME_ADMIN_EMAIL = "VarSimulation_admin@autonomy.ai"
 VARIABLE_BEER_GAME_ADMIN_FULL_NAME = "Variable Simulation Administrator"
 
-THREE_FG_GROUP_NAME = "Three FG Beer Game"
+THREE_FG_CUSTOMER_NAME = "Three FG Beer Game"
 THREE_FG_GROUP_DESCRIPTION = "Three finished-goods simulation template"
 THREE_FG_ADMIN_USERNAME = "ThreeFG_admin"
 THREE_FG_ADMIN_EMAIL = "ThreeFG_admin@autonomy.ai"
 THREE_FG_ADMIN_FULL_NAME = "Three FG Simulation Administrator"
 
-VARIABLE_BEER_GAME_GROUP_NAME = "Variable Beer Game"
+VARIABLE_BEER_GAME_CUSTOMER_NAME = "Variable Beer Game"
 VARIABLE_BEER_GAME_GROUP_DESCRIPTION = "Lognormal-demand simulation with three finished goods"
 VARIABLE_BEER_GAME_ADMIN_USERNAME = "VarSimulation_admin"
 VARIABLE_BEER_GAME_ADMIN_EMAIL = "VarSimulation_admin@autonomy.ai"
 VARIABLE_BEER_GAME_ADMIN_FULL_NAME = "Variable Simulation Administrator"
 
-COMPLEX_GROUP_NAME = "Complex_SC"
+COMPLEX_CUSTOMER_NAME = "Complex_SC"
 COMPLEX_GROUP_DESCRIPTION = (
     "Complex supply chain scenarios with multi-echelon networks and diverse suppliers."
 )
@@ -706,7 +706,7 @@ def _iter_node_slots(config_payload: Dict[str, Any]) -> List[NodeSlot]:
     return slots
 
 
-def _ensure_node_user(session: Session, group: Group, slot: NodeSlot) -> User:
+def _ensure_node_user(session: Session, customer: Customer, slot: NodeSlot) -> User:
     local_part = re.sub(r"[^0-9a-z]+", "_", slot.label.lower()).strip("_") or slot.key
     email = f"{local_part}@autonomy.ai"
     user = session.query(User).filter(User.email == email).first()
@@ -721,7 +721,7 @@ def _ensure_node_user(session: Session, group: Group, slot: NodeSlot) -> User:
             is_active=True,
             is_superuser=False,
             user_type=UserTypeEnum.USER,
-            group_id=group.id,
+            customer_id=customer.id,
         )
         session.add(user)
         session.flush()
@@ -735,8 +735,8 @@ def _ensure_node_user(session: Session, group: Group, slot: NodeSlot) -> User:
     if user.full_name != full_name:
         user.full_name = full_name
         updated = True
-    if user.group_id != group.id:
-        user.group_id = group.id
+    if user.customer_id != customer.id:
+        user.customer_id = customer.id
         updated = True
     if _normalize_user_type(user.user_type) != UserTypeEnum.USER:
         user.user_type = UserTypeEnum.USER
@@ -954,19 +954,19 @@ def _env_flag(name: str) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def ensure_group_with_admin(
+def ensure_customer_with_admin(
     session: Session,
     *,
-    group_name: str,
+    customer_name: str,
     group_description: str,
     admin_username: str,
     admin_email: str,
     admin_full_name: str,
     password: str = DEFAULT_PASSWORD,
-) -> Tuple[Group, bool]:
-    """Create or update a group and its administrator."""
+) -> Tuple[Customer, bool]:
+    """Create or update a customer and its administrator."""
 
-    existing_group = session.query(Group).filter(Group.name == group_name).first()
+    existing_customer = session.query(Customer).filter(Customer.name == customer_name).first()
     admin_user = session.query(User).filter(User.email == admin_email).first()
 
     admin_created = False
@@ -1004,53 +1004,53 @@ def ensure_group_with_admin(
             session.add(admin_user)
             session.flush()
 
-    if existing_group:
-        if existing_group.description != group_description:
-            existing_group.description = group_description
-        if existing_group.admin_id != admin_user.id:
-            existing_group.admin_id = admin_user.id
-        session.add(existing_group)
+    if existing_customer:
+        if existing_customer.description != group_description:
+            existing_customer.description = group_description
+        if existing_customer.admin_id != admin_user.id:
+            existing_customer.admin_id = admin_user.id
+        session.add(existing_customer)
         session.flush()
 
-        if admin_user.group_id != existing_group.id:
-            admin_user.group_id = existing_group.id
+        if admin_user.customer_id != existing_customer.id:
+            admin_user.customer_id = existing_customer.id
             session.add(admin_user)
             session.flush()
 
         print(
-            f"[info] Group '{existing_group.name}' already exists (id={existing_group.id})."
+            f"[info] Customer '{existing_customer.name}' already exists (id={existing_customer.id})."
         )
-        return existing_group, False
+        return existing_customer, False
 
-    print(f"[info] Creating group '{group_name}' and administrator user '{admin_email}'...")
+    print(f"[info] Creating customer '{customer_name}' and administrator user '{admin_email}'...")
 
-    group = Group(
-        name=group_name,
+    customer = Customer(
+        name=customer_name,
         description=group_description,
         admin_id=admin_user.id,
     )
-    session.add(group)
+    session.add(customer)
     session.flush()
 
-    if admin_user.group_id != group.id:
-        admin_user.group_id = group.id
+    if admin_user.customer_id != customer.id:
+        admin_user.customer_id = customer.id
         session.add(admin_user)
         session.flush()
 
     print(
-        f"[success] Created group '{group.name}' (id={group.id}) and admin "
+        f"[success] Created customer '{customer.name}' (id={customer.id}) and admin "
         f"'{admin_email}'{' (new user)' if admin_created else ''}."
     )
 
-    return group, True
+    return customer, True
 
 
-def ensure_group(session: Session) -> Tuple[Group, bool]:
-    """Create the default Autonomy group and admin user."""
+def ensure_customer(session: Session) -> Tuple[Customer, bool]:
+    """Create the default Autonomy customer and admin user."""
 
-    return ensure_group_with_admin(
+    return ensure_customer_with_admin(
         session,
-        group_name=DEFAULT_GROUP_NAME,
+        customer_name=DEFAULT_CUSTOMER_NAME,
         group_description=DEFAULT_GROUP_DESCRIPTION,
         admin_username=DEFAULT_ADMIN_USERNAME,
         admin_email=DEFAULT_ADMIN_EMAIL,
@@ -1067,22 +1067,22 @@ def ensure_named_group(
     admin_username: str,
     admin_email: str,
     admin_full_name: str,
-) -> Group:
-    group, _ = ensure_group_with_admin(
+) -> Customer:
+    customer, _ = ensure_customer_with_admin(
         session,
-        group_name=name,
+        customer_name=name,
         group_description=description,
         admin_username=admin_username,
         admin_email=admin_email,
         admin_full_name=admin_full_name,
         password=DEFAULT_PASSWORD,
     )
-    return group
+    return customer
 
 
 def ensure_supply_chain_config(
     session: Session,
-    group: Group,
+    customer: Customer,
     *,
     name: Optional[str] = None,
     description: Optional[str] = None,
@@ -1090,10 +1090,10 @@ def ensure_supply_chain_config(
     factory_master_type: Optional[str] = None,
     manufacturer_master_type: Optional[str] = None,
 ) -> SupplyChainConfig:
-    """Ensure the default supply chain configuration exists for the group."""
+    """Ensure the default supply chain configuration exists for the customer."""
 
     base_query = session.query(SupplyChainConfig).filter(
-        SupplyChainConfig.group_id == group.id
+        SupplyChainConfig.customer_id == customer.id
     )
 
     config: Optional[SupplyChainConfig]
@@ -1116,10 +1116,10 @@ def ensure_supply_chain_config(
             f"[info] Supply chain configuration already exists (id={config.id})."
         )
         updated = False
-        if config.group_id != group.id:
-            config.group_id = group.id
+        if config.customer_id != customer.id:
+            config.customer_id = customer.id
             updated = True
-        desired_creator = group.admin_id
+        desired_creator = customer.admin_id
         if desired_creator and config.created_by != desired_creator:
             config.created_by = desired_creator
             updated = True
@@ -1217,14 +1217,14 @@ def ensure_supply_chain_config(
         return config
     # Create a new configuration
     if name == INVENTORY_CONFIG_NAME:
-        return _create_inventory_only_config(session, group, name=name, description=description, override_payload=override_payload)
+        return _create_inventory_only_config(session, customer, name=name, description=description, override_payload=override_payload)
 
     print("[info] Creating default supply chain configuration...")
     config = SupplyChainConfig(
         name=name or DEFAULT_CONFIG_NAME,
         description=description or "Default supply chain configuration",
-        created_by=group.admin_id,
-        group_id=group.id,
+        created_by=customer.admin_id,
+        customer_id=customer.id,
         is_active=True,
         time_bucket=TimeBucket.WEEK,
     )
@@ -1366,7 +1366,7 @@ def ensure_supply_chain_config(
     session.flush()
 
     print(
-        f"[success] Created supply chain configuration (id={config.id}) for group {group.id}."
+        f"[success] Created supply chain configuration (id={config.id}) for customer {customer.id}."
     )
     _apply_default_supply_chain_settings(session, config)
     _apply_site_type_definitions(session, config, DEFAULT_SIMULATION_SITE_TYPE_DEFINITIONS)
@@ -1381,7 +1381,7 @@ def ensure_supply_chain_config(
 
 def ensure_three_fg_inventory_config(
     session: Session,
-    group: Group,
+    customer: Customer,
     *,
     name: str = "Three FG Beer Game",
     description: str = "Inventory-only simulation with three finished goods (Lager, IPA, Dark).",
@@ -1391,14 +1391,14 @@ def ensure_three_fg_inventory_config(
 
     config = (
         session.query(SupplyChainConfig)
-        .filter(SupplyChainConfig.group_id == group.id, SupplyChainConfig.name == name)
+        .filter(SupplyChainConfig.customer_id == customer.id, SupplyChainConfig.name == name)
         .first()
     )
     if not config:
         config = SupplyChainConfig(
             name=name,
             description=description,
-            group_id=group.id,
+            customer_id=customer.id,
             time_bucket=TimeBucket.WEEK,
             is_active=True,
         )
@@ -1502,7 +1502,7 @@ def ensure_three_fg_inventory_config(
 
 def _create_inventory_only_config(
     session: Session,
-    group: Group,
+    customer: Customer,
     *,
     name: Optional[str],
     description: Optional[str],
@@ -1517,8 +1517,8 @@ def _create_inventory_only_config(
     config = SupplyChainConfig(
         name=name or INVENTORY_CONFIG_NAME,
         description=description or "Inventory-only supply chain configuration",
-        created_by=group.admin_id,
-        group_id=group.id,
+        created_by=customer.admin_id,
+        customer_id=customer.id,
         is_active=True,
         time_bucket=TimeBucket.WEEK,
         site_type_definitions=DEFAULT_SIMULATION_SITE_TYPE_DEFINITIONS,
@@ -1636,7 +1636,7 @@ def _create_inventory_only_config(
     )
     session.flush()
 
-    print(f"[success] Created inventory-only supply chain configuration (id={config.id}) for group {group.id}.")
+    print(f"[success] Created inventory-only supply chain configuration (id={config.id}) for customer {customer.id}.")
     _apply_default_supply_chain_settings(session, config)
     _reseed_product_site_configs(session, config)
     return config
@@ -2431,42 +2431,42 @@ def _populate_config_lineage(session: Session, config: SupplyChainConfig) -> Non
     session.flush()
 
 
-def _get_parent_config(session: Session, group: Group, parent_name: str) -> Optional[SupplyChainConfig]:
-    """Get a parent config by name within the same group."""
+def _get_parent_config(session: Session, customer: Customer, parent_name: str) -> Optional[SupplyChainConfig]:
+    """Get a parent config by name within the same customer."""
     return (
         session.query(SupplyChainConfig)
         .filter(
-            SupplyChainConfig.group_id == group.id,
+            SupplyChainConfig.customer_id == customer.id,
             SupplyChainConfig.name == parent_name
         )
         .first()
     )
 
 
-def _get_root_config(session: Session, group: Group) -> Optional[SupplyChainConfig]:
-    """Get the root config (Default Beer Game) for the group by DB lookup name."""
-    return _get_parent_config(session, group, "Default Beer Game")
+def _get_root_config(session: Session, customer: Customer) -> Optional[SupplyChainConfig]:
+    """Get the root config (Default Beer Game) for the customer by DB lookup name."""
+    return _get_parent_config(session, customer, "Default Beer Game")
 
 
-def ensure_case_config(session: Session, group: Group) -> SupplyChainConfig:
+def ensure_case_config(session: Session, customer: Customer) -> SupplyChainConfig:
     """Create or update the Case simulation configuration (Case built from Six-Packs).
 
     Lineage: Default Beer Game -> Case Beer Game (DB config names)
     """
     # Get parent config (Default Beer Game - DB lookup name)
-    parent_config = _get_root_config(session, group)
+    parent_config = _get_root_config(session, customer)
     root_config = parent_config
 
     config = (
         session.query(SupplyChainConfig)
-        .filter(SupplyChainConfig.group_id == group.id, SupplyChainConfig.name == "Case Beer Game")
+        .filter(SupplyChainConfig.customer_id == customer.id, SupplyChainConfig.name == "Case Beer Game")
         .first()
     )
     if not config:
         config = SupplyChainConfig(
             name="Case Beer Game",
             description="Case manufacturer consumes Six-Packs (1:4 BOM) using manufacturer master node type.",
-            group_id=group.id,
+            customer_id=customer.id,
             time_bucket=TimeBucket.WEEK,
             is_active=True,
             parent_config_id=parent_config.id if parent_config else None,
@@ -2656,18 +2656,18 @@ def ensure_case_config(session: Session, group: Group) -> SupplyChainConfig:
     return config
 
 
-def ensure_six_pack_config(session: Session, group: Group) -> SupplyChainConfig:
+def ensure_six_pack_config(session: Session, customer: Customer) -> SupplyChainConfig:
     """Create or update the Six-Pack simulation configuration (Case built from Six-Packs).
 
     Lineage: Default Beer Game -> Case Beer Game -> Six-Pack Beer Game (DB config names)
     """
     # Get parent config (Case Beer Game - DB lookup name)
-    parent_config = _get_parent_config(session, group, "Case Beer Game")
-    root_config = _get_root_config(session, group)
+    parent_config = _get_parent_config(session, customer, "Case Beer Game")
+    root_config = _get_root_config(session, customer)
 
     config = (
         session.query(SupplyChainConfig)
-        .filter(SupplyChainConfig.group_id == group.id, SupplyChainConfig.name == "Six-Pack Beer Game")
+        .filter(SupplyChainConfig.customer_id == customer.id, SupplyChainConfig.name == "Six-Pack Beer Game")
         .first()
     )
     created = False
@@ -2675,7 +2675,7 @@ def ensure_six_pack_config(session: Session, group: Group) -> SupplyChainConfig:
         config = SupplyChainConfig(
             name="Six-Pack Beer Game",
             description="Case manufacturer consumes Six-Packs built from bottles supplied by Market Supply.",
-            group_id=group.id,
+            customer_id=customer.id,
             time_bucket=TimeBucket.WEEK,
             is_active=True,
             parent_config_id=parent_config.id if parent_config else None,
@@ -2886,25 +2886,25 @@ def ensure_six_pack_config(session: Session, group: Group) -> SupplyChainConfig:
     return config
 
 
-def ensure_bottle_config(session: Session, group: Group) -> SupplyChainConfig:
+def ensure_bottle_config(session: Session, customer: Customer) -> SupplyChainConfig:
     """Create or update the Bottle simulation configuration (Case <- Six-Pack <- Bottle <- Ingredients).
 
     Lineage: Default Beer Game -> Case Beer Game -> Six-Pack Beer Game -> Bottle Beer Game (DB config names)
     """
     # Get parent config (Six-Pack Beer Game - DB lookup name)
-    parent_config = _get_parent_config(session, group, "Six-Pack Beer Game")
-    root_config = _get_root_config(session, group)
+    parent_config = _get_parent_config(session, customer, "Six-Pack Beer Game")
+    root_config = _get_root_config(session, customer)
 
     config = (
         session.query(SupplyChainConfig)
-        .filter(SupplyChainConfig.group_id == group.id, SupplyChainConfig.name == "Bottle Beer Game")
+        .filter(SupplyChainConfig.customer_id == customer.id, SupplyChainConfig.name == "Bottle Beer Game")
         .first()
     )
     if not config:
         config = SupplyChainConfig(
             name="Bottle Beer Game",
             description="Case manufacturer consumes Six-Packs; Six-Packs consume Bottles; Bottles consume Ingredients from Market Supply.",
-            group_id=group.id,
+            customer_id=customer.id,
             time_bucket=TimeBucket.WEEK,
             is_active=True,
             parent_config_id=parent_config.id if parent_config else None,
@@ -3127,19 +3127,19 @@ def ensure_bottle_config(session: Session, group: Group) -> SupplyChainConfig:
     return config
 
 
-def ensure_multi_item_six_pack_config(session: Session, group: Group) -> SupplyChainConfig:
+def ensure_multi_item_six_pack_config(session: Session, customer: Customer) -> SupplyChainConfig:
     """Create or update a multi-item Six-Pack simulation variant with mixed sourcing."""
 
     config = (
         session.query(SupplyChainConfig)
-        .filter(SupplyChainConfig.group_id == group.id, SupplyChainConfig.name == "Multi-Product SixPack Beer Game")
+        .filter(SupplyChainConfig.customer_id == customer.id, SupplyChainConfig.name == "Multi-Product SixPack Beer Game")
         .first()
     )
     if not config:
         config = SupplyChainConfig(
             name="Multi-Product SixPack Beer Game",
             description="Multi-item flow where some cases are sourced directly and others via BOM conversions.",
-            group_id=group.id,
+            customer_id=customer.id,
             time_bucket=TimeBucket.WEEK,
             is_active=True,
         )
@@ -3324,7 +3324,7 @@ def ensure_multi_item_six_pack_config(session: Session, group: Group) -> SupplyC
 
 def ensure_default_game(
     session: Session,
-    group: Group,
+    customer: Customer,
     *,
     config: Optional[SupplyChainConfig] = None,
     config_name: Optional[str] = None,
@@ -3333,18 +3333,18 @@ def ensure_default_game(
     game_name: Optional[str] = None,
     manufacturer_master_type: Optional[str] = None,
 ) -> Game:
-    """Ensure the primary game exists for the supplied group."""
+    """Ensure the primary game exists for the supplied customer."""
 
     target_name = game_name or DEFAULT_GAME_NAME
     game = (
         session.query(Game)
-        .filter(Game.group_id == group.id, Game.name == target_name)
+        .filter(Game.customer_id == customer.id, Game.name == target_name)
         .first()
     )
 
     sc_config = config or ensure_supply_chain_config(
         session,
-        group,
+        customer,
         name=config_name,
         description=config_description,
         demand_pattern_override=demand_pattern_override,
@@ -3370,8 +3370,8 @@ def ensure_default_game(
         game.config = json.loads(json.dumps(existing_config))
         game.demand_pattern = existing_config.get("demand_pattern", {})
         game.supply_chain_config_id = sc_config.id
-        game.group_id = group.id
-        creator_id = sc_config.created_by or group.admin_id
+        game.customer_id = customer.id
+        creator_id = sc_config.created_by or customer.admin_id
         if creator_id:
             game.created_by = creator_id
         session.add(game)
@@ -3389,11 +3389,11 @@ def ensure_default_game(
     if override_payload:
         game_config["demand_pattern"] = override_payload
 
-    creator_id = sc_config.created_by or group.admin_id
+    creator_id = sc_config.created_by or customer.admin_id
     game = Game(
         name=game_config.get("name", target_name),
         created_by=creator_id,
-        group_id=group.id,
+        customer_id=customer.id,
         status=ScenarioStatus.CREATED,
         max_rounds=game_config.get("max_rounds", 52),
         config=game_config,
@@ -3408,7 +3408,7 @@ def ensure_default_game(
 
 def ensure_naive_unsupervised_game(
     session: Session,
-    group: Group,
+    customer: Customer,
     config: SupplyChainConfig,
     *,
     demand_pattern_override: Optional[Dict[str, Any]] = None,
@@ -3420,7 +3420,7 @@ def ensure_naive_unsupervised_game(
 
     game = (
         session.query(Game)
-        .filter(Game.group_id == group.id, Game.name == game_name)
+        .filter(Game.customer_id == customer.id, Game.name == game_name)
         .first()
     )
 
@@ -3440,11 +3440,11 @@ def ensure_naive_unsupervised_game(
         if demand_pattern_override:
             base_config["demand_pattern"] = json.loads(json.dumps(demand_pattern_override))
 
-        creator_id = config.created_by or group.admin_id
+        creator_id = config.created_by or customer.admin_id
         game = Game(
             name=game_name,
             created_by=creator_id,
-            group_id=group.id,
+            customer_id=customer.id,
             status=ScenarioStatus.CREATED,
             max_rounds=base_config.get("max_rounds", 40),
             config=base_config,
@@ -3472,8 +3472,8 @@ def ensure_naive_unsupervised_game(
         game.description = NAIVE_AGENT_DESCRIPTION
         game.status = ScenarioStatus.CREATED
         game.supply_chain_config_id = config.id
-        game.group_id = group.id
-        creator_id = config.created_by or group.admin_id
+        game.customer_id = customer.id
+        creator_id = config.created_by or customer.admin_id
         if creator_id:
             game.created_by = creator_id
         session.add(game)
@@ -3483,7 +3483,7 @@ def ensure_naive_unsupervised_game(
 
 def ensure_pid_game(
     session: Session,
-    group: Group,
+    customer: Customer,
     config: SupplyChainConfig,
     *,
     demand_pattern_override: Optional[Dict[str, Any]] = None,
@@ -3494,7 +3494,7 @@ def ensure_pid_game(
     config_service = SupplyChainConfigService(session)
     game = (
         session.query(Game)
-        .filter(Game.group_id == group.id, Game.name == game_name)
+        .filter(Game.customer_id == customer.id, Game.name == game_name)
         .first()
     )
 
@@ -3514,11 +3514,11 @@ def ensure_pid_game(
         if demand_pattern_override:
             base_config["demand_pattern"] = json.loads(json.dumps(demand_pattern_override))
 
-        creator_id = config.created_by or group.admin_id
+        creator_id = config.created_by or customer.admin_id
         game = Game(
             name=game_name,
             created_by=creator_id,
-            group_id=group.id,
+            customer_id=customer.id,
             status=ScenarioStatus.CREATED,
             max_rounds=base_config.get("max_rounds", 40),
             config=base_config,
@@ -3546,8 +3546,8 @@ def ensure_pid_game(
         game.description = PID_AGENT_DESCRIPTION
         game.status = ScenarioStatus.CREATED
         game.supply_chain_config_id = config.id
-        game.group_id = group.id
-        creator_id = config.created_by or group.admin_id
+        game.customer_id = customer.id
+        creator_id = config.created_by or customer.admin_id
         if creator_id:
             game.created_by = creator_id
         session.add(game)
@@ -3564,7 +3564,7 @@ def ensure_pid_game(
 
 def ensure_trm_game(
     session: Session,
-    group: Group,
+    customer: Customer,
     config: SupplyChainConfig,
     *,
     demand_pattern_override: Optional[Dict[str, Any]] = None,
@@ -3575,7 +3575,7 @@ def ensure_trm_game(
     config_service = SupplyChainConfigService(session)
     game = (
         session.query(Game)
-        .filter(Game.group_id == group.id, Game.name == game_name)
+        .filter(Game.customer_id == customer.id, Game.name == game_name)
         .first()
     )
 
@@ -3595,11 +3595,11 @@ def ensure_trm_game(
         if demand_pattern_override:
             base_config["demand_pattern"] = json.loads(json.dumps(demand_pattern_override))
 
-        creator_id = config.created_by or group.admin_id
+        creator_id = config.created_by or customer.admin_id
         game = Game(
             name=game_name,
             created_by=creator_id,
-            group_id=group.id,
+            customer_id=customer.id,
             status=ScenarioStatus.CREATED,
             max_rounds=base_config.get("max_rounds", 40),
             config=base_config,
@@ -3627,8 +3627,8 @@ def ensure_trm_game(
         game.description = TRM_AGENT_DESCRIPTION
         game.status = ScenarioStatus.CREATED
         game.supply_chain_config_id = config.id
-        game.group_id = group.id
-        creator_id = config.created_by or group.admin_id
+        game.customer_id = customer.id
+        creator_id = config.created_by or customer.admin_id
         if creator_id:
             game.created_by = creator_id
         session.add(game)
@@ -3645,7 +3645,7 @@ def ensure_trm_game(
 
 def configure_human_players_for_game(
     session: Session,
-    group: Group,
+    customer: Customer,
     game: Game,
 ) -> None:
     """Ensure the default game uses human scenario_users mapped to role-specific accounts."""
@@ -3663,7 +3663,7 @@ def configure_human_players_for_game(
     role_assignments: Dict[str, Dict[str, int | bool | None]] = {}
 
     for slot in slots:
-        user = _ensure_node_user(session, group, slot)
+        user = _ensure_node_user(session, customer, slot)
         scenario_user = existing_players.get(slot.key)
         if scenario_user is None:
             scenario_user = ScenarioUser(
@@ -3732,7 +3732,7 @@ def configure_human_players_for_game(
 
 def ensure_human_game_for_config(
     session: Session,
-    group: Group,
+    customer: Customer,
     config: SupplyChainConfig,
     *,
     game_name: str,
@@ -3744,7 +3744,7 @@ def ensure_human_game_for_config(
     config_service = SupplyChainConfigService(session)
     game = (
         session.query(Game)
-        .filter(Game.group_id == group.id, Game.name == game_name)
+        .filter(Game.customer_id == customer.id, Game.name == game_name)
         .first()
     )
 
@@ -3775,11 +3775,11 @@ def ensure_human_game_for_config(
         _apply_default_lead_times(base_config)
         base_config["progression_mode"] = "unsupervised"
 
-        creator_id = config.created_by or group.admin_id
+        creator_id = config.created_by or customer.admin_id
         game = Game(
             name=base_config.get("name", game_name),
             created_by=creator_id,
-            group_id=group.id,
+            customer_id=customer.id,
             status=ScenarioStatus.CREATED,
             max_rounds=base_config.get("max_rounds", 40),
             config=base_config,
@@ -3803,19 +3803,19 @@ def ensure_human_game_for_config(
         game.description = description
         game.status = ScenarioStatus.CREATED
         game.supply_chain_config_id = config.id
-        game.group_id = group.id
-        creator_id = config.created_by or group.admin_id
+        game.customer_id = customer.id
+        creator_id = config.created_by or customer.admin_id
         if creator_id:
             game.created_by = creator_id
         session.add(game)
 
-    configure_human_players_for_game(session, group, game)
+    configure_human_players_for_game(session, customer, game)
     return game
 
 
 def ensure_hybrid_human_naive_game(
     session: Session,
-    group: Group,
+    customer: Customer,
     config: SupplyChainConfig,
     *,
     game_name: str,
@@ -3829,7 +3829,7 @@ def ensure_hybrid_human_naive_game(
 
     Args:
         session: Database session
-        group: Group for the game
+        customer: Customer for the game
         config: Supply chain configuration
         game_name: Name of the game
         description: Game description
@@ -3842,7 +3842,7 @@ def ensure_hybrid_human_naive_game(
     """
     # Check if game exists
     existing = session.query(Game).filter(
-        Game.group_id == group.id,
+        Game.customer_id == customer.id,
         Game.name == game_name,
     ).first()
 
@@ -3862,7 +3862,7 @@ def ensure_hybrid_human_naive_game(
 
     game = Game(
         name=game_name,
-        group_id=group.id,
+        customer_id=customer.id,
         supply_chain_config_id=config.id,
         config=config_payload,
         description=description or game_name,
@@ -3885,7 +3885,7 @@ def ensure_hybrid_human_naive_game(
 
         if slot.key == human_site_key:
             # Create human scenario_user
-            user = _ensure_node_user(session, group, slot)
+            user = _ensure_node_user(session, customer, slot)
             scenario_user = ScenarioUser(
                 scenario_id=game.id,
                 role=_player_role_for_node_type(slot.node_type),
@@ -4063,7 +4063,7 @@ def ensure_ai_agents(
     )
 
 
-def ensure_role_users(session: Session, group: Group) -> None:
+def ensure_role_users(session: Session, customer: Customer) -> None:
     """Legacy helper retained for compatibility; node-scoped accounts are created per game."""
     print(
         "[info] Skipping legacy role user bootstrap; node-specific users are created when configuring games."
@@ -4520,7 +4520,7 @@ def _configure_game_agents(
 
 def ensure_autonomy_games(
     session: Session,
-    group: Group,
+    customer: Customer,
     config: SupplyChainConfig,
     artifacts: Dict[str, Optional[Dict[str, Any]]],
     *,
@@ -4542,7 +4542,7 @@ def ensure_autonomy_games(
         game_name = spec["name"] if not name_suffix else f"{spec['name']} ({name_suffix})"
         game = (
             session.query(Game)
-            .filter(Game.group_id == group.id, Game.name == game_name)
+            .filter(Game.customer_id == customer.id, Game.name == game_name)
             .first()
         )
 
@@ -4592,11 +4592,11 @@ def ensure_autonomy_games(
                 }
                 base_config.setdefault("autonomy_overrides", {}).update(override_nodes)
 
-            creator_id = config.created_by or group.admin_id
+            creator_id = config.created_by or customer.admin_id
             game = Game(
                 name=game_name,
                 created_by=creator_id,
-                group_id=group.id,
+                customer_id=customer.id,
                 status=ScenarioStatus.CREATED,
                 max_rounds=base_config.get("max_rounds", 40),
                 config=base_config,
@@ -4618,8 +4618,8 @@ def ensure_autonomy_games(
                     game_config = {}
             _apply_default_lead_times(game_config)
             game.supply_chain_config_id = config.id
-            game.group_id = group.id
-            creator_id = config.created_by or group.admin_id
+            game.customer_id = customer.id
+            creator_id = config.created_by or customer.admin_id
             if creator_id:
                 game.created_by = creator_id
             game_config.setdefault("autonomy", {})
@@ -4670,7 +4670,7 @@ def _build_config_specs() -> List[Dict[str, Any]]:
             "pid_game_name": PID_AGENT_GAME_NAME,
             "trm_game_name": TRM_AGENT_GAME_NAME,
             "autonomy_suffix": None,
-            "group_name": DEFAULT_GROUP_NAME,
+            "customer_name": DEFAULT_CUSTOMER_NAME,
             "group_description": DEFAULT_GROUP_DESCRIPTION,
             "admin_username": DEFAULT_ADMIN_USERNAME,
             "admin_email": DEFAULT_ADMIN_EMAIL,
@@ -4686,7 +4686,7 @@ def _build_config_specs() -> List[Dict[str, Any]]:
             "pid_game_name": f"{PID_AGENT_GAME_NAME} (Three FG)",
             "trm_game_name": f"{TRM_AGENT_GAME_NAME} (Three FG)",
             "autonomy_suffix": "Three FG Beer Game",
-            "group_name": THREE_FG_GROUP_NAME,
+            "customer_name": THREE_FG_CUSTOMER_NAME,
             "group_description": THREE_FG_GROUP_DESCRIPTION,
             "admin_username": THREE_FG_ADMIN_USERNAME,
             "admin_email": THREE_FG_ADMIN_EMAIL,
@@ -4699,7 +4699,7 @@ def _build_config_specs() -> List[Dict[str, Any]]:
             },
         },
         {
-            "config_name": VARIABLE_BEER_GAME_GROUP_NAME,
+            "config_name": VARIABLE_BEER_GAME_CUSTOMER_NAME,
             "config_description": "Lognormal-demand simulation with three finished goods",
             "demand_pattern": _lognormal_pattern_from_median_variance(8.0, 8.0),
             "game_name": f"{DEFAULT_GAME_NAME} (Variable Beer Game)",
@@ -4707,14 +4707,14 @@ def _build_config_specs() -> List[Dict[str, Any]]:
             "pid_game_name": f"{PID_AGENT_GAME_NAME} (Variable Beer Game)",
             "trm_game_name": f"{TRM_AGENT_GAME_NAME} (Variable Beer Game)",
             "autonomy_suffix": "Variable Beer Game",
-            "group_name": VARIABLE_BEER_GAME_GROUP_NAME,
+            "customer_name": VARIABLE_BEER_GAME_CUSTOMER_NAME,
             "group_description": VARIABLE_BEER_GAME_GROUP_DESCRIPTION,
             "admin_username": VARIABLE_BEER_GAME_ADMIN_USERNAME,
             "admin_email": VARIABLE_BEER_GAME_ADMIN_EMAIL,
             "admin_full_name": VARIABLE_BEER_GAME_ADMIN_FULL_NAME,
             "ensure_func": ensure_three_fg_inventory_config,
             "ensure_kwargs": {
-                "name": VARIABLE_BEER_GAME_GROUP_NAME,
+                "name": VARIABLE_BEER_GAME_CUSTOMER_NAME,
                 "description": "Lognormal-demand simulation with three finished goods",
                 "demand_pattern_override": _lognormal_pattern_from_median_variance(8.0, 8.0),
             },
@@ -4728,7 +4728,7 @@ def _build_config_specs() -> List[Dict[str, Any]]:
             "pid_game_name": f"{PID_AGENT_GAME_NAME} (Case Beer Game)",
             "trm_game_name": f"{TRM_AGENT_GAME_NAME} (Case Beer Game)",
             "autonomy_suffix": "Case Beer Game",
-            "group_name": DEFAULT_GROUP_NAME,
+            "customer_name": DEFAULT_CUSTOMER_NAME,
             "group_description": DEFAULT_GROUP_DESCRIPTION,
             "admin_username": DEFAULT_ADMIN_USERNAME,
             "admin_email": DEFAULT_ADMIN_EMAIL,
@@ -4745,7 +4745,7 @@ def _build_config_specs() -> List[Dict[str, Any]]:
             "pid_game_name": f"{PID_AGENT_GAME_NAME} (Six-Pack Beer Game)",
             "trm_game_name": f"{TRM_AGENT_GAME_NAME} (Six-Pack Beer Game)",
             "autonomy_suffix": "Six-Pack Beer Game",
-            "group_name": DEFAULT_GROUP_NAME,
+            "customer_name": DEFAULT_CUSTOMER_NAME,
             "group_description": DEFAULT_GROUP_DESCRIPTION,
             "admin_username": DEFAULT_ADMIN_USERNAME,
             "admin_email": DEFAULT_ADMIN_EMAIL,
@@ -4760,7 +4760,7 @@ def _build_config_specs() -> List[Dict[str, Any]]:
             "naive_game_name": f"{NAIVE_AGENT_GAME_NAME} (Bottle Beer Game)",
             "pid_game_name": f"{PID_AGENT_GAME_NAME} (Bottle Beer Game)",
             "autonomy_suffix": "Bottle Beer Game",
-            "group_name": DEFAULT_GROUP_NAME,
+            "customer_name": DEFAULT_CUSTOMER_NAME,
             "group_description": DEFAULT_GROUP_DESCRIPTION,
             "admin_username": DEFAULT_ADMIN_USERNAME,
             "admin_email": DEFAULT_ADMIN_EMAIL,
@@ -4808,25 +4808,25 @@ def seed_default_data(
 
     for spec in config_specs:
         slug = _slugify(spec["config_name"])
-        group, _ = ensure_group_with_admin(
+        customer, _ = ensure_customer_with_admin(
             session,
-            group_name=spec.get("group_name") or spec["config_name"],
-            group_description=spec.get("group_description") or f"{spec['config_name']} group",
+            customer_name=spec.get("customer_name") or spec["config_name"],
+            group_description=spec.get("group_description") or f"{spec['config_name']} customer",
             admin_username=spec.get("admin_username") or f"{slug}_admin",
             admin_email=spec.get("admin_email") or f"{slug}_admin@autonomy.ai",
             admin_full_name=spec.get("admin_full_name") or f"{spec['config_name']} Administrator",
             password=DEFAULT_PASSWORD,
         )
-        ensure_role_users(session, group)
+        ensure_role_users(session, customer)
 
         ensure_func = spec.get("ensure_func")
         ensure_kwargs = spec.get("ensure_kwargs") or {}
         config = (
-            ensure_func(session, group, **ensure_kwargs)
+            ensure_func(session, customer, **ensure_kwargs)
             if ensure_func
             else ensure_supply_chain_config(
                 session,
-                group,
+                customer,
                 name=spec["config_name"],
                 description=spec["config_description"],
                 demand_pattern_override=spec["demand_pattern"],
@@ -4836,7 +4836,7 @@ def seed_default_data(
 
         game = ensure_default_game(
             session,
-            group,
+            customer,
             config=config if ensure_func else None,
             config_name=spec["config_name"],
             config_description=spec["config_description"],
@@ -4854,7 +4854,7 @@ def seed_default_data(
                 spec.get("llm_strategy"),
             )
         else:
-            configure_human_players_for_game(session, group, game)
+            configure_human_players_for_game(session, customer, game)
 
         session.flush()
         session.commit()
@@ -4867,7 +4867,7 @@ def seed_default_data(
 
         naive_game = ensure_naive_unsupervised_game(
             session,
-            group,
+            customer,
             config,
             demand_pattern_override=spec["demand_pattern"],
             game_name=spec["naive_game_name"],
@@ -4880,7 +4880,7 @@ def seed_default_data(
 
         pid_game = ensure_pid_game(
             session,
-            group,
+            customer,
             config,
             demand_pattern_override=spec["demand_pattern"],
             game_name=spec["pid_game_name"],
@@ -4891,7 +4891,7 @@ def seed_default_data(
 
         trm_game = ensure_trm_game(
             session,
-            group,
+            customer,
             config,
             demand_pattern_override=spec["demand_pattern"],
             game_name=spec.get("trm_game_name", f"{TRM_AGENT_GAME_NAME} ({spec['config_name']})"),
@@ -4915,7 +4915,7 @@ def seed_default_data(
             for site_key, game_name, game_desc in hybrid_site_configs:
                 hybrid_game = ensure_hybrid_human_naive_game(
                     session,
-                    group,
+                    customer,
                     config,
                     game_name=game_name,
                     description=game_desc,
@@ -4953,32 +4953,32 @@ def seed_default_data(
         if options.create_autonomy_games and options.run_dataset and options.run_training:
             ensure_autonomy_games(
                 session,
-                group,
+                customer,
                 config,
                 artifacts,
                 recreate=options.reset_games,
                 name_suffix=spec["autonomy_suffix"],
             )
 
-    # Ensure the complex multi-region configuration exists under the Complex_SC group
+    # Ensure the complex multi-region configuration exists under the Complex_SC customer
     if include_complex:
         try:
-            complex_group, _ = ensure_group_with_admin(
+            complex_customer, _ = ensure_customer_with_admin(
                 session,
-                group_name=COMPLEX_GROUP_NAME,
+                customer_name=COMPLEX_CUSTOMER_NAME,
                 group_description=COMPLEX_GROUP_DESCRIPTION,
                 admin_username=COMPLEX_ADMIN_USERNAME,
                 admin_email=COMPLEX_ADMIN_EMAIL,
                 admin_full_name=COMPLEX_ADMIN_FULL_NAME,
                 password=DEFAULT_PASSWORD,
             )
-            ensure_role_users(session, complex_group)
+            ensure_role_users(session, complex_customer)
             # Temporarily disabled - requires migration to Product model
             try:
                 from backend.scripts.create_regional_sc_config import ensure_multi_region_config
                 config, created = ensure_multi_region_config(
                     session,
-                    group=complex_group,
+                    customer=complex_customer,
                     name=COMPLEX_SC_CONFIG_NAME,
                     description=COMPLEX_SC_DESCRIPTION,
                 )
@@ -4993,7 +4993,7 @@ def seed_default_data(
                 if created:
                     print(
                         f"[success] Created multi-region supply chain configuration '{COMPLEX_SC_CONFIG_NAME}' "
-                        f"for group '{complex_group.name}'."
+                        f"for customer '{complex_customer.name}'."
                     )
                 else:
                     print(
@@ -5016,7 +5016,7 @@ def seed_default_data(
 
                 human_game = ensure_human_game_for_config(
                     session,
-                    complex_group,
+                    complex_customer,
                     config,
                     game_name=COMPLEX_HUMAN_GAME_NAME,
                     description=COMPLEX_HUMAN_GAME_DESCRIPTION,
@@ -5026,7 +5026,7 @@ def seed_default_data(
 
                 complex_naive_game = ensure_naive_unsupervised_game(
                     session,
-                    complex_group,
+                    complex_customer,
                     config,
                     game_name=f"{NAIVE_AGENT_GAME_NAME} ({config.name})",
                 )
@@ -5035,7 +5035,7 @@ def seed_default_data(
 
                 complex_naive_type_game = ensure_naive_unsupervised_game(
                     session,
-                    complex_group,
+                    complex_customer,
                     config,
                     game_name=f"{NAIVE_AGENT_GAME_NAME} ({config.name}) - Node Types",
                 )
@@ -5044,7 +5044,7 @@ def seed_default_data(
 
                 complex_pid_game = ensure_pid_game(
                     session,
-                    complex_group,
+                    complex_customer,
                     config,
                     game_name=f"{PID_AGENT_GAME_NAME} ({config.name})",
                 )
@@ -5053,7 +5053,7 @@ def seed_default_data(
 
                 complex_pid_type_game = ensure_pid_game(
                     session,
-                    complex_group,
+                    complex_customer,
                     config,
                     game_name=f"{PID_AGENT_GAME_NAME} ({config.name}) - Node Types",
                 )
@@ -5062,7 +5062,7 @@ def seed_default_data(
 
                 complex_trm_game = ensure_trm_game(
                     session,
-                    complex_group,
+                    complex_customer,
                     config,
                     game_name=f"{TRM_AGENT_GAME_NAME} ({config.name})",
                 )
@@ -5071,7 +5071,7 @@ def seed_default_data(
 
                 complex_trm_type_game = ensure_trm_game(
                     session,
-                    complex_group,
+                    complex_customer,
                     config,
                     game_name=f"{TRM_AGENT_GAME_NAME} ({config.name}) - Node Types",
                 )
@@ -5082,7 +5082,7 @@ def seed_default_data(
                 if options.create_autonomy_games:
                     ensure_autonomy_games(
                         session,
-                        complex_group,
+                        complex_customer,
                         config,
                         complex_artifacts,
                         recreate=options.reset_games,
@@ -5228,7 +5228,7 @@ def main() -> None:
     try:
         SyncSessionLocal = session_factory_from_settings()
         run_seed_with_session(SyncSessionLocal, options)
-        print("[done] Default group, users, and scenarios are ready.")
+        print("[done] Default customer, users, and scenarios are ready.")
         if configured_label:
             print(f"[info] Data stored in: {configured_label}")
         return

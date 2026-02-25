@@ -2,7 +2,7 @@
 Powell Training Configuration API Endpoints
 
 Provides CRUD for Powell training configurations and training job management.
-Group administrators configure AI model training here.
+Customer administrators configure AI model training here.
 """
 
 from typing import List, Optional, Dict, Any
@@ -116,7 +116,7 @@ class PowellTrainingConfigUpdate(BaseModel):
 class PowellTrainingConfigResponse(BaseModel):
     """Response schema for Powell training configuration."""
     id: int
-    group_id: int
+    customer_id: int
     config_id: int
     name: str
     description: Optional[str]
@@ -245,19 +245,19 @@ async def list_trm_types():
 
 @router.get("/configs", response_model=List[PowellTrainingConfigResponse])
 async def list_powell_training_configs(
-    group_id: int,
+    customer_id: int,
     include_inactive: bool = False,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session)
 ):
     """
-    List all Powell training configurations for a group.
+    List all Powell training configurations for a customer.
     """
-    if current_user.group_id != group_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
+    if current_user.customer_id != customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     query = select(PowellTrainingConfig).where(
-        PowellTrainingConfig.group_id == group_id
+        PowellTrainingConfig.customer_id == customer_id
     )
     if not include_inactive:
         query = query.where(PowellTrainingConfig.is_active == True)
@@ -277,7 +277,7 @@ async def list_powell_training_configs(
 
         responses.append(PowellTrainingConfigResponse(
             id=config.id,
-            group_id=config.group_id,
+            customer_id=config.customer_id,
             config_id=config.config_id,
             name=config.name,
             description=config.description,
@@ -322,7 +322,7 @@ async def list_powell_training_configs(
 
 @router.post("/configs", response_model=PowellTrainingConfigResponse)
 async def create_powell_training_config(
-    group_id: int,
+    customer_id: int,
     config: PowellTrainingConfigCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session)
@@ -330,9 +330,9 @@ async def create_powell_training_config(
     """
     Create a new Powell training configuration.
 
-    Only Group Admin can create training configurations.
+    Only Customer Admin can create training configurations.
     """
-    if current_user.group_id != group_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
+    if current_user.customer_id != customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     # Verify hierarchy configs exist if specified
@@ -341,7 +341,7 @@ async def create_powell_training_config(
             select(PlanningHierarchyConfig).where(
                 and_(
                     PlanningHierarchyConfig.id == config.sop_hierarchy_config_id,
-                    PlanningHierarchyConfig.group_id == group_id
+                    PlanningHierarchyConfig.customer_id == customer_id
                 )
             )
         )
@@ -350,7 +350,7 @@ async def create_powell_training_config(
 
     # Create main config
     db_config = PowellTrainingConfig(
-        group_id=group_id,
+        customer_id=customer_id,
         config_id=config.config_id,
         name=config.name,
         description=config.description,
@@ -417,7 +417,7 @@ async def create_powell_training_config(
 
     return PowellTrainingConfigResponse(
         id=db_config.id,
-        group_id=db_config.group_id,
+        customer_id=db_config.customer_id,
         config_id=db_config.config_id,
         name=db_config.name,
         description=db_config.description,
@@ -485,7 +485,7 @@ async def start_training_run(
     if not config:
         raise HTTPException(status_code=404, detail="Configuration not found")
 
-    if current_user.group_id != config.group_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
+    if current_user.customer_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     # Create training run record
@@ -618,7 +618,7 @@ async def list_training_sites(
     if not config:
         raise HTTPException(status_code=404, detail="Configuration not found")
 
-    if current_user.group_id != config.group_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
+    if current_user.customer_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     # Get all site training configs for this powell config
@@ -689,7 +689,7 @@ async def train_site(
     if not config:
         raise HTTPException(status_code=404, detail="Configuration not found")
 
-    if current_user.group_id != config.group_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
+    if current_user.customer_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     from app.services.powell.powell_training_service import PowellTrainingService
@@ -726,7 +726,7 @@ async def train_all_sites(
     if not config:
         raise HTTPException(status_code=404, detail="Configuration not found")
 
-    if current_user.group_id != config.group_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
+    if current_user.customer_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     from app.services.powell.powell_training_service import PowellTrainingService
@@ -761,7 +761,7 @@ async def get_site_progress(
     if not config:
         raise HTTPException(status_code=404, detail="Configuration not found")
 
-    if current_user.group_id != config.group_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
+    if current_user.customer_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     # Get site training configs
@@ -914,7 +914,7 @@ async def generate_synthetic_trm_data(
     if not config:
         raise HTTPException(status_code=404, detail="Configuration not found")
 
-    if current_user.group_id != config.group_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
+    if current_user.customer_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     start_time = time.time()
@@ -923,7 +923,7 @@ async def generate_synthetic_trm_data(
         stats = await generate_data(
             db=db,
             config_id=config.config_id,
-            group_id=config.group_id,
+            customer_id=config.customer_id,
             num_days=request.num_days,
             num_orders_per_day=request.num_orders_per_day,
             num_decisions_per_day=request.num_decisions_per_day,
@@ -985,7 +985,7 @@ async def get_training_data_stats(
     if not config:
         raise HTTPException(status_code=404, detail="Configuration not found")
 
-    if current_user.group_id != config.group_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
+    if current_user.customer_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     # Count records
@@ -1000,7 +1000,7 @@ async def get_training_data_stats(
     ]:
         result = await db.execute(
             select(func.count(model.id)).where(
-                and_(model.group_id == config.group_id, model.config_id == config.config_id)
+                and_(model.customer_id == config.customer_id, model.config_id == config.config_id)
             )
         )
         stats[name] = result.scalar() or 0
@@ -1008,7 +1008,7 @@ async def get_training_data_stats(
     # Replay buffer
     result = await db.execute(
         select(func.count(TRMReplayBuffer.id)).where(
-            and_(TRMReplayBuffer.group_id == config.group_id, TRMReplayBuffer.config_id == config.config_id)
+            and_(TRMReplayBuffer.customer_id == config.customer_id, TRMReplayBuffer.config_id == config.config_id)
         )
     )
     stats["replay_buffer_entries"] = result.scalar() or 0
@@ -1017,7 +1017,7 @@ async def get_training_data_stats(
     result = await db.execute(
         select(func.count(TRMReplayBuffer.id)).where(
             and_(
-                TRMReplayBuffer.group_id == config.group_id,
+                TRMReplayBuffer.customer_id == config.customer_id,
                 TRMReplayBuffer.config_id == config.config_id,
                 TRMReplayBuffer.is_expert == True
             )
@@ -1060,7 +1060,7 @@ async def get_training_data_stats(
         result = await db.execute(
             select(func.count(TRMReplayBuffer.id)).where(
                 and_(
-                    TRMReplayBuffer.group_id == config.group_id,
+                    TRMReplayBuffer.customer_id == config.customer_id,
                     TRMReplayBuffer.config_id == config.config_id,
                     TRMReplayBuffer.trm_type == trm_type.value
                 )

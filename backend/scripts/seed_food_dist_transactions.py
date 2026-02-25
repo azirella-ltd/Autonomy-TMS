@@ -117,9 +117,9 @@ def get_config_and_data(db):
 def get_product_category(product):
     """Determine product category from product_group_id or name."""
     if product.product_group_id:
-        group_id = product.product_group_id.upper()
+        customer_id = product.product_group_id.upper()
         for cat in DEMAND_PATTERNS.keys():
-            if cat in group_id:
+            if cat in customer_id:
                 return cat
     # Fallback based on name
     name = (product.name or "").upper()

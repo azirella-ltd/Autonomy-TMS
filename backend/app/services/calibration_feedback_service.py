@@ -351,14 +351,14 @@ class CalibrationFeedbackService:
 
     async def recalibrate_all_stale(
         self,
-        group_id: int,
+        customer_id: int,
         max_age_hours: int = RECALIBRATION_INTERVAL_HOURS,
     ) -> List[int]:
         """
         Recalibrate all belief states that haven't been updated recently.
 
         Args:
-            group_id: Group ID to recalibrate
+            customer_id: Customer ID to recalibrate
             max_age_hours: Maximum hours since last recalibration
 
         Returns:
@@ -370,7 +370,7 @@ class CalibrationFeedbackService:
         result = await self.db.execute(
             select(PowellBeliefState)
             .where(
-                PowellBeliefState.group_id == group_id,
+                PowellBeliefState.customer_id == customer_id,
                 (PowellBeliefState.last_recalibration == None) |  # noqa: E711
                 (PowellBeliefState.last_recalibration < cutoff)
             )
@@ -385,22 +385,22 @@ class CalibrationFeedbackService:
             except Exception as e:
                 logger.error(f"Failed to recalibrate belief state {state.id}: {e}")
 
-        logger.info(f"Recalibrated {len(recalibrated_ids)} belief states for group {group_id}")
+        logger.info(f"Recalibrated {len(recalibrated_ids)} belief states for customer {customer_id}")
         return recalibrated_ids
 
     async def get_calibration_summary(
         self,
-        group_id: int,
+        customer_id: int,
         lookback_days: int = 7,
     ) -> Dict[str, Any]:
         """
-        Get calibration summary for a group.
+        Get calibration summary for a customer.
 
         Provides overall metrics on prediction quality across all
-        belief states in the group.
+        belief states for the customer.
 
         Args:
-            group_id: Group ID
+            customer_id: Customer ID
             lookback_days: Days to look back
 
         Returns:
@@ -408,12 +408,12 @@ class CalibrationFeedbackService:
         """
         cutoff = datetime.utcnow() - timedelta(days=lookback_days)
 
-        # Get all calibration logs for the group
+        # Get all calibration logs for the customer
         result = await self.db.execute(
             select(PowellCalibrationLog)
             .join(PowellBeliefState)
             .where(
-                PowellBeliefState.group_id == group_id,
+                PowellBeliefState.customer_id == customer_id,
                 PowellCalibrationLog.observed_at >= cutoff,
             )
         )
@@ -441,7 +441,7 @@ class CalibrationFeedbackService:
         drift_result = await self.db.execute(
             select(func.count(PowellBeliefState.id))
             .where(
-                PowellBeliefState.group_id == group_id,
+                PowellBeliefState.customer_id == customer_id,
                 PowellBeliefState.drift_detected == True,  # noqa: E712
             )
         )

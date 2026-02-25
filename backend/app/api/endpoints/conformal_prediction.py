@@ -852,19 +852,19 @@ def reduce_scenarios(
 _sop_planners: dict = {}
 
 
-def _get_sop_planner(group_id: int = 1):
-    """Get or create SOP planner for group"""
+def _get_sop_planner(customer_id: int = 1):
+    """Get or create SOP planner for customer"""
     from ...services.powell import RollingHorizonSOP
 
-    if group_id not in _sop_planners:
+    if customer_id not in _sop_planners:
         # Default configuration - would be loaded from DB in production
-        _sop_planners[group_id] = RollingHorizonSOP(
+        _sop_planners[customer_id] = RollingHorizonSOP(
             products=["PROD001", "PROD002"],
             sites=[1, 2],
             suppliers=["SUP001"],
             resources=["MACHINE1"],
         )
-    return _sop_planners[group_id]
+    return _sop_planners[customer_id]
 
 
 @router.post("/sop/initialize")
@@ -873,7 +873,7 @@ def initialize_sop_planner(
     sites: List[int],
     suppliers: List[str],
     resources: List[str],
-    group_id: int = 1,
+    customer_id: int = 1,
     db: Session = Depends(get_db),
 ):
     """
@@ -891,7 +891,7 @@ def initialize_sop_planner(
         cvar_alpha=0.95,
     )
 
-    _sop_planners[group_id] = RollingHorizonSOP(
+    _sop_planners[customer_id] = RollingHorizonSOP(
         products=products,
         sites=sites,
         suppliers=suppliers,
@@ -901,7 +901,7 @@ def initialize_sop_planner(
 
     return {
         "status": "initialized",
-        "group_id": group_id,
+        "customer_id": customer_id,
         "products": products,
         "sites": sites,
         "suppliers": suppliers,
@@ -912,7 +912,7 @@ def initialize_sop_planner(
 @router.post("/sop/run-cycle")
 def run_sop_cycle(
     request: SOPCycleRequest,
-    group_id: int = 1,
+    customer_id: int = 1,
     db: Session = Depends(get_db),
 ):
     """
@@ -928,7 +928,7 @@ def run_sop_cycle(
     """
     from datetime import datetime
 
-    planner = _get_sop_planner(group_id)
+    planner = _get_sop_planner(customer_id)
 
     # Parse date
     planning_date = datetime.strptime(request.planning_date, "%Y-%m-%d").date()
@@ -959,7 +959,7 @@ def run_sop_cycle(
 @router.post("/sop/observe-actuals")
 def observe_sop_actuals(
     request: ObserveActualsRequest,
-    group_id: int = 1,
+    customer_id: int = 1,
     db: Session = Depends(get_db),
 ):
     """
@@ -970,7 +970,7 @@ def observe_sop_actuals(
     """
     from datetime import datetime
 
-    planner = _get_sop_planner(group_id)
+    planner = _get_sop_planner(customer_id)
 
     observation_date = datetime.strptime(request.observation_date, "%Y-%m-%d").date()
 
@@ -1017,7 +1017,7 @@ def observe_sop_actuals(
 
 @router.get("/sop/performance")
 def get_sop_performance(
-    group_id: int = 1,
+    customer_id: int = 1,
     db: Session = Depends(get_db),
 ):
     """
@@ -1028,25 +1028,25 @@ def get_sop_performance(
     - Cost accuracy (how close were estimates to actuals?)
     - Learning progress (is the system improving?)
     """
-    planner = _get_sop_planner(group_id)
+    planner = _get_sop_planner(customer_id)
     return planner.get_performance_summary()
 
 
 @router.get("/sop/history")
 def get_sop_history(
-    group_id: int = 1,
+    customer_id: int = 1,
     db: Session = Depends(get_db),
 ):
     """
     Get history of all S&OP planning cycles.
     """
-    planner = _get_sop_planner(group_id)
+    planner = _get_sop_planner(customer_id)
     return {"cycles": planner.get_cycle_history()}
 
 
 @router.get("/sop/learning-progress")
 def get_sop_learning_progress(
-    group_id: int = 1,
+    customer_id: int = 1,
     db: Session = Depends(get_db),
 ):
     """
@@ -1055,13 +1055,13 @@ def get_sop_learning_progress(
     Compares early vs late cycle performance to see if the
     conformal learning loop is improving predictions.
     """
-    planner = _get_sop_planner(group_id)
+    planner = _get_sop_planner(customer_id)
     return planner.get_learning_progress()
 
 
 @router.post("/sop/reset")
 def reset_sop_planner(
-    group_id: int = 1,
+    customer_id: int = 1,
     db: Session = Depends(get_db),
 ):
     """
@@ -1069,10 +1069,10 @@ def reset_sop_planner(
 
     Clears all calibration data and cycle history.
     """
-    if group_id in _sop_planners:
-        _sop_planners[group_id].reset()
-        return {"status": "reset", "group_id": group_id}
-    return {"status": "not_found", "group_id": group_id}
+    if customer_id in _sop_planners:
+        _sop_planners[customer_id].reset()
+        return {"status": "reset", "customer_id": customer_id}
+    return {"status": "not_found", "customer_id": customer_id}
 
 
 # ============================================================================
@@ -1081,7 +1081,7 @@ def reset_sop_planner(
 
 @router.post("/demo/calibrate")
 def calibrate_demo_data(
-    group_id: int = 1,
+    customer_id: int = 1,
     db: Session = Depends(get_db),
 ):
     """
@@ -1149,7 +1149,7 @@ def calibrate_demo_data(
     joint_coverage = suite.compute_joint_coverage()
 
     # ── 2. Seed 2 past S&OP cycles ──────────────────────────────────────
-    planner = _get_sop_planner(group_id)
+    planner = _get_sop_planner(customer_id)
     planner.cycle_history.clear()
 
     today = date.today()

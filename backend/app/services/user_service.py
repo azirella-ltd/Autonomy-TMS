@@ -66,51 +66,51 @@ class UserService:
 
         return UserTypeEnum.USER
 
-    def _normalize_group_id(self, group_id: Optional[Any]) -> Optional[int]:
-        if group_id is None:
+    def _normalize_customer_id(self, customer_id: Optional[Any]) -> Optional[int]:
+        if customer_id is None:
             return None
-        if isinstance(group_id, str):
-            stripped = group_id.strip()
+        if isinstance(customer_id, str):
+            stripped = customer_id.strip()
             if not stripped:
                 return None
             if not stripped.isdigit():
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid group id",
+                    detail="Invalid customer id",
                 )
             return int(stripped)
-        if isinstance(group_id, int):
-            return group_id
+        if isinstance(customer_id, int):
+            return customer_id
         try:
-            return int(group_id)
+            return int(customer_id)
         except (TypeError, ValueError):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid group id",
+                detail="Invalid customer id",
             )
 
-    def _validate_group_assignment(
+    def _validate_customer_assignment(
         self,
-        group_id: Optional[Any],
+        customer_id: Optional[Any],
         user_type: UserTypeEnum,
-    ) -> (Optional[models.Group], Optional[int]):
-        normalized_group_id = self._normalize_group_id(group_id)
-        group: Optional[models.Group] = None
-        if normalized_group_id is not None:
-            group = self.db.query(models.Group).filter(models.Group.id == normalized_group_id).first()
-            if not group:
+    ) -> (Optional[models.Customer], Optional[int]):
+        normalized_customer_id = self._normalize_customer_id(customer_id)
+        customer: Optional[models.Customer] = None
+        if normalized_customer_id is not None:
+            customer = self.db.query(models.Customer).filter(models.Customer.id == normalized_customer_id).first()
+            if not customer:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Group not found",
+                    detail="Customer not found",
                 )
 
-        if user_type in {UserTypeEnum.USER, UserTypeEnum.GROUP_ADMIN} and group is None:
+        if user_type in {UserTypeEnum.USER, UserTypeEnum.GROUP_ADMIN} and customer is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="A group assignment is required for this user type",
+                detail="A customer assignment is required for this user type",
             )
 
-        return group, normalized_group_id
+        return customer, normalized_customer_id
 
     def _prepare_roles_for_type(
         self,
@@ -122,7 +122,7 @@ class UserService:
         return self._dedupe_roles(roles)
 
     def _is_group_admin_user(self, user: Optional[models.User]) -> bool:
-        if not user or not user.group_id:
+        if not user or not user.customer_id:
             return False
         return self._get_user_type(user) == UserTypeEnum.GROUP_ADMIN
 
@@ -136,12 +136,12 @@ class UserService:
 
     def _find_group_admins(
         self,
-        group_id: Optional[int],
+        customer_id: Optional[int],
         exclude_user_id: Optional[int] = None,
     ) -> List[models.User]:
-        if not group_id:
+        if not customer_id:
             return []
-        query = self.db.query(models.User).filter(models.User.group_id == group_id)
+        query = self.db.query(models.User).filter(models.User.customer_id == customer_id)
         if exclude_user_id is not None:
             query = query.filter(models.User.id != exclude_user_id)
         users = query.all()
@@ -157,37 +157,37 @@ class UserService:
     def _cleanup_group_admin_on_delete(self, user: models.User) -> Dict[str, Any]:
         if not self._is_group_admin_user(user):
             return {
-                "group_deleted": False,
-                "group_id": user.group_id,
-                "group_name": None,
+                "customer_deleted": False,
+                "customer_id": user.customer_id,
+                "customer_name": None,
             }
 
-        group = self.db.query(models.Group).filter(models.Group.id == user.group_id).first()
-        if not group:
+        customer = self.db.query(models.Customer).filter(models.Customer.id == user.customer_id).first()
+        if not customer:
             return {
-                "group_deleted": False,
-                "group_id": user.group_id,
-                "group_name": None,
+                "customer_deleted": False,
+                "customer_id": user.customer_id,
+                "customer_name": None,
             }
 
-        other_admins = self._find_group_admins(group.id, exclude_user_id=user.id)
+        other_admins = self._find_group_admins(customer.id, exclude_user_id=user.id)
         if not other_admins:
-            group_name = group.name
-            self.db.delete(group)
+            customer_name = customer.name
+            self.db.delete(customer)
             return {
-                "group_deleted": True,
-                "group_id": group.id,
-                "group_name": group_name,
+                "customer_deleted": True,
+                "customer_id": customer.id,
+                "customer_name": customer_name,
             }
 
-        if group.admin_id == user.id:
-            group.admin_id = other_admins[0].id
-            self.db.add(group)
+        if customer.admin_id == user.id:
+            customer.admin_id = other_admins[0].id
+            self.db.add(customer)
 
         return {
-            "group_deleted": False,
-            "group_id": group.id,
-            "group_name": group.name,
+            "customer_deleted": False,
+            "customer_id": customer.id,
+            "customer_name": customer.name,
         }
 
     # ------------------------------------------------------------------
@@ -211,18 +211,18 @@ class UserService:
     def get_users(self, skip: int = 0, limit: int = 100) -> List[models.User]:
         return self.db.query(models.User).offset(skip).limit(limit).all()
 
-    def list_group_players(
+    def list_customer_users(
         self,
-        group_id: Optional[int],
+        customer_id: Optional[int],
         skip: int = 0,
         limit: Optional[int] = 100,
     ) -> List[models.User]:
-        if not group_id:
+        if not customer_id:
             return []
 
         query = (
             self.db.query(models.User)
-            .filter(models.User.group_id == group_id)
+            .filter(models.User.customer_id == customer_id)
             .order_by(models.User.username.asc())
         )
         users = query.all()
@@ -263,7 +263,7 @@ class UserService:
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Group admins can only view users",
                 )
-            return self.list_group_players(current_user.group_id, skip=skip, limit=limit)
+            return self.list_customer_users(current_user.customer_id, skip=skip, limit=limit)
 
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -323,19 +323,19 @@ class UserService:
                     detail="System administrators can only create group admin users",
                 )
 
-            group, normalized_group_id = self._validate_group_assignment(user.group_id, desired_type)
+            customer, normalized_customer_id = self._validate_customer_assignment(user.customer_id, desired_type)
             is_superuser_flag = False
         else:
-            if not current_user or not current_user.group_id:
+            if not current_user or not current_user.customer_id:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Group admins must belong to a group",
+                    detail="Group admins must belong to a customer",
                 )
 
-            if user.group_id is not None and user.group_id != current_user.group_id:
+            if user.customer_id is not None and user.customer_id != current_user.customer_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Group admins can only assign users to their own group",
+                    detail="Group admins can only assign users to their own customer",
                 )
 
             if user.user_type and self._normalize_type(user.user_type) != UserTypeEnum.USER:
@@ -351,7 +351,7 @@ class UserService:
                 )
 
             desired_type = UserTypeEnum.USER
-            group, normalized_group_id = self._validate_group_assignment(current_user.group_id, desired_type)
+            customer, normalized_customer_id = self._validate_customer_assignment(current_user.customer_id, desired_type)
             is_superuser_flag = False
 
         db_user = models.User(
@@ -361,7 +361,7 @@ class UserService:
             full_name=user.full_name,
             is_active=True,
             is_superuser=is_superuser_flag,
-            group_id=normalized_group_id,
+            customer_id=normalized_customer_id,
             user_type=desired_type,
         )
 
@@ -369,9 +369,9 @@ class UserService:
             self.db.add(db_user)
             self.db.flush()
 
-            if desired_type == UserTypeEnum.GROUP_ADMIN and group and (group.admin_id is None):
-                group.admin_id = db_user.id
-                self.db.add(group)
+            if desired_type == UserTypeEnum.GROUP_ADMIN and customer and (customer.admin_id is None):
+                customer.admin_id = db_user.id
+                self.db.add(customer)
 
             self.db.commit()
             self.db.refresh(db_user)
@@ -400,7 +400,7 @@ class UserService:
             and not acting_is_superuser
             and user_id != current_user.id
             and target_type == UserTypeEnum.USER
-            and db_user.group_id == current_user.group_id
+            and db_user.customer_id == current_user.customer_id
         )
 
         if (
@@ -414,10 +414,10 @@ class UserService:
             )
 
         if is_group_admin_managing_player:
-            if user_update.group_id is not None and user_update.group_id != current_user.group_id:
+            if user_update.customer_id is not None and user_update.customer_id != current_user.customer_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Group admins cannot change a scenario_user's group",
+                    detail="Group admins cannot change a scenario_user's customer",
                 )
 
             if user_update.user_type and self._normalize_type(user_update.user_type) != UserTypeEnum.USER:
@@ -503,8 +503,8 @@ class UserService:
                     detail="System administrators cannot change activation status for group admins",
                 )
 
-            if user_update.group_id is not None:
-                self._validate_group_assignment(user_update.group_id, UserTypeEnum.GROUP_ADMIN)
+            if user_update.customer_id is not None:
+                self._validate_customer_assignment(user_update.customer_id, UserTypeEnum.GROUP_ADMIN)
 
         if user_update.email is not None:
             existing = self.get_user_by_email(user_update.email)
@@ -530,13 +530,13 @@ class UserService:
         if user_update.is_active is not None and acting_is_superuser:
             db_user.is_active = user_update.is_active
 
-        previous_group_id = db_user.group_id
+        previous_customer_id = db_user.customer_id
         previous_type = target_type
 
-        proposed_group_id = (
-            user_update.group_id
-            if user_update.group_id is not None
-            else db_user.group_id
+        proposed_customer_id = (
+            user_update.customer_id
+            if user_update.customer_id is not None
+            else db_user.customer_id
         )
 
         desired_type = self._resolve_user_type(
@@ -549,13 +549,13 @@ class UserService:
             ),
         )
 
-        group, normalized_group_id = self._validate_group_assignment(proposed_group_id, desired_type)
+        customer, normalized_customer_id = self._validate_customer_assignment(proposed_customer_id, desired_type)
 
         if not acting_is_superuser:
-            if normalized_group_id != previous_group_id:
+            if normalized_customer_id != previous_customer_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Not enough permissions to change group",
+                    detail="Not enough permissions to change customer",
                 )
 
             if desired_type != previous_type:
@@ -570,32 +570,32 @@ class UserService:
                     detail="Not enough permissions to change system privileges",
                 )
 
-        # Prevent removing the last group admin from a group via update
+        # Prevent removing the last group admin from a customer via update
         if previous_type == UserTypeEnum.GROUP_ADMIN:
-            changing_group = normalized_group_id != previous_group_id
+            changing_customer = normalized_customer_id != previous_customer_id
             losing_admin_role = desired_type != UserTypeEnum.GROUP_ADMIN
-            if changing_group or losing_admin_role:
-                other_admins = self._find_group_admins(previous_group_id, exclude_user_id=db_user.id)
+            if changing_customer or losing_admin_role:
+                other_admins = self._find_group_admins(previous_customer_id, exclude_user_id=db_user.id)
                 if not other_admins:
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Cannot remove the last group admin from the group. Assign another group admin or delete the group first.",
+                        detail="Cannot remove the last group admin from the customer. Assign another group admin or delete the customer first.",
                     )
-                previous_group = self.db.query(models.Group).filter(models.Group.id == previous_group_id).first()
-                if previous_group and previous_group.admin_id == db_user.id:
-                    previous_group.admin_id = other_admins[0].id
-                    self.db.add(previous_group)
+                previous_customer = self.db.query(models.Customer).filter(models.Customer.id == previous_customer_id).first()
+                if previous_customer and previous_customer.admin_id == db_user.id:
+                    previous_customer.admin_id = other_admins[0].id
+                    self.db.add(previous_customer)
 
-        db_user.group_id = normalized_group_id
+        db_user.customer_id = normalized_customer_id
         db_user.user_type = desired_type
         db_user.is_superuser = desired_type == UserTypeEnum.SYSTEM_ADMIN
 
         if user_update.password:
             db_user.hashed_password = get_password_hash(user_update.password)
 
-        if desired_type == UserTypeEnum.GROUP_ADMIN and group and (group.admin_id is None or group.admin_id == db_user.id):
-            group.admin_id = db_user.id
-            self.db.add(group)
+        if desired_type == UserTypeEnum.GROUP_ADMIN and customer and (customer.admin_id is None or customer.admin_id == db_user.id):
+            customer.admin_id = db_user.id
+            self.db.add(customer)
 
         try:
             self.db.commit()
@@ -632,7 +632,7 @@ class UserService:
             and not acting_is_superuser
             and user_id != current_user.id
             and user_type == UserTypeEnum.USER
-            and db_user.group_id == current_user.group_id
+            and db_user.customer_id == current_user.customer_id
         )
 
         if (
@@ -682,8 +682,8 @@ class UserService:
                                         "id": candidate.id,
                                         "username": candidate.username,
                                         "email": candidate.email,
-                                        "group_id": candidate.group_id,
-                                        "group_name": candidate.group.name if candidate.group else None,
+                                        "customer_id": candidate.customer_id,
+                                        "customer_name": candidate.customer.name if candidate.customer else None,
                                     }
                                     for candidate in candidates
                                 ],
@@ -707,14 +707,14 @@ class UserService:
                     self.db.add(replacement_user)
                     promoted_user = replacement_user
 
-            group_cleanup = self._cleanup_group_admin_on_delete(db_user)
+            customer_cleanup = self._cleanup_group_admin_on_delete(db_user)
 
-            if not group_cleanup.get("group_deleted"):
+            if not customer_cleanup.get("customer_deleted"):
                 self.db.delete(db_user)
             self.db.commit()
 
             response: Dict[str, Any] = {"message": "User deleted successfully"}
-            response.update(group_cleanup)
+            response.update(customer_cleanup)
             if promoted_user:
                 response["replacement_promoted"] = {
                     "id": promoted_user.id,

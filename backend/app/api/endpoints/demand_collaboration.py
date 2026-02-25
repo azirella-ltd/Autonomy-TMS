@@ -142,7 +142,7 @@ async def create_demand_collaboration(
     collaboration: DemandCollaborationCreate
 ):
     """Create demand collaboration record"""
-    company_id = current_user.group_id
+    company_id = current_user.customer_id
 
     # Calculate variance if baseline provided
     variance = None
@@ -193,7 +193,7 @@ async def bulk_create_demand_collaboration(
     collaborations: List[DemandCollaborationCreate]
 ):
     """Bulk create demand collaboration records"""
-    company_id = current_user.group_id
+    company_id = current_user.customer_id
     created_count = 0
 
     for collaboration in collaborations:

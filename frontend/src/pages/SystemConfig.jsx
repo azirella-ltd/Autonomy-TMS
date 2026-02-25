@@ -52,7 +52,7 @@ const SystemConfig = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isGroupAdmin = isGroupAdminUser(user);
-  const scConfigBasePath = isGroupAdmin ? '/admin/group/supply-chain-configs' : '/supply-chain-config';
+  const scConfigBasePath = isGroupAdmin ? '/admin/customer/supply-chain-configs' : '/supply-chain-config';
 
   useEffect(() => {
     let active = true;

@@ -14,7 +14,7 @@ from sqlalchemy import select, delete
 
 from app.db.session import async_session_factory
 from app.models.supply_chain_config import SupplyChainConfig
-from app.models.group import Group
+from app.models.customer import Customer
 from app.models.scenario import Scenario
 from app.models.aws_sc_planning import ProductionCapacity, InboundOrderLine
 from app.services.sc_planning.simulation_execution_adapter import SimulationExecutionAdapter
@@ -36,17 +36,17 @@ async def test_capacity_integration():
         )
         config = result.scalar_one_or_none()
 
-        result = await db.execute(select(Group).filter(Group.id == 2))
-        group = result.scalar_one_or_none()
+        result = await db.execute(select(Customer).filter(Customer.id == 2))
+        customer = result.scalar_one_or_none()
 
-        if not config or not group:
-            print("❌ Config or group not found")
+        if not config or not customer:
+            print("❌ Config or customer not found")
             return False
 
         # Create scenario with capacity enabled
         scenario = Scenario(
             name="Capacity Integration Test",
-            group_id=group.id,
+            customer_id=customer.id,
             supply_chain_config_id=config.id,
             use_aws_sc_planning=True,
             max_rounds=10,
@@ -67,7 +67,7 @@ async def test_capacity_integration():
 
         # Setup: Clean up any existing capacity constraints first
         await db.execute(delete(ProductionCapacity).filter(
-            ProductionCapacity.group_id == group.id,
+            ProductionCapacity.customer_id == customer.id,
             ProductionCapacity.config_id == config.id
         ))
         await db.commit()
@@ -88,7 +88,7 @@ async def test_capacity_integration():
                     capacity_type='production',
                     capacity_period='week',
                     allow_overflow=False,
-                    group_id=group.id,
+                    customer_id=customer.id,
                     config_id=config.id
                 )
                 capacities.append(capacity)
@@ -173,7 +173,7 @@ async def test_capacity_integration():
         # Check capacity before reset
         result_before = await db.execute(
             select(ProductionCapacity).filter(
-                ProductionCapacity.group_id == group.id,
+                ProductionCapacity.customer_id == customer.id,
                 ProductionCapacity.config_id == config.id
             )
         )
@@ -189,7 +189,7 @@ async def test_capacity_integration():
         # Check capacity after reset
         result_after = await db.execute(
             select(ProductionCapacity).filter(
-                ProductionCapacity.group_id == group.id,
+                ProductionCapacity.customer_id == customer.id,
                 ProductionCapacity.config_id == config.id
             )
         )
@@ -209,7 +209,7 @@ async def test_capacity_integration():
         print("Cleanup:")
         await db.execute(delete(InboundOrderLine).filter(InboundOrderLine.scenario_id == scenario.id))
         await db.execute(delete(ProductionCapacity).filter(
-            ProductionCapacity.group_id == group.id,
+            ProductionCapacity.customer_id == customer.id,
             ProductionCapacity.config_id == config.id
         ))
         await db.delete(scenario)

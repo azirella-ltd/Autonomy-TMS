@@ -10,7 +10,7 @@ are defined in sc_entities.py (canonical source).
 This file contains: ProductionCapacity, OrderAggregationPolicy,
 AggregatedOrder, SourcingSchedule, SourcingScheduleDetails.
 
-Updated 2026-01-11: Added group_id foreign keys for multi-tenancy support.
+Updated 2026-01-11: Added customer_id foreign keys for multi-tenancy support.
 """
 
 from sqlalchemy import (
@@ -72,7 +72,7 @@ class ProductionCapacity(Base):
     overflow_cost_multiplier = Column(Double, default=1.5)  # Cost multiplier for overflow
 
     # Multi-tenancy and time range
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"))
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
     effective_start_date = Column(Date)
     effective_end_date = Column(Date)
@@ -86,7 +86,7 @@ class ProductionCapacity(Base):
 
     __table_args__ = (
         Index('idx_capacity_site_product', 'site_id', 'product_id'),
-        Index('idx_capacity_group_config', 'group_id', 'config_id'),
+        Index('idx_capacity_customer_config', 'customer_id', 'config_id'),
         Index('idx_capacity_config', 'config_id'),
         Index('idx_capacity_type', 'capacity_type'),
     )
@@ -145,7 +145,7 @@ class OrderAggregationPolicy(Base):
     priority = Column(Integer, default=100)  # Higher priority policies evaluated first
 
     # Multi-tenancy
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"))
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
 
     # Effective date range
@@ -159,7 +159,7 @@ class OrderAggregationPolicy(Base):
     __table_args__ = (
         Index('idx_agg_policy_sites', 'from_site_id', 'to_site_id'),
         Index('idx_agg_policy_product', 'product_id'),
-        Index('idx_agg_policy_group_config', 'group_id', 'config_id'),
+        Index('idx_agg_policy_customer_config', 'customer_id', 'config_id'),
         Index('idx_agg_policy_active', 'is_active'),
     )
 
@@ -209,7 +209,7 @@ class AggregatedOrder(Base):
     status = Column(String(20), default='pending')  # pending, placed, fulfilled
 
     # Multi-tenancy
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"))
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
 
     # Timestamps
@@ -248,14 +248,14 @@ class SourcingSchedule(Base):
     is_active = Column(String(10), server_default='true')
     eff_start_date = Column(DateTime, server_default='1900-01-01 00:00:00')
     eff_end_date = Column(DateTime, server_default='9999-12-31 23:59:59')
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"))
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
     created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
     updated_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"), onupdate=text("CURRENT_TIMESTAMP"))
 
     __table_args__ = (
         Index('idx_sourcing_schedule_site', 'to_site_id'),
-        Index('idx_sourcing_schedule_group_config', 'group_id', 'config_id'),
+        Index('idx_sourcing_schedule_customer_config', 'customer_id', 'config_id'),
         Index('idx_sourcing_schedule_config', 'config_id'),
     )
 
@@ -293,7 +293,7 @@ class SourcingScheduleDetails(Base):
     is_active = Column(String(10), server_default='true')
     eff_start_date = Column(DateTime, server_default='1900-01-01 00:00:00')
     eff_end_date = Column(DateTime, server_default='9999-12-31 23:59:59')
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"))
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
     created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
     updated_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"), onupdate=text("CURRENT_TIMESTAMP"))
@@ -301,6 +301,6 @@ class SourcingScheduleDetails(Base):
     __table_args__ = (
         Index('idx_sourcing_schedule_details_schedule', 'sourcing_schedule_id'),
         Index('idx_sourcing_schedule_details_product', 'product_id'),
-        Index('idx_sourcing_schedule_details_group_config', 'group_id', 'config_id'),
+        Index('idx_sourcing_schedule_details_customer_config', 'customer_id', 'config_id'),
         Index('idx_sourcing_schedule_details_config', 'config_id'),
     )

@@ -241,7 +241,7 @@ async def train_stress(
         site_id=site["site_id"],
         site_name=site["site_name"],
         master_type=site["master_type"],
-        group_id=1,
+        customer_id=1,
         config_id=config_id,
         device=device,
         checkpoint_dir=output_dir,

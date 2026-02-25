@@ -745,7 +745,7 @@ export const NAVIGATION_CONFIG = [
   },
 
   // ============================================================================
-  // ADMINISTRATION (Group Admin)
+  // ADMINISTRATION (Customer Admin)
   // ============================================================================
   {
     section: 'Administration',
@@ -757,18 +757,18 @@ export const NAVIGATION_CONFIG = [
         path: '/admin/users',
         icon: PeopleIcon,
         requiredCapability: 'view_users',
-        description: 'Manage users in your group',
+        description: 'Manage users in your organization',
       },
       {
         label: 'Role Management',
         path: '/admin/role-management',
         icon: AdminIcon,
         requiredCapability: 'manage_roles',
-        description: 'Configure roles and permissions (Group Admin)',
+        description: 'Configure roles and permissions',
       },
       {
         label: 'Supply Chain Configs',
-        path: '/admin/group/supply-chain-configs',
+        path: '/admin/customer/supply-chain-configs',
         icon: NetworkIcon,
         requiredCapability: 'view_sc_configs',
       },
@@ -854,10 +854,10 @@ export const SYSTEM_ADMIN_NAVIGATION = [
         icon: DashboardIcon,
       },
       {
-        label: 'Groups',
-        path: '/admin/groups',
+        label: 'Customers',
+        path: '/admin/customers',
         icon: AdminIcon,
-        description: 'Manage all groups (System Admin only)',
+        description: 'Manage all customers (System Admin only)',
       },
       {
         label: 'System Users',
@@ -963,7 +963,7 @@ export const SYSTEM_ADMIN_NAVIGATION = [
 /**
  * Learning Mode Navigation (Simplified)
  *
- * For Learning groups - focused on scenario-based learning and AI familiarization.
+ * For Learning customers - focused on scenario-based learning and AI familiarization.
  * Simplified navigation with only essential simulation features.
  *
  * NOTE: This is for user education, not AI model training.
@@ -1064,7 +1064,7 @@ export const LEARNING_NAVIGATION = [
       },
       {
         label: 'Scenario Configurations',
-        path: '/admin/group/supply-chain-configs',
+        path: '/admin/customer/supply-chain-configs',
         icon: NetworkIcon,
         requiredCapability: 'view_sc_configs',
         description: 'Configure learning scenarios',
@@ -1074,27 +1074,30 @@ export const LEARNING_NAVIGATION = [
 ];
 
 /**
- * Group mode types
+ * Customer mode types
  *
  * NOTE: "LEARNING" is for user education (understanding AI agents).
  * This is separate from "AI Model Training" (TRM/GNN/RL training)
- * which can happen in BOTH Learning and Production groups.
+ * which can happen in BOTH Learning and Production customers.
  */
-export const GROUP_MODES = {
+export const CUSTOMER_MODES = {
   LEARNING: 'learning',      // User education mode
   PRODUCTION: 'production',  // Real data, real planning
 };
 
+// Backward-compatible alias
+export const GROUP_MODES = CUSTOMER_MODES;
+
 /**
- * Get filtered navigation based on user capabilities and group mode
+ * Get filtered navigation based on user capabilities and customer mode
  *
  * @param {Function} hasCapability - Function to check if user has capability
  * @param {boolean} isSystemAdmin - Whether user is system admin
- * @param {boolean} isGroupAdmin - Whether user is group admin
- * @param {string} groupMode - Group mode: 'learning' or 'production' (default: 'production')
+ * @param {boolean} isGroupAdmin - Whether user is customer admin (GROUP_ADMIN type)
+ * @param {string} customerMode - Customer mode: 'learning' or 'production' (default: 'production')
  * @returns {Array} Filtered navigation sections with enabled/disabled state
  */
-export function getFilteredNavigation(hasCapability, isSystemAdmin, isGroupAdmin, groupMode = 'production') {
+export function getFilteredNavigation(hasCapability, isSystemAdmin, isGroupAdmin, customerMode = 'production') {
   // System admins get special navigation
   if (isSystemAdmin) {
     return SYSTEM_ADMIN_NAVIGATION.map(section => ({
@@ -1107,14 +1110,14 @@ export function getFilteredNavigation(hasCapability, isSystemAdmin, isGroupAdmin
     }));
   }
 
-  // Learning groups get simplified navigation (user education mode)
+  // Learning customers get simplified navigation (user education mode)
   // For admin sections, show if user is GROUP_ADMIN OR has any admin capability
-  const hasAdminCapability = hasCapability('view_groups') ||
+  const hasAdminCapability = hasCapability('view_customers') ||
     hasCapability('view_users') ||
     hasCapability('view_sc_configs') ||
     hasCapability('manage_roles');
 
-  if (groupMode === GROUP_MODES.LEARNING) {
+  if (customerMode === CUSTOMER_MODES.LEARNING) {
     return LEARNING_NAVIGATION
       .filter(section => {
         if (section.adminOnly && !isGroupAdmin && !hasAdminCapability) {

@@ -1,7 +1,7 @@
 /**
- * Production Group Administrator Dashboard
+ * Production Customer Administrator Dashboard
  *
- * Tailored for production group admins - focused on configuration and operations
+ * Tailored for production customer admins - focused on configuration and operations
  * rather than game-centric learning mode features.
  *
  * Tabs:
@@ -16,9 +16,9 @@ import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { isSystemAdmin as isSystemAdminUser } from '../../utils/authUtils';
 import { saveAdminDashboardPath } from '../../utils/adminDashboardState';
-import GroupSupplyChainConfigList from './GroupSupplyChainConfigList';
-import GroupPlayerManagement from './UserManagement';
-import GroupSettingsPanel from './GroupSettingsPanel';
+import CustomerSupplyChainConfigList from './CustomerSupplyChainConfigList';
+import CustomerAdminUserManagement from './UserManagement';
+import CustomerSettingsPanel from './CustomerSettingsPanel';
 import { getSupplyChainConfigs } from '../../services/supplyChainConfigService';
 import {
   Card,
@@ -67,10 +67,10 @@ const ProductionAdminDashboard = () => {
   );
   const [selectedSupplyChainId, setSelectedSupplyChainId] = useState(initialScParam);
 
-  const groupId = useMemo(() => {
-    const rawGroup = user?.group_id;
-    if (rawGroup == null) return null;
-    const parsed = Number(rawGroup);
+  const customerId = useMemo(() => {
+    const rawCustomer = user?.customer_id;
+    if (rawCustomer == null) return null;
+    const parsed = Number(rawCustomer);
     return Number.isFinite(parsed) ? parsed : null;
   }, [user]);
 
@@ -79,8 +79,8 @@ const ProductionAdminDashboard = () => {
   const [supplyChainsLoading, setSupplyChainsLoading] = useState(true);
   const [selectedConfig, setSelectedConfig] = useState(null);
 
-  // Group info state
-  const [groupInfo, setGroupInfo] = useState(null);
+  // Customer info state
+  const [customerInfo, setCustomerInfo] = useState(null);
 
   useEffect(() => {
     const section = searchParams.get('section') || 'sc';
@@ -162,19 +162,19 @@ const ProductionAdminDashboard = () => {
     refreshSupplyChains();
   }, [refreshSupplyChains]);
 
-  // Load group info
+  // Load customer info
   useEffect(() => {
-    const loadGroupInfo = async () => {
-      if (!groupId) return;
+    const loadCustomerInfo = async () => {
+      if (!customerId) return;
       try {
-        const response = await api.get(`/groups/${groupId}`);
-        setGroupInfo(response.data);
+        const response = await api.get(`/groups/${customerId}`);
+        setCustomerInfo(response.data);
       } catch (err) {
-        console.warn('Failed to load group info', err);
+        console.warn('Failed to load customer info', err);
       }
     };
-    loadGroupInfo();
-  }, [groupId]);
+    loadCustomerInfo();
+  }, [customerId]);
 
   // Supply chain options for dropdown
   const supplyChainOptions = useMemo(() => {
@@ -240,7 +240,7 @@ const ProductionAdminDashboard = () => {
           <div className="flex flex-col gap-4 mb-4">
             <div>
               <h1 className="text-2xl font-bold mb-1">
-                {groupInfo?.name || 'Group'} Administration
+                {customerInfo?.name || 'Customer'} Administration
               </h1>
               <p className="text-sm text-muted-foreground">
                 Configure supply chain networks, manage scenarios and users, and adjust planning settings for your organization.
@@ -289,7 +289,7 @@ const ProductionAdminDashboard = () => {
 
       <div>
         {/* Supply Chains Tab */}
-        {activeTab === 'sc' && <GroupSupplyChainConfigList />}
+        {activeTab === 'sc' && <CustomerSupplyChainConfigList />}
 
         {/* Scenarios Tab - Git-like tree view */}
         {activeTab === 'scenarios' && (
@@ -320,7 +320,7 @@ const ProductionAdminDashboard = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => navigate(`/admin/group/supply-chain-configs/${selectedConfig.id}/scenarios`)}
+                      onClick={() => navigate(`/admin/customer/supply-chain-configs/${selectedConfig.id}/scenarios`)}
                     >
                       Open Full Tree Manager
                       <ChevronRight className="h-4 w-4 ml-1" />
@@ -344,15 +344,15 @@ const ProductionAdminDashboard = () => {
         )}
 
         {/* Users Tab */}
-        {activeTab === 'users' && <GroupPlayerManagement />}
+        {activeTab === 'users' && <CustomerAdminUserManagement />}
 
         {/* Settings Tab */}
         {activeTab === 'settings' && (
-          <GroupSettingsPanel
-            groupId={groupId}
-            groupInfo={groupInfo}
+          <CustomerSettingsPanel
+            groupId={customerId}
+            groupInfo={customerInfo}
             selectedConfigId={selectedConfig?.id}
-            onGroupInfoChange={setGroupInfo}
+            onGroupInfoChange={setCustomerInfo}
           />
         )}
       </div>

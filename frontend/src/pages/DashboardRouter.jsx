@@ -7,11 +7,11 @@
  * - powell_role (stored on user) → Determines landing page (FIXED)
  * - capabilities (via RBAC roles) → Determines what user can do (CUSTOMIZABLE)
  *
- * This separation allows group admins to customize a user's capabilities
+ * This separation allows customer admins to customize a user's capabilities
  * while maintaining consistent navigation patterns for each role.
  *
  * Routing Priority:
- * 1. SYSTEM_ADMIN always → /admin/groups
+ * 1. SYSTEM_ADMIN always → /admin/customers
  * 2. Powell role checked FIRST for all other users (from user.powell_role field)
  * 3. Falls back to user_type based routing if no Powell role
  *
@@ -28,8 +28,8 @@
  * - DEMO_ALL: → /executive-dashboard (has all capabilities for demos)
  *
  * Fallback Routing (user_type based, if no Powell role):
- * - GROUP_ADMIN (Learning Group): → /admin (Learning Home - game-centric training dashboard)
- * - GROUP_ADMIN (Production Group): → /admin/production (Configuration-focused dashboard)
+ * - GROUP_ADMIN (Learning Customer): → /admin (Learning Home - game-centric training dashboard)
+ * - GROUP_ADMIN (Production Customer): → /admin/production (Configuration-focused dashboard)
  *   Features: Supply Chains, Scenarios (tree), Users, Settings (hierarchies, data sources, CDC)
  * - USER: → Active game or /scenarios/play
  *
@@ -73,7 +73,7 @@ const getPowellRoleFromAPI = async () => {
  * Get landing page for Powell role
  *
  * Powell role determines the fixed landing page regardless of capabilities.
- * This allows group admins to customize user capabilities while maintaining
+ * This allows customer admins to customize user capabilities while maintaining
  * consistent navigation patterns for each role.
  */
 const getPowellLandingPage = (powellRole) => {
@@ -103,15 +103,15 @@ const DashboardRouter = () => {
     const handleRedirect = async () => {
       if (!user) return;
 
-      // SYSTEM_ADMIN: Always go to Group Management (skip Powell check)
+      // SYSTEM_ADMIN: Always go to Customer Management (skip Powell check)
       if (user.user_type === 'SYSTEM_ADMIN') {
-        navigate('/admin/groups', { replace: true });
+        navigate('/admin/customers', { replace: true });
         return;
       }
 
       // Check Powell role FIRST for ALL non-system users (USER, GROUP_ADMIN, etc.)
       // Powell role is stored on user record - determines landing page (fixed)
-      // Capabilities determine what user can do (customizable by group admin)
+      // Capabilities determine what user can do (customizable by customer admin)
       const { powellRole } = await getPowellRoleFromAPI();
       const powellLanding = getPowellLandingPage(powellRole);
 
@@ -142,26 +142,26 @@ const DashboardRouter = () => {
         return;
       }
 
-      // GROUP_ADMIN without Powell role: Route based on group mode
+      // GROUP_ADMIN without Powell role: Route based on customer mode
       if (user.user_type === 'GROUP_ADMIN') {
         try {
-          if (user.group_id) {
-            const response = await api.get(`/groups/${user.group_id}`);
-            const group = response.data;
+          if (user.customer_id) {
+            const response = await api.get(`/customers/${user.customer_id}`);
+            const customer = response.data;
 
-            if (group.mode === 'learning') {
-              // Learning groups go to Learning Home (training-focused admin dashboard)
+            if (customer.mode === 'learning') {
+              // Learning customers go to Learning Home (training-focused admin dashboard)
               navigate('/admin', { replace: true });
             } else {
-              // Production groups go to Production Admin Dashboard (configuration-focused)
+              // Production customers go to Production Admin Dashboard (configuration-focused)
               navigate('/admin/production', { replace: true });
             }
           } else {
-            // No group assigned, default to production admin
+            // No customer assigned, default to production admin
             navigate('/admin/production', { replace: true });
           }
         } catch (err) {
-          console.error('Failed to fetch group info:', err);
+          console.error('Failed to fetch customer info:', err);
           // Default to production admin on error
           navigate('/admin/production', { replace: true });
         }

@@ -91,7 +91,7 @@ const GroupGameSupervisionPanel = ({
       if (!game) return false;
 
       if (normalizedGroupId != null) {
-        const targetGroup = game.group_id ?? game?.config?.group_id ?? null;
+        const targetGroup = game.customer_id ?? game?.config?.customer_id ?? null;
         if (targetGroup != null) {
           if (Number(targetGroup) !== normalizedGroupId) {
             return false;
@@ -580,9 +580,9 @@ const GroupGameSupervisionPanel = ({
         <CardContent className="p-6">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
             <div>
-              <h2 className="text-lg font-bold">Game Supervision</h2>
+              <h2 className="text-lg font-bold">Scenario Supervision</h2>
               <p className="text-sm text-muted-foreground">
-                Monitor live sessions and orchestrate progress across your group's games.
+                Monitor live sessions and orchestrate progress across your customer's scenarios.
               </p>
             </div>
             <div className="flex flex-col sm:flex-row gap-3 items-center">

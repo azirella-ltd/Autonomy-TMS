@@ -99,14 +99,14 @@ class PlanningBenchmark:
         db: Session = self._SF()
         try:
             tag = uuid.uuid4().hex[:8]
-            row = db.execute(text("SELECT id FROM groups LIMIT 1")).fetchone()
+            row = db.execute(text("SELECT id FROM customers LIMIT 1")).fetchone()
             if row is None:
-                raise RuntimeError("No groups in DB. Run 'make db-bootstrap' first.")
-            group_id = row[0]
+                raise RuntimeError("No customers in DB. Run 'make db-bootstrap' first.")
+            customer_id = row[0]
 
             config = SupplyChainConfig(
                 name=f"Bench-{num_sites}-{tag}", description="Benchmark network",
-                group_id=group_id, is_active=False, scenario_type="SIMULATION")
+                customer_id=customer_id, is_active=False, scenario_type="SIMULATION")
             db.add(config); db.flush()
             config_id = config.id
 
@@ -192,7 +192,7 @@ class PlanningBenchmark:
     def _meta(self, config_id: int) -> Tuple[int, int]:
         db = self._SF()
         try:
-            return db.get(SupplyChainConfig, config_id).group_id, 30
+            return db.get(SupplyChainConfig, config_id).customer_id, 30
         finally:
             db.close()
 

@@ -78,7 +78,7 @@ const GroupGameConfigPanel = ({
 
     return games.filter((game) => {
       if (!game) return false;
-      const targetGroup = game.group_id ?? game?.config?.group_id ?? null;
+      const targetGroup = game.customer_id ?? game?.config?.customer_id ?? null;
       if (groupId != null) {
         if (targetGroup != null) {
           if (Number(targetGroup) !== Number(groupId)) {
@@ -184,9 +184,9 @@ const GroupGameConfigPanel = ({
       <CardContent className="p-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
           <div>
-            <h2 className="text-lg font-bold">Game Configuration</h2>
+            <h2 className="text-lg font-bold">Scenario Configuration</h2>
             <p className="text-sm text-muted-foreground">
-              Review recent mixed game setups and create new sessions for your group.
+              Review recent mixed scenario setups and create new sessions for your customer.
             </p>
           </div>
           <div className="flex flex-col md:flex-row gap-2 items-stretch md:items-center">
@@ -195,7 +195,7 @@ const GroupGameConfigPanel = ({
                 Refresh
               </Button>
             )}
-            <Button onClick={handleCreateGame}>New Mixed Game</Button>
+            <Button onClick={handleCreateGame}>New Mixed Scenario</Button>
           </div>
         </div>
 
@@ -218,9 +218,9 @@ const GroupGameConfigPanel = ({
           </div>
         ) : filteredGames.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-muted-foreground mb-2">No games found for your group yet.</p>
+            <p className="text-muted-foreground mb-2">No scenarios found for your customer yet.</p>
             <p className="text-sm text-muted-foreground">
-              Configure a new mixed game to get your scenarioUsers started.
+              Configure a new mixed scenario to get your users started.
             </p>
           </div>
         ) : (

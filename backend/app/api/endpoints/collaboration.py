@@ -586,17 +586,17 @@ async def analyze_decision_tradeoffs(
 
 @router.get("/scenarios")
 def list_collaboration_scenarios(
-    group_id: Optional[int] = Query(None),
+    customer_id: Optional[int] = Query(None),
     level: Optional[str] = Query(None, description="Filter by level: sop, tactical, execution"),
     status_filter: Optional[str] = Query(None, alias="status", description="Filter by status"),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
-    """List collaboration scenarios for a group."""
+    """List collaboration scenarios for a customer."""
     from sqlalchemy import text as sa_text
 
-    gid = group_id or current_user.group_id
-    query = "SELECT * FROM collaboration_scenarios WHERE group_id = :gid"
+    gid = customer_id or current_user.customer_id
+    query = "SELECT * FROM collaboration_scenarios WHERE customer_id = :gid"
     params = {"gid": gid}
 
     if level:

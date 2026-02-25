@@ -46,7 +46,7 @@ class OrderManagementService:
         priority_code: str = "STANDARD",
         config_id: Optional[int] = None,
         scenario_id: Optional[int] = None,
-        group_id: Optional[int] = None,
+        customer_id: Optional[int] = None,
     ) -> OutboundOrderLine:
         """
         Create a customer order (OutboundOrderLine).
@@ -62,7 +62,7 @@ class OrderManagementService:
             priority_code: VIP, HIGH, STANDARD, LOW
             config_id: Supply chain configuration ID
             scenario_id: Scenario ID (if applicable)
-            group_id: Group ID (enables conformal prediction feedback)
+            customer_id: Customer ID (enables conformal prediction feedback)
 
         Returns:
             Created OutboundOrderLine
@@ -89,7 +89,7 @@ class OrderManagementService:
         await self.db.refresh(order)
 
         # Feed into conformal prediction calibration loop
-        if group_id is not None:
+        if customer_id is not None:
             try:
                 from app.services.conformal_orchestrator import ConformalOrchestrator
                 orchestrator = ConformalOrchestrator.get_instance()
@@ -99,7 +99,7 @@ class OrderManagementService:
                     site_id=site_id,
                     ordered_quantity=ordered_quantity,
                     order_date=requested_delivery_date,
-                    group_id=group_id,
+                    customer_id=customer_id,
                 )
             except Exception as e:
                 logger.warning(f"Conformal actuals hook failed: {e}")
@@ -149,7 +149,7 @@ class OrderManagementService:
         order_id: int,
         shipped_quantity: float,
         promised_delivery_date: Optional[date] = None,
-        group_id: Optional[int] = None,
+        customer_id: Optional[int] = None,
     ) -> OutboundOrderLine:
         """
         Update order fulfillment status.
@@ -158,7 +158,7 @@ class OrderManagementService:
             order_id: OutboundOrderLine ID
             shipped_quantity: Additional quantity shipped
             promised_delivery_date: ATP-promised delivery date
-            group_id: Group ID (enables conformal service level feedback)
+            customer_id: Customer ID (enables conformal service level feedback)
 
         Returns:
             Updated OutboundOrderLine
@@ -179,7 +179,7 @@ class OrderManagementService:
             order.last_ship_date = date.today()
 
             # Feed service level observation into conformal prediction
-            if group_id is not None and order.ordered_quantity > 0:
+            if customer_id is not None and order.ordered_quantity > 0:
                 try:
                     from app.services.conformal_orchestrator import ConformalOrchestrator
                     actual_fill = float(order.shipped_quantity) / float(order.ordered_quantity)
@@ -190,7 +190,7 @@ class OrderManagementService:
                         site_id=order.site_id,
                         expected_fill_rate=1.0,
                         actual_fill_rate=actual_fill,
-                        group_id=group_id,
+                        customer_id=customer_id,
                     )
                 except Exception as e:
                     logger.warning(f"Conformal service level hook failed: {e}")
@@ -260,7 +260,7 @@ class OrderManagementService:
         requested_delivery_date: date,
         vendor_id: Optional[str] = None,
         config_id: Optional[int] = None,
-        group_id: Optional[int] = None,
+        customer_id: Optional[int] = None,
         scenario_id: Optional[int] = None,
         order_round: Optional[int] = None,
     ) -> PurchaseOrder:
@@ -276,7 +276,7 @@ class OrderManagementService:
             requested_delivery_date: Requested delivery date
             vendor_id: External vendor ID (if applicable)
             config_id: Supply chain configuration
-            group_id: Group ID
+            customer_id: Customer ID
             scenario_id: Scenario ID
             order_round: Round when PO was created
 
@@ -289,7 +289,7 @@ class OrderManagementService:
             supplier_site_id=supplier_site_id,
             destination_site_id=destination_site_id,
             config_id=config_id,
-            group_id=group_id,
+            customer_id=customer_id,
             status="APPROVED",  # Auto-approve in simulation
             order_date=date.today(),
             requested_delivery_date=requested_delivery_date,
@@ -523,7 +523,7 @@ class OrderManagementService:
         to.received_at = datetime.utcnow()
 
         # Feed lead time observation into conformal prediction
-        if getattr(to, 'group_id', None) is not None and to.order_date and to.actual_delivery_date:
+        if getattr(to, 'customer_id', None) is not None and to.order_date and to.actual_delivery_date:
             try:
                 from app.services.conformal_orchestrator import ConformalOrchestrator
                 actual_lt = (to.actual_delivery_date - to.order_date).days
@@ -538,7 +538,7 @@ class OrderManagementService:
                         supplier_id=str(to.source_site_id),
                         expected_lead_time_days=float(expected_lt),
                         actual_lead_time_days=float(actual_lt),
-                        group_id=to.group_id,
+                        customer_id=to.customer_id,
                         source_order_type="TO",
                         source_order_id=to.id,
                     )
@@ -554,7 +554,7 @@ class OrderManagementService:
                 po.received_at = datetime.utcnow()
 
                 # Feed PO lead time + price into conformal prediction
-                if getattr(po, 'group_id', None) is not None:
+                if getattr(po, 'customer_id', None) is not None:
                     try:
                         from app.services.conformal_orchestrator import ConformalOrchestrator
                         orchestrator = ConformalOrchestrator.get_instance()
@@ -573,7 +573,7 @@ class OrderManagementService:
                                     supplier_id=supplier_id,
                                     expected_lead_time_days=float(expected_lt),
                                     actual_lead_time_days=float(actual_lt),
-                                    group_id=po.group_id,
+                                    customer_id=po.customer_id,
                                     source_order_type="PO",
                                     source_order_id=po.id,
                                 )
@@ -605,7 +605,7 @@ class OrderManagementService:
                                         material_id=po_line.product_id,
                                         expected_price=float(vp.vendor_unit_cost),
                                         actual_price=float(po_line.unit_price),
-                                        group_id=po.group_id,
+                                        customer_id=po.customer_id,
                                         source_po_id=po.id,
                                     )
                     except Exception as e:

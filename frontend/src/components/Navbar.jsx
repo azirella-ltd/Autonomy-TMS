@@ -44,7 +44,7 @@ const Navbar = () => {
   const [gameInfo, setGameInfo] = useState(null);
   const [systemConfigName, setSystemConfigName] = useState(null);
   const [supplyChainConfigName, setSupplyChainConfigName] = useState(null);
-  const [groupMode, setGroupMode] = useState(null); // 'learning' or 'production'
+  const [customerMode, setCustomerMode] = useState(null); // 'learning' or 'production'
   const menuRef = useRef(null);
   const buttonRef = useRef(null);
   const navigate = useNavigate();
@@ -58,24 +58,24 @@ const Navbar = () => {
     setCurrentPath(location.pathname);
   }, [location]);
 
-  // Fetch group mode for GROUP_ADMIN users
+  // Fetch customer mode for GROUP_ADMIN users
   useEffect(() => {
-    const fetchGroupMode = async () => {
-      if (user?.user_type === 'GROUP_ADMIN' && user?.group_id) {
+    const fetchCustomerMode = async () => {
+      if (user?.user_type === 'GROUP_ADMIN' && user?.customer_id) {
         try {
-          const response = await api.get(`/groups/${user.group_id}`);
-          setGroupMode(response.data.mode || 'learning');
+          const response = await api.get(`/customers/${user.customer_id}`);
+          setCustomerMode(response.data.mode || 'learning');
         } catch (error) {
-          console.error('Failed to fetch group mode:', error);
-          setGroupMode('learning'); // Default to learning on error
+          console.error('Failed to fetch customer mode:', error);
+          setCustomerMode('learning'); // Default to learning on error
         }
       } else if (user?.user_type === 'SYSTEM_ADMIN') {
-        setGroupMode(null); // System admin doesn't have a group mode
+        setCustomerMode(null); // System admin doesn't have a customer mode
       }
     };
 
     if (user) {
-      fetchGroupMode();
+      fetchCustomerMode();
     }
   }, [user]);
 
@@ -160,7 +160,7 @@ const Navbar = () => {
       "/supply-chain-config"
     );
     const onGroupSupplyChainRoute = location.pathname.includes(
-      "/admin/group/supply-chain-configs"
+      "/admin/customer/supply-chain-configs"
     );
     const onGameFromConfigRoute = location.pathname.includes(
       "/scenarios/new-from-config"
@@ -203,8 +203,8 @@ const Navbar = () => {
   const isSysAdmin = isSystemAdmin(user);
   // Check for GROUP_ADMIN specifically (not SYSTEM_ADMIN)
   const isGrpAdmin = !isSysAdmin && isGroupAdmin(user);
-  const isProductionMode = groupMode === 'production';
-  const isLearningMode = groupMode === 'learning';
+  const isProductionMode = customerMode === 'production';
+  const isLearningMode = customerMode === 'learning';
 
   // Build navigation based on role and group mode
   const getNavigation = () => {
@@ -324,7 +324,7 @@ const Navbar = () => {
           label: "Groups Management",
           icon: GroupsIcon,
           onClick: () => {
-            navigate("/admin/groups");
+            navigate("/admin/customers");
             handleMenuClose();
           },
         },
@@ -394,7 +394,7 @@ const Navbar = () => {
           label: "Supply Chain Configs",
           icon: NetworkIcon,
           onClick: () => {
-            navigate("/admin/group/supply-chain-configs");
+            navigate("/admin/customer/supply-chain-configs");
             handleMenuClose();
           },
         },
@@ -488,7 +488,7 @@ const Navbar = () => {
           label: "Supply Chain Configs",
           icon: NetworkIcon,
           onClick: () => {
-            navigate("/admin/group/supply-chain-configs");
+            navigate("/admin/customer/supply-chain-configs");
             handleMenuClose();
           },
         },
@@ -540,7 +540,7 @@ const Navbar = () => {
           <Link
             to={
               isSysAdmin
-                ? "/admin/groups"
+                ? "/admin/customers"
                 : isGrpAdmin && isProductionMode
                 ? "/insights"
                 : isGrpAdmin && isLearningMode
@@ -642,7 +642,7 @@ const Navbar = () => {
                   {user?.name || user?.full_name || "User"}
                 </p>
                 <p className="text-xs text-muted-foreground leading-tight">
-                  {user?.powell_role ? user.powell_role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : (user?.user_type === 'systemadmin' ? 'System Admin' : user?.user_type === 'groupadmin' ? 'Group Admin' : '')}
+                  {user?.powell_role ? user.powell_role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : (user?.user_type === 'systemadmin' ? 'System Admin' : user?.user_type === 'groupadmin' ? 'Customer Admin' : '')}
                 </p>
               </div>
               {menuOpen ? (

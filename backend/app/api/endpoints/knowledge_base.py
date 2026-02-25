@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_group_admin
+from app.api.deps import get_current_user, require_customer_admin
 from app.db.kb_session import get_kb_db
 from app.models.user import User
 from app.services.knowledge_base_service import KnowledgeBaseService
@@ -68,7 +68,7 @@ async def upload_document(
     category: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
     tags: Optional[str] = Form(None),  # Comma-separated tags
-    current_user: User = Depends(require_group_admin),
+    current_user: User = Depends(require_customer_admin),
     db: AsyncSession = Depends(get_kb_db),
 ) -> Dict[str, Any]:
     """Upload and index a document for RAG.
@@ -97,7 +97,7 @@ async def upload_document(
     # Parse tags
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
 
-    service = KnowledgeBaseService(db, current_user.group_id)
+    service = KnowledgeBaseService(db, current_user.customer_id)
 
     try:
         result = await service.ingest_document(
@@ -135,7 +135,7 @@ async def list_documents(
 
     Requires: Any authenticated user
     """
-    service = KnowledgeBaseService(db, current_user.group_id)
+    service = KnowledgeBaseService(db, current_user.customer_id)
     documents = await service.list_documents(status=status, category=category)
     return {"documents": documents, "total": len(documents)}
 
@@ -150,7 +150,7 @@ async def get_document(
 
     Requires: Any authenticated user
     """
-    service = KnowledgeBaseService(db, current_user.group_id)
+    service = KnowledgeBaseService(db, current_user.customer_id)
     doc = await service.get_document(document_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -160,14 +160,14 @@ async def get_document(
 @router.delete("/documents/{document_id}", tags=["knowledge-base"])
 async def delete_document(
     document_id: int,
-    current_user: User = Depends(require_group_admin),
+    current_user: User = Depends(require_customer_admin),
     db: AsyncSession = Depends(get_kb_db),
 ) -> Dict[str, Any]:
     """Delete a document and all its chunks.
 
     Requires: Group Admin
     """
-    service = KnowledgeBaseService(db, current_user.group_id)
+    service = KnowledgeBaseService(db, current_user.customer_id)
     deleted = await service.delete_document(document_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -191,7 +191,7 @@ async def search_knowledge_base(
 
     Requires: Any authenticated user
     """
-    service = KnowledgeBaseService(db, current_user.group_id)
+    service = KnowledgeBaseService(db, current_user.customer_id)
 
     try:
         results = await service.search(
@@ -239,5 +239,5 @@ async def get_knowledge_base_status(
 
     Requires: Any authenticated user
     """
-    service = KnowledgeBaseService(db, current_user.group_id)
+    service = KnowledgeBaseService(db, current_user.customer_id)
     return await service.get_status()

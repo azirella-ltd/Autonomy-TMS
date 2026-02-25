@@ -1466,7 +1466,7 @@ const UserImportTab = () => {
 
 // Main Component
 const SAPDataManagement = () => {
-  const { user, isGroupAdmin } = useAuth();
+  const { user, isCustomerAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(true);
 

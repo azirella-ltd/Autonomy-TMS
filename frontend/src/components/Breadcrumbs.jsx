@@ -79,7 +79,8 @@ const ROUTE_LABELS = {
   // Admin pages
   monitoring: 'System Monitoring',
   governance: 'Governance',
-  groups: 'Groups',
+  groups: 'Customers',
+  customers: 'Customers',
   users: 'User Management',
   'role-management': 'Role Management',
   powell: 'Decision Cascade',
@@ -99,7 +100,8 @@ const ROUTE_LABELS = {
   settings: 'Settings',
   'ai-assistant': 'AI Assistant',
   production: 'Production',
-  group: 'Group',
+  group: 'Customer',
+  customer: 'Customer',
 };
 
 const Breadcrumbs = () => {

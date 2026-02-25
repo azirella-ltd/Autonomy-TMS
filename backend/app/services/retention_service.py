@@ -254,20 +254,20 @@ class RetentionService:
         logger.info(f"Archived {archived} closed cycles")
         return result
 
-    def get_retention_stats(self, group_id: Optional[int] = None) -> Dict[str, Any]:
+    def get_retention_stats(self, customer_id: Optional[int] = None) -> Dict[str, Any]:
         """
         Get retention statistics.
 
         Args:
-            group_id: Optional group filter
+            customer_id: Optional customer filter
 
         Returns:
             Statistics dict
         """
         base_query = self.db.query(PlanningSnapshot)
-        if group_id:
+        if customer_id:
             base_query = base_query.join(PlanningCycle).filter(
-                PlanningCycle.group_id == group_id
+                PlanningCycle.customer_id == customer_id
             )
 
         stats = {

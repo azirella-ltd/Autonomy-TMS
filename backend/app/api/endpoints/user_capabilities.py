@@ -1,6 +1,6 @@
 """
 API endpoints for managing user capabilities and roles.
-Allows group admins to assign capabilities to users within their group.
+Allows group admins to assign capabilities to users within their customer organization.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -36,7 +36,7 @@ def update_user_capabilities(
     """
     Update user's role and custom capabilities.
 
-    Group admins can update users within their group.
+    Group admins can update users within their customer organization.
     System admins can update any user (except other system admins).
     """
     # Check if current user has permission to manage capabilities
@@ -51,9 +51,9 @@ def update_user_capabilities(
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Group admins can only manage users in their group
+    # Group admins can only manage users in their customer organization
     if current_user.user_type == UserType.GROUP_ADMIN:
-        if not current_user.group_id or target_user.group_id != current_user.group_id:
+        if not current_user.customer_id or target_user.customer_id != current_user.customer_id:
             raise HTTPException(
                 status_code=403,
                 detail="You can only manage users within your group"
@@ -115,7 +115,7 @@ def get_user_capabilities(
     """
     Get a user's capabilities.
 
-    Group admins can view users in their group.
+    Group admins can view users in their customer organization.
     System admins can view any user.
     """
     # Check if current user has permission to view capabilities
@@ -130,9 +130,9 @@ def get_user_capabilities(
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Group admins can only view users in their group
+    # Group admins can only view users in their customer organization
     if current_user.user_type == UserType.GROUP_ADMIN:
-        if not current_user.group_id or target_user.group_id != current_user.group_id:
+        if not current_user.customer_id or target_user.customer_id != current_user.customer_id:
             raise HTTPException(
                 status_code=403,
                 detail="You can only view users within your group"
@@ -156,7 +156,7 @@ def list_group_users(
     """
     List all users that the current user can manage.
 
-    Group admins see users in their group.
+    Group admins see users in their customer organization.
     System admins see all users.
     """
     # Check if current user has permission to view users
@@ -169,10 +169,10 @@ def list_group_users(
     # Build query based on user type
     query = db.query(User)
     if current_user.user_type == UserType.GROUP_ADMIN:
-        # Group admins only see users in their group
-        if not current_user.group_id:
+        # Group admins only see users in their customer organization
+        if not current_user.customer_id:
             return {"users": []}
-        query = query.filter(User.group_id == current_user.group_id)
+        query = query.filter(User.customer_id == current_user.customer_id)
 
     # Execute query
     users = query.all()
@@ -186,7 +186,7 @@ def list_group_users(
                 "user_type": user.user_type.value,
                 "capabilities": get_user_capabilities_list(user, db),
                 "is_active": user.is_active,
-                "group_id": user.group_id,
+                "customer_id": user.customer_id,
             }
             for user in users
         ]

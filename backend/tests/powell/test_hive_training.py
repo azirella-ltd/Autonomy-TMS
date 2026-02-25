@@ -218,7 +218,7 @@ class TestCDCRetrainingFeatures:
         from unittest.mock import MagicMock
         from app.services.powell.cdc_retraining_service import CDCRetrainingService
         db = MagicMock()
-        return CDCRetrainingService(db=db, site_key="TEST", group_id=1)
+        return CDCRetrainingService(db=db, site_key="TEST", customer_id=1)
 
     def test_extract_features_no_signal_context(self):
         svc = self._service()
@@ -292,7 +292,7 @@ class TestStigmergicPhase:
         from app.services.powell.trm_site_trainer import TRMSiteTrainer
         return TRMSiteTrainer(
             trm_type="atp_executor", site_id=1, site_name="Test",
-            master_type="INVENTORY", group_id=1, config_id=1,
+            master_type="INVENTORY", customer_id=1, config_id=1,
             stigmergic_phase=phase,
         )
 
@@ -396,7 +396,7 @@ class TestCrossHeadReward:
         from app.services.powell.trm_site_trainer import TRMSiteTrainer
         trainer = TRMSiteTrainer(
             trm_type="atp_executor", site_id=1, site_name="Test",
-            master_type="INVENTORY", group_id=1, config_id=1,
+            master_type="INVENTORY", customer_id=1, config_id=1,
         )
         assert trainer.cross_head_reward_weight == 0.05
 
@@ -404,7 +404,7 @@ class TestCrossHeadReward:
         from app.services.powell.trm_site_trainer import TRMSiteTrainer
         trainer = TRMSiteTrainer(
             trm_type="atp_executor", site_id=1, site_name="Test",
-            master_type="INVENTORY", group_id=1, config_id=1,
+            master_type="INVENTORY", customer_id=1, config_id=1,
             cross_head_reward_weight=0.2,
         )
         assert trainer.cross_head_reward_weight == 0.2
@@ -449,7 +449,7 @@ class TestBackwardCompatibility:
         from app.services.powell.trm_site_trainer import TRMSiteTrainer, StigmergicPhase
         trainer = TRMSiteTrainer(
             trm_type="atp_executor", site_id=1, site_name="Test",
-            master_type="INVENTORY", group_id=1, config_id=1,
+            master_type="INVENTORY", customer_id=1, config_id=1,
         )
         assert trainer.stigmergic_phase == StigmergicPhase.NO_SIGNALS
 
@@ -472,7 +472,7 @@ class TestBackwardCompatibility:
         from app.services.powell.trm_site_trainer import TRMSiteTrainer
         trainer = TRMSiteTrainer(
             trm_type="atp_executor", site_id=1, site_name="Test",
-            master_type="INVENTORY", group_id=1, config_id=1,
+            master_type="INVENTORY", customer_id=1, config_id=1,
         )
         assert hasattr(trainer, "train_stigmergic_curriculum")
         assert callable(trainer.train_stigmergic_curriculum)

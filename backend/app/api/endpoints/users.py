@@ -125,9 +125,9 @@ async def read_user(
     if current_user.user_type == UserTypeEnum.SYSTEM_ADMIN or current_user.id == user_id:
         return user
 
-    if user_service.is_group_admin(current_user):
+    if user_service.is_customer_admin(current_user):
         if (
-            user.group_id == current_user.group_id
+            user.customer_id == current_user.customer_id
             and user_service.get_user_type(user) == UserTypeEnum.USER
         ):
             return user
@@ -158,7 +158,7 @@ async def update_user_capabilities(
     This creates or updates a custom role for the user with the specified capabilities.
 
     Permissions:
-    - Group Admins can update users in their group
+    - Group Admins can update users in their customer organization
     - System Admins can update any user
 
     Args:
@@ -181,14 +181,14 @@ async def update_user_capabilities(
 
     # Permission checks
     is_system_admin = current_user.user_type == UserTypeEnum.SYSTEM_ADMIN
-    is_group_admin = current_user.user_type == UserTypeEnum.GROUP_ADMIN
+    is_customer_admin = current_user.user_type == UserTypeEnum.GROUP_ADMIN
 
-    # Group admins can only manage users in their group
-    if is_group_admin:
-        if not current_user.group_id or target_user.group_id != current_user.group_id:
+    # Group admins can only manage users in their customer organization
+    if is_customer_admin:
+        if not current_user.customer_id or target_user.customer_id != current_user.customer_id:
             raise HTTPException(
                 status_code=403,
-                detail="You can only manage users within your group"
+                detail="You can only manage users within your customer organization"
             )
 
         # Group admins cannot modify system admins
@@ -199,7 +199,7 @@ async def update_user_capabilities(
             )
 
     # System admins can manage anyone except other system admins (without explicit permission)
-    if not is_system_admin and not is_group_admin:
+    if not is_system_admin and not is_customer_admin:
         raise HTTPException(
             status_code=403,
             detail="Not authorized to manage user capabilities"
@@ -209,7 +209,7 @@ async def update_user_capabilities(
     success = rbac_service.sync_user_capabilities(
         user_id=user_id,
         capability_names=payload.capabilities,
-        tenant_id=target_user.group_id
+        tenant_id=target_user.customer_id
     )
 
     if not success:
@@ -240,7 +240,7 @@ async def get_user_capabilities_endpoint(
 
     Permissions:
     - Users can view their own capabilities
-    - Group Admins can view users in their group
+    - Group Admins can view users in their customer organization
     - System Admins can view any user
 
     Args:
@@ -262,13 +262,13 @@ async def get_user_capabilities_endpoint(
 
     # Permission checks
     is_system_admin = current_user.user_type == UserTypeEnum.SYSTEM_ADMIN
-    is_group_admin = current_user.user_type == UserTypeEnum.GROUP_ADMIN
+    is_customer_admin = current_user.user_type == UserTypeEnum.GROUP_ADMIN
     is_self = current_user.id == user_id
 
     # Check permissions
     if not is_self and not is_system_admin:
-        if is_group_admin:
-            if not current_user.group_id or target_user.group_id != current_user.group_id:
+        if is_customer_admin:
+            if not current_user.customer_id or target_user.customer_id != current_user.customer_id:
                 raise HTTPException(
                     status_code=403,
                     detail="You can only view users within your group"
@@ -317,16 +317,16 @@ async def update_user_status(
 
     # Permission checks
     is_system_admin = current_user.user_type == UserTypeEnum.SYSTEM_ADMIN
-    is_group_admin = current_user.user_type == UserTypeEnum.GROUP_ADMIN
+    is_customer_admin = current_user.user_type == UserTypeEnum.GROUP_ADMIN
 
-    if is_group_admin:
-        if not current_user.group_id or target_user.group_id != current_user.group_id:
+    if is_customer_admin:
+        if not current_user.customer_id or target_user.customer_id != current_user.customer_id:
             raise HTTPException(
                 status_code=403,
-                detail="You can only manage users within your group"
+                detail="You can only manage users within your customer organization"
             )
 
-    if not is_system_admin and not is_group_admin:
+    if not is_system_admin and not is_customer_admin:
         raise HTTPException(
             status_code=403,
             detail="Not authorized to modify user status"

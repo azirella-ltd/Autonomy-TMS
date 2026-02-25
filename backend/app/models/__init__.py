@@ -31,7 +31,10 @@ from .risk import RiskAlert, Watchlist
 # 2. Core models with no dependencies
 from .user import RefreshToken  # Must be imported before User to avoid circular import
 from .user import User, user_scenarios
-from .group import Group, GroupMode, ClockMode
+from .customer import Customer, CustomerMode, ClockMode
+# Backward compatibility aliases
+Group = Customer
+GroupMode = CustomerMode
 
 # 3. Models that depend on User
 from .participant import (
@@ -310,7 +313,7 @@ registered_tables = set(Base.metadata.tables.keys())
 expected_tables = {
     'users', 'refresh_tokens', 'scenario_users', 'password_history',
     'password_reset_tokens', 'token_blacklist', 'user_sessions',
-    'scenarios', 'rounds', 'scenario_user_actions', 'user_scenarios', 'groups'
+    'scenarios', 'rounds', 'scenario_user_actions', 'user_scenarios', 'customers'
 }
 
 missing_tables = expected_tables - registered_tables
@@ -324,7 +327,8 @@ logger.info(f"Registered tables in metadata: {registered_tables}")
 __all__ = [
     'Base',
     'User',
-    'Group',
+    'Customer',
+    'Group',  # Backward compat alias
     'RefreshToken',
     'NodeType',
     'SupplyChainConfig',

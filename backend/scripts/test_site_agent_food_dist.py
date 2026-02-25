@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.models.supply_chain_config import SupplyChainConfig, Node, Lane
 from app.models.sc_entities import Product, InvLevel, InvPolicy
-from app.models.group import Group
+from app.models.customer import Customer
 
 
 def get_food_dist_config(db: Session) -> Optional[SupplyChainConfig]:
@@ -51,19 +51,19 @@ def get_food_dist_config(db: Session) -> Optional[SupplyChainConfig]:
             print(f"  - {cfg.id}: {cfg.name}")
         return configs[0]
 
-    # Also check groups
-    groups = db.query(Group).filter(
-        Group.name.ilike("%Food Dist%")
+    # Also check customers
+    customers = db.query(Customer).filter(
+        Customer.name.ilike("%Food Dist%")
     ).all()
 
-    if groups:
-        print(f"Found {len(groups)} Food Dist group(s):")
-        for grp in groups:
-            print(f"  - {grp.id}: {grp.name}")
+    if customers:
+        print(f"Found {len(customers)} Food Dist customer(s):")
+        for cust in customers:
+            print(f"  - {cust.id}: {cust.name}")
             # Get associated config
-            if grp.default_config_id:
+            if cust.default_config_id:
                 cfg = db.query(SupplyChainConfig).filter_by(
-                    id=grp.default_config_id
+                    id=cust.default_config_id
                 ).first()
                 if cfg:
                     return cfg
@@ -84,7 +84,7 @@ def generate_food_dist_config(db: Session) -> SupplyChainConfig:
     result = loop.run_until_complete(generator.generate())
 
     print(f"Generated config: {result['config'].name}")
-    print(f"  - Group: {result['group'].name}")
+    print(f"  - Customer: {result['customer'].name}")
     print(f"  - Nodes: {len(result['nodes'])}")
     print(f"  - Products: {len(result['products'])}")
 

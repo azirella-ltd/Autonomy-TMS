@@ -84,7 +84,7 @@ class Watchlist(Base):
 
     # Ownership
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    group_id = Column(Integer, ForeignKey("groups.id"), nullable=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True, index=True)
 
     # Monitoring configuration
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=True)
@@ -114,7 +114,7 @@ class Watchlist(Base):
 
     # Relationships
     creator = relationship("User", foreign_keys=[created_by], back_populates="watchlists")
-    group = relationship("Group", back_populates="watchlists")
+    customer = relationship("Customer", back_populates="watchlists")
     config = relationship("SupplyChainConfig")
 
     def __repr__(self):

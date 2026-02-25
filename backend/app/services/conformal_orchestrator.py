@@ -164,7 +164,7 @@ class ConformalOrchestrator:
         db: AsyncSession,
         entity_type: EntityType,
         entity_id: str,
-        group_id: int,
+        customer_id: int,
         point_estimate: float,
         lower: float,
         upper: float,
@@ -177,7 +177,7 @@ class ConformalOrchestrator:
         result = await db.execute(
             select(PowellBeliefState).where(
                 and_(
-                    PowellBeliefState.group_id == group_id,
+                    PowellBeliefState.customer_id == customer_id,
                     PowellBeliefState.entity_type == entity_type,
                     PowellBeliefState.entity_id == entity_id,
                 )
@@ -187,7 +187,7 @@ class ConformalOrchestrator:
 
         if state is None:
             state = PowellBeliefState(
-                group_id=group_id,
+                customer_id=customer_id,
                 entity_type=entity_type,
                 entity_id=entity_id,
             )
@@ -224,7 +224,7 @@ class ConformalOrchestrator:
         self,
         db: AsyncSession,
         product_site_pairs: List[Tuple[str, int]],
-        group_id: int,
+        customer_id: int,
     ) -> Dict:
         """
         Hook called after forecasts are loaded (any of the 4 paths).
@@ -286,7 +286,7 @@ class ConformalOrchestrator:
                     ]
                     entity_id = f"{product_id}:{site_id}"
                     await self.persist_calibration(
-                        db, EntityType.DEMAND, entity_id, group_id,
+                        db, EntityType.DEMAND, entity_id, customer_id,
                         point_estimate=forecast_values[-1],
                         lower=interval.lower,
                         upper=interval.upper,
@@ -327,7 +327,7 @@ class ConformalOrchestrator:
         site_id: int,
         ordered_quantity: float,
         order_date: date,
-        group_id: int,
+        customer_id: int,
     ) -> Optional[Dict]:
         """
         Hook called when an OutboundOrderLine is created.
@@ -361,7 +361,7 @@ class ConformalOrchestrator:
         # Feed into calibration loop
         emergency_recal = await self._record_and_check_calibration(
             db, EntityType.DEMAND, f"{product_id}:{site_id}",
-            group_id, forecast_value, actual_value,
+            customer_id, forecast_value, actual_value,
         )
 
         return {
@@ -427,7 +427,7 @@ class ConformalOrchestrator:
         db: AsyncSession,
         entity_type: EntityType,
         entity_id: str,
-        group_id: int,
+        customer_id: int,
         predicted_value: float,
         actual_value: float,
         default_coverage: float = 0.90,
@@ -444,7 +444,7 @@ class ConformalOrchestrator:
         result = await db.execute(
             select(PowellBeliefState).where(
                 and_(
-                    PowellBeliefState.group_id == group_id,
+                    PowellBeliefState.customer_id == customer_id,
                     PowellBeliefState.entity_type == entity_type,
                     PowellBeliefState.entity_id == entity_id,
                 )
@@ -454,7 +454,7 @@ class ConformalOrchestrator:
 
         if state is None:
             state = PowellBeliefState(
-                group_id=group_id,
+                customer_id=customer_id,
                 entity_type=entity_type,
                 entity_id=entity_id,
                 point_estimate=predicted_value,
@@ -502,7 +502,7 @@ class ConformalOrchestrator:
                 state.drift_score = emp_coverage - target
 
                 await self._emergency_recalibrate(
-                    db, entity_type, entity_id, group_id, state,
+                    db, entity_type, entity_id, customer_id, state,
                 )
                 await db.flush()
                 return True
@@ -521,7 +521,7 @@ class ConformalOrchestrator:
         db: AsyncSession,
         entity_type: EntityType,
         entity_id: str,
-        group_id: int,
+        customer_id: int,
         state: PowellBeliefState,
     ) -> None:
         """Emergency recalibration triggered by coverage drift. Works for all entity types."""
@@ -625,7 +625,7 @@ class ConformalOrchestrator:
             cov_hist = state.coverage_history or []
 
         await self.persist_calibration(
-            db, entity_type, entity_id, group_id,
+            db, entity_type, entity_id, customer_id,
             point_estimate=forecasts[-1],
             lower=lower if lower is not None else (state.conformal_lower or 0.0),
             upper=upper if upper is not None else (state.conformal_upper or 0.0),
@@ -724,7 +724,7 @@ class ConformalOrchestrator:
         supplier_id: str,
         expected_lead_time_days: float,
         actual_lead_time_days: float,
-        group_id: int,
+        customer_id: int,
         source_order_type: str = "TO",
         source_order_id: Optional[int] = None,
     ) -> Optional[Dict]:
@@ -736,7 +736,7 @@ class ConformalOrchestrator:
             supplier_id: Supplier identifier (str(source_site_id) for TO, vendor_id for PO)
             expected_lead_time_days: Predicted lead time (estimated_delivery_date - order_date)
             actual_lead_time_days: Actual lead time (actual_delivery_date - order_date)
-            group_id: Group ID for belief state
+            customer_id: Customer ID for belief state
             source_order_type: "TO" or "PO" for logging
             source_order_id: ID of the source order
         """
@@ -751,7 +751,7 @@ class ConformalOrchestrator:
 
         emergency_recal = await self._record_and_check_calibration(
             db, EntityType.LEAD_TIME, supplier_id,
-            group_id, expected_lead_time_days, actual_lead_time_days,
+            customer_id, expected_lead_time_days, actual_lead_time_days,
         )
 
         logger.debug(
@@ -778,7 +778,7 @@ class ConformalOrchestrator:
         process_id: Optional[str],
         expected_yield: float,
         actual_yield: float,
-        group_id: int,
+        customer_id: int,
     ) -> Optional[Dict]:
         """
         Hook called when manufacturing output is recorded.
@@ -792,7 +792,7 @@ class ConformalOrchestrator:
             process_id: Manufacturing process ID (optional)
             expected_yield: Expected yield ratio (0.0-1.0)
             actual_yield: Actual yield ratio (0.0-1.0)
-            group_id: Group ID for belief state
+            customer_id: Customer ID for belief state
         """
         if not (0.0 <= expected_yield <= 1.0) or not (0.0 <= actual_yield <= 1.0):
             logger.debug(
@@ -805,7 +805,7 @@ class ConformalOrchestrator:
 
         emergency_recal = await self._record_and_check_calibration(
             db, EntityType.YIELD, entity_id,
-            group_id, expected_yield, actual_yield,
+            customer_id, expected_yield, actual_yield,
         )
 
         logger.debug(
@@ -829,7 +829,7 @@ class ConformalOrchestrator:
         material_id: str,
         expected_price: float,
         actual_price: float,
-        group_id: int,
+        customer_id: int,
         source_po_id: Optional[int] = None,
     ) -> Optional[Dict]:
         """
@@ -840,7 +840,7 @@ class ConformalOrchestrator:
             material_id: Product ID of the material
             expected_price: Catalog/vendor_unit_cost price
             actual_price: Actual PO line item unit_price
-            group_id: Group ID for belief state
+            customer_id: Customer ID for belief state
             source_po_id: PurchaseOrder ID
         """
         if actual_price < 0 or expected_price <= 0:
@@ -853,7 +853,7 @@ class ConformalOrchestrator:
 
         emergency_recal = await self._record_and_check_calibration(
             db, EntityType.PRICE, material_id,
-            group_id, expected_price, actual_price,
+            customer_id, expected_price, actual_price,
         )
 
         logger.debug(
@@ -878,7 +878,7 @@ class ConformalOrchestrator:
         site_id: int,
         expected_fill_rate: float,
         actual_fill_rate: float,
-        group_id: int,
+        customer_id: int,
     ) -> Optional[Dict]:
         """
         Hook called when an order is fully fulfilled, providing a
@@ -892,7 +892,7 @@ class ConformalOrchestrator:
             site_id: Fulfillment site ID
             expected_fill_rate: Target fill rate (typically 1.0)
             actual_fill_rate: Actual fill rate (shipped/ordered)
-            group_id: Group ID for belief state
+            customer_id: Customer ID for belief state
         """
         if not (0.0 <= expected_fill_rate <= 1.0) or not (0.0 <= actual_fill_rate <= 1.0):
             logger.debug(
@@ -906,7 +906,7 @@ class ConformalOrchestrator:
 
         emergency_recal = await self._record_and_check_calibration(
             db, EntityType.SERVICE_LEVEL, entity_id,
-            group_id, expected_fill_rate, actual_fill_rate,
+            customer_id, expected_fill_rate, actual_fill_rate,
         )
 
         logger.debug(
@@ -959,23 +959,23 @@ async def _async_daily_recalibration() -> None:
         return
 
     async with async_session_factory() as db:
-        # Get all groups that have belief states
+        # Get all customers that have belief states
         result = await db.execute(
-            select(PowellBeliefState.group_id).distinct()
+            select(PowellBeliefState.customer_id).distinct()
         )
-        group_ids = result.scalars().all()
+        customer_ids = result.scalars().all()
 
         total_recalibrated = 0
-        for group_id in group_ids:
+        for customer_id in customer_ids:
             try:
                 feedback_service = CalibrationFeedbackService(db)
                 recalibrated = await feedback_service.recalibrate_all_stale(
-                    group_id=group_id,
+                    customer_id=customer_id,
                     max_age_hours=24,
                 )
                 total_recalibrated += len(recalibrated)
             except Exception as e:
-                logger.error(f"Recalibration failed for group {group_id}: {e}")
+                logger.error(f"Recalibration failed for customer {customer_id}: {e}")
 
         # Re-hydrate suite from updated DB state
         if total_recalibrated > 0:
@@ -986,7 +986,7 @@ async def _async_daily_recalibration() -> None:
         logger.info(
             f"Daily conformal recalibration complete: "
             f"{total_recalibrated} belief states recalibrated across "
-            f"{len(group_ids)} groups"
+            f"{len(customer_ids)} customers"
         )
 
 

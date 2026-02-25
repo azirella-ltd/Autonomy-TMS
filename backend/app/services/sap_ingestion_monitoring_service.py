@@ -89,7 +89,7 @@ class ActionType(str, Enum):
 class IngestionJob:
     """Represents a data ingestion job."""
     id: Optional[int] = None
-    group_id: int = 0
+    customer_id: int = 0
     connection_id: int = 0
 
     job_type: JobType = JobType.FULL_EXTRACT
@@ -118,7 +118,7 @@ class IngestionJob:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
-            "group_id": self.group_id,
+            "customer_id": self.customer_id,
             "connection_id": self.connection_id,
             "job_type": self.job_type.value,
             "status": self.status.value,
@@ -222,7 +222,7 @@ class DataQualityReport:
 class DataInsight:
     """An insight or recommendation from data analysis."""
     id: Optional[int] = None
-    group_id: int = 0
+    customer_id: int = 0
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
     # Classification
@@ -252,7 +252,7 @@ class DataInsight:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
-            "group_id": self.group_id,
+            "customer_id": self.customer_id,
             "timestamp": self.timestamp.isoformat(),
             "severity": self.severity.value,
             "category": self.category,
@@ -275,7 +275,7 @@ class DataInsight:
 class RemediationAction:
     """A remediation action for a data issue."""
     id: Optional[int] = None
-    group_id: int = 0
+    customer_id: int = 0
     insight_id: Optional[int] = None
 
     # Action details
@@ -306,7 +306,7 @@ class RemediationAction:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
-            "group_id": self.group_id,
+            "customer_id": self.customer_id,
             "insight_id": self.insight_id,
             "action_type": self.action_type.value,
             "status": self.status.value,
@@ -337,9 +337,9 @@ class SAPIngestionMonitoringService:
     5. Action management
     """
 
-    def __init__(self, db: AsyncSession, group_id: int):
+    def __init__(self, db: AsyncSession, customer_id: int):
         self.db = db
-        self.group_id = group_id
+        self.customer_id = customer_id
         self._jobs: Dict[int, IngestionJob] = {}
         self._quality_history: Dict[str, List[DataQualityReport]] = defaultdict(list)
         self._insights: List[DataInsight] = []
@@ -361,7 +361,7 @@ class SAPIngestionMonitoringService:
         """Create a new ingestion job."""
         job = IngestionJob(
             id=self._next_job_id,
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             connection_id=connection_id,
             job_type=job_type,
             tables=tables,
@@ -912,7 +912,7 @@ class SAPIngestionMonitoringService:
         """Create a new insight."""
         insight = DataInsight(
             id=self._next_insight_id,
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             timestamp=datetime.utcnow(),
             severity=severity,
             category=category,
@@ -934,7 +934,7 @@ class SAPIngestionMonitoringService:
         for action_info in suggested_actions or []:
             action = RemediationAction(
                 id=self._next_action_id,
-                group_id=self.group_id,
+                customer_id=self.customer_id,
                 insight_id=insight.id,
                 action_type=ActionType(action_info.get("type", ActionType.MANUAL_REVIEW.value)),
                 title=action_info.get("title", ""),
@@ -1076,6 +1076,6 @@ class SAPIngestionMonitoringService:
 
 
 # Convenience function
-def create_ingestion_monitoring_service(db: AsyncSession, group_id: int) -> SAPIngestionMonitoringService:
-    """Create an ingestion monitoring service for a group."""
-    return SAPIngestionMonitoringService(db, group_id)
+def create_ingestion_monitoring_service(db: AsyncSession, customer_id: int) -> SAPIngestionMonitoringService:
+    """Create an ingestion monitoring service for a customer."""
+    return SAPIngestionMonitoringService(db, customer_id)

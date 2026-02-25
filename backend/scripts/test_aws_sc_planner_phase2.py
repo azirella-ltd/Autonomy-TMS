@@ -1,8 +1,8 @@
 """
-Test AWS SC Planner with Phase 2 group_id Support
+Test AWS SC Planner with Phase 2 customer_id Support
 
 This script tests that the AWSSupplyChainPlanner works correctly with
-the new group_id parameter added in Phase 2.
+the new customer_id parameter added in Phase 2.
 
 Usage:
     docker compose exec backend python scripts/test_aws_sc_planner_phase2.py
@@ -14,45 +14,45 @@ from sqlalchemy import select
 
 from app.db.session import SessionLocal
 from app.models.supply_chain_config import SupplyChainConfig
-from app.models.group import Group
+from app.models.customer import Customer
 from app.services.aws_sc_planning.planner import AWSSupplyChainPlanner
 
 
 async def test_planner_with_group_id():
-    """Test AWSSupplyChainPlanner with group_id filtering"""
+    """Test AWSSupplyChainPlanner with customer_id filtering"""
 
     print("=" * 80)
-    print("Testing AWS SC Planner with Phase 2 group_id Support")
+    print("Testing AWS SC Planner with Phase 2 customer_id Support")
     print("=" * 80)
     print()
 
     async with SessionLocal() as db:
-        # Find a group with a config that has AWS SC data
+        # Find a customer with a config that has AWS SC data
         print("1. Finding suitable test configuration...")
         print("-" * 80)
 
-        # Get Complex_SC group (group_id=3) which has planning data
+        # Get Complex_SC customer (customer_id=3) which has planning data
         result = await db.execute(
-            select(Group).filter(Group.name == "Complex_SC")
+            select(Customer).filter(Customer.name == "Complex_SC")
         )
-        group = result.scalar_one_or_none()
+        customer = result.scalar_one_or_none()
 
-        if not group:
-            print("❌ Complex_SC group not found")
+        if not customer:
+            print("❌ Complex_SC customer not found")
             return False
 
-        print(f"✓ Found group: {group.name} (ID={group.id})")
+        print(f"✓ Found customer: {customer.name} (ID={customer.id})")
 
-        # Get the config for this group
+        # Get the config for this customer
         result = await db.execute(
             select(SupplyChainConfig).filter(
-                SupplyChainConfig.group_id == group.id
+                SupplyChainConfig.customer_id == customer.id
             ).limit(1)
         )
         config = result.scalar_one_or_none()
 
         if not config:
-            print(f"❌ No config found for group {group.id}")
+            print(f"❌ No config found for customer {customer.id}")
             return False
 
         print(f"✓ Found config: {config.name} (ID={config.id})")
@@ -62,7 +62,7 @@ async def test_planner_with_group_id():
         print("2. Testing OLD planner (config_id only)...")
         print("-" * 80)
         try:
-            # This should fail because __init__ now requires group_id
+            # This should fail because __init__ now requires customer_id
             planner_old = AWSSupplyChainPlanner(
                 config_id=config.id,
                 planning_horizon=7
@@ -73,18 +73,18 @@ async def test_planner_with_group_id():
             print(f"✓ OLD planner correctly rejected: {e}")
             print()
 
-        # Test NEW way (should work - config_id + group_id)
-        print("3. Testing NEW planner (config_id + group_id)...")
+        # Test NEW way (should work - config_id + customer_id)
+        print("3. Testing NEW planner (config_id + customer_id)...")
         print("-" * 80)
         try:
             planner_new = AWSSupplyChainPlanner(
                 config_id=config.id,
-                group_id=group.id,
+                customer_id=customer.id,
                 planning_horizon=7
             )
             print(f"✓ NEW planner created successfully")
             print(f"  - config_id: {planner_new.config_id}")
-            print(f"  - group_id: {planner_new.group_id}")
+            print(f"  - customer_id: {planner_new.customer_id}")
             print(f"  - planning_horizon: {planner_new.planning_horizon}")
             print()
         except Exception as e:
@@ -121,16 +121,16 @@ async def test_planner_with_group_id():
                 print(f"  - Generated {len(supply_plans)} supply plans")
                 print()
 
-                # Verify all plans have group_id set
-                print("6. Verifying supply plans have group_id...")
+                # Verify all plans have customer_id set
+                print("6. Verifying supply plans have customer_id...")
                 print("-" * 80)
-                plans_with_group = sum(1 for p in supply_plans if p.group_id == group.id)
-                print(f"  - Plans with group_id: {plans_with_group}/{len(supply_plans)}")
+                plans_with_group = sum(1 for p in supply_plans if p.customer_id == customer.id)
+                print(f"  - Plans with customer_id: {plans_with_group}/{len(supply_plans)}")
 
                 if plans_with_group == len(supply_plans):
-                    print(f"✓ All plans have correct group_id")
+                    print(f"✓ All plans have correct customer_id")
                 else:
-                    print(f"⚠️  Some plans missing group_id")
+                    print(f"⚠️  Some plans missing customer_id")
                 print()
 
             except Exception as e:
@@ -143,15 +143,15 @@ async def test_planner_with_group_id():
         print("=" * 80)
         print("Test Summary")
         print("=" * 80)
-        print(f"✅ Phase 2 group_id support is working correctly!")
+        print(f"✅ Phase 2 customer_id support is working correctly!")
         print()
         print("Key Changes Verified:")
-        print("  ✓ AWSSupplyChainPlanner requires group_id parameter")
+        print("  ✓ AWSSupplyChainPlanner requires customer_id parameter")
         print("  ✓ All sub-processors (DemandProcessor, InventoryTargetCalculator, NetRequirementsCalculator)")
-        print("    accept and use group_id for filtering")
-        print("  ✓ Planning execution works with group-based filtering")
+        print("    accept and use customer_id for filtering")
+        print("  ✓ Planning execution works with customer-based filtering")
         if is_valid and len(supply_plans) > 0:
-            print(f"  ✓ Supply plans generated with group_id={group.id}")
+            print(f"  ✓ Supply plans generated with customer_id={customer.id}")
         print()
         print("=" * 80)
 

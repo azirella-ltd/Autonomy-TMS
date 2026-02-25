@@ -316,7 +316,7 @@ def _coerce_transportation_lane_payload(payload: Dict[str, Any]) -> Dict[str, An
 _coerce_lane_payload = _coerce_transportation_lane_payload
 
 
-def _get_user_admin_group_id(db: Session, user: models.User) -> Optional[int]:
+def _get_user_admin_customer_id(db: Session, user: models.User) -> Optional[int]:
     """Return the group ID managed by the provided user, if any.
 
     Note: Uses user_type (not is_superuser) to determine admin status.
@@ -336,18 +336,18 @@ def _get_user_admin_group_id(db: Session, user: models.User) -> Optional[int]:
 
     # First, check if the user is explicitly registered as the group's primary admin
     direct_group = (
-        db.query(models.Group)
-        .filter(models.Group.admin_id == user.id)
+        db.query(models.Customer)
+        .filter(models.Customer.admin_id == user.id)
         .first()
     )
     if direct_group:
         return direct_group.id
 
     # GROUP_ADMIN sees their group's configs
-    if user_type == UserTypeEnum.GROUP_ADMIN and user.group_id:
+    if user_type == UserTypeEnum.GROUP_ADMIN and user.customer_id:
         group = (
-            db.query(models.Group)
-            .filter(models.Group.id == user.group_id)
+            db.query(models.Customer)
+            .filter(models.Customer.id == user.customer_id)
             .first()
         )
         if group:
@@ -366,10 +366,10 @@ def _ensure_user_can_manage_config(
     if user_type == UserTypeEnum.SYSTEM_ADMIN:
         return
 
-    admin_group_id = _get_user_admin_group_id(db, user)
-    if config.group_id is None:
+    admin_customer_id = _get_user_admin_customer_id(db, user)
+    if config.customer_id is None:
         return
-    if admin_group_id and config.group_id == admin_group_id:
+    if admin_customer_id and config.customer_id == admin_customer_id:
         return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
@@ -387,16 +387,16 @@ def _ensure_user_can_view_config(
     if user_type == UserTypeEnum.SYSTEM_ADMIN:
         return
 
-    config_group_id = getattr(config, "group_id", None)
-    if config_group_id is None:
+    config_customer_id = getattr(config, "customer_id", None)
+    if config_customer_id is None:
         return
 
-    admin_group_id = _get_user_admin_group_id(db, user)
-    if admin_group_id and config_group_id == admin_group_id:
+    admin_customer_id = _get_user_admin_customer_id(db, user)
+    if admin_customer_id and config_customer_id == admin_customer_id:
         return
 
-    user_group_id = getattr(user, "group_id", None)
-    if user_group_id and user_group_id == config_group_id:
+    user_customer_id = getattr(user, "customer_id", None)
+    if user_customer_id and user_customer_id == config_customer_id:
         return
 
     raise HTTPException(
@@ -427,7 +427,7 @@ def _compute_config_hash(db: Session, config_id: int) -> Optional[str]:
             "name": config.name,
             "description": config.description,
             "is_active": bool(config.is_active),
-            "group_id": config.group_id,
+            "customer_id": config.customer_id,
         },
         "items": [
             {
@@ -721,23 +721,23 @@ async def read_configs(
         return crud.supply_chain_config.get_multi(db, skip=skip, limit=limit)
 
     # GROUP_ADMIN sees configs for their administered group
-    admin_group_id = _get_user_admin_group_id(db, current_user)
-    if admin_group_id:
+    admin_customer_id = _get_user_admin_customer_id(db, current_user)
+    if admin_customer_id:
         return crud.supply_chain_config.get_multi(
             db,
             skip=skip,
             limit=limit,
-            group_id=admin_group_id,
+            customer_id=admin_customer_id,
         )
 
     # Regular users see configs for their assigned group
-    user_group_id = getattr(current_user, "group_id", None)
-    if user_group_id:
+    user_customer_id = getattr(current_user, "customer_id", None)
+    if user_customer_id:
         return crud.supply_chain_config.get_multi(
             db,
             skip=skip,
             limit=limit,
-            group_id=user_group_id,
+            customer_id=user_customer_id,
         )
 
     raise HTTPException(
@@ -756,19 +756,19 @@ def read_active_config(
     if user_type == UserTypeEnum.SYSTEM_ADMIN:
         config = crud.supply_chain_config.get_active(db)
     else:
-        admin_group_id = _get_user_admin_group_id(db, current_user)
-        if admin_group_id:
+        admin_customer_id = _get_user_admin_customer_id(db, current_user)
+        if admin_customer_id:
             config = (
                 db.query(SupplyChainConfig)
                 .filter(
-                    SupplyChainConfig.group_id == admin_group_id,
+                    SupplyChainConfig.customer_id == admin_customer_id,
                     SupplyChainConfig.is_active == True,
                 )
                 .first()
             )
         else:
-            user_group_id = getattr(current_user, "group_id", None)
-            if not user_group_id:
+            user_customer_id = getattr(current_user, "customer_id", None)
+            if not user_customer_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="You do not have permission to view this configuration",
@@ -777,7 +777,7 @@ def read_active_config(
             config = (
                 db.query(SupplyChainConfig)
                 .filter(
-                    SupplyChainConfig.group_id == user_group_id,
+                    SupplyChainConfig.customer_id == user_customer_id,
                     SupplyChainConfig.is_active == True,
                 )
                 .first()
@@ -799,32 +799,32 @@ def create_config(
     background_tasks: BackgroundTasks,
 ):
     """Create a new supply chain configuration."""
-    admin_group_id = _get_user_admin_group_id(db, current_user)
+    admin_customer_id = _get_user_admin_customer_id(db, current_user)
     user_type = getattr(current_user, "user_type", None)
 
     if user_type == UserTypeEnum.SYSTEM_ADMIN:
-        target_group_id = config_in.group_id
-        if target_group_id is None:
+        target_customer_id = config_in.customer_id
+        if target_customer_id is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Group is required to create a configuration",
+                detail="Customer is required to create a configuration",
             )
 
-        if not db.query(models.Group).filter(models.Group.id == target_group_id).first():
+        if not db.query(models.Customer).filter(models.Customer.id == target_customer_id).first():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Specified group not found",
+                detail="Specified customer not found",
             )
 
         payload = config_in
     else:
-        if not admin_group_id:
+        if not admin_customer_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have permission to create configurations",
             )
 
-        payload = config_in.copy(update={"group_id": admin_group_id})
+        payload = config_in.copy(update={"customer_id": admin_customer_id})
 
     cfg = crud.supply_chain_config.create(db, obj_in=payload)
     # Attach creator if column exists
@@ -867,25 +867,25 @@ def update_config(
     user_type = getattr(current_user, "user_type", None)
 
     if user_type == UserTypeEnum.SYSTEM_ADMIN:
-        if "group_id" in update_data:
-            new_group_id = update_data["group_id"]
-            if new_group_id is None:
+        if "customer_id" in update_data:
+            new_customer_id = update_data["customer_id"]
+            if new_customer_id is None:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Group cannot be null",
+                    detail="Customer cannot be null",
                 )
-            if not db.query(models.Group).filter(models.Group.id == new_group_id).first():
+            if not db.query(models.Customer).filter(models.Customer.id == new_customer_id).first():
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Specified group not found",
+                    detail="Specified customer not found",
                 )
     else:
-        if "group_id" in update_data and update_data["group_id"] != config.group_id:
+        if "customer_id" in update_data and update_data["customer_id"] != config.customer_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="You cannot reassign this configuration to another group",
+                detail="You cannot reassign this configuration to another customer",
             )
-        update_data.pop("group_id", None)
+        update_data.pop("customer_id", None)
 
     updated = crud.supply_chain_config.update(db, db_obj=config, obj_in=update_data)
     changed_keys = set(update_data.keys())
@@ -2083,7 +2083,7 @@ def validate_supply_chain_config(
 
     # Validate access (must be in same group or be system admin)
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.group_id != current_user.group_id:
+        if config.customer_id != current_user.customer_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to validate this configuration"
@@ -2164,7 +2164,7 @@ def create_scenario_branch(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if parent.group_id != current_user.group_id:
+        if parent.customer_id != current_user.customer_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to branch from this configuration"
@@ -2242,7 +2242,7 @@ def get_effective_configuration(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.group_id != current_user.group_id:
+        if config.customer_id != current_user.customer_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to view this configuration"
@@ -2325,7 +2325,7 @@ def update_scenario(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.group_id != current_user.group_id:
+        if config.customer_id != current_user.customer_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to update this configuration"
@@ -2398,7 +2398,7 @@ def commit_scenario(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.group_id != current_user.group_id:
+        if config.customer_id != current_user.customer_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to commit this configuration"
@@ -2456,7 +2456,7 @@ def rollback_scenario(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.group_id != current_user.group_id:
+        if config.customer_id != current_user.customer_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to rollback this configuration"
@@ -2516,7 +2516,7 @@ def diff_scenarios(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.group_id != current_user.group_id or other_config.group_id != current_user.group_id:
+        if config.customer_id != current_user.customer_id or other_config.customer_id != current_user.customer_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to compare these configurations"
@@ -2574,7 +2574,7 @@ def get_scenario_tree(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.group_id != current_user.group_id:
+        if config.customer_id != current_user.customer_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to view this configuration tree"
@@ -3075,30 +3075,30 @@ def get_config_tree(
     return build_tree(config)
 
 
-@router.get("/group/{group_id}/root", response_model=Optional[schemas.SupplyChainConfig])
-def get_group_root_config(
-    group_id: int,
+@router.get("/customer/{customer_id}/root", response_model=Optional[schemas.SupplyChainConfig])
+def get_customer_root_config(
+    customer_id: int,
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_active_user),
 ) -> Optional[SupplyChainConfig]:
-    """Get the root configuration for a group.
+    """Get the root configuration for a customer.
 
     Returns the config that has no parent_config_id (the root of the lineage tree).
     """
     user_type = getattr(current_user, "user_type", None)
     if user_type != UserTypeEnum.SYSTEM_ADMIN:
-        admin_group_id = _get_user_admin_group_id(db, current_user)
-        user_group_id = getattr(current_user, "group_id", None)
-        if admin_group_id != group_id and user_group_id != group_id:
+        admin_customer_id = _get_user_admin_customer_id(db, current_user)
+        user_customer_id = getattr(current_user, "customer_id", None)
+        if admin_customer_id != customer_id and user_customer_id != customer_id:
             raise HTTPException(
                 status_code=403,
-                detail="You do not have access to this group's configurations"
+                detail="You do not have access to this customer's configurations"
             )
 
     root_config = (
         db.query(SupplyChainConfig)
         .filter(
-            SupplyChainConfig.group_id == group_id,
+            SupplyChainConfig.customer_id == customer_id,
             SupplyChainConfig.parent_config_id.is_(None),
         )
         .first()
@@ -3107,31 +3107,31 @@ def get_group_root_config(
     return root_config
 
 
-@router.get("/group/{group_id}/tree", response_model=List[ConfigTreeNode])
-def get_group_config_tree(
-    group_id: int,
+@router.get("/customer/{customer_id}/tree", response_model=List[ConfigTreeNode])
+def get_customer_config_tree(
+    customer_id: int,
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_active_user),
 ) -> List[ConfigTreeNode]:
-    """Get the full config tree for a group.
+    """Get the full config tree for a customer.
 
     Returns all root configs (configs with no parent) and their descendants.
     """
     user_type = getattr(current_user, "user_type", None)
     if user_type != UserTypeEnum.SYSTEM_ADMIN:
-        admin_group_id = _get_user_admin_group_id(db, current_user)
-        user_group_id = getattr(current_user, "group_id", None)
-        if admin_group_id != group_id and user_group_id != group_id:
+        admin_customer_id = _get_user_admin_customer_id(db, current_user)
+        user_customer_id = getattr(current_user, "customer_id", None)
+        if admin_customer_id != customer_id and user_customer_id != customer_id:
             raise HTTPException(
                 status_code=403,
-                detail="You do not have access to this group's configurations"
+                detail="You do not have access to this customer's configurations"
             )
 
     # Get all root configs (no parent)
     root_configs = (
         db.query(SupplyChainConfig)
         .filter(
-            SupplyChainConfig.group_id == group_id,
+            SupplyChainConfig.customer_id == customer_id,
             SupplyChainConfig.parent_config_id.is_(None),
         )
         .all()

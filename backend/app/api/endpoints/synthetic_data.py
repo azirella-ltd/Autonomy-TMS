@@ -112,7 +112,7 @@ class DirectGenerationRequest(BaseModel):
 class GenerationResultResponse(BaseModel):
     """Response for data generation result."""
     success: bool
-    group_id: Optional[int] = None
+    customer_id: Optional[int] = None
     config_id: Optional[int] = None
     admin_user_id: Optional[int] = None
     nodes_created: Optional[int] = None
@@ -521,7 +521,7 @@ async def generate_synthetic_data(
 
         return GenerationResultResponse(
             success=True,
-            group_id=result.group_id,
+            customer_id=result.customer_id,
             config_id=result.config_id,
             admin_user_id=result.admin_user_id,
             nodes_created=result.nodes_created,

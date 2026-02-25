@@ -84,7 +84,7 @@ class WatchlistResponse(BaseModel):
     name: str
     description: Optional[str]
     created_by: int
-    group_id: Optional[int]
+    customer_id: Optional[int]
     config_id: Optional[int]
     product_filter: Optional[List[str]]
     site_filter: Optional[List[str]]
@@ -409,7 +409,7 @@ async def create_watchlist(
         name=watchlist.name,
         description=watchlist.description,
         created_by=current_user.id,
-        group_id=current_user.group_id,
+        customer_id=current_user.customer_id,
         config_id=watchlist.config_id,
         product_filter=watchlist.product_filter,
         site_filter=watchlist.site_filter,
@@ -435,7 +435,7 @@ async def get_watchlists(
     db: Session = Depends(get_sync_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Get all watchlists for the current user's group."""
+    """Get all watchlists for the current user's customer."""
     query = db.query(Watchlist).filter(Watchlist.created_by == current_user.id)
 
     if is_active is not None:

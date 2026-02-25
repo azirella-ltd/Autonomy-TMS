@@ -42,11 +42,11 @@ async def get_hierarchical_dashboard(
     - Product: Category > Family > Group > Product
     - Time: Year > Quarter > Month > Week
     """
-    group_id = current_user.group_id or 1
+    customer_id = current_user.customer_id or 1
     service = HierarchicalMetricsService()
 
     data = service.get_dashboard_metrics(
-        group_id=group_id,
+        customer_id=customer_id,
         site_level=site_level,
         site_key=site_key,
         product_level=product_level,

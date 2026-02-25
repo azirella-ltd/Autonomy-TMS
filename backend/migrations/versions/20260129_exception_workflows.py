@@ -29,7 +29,7 @@ def upgrade():
         sa.Column('code', sa.String(50), nullable=False),
         sa.Column('description', sa.Text(), nullable=True),
         sa.Column('config_id', sa.Integer(), nullable=True),
-        sa.Column('group_id', sa.Integer(), nullable=True),
+        sa.Column('customer_id', sa.Integer(), nullable=True),
         sa.Column('exception_types', sa.JSON(), nullable=True),
         sa.Column('severity_levels', sa.JSON(), nullable=True),
         sa.Column('product_categories', sa.JSON(), nullable=True),
@@ -49,11 +49,11 @@ def upgrade():
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('code'),
         sa.ForeignKeyConstraint(['config_id'], ['supply_chain_configs.id']),
-        sa.ForeignKeyConstraint(['group_id'], ['groups.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['customer_id'], ['groups.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['created_by_id'], ['users.id']),
     )
     op.create_index('idx_ewt_config', 'exception_workflow_template', ['config_id'])
-    op.create_index('idx_ewt_group', 'exception_workflow_template', ['group_id'])
+    op.create_index('idx_ewt_group', 'exception_workflow_template', ['customer_id'])
     op.create_index('idx_ewt_active', 'exception_workflow_template', ['is_active', 'priority'])
 
     # Create exception_escalation_log table

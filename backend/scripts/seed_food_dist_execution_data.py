@@ -11,7 +11,7 @@ Populates all Execution-section dashboards with demo data:
 - Invoices + Line Items + 3-Way Match Results
 - Goods Receipts + Line Items
 
-Uses: config_id=22, group_id=13, dc_site_id=256, user_id=60
+Uses: config_id=22, customer_id=13, dc_site_id=256, user_id=60
 """
 
 import sys
@@ -198,7 +198,7 @@ def seed_po_line_items(conn):
 
 # ─── 2. Transfer Orders ──────────────────────────────────────────────────────
 # Actual columns: id, to_number, source_site_id, destination_site_id, config_id,
-#   group_id, company_id, order_type, from_tpartner_id, to_tpartner_id, source,
+#   customer_id, company_id, order_type, from_tpartner_id, to_tpartner_id, source,
 #   source_event_id, source_update_dttm, status, order_date, shipment_date,
 #   estimated_delivery_date, actual_ship_date, actual_delivery_date, scenario_id,
 #   order_round, arrival_round, transportation_mode, carrier, tracking_number,
@@ -233,7 +233,7 @@ def seed_transfer_orders(conn):
 
         conn.execute(text("""
             INSERT INTO transfer_order
-            (to_number, source_site_id, destination_site_id, config_id, group_id, company_id,
+            (to_number, source_site_id, destination_site_id, config_id, customer_id, company_id,
              order_type, status, order_date, shipment_date, estimated_delivery_date,
              actual_ship_date, actual_delivery_date, transportation_mode, carrier,
              tracking_number, transportation_cost, currency, created_by_id, created_at)
@@ -365,7 +365,7 @@ def seed_supplier_performance(conn):
 
 # ─── 4. Project Orders ───────────────────────────────────────────────────────
 # Actual columns: id, project_order_number, project_id, project_name,
-#   customer_id, customer_name, site_id (String), config_id, group_id,
+#   customer_id, customer_name, site_id (String), config_id, customer_id,
 #   company_id, order_type, source, source_event_id, source_update_dttm,
 #   status, order_date, required_start_date, required_completion_date,
 #   planned_start_date, planned_completion_date, actual_start_date,
@@ -439,7 +439,7 @@ def seed_project_orders(conn):
         conn.execute(text("""
             INSERT INTO project_order
             (project_order_number, project_id, project_name, site_id,
-             config_id, group_id, company_id, order_type, status, order_date,
+             config_id, customer_id, company_id, order_type, status, order_date,
              required_start_date, required_completion_date,
              planned_start_date, planned_completion_date,
              actual_start_date, actual_completion_date,
@@ -505,7 +505,7 @@ def seed_project_orders(conn):
 
 # ─── 5. Maintenance Orders ───────────────────────────────────────────────────
 # Actual columns: id, maintenance_order_number, asset_id, asset_name,
-#   asset_category, site_id (String), config_id, group_id, company_id,
+#   asset_category, site_id (String), config_id, customer_id, company_id,
 #   order_type, source, maintenance_type, status, priority, order_date,
 #   scheduled_start_date, scheduled_end_date, actual_start_date,
 #   actual_end_date, work_description, root_cause, resolution_notes,
@@ -560,7 +560,7 @@ def seed_maintenance_orders(conn):
         conn.execute(text("""
             INSERT INTO maintenance_order
             (maintenance_order_number, asset_id, asset_name, asset_category,
-             site_id, config_id, group_id, company_id, order_type, source,
+             site_id, config_id, customer_id, company_id, order_type, source,
              maintenance_type, status, priority, order_date,
              scheduled_start_date, scheduled_end_date,
              actual_start_date, actual_end_date,
@@ -635,7 +635,7 @@ def seed_maintenance_orders(conn):
 
 # ─── 6. Turnaround Orders ────────────────────────────────────────────────────
 # Actual columns: id, turnaround_order_number, from_site_id (String),
-#   to_site_id (String), refurbishment_site_id (String), config_id, group_id,
+#   to_site_id (String), refurbishment_site_id (String), config_id, customer_id,
 #   company_id, order_type, source, return_reason_code,
 #   return_reason_description, turnaround_type, status, order_date,
 #   expected_receipt_date, actual_receipt_date, inspection_date,
@@ -696,7 +696,7 @@ def seed_turnaround_orders(conn):
         conn.execute(text("""
             INSERT INTO turnaround_order
             (turnaround_order_number, from_site_id, to_site_id, refurbishment_site_id,
-             config_id, group_id, company_id, order_type, source,
+             config_id, customer_id, company_id, order_type, source,
              return_reason_code, return_reason_description, turnaround_type,
              status, order_date, expected_receipt_date, actual_receipt_date,
              inspection_date, disposition_date, completion_date, disposition,

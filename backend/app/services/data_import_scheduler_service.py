@@ -203,14 +203,14 @@ class DataImportSchedulerService:
 
     async def configure_tier_schedules(
         self,
-        group_id: int,
+        customer_id: int,
         tier_overrides: Optional[Dict[ImportTier, str]] = None,
     ) -> List[SyncJobConfig]:
         """
         Configure sync jobs for all data types in each tier.
 
         Args:
-            group_id: Group to configure
+            customer_id: Customer to configure
             tier_overrides: Optional cron expression overrides by tier
 
         Returns:
@@ -223,7 +223,7 @@ class DataImportSchedulerService:
 
             for data_type in tier_config.data_types:
                 config = await self._create_or_update_config(
-                    group_id=group_id,
+                    customer_id=customer_id,
                     data_type=data_type,
                     tier=tier,
                     cron=cron,
@@ -232,12 +232,12 @@ class DataImportSchedulerService:
                 configs.append(config)
 
         await self.db.flush()
-        logger.info(f"Configured {len(configs)} sync jobs for group {group_id}")
+        logger.info(f"Configured {len(configs)} sync jobs for customer {customer_id}")
         return configs
 
     async def _create_or_update_config(
         self,
-        group_id: int,
+        customer_id: int,
         data_type: SyncDataType,
         tier: ImportTier,
         cron: str,
@@ -247,7 +247,7 @@ class DataImportSchedulerService:
         # Check for existing config
         result = await self.db.execute(
             select(SyncJobConfig).where(
-                SyncJobConfig.group_id == group_id,
+                SyncJobConfig.customer_id == customer_id,
                 SyncJobConfig.data_type == data_type,
             )
         )
@@ -265,7 +265,7 @@ class DataImportSchedulerService:
         else:
             # Create new
             config = SyncJobConfig(
-                group_id=group_id,
+                customer_id=customer_id,
                 data_type=data_type,
                 name=defaults.get("name", f"{data_type.value} Sync"),
                 description=f"{tier.value.capitalize()} tier import",
@@ -283,7 +283,7 @@ class DataImportSchedulerService:
 
     async def get_tier_status(
         self,
-        group_id: int,
+        customer_id: int,
     ) -> Dict[ImportTier, Dict[str, Any]]:
         """
         Get status summary for each import tier.
@@ -297,7 +297,7 @@ class DataImportSchedulerService:
             # Get configs for this tier
             result = await self.db.execute(
                 select(SyncJobConfig).where(
-                    SyncJobConfig.group_id == group_id,
+                    SyncJobConfig.customer_id == customer_id,
                     SyncJobConfig.data_type.in_(tier_config.data_types),
                 )
             )
@@ -547,14 +547,14 @@ class DataImportSchedulerService:
     async def trigger_workflows_from_cdc(
         self,
         cdc_result: CDCResult,
-        group_id: int,
+        customer_id: int,
     ) -> Dict[str, Any]:
         """
         Trigger appropriate workflows based on CDC results.
 
         Args:
             cdc_result: The CDC analysis result
-            group_id: Group ID
+            customer_id: Customer ID
 
         Returns:
             Summary of triggered workflows
@@ -578,28 +578,28 @@ class DataImportSchedulerService:
             if workflow_step == "condition_monitor":
                 # Trigger condition monitoring
                 conditions = await self._trigger_condition_monitoring(
-                    cdc_result, group_id
+                    cdc_result, customer_id
                 )
                 triggered["condition_checks"] = conditions
 
             elif workflow_step == "agent_trigger":
                 # Trigger execution agents (TRMs)
                 agents = await self._trigger_execution_agents(
-                    cdc_result, group_id
+                    cdc_result, customer_id
                 )
                 triggered["agent_triggers"] = agents
 
             elif workflow_step == "soop_trigger":
                 # Trigger S&OP cycle
                 soop = await self._trigger_soop_cycle(
-                    cdc_result, group_id
+                    cdc_result, customer_id
                 )
                 triggered["agent_triggers"].extend(soop)
 
             elif workflow_step == "alert":
                 # Send notifications
                 alerts = await self._send_change_alerts(
-                    cdc_result, group_id
+                    cdc_result, customer_id
                 )
                 triggered["notifications"] = alerts
 
@@ -608,7 +608,7 @@ class DataImportSchedulerService:
     async def _trigger_condition_monitoring(
         self,
         cdc_result: CDCResult,
-        group_id: int,
+        customer_id: int,
     ) -> List[str]:
         """Trigger condition monitoring based on CDC changes."""
         # This will be implemented by ConditionMonitorService
@@ -631,7 +631,7 @@ class DataImportSchedulerService:
     async def _trigger_execution_agents(
         self,
         cdc_result: CDCResult,
-        group_id: int,
+        customer_id: int,
     ) -> List[str]:
         """Trigger TRM agents based on changes."""
         agents_to_trigger = []
@@ -654,7 +654,7 @@ class DataImportSchedulerService:
     async def _trigger_soop_cycle(
         self,
         cdc_result: CDCResult,
-        group_id: int,
+        customer_id: int,
     ) -> List[str]:
         """Trigger S&OP planning cycle."""
         agents = []
@@ -670,7 +670,7 @@ class DataImportSchedulerService:
     async def _send_change_alerts(
         self,
         cdc_result: CDCResult,
-        group_id: int,
+        customer_id: int,
     ) -> List[str]:
         """Send alerts for significant changes."""
         alerts = []

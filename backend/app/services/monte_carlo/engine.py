@@ -44,7 +44,7 @@ class MonteCarloEngine:
         self,
         run_id: int,
         config_id: int,
-        group_id: int,
+        customer_id: int,
         num_scenarios: int = 1000,
         random_seed: Optional[int] = None
     ):
@@ -54,13 +54,13 @@ class MonteCarloEngine:
         Args:
             run_id: MonteCarloRun ID for storing results
             config_id: Supply chain configuration ID
-            group_id: Group ID for multi-tenancy
+            customer_id: Customer ID for multi-tenancy
             num_scenarios: Number of scenarios to simulate (default: 1000)
             random_seed: Random seed for reproducibility (optional)
         """
         self.run_id = run_id
         self.config_id = config_id
-        self.group_id = group_id
+        self.customer_id = customer_id
         self.num_scenarios = num_scenarios
         self.random_seed = random_seed
 
@@ -68,7 +68,7 @@ class MonteCarloEngine:
         self.rng = np.random.RandomState(seed=random_seed)
 
         # Initialize components
-        self.sampler = StochasticSampler(config_id, group_id, scenario_id=None)
+        self.sampler = StochasticSampler(config_id, customer_id, scenario_id=None)
 
         # Results storage
         self.scenario_results: List[Dict[str, Any]] = []
@@ -174,7 +174,7 @@ class MonteCarloEngine:
         # Run supply chain planner with sampled inputs
         planner = SupplyChainPlanner(
             config_id=self.config_id,
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             planning_horizon=planning_horizon_weeks * 7  # Convert weeks to days
         )
 

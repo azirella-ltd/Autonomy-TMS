@@ -10,7 +10,7 @@ Performance Impact:
 - Round processing time reduction: 5-10x
 
 Usage:
-    cache = ExecutionCache(db, config_id=2, group_id=2)
+    cache = ExecutionCache(db, config_id=2, customer_id=2)
     await cache.load()
 
     # Fast lookups (no DB query)
@@ -54,7 +54,7 @@ class ExecutionCache:
         self,
         db: AsyncSession,
         config_id: int,
-        group_id: int
+        customer_id: int
     ):
         """
         Initialize execution cache
@@ -62,11 +62,11 @@ class ExecutionCache:
         Args:
             db: Database session
             config_id: Supply chain configuration ID
-            group_id: Group ID for multi-tenancy
+            customer_id: Customer ID for multi-tenancy
         """
         self.db = db
         self.config_id = config_id
-        self.group_id = group_id
+        self.customer_id = customer_id
 
         # Cache dictionaries
         self._inv_policies: Dict[Tuple[int, int], InvPolicy] = {}
@@ -110,7 +110,7 @@ class ExecutionCache:
         if self._loaded:
             return self._get_cache_counts()
 
-        print(f"  Loading execution cache for config_id={self.config_id}, group_id={self.group_id}...")
+        print(f"  Loading execution cache for config_id={self.config_id}, customer_id={self.customer_id}...")
 
         # Load inventory policies
         await self._load_inv_policies()
@@ -148,7 +148,7 @@ class ExecutionCache:
         result = await self.db.execute(
             select(InvPolicy).filter(
                 InvPolicy.config_id == self.config_id,
-                InvPolicy.group_id == self.group_id
+                InvPolicy.customer_id == self.customer_id
             )
         )
 
@@ -161,7 +161,7 @@ class ExecutionCache:
         result = await self.db.execute(
             select(SourcingRules).filter(
                 SourcingRules.config_id == self.config_id,
-                SourcingRules.group_id == self.group_id
+                SourcingRules.customer_id == self.customer_id
             )
         )
 
@@ -176,7 +176,7 @@ class ExecutionCache:
         result = await self.db.execute(
             select(ProductionProcess).filter(
                 ProductionProcess.config_id == self.config_id,
-                ProductionProcess.group_id == self.group_id
+                ProductionProcess.customer_id == self.customer_id
             )
         )
 
@@ -189,7 +189,7 @@ class ExecutionCache:
         result = await self.db.execute(
             select(ProductionCapacity).filter(
                 ProductionCapacity.config_id == self.config_id,
-                ProductionCapacity.group_id == self.group_id
+                ProductionCapacity.customer_id == self.customer_id
             )
         )
 
@@ -202,7 +202,7 @@ class ExecutionCache:
         result = await self.db.execute(
             select(OrderAggregationPolicy).filter(
                 OrderAggregationPolicy.config_id == self.config_id,
-                OrderAggregationPolicy.group_id == self.group_id,
+                OrderAggregationPolicy.customer_id == self.customer_id,
                 OrderAggregationPolicy.is_active == True
             )
         )

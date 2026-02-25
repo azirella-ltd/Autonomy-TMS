@@ -83,7 +83,7 @@ const ScenariosList = () => {
   const { user } = useAuth();
   const isGroupAdmin = isGroupAdminUser(user);
   const restrictLifecycleActions = isGroupAdmin;
-  const scConfigBasePath = isGroupAdmin ? '/admin/group/supply-chain-configs' : '/supply-chain-config';
+  const scConfigBasePath = isGroupAdmin ? '/admin/customer/supply-chain-configs' : '/supply-chain-config';
   const supervisionPathBase = '/admin?section=supervision';
   const toast = useToast();
 
@@ -153,8 +153,8 @@ const ScenariosList = () => {
     const fetchCollabScenarios = async () => {
       try {
         setCollabLoading(true);
-        const groupId = user?.group_id;
-        const data = await collaborationApi.getScenarios(groupId);
+        const customerId = user?.customer_id;
+        const data = await collaborationApi.getScenarios(customerId);
         setCollabScenarios(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error('Failed to load collaboration scenarios:', err);
@@ -164,7 +164,7 @@ const ScenariosList = () => {
       }
     };
     fetchCollabScenarios();
-  }, [user?.group_id]);
+  }, [user?.customer_id]);
 
   useEffect(() => {
     if (location.state?.refresh) {

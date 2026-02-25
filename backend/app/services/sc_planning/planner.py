@@ -33,23 +33,23 @@ class SupplyChainPlanner:
     - Generates supply plan recommendations
     """
 
-    def __init__(self, config_id: int, group_id: int, planning_horizon: int = 52):
+    def __init__(self, config_id: int, customer_id: int, planning_horizon: int = 52):
         """
         Initialize planner
 
         Args:
             config_id: Supply chain configuration ID
-            group_id: Group ID for multi-tenancy (Phase 2)
+            customer_id: Customer ID for multi-tenancy (Phase 2)
             planning_horizon: Number of days to plan ahead (default: 52)
         """
         self.config_id = config_id
-        self.group_id = group_id
+        self.customer_id = customer_id
         self.planning_horizon = planning_horizon
 
         # Initialize sub-processors
-        self.demand_processor = DemandProcessor(config_id, group_id)
-        self.inventory_target_calculator = InventoryTargetCalculator(config_id, group_id)
-        self.net_requirements_calculator = NetRequirementsCalculator(config_id, group_id, planning_horizon)
+        self.demand_processor = DemandProcessor(config_id, customer_id)
+        self.inventory_target_calculator = InventoryTargetCalculator(config_id, customer_id)
+        self.net_requirements_calculator = NetRequirementsCalculator(config_id, customer_id, planning_horizon)
 
     async def run_planning(
         self,

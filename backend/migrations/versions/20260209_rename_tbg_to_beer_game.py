@@ -57,7 +57,7 @@ def upgrade():
     # 2. Rename group names
     for old_name, new_name in GROUP_RENAMES.items():
         op.execute(
-            sa.text("UPDATE groups SET name = :new WHERE name = :old"),
+            sa.text("UPDATE customers SET name = :new WHERE name = :old"),
             {"old": old_name, "new": new_name}
         )
 
@@ -98,7 +98,7 @@ def downgrade():
     # Reverse group renames
     for old_name, new_name in GROUP_RENAMES.items():
         op.execute(
-            sa.text("UPDATE groups SET name = :old WHERE name = :new"),
+            sa.text("UPDATE customers SET name = :old WHERE name = :new"),
             {"old": old_name, "new": new_name}
         )
 

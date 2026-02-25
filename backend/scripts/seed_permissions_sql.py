@@ -95,8 +95,8 @@ PERMISSIONS = [
     ("create_user", "users", "create", "Create new users", "Administration"),
     ("edit_user", "users", "edit", "Edit user details", "Administration"),
     ("manage_permissions", "permissions", "manage", "Assign user capabilities", "Administration"),
-    ("view_groups", "groups", "view", "View group/company information", "Administration"),
-    ("manage_groups", "groups", "manage", "Manage group settings", "Administration"),
+    ("view_groups", "groups", "view", "View customer/company information", "Administration"),
+    ("manage_groups", "groups", "manage", "Manage customer settings", "Administration"),
 ]
 
 

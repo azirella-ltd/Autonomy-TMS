@@ -13,21 +13,24 @@ describe('AuthContext role helpers', () => {
         hasRole: (role) => !!user && (user.is_superuser || (user.roles || []).includes(role)),
         hasAnyRole: (roles = []) => roles.length === 0 || roles.some((r) => !!user && (user.is_superuser || (user.roles || []).includes(r))),
         hasAllRoles: (roles = []) => roles.length === 0 || roles.every((r) => !!user && (user.is_superuser || (user.roles || []).includes(r))),
-        isGroupAdmin: !!user && (user.is_superuser || (user.roles || []).includes('groupadmin')),
+        isCustomerAdmin: !!user && (user.is_superuser || (user.roles || []).includes('groupadmin')),
+        isGroupAdmin: !!user && (user.is_superuser || (user.roles || []).includes('groupadmin')), // backward-compatible alias
       }}
     >
       {children}
     </AuthContext.Provider>
   );
 
-  it('detects group admin via roles and treats superusers as system admins', () => {
+  it('detects customer admin via roles and treats superusers as system admins', () => {
     const userRoles = { roles: ['user', 'groupadmin'], is_superuser: false };
     const { result: r1 } = renderHook(() => React.useContext(AuthContext), { wrapper: wrapperWithUser(userRoles) });
-    expect(r1.current.isGroupAdmin).toBe(true);
+    expect(r1.current.isCustomerAdmin).toBe(true);
+    expect(r1.current.isGroupAdmin).toBe(true); // backward-compatible alias
 
     const userSuper = { roles: ['user'], is_superuser: true };
     const { result: r2 } = renderHook(() => React.useContext(AuthContext), { wrapper: wrapperWithUser(userSuper) });
-    expect(r2.current.isGroupAdmin).toBe(true);
+    expect(r2.current.isCustomerAdmin).toBe(true);
+    expect(r2.current.isGroupAdmin).toBe(true); // backward-compatible alias
   });
 
   it('checks hasRole / hasAnyRole / hasAllRoles', () => {

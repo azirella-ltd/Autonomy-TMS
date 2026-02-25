@@ -194,7 +194,7 @@ class AnalyticsService:
         result = await self.db.execute(
             select(ProductionCapacity).filter(
                 ProductionCapacity.config_id == game.supply_chain_config_id,
-                ProductionCapacity.group_id == game.group_id
+                ProductionCapacity.customer_id == game.customer_id
             )
         )
         capacities = result.scalars().all()
@@ -301,13 +301,13 @@ class AnalyticsService:
     # POLICY EFFECTIVENESS
     # ============================================================================
 
-    async def get_policy_effectiveness(self, config_id: int, group_id: int) -> Dict:
+    async def get_policy_effectiveness(self, config_id: int, customer_id: int) -> Dict:
         """
         Get policy effectiveness metrics
 
         Args:
             config_id: Supply chain config ID
-            group_id: Group ID
+            customer_id: Customer ID
 
         Returns:
             Dictionary with policy effectiveness metrics
@@ -318,7 +318,7 @@ class AnalyticsService:
         result = await self.db.execute(
             select(OrderAggregationPolicy).filter(
                 OrderAggregationPolicy.config_id == config_id,
-                OrderAggregationPolicy.group_id == group_id,
+                OrderAggregationPolicy.customer_id == customer_id,
                 OrderAggregationPolicy.is_active == True
             )
         )
@@ -356,7 +356,7 @@ class AnalyticsService:
         result = await self.db.execute(
             select(ProductionCapacity).filter(
                 ProductionCapacity.config_id == config_id,
-                ProductionCapacity.group_id == group_id
+                ProductionCapacity.customer_id == customer_id
             )
         )
         cap_policies = result.scalars().all()
@@ -379,7 +379,7 @@ class AnalyticsService:
 
         return {
             'config_id': config_id,
-            'group_id': group_id,
+            'customer_id': customer_id,
             'policies': policies
         }
 

@@ -63,9 +63,9 @@ class InventoryTargetCalculator:
     inventory policies with hierarchical override logic.
     """
 
-    def __init__(self, config_id: int, group_id: int):
+    def __init__(self, config_id: int, customer_id: int):
         self.config_id = config_id
-        self.group_id = group_id
+        self.customer_id = customer_id
 
     async def calculate_targets(
         self,
@@ -159,7 +159,7 @@ class InventoryTargetCalculator:
             # Level 1: product_id + site_id (highest priority - most specific)
             result = await db.execute(
                 select(InvPolicy).filter(
-                    InvPolicy.group_id == self.group_id,
+                    InvPolicy.customer_id == self.customer_id,
                     InvPolicy.config_id == self.config_id,
                     InvPolicy.product_id == product_id,
                     InvPolicy.site_id == site_id
@@ -173,7 +173,7 @@ class InventoryTargetCalculator:
             if product.product_group_id:
                 result = await db.execute(
                     select(InvPolicy).filter(
-                        InvPolicy.group_id == self.group_id,
+                        InvPolicy.customer_id == self.customer_id,
                     InvPolicy.config_id == self.config_id,
                         InvPolicy.product_group_id == str(product.product_group_id),
                         InvPolicy.site_id == site_id,
@@ -188,7 +188,7 @@ class InventoryTargetCalculator:
             if site.geo_id:
                 result = await db.execute(
                     select(InvPolicy).filter(
-                        InvPolicy.group_id == self.group_id,
+                        InvPolicy.customer_id == self.customer_id,
                     InvPolicy.config_id == self.config_id,
                         InvPolicy.product_id == product_id,
                         InvPolicy.dest_geo_id == str(site.geo_id),
@@ -203,7 +203,7 @@ class InventoryTargetCalculator:
             if product.product_group_id and site.geo_id:
                 result = await db.execute(
                     select(InvPolicy).filter(
-                        InvPolicy.group_id == self.group_id,
+                        InvPolicy.customer_id == self.customer_id,
                     InvPolicy.config_id == self.config_id,
                         InvPolicy.product_group_id == str(product.product_group_id),
                         InvPolicy.dest_geo_id == str(site.geo_id),
@@ -219,7 +219,7 @@ class InventoryTargetCalculator:
             if site.segment_id:
                 result = await db.execute(
                     select(InvPolicy).filter(
-                        InvPolicy.group_id == self.group_id,
+                        InvPolicy.customer_id == self.customer_id,
                     InvPolicy.config_id == self.config_id,
                         InvPolicy.segment_id == str(site.segment_id),
                         InvPolicy.product_id.is_(None),
@@ -236,7 +236,7 @@ class InventoryTargetCalculator:
             if site.company_id:
                 result = await db.execute(
                     select(InvPolicy).filter(
-                        InvPolicy.group_id == self.group_id,
+                        InvPolicy.customer_id == self.customer_id,
                     InvPolicy.config_id == self.config_id,
                         InvPolicy.company_id == str(site.company_id),
                         InvPolicy.product_id.is_(None),
@@ -536,7 +536,7 @@ class InventoryTargetCalculator:
             # Fallback to sourcing rule transportation lane
             result = await db.execute(
                 select(SourcingRules).filter(
-                    SourcingRules.group_id == self.group_id,
+                    SourcingRules.customer_id == self.customer_id,
                     SourcingRules.config_id == self.config_id,
                     SourcingRules.product_id == product_id,
                     SourcingRules.to_site_id == site_id,

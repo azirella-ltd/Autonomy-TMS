@@ -312,7 +312,7 @@ const SyntheticDataWizard = () => {
     const items = [
       { label: 'Archetype', value: state.archetype },
       { label: 'Company', value: state.company_name },
-      { label: 'Group', value: state.group_name },
+      { label: 'Customer', value: state.group_name },
       { label: 'Admin', value: state.admin_name },
       { label: 'Sites', value: state.num_sites },
       { label: 'Products', value: state.num_products },
@@ -443,9 +443,9 @@ const SyntheticDataWizard = () => {
           <Grid container spacing={2}>
             <Grid item xs={6}>
               <Typography variant="subtitle2" color="text.secondary">
-                Group ID
+                Customer ID
               </Typography>
-              <Typography variant="h6">{generationResult.group_id}</Typography>
+              <Typography variant="h6">{generationResult.customer_id}</Typography>
             </Grid>
             <Grid item xs={6}>
               <Typography variant="subtitle2" color="text.secondary">

@@ -36,7 +36,7 @@ class MultiStageCTPRequest(BaseModel):
     quantity: float
     target_date: Optional[str] = None  # ISO date string
     config_id: int
-    group_id: int
+    customer_id: int
 
 
 class OrderPromiseRequest(BaseModel):
@@ -47,7 +47,7 @@ class OrderPromiseRequest(BaseModel):
     target_date: str  # ISO date string
     priority: int = 3
     config_id: int
-    group_id: int
+    customer_id: int
 
 
 # ---------------------------------------------------------------------------
@@ -248,7 +248,7 @@ def calculate_multi_stage_ctp(
     svc = MultiStageCTPService(
         db=db,
         config_id=req.config_id,
-        group_id=req.group_id,
+        customer_id=req.customer_id,
     )
 
     result = svc.calculate_multi_stage_ctp(
@@ -282,7 +282,7 @@ def promise_order(
     svc = MultiStageCTPService(
         db=db,
         config_id=req.config_id,
-        group_id=req.group_id,
+        customer_id=req.customer_id,
     )
 
     result = svc.promise_order(
@@ -311,7 +311,7 @@ def promise_order(
 @router.get("/unpegged/{config_id}")
 def get_unpegged_demand(
     config_id: int,
-    group_id: int = Query(...),
+    customer_id: int = Query(...),
     db: Session = Depends(get_db),
 ):
     """
@@ -321,7 +321,7 @@ def get_unpegged_demand(
     useful as a planning action list.
     """
     svc = PeggingService(db)
-    result = svc.get_unpegged_demand(config_id, group_id)
+    result = svc.get_unpegged_demand(config_id, customer_id)
 
     return {
         "config_id": config_id,

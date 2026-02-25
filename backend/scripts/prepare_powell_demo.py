@@ -6,7 +6,7 @@ Single orchestration script that trains all 3 Powell tiers in sequence
 and seeds consistent demo data across all 12 Powell tables.
 
 Pipeline:
-  Step 1:  Verify Food Dist base data exists (group, config, sites, products)
+  Step 1:  Verify Food Dist base data exists (customer, config, sites, products)
   Step 2:  Train S&OP GraphSAGE on Food Dist network
   Step 3:  Train Execution tGNN using S&OP embeddings
   Step 4:  Generate synthetic TRM training data (365 days)
@@ -50,7 +50,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.session import sync_engine, async_session_factory
-from app.models.group import Group, GroupMode
+from app.models.customer import Customer, CustomerMode
 from app.models.supply_chain_config import SupplyChainConfig, Site
 from app.models.user import User
 from app.models.powell import (
@@ -125,29 +125,29 @@ def get_dc_site_id(db: Session, config_id: int) -> str:
 # ===================================================================
 
 def step1_verify_base_data(db: Session):
-    """Verify Food Dist group, config, sites, and products exist."""
+    """Verify Food Dist customer, config, sites, and products exist."""
     banner(1, "Verify Food Dist Base Data")
 
     # Flexible lookup: try "Food Dist" first, then "Food Distributor" variants
-    group = db.query(Group).filter(Group.name == "Food Dist").first()
-    if not group:
-        group = db.query(Group).filter(
-            Group.name.ilike("Food Distribut%"),
-            Group.mode != GroupMode.LEARNING,  # Prefer production group
+    customer = db.query(Customer).filter(Customer.name == "Food Dist").first()
+    if not customer:
+        customer = db.query(Customer).filter(
+            Customer.name.ilike("Food Distribut%"),
+            Customer.mode != CustomerMode.LEARNING,  # Prefer production customer
         ).first()
-    if not group:
-        group = db.query(Group).filter(
-            Group.name.ilike("Food Distribut%"),
+    if not customer:
+        customer = db.query(Customer).filter(
+            Customer.name.ilike("Food Distribut%"),
         ).first()
-    if not group:
-        print("  ERROR: No Food Dist/Food Distributor group found.")
+    if not customer:
+        print("  ERROR: No Food Dist/Food Distributor customer found.")
         print("  Run: docker compose exec backend python scripts/seed_food_dist_demo.py")
         print("  Or:  docker compose exec backend python scripts/generate_food_dist_config.py")
         sys.exit(1)
-    print(f"  Group: {group.name} (id={group.id})")
+    print(f"  Customer: {customer.name} (id={customer.id})")
 
     config = db.query(SupplyChainConfig).filter(
-        SupplyChainConfig.group_id == group.id
+        SupplyChainConfig.customer_id == customer.id
     ).first()
     if not config:
         print("  ERROR: No SC config for Food Dist.")
@@ -171,7 +171,7 @@ def step1_verify_base_data(db: Session):
         user_id = user.id if user else None
     print(f"  User ID: {user_id}")
 
-    return group, config, dc_location_id, user_id
+    return customer, config, dc_location_id, user_id
 
 
 # ===================================================================
@@ -325,7 +325,7 @@ def step3_train_execution_tgnn(config_id: int):
 # Step 4: Generate TRM training data
 # ===================================================================
 
-async def step4_generate_trm_data(group_id: int, config_id: int):
+async def step4_generate_trm_data(customer_id: int, config_id: int):
     """Generate 365 days of synthetic TRM training data."""
     banner(4, "Generate TRM Training Data")
 
@@ -336,7 +336,7 @@ async def step4_generate_trm_data(group_id: int, config_id: int):
         stats = await generate_synthetic_trm_data(
             db=db,
             config_id=config_id,
-            group_id=group_id,
+            customer_id=customer_id,
             num_days=365,
             num_orders_per_day=50,
             num_decisions_per_day=20,
@@ -359,7 +359,7 @@ async def step4_generate_trm_data(group_id: int, config_id: int):
 # Step 5: Train TRM models
 # ===================================================================
 
-async def step5_train_trms(group_id: int):
+async def step5_train_trms(customer_id: int):
     """Train TRM models from replay buffer using BC + TD learning."""
     banner(5, "Train TRM Models")
 
@@ -390,7 +390,7 @@ async def step5_train_trms(group_id: int):
         for trm_type, config in trm_types.items():
             print(f"\n  Training {trm_type.upper()}...")
 
-            data = await load_replay_buffer_data(db, group_id, trm_type, limit=5000)
+            data = await load_replay_buffer_data(db, customer_id, trm_type, limit=5000)
             states, actions, rewards, next_states, dones, is_expert = data
 
             if states is None or len(states) < 100:
@@ -447,7 +447,7 @@ async def step5_train_trms(group_id: int):
 # Step 6: Run cascade demo (reuse generate_cascade_demo.py)
 # ===================================================================
 
-def step6_cascade_demo(db: Session, config_id: int, group_id: int,
+def step6_cascade_demo(db: Session, config_id: int, customer_id: int,
                        user_id: int, dc_location_id: str):
     """Run the full planning cascade and seed Powell execution tables."""
     banner(6, "Cascade Demo → Powell Execution Tables")
@@ -460,7 +460,7 @@ def step6_cascade_demo(db: Session, config_id: int, group_id: int,
     )
 
     print("  Running Planning Cascade...")
-    cascade_result = step1_run_cascade(db, config_id, group_id, user_id)
+    cascade_result = step1_run_cascade(db, config_id, customer_id, user_id)
 
     print("  Materializing Allocations...")
     powell_rows, priority_allocs = step2_materialize_allocations(
@@ -490,7 +490,7 @@ def step6_cascade_demo(db: Session, config_id: int, group_id: int,
 # ===================================================================
 
 def step7_seed_site_agent_decisions(db: Session, config_id: int, dc_location_id: str,
-                                    group_id: int = None):
+                                    customer_id: int = None):
     """Create SiteAgent decision records from cascade TRM decisions.
 
     Uses raw SQL to match actual DB schema (which may differ from model definition).
@@ -562,20 +562,20 @@ def step7_seed_site_agent_decisions(db: Session, config_id: int, dc_location_id:
 
         db.execute(text("""
             INSERT INTO powell_site_agent_decisions
-            (site_key, group_id, decision_type, decision_timestamp,
+            (site_key, customer_id, decision_type, decision_timestamp,
              state_features, engine_decision, trm_adjustment, final_decision,
              trm_confidence, decision_source,
              outcome_recorded, outcome_timestamp, outcome_service_level, outcome_cost, outcome_data,
              created_at)
             VALUES
-            (:site_key, :group_id, :decision_type, :decision_timestamp,
+            (:site_key, :customer_id, :decision_type, :decision_timestamp,
              :state_features, :engine_decision, :trm_adjustment, :final_decision,
              :trm_confidence, :decision_source,
              :outcome_recorded, :outcome_timestamp, :outcome_service_level, :outcome_cost, :outcome_data,
              :created_at)
         """), {
             "site_key": dc_location_id,
-            "group_id": group_id,
+            "customer_id": customer_id,
             "decision_type": "atp_exception",
             "decision_timestamp": ts,
             "state_features": json.dumps(state_features),
@@ -626,17 +626,17 @@ def step7_seed_site_agent_decisions(db: Session, config_id: int, dc_location_id:
 
         db.execute(text("""
             INSERT INTO powell_site_agent_decisions
-            (site_key, group_id, decision_type, decision_timestamp,
+            (site_key, customer_id, decision_type, decision_timestamp,
              state_features, engine_decision, trm_adjustment, final_decision,
              trm_confidence, decision_source,
              outcome_recorded, outcome_timestamp, outcome_service_level, outcome_data, created_at)
             VALUES
-            (:site_key, :group_id, :dt, :dts,
+            (:site_key, :customer_id, :dt, :dts,
              :sf, :ed, :ta, :fd,
              :tc, :ds,
              :or_, :ots, :osl, :od, :ca)
         """), {
-            "site_key": dc_location_id, "group_id": group_id,
+            "site_key": dc_location_id, "customer_id": customer_id,
             "dt": "inventory_adjustment", "dts": ts,
             "sf": json.dumps(state_features), "ed": json.dumps(engine_decision),
             "ta": json.dumps(trm_adj), "fd": json.dumps(final),
@@ -671,14 +671,14 @@ def step7_seed_site_agent_decisions(db: Session, config_id: int, dc_location_id:
 
         db.execute(text("""
             INSERT INTO powell_site_agent_decisions
-            (site_key, group_id, decision_type, decision_timestamp,
+            (site_key, customer_id, decision_type, decision_timestamp,
              state_features, engine_decision, trm_adjustment, final_decision,
              trm_confidence, decision_source,
              outcome_recorded, outcome_timestamp, outcome_cost, outcome_data, created_at)
             VALUES
             (:sk, :gid, :dt, :dts, :sf, :ed, :ta, :fd, :tc, :ds, :or_, :ots, :oc, :od, :ca)
         """), {
-            "sk": dc_location_id, "gid": group_id,
+            "sk": dc_location_id, "gid": customer_id,
             "dt": "po_timing", "dts": ts,
             "sf": json.dumps(state_features), "ed": json.dumps(engine_decision),
             "ta": json.dumps(trm_adj), "fd": json.dumps(final),
@@ -709,13 +709,13 @@ def step7_seed_site_agent_decisions(db: Session, config_id: int, dc_location_id:
 
         db.execute(text("""
             INSERT INTO powell_site_agent_decisions
-            (site_key, group_id, decision_type, decision_timestamp,
+            (site_key, customer_id, decision_type, decision_timestamp,
              state_features, engine_decision, trm_adjustment, final_decision,
              trm_confidence, decision_source,
              outcome_recorded, outcome_timestamp, outcome_data, created_at)
             VALUES (:sk, :gid, :dt, :dts, :sf, :ed, :ta, :fd, :tc, :ds, :or_, :ots, :od, :ca)
         """), {
-            "sk": dc_location_id, "gid": group_id,
+            "sk": dc_location_id, "gid": customer_id,
             "dt": "cdc_trigger", "dts": ts,
             "sf": json.dumps(state_features), "ed": json.dumps(engine_decision),
             "ta": json.dumps({"type": "severity_override"}), "fd": json.dumps(final),
@@ -742,7 +742,7 @@ def step7_seed_site_agent_decisions(db: Session, config_id: int, dc_location_id:
 # Step 8: Seed belief state & policy parameters
 # ===================================================================
 
-def step8_seed_belief_state_and_policies(db: Session, group_id: int, config_id: int):
+def step8_seed_belief_state_and_policies(db: Session, customer_id: int, config_id: int):
     """Seed PowellBeliefState, PowellPolicyParameters, PowellValueFunction.
 
     Uses raw SQL for belief_state and value_function (DB schema diverges from model).
@@ -922,7 +922,7 @@ def step8_seed_belief_state_and_policies(db: Session, group_id: int, config_id: 
 # Step 9: Seed CDC trigger events
 # ===================================================================
 
-def step9_seed_cdc_triggers(db: Session, group_id: int, dc_location_id: str):
+def step9_seed_cdc_triggers(db: Session, customer_id: int, dc_location_id: str):
     """Seed CDC trigger log and threshold config for dashboard.
 
     Uses raw SQL to match actual DB schema (which may differ from model definition).
@@ -935,7 +935,7 @@ def step9_seed_cdc_triggers(db: Session, group_id: int, dc_location_id: str):
     now = datetime.utcnow()
 
     # --- CDC Threshold Config ---
-    # Actual DB columns: id, site_key, group_id, threshold_type, threshold_value,
+    # Actual DB columns: id, site_key, customer_id, threshold_type, threshold_value,
     #   cooldown_hours, enabled, effective_from, effective_to, created_by, created_at, updated_at
     db.execute(text("DELETE FROM powell_cdc_thresholds WHERE site_key = :sk"), {"sk": dc_location_id})
     db.flush()
@@ -954,11 +954,11 @@ def step9_seed_cdc_triggers(db: Session, group_id: int, dc_location_id: str):
     for ttype, tvalue in threshold_types.items():
         db.execute(text("""
             INSERT INTO powell_cdc_thresholds
-            (site_key, group_id, threshold_type, threshold_value, cooldown_hours,
+            (site_key, customer_id, threshold_type, threshold_value, cooldown_hours,
              enabled, effective_from, created_at)
             VALUES (:sk, :gid, :tt, :tv, :cd, :en, :ef, :ca)
         """), {
-            "sk": dc_location_id, "gid": group_id,
+            "sk": dc_location_id, "gid": customer_id,
             "tt": ttype, "tv": tvalue, "cd": 24,
             "en": True, "ef": date.today() - timedelta(days=30), "ca": now,
         })
@@ -968,7 +968,7 @@ def step9_seed_cdc_triggers(db: Session, group_id: int, dc_location_id: str):
     print(f"  Created {thresholds_created} CDC threshold configs for site {dc_location_id}")
 
     # --- CDC Trigger Log ---
-    # Actual DB columns: id, site_key, group_id, triggered_at, reasons, action_taken,
+    # Actual DB columns: id, site_key, customer_id, triggered_at, reasons, action_taken,
     #   severity, metrics_snapshot, human_approved, approved_by, approved_at,
     #   execution_result, execution_duration_ms, created_at
     db.execute(text("DELETE FROM powell_cdc_trigger_log WHERE site_key = :sk"), {"sk": dc_location_id})
@@ -1018,13 +1018,13 @@ def step9_seed_cdc_triggers(db: Session, group_id: int, dc_location_id: str):
 
             db.execute(text("""
                 INSERT INTO powell_cdc_trigger_log
-                (site_key, group_id, triggered_at, reasons, action_taken, severity,
+                (site_key, customer_id, triggered_at, reasons, action_taken, severity,
                  metrics_snapshot, human_approved, approved_at,
                  execution_result, execution_duration_ms, created_at)
                 VALUES (:sk, :gid, :ta, :reasons, :action, :sev,
                         :ms, :ha, :aa, :er, :edm, :ca)
             """), {
-                "sk": dc_location_id, "gid": group_id,
+                "sk": dc_location_id, "gid": customer_id,
                 "ta": triggered_at, "reasons": json.dumps(reasons),
                 "action": action_taken, "sev": severity,
                 "ms": json.dumps(metrics_snapshot),
@@ -1042,11 +1042,11 @@ def step9_seed_cdc_triggers(db: Session, group_id: int, dc_location_id: str):
 
             db.execute(text("""
                 INSERT INTO powell_cdc_trigger_log
-                (site_key, group_id, triggered_at, reasons, action_taken, severity,
+                (site_key, customer_id, triggered_at, reasons, action_taken, severity,
                  metrics_snapshot, human_approved, created_at)
                 VALUES (:sk, :gid, :ta, :reasons, :action, :sev, :ms, :ha, :ca)
             """), {
-                "sk": dc_location_id, "gid": group_id,
+                "sk": dc_location_id, "gid": customer_id,
                 "ta": triggered_at, "reasons": json.dumps([]),
                 "action": "NO_ACTION", "sev": "info",
                 "ms": json.dumps(metrics_snapshot), "ha": False, "ca": now,
@@ -1066,7 +1066,7 @@ def step9_seed_cdc_triggers(db: Session, group_id: int, dc_location_id: str):
 # ===================================================================
 
 def step10_checkpoint_and_verify(db: Session, config_id: int, dc_location_id: str,
-                                 group_id: int = None):
+                                 customer_id: int = None):
     """Create SiteAgent checkpoint record and verify all data.
 
     Uses raw SQL to match actual DB schema (which may differ from model definition).
@@ -1079,7 +1079,7 @@ def step10_checkpoint_and_verify(db: Session, config_id: int, dc_location_id: st
     now = datetime.utcnow()
 
     # --- Create SiteAgent Checkpoint ---
-    # Actual DB columns: id, site_key, group_id, checkpoint_name, checkpoint_path,
+    # Actual DB columns: id, site_key, customer_id, checkpoint_name, checkpoint_path,
     #   model_config, training_config, param_counts, training_metrics, training_phases,
     #   training_duration_seconds, is_active, activated_at, created_at
     db.execute(text("DELETE FROM powell_site_agent_checkpoints WHERE site_key = :sk"),
@@ -1120,13 +1120,13 @@ def step10_checkpoint_and_verify(db: Session, config_id: int, dc_location_id: st
 
     db.execute(text("""
         INSERT INTO powell_site_agent_checkpoints
-        (site_key, group_id, checkpoint_name, checkpoint_path,
+        (site_key, customer_id, checkpoint_name, checkpoint_path,
          model_config, training_config, param_counts, training_metrics,
          training_phases, training_duration_seconds,
          is_active, activated_at, created_at)
         VALUES (:sk, :gid, :cn, :cp, :mc, :tc, :pc, :tm, :tp, :tds, :ia, :aa, :ca)
     """), {
-        "sk": dc_location_id, "gid": group_id,
+        "sk": dc_location_id, "gid": customer_id,
         "cn": "food_dist_trm_v1.0", "cp": checkpoint_path,
         "mc": json.dumps(model_config), "tc": json.dumps(training_config),
         "pc": json.dumps({"total": 264708, "encoder": 200000, "decoder": 64708}),
@@ -1290,7 +1290,7 @@ def main():
 
     try:
         # Step 1: Verify base data (always run)
-        group, config, dc_location_id, user_id = step1_verify_base_data(db)
+        customer, config, dc_location_id, user_id = step1_verify_base_data(db)
 
         # Step 2: S&OP GraphSAGE
         if start_step <= 2 <= end_step:
@@ -1302,31 +1302,31 @@ def main():
 
         # Step 4: Generate TRM data (async)
         if start_step <= 4 <= end_step:
-            asyncio.run(step4_generate_trm_data(group.id, config.id))
+            asyncio.run(step4_generate_trm_data(customer.id, config.id))
 
         # Step 5: Train TRMs (async)
         if start_step <= 5 <= end_step:
-            asyncio.run(step5_train_trms(group.id))
+            asyncio.run(step5_train_trms(customer.id))
 
         # Step 6: Cascade demo
         if start_step <= 6 <= end_step:
-            step6_cascade_demo(db, config.id, group.id, user_id, dc_location_id)
+            step6_cascade_demo(db, config.id, customer.id, user_id, dc_location_id)
 
         # Step 7: SiteAgent decisions
         if start_step <= 7 <= end_step:
-            step7_seed_site_agent_decisions(db, config.id, dc_location_id, group.id)
+            step7_seed_site_agent_decisions(db, config.id, dc_location_id, customer.id)
 
         # Step 8: Belief state & policies
         if start_step <= 8 <= end_step:
-            step8_seed_belief_state_and_policies(db, group.id, config.id)
+            step8_seed_belief_state_and_policies(db, customer.id, config.id)
 
         # Step 9: CDC triggers
         if start_step <= 9 <= end_step:
-            step9_seed_cdc_triggers(db, group.id, dc_location_id)
+            step9_seed_cdc_triggers(db, customer.id, dc_location_id)
 
         # Step 10: Checkpoint + verification
         if start_step <= 10 <= end_step:
-            step10_checkpoint_and_verify(db, config.id, dc_location_id, group.id)
+            step10_checkpoint_and_verify(db, config.id, dc_location_id, customer.id)
 
         print("\n" + "=" * 70)
         print("  Powell Demo Prep COMPLETE")

@@ -134,7 +134,7 @@ const progressionOptions = [
   {
     value: 'supervised',
     label: 'Supervised',
-    description: 'Group Admin advances rounds manually.',
+    description: 'Customer Admin advances rounds manually.',
   },
   {
     value: 'unsupervised',
@@ -824,11 +824,11 @@ const CreateMixedGame = () => {
     if (!Array.isArray(configs) || isEditing) {
       return;
     }
-    const groupIdRaw = user?.group_id;
-    const groupId = Number.isFinite(Number(groupIdRaw)) ? Number(groupIdRaw) : null;
+    const customerIdRaw = user?.customer_id;
+    const customerId = Number.isFinite(Number(customerIdRaw)) ? Number(customerIdRaw) : null;
     const candidates = configs.filter((config) => {
-      if (groupId == null) return true;
-      return Number(config?.group_id) === groupId;
+      if (customerId == null) return true;
+      return Number(config?.customer_id) === customerId;
     });
     const chosen = candidates.find((config) => Boolean(config?.is_active)) || candidates[0] || configs[0] || null;
     setActiveConfigId(chosen ? chosen.id : null);

@@ -75,7 +75,7 @@ class AllocationAgent:
     def generate_allocation_commit(
         self,
         config_id: int,
-        group_id: int,
+        customer_id: int,
         supply_commit_id: int,
         supply_commit_hash: str,
         policy_envelope: Dict[str, Any],
@@ -87,7 +87,7 @@ class AllocationAgent:
 
         Args:
             config_id: Supply chain config ID
-            group_id: Group ID
+            customer_id: Customer ID
             supply_commit_id: Supply Commit ID (grounding)
             supply_commit_hash: Hash for feed-forward
             policy_envelope: Active policy envelope
@@ -117,7 +117,7 @@ class AllocationAgent:
         # Create SBP record
         sbp = SolverBaselinePack(
             config_id=config_id,
-            group_id=group_id,
+            customer_id=customer_id,
             supply_commit_id=supply_commit_id,
             supply_commit_hash=supply_commit_hash,
             candidates=[self._candidate_to_dict(c) for c in sbp_candidates],
@@ -167,7 +167,7 @@ class AllocationAgent:
         # Create Allocation Commit
         allocation_commit = AllocationCommit(
             config_id=config_id,
-            group_id=group_id,
+            customer_id=customer_id,
             supply_commit_id=supply_commit_id,
             supply_commit_hash=supply_commit_hash,
             solver_baseline_pack_id=sbp.id,

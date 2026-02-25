@@ -28,7 +28,7 @@ ScenarioUser = ScenarioUser
 Game = Scenario
 ScenarioRound = ScenarioRound
 from app.models.transfer_order import TransferOrder
-from app.models.group import Group
+from app.models.customer import Customer
 from app.models.explainability import ExplainabilityLevel
 from .agents import SimulationAgent, AgentStrategy, AgentType
 
@@ -640,7 +640,7 @@ class AgentRecommendationService:
         """
         Get effective explainability level for scenario_user.
 
-        Priority: User override > Group default > NORMAL
+        Priority: User override > Customer default > NORMAL
         """
         # Check user-level override first
         if hasattr(scenario_user, 'user') and scenario_user.user:
@@ -648,11 +648,11 @@ class AgentRecommendationService:
             if user_override is not None:
                 return user_override
 
-        # Fall back to group default
-        if hasattr(scenario_user, 'user') and scenario_user.user and scenario_user.user.group_id:
-            group = self.db.query(Group).filter(Group.id == scenario_user.user.group_id).first()
-            if group and hasattr(group, 'explainability_level'):
-                return group.explainability_level
+        # Fall back to customer default
+        if hasattr(scenario_user, 'user') and scenario_user.user and scenario_user.user.customer_id:
+            customer = self.db.query(Customer).filter(Customer.id == scenario_user.user.customer_id).first()
+            if customer and hasattr(customer, 'explainability_level'):
+                return customer.explainability_level
 
         # Ultimate fallback
         return ExplainabilityLevel.NORMAL

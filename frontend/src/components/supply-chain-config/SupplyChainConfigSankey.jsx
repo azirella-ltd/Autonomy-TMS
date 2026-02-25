@@ -498,10 +498,10 @@ const SupplyChainConfigSankey = ({ restrictToGroupId = null }) => {
       const filtered = Array.isArray(data)
         ? data.filter((cfg) => {
             if (targetGroupId === null) return true;
-            if (cfg?.group_id === undefined || cfg?.group_id === null) {
+            if (cfg?.customer_id === undefined || cfg?.customer_id === null) {
               return false;
             }
-            return String(cfg.group_id) === targetGroupId;
+            return String(cfg.customer_id) === targetGroupId;
           })
         : [];
 
@@ -2390,7 +2390,7 @@ const SupplyChainConfigSankey = ({ restrictToGroupId = null }) => {
 
           {!configsLoading && !configsError && !configOptions.length && (
             <p className="text-sm text-muted-foreground">
-              There are no supply chain configurations available for your group
+              There are no supply chain configurations available for your customer
               yet.
             </p>
           )}

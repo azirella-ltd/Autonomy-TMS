@@ -47,7 +47,7 @@ from app.models.planning_hierarchy import (
     SiteHierarchyNode, ProductHierarchyNode,
     SiteHierarchyLevel, ProductHierarchyLevel
 )
-from app.models.group import Group, GroupMode, ClockMode
+from app.models.customer import Customer, CustomerMode, ClockMode
 from app.models.user import User
 from app.models.agent_config import AgentConfig
 from app.models.supplier import VendorProduct, VendorLeadTime
@@ -508,28 +508,28 @@ class FoodDistConfigGenerator:
 
     def __init__(self, db: AsyncSession):
         self.db = db
-        self.group: Optional[Group] = None
+        self.customer: Optional[Customer] = None
         self.sc_config: Optional[SupplyChainConfig] = None
         self.products: Dict[str, Product] = {}
         self.nodes: Dict[str, Node] = {}
 
     async def generate(
         self,
-        group_name: str = "Food Dist",
+        customer_name: str = "Food Dist",
         admin_email: str = "admin@distdemo.com",
         admin_name: str = "Food Dist Admin",
         random_seed: Optional[int] = 42,
-        existing_group_id: Optional[int] = None,
+        existing_customer_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Generate the complete Food Dist configuration.
 
         Args:
-            group_name: Name of the training group
-            admin_email: Email for the group admin
-            admin_name: Name for the group admin
+            customer_name: Name of the customer
+            admin_email: Email for the customer admin
+            admin_name: Name for the customer admin
             random_seed: Seed for reproducible random generation
-            existing_group_id: If provided, skip group/admin creation and use this group
+            existing_customer_id: If provided, skip customer/admin creation and use this customer
 
         Returns:
             Summary of created entities
@@ -537,35 +537,35 @@ class FoodDistConfigGenerator:
         if random_seed:
             random.seed(random_seed)
 
-        logger.info(f"Generating Food Dist configuration: {group_name}")
+        logger.info(f"Generating Food Dist configuration: {customer_name}")
 
-        # 1. Create or load group
+        # 1. Create or load customer
         admin = None
-        if existing_group_id:
-            # Use existing group — skip admin/group creation
+        if existing_customer_id:
+            # Use existing customer — skip admin/customer creation
             result = await self.db.execute(
-                select(Group).where(Group.id == existing_group_id)
+                select(Customer).where(Customer.id == existing_customer_id)
             )
-            self.group = result.scalar_one_or_none()
-            if not self.group:
-                raise ValueError(f"Group with id={existing_group_id} not found")
-            logger.info(f"Using existing group: {self.group.name} (ID: {self.group.id})")
+            self.customer = result.scalar_one_or_none()
+            if not self.customer:
+                raise ValueError(f"Customer with id={existing_customer_id} not found")
+            logger.info(f"Using existing customer: {self.customer.name} (ID: {self.customer.id})")
         else:
-            admin, self.group = await self._create_admin_and_group(group_name, admin_email, admin_name)
+            admin, self.customer = await self._create_admin_and_customer(customer_name, admin_email, admin_name)
 
-        # 2b. Check if config already exists for this group
+        # 2b. Check if config already exists for this customer
         existing_config = await self.db.execute(
             select(SupplyChainConfig).where(
-                SupplyChainConfig.group_id == self.group.id,
+                SupplyChainConfig.customer_id == self.customer.id,
                 SupplyChainConfig.name == "Food Dist Distribution Network",
             )
         )
         existing_config = existing_config.scalar_one_or_none()
         if existing_config:
-            logger.info(f"SC config already exists for group {self.group.id}: {existing_config.name} (ID: {existing_config.id})")
+            logger.info(f"SC config already exists for customer {self.customer.id}: {existing_config.name} (ID: {existing_config.id})")
             return {
-                "group_id": self.group.id,
-                "group_name": self.group.name,
+                "customer_id": self.customer.id,
+                "customer_name": self.customer.name,
                 "admin_user_id": admin.id if admin else None,
                 "config_id": existing_config.id,
                 "dc_node_id": None,
@@ -617,8 +617,8 @@ class FoodDistConfigGenerator:
         await self.db.commit()
 
         return {
-            "group_id": self.group.id,
-            "group_name": group_name,
+            "customer_id": self.customer.id,
+            "customer_name": customer_name,
             "admin_user_id": admin.id if admin else None,
             "config_id": self.sc_config.id,
             "dc_node_id": dc_node.id,
@@ -643,17 +643,17 @@ class FoodDistConfigGenerator:
             }
         }
 
-    async def _create_admin_and_group(self, group_name: str, email: str, name: str) -> tuple[User, Group]:
-        """Create the Food Dist training group and admin user together.
+    async def _create_admin_and_customer(self, customer_name: str, email: str, name: str) -> tuple[User, Customer]:
+        """Create the Food Dist customer and admin user together.
 
-        Note: Group requires admin_id, admin requires group_id - we handle this
-        by creating admin first without group_id, then group with admin_id,
-        then updating admin with group_id.
+        Note: Customer requires admin_id, admin requires customer_id - we handle this
+        by creating admin first without customer_id, then customer with admin_id,
+        then updating admin with customer_id.
         """
         from app.core.security import get_password_hash
         from app.services.bootstrap import DEFAULT_ADMIN_PASSWORD
 
-        # 1. Create admin user first (without group_id initially)
+        # 1. Create admin user first (without customer_id initially)
         user = User(
             email=email,
             hashed_password=get_password_hash(DEFAULT_ADMIN_PASSWORD),
@@ -666,23 +666,23 @@ class FoodDistConfigGenerator:
         await self.db.flush()
         logger.info(f"Created admin user: {user.email} (ID: {user.id})")
 
-        # 2. Create group with admin_id
-        group = Group(
-            name=group_name,
+        # 2. Create customer with admin_id
+        customer = Customer(
+            name=customer_name,
             description="Food Dist Learning Environment - Foodservice redistribution simulation",
             admin_id=user.id,
-            mode=GroupMode.LEARNING,
+            mode=CustomerMode.LEARNING,
             clock_mode=ClockMode.TURN_BASED,
         )
-        self.db.add(group)
+        self.db.add(customer)
         await self.db.flush()
-        logger.info(f"Created group: {group.name} (ID: {group.id})")
+        logger.info(f"Created customer: {customer.name} (ID: {customer.id})")
 
-        # 3. Update user with group_id
-        user.group_id = group.id
+        # 3. Update user with customer_id
+        user.customer_id = customer.id
         await self.db.flush()
 
-        return user, group
+        return user, customer
 
     async def _create_sc_config(self) -> SupplyChainConfig:
         """Create the supply chain configuration."""
@@ -690,7 +690,7 @@ class FoodDistConfigGenerator:
             name="Food Dist Distribution Network",
             description="Foodservice redistribution network - "
                        "Multi-temperature distribution with 2-4 day delivery capability",
-            group_id=self.group.id,
+            customer_id=self.customer.id,
             is_active=True,
             site_type_definitions=[
                 {"type": "SUPPLIER", "label": "Supplier", "order": 0, "is_required": False, "master_type": "market_supply"},
@@ -1092,7 +1092,7 @@ class FoodDistConfigGenerator:
         """Create site hierarchy."""
         # Company level
         company = SiteHierarchyNode(
-            group_id=self.group.id,
+            customer_id=self.customer.id,
             code="FOODDIST_CORP",
             name="Food Dist Corporation",
             hierarchy_level=SiteHierarchyLevel.COMPANY,
@@ -1161,7 +1161,7 @@ class FoodDistConfigGenerator:
                 continue  # skip empty regions
 
             region_node = SiteHierarchyNode(
-                group_id=self.group.id,
+                customer_id=self.customer.id,
                 code=f"REG_{region_code}",
                 name=f"{region_info['name']} Region",
                 parent_id=company.id,
@@ -1176,7 +1176,7 @@ class FoodDistConfigGenerator:
 
             for state_abbr, sites in region_info["states"].items():
                 state_node = SiteHierarchyNode(
-                    group_id=self.group.id,
+                    customer_id=self.customer.id,
                     code=f"ST_{state_abbr}",
                     name=STATE_NAMES.get(state_abbr, state_abbr),
                     parent_id=region_node.id,
@@ -1191,7 +1191,7 @@ class FoodDistConfigGenerator:
 
                 for site_node_obj, site_label in sites:
                     site_hier = SiteHierarchyNode(
-                        group_id=self.group.id,
+                        customer_id=self.customer.id,
                         code=site_node_obj.name,
                         name=site_label,
                         site_id=site_node_obj.id,
@@ -1217,7 +1217,7 @@ class FoodDistConfigGenerator:
             cat_code = f"CAT_{group_def.temperature.value.upper()}"
             if cat_code not in category_nodes:
                 category = ProductHierarchyNode(
-                    group_id=self.group.id,
+                    customer_id=self.customer.id,
                     code=cat_code,
                     name=f"{group_def.temperature.value.title()} Products",
                     hierarchy_level=ProductHierarchyLevel.CATEGORY,
@@ -1233,7 +1233,7 @@ class FoodDistConfigGenerator:
 
             # Family (product group)
             family = ProductHierarchyNode(
-                group_id=self.group.id,
+                customer_id=self.customer.id,
                 code=group_def.code,
                 name=group_def.name,
                 parent_id=category.id,
@@ -1250,7 +1250,7 @@ class FoodDistConfigGenerator:
                 if product_def.sku in self.products:
                     product = self.products[product_def.sku]
                     prod_node = ProductHierarchyNode(
-                        group_id=self.group.id,
+                        customer_id=self.customer.id,
                         code=product_def.sku,
                         name=product_def.name,
                         product_id=str(product.id),
@@ -1414,10 +1414,10 @@ class FoodDistConfigGenerator:
 
 async def generate_food_dist_config(
     db: AsyncSession,
-    group_name: str = "Food Dist",
+    customer_name: str = "Food Dist",
     admin_email: str = "admin@distdemo.com",
     admin_name: str = "Food Dist Admin",
-    existing_group_id: Optional[int] = None,
+    existing_customer_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Convenience function to generate Food Dist configuration.
@@ -1426,15 +1426,15 @@ async def generate_food_dist_config(
         from app.services.food_dist_config_generator import generate_food_dist_config
         result = await generate_food_dist_config(db)
 
-        # Or with existing group:
-        result = await generate_food_dist_config(db, existing_group_id=14)
+        # Or with existing customer:
+        result = await generate_food_dist_config(db, existing_customer_id=14)
     """
     generator = FoodDistConfigGenerator(db)
     return await generator.generate(
-        group_name=group_name,
+        customer_name=customer_name,
         admin_email=admin_email,
         admin_name=admin_name,
-        existing_group_id=existing_group_id,
+        existing_customer_id=existing_customer_id,
     )
 
 

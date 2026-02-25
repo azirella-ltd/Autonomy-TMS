@@ -64,10 +64,10 @@ async def get_executive_dashboard(
     """
     service = AgentPerformanceService(db)
 
-    # Use user's group if they have one, otherwise use demo group ID
-    group_id = current_user.group_id or 1
+    # Use user's customer if they have one, otherwise use demo customer ID
+    customer_id = current_user.customer_id or 1
 
-    data = service.get_executive_dashboard_data(group_id, planning_cycle)
+    data = service.get_executive_dashboard_data(customer_id, planning_cycle)
 
     return {
         "success": True,
@@ -97,9 +97,9 @@ async def get_agent_performance(
     - Category-level breakdown
     """
     service = AgentPerformanceService(db)
-    group_id = current_user.group_id or 1
+    customer_id = current_user.customer_id or 1
 
-    exec_data = service.get_executive_dashboard_data(group_id, planning_cycle)
+    exec_data = service.get_executive_dashboard_data(customer_id, planning_cycle)
 
     # Add decision performance specific data
     return {
@@ -143,10 +143,10 @@ async def get_sop_worklist(
     Returns worklist items with issues, impacts, and due dates.
     """
     service = AgentPerformanceService(db)
-    group_id = current_user.group_id or 1
+    customer_id = current_user.customer_id or 1
 
-    items = service.get_sop_worklist_items(group_id, status, category)
-    summary = service.get_sop_worklist_summary(group_id)
+    items = service.get_sop_worklist_items(customer_id, status, category)
+    summary = service.get_sop_worklist_summary(customer_id)
 
     return {
         "success": True,
@@ -166,9 +166,9 @@ async def get_sop_worklist_summary(
 ):
     """Get just the S&OP worklist summary KPIs."""
     service = AgentPerformanceService(db)
-    group_id = current_user.group_id or 1
+    customer_id = current_user.customer_id or 1
 
-    summary = service.get_sop_worklist_summary(group_id)
+    summary = service.get_sop_worklist_summary(customer_id)
 
     return {
         "success": True,
@@ -257,9 +257,9 @@ async def get_agent_decisions(
     """
     from app.models.decision_tracking import AgentDecision, DecisionStatus
 
-    group_id = current_user.group_id or 1
+    customer_id = current_user.customer_id or 1
 
-    query = db.query(AgentDecision).filter(AgentDecision.group_id == group_id)
+    query = db.query(AgentDecision).filter(AgentDecision.customer_id == customer_id)
 
     if decision_type:
         query = query.filter(AgentDecision.decision_type == decision_type)

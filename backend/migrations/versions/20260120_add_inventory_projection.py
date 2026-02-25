@@ -27,7 +27,7 @@ def upgrade() -> None:
         sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
 
         # AWS SC Core Fields
-        sa.Column('company_id', sa.Integer(), nullable=False, comment='Company/group ID'),
+        sa.Column('company_id', sa.Integer(), nullable=False, comment='Company/customer ID'),
         sa.Column('product_id', sa.Integer(), nullable=False, comment='Product ID (items table)'),
         sa.Column('site_id', sa.Integer(), nullable=False, comment='Site ID (nodes table)'),
         sa.Column('projection_date', sa.Date(), nullable=False, comment='Projection date'),
@@ -106,7 +106,7 @@ def upgrade() -> None:
         sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
 
         # AWS SC Core Fields
-        sa.Column('company_id', sa.Integer(), nullable=False, comment='Company/group ID'),
+        sa.Column('company_id', sa.Integer(), nullable=False, comment='Company/customer ID'),
         sa.Column('product_id', sa.Integer(), nullable=False, comment='Product ID (items table)'),
         sa.Column('site_id', sa.Integer(), nullable=False, comment='Site ID (nodes table)'),
         sa.Column('atp_date', sa.Date(), nullable=False, comment='ATP date'),
@@ -165,7 +165,7 @@ def upgrade() -> None:
         sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
 
         # AWS SC Core Fields
-        sa.Column('company_id', sa.Integer(), nullable=False, comment='Company/group ID'),
+        sa.Column('company_id', sa.Integer(), nullable=False, comment='Company/customer ID'),
         sa.Column('product_id', sa.Integer(), nullable=False, comment='Product ID (items table)'),
         sa.Column('site_id', sa.Integer(), nullable=False, comment='Site ID (nodes table)'),
         sa.Column('ctp_date', sa.Date(), nullable=False, comment='CTP date'),
@@ -232,7 +232,7 @@ def upgrade() -> None:
         sa.Column('order_line_number', sa.Integer(), nullable=False, comment='Order line number'),
 
         # AWS SC Core Fields
-        sa.Column('company_id', sa.Integer(), nullable=False, comment='Company/group ID'),
+        sa.Column('company_id', sa.Integer(), nullable=False, comment='Company/customer ID'),
         sa.Column('product_id', sa.Integer(), nullable=False, comment='Product ID (items table)'),
         sa.Column('site_id', sa.Integer(), nullable=False, comment='Site ID (nodes table)'),
         sa.Column('customer_id', sa.String(100), nullable=True, comment='Customer ID'),

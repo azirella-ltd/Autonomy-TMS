@@ -3,7 +3,7 @@
 Seed Food Dist Allocation & ATP Demo Data
 
 Creates comprehensive allocation planning and ATP consumption/order promising
-demo data for the Food Dist group. Seeds:
+demo data for the Food Dist customer. Seeds:
 
 1. Site hierarchy (Company → Region → Country → Site)
 2. Product hierarchy (Category → Family → Group → Product)
@@ -41,7 +41,7 @@ from sqlalchemy import select
 
 from app.db.session import sync_engine
 from app.models.user import User, UserTypeEnum, PowellRoleEnum
-from app.models.group import Group
+from app.models.customer import Customer
 from app.models.supply_chain_config import SupplyChainConfig
 from app.models.sc_entities import Product
 from app.models.planning_hierarchy import (
@@ -132,19 +132,19 @@ def _compute_hash(data: dict) -> str:
 # 1. Site Hierarchy
 # =============================================================================
 
-def seed_site_hierarchy(db: Session, group_id: int) -> dict:
+def seed_site_hierarchy(db: Session, customer_id: int) -> dict:
     """Seed site hierarchy nodes. Returns dict of code → SiteHierarchyNode."""
     print("\n  Seeding site hierarchy...")
 
     # Check if already seeded
     existing = db.query(SiteHierarchyNode).filter(
-        SiteHierarchyNode.group_id == group_id,
+        SiteHierarchyNode.customer_id == customer_id,
         SiteHierarchyNode.code == "DF_COMPANY"
     ).first()
     if existing:
         print("    Site hierarchy already exists, loading...")
         nodes = db.query(SiteHierarchyNode).filter(
-            SiteHierarchyNode.group_id == group_id
+            SiteHierarchyNode.customer_id == customer_id
         ).all()
         return {n.code: n for n in nodes}
 
@@ -156,7 +156,7 @@ def seed_site_hierarchy(db: Session, group_id: int) -> dict:
         code="DF_COMPANY", name="Food Dist Inc.",
         hierarchy_level=SiteHierarchyLevel.COMPANY,
         hierarchy_path="DF_COMPANY", depth=0,
-        group_id=group_id, is_plannable=True,
+        customer_id=customer_id, is_plannable=True,
     )
     db.add(company)
     db.flush()
@@ -168,7 +168,7 @@ def seed_site_hierarchy(db: Session, group_id: int) -> dict:
         parent_id=company.id,
         hierarchy_level=SiteHierarchyLevel.REGION,
         hierarchy_path="DF_COMPANY/DF_CENTRAL", depth=1,
-        group_id=group_id, is_plannable=True,
+        customer_id=customer_id, is_plannable=True,
     )
     db.add(region)
     db.flush()
@@ -180,7 +180,7 @@ def seed_site_hierarchy(db: Session, group_id: int) -> dict:
         parent_id=region.id,
         hierarchy_level=SiteHierarchyLevel.COUNTRY,
         hierarchy_path="DF_COMPANY/DF_CENTRAL/DF_US", depth=2,
-        group_id=group_id, is_plannable=True,
+        customer_id=customer_id, is_plannable=True,
     )
     db.add(country)
     db.flush()
@@ -207,7 +207,7 @@ def seed_site_hierarchy(db: Session, group_id: int) -> dict:
             parent_id=country.id,
             hierarchy_level=SiteHierarchyLevel.SITE,
             hierarchy_path=f"DF_COMPANY/DF_CENTRAL/DF_US/{code}",
-            depth=3, group_id=group_id, is_plannable=True,
+            depth=3, customer_id=customer_id, is_plannable=True,
         )
         db.add(node)
         db.flush()
@@ -222,18 +222,18 @@ def seed_site_hierarchy(db: Session, group_id: int) -> dict:
 # 2. Product Hierarchy
 # =============================================================================
 
-def seed_product_hierarchy(db: Session, group_id: int) -> dict:
+def seed_product_hierarchy(db: Session, customer_id: int) -> dict:
     """Seed product hierarchy nodes. Returns dict of code → ProductHierarchyNode."""
     print("\n  Seeding product hierarchy...")
 
     existing = db.query(ProductHierarchyNode).filter(
-        ProductHierarchyNode.group_id == group_id,
+        ProductHierarchyNode.customer_id == customer_id,
         ProductHierarchyNode.code == "DF_ALL_PRODUCTS"
     ).first()
     if existing:
         print("    Product hierarchy already exists, loading...")
         nodes = db.query(ProductHierarchyNode).filter(
-            ProductHierarchyNode.group_id == group_id
+            ProductHierarchyNode.customer_id == customer_id
         ).all()
         return {n.code: n for n in nodes}
 
@@ -244,7 +244,7 @@ def seed_product_hierarchy(db: Session, group_id: int) -> dict:
         code="DF_ALL_PRODUCTS", name="All Products",
         hierarchy_level=ProductHierarchyLevel.CATEGORY,
         hierarchy_path="DF_ALL_PRODUCTS", depth=0,
-        group_id=group_id, is_plannable=True,
+        customer_id=customer_id, is_plannable=True,
     )
     db.add(top)
     db.flush()
@@ -264,7 +264,7 @@ def seed_product_hierarchy(db: Session, group_id: int) -> dict:
             parent_id=top.id,
             hierarchy_level=ProductHierarchyLevel.CATEGORY,
             hierarchy_path=f"DF_ALL_PRODUCTS/{cat_code}", depth=1,
-            group_id=group_id, is_plannable=True,
+            customer_id=customer_id, is_plannable=True,
         )
         db.add(cat)
         db.flush()
@@ -280,7 +280,7 @@ def seed_product_hierarchy(db: Session, group_id: int) -> dict:
             parent_id=cat_nodes[cat_code].id,
             hierarchy_level=ProductHierarchyLevel.FAMILY,
             hierarchy_path=f"DF_ALL_PRODUCTS/{cat_code}/{family_code}", depth=2,
-            group_id=group_id, is_plannable=True,
+            customer_id=customer_id, is_plannable=True,
         )
         db.add(fam)
         db.flush()
@@ -296,7 +296,7 @@ def seed_product_hierarchy(db: Session, group_id: int) -> dict:
                 parent_id=family_nodes[family_code].id,
                 hierarchy_level=ProductHierarchyLevel.PRODUCT,
                 hierarchy_path=f"DF_ALL_PRODUCTS/{cat_code}/{family_code}/{sku}",
-                depth=3, group_id=group_id, is_plannable=True,
+                depth=3, customer_id=customer_id, is_plannable=True,
                 product_id=sku,  # Link to existing Product
             )
             db.add(prod)
@@ -312,7 +312,7 @@ def seed_product_hierarchy(db: Session, group_id: int) -> dict:
 # 3. Layer Licenses
 # =============================================================================
 
-def seed_layer_licenses(db: Session, group_id: int):
+def seed_layer_licenses(db: Session, customer_id: int):
     """Seed enterprise-tier layer licenses for Food Dist."""
     print("\n  Seeding layer licenses...")
 
@@ -327,14 +327,14 @@ def seed_layer_licenses(db: Session, group_id: int):
     count = 0
     for layer, tier in layers:
         existing = db.query(LayerLicense).filter(
-            LayerLicense.group_id == group_id,
+            LayerLicense.customer_id == customer_id,
             LayerLicense.layer == layer,
         ).first()
         if existing:
             continue
 
         ll = LayerLicense(
-            group_id=group_id,
+            customer_id=customer_id,
             layer=layer,
             mode=LayerMode.ACTIVE,
             activated_at=datetime.utcnow(),
@@ -351,14 +351,14 @@ def seed_layer_licenses(db: Session, group_id: int):
 # 4. Planning Cascade
 # =============================================================================
 
-def seed_planning_cascade(db: Session, config_id: int, group_id: int, sop_director_id: int, alloc_mgr_id: int):
+def seed_planning_cascade(db: Session, config_id: int, customer_id: int, sop_director_id: int, alloc_mgr_id: int):
     """Seed the full planning cascade: PolicyEnvelope → SupBP → SC → SBP → AllocationCommits."""
     print("\n  Seeding planning cascade...")
 
     # Check for existing cascade data
     existing_pe = db.query(PolicyEnvelope).filter(
         PolicyEnvelope.config_id == config_id,
-        PolicyEnvelope.group_id == group_id,
+        PolicyEnvelope.customer_id == customer_id,
     ).first()
     if existing_pe:
         print("    Planning cascade already seeded, skipping")
@@ -377,7 +377,7 @@ def seed_planning_cascade(db: Session, config_id: int, group_id: int, sop_direct
     }
     pe = PolicyEnvelope(
         hash=_compute_hash(pe_data),
-        config_id=config_id, group_id=group_id,
+        config_id=config_id, customer_id=customer_id,
         generated_by=PolicySource.CUSTOMER_INPUT,
         safety_stock_targets=pe_data["safety_stock_targets"],
         otif_floors=pe_data["otif_floors"],
@@ -423,7 +423,7 @@ def seed_planning_cascade(db: Session, config_id: int, group_id: int, sop_direct
     supbp = SupplyBaselinePack(
         hash=_compute_hash(supbp_data),
         policy_envelope_id=pe.id, policy_envelope_hash=pe.hash,
-        config_id=config_id, group_id=group_id,
+        config_id=config_id, customer_id=customer_id,
         generated_by=PolicySource.AUTONOMY_SIM,
         candidates=supbp_candidates,
         tradeoff_frontier=[
@@ -443,7 +443,7 @@ def seed_planning_cascade(db: Session, config_id: int, group_id: int, sop_direct
     sc = SupplyCommit(
         hash=_compute_hash(sc_data),
         supply_baseline_pack_id=supbp.id, supply_baseline_pack_hash=supbp.hash,
-        config_id=config_id, group_id=group_id,
+        config_id=config_id, customer_id=customer_id,
         selected_method="PARAMETRIC_CFA_V1",
         recommendations=sc_recs,
         projected_otif=0.96, projected_inventory_cost=125000, projected_dos=12.5,
@@ -476,7 +476,7 @@ def seed_planning_cascade(db: Session, config_id: int, group_id: int, sop_direct
     sbp = SolverBaselinePack(
         hash=_compute_hash(sbp_data),
         supply_commit_id=sc.id, supply_commit_hash=sc.hash,
-        config_id=config_id, group_id=group_id,
+        config_id=config_id, customer_id=customer_id,
         candidates=sbp_candidates,
     )
     db.add(sbp)
@@ -505,7 +505,7 @@ def seed_planning_cascade(db: Session, config_id: int, group_id: int, sop_direct
             hash=_compute_hash({**ac_data, "week": week_label}),
             supply_commit_id=sc.id, supply_commit_hash=sc.hash,
             solver_baseline_pack_id=sbp.id, solver_baseline_pack_hash=sbp.hash,
-            config_id=config_id, group_id=group_id,
+            config_id=config_id, customer_id=customer_id,
             selected_method=method,
             allocations=allocs,
             status=status,
@@ -565,14 +565,14 @@ def _generate_allocation_entries(week_start: date, method: str) -> list:
 # 5. Inventory Projections
 # =============================================================================
 
-def seed_inv_projections(db: Session, config_id: int, group_id: int, dc_site_id: int):
+def seed_inv_projections(db: Session, config_id: int, customer_id: int, dc_site_id: int):
     """Seed 28-day inventory projections for all 25 products."""
     print("\n  Seeding inventory projections...")
 
     base_date = date(2026, 2, 3)
 
     existing = db.query(InvProjection).filter(
-        InvProjection.company_id == group_id,
+        InvProjection.company_id == customer_id,
         InvProjection.product_id == ALL_SKUS[0],
         InvProjection.projection_date == base_date,
     ).first()
@@ -614,7 +614,7 @@ def seed_inv_projections(db: Session, config_id: int, group_id: int, dc_site_id:
             dos = inv / daily_demand if daily_demand > 0 else 99
 
             proj = InvProjection(
-                company_id=group_id,
+                company_id=customer_id,
                 product_id=sku,
                 site_id=dc_site_id,
                 projection_date=proj_date,
@@ -650,14 +650,14 @@ def seed_inv_projections(db: Session, config_id: int, group_id: int, dc_site_id:
 # 6. ATP Projections
 # =============================================================================
 
-def seed_atp_projections(db: Session, config_id: int, group_id: int, dc_site_id: int):
+def seed_atp_projections(db: Session, config_id: int, customer_id: int, dc_site_id: int):
     """Seed ATP projections with customer-specific allocations."""
     print("\n  Seeding ATP projections...")
 
     base_date = date(2026, 2, 3)
 
     existing = db.query(AtpProjection).filter(
-        AtpProjection.company_id == group_id,
+        AtpProjection.company_id == customer_id,
         AtpProjection.product_id == ALL_SKUS[0],
         AtpProjection.atp_date == base_date,
     ).first()
@@ -688,7 +688,7 @@ def seed_atp_projections(db: Session, config_id: int, group_id: int, dc_site_id:
 
             # Aggregate ATP row (no customer)
             db.add(AtpProjection(
-                company_id=group_id,
+                company_id=customer_id,
                 product_id=sku, site_id=dc_site_id,
                 atp_date=atp_date,
                 atp_qty=round(atp, 1),
@@ -710,7 +710,7 @@ def seed_atp_projections(db: Session, config_id: int, group_id: int, dc_site_id:
                 cust_pct = info["pct"]
                 cust_atp = round(atp * cust_pct, 1)
                 db.add(AtpProjection(
-                    company_id=group_id,
+                    company_id=customer_id,
                     product_id=sku, site_id=dc_site_id,
                     atp_date=atp_date,
                     atp_qty=cust_atp,
@@ -736,14 +736,14 @@ def seed_atp_projections(db: Session, config_id: int, group_id: int, dc_site_id:
 # 7. Order Promises
 # =============================================================================
 
-def seed_order_promises(db: Session, group_id: int, dc_site_id: int):
+def seed_order_promises(db: Session, customer_id: int, dc_site_id: int):
     """Seed ~80 order promises across 10 customers."""
     print("\n  Seeding order promises...")
 
     base_date = date(2026, 2, 3)
 
     existing = db.query(OrderPromise).filter(
-        OrderPromise.company_id == group_id,
+        OrderPromise.company_id == customer_id,
         OrderPromise.order_id.like("DF-ORD-%"),
     ).first()
     if existing:
@@ -838,7 +838,7 @@ def seed_order_promises(db: Session, group_id: int, dc_site_id: int):
             op = OrderPromise(
                 order_id=order_id,
                 order_line_number=1,
-                company_id=group_id,
+                company_id=customer_id,
                 product_id=sku,
                 site_id=dc_site_id,
                 customer_id=cust_code,
@@ -866,13 +866,13 @@ def seed_order_promises(db: Session, group_id: int, dc_site_id: int):
 # 8. Feedback Signals + Agent Decision Metrics
 # =============================================================================
 
-def seed_feedback_and_metrics(db: Session, config_id: int, group_id: int, alloc_mgr_id: int):
+def seed_feedback_and_metrics(db: Session, config_id: int, customer_id: int, alloc_mgr_id: int):
     """Seed feedback signals and agent decision metrics."""
     print("\n  Seeding feedback signals and agent decision metrics...")
 
     existing = db.query(FeedBackSignal).filter(
         FeedBackSignal.config_id == config_id,
-        FeedBackSignal.group_id == group_id,
+        FeedBackSignal.customer_id == customer_id,
     ).first()
     if existing:
         print("    Feedback/metrics already exist, skipping")
@@ -904,7 +904,7 @@ def seed_feedback_and_metrics(db: Session, config_id: int, group_id: int, alloc_
 
     for sig_type, layer, fed_to, metric, value, thresh, dev, details in signals:
         fb = FeedBackSignal(
-            config_id=config_id, group_id=group_id,
+            config_id=config_id, customer_id=customer_id,
             signal_type=sig_type,
             measured_at_layer=layer,
             fed_back_to=fed_to,
@@ -947,7 +947,7 @@ def seed_feedback_and_metrics(db: Session, config_id: int, group_id: int, alloc_
     for (agent_type, start, end, touchless, a_score, u_score, override_rt, odr, dsc,
          total, auto, reviewed, overridden, rejected, integ, risk) in metrics_data:
         m = AgentDecisionMetrics(
-            config_id=config_id, group_id=group_id,
+            config_id=config_id, customer_id=customer_id,
             agent_type=agent_type,
             period_start=start, period_end=end,
             touchless_rate=touchless,
@@ -969,7 +969,7 @@ def seed_feedback_and_metrics(db: Session, config_id: int, group_id: int, alloc_
 # 9. Demo Users
 # =============================================================================
 
-def seed_demo_users(db: Session, group_id: int) -> dict:
+def seed_demo_users(db: Session, customer_id: int) -> dict:
     """Create allocation manager and order promising manager users."""
     print("\n  Seeding demo users...")
 
@@ -981,7 +981,7 @@ def seed_demo_users(db: Session, group_id: int) -> dict:
         email="allocmgr@distdemo.com",
         full_name="Rachel Martinez (Allocation Manager)",
         user_type=UserTypeEnum.USER,
-        group_id=group_id,
+        customer_id=customer_id,
         powell_role=PowellRoleEnum.ALLOCATION_MANAGER,  # Narrow scope: Allocation Worklist only
     )
     users["alloc_manager"] = alloc_user
@@ -992,7 +992,7 @@ def seed_demo_users(db: Session, group_id: int) -> dict:
         email="orderpromise@distdemo.com",
         full_name="Carlos Rivera (Order Promising Manager)",
         user_type=UserTypeEnum.USER,
-        group_id=group_id,
+        customer_id=customer_id,
         powell_role=PowellRoleEnum.ORDER_PROMISE_MANAGER,  # Narrow scope: ATP Worklist only
     )
     users["order_promise_mgr"] = order_user
@@ -1029,7 +1029,7 @@ def seed_demo_users(db: Session, group_id: int) -> dict:
 
 def _create_or_get_user(
     db: Session, username: str, email: str, full_name: str,
-    user_type: UserTypeEnum, group_id: int,
+    user_type: UserTypeEnum, customer_id: int,
     powell_role: PowellRoleEnum = None,
 ) -> User:
     """Create a user or return existing."""
@@ -1037,7 +1037,7 @@ def _create_or_get_user(
     if existing:
         print(f"    User '{username}' already exists (id={existing.id})")
         existing.powell_role = powell_role
-        existing.group_id = group_id
+        existing.customer_id = customer_id
         db.flush()
         return existing
 
@@ -1047,7 +1047,7 @@ def _create_or_get_user(
         full_name=full_name,
         hashed_password=get_password_hash(DEFAULT_PASSWORD),
         user_type=user_type,
-        group_id=group_id,
+        customer_id=customer_id,
         powell_role=powell_role,
         is_active=True,
         is_superuser=False,
@@ -1252,7 +1252,7 @@ SKU_NAMES = {
 }
 
 
-def seed_atp_decisions(db: Session, group_id: int, order_promise_user_id: int):
+def seed_atp_decisions(db: Session, customer_id: int, order_promise_user_id: int):
     """Seed AgentDecision rows for the ATP Fulfillment worklist.
 
     Creates ~30 decisions across SKUs and customers with a mix of statuses
@@ -1261,7 +1261,7 @@ def seed_atp_decisions(db: Session, group_id: int, order_promise_user_id: int):
     print("\n  Seeding ATP agent decisions...")
 
     existing = db.query(AgentDecision).filter(
-        AgentDecision.group_id == group_id,
+        AgentDecision.customer_id == customer_id,
         AgentDecision.decision_type == DecisionType.ATP_ALLOCATION,
     ).first()
     if existing:
@@ -1371,7 +1371,7 @@ def seed_atp_decisions(db: Session, group_id: int, order_promise_user_id: int):
         recommendation_text = f"{action} order {order_id} for {CUSTOMER_NAMES.get(cust, cust)}: {requested_qty} cases of {SKU_NAMES.get(sku, sku)}"
 
         decision = AgentDecision(
-            group_id=group_id,
+            customer_id=customer_id,
             user_id=order_promise_user_id if status != DecisionStatus.PENDING else None,
             decision_type=DecisionType.ATP_ALLOCATION,
             item_code=sku,
@@ -1420,14 +1420,14 @@ def main():
         # Step 1: Validate prerequisites
         print("\n1. Validating prerequisites...")
 
-        group = db.query(Group).filter(Group.name == "Food Dist").first()
-        if not group:
-            print("ERROR: 'Food Dist' group not found. Run seed_dot_foods_demo.py first.")
+        customer = db.query(Customer).filter(Customer.name == "Food Dist").first()
+        if not customer:
+            print("ERROR: 'Food Dist' customer not found. Run seed_dot_foods_demo.py first.")
             sys.exit(1)
-        print(f"   Group: {group.name} (id={group.id})")
+        print(f"   Customer: {customer.name} (id={customer.id})")
 
         config = db.query(SupplyChainConfig).filter(
-            SupplyChainConfig.group_id == group.id
+            SupplyChainConfig.customer_id == customer.id
         ).first()
         if not config:
             print("ERROR: No SC config found for Food Dist. Run FoodDistConfigGenerator first.")
@@ -1472,7 +1472,7 @@ def main():
 
         # Step 2: Create demo users first (needed for reviewed_by references)
         print("\n2. Creating demo users...")
-        users = seed_demo_users(db, group.id)
+        users = seed_demo_users(db, customer.id)
         db.commit()
 
         alloc_mgr_id = users["alloc_manager"].id
@@ -1481,42 +1481,42 @@ def main():
 
         # Step 3: Seed site hierarchy
         print("\n3. Seeding site hierarchy...")
-        site_nodes = seed_site_hierarchy(db, group.id)
+        site_nodes = seed_site_hierarchy(db, customer.id)
         db.commit()
 
         # Step 4: Seed product hierarchy
         print("\n4. Seeding product hierarchy...")
-        product_nodes = seed_product_hierarchy(db, group.id)
+        product_nodes = seed_product_hierarchy(db, customer.id)
         db.commit()
 
         # Step 5: Seed layer licenses
         print("\n5. Seeding layer licenses...")
-        seed_layer_licenses(db, group.id)
+        seed_layer_licenses(db, customer.id)
         db.commit()
 
         # Step 6: Seed planning cascade
         print("\n6. Seeding planning cascade...")
-        seed_planning_cascade(db, config.id, group.id, sop_user_id, alloc_mgr_id)
+        seed_planning_cascade(db, config.id, customer.id, sop_user_id, alloc_mgr_id)
         db.commit()
 
         # Step 7: Seed inventory projections
         print("\n7. Seeding inventory projections...")
-        seed_inv_projections(db, config.id, group.id, dc_node.id)
+        seed_inv_projections(db, config.id, customer.id, dc_node.id)
         db.commit()
 
         # Step 8: Seed ATP projections
         print("\n8. Seeding ATP projections...")
-        seed_atp_projections(db, config.id, group.id, dc_node.id)
+        seed_atp_projections(db, config.id, customer.id, dc_node.id)
         db.commit()
 
         # Step 9: Seed order promises
         print("\n9. Seeding order promises...")
-        seed_order_promises(db, group.id, dc_node.id)
+        seed_order_promises(db, customer.id, dc_node.id)
         db.commit()
 
         # Step 10: Seed feedback signals and metrics
         print("\n10. Seeding feedback signals and metrics...")
-        seed_feedback_and_metrics(db, config.id, group.id, alloc_mgr_id)
+        seed_feedback_and_metrics(db, config.id, customer.id, alloc_mgr_id)
         db.commit()
 
         # Step 11: Seed daily powell_allocations for timeline view
@@ -1528,14 +1528,14 @@ def main():
         print("\n12. Seeding ATP agent decisions...")
         order_promise_user = users.get("order_promise_mgr")
         opm_id = order_promise_user.id if order_promise_user else alloc_mgr_id
-        seed_atp_decisions(db, group.id, opm_id)
+        seed_atp_decisions(db, customer.id, opm_id)
         db.commit()
 
         # Summary
         print("\n" + "=" * 70)
         print("Food Dist Allocation & ATP Demo Data Seeded Successfully!")
         print("=" * 70)
-        print(f"\nGroup: {group.name} (id={group.id})")
+        print(f"\nGroup: {customer.name} (id={customer.id})")
         print(f"SC Config: {config.name} (id={config.id})")
         print(f"DC Site: {dc_node.name} (id={dc_node.id})")
         print(f"\nData created:")

@@ -23,7 +23,7 @@ if str(BACKEND_ROOT) not in os.sys.path:  # type: ignore[attr-defined]
 
 from app.core.config import settings
 from app.core.time_buckets import TimeBucket
-from app.models import Group
+from app.models import Customer
 from app.models.supply_chain_config import (
     Item,
     ProductSiteConfig,
@@ -480,13 +480,13 @@ def _configure_demand(
 def ensure_multi_region_config(
     session: Session,
     *,
-    group: Group,
+    customer: Customer,
     name: str,
     description: Optional[str] = None,
 ) -> Tuple[SupplyChainConfig, bool]:
     existing = (
         session.query(SupplyChainConfig)
-        .filter(SupplyChainConfig.group_id == group.id, SupplyChainConfig.name == name)
+        .filter(SupplyChainConfig.customer_id == customer.id, SupplyChainConfig.name == name)
         .first()
     )
     if existing:
@@ -513,8 +513,8 @@ def ensure_multi_region_config(
     config = SupplyChainConfig(
         name=name,
         description=description or "Multi-region, multi-echelon supply chain",
-        group_id=group.id,
-        created_by=group.admin_id,
+        customer_id=customer.id,
+        created_by=customer.admin_id,
         is_active=True,
         time_bucket=TimeBucket.WEEK,
     )
@@ -562,7 +562,7 @@ def ensure_multi_region_config(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Create a multi-region SC config")
-    parser.add_argument("--group-name", default="Beer Game", help="Group to attach the configuration to")
+    parser.add_argument("--customer-name", default="Beer Game", help="Customer to attach the configuration to")
     parser.add_argument("--config-name", default="Complex_SC", help="Name of the configuration")
     parser.add_argument(
         "--description",
@@ -579,18 +579,18 @@ def main() -> None:
     SessionLocal = sessionmaker(bind=engine)
 
     with SessionLocal() as session:
-        group = session.query(Group).filter(Group.name == args.group_name).first()
-        if group is None:
-            raise RuntimeError(f"Group '{args.group_name}' not found.")
+        customer = session.query(Customer).filter(Customer.name == args.customer_name).first()
+        if customer is None:
+            raise RuntimeError(f"Customer '{args.customer_name}' not found.")
         config, created = ensure_multi_region_config(
             session,
-            group=group,
+            customer=customer,
             name=args.config_name,
             description=args.description,
         )
         session.commit()
         if created:
-            print(f"[success] Created configuration '{config.name}' (id={config.id}) for group '{group.name}'.")
+            print(f"[success] Created configuration '{config.name}' (id={config.id}) for customer '{customer.name}'.")
         else:
             print(f"[info] Configuration '{config.name}' already present (id={config.id}).")
 

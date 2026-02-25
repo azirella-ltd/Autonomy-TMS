@@ -249,11 +249,14 @@ export function AuthProvider({ children }) {
     return roles.every((r) => hasRole(r));
   }, [hasRole]);
 
-  const isGroupAdmin = useMemo(() => {
+  const isCustomerAdmin = useMemo(() => {
     if (!user) return false;
     if (isSystemAdmin(user)) return true;
     return isGroupAdminUtil(user);
   }, [user]);
+
+  // Backward-compatible alias
+  const isGroupAdmin = isCustomerAdmin;
 
   const value = useMemo(() => ({
     isAuthenticated,
@@ -267,11 +270,12 @@ export function AuthProvider({ children }) {
     hasRole,
     hasAnyRole,
     hasAllRoles,
-    isGroupAdmin,
+    isCustomerAdmin,
+    isGroupAdmin, // backward-compatible alias
     showTimeoutWarning,
     timeLeft,
     resetTimers, // Export resetTimers to allow manual reset from components
-  }), [isAuthenticated, user, loading, error, login, logout, refreshUser, hasRole, hasAnyRole, hasAllRoles, isGroupAdmin, showTimeoutWarning, timeLeft, resetTimers]);
+  }), [isAuthenticated, user, loading, error, login, logout, refreshUser, hasRole, hasAnyRole, hasAllRoles, isCustomerAdmin, showTimeoutWarning, timeLeft, resetTimers]);
 
   return (
     <AuthContext.Provider value={value}>

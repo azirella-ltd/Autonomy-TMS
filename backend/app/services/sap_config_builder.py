@@ -38,7 +38,7 @@ from app.models.sc_entities import (
     SourcingRules, ProductBom, ProductionProcess,
 )
 from app.models.supplier import VendorProduct, VendorLeadTime
-from app.models.group import Group
+from app.models.customer import Customer
 
 from app.integrations.sap.data_mapper import SupplyChainMapper
 from app.services.sap_field_mapping_service import (
@@ -202,11 +202,11 @@ class SAPConfigBuilder:
     SupplyChainConfig with all entities.
     """
 
-    def __init__(self, db: AsyncSession, group_id: int):
+    def __init__(self, db: AsyncSession, customer_id: int):
         self.db = db
-        self.group_id = group_id
+        self.customer_id = customer_id
         self.mapper = SupplyChainMapper()
-        self._field_mapping_service = create_field_mapping_service(db, group_id)
+        self._field_mapping_service = create_field_mapping_service(db, customer_id)
 
         # Extracted data (DataFrames)
         self._data: Dict[str, pd.DataFrame] = {}
@@ -1968,7 +1968,7 @@ class SAPConfigBuilder:
         config = SupplyChainConfig(
             name=config_name,
             description=f"Imported from SAP data on {datetime.utcnow().strftime('%Y-%m-%d')}",
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             is_active=True,
         )
         self.db.add(config)

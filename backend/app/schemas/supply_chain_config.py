@@ -338,9 +338,9 @@ class SupplyChainConfigBase(BaseModel):
     name: str = Field(..., max_length=100, description="Name of the configuration")
     description: Optional[str] = Field(None, max_length=500, description="Description of the configuration")
     is_active: bool = Field(False, description="Whether this is the active configuration")
-    group_id: Optional[int] = Field(
+    customer_id: Optional[int] = Field(
         None,
-        description="ID of the group that owns this configuration"
+        description="ID of the customer that owns this configuration"
     )
     time_bucket: TimeBucket = Field(TimeBucket.WEEK, description="Time aggregation unit for the simulation")
     site_type_definitions: List[NodeTypeDefinition] = Field(
@@ -560,7 +560,7 @@ class SupplyChainConfigUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=100, description="Name of the configuration")
     description: Optional[str] = Field(None, max_length=500, description="Description of the configuration")
     is_active: Optional[bool] = Field(None, description="Whether this is the active configuration")
-    group_id: Optional[int] = Field(None, description="ID of the group that owns this configuration")
+    customer_id: Optional[int] = Field(None, description="ID of the customer that owns this configuration")
     time_bucket: Optional[TimeBucket] = Field(None, description="Time aggregation unit for the simulation")
     site_type_definitions: Optional[List[NodeTypeDefinition]] = Field(
         None,

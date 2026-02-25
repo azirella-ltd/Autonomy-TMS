@@ -39,7 +39,7 @@ def upgrade():
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
 
         # Ownership
-        sa.Column('group_id', sa.Integer(), sa.ForeignKey('groups.id'), nullable=False, index=True),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id'), nullable=False, index=True),
         sa.Column('config_id', sa.Integer(), sa.ForeignKey('supply_chain_configs.id'), nullable=False),
         sa.Column('name', sa.String(100), nullable=False),
         sa.Column('description', sa.Text(), nullable=True),

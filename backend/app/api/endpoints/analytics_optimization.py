@@ -76,7 +76,7 @@ async def create_inventory_optimization(
 ):
     """Create inventory optimization recommendation"""
     inv_opt = InventoryOptimization(
-        company_id=current_user.group_id,
+        company_id=current_user.customer_id,
         site_id=optimization.site_id,
         product_id=optimization.product_id,
         optimization_date=optimization.optimization_date,
@@ -165,7 +165,7 @@ async def create_capacity_optimization(
 ):
     """Create capacity optimization recommendation"""
     cap_opt = CapacityOptimization(
-        company_id=current_user.group_id,
+        company_id=current_user.customer_id,
         site_id=optimization.site_id,
         resource_id=optimization.resource_id,
         optimization_date=optimization.optimization_date,
@@ -249,7 +249,7 @@ async def create_network_optimization(
 ):
     """Create network optimization recommendation"""
     net_opt = NetworkOptimization(
-        company_id=current_user.group_id,
+        company_id=current_user.customer_id,
         optimization_date=optimization.optimization_date,
         optimization_type=optimization.optimization_type,
         optimization_method=optimization.optimization_method,
@@ -333,7 +333,7 @@ async def create_kpi_configuration(
 ):
     """Create KPI configuration"""
     kpi = KPIConfiguration(
-        company_id=current_user.group_id,
+        company_id=current_user.customer_id,
         site_id=kpi_config.site_id,
         kpi_name=kpi_config.kpi_name,
         kpi_category=kpi_config.kpi_category,

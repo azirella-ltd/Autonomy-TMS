@@ -80,7 +80,7 @@ class SyncJobConfigBase(BaseModel):
 
 class SyncJobConfigCreate(SyncJobConfigBase):
     """Schema for creating a sync job configuration."""
-    group_id: int = Field(..., gt=0, description="Group this config belongs to")
+    customer_id: int = Field(..., gt=0, description="Customer this config belongs to")
 
     class Config:
         json_schema_extra = {
@@ -88,7 +88,7 @@ class SyncJobConfigCreate(SyncJobConfigBase):
                 "name": "Daily Material Master Sync",
                 "data_type": "material_master",
                 "cron_expression": "0 2 * * *",
-                "group_id": 1,
+                "customer_id": 1,
                 "is_enabled": True,
                 "is_delta_load": True,
                 "lookback_days": 1,
@@ -116,7 +116,7 @@ class SyncJobConfigUpdate(BaseModel):
 class SyncJobConfigResponse(SyncJobConfigBase):
     """Schema for sync job configuration response."""
     id: int
-    group_id: int
+    customer_id: int
     created_at: datetime
     updated_at: Optional[datetime] = None
     last_execution_at: Optional[datetime] = None
@@ -130,7 +130,7 @@ class SyncJobConfigResponse(SyncJobConfigBase):
                 "name": "Daily Material Master Sync",
                 "data_type": "material_master",
                 "cron_expression": "0 2 * * *",
-                "group_id": 1,
+                "customer_id": 1,
                 "is_enabled": True,
                 "is_delta_load": True,
                 "lookback_days": 1,

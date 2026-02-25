@@ -3,11 +3,11 @@ import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { isSystemAdmin as isSystemAdminUser } from '../../utils/authUtils';
 import { saveAdminDashboardPath } from '../../utils/adminDashboardState';
-import GroupSupplyChainConfigList from './GroupSupplyChainConfigList';
-import GroupPlayerManagement from './UserManagement';
-import GroupGameConfigPanel from './GroupGameConfigPanel';
-import GroupGameSupervisionPanel from './GroupGameSupervisionPanel';
-import GroupGameComparisonPanel from './GroupGameComparisonPanel';
+import CustomerSupplyChainConfigList from './CustomerSupplyChainConfigList';
+import CustomerAdminUserManagement from './UserManagement';
+import CustomerScenarioConfigPanel from './CustomerScenarioConfigPanel';
+import CustomerScenarioSupervisionPanel from './CustomerScenarioSupervisionPanel';
+import CustomerScenarioComparisonPanel from './CustomerScenarioComparisonPanel';
 import simulationApi from '../../services/api';
 import { api } from '../../services/api';
 import { getSupplyChainConfigs } from '../../services/supplyChainConfigService';
@@ -62,10 +62,10 @@ const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState(tabItems.some((tab) => tab.value === initialTab) ? initialTab : 'game');
   const [selectedSupplyChainId, setSelectedSupplyChainId] = useState(initialScParam);
 
-  const groupId = useMemo(() => {
-    const rawGroup = user?.group_id;
-    if (rawGroup == null) return null;
-    const parsed = Number(rawGroup);
+  const customerId = useMemo(() => {
+    const rawCustomer = user?.customer_id;
+    if (rawCustomer == null) return null;
+    const parsed = Number(rawCustomer);
     return Number.isFinite(parsed) ? parsed : null;
   }, [user]);
 
@@ -340,7 +340,7 @@ const AdminDashboard = () => {
           <div className="flex flex-col gap-4 mb-4">
             <div>
               <h1 className="text-2xl font-bold mb-1">
-                Group Administrator Workspace
+                Customer Administrator Workspace
               </h1>
               <p className="text-sm text-muted-foreground">
                 Configure your supply chain templates, manage scenarioUser access, and supervise active games from a single workspace.
@@ -389,16 +389,16 @@ const AdminDashboard = () => {
 
       <div>
         {activeTab === 'sc' && (
-          <GroupSupplyChainConfigList />
+          <CustomerSupplyChainConfigList />
         )}
 
         {activeTab === 'game' && (
-          <GroupGameConfigPanel
+          <CustomerScenarioConfigPanel
             games={games}
             loading={gamesLoading}
             error={gamesError}
             onRefresh={refreshGames}
-            groupId={groupId}
+            groupId={customerId}
             currentUserId={currentUserId}
             selectedSupplyChainId={selectedSupplyChainId}
             onSelectSupplyChain={(value) => handleSupplyChainChange({ target: { value } })}
@@ -407,27 +407,27 @@ const AdminDashboard = () => {
           />
         )}
 
-        {activeTab === 'users' && <GroupPlayerManagement />}
+        {activeTab === 'users' && <CustomerAdminUserManagement />}
 
         {activeTab === 'supervision' && (
-          <GroupGameSupervisionPanel
+          <CustomerScenarioSupervisionPanel
             games={games}
             loading={gamesLoading}
             error={gamesError}
             onRefresh={refreshGames}
-            groupId={groupId}
+            groupId={customerId}
             currentUserId={currentUserId}
             selectedSupplyChainId={selectedSupplyChainId}
           />
         )}
 
         {activeTab === 'comparison' && (
-          <GroupGameComparisonPanel
+          <CustomerScenarioComparisonPanel
             games={games}
             loading={gamesLoading}
             error={gamesError}
             onRefresh={refreshGames}
-            groupId={groupId}
+            groupId={customerId}
             currentUserId={currentUserId}
             selectedSupplyChainId={selectedSupplyChainId}
           />

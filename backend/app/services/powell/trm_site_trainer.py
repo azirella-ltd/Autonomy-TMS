@@ -14,7 +14,7 @@ Stigmergic signal enrichment adds an orthogonal dimension:
 Usage:
     trainer = TRMSiteTrainer(
         trm_type="atp_executor", site_id=42, site_name="SLC DC",
-        master_type="INVENTORY", group_id=1, config_id=1, device="cpu"
+        master_type="INVENTORY", customer_id=1, config_id=1, device="cpu"
     )
     result = await trainer.train_phase1(epochs=20)
     result = await trainer.train_phase2(db, epochs=50)
@@ -74,7 +74,7 @@ class TRMSiteTrainer:
         site_id: int,
         site_name: str,
         master_type: str,
-        group_id: int,
+        customer_id: int,
         config_id: int,
         device: str = "cpu",
         checkpoint_dir: Optional[Path] = None,
@@ -86,7 +86,7 @@ class TRMSiteTrainer:
         self.site_id = site_id
         self.site_name = site_name
         self.master_type = master_type
-        self.group_id = group_id
+        self.customer_id = customer_id
         self.config_id = config_id
         self.device = device
         self.checkpoint_dir = checkpoint_dir or CHECKPOINT_DIR

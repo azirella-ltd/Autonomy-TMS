@@ -44,18 +44,18 @@ def upgrade() -> None:
     op.create_index('idx_to_company', 'transfer_order', ['company_id'], unique=False)
     op.create_index('idx_to_order_type', 'transfer_order', ['order_type'], unique=False)
 
-    # Populate company_id from group_id (use group.name as company_id for now)
+    # Populate company_id from customer_id (use customer.name as company_id for now)
     # This will be updated in a follow-up migration when company table is added
     op.execute("""
         UPDATE purchase_order po
-        SET company_id = (SELECT CAST(g.id AS VARCHAR) FROM groups g WHERE g.id = po.group_id)
-        WHERE po.group_id IS NOT NULL
+        SET company_id = (SELECT CAST(g.id AS VARCHAR) FROM customers g WHERE g.id = po.customer_id)
+        WHERE po.customer_id IS NOT NULL
     """)
 
     op.execute("""
         UPDATE transfer_order tord
-        SET company_id = (SELECT CAST(g.id AS VARCHAR) FROM groups g WHERE g.id = tord.group_id)
-        WHERE tord.group_id IS NOT NULL
+        SET company_id = (SELECT CAST(g.id AS VARCHAR) FROM customers g WHERE g.id = tord.customer_id)
+        WHERE tord.customer_id IS NOT NULL
     """)
 
 

@@ -45,9 +45,9 @@ class NetRequirementsCalculator:
     sourcing rules. Includes multi-level BOM explosion for manufactured items.
     """
 
-    def __init__(self, config_id: int, group_id: int, planning_horizon: int):
+    def __init__(self, config_id: int, customer_id: int, planning_horizon: int):
         self.config_id = config_id
-        self.group_id = group_id
+        self.customer_id = customer_id
         self.planning_horizon = planning_horizon
         self._bom_traversal_depth = 0
         self._max_bom_depth = 10  # Prevent infinite loops
@@ -424,7 +424,7 @@ class NetRequirementsCalculator:
             async with SessionLocal() as db:
                 # Get BOM for this product
                 query = select(ProductBom).filter(
-                    ProductBom.group_id == self.group_id,
+                    ProductBom.customer_id == self.customer_id,
                     ProductBom.config_id == self.config_id,
                     ProductBom.product_id == product_id,
                 )
@@ -445,7 +445,7 @@ class NetRequirementsCalculator:
                     alternate_groups[entry.alternate_group or 0].append(entry)
 
                 # For each alternate group, pick highest priority
-                for group_id, entries in alternate_groups.items():
+                for alt_group_key, entries in alternate_groups.items():
                     selected_entry = min(entries, key=lambda e: e.priority or 0)
 
                     # Calculate component requirement
@@ -652,7 +652,7 @@ class NetRequirementsCalculator:
             # Level 1: product_id + site_id (highest priority - most specific)
             result = await db.execute(
                 select(SourcingRules).filter(
-                    SourcingRules.group_id == self.group_id,
+                    SourcingRules.customer_id == self.customer_id,
                     SourcingRules.config_id == self.config_id,
                     SourcingRules.product_id == product_id,
                     SourcingRules.to_site_id == site_id
@@ -666,7 +666,7 @@ class NetRequirementsCalculator:
             if product.product_group_id:
                 result = await db.execute(
                     select(SourcingRules).filter(
-                        SourcingRules.group_id == self.group_id,
+                        SourcingRules.customer_id == self.customer_id,
                     SourcingRules.config_id == self.config_id,
                         SourcingRules.product_group_id == product.product_group_id,
                         SourcingRules.to_site_id == site_id,
@@ -681,7 +681,7 @@ class NetRequirementsCalculator:
             if site.company_id:
                 result = await db.execute(
                     select(SourcingRules).filter(
-                        SourcingRules.group_id == self.group_id,
+                        SourcingRules.customer_id == self.customer_id,
                     SourcingRules.config_id == self.config_id,
                         SourcingRules.company_id == site.company_id,
                         SourcingRules.to_site_id == site_id,
@@ -717,8 +717,8 @@ class NetRequirementsCalculator:
         if scenario_id is not None and hasattr(InvLevel, 'scenario_id'):
             filters.append(InvLevel.scenario_id == scenario_id)
 
-        if self.group_id is not None:
-            filters.append(InvLevel.company_id == str(self.group_id))
+        if self.customer_id is not None:
+            filters.append(InvLevel.company_id == str(self.customer_id))
 
         stmt = (
             select(InvLevel)
@@ -755,8 +755,8 @@ class NetRequirementsCalculator:
         if scenario_id is not None and hasattr(SupplyPlan, 'scenario_id'):
             filters.append(SupplyPlan.scenario_id == scenario_id)
 
-        if self.group_id is not None:
-            filters.append(SupplyPlan.company_id == str(self.group_id))
+        if self.customer_id is not None:
+            filters.append(SupplyPlan.company_id == str(self.customer_id))
 
         stmt = (
             select(

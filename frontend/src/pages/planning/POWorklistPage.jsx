@@ -268,7 +268,7 @@ const POWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
 
       {!canManage && (
         <Alert severity="info" sx={{ mb: 2 }}>
-          You have read-only access to this worklist. Contact your Group Admin
+          You have read-only access to this worklist. Contact your Customer Admin
           to request the <strong>manage_po_worklist</strong> capability.
         </Alert>
       )}

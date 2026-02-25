@@ -54,7 +54,7 @@ class InvProjection(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # SC Core Fields
-    company_id: Mapped[int] = mapped_column(Integer, ForeignKey("groups.id"), nullable=False)
+    company_id: Mapped[int] = mapped_column(Integer, ForeignKey("customers.id"), nullable=False)
     product_id: Mapped[str] = mapped_column(String(100), ForeignKey("product.id"), nullable=False)  # SC Product table
     site_id: Mapped[int] = mapped_column(Integer, ForeignKey("site.id"), nullable=False)
     projection_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -181,7 +181,7 @@ class AtpProjection(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # SC Core Fields
-    company_id: Mapped[int] = mapped_column(Integer, ForeignKey("groups.id"), nullable=False)
+    company_id: Mapped[int] = mapped_column(Integer, ForeignKey("customers.id"), nullable=False)
     product_id: Mapped[str] = mapped_column(String(100), ForeignKey("product.id"), nullable=False)  # SC Product table
     site_id: Mapped[int] = mapped_column(Integer, ForeignKey("site.id"), nullable=False)
     atp_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -257,7 +257,7 @@ class CtpProjection(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # SC Core Fields
-    company_id: Mapped[int] = mapped_column(Integer, ForeignKey("groups.id"), nullable=False)
+    company_id: Mapped[int] = mapped_column(Integer, ForeignKey("customers.id"), nullable=False)
     product_id: Mapped[str] = mapped_column(String(100), ForeignKey("product.id"), nullable=False)  # SC Product table
     site_id: Mapped[int] = mapped_column(Integer, ForeignKey("site.id"), nullable=False)
     ctp_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -341,7 +341,7 @@ class OrderPromise(Base):
     order_line_number: Mapped[int] = mapped_column(Integer, nullable=False, comment="Order line number")
 
     # SC Core Fields
-    company_id: Mapped[int] = mapped_column(Integer, ForeignKey("groups.id"), nullable=False)
+    company_id: Mapped[int] = mapped_column(Integer, ForeignKey("customers.id"), nullable=False)
     product_id: Mapped[str] = mapped_column(String(100), ForeignKey("product.id"), nullable=False)  # SC Product table
     site_id: Mapped[int] = mapped_column(Integer, ForeignKey("site.id"), nullable=False)
     customer_id: Mapped[Optional[str]] = mapped_column(String(100), comment="Customer ID")

@@ -2,7 +2,7 @@
 """
 Seed Food Dist Demo - Powell Framework Aligned Users
 
-Creates a Food Dist customer group with users aligned to Powell SDAM levels:
+Creates a Food Dist customer with users aligned to Powell SDAM levels:
 
 Primary Demo User (recommended for demos):
 - demo: Combined user with ALL Powell capabilities (no login/logout needed!)
@@ -40,7 +40,7 @@ if str(BACKEND_ROOT) not in sys.path:
 from sqlalchemy.orm import Session, sessionmaker
 from app.db.session import sync_engine
 from app.models.user import User, UserTypeEnum, PowellRoleEnum
-from app.models.group import Group, GroupMode
+from app.models.customer import Customer, CustomerMode
 from app.models.rbac import Role, Permission
 from app.core.security import get_password_hash
 from app.core.capabilities import (
@@ -63,7 +63,7 @@ from app.services.rbac_service import RBACService, seed_default_permissions
 # Food Dist Demo Configuration
 # =============================================================================
 
-FOOD_DIST_GROUP_NAME = "Food Dist"
+FOOD_DIST_CUSTOMER_NAME = "Food Dist"
 FOOD_DIST_DESCRIPTION = "Food Dist - America's largest food redistributor. Powell Framework demo."
 DEFAULT_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")
 
@@ -75,7 +75,7 @@ DEMO_USERS = [
         "full_name": "Food Dist Admin",
         "user_type": UserTypeEnum.GROUP_ADMIN,
         "is_group_admin": True,
-        "powell_role": None,  # Group admin uses built-in capabilities
+        "powell_role": None,  # Customer admin uses built-in capabilities
         "site_scope": None,  # Full access
         "product_scope": None,  # Full access
     },
@@ -208,7 +208,7 @@ def create_or_get_user(
     email: str,
     full_name: str,
     user_type: UserTypeEnum,
-    group_id: int,
+    customer_id: int,
     powell_role: PowellRoleEnum = None,
     site_scope: list = None,
     product_scope: list = None,
@@ -244,8 +244,8 @@ def create_or_get_user(
             print(f"  Fixing user '{username}' is_superuser: True -> False")
             existing.is_superuser = False
             updated = True
-        if group_id and existing.group_id != group_id:
-            existing.group_id = group_id
+        if customer_id and existing.customer_id != customer_id:
+            existing.customer_id = customer_id
             updated = True
         if updated:
             db.flush()
@@ -260,7 +260,7 @@ def create_or_get_user(
         full_name=full_name,
         hashed_password=get_password_hash(DEFAULT_PASSWORD),
         user_type=user_type,
-        group_id=group_id,
+        customer_id=customer_id,
         powell_role=powell_role,
         is_active=True,
         is_superuser=False,
@@ -274,35 +274,35 @@ def create_or_get_user(
     return user
 
 
-def create_or_get_group(db: Session, admin_user: User) -> Group:
-    """Create Food Dist group or return existing one."""
-    existing = db.query(Group).filter(Group.name == FOOD_DIST_GROUP_NAME).first()
+def create_or_get_customer(db: Session, admin_user: User) -> Customer:
+    """Create Food Dist customer or return existing one."""
+    existing = db.query(Customer).filter(Customer.name == FOOD_DIST_CUSTOMER_NAME).first()
     if existing:
-        print(f"Group '{FOOD_DIST_GROUP_NAME}' already exists (id={existing.id})")
+        print(f"Customer '{FOOD_DIST_CUSTOMER_NAME}' already exists (id={existing.id})")
         return existing
 
-    group = Group(
-        name=FOOD_DIST_GROUP_NAME,
+    customer = Customer(
+        name=FOOD_DIST_CUSTOMER_NAME,
         description=FOOD_DIST_DESCRIPTION,
         admin_id=admin_user.id,
-        mode=GroupMode.PRODUCTION,  # Operational group
+        mode=CustomerMode.PRODUCTION,  # Operational customer
     )
-    db.add(group)
+    db.add(customer)
     db.flush()
-    print(f"Created group '{FOOD_DIST_GROUP_NAME}' (id={group.id})")
-    return group
+    print(f"Created customer '{FOOD_DIST_CUSTOMER_NAME}' (id={customer.id})")
+    return customer
 
 
 def create_powell_role(
     db: Session,
     rbac_service: RBACService,
     role_name: str,
-    group_id: int = None,
+    customer_id: int = None,
 ) -> Role:
     """Create a Powell-aligned role with appropriate capabilities.
 
     Uses tenant_id=None to create global roles that work across all tenants.
-    The group_id is used for naming/description purposes only.
+    The customer_id is used for naming/description purposes only.
     """
     slug = role_name.lower().replace(" ", "-")
 
@@ -346,8 +346,8 @@ def create_powell_role(
     return role
 
 
-def _generate_sc_config_for_group(group_id: int):
-    """Generate Food Dist SC config for an existing group using async generator."""
+def _generate_sc_config_for_group(customer_id: int):
+    """Generate Food Dist SC config for an existing customer using async generator."""
     from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
     from sqlalchemy.orm import sessionmaker as async_sessionmaker
     from app.core.db_urls import resolve_async_database_url
@@ -361,12 +361,12 @@ def _generate_sc_config_for_group(group_id: int):
             try:
                 result = await generate_food_dist_config(
                     db=session,
-                    existing_group_id=group_id,
+                    existing_customer_id=customer_id,
                 )
                 config_id = result.get("config_id")
                 status = result.get("summary", {}).get("status")
                 if status == "already_exists":
-                    print(f"  SC config already exists for group {group_id} (config_id={config_id})")
+                    print(f"  SC config already exists for customer {customer_id} (config_id={config_id})")
                 else:
                     print(f"  Created SC config (id={config_id}) with:")
                     print(f"    Suppliers: {result.get('suppliers_created', 0)}")
@@ -400,8 +400,8 @@ def main():
         print("\n1. Ensuring permissions are seeded...")
         seed_default_permissions(db)
 
-        # Step 2: Create group admin user first (needed for group creation)
-        print("\n2. Creating group admin user...")
+        # Step 2: Create customer admin user first (needed for customer creation)
+        print("\n2. Creating customer admin user...")
         admin_config = next(u for u in DEMO_USERS if u["is_group_admin"])
         admin_user = create_or_get_user(
             db=db,
@@ -409,16 +409,16 @@ def main():
             email=admin_config["email"],
             full_name=admin_config["full_name"],
             user_type=admin_config["user_type"],
-            group_id=None,  # Will be updated after group creation
+            customer_id=None,  # Will be updated after customer creation
         )
         db.commit()
 
-        # Step 3: Create Food Dist group
-        print("\n3. Creating Food Dist group...")
-        group = create_or_get_group(db, admin_user)
+        # Step 3: Create Food Dist customer
+        print("\n3. Creating Food Dist customer...")
+        customer = create_or_get_customer(db, admin_user)
 
-        # Update admin user's group_id
-        admin_user.group_id = group.id
+        # Update admin user's customer_id
+        admin_user.customer_id = customer.id
         db.commit()
 
         # Step 4: Create RBAC service and Powell roles
@@ -427,7 +427,7 @@ def main():
 
         powell_roles = {}
         for role_name in POWELL_ROLE_CAPABILITIES.keys():
-            role = create_powell_role(db, rbac_service, role_name, group_id=group.id)
+            role = create_powell_role(db, rbac_service, role_name, customer_id=customer.id)
             powell_roles[role_name] = role
 
         db.commit()
@@ -453,13 +453,13 @@ def main():
                 email=user_config["email"],
                 full_name=user_config["full_name"],
                 user_type=user_config["user_type"],
-                group_id=group.id,
+                customer_id=customer.id,
                 powell_role=powell_role_enum,  # Store on user for landing page routing
                 site_scope=user_config.get("site_scope"),
                 product_scope=user_config.get("product_scope"),
             )
 
-            # Assign RBAC role for capabilities (can be customized by group admin)
+            # Assign RBAC role for capabilities (can be customized by customer admin)
             if powell_role_str:
                 role = powell_roles.get(powell_role_str)
                 if role and role not in user.roles:
@@ -468,16 +468,16 @@ def main():
 
         db.commit()
 
-        # Step 6: Generate Food Dist SC config for this group (async)
-        print("\n6. Generating Food Dist supply chain config for group...")
-        _generate_sc_config_for_group(group.id)
+        # Step 6: Generate Food Dist SC config for this customer (async)
+        print("\n6. Generating Food Dist supply chain config for customer...")
+        _generate_sc_config_for_group(customer.id)
 
         # Step 7: Print summary
         print("\n" + "=" * 70)
         print("Food Dist Demo Setup Complete!")
         print("=" * 70)
-        print(f"\nGroup: {FOOD_DIST_GROUP_NAME} (ID: {group.id})")
-        print(f"Mode: {group.mode.value}")
+        print(f"\nCustomer: {FOOD_DIST_CUSTOMER_NAME} (ID: {customer.id})")
+        print(f"Mode: {customer.mode.value}")
         print(f"\nUsers created (password: {DEFAULT_PASSWORD}):")
         print("-" * 50)
 

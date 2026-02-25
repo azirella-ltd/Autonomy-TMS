@@ -20,13 +20,13 @@ const GroupSupplyChainConfigForm = () => {
     return <Navigate to="/unauthorized" replace />;
   }
 
-  const groupId = user?.group_id ?? null;
+  const customerId = user?.customer_id ?? null;
 
-  if (isGroupAdminUser(user) && !groupId) {
+  if (isGroupAdminUser(user) && !customerId) {
     return (
       <div className="flex justify-center items-center min-h-[50vh]">
         <Alert variant="warning">
-          You must be assigned to a group before you can create or edit supply chain configurations.
+          You must be assigned to a customer before you can create or edit supply chain configurations.
         </Alert>
       </div>
     );
@@ -34,9 +34,9 @@ const GroupSupplyChainConfigForm = () => {
 
   return (
     <SupplyChainConfigForm
-      basePath="/admin/group/supply-chain-configs"
+      basePath="/admin/customer/supply-chain-configs"
       allowGroupSelection={false}
-      defaultGroupId={groupId}
+      defaultGroupId={customerId}
     />
   );
 };

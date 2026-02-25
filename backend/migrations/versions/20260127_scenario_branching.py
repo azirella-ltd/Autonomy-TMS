@@ -111,7 +111,7 @@ def upgrade():
     op.create_index('idx_sc_config_base', 'supply_chain_configs', ['base_config_id'])
     op.create_index('idx_sc_config_type', 'supply_chain_configs', ['scenario_type'])
     op.create_index('idx_sc_config_active', 'supply_chain_configs', ['is_active'])
-    op.create_index('idx_sc_config_group_type', 'supply_chain_configs', ['group_id', 'scenario_type'])
+    op.create_index('idx_sc_config_group_type', 'supply_chain_configs', ['customer_id', 'scenario_type'])
 
     # =========================================================================
     # Create config_deltas Table for Delta Storage

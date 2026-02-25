@@ -54,7 +54,7 @@ class QualityOrder(Base):
     company_id = Column(String(100))
     site_id = Column(Integer, ForeignKey("site.id"), nullable=False)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"))
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"))
 
     # SC source tracking
     source = Column(String(100))
@@ -153,7 +153,7 @@ class QualityOrder(Base):
     __table_args__ = (
         Index('idx_qo_site', 'site_id'),
         Index('idx_qo_config', 'config_id'),
-        Index('idx_qo_group', 'group_id'),
+        Index('idx_qo_customer', 'customer_id'),
         Index('idx_qo_company', 'company_id'),
         Index('idx_qo_product', 'product_id'),
         Index('idx_qo_status', 'status'),

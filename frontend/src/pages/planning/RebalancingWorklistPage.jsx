@@ -300,7 +300,7 @@ const RebalancingWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
       {!canManage && (
         <Alert severity="info" sx={{ mb: 2 }}>
           You have read-only access to the rebalancing worklist. Contact your
-          Group Admin to request the <strong>manage_rebalancing_worklist</strong>{' '}
+          Customer Admin to request the <strong>manage_rebalancing_worklist</strong>{' '}
           capability for Accept / Override / Reject actions.
         </Alert>
       )}

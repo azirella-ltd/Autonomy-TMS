@@ -57,18 +57,18 @@ const ScenarioTreeManager = () => {
 
   const handleConfigChange = (updatedConfig) => {
     if (updatedConfig?.id && updatedConfig.id !== parseInt(configId)) {
-      navigate(`/admin/group/supply-chain-configs/${updatedConfig.id}/scenarios`);
+      navigate(`/admin/customer/supply-chain-configs/${updatedConfig.id}/scenarios`);
     } else {
       loadConfig();
     }
   };
 
   const handleBack = () => {
-    navigate('/admin/group/supply-chain-configs');
+    navigate('/admin/customer/supply-chain-configs');
   };
 
   const handleEdit = () => {
-    navigate(`/admin/group/supply-chain-configs/edit/${configId}`);
+    navigate(`/admin/customer/supply-chain-configs/edit/${configId}`);
   };
 
   const handleViewEffective = async () => {

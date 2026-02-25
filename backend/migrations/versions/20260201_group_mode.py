@@ -28,13 +28,13 @@ def upgrade() -> None:
     group_mode_enum.create(op.get_bind(), checkfirst=True)
     clock_mode_enum.create(op.get_bind(), checkfirst=True)
 
-    # Add columns to groups table
+    # Add columns to customers table
     op.add_column('groups', sa.Column(
         'mode',
         group_mode_enum,
         nullable=False,
         server_default='production',
-        comment='Group operating mode: training or production'
+        comment='Customer operating mode: training or production'
     ))
 
     op.add_column('groups', sa.Column(

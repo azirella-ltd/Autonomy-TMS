@@ -254,14 +254,14 @@ const UserEditor = ({ open, user, onClose, onSave }) => {
 
           <hr className="border-border" />
 
-          <FormField label="User Type" helperText="User has standard access, Group Admin can manage users">
+          <FormField label="User Type" helperText="User has standard access, Customer Admin can manage users">
             <NativeSelect
               value={formData.user_type}
               onChange={handleChange('user_type')}
               disabled={saving}
             >
               <SelectOption value="USER">User</SelectOption>
-              <SelectOption value="GROUP_ADMIN">Group Admin</SelectOption>
+              <SelectOption value="GROUP_ADMIN">Customer Admin</SelectOption>
             </NativeSelect>
           </FormField>
 

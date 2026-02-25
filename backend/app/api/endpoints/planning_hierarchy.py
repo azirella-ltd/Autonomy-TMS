@@ -2,7 +2,7 @@
 Planning Hierarchy Configuration API Endpoints
 
 Provides CRUD operations for planning hierarchy configurations.
-Group administrators can configure hierarchy levels for different planning types.
+Customer administrators can configure hierarchy levels for different planning types.
 """
 
 from typing import List, Optional
@@ -76,7 +76,7 @@ class PlanningHierarchyConfigUpdate(BaseModel):
 class PlanningHierarchyConfigResponse(BaseModel):
     """Response schema for planning hierarchy configuration."""
     id: int
-    group_id: int
+    customer_id: int
     config_id: Optional[int]
     planning_type: str
     site_hierarchy_level: str
@@ -153,25 +153,25 @@ async def list_planning_templates():
 
 @router.get("/configs", response_model=List[PlanningHierarchyConfigResponse])
 async def list_planning_configs(
-    group_id: int,
+    customer_id: int,
     include_inactive: bool = False,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session)
 ):
     """
-    List all planning hierarchy configurations for a group.
+    List all planning hierarchy configurations for a customer.
 
-    Only group members can view their group's configurations.
+    Only customer members can view their customer's configurations.
     """
-    # Verify user has access to this group
-    if current_user.group_id != group_id and not current_user.is_system_admin:
+    # Verify user has access to this customer
+    if current_user.customer_id != customer_id and not current_user.is_system_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to view this group's configurations"
+            detail="Not authorized to view this customer's configurations"
         )
 
     query = select(PlanningHierarchyConfig).where(
-        PlanningHierarchyConfig.group_id == group_id
+        PlanningHierarchyConfig.customer_id == customer_id
     )
 
     if not include_inactive:
@@ -184,7 +184,7 @@ async def list_planning_configs(
 
     return [PlanningHierarchyConfigResponse(
         id=c.id,
-        group_id=c.group_id,
+        customer_id=c.customer_id,
         config_id=c.config_id,
         planning_type=c.planning_type.value,
         site_hierarchy_level=c.site_hierarchy_level.value,
@@ -206,7 +206,7 @@ async def list_planning_configs(
 
 @router.post("/configs", response_model=PlanningHierarchyConfigResponse)
 async def create_planning_config(
-    group_id: int,
+    customer_id: int,
     config: PlanningHierarchyConfigCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session)
@@ -214,20 +214,20 @@ async def create_planning_config(
     """
     Create a new planning hierarchy configuration.
 
-    Only group administrators can create configurations.
+    Only customer administrators can create configurations.
     """
-    # Verify user is admin of this group
-    if current_user.group_id != group_id and not current_user.is_system_admin:
+    # Verify user is admin of this customer
+    if current_user.customer_id != customer_id and not current_user.is_system_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to create configurations for this group"
+            detail="Not authorized to create configurations for this customer"
         )
 
     # Check for existing config with same planning type
     existing = await db.execute(
         select(PlanningHierarchyConfig).where(
             and_(
-                PlanningHierarchyConfig.group_id == group_id,
+                PlanningHierarchyConfig.customer_id == customer_id,
                 PlanningHierarchyConfig.planning_type == config.planning_type,
                 PlanningHierarchyConfig.config_id == config.config_id,
                 PlanningHierarchyConfig.is_active == True
@@ -241,7 +241,7 @@ async def create_planning_config(
         )
 
     db_config = PlanningHierarchyConfig(
-        group_id=group_id,
+        customer_id=customer_id,
         config_id=config.config_id,
         planning_type=config.planning_type,
         site_hierarchy_level=config.site_hierarchy_level,
@@ -266,7 +266,7 @@ async def create_planning_config(
 
     return PlanningHierarchyConfigResponse(
         id=db_config.id,
-        group_id=db_config.group_id,
+        customer_id=db_config.customer_id,
         config_id=db_config.config_id,
         planning_type=db_config.planning_type.value,
         site_hierarchy_level=db_config.site_hierarchy_level.value,
@@ -288,7 +288,7 @@ async def create_planning_config(
 
 @router.post("/configs/from-template/{template_code}", response_model=PlanningHierarchyConfigResponse)
 async def create_config_from_template(
-    group_id: int,
+    customer_id: int,
     template_code: str,
     name: Optional[str] = None,
     config_id: Optional[int] = None,
@@ -300,11 +300,11 @@ async def create_config_from_template(
 
     Templates provide sensible defaults for common planning scenarios.
     """
-    # Verify user is admin of this group
-    if current_user.group_id != group_id and not current_user.is_system_admin:
+    # Verify user is admin of this customer
+    if current_user.customer_id != customer_id and not current_user.is_system_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to create configurations for this group"
+            detail="Not authorized to create configurations for this customer"
         )
 
     # Find template
@@ -324,7 +324,7 @@ async def create_config_from_template(
     config_name = name or template["name"]
 
     db_config = PlanningHierarchyConfig(
-        group_id=group_id,
+        customer_id=customer_id,
         config_id=config_id,
         planning_type=template["planning_type"],
         site_hierarchy_level=template["site_hierarchy_level"],
@@ -349,7 +349,7 @@ async def create_config_from_template(
 
     return PlanningHierarchyConfigResponse(
         id=db_config.id,
-        group_id=db_config.group_id,
+        customer_id=db_config.customer_id,
         config_id=db_config.config_id,
         planning_type=db_config.planning_type.value,
         site_hierarchy_level=db_config.site_hierarchy_level.value,
@@ -379,7 +379,7 @@ async def update_planning_config(
     """
     Update a planning hierarchy configuration.
 
-    Only group administrators can update configurations.
+    Only customer administrators can update configurations.
     """
     result = await db.execute(
         select(PlanningHierarchyConfig).where(PlanningHierarchyConfig.id == config_id)
@@ -392,8 +392,8 @@ async def update_planning_config(
             detail="Configuration not found"
         )
 
-    # Verify user is admin of this group
-    if current_user.group_id != db_config.group_id and not current_user.is_system_admin:
+    # Verify user is admin of this customer
+    if current_user.customer_id != db_config.customer_id and not current_user.is_system_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to update this configuration"
@@ -409,7 +409,7 @@ async def update_planning_config(
 
     return PlanningHierarchyConfigResponse(
         id=db_config.id,
-        group_id=db_config.group_id,
+        customer_id=db_config.customer_id,
         config_id=db_config.config_id,
         planning_type=db_config.planning_type.value,
         site_hierarchy_level=db_config.site_hierarchy_level.value,
@@ -438,7 +438,7 @@ async def delete_planning_config(
     """
     Delete (deactivate) a planning hierarchy configuration.
 
-    Only group administrators can delete configurations.
+    Only customer administrators can delete configurations.
     """
     result = await db.execute(
         select(PlanningHierarchyConfig).where(PlanningHierarchyConfig.id == config_id)
@@ -451,8 +451,8 @@ async def delete_planning_config(
             detail="Configuration not found"
         )
 
-    # Verify user is admin of this group
-    if current_user.group_id != db_config.group_id and not current_user.is_system_admin:
+    # Verify user is admin of this customer
+    if current_user.customer_id != db_config.customer_id and not current_user.is_system_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to delete this configuration"
@@ -465,22 +465,22 @@ async def delete_planning_config(
     return {"message": "Configuration deactivated", "id": config_id}
 
 
-@router.post("/configs/initialize-defaults/{group_id}")
+@router.post("/configs/initialize-defaults/{customer_id}")
 async def initialize_default_configs(
-    group_id: int,
+    customer_id: int,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session)
 ):
     """
-    Initialize a group with default planning configurations from all templates.
+    Initialize a customer with default planning configurations from all templates.
 
     This creates one configuration for each planning type using the default templates.
     """
-    # Verify user is admin of this group
-    if current_user.group_id != group_id and not current_user.is_system_admin:
+    # Verify user is admin of this customer
+    if current_user.customer_id != customer_id and not current_user.is_system_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to initialize configurations for this group"
+            detail="Not authorized to initialize configurations for this customer"
         )
 
     created_configs = []
@@ -490,7 +490,7 @@ async def initialize_default_configs(
         existing = await db.execute(
             select(PlanningHierarchyConfig).where(
                 and_(
-                    PlanningHierarchyConfig.group_id == group_id,
+                    PlanningHierarchyConfig.customer_id == customer_id,
                     PlanningHierarchyConfig.planning_type == template["planning_type"],
                     PlanningHierarchyConfig.is_active == True
                 )
@@ -500,7 +500,7 @@ async def initialize_default_configs(
             continue  # Skip if already exists
 
         db_config = PlanningHierarchyConfig(
-            group_id=group_id,
+            customer_id=customer_id,
             planning_type=template["planning_type"],
             site_hierarchy_level=template["site_hierarchy_level"],
             product_hierarchy_level=template["product_hierarchy_level"],

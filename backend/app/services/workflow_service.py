@@ -97,7 +97,7 @@ class WorkflowService:
                 "data_type": config.data_type.value,
                 "records_synced": sync_execution.total_records
             },
-            group_id=config.group_id,
+            customer_id=config.customer_id,
             status=WorkflowStatus.PENDING,
             total_steps=len(template.steps)
         )
@@ -127,7 +127,7 @@ class WorkflowService:
     def trigger_manual_workflow(
         self,
         template_id: int,
-        group_id: int,
+        customer_id: int,
         triggered_by: int,
         metadata: Optional[Dict[str, Any]] = None
     ) -> WorkflowExecution:
@@ -136,7 +136,7 @@ class WorkflowService:
 
         Args:
             template_id: Workflow template ID
-            group_id: Group ID
+            customer_id: Customer ID
             triggered_by: User ID
             metadata: Optional trigger metadata
 
@@ -153,7 +153,7 @@ class WorkflowService:
             template_version=template.version,
             trigger_type=WorkflowTriggerType.MANUAL,
             trigger_metadata=metadata,
-            group_id=group_id,
+            customer_id=customer_id,
             triggered_by=triggered_by,
             status=WorkflowStatus.PENDING,
             total_steps=len(template.steps)
@@ -202,7 +202,7 @@ class WorkflowService:
         templates = self.db.query(WorkflowTemplate).filter(
             and_(
                 WorkflowTemplate.is_active == True,
-                WorkflowTemplate.group_id == config.group_id
+                WorkflowTemplate.customer_id == config.customer_id
             )
         ).all()
 

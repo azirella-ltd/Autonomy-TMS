@@ -16,12 +16,12 @@ logger = logging.getLogger(__name__)
 RAG_ENABLED = os.getenv("RAG_ENABLED", "true").lower() == "true"
 RAG_DEFAULT_TOP_K = int(os.getenv("RAG_DEFAULT_TOP_K", "5"))
 RAG_DEFAULT_MAX_TOKENS = int(os.getenv("RAG_DEFAULT_MAX_TOKENS", "3000"))
-RAG_DEFAULT_GROUP_ID = int(os.getenv("RAG_DEFAULT_GROUP_ID", "1"))
+RAG_DEFAULT_CUSTOMER_ID = int(os.getenv("RAG_DEFAULT_CUSTOMER_ID", "1"))
 
 
 async def get_rag_context(
     query: str,
-    group_id: Optional[int] = None,
+    customer_id: Optional[int] = None,
     top_k: Optional[int] = None,
     max_tokens: Optional[int] = None,
     category: Optional[str] = None,
@@ -33,7 +33,7 @@ async def get_rag_context(
 
     Args:
         query: Natural language search query.
-        group_id: KB group to search (default: RAG_DEFAULT_GROUP_ID env or 1).
+        customer_id: KB customer to search (default: RAG_DEFAULT_CUSTOMER_ID env or 1).
         top_k: Number of chunks to retrieve (default: RAG_DEFAULT_TOP_K env or 5).
         max_tokens: Approximate word limit for context (default: RAG_DEFAULT_MAX_TOKENS env or 3000).
         category: Optional document category filter.
@@ -47,7 +47,7 @@ async def get_rag_context(
     if not query or not query.strip():
         return ""
 
-    group_id = group_id or RAG_DEFAULT_GROUP_ID
+    customer_id = customer_id or RAG_DEFAULT_CUSTOMER_ID
     top_k = top_k or RAG_DEFAULT_TOP_K
     max_tokens = max_tokens or RAG_DEFAULT_MAX_TOKENS
 
@@ -56,7 +56,7 @@ async def get_rag_context(
         from app.services.knowledge_base_service import KnowledgeBaseService
 
         async with get_kb_session() as db:
-            svc = KnowledgeBaseService(db=db, group_id=group_id)
+            svc = KnowledgeBaseService(db=db, customer_id=customer_id)
             context = await svc.search_for_context(
                 query, top_k=top_k, max_tokens=max_tokens
             )

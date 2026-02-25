@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from app.db.session import async_session_factory
 from app.models.supply_chain_config import SupplyChainConfig
-from app.models.group import Group
+from app.models.customer import Customer
 from app.models.scenario import Scenario
 from app.models.aws_sc_planning import ProductionCapacity
 
@@ -67,7 +67,7 @@ async def example_1_strict_capacity():
                     capacity_type='production',
                     capacity_period='week',
                     allow_overflow=False,  # Strict limit
-                    group_id=2,
+                    customer_id=2,
                     config_id=config.id
                 )
                 capacities.append(capacity)
@@ -82,7 +82,7 @@ async def example_1_strict_capacity():
                     capacity_type='transfer',
                     capacity_period='week',
                     allow_overflow=False,
-                    group_id=2,
+                    customer_id=2,
                     config_id=config.id
                 )
                 capacities.append(capacity)
@@ -97,7 +97,7 @@ async def example_1_strict_capacity():
                     capacity_type='transfer',
                     capacity_period='week',
                     allow_overflow=False,
-                    group_id=2,
+                    customer_id=2,
                     config_id=config.id
                 )
                 capacities.append(capacity)
@@ -158,7 +158,7 @@ async def example_2_flexible_capacity():
                     capacity_period='week',
                     allow_overflow=True,  # Overflow allowed
                     overflow_cost_multiplier=1.5,  # 50% premium
-                    group_id=2,
+                    customer_id=2,
                     config_id=config.id
                 )
                 capacities.append(capacity)
@@ -174,7 +174,7 @@ async def example_2_flexible_capacity():
                     capacity_period='week',
                     allow_overflow=True,
                     overflow_cost_multiplier=1.3,  # 30% premium
-                    group_id=2,
+                    customer_id=2,
                     config_id=config.id
                 )
                 capacities.append(capacity)
@@ -236,7 +236,7 @@ async def example_3_product_specific_capacity():
                 capacity_type='production',
                 capacity_period='week',
                 allow_overflow=False,
-                group_id=2,
+                customer_id=2,
                 config_id=config.id
             )
             capacities.append(capacity_a)
@@ -251,7 +251,7 @@ async def example_3_product_specific_capacity():
                 capacity_type='production',
                 capacity_period='week',
                 allow_overflow=False,
-                group_id=2,
+                customer_id=2,
                 config_id=config.id
             )
             capacities.append(capacity_b)
@@ -286,17 +286,17 @@ async def example_4_scenario_configuration():
         )
         config = result.scalar_one_or_none()
 
-        result = await db.execute(select(Group).filter(Group.id == 2))
-        group = result.scalar_one_or_none()
+        result = await db.execute(select(Customer).filter(Customer.id == 2))
+        customer = result.scalar_one_or_none()
 
-        if not config or not group:
-            print("❌ Config or group not found")
+        if not config or not customer:
+            print("❌ Config or customer not found")
             return
 
         # Create scenario with capacity constraints enabled
         scenario = Scenario(
             name="Capacity Constrained Scenario",
-            group_id=group.id,
+            customer_id=customer.id,
             supply_chain_config_id=config.id,
             use_aws_sc_planning=True,
             max_rounds=10,

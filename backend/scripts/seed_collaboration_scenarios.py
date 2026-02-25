@@ -46,20 +46,20 @@ def get_engine():
 
 
 def lookup_food_dist(conn):
-    """Find Food Dist group, config, and user IDs."""
+    """Find Food Dist customer, config, and user IDs."""
     row = conn.execute(text(
-        "SELECT id FROM groups WHERE name ILIKE '%food dist%' OR name ILIKE '%dot foods%' LIMIT 1"
+        "SELECT id FROM customers WHERE name ILIKE '%food dist%' OR name ILIKE '%dot foods%' LIMIT 1"
     )).fetchone()
     if not row:
-        log.error("Food Dist group not found. Run seed_food_dist_demo.py first.")
+        log.error("Food Dist customer not found. Run seed_food_dist_demo.py first.")
         sys.exit(1)
-    group_id = row[0]
+    customer_id = row[0]
 
     row = conn.execute(text(
-        "SELECT id FROM supply_chain_configs WHERE group_id = :gid ORDER BY id LIMIT 1"
-    ), {"gid": group_id}).fetchone()
+        "SELECT id FROM supply_chain_configs WHERE customer_id = :gid ORDER BY id LIMIT 1"
+    ), {"gid": customer_id}).fetchone()
     if not row:
-        log.error("No supply chain config found for Food Dist group.")
+        log.error("No supply chain config found for Food Dist customer.")
         sys.exit(1)
     config_id = row[0]
 
@@ -76,9 +76,9 @@ def lookup_food_dist(conn):
         row = conn.execute(text("SELECT id FROM users WHERE email = :e"), {"e": email}).fetchone()
         users[key] = row[0] if row else None
 
-    log.info(f"  Group ID: {group_id}, Config ID: {config_id}")
+    log.info(f"  Customer ID: {customer_id}, Config ID: {config_id}")
     log.info(f"  Users found: {sum(1 for v in users.values() if v)}/{len(users)}")
-    return group_id, config_id, users
+    return customer_id, config_id, users
 
 
 def ensure_table(conn):
@@ -87,7 +87,7 @@ def ensure_table(conn):
         CREATE TABLE IF NOT EXISTS collaboration_scenarios (
             id SERIAL PRIMARY KEY,
             config_id INTEGER NOT NULL REFERENCES supply_chain_configs(id) ON DELETE CASCADE,
-            group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+            customer_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
             scenario_code VARCHAR(50) NOT NULL UNIQUE,
             title VARCHAR(200) NOT NULL,
             description TEXT NOT NULL,
@@ -108,7 +108,7 @@ def ensure_table(conn):
             updated_at TIMESTAMP DEFAULT NOW()
         );
         CREATE INDEX IF NOT EXISTS idx_collab_scenario_group
-            ON collaboration_scenarios(group_id, level);
+            ON collaboration_scenarios(customer_id, level);
     """))
     conn.commit()
     log.info("  Table collaboration_scenarios ensured.")
@@ -122,11 +122,11 @@ def ensure_table(conn):
 BASE_DATE = datetime(2026, 3, 2)
 
 
-def scenario_1_sop_beverage_surge(group_id, config_id, users):
+def scenario_1_sop_beverage_surge(customer_id, config_id, users):
     """S&OP: Summer Beverage Surge — Policy Envelope Adjustment"""
     return {
         "config_id": config_id,
-        "group_id": group_id,
+        "customer_id": customer_id,
         "scenario_code": "COLLAB-SOP-001",
         "title": "Summer Beverage Surge: Policy Envelope Adjustment for Q2 2026",
         "description": (
@@ -268,11 +268,11 @@ def scenario_1_sop_beverage_surge(group_id, config_id, users):
     }
 
 
-def scenario_2_exec_metro_grocery_rush(group_id, config_id, users):
+def scenario_2_exec_metro_grocery_rush(customer_id, config_id, users):
     """Execution: Metro Grocery Rush Order — Multi-Party Authorization (KEY SCENARIO)"""
     return {
         "config_id": config_id,
-        "group_id": group_id,
+        "customer_id": customer_id,
         "scenario_code": "COLLAB-EXEC-001",
         "title": "Metro Grocery Rush Order: Multi-Party Authorization for Strategic Customer",
         "description": (
@@ -503,11 +503,11 @@ def scenario_2_exec_metro_grocery_rush(group_id, config_id, users):
     }
 
 
-def scenario_3_exec_tyson_delay(group_id, config_id, users):
+def scenario_3_exec_tyson_delay(customer_id, config_id, users):
     """Execution: Tyson Shipment Delay — Emergency PO Rerouting"""
     return {
         "config_id": config_id,
-        "group_id": group_id,
+        "customer_id": customer_id,
         "scenario_code": "COLLAB-EXEC-002",
         "title": "Tyson Shipment Delay: Emergency PO Rerouting for Frozen Proteins",
         "description": (
@@ -635,11 +635,11 @@ def scenario_3_exec_tyson_delay(group_id, config_id, users):
     }
 
 
-def scenario_4_exec_school_lunch_surge(group_id, config_id, users):
+def scenario_4_exec_school_lunch_surge(customer_id, config_id, users):
     """Execution: School Lunch Program Surge — Safety Stock Exception"""
     return {
         "config_id": config_id,
-        "group_id": group_id,
+        "customer_id": customer_id,
         "scenario_code": "COLLAB-EXEC-003",
         "title": "School Lunch Program Surge: Refrigerated Dairy Safety Stock Exception",
         "description": (
@@ -788,11 +788,11 @@ def scenario_4_exec_school_lunch_surge(group_id, config_id, users):
     }
 
 
-def scenario_5_exec_frozen_zone_rebalancing(group_id, config_id, users):
+def scenario_5_exec_frozen_zone_rebalancing(customer_id, config_id, users):
     """Execution: Frozen Zone Capacity — Cross-Temperature Rebalancing"""
     return {
         "config_id": config_id,
-        "group_id": group_id,
+        "customer_id": customer_id,
         "scenario_code": "COLLAB-EXEC-004",
         "title": "Frozen Zone Capacity Crunch: Cross-Temperature Rebalancing",
         "description": (
@@ -943,8 +943,8 @@ def main():
         ensure_table(conn)
 
         # Step 2: Lookup Food Dist context
-        log.info("\n[2/3] Looking up Food Dist group, config, and users...")
-        group_id, config_id, users = lookup_food_dist(conn)
+        log.info("\n[2/3] Looking up Food Dist customer, config, and users...")
+        customer_id, config_id, users = lookup_food_dist(conn)
 
         # Step 3: Clean and insert
         log.info("\n[3/3] Seeding 5 collaboration scenarios...")
@@ -955,23 +955,23 @@ def main():
         log.info("  Cleaned existing scenarios.")
 
         scenarios = [
-            scenario_1_sop_beverage_surge(group_id, config_id, users),
-            scenario_2_exec_metro_grocery_rush(group_id, config_id, users),
-            scenario_3_exec_tyson_delay(group_id, config_id, users),
-            scenario_4_exec_school_lunch_surge(group_id, config_id, users),
-            scenario_5_exec_frozen_zone_rebalancing(group_id, config_id, users),
+            scenario_1_sop_beverage_surge(customer_id, config_id, users),
+            scenario_2_exec_metro_grocery_rush(customer_id, config_id, users),
+            scenario_3_exec_tyson_delay(customer_id, config_id, users),
+            scenario_4_exec_school_lunch_surge(customer_id, config_id, users),
+            scenario_5_exec_frozen_zone_rebalancing(customer_id, config_id, users),
         ]
 
         for s in scenarios:
             conn.execute(text("""
                 INSERT INTO collaboration_scenarios (
-                    config_id, group_id, scenario_code, title, description,
+                    config_id, customer_id, scenario_code, title, description,
                     level, status, priority,
                     originating_agent, target_agents, trigger_event,
                     authorization_requests, balanced_scorecard, net_benefit,
                     resolution, timeline, assigned_to, escalated_to
                 ) VALUES (
-                    :config_id, :group_id, :scenario_code, :title, :description,
+                    :config_id, :customer_id, :scenario_code, :title, :description,
                     :level, :status, :priority,
                     :originating_agent, :target_agents, :trigger_event,
                     :authorization_requests, :balanced_scorecard, :net_benefit,

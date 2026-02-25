@@ -43,7 +43,7 @@ def upgrade() -> None:
         sa.Column('capacity_units', sa.Double),
         sa.Column('capacity_period', sa.String(20), comment='day, week, month'),
         sa.Column('config_id', sa.Integer(), sa.ForeignKey('supply_chain_configs.id')),
-        sa.Column('group_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE')),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE')),
     )
     op.create_index('idx_prod_process_site', 'production_process', ['site_id'])
     op.create_index('idx_prod_process_config', 'production_process', ['config_id'])
@@ -62,7 +62,7 @@ def upgrade() -> None:
         sa.Column('priority', sa.Integer(), server_default=sa.text("1")),
         sa.Column('scrap_percentage', sa.Double, server_default='0.0'),
         sa.Column('config_id', sa.Integer(), sa.ForeignKey('supply_chain_configs.id')),
-        sa.Column('group_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE')),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE')),
     )
     op.create_index('idx_bom_product', 'product_bom', ['product_id'])
     op.create_index('idx_bom_component', 'product_bom', ['component_product_id'])
@@ -90,7 +90,7 @@ def upgrade() -> None:
         sa.Column('created_at', sa.DateTime(), server_default=sa.text('CURRENT_TIMESTAMP')),
         sa.Column('updated_at', sa.DateTime(), server_default=sa.text('CURRENT_TIMESTAMP')),
         sa.Column('config_id', sa.Integer(), sa.ForeignKey('supply_chain_configs.id')),
-        sa.Column('group_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE')),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE')),
         sa.Column('tpartner_id', sa.Integer(), comment='Trading partner for buy rules'),
         sa.Column('transportation_lane_id', sa.String(100), comment='Lane for transfer rules'),
         sa.Column('production_process_id', sa.String(100), sa.ForeignKey('production_process.id')),
@@ -125,7 +125,7 @@ def upgrade() -> None:
         sa.Column('created_at', sa.DateTime(), server_default=sa.text('CURRENT_TIMESTAMP')),
         sa.Column('updated_at', sa.DateTime(), server_default=sa.text('CURRENT_TIMESTAMP')),
         sa.Column('config_id', sa.Integer(), sa.ForeignKey('supply_chain_configs.id')),
-        sa.Column('group_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE')),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE')),
         # AWS SC Safety Stock Policy Type fields
         sa.Column('ss_policy', sa.String(20), comment='Safety stock policy: abs_level, doc_dem, doc_fcst, sl'),
         sa.Column('ss_days', sa.Integer(), comment='Days of coverage for doc_dem/doc_fcst'),
@@ -155,7 +155,7 @@ def upgrade() -> None:
         sa.Column('in_transit_quantity', sa.Double, server_default='0.0'),
         sa.Column('snapshot_date', sa.Date(), nullable=False),
         sa.Column('config_id', sa.Integer(), sa.ForeignKey('supply_chain_configs.id')),
-        sa.Column('group_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE')),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE')),
     )
     op.create_index('idx_inv_level_product_site', 'inv_level', ['product_id', 'site_id'])
     op.create_index('idx_inv_level_snapshot', 'inv_level', ['snapshot_date'])
@@ -177,7 +177,7 @@ def upgrade() -> None:
         sa.Column('user_override_quantity', sa.Double),
         sa.Column('is_active', sa.String(10), server_default='true'),
         sa.Column('config_id', sa.Integer(), sa.ForeignKey('supply_chain_configs.id')),
-        sa.Column('group_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE')),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE')),
         sa.Column('game_id', sa.Integer(), sa.ForeignKey('games.id')),
         sa.Column('created_at', sa.DateTime(), server_default=sa.text('CURRENT_TIMESTAMP')),
     )
@@ -205,7 +205,7 @@ def upgrade() -> None:
         sa.Column('status', sa.String(20), server_default='DRAFT'),
         sa.Column('planning_run_id', sa.String(100)),
         sa.Column('config_id', sa.Integer(), sa.ForeignKey('supply_chain_configs.id')),
-        sa.Column('group_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE')),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE')),
         sa.Column('game_id', sa.Integer(), sa.ForeignKey('games.id')),
         sa.Column('created_at', sa.DateTime(), server_default=sa.text('CURRENT_TIMESTAMP')),
     )

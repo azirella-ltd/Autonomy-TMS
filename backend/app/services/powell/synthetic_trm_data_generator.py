@@ -17,7 +17,7 @@ The generator simulates realistic supply chain operations with:
 - Order exceptions
 
 Usage:
-    generator = SyntheticTRMDataGenerator(db, config_id, group_id)
+    generator = SyntheticTRMDataGenerator(db, config_id, customer_id)
     stats = await generator.generate(
         num_days=365,
         num_orders_per_day=50,
@@ -134,14 +134,14 @@ class SyntheticTRMDataGenerator:
         self,
         db: AsyncSession,
         config_id: int,
-        group_id: int,
+        customer_id: int,
         seed: Optional[int] = None,
         signal_bus=None,
         phase: int = 2,
     ):
         self.db = db
         self.config_id = config_id
-        self.group_id = group_id
+        self.customer_id = customer_id
         self.signal_bus = signal_bus  # Optional HiveSignalBus for signal-enriched data
         self.phase = phase  # Curriculum phase (1=low variance, 2=moderate, 3=high)
 
@@ -151,14 +151,14 @@ class SyntheticTRMDataGenerator:
             np.random.seed(seed)
 
         # Stochastic sampler for distribution-based sampling
-        self.stochastic_sampler = StochasticSampler(scenario_id=group_id)
+        self.stochastic_sampler = StochasticSampler(scenario_id=customer_id)
 
         # Will be loaded
         self.sc_config: Optional[SupplyChainConfig] = None
         self.sites: List[Site] = []
         self.lanes: List[TransportationLane] = []
         self.products: List[str] = []  # product IDs
-        self.company_id: str = f"DF_CORP_{group_id}"  # Default company ID format
+        self.company_id: str = f"DF_CORP_{customer_id}"  # Default company ID format
 
         # Simulation state
         self.site_states: Dict[int, SiteState] = {}
@@ -454,7 +454,7 @@ class SyntheticTRMDataGenerator:
                 supplier_site_id=supplier_site.id,
                 destination_site_id=dest_site.id,
                 config_id=self.config_id,
-                group_id=self.group_id,
+                customer_id=self.customer_id,
                 company_id=self.company_id,
                 order_type="po",
                 status="APPROVED",
@@ -547,7 +547,7 @@ class SyntheticTRMDataGenerator:
 
         # Create decision log
         decision = ATPDecisionLog(
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             config_id=self.config_id,
             site_id=site.id,
             product_id=self.products.index(product_id),
@@ -634,7 +634,7 @@ class SyntheticTRMDataGenerator:
         action_map = {"fulfill": 0, "partial": 1, "defer": 2, "reject": 3}
 
         replay_entry = TRMReplayBuffer(
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             config_id=self.config_id,
             site_id=site.id,
             trm_type=TRMType.ATP_EXECUTOR.value,
@@ -740,7 +740,7 @@ class SyntheticTRMDataGenerator:
         source = self._random_decision_source()
 
         decision = RebalancingDecisionLog(
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             config_id=self.config_id,
             product_id=self.products.index(product_id),
             decision_date=self.current_date,
@@ -821,7 +821,7 @@ class SyntheticTRMDataGenerator:
         action_map = {"transfer": 1, "hold": 0, "expedite": 2}
 
         replay_entry = TRMReplayBuffer(
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             config_id=self.config_id,
             site_id=from_site.id,
             trm_type=TRMType.REBALANCING.value,
@@ -900,7 +900,7 @@ class SyntheticTRMDataGenerator:
         source = self._random_decision_source()
 
         decision = PODecisionLog(
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             config_id=self.config_id,
             site_id=site.id,
             product_id=self.products.index(product_id),
@@ -984,7 +984,7 @@ class SyntheticTRMDataGenerator:
         action_map = {"order": 1, "defer": 0, "expedite": 2, "cancel": 3}
 
         replay_entry = TRMReplayBuffer(
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             config_id=self.config_id,
             site_id=site.id,
             trm_type=TRMType.PO_CREATION.value,
@@ -1080,7 +1080,7 @@ class SyntheticTRMDataGenerator:
         source = self._random_decision_source()
 
         decision = OrderTrackingDecisionLog(
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             config_id=self.config_id,
             order_id=order_id,
             order_type=order_type,
@@ -1168,7 +1168,7 @@ class SyntheticTRMDataGenerator:
         action_map = {"accept": 0, "expedite": 1, "reorder": 2, "escalate": 3, "cancel": 4}
 
         replay_entry = TRMReplayBuffer(
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             config_id=self.config_id,
             site_id=site.id,
             trm_type=TRMType.ORDER_TRACKING.value,
@@ -1282,7 +1282,7 @@ class SyntheticTRMDataGenerator:
         source = self._random_decision_source()
 
         decision = SafetyStockDecisionLog(
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             config_id=self.config_id,
             site_id=site.id,
             product_id=self.products.index(product_id),
@@ -1362,7 +1362,7 @@ class SyntheticTRMDataGenerator:
         ]
 
         replay_entry = TRMReplayBuffer(
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             config_id=self.config_id,
             site_id=site.id,
             trm_type=TRMType.SAFETY_STOCK.value,
@@ -1458,7 +1458,7 @@ class SyntheticTRMDataGenerator:
 async def generate_synthetic_trm_data(
     db: AsyncSession,
     config_id: int,
-    group_id: int,
+    customer_id: int,
     num_days: int = 365,
     num_orders_per_day: int = 50,
     num_decisions_per_day: int = 20,
@@ -1472,7 +1472,7 @@ async def generate_synthetic_trm_data(
     Args:
         db: Database session
         config_id: Supply chain config ID
-        group_id: Group ID
+        customer_id: Customer ID
         num_days: Number of days to simulate
         num_orders_per_day: Average orders per day
         num_decisions_per_day: Average TRM decisions per day
@@ -1484,7 +1484,7 @@ async def generate_synthetic_trm_data(
         GenerationStats with counts of generated records
     """
     generator = SyntheticTRMDataGenerator(
-        db, config_id, group_id, seed, signal_bus=signal_bus, phase=phase
+        db, config_id, customer_id, seed, signal_bus=signal_bus, phase=phase
     )
     return await generator.generate(
         num_days=num_days,

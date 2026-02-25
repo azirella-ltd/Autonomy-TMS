@@ -1,7 +1,7 @@
 /**
  * AI Training Configuration Component
  *
- * Allows Group Admin to configure and manage Powell framework AI model training:
+ * Allows Customer Admin to configure and manage Powell framework AI model training:
  * - Create Powell Training Configurations
  * - Link to hierarchy configs for S&OP and Execution levels
  * - Generate synthetic training data
@@ -116,7 +116,7 @@ const STATUS_ICONS = {
   training_trm: <AIIcon color="warning" />
 };
 
-export default function AITrainingConfig({ groupId, hierarchyConfigs = [], supplyChainConfigs = [] }) {
+export default function AITrainingConfig({ customerId, hierarchyConfigs = [], supplyChainConfigs = [] }) {
   const [configs, setConfigs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -162,12 +162,12 @@ export default function AITrainingConfig({ groupId, hierarchyConfigs = [], suppl
     seed: ''
   });
 
-  const effectiveGroupId = groupId || localStorage.getItem('groupId') || 1;
+  const effectiveCustomerId = customerId || localStorage.getItem('groupId') || 1;
 
   const fetchConfigs = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await api.get(`/powell-training/configs?group_id=${effectiveGroupId}`);
+      const response = await api.get(`/powell-training/configs?group_id=${effectiveCustomerId}`);
       setConfigs(response.data);
     } catch (err) {
       setError('Failed to load AI training configurations');
@@ -175,7 +175,7 @@ export default function AITrainingConfig({ groupId, hierarchyConfigs = [], suppl
     } finally {
       setLoading(false);
     }
-  }, [effectiveGroupId]);
+  }, [effectiveCustomerId]);
 
   useEffect(() => {
     fetchConfigs();
@@ -255,7 +255,7 @@ export default function AITrainingConfig({ groupId, hierarchyConfigs = [], suppl
         await api.put(`/powell-training/configs/${editingConfig.id}`, payload);
         setSuccess('Configuration updated successfully');
       } else {
-        await api.post(`/powell-training/configs?group_id=${effectiveGroupId}`, payload);
+        await api.post(`/powell-training/configs?group_id=${effectiveCustomerId}`, payload);
         setSuccess('Configuration created successfully');
       }
       handleCloseDialog();

@@ -237,7 +237,7 @@ const CapabilityAwareNavbar = () => {
             </IconButton>
 
             <Link
-              to={isSysAdmin ? '/admin/groups' : '/dashboard'}
+              to={isSysAdmin ? '/admin/customers' : '/dashboard'}
               className="flex items-center no-underline"
             >
               <img
@@ -303,7 +303,7 @@ const CapabilityAwareNavbar = () => {
                         {user?.name || user?.full_name || user?.email || 'User'}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {user?.powell_role ? user.powell_role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : (user?.user_type === 'systemadmin' ? 'System Admin' : user?.user_type === 'groupadmin' ? 'Group Admin' : '')}
+                        {user?.powell_role ? user.powell_role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : (user?.user_type === 'systemadmin' ? 'System Admin' : user?.user_type === 'groupadmin' ? 'Customer Admin' : '')}
                       </p>
                     </div>
                     <ChevronDown className="h-4 w-4 text-muted-foreground" />

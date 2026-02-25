@@ -32,9 +32,9 @@ from sqlalchemy import or_, text
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.services.group_service import GroupService
-from app.services.bootstrap import build_default_group_payload, ensure_default_group_and_game
-from app.schemas.group import GroupCreate, GroupUpdate, Group as GroupSchema
+from app.services.customer_service import CustomerService
+from app.services.bootstrap import build_default_customer_payload, ensure_default_customer_and_game
+from app.schemas.customer import CustomerCreate, CustomerUpdate, Customer as CustomerSchema
 from app.schemas.scenario import ScenarioCreate, PricingConfig, NodePolicy, DemandPattern
 from app.schemas.supply_chain_config import SupplyChainConfigUpdate
 from app.schemas.scenario_user import ScenarioUserAssignment, ScenarioUserType as ScenarioUserTypeSchema
@@ -306,7 +306,7 @@ class MeResponse(BaseModel):
     email: str
     name: str
     role: str
-    group_id: Optional[int] = None
+    customer_id: Optional[int] = None
     user_type: Optional[str] = None
     is_superuser: bool = False
 
@@ -674,7 +674,7 @@ async def me(user: Dict[str, Any] = Depends(get_current_user)):
         email=user["email"],
         name=display_name,
         role=user.get("role", "user"),
-        group_id=user.get("group_id"),
+        customer_id=user.get("customer_id"),
         user_type=user.get("user_type"),
         is_superuser=bool(user.get("is_superuser", False)),
     )
@@ -743,7 +743,7 @@ async def list_users(
     limit: int = 250,
     offset: int = 0,
     user_type: Optional[str] = None,
-    group_id: Optional[int] = None,
+    customer_id: Optional[int] = None,
     search: Optional[str] = None,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -752,12 +752,12 @@ async def list_users(
         query = db.query(User).order_by(User.created_at.desc())
 
         if not _is_system_admin_user(current_user):
-            group_filter = _extract_group_id(current_user)
-            if not group_filter:
+            customer_filter = _extract_customer_id(current_user)
+            if not customer_filter:
                 return []
-            query = query.filter(User.group_id == group_filter)
-        elif group_id is not None:
-            query = query.filter(User.group_id == group_id)
+            query = query.filter(User.customer_id == customer_filter)
+        elif customer_id is not None:
+            query = query.filter(User.customer_id == customer_id)
 
         if user_type:
             normalized = user_type.strip().upper()
@@ -796,10 +796,10 @@ async def list_supply_chain_configs(
     try:
         query = db.query(SupplyChainConfig).order_by(SupplyChainConfig.created_at.desc())
         if not _is_system_admin_user(current_user):
-            group_filter = _extract_group_id(current_user)
-            if not group_filter:
+            customer_filter = _extract_customer_id(current_user)
+            if not customer_filter:
                 return []
-            query = query.filter(SupplyChainConfig.group_id == group_filter)
+            query = query.filter(SupplyChainConfig.customer_id == customer_filter)
 
         configs = query.all()
         return [_serialize_supply_chain_config(cfg) for cfg in configs]
@@ -956,13 +956,13 @@ def update_supply_chain_config_basic(
         if not update_data:
             return _serialize_supply_chain_config_detail(config)
 
-        if "group_id" in update_data:
+        if "customer_id" in update_data:
             if not _is_system_admin_user(current_user):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Only system admins can reassign configurations to another group",
+                    detail="Only system admins can reassign configurations to another customer",
                 )
-            config.group_id = update_data["group_id"]
+            config.customer_id = update_data["customer_id"]
 
         if "name" in update_data:
             config.name = (update_data["name"] or "").strip()
@@ -1186,8 +1186,12 @@ def require_system_admin(user: Dict[str, Any]):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
 
 
-def _default_group_payload() -> GroupCreate:
+def _default_customer_payload() -> CustomerCreate:
     return build_default_group_payload()
+
+
+# Backward-compatible alias
+_default_group_payload = _default_customer_payload
 
 
 def _serialize_user_record(user: User) -> Dict[str, Any]:
@@ -1201,7 +1205,7 @@ def _serialize_user_record(user: User) -> Dict[str, Any]:
         "email": user.email,
         "username": user.username,
         "full_name": getattr(user, "full_name", None),
-        "group_id": user.group_id,
+        "customer_id": user.customer_id,
         "user_type": user_type,
         "is_active": bool(getattr(user, "is_active", True)),
         "is_superuser": bool(getattr(user, "is_superuser", False)),
@@ -1230,7 +1234,7 @@ def _build_user_payload_from_model(user: User) -> Dict[str, Any]:
         "email": data["email"],
         "name": name,
         "role": role,
-        "group_id": data.get("group_id"),
+        "customer_id": data.get("customer_id"),
         "is_superuser": bool(data.get("is_superuser")),
         "user_type": user_type,
     }
@@ -1271,7 +1275,7 @@ def _serialize_supply_chain_config(cfg: SupplyChainConfig) -> Dict[str, Any]:
         "name": cfg.name,
         "description": cfg.description,
         "is_active": bool(cfg.is_active),
-        "group_id": cfg.group_id,
+        "customer_id": cfg.customer_id,
         "parent_config_id": cfg.parent_config_id,
         "base_config_id": getattr(cfg, "base_config_id", None),
         "scenario_type": getattr(cfg, "scenario_type", "BASELINE") or "BASELINE",
@@ -1328,12 +1332,12 @@ def _ensure_can_view_supply_chain_config(user: Dict[str, Any], config: SupplyCha
     if user.get("is_superuser"):
         return
 
-    config_group_id = getattr(config, "group_id", None)
-    if config_group_id is None:
+    config_customer_id = getattr(config, "customer_id", None)
+    if config_customer_id is None:
         return
 
-    user_group_id = _as_int(user.get("group_id"))
-    if user_group_id is not None and user_group_id == int(config_group_id):
+    user_customer_id = _as_int(user.get("customer_id"))
+    if user_customer_id is not None and user_customer_id == int(config_customer_id):
         return
 
     raise HTTPException(
@@ -1346,9 +1350,9 @@ def _ensure_can_manage_supply_chain_config(user: Dict[str, Any], config: SupplyC
     if user.get("is_superuser"):
         return
 
-    config_group_id = getattr(config, "group_id", None)
-    user_group_id = _as_int(user.get("group_id"))
-    if config_group_id is None or user_group_id is None:
+    config_customer_id = getattr(config, "customer_id", None)
+    user_customer_id = _as_int(user.get("customer_id"))
+    if config_customer_id is None or user_customer_id is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this configuration",
@@ -1356,7 +1360,7 @@ def _ensure_can_manage_supply_chain_config(user: Dict[str, Any], config: SupplyC
 
     role_token = str(user.get("role") or "").strip().lower()
     user_type_token = str(user.get("user_type") or "").strip().lower()
-    if user_group_id == int(config_group_id) and (
+    if user_customer_id == int(config_customer_id) and (
         role_token == "groupadmin" or user_type_token in {"group_admin", "groupadmin"}
     ):
         return
@@ -1371,7 +1375,7 @@ def _serialize_supply_chain_config_detail(cfg: SupplyChainConfig) -> Dict[str, A
     payload = _serialize_supply_chain_config(cfg)
     payload["time_bucket"] = cfg.time_bucket.value if getattr(cfg, "time_bucket", None) else None
     payload["description"] = cfg.description
-    payload["group_id"] = cfg.group_id
+    payload["customer_id"] = cfg.customer_id
     payload["is_active"] = bool(cfg.is_active)
     definitions, labels = _ensure_site_type_definitions(
         {
@@ -1909,12 +1913,16 @@ def _is_system_admin_user(user: Any) -> bool:
     return False
 
 
-def _extract_group_id(user: Any) -> Optional[int]:
-    gid = user.get("group_id") if isinstance(user, dict) else getattr(user, "group_id", None)
+def _extract_customer_id(user: Any) -> Optional[int]:
+    gid = user.get("customer_id") if isinstance(user, dict) else getattr(user, "customer_id", None)
     try:
         return int(gid) if gid is not None else None
     except (TypeError, ValueError):
         return None
+
+
+# Backward-compatible alias
+_extract_group_id = _extract_customer_id
 
 
 def _iso(dt: Optional[datetime]) -> Optional[str]:
@@ -4854,7 +4862,7 @@ def _serialize_game(game: DbGame) -> Dict[str, Any]:
         "max_rounds": game.max_rounds or 0,
         "created_at": _iso(game.created_at),
         "updated_at": _iso(getattr(game, "updated_at", None)),
-        "group_id": game.group_id,
+        "customer_id": game.customer_id,
         "created_by": game.created_by,
         "is_public": bool(getattr(game, "is_public", True)),
         "config": config,
@@ -4876,8 +4884,8 @@ def _get_game_for_user(db: Session, user: Any, scenario_id: int) -> DbGame:
         raise HTTPException(status_code=404, detail="Game not found")
     if _is_system_admin_user(user):
         return game
-    user_group_id = _extract_group_id(user)
-    if user_group_id is None or user_group_id != game.group_id:
+    user_customer_id = _extract_customer_id(user)
+    if user_customer_id is None or user_customer_id != game.customer_id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     return game
 
@@ -4890,9 +4898,9 @@ def _touch_game(game: DbGame) -> None:
 async def create_mixed_scenario(payload: GameCreate, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
-        group_id = _extract_group_id(user)
-        if group_id is None and not _is_system_admin_user(user):
-            raise HTTPException(status_code=403, detail="Group membership required to create games")
+        customer_id = _extract_customer_id(user)
+        if customer_id is None and not _is_system_admin_user(user):
+            raise HTTPException(status_code=403, detail="Customer membership required to create games")
         if payload.supply_chain_config_id is None:
             raise HTTPException(status_code=400, detail="supply_chain_config_id is required to create a mixed game")
 
@@ -4914,7 +4922,7 @@ async def create_mixed_scenario(payload: GameCreate, user: Dict[str, Any] = Depe
             current_round=0,
             max_rounds=payload.max_rounds or 0,
             created_at=datetime.utcnow(),
-            group_id=group_id,
+            customer_id=customer_id,
             created_by=user.get("id"),
             is_public=payload.is_public,
             demand_pattern=config.get("demand_pattern", {}),
@@ -5046,13 +5054,13 @@ async def list_mixed_scenarios(user: Dict[str, Any] = Depends(get_current_user))
     try:
         query = db.query(DbGame).order_by(DbGame.created_at.desc())
         if not _is_system_admin_user(user):
-            group_id = _extract_group_id(user)
-            if group_id is None:
+            customer_id = _extract_customer_id(user)
+            if customer_id is None:
                 return []
-            query = query.filter(DbGame.group_id == group_id)
+            query = query.filter(DbGame.customer_id == customer_id)
         games = query.all()
         if not games:
-            ensure_default_group_and_game(db)
+            ensure_default_customer_and_game(db)
             db.expire_all()
             games = query.all()
 
@@ -5681,65 +5689,65 @@ async def finish_game(scenario_id: int, user: Dict[str, Any] = Depends(get_curre
 
 # Simple model status for UI banner
 # ------------------------------------------------------------------------------
-# Group management
+# Customer management
 # ------------------------------------------------------------------------------
 
-@api.get("/groups", response_model=List[GroupSchema], tags=["groups"])
-def list_groups_endpoint(
+@api.get("/customers", response_model=List[CustomerSchema], tags=["customers"])
+def list_customers_endpoint(
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: Session = Depends(get_sync_session),
 ):
     require_system_admin(current_user)
-    service = GroupService(db)
-    return service.get_groups()
+    service = CustomerService(db)
+    return service.get_customers()
 
 
-@api.post("/groups/default", response_model=GroupSchema, tags=["groups"])
-def ensure_default_group_endpoint(
+@api.post("/customers/default", response_model=CustomerSchema, tags=["customers"])
+def ensure_default_customer_endpoint(
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: Session = Depends(get_sync_session),
 ):
     require_system_admin(current_user)
-    service = GroupService(db)
-    groups = service.get_groups()
-    if groups:
-        return groups[0]
+    service = CustomerService(db)
+    customers = service.get_customers()
+    if customers:
+        return customers[0]
     payload = _default_group_payload()
-    return service.create_group(payload)
+    return service.create_customer(payload)
 
 
-@api.post("/groups", response_model=GroupSchema, status_code=status.HTTP_201_CREATED, tags=["groups"])
-def create_group_endpoint(
-    group_in: GroupCreate,
+@api.post("/customers", response_model=CustomerSchema, status_code=status.HTTP_201_CREATED, tags=["customers"])
+def create_customer_endpoint(
+    customer_in: CustomerCreate,
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: Session = Depends(get_sync_session),
 ):
     require_system_admin(current_user)
-    service = GroupService(db)
-    return service.create_group(group_in)
+    service = CustomerService(db)
+    return service.create_customer(customer_in)
 
 
-@api.put("/groups/{group_id}", response_model=GroupSchema, tags=["groups"])
-def update_group_endpoint(
-    group_id: int,
-    group_update: GroupUpdate,
+@api.put("/customers/{customer_id}", response_model=CustomerSchema, tags=["customers"])
+def update_customer_endpoint(
+    customer_id: int,
+    customer_update: CustomerUpdate,
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: Session = Depends(get_sync_session),
 ):
     require_system_admin(current_user)
-    service = GroupService(db)
-    return service.update_group(group_id, group_update)
+    service = CustomerService(db)
+    return service.update_customer(customer_id, customer_update)
 
 
-@api.delete("/groups/{group_id}", tags=["groups"])
-def delete_group_endpoint(
-    group_id: int,
+@api.delete("/customers/{customer_id}", tags=["customers"])
+def delete_customer_endpoint(
+    customer_id: int,
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: Session = Depends(get_sync_session),
 ):
     require_system_admin(current_user)
-    service = GroupService(db)
-    return service.delete_group(group_id)
+    service = CustomerService(db)
+    return service.delete_customer(customer_id)
 
 
 _MODEL_STATUS = {
@@ -5807,9 +5815,9 @@ api.include_router(predictive_analytics_router, prefix="/predictive-analytics", 
 from app.api.endpoints.sso import router as sso_router
 api.include_router(sso_router, prefix="/sso", tags=["sso", "authentication"])
 
-# Group management
-from app.api.endpoints.group import router as group_router
-api.include_router(group_router, prefix="/groups", tags=["groups", "organization"])
+# Customer management
+from app.api.endpoints.customer import router as customer_router
+api.include_router(customer_router, prefix="/customers", tags=["customers", "organization"])
 
 # Option 1: Enterprise Features - Multi-Tenancy
 from app.api.endpoints.tenant import router as tenant_router

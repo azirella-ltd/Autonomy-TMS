@@ -23,7 +23,7 @@ from app.models.participant import Participant, ParticipantRole, ParticipantType
 from app.models.auth_models import PasswordHistory, PasswordResetToken
 from app.models.session import TokenBlacklist, UserSession
 from app.models.scenario import Scenario, ScenarioStatus, Round, ParticipantAction
-from app.models.group import Group
+from app.models.customer import Customer
 from app.models.supply_chain_config import SupplyChainConfig, Node, Lane, Market, MarketDemand
 from app.models.sc_entities import Product
 from app.models.mps import MPSPlan, MPSPlanItem, MPSCapacityCheck
@@ -132,20 +132,20 @@ async def init_db():
                 await db.refresh(systemadmin)
                 logger.info("System administrator user created successfully")
 
-            # Ensure default Autonomy group exists
-            result = await db.execute(select(Group).where(Group.name == "Autonomy"))
-            group = result.scalars().first()
-            if not group:
-                group = Group(
-                    name="Autonomy", description="Default group", admin_id=systemadmin.id
+            # Ensure default Autonomy customer exists
+            result = await db.execute(select(Customer).where(Customer.name == "Autonomy"))
+            customer = result.scalars().first()
+            if not customer:
+                customer = Customer(
+                    name="Autonomy", description="Default customer", admin_id=systemadmin.id
                 )
-                db.add(group)
+                db.add(customer)
                 await db.flush()
 
-            # Assign group to system administrator and any users missing a group
-            systemadmin.group_id = group.id
+            # Assign customer to system administrator and any users missing a customer
+            systemadmin.customer_id = customer.id
             await db.execute(
-                update(User).where(User.group_id.is_(None)).values(group_id=group.id)
+                update(User).where(User.customer_id.is_(None)).values(customer_id=customer.id)
             )
 
             # Seed core supply chain configuration

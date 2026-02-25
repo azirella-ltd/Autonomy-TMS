@@ -73,7 +73,7 @@ class SupplyDemandPegging(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
 
     # Ownership
-    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False)
 
     # Product & site where pegging occurs
@@ -133,7 +133,7 @@ class SupplyDemandPegging(Base):
         Index("ix_pegging_supply", "supply_type", "supply_id"),
         Index("ix_pegging_product_site", "product_id", "site_id"),
         Index("ix_pegging_config_active", "config_id", "is_active"),
-        Index("ix_pegging_group", "group_id"),
+        Index("ix_pegging_customer", "customer_id"),
     )
 
     def __repr__(self):
@@ -177,7 +177,7 @@ class AATPConsumptionRecord(Base):
 
     # Context
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=True)
-    group_id = Column(Integer, ForeignKey("groups.id"), nullable=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
 
     consumed_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 

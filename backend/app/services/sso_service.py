@@ -485,7 +485,7 @@ class SSOService:
             hashed_password=get_password_hash(external_id),  # Random password (user can't use it)
             is_active=True,
             user_type=UserTypeEnum[provider.default_user_type] if provider.default_user_type else UserTypeEnum.USER,
-            group_id=provider.default_group_id,
+            customer_id=provider.default_customer_id,
             created_at=datetime.utcnow()
         )
 

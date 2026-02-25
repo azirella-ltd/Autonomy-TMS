@@ -101,9 +101,9 @@ def is_sc_relevant_role(
 class SAPUserProvisioningService:
     """Import SC-relevant SAP users into the Autonomy platform."""
 
-    def __init__(self, db: AsyncSession, group_id: int):
+    def __init__(self, db: AsyncSession, customer_id: int):
         self.db = db
-        self.group_id = group_id
+        self.customer_id = customer_id
 
     # ------------------------------------------------------------------
     # Public API
@@ -217,7 +217,7 @@ class SAPUserProvisioningService:
 
         # Create audit log
         log = SAPUserImportLog(
-            group_id=self.group_id,
+            customer_id=self.customer_id,
             filter_config=filter_config or {},
             role_mapping_config={},
             is_preview=False,
@@ -324,7 +324,7 @@ class SAPUserProvisioningService:
                         user_type=target_user_type,
                         powell_role=target_role,
                         site_scope=site_scope,
-                        group_id=self.group_id,
+                        customer_id=self.customer_id,
                     )
                     self.db.add(new_user)
                     await self.db.flush()
@@ -468,11 +468,11 @@ class SAPUserProvisioningService:
         return base
 
     async def _load_role_mappings(self) -> list[SAPRoleMapping]:
-        """Load active role mappings for this group, ordered by priority."""
+        """Load active role mappings for this customer, ordered by priority."""
         result = await self.db.execute(
             select(SAPRoleMapping)
             .where(
-                SAPRoleMapping.group_id == self.group_id,
+                SAPRoleMapping.customer_id == self.customer_id,
                 SAPRoleMapping.is_active == True,  # noqa: E712
             )
             .order_by(SAPRoleMapping.priority)

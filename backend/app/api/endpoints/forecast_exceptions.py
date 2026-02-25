@@ -40,7 +40,7 @@ class ForecastExceptionCreate(BaseModel):
     detection_method: str = "MANUAL"
     detection_details: Optional[dict] = None
     config_id: Optional[int] = None
-    group_id: Optional[int] = None
+    customer_id: Optional[int] = None
 
 
 class ForecastExceptionUpdate(BaseModel):
@@ -86,7 +86,7 @@ class ExceptionRuleCreate(BaseModel):
     product_ids: Optional[List[str]] = None
     site_ids: Optional[List[int]] = None
     config_id: Optional[int] = None
-    group_id: Optional[int] = None
+    customer_id: Optional[int] = None
 
 
 class CommentCreate(BaseModel):
@@ -109,7 +109,7 @@ class DetectionRunRequest(BaseModel):
 def list_exceptions(
     db: Session = Depends(get_db),
     config_id: Optional[int] = None,
-    group_id: Optional[int] = None,
+    customer_id: Optional[int] = None,
     product_id: Optional[str] = None,
     site_id: Optional[int] = None,
     status: Optional[str] = None,
@@ -126,8 +126,8 @@ def list_exceptions(
 
     if config_id:
         query = query.filter(ForecastException.config_id == config_id)
-    if group_id:
-        query = query.filter(ForecastException.group_id == group_id)
+    if customer_id:
+        query = query.filter(ForecastException.customer_id == customer_id)
     if product_id:
         query = query.filter(ForecastException.product_id == product_id)
     if site_id:
@@ -182,20 +182,20 @@ def list_exceptions(
 def get_exception_summary(
     db: Session = Depends(get_db),
     config_id: Optional[int] = None,
-    group_id: Optional[int] = None,
+    customer_id: Optional[int] = None,
 ):
     """Get summary of exceptions by status and severity"""
     query = db.query(ForecastException)
     if config_id:
         query = query.filter(ForecastException.config_id == config_id)
-    if group_id:
-        query = query.filter(ForecastException.group_id == group_id)
+    if customer_id:
+        query = query.filter(ForecastException.customer_id == customer_id)
 
     # Count by status
     status_counts = dict(
         db.query(ForecastException.status, func.count(ForecastException.id))
         .filter(ForecastException.config_id == config_id if config_id else True)
-        .filter(ForecastException.group_id == group_id if group_id else True)
+        .filter(ForecastException.customer_id == customer_id if customer_id else True)
         .group_by(ForecastException.status)
         .all()
     )
@@ -204,7 +204,7 @@ def get_exception_summary(
     severity_counts = dict(
         db.query(ForecastException.severity, func.count(ForecastException.id))
         .filter(ForecastException.config_id == config_id if config_id else True)
-        .filter(ForecastException.group_id == group_id if group_id else True)
+        .filter(ForecastException.customer_id == customer_id if customer_id else True)
         .group_by(ForecastException.severity)
         .all()
     )
@@ -213,7 +213,7 @@ def get_exception_summary(
     type_counts = dict(
         db.query(ForecastException.exception_type, func.count(ForecastException.id))
         .filter(ForecastException.config_id == config_id if config_id else True)
-        .filter(ForecastException.group_id == group_id if group_id else True)
+        .filter(ForecastException.customer_id == customer_id if customer_id else True)
         .group_by(ForecastException.exception_type)
         .all()
     )
@@ -280,7 +280,7 @@ def create_exception(
         detection_method=data.detection_method,
         detection_details=data.detection_details,
         config_id=data.config_id,
-        group_id=data.group_id,
+        customer_id=data.customer_id,
     )
 
     # Calculate variance if actual provided
@@ -543,7 +543,7 @@ def add_comment(
 def list_rules(
     db: Session = Depends(get_db),
     config_id: Optional[int] = None,
-    group_id: Optional[int] = None,
+    customer_id: Optional[int] = None,
     is_active: Optional[bool] = None,
 ):
     """List exception detection rules"""
@@ -551,8 +551,8 @@ def list_rules(
 
     if config_id:
         query = query.filter(ForecastExceptionRule.config_id == config_id)
-    if group_id:
-        query = query.filter(ForecastExceptionRule.group_id == group_id)
+    if customer_id:
+        query = query.filter(ForecastExceptionRule.customer_id == customer_id)
     if is_active is not None:
         query = query.filter(ForecastExceptionRule.is_active == is_active)
 
@@ -581,7 +581,7 @@ def create_rule(
         product_ids=data.product_ids,
         site_ids=data.site_ids,
         config_id=data.config_id,
-        group_id=data.group_id,
+        customer_id=data.customer_id,
     )
 
     db.add(rule)

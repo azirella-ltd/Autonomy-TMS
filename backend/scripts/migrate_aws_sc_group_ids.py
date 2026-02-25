@@ -1,8 +1,8 @@
 """
-Migrate existing AWS SC planning data to include group_id
+Migrate existing AWS SC planning data to include customer_id
 
-This script populates the group_id field for all existing AWS SC planning records
-by deriving it from the config_id (which links to supply_chain_configs.group_id).
+This script populates the customer_id field for all existing AWS SC planning records
+by deriving it from the config_id (which links to supply_chain_configs.customer_id).
 
 This migration is safe to run multiple times (idempotent).
 
@@ -19,15 +19,15 @@ from app.models.supply_chain_config import SupplyChainConfig
 
 
 async def migrate_group_ids():
-    """Populate group_id for all AWS SC planning tables"""
+    """Populate customer_id for all AWS SC planning tables"""
 
     async with SessionLocal() as db:
         print("=" * 80)
-        print("AWS SC Multi-Tenancy Migration: Populating group_id fields")
+        print("AWS SC Multi-Tenancy Migration: Populating customer_id fields")
         print("=" * 80)
         print()
 
-        # Tables that need group_id populated (all have config_id)
+        # Tables that need customer_id populated (all have config_id)
         tables_with_config = [
             'forecast',
             'supply_plan',
@@ -44,7 +44,7 @@ async def migrate_group_ids():
             'sourcing_schedule_details',
         ]
 
-        # Tables that need both group_id and config_id populated
+        # Tables that need both customer_id and config_id populated
         tables_without_config = [
             'inv_level',
             'trading_partner',
@@ -63,7 +63,7 @@ async def migrate_group_ids():
             count_query = text(f"""
                 SELECT COUNT(*) as cnt
                 FROM {table_name}
-                WHERE config_id IS NOT NULL AND group_id IS NULL
+                WHERE config_id IS NOT NULL AND customer_id IS NULL
             """)
             result = await db.execute(count_query)
             count = result.scalar()
@@ -74,13 +74,13 @@ async def migrate_group_ids():
 
             print(f"  Found {count} records to update")
 
-            # Update group_id from config
+            # Update customer_id from config
             update_query = text(f"""
                 UPDATE {table_name} t
                 INNER JOIN supply_chain_configs sc ON t.config_id = sc.id
-                SET t.group_id = sc.group_id
+                SET t.customer_id = sc.customer_id
                 WHERE t.config_id IS NOT NULL
-                  AND t.group_id IS NULL
+                  AND t.customer_id IS NULL
             """)
 
             await db.execute(update_query)
@@ -90,7 +90,7 @@ async def migrate_group_ids():
             verify_query = text(f"""
                 SELECT COUNT(*) as cnt
                 FROM {table_name}
-                WHERE config_id IS NOT NULL AND group_id IS NULL
+                WHERE config_id IS NOT NULL AND customer_id IS NULL
             """)
             result = await db.execute(verify_query)
             remaining = result.scalar()
@@ -98,7 +98,7 @@ async def migrate_group_ids():
             if remaining == 0:
                 print(f"  ✅ Successfully updated {count} records")
             else:
-                print(f"  ⚠️  Warning: {remaining} records still have NULL group_id")
+                print(f"  ⚠️  Warning: {remaining} records still have NULL customer_id")
 
         # ================================================================
         # STEP 2: Update inv_level (needs special handling)
@@ -108,7 +108,7 @@ async def migrate_group_ids():
         print("-" * 80)
 
         # inv_level doesn't have config_id, need to infer from product_id + site_id
-        # For now, we'll skip this or use a default group if there's ambiguity
+        # For now, we'll skip this or use a default customer if there's ambiguity
         count_query = text("SELECT COUNT(*) as cnt FROM inv_level")
         result = await db.execute(count_query)
         total = result.scalar()
@@ -116,7 +116,7 @@ async def migrate_group_ids():
 
         if total > 0:
             print("  ⚠️  inv_level migration requires manual handling")
-            print("  Recommend: Set config_id/group_id when creating new inv_level records")
+            print("  Recommend: Set config_id/customer_id when creating new inv_level records")
 
         # ================================================================
         # STEP 3: Update trading_partner (needs special handling)
@@ -126,7 +126,7 @@ async def migrate_group_ids():
         print("-" * 80)
 
         # trading_partner doesn't have config_id
-        # Need to determine group_id from related tables (vendor_product, sourcing_rules)
+        # Need to determine customer_id from related tables (vendor_product, sourcing_rules)
         count_query = text("SELECT COUNT(*) as cnt FROM trading_partner")
         result = await db.execute(count_query)
         total = result.scalar()
@@ -134,7 +134,7 @@ async def migrate_group_ids():
 
         if total > 0:
             print("  ⚠️  trading_partner migration requires manual handling")
-            print("  Recommend: Set config_id/group_id when creating new trading_partner records")
+            print("  Recommend: Set config_id/customer_id when creating new trading_partner records")
 
         # ================================================================
         # SUMMARY
@@ -147,8 +147,8 @@ async def migrate_group_ids():
             count_query = text(f"""
                 SELECT
                     COUNT(*) as total,
-                    SUM(CASE WHEN group_id IS NOT NULL THEN 1 ELSE 0 END) as with_group,
-                    SUM(CASE WHEN group_id IS NULL THEN 1 ELSE 0 END) as without_group
+                    SUM(CASE WHEN customer_id IS NOT NULL THEN 1 ELSE 0 END) as with_group,
+                    SUM(CASE WHEN customer_id IS NULL THEN 1 ELSE 0 END) as without_group
                 FROM {table_name}
             """)
             result = await db.execute(count_query)
@@ -159,7 +159,7 @@ async def migrate_group_ids():
             if total > 0:
                 pct = (with_group / total * 100) if total > 0 else 0
                 status = "✅" if without_group == 0 else "⚠️"
-                print(f"{status} {table_name:35} {with_group:5}/{total:5} ({pct:5.1f}%) have group_id")
+                print(f"{status} {table_name:35} {with_group:5}/{total:5} ({pct:5.1f}%) have customer_id")
 
         print()
         print("=" * 80)

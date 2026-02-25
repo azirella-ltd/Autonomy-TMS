@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script to set up the default environment with a group admin, default group,
+Script to set up the default environment with a customer admin, default customer,
 supply chain configuration, and a scenario with AI scenario_users.
 """
 import asyncio
@@ -36,7 +36,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.db.session import async_session_factory, engine, Base
 from app.models.user import User, UserBase
-from app.models.group import Group
+from app.models.customer import Customer
 from app.models.supply_chain_config import SupplyChainConfig, Node, Lane, MarketDemand, NodeType
 from app.models.compatibility import Item
 from app.models.sc_entities import InvPolicy as ProductSiteConfig
@@ -56,54 +56,54 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 async def create_default_environment():
-    """Create the default environment with group admin, group, and scenario."""
+    """Create the default environment with customer admin, customer, and scenario."""
     # Create all tables if they don't exist
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     
     async with async_session_factory() as db:
         try:
-            # Check if group admin already exists
+            # Check if customer admin already exists
             result = await db.execute(
                 select(User).where(User.email == "groupadmin@autonomy.ai")
             )
             group_admin = result.scalars().first()
             
             if not group_admin:
-                # Create group admin user
+                # Create customer admin user
                 group_admin = User(
                     username="groupadmin",
                     email="groupadmin@autonomy.ai",
                     hashed_password=get_password_hash(os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")),
-                    full_name="Group Admin",
+                    full_name="Customer Admin",
                     is_superuser=False,
                     is_active=True
                 )
                 db.add(group_admin)
                 await db.flush()  # Flush to get the ID
-                logger.info("✅ Created group admin user: groupadmin@autonomy.ai / Autonomy@2025")
+                logger.info("✅ Created customer admin user: groupadmin@autonomy.ai / Autonomy@2025")
         
-            # Check if default group exists
+            # Check if default customer exists
             result = await db.execute(
-                select(Group).where(Group.name == "Default Simulation")
+                select(Customer).where(Customer.name == "Default Simulation")
             )
-            default_group = result.scalars().first()
+            default_customer = result.scalars().first()
             
-            if not default_group:
-                # Create default group
-                default_group = Group(
+            if not default_customer:
+                # Create default customer
+                default_customer = Customer(
                     name="Default Simulation",
-                    description="Default Group for Autonomy",
+                    description="Default Customer for Autonomy",
                     admin_id=group_admin.id
                 )
-                db.add(default_group)
+                db.add(default_customer)
                 await db.flush()  # Flush to get the ID
-                logger.info(f"✅ Created default group: {default_group.name}")
+                logger.info(f"✅ Created default customer: {default_customer.name}")
                 
-                # Update group admin with group_id
-                group_admin.group_id = default_group.id
+                # Update customer admin with customer_id
+                group_admin.customer_id = default_customer.id
                 await db.flush()
-                logger.info(f"✅ Updated group admin with group_id: {group_admin.group_id}")
+                logger.info(f"✅ Updated customer admin with customer_id: {group_admin.customer_id}")
             
             # Check if default supply chain config exists
             result = await db.execute(
@@ -116,7 +116,7 @@ async def create_default_environment():
                 default_config = SupplyChainConfig(
                     name="Default Simulation",
                     description="Default supply chain configuration",
-                    group_id=default_group.id,
+                    customer_id=default_customer.id,
                     created_by=group_admin.id
                 )
                 db.add(default_config)
@@ -200,7 +200,7 @@ async def create_default_environment():
                     full_name=f"AI {role.capitalize()}",
                     is_superuser=False,
                     is_active=True,
-                    group_id=default_group.id  # Add AI users to the default group
+                    customer_id=default_customer.id  # Add AI users to the default customer
                 )
                 db.add(ai_user)
                 await db.flush()
@@ -222,7 +222,7 @@ async def create_default_environment():
                     current_round=0,
                     status=ScenarioStatus.CREATED,
                     supply_chain_config_id=default_config.id,
-                    group_id=default_group.id,
+                    customer_id=default_customer.id,
                     created_by=group_admin.id
                 )
                 db.add(default_scenario)

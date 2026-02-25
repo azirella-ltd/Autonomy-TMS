@@ -108,7 +108,7 @@ class ScenarioBranchingService:
         child = SupplyChainConfig(
             name=name,
             description=description,
-            group_id=parent.group_id,
+            customer_id=parent.customer_id,
             time_bucket=parent.time_bucket,
             parent_config_id=parent_config_id,
             base_config_id=base_config_id,
@@ -389,7 +389,7 @@ class ScenarioBranchingService:
                 "id": config.id,
                 "name": config.name,
                 "description": config.description,
-                "group_id": config.group_id,
+                "customer_id": config.customer_id,
                 "time_bucket": config.time_bucket.value if config.time_bucket else None,
                 "scenario_type": config.scenario_type,
                 "parent_config_id": config.parent_config_id,

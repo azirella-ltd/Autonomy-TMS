@@ -82,7 +82,7 @@ from app.db.session import get_db
 from sqlalchemy.future import select
 
 from app.models.user import User, UserTypeEnum
-from app.models.group import Group
+from app.models.customer import Customer
 from app.repositories.users import get_user_by_email
 try:  # pragma: no cover - optional middleware dependency
     from app.middleware.csrf import set_csrf_cookie
@@ -291,17 +291,17 @@ async def get_current_user(
             user.user_type = UserTypeEnum.USER
 
         if (
-            getattr(user, "group_id", None) in (None, 0)
+            getattr(user, "customer_id", None) in (None, 0)
             and user.user_type == UserTypeEnum.GROUP_ADMIN
         ):
-            admin_group = getattr(user, "admin_of_group", None)
-            if not admin_group:
-                admin_group_result = await db.execute(
-                    select(Group).filter(Group.admin_id == user.id)
+            admin_customer = getattr(user, "admin_of_customer", None)
+            if not admin_customer:
+                admin_customer_result = await db.execute(
+                    select(Customer).filter(Customer.admin_id == user.id)
                 )
-                admin_group = admin_group_result.scalars().first()
-            if admin_group:
-                user.group_id = admin_group.id
+                admin_customer = admin_customer_result.scalars().first()
+            if admin_customer:
+                user.customer_id = admin_customer.id
 
         return user
         

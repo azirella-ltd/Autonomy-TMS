@@ -78,7 +78,7 @@ class TestDemandProcessorNetting:
 
     @pytest.fixture
     def processor(self):
-        return DemandProcessor(config_id=1, group_id=1)
+        return DemandProcessor(config_id=1, customer_id=1)
 
     # -- Test 1 --
     @pytest.mark.asyncio
@@ -210,7 +210,7 @@ class TestDemandProcessorAggregation:
 
     @pytest.fixture
     def processor(self):
-        return DemandProcessor(config_id=1, group_id=1)
+        return DemandProcessor(config_id=1, customer_id=1)
 
     # -- Test 9 (bonus aggregation test) --
     @pytest.mark.asyncio
@@ -239,7 +239,7 @@ class TestSafetyStockAbsLevel:
 
     @pytest.fixture
     def calculator(self):
-        return InventoryTargetCalculator(config_id=1, group_id=1)
+        return InventoryTargetCalculator(config_id=1, customer_id=1)
 
     # -- Test 10 --
     @pytest.mark.asyncio
@@ -272,7 +272,7 @@ class TestSafetyStockDocDem:
 
     @pytest.fixture
     def calculator(self):
-        return InventoryTargetCalculator(config_id=1, group_id=1)
+        return InventoryTargetCalculator(config_id=1, customer_id=1)
 
     # -- Test 12 --
     @pytest.mark.asyncio
@@ -310,7 +310,7 @@ class TestSafetyStockDocFcst:
 
     @pytest.fixture
     def calculator(self):
-        return InventoryTargetCalculator(config_id=1, group_id=1)
+        return InventoryTargetCalculator(config_id=1, customer_id=1)
 
     # -- Test 14 --
     @pytest.mark.asyncio
@@ -352,7 +352,7 @@ class TestSafetyStockServiceLevel:
 
     @pytest.fixture
     def calculator(self):
-        return InventoryTargetCalculator(config_id=1, group_id=1)
+        return InventoryTargetCalculator(config_id=1, customer_id=1)
 
     # -- Test 16 --
     @pytest.mark.asyncio
@@ -466,7 +466,7 @@ class TestSafetyStockConformal:
 
     @pytest.fixture
     def calculator(self):
-        return InventoryTargetCalculator(config_id=1, group_id=1)
+        return InventoryTargetCalculator(config_id=1, customer_id=1)
 
     # -- Test 21 --
     @pytest.mark.asyncio
@@ -518,7 +518,7 @@ class TestConformalCalculation:
 
     @pytest.fixture
     def calculator(self):
-        return InventoryTargetCalculator(config_id=1, group_id=1)
+        return InventoryTargetCalculator(config_id=1, customer_id=1)
 
     # -- Test 22 --
     @pytest.mark.asyncio
@@ -552,7 +552,7 @@ class TestZScore:
 
     @pytest.fixture
     def calculator(self):
-        return InventoryTargetCalculator(config_id=1, group_id=1)
+        return InventoryTargetCalculator(config_id=1, customer_id=1)
 
     # -- Test 23 --
     def test_z_score_common_values(self, calculator):
@@ -577,7 +577,7 @@ class TestHierarchicalOverrideAndTargets:
 
     @pytest.fixture
     def calculator(self):
-        return InventoryTargetCalculator(config_id=1, group_id=1)
+        return InventoryTargetCalculator(config_id=1, customer_id=1)
 
     # -- Test 25 --
     @pytest.mark.asyncio
@@ -683,7 +683,7 @@ class TestReviewPeriodDemand:
 
     @pytest.fixture
     def calculator(self):
-        return InventoryTargetCalculator(config_id=1, group_id=1)
+        return InventoryTargetCalculator(config_id=1, customer_id=1)
 
     # -- Test 31 --
     @pytest.mark.asyncio
@@ -713,7 +713,7 @@ class TestAvgDailyForecast:
 
     @pytest.fixture
     def calculator(self):
-        return InventoryTargetCalculator(config_id=1, group_id=1)
+        return InventoryTargetCalculator(config_id=1, customer_id=1)
 
     # -- Test 32 --
     def test_avg_daily_forecast_calculation(self, calculator):
@@ -765,7 +765,7 @@ class TestTimePhasedNetting:
 
     @pytest.fixture
     def calc(self):
-        c = NetRequirementsCalculator(config_id=1, group_id=1, planning_horizon=10)
+        c = NetRequirementsCalculator(config_id=1, customer_id=1, planning_horizon=10)
         # Stub out DB-dependent generate_supply_plan to return a mock plan
         return c
 
@@ -855,7 +855,7 @@ class TestNetReqSourcingRuleSelection:
     @pytest.mark.asyncio
     async def test_highest_priority_rule_selected(self):
         """Among multiple rules, the one with lowest priority number wins."""
-        calc = NetRequirementsCalculator(config_id=1, group_id=1, planning_horizon=10)
+        calc = NetRequirementsCalculator(config_id=1, customer_id=1, planning_horizon=10)
 
         rule_high = _make_sourcing_rule(
             sourcing_rule_type="buy", priority=1, lead_time=3
@@ -883,7 +883,7 @@ class TestNetReqSourcingRuleSelection:
     @pytest.mark.asyncio
     async def test_no_sourcing_rule_returns_none(self):
         """No sourcing rules → None (no plan generated)."""
-        calc = NetRequirementsCalculator(config_id=1, group_id=1, planning_horizon=10)
+        calc = NetRequirementsCalculator(config_id=1, customer_id=1, planning_horizon=10)
         calc.get_sourcing_rules = AsyncMock(return_value=[])
 
         plan = await calc.generate_supply_plan(
@@ -896,7 +896,7 @@ class TestNetReqSourcingRuleSelection:
     @pytest.mark.asyncio
     async def test_manufacture_rule_type(self):
         """Manufacture sourcing rule dispatches to create_manufacture_plan."""
-        calc = NetRequirementsCalculator(config_id=1, group_id=1, planning_horizon=10)
+        calc = NetRequirementsCalculator(config_id=1, customer_id=1, planning_horizon=10)
 
         rule = _make_sourcing_rule(sourcing_rule_type="manufacture", priority=1)
 
@@ -921,7 +921,7 @@ class TestBOMExplosion:
     @pytest.mark.asyncio
     async def test_cycle_detection_prevents_infinite_loop(self):
         """BOM with circular reference is detected and stops."""
-        calc = NetRequirementsCalculator(config_id=1, group_id=1, planning_horizon=10)
+        calc = NetRequirementsCalculator(config_id=1, customer_id=1, planning_horizon=10)
 
         # Simulate a circular BOM by pre-adding a visited key
         calc._visited_boms.add(("PROD_A", "default"))
@@ -938,7 +938,7 @@ class TestBOMExplosion:
     @pytest.mark.asyncio
     async def test_max_depth_prevents_runaway(self):
         """BOM traversal stops at max depth (10 levels)."""
-        calc = NetRequirementsCalculator(config_id=1, group_id=1, planning_horizon=10)
+        calc = NetRequirementsCalculator(config_id=1, customer_id=1, planning_horizon=10)
         calc._bom_traversal_depth = 10  # At max
 
         await calc.explode_bom(
@@ -956,7 +956,7 @@ class TestMultiSourcing:
     @pytest.mark.asyncio
     async def test_multi_sourcing_allocation(self):
         """Equal-priority rules split requirement by allocation_percent."""
-        calc = NetRequirementsCalculator(config_id=1, group_id=1, planning_horizon=10)
+        calc = NetRequirementsCalculator(config_id=1, customer_id=1, planning_horizon=10)
 
         rule_a = _make_sourcing_rule(
             sourcing_rule_type="buy", priority=1,

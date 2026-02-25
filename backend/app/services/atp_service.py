@@ -1030,7 +1030,7 @@ class ATPService:
 
             # Create ATP projection record
             atp_record = AtpProjection(
-                company_id=game.group_id or 1,
+                company_id=game.customer_id or 1,
                 product_id=product_id,
                 site_id=node_id,
                 atp_date=date.today(),
