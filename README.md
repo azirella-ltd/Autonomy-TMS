@@ -203,7 +203,7 @@ The Beer Game uses the same AWS SC services underneath:
 - **35 AWS SC Entities**: Standard supply chain data model
 - **DAG Topology**: 4 master site types (MARKET_SUPPLY, MARKET_DEMAND, INVENTORY, MANUFACTURER)
 - **Temporal Support**: Effective date tracking for planning scenarios
-- **Multi-tenancy**: Group-based isolation with RBAC
+- **Multi-tenancy**: Customer-based isolation with RBAC
 
 ---
 

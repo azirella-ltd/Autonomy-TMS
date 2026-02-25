@@ -92,7 +92,7 @@ The customer mode determines the **user experience**, not whether AI models can 
 - **Order Management**: Inbound/outbound orders, shipment tracking, fulfillment
 - **Network Design**: DAG-based supply chain topology (35 AWS SC entities)
 
-**AWS SC Compliance**: 91% (32/35 entities implemented). See [AWS_SC_IMPLEMENTATION_STATUS.md](docs/progress/AWS_SC_IMPLEMENTATION_STATUS.md) for detailed status.
+**AWS SC Compliance**: ✅ 100% (35/35 entities implemented). See [AWS_SC_IMPLEMENTATION_STATUS.md](docs/progress/AWS_SC_IMPLEMENTATION_STATUS.md) for detailed status.
 
 **AWS SC References**:
 - **Features**: Target feature parity (excluding Data Lakes) with AWS Supply Chain capabilities: https://aws.amazon.com/aws-supply-chain/features/
@@ -450,12 +450,27 @@ make proxy-logs
 - `ScenarioReport.jsx`: Post-scenario analytics
 - `ScenarioVisualizations.jsx`: Charts and metrics
 
-**Admin Pages** (`pages/admin/`):
-- `TRMDashboard.jsx`: TRM training interface
-- `GNNDashboard.jsx`: GNN training interface
-- `ModelSetup.jsx`: Model configuration
-- `UserManagement.jsx`: User administration
-- `CustomerManagement.jsx`: Customer management
+**Admin Pages** (`pages/admin/` — 25+ pages implemented):
+- `TRMDashboard.jsx`: TRM training interface (training/model manager/testing tabs)
+- `GNNDashboard.jsx`: GNN training with config-specific models
+- `GraphSAGEDashboard.jsx`: S&OP GraphSAGE medium-term model training
+- `HiveDashboard.jsx`: TRM Hive visualization (urgency vectors, signal bus, decision cycle phases)
+- `PowellDashboard.jsx`: Powell SDAM framework dashboard (state/policy/decision/outcomes)
+- `RLDashboard.jsx` / `RLHFDashboard.jsx`: RL and RLHF training interfaces
+- `KnowledgeBase.jsx`: RAG document management, vector search, embedding config
+- `PicoClawManagement.jsx`: Edge CDC fleet dashboard (heartbeats, alerts, service accounts)
+- `OpenClawManagement.jsx`: Multi-channel agent gateway (WhatsApp/Slack/Teams)
+- `SignalIngestionDashboard.jsx`: Signal monitoring, review queue, source reliability
+- `EdgeAgentSecurity.jsx`: CVE tracker, security checklist, deployment hardening
+- `SAPDataManagement.jsx`: SAP integration (connections, field mapping, ingestion, insights)
+- `SyntheticDataWizard.jsx`: AI-guided company/data generation wizard
+- `ModelSetup.jsx`: Model architecture configuration
+- `UserManagement.jsx` / `UserRoleManagement.jsx`: User and role administration
+- `CustomerManagement.jsx`: Customer/tenant management
+- `PlanningHierarchyConfig.jsx`: MPS/MRP/S&OP hierarchy configuration
+- `ScenarioTreeManager.jsx`: Git-like scenario branching
+- `AuthorizationProtocolBoard.jsx`: AAP cross-functional negotiation visualization
+- `Governance.jsx` / `ExceptionWorkflows.jsx` / `ApprovalTemplates.jsx`: Governance and workflows
 
 **Components** (`components/`):
 - `supply-chain-config/`: Network configuration UI with D3-Sankey diagrams
@@ -490,7 +505,7 @@ See [DAG_Logic.md](DAG_Logic.md) for detailed master site type mappings and conf
 
 ### Agent System Architecture
 
-**TRM Hive Model**: Each site's 11 TRM agents form a self-organizing "hive" with intra-hive signal propagation (HiveSignalBus, UrgencyVector) and the tGNN as inter-hive connective tissue. Integrates with the [Agentic Authorization Protocol](docs/AGENTIC_AUTHORIZATION_PROTOCOL.md) for cross-authority negotiation and includes a Kinaxis-inspired embedded scenario architecture where agents create branched what-if scenarios at machine speed. **Recommended neural architecture**: Three-layer hybrid — stigmergic coordination (S-MADRL pheromones), heterogeneous graph attention (HetNet), and recursive per-head refinement (Samsung TRM) — totaling ~473K params at <10ms latency. **Pragmatic start**: Stigmergic layer only (Phase A, 2-3 weeks, 10M training records) captures 80% of coordination value. See [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 14 for architecture specification, Section 15 for digital twin training pipeline, Section 16 for multi-site coordination stack, and [TRM_RESEARCH_SYNTHESIS.md](TRM_RESEARCH_SYNTHESIS.md) Section 8 for research foundations.
+**TRM Hive Model** (✅ IMPLEMENTED): Each site's 11 TRM agents form a self-organizing "hive" with intra-hive signal propagation (HiveSignalBus, UrgencyVector) and the tGNN as inter-hive connective tissue. Integrates with the [Agentic Authorization Protocol](docs/AGENTIC_AUTHORIZATION_PROTOCOL.md) for cross-authority negotiation and includes a Kinaxis-inspired embedded scenario architecture where agents create branched what-if scenarios at machine speed. **Neural architecture**: Three-layer hybrid — stigmergic coordination (S-MADRL pheromones), heterogeneous graph attention (HetNet), and recursive per-head refinement (Samsung TRM) — totaling ~473K params at <10ms latency. See [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 14 for architecture specification, Section 15 for digital twin training pipeline, Section 16 for multi-site coordination stack, and [TRM_RESEARCH_SYNTHESIS.md](TRM_RESEARCH_SYNTHESIS.md) Section 8 for research foundations.
 
 **Multi-Site Coordination Stack** (4 layers, see [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 16):
 - **Layer 1 — Intra-Hive** (<10ms): UrgencyVector + HiveSignalBus within a single site
@@ -499,7 +514,7 @@ See [DAG_Logic.md](DAG_Logic.md) for detailed master site type mappings and conf
 - **Layer 4 — S&OP Consensus Board** (weekly): Policy parameters θ negotiated by functional agents
 - **Key principle**: TRMs never call across sites. All cross-site information flows through the tGNN directive or AAP authorization.
 
-**Digital Twin Training Pipeline** (see [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 15): Five-phase cold-start pipeline using platform simulation capabilities as digital twin — (1) Individual BC warm-start from curriculum, (2) Multi-head coordinated traces from SimPy/Beer Game, (3) Stochastic stress-testing via Monte Carlo, (4) Copilot calibration from human overrides, (5) Autonomous CDC relearning from production outcomes. Total synthetic data: ~46M records, ~7-10 days compute. Stigmergic-only variant: ~10M records, ~5-8 days.
+**Digital Twin Training Pipeline** (✅ IMPLEMENTED, see [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 15): Five-phase cold-start pipeline using platform simulation capabilities as digital twin — (1) Individual BC warm-start from curriculum, (2) Multi-head coordinated traces from SimPy/Beer Game, (3) Stochastic stress-testing via Monte Carlo, (4) Copilot calibration from human overrides, (5) Autonomous CDC relearning from production outcomes. Implementation files: `hive_curriculum.py` (1,126 lines), `hive_feedback.py` (6,957 lines), `inter_hive_signal.py` (7,613 lines), `coordinated_sim_runner.py` (12,314 lines), `decision_cycle.py` (7,583 lines).
 
 **Strategy Types** (see [AGENT_SYSTEM.md](AGENT_SYSTEM.md)):
 - `naive`: Mirrors incoming demand (baseline)
@@ -1197,19 +1212,22 @@ make picoclaw-status      # Show fleet container status
 
 ## Architectural Refactoring
 
-**Status**: 🔄 **IN PROGRESS** - Refactoring from Beer Game-centric to AWS SC-first
+**Status**: ✅ **SUBSTANTIALLY COMPLETE** (Feb 2026)
 
-See [ARCHITECTURAL_REFACTORING_PLAN.md](ARCHITECTURAL_REFACTORING_PLAN.md) for:
-- 7-phase transformation plan (25 weeks)
-- Navigation restructuring (Planning becomes primary, Gamification becomes secondary)
-- Database migration strategy (15 missing AWS SC entities)
-- Service layer refactoring (AWS SC services + simulation module)
-- Frontend page additions (Planning, Execution, AI Agent pages)
+The platform has been refactored from Beer Game-centric to AWS SC-first. See [ARCHITECTURAL_REFACTORING_PLAN.md](ARCHITECTURAL_REFACTORING_PLAN.md) for original plan.
 
-**Key Changes**:
-- **Project Positioning**: AWS SC with AI → Differentiators → Simulation
-- **Navigation**: Planning (primary), Execution, AI & Agents, Simulation (secondary)
-- **Beer Game**: Repositioned as simulation/training module (not primary focus)
+**Completed**:
+- ✅ AWS SC entity compliance: 100% (35/35 entities)
+- ✅ Navigation: Planning (primary), Execution, AI & Agents, Simulation (secondary)
+- ✅ 96+ frontend pages implemented (planning, admin, analytics, execution, visibility)
+- ✅ Terminology renames: Game→Scenario, Player→User, Group→Customer, Round→Period
+- ✅ TRM Hive architecture fully implemented (30K+ lines)
+- ✅ AAP (Agentic Authorization Protocol) implemented
+- ✅ CDC→Relearning autonomous feedback loop
+- ✅ Knowledge Base / RAG with pgvector
+- ✅ SAP integration (connections, field mapping, user import, monitoring)
+- ✅ Edge agents (PicoClaw/OpenClaw) with signal ingestion
+- ✅ Beer Game repositioned as simulation/training module (not primary focus)
 
 ---
 
@@ -1230,7 +1248,7 @@ The backend uses `backend/main.py` as the FastAPI application entry point. Note:
 ### Seeding Process
 When running `make up` with `FORCE_GPU=1`, the system automatically runs `make db-bootstrap` which:
 1. Seeds Default TBG, Three FG TBG, and Variable TBG configs
-2. Creates default users and groups
+2. Creates default users and customers
 3. Generates showcase scenarios with LLM and GNN agents
 
 ### Training Hyperparameters

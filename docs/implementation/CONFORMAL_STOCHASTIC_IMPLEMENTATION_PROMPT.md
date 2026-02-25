@@ -2149,7 +2149,7 @@ FORECAST LOADED (4 paths)                    ACTUAL DEMAND OBSERVED
            ├─ recalibrate_all_stale(group)       └─ _record_and_check_calibration(*)
            └─ hydrate_from_db()
                                                ORDER FULFILLED
-         STARTUP                                 update_order_fulfillment(group_id)
+         STARTUP                                 update_order_fulfillment(customer_id)
          hydrate_from_db()                         ├─ on_service_level_observed(SERVICE_LEVEL)
            └─ PowellBeliefState                    │   └─ target fill rate vs actual fill rate
               → suite.calibrate_*(DEMAND,          └─ _record_and_check_calibration(*)
@@ -2162,7 +2162,7 @@ FORECAST LOADED (4 paths)                    ACTUAL DEMAND OBSERVED
 |------|--------|
 | `backend/main.py` | Registers APScheduler job; hydrates suite from DB on startup |
 | `backend/app/api/endpoints/demand_plan.py` | `BackgroundTasks` hook on `/integrate` and `/override` |
-| `backend/app/services/order_management_service.py` | Demand actuals hook on `create_customer_order(group_id)`; lead time + price hooks on `receive_transfer_order()`; service level hook on `update_order_fulfillment(group_id)` |
+| `backend/app/services/order_management_service.py` | Demand actuals hook on `create_customer_order(customer_id)`; lead time + price hooks on `receive_transfer_order()`; service level hook on `update_order_fulfillment(customer_id)` |
 | `backend/app/services/sc_planning/inventory_target_calculator.py` | Advisory staleness check in `_calculate_conformal_safety_stock` |
 | `backend/app/services/powell/belief_state.py` | `integrate_with_conformal_service()` stub replaced with real wiring |
 

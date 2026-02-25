@@ -123,6 +123,12 @@ class AgentDecision(Base):
     outcome_quality_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # -100 to +100
     outcome_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # Override effectiveness (filled by OutcomeCollector when outcome measured)
+    agent_counterfactual_reward: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    human_actual_reward: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    override_delta: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    override_classification: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+
     # Agent metadata
     agent_type: Mapped[str] = mapped_column(String(50), nullable=False, default="trm")
     agent_version: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
@@ -211,6 +217,10 @@ class PerformanceMetric(Base):
 
     # Automation metrics
     automation_percentage: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Override effectiveness aggregates
+    override_effectiveness_rate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # % beneficial
+    override_net_delta: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # Cumulative reward delta
 
     # Active resources
     active_agents: Mapped[int] = mapped_column(Integer, default=0)

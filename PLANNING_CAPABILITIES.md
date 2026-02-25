@@ -95,7 +95,7 @@ class Forecast(Base):
 
 **Example Flow**:
 ```python
-planner = SupplyChainPlanner(config_id, group_id)
+planner = SupplyChainPlanner(config_id, customer_id)
 result = await planner.plan(
     start_date=date.today(),
     planning_horizon=52,  # weeks
@@ -409,13 +409,13 @@ The `HierarchicalDAGBuilder` service constructs planning DAGs at appropriate hie
 from app.services.hierarchical_dag_builder import build_sop_dag, build_mps_dag, build_execution_dag
 
 # Build S&OP DAG at Country × Family level
-sop_dag = await build_sop_dag(config_id, group_id, as_of_date)
+sop_dag = await build_sop_dag(config_id, customer_id, as_of_date)
 
 # Build MPS DAG at Site × Group level (with S&OP constraints)
-mps_dag = await build_mps_dag(config_id, group_id, as_of_date, sop_constraints=sop_dag)
+mps_dag = await build_mps_dag(config_id, customer_id, as_of_date, sop_constraints=sop_dag)
 
 # Build Execution DAG at Site × SKU level (with MPS constraints)
-exec_dag = await build_execution_dag(config_id, group_id, as_of_date, mps_constraints=mps_dag)
+exec_dag = await build_execution_dag(config_id, customer_id, as_of_date, mps_constraints=mps_dag)
 ```
 
 ### Powell Framework Alignment
@@ -667,7 +667,7 @@ Generic services support hierarchy-based data transformation per Powell's framew
 # Aggregation example
 from app.services.aggregation_service import AggregationService
 
-aggregator = AggregationService(db, group_id)
+aggregator = AggregationService(db, customer_id)
 country_totals = await aggregator.aggregate(
     site_level_records,
     target_site_level=SiteHierarchyLevel.COUNTRY,
@@ -678,7 +678,7 @@ country_totals = await aggregator.aggregate(
 # Disaggregation example
 from app.services.disaggregation_service import DisaggregationService
 
-disaggregator = DisaggregationService(db, group_id)
+disaggregator = DisaggregationService(db, customer_id)
 site_sku_plan = await disaggregator.disaggregate(
     sop_plan_records,
     target_site_level=SiteHierarchyLevel.SITE,

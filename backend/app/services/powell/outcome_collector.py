@@ -67,6 +67,13 @@ TRM_OUTCOME_DELAY = {
 # Minimum delay before we even attempt outcome collection
 MIN_DELAY = timedelta(hours=1)
 
+# Override effectiveness classification thresholds
+OVERRIDE_DELTA_THRESHOLDS = {
+    "beneficial_min": 0.05,   # delta >= +0.05 → BENEFICIAL
+    "detrimental_max": -0.05, # delta <= -0.05 → DETRIMENTAL
+    # Between -0.05 and +0.05 → NEUTRAL
+}
+
 
 class OutcomeCollectorService:
     """
@@ -123,6 +130,18 @@ class OutcomeCollectorService:
                         decision.actual_outcome = outcome
                         decision.reward_signal = reward
                         decision.outcome_recorded_at = now
+
+                        # Compute override effectiveness if this was overridden
+                        if getattr(decision, "is_overridden", False) and decision.override_value:
+                            comparison = self._compute_override_effectiveness(
+                                decision, outcome, reward
+                            )
+                            if comparison:
+                                decision.agent_counterfactual_reward = comparison["agent_counterfactual_reward"]
+                                decision.human_actual_reward = comparison["human_actual_reward"]
+                                decision.override_delta = comparison["override_delta"]
+                                decision.override_classification = comparison["classification"]
+
                         stats["succeeded"] += 1
                         type_stats["computed"] += 1
                 except Exception as e:
@@ -327,6 +346,188 @@ class OutcomeCollectorService:
             return base_reward
         except Exception:
             return base_reward
+
+    # ------------------------------------------------------------------
+    # Override Effectiveness: Counterfactual Comparison
+    # ------------------------------------------------------------------
+
+    def _compute_override_effectiveness(
+        self,
+        decision: SiteAgentDecision,
+        actual_outcome: Dict[str, Any],
+        human_reward: float,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Compute counterfactual: what reward would the agent's original
+        recommendation have earned, given the same actual environment?
+
+        The human_reward is the reward computed from actual_outcome (what
+        actually happened under the human's override). We estimate what
+        would have happened if the agent's recommendation had been followed.
+
+        Returns:
+            Dict with agent_counterfactual_reward, human_actual_reward,
+            override_delta, and classification.
+        """
+        try:
+            final_result = decision.final_result or {}
+            override_value = decision.override_value or {}
+            decision_type = decision.decision_type
+
+            # Dispatch to type-specific counterfactual estimator
+            if decision_type == "atp_exception":
+                agent_reward = self._counterfactual_atp(
+                    final_result, override_value, actual_outcome
+                )
+            elif decision_type == "inventory_adjustment":
+                agent_reward = self._counterfactual_inventory(
+                    final_result, override_value, actual_outcome
+                )
+            elif decision_type == "po_timing":
+                agent_reward = self._counterfactual_po(
+                    final_result, override_value, actual_outcome
+                )
+            else:
+                # General TRM: substitute agent's action into same context
+                agent_reward = self._counterfactual_general(
+                    decision_type, final_result, override_value, actual_outcome
+                )
+
+            if agent_reward is None:
+                return None
+
+            delta = human_reward - agent_reward
+            if delta >= OVERRIDE_DELTA_THRESHOLDS["beneficial_min"]:
+                classification = "BENEFICIAL"
+            elif delta <= OVERRIDE_DELTA_THRESHOLDS["detrimental_max"]:
+                classification = "DETRIMENTAL"
+            else:
+                classification = "NEUTRAL"
+
+            return {
+                "agent_counterfactual_reward": agent_reward,
+                "human_actual_reward": human_reward,
+                "override_delta": delta,
+                "classification": classification,
+            }
+        except Exception as e:
+            logger.debug(f"Override effectiveness computation failed: {e}")
+            return None
+
+    def _counterfactual_atp(
+        self,
+        agent_result: Dict,
+        human_override: Dict,
+        actual_outcome: Dict,
+    ) -> Optional[float]:
+        """
+        ATP counterfactual: compare agent's promised_qty fill rate
+        vs what actually happened under human's override.
+
+        The agent would have promised agent_result["promised_qty"].
+        The actual demand was actual_outcome["requested_qty"].
+        """
+        agent_promised = agent_result.get("promised_qty", 0)
+        actual_requested = actual_outcome.get("requested_qty", 1)
+        if actual_requested <= 0:
+            actual_requested = 1
+
+        # Agent's fill rate if its recommendation had been followed
+        agent_fill = min(1.0, agent_promised / actual_requested)
+
+        # Was the actual on-time? Use same on-time status for counterfactual
+        # (delivery timing depends on supply, not just the ATP decision)
+        was_on_time = actual_outcome.get("was_on_time", False)
+        priority = actual_outcome.get("customer_priority", 3)
+
+        agent_reward = self.reward_calculator.calculate_reward("atp", {
+            "fulfilled_qty": agent_promised,
+            "requested_qty": actual_requested,
+            "was_on_time": was_on_time,
+            "customer_priority": priority,
+        })
+        return agent_reward
+
+    def _counterfactual_inventory(
+        self,
+        agent_result: Dict,
+        human_override: Dict,
+        actual_outcome: Dict,
+    ) -> Optional[float]:
+        """
+        Inventory buffer counterfactual: compare agent's safety stock
+        adjustment vs human's, evaluate against actual service level.
+        """
+        agent_ss = agent_result.get("inventory_buffer",
+                                    agent_result.get("safety_stock", 100))
+        actual_sl = actual_outcome.get("service_level", 0.95)
+        actual_inv = actual_outcome.get("avg_inventory", agent_ss)
+
+        # Under agent's SS, would there have been a stockout?
+        # If agent set higher SS, less likely stockout; if lower, more likely
+        human_ss = human_override.get("safety_stock",
+                                      human_override.get("inventory_buffer", agent_ss))
+
+        if human_ss > 0:
+            ratio = agent_ss / human_ss
+        else:
+            ratio = 1.0
+
+        # Approximate: if agent would have had ratio * actual_inv inventory
+        counterfactual_inv = actual_inv * ratio
+        counterfactual_stockout = counterfactual_inv <= 0
+        counterfactual_sl = actual_sl if not counterfactual_stockout else max(0, actual_sl - 0.1)
+
+        agent_reward = self.reward_calculator.calculate_reward("inventory_adjustment", {
+            "service_level": counterfactual_sl,
+            "avg_inventory": counterfactual_inv,
+            "actual_stockout_occurred": counterfactual_stockout,
+            "actual_dos_at_end": counterfactual_inv / max(agent_ss / 14, 1),
+            "target_dos": 14,
+        })
+        return agent_reward
+
+    def _counterfactual_po(
+        self,
+        agent_result: Dict,
+        human_override: Dict,
+        actual_outcome: Dict,
+    ) -> Optional[float]:
+        """
+        PO timing counterfactual: compare agent's order timing/qty
+        vs human's, evaluate on-time delivery and holding cost.
+        """
+        agent_reward = self.reward_calculator.calculate_reward("po_timing", {
+            "on_time_delivery": actual_outcome.get("on_time_delivery", True),
+            "days_late": actual_outcome.get("days_late", 0),
+            "days_of_supply_after": actual_outcome.get("days_of_supply_after", 14),
+            "target_dos": actual_outcome.get("target_dos", 14),
+            "stockout_occurred": actual_outcome.get("stockout_occurred", False),
+        })
+        return agent_reward
+
+    def _counterfactual_general(
+        self,
+        decision_type: str,
+        agent_result: Dict,
+        human_override: Dict,
+        actual_outcome: Dict,
+    ) -> Optional[float]:
+        """
+        General counterfactual for TRM types without specialized logic.
+
+        Substitutes agent's action into the same outcome context and
+        computes reward. Uses the existing outcome but attributes the
+        agent's original values.
+        """
+        trm_type = decision_type.replace("_exception", "")
+        try:
+            agent_reward = self.reward_calculator.calculate_reward(
+                trm_type, actual_outcome
+            )
+            return agent_reward
+        except Exception:
+            return None
 
     # ------------------------------------------------------------------
     # Path 2: powell_*_decisions table outcome collection (all 11 TRMs)

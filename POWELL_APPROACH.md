@@ -3650,9 +3650,9 @@ The `ConformalOrchestrator` singleton fills 6 gaps with generic multi-entity sup
 **Integration points**:
 - `main.py` startup registers APScheduler job + hydrates suite (all entity types)
 - `demand_plan.py /integrate` and `/override` fire background tasks
-- `OrderManagementService.create_customer_order(group_id=...)` feeds demand actuals
+- `OrderManagementService.create_customer_order(customer_id=...)` feeds demand actuals
 - `OrderManagementService.receive_transfer_order()` feeds lead time + price actuals
-- `OrderManagementService.update_order_fulfillment(group_id=...)` feeds service level actuals
+- `OrderManagementService.update_order_fulfillment(customer_id=...)` feeds service level actuals
 - `inventory_target_calculator._calculate_conformal_safety_stock()` checks staleness
 - `BeliefStateManager.integrate_with_conformal_service()` wires to `SupplyChainConformalSuite`
 
@@ -5096,7 +5096,7 @@ The `AggregationService` supports multiple methods:
 from app.services.aggregation_service import AggregationService
 
 # Aggregate site-level inventory to country level for S&OP
-service = AggregationService(db, group_id)
+service = AggregationService(db, customer_id)
 country_inventory = await service.aggregate(
     site_inventory_records,
     target_site_level=SiteHierarchyLevel.COUNTRY,
@@ -5119,7 +5119,7 @@ Powell's key insight: **Disaggregation proportions are a policy decision**, not 
 from app.services.disaggregation_service import DisaggregationService, DisaggregationMethod
 
 # Disaggregate S&OP plan to MPS level using learned proportions
-service = DisaggregationService(db, group_id)
+service = DisaggregationService(db, customer_id)
 
 # PFA: Use historical proportions (simple, stable)
 site_plan = await service.disaggregate(
@@ -5204,12 +5204,12 @@ result = await generator.generate(GenerationRequest(
 
 # 2. Run S&OP (CFA) to get policy parameters
 from app.services.sop_planning_service import SOPPlanningService
-sop_service = SOPPlanningService(db, result.group_id)
+sop_service = SOPPlanningService(db, result.customer_id)
 theta = await sop_service.compute_policy_parameters(result.config_id)
 
 # 3. Disaggregate with learned splits
 from app.services.disaggregation_service import DisaggregationService
-disagg = DisaggregationService(db, result.group_id)
+disagg = DisaggregationService(db, result.customer_id)
 mps_plan = await disagg.disaggregate(
     theta.country_family_targets,
     target_site_level=SiteHierarchyLevel.SITE,

@@ -256,7 +256,7 @@ POST /supply-chain-configs/proposals/{proposal_id}/reject
 
 ```sql
 INSERT INTO authority_definitions (
-  group_id, agent_id, action_type, max_value, requires_approval, approval_authority
+  customer_id, agent_id, action_type, max_value, requires_approval, approval_authority
 ) VALUES
   (1, 'agent_atp_001', 'expedite', 10000, false, null),          -- Autonomous < $10K
   (1, 'agent_atp_001', 'expedite', 100000, true, 'manager'),     -- Manager approval $10K-$100K

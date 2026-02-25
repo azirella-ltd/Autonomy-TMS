@@ -706,7 +706,7 @@ class BeerGameExecutionEngine:
                 supplier_site_id=upstream_site.id,
                 destination_site_id=site.id,
                 config_id=self.config_id,
-                group_id=self.config.group_id,
+                customer_id=self.config.customer_id,
                 company_id=self.config.company_id,
                 status="APPROVED",  # Auto-approve in Beer Game
                 order_date=date.today(),

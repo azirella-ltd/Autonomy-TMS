@@ -38,7 +38,7 @@ def upgrade():
         sa.Column('site_name', sa.String(200), nullable=True),
         sa.Column('site_type', sa.String(50), nullable=True),
         sa.Column('region', sa.String(100), nullable=True),
-        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=True),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('customers.id', ondelete='CASCADE'), nullable=True),
         sa.Column('mode', sa.String(50), nullable=False, server_default='deterministic'),
         sa.Column('heartbeat_interval_min', sa.Integer(), nullable=False, server_default='30'),
         sa.Column('digest_interval_min', sa.Integer(), nullable=False, server_default='60'),
@@ -100,7 +100,7 @@ def upgrade():
         sa.Column('name', sa.String(200), nullable=False),
         sa.Column('scope', sa.String(20), nullable=False, server_default='site'),
         sa.Column('site_key', sa.String(100), nullable=True),
-        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=True),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('customers.id', ondelete='CASCADE'), nullable=True),
         sa.Column('token_hash', sa.String(256), nullable=True),
         sa.Column('token_masked', sa.String(50), nullable=True),
         sa.Column('status', sa.String(20), nullable=False, server_default='active'),
@@ -116,7 +116,7 @@ def upgrade():
     op.create_table(
         'edge_openclaw_config',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=True, unique=True),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('customers.id', ondelete='CASCADE'), nullable=True, unique=True),
         sa.Column('provider', sa.String(50), nullable=False, server_default='vllm'),
         sa.Column('model', sa.String(100), nullable=False, server_default='qwen3-8b'),
         sa.Column('api_base', sa.String(500), nullable=True, server_default='http://localhost:8001/v1'),
@@ -135,7 +135,7 @@ def upgrade():
         sa.Column('channel_id', sa.String(50), nullable=False, unique=True),
         sa.Column('name', sa.String(100), nullable=False),
         sa.Column('channel_type', sa.String(50), nullable=False),
-        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=True),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('customers.id', ondelete='CASCADE'), nullable=True),
         sa.Column('config', sa.JSON(), nullable=True),
         sa.Column('status', sa.String(20), nullable=False, server_default='disconnected'),
         sa.Column('configured', sa.Boolean(), nullable=False, server_default='false'),
@@ -152,7 +152,7 @@ def upgrade():
         sa.Column('category', sa.String(50), nullable=False),
         sa.Column('description', sa.Text(), nullable=True),
         sa.Column('enabled', sa.Boolean(), nullable=False, server_default='true'),
-        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=True),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('customers.id', ondelete='CASCADE'), nullable=True),
         sa.Column('updated_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
     )
 
@@ -178,7 +178,7 @@ def upgrade():
         'edge_ingested_signals',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column('signal_id', sa.String(64), nullable=False, unique=True, index=True),
-        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=True),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('customers.id', ondelete='CASCADE'), nullable=True),
         sa.Column('channel', sa.String(50), nullable=False),
         sa.Column('source', sa.String(50), nullable=False),
         sa.Column('raw_text', sa.Text(), nullable=True),
@@ -226,7 +226,7 @@ def upgrade():
         'edge_source_reliability',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column('source', sa.String(50), nullable=False, unique=True, index=True),
-        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=True),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('customers.id', ondelete='CASCADE'), nullable=True),
         sa.Column('default_weight', sa.Float(), nullable=False, server_default='0.5'),
         sa.Column('learned_weight', sa.Float(), nullable=True),
         sa.Column('manual_weight', sa.Float(), nullable=True),
@@ -246,7 +246,7 @@ def upgrade():
         sa.Column('checked', sa.Boolean(), nullable=False, server_default='false'),
         sa.Column('checked_by', sa.String(100), nullable=True),
         sa.Column('checked_at', sa.DateTime(), nullable=True),
-        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id', ondelete='CASCADE'), nullable=True),
+        sa.Column('customer_id', sa.Integer(), sa.ForeignKey('customers.id', ondelete='CASCADE'), nullable=True),
     )
 
     op.create_table(

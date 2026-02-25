@@ -341,7 +341,7 @@ POST /api/v1/supply-chain-configs
 {
   "config_name": "My Custom Network",
   "description": "3-echelon with 2 DCs",
-  "group_id": 1,
+  "customer_id": 1,
   "nodes": [
     {"node_name": "DC East", "sc_node_type": "DC", "master_type": "INVENTORY"},
     {"node_name": "DC West", "sc_node_type": "DC", "master_type": "INVENTORY"},

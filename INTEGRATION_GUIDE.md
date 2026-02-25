@@ -1,6 +1,6 @@
 # Integration Guide
 
-**Last Updated**: 2026-01-22
+**Last Updated**: 2026-02-25
 
 ---
 
@@ -417,7 +417,7 @@ Content-Type: application/json
     "id": 5,
     "email": "user@company.com",
     "role": "GROUP_ADMIN",
-    "group_id": 1
+    "customer_id": 1
   }
 }
 
@@ -464,7 +464,7 @@ GET /api/v1/supply-chain-configs/{config_id}
 POST /api/v1/supply-chain-configs
 {
   "config_name": "My Network",
-  "group_id": 1,
+  "customer_id": 1,
   "sites": [...],
   "transportation_lanes": [...],
   "products": [...]
@@ -783,10 +783,10 @@ socket.on('supply_plan_update', (data) => {
 ### User Roles
 
 **Role Hierarchy**:
-1. **SYSTEM_ADMIN**: Full access to all features and all groups
-2. **GROUP_ADMIN**: Admin access within their group
-3. **PLANNER**: Can create/approve supply plans within their group
-4. **PLAYER**: Can play games, view dashboards (read-only planning)
+1. **SYSTEM_ADMIN**: Full access to all features and all customers
+2. **GROUP_ADMIN**: Admin access within their customer org
+3. **PLANNER**: Can create/approve supply plans within their customer org
+4. **PLAYER**: Can play scenarios, view dashboards (read-only planning)
 
 ### Permissions (RBAC)
 
@@ -817,23 +817,23 @@ async def approve_supply_plan(task_id: str, current_user: User = Depends(get_cur
     ...
 ```
 
-### Multi-Tenancy (Groups)
+### Multi-Tenancy (Customers)
 
-**Group Isolation**:
-- Each group represents a company/organization
-- Users belong to one group
-- Data is scoped to group (supply chain configs, games, plans)
-- GROUP_ADMIN can only see their group's data
-- SYSTEM_ADMIN can see all groups
+**Customer Isolation**:
+- Each customer represents a company/organization
+- Users belong to one customer
+- Data is scoped to customer (supply chain configs, scenarios, plans)
+- GROUP_ADMIN can only see their customer's data
+- SYSTEM_ADMIN can see all customers
 
 **API Scoping**:
 ```bash
-# User in Group 1 can only see Group 1 configs
+# User in Customer 1 can only see Customer 1 configs
 GET /api/v1/supply-chain-configs
-# Returns configs where group_id = current_user.group_id
+# Returns configs where customer_id = current_user.customer_id
 
 # SYSTEM_ADMIN sees all
-GET /api/v1/supply-chain-configs?group_id=1  # Filter by group
+GET /api/v1/supply-chain-configs?customer_id=1  # Filter by customer
 ```
 
 ---

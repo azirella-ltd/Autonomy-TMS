@@ -1326,7 +1326,7 @@ class AgentAuthority(Base):
     __tablename__ = "agent_authority"
 
     id = Column(Integer, primary_key=True)
-    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
     agent_type = Column(String(50), nullable=False)    # so_agent, logistics_agent, etc.
     action_type = Column(String(50), nullable=False)    # reallocate, expedite, transfer, etc.
     authority = Column(String(20), nullable=False)       # UNILATERAL, REQUIRES_AUTH, FORBIDDEN
@@ -1344,7 +1344,7 @@ class AuthorizationThread(Base):
     __tablename__ = "authorization_thread"
 
     id = Column(Integer, primary_key=True)
-    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
 
     # Participants
@@ -1421,9 +1421,9 @@ class AuthorizationMessage(Base):
 class AuthorizationService:
     """Orchestrates cross-authority authorization exchanges."""
 
-    def __init__(self, db: Session, group_id: int):
+    def __init__(self, db: Session, customer_id: int):
         self.db = db
-        self.group_id = group_id
+        self.customer_id = customer_id
 
     async def evaluate_options(
         self,
@@ -1546,17 +1546,17 @@ class AuthorizationService:
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /authority/{group_id}/{agent_type}` | Get authority map for an agent type |
-| `PUT /authority/{group_id}/{agent_type}` | Update authority boundaries (admin) |
+| `GET /authority/{customer_id}/{agent_type}` | Get authority map for an agent type |
+| `PUT /authority/{customer_id}/{agent_type}` | Update authority boundaries (admin) |
 | `POST /authorization/evaluate` | Agent evaluates candidate actions (returns ranked with scorecards) |
 | `POST /authorization/request` | Create an authorization request |
-| `GET /authorization/threads/{group_id}` | List authorization threads (filterable by status, agent, priority) |
+| `GET /authorization/threads/{customer_id}` | List authorization threads (filterable by status, agent, priority) |
 | `GET /authorization/thread/{thread_id}` | Get full thread with all messages |
 | `POST /authorization/thread/{thread_id}/respond` | Target agent responds (authorize/counter/deny) |
 | `POST /authorization/thread/{thread_id}/accept-counter` | Originator accepts counter-offer |
 | `POST /authorization/thread/{thread_id}/escalate` | Escalate to human |
 | `POST /authorization/thread/{thread_id}/resolve` | Human resolves escalated thread |
-| `GET /authorization/metrics/{group_id}` | Authorization metrics (resolution rate, escalation rate, avg time) |
+| `GET /authorization/metrics/{customer_id}` | Authorization metrics (resolution rate, escalation rate, avg time) |
 
 ### 11.4 Frontend Components
 

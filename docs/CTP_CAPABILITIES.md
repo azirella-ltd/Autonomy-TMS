@@ -309,7 +309,7 @@ POST /api/pegging/ctp/multi-stage
     "quantity": 100.0,
     "target_date": "2026-03-15",
     "config_id": 1,
-    "group_id": 1
+    "customer_id": 1
 }
 
 Response:
@@ -349,7 +349,7 @@ POST /api/pegging/ctp/promise
     "target_date": "2026-03-15",
     "priority": 2,
     "config_id": 1,
-    "group_id": 1
+    "customer_id": 1
 }
 
 Response:
@@ -430,7 +430,7 @@ ix_pegging_demand        (demand_type, demand_id)    -- Demand trace
 ix_pegging_supply        (supply_type, supply_id)    -- Supply trace
 ix_pegging_product_site  (product_id, site_id)       -- Product@site summary
 ix_pegging_config_active (config_id, is_active)      -- Active pegging for config
-ix_pegging_group         (group_id)                  -- Group-scoped queries
+ix_pegging_group         (customer_id)                  -- Group-scoped queries
 ```
 
 ### 6.3 Services

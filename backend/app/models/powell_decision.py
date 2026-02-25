@@ -59,6 +59,19 @@ class SiteAgentDecision(Base):
     feedback_recorded_at = Column(DateTime)
     feedback_user_id = Column(Integer, ForeignKey("users.id"))
 
+    # Override tracking
+    is_overridden = Column(Boolean, default=False, index=True)
+    override_value = Column(JSON)              # What human chose instead
+    override_reason_text = Column(Text)        # Why they overrode
+    override_user_id = Column(Integer, ForeignKey("users.id"))
+    override_timestamp = Column(DateTime)
+
+    # Counterfactual comparison (filled by OutcomeCollector)
+    agent_counterfactual_reward = Column(Float)   # Reward if agent's recommendation had been followed
+    human_actual_reward = Column(Float)            # Reward from what actually happened (human's choice)
+    override_delta = Column(Float)                 # human_actual_reward - agent_counterfactual_reward
+    override_classification = Column(String(20))   # BENEFICIAL / NEUTRAL / DETRIMENTAL
+
     # Hive signal context (Sprint 4 — nullable for backward compatibility)
     signal_context = Column(JSON)           # Snapshot of signals read before decision
     urgency_at_time = Column(Float)          # Urgency vector value for this TRM at decision time
@@ -78,6 +91,7 @@ class SiteAgentDecision(Base):
         Index("ix_powell_decisions_timestamp_type", "timestamp", "decision_type"),
         Index("ix_powell_decisions_reward", "reward_signal"),
         Index("ix_powell_decisions_cycle_id", "cycle_id"),
+        Index("idx_psd_override", "is_overridden", "override_classification"),
     )
 
 

@@ -10,11 +10,14 @@ Endpoints:
 - GET /sop-worklist: S&OP worklist items
 - POST /sop-worklist/{id}/resolve: Resolve a worklist item
 - GET /sop-worklist/{id}/reasoning: Get agent reasoning ("Ask Why")
+- GET /override-effectiveness: Override effectiveness metrics for executive dashboard
 """
 
-from typing import Optional
+from typing import Optional, Dict, List, Any
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func, case
 from pydantic import BaseModel
 
 from app.api.deps import get_current_user, get_db
@@ -273,4 +276,154 @@ async def get_agent_decisions(
         "success": True,
         "decisions": [d.to_dict() for d in decisions],
         "count": len(decisions),
+    }
+
+
+# =============================================================================
+# Override Effectiveness (Executive Dashboard)
+# =============================================================================
+
+@router.get("/override-effectiveness")
+async def get_override_effectiveness(
+    days: int = Query(default=90, ge=7, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get override effectiveness metrics for the executive dashboard.
+
+    Aggregates across all sites for the customer, showing whether
+    human overrides are adding value or creating friction.
+    """
+    from app.models.powell_decision import SiteAgentDecision
+
+    customer_id = current_user.customer_id or 1
+    now = datetime.utcnow()
+    cutoff = now - timedelta(days=days)
+
+    # We can't filter SiteAgentDecision by customer_id directly (it uses site_key),
+    # so we aggregate across all sites for now.
+    base_q = db.query(SiteAgentDecision).filter(
+        SiteAgentDecision.is_overridden == True,
+        SiteAgentDecision.timestamp > cutoff,
+    )
+
+    total_overrides = base_q.count()
+
+    classified = base_q.filter(SiteAgentDecision.override_classification.isnot(None))
+    beneficial = classified.filter(SiteAgentDecision.override_classification == "BENEFICIAL").count()
+    neutral = classified.filter(SiteAgentDecision.override_classification == "NEUTRAL").count()
+    detrimental = classified.filter(SiteAgentDecision.override_classification == "DETRIMENTAL").count()
+    classified_total = beneficial + neutral + detrimental
+    pending = total_overrides - classified_total
+
+    effectiveness_rate = (beneficial / classified_total * 100) if classified_total > 0 else 0.0
+
+    net_delta = db.query(func.sum(SiteAgentDecision.override_delta)).filter(
+        SiteAgentDecision.is_overridden == True,
+        SiteAgentDecision.override_delta.isnot(None),
+        SiteAgentDecision.timestamp > cutoff,
+    ).scalar() or 0.0
+
+    # By TRM type
+    type_rows = db.query(
+        SiteAgentDecision.decision_type,
+        func.count(SiteAgentDecision.id).label("count"),
+        func.sum(case(
+            (SiteAgentDecision.override_classification == "BENEFICIAL", 1), else_=0
+        )).label("beneficial"),
+        func.sum(case(
+            (SiteAgentDecision.override_classification == "NEUTRAL", 1), else_=0
+        )).label("neutral"),
+        func.sum(case(
+            (SiteAgentDecision.override_classification == "DETRIMENTAL", 1), else_=0
+        )).label("detrimental"),
+        func.coalesce(func.sum(SiteAgentDecision.override_delta), 0.0).label("net_delta"),
+    ).filter(
+        SiteAgentDecision.is_overridden == True,
+        SiteAgentDecision.timestamp > cutoff,
+    ).group_by(SiteAgentDecision.decision_type).all()
+
+    by_trm_type = {}
+    for row in type_rows:
+        ct = int(row.beneficial or 0) + int(row.neutral or 0) + int(row.detrimental or 0)
+        by_trm_type[row.decision_type] = {
+            "total": row.count,
+            "beneficial": int(row.beneficial or 0),
+            "neutral": int(row.neutral or 0),
+            "detrimental": int(row.detrimental or 0),
+            "effectiveness_rate": (int(row.beneficial or 0) / ct * 100) if ct > 0 else 0.0,
+            "net_delta": float(row.net_delta),
+        }
+
+    # Weekly trend
+    trend_rows = db.query(
+        func.date_trunc("week", SiteAgentDecision.timestamp).label("week"),
+        func.count(SiteAgentDecision.id).label("count"),
+        func.sum(case(
+            (SiteAgentDecision.override_classification == "BENEFICIAL", 1), else_=0
+        )).label("beneficial"),
+        func.sum(case(
+            (SiteAgentDecision.override_classification == "NEUTRAL", 1), else_=0
+        )).label("neutral"),
+        func.sum(case(
+            (SiteAgentDecision.override_classification == "DETRIMENTAL", 1), else_=0
+        )).label("detrimental"),
+    ).filter(
+        SiteAgentDecision.is_overridden == True,
+        SiteAgentDecision.timestamp > cutoff,
+    ).group_by("week").order_by("week").all()
+
+    trend = []
+    for row in trend_rows:
+        ct = int(row.beneficial or 0) + int(row.neutral or 0) + int(row.detrimental or 0)
+        trend.append({
+            "week": row.week.isoformat() if row.week else None,
+            "total": row.count,
+            "beneficial": int(row.beneficial or 0),
+            "neutral": int(row.neutral or 0),
+            "detrimental": int(row.detrimental or 0),
+            "effectiveness_rate": (int(row.beneficial or 0) / ct * 100) if ct > 0 else 0.0,
+        })
+
+    # Recent overrides for the "examples" section
+    recent_beneficial = db.query(SiteAgentDecision).filter(
+        SiteAgentDecision.is_overridden == True,
+        SiteAgentDecision.override_classification == "BENEFICIAL",
+        SiteAgentDecision.timestamp > cutoff,
+    ).order_by(SiteAgentDecision.override_delta.desc()).limit(5).all()
+
+    recent_detrimental = db.query(SiteAgentDecision).filter(
+        SiteAgentDecision.is_overridden == True,
+        SiteAgentDecision.override_classification == "DETRIMENTAL",
+        SiteAgentDecision.timestamp > cutoff,
+    ).order_by(SiteAgentDecision.override_delta.asc()).limit(5).all()
+
+    def _decision_summary(d):
+        return {
+            "decision_id": d.decision_id,
+            "site_key": d.site_key,
+            "decision_type": d.decision_type,
+            "override_delta": d.override_delta,
+            "agent_counterfactual_reward": d.agent_counterfactual_reward,
+            "human_actual_reward": d.human_actual_reward,
+            "override_reason": d.override_reason_text,
+            "timestamp": d.timestamp.isoformat() if d.timestamp else None,
+        }
+
+    return {
+        "success": True,
+        "data": {
+            "effectiveness_rate": effectiveness_rate,
+            "net_reward_delta": float(net_delta),
+            "total_overrides": total_overrides,
+            "beneficial_count": beneficial,
+            "neutral_count": neutral,
+            "detrimental_count": detrimental,
+            "pending_count": pending,
+            "by_trm_type": by_trm_type,
+            "trend": trend,
+            "top_beneficial": [_decision_summary(d) for d in recent_beneficial],
+            "top_detrimental": [_decision_summary(d) for d in recent_detrimental],
+        },
     }

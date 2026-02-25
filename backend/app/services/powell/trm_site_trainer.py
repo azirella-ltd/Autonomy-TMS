@@ -501,6 +501,12 @@ class TRMSiteTrainer:
             xhr_t = torch.tensor(cross_head_rewards, dtype=torch.float32).to(self.device)
             rewards_t = rewards_t + self.cross_head_reward_weight * xhr_t
 
+        # Compute outcome-gated sample weights
+        is_expert_list = replay_data.get("is_expert", [False] * num_samples)
+        override_eff_list = replay_data.get("override_effectiveness", [None] * num_samples)
+        sample_weights = self._compute_sample_weights(is_expert_list, override_eff_list)
+        sample_weights_t = torch.tensor(sample_weights, dtype=torch.float32).to(self.device)
+
         # Target network for stable Q-learning
         import copy
         target_model = copy.deepcopy(self.model)
@@ -533,8 +539,9 @@ class TRMSiteTrainer:
                     next_q = next_outputs["value"].squeeze(-1)
                     target_q = rewards_t[batch_idx] + gamma * next_q * (1 - dones_t[batch_idx])
 
-                # TD loss
-                td_loss = torch.nn.functional.mse_loss(q_values, target_q)
+                # Weighted TD loss (outcome-gated sample weights)
+                td_errors = (q_values - target_q) ** 2
+                td_loss = (td_errors * sample_weights_t[batch_idx]).mean()
 
                 # CQL penalty: penalize high Q-values on out-of-distribution actions
                 cql_penalty = 0.1 * (q_values ** 2).mean()
@@ -684,6 +691,7 @@ class TRMSiteTrainer:
 
         states, next_states, rewards, dones = [], [], [], []
         signal_contexts, next_signal_contexts, cross_head_rewards = [], [], []
+        is_expert_flags, override_effectiveness_flags = [], []
         for row in rows:
             if row.state_vector and row.next_state_vector:
                 states.append(row.state_vector)
@@ -693,6 +701,10 @@ class TRMSiteTrainer:
                 signal_contexts.append(getattr(row, "signal_context", None))
                 next_signal_contexts.append(getattr(row, "next_signal_context", None))
                 cross_head_rewards.append(getattr(row, "cross_head_reward", 0.0) or 0.0)
+                is_expert_flags.append(getattr(row, "is_expert", False))
+                override_effectiveness_flags.append(
+                    getattr(row, "override_effectiveness", None)
+                )
 
         return {
             "states": np.array(states, dtype=np.float32) if states else np.empty((0,)),
@@ -702,7 +714,43 @@ class TRMSiteTrainer:
             "signal_contexts": signal_contexts,
             "next_signal_contexts": next_signal_contexts,
             "cross_head_rewards": np.array(cross_head_rewards, dtype=np.float32) if cross_head_rewards else np.empty((0,)),
+            "is_expert": is_expert_flags,
+            "override_effectiveness": override_effectiveness_flags,
         }
+
+    # =========================================================================
+    # Outcome-Gated Sample Weights
+    # =========================================================================
+
+    @staticmethod
+    def _compute_sample_weights(
+        is_expert: list,
+        override_effectiveness: list,
+    ) -> "np.ndarray":
+        """Compute per-sample weights based on override effectiveness.
+
+        Expert overrides are weighted by their validated outcome quality:
+          - BENEFICIAL: 2.0 (proven good — full expert weight)
+          - NEUTRAL: 1.0 (no measurable difference — standard weight)
+          - DETRIMENTAL: 0.3 (proven bad — heavily discounted)
+          - None (pending): 0.5 (unvalidated — conservative weight)
+
+        Non-expert samples always get weight 1.0.
+        """
+        n = len(is_expert)
+        weights = np.ones(n, dtype=np.float32)
+        for i in range(n):
+            if is_expert[i]:
+                eff = override_effectiveness[i]
+                if eff == "BENEFICIAL":
+                    weights[i] = 2.0
+                elif eff == "NEUTRAL":
+                    weights[i] = 1.0
+                elif eff == "DETRIMENTAL":
+                    weights[i] = 0.3
+                else:  # None — no outcome yet
+                    weights[i] = 0.5
+        return weights
 
     # =========================================================================
     # Loss Function (reused from powell_training_service)

@@ -557,6 +557,7 @@ class TRMReplayBuffer(Base):
 
     # Quality metrics
     is_expert: Mapped[bool] = mapped_column(Boolean, default=False)  # From human expert
+    override_effectiveness: Mapped[Optional[str]] = mapped_column(String(20))  # BENEFICIAL/NEUTRAL/DETRIMENTAL
     priority: Mapped[float] = mapped_column(Float, default=1.0)  # For prioritized replay
     td_error: Mapped[Optional[float]] = mapped_column(Float)  # For prioritized replay
 

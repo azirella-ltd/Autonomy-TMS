@@ -1030,3 +1030,188 @@ async def get_broadcast_feedback(
     """Collect hive feedback features from all registered sites."""
     svc = _get_broadcast_service()
     return svc.collect_feedback()
+
+
+# ============================================================================
+# Override Tracking & Effectiveness Endpoints
+# ============================================================================
+
+class OverrideRequest(BaseModel):
+    """Record a human override of an agent decision."""
+    override_value: Dict[str, Any] = Field(..., description="What the human chose instead")
+    reason: Optional[str] = Field(None, description="Why they overrode")
+
+
+class OverrideEffectivenessResponse(BaseModel):
+    """Override effectiveness metrics for a site."""
+    effectiveness_rate: float
+    net_reward_delta: float
+    total_overrides: int
+    beneficial_count: int
+    neutral_count: int
+    detrimental_count: int
+    pending_count: int
+    by_trm_type: Dict[str, Dict[str, Any]]
+    trend: List[Dict[str, Any]]
+
+
+@router.post("/decisions/{decision_id}/override")
+async def record_override(
+    decision_id: str,
+    request: OverrideRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Record a human override of a SiteAgent TRM decision.
+
+    Sets is_overridden=True, stores the human's chosen value and reason.
+    The OutcomeCollector will later compute counterfactual comparison.
+    """
+    from app.models.powell_decision import SiteAgentDecision
+
+    decision = db.query(SiteAgentDecision).filter(
+        SiteAgentDecision.decision_id == decision_id,
+    ).first()
+
+    if not decision:
+        raise HTTPException(status_code=404, detail=f"Decision {decision_id} not found")
+
+    decision.is_overridden = True
+    decision.override_value = request.override_value
+    decision.override_reason_text = request.reason
+    decision.override_user_id = current_user.id
+    decision.override_timestamp = datetime.utcnow()
+
+    db.commit()
+
+    return {
+        "status": "success",
+        "decision_id": decision_id,
+        "is_overridden": True,
+        "message": "Override recorded. Effectiveness will be computed after outcome collection.",
+    }
+
+
+@router.get("/override-effectiveness/{site_key}", response_model=OverrideEffectivenessResponse)
+async def get_override_effectiveness(
+    site_key: str,
+    days: int = Query(default=90, ge=7, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get override effectiveness metrics for a site.
+
+    Computes how often human overrides led to better outcomes
+    than the agent's original recommendation.
+    """
+    from app.models.powell_decision import SiteAgentDecision
+    from sqlalchemy import func, case
+    from datetime import timedelta
+
+    now = datetime.utcnow()
+    cutoff = now - timedelta(days=days)
+
+    # Base query: overridden decisions for this site
+    base_q = db.query(SiteAgentDecision).filter(
+        SiteAgentDecision.site_key == site_key,
+        SiteAgentDecision.is_overridden == True,
+        SiteAgentDecision.timestamp > cutoff,
+    )
+
+    total_overrides = base_q.count()
+
+    # Count by classification
+    classified = base_q.filter(SiteAgentDecision.override_classification.isnot(None))
+    beneficial = classified.filter(SiteAgentDecision.override_classification == "BENEFICIAL").count()
+    neutral = classified.filter(SiteAgentDecision.override_classification == "NEUTRAL").count()
+    detrimental = classified.filter(SiteAgentDecision.override_classification == "DETRIMENTAL").count()
+    classified_total = beneficial + neutral + detrimental
+    pending = total_overrides - classified_total
+
+    effectiveness_rate = (beneficial / classified_total * 100) if classified_total > 0 else 0.0
+
+    # Net reward delta
+    net_delta_result = db.query(func.sum(SiteAgentDecision.override_delta)).filter(
+        SiteAgentDecision.site_key == site_key,
+        SiteAgentDecision.is_overridden == True,
+        SiteAgentDecision.override_delta.isnot(None),
+        SiteAgentDecision.timestamp > cutoff,
+    ).scalar() or 0.0
+
+    # By TRM type breakdown
+    type_rows = db.query(
+        SiteAgentDecision.decision_type,
+        func.count(SiteAgentDecision.id).label("count"),
+        func.sum(case(
+            (SiteAgentDecision.override_classification == "BENEFICIAL", 1), else_=0
+        )).label("beneficial"),
+        func.sum(case(
+            (SiteAgentDecision.override_classification == "NEUTRAL", 1), else_=0
+        )).label("neutral"),
+        func.sum(case(
+            (SiteAgentDecision.override_classification == "DETRIMENTAL", 1), else_=0
+        )).label("detrimental"),
+        func.coalesce(func.sum(SiteAgentDecision.override_delta), 0.0).label("net_delta"),
+    ).filter(
+        SiteAgentDecision.site_key == site_key,
+        SiteAgentDecision.is_overridden == True,
+        SiteAgentDecision.timestamp > cutoff,
+    ).group_by(SiteAgentDecision.decision_type).all()
+
+    by_trm_type = {}
+    for row in type_rows:
+        ct = int(row.beneficial or 0) + int(row.neutral or 0) + int(row.detrimental or 0)
+        by_trm_type[row.decision_type] = {
+            "total": row.count,
+            "beneficial": int(row.beneficial or 0),
+            "neutral": int(row.neutral or 0),
+            "detrimental": int(row.detrimental or 0),
+            "effectiveness_rate": (int(row.beneficial or 0) / ct * 100) if ct > 0 else 0.0,
+            "net_delta": float(row.net_delta),
+        }
+
+    # Weekly trend (last N weeks)
+    from sqlalchemy import extract
+    trend_rows = db.query(
+        func.date_trunc("week", SiteAgentDecision.timestamp).label("week"),
+        func.count(SiteAgentDecision.id).label("count"),
+        func.sum(case(
+            (SiteAgentDecision.override_classification == "BENEFICIAL", 1), else_=0
+        )).label("beneficial"),
+        func.sum(case(
+            (SiteAgentDecision.override_classification == "NEUTRAL", 1), else_=0
+        )).label("neutral"),
+        func.sum(case(
+            (SiteAgentDecision.override_classification == "DETRIMENTAL", 1), else_=0
+        )).label("detrimental"),
+    ).filter(
+        SiteAgentDecision.site_key == site_key,
+        SiteAgentDecision.is_overridden == True,
+        SiteAgentDecision.timestamp > cutoff,
+    ).group_by("week").order_by("week").all()
+
+    trend = []
+    for row in trend_rows:
+        ct = int(row.beneficial or 0) + int(row.neutral or 0) + int(row.detrimental or 0)
+        trend.append({
+            "week": row.week.isoformat() if row.week else None,
+            "total": row.count,
+            "beneficial": int(row.beneficial or 0),
+            "neutral": int(row.neutral or 0),
+            "detrimental": int(row.detrimental or 0),
+            "effectiveness_rate": (int(row.beneficial or 0) / ct * 100) if ct > 0 else 0.0,
+        })
+
+    return OverrideEffectivenessResponse(
+        effectiveness_rate=effectiveness_rate,
+        net_reward_delta=float(net_delta_result),
+        total_overrides=total_overrides,
+        beneficial_count=beneficial,
+        neutral_count=neutral,
+        detrimental_count=detrimental,
+        pending_count=pending,
+        by_trm_type=by_trm_type,
+        trend=trend,
+    )
