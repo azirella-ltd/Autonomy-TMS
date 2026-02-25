@@ -1033,6 +1033,71 @@ async def get_broadcast_feedback(
 
 
 # ============================================================================
+# GNN Orchestration — Full Inference → Directive Cycle
+# ============================================================================
+
+@router.post("/gnn/run-cycle")
+async def run_gnn_orchestration_cycle(
+    force_recompute: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Run the full GNN inference → directive broadcast cycle.
+
+    Steps:
+        1. S&OP GraphSAGE inference (uses cache unless force_recompute)
+        2. Execution Temporal GNN inference
+        3. Merge outputs into per-site directive parameters
+        4. Generate tGNNSiteDirectives
+        5. Broadcast to registered SiteAgents
+        6. Collect feedback
+
+    This is the Layer 2 multi-site coordination pipeline.
+    Normally runs daily via APScheduler; this endpoint allows manual trigger.
+    """
+    from app.services.powell.gnn_orchestration_service import GNNOrchestrationService
+
+    # Use config_id from query or default to 1
+    config_id = 1  # TODO: accept from request when multi-config support is needed
+
+    orchestrator = GNNOrchestrationService(db, config_id)
+    result = await orchestrator.run_full_cycle(force_recompute=force_recompute)
+
+    return {
+        "success": len(result.get("errors", [])) == 0,
+        "data": result,
+    }
+
+
+@router.get("/gnn/status")
+async def get_gnn_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get status of last GNN inference cycle and S&OP embeddings."""
+    from app.services.powell.sop_inference_service import SOPInferenceService
+
+    try:
+        sop_svc = SOPInferenceService(db, config_id=1)
+        embeddings = await sop_svc.get_embeddings_tensor()
+        has_sop = embeddings is not None
+    except Exception:
+        has_sop = False
+
+    broadcast_svc = _get_broadcast_service()
+    broadcast_status = broadcast_svc.get_status()
+
+    return {
+        "success": True,
+        "data": {
+            "sop_embeddings_cached": has_sop,
+            "broadcast_service": broadcast_status,
+        },
+    }
+
+
+# ============================================================================
 # Override Tracking & Effectiveness Endpoints
 # ============================================================================
 

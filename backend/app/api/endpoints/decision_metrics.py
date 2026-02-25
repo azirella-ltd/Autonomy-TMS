@@ -487,3 +487,30 @@ async def get_override_posteriors(
         "aggregate": aggregate,
         "tier_map": {k: v for k, v in TIER_MAP.items()},
     }
+
+
+# =============================================================================
+# Causal Matching Stats
+# =============================================================================
+
+@router.get("/causal-matching-stats")
+async def get_causal_matching_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get causal matching statistics — propensity-score matched pairs
+    for Tier 2 override effectiveness.
+
+    Shows how many matched pairs exist, quality distribution, and
+    average treatment effects by TRM type.
+    """
+    from app.services.causal_matching_service import CausalMatchingService
+
+    service = CausalMatchingService(db)
+    stats = service.get_matching_stats()
+
+    return {
+        "success": True,
+        "data": stats,
+    }

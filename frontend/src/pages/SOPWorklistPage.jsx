@@ -234,15 +234,32 @@ const WorklistItemRow = ({ item, onAskWhy, onAccept, onReject }) => {
 // Agent Reasoning Modal
 // =============================================================================
 
+// Override reason codes for structured capture (feeds Bayesian posterior)
+const OVERRIDE_REASON_CODES = [
+  { value: 'MARKET_INTELLIGENCE', label: 'Market Intelligence', description: 'External market data not visible to agent' },
+  { value: 'CUSTOMER_COMMITMENT', label: 'Customer Commitment', description: 'Contractual or relationship obligation' },
+  { value: 'CAPACITY_CONSTRAINT', label: 'Capacity Constraint', description: 'Physical or operational capacity issue' },
+  { value: 'SUPPLIER_ISSUE', label: 'Supplier Issue', description: 'Supplier reliability or performance concern' },
+  { value: 'QUALITY_CONCERN', label: 'Quality Concern', description: 'Quality risk or inspection issue' },
+  { value: 'COST_OPTIMIZATION', label: 'Cost Optimization', description: 'Better cost outcome available' },
+  { value: 'SERVICE_LEVEL', label: 'Service Level Priority', description: 'Service level takes precedence over cost' },
+  { value: 'DEMAND_CHANGE', label: 'Demand Signal', description: 'New demand information not yet in system' },
+  { value: 'EXPEDITE_REQUIRED', label: 'Expedite Required', description: 'Urgency requires faster action' },
+  { value: 'RISK_MITIGATION', label: 'Risk Mitigation', description: 'Proactive risk reduction action' },
+  { value: 'AGENT_ERROR', label: 'Agent Error', description: 'Agent recommendation appears incorrect' },
+  { value: 'OTHER', label: 'Other', description: 'Explain in notes below' },
+];
+
 const AgentReasoningModal = ({ item, reasoning, onClose, onAccept, onReject }) => {
   const [overrideReason, setOverrideReason] = useState('');
+  const [reasonCode, setReasonCode] = useState('');
   const [showRejectForm, setShowRejectForm] = useState(false);
 
   if (!item) return null;
 
   const handleReject = () => {
-    if (showRejectForm && overrideReason.trim()) {
-      onReject(item.id, overrideReason);
+    if (showRejectForm && reasonCode && overrideReason.trim()) {
+      onReject(item.id, `[${reasonCode}] ${overrideReason}`);
       onClose();
     } else {
       setShowRejectForm(true);
@@ -333,19 +350,37 @@ const AgentReasoningModal = ({ item, reasoning, onClose, onAccept, onReject }) =
 
           {/* Override Form */}
           {showRejectForm && (
-            <div className="p-4 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-lg">
-              <h3 className="text-sm font-medium text-red-700 dark:text-red-400 mb-2">
+            <div className="p-4 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-lg space-y-3">
+              <h3 className="text-sm font-medium text-red-700 dark:text-red-400">
                 Override Reason Required
               </h3>
-              <textarea
-                value={overrideReason}
-                onChange={(e) => setOverrideReason(e.target.value)}
-                placeholder="Please explain why you're overriding the agent recommendation..."
-                className="w-full p-3 border rounded-md text-sm resize-none h-24"
-                autoFocus
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Your feedback helps improve agent accuracy (performance metrics)
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Reason Category</label>
+                <select
+                  value={reasonCode}
+                  onChange={(e) => setReasonCode(e.target.value)}
+                  className="w-full mt-1 p-2 border rounded-md text-sm bg-background"
+                  autoFocus
+                >
+                  <option value="">Select a reason...</option>
+                  {OVERRIDE_REASON_CODES.map((code) => (
+                    <option key={code.value} value={code.value}>
+                      {code.label} — {code.description}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Details</label>
+                <textarea
+                  value={overrideReason}
+                  onChange={(e) => setOverrideReason(e.target.value)}
+                  placeholder="Please explain why you're overriding the agent recommendation..."
+                  className="w-full mt-1 p-3 border rounded-md text-sm resize-none h-20 bg-background"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Your structured feedback trains the Bayesian effectiveness model and improves agent accuracy
               </p>
             </div>
           )}
@@ -359,6 +394,7 @@ const AgentReasoningModal = ({ item, reasoning, onClose, onAccept, onReject }) =
             variant="outline"
             className="text-red-600 border-red-200 hover:bg-red-50"
             onClick={handleReject}
+            disabled={showRejectForm && (!reasonCode || !overrideReason.trim())}
           >
             <Pencil className="h-4 w-4 mr-1" />
             {showRejectForm ? 'Submit Override' : 'Override'}

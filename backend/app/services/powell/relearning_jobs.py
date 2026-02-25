@@ -5,6 +5,8 @@ Registers CDC relearning loop jobs with APScheduler:
 - Hourly at :30: Outcome collection for TRM decisions (SiteAgentDecision path)
 - Hourly at :32: TRM outcome collection for all 11 powell_*_decisions tables
 - Hourly at :35: CDT calibration (incremental, after outcomes collected)
+- Daily at 02:40: Causal matching for Tier 2 override signal strength
+- Daily at 03:00: GNN orchestration cycle (S&OP + Execution → directive broadcast)
 - Every 6h at :45: CDC-triggered retraining evaluation
 
 Part of the Powell SDAM feedback loop:
@@ -71,6 +73,28 @@ def register_relearning_jobs(scheduler_service: 'SyncSchedulerService') -> None:
         misfire_grace_time=1800,
     )
     logger.info("Registered Powell CDT calibration job (hourly at :35)")
+
+    # Daily at 02:40: Causal matching — propensity-score matched pairs for Tier 2
+    scheduler.add_job(
+        func=_run_causal_matching,
+        trigger=CronTrigger(hour=2, minute=40),
+        id="powell_causal_matching",
+        name="Powell: Causal Matching (daily)",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    logger.info("Registered Powell causal matching job (daily at 02:40)")
+
+    # Daily at 03:00: GNN orchestration cycle (S&OP + Execution → directive broadcast)
+    scheduler.add_job(
+        func=_run_gnn_orchestration,
+        trigger=CronTrigger(hour=3, minute=0),
+        id="powell_gnn_orchestration",
+        name="Powell: GNN Orchestration Cycle (daily)",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    logger.info("Registered Powell GNN orchestration job (daily at 03:00)")
 
     # Every 6 hours: Retraining evaluation (at :45)
     scheduler.add_job(
@@ -156,6 +180,57 @@ def _run_cdt_calibration() -> None:
         )
     except Exception as e:
         logger.error(f"CDT calibration job failed: {e}")
+    finally:
+        db.close()
+
+
+def _run_gnn_orchestration() -> None:
+    """Run full GNN inference → directive broadcast cycle."""
+    import asyncio
+    from app.db.session import SessionLocal
+
+    logger.info("Starting scheduled GNN orchestration cycle")
+
+    db = SessionLocal()
+    try:
+        from app.services.powell.gnn_orchestration_service import GNNOrchestrationService
+
+        orchestrator = GNNOrchestrationService(db, config_id=1)
+        result = asyncio.get_event_loop().run_until_complete(
+            orchestrator.run_full_cycle()
+        )
+        logger.info(
+            f"GNN orchestration completed: "
+            f"{result.get('directives_generated', 0)} directives generated, "
+            f"{result.get('broadcast_success', 0)} broadcast, "
+            f"cycle took {result.get('cycle_duration_ms', 0)}ms"
+        )
+        if result.get("errors"):
+            logger.warning(f"GNN orchestration errors: {result['errors']}")
+    except Exception as e:
+        logger.error(f"GNN orchestration job failed: {e}")
+    finally:
+        db.close()
+
+
+def _run_causal_matching() -> None:
+    """Find propensity-score matched pairs for Tier 2 override effectiveness."""
+    from app.db.session import SessionLocal
+
+    logger.info("Starting scheduled causal matching")
+
+    db = SessionLocal()
+    try:
+        from app.services.causal_matching_service import CausalMatchingService
+
+        service = CausalMatchingService(db)
+        stats = service.run_matching(lookback_days=30)
+        logger.info(
+            f"Causal matching completed: {stats['matched']} matched, "
+            f"{stats['skipped']} skipped, {stats['failed']} failed"
+        )
+    except Exception as e:
+        logger.error(f"Causal matching job failed: {e}")
     finally:
         db.close()
 
