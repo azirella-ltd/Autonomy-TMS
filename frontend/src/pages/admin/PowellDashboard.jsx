@@ -170,6 +170,11 @@ const PowellDashboard = () => {
   const [learningProgress, setLearningProgress] = useState(null);
   const [calibrating, setCalibrating] = useState(false);
 
+  // Override effectiveness state
+  const [overrideData, setOverrideData] = useState(null);
+  const [posteriorData, setPosteriorData] = useState(null);
+  const [overrideLoading, setOverrideLoading] = useState(true);
+
   // Fetch data
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -272,6 +277,30 @@ const PowellDashboard = () => {
     loadConformalData();
   }, [loadConformalData]);
 
+  // Lazy-load override effectiveness data when the tab is selected
+  useEffect(() => {
+    if (currentTab !== 'overrides') return;
+    let cancelled = false;
+    const fetchOverrides = async () => {
+      setOverrideLoading(true);
+      try {
+        const [effRes, postRes] = await Promise.all([
+          api.get('/decision-metrics/override-effectiveness').catch(() => ({ data: { success: false } })),
+          api.get('/decision-metrics/override-posteriors').catch(() => ({ data: { success: false } })),
+        ]);
+        if (cancelled) return;
+        setOverrideData(effRes.data?.success ? effRes.data.data : null);
+        setPosteriorData(postRes.data?.success ? { posteriors: postRes.data.posteriors || [], aggregate: postRes.data.aggregate || {}, tier_map: postRes.data.tier_map || {} } : null);
+      } catch (err) {
+        console.error('Failed to load override data:', err);
+      } finally {
+        if (!cancelled) setOverrideLoading(false);
+      }
+    };
+    fetchOverrides();
+    return () => { cancelled = true; };
+  }, [currentTab]);
+
   const policyOptions = [
     { id: 'pfa', name: 'Base Stock (PFA)', type: 'PFA', description: 'Direct mapping from state to order quantity using base-stock levels' },
     { id: 'cfa', name: 'Parameterized (CFA)', type: 'CFA', description: 'Optimized parameters (s,S), (r,Q) from S&OP GraphSAGE' },
@@ -370,6 +399,10 @@ const PowellDashboard = () => {
           <TabsTrigger value="hive" className="flex items-center gap-2">
             <Layers className="h-4 w-4" />
             Hive Signals
+          </TabsTrigger>
+          <TabsTrigger value="overrides" className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4" />
+            Overrides
           </TabsTrigger>
         </TabsList>
 
@@ -1398,6 +1431,301 @@ const PowellDashboard = () => {
         {/* Hive Signals Tab */}
         <TabsContent value="hive">
           <HiveSignalsTab siteKey={selectedSite} />
+        </TabsContent>
+
+        {/* Override Effectiveness Tab */}
+        <TabsContent value="overrides">
+          {overrideLoading ? (
+            <div className="text-center py-12 text-muted-foreground">Loading override effectiveness data...</div>
+          ) : !overrideData ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <ShieldCheck className="h-12 w-12 mx-auto mb-4 opacity-30" />
+              <p className="text-lg font-medium">No Override Data Available</p>
+              <p className="text-sm mt-1">Override effectiveness tracking will appear once human overrides are recorded.</p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Row 1: Summary StatCards */}
+              <div className="grid grid-cols-4 gap-4">
+                <StatCard
+                  title="Effectiveness Rate"
+                  value={`${((overrideData.effectiveness_rate || 0) * 100).toFixed(1)}%`}
+                  subtitle="% of overrides that improved outcomes"
+                  icon={ShieldCheck}
+                  color={(overrideData.effectiveness_rate || 0) >= 0.6 ? 'green' : (overrideData.effectiveness_rate || 0) >= 0.4 ? 'yellow' : 'red'}
+                />
+                <StatCard
+                  title="Net Reward Delta"
+                  value={((overrideData.net_reward_delta || 0) >= 0 ? '+' : '') + (overrideData.net_reward_delta || 0).toFixed(2)}
+                  subtitle="Cumulative reward impact of overrides"
+                  icon={TrendingUp}
+                  color={(overrideData.net_reward_delta || 0) >= 0 ? 'green' : 'red'}
+                />
+                <StatCard
+                  title="Total Overrides"
+                  value={overrideData.total_overrides || 0}
+                  subtitle={`${overrideData.beneficial_count || 0} beneficial / ${overrideData.neutral_count || 0} neutral / ${overrideData.detrimental_count || 0} detrimental`}
+                  icon={Target}
+                  color="blue"
+                />
+                <StatCard
+                  title="Bayesian Confidence"
+                  value={posteriorData?.aggregate?.avg_effectiveness != null
+                    ? `${(posteriorData.aggregate.avg_effectiveness * 100).toFixed(1)}%`
+                    : 'N/A'}
+                  subtitle={posteriorData?.aggregate?.ci_lower != null && posteriorData?.aggregate?.ci_upper != null
+                    ? `90% CI: ${(posteriorData.aggregate.ci_lower * 100).toFixed(1)}% - ${(posteriorData.aggregate.ci_upper * 100).toFixed(1)}%`
+                    : 'No credible interval data'}
+                  icon={Sparkles}
+                  color="purple"
+                />
+              </div>
+
+              {/* Row 2: By TRM Type Table */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Brain className="h-5 w-5 text-blue-500" />
+                    Override Effectiveness by TRM Type
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {overrideData.by_trm_type && Object.keys(overrideData.by_trm_type).length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left py-2 px-3 font-medium">TRM Type</th>
+                            <th className="text-center py-2 px-3 font-medium">Tier</th>
+                            <th className="text-right py-2 px-3 font-medium">Overrides</th>
+                            <th className="text-right py-2 px-3 font-medium">Beneficial</th>
+                            <th className="text-right py-2 px-3 font-medium">Detrimental</th>
+                            <th className="text-right py-2 px-3 font-medium">Effectiveness %</th>
+                            <th className="text-right py-2 px-3 font-medium">Net Delta</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(overrideData.by_trm_type).map(([trmType, stats]) => {
+                            const tier = posteriorData?.tier_map?.[trmType] || null;
+                            const tierColors = { 1: 'bg-green-100 text-green-800', 2: 'bg-yellow-100 text-yellow-800', 3: 'bg-orange-100 text-orange-800' };
+                            return (
+                              <tr key={trmType} className="border-b hover:bg-muted/50">
+                                <td className="py-2 px-3 font-medium">{trmType.replace(/_/g, ' ')}</td>
+                                <td className="py-2 px-3 text-center">
+                                  {tier ? (
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${tierColors[tier] || 'bg-gray-100 text-gray-800'}`}>
+                                      Tier {tier}
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 text-right">{stats.total || 0}</td>
+                                <td className="py-2 px-3 text-right text-green-600">{stats.beneficial || 0}</td>
+                                <td className="py-2 px-3 text-right text-red-600">{stats.detrimental || 0}</td>
+                                <td className="py-2 px-3 text-right">
+                                  <span className={
+                                    (stats.effectiveness || 0) >= 0.6 ? 'text-green-600 font-medium'
+                                    : (stats.effectiveness || 0) >= 0.4 ? 'text-yellow-600 font-medium'
+                                    : 'text-red-600 font-medium'
+                                  }>
+                                    {((stats.effectiveness || 0) * 100).toFixed(1)}%
+                                  </span>
+                                </td>
+                                <td className="py-2 px-3 text-right">
+                                  <span className={(stats.net_delta || 0) >= 0 ? 'text-green-600' : 'text-red-600'}>
+                                    {(stats.net_delta || 0) >= 0 ? '+' : ''}{(stats.net_delta || 0).toFixed(2)}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="text-center py-6 text-muted-foreground">No per-TRM override data available</div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Row 3: Trend Chart */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <BarChart3 className="h-5 w-5 text-purple-500" />
+                    Override Trend by Week
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {overrideData.trend && overrideData.trend.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <BarChart data={overrideData.trend}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="week" />
+                        <YAxis />
+                        <RechartsTooltip />
+                        <Legend />
+                        <Bar dataKey="beneficial" stackId="a" fill="#22c55e" name="Beneficial" />
+                        <Bar dataKey="neutral" stackId="a" fill="#9ca3af" name="Neutral" />
+                        <Bar dataKey="detrimental" stackId="a" fill="#ef4444" name="Detrimental" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No trend data available yet
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Row 4: Top Beneficial / Top Detrimental */}
+              <div className="grid grid-cols-2 gap-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <CheckCircle className="h-5 w-5 text-green-500" />
+                      Top Beneficial Overrides
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {overrideData.top_beneficial && overrideData.top_beneficial.length > 0 ? (
+                      <div className="space-y-3">
+                        {overrideData.top_beneficial.map((item, idx) => (
+                          <div key={idx} className="flex items-start gap-3 p-3 border rounded-lg">
+                            <div className="flex-shrink-0 w-6 h-6 rounded-full bg-green-100 flex items-center justify-center text-xs font-medium text-green-700">
+                              {idx + 1}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-sm">{(item.decision_type || '').replace(/_/g, ' ')}</span>
+                                <Badge variant="outline" className="text-xs">{item.site_key || '-'}</Badge>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1 truncate">{item.override_reason || 'No reason provided'}</p>
+                              <div className="mt-1">
+                                <span className="text-xs text-green-600 font-medium">
+                                  Delta: +{(item.override_delta || 0).toFixed(3)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6 text-muted-foreground text-sm">No beneficial overrides recorded</div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <AlertTriangle className="h-5 w-5 text-red-500" />
+                      Top Detrimental Overrides
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {overrideData.top_detrimental && overrideData.top_detrimental.length > 0 ? (
+                      <div className="space-y-3">
+                        {overrideData.top_detrimental.map((item, idx) => (
+                          <div key={idx} className="flex items-start gap-3 p-3 border rounded-lg">
+                            <div className="flex-shrink-0 w-6 h-6 rounded-full bg-red-100 flex items-center justify-center text-xs font-medium text-red-700">
+                              {idx + 1}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-sm">{(item.decision_type || '').replace(/_/g, ' ')}</span>
+                                <Badge variant="outline" className="text-xs">{item.site_key || '-'}</Badge>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1 truncate">{item.override_reason || 'No reason provided'}</p>
+                              <div className="mt-1">
+                                <span className="text-xs text-red-600 font-medium">
+                                  Delta: {(item.override_delta || 0).toFixed(3)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6 text-muted-foreground text-sm">No detrimental overrides recorded</div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Row 5: Bayesian Posteriors Table */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5 text-purple-500" />
+                    Bayesian Override Posteriors
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {posteriorData?.posteriors && posteriorData.posteriors.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left py-2 px-3 font-medium">User</th>
+                            <th className="text-left py-2 px-3 font-medium">TRM Type</th>
+                            <th className="text-center py-2 px-3 font-medium">Tier</th>
+                            <th className="text-right py-2 px-3 font-medium">Observations</th>
+                            <th className="text-right py-2 px-3 font-medium">E[Effectiveness]</th>
+                            <th className="text-right py-2 px-3 font-medium">Training Weight</th>
+                            <th className="text-right py-2 px-3 font-medium">90% CI</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {posteriorData.posteriors.map((row, idx) => {
+                            const tier = row.tier || posteriorData.tier_map?.[row.trm_type] || null;
+                            const tierColors = { 1: 'bg-green-100 text-green-800', 2: 'bg-yellow-100 text-yellow-800', 3: 'bg-orange-100 text-orange-800' };
+                            return (
+                              <tr key={idx} className="border-b hover:bg-muted/50">
+                                <td className="py-2 px-3">{row.user || row.user_id || '-'}</td>
+                                <td className="py-2 px-3">{(row.trm_type || '').replace(/_/g, ' ')}</td>
+                                <td className="py-2 px-3 text-center">
+                                  {tier ? (
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${tierColors[tier] || 'bg-gray-100 text-gray-800'}`}>
+                                      Tier {tier}
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 text-right">{row.observations || 0}</td>
+                                <td className="py-2 px-3 text-right font-medium">
+                                  {row.expected_effectiveness != null
+                                    ? `${(row.expected_effectiveness * 100).toFixed(1)}%`
+                                    : '-'}
+                                </td>
+                                <td className="py-2 px-3 text-right">
+                                  {row.training_weight != null
+                                    ? row.training_weight.toFixed(3)
+                                    : '-'}
+                                </td>
+                                <td className="py-2 px-3 text-right text-muted-foreground">
+                                  {row.ci_lower != null && row.ci_upper != null
+                                    ? `${(row.ci_lower * 100).toFixed(1)}% - ${(row.ci_upper * 100).toFixed(1)}%`
+                                    : '-'}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Info className="h-8 w-8 mx-auto mb-3 opacity-30" />
+                      <p>No Bayesian posteriors yet — overrides will be tracked as they occur</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </div>

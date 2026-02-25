@@ -36,6 +36,7 @@ from sqlalchemy import and_, func, select
 
 from app.models.powell_decision import SiteAgentDecision, CDCTriggerLog
 from app.services.powell.trm_trainer import RewardCalculator
+from app.services.override_effectiveness_service import OverrideEffectivenessService
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +142,41 @@ class OutcomeCollectorService:
                                 decision.human_actual_reward = comparison["human_actual_reward"]
                                 decision.override_delta = comparison["override_delta"]
                                 decision.override_classification = comparison["classification"]
+
+                                # Compute site-window BSC delta (systemic impact)
+                                site_bsc = self._compute_site_window_bsc(
+                                    decision, OUTCOME_DELAY.get(decision_type, timedelta(days=7))
+                                )
+                                if site_bsc is not None:
+                                    decision.site_bsc_delta = site_bsc
+
+                                # Composite score: 30% local + 50% site BSC + 20% reserved
+                                local_delta = comparison["override_delta"]
+                                bsc_delta = site_bsc if site_bsc is not None else 0.0
+                                decision.composite_override_score = (
+                                    0.4 * local_delta + 0.6 * bsc_delta
+                                )
+
+                                # Use composite score for Bayesian posterior update
+                                # when site BSC is available; fall back to local delta
+                                posterior_delta = (
+                                    decision.composite_override_score
+                                    if site_bsc is not None
+                                    else local_delta
+                                )
+
+                                # Update Bayesian posterior for the overriding user
+                                if decision.override_user_id:
+                                    try:
+                                        OverrideEffectivenessService.update_posterior(
+                                            db=self.db,
+                                            user_id=decision.override_user_id,
+                                            trm_type=decision.decision_type,
+                                            delta=posterior_delta,
+                                            site_key=decision.site_key,
+                                        )
+                                    except Exception as e:
+                                        logger.debug(f"Posterior update failed: {e}")
 
                         stats["succeeded"] += 1
                         type_stats["computed"] += 1
@@ -528,6 +564,134 @@ class OutcomeCollectorService:
             return agent_reward
         except Exception:
             return None
+
+    # ------------------------------------------------------------------
+    # Site-Window Balanced Scorecard Comparison (Systemic Impact)
+    # ------------------------------------------------------------------
+
+    def _compute_site_window_bsc(
+        self,
+        override_decision: SiteAgentDecision,
+        feedback_horizon: timedelta,
+    ) -> Optional[float]:
+        """
+        Compute the site-level balanced scorecard delta around an override.
+
+        Measures whether the *site's aggregate performance* improved or degraded
+        in the feedback window after the override, compared to the equivalent
+        pre-override baseline window.
+
+        This captures systemic effects that decision-local counterfactuals miss:
+        e.g., a reallocation that helps one order but degrades fill rate for
+        others at the same site.
+
+        The BSC delta is a normalized score in [-1, +1]:
+          > 0  → site metrics improved after override (systemically beneficial)
+          < 0  → site metrics degraded after override (systemically harmful)
+          ≈ 0  → no detectable systemic effect
+
+        Returns:
+            Float in [-1, +1] or None if insufficient data.
+        """
+        try:
+            site_key = override_decision.site_key
+            override_time = override_decision.timestamp or override_decision.created_at
+            if not override_time:
+                return None
+
+            # Define comparison windows
+            post_start = override_time
+            post_end = override_time + feedback_horizon
+            pre_start = override_time - feedback_horizon
+            pre_end = override_time
+
+            # Query all decisions at this site in both windows
+            pre_decisions = self.db.query(SiteAgentDecision).filter(
+                SiteAgentDecision.site_key == site_key,
+                SiteAgentDecision.timestamp >= pre_start,
+                SiteAgentDecision.timestamp < pre_end,
+                SiteAgentDecision.reward_signal.isnot(None),
+                SiteAgentDecision.id != override_decision.id,
+            ).all()
+
+            post_decisions = self.db.query(SiteAgentDecision).filter(
+                SiteAgentDecision.site_key == site_key,
+                SiteAgentDecision.timestamp >= post_start,
+                SiteAgentDecision.timestamp <= post_end,
+                SiteAgentDecision.reward_signal.isnot(None),
+                SiteAgentDecision.id != override_decision.id,
+            ).all()
+
+            # Need minimum data in both windows for meaningful comparison
+            if len(pre_decisions) < 3 or len(post_decisions) < 3:
+                return None
+
+            # Compute aggregate BSC proxies for each window
+            pre_bsc = self._aggregate_site_bsc(pre_decisions)
+            post_bsc = self._aggregate_site_bsc(post_decisions)
+
+            if pre_bsc is None or post_bsc is None:
+                return None
+
+            # BSC delta: positive = improvement, negative = degradation
+            # Normalize by the absolute magnitude to keep in [-1, +1]
+            raw_delta = post_bsc["composite"] - pre_bsc["composite"]
+            normalizer = max(abs(pre_bsc["composite"]), 0.01)
+            bsc_delta = max(-1.0, min(1.0, raw_delta / normalizer))
+
+            return round(bsc_delta, 4)
+
+        except Exception as e:
+            logger.debug(f"Site-window BSC computation failed: {e}")
+            return None
+
+    def _aggregate_site_bsc(
+        self,
+        decisions: List[SiteAgentDecision],
+    ) -> Optional[Dict[str, float]]:
+        """
+        Compute aggregate balanced scorecard proxy from a set of decisions.
+
+        Uses four metrics as BSC proxies:
+          1. Mean reward signal (overall decision quality)
+          2. Override-free success rate (% of non-overridden decisions with positive reward)
+          3. Negative reward ratio (% of decisions with negative reward — proxy for service failures)
+          4. Reward variance (lower is better — proxy for operational stability)
+
+        Returns composite score and component metrics.
+        """
+        if not decisions:
+            return None
+
+        rewards = [d.reward_signal for d in decisions if d.reward_signal is not None]
+        if len(rewards) < 2:
+            return None
+
+        mean_reward = sum(rewards) / len(rewards)
+        positive_rate = sum(1 for r in rewards if r > 0) / len(rewards)
+        negative_rate = sum(1 for r in rewards if r < 0) / len(rewards)
+
+        # Variance (lower is better for stability)
+        variance = sum((r - mean_reward) ** 2 for r in rewards) / len(rewards)
+        stability = 1.0 / (1.0 + variance)  # Transform to [0, 1], higher = more stable
+
+        # Composite BSC proxy: weighted combination
+        # Mean reward (40%) + positive rate (30%) + stability (20%) - negative rate (10%)
+        composite = (
+            0.4 * mean_reward
+            + 0.3 * positive_rate
+            + 0.2 * stability
+            - 0.1 * negative_rate
+        )
+
+        return {
+            "mean_reward": round(mean_reward, 4),
+            "positive_rate": round(positive_rate, 4),
+            "negative_rate": round(negative_rate, 4),
+            "stability": round(stability, 4),
+            "composite": round(composite, 4),
+            "decision_count": len(rewards),
+        }
 
     # ------------------------------------------------------------------
     # Path 2: powell_*_decisions table outcome collection (all 11 TRMs)

@@ -610,6 +610,20 @@ API endpoints:
 - `GET /site-agent/retraining/status/{site_key}` — Checkpoint, readiness, pending experiences
 - `POST /site-agent/retraining/trigger/{site_key}` — Manual retraining (background)
 
+**Override Effectiveness Tracking** (see [POWELL_APPROACH.md](POWELL_APPROACH.md) Section 5.9.10):
+
+Human overrides are scored using **Bayesian Beta posteriors** per `(user_id, trm_type)` with tiered causal inference. The posterior `Beta(α, β)` starts from uninformative `Beta(1,1)` (E[p]=0.50, training_weight=0.85) and updates as outcomes are observed. Three observability tiers control signal strength: Tier 1 (analytical counterfactual for ATP/forecast/quality, signal=1.0), Tier 2 (propensity-score matching for MO/TO/PO, signal=0.3-0.9), Tier 3 (minimal for safety stock/maintenance, signal=0.15). Training weight formula: `0.3 + 1.7 × E[p]`, capped by certainty discount.
+
+**Systemic impact**: Overrides are measured at two scopes — decision-local (counterfactual comparison) and site-window (balanced scorecard delta comparing aggregate site performance pre vs post override). Composite score = `0.4 × local_delta + 0.6 × site_bsc_delta` feeds into the Bayesian posterior to prevent locally-good but systemically-harmful overrides from inflating training weights.
+
+**Causal learning pipeline**: Progresses from Bayesian priors → propensity-score matching → doubly robust estimation → causal forests (Athey & Imbens 2018) that identify *when* overrides help vs. hurt. See [docs/OVERRIDE_EFFECTIVENESS_METHODOLOGY.md](docs/OVERRIDE_EFFECTIVENESS_METHODOLOGY.md) for full methodology including mathematical appendix.
+
+- **Model**: `backend/app/models/override_effectiveness.py` — `OverrideEffectivenessPosterior`, `CausalMatchPair`
+- **Service**: `backend/app/services/override_effectiveness_service.py` — Bayesian posterior management
+- **Systemic**: `backend/app/services/powell/outcome_collector.py` — `_compute_site_window_bsc()` method
+- **API**: `GET /decision-metrics/override-posteriors` — Per-user posterior summaries with 90% credible intervals
+- **Database tables**: `override_effectiveness_posteriors`, `override_causal_match_pairs`
+
 See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
 
 ### AWS SC Planning Flow
@@ -705,6 +719,8 @@ See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
 - `powell_subcontracting_decisions`: Subcontracting routing decisions
 - `powell_forecast_adjustment_decisions`: Forecast adjustment decisions
 - `powell_buffer_decisions`: Inventory buffer adjustment decisions
+- `override_effectiveness_posteriors`: Bayesian Beta posteriors per (user, trm_type) for override quality tracking
+- `override_causal_match_pairs`: Matched override vs non-override decision pairs for causal inference
 
 ---
 

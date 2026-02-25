@@ -652,9 +652,310 @@ In all three cases, the system converges toward correct behavior. The Bayesian f
 
 ---
 
+## 8. Systemic Impact: Local vs. Site-Level Override Effectiveness
+
+### 8.1 The Problem of Local Optimality
+
+Decision-level counterfactual comparison (Sections 2-4) answers: **"Did this override produce a better outcome for this specific decision?"** But this misses a critical dimension: **"Did this override improve or degrade the site's overall performance?"**
+
+**Example**: A planner reallocates inventory from a standard order to a priority customer order. The decision-level delta is strongly positive (priority order ships on time). But the standard order now misses its SLA, and two more orders behind it are also delayed. The site's overall OTIF drops by 3%. The override was **locally beneficial but systemically harmful**.
+
+This is the classic **local vs. global optimization** problem. Supply chain decisions are coupled — changing one allocation affects all other allocations sharing the same resource pool.
+
+### 8.2 Three-Scope Measurement
+
+Override effectiveness should be measured at three scopes:
+
+| Scope | Question | Method | Current? |
+|-------|----------|--------|----------|
+| **Decision-local** | Did *this* decision achieve a better outcome? | Counterfactual comparison (Section 3) | Yes |
+| **Site-window** | Did the *site's aggregate BSC* improve in the feedback window? | Pre/post window comparison | **Yes (new)** |
+| **Network-ripple** | Did *downstream sites* experience degradation? | Cross-site causal tracing | Future (requires tGNN directives) |
+
+### 8.3 Site-Window BSC Comparison
+
+After an override at time `t` for site `site_key`, the system computes:
+
+```
+Pre-override window:  [t - feedback_horizon, t)
+Post-override window: [t, t + feedback_horizon]
+
+BSC_pre  = aggregate_bsc(all decisions at site_key in pre-window)
+BSC_post = aggregate_bsc(all decisions at site_key in post-window)
+
+site_bsc_delta = (BSC_post.composite - BSC_pre.composite) / max(|BSC_pre.composite|, 0.01)
+```
+
+The BSC proxy aggregates four metrics from all decisions at the same site:
+
+| Metric | Weight | Interpretation |
+|--------|--------|---------------|
+| Mean reward signal | 40% | Overall decision quality at site |
+| Positive reward rate | 30% | % of decisions with positive outcomes (service success) |
+| Reward stability (1/(1+variance)) | 20% | Operational consistency (low variance = stable operations) |
+| Negative reward rate (subtracted) | 10% | Service failures — captures the downstream damage from resource reallocation |
+
+The `site_bsc_delta` is normalized to [-1, +1]:
+- **> 0**: Site performance improved after the override (systemically beneficial)
+- **≈ 0**: No detectable systemic effect (locally contained override)
+- **< 0**: Site performance degraded (override helped one thing, hurt others)
+
+### 8.4 Composite Override Score
+
+The composite score combines local and systemic measurements:
+
+```python
+composite = 0.4 * local_delta + 0.6 * site_bsc_delta
+```
+
+The site-level BSC receives **higher weight** (60%) because it captures the aggregate reality. A planner who consistently makes locally-correct overrides that degrade the overall site will see their composite score — and therefore their Bayesian posterior — reflect the systemic damage.
+
+**Fallback**: When insufficient site data exists for BSC comparison (< 3 decisions in either window), the composite falls back to the decision-local delta alone.
+
+### 8.5 Impact on Training Weights
+
+The composite score is what feeds into the Bayesian posterior update (Section 3.3), **not** the local delta alone. This means:
+
+```
+Planner makes 10 overrides:
+  - 8 are locally beneficial (positive local_delta)
+  - But 6 of those cause site-level degradation (negative site_bsc_delta)
+  - Composite scores: 3 positive, 5 negative, 2 neutral
+  - Posterior: E[p] drifts toward ~0.40, training_weight ≈ 0.68
+
+vs. blind 2x weighting: all 10 would have been weighted at 2.0
+vs. local-only Bayesian: E[p] would be ~0.80, training_weight ≈ 1.66
+```
+
+The composite approach correctly captures that this planner's overrides are net-negative for the site, even though they look individually impressive.
+
+### 8.6 Limitations and Future Work
+
+**Current limitations**:
+- Site-window BSC is correlational, not causal. Other events in the window (new orders, demand spikes, upstream disruptions) also affect BSC. The comparison attributes all change to the override.
+- Only considers the override decision's own site. Cross-site ripple effects (e.g., a rebalance override that depletes origin site) are not yet captured.
+- Requires sufficient decision density at the site for meaningful comparison.
+
+**Future: Network Ripple Graph** (requires tGNN integration):
+- Tag downstream decisions that share a resource pool with the override
+- Compute per-decision ripple deltas using the tGNN's attention weights to identify causal paths
+- Weight ripple effects by causal proximity (direct impact > indirect impact)
+
+**Future: Bayesian Structural Time Series**:
+- Use CausalImpact-style analysis (Brodersen et al., 2015) to estimate the override's causal effect on site KPIs
+- Accounts for trends, seasonality, and other contemporaneous events
+- Requires 20+ pre-override time points for reliable estimation
+
+---
+
+## 9. Mathematical Appendix: Bayesian Beta Posterior
+
+### 9.1 Why Beta-Binomial?
+
+The Beta distribution is the conjugate prior for the Bernoulli/Binomial likelihood. Since we're modeling a binary outcome (override beneficial or not), the Beta-Binomial model is the natural Bayesian choice:
+
+```
+Prior:      p ~ Beta(α₀, β₀)
+Likelihood: X_i ~ Bernoulli(p)        [each override outcome is a "success" or "failure"]
+Posterior:  p | data ~ Beta(α₀ + Σxᵢ, β₀ + n - Σxᵢ)
+```
+
+**Conjugacy** means the posterior has the same functional form as the prior, which:
+- Makes updates O(1) — just increment α or β
+- Avoids MCMC or numerical integration
+- Provides closed-form credible intervals via the Beta quantile function
+- Is computationally trivial (runs in microseconds, no GPU needed)
+
+### 9.2 Prior Selection Rationale
+
+**Beta(1, 1)** — the uniform distribution on [0, 1]:
+
+```
+E[p] = 1/(1+1) = 0.50
+Var[p] = 1·1 / (2²·3) = 1/12 ≈ 0.083
+```
+
+This encodes maximal ignorance: "we assign equal probability to every possible effectiveness rate." The training weight at this prior is 0.85, which is a slight discount from the non-expert weight of 1.0 — reflecting the principle that unvalidated human overrides should receive *less* than default credence, not more.
+
+**Why not Beta(2, 1) (optimistic)?** An optimistic prior assumes humans override for good reasons. While plausible, this assumption can be wrong — confirmation bias, status quo bias, and anchoring affect planner decision-making. Starting neutral lets the data speak.
+
+**Why not Beta(5, 5) (peaked at 0.5)?** A peaked prior resists early evidence. With Beta(5, 5), it takes 4+ observations to move the posterior meaningfully. Beta(1, 1) is more responsive to initial data, which is desirable when we want the system to learn quickly.
+
+### 9.3 Signal Strength and Fractional Updates
+
+Not all observations carry the same evidentiary weight. The signal strength scales the update:
+
+```
+Standard update:      α += 1.0  (if beneficial)
+Tier 2 update:        α += s₂   where s₂ ∈ [0.3, 0.9], scaled by matched-pair count
+Tier 3 update:        α += 0.15 (minimal — high confounding)
+```
+
+Fractional updates preserve the Beta conjugacy structure. A fractional update of `s` is mathematically equivalent to observing `s` fraction of a Bernoulli trial. The posterior remains a valid Beta distribution.
+
+**Signal strength for Tier 2** scales with matched-pair availability:
+
+```python
+s₂ = min(0.9, 0.3 + (matched_pairs / 50) * 0.6)
+```
+
+At 0 matched pairs: s₂ = 0.3 (weak signal, like slightly better than Tier 3)
+At 20 matched pairs: s₂ = 0.54 (moderate signal)
+At 50+ matched pairs: s₂ = 0.9 (approaching Tier 1 confidence)
+
+### 9.4 Posterior-to-Weight Mapping
+
+The training weight must satisfy:
+1. **Monotonically increasing in E[p]** — better overrides → higher weight
+2. **Bounded** — range [0.3, 2.0] prevents extreme amplification/suppression
+3. **Uncertainty-discounted** — few observations → weight capped near 0.85
+
+```python
+weight = 0.3 + 1.7 * E[p]                    # Linear mapping [0,1] → [0.3, 2.0]
+certainty = min(1.0, max(0, n) / 10)          # n = effective observations
+max_weight = 0.85 + 1.15 * certainty          # Cap: 0.85 → 2.0 as n grows
+weight = min(weight, max_weight)               # Apply cap
+```
+
+This produces the following training weight surface:
+
+```
+E[p] ↓ / Observations →   0     3     5     10    20+
+0.20 (detrimental)       0.64  0.64  0.64  0.64  0.64
+0.50 (uninformative)     0.85  0.85  1.15  1.15  1.15
+0.70 (moderate)          0.85  1.05  1.27  1.49  1.49
+0.85 (proven effective)  0.85  1.10  1.44  1.75  1.75
+0.95 (excellent)         0.85  1.10  1.44  2.00  2.00
+```
+
+**Key properties**:
+- At n=0, all weights are 0.85 regardless of E[p] — we don't trust uninformed priors
+- The diagonal converges: as data accumulates, the weight approaches the "true" mapping
+- Detrimental overrides are suppressed to 0.64 even with few observations (the Bayesian framework is asymmetrically cautious about bad evidence)
+
+### 9.5 Credible Intervals
+
+The 90% credible interval uses the Beta quantile function:
+
+```python
+from scipy.stats import beta
+CI_90 = [beta.ppf(0.05, α, β), beta.ppf(0.95, α, β)]
+```
+
+Example credible intervals:
+
+```
+Beta(1, 1):     CI₉₀ = [0.05, 0.95]  → "We know almost nothing"
+Beta(5, 2):     CI₉₀ = [0.39, 0.93]  → "Probably effective, but uncertain"
+Beta(15, 5):    CI₉₀ = [0.54, 0.88]  → "Likely effective, narrowing"
+Beta(50, 10):   CI₉₀ = [0.73, 0.89]  → "Confidently effective"
+Beta(3, 12):    CI₉₀ = [0.08, 0.37]  → "Confidently ineffective"
+```
+
+When scipy is unavailable, a normal approximation is used:
+
+```python
+mean = α / (α + β)
+std = sqrt(α * β / ((α + β)² * (α + β + 1)))
+CI_90 ≈ [mean - 1.645 * std, mean + 1.645 * std]
+```
+
+---
+
+## 10. Causal Inference: Technical Deep-Dive
+
+### 10.1 The Fundamental Problem
+
+Following Holland (1986), for each override decision `i`, we want:
+
+```
+τᵢ = Yᵢ(1) - Yᵢ(0)
+```
+
+Where `Yᵢ(1)` is the outcome under override (observed) and `Yᵢ(0)` is the outcome without override (counterfactual, never observed). We can only ever observe one of these.
+
+**Tier 1 (Analytical Counterfactual)**: For ATP and Forecast Adjustment, the counterfactual is mechanistically computable. The agent recommended `X`, the human chose `Y`, and the environment realization `E` is observed. We can compute `reward(X, E)` and `reward(Y, E)` directly.
+
+**Tier 2 (Statistical Counterfactual)**: For MO, TO, PO, etc., the outcome depends on confounders `C` (production line state, transit conditions, supplier behavior). We estimate the counterfactual by finding a control decision with similar `(state, confounders)` that was not overridden.
+
+**Tier 3 (Weak Signal)**: For Safety Stock, Inventory, Maintenance, the confounders are numerous and long-acting. Direct causal attribution requires either strong modeling assumptions or very large sample sizes.
+
+### 10.2 Propensity Score Matching (Tier 2)
+
+**Goal**: Estimate the Average Treatment Effect on the Treated (ATT):
+
+```
+ATT = E[Y(1) - Y(0) | T=1]
+    ≈ (1/n) Σᵢ [Yᵢ - Ŷ_match(i)]    for overridden decisions i
+```
+
+**Steps**:
+1. **Propensity model**: Train logistic regression `P(override | state) = σ(w·s + b)` using all decisions (overridden and not)
+2. **Matching**: For each overridden decision, find the k nearest non-overridden decisions by state distance, weighted by propensity score
+3. **Treatment effect**: `τ̂ᵢ = reward_override - mean(reward_controls)`
+4. **Quality filter**: Only keep matches with `state_distance < threshold` and `propensity_score ∈ [0.1, 0.9]` (avoid extreme propensities)
+
+**Match quality classification**:
+- **HIGH**: state_distance < 0.1, |propensity_score_diff| < 0.1
+- **MEDIUM**: state_distance < 0.3, |propensity_score_diff| < 0.2
+- **LOW**: state_distance < 0.5 (used with caution)
+
+**Data requirements**: ~50 matched pairs per TRM type for initial estimates, ~200+ for reliable ATT.
+
+### 10.3 Doubly Robust Estimation (Phase 3)
+
+Combines propensity scoring with outcome regression for robustness against model misspecification:
+
+```
+τ̂_DR = (1/n) Σ [ T/π(s) · (Y - μ₁(s)) - (1-T)/(1-π(s)) · (Y - μ₀(s)) + μ₁(s) - μ₀(s) ]
+```
+
+This is consistent if **either** the propensity model π(s) **or** the outcome model μ(s) is correctly specified. The dual protection makes it the preferred estimator when both models are available.
+
+### 10.4 Causal Forests (Phase 4, Athey & Imbens 2018)
+
+Generalized Random Forests adapted for causal inference enable **heterogeneous treatment effect** estimation:
+
+```
+τ̂(s) = E[Y(1) - Y(0) | S=s]
+```
+
+This answers not just "are overrides beneficial?" but "**when** are overrides beneficial?"
+
+**Example output for Safety Stock TRM**:
+
+```
+Override value conditions (learned from 1,200+ observations):
+  - BENEFICIAL when: demand_cv > 0.35 AND lead_time_trend = increasing
+    (Human notices supply risk before formal data update. Average benefit: +0.12)
+  - DETRIMENTAL when: demand_cv < 0.15 AND system_stable = True
+    (Human adds noise to already-optimal decision. Average harm: -0.08)
+  - NEUTRAL when: supplier_count > 3
+    (Multiple sources buffer against either decision. No significant difference.)
+```
+
+**Requirements**: ~1,000+ observations per TRM type with sufficient state variation.
+
+### 10.5 Causal Learning Timeline
+
+```
+Data Volume        Method Available              Dashboard Shows
+──────────        ────────────────              ───────────────
+Day 1             Bayesian prior Beta(1,1)       "Awaiting data"
+~20 overrides     Tier 1 analytical CFs          Effectiveness ± wide CI
+~50 overrides     Propensity matching begins      Tier 2 estimates appear
+~200 overrides    Doubly robust estimation        CI narrows significantly
+~500 overrides    Causal forest training          "Override value conditions"
+~1000+ overrides  Full heterogeneous effects      Predictive override scoring
+```
+
+---
+
 ## References
 
 - Holland, P.W. (1986). "Statistics and Causal Inference." *JASA*, 81(396), 945-960.
 - Athey, S. & Imbens, G.W. (2018). "Estimation and Inference of Heterogeneous Treatment Effects using Random Forests." *JASA*, 113.
 - Rubin, D.B. (2005). "Causal Inference Using Potential Outcomes." *JASA*, 100(469), 322-331.
 - Powell, W.B. (2022). *Sequential Decision Analytics and Modeling*. — Sections on VFA and belief state management directly apply to the posterior maintenance.
+- Brodersen, K.H. et al. (2015). "Inferring causal impact using Bayesian structural time series models." *Annals of Applied Statistics*, 9(1), 247-274. — Foundation for future site-level causal impact analysis.
+- Rosenbaum, P.R. & Rubin, D.B. (1983). "The central role of the propensity score in observational studies for causal effects." *Biometrika*, 70(1), 41-55. — Theoretical basis for Tier 2 propensity-score matching.

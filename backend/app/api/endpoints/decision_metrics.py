@@ -11,6 +11,7 @@ Endpoints:
 - POST /sop-worklist/{id}/resolve: Resolve a worklist item
 - GET /sop-worklist/{id}/reasoning: Get agent reasoning ("Ask Why")
 - GET /override-effectiveness: Override effectiveness metrics for executive dashboard
+- GET /override-posteriors: Bayesian posteriors for override effectiveness by (user, trm_type)
 """
 
 from typing import Optional, Dict, List, Any
@@ -23,6 +24,9 @@ from pydantic import BaseModel
 from app.api.deps import get_current_user, get_db
 from app.models.user import User
 from app.services.agent_performance_service import AgentPerformanceService
+from app.services.override_effectiveness_service import (
+    OverrideEffectivenessService, TIER_MAP,
+)
 
 
 router = APIRouter()
@@ -411,6 +415,10 @@ async def get_override_effectiveness(
             "timestamp": d.timestamp.isoformat() if d.timestamp else None,
         }
 
+    # Enrich by_trm_type with observability tier
+    for trm_type_key, data in by_trm_type.items():
+        data["tier"] = TIER_MAP.get(trm_type_key, 3)
+
     return {
         "success": True,
         "data": {
@@ -426,4 +434,56 @@ async def get_override_effectiveness(
             "top_beneficial": [_decision_summary(d) for d in recent_beneficial],
             "top_detrimental": [_decision_summary(d) for d in recent_detrimental],
         },
+    }
+
+
+# =============================================================================
+# Bayesian Override Posteriors
+# =============================================================================
+
+@router.get("/override-posteriors")
+async def get_override_posteriors(
+    trm_type: Optional[str] = Query(None, description="Filter by TRM type"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get Bayesian posteriors for override effectiveness.
+
+    Returns per-(user, trm_type) Beta posteriors with credible intervals.
+    Used by the Override Effectiveness dashboard to show confidence-aware metrics.
+    """
+    from app.models.override_effectiveness import OverrideEffectivenessPosterior
+    from app.models.user import User as UserModel
+
+    query = db.query(OverrideEffectivenessPosterior)
+    if trm_type:
+        query = query.filter(OverrideEffectivenessPosterior.trm_type == trm_type)
+
+    posteriors = query.order_by(
+        OverrideEffectivenessPosterior.observation_count.desc(),
+    ).limit(200).all()
+
+    # Enrich with user names and credible intervals
+    results = []
+    for p in posteriors:
+        user = db.query(UserModel).filter(UserModel.id == p.user_id).first()
+        ci = OverrideEffectivenessService.get_credible_interval(p)
+
+        results.append({
+            **p.to_dict(),
+            "user_name": user.name if user else f"User {p.user_id}",
+            "user_email": user.email if user else None,
+            "credible_interval": ci,
+            "tier": TIER_MAP.get(p.trm_type, 3),
+        })
+
+    # Aggregate stats
+    aggregate = OverrideEffectivenessService.get_aggregate_stats(db, trm_type)
+
+    return {
+        "success": True,
+        "posteriors": results,
+        "aggregate": aggregate,
+        "tier_map": {k: v for k, v in TIER_MAP.items()},
     }

@@ -633,6 +633,7 @@ class SyntheticTRMDataGenerator:
         # Action: 0=fulfill, 1=partial, 2=defer, 3=reject
         action_map = {"fulfill": 0, "partial": 1, "defer": 2, "reject": 3}
 
+        is_expert = source == DecisionSource.EXPERT_HUMAN
         replay_entry = TRMReplayBuffer(
             customer_id=self.customer_id,
             config_id=self.config_id,
@@ -648,7 +649,8 @@ class SyntheticTRMDataGenerator:
             reward_components={"fill_rate": fill_rate, "on_time": float(on_time)},
             next_state_vector=next_state_vector,
             done=False,
-            is_expert=source == DecisionSource.EXPERT_HUMAN,
+            is_expert=is_expert,
+            override_effectiveness=self._synthetic_override_effectiveness() if is_expert else None,
             priority=1.0 + abs(reward),  # Higher reward = higher priority
             transition_date=self.current_date
         )
@@ -820,6 +822,7 @@ class SyntheticTRMDataGenerator:
 
         action_map = {"transfer": 1, "hold": 0, "expedite": 2}
 
+        is_expert = source == DecisionSource.EXPERT_HUMAN
         replay_entry = TRMReplayBuffer(
             customer_id=self.customer_id,
             config_id=self.config_id,
@@ -836,7 +839,8 @@ class SyntheticTRMDataGenerator:
             reward_components={"service_improvement": service_after - service_before},
             next_state_vector=next_state_vector,
             done=False,
-            is_expert=source == DecisionSource.EXPERT_HUMAN,
+            is_expert=is_expert,
+            override_effectiveness=self._synthetic_override_effectiveness() if is_expert else None,
             priority=1.0 + abs(reward),
             transition_date=self.current_date
         )
@@ -983,6 +987,7 @@ class SyntheticTRMDataGenerator:
 
         action_map = {"order": 1, "defer": 0, "expedite": 2, "cancel": 3}
 
+        is_expert = source == DecisionSource.EXPERT_HUMAN
         replay_entry = TRMReplayBuffer(
             customer_id=self.customer_id,
             config_id=self.config_id,
@@ -999,7 +1004,8 @@ class SyntheticTRMDataGenerator:
             reward_components={"stockout": float(stockout_occurred), "dos": days_of_supply},
             next_state_vector=next_state_vector,
             done=False,
-            is_expert=source == DecisionSource.EXPERT_HUMAN,
+            is_expert=is_expert,
+            override_effectiveness=self._synthetic_override_effectiveness() if is_expert else None,
             priority=1.0 + abs(reward),
             transition_date=self.current_date
         )
@@ -1167,6 +1173,7 @@ class SyntheticTRMDataGenerator:
 
         action_map = {"accept": 0, "expedite": 1, "reorder": 2, "escalate": 3, "cancel": 4}
 
+        is_expert = source == DecisionSource.EXPERT_HUMAN
         replay_entry = TRMReplayBuffer(
             customer_id=self.customer_id,
             config_id=self.config_id,
@@ -1185,7 +1192,8 @@ class SyntheticTRMDataGenerator:
             },
             next_state_vector=next_state_vector,
             done=exception_resolved,
-            is_expert=source == DecisionSource.EXPERT_HUMAN,
+            is_expert=is_expert,
+            override_effectiveness=self._synthetic_override_effectiveness() if is_expert else None,
             priority=1.0 + abs(reward),
             transition_date=self.current_date
         )
@@ -1361,6 +1369,7 @@ class SyntheticTRMDataGenerator:
             lead_time_days / 30, lead_time_cv, inventory / 200,
         ]
 
+        is_expert = source == DecisionSource.EXPERT_HUMAN
         replay_entry = TRMReplayBuffer(
             customer_id=self.customer_id,
             config_id=self.config_id,
@@ -1380,12 +1389,26 @@ class SyntheticTRMDataGenerator:
             },
             next_state_vector=next_state_vector,
             done=False,
-            is_expert=source == DecisionSource.EXPERT_HUMAN,
+            is_expert=is_expert,
+            override_effectiveness=self._synthetic_override_effectiveness() if is_expert else None,
             priority=1.0 + abs(reward),
             transition_date=self.current_date,
         )
         self.db.add(replay_entry)
         self.stats.replay_buffer_entries_created += 1
+
+    @staticmethod
+    def _synthetic_override_effectiveness() -> str:
+        """Generate realistic override effectiveness labels for synthetic data.
+
+        Distribution: 60% BENEFICIAL, 25% NEUTRAL, 15% DETRIMENTAL.
+        Reflects a plausible real-world scenario where most human overrides
+        add value (experts override for good reason) but some don't.
+        """
+        return random.choices(
+            ["BENEFICIAL", "NEUTRAL", "DETRIMENTAL"],
+            weights=[60, 25, 15],
+        )[0]
 
     def _generate_demand(self, site_id: int, product_id: str) -> float:
         """Generate demand based on pattern for site/product."""

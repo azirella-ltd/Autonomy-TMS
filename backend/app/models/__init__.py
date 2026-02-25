@@ -301,6 +301,11 @@ from .decision_tracking import (
     DecisionType, DecisionStatus as DQSDecisionStatus, DecisionUrgency
 )
 
+# 24b. Override Effectiveness — Bayesian Posteriors & Causal Match Pairs
+from .override_effectiveness import (
+    OverrideEffectivenessPosterior, CausalMatchPair,
+)
+
 # 25. Collaboration Scenarios (Agentic Authorization Protocol demo data)
 from .collaboration_scenario import CollaborationScenario
 
@@ -574,6 +579,9 @@ __all__ = [
     # SAP User Import
     'SAPUserImportLog',
     'SAPRoleMapping',
+    # Override Effectiveness — Bayesian Posteriors
+    'OverrideEffectivenessPosterior',
+    'CausalMatchPair',
 ]
 
 # Note: SQLAlchemy will configure mappers lazily when first used.

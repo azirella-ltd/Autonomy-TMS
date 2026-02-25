@@ -1802,6 +1802,31 @@ The CDC Monitor tab displays:
 - **Retraining Status**: Readiness indicator (green/yellow/orange/red), experience progress bar (pending / required), active checkpoint details (version, loss, samples, phase), "Retrain Now" button
 - **Recent Trigger History**: Scrollable list of trigger events with severity badges, reasons, recommended actions, and timestamps
 
+##### 5.9.10 Override Effectiveness Tracking
+
+Human overrides of AI agent decisions are not blindly trusted. The system maintains a **Bayesian Beta posterior** per `(user_id, trm_type)` pair that quantifies each user's empirical track record for each decision domain. The posterior `Beta(α, β)` starts from an uninformative `Beta(1, 1)` prior (E[p]=0.50) and updates as outcomes are observed.
+
+**Why Bayesian?** Hard threshold classification (BENEFICIAL if delta ≥ 0.05) treats a +0.06 delta the same as +0.50, ignores observability differences across decision types, and never improves with data. The Beta posterior provides: (1) uncertainty quantification via credible intervals, (2) tiered signal strength that reflects observability, (3) progressive learning that sharpens with each observation.
+
+**Three Observability Tiers** determine signal strength for posterior updates:
+
+| Tier | Decision Types | Method | Signal Strength | Latency |
+|------|---------------|--------|-----------------|---------|
+| **Tier 1 — Analytical Counterfactual** | ATP, Forecast Adjustment, Quality | Deterministic replay of agent's action in observed environment; direct KPI comparison | 1.0 (full update) | Hours |
+| **Tier 2 — Propensity-Score Matching** | MO, TO, PO, Order Tracking | Match override to similar non-overridden decisions by state vector; compare outcomes | 0.3–0.9 (scales with matched-pair count) | Days |
+| **Tier 3 — Bayesian Minimal Update** | Safety Stock, Maintenance, Buffer, Subcontracting | High confounding; small nudge based on outcome direction; grows as causal forests are trained | 0.15 | Weeks |
+
+**Training Weight Derivation**: `weight = 0.3 + 1.7 × E[p]`, capped by certainty discount `max_weight = 0.85 + 1.15 × min(1, n/10)`. A user with a strong track record (`Beta(45, 5)` → 0.90 mean) gets `~1.8×` weight; a user whose overrides frequently underperform (`Beta(8, 22)` → 0.27 mean) gets `~0.5×` weight. New users start at 0.85 and the weight diverges only as evidence accumulates.
+
+**Systemic Impact (Site-Window BSC)**: Decision-local counterfactuals miss systemic effects (e.g., a reallocation that helps one order but degrades site-wide OTIF). The system computes a **site-window balanced scorecard delta** comparing aggregate site performance in the feedback window against the equivalent pre-override baseline. The final **composite override score** = `0.4 × local_delta + 0.6 × site_bsc_delta` feeds into the Bayesian posterior, ensuring planners whose overrides look locally good but are systemically harmful see their training weights decrease.
+
+**Causal Learning Pipeline**: The system progressively improves its causal estimates: Phase 0 (Day 1) uses Bayesian priors only → Phase 1 (weeks) adds Tier 1 analytical counterfactuals → Phase 2 (months) adds propensity-score matching for Tier 2 → Phase 3 (3-6 months) adds doubly robust estimation and causal forests that identify *when* overrides help vs. hurt → Phase 4 (6+ months) enables predictive override scoring.
+
+**Key Files**: `backend/app/services/override_effectiveness_service.py`, `backend/app/models/override_effectiveness.py`, `backend/app/services/powell/outcome_collector.py` (site-window BSC + counterfactual methods)
+**Database Tables**: `override_effectiveness_posteriors`, `override_causal_match_pairs`
+**API**: `GET /decision-metrics/override-posteriors` — per-user posterior summaries with 90% credible intervals
+**Methodology**: See [docs/OVERRIDE_EFFECTIVENESS_METHODOLOGY.md](docs/OVERRIDE_EFFECTIVENESS_METHODOLOGY.md) for full Bayesian derivation, tiered signal strengths, systemic BSC comparison, causal inference pipeline, and mathematical appendix.
+
 #### 5.10 Unified SiteAgent Architecture
 
 > **See also**: [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) for the "Hive" model that reconceptualizes each SiteAgent as a colony of 11 specialized TRM workers coordinating through signal-mediated communication, with the tGNN serving as inter-hive connective tissue. Sections 10-12 integrate the Hive with the [Agentic Authorization Protocol](docs/AGENTIC_AUTHORIZATION_PROTOCOL.md) and define a Kinaxis-inspired embedded scenario architecture where agents create branched what-if scenarios and negotiate via the AAP.

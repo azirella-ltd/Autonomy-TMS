@@ -501,10 +501,16 @@ class TRMSiteTrainer:
             xhr_t = torch.tensor(cross_head_rewards, dtype=torch.float32).to(self.device)
             rewards_t = rewards_t + self.cross_head_reward_weight * xhr_t
 
-        # Compute outcome-gated sample weights
+        # Compute outcome-gated sample weights (Bayesian posterior when DB available)
         is_expert_list = replay_data.get("is_expert", [False] * num_samples)
         override_eff_list = replay_data.get("override_effectiveness", [None] * num_samples)
-        sample_weights = self._compute_sample_weights(is_expert_list, override_eff_list)
+        override_uid_list = replay_data.get("override_user_ids", [None] * num_samples)
+        sample_weights = self._compute_sample_weights(
+            is_expert_list, override_eff_list,
+            override_user_ids=override_uid_list,
+            trm_type=self.trm_type,
+            db=db,
+        )
         sample_weights_t = torch.tensor(sample_weights, dtype=torch.float32).to(self.device)
 
         # Target network for stable Q-learning
@@ -691,7 +697,7 @@ class TRMSiteTrainer:
 
         states, next_states, rewards, dones = [], [], [], []
         signal_contexts, next_signal_contexts, cross_head_rewards = [], [], []
-        is_expert_flags, override_effectiveness_flags = [], []
+        is_expert_flags, override_effectiveness_flags, override_user_ids = [], [], []
         for row in rows:
             if row.state_vector and row.next_state_vector:
                 states.append(row.state_vector)
@@ -705,6 +711,9 @@ class TRMSiteTrainer:
                 override_effectiveness_flags.append(
                     getattr(row, "override_effectiveness", None)
                 )
+                override_user_ids.append(
+                    getattr(row, "override_user_id", None)
+                )
 
         return {
             "states": np.array(states, dtype=np.float32) if states else np.empty((0,)),
@@ -716,6 +725,7 @@ class TRMSiteTrainer:
             "cross_head_rewards": np.array(cross_head_rewards, dtype=np.float32) if cross_head_rewards else np.empty((0,)),
             "is_expert": is_expert_flags,
             "override_effectiveness": override_effectiveness_flags,
+            "override_user_ids": override_user_ids,
         }
 
     # =========================================================================
@@ -726,19 +736,52 @@ class TRMSiteTrainer:
     def _compute_sample_weights(
         is_expert: list,
         override_effectiveness: list,
+        override_user_ids: list = None,
+        trm_type: str = None,
+        db=None,
     ) -> "np.ndarray":
-        """Compute per-sample weights based on override effectiveness.
+        """Compute per-sample weights using Bayesian posteriors when available.
 
-        Expert overrides are weighted by their validated outcome quality:
-          - BENEFICIAL: 2.0 (proven good — full expert weight)
-          - NEUTRAL: 1.0 (no measurable difference — standard weight)
-          - DETRIMENTAL: 0.3 (proven bad — heavily discounted)
-          - None (pending): 0.5 (unvalidated — conservative weight)
+        When a database session is provided, fetches the Beta posterior
+        for each (user, trm_type) pair to derive training weights that
+        reflect accumulated causal evidence across observability tiers.
+
+        Fallback (no DB): uses hard-coded label mapping:
+          - BENEFICIAL: 2.0  (proven good)
+          - NEUTRAL: 1.0     (no measurable difference)
+          - DETRIMENTAL: 0.3 (proven bad)
+          - None: 0.5        (pending outcome)
 
         Non-expert samples always get weight 1.0.
+
+        See docs/OVERRIDE_EFFECTIVENESS_METHODOLOGY.md for full rationale.
         """
         n = len(is_expert)
         weights = np.ones(n, dtype=np.float32)
+
+        # Try Bayesian posterior lookup if we have the needed context
+        use_bayesian = (
+            db is not None
+            and override_user_ids is not None
+            and trm_type is not None
+        )
+
+        if use_bayesian:
+            try:
+                from app.services.override_effectiveness_service import (
+                    OverrideEffectivenessService,
+                )
+                for i in range(n):
+                    if is_expert[i]:
+                        uid = override_user_ids[i] if i < len(override_user_ids) else None
+                        weights[i] = OverrideEffectivenessService.get_training_weight(
+                            db=db, user_id=uid, trm_type=trm_type,
+                        )
+                return weights
+            except Exception:
+                pass  # Fall through to hard-coded mapping
+
+        # Hard-coded fallback (used when no DB or import fails)
         for i in range(n):
             if is_expert[i]:
                 eff = override_effectiveness[i]

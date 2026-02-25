@@ -72,6 +72,10 @@ class SiteAgentDecision(Base):
     override_delta = Column(Float)                 # human_actual_reward - agent_counterfactual_reward
     override_classification = Column(String(20))   # BENEFICIAL / NEUTRAL / DETRIMENTAL
 
+    # Systemic impact (filled by OutcomeCollector — site-window BSC comparison)
+    site_bsc_delta = Column(Float)                 # Site-level BSC change in feedback window vs baseline
+    composite_override_score = Column(Float)       # Weighted composite: w_local*delta + w_site*bsc_delta
+
     # Hive signal context (Sprint 4 — nullable for backward compatibility)
     signal_context = Column(JSON)           # Snapshot of signals read before decision
     urgency_at_time = Column(Float)          # Urgency vector value for this TRM at decision time
