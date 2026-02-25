@@ -449,7 +449,7 @@ const CreateMixedGame = () => {
         return null;
       }
       const nodeType = normalizeSiteType(node?.type);
-      const itemConfig = node?.item_configs && node.item_configs.length > 0 ? node.item_configs[0] : null;
+      const itemConfig = node?.product_site_configs && node.product_site_configs.length > 0 ? node.product_site_configs[0] : null;
       const inboundLanes = (config?.lanes || []).filter((lane) => lane?.to_site_id === node.id);
       const leadRanges = inboundLanes.map((lane) => lane?.lead_time_days || {});
       const leadMin = leadRanges.reduce((acc, range) => {
@@ -1149,11 +1149,11 @@ const CreateMixedGame = () => {
     return new Map(activeSupplyChainConfig.markets.map((market) => [market.id, market]));
   }, [activeSupplyChainConfig]);
 
-  const itemsById = useMemo(() => {
-    if (!activeSupplyChainConfig?.items) {
+  const productsById = useMemo(() => {
+    if (!activeSupplyChainConfig?.products) {
       return new Map();
     }
-    return new Map(activeSupplyChainConfig.items.map((item) => [item.id, item]));
+    return new Map(activeSupplyChainConfig.products.map((p) => [p.id, p]));
   }, [activeSupplyChainConfig]);
 
   const sitePolicyBounds = useMemo(() => {
@@ -1166,7 +1166,7 @@ const CreateMixedGame = () => {
       if (!key) {
         return;
       }
-      const itemConfig = node?.item_configs && node.item_configs.length > 0 ? node.item_configs[0] : null;
+      const itemConfig = node?.product_site_configs && node.product_site_configs.length > 0 ? node.product_site_configs[0] : null;
       const inboundLanes = (activeSupplyChainConfig.lanes || []).filter((lane) => lane?.to_site_id === node.id);
       const leadRange = inboundLanes.reduce(
         (acc, lane) => {
@@ -1199,19 +1199,19 @@ const CreateMixedGame = () => {
       return [];
     }
     return demands.map((demand) => {
-      const item = itemsById.get(demand.item_id);
+      const product = productsById.get(demand.product_id);
       const market = marketsById.get(demand.market_id);
       const pattern = demand.demand_pattern || demand.pattern || {};
       const params = pattern.params || pattern;
       return {
         id: demand.id,
-        itemName: item?.name || `Item ${demand.item_id}`,
+        productName: product?.name || `Product ${demand.product_id}`,
         pattern,
         params,
         marketName: market?.name || 'Unknown Market',
       };
     });
-  }, [activeSupplyChainConfig, itemsById, marketsById]);
+  }, [activeSupplyChainConfig, productsById, marketsById]);
 
   const marketSupplyRows = useMemo(() => {
     if (!activeSupplyChainConfig) {
@@ -2022,7 +2022,7 @@ const CreateMixedGame = () => {
                                   <TableBody>
                                     {marketDemandRows.map((row) => (
                                       <TableRow key={row.id}>
-                                        <TableCell>{row.itemName}</TableCell>
+                                        <TableCell>{row.productName}</TableCell>
                                         <TableCell>{row.marketName}</TableCell>
                                         <TableCell>{formatDemandPatternSummary(row.pattern, row.params)}</TableCell>
                                       </TableRow>

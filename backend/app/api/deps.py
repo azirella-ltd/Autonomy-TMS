@@ -274,3 +274,29 @@ async def get_current_user_or_service_account(
         detail="Invalid credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+async def resolve_scenario_user_id(
+    scenario_id: int,
+    user: User,
+    db: AsyncSession,
+) -> int:
+    """Resolve the ScenarioUser ID for a given (scenario_id, user_id) pair.
+
+    Raises HTTPException 404 if the user is not a participant in the scenario.
+    """
+    from app.models.participant import ScenarioUser
+
+    result = await db.execute(
+        select(ScenarioUser.id).where(
+            ScenarioUser.scenario_id == scenario_id,
+            ScenarioUser.user_id == user.id,
+        )
+    )
+    scenario_user_id = result.scalar_one_or_none()
+    if scenario_user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User is not a participant in scenario {scenario_id}",
+        )
+    return scenario_user_id

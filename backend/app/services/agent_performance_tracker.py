@@ -435,7 +435,7 @@ class AgentPerformanceLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     scenario_user_id = Column(Integer, ForeignKey("scenario_users.id"), nullable=False, index=True)
-    scenario_id = Column(Integer, ForeignKey("games.id"), nullable=False, index=True)
+    scenario_id = Column(Integer, ForeignKey("scenarios.id"), nullable=False, index=True)
     round_number = Column(Integer, nullable=False, index=True)
 
     agent_type = Column(String(20), nullable=False, index=True)  # llm, gnn, trm, manual

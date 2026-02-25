@@ -1642,31 +1642,16 @@ def delete_transportation_lane(
     return None
 
 
-# --- Product-Site Configuration Endpoints ---
+# --- Product-Site Configuration Endpoints (AWS SC DM) ---
 
-# TODO: Migrate to InvPolicy endpoints - Phase 4
-# ProductSiteConfig functionality moved to SC InvPolicy table
-@router.get("/{config_id}/item-node-configs")
-def read_product_site_configs(
-    *,
-    db: Session = Depends(deps.get_db),
-    config_id: int,
-    current_user: models.User = Depends(deps.get_current_active_user),
-):
-    """
-    Returns product-site configurations for the supply chain config.
-    Queries item_node_configs table joined with nodes to filter by config_id.
 
-    Note: This is a compatibility endpoint. Data is stored in item_node_configs
-    table where site_id references nodes.id.
-    """
+def _read_product_site_configs_impl(db: Session, config_id: int, current_user):
+    """Shared implementation for product-site config read."""
     from sqlalchemy import text
 
     config = get_config_or_404(db, config_id)
     _ensure_user_can_view_config(db, current_user, config)
 
-    # Query item_node_configs joined with site to filter by config_id
-    # site_id in item_node_configs references site.id (AWS SC DM)
     query = text("""
         SELECT
             inc.id,
@@ -1686,7 +1671,6 @@ def read_product_site_configs(
     result = db.execute(query, {"config_id": config_id})
     rows = result.fetchall()
 
-    # Convert to list of dicts matching ProductSiteConfig schema
     configs = []
     for row in rows:
         configs.append({
@@ -1701,91 +1685,116 @@ def read_product_site_configs(
         })
 
     return configs
-#
-#
-# @router.post(
-#     "/{config_id}/item-node-configs",
-#     response_model=schemas.ProductSiteConfig,
-#     status_code=status.HTTP_201_CREATED,
-# )
-# def create_product_site_config(
-#     *,
-#     db: Session = Depends(deps.get_db),
-#     config_id: int,
-#     config_in: schemas.ProductSiteConfigCreate,
-#     current_user: models.User = Depends(deps.get_current_active_user),
-# ):
-#     config = get_config_or_404(db, config_id)
-#     _ensure_user_can_manage_config(db, current_user, config)
-#
-#     item = crud.item.get(db, id=config_in.product_id)
-#     node = crud.site.get(db, id=config_in.site_id)
-#     if not item or item.config_id != config_id:
-#         raise HTTPException(
-#             status_code=status.HTTP_400_BAD_REQUEST,
-#             detail="Item must belong to this configuration",
-#         )
-#     if not node or node.config_id != config_id:
-#         raise HTTPException(
-#             status_code=status.HTTP_400_BAD_REQUEST,
-#             detail="Node must belong to this configuration",
-#         )
-#
-#     existing = crud.product_site_config.get_by_product_and_site(
-#         db,
-#         product_id=config_in.product_id,
-#         site_id=config_in.site_id,
-#     )
-#     if existing:
-#         raise HTTPException(
-#             status_code=status.HTTP_400_BAD_REQUEST,
-#             detail="This item already has configuration for the specified node",
-#         )
-#
-#     created = crud.product_site_config.create(db, obj_in=config_in)
-#     _mark_config_requires_training(db, config)
-#     return created
-#
-#
-# @router.put(
-#     "/{config_id}/item-node-configs/{config_entry_id}",
-#     response_model=schemas.ProductSiteConfig,
-# )
-# def update_product_site_config(
-#     *,
-#     db: Session = Depends(deps.get_db),
-#     config_id: int,
-#     config_entry_id: int,
-#     config_in: schemas.ProductSiteConfigUpdate,
-#     current_user: models.User = Depends(deps.get_current_active_user),
-# ):
-#     config = get_config_or_404(db, config_id)
-#     _ensure_user_can_manage_config(db, current_user, config)
-#     entry = get_product_site_config_or_404(db, config_id, config_entry_id)
-#
-#     updated = crud.product_site_config.update(db, db_obj=entry, obj_in=config_in)
-#     _mark_config_requires_training(db, config)
-#     return updated
-#
-#
-# @router.delete(
-#     "/{config_id}/item-node-configs/{config_entry_id}",
-#     status_code=status.HTTP_204_NO_CONTENT,
-# )
-# def delete_product_site_config(
-#     *,
-#     db: Session = Depends(deps.get_db),
-#     config_id: int,
-#     config_entry_id: int,
-#     current_user: models.User = Depends(deps.get_current_active_user),
-# ):
-#     config = get_config_or_404(db, config_id)
-#     _ensure_user_can_manage_config(db, current_user, config)
-#     entry = get_product_site_config_or_404(db, config_id, config_entry_id)
-#
-#     crud.product_site_config.remove(db, id=entry.id)
-#     _mark_config_requires_training(db, config)
-#     return None
+
+
+@router.get("/{config_id}/product-site-configs")
+def read_product_site_configs(
+    *,
+    db: Session = Depends(deps.get_db),
+    config_id: int,
+    current_user: models.User = Depends(deps.get_current_active_user),
+):
+    """Returns product-site configurations for the supply chain config (AWS SC DM)."""
+    return _read_product_site_configs_impl(db, config_id, current_user)
+
+
+@router.get("/{config_id}/item-node-configs")
+def read_product_site_configs_compat(
+    *,
+    db: Session = Depends(deps.get_db),
+    config_id: int,
+    current_user: models.User = Depends(deps.get_current_active_user),
+):
+    """DEPRECATED: Use /product-site-configs instead."""
+    return _read_product_site_configs_impl(db, config_id, current_user)
+
+
+@router.post(
+    "/{config_id}/product-site-configs",
+    response_model=schemas.ProductSiteConfig,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_product_site_config(
+    *,
+    db: Session = Depends(deps.get_db),
+    config_id: int,
+    config_in: schemas.ProductSiteConfigCreate,
+    current_user: models.User = Depends(deps.get_current_active_user),
+):
+    """Create a product-site configuration entry."""
+    config = get_config_or_404(db, config_id)
+    _ensure_user_can_manage_config(db, current_user, config)
+
+    product = crud.product.get(db, id=config_in.product_id)
+    site = crud.site.get(db, id=config_in.site_id)
+    if not product or product.config_id != config_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Product must belong to this configuration",
+        )
+    if not site or site.config_id != config_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Site must belong to this configuration",
+        )
+
+    existing = crud.product_site_config.get_by_product_and_site(
+        db,
+        product_id=config_in.product_id,
+        site_id=config_in.site_id,
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This product already has configuration for the specified site",
+        )
+
+    created = crud.product_site_config.create(db, obj_in=config_in)
+    _mark_config_requires_training(db, config)
+    return created
+
+
+@router.put(
+    "/{config_id}/product-site-configs/{config_entry_id}",
+    response_model=schemas.ProductSiteConfig,
+)
+def update_product_site_config(
+    *,
+    db: Session = Depends(deps.get_db),
+    config_id: int,
+    config_entry_id: int,
+    config_in: schemas.ProductSiteConfigUpdate,
+    current_user: models.User = Depends(deps.get_current_active_user),
+):
+    """Update a product-site configuration entry."""
+    config = get_config_or_404(db, config_id)
+    _ensure_user_can_manage_config(db, current_user, config)
+    entry = get_product_site_config_or_404(db, config_id, config_entry_id)
+
+    updated = crud.product_site_config.update(db, db_obj=entry, obj_in=config_in)
+    _mark_config_requires_training(db, config)
+    return updated
+
+
+@router.delete(
+    "/{config_id}/product-site-configs/{config_entry_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_product_site_config(
+    *,
+    db: Session = Depends(deps.get_db),
+    config_id: int,
+    config_entry_id: int,
+    current_user: models.User = Depends(deps.get_current_active_user),
+):
+    """Delete a product-site configuration entry."""
+    config = get_config_or_404(db, config_id)
+    _ensure_user_can_manage_config(db, current_user, config)
+    entry = get_product_site_config_or_404(db, config_id, config_entry_id)
+
+    crud.product_site_config.remove(db, id=entry.id)
+    _mark_config_requires_training(db, config)
+    return None
 
 
 # --- Market Demand Endpoints ---

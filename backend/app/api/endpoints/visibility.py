@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from app.db.session import get_db
 from app.core.security import get_current_user
 from app.models.user import User
+from app.api.deps import resolve_scenario_user_id
 from app.services.visibility_service import get_visibility_service
 
 router = APIRouter(prefix="/visibility", tags=["visibility"])
@@ -365,10 +366,8 @@ async def set_visibility_permissions(
     ```
     """
     try:
+        scenario_user_id = await resolve_scenario_user_id(scenario_id, current_user, db)
         visibility_service = get_visibility_service(db)
-
-        # TODO: Map current_user to scenario_user_id properly
-        scenario_user_id = current_user.id
 
         result = await visibility_service.set_visibility_permission(
             scenario_id=scenario_id,

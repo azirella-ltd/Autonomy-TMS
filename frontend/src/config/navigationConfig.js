@@ -66,6 +66,9 @@ import {
   ListChecks as WorklistIcon,
   Cpu as ExecutionIcon,
   BookOpen as BookOpenIcon,
+  Award as AwardIcon,
+  ThumbsUp as ThumbsUpIcon,
+  Trophy as TrophyIcon,
 } from 'lucide-react';
 
 /**
@@ -678,6 +681,27 @@ export const NAVIGATION_CONFIG = [
         icon: BrainIcon,
         requiredCapability: 'view_rl_training',
         description: 'Reinforcement Learning — VFA fine-tuning for TRMs',
+      },
+      {
+        label: 'Agent Benchmark',
+        path: '/admin/agent-benchmark',
+        icon: AwardIcon,
+        requiredCapability: 'view_ai_agents',
+        description: 'Compare agent strategies — cost, service, efficiency',
+      },
+      {
+        label: 'RLHF Feedback',
+        path: '/admin/rlhf',
+        icon: ThumbsUpIcon,
+        requiredCapability: 'view_rl_training',
+        description: 'Human feedback collection — override patterns and training data',
+      },
+      {
+        label: 'Performance Leaderboard',
+        path: '/admin/leaderboard',
+        icon: TrophyIcon,
+        requiredCapability: 'view_ai_agents',
+        description: 'Participant and agent performance rankings',
       },
       {
         label: 'Agent Management',

@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from app.db.session import get_db
 from app.core.security import get_current_user
 from app.models.user import User
+from app.api.deps import resolve_scenario_user_id
 from app.services.conversation_service import get_conversation_service
 
 router = APIRouter(prefix="/conversation", tags=["conversation"])
@@ -100,17 +101,12 @@ async def send_conversation_message(
     ```
     """
     try:
-        # Get conversation service
+        scenario_user_id = await resolve_scenario_user_id(scenario_id, current_user, db)
         conversation_service = get_conversation_service(db)
 
-        # TODO: Verify user has access to this scenario
-        # For now, we'll use a simple scenario_user lookup
-        # In production, add proper authorization checks
-
-        # Send message and get AI response
         result = await conversation_service.send_message(
             scenario_id=scenario_id,
-            scenario_user_id=current_user.id,  # TODO: Map user to scenario_user properly
+            scenario_user_id=scenario_user_id,
             message=request.message,
             parent_message_id=request.parent_message_id,
         )
@@ -121,6 +117,8 @@ async def send_conversation_message(
             conversation_id=result["conversation_id"],
         )
 
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -142,7 +140,7 @@ async def get_conversation_history(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Get conversation history for the current scenario_user in a scenario.
+    Get conversation history for the current participant in a scenario.
 
     Returns the most recent messages in reverse chronological order.
     Optionally includes full context snapshots for each message.
@@ -150,22 +148,17 @@ async def get_conversation_history(
     **Parameters:**
     - `limit`: Maximum number of messages to return (default: 50, max: 200)
     - `include_context`: Whether to include full scenario state context for each message
-
-    **Use Cases:**
-    - Display chat history when scenario_user rejoins scenario
-    - Analyze conversation patterns
-    - Export conversation for review
     """
     if limit > 200:
         limit = 200
 
     try:
+        scenario_user_id = await resolve_scenario_user_id(scenario_id, current_user, db)
         conversation_service = get_conversation_service(db)
 
-        # Get conversation history
         messages = await conversation_service.get_conversation_history(
             scenario_id=scenario_id,
-            scenario_user_id=current_user.id,  # TODO: Map user to scenario_user properly
+            scenario_user_id=scenario_user_id,
             limit=limit,
             include_context=include_context,
         )
@@ -174,9 +167,11 @@ async def get_conversation_history(
             messages=[ConversationMessageResponse(**msg) for msg in messages],
             total_count=len(messages),
             scenario_id=scenario_id,
-            scenario_user_id=current_user.id,
+            scenario_user_id=scenario_user_id,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -191,22 +186,18 @@ async def clear_conversation(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Clear conversation history for the current scenario_user.
+    Clear conversation history for the current participant.
 
     This removes all conversation messages but preserves system metadata.
-    Useful for:
-    - Starting fresh in a new round
-    - Removing old/irrelevant conversation
-    - Testing and development
-
     **Note:** This action cannot be undone.
     """
     try:
+        scenario_user_id = await resolve_scenario_user_id(scenario_id, current_user, db)
         conversation_service = get_conversation_service(db)
 
         success = await conversation_service.clear_conversation(
             scenario_id=scenario_id,
-            scenario_user_id=current_user.id,  # TODO: Map user to scenario_user properly
+            scenario_user_id=scenario_user_id,
         )
 
         if not success:
@@ -217,6 +208,8 @@ async def clear_conversation(
 
         return {"status": "success", "message": "Conversation cleared"}
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -237,22 +230,20 @@ async def get_conversation_summary(
     - Total message count
     - User vs AI message breakdown
     - Conversation start and last activity timestamps
-
-    **Use Cases:**
-    - Dashboard widgets showing engagement
-    - Activity tracking
-    - Conversation analytics
     """
     try:
+        scenario_user_id = await resolve_scenario_user_id(scenario_id, current_user, db)
         conversation_service = get_conversation_service(db)
 
         summary = await conversation_service.get_conversation_summary(
             scenario_id=scenario_id,
-            scenario_user_id=current_user.id,  # TODO: Map user to scenario_user properly
+            scenario_user_id=scenario_user_id,
         )
 
         return ConversationSummaryResponse(**summary)
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -51,6 +51,9 @@ import EdgeAgentSecurity from "./pages/admin/EdgeAgentSecurity.jsx";
 import HiveDashboard from "./pages/admin/HiveDashboard.jsx";
 import AuthorizationProtocolBoard from "./pages/admin/AuthorizationProtocolBoard.jsx";
 import KnowledgeBase from "./pages/admin/KnowledgeBase.jsx";
+import AgentBenchmarkDashboard from "./pages/admin/AgentBenchmarkDashboard.jsx";
+import RLHFDashboard from "./pages/admin/RLHFDashboard.jsx";
+import PerformanceLeaderboard from "./pages/admin/PerformanceLeaderboard.jsx";
 import ScenarioUsers from "./pages/ScenarioUsers.jsx";
 import DebugBanner from "./components/DebugBanner.jsx";
 import AnalyticsDashboard from "./pages/AnalyticsDashboard.jsx";
@@ -462,6 +465,18 @@ const AppContent = () => {
             <Route
               path="/admin/knowledge-base"
               element={<KnowledgeBase />}
+            />
+            <Route
+              path="/admin/agent-benchmark"
+              element={<AgentBenchmarkDashboard />}
+            />
+            <Route
+              path="/admin/rlhf"
+              element={<RLHFDashboard />}
+            />
+            <Route
+              path="/admin/leaderboard"
+              element={<PerformanceLeaderboard />}
             />
 
             <Route

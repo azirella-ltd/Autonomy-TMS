@@ -78,6 +78,7 @@ from app.models.sc_entities import (
 from app.models.purchase_order import PurchaseOrder, PurchaseOrderLineItem
 from app.models.supply_chain_config import SupplyChainConfig, Site, TransportationLane
 from app.models.powell_training_config import TRMType, DEFAULT_TRM_REWARD_WEIGHTS
+from app.services.sc_planning.stochastic_sampler import StochasticSampler
 
 logger = logging.getLogger(__name__)
 
@@ -136,16 +137,21 @@ class SyntheticTRMDataGenerator:
         group_id: int,
         seed: Optional[int] = None,
         signal_bus=None,
+        phase: int = 2,
     ):
         self.db = db
         self.config_id = config_id
         self.group_id = group_id
         self.signal_bus = signal_bus  # Optional HiveSignalBus for signal-enriched data
+        self.phase = phase  # Curriculum phase (1=low variance, 2=moderate, 3=high)
 
         # Set random seed for reproducibility
         if seed:
             random.seed(seed)
             np.random.seed(seed)
+
+        # Stochastic sampler for distribution-based sampling
+        self.stochastic_sampler = StochasticSampler(scenario_id=group_id)
 
         # Will be loaded
         self.sc_config: Optional[SupplyChainConfig] = None
@@ -181,11 +187,54 @@ class SyntheticTRMDataGenerator:
             DecisionSource.AI_AUTONOMOUS: 0.1
         }
 
+        # Phase-aware variance multipliers (curriculum progression)
+        self._phase_variance_map = {1: 0.15, 2: 0.40, 3: 0.75}
+
         # Deterministic engines for expert labels
         self.aatp_engine = AATPEngine()
         self.rebalancing_engine = RebalancingEngine()
         self.order_tracking_engine = OrderTrackingEngine()
         self.ss_calculator = BufferCalculator()
+
+    def _phase_variance(self, phase: Optional[int] = None) -> float:
+        """Return variance multiplier based on curriculum phase.
+
+        Phase 1: low uncertainty (0.15) — simple, clear-signal scenarios
+        Phase 2: moderate uncertainty (0.40) — trade-offs, variability
+        Phase 3: high uncertainty (0.75) — disruptions, edge cases
+
+        Args:
+            phase: Curriculum phase (1-3). Defaults to self.phase.
+
+        Returns:
+            Variance multiplier as a fraction of the mean.
+        """
+        p = phase if phase is not None else self.phase
+        return self._phase_variance_map.get(p, 0.40)
+
+    def _make_dist_config(self, dist_type: str, mean: float, variance_pct: Optional[float] = None) -> dict:
+        """Create a distribution config dict compatible with StochasticSampler.
+
+        Args:
+            dist_type: Distribution type ('normal', 'lognormal', 'triangular', etc.)
+            mean: Mean value.
+            variance_pct: Std-dev as fraction of mean. If None, uses phase variance.
+
+        Returns:
+            Dict suitable for StochasticSampler.sample_from_distribution().
+        """
+        pct = variance_pct if variance_pct is not None else self._phase_variance()
+        std = abs(mean) * pct
+        if dist_type == "triangular":
+            # Triangular: mode=mean, low=mean-2*std, high=mean+2*std
+            return {
+                "type": "triangular",
+                "low": max(0, mean - 2 * std),
+                "mode": mean,
+                "high": mean + 2 * std,
+            }
+        # Default: normal-family distribution
+        return {"type": dist_type, "mean": mean, "stddev": std}
 
     async def load_config(self):
         """Load supply chain configuration from database."""
@@ -321,7 +370,10 @@ class SyntheticTRMDataGenerator:
             for product_id in self.products:
                 # Generate forecast with P10/P50/P90
                 base_demand = self._generate_demand(site.id, product_id)
-                std_dev = base_demand * random.uniform(0.1, 0.3)
+                # Phase-scaled variance: phase 1 = tight, phase 3 = wide
+                variance_pct = self._phase_variance()
+                dist_config = self._make_dist_config("normal", base_demand, variance_pct)
+                std_dev = dist_config["stddev"]
 
                 forecast = Forecast(
                     company_id=self.company_id,
@@ -391,6 +443,12 @@ class SyntheticTRMDataGenerator:
 
             po_number = f"PO-{self.current_date.strftime('%Y%m%d')}-{i:04d}"
 
+            # Sample lead time from stochastic distribution (phase-aware)
+            lt_mean = 12.0  # midpoint of original 3-21 range
+            lt_config = self._make_dist_config("normal", lt_mean)
+            sampled_lt = self.stochastic_sampler.sample_from_distribution(lt_config, lt_mean)
+            po_lead_time_days = max(1, int(round(sampled_lt)))
+
             po = PurchaseOrder(
                 po_number=po_number,
                 supplier_site_id=supplier_site.id,
@@ -401,7 +459,7 @@ class SyntheticTRMDataGenerator:
                 order_type="po",
                 status="APPROVED",
                 order_date=self.current_date,
-                requested_delivery_date=self.current_date + timedelta(days=random.randint(3, 21)),
+                requested_delivery_date=self.current_date + timedelta(days=po_lead_time_days),
                 total_amount=random.uniform(1000, 50000)
             )
             self.db.add(po)
@@ -655,10 +713,15 @@ class SyntheticTRMDataGenerator:
             stockout_risk=max(0, min(1, 1 - to_inv / (to_safety + 1e-6))),
             demand_forecast=to_demand,
         )
+        # Sample transit time from stochastic distribution (phase-aware)
+        transit_mean = 3.0  # midpoint of original 1-5 range
+        transit_config = self._make_dist_config("normal", transit_mean)
+        sampled_transit = max(0.5, self.stochastic_sampler.sample_from_distribution(transit_config, transit_mean))
+
         engine_lane = EngineLaneConstraints(
             from_site=str(from_site.id),
             to_site=str(to_site.id),
-            transfer_time=random.uniform(1, 5),
+            transfer_time=sampled_transit,
             cost_per_unit=random.uniform(0.5, 2.0),
         )
 
@@ -796,11 +859,19 @@ class SyntheticTRMDataGenerator:
         demand_forecast = state.last_demand.get(product_id, 40)
 
         # Use safety stock calculator for ROP-based expert decision
+        # Sample supplier lead time from stochastic distribution (phase-aware)
+        lt_mean = 13.0  # midpoint of original 5-21 range
+        lt_config = self._make_dist_config("normal", lt_mean)
+        sampled_supplier_lt = max(1.0, self.stochastic_sampler.sample_from_distribution(lt_config, lt_mean))
+        # Lead time std also phase-scaled
+        lt_std_config = self._make_dist_config("normal", 2.0)
+        sampled_lt_std = max(0.1, self.stochastic_sampler.sample_from_distribution(lt_std_config, 2.0))
+
         demand_stats = DemandStats(
             avg_daily_demand=demand_forecast / 7 if demand_forecast > 0 else 5.0,
             std_daily_demand=demand_forecast * 0.2 / 7,
-            avg_lead_time=random.uniform(5, 21),
-            std_lead_time=random.uniform(1, 3),
+            avg_lead_time=sampled_supplier_lt,
+            std_lead_time=sampled_lt_std,
         )
         ss_policy = SSPolicy(
             policy_type=PolicyType.SERVICE_LEVEL,
@@ -1135,17 +1206,29 @@ class SyntheticTRMDataGenerator:
         demand_forecast = state.last_demand.get(product_id, 40)
         backlog = state.backlog.get(product_id, 0)
 
-        # Build demand context
+        # Build demand context — phase-aware stochastic sampling
         avg_daily_demand = demand_forecast / 7 if demand_forecast > 0 else 5.0
-        demand_cv = random.uniform(0.1, 0.8)
+        # demand_cv scales with phase: phase 1 → tight (0.05-0.30), phase 3 → wide (0.05-0.80)
+        phase_var = self._phase_variance()
+        demand_cv_mean = 0.15 + phase_var  # ranges: ~0.30 (p1), ~0.55 (p2), ~0.90 (p3)
+        demand_cv = max(0.05, min(0.95, self.stochastic_sampler.sample_from_distribution(
+            self._make_dist_config("normal", demand_cv_mean, 0.3), demand_cv_mean
+        )))
         demand_trend = random.uniform(-0.2, 0.3)
         day_of_year = self.current_date.timetuple().tm_yday
         seasonal_index = 1 + 0.3 * np.sin(2 * np.pi * day_of_year / 365)
         recent_stockout_count = random.choices([0, 1, 2, 3, 4], weights=[0.5, 0.2, 0.15, 0.1, 0.05])[0]
         recent_excess_days = random.choices([0, 10, 30, 60, 90], weights=[0.3, 0.3, 0.2, 0.15, 0.05])[0]
         forecast_bias = random.uniform(-0.15, 0.15)
-        lead_time_days = random.uniform(5, 21)
-        lead_time_cv = random.uniform(0.05, 0.3)
+        # Lead time via stochastic sampler (phase-aware)
+        lt_mean_buf = 13.0  # midpoint of original 5-21
+        lt_config_buf = self._make_dist_config("normal", lt_mean_buf)
+        lead_time_days = max(1.0, self.stochastic_sampler.sample_from_distribution(lt_config_buf, lt_mean_buf))
+        # Lead time CV also phase-scaled
+        lt_cv_mean = 0.10 + phase_var * 0.3  # ranges: ~0.15 (p1), ~0.22 (p2), ~0.33 (p3)
+        lead_time_cv = max(0.01, min(0.5, self.stochastic_sampler.sample_from_distribution(
+            self._make_dist_config("normal", lt_cv_mean, 0.3), lt_cv_mean
+        )))
 
         # Use SS calculator for baseline
         demand_stats = DemandStats(
@@ -1381,6 +1464,7 @@ async def generate_synthetic_trm_data(
     num_decisions_per_day: int = 20,
     seed: Optional[int] = None,
     signal_bus=None,
+    phase: int = 2,
 ) -> GenerationStats:
     """
     Convenience function to generate synthetic TRM training data.
@@ -1394,11 +1478,14 @@ async def generate_synthetic_trm_data(
         num_decisions_per_day: Average TRM decisions per day
         seed: Random seed for reproducibility
         signal_bus: Optional HiveSignalBus for signal-enriched generation
+        phase: Curriculum phase (1=low variance, 2=moderate, 3=high). Default 2.
 
     Returns:
         GenerationStats with counts of generated records
     """
-    generator = SyntheticTRMDataGenerator(db, config_id, group_id, seed, signal_bus=signal_bus)
+    generator = SyntheticTRMDataGenerator(
+        db, config_id, group_id, seed, signal_bus=signal_bus, phase=phase
+    )
     return await generator.generate(
         num_days=num_days,
         num_orders_per_day=num_orders_per_day,
