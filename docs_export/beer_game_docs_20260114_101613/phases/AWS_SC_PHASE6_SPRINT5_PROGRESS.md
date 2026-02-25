@@ -297,7 +297,7 @@ validate_environment_secrets()
 ./backend/scripts/validate_health.sh
 
 # Remote validation
-./backend/scripts/validate_health.sh https://autonomy.com
+./backend/scripts/validate_health.sh https://autonomy.autonomy.com
 ```
 
 ---

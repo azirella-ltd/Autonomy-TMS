@@ -6,24 +6,6 @@ The Autonomy platform uses Warren B. Powell's **Sequential Decision Analytics an
 
 Each TRM is paired 1:1 with a **deterministic engine**. The engine provides the auditable, formula-based baseline. The TRM learns context-dependent adjustments the engine's fixed rules cannot capture.
 
-> **Research context**: Our TRM architecture is grounded in Samsung SAIL Montreal's foundational research showing that a 7M-parameter recursive network can outperform 671B-parameter LLMs on structured reasoning tasks. See [TRM_RESEARCH_SYNTHESIS.md](TRM_RESEARCH_SYNTHESIS.md) for full research synthesis including the original paper, critical analysis, extensions, and applicability to supply chain.
-
-### Samsung TRM Research Foundations
-
-The name "Tiny Recursive Model" comes from the paper ["Less is More: Recursive Reasoning with Tiny Networks"](https://arxiv.org/abs/2510.04871) (Jolicoeur-Martineau et al., Samsung SAIL Montreal, Oct 2025), which won the **1st Place Paper Award at ARC Prize 2025**. Key findings that inform our architecture:
-
-| Samsung TRM Finding | Our Application |
-|---------------------|-----------------|
-| 2-layer network applied recursively gives 42 effective layers | 2-layer transformer with 3-step recursive refinement |
-| 7M params beats 671B on structured reasoning | 7M params sufficient for narrow execution decisions |
-| Post-norm essential for recursion stability | Post-normalization in all TRM layers |
-| Deep supervision at each step improves learning | Multi-phase curriculum with BC → RL progression |
-| CGAR progressive depth reduces training FLOPs 40% | Progressive curriculum (simple → moderate → full) |
-| Recursion > parameters for generalization | Small model + site-specific conditioning |
-| 94.4% accuracy at first recursion step | 3 steps sufficient; latency-critical paths may use fewer |
-
-**Critical insight from follow-up research** ([arxiv:2512.11847](https://arxiv.org/abs/2512.11847)): Samsung's TRM showed 0% accuracy when task identifiers were removed, demonstrating strict dependence on task-specific conditioning. This *validates* our per-site checkpoint strategy — each site genuinely has different dynamics, and site-specific training is essential.
-
 ```
 ┌────────────────────────────────────────────────────────────┐
 │  S&OP GraphSAGE  (CFA - Cost Function Approximation)      │
@@ -40,22 +22,17 @@ The name "Tiny Recursive Model" comes from the paper ["Less is More: Recursive R
 ┌──────────────────────────▼─────────────────────────────────┐
 │  Narrow TRMs  (VFA - Value Function Approximation)         │
 │  Updates: per-decision (< 10ms)                            │
-│  11 Engine-TRM pairs:                                       │
-│    ┌─────────────────────────┬──────────────────────────┐   │
-│    │ Deterministic Engine     │ Learned TRM              │   │
-│    ├─────────────────────────┼──────────────────────────┤   │
-│    │ AATPEngine               │ ATPExecutorTRM           │   │
-│    │ MRPEngine                │ POCreationTRM            │   │
-│    │ SafetyStockCalculator    │ InventoryBufferTRM       │   │
-│    │ RebalancingEngine        │ InventoryRebalancingTRM  │   │
-│    │ OrderTrackingEngine      │ OrderTrackingTRM         │   │
-│    │ MOExecutionEngine        │ MOExecutionTRM           │   │
-│    │ TOExecutionEngine        │ TOExecutionTRM           │   │
-│    │ QualityEngine            │ QualityDispositionTRM    │   │
-│    │ MaintenanceEngine        │ MaintenanceSchedulingTRM │   │
-│    │ SubcontractingEngine     │ SubcontractingTRM        │   │
-│    │ ForecastAdjustmentEngine │ ForecastAdjustmentTRM    │   │
-│    └─────────────────────────┴──────────────────────────┘   │
+│  5 Engine-TRM pairs:                                        │
+│    ┌───────────────────┬───────────────────────────────┐   │
+│    │ Deterministic      │ Learned TRM                   │   │
+│    │ Engine             │ (adjustments on top)           │   │
+│    ├───────────────────┼───────────────────────────────┤   │
+│    │ AATPEngine         │ ATPExecutorTRM                   │   │
+│    │ MRPEngine          │ POCreationTRM                 │   │
+│    │ SafetyStockCalc    │ InventoryBufferTRM            │   │
+│    │ RebalancingEngine  │ InventoryRebalancingTRM       │   │
+│    │ OrderTrackingEngine│ OrderTrackingTRM              │   │
+│    └───────────────────┴───────────────────────────────┘   │
 └────────────────────────────────────────────────────────────┘
 ```
 
@@ -330,12 +307,6 @@ Each TRM type has a dedicated reward calculator in `RewardCalculator`:
 | `po_creation` | stockout_penalty, dos_target, cost_efficiency, timing_accuracy |
 | `order_tracking` | correct_exception, resolution_speed, escalation_appropriateness |
 | `safety_stock` | stockout_penalty, dos_target, excess_cost, stability_bonus |
-| `mo_execution` | on_time_completion, yield_variance, sequence_efficiency, resource_utilization |
-| `to_execution` | transit_time_accuracy, consolidation_savings, stockout_prevention |
-| `quality_disposition` | correct_disposition, rework_success_rate, complaint_avoidance |
-| `maintenance` | breakdown_prevention, cost_efficiency, production_impact_avoidance |
-| `subcontracting` | quality_pass_rate, on_time_delivery, cost_savings_vs_internal |
-| `forecast_adjustment` | forecast_error_reduction, signal_accuracy, adjustment_stability |
 
 ### Per-Site Learning-Depth Curriculum
 
@@ -362,12 +333,6 @@ Training is organized **per site x per TRM type** with a 3-phase progressive cur
 | InventoryBufferTRM | Yes | Yes | No |
 | InventoryRebalancingTRM | Yes | No | No |
 | OrderTrackingTRM | Yes | Yes | No |
-| MOExecutionTRM | No | Yes | No |
-| TOExecutionTRM | Yes | Yes | No |
-| QualityDispositionTRM | Yes | Yes | No |
-| MaintenanceSchedulingTRM | Yes | Yes | No |
-| SubcontractingTRM | No | Yes | No |
-| ForecastAdjustmentTRM | Yes | Yes | No |
 
 #### Checkpoint Naming & Fallback
 
@@ -387,8 +352,6 @@ Checkpoints follow the naming convention `trm_{type}_site{site_id}_v{N}.pt`. Whe
 
 ## SiteAgent Orchestration
 
-> **See also**: [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) for the "Hive" model — a signal-mediated coordination architecture where each SiteAgent's 11 TRMs form functional castes (Scouts, Foragers, Nurses, Guards, Builders) that communicate through an intra-hive signal bus, with the tGNN connecting hives across the network.
-
 The `SiteAgent` (`site_agent.py`) wires engines and TRMs together at the per-site execution level:
 
 ```
@@ -398,13 +361,7 @@ SiteAgent (per site)
   ├── POCreationTRM (engine: MRPEngine)
   ├── InventoryBufferTRM (engine: SafetyStockCalculator)
   ├── InventoryRebalancingTRM (engine: RebalancingEngine)
-  ├── OrderTrackingTRM (engine: OrderTrackingEngine)
-  ├── MOExecutionTRM (engine: MOExecutionEngine)
-  ├── TOExecutionTRM (engine: TOExecutionEngine)
-  ├── QualityDispositionTRM (engine: QualityEngine)
-  ├── MaintenanceSchedulingTRM (engine: MaintenanceEngine)
-  ├── SubcontractingTRM (engine: SubcontractingEngine)
-  └── ForecastAdjustmentTRM (engine: ForecastAdjustmentEngine)
+  └── OrderTrackingTRM (engine: OrderTrackingEngine)
 ```
 
 The SiteAgent:
@@ -426,12 +383,6 @@ The SiteAgent:
 | `engines/safety_stock_calculator.py` | `SafetyStockCalculator` | 4 AWS SC policy types |
 | `engines/rebalancing_engine.py` | `RebalancingEngine` | Cross-location transfer rules |
 | `engines/order_tracking_engine.py` | `OrderTrackingEngine` | Threshold-based exception detection |
-| `engines/mo_execution_engine.py` | `MOExecutionEngine` | MO release readiness, sequencing, expedite |
-| `engines/to_execution_engine.py` | `TOExecutionEngine` | TO release, consolidation, expedite |
-| `engines/quality_engine.py` | `QualityEngine` | Quality disposition rule cascade |
-| `engines/maintenance_engine.py` | `MaintenanceEngine` | Maintenance scheduling, breakdown risk |
-| `engines/subcontracting_engine.py` | `SubcontractingEngine` | Make-vs-buy decision cascade |
-| `engines/forecast_adjustment_engine.py` | `ForecastAdjustmentEngine` | Signal processing, confidence gating |
 | `engines/__init__.py` | — | Package exports |
 
 ### Narrow TRM Services (learned adjustments)
@@ -443,12 +394,6 @@ The SiteAgent:
 | `inventory_buffer_trm.py` | `InventoryBufferTRM` | `SafetyStockCalculator` |
 | `inventory_rebalancing_trm.py` | `InventoryRebalancingTRM` | `RebalancingEngine` |
 | `order_tracking_trm.py` | `OrderTrackingTRM` | `OrderTrackingEngine` |
-| `mo_execution_trm.py` | `MOExecutionTRM` | `MOExecutionEngine` |
-| `to_execution_trm.py` | `TOExecutionTRM` | `TOExecutionEngine` |
-| `quality_disposition_trm.py` | `QualityDispositionTRM` | `QualityEngine` |
-| `maintenance_scheduling_trm.py` | `MaintenanceSchedulingTRM` | `MaintenanceEngine` |
-| `subcontracting_trm.py` | `SubcontractingTRM` | `SubcontractingEngine` |
-| `forecast_adjustment_trm.py` | `ForecastAdjustmentTRM` | `ForecastAdjustmentEngine` |
 
 ### Training & Data
 
@@ -463,7 +408,7 @@ The SiteAgent:
 
 | File | Purpose |
 |------|---------|
-| `models/trm_training_data.py` | Decision logs, outcomes, replay buffer (all 11 types) |
+| `models/trm_training_data.py` | Decision logs, outcomes, replay buffer (all 5 types) |
 | `models/powell_training_config.py` | `TRMType` enum, `DEFAULT_TRM_REWARD_WEIGHTS` |
 | `models/powell_decisions.py` | Production decision persistence tables |
 
@@ -476,46 +421,3 @@ The SiteAgent:
 | `integration_service.py` | Powell framework integration orchestration |
 
 All files are under `backend/app/services/powell/` unless noted otherwise.
-
----
-
-## Context-Aware Explainability
-
-Every TRM decision produces a human-readable explanation grounded in the agent's operational context. This is powered by `AgentContextExplainer` (`backend/app/services/agent_context_explainer.py`).
-
-### What Every Explanation Contains
-
-1. **Authority Context**: Whether the decision is within the TRM's unilateral authority, requires authorization from another agent, or is advisory only. Based on the Agentic Authorization Protocol authority map.
-
-2. **Active Guardrails**: CDC thresholds compared to current metrics. Each guardrail shows status (WITHIN, APPROACHING, EXCEEDED) with margin to threshold. Examples: demand_deviation ±15%, inventory_ratio_low <70%, service_level_drop 5%.
-
-3. **Policy Parameters**: Active theta values from `powell_policy_parameters` that are driving the decision (safety stock multiplier, reorder point, service level target, etc.).
-
-4. **Feature Attribution**: Which state inputs most influenced the model's output. Computed via gradient saliency (`predict_with_attribution()` on `SiteAgentModel`). Top-5 features shown with normalized importance scores.
-
-5. **Conformal Prediction Interval**: Uncertainty bounds from the belief state (lower, estimate, upper) with coverage probability and calibration quality.
-
-6. **Counterfactuals**: "If inventory were 15% lower, PO would trigger at CRITICAL urgency." Generated by checking proximity to nearest decision-changing threshold.
-
-### Verbosity Levels
-
-| Level | Content | Latency | Use Case |
-|-------|---------|---------|----------|
-| **SUCCINCT** | 1-sentence summary | <1ms | Inline with every decision |
-| **NORMAL** | Summary + top driver + authority + guardrail status | <5ms | Worklist display |
-| **VERBOSE** | Full attribution, all guardrails, policy params, counterfactuals | <50ms | Ask Why deep-dive |
-
-### Attribution Method
-
-TRMs use **gradient saliency** (∂output/∂input) because the SiteAgentModel uses feed-forward + transformer encoder architecture (not attention-based). This computes per-feature importance in a single backward pass.
-
-For on-demand Ask Why requests, the full gradient computation runs (~2-5ms). For inline mode, cached attribution from the most recent on-demand call is used.
-
-### Explainability Files
-
-| File | Purpose |
-|------|---------|
-| `agent_context_explainer.py` | Core service: authority, guardrails, policy, conformal, counterfactuals |
-| `explanation_templates.py` | 39 templates (13 agent types × 3 verbosity levels) |
-| `site_agent_model.py` | `predict_with_attribution()` for gradient saliency |
-| `planning_cascade.py` | Ask Why API endpoints for TRM and GNN decisions |

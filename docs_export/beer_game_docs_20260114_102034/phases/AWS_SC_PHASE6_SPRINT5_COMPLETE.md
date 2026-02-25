@@ -306,10 +306,10 @@ ls -1 backups/
 ./backend/scripts/validate_health.sh
 
 # Validate remote deployment
-./backend/scripts/validate_health.sh https://autonomy.com
+./backend/scripts/validate_health.sh https://autonomy.autonomy.com
 
 # Validate staging
-./backend/scripts/validate_health.sh https://staging.autonomy.com
+./backend/scripts/validate_health.sh https://staging.autonomy.autonomy.com
 ```
 
 **Output**:

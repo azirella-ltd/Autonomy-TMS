@@ -54,8 +54,8 @@ OPENAI_PROJECT=proj_...
 GPT_ID=g-...
 
 # Application
-CORS_ORIGINS=https://autonomy.com
-ALLOWED_HOSTS=autonomy.com
+CORS_ORIGINS=https://autonomy.autonomy.com
+ALLOWED_HOSTS=autonomy.autonomy.com
 ```
 
 ## Environment Configuration
