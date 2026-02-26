@@ -27,7 +27,7 @@ class ForecastPipelineConfig(Base):
     name = Column(String(120), nullable=False)
     description = Column(Text)
 
-    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False, index=True)
 
     time_bucket = Column(String(10), nullable=False, default="W")
@@ -81,7 +81,7 @@ class ForecastPipelineRun(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     pipeline_config_id = Column(Integer, ForeignKey("forecast_pipeline_config.id", ondelete="CASCADE"), nullable=False, index=True)
 
-    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False, index=True)
 
     status = Column(String(30), nullable=False, default="pending")  # pending, running, completed, failed, published

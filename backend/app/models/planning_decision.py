@@ -84,7 +84,7 @@ class PlanningDecision(Base):
     # Context
     cycle_id = Column(Integer, ForeignKey("planning_cycles.id", ondelete="CASCADE"), nullable=False, index=True)
     snapshot_id = Column(Integer, ForeignKey("planning_snapshots.id", ondelete="SET NULL"), nullable=True, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
 
     # Decision Identification
     decision_code = Column(String(50), nullable=False, index=True)  # Unique code for reference
@@ -201,7 +201,7 @@ class PlanningDecision(Base):
                              foreign_keys=[supersedes_id])
     history = relationship("DecisionHistory", back_populates="decision", cascade="all, delete-orphan",
                           order_by="DecisionHistory.changed_at")
-    customer = relationship("Customer")
+    tenant = relationship("Tenant")
 
     __table_args__ = (
         Index("ix_decision_cycle_category", "cycle_id", "category"),

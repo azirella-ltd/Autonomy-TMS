@@ -8,7 +8,7 @@ from app.api.endpoints import (
     dashboard_router,
     config_router,
     supply_chain_config_router,
-    group_router,
+    tenant_router,
     analytics_router,
     advanced_analytics_router,
     health_router,
@@ -67,7 +67,7 @@ api_router.include_router(model_router, prefix="/model", tags=["model"])
 api_router.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])
 api_router.include_router(config_router, tags=["config"])
 api_router.include_router(supply_chain_config_router, prefix="/supply-chain-config", tags=["supply-chain-config"])
-api_router.include_router(group_router, prefix="/groups", tags=["groups"])
+api_router.include_router(tenant_router, prefix="/tenants", tags=["tenants"])
 api_router.include_router(analytics_router, prefix="/analytics", tags=["analytics"])
 api_router.include_router(advanced_analytics_router, prefix="/advanced-analytics", tags=["advanced-analytics"])
 api_router.include_router(health_router, prefix="/health", tags=["health"])

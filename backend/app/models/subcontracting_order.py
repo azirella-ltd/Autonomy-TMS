@@ -55,7 +55,7 @@ class SubcontractingOrder(Base):
     company_id = Column(String(100))
     site_id = Column(Integer, ForeignKey("site.id"), nullable=False)  # Originating site
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
-    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"))
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"))
 
     # SC source tracking
     source = Column(String(100))
@@ -152,7 +152,7 @@ class SubcontractingOrder(Base):
     __table_args__ = (
         Index('idx_sco_site', 'site_id'),
         Index('idx_sco_config', 'config_id'),
-        Index('idx_sco_customer', 'customer_id'),
+        Index('idx_sco_tenant', 'tenant_id'),
         Index('idx_sco_company', 'company_id'),
         Index('idx_sco_subcontractor', 'subcontractor_id'),
         Index('idx_sco_product', 'finished_product_id'),

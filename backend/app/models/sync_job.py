@@ -73,7 +73,7 @@ class SyncJobConfig(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     # Scope
-    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     data_type = Column(Enum(SyncDataType, name="syncdatatype"), nullable=False, index=True)
     name = Column(String(100), nullable=True)  # Human-readable name
     description = Column(Text, nullable=True)
@@ -119,17 +119,17 @@ class SyncJobConfig(Base):
     updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # Relationships
-    customer = relationship("Customer", back_populates="sync_job_configs")
+    tenant = relationship("Tenant", back_populates="sync_job_configs")
     executions = relationship("SyncJobExecution", back_populates="config", cascade="all, delete-orphan")
     creator = relationship("User", foreign_keys=[created_by])
 
     __table_args__ = (
-        Index("ix_sync_job_config_customer_type", "customer_id", "data_type", unique=True),
+        Index("ix_sync_job_config_tenant_type", "tenant_id", "data_type", unique=True),
         Index("ix_sync_job_config_enabled", "is_enabled"),
     )
 
     def __repr__(self):
-        return f"<SyncJobConfig(id={self.id}, customer={self.customer_id}, type={self.data_type.value})>"
+        return f"<SyncJobConfig(id={self.id}, tenant={self.tenant_id}, type={self.data_type.value})>"
 
 
 class SyncJobExecution(Base):

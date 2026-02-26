@@ -74,8 +74,8 @@ class ConditionAlert(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
     # Scope
-    customer_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("customers.id", ondelete="CASCADE"),
+    tenant_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("tenants.id", ondelete="CASCADE"),
         nullable=False, index=True
     )
     condition_type: Mapped[ConditionType] = mapped_column(
@@ -141,14 +141,14 @@ class ConditionAlert(Base):
     )
 
     # Relationships
-    customer = relationship("Customer")
+    tenant = relationship("Tenant")
     resolved_by_user = relationship("User", foreign_keys=[resolved_by_user_id])
 
     __table_args__ = (
-        Index("ix_condition_alert_customer_type", "customer_id", "condition_type"),
+        Index("ix_condition_alert_tenant_type", "tenant_id", "condition_type"),
         Index("ix_condition_alert_entity", "entity_type", "entity_id"),
         Index("ix_condition_alert_active_severity", "is_active", "severity"),
-        Index("ix_condition_alert_customer_active", "customer_id", "is_active"),
+        Index("ix_condition_alert_tenant_active", "tenant_id", "is_active"),
     )
 
     def __repr__(self):
@@ -167,8 +167,8 @@ class ScenarioEvaluation(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
     # Scope
-    customer_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("customers.id", ondelete="CASCADE"),
+    tenant_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("tenants.id", ondelete="CASCADE"),
         nullable=False, index=True
     )
 
@@ -229,7 +229,7 @@ class ScenarioEvaluation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
-    customer = relationship("Customer")
+    tenant = relationship("Tenant")
     triggering_condition = relationship(
         "ConditionAlert",
         foreign_keys=[triggered_by_condition_id],
@@ -239,7 +239,7 @@ class ScenarioEvaluation(Base):
     agent_action = relationship("AgentAction", foreign_keys=[agent_action_id])
 
     __table_args__ = (
-        Index("ix_scenario_eval_customer", "customer_id"),
+        Index("ix_scenario_eval_tenant", "tenant_id"),
         Index("ix_scenario_eval_trigger", "trigger_type", "trigger_entity_id"),
         Index("ix_scenario_eval_time", "evaluated_at"),
     )
@@ -260,8 +260,8 @@ class SupplyRequest(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
     # Scope
-    customer_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("customers.id", ondelete="CASCADE"),
+    tenant_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("tenants.id", ondelete="CASCADE"),
         nullable=False, index=True
     )
 
@@ -303,14 +303,14 @@ class SupplyRequest(Base):
     )
 
     # Relationships
-    customer = relationship("Customer")
+    tenant = relationship("Tenant")
     condition_alert = relationship("ConditionAlert")
 
     __table_args__ = (
         Index("ix_supply_request_requesting", "requesting_entity_type", "requesting_entity_id"),
         Index("ix_supply_request_requested", "requested_entity_type", "requested_entity_id"),
         Index("ix_supply_request_status", "status"),
-        Index("ix_supply_request_customer_status", "customer_id", "status"),
+        Index("ix_supply_request_tenant_status", "tenant_id", "status"),
     )
 
     def __repr__(self):

@@ -5,7 +5,7 @@ from .model import router as model_router
 from .dashboard import dashboard_router
 from .config import router as config_router
 from .supply_chain_config import router as supply_chain_config_router
-from .group import router as group_router
+from .tenant import router as tenant_router
 from .analytics import router as analytics_router
 from .advanced_analytics import router as advanced_analytics_router
 from .health import router as health_router
@@ -71,7 +71,7 @@ __all__ = [
     'dashboard_router',
     'config_router',
     'supply_chain_config_router',
-    'group_router',
+    'tenant_router',
     'analytics_router',
     'advanced_analytics_router',
     'health_router',

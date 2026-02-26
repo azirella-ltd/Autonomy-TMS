@@ -49,7 +49,7 @@ class ForecastException(Base):
 
     # Scope
     config_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("supply_chain_configs.id"))
-    org_customer_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("customers.id", ondelete="CASCADE"))
+    tenant_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"))
     product_id: Mapped[str] = mapped_column(String(100), ForeignKey("product.id"), nullable=False)
     site_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("site.id"))
     customer_id: Mapped[Optional[str]] = mapped_column(String(100))
@@ -155,7 +155,7 @@ class ForecastException(Base):
 
     __table_args__ = (
         Index('idx_fe_config', 'config_id'),
-        Index('idx_fe_org_customer', 'org_customer_id'),
+        Index('idx_fe_tenant', 'tenant_id'),
         Index('idx_fe_product', 'product_id'),
         Index('idx_fe_site', 'site_id'),
         Index('idx_fe_status', 'status'),
@@ -173,7 +173,7 @@ class ForecastException(Base):
             "id": self.id,
             "exception_number": self.exception_number,
             "config_id": self.config_id,
-            "org_customer_id": self.org_customer_id,
+            "tenant_id": self.tenant_id,
             "product_id": self.product_id,
             "site_id": self.site_id,
             "customer_id": self.customer_id,
@@ -252,7 +252,7 @@ class ForecastExceptionRule(Base):
 
     # Scope
     config_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("supply_chain_configs.id"))
-    org_customer_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("customers.id", ondelete="CASCADE"))
+    tenant_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"))
     product_ids: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)  # List of product IDs or patterns
     site_ids: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)  # List of site IDs
 
@@ -288,7 +288,7 @@ class ForecastExceptionRule(Base):
 
     __table_args__ = (
         Index('idx_fer_config', 'config_id'),
-        Index('idx_fer_customer', 'org_customer_id'),
+        Index('idx_fer_tenant', 'tenant_id'),
         Index('idx_fer_type', 'rule_type'),
         Index('idx_fer_active', 'is_active'),
     )
@@ -300,7 +300,7 @@ class ForecastExceptionRule(Base):
             "name": self.name,
             "description": self.description,
             "config_id": self.config_id,
-            "org_customer_id": self.org_customer_id,
+            "tenant_id": self.tenant_id,
             "product_ids": self.product_ids,
             "site_ids": self.site_ids,
             "rule_type": self.rule_type,
@@ -365,7 +365,7 @@ class ExceptionWorkflowTemplate(Base):
 
     # Scope
     config_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("supply_chain_configs.id"))
-    org_customer_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("customers.id", ondelete="CASCADE"))
+    tenant_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"))
 
     # Matching criteria (when to apply this workflow)
     exception_types: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
@@ -425,7 +425,7 @@ class ExceptionWorkflowTemplate(Base):
 
     __table_args__ = (
         Index('idx_ewt_config', 'config_id'),
-        Index('idx_ewt_customer', 'org_customer_id'),
+        Index('idx_ewt_tenant', 'tenant_id'),
         Index('idx_ewt_active', 'is_active', 'priority'),
     )
 
@@ -436,7 +436,7 @@ class ExceptionWorkflowTemplate(Base):
             "code": self.code,
             "description": self.description,
             "config_id": self.config_id,
-            "org_customer_id": self.org_customer_id,
+            "tenant_id": self.tenant_id,
             "exception_types": self.exception_types,
             "severity_levels": self.severity_levels,
             "product_categories": self.product_categories,

@@ -48,7 +48,7 @@ class DecisionGovernancePolicy(Base):
     __tablename__ = "decision_governance_policies"
 
     id = Column(Integer, primary_key=True, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
 
     # Scope — which decisions this policy applies to (NULL = all)
     action_type = Column(String(100), nullable=True,
@@ -101,14 +101,14 @@ class DecisionGovernancePolicy(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (
-        Index("idx_gov_policy_customer", "customer_id", "is_active"),
-        Index("idx_gov_policy_scope", "customer_id", "action_type", "category", "agent_id"),
+        Index("idx_gov_policy_tenant", "tenant_id", "is_active"),
+        Index("idx_gov_policy_scope", "tenant_id", "action_type", "category", "agent_id"),
     )
 
     def to_dict(self):
         return {
             "id": self.id,
-            "customer_id": self.customer_id,
+            "tenant_id": self.tenant_id,
             "action_type": self.action_type,
             "category": self.category,
             "agent_id": self.agent_id,
@@ -171,7 +171,7 @@ class GuardrailDirective(Base):
     __tablename__ = "guardrail_directives"
 
     id = Column(Integer, primary_key=True, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
 
     # ── Provenance — who, when, how ──
     source_user_id = Column(Integer, ForeignKey("users.id"), nullable=False,
@@ -252,7 +252,7 @@ Which decisions are affected, e.g.:
     reviewer = relationship("User", foreign_keys=[reviewed_by])
 
     __table_args__ = (
-        Index("idx_guardrail_customer_status", "customer_id", "status"),
+        Index("idx_guardrail_tenant_status", "tenant_id", "status"),
         Index("idx_guardrail_source_user", "source_user_id", "received_at"),
         Index("idx_guardrail_channel", "source_channel", "received_at"),
     )
@@ -260,7 +260,7 @@ Which decisions are affected, e.g.:
     def to_dict(self):
         return {
             "id": self.id,
-            "customer_id": self.customer_id,
+            "tenant_id": self.tenant_id,
             "source_user_id": self.source_user_id,
             "source_channel": self.source_channel,
             "source_signal_id": self.source_signal_id,

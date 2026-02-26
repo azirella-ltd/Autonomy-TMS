@@ -19,7 +19,7 @@ from .base import Base
 from app.core.time_buckets import TimeBucket
 
 if TYPE_CHECKING:
-    from .customer import Customer
+    from .tenant import Tenant
     from .scenario import Scenario
     from .sc_entities import Product
 
@@ -93,7 +93,7 @@ class SupplyChainConfig(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
     created_by = Column(Integer, ForeignKey('users.id'), nullable=True)
-    customer_id = Column(Integer, ForeignKey('customers.id', ondelete='CASCADE'), nullable=False)
+    tenant_id = Column(Integer, ForeignKey('tenants.id', ondelete='CASCADE'), nullable=False)
     time_bucket = Column(Enum(TimeBucket, name="timebucket"), nullable=False, default=TimeBucket.WEEK)
 
     # Scenario Branching Fields (git-like configuration inheritance)
@@ -112,7 +112,7 @@ class SupplyChainConfig(Base):
     transportation_lanes = relationship("TransportationLane", back_populates="config", cascade="all, delete-orphan")
     markets = relationship("Market", back_populates="config", cascade="all, delete-orphan")
     market_demands = relationship("MarketDemand", back_populates="config", cascade="all, delete-orphan")
-    customer = relationship("Customer", back_populates="supply_chain_configs")
+    tenant = relationship("Tenant", back_populates="supply_chain_configs")
     # Scenarios using this configuration
     scenarios = relationship(
         "Scenario",
@@ -520,7 +520,7 @@ class AuthorityDefinition(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     # Scope
-    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"), nullable=True)
 
     # Agent/User scope
@@ -542,7 +542,7 @@ class AuthorityDefinition(Base):
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # Relationships
-    customer = relationship("Customer")
+    tenant = relationship("Tenant")
     config = relationship("SupplyChainConfig")
 
 

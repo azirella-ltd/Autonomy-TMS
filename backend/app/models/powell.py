@@ -69,9 +69,9 @@ class PowellBeliefState(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # Context
-    customer_id: Mapped[int] = mapped_column(
+    tenant_id: Mapped[int] = mapped_column(
         Integer,
-        ForeignKey("customers.id", ondelete="CASCADE"),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
         nullable=False
     )
     entity_type: Mapped[EntityType] = mapped_column(
@@ -175,18 +175,18 @@ class PowellBeliefState(Base):
     )
 
     # Relationships
-    customer = relationship("Customer")
+    tenant = relationship("Tenant")
 
     __table_args__ = (
         Index('idx_belief_entity', 'entity_type', 'entity_id'),
-        Index('idx_belief_customer', 'customer_id', 'entity_type'),
+        Index('idx_belief_tenant', 'tenant_id', 'entity_type'),
     )
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for API response."""
         return {
             "id": self.id,
-            "customer_id": self.customer_id,
+            "tenant_id": self.tenant_id,
             "entity_type": self.entity_type.value if self.entity_type else None,
             "entity_id": self.entity_id,
             "point_estimate": self.point_estimate,

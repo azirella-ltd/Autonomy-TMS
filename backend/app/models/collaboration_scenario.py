@@ -38,8 +38,8 @@ class CollaborationScenario(Base):
         Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"),
         nullable=False, index=True
     )
-    customer_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("customers.id", ondelete="CASCADE"),
+    tenant_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("tenants.id", ondelete="CASCADE"),
         nullable=False, index=True
     )
 
@@ -89,5 +89,5 @@ class CollaborationScenario(Base):
     )
 
     __table_args__ = (
-        Index('idx_collab_scenario_customer', 'customer_id', 'level'),
+        Index('idx_collab_scenario_tenant', 'tenant_id', 'level'),
     )

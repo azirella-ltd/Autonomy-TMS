@@ -96,7 +96,7 @@ class PlanningCycle(Base):
     description = Column(Text, nullable=True)
 
     # Scope
-    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="SET NULL"), nullable=True)
 
     # Planning Horizon
@@ -152,7 +152,7 @@ class PlanningCycle(Base):
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # Relationships
-    customer = relationship("Customer", back_populates="planning_cycles")
+    tenant = relationship("Tenant", back_populates="planning_cycles")
     config = relationship("SupplyChainConfig")
     snapshots = relationship("PlanningSnapshot",
                             foreign_keys="PlanningSnapshot.cycle_id",
@@ -167,8 +167,8 @@ class PlanningCycle(Base):
     previous_cycle = relationship("PlanningCycle", remote_side=[id], foreign_keys=[previous_cycle_id])
 
     __table_args__ = (
-        Index("ix_planning_cycle_customer_period", "customer_id", "period_start", "period_end"),
-        Index("ix_planning_cycle_customer_code", "customer_id", "code", unique=True),
+        Index("ix_planning_cycle_tenant_period", "tenant_id", "period_start", "period_end"),
+        Index("ix_planning_cycle_tenant_code", "tenant_id", "code", unique=True),
         Index("ix_planning_cycle_status", "status"),
         Index("ix_planning_cycle_type_status", "cycle_type", "status"),
     )

@@ -17,13 +17,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 # Import models in the correct order to avoid circular imports
 from app.models.base import Base
 from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
-from app.models.tenant import Tenant  # Must be imported before User (FK dependency)
 from app.models.user import User, RefreshToken, UserTypeEnum
 from app.models.participant import Participant, ParticipantRole, ParticipantType, ParticipantStrategy
 from app.models.auth_models import PasswordHistory, PasswordResetToken
 from app.models.session import TokenBlacklist, UserSession
 from app.models.scenario import Scenario, ScenarioStatus, Round, ParticipantAction
-from app.models.customer import Customer
+from app.models.tenant import Tenant, TenantMode
 from app.models.supply_chain_config import SupplyChainConfig, Node, Lane, Market, MarketDemand
 from app.models.sc_entities import Product
 from app.models.mps import MPSPlan, MPSPlanItem, MPSCapacityCheck
@@ -132,20 +131,20 @@ async def init_db():
                 await db.refresh(systemadmin)
                 logger.info("System administrator user created successfully")
 
-            # Ensure default Autonomy customer exists
-            result = await db.execute(select(Customer).where(Customer.name == "Autonomy"))
-            customer = result.scalars().first()
-            if not customer:
-                customer = Customer(
-                    name="Autonomy", description="Default customer", admin_id=systemadmin.id
+            # Ensure default Autonomy tenant exists
+            result = await db.execute(select(Tenant).where(Tenant.name == "Autonomy"))
+            tenant = result.scalars().first()
+            if not tenant:
+                tenant = Tenant(
+                    name="Autonomy", description="Default tenant", admin_id=systemadmin.id
                 )
-                db.add(customer)
+                db.add(tenant)
                 await db.flush()
 
-            # Assign customer to system administrator and any users missing a customer
-            systemadmin.customer_id = customer.id
+            # Assign tenant to system administrator and any users missing a tenant
+            systemadmin.tenant_id = tenant.id
             await db.execute(
-                update(User).where(User.customer_id.is_(None)).values(customer_id=customer.id)
+                update(User).where(User.tenant_id.is_(None)).values(tenant_id=tenant.id)
             )
 
             # Seed core supply chain configuration

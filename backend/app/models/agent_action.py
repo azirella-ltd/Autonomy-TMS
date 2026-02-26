@@ -88,7 +88,7 @@ class AgentAction(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # Ownership
-    customer_id: Mapped[int] = mapped_column(Integer, ForeignKey("customers.id"), nullable=False)
+    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id"), nullable=False)
 
     # Action classification
     action_mode: Mapped[ActionMode] = mapped_column(
@@ -384,17 +384,17 @@ class AgentAction(Base):
     )
 
     # Relationships
-    customer = relationship("Customer")
+    tenant = relationship("Tenant")
     acknowledger = relationship("User", foreign_keys=[acknowledged_by])
     overrider = relationship("User", foreign_keys=[overridden_by])
     resolver = relationship("User", foreign_keys=[resolved_by])
     belief_state = relationship("PowellBeliefState", foreign_keys=[belief_state_id])
 
     __table_args__ = (
-        Index('idx_agent_action_customer_time', 'customer_id', 'executed_at'),
+        Index('idx_agent_action_tenant_time', 'tenant_id', 'executed_at'),
         Index('idx_agent_action_hierarchy', 'site_key', 'product_key', 'time_key'),
         Index('idx_agent_action_mode', 'action_mode', 'is_acknowledged'),
-        Index('idx_agent_action_category', 'category', 'customer_id'),
+        Index('idx_agent_action_category', 'category', 'tenant_id'),
         Index('idx_agent_action_governance', 'action_mode', 'hold_until', 'execution_result'),
     )
 
@@ -402,7 +402,7 @@ class AgentAction(Base):
         """Convert to dictionary for API response."""
         return {
             "id": self.id,
-            "customer_id": self.customer_id,
+            "tenant_id": self.tenant_id,
             "action_mode": self.action_mode.value,
             "action_type": self.action_type,
             "category": self.category.value,

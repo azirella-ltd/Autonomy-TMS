@@ -45,7 +45,7 @@ class MonteCarloRun(Base):
     supply_chain_config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False)
     mps_plan_id = Column(Integer, ForeignKey("mps_plans.id"), nullable=True)
     scenario_id = Column(Integer, ForeignKey("scenarios.id"), nullable=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
 
     # Simulation parameters
     name = Column(String(255), nullable=False)

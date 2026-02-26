@@ -33,7 +33,7 @@ class PurchaseOrder(Base):
 
     # Configuration
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
-    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"))
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"))
 
     # SC Compliance fields
     company_id = Column(String(100))  # SC: company identifier
@@ -85,7 +85,7 @@ class PurchaseOrder(Base):
         Index('idx_po_status', 'status'),
         Index('idx_po_order_date', 'order_date'),
         Index('idx_po_config', 'config_id'),
-        Index('idx_po_customer', 'customer_id'),
+        Index('idx_po_tenant', 'tenant_id'),
         Index('idx_po_mrp_run', 'mrp_run_id'),
         Index('idx_po_company', 'company_id'),
         Index('idx_po_order_type', 'order_type'),

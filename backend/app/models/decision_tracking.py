@@ -21,7 +21,7 @@ from .base import Base
 
 if TYPE_CHECKING:
     from .user import User
-    from .customer import Customer
+    from .tenant import Tenant
 
 
 class DecisionType(str, Enum):
@@ -68,8 +68,8 @@ class AgentDecision(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
     # Context
-    customer_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True
+    tenant_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
     )
     user_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
@@ -147,8 +147,8 @@ class AgentDecision(Base):
 
     # Indexes for common queries
     __table_args__ = (
-        Index('ix_agent_decisions_customer_status', 'customer_id', 'status'),
-        Index('ix_agent_decisions_customer_type_cycle', 'customer_id', 'decision_type', 'planning_cycle'),
+        Index('ix_agent_decisions_tenant_status', 'tenant_id', 'status'),
+        Index('ix_agent_decisions_tenant_type_cycle', 'tenant_id', 'decision_type', 'planning_cycle'),
         Index('ix_agent_decisions_user_status', 'user_id', 'status'),
     )
 
@@ -189,8 +189,8 @@ class PerformanceMetric(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
-    customer_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True
+    tenant_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # Time period
@@ -233,7 +233,7 @@ class PerformanceMetric(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
-        Index('ix_performance_metrics_customer_period', 'customer_id', 'period_start', 'period_type'),
+        Index('ix_performance_metrics_tenant_period', 'tenant_id', 'period_start', 'period_type'),
     )
 
     def to_dict(self):
@@ -266,8 +266,8 @@ class SOPWorklistItem(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
-    customer_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True
+    tenant_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # Item identification
@@ -319,7 +319,7 @@ class SOPWorklistItem(Base):
     )
 
     __table_args__ = (
-        Index('ix_sop_worklist_customer_status', 'customer_id', 'status'),
+        Index('ix_sop_worklist_tenant_status', 'tenant_id', 'status'),
     )
 
     def to_dict(self):

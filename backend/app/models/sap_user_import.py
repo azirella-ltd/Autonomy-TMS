@@ -24,8 +24,8 @@ class SAPUserImportLog(Base):
     __tablename__ = "sap_user_import_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"),
-                      nullable=False, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"),
+                    nullable=False, index=True)
     connection_id = Column(Integer, nullable=True)
 
     filter_config = Column(JSON, nullable=False)
@@ -51,7 +51,7 @@ class SAPUserImportLog(Base):
     def to_dict(self):
         return {
             "id": self.id,
-            "customer_id": self.customer_id,
+            "tenant_id": self.tenant_id,
             "connection_id": self.connection_id,
             "filter_config": self.filter_config,
             "role_mapping_config": self.role_mapping_config,
@@ -81,8 +81,8 @@ class SAPRoleMapping(Base):
     __tablename__ = "sap_role_mappings"
 
     id = Column(Integer, primary_key=True, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"),
-                      nullable=False, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"),
+                    nullable=False, index=True)
 
     agr_name_pattern = Column(String(100), nullable=False)
     pattern_type = Column(String(10), default="glob", nullable=False)
@@ -100,14 +100,14 @@ class SAPRoleMapping(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (
-        UniqueConstraint("customer_id", "agr_name_pattern",
-                         name="uq_sap_role_mapping_customer_pattern"),
+        UniqueConstraint("tenant_id", "agr_name_pattern",
+                         name="uq_sap_role_mapping_tenant_pattern"),
     )
 
     def to_dict(self):
         return {
             "id": self.id,
-            "customer_id": self.customer_id,
+            "tenant_id": self.tenant_id,
             "agr_name_pattern": self.agr_name_pattern,
             "pattern_type": self.pattern_type,
             "powell_role": self.powell_role,

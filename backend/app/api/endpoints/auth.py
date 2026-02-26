@@ -49,7 +49,7 @@ from app.models.scenario import Scenario
 from app.models.agent_config import AgentConfig
 from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 from app.services.supply_chain_config_service import SupplyChainConfigService
-from app.services.customer_service import DEFAULT_SITE_TYPE_DEFINITIONS
+from app.services.tenant_service import DEFAULT_SITE_TYPE_DEFINITIONS
 
 router = APIRouter()
 

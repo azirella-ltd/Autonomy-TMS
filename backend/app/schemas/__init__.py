@@ -42,7 +42,7 @@ from .participant import (
 
 from .agent_config import AgentConfig, AgentConfigCreate, AgentConfigUpdate, AgentConfigInDBBase as AgentConfigInDB
 from .dashboard import DashboardResponse, ScenarioUserMetrics as ParticipantMetrics, TimeSeriesPoint
-from .group import Group, GroupCreate, GroupUpdate
+from .tenant import TenantResponse, TenantCreate, TenantUpdate, TenantSummary, TenantModeEnum, TenantBase
 # AWS SC DM compliant schema imports
 from .supply_chain_config import (
     SupplyChainConfig,
@@ -159,8 +159,8 @@ __all__ = [
     # Dashboard
     'DashboardResponse', 'ParticipantMetrics', 'TimeSeriesPoint',
 
-    # Group
-    'Group', 'GroupCreate', 'GroupUpdate',
+    # Tenant
+    'TenantResponse', 'TenantCreate', 'TenantUpdate', 'TenantSummary', 'TenantModeEnum', 'TenantBase',
 
     # Supply chain config (AWS SC DM terminology)
     'SupplyChainConfig', 'SupplyChainConfigCreate', 'SupplyChainConfigUpdate',

@@ -33,7 +33,7 @@ class DeploymentPipelineRun(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # Ownership
-    customer_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("customers.id"), index=True)
+    tenant_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tenants.id"), index=True)
 
     # Config template used
     config_template: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -84,5 +84,5 @@ class DeploymentPipelineRun(Base):
 
     __table_args__ = (
         Index('idx_pipeline_status', 'status', 'created_at'),
-        Index('idx_pipeline_customer', 'customer_id', 'created_at'),
+        Index('idx_pipeline_tenant', 'tenant_id', 'created_at'),
     )

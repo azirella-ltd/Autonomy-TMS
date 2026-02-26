@@ -28,8 +28,6 @@ Base = declarative_base(cls=CustomBase)
 
 # Import all models to ensure they're registered with SQLAlchemy
 # This must be done after Base is defined
-# IMPORTANT: Tenant must be imported before User due to FK dependency
-from app.models.tenant import Tenant
 from app.models.user import User, RefreshToken
 from app.models.participant import Participant
 from app.models.scenario import Scenario, Round, ParticipantAction

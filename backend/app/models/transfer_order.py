@@ -32,7 +32,7 @@ class TransferOrder(Base):
 
     # Configuration
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
-    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"))
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"))
 
     # SC Compliance fields
     company_id = Column(String(100))  # SC: company identifier
@@ -97,7 +97,7 @@ class TransferOrder(Base):
         Index('idx_to_status', 'status'),
         Index('idx_to_shipment_date', 'shipment_date'),
         Index('idx_to_config', 'config_id'),
-        Index('idx_to_customer', 'customer_id'),
+        Index('idx_to_tenant', 'tenant_id'),
         Index('idx_to_mrp_run', 'mrp_run_id'),
         Index('idx_to_lane', 'source_site_id', 'destination_site_id'),
         Index('idx_to_company', 'company_id'),

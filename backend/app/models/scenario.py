@@ -22,7 +22,7 @@ from app.core.time_buckets import TimeBucket, DEFAULT_START_DATE
 
 # Import for type checking only to avoid circular imports
 if TYPE_CHECKING:
-    from .customer import Customer
+    from .tenant import Tenant
     from .participant import ScenarioUser
     from .user import User
     from .agent_config import AgentConfig
@@ -66,7 +66,7 @@ class Scenario(Base):
     time_bucket: Mapped[str] = mapped_column(String(16), default=TimeBucket.WEEK.value)
     start_date: Mapped[date] = mapped_column(Date, default=DEFAULT_START_DATE)
     current_period_start: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
-    customer_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=True)
+    tenant_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True)
     supply_chain_config_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("supply_chain_configs.id", ondelete="RESTRICT"),
@@ -91,7 +91,7 @@ class Scenario(Base):
     users = relationship("User", secondary="user_scenarios", back_populates="scenarios", lazy="selectin")
     supervisor_actions = relationship("SupervisorAction", back_populates="scenario", lazy="selectin")
     agent_configs = relationship("AgentConfig", back_populates="scenario", lazy="selectin")
-    customer: Mapped[Optional["Customer"]] = relationship("Customer", back_populates="scenarios")
+    tenant: Mapped[Optional["Tenant"]] = relationship("Tenant", back_populates="scenarios")
     supply_chain_config: Mapped["SupplyChainConfig"] = relationship(
         "SupplyChainConfig",
         back_populates="scenarios",

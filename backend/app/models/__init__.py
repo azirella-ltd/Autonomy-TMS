@@ -31,10 +31,7 @@ from .risk import RiskAlert, Watchlist
 # 2. Core models with no dependencies
 from .user import RefreshToken  # Must be imported before User to avoid circular import
 from .user import User, user_scenarios
-from .customer import Customer, CustomerMode, ClockMode
-# Backward compatibility aliases
-Group = Customer
-GroupMode = CustomerMode
+from .tenant import Tenant, TenantMode, ClockMode
 
 # 3. Models that depend on User
 from .participant import (
@@ -157,7 +154,6 @@ from .achievement import (
 )
 
 # 7. Enterprise Features - Option 1
-from .tenant import Tenant
 from .sso_provider import SSOProvider, UserSSOMapping
 # RBAC models already imported at top
 from .audit_log import AuditLog
@@ -328,7 +324,7 @@ registered_tables = set(Base.metadata.tables.keys())
 expected_tables = {
     'users', 'refresh_tokens', 'scenario_users', 'password_history',
     'password_reset_tokens', 'token_blacklist', 'user_sessions',
-    'scenarios', 'rounds', 'scenario_user_actions', 'user_scenarios', 'customers'
+    'scenarios', 'rounds', 'scenario_user_actions', 'user_scenarios', 'tenants'
 }
 
 missing_tables = expected_tables - registered_tables
@@ -342,8 +338,7 @@ logger.info(f"Registered tables in metadata: {registered_tables}")
 __all__ = [
     'Base',
     'User',
-    'Customer',
-    'Group',  # Backward compat alias
+    'Tenant',
     'RefreshToken',
     'NodeType',
     'SupplyChainConfig',

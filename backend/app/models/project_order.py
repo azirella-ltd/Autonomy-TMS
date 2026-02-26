@@ -43,7 +43,7 @@ class ProjectOrder(Base):
     # Sites and configuration
     site_id = Column(Integer, ForeignKey("site.id"), nullable=False)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
-    org_customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"))
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"))
 
     # AWS SC Compliance fields
     company_id = Column(String(100))  # SC: company identifier
@@ -112,7 +112,7 @@ class ProjectOrder(Base):
         Index('idx_proj_order_date', 'order_date'),
         Index('idx_proj_completion_date', 'required_completion_date'),
         Index('idx_proj_config', 'config_id'),
-        Index('idx_proj_org_customer', 'org_customer_id'),
+        Index('idx_proj_tenant', 'tenant_id'),
         Index('idx_proj_company', 'company_id'),
         Index('idx_proj_priority', 'priority'),
     )

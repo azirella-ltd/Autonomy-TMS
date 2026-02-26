@@ -97,7 +97,7 @@ class PlanningHierarchyConfig(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # Ownership
-    customer_id: Mapped[int] = mapped_column(Integer, ForeignKey("customers.id"), nullable=False)
+    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id"), nullable=False)
     config_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("supply_chain_configs.id"))
 
     # Planning type this configuration applies to
@@ -181,18 +181,18 @@ class PlanningHierarchyConfig(Base):
     created_by: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"))
 
     # Relationships
-    customer = relationship("Customer")
+    tenant = relationship("Tenant")
     config = relationship("SupplyChainConfig")
 
     __table_args__ = (
-        UniqueConstraint('customer_id', 'planning_type', 'config_id', name='uq_planning_hierarchy_type'),
-        Index('idx_planning_hierarchy_customer', 'customer_id', 'is_active'),
+        UniqueConstraint('tenant_id', 'planning_type', 'config_id', name='uq_planning_hierarchy_type'),
+        Index('idx_planning_hierarchy_tenant', 'tenant_id', 'is_active'),
     )
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
-            "customer_id": self.customer_id,
+            "tenant_id": self.tenant_id,
             "config_id": self.config_id,
             "planning_type": self.planning_type.value,
             "site_hierarchy_level": self.site_hierarchy_level.value,
@@ -261,7 +261,7 @@ class SiteHierarchyNode(Base):
     gnn_node_features: Mapped[Optional[Dict]] = mapped_column(JSON)
 
     # Ownership
-    customer_id: Mapped[int] = mapped_column(Integer, ForeignKey("customers.id"), nullable=False)
+    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id"), nullable=False)
 
     # Audit
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -271,11 +271,11 @@ class SiteHierarchyNode(Base):
     parent = relationship("SiteHierarchyNode", remote_side=[id], backref="children")
     geography = relationship("Geography")
     site = relationship("Site")
-    customer = relationship("Customer")
+    tenant = relationship("Tenant")
 
     __table_args__ = (
         Index('idx_site_hierarchy_path', 'hierarchy_path'),
-        Index('idx_site_hierarchy_level', 'hierarchy_level', 'customer_id'),
+        Index('idx_site_hierarchy_level', 'hierarchy_level', 'tenant_id'),
     )
 
 
@@ -334,7 +334,7 @@ class ProductHierarchyNode(Base):
     gnn_node_features: Mapped[Optional[Dict]] = mapped_column(JSON)
 
     # Ownership
-    customer_id: Mapped[int] = mapped_column(Integer, ForeignKey("customers.id"), nullable=False)
+    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id"), nullable=False)
 
     # Audit
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -344,11 +344,11 @@ class ProductHierarchyNode(Base):
     parent = relationship("ProductHierarchyNode", remote_side=[id], backref="children")
     product_hierarchy = relationship("ProductHierarchy")
     product = relationship("Product")
-    customer = relationship("Customer")
+    tenant = relationship("Tenant")
 
     __table_args__ = (
         Index('idx_product_hierarchy_path', 'hierarchy_path'),
-        Index('idx_product_hierarchy_level', 'hierarchy_level', 'customer_id'),
+        Index('idx_product_hierarchy_level', 'hierarchy_level', 'tenant_id'),
     )
 
 
@@ -373,7 +373,7 @@ class TimeBucketConfig(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # Ownership
-    customer_id: Mapped[int] = mapped_column(Integer, ForeignKey("customers.id"), nullable=False)
+    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id"), nullable=False)
 
     # Bucket type
     bucket_type: Mapped[TimeBucketType] = mapped_column(
@@ -411,10 +411,10 @@ class TimeBucketConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    customer = relationship("Customer")
+    tenant = relationship("Tenant")
 
     __table_args__ = (
-        UniqueConstraint('customer_id', 'bucket_type', name='uq_time_bucket_type'),
+        UniqueConstraint('tenant_id', 'bucket_type', name='uq_time_bucket_type'),
     )
 
 
@@ -557,7 +557,7 @@ class AggregatedPlan(Base):
     approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
     # Ownership
-    customer_id: Mapped[int] = mapped_column(Integer, ForeignKey("customers.id"), nullable=False)
+    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id"), nullable=False)
 
     # Audit
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -567,7 +567,7 @@ class AggregatedPlan(Base):
     planning_config = relationship("PlanningHierarchyConfig")
     site_node = relationship("SiteHierarchyNode")
     product_node = relationship("ProductHierarchyNode")
-    customer = relationship("Customer")
+    tenant = relationship("Tenant")
 
     __table_args__ = (
         Index('idx_aggregated_plan_period', 'plan_id', 'period_start', 'period_end'),

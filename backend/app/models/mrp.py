@@ -29,7 +29,7 @@ class MRPRun(Base):
     run_id = Column(String(100), unique=True, nullable=False, index=True)
     mps_plan_id = Column(Integer, ForeignKey("mps_plans.id"), nullable=False)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
-    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"))
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"))
 
     # Run parameters
     planning_horizon_weeks = Column(Integer)
@@ -65,7 +65,7 @@ class MRPRun(Base):
         Index('idx_mrp_run_mps_plan', 'mps_plan_id'),
         Index('idx_mrp_run_status', 'status'),
         Index('idx_mrp_run_config', 'config_id'),
-        Index('idx_mrp_run_customer', 'customer_id'),
+        Index('idx_mrp_run_tenant', 'tenant_id'),
         Index('idx_mrp_run_started', 'started_at'),
     )
 

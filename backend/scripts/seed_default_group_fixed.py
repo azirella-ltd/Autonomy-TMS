@@ -35,9 +35,9 @@ try:
         User,
     )
     from app.models.agent_config import AgentConfig
-    from app.schemas.customer import CustomerCreate
+    from app.schemas.tenant import TenantCreate
     from app.schemas.user import UserCreate
-    from app.services.customer_service import CustomerService
+    from app.services.tenant_service import TenantService
     from scripts.seed_default_group import ensure_supply_chain_config
 except ImportError as e:
     print(f"Error importing application modules: {e}")

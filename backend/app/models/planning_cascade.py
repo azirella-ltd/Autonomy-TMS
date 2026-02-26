@@ -134,7 +134,7 @@ class PolicyEnvelope(Base):
 
     # Context
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
 
     # Source tracking
     generated_by = Column(Enum(PolicySource, name="policy_source"), nullable=False, default=PolicySource.CUSTOMER_INPUT)
@@ -184,7 +184,7 @@ class PolicyEnvelope(Base):
 
     # Relationships - use lazy="select" to defer class resolution
     config = relationship("SupplyChainConfig", lazy="select")
-    customer = relationship("Customer", lazy="select")
+    tenant = relationship("Tenant", lazy="select")
     supply_baseline_packs = relationship("SupplyBaselinePack", back_populates="policy_envelope")
 
     __table_args__ = (
@@ -230,7 +230,7 @@ class SupplyBaselinePack(Base):
 
     # Context
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
 
     # Source tracking
     generated_by = Column(Enum(PolicySource, name="policy_source"), nullable=False)
@@ -312,7 +312,7 @@ class SupplyCommit(Base):
 
     # Context
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
 
     # Selected candidate info
     selected_method = Column(String(50), nullable=True)  # Which SupBP candidate was selected/blended
@@ -415,7 +415,7 @@ class SolverBaselinePack(Base):
 
     # Context
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
 
     # Candidates
     # Format: [
@@ -487,7 +487,7 @@ class AllocationCommit(Base):
 
     # Context
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
 
     # Selected method
     selected_method = Column(String(50), nullable=True)
@@ -579,7 +579,7 @@ class FeedBackSignal(Base):
 
     # Context
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
 
     # Signal type
     signal_type = Column(String(50), nullable=False, index=True)
@@ -646,7 +646,7 @@ class AgentDecisionMetrics(Base):
 
     # Context
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
     agent_type = Column(String(50), nullable=False, index=True)  # supply_agent, allocation_agent
 
     # Period
@@ -704,7 +704,7 @@ class LayerLicense(Base):
     __tablename__ = "layer_license"
 
     id = Column(Integer, primary_key=True, index=True)
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
     layer = Column(Enum(LayerName, name="layer_name"), nullable=False)
     mode = Column(Enum(LayerMode, name="layer_mode"), nullable=False, default=LayerMode.INPUT)
 
@@ -719,8 +719,8 @@ class LayerLicense(Base):
     updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     # Relationships
-    customer = relationship("Customer", lazy="select")
+    tenant = relationship("Tenant", lazy="select")
 
     __table_args__ = (
-        Index("ix_layer_license_customer_layer", "customer_id", "layer", unique=True),
+        Index("ix_layer_license_tenant_layer", "tenant_id", "layer", unique=True),
     )

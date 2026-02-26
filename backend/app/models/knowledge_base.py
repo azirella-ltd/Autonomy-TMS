@@ -41,13 +41,13 @@ class KBDocument(KBBase):
     Stores metadata about uploaded files. The actual content is chunked
     and stored in kb_chunks with vector embeddings for retrieval.
 
-    Note: customer_id and uploaded_by are plain integers (no FK to main DB).
+    Note: tenant_id and uploaded_by are plain integers (no FK to main DB).
     Association is enforced at the application level, not the database level.
     """
     __tablename__ = "kb_documents"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    customer_id = Column(Integer, nullable=False)  # Application-level ref to customers.id
+    tenant_id = Column(Integer, nullable=False)  # Application-level ref to tenants.id
     uploaded_by = Column(Integer, nullable=True)  # Application-level ref to users.id
 
     # Document metadata
@@ -79,7 +79,7 @@ class KBDocument(KBBase):
     chunks = relationship("KBChunk", back_populates="document", cascade="all, delete-orphan")
 
     __table_args__ = (
-        Index("idx_kb_doc_customer", "customer_id"),
+        Index("idx_kb_doc_tenant", "tenant_id"),
         Index("idx_kb_doc_status", "status"),
         Index("idx_kb_doc_category", "category"),
     )
@@ -87,7 +87,7 @@ class KBDocument(KBBase):
     def to_dict(self):
         return {
             "id": self.id,
-            "customer_id": self.customer_id,
+            "tenant_id": self.tenant_id,
             "uploaded_by": self.uploaded_by,
             "title": self.title,
             "filename": self.filename,

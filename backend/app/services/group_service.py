@@ -24,7 +24,7 @@ from ..models.supply_chain_config import (
     NodeType,
 )
 from ..models.sc_entities import Product, ProductBom
-from ..schemas.group import GroupCreate, GroupUpdate
+from ..schemas.tenant import TenantCreate, TenantUpdate
 from ..core.security import get_password_hash
 from app.core.time_buckets import TimeBucket
 from .supply_chain_config_service import SupplyChainConfigService
@@ -95,7 +95,7 @@ class GroupService:
             )
         return group
 
-    def create_group(self, group_in: GroupCreate) -> Group:
+    def create_group(self, group_in: TenantCreate) -> Group:
         admin_data = group_in.admin
         hashed_password = get_password_hash(admin_data.password)
         try:
@@ -329,7 +329,7 @@ class GroupService:
             logger.exception("Failed to create group %s", group_in.name)
             raise HTTPException(status_code=500, detail="Error creating group")
 
-    def update_group(self, group_id: int, group_update: GroupUpdate) -> Group:
+    def update_group(self, group_id: int, group_update: TenantUpdate) -> Group:
         group = self.db.query(Group).filter(Group.id == group_id).first()
         if not group:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")

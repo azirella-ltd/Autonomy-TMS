@@ -207,7 +207,7 @@ class CDCThresholdConfig(Base):
 
     # Context
     site_key = Column(String(64), index=True, nullable=False)
-    customer_id = Column(Integer, ForeignKey("customers.id"), index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True)
 
     # Thresholds
     demand_deviation = Column(Float, default=0.15)
@@ -230,5 +230,5 @@ class CDCThresholdConfig(Base):
     updated_by = Column(Integer, ForeignKey("users.id"))
 
     __table_args__ = (
-        Index("ix_cdc_thresholds_site_customer", "site_key", "customer_id"),
+        Index("ix_cdc_thresholds_site_tenant", "site_key", "tenant_id"),
     )

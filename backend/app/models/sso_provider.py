@@ -49,7 +49,7 @@ class SSOProvider(Base):
     # Auto-provisioning settings
     auto_create_users = Column(Boolean, default=True)  # Auto-create users on first SSO login
     default_user_type = Column(String(50), default="USER")  # Default role for new users
-    default_customer_id = Column(Integer, ForeignKey('customers.id'), nullable=True)
+    default_tenant_id = Column(Integer, ForeignKey('tenants.id'), nullable=True)
 
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -61,7 +61,7 @@ class SSOProvider(Base):
 
     # Relationships
     user_mappings = relationship("UserSSOMapping", back_populates="provider", cascade="all, delete-orphan")
-    default_customer = relationship("Customer", foreign_keys=[default_customer_id])
+    default_tenant = relationship("Tenant", foreign_keys=[default_tenant_id])
     tenant = relationship("Tenant", back_populates="sso_providers")
 
     def __repr__(self):

@@ -32,9 +32,9 @@ from sqlalchemy import or_, text
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.services.customer_service import CustomerService
-from app.services.bootstrap import build_default_customer_payload, ensure_default_customer_and_game
-from app.schemas.customer import CustomerCreate, CustomerUpdate, Customer as CustomerSchema
+from app.services.tenant_service import TenantService
+from app.services.bootstrap import build_default_tenant_payload, ensure_default_tenant_and_scenario
+from app.schemas.tenant import TenantCreate, TenantUpdate, TenantResponse as TenantSchema
 from app.schemas.scenario import ScenarioCreate, PricingConfig, NodePolicy, DemandPattern
 from app.schemas.supply_chain_config import SupplyChainConfigUpdate
 from app.schemas.scenario_user import ScenarioUserAssignment, ScenarioUserType as ScenarioUserTypeSchema
@@ -1190,12 +1190,13 @@ def require_system_admin(user: Dict[str, Any]):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
 
 
-def _default_customer_payload() -> CustomerCreate:
-    return build_default_group_payload()
+def _default_tenant_payload() -> TenantCreate:
+    return build_default_tenant_payload()
 
 
-# Backward-compatible alias
-_default_group_payload = _default_customer_payload
+# Backward-compatible aliases
+_default_customer_payload = _default_tenant_payload
+_default_group_payload = _default_tenant_payload
 
 
 def _serialize_user_record(user: User) -> Dict[str, Any]:
@@ -5064,7 +5065,7 @@ async def list_mixed_scenarios(user: Dict[str, Any] = Depends(get_current_user))
             query = query.filter(DbGame.customer_id == customer_id)
         games = query.all()
         if not games:
-            ensure_default_customer_and_game(db)
+            ensure_default_tenant_and_scenario(db)
             db.expire_all()
             games = query.all()
 
@@ -5696,62 +5697,62 @@ async def finish_game(scenario_id: int, user: Dict[str, Any] = Depends(get_curre
 # Customer management
 # ------------------------------------------------------------------------------
 
-@api.get("/customers", response_model=List[CustomerSchema], tags=["customers"])
+@api.get("/customers", response_model=List[TenantSchema], tags=["customers"])
 def list_customers_endpoint(
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: Session = Depends(get_sync_session),
 ):
     require_system_admin(current_user)
-    service = CustomerService(db)
-    return service.get_customers()
+    service = TenantService(db)
+    return service.get_tenants()
 
 
-@api.post("/customers/default", response_model=CustomerSchema, tags=["customers"])
-def ensure_default_customer_endpoint(
+@api.post("/customers/default", response_model=TenantSchema, tags=["customers"])
+def ensure_default_tenant_endpoint(
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: Session = Depends(get_sync_session),
 ):
     require_system_admin(current_user)
-    service = CustomerService(db)
-    customers = service.get_customers()
-    if customers:
-        return customers[0]
+    service = TenantService(db)
+    tenants = service.get_tenants()
+    if tenants:
+        return tenants[0]
     payload = _default_group_payload()
-    return service.create_customer(payload)
+    return service.create_tenant(payload)
 
 
-@api.post("/customers", response_model=CustomerSchema, status_code=status.HTTP_201_CREATED, tags=["customers"])
-def create_customer_endpoint(
-    customer_in: CustomerCreate,
+@api.post("/customers", response_model=TenantSchema, status_code=status.HTTP_201_CREATED, tags=["customers"])
+def create_tenant_endpoint(
+    tenant_in: TenantCreate,
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: Session = Depends(get_sync_session),
 ):
     require_system_admin(current_user)
-    service = CustomerService(db)
-    return service.create_customer(customer_in)
+    service = TenantService(db)
+    return service.create_tenant(tenant_in)
 
 
-@api.put("/customers/{customer_id}", response_model=CustomerSchema, tags=["customers"])
-def update_customer_endpoint(
+@api.put("/customers/{customer_id}", response_model=TenantSchema, tags=["customers"])
+def update_tenant_endpoint(
     customer_id: int,
-    customer_update: CustomerUpdate,
+    tenant_update: TenantUpdate,
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: Session = Depends(get_sync_session),
 ):
     require_system_admin(current_user)
-    service = CustomerService(db)
-    return service.update_customer(customer_id, customer_update)
+    service = TenantService(db)
+    return service.update_tenant(customer_id, tenant_update)
 
 
 @api.delete("/customers/{customer_id}", tags=["customers"])
-def delete_customer_endpoint(
+def delete_tenant_endpoint(
     customer_id: int,
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: Session = Depends(get_sync_session),
 ):
     require_system_admin(current_user)
-    service = CustomerService(db)
-    return service.delete_customer(customer_id)
+    service = TenantService(db)
+    return service.delete_tenant(customer_id)
 
 
 _MODEL_STATUS = {
@@ -5819,13 +5820,9 @@ api.include_router(predictive_analytics_router, prefix="/predictive-analytics", 
 from app.api.endpoints.sso import router as sso_router
 api.include_router(sso_router, prefix="/sso", tags=["sso", "authentication"])
 
-# Customer management
-from app.api.endpoints.customer import router as customer_router
-api.include_router(customer_router, prefix="/customers", tags=["customers", "organization"])
-
-# Option 1: Enterprise Features - Multi-Tenancy
+# Tenant management
 from app.api.endpoints.tenant import router as tenant_router
-api.include_router(tenant_router, prefix="/tenants", tags=["tenants", "multi-tenancy"])
+api.include_router(tenant_router, prefix="/tenants", tags=["tenants", "organization"])
 
 # Option 1: Enterprise Features - RBAC
 from app.api.endpoints.rbac import router as rbac_router

@@ -1,4 +1,4 @@
-"""Helpers to bootstrap a default customer/game for developer convenience."""
+"""Helpers to bootstrap a default tenant/scenario for developer convenience."""
 
 from __future__ import annotations
 
@@ -12,26 +12,31 @@ from app.models.scenario import Scenario
 
 # Aliases for backwards compatibility
 Game = Scenario
-from app.schemas.customer import CustomerCreate
+from app.schemas.tenant import TenantCreate
 from app.schemas.user import UserCreate
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CUSTOMER_NAME = "Autonomy"
-DEFAULT_CUSTOMER_DESCRIPTION = "Default Autonomy customer"
-DEFAULT_CUSTOMER_LOGO = "/autonomy_logo.svg"
+DEFAULT_TENANT_NAME = "Autonomy"
+DEFAULT_TENANT_DESCRIPTION = "Default Autonomy tenant"
+DEFAULT_TENANT_LOGO = "/autonomy_logo.svg"
 DEFAULT_ADMIN_USERNAME = "groupadmin"
 DEFAULT_ADMIN_EMAIL = "groupadmin@autonomy.ai"
 DEFAULT_ADMIN_FULL_NAME = "Group Administrator"
 DEFAULT_ADMIN_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")
 
+# Backward compatibility aliases
+DEFAULT_CUSTOMER_NAME = DEFAULT_TENANT_NAME
+DEFAULT_CUSTOMER_DESCRIPTION = DEFAULT_TENANT_DESCRIPTION
+DEFAULT_CUSTOMER_LOGO = DEFAULT_TENANT_LOGO
 
-def build_default_customer_payload() -> CustomerCreate:
-    """Return the default Autonomy customer payload used across the app."""
-    return CustomerCreate(
-        name=DEFAULT_CUSTOMER_NAME,
-        description=DEFAULT_CUSTOMER_DESCRIPTION,
-        logo=DEFAULT_CUSTOMER_LOGO,
+
+def build_default_tenant_payload() -> TenantCreate:
+    """Return the default Autonomy tenant payload used across the app."""
+    return TenantCreate(
+        name=DEFAULT_TENANT_NAME,
+        description=DEFAULT_TENANT_DESCRIPTION,
+        logo=DEFAULT_TENANT_LOGO,
         admin=UserCreate(
             username=DEFAULT_ADMIN_USERNAME,
             email=DEFAULT_ADMIN_EMAIL,
@@ -42,16 +47,24 @@ def build_default_customer_payload() -> CustomerCreate:
     )
 
 
-def ensure_default_customer_and_game(db: Session) -> Optional[Game]:
-    """Ensure at least one game exists for developer-focused SQLite fallback."""
+# Backward compatibility alias
+build_default_customer_payload = build_default_tenant_payload
+
+
+def ensure_default_tenant_and_scenario(db: Session) -> Optional[Game]:
+    """Ensure at least one scenario exists for developer-focused SQLite fallback."""
     existing_game = db.query(Game).first()
     if existing_game:
         return existing_game
 
-    logger.info("Bootstrapping default customer and game for local development")
-    from .customer_service import CustomerService  # local import to avoid circular dependency
+    logger.info("Bootstrapping default tenant and scenario for local development")
+    from .tenant_service import TenantService  # local import to avoid circular dependency
 
-    service = CustomerService(db)
-    customer = service.create_customer(build_default_customer_payload())
-    db.refresh(customer)
+    service = TenantService(db)
+    tenant = service.create_tenant(build_default_tenant_payload())
+    db.refresh(tenant)
     return db.query(Game).first()
+
+
+# Backward compatibility alias
+ensure_default_customer_and_game = ensure_default_tenant_and_scenario

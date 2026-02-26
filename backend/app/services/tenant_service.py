@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 
 from ..models import (
-    Customer,
+    Tenant,
     User,
     SupplyChainConfig,
     Scenario as Game,
@@ -23,7 +23,7 @@ from ..models.supply_chain_config import (
     NodeType,
 )
 from ..models.sc_entities import Product, ProductBom
-from ..schemas.customer import CustomerCreate, CustomerUpdate
+from ..schemas.tenant import TenantCreate, TenantUpdate
 from ..core.security import get_password_hash
 from app.core.time_buckets import TimeBucket
 from .supply_chain_config_service import SupplyChainConfigService
@@ -78,24 +78,29 @@ DEFAULT_SITE_TYPE_DEFINITIONS = [
 ]
 
 
-class CustomerService:
+class TenantService:
+    """Service for managing Autonomy tenants (organization isolation boundary)."""
+
     def __init__(self, db: Session):
         self.db = db
 
-    def get_customers(self):
-        return self.db.query(Customer).all()
+    def get_tenants(self):
+        """Return all tenants."""
+        return self.db.query(Tenant).all()
 
-    def get_customer(self, customer_id: int) -> Customer:
-        customer = self.db.query(Customer).filter(Customer.id == customer_id).first()
-        if not customer:
+    def get_tenant(self, tenant_id: int) -> Tenant:
+        """Return a single tenant by ID, or raise 404."""
+        tenant = self.db.query(Tenant).filter(Tenant.id == tenant_id).first()
+        if not tenant:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Customer not found",
+                detail="Tenant not found",
             )
-        return customer
+        return tenant
 
-    def create_customer(self, customer_in: CustomerCreate) -> Customer:
-        admin_data = customer_in.admin
+    def create_tenant(self, tenant_in: TenantCreate) -> Tenant:
+        """Create a new tenant with admin user, default SC config, and default scenario."""
+        admin_data = tenant_in.admin
         hashed_password = get_password_hash(admin_data.password)
         try:
             admin_user = User(
@@ -110,23 +115,23 @@ class CustomerService:
             self.db.add(admin_user)
             self.db.flush()
 
-            customer = Customer(
-                name=customer_in.name,
-                description=customer_in.description,
-                logo=customer_in.logo,
+            tenant = Tenant(
+                name=tenant_in.name,
+                description=tenant_in.description,
+                logo=tenant_in.logo,
                 admin_id=admin_user.id,
             )
-            self.db.add(customer)
+            self.db.add(tenant)
             self.db.flush()
 
-            admin_user.customer_id = customer.id
+            admin_user.tenant_id = tenant.id
             self.db.add(admin_user)
 
             sc_config = SupplyChainConfig(
                 name="Default Supply Chain",
                 description="Default supply chain configuration",
                 created_by=admin_user.id,
-                customer_id=customer.id,
+                tenant_id=tenant.id,
                 is_active=True,
                 time_bucket=TimeBucket.WEEK,
                 site_type_definitions=DEFAULT_SITE_TYPE_DEFINITIONS,
@@ -238,7 +243,7 @@ class CustomerService:
                 game = Game(
                     name=game_config.get("name", "Default Scenario"),
                     created_by=admin_user.id,
-                    customer_id=customer.id,
+                    tenant_id=tenant.id,
                     status=GameStatus.CREATED,
                     max_rounds=game_config.get("max_rounds", 52),
                     config=game_config,
@@ -248,30 +253,30 @@ class CustomerService:
                 self.db.add(game)
                 self.db.flush()
 
-                customer_suffix = f"c{customer.id}"
+                tenant_suffix = f"c{tenant.id}"
                 player_password_hash = get_password_hash(DEFAULT_ADMIN_PASSWORD)
                 default_users = [
                     {
-                        "username": f"retailer_{customer_suffix}",
-                        "email": f"retailer+{customer_suffix}@autonomy.ai",
+                        "username": f"retailer_{tenant_suffix}",
+                        "email": f"retailer+{tenant_suffix}@autonomy.ai",
                         "full_name": "Retailer",
                         "role": PlayerRole.RETAILER,
                     },
                     {
-                        "username": f"distributor_{customer_suffix}",
-                        "email": f"distributor+{customer_suffix}@autonomy.ai",
+                        "username": f"distributor_{tenant_suffix}",
+                        "email": f"distributor+{tenant_suffix}@autonomy.ai",
                         "full_name": "Distributor",
                         "role": PlayerRole.DISTRIBUTOR,
                     },
                     {
-                        "username": f"manufacturer_{customer_suffix}",
-                        "email": f"manufacturer+{customer_suffix}@autonomy.ai",
+                        "username": f"manufacturer_{tenant_suffix}",
+                        "email": f"manufacturer+{tenant_suffix}@autonomy.ai",
                         "full_name": "Factory",
                         "role": PlayerRole.MANUFACTURER,
                     },
                     {
-                        "username": f"wholesaler_{customer_suffix}",
-                        "email": f"wholesaler+{customer_suffix}@autonomy.ai",
+                        "username": f"wholesaler_{tenant_suffix}",
+                        "email": f"wholesaler+{tenant_suffix}@autonomy.ai",
                         "full_name": "Wholesaler",
                         "role": PlayerRole.WHOLESALER,
                     },
@@ -285,7 +290,7 @@ class CustomerService:
                         full_name=spec["full_name"],
                         hashed_password=player_password_hash,
                         user_type=UserTypeEnum.USER,
-                        customer_id=customer.id,
+                        tenant_id=tenant.id,
                         is_active=True,
                         is_superuser=False,
                     )
@@ -321,31 +326,33 @@ class CustomerService:
                 self.db.add(game)
 
                 self.db.commit()
-                self.db.refresh(customer)
-                return customer
+                self.db.refresh(tenant)
+                return tenant
         except Exception:
             self.db.rollback()
-            logger.exception("Failed to create customer %s", customer_in.name)
-            raise HTTPException(status_code=500, detail="Error creating customer")
+            logger.exception("Failed to create tenant %s", tenant_in.name)
+            raise HTTPException(status_code=500, detail="Error creating tenant")
 
-    def update_customer(self, customer_id: int, customer_update: CustomerUpdate) -> Customer:
-        customer = self.db.query(Customer).filter(Customer.id == customer_id).first()
-        if not customer:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
-        for field, value in customer_update.dict(exclude_unset=True).items():
-            setattr(customer, field, value)
+    def update_tenant(self, tenant_id: int, tenant_update: TenantUpdate) -> Tenant:
+        """Update an existing tenant."""
+        tenant = self.db.query(Tenant).filter(Tenant.id == tenant_id).first()
+        if not tenant:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+        for field, value in tenant_update.dict(exclude_unset=True).items():
+            setattr(tenant, field, value)
         self.db.commit()
-        self.db.refresh(customer)
-        return customer
+        self.db.refresh(tenant)
+        return tenant
 
-    def delete_customer(self, customer_id: int):
-        customer = self.db.query(Customer).filter(Customer.id == customer_id).first()
-        if not customer:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
-        self.db.delete(customer)
+    def delete_tenant(self, tenant_id: int):
+        """Delete a tenant by ID."""
+        tenant = self.db.query(Tenant).filter(Tenant.id == tenant_id).first()
+        if not tenant:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+        self.db.delete(tenant)
         self.db.commit()
-        return {"message": "Customer deleted"}
+        return {"message": "Tenant deleted"}
 
 
 # Backward compatibility aliases
-GroupService = CustomerService
+CustomerService = TenantService

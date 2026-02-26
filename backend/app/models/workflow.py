@@ -69,8 +69,8 @@ class WorkflowTemplate(Base):
     description = Column(Text, nullable=True)
 
     # Scope
-    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=True, index=True)
-    is_global = Column(Boolean, default=False)  # Available to all customers
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
+    is_global = Column(Boolean, default=False)  # Available to all tenants
 
     # Trigger Configuration
     trigger_types = Column(JSON, nullable=True)  # List of WorkflowTriggerType values
@@ -111,12 +111,12 @@ class WorkflowTemplate(Base):
     updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # Relationships
-    customer = relationship("Customer", back_populates="workflow_templates")
+    tenant = relationship("Tenant", back_populates="workflow_templates")
     executions = relationship("WorkflowExecution", back_populates="template")
     creator = relationship("User", foreign_keys=[created_by])
 
     __table_args__ = (
-        Index("ix_workflow_template_code_customer", "code", "customer_id", unique=True),
+        Index("ix_workflow_template_code_tenant", "code", "tenant_id", unique=True),
         Index("ix_workflow_template_active", "is_active"),
     )
 
@@ -151,7 +151,7 @@ class WorkflowExecution(Base):
     trigger_metadata = Column(JSON, nullable=True)  # Additional trigger context
 
     # Scope
-    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="CASCADE"), nullable=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     planning_cycle_id = Column(Integer, ForeignKey("planning_cycles.id", ondelete="SET NULL"), nullable=True)
 
     # Status
@@ -185,12 +185,12 @@ class WorkflowExecution(Base):
     template = relationship("WorkflowTemplate", back_populates="executions")
     steps = relationship("WorkflowStepExecution", back_populates="workflow", cascade="all, delete-orphan",
                         order_by="WorkflowStepExecution.step_number")
-    customer = relationship("Customer")
+    tenant = relationship("Tenant")
     trigger_user = relationship("User", foreign_keys=[triggered_by])
 
     __table_args__ = (
         Index("ix_workflow_exec_status_created", "status", "created_at"),
-        Index("ix_workflow_exec_customer_created", "customer_id", "created_at"),
+        Index("ix_workflow_exec_tenant_created", "tenant_id", "created_at"),
         Index("ix_workflow_exec_template_status", "template_id", "status"),
         Index("ix_workflow_exec_trigger", "trigger_type", "trigger_source_type", "trigger_source_id"),
     )
