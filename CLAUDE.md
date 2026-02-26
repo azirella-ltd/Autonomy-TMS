@@ -1159,70 +1159,63 @@ Use these books as references when writing executive summaries, competitive posi
 
 ---
 
-## External Agent Runtimes & Self-Hosted LLM
+## Claude Skills Framework
 
-**Status**: IMPLEMENTED (2026-02-24)
+**Status**: IMPLEMENTED (2026-02-26)
 
-The platform supports integration with external agent runtimes (PicoClaw, OpenClaw) as thin orchestration layers wrapping the existing REST API. A self-hosted LLM (Qwen 3 via vLLM) eliminates dependency on external LLM providers for data sovereignty.
+The platform uses Claude Skills as an alternative to TRM neural networks for execution-level decisions. Each skill encodes heuristic decision rules as a SKILL.md file, with RAG decision memory providing few-shot context from past decisions. Feature-flagged OFF by default (`USE_CLAUDE_SKILLS=false`).
 
 **Key Documentation**:
-- [docs/PICOCLAW_OPENCLAW_GUIDE.md](docs/PICOCLAW_OPENCLAW_GUIDE.md) - **Usage Guide**: Quick start, deployment, Make targets, admin UI pages, skills reference, security checklist, troubleshooting
-- [PICOCLAW_OPENCLAW_IMPLEMENTATION.md](PICOCLAW_OPENCLAW_IMPLEMENTATION.md) - **Implementation Roadmap**: 5-phase plan covering OpenClaw chat interface, PicoClaw edge CDC monitors, multi-agent authorization protocol, simulation swarm, and **channel context capture** (email/Slack/voice/market data signal ingestion into ForecastAdjustmentTRM). Includes comprehensive security risk matrix with CVE tracking (7+ OpenClaw CVEs documented), supply chain attack analysis (ClawHavoc), deployment checklist, and hardening requirements.
-- [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md#external-agent-runtimes-picoclaw--openclaw) - **Integration Details**: PicoClaw/OpenClaw workspace configuration, security considerations, Docker Compose deployment
-- [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md#self-hosted-llm-configuration) - **Self-Hosted LLM**: Qwen 3 model selection, vLLM serving, GPU sharing strategy, Docker Compose overlay
-- [AI_AGENTS.md](AI_AGENTS.md#external-agent-runtimes-picoclaw--openclaw) - **Agent Comparison**: PicoClaw/OpenClaw vs built-in agents, hybrid architecture, LLM provider configuration
+- [docs/CLAUDE_SKILLS_STRATEGY.md](docs/CLAUDE_SKILLS_STRATEGY.md) — Full strategic analysis: PicoClaw/OpenClaw vs Claude, TRM vs Skills+RAG, cost models, IP protection
+- [docs/CLAUDE_SKILLS_MIGRATION_PLAN.md](docs/CLAUDE_SKILLS_MIGRATION_PLAN.md) — Phased implementation roadmap
+- [docs/CLAUDE_SUBSCRIPTION_GUIDE.md](docs/CLAUDE_SUBSCRIPTION_GUIDE.md) — Subscription setup, pricing, smart routing config
 
-**Quick Reference**:
-- **PicoClaw**: Ultra-lightweight Go binary (<10MB RAM, $10 hardware) for edge CDC monitoring, alert routing via Telegram/Slack, and structured market data capture (weather, economic indicators, commodity prices). **Security**: Pre-v1.0, no formal audit, deploy in read-only containers only.
-- **OpenClaw**: Feature-rich agent platform for chat-based planning via WhatsApp/Slack/Teams, human escalation, and **channel context capture** (email/Slack/voice signals → ForecastAdjustmentTRM). **Security**: Minimum version v2026.2.15 required (CVE-2026-25253 critical RCE patched). Never install ClawHub marketplace skills.
-- **Self-Hosted LLM**: Qwen 3 8B via vLLM — 96.5% tool calling accuracy, OpenAI-compatible API, 8GB VRAM minimum
-- **Docker**: `docker-compose.llm.yml` overlay adds vLLM service to existing stack
-
-**Deployment Commands**:
-```bash
-# OpenClaw (chat-based planning interface)
-make openclaw-setup       # Validate workspace config
-make openclaw-up          # Start OpenClaw container
-make openclaw-down        # Stop OpenClaw container
-make openclaw-logs        # Tail OpenClaw logs
-
-# PicoClaw (edge CDC monitoring fleet)
-make picoclaw-workspaces  # Generate per-site workspaces from config
-make picoclaw-fleet       # Generate fleet docker-compose.picoclaw.yml
-make picoclaw-up          # Start PicoClaw CDC fleet
-make picoclaw-down        # Stop PicoClaw fleet
-make picoclaw-logs        # Tail PicoClaw fleet logs
-make picoclaw-status      # Show fleet container status
+**Architecture**:
+```
+Deterministic Engine (unchanged, always runs first)
+    → Skill Orchestrator (routes to Claude or RAG cache)
+        → RAG Decision Memory (find similar past decisions)
+        → Claude API (Haiku for calculation, Sonnet for judgment)
+    → Fallback: engine-only result if skill fails
 ```
 
-**Backend Implementation Files**:
-- `backend/app/models/edge_agents.py` — 13 SQLAlchemy models (PicoClaw instances/heartbeats/alerts, service accounts, OpenClaw config/channels/skills/sessions, ingested signals, correlations, source reliability, security checklist, activity log)
-- `backend/app/services/edge_agent_service.py` — Fleet management, gateway config, security checklist CRUD
-- `backend/app/services/signal_ingestion_service.py` — Confidence-gated signal pipeline (sanitize → rate limit → dedup → score → gate → correlate)
-- `backend/app/services/authorization_service.py` — Authorization with authority boundaries (`create_agent_authorization_request`, `escalate_to_human`)
-- `backend/app/services/escalation_formatter.py` — Tier 2 (agent) → Tier 3 (human) escalation bridge with ranked alternatives
-- `backend/app/services/powell/authority_boundaries.py` — Per-agent action classification (12 roles) with target routing and SLA
-- `backend/app/api/deps.py` — Service account auth middleware (`get_current_user_or_service_account`)
-- `backend/app/api/endpoints/edge_agents.py` — REST API: `/edge-agents/*` + `/signals/*` (40+ endpoints, service account auth)
-- `backend/app/api/endpoints/planning_scenarios.py` — `POST /scenarios/what-if` for pre-authorization evaluation
+**11 Skills by Routing Tier**:
 
-**Deployment Files**:
-- `deploy/openclaw/workspace/SOUL.md` — OpenClaw agent persona
-- `deploy/openclaw/workspace/skills/` — 9 skills (supply-plan-query, atp-check, override-decision, ask-why, kpi-dashboard, signal-capture, escalate-authorization, voice-signal, email-signal)
-- `deploy/openclaw/openclaw.json` — LLM provider config + channel stubs
-- `deploy/openclaw/docker-compose.openclaw.yml` — OpenClaw container definition
-- `deploy/picoclaw/templates/` — HEARTBEAT.sh, DIGEST.sh, MARKET_SIGNAL.sh, config.json.template, IDENTITY.md.template, SOUL.md, skills/
-- `deploy/picoclaw/generate_workspaces.py` — Per-site workspace generator from supply chain config
-- `deploy/picoclaw/generate_fleet_compose.py` — Fleet Docker Compose generator
+| Tier | Skills | Cost/Call | Notes |
+|------|--------|-----------|-------|
+| Deterministic | `atp_executor`, `order_tracking` | $0 | No LLM needed |
+| Haiku | `po_creation`, `inventory_rebalancing`, `inventory_buffer`, `to_execution` | ~$0.0018 | Calculation-heavy |
+| Sonnet | `mo_execution`, `quality_disposition`, `maintenance_scheduling`, `subcontracting`, `forecast_adjustment` | ~$0.0054 | Requires judgment |
 
-**Frontend Files**:
-- `frontend/src/pages/admin/PicoClawManagement.jsx` — Fleet dashboard, alerts, CDC config, service accounts
-- `frontend/src/pages/admin/OpenClawManagement.jsx` — Gateway overview, skills, channels, LLM config
-- `frontend/src/pages/admin/SignalIngestionDashboard.jsx` — Signal monitoring, review queue, source reliability, correlations
-- `frontend/src/pages/admin/EdgeAgentSecurity.jsx` — Security overview, CVE tracker, deployment checklist, integration health
-- `frontend/src/services/edgeAgentApi.js` — API client for all edge agent operations
+**Implementation Files**:
+- `backend/app/services/skills/__init__.py` — Framework package
+- `backend/app/services/skills/base_skill.py` — `SkillDefinition`, `SkillResult`, `SkillError`, registry
+- `backend/app/services/skills/claude_client.py` — Claude API client with vLLM/Qwen fallback, prompt caching
+- `backend/app/services/skills/skill_orchestrator.py` — Routes decisions through skills with RAG context
+- `backend/app/services/skills/*/SKILL.md` — 11 heuristic rule files (one per TRM type)
+- `backend/app/models/decision_embeddings.py` — pgvector 768-dim embeddings for RAG decision memory
+- `backend/app/services/decision_memory_service.py` — Embed/retrieve past decisions for few-shot context
+- `backend/app/services/powell/site_agent.py` — Integration point (`use_claude_skills` flag)
 
-**Navigation**: Administration > Edge Agents (PicoClaw Fleet, OpenClaw Gateway, Signal Ingestion, Edge Security)
+**RAG Decision Memory** (cost reduction flywheel):
+- Cache hit (similarity > 0.95): Skip LLM entirely ($0)
+- Few-shot hit (similarity > 0.70): Inject as context, cheaper Haiku model (~$0.0012)
+- Novel situation: Full skill prompt to Sonnet (~$0.0054)
+- Expected cost: ~$130/mo initially → ~$34/mo as decision corpus grows
+
+**Environment Variables**:
+```env
+CLAUDE_API_KEY=sk-ant-...          # From console.anthropic.com
+CLAUDE_MODEL_HAIKU=claude-haiku-4-5-20251001
+CLAUDE_MODEL_SONNET=claude-sonnet-4-6
+USE_CLAUDE_SKILLS=false            # Feature flag (enable when ready)
+```
+
+**Fallback**: vLLM + Qwen 3 via `LLM_API_BASE` for air-gapped customers. TRM neural networks remain as fallback when `use_claude_skills=False`.
+
+**Self-Hosted LLM** (unchanged):
+- Qwen 3 8B via vLLM — 96.5% tool calling accuracy, OpenAI-compatible API, 8GB VRAM minimum
+- `docker-compose.llm.yml` overlay adds vLLM service to existing stack
 
 ---
 
@@ -1242,7 +1235,9 @@ The platform has been refactored from Beer Game-centric to AWS SC-first. See [AR
 - ✅ CDC→Relearning autonomous feedback loop
 - ✅ Knowledge Base / RAG with pgvector
 - ✅ SAP integration (connections, field mapping, user import, monitoring)
-- ✅ Edge agents (PicoClaw/OpenClaw) with signal ingestion
+- ✅ Claude Skills framework (11 skills replacing TRM neural networks, feature-flagged)
+- ✅ RAG Decision Memory (pgvector-based decision embeddings for cost reduction)
+- ✅ PicoClaw/OpenClaw removed (replaced by Claude Skills ecosystem)
 - ✅ Beer Game repositioned as simulation/training module (not primary focus)
 
 ---

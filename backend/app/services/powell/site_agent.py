@@ -94,6 +94,9 @@ class SiteAgentConfig:
     # Authorization protocol
     enable_authorization: bool = True  # Check authority boundaries before actions
 
+    # Claude Skills (feature-flagged, OFF by default)
+    use_claude_skills: bool = False  # If True, route through Claude Skills instead of TRM
+
 
 @dataclass
 class ATPResponse:
@@ -159,6 +162,11 @@ class SiteAgent:
             AgentType.TRM_FORECAST_ADJUSTMENT, AgentType.TRM_SAFETY_STOCK,
         ]:
             self._explainers[agent_type.value] = AgentContextExplainer(agent_type)
+
+        # Claude Skills orchestrator (lazy-initialized when use_claude_skills=True)
+        self._skill_orchestrator = None
+        if config.use_claude_skills:
+            self._init_skill_orchestrator()
 
         # Hive signal bus for stigmergic TRM coordination
         self.signal_bus: Optional[HiveSignalBus] = None
@@ -335,6 +343,31 @@ class SiteAgent:
             self.model = SiteAgentModel(self.config.model_config)
             self.model.eval()
 
+    def _init_skill_orchestrator(self):
+        """Initialize Claude Skills orchestrator for LLM-based decisions."""
+        try:
+            from app.services.skills import SkillOrchestrator, ClaudeClient
+            # Import all skill registrations
+            import app.services.skills.atp_executor
+            import app.services.skills.po_creation
+            import app.services.skills.inventory_rebalancing
+            import app.services.skills.inventory_buffer
+            import app.services.skills.order_tracking
+            import app.services.skills.mo_execution
+            import app.services.skills.to_execution
+            import app.services.skills.quality_disposition
+            import app.services.skills.maintenance_scheduling
+            import app.services.skills.subcontracting
+            import app.services.skills.forecast_adjustment
+
+            self._skill_orchestrator = SkillOrchestrator(
+                claude_client=ClaudeClient(),
+            )
+            logger.info("Claude Skills orchestrator initialized for site %s", self.site_key)
+        except Exception as e:
+            logger.warning("Failed to initialize Skills orchestrator: %s. Falling back to TRM.", e)
+            self._skill_orchestrator = None
+
     async def execute_atp(self, order: Order) -> ATPResponse:
         """
         Execute ATP decision for incoming order.
@@ -372,7 +405,41 @@ class SiteAgent:
         # Step 2: Shortage detected — emit signal
         self._emit_atp_shortage_signal(order, base_result)
 
-        # Step 2b: Check if TRM is available
+        # Step 2b: Try Claude Skills first (if enabled), then TRM, then engine-only
+        if self.config.use_claude_skills and self._skill_orchestrator:
+            try:
+                from app.services.skills.base_skill import SkillError
+                skill_result = await self._skill_orchestrator.execute(
+                    trm_type="atp_executor",
+                    state_features={
+                        "order_id": order.order_id,
+                        "requested_qty": order.requested_qty,
+                        "available_qty": base_result.available_qty,
+                        "shortage_qty": base_result.shortage_qty,
+                        "priority": getattr(order, "priority", 3),
+                    },
+                    engine_result={
+                        "available_qty": base_result.available_qty,
+                        "available_date": str(base_result.available_date),
+                    },
+                    site_key=self.site_key,
+                )
+                promised = skill_result.decision.get("quantity", base_result.available_qty)
+                if promised > 0:
+                    self.aatp_engine.commit_consumption(order, base_result)
+                return ATPResponse(
+                    order_id=order.order_id,
+                    promised_qty=min(promised, order.requested_qty),
+                    promise_date=base_result.available_date,
+                    source=f"skill:{skill_result.model_used}",
+                    confidence=skill_result.confidence,
+                    explanation=skill_result.reasoning,
+                    signal_context=hive_snapshot or None,
+                )
+            except Exception as e:
+                logger.debug("Skill ATP failed, falling through to TRM/engine: %s", e)
+
+        # Step 2c: Check if TRM is available
         if not self.config.use_trm_adjustments or self.model is None:
             # No TRM - return deterministic result
             if base_result.available_qty > 0:
@@ -541,8 +608,35 @@ class SiteAgent:
                 source="deterministic"
             )
 
-            # Step 3: TRM timing adjustments (if enabled)
-            if self.config.use_trm_adjustments and self.model is not None:
+            # Step 3a: Claude Skills PO adjustment (if enabled)
+            if self.config.use_claude_skills and self._skill_orchestrator:
+                try:
+                    skill_result = await self._skill_orchestrator.execute(
+                        trm_type="po_creation",
+                        state_features={
+                            "item_id": po.item_id,
+                            "quantity": po.quantity,
+                            "order_date": str(po.order_date),
+                            "order_type": po.order_type,
+                            "lead_time": lead_times.get(po.item_id, 7),
+                            "on_hand": on_hand_inventory.get(po.item_id, 0),
+                        },
+                        engine_result={
+                            "quantity": po.quantity,
+                            "order_date": str(po.order_date),
+                            "order_type": po.order_type,
+                        },
+                        site_key=self.site_key,
+                    )
+                    if skill_result.decision.get("action") == "create_po":
+                        rec.expedite = skill_result.decision.get("timing") == "immediate"
+                        rec.confidence = skill_result.confidence
+                        rec.source = f"skill:{skill_result.model_used}"
+                except Exception as e:
+                    logger.debug("Skill PO adjustment failed, falling through: %s", e)
+
+            # Step 3b: TRM timing adjustments (if enabled and skills didn't run)
+            elif self.config.use_trm_adjustments and self.model is not None:
                 try:
                     state = await self._encode_state()
                     po_context = self._po_to_tensor(po)
@@ -595,12 +689,35 @@ class SiteAgent:
 
     async def get_inventory_adjustments(self) -> Dict[str, float]:
         """
-        Get inventory parameter adjustments from TRM.
+        Get inventory parameter adjustments from Skills or TRM.
 
         Returns dict with:
         - ss_multiplier: Safety stock adjustment
         - rop_multiplier: Reorder point adjustment
         """
+        # Try Claude Skills first (if enabled)
+        if self.config.use_claude_skills and self._skill_orchestrator:
+            try:
+                skill_result = await self._skill_orchestrator.execute(
+                    trm_type="inventory_buffer",
+                    state_features={
+                        "site_key": self.site_key,
+                        "current_multiplier": 1.0,
+                    },
+                    engine_result={"ss_multiplier": 1.0, "rop_multiplier": 1.0},
+                    site_key=self.site_key,
+                )
+                multiplier = skill_result.decision.get("multiplier", 1.0)
+                return {
+                    "ss_multiplier": multiplier,
+                    "rop_multiplier": multiplier,
+                    "confidence": skill_result.confidence,
+                    "source": f"skill:{skill_result.model_used}",
+                }
+            except Exception as e:
+                logger.debug("Skill inventory buffer failed, falling through: %s", e)
+
+        # TRM path
         if not self.config.use_trm_adjustments or self.model is None:
             return {'ss_multiplier': 1.0, 'rop_multiplier': 1.0}
 
