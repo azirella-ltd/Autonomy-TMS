@@ -62,7 +62,7 @@ class SSOProvider(Base):
     # Relationships
     user_mappings = relationship("UserSSOMapping", back_populates="provider", cascade="all, delete-orphan")
     default_tenant = relationship("Tenant", foreign_keys=[default_tenant_id])
-    tenant = relationship("Tenant", back_populates="sso_providers")
+    tenant = relationship("Tenant", foreign_keys=[tenant_id], back_populates="sso_providers")
 
     def __repr__(self):
         return f"<SSOProvider {self.name} ({self.type})>"
