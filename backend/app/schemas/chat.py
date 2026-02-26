@@ -19,7 +19,7 @@ class MessageType(str, Enum):
 
 class SenderType(str, Enum):
     """Message sender types."""
-    PLAYER = "scenario_user"
+    SCENARIO_USER = "scenario_user"
     AGENT = "agent"
 
 

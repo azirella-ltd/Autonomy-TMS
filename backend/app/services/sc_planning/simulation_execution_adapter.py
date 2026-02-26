@@ -153,7 +153,7 @@ class SimulationExecutionAdapter:
             item = self.config.items[0]
 
             # Get scenario_user's current inventory and backlog from game state
-            inventory_qty, backlog_qty = self._get_player_inventory_and_backlog(
+            inventory_qty, backlog_qty = self._get_scenario_user_inventory_and_backlog(
                 scenario_user, round_number
             )
 
@@ -216,7 +216,7 @@ class SimulationExecutionAdapter:
         in_transit = sum(order.quantity_submitted for order in orders)
         return float(in_transit)
 
-    def _get_player_inventory_and_backlog(
+    def _get_scenario_user_inventory_and_backlog(
         self,
         scenario_user: ScenarioUser,
         round_number: int
@@ -233,10 +233,10 @@ class SimulationExecutionAdapter:
         """
         game_config = self.game.config or {}
         nodes_state = game_config.get('nodes', {})
-        player_state = nodes_state.get(scenario_user.role, {})
+        scenario_user_state = nodes_state.get(scenario_user.role, {})
 
-        inventory = player_state.get('inventory', 12)
-        backlog = player_state.get('backlog', 0)
+        inventory = scenario_user_state.get('inventory', 12)
+        backlog = scenario_user_state.get('backlog', 0)
 
         return float(inventory), float(backlog)
 
@@ -311,7 +311,7 @@ class SimulationExecutionAdapter:
 
     async def create_work_orders(
         self,
-        player_orders: Dict[str, float],
+        scenario_user_orders: Dict[str, float],
         round_number: int
     ) -> int:
         """
@@ -320,7 +320,7 @@ class SimulationExecutionAdapter:
         This is the PRIMARY execution method: scenario_user orders become work orders.
 
         Args:
-            player_orders: Dict mapping role → order quantity
+            scenario_user_orders: Dict mapping role → order quantity
             round_number: Current game round
 
         Returns:
@@ -338,7 +338,7 @@ class SimulationExecutionAdapter:
         order_date = self.game.start_date + timedelta(days=round_number * 7)
         orders_created = 0
 
-        for role, order_qty in player_orders.items():
+        for role, order_qty in scenario_user_orders.items():
             if order_qty <= 0:
                 continue
 
@@ -421,7 +421,7 @@ class SimulationExecutionAdapter:
 
     async def create_work_orders_batch(
         self,
-        player_orders: Dict[str, float],
+        scenario_user_orders: Dict[str, float],
         round_number: int
     ) -> int:
         """
@@ -431,7 +431,7 @@ class SimulationExecutionAdapter:
         because it uses a single batch insert instead of individual inserts.
 
         Args:
-            player_orders: Dict mapping role → order quantity
+            scenario_user_orders: Dict mapping role → order quantity
             round_number: Current game round
 
         Returns:
@@ -458,7 +458,7 @@ class SimulationExecutionAdapter:
         # Build all work orders in memory first
         work_orders = []
 
-        for role, order_qty in player_orders.items():
+        for role, order_qty in scenario_user_orders.items():
             if order_qty <= 0:
                 continue
 
@@ -686,7 +686,7 @@ class SimulationExecutionAdapter:
         if not scenario_user:
             return 0.0
 
-        inventory, _ = self._get_player_inventory_and_backlog(
+        inventory, _ = self._get_scenario_user_inventory_and_backlog(
             scenario_user, self.game.current_round
         )
         return inventory
@@ -697,7 +697,7 @@ class SimulationExecutionAdapter:
 
     async def create_work_orders_with_capacity(
         self,
-        player_orders: Dict[str, float],
+        scenario_user_orders: Dict[str, float],
         round_number: int
     ) -> Dict[str, any]:
         """
@@ -707,7 +707,7 @@ class SimulationExecutionAdapter:
         orders are either queued for next period or rejected.
 
         Args:
-            player_orders: Dict mapping role → order quantity
+            scenario_user_orders: Dict mapping role → order quantity
             round_number: Current game round
 
         Returns:
@@ -741,7 +741,7 @@ class SimulationExecutionAdapter:
         rejected = []
         capacity_used = {}
 
-        for role, order_qty in player_orders.items():
+        for role, order_qty in scenario_user_orders.items():
             if order_qty <= 0:
                 continue
 
@@ -959,7 +959,7 @@ class SimulationExecutionAdapter:
 
     async def create_work_orders_with_aggregation(
         self,
-        player_orders: Dict[str, float],
+        scenario_user_orders: Dict[str, float],
         round_number: int,
         use_capacity: bool = False
     ) -> Dict[str, any]:
@@ -970,7 +970,7 @@ class SimulationExecutionAdapter:
         and optionally enforces capacity limits.
 
         Args:
-            player_orders: Dict mapping role → order quantity
+            scenario_user_orders: Dict mapping role → order quantity
             round_number: Current game round
             use_capacity: Enforce capacity constraints (default: False)
 
@@ -1007,7 +1007,7 @@ class SimulationExecutionAdapter:
         # Step 1: Group orders by upstream site
         upstream_groups = {}  # {(upstream_site_id, product_id): [(role, qty, node, upstream, lead_time, order_type), ...]}
 
-        for role, order_qty in player_orders.items():
+        for role, order_qty in scenario_user_orders.items():
             if order_qty <= 0:
                 continue
 

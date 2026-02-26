@@ -314,7 +314,7 @@ class CollaborationService:
                 scenario_id=suggestion.scenario_id,
                 sender_id=f"user:{user_id}",
                 sender_name=user_id,
-                sender_type=SenderType.PLAYER,
+                sender_type=SenderType.SCENARIO_USER,
                 recipient_id=f"agent:{suggestion.agent_name}",
                 content=rationale,
                 type=MessageType.TEXT,
@@ -388,7 +388,7 @@ class CollaborationService:
             message = ChatMessage(
                 sender_id=f"user:{from_user}",
                 sender_name=from_user,
-                sender_type=SenderType.PLAYER,
+                sender_type=SenderType.SCENARIO_USER,
                 recipient_id=f"user:{to_user}",
                 content=request_message,
                 type=MessageType.QUESTION,
@@ -466,7 +466,7 @@ class CollaborationService:
             response_msg = ChatMessage(
                 sender_id=f"user:{user_id}",
                 sender_name=user_id,
-                sender_type=SenderType.PLAYER,
+                sender_type=SenderType.SCENARIO_USER,
                 recipient_id=request_msg.sender_id,
                 content=response_content,
                 type=MessageType.TEXT,

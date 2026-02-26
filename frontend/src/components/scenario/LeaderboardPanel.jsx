@@ -194,14 +194,14 @@ const LeaderboardPanel = ({ scenarioUserId }) => {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {leaderboardData.entries.map((entry) => {
-                  const isCurrentPlayer = entry.scenario_user_id === scenarioUserId
+                  const isCurrentScenarioUser = entry.scenario_user_id === scenarioUserId
                   const medal = getRankMedal(entry.rank)
 
                   return (
                     <tr
                       key={entry.id}
                       className={`transition-colors ${
-                        isCurrentPlayer
+                        isCurrentScenarioUser
                           ? 'bg-indigo-50 font-semibold'
                           : entry.rank <= 3
                           ? getRankColor(entry.rank)
@@ -227,14 +227,14 @@ const LeaderboardPanel = ({ scenarioUserId }) => {
                           <div className="ml-4">
                             <div className="text-sm font-medium text-gray-900">
                               {entry.scenario_user_name || `User ${entry.scenario_user_id}`}
-                              {isCurrentPlayer && (
+                              {isCurrentScenarioUser && (
                                 <span className="ml-2 px-2 py-1 text-xs bg-indigo-600 text-white rounded-full">
                                   You
                                 </span>
                               )}
                             </div>
-                            {entry.player_role && (
-                              <div className="text-sm text-gray-500">{entry.player_role}</div>
+                            {entry.scenario_user_role && (
+                              <div className="text-sm text-gray-500">{entry.scenario_user_role}</div>
                             )}
                           </div>
                         </div>

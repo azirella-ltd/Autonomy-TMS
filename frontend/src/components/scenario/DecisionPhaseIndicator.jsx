@@ -8,8 +8,8 @@
  *
  * Props:
  * - phase: Current phase ('waiting', 'fulfillment', 'replenishment', 'completed')
- * - playersCompleted: Number of scenarioUsers who have submitted their decision
- * - totalPlayers: Total number of scenarioUsers in the game
+ * - scenarioUsersCompleted: Number of scenarioUsers who have submitted their decision
+ * - totalScenarioUsers: Total number of scenarioUsers in the game
  * - currentRound: Current round number
  * - phaseStartedAt: Timestamp when current phase started (optional)
  */
@@ -27,8 +27,8 @@ import { cn } from '../../lib/utils/cn';
 
 const DecisionPhaseIndicator = ({
   phase = 'waiting',
-  playersCompleted = 0,
-  totalPlayers = 4,
+  scenarioUsersCompleted = 0,
+  totalScenarioUsers = 4,
   currentRound = 1,
   phaseStartedAt = null,
 }) => {
@@ -85,7 +85,7 @@ const DecisionPhaseIndicator = ({
   const currentPhaseConfig = phases[currentPhaseIndex] || phases[0];
 
   // Calculate completion percentage
-  const completionPercentage = totalPlayers > 0 ? (playersCompleted / totalPlayers) * 100 : 0;
+  const completionPercentage = totalScenarioUsers > 0 ? (scenarioUsersCompleted / totalScenarioUsers) * 100 : 0;
 
   // Time elapsed (if phaseStartedAt provided)
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -209,7 +209,7 @@ const DecisionPhaseIndicator = ({
               <div className="flex items-center gap-3">
                 <PeopleIcon className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">
-                  Users Completed: <strong className="text-foreground">{playersCompleted}</strong> / {totalPlayers}
+                  Users Completed: <strong className="text-foreground">{scenarioUsersCompleted}</strong> / {totalScenarioUsers}
                 </span>
                 <span className="text-xs text-muted-foreground">
                   ({completionPercentage.toFixed(0)}%)

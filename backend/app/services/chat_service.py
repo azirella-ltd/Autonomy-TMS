@@ -462,13 +462,13 @@ class ChatService:
         game = game_result.scalars().first()
 
         # Get scenario_user for this agent role
-        player_result = await self.db.execute(
+        scenario_user_result = await self.db.execute(
             select(ScenarioUser).filter(
                 ScenarioUser.scenario_id == scenario_id,
                 ScenarioUser.role == agent_name.upper()
             )
         )
-        scenario_user = player_result.scalars().first()
+        scenario_user = scenario_user_result.scalars().first()
 
         if not scenario_user:
             raise ValueError(f"No scenario_user found for agent {agent_name} in game {scenario_id}")

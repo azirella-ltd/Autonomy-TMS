@@ -542,7 +542,7 @@ class NegotiationService:
     # NEGOTIATION HISTORY
     # =============================================================================
 
-    async def get_player_negotiations(
+    async def get_scenario_user_negotiations(
         self,
         scenario_id: int,
         scenario_user_id: int,
@@ -740,11 +740,11 @@ class NegotiationService:
             if len(rows) != 2:
                 return {"error": "Insufficient data for suggestion"}
 
-            player_state = next((r for r in rows if r.id == scenario_user_id), None)
+            scenario_user_state = next((r for r in rows if r.id == scenario_user_id), None)
             target_state = next((r for r in rows if r.id == target_scenario_user_id), None)
 
             # Analyze states and suggest negotiation
-            suggestion = self._analyze_and_suggest(player_state, target_state)
+            suggestion = self._analyze_and_suggest(scenario_user_state, target_state)
 
             return suggestion
 
@@ -754,21 +754,21 @@ class NegotiationService:
 
     def _analyze_and_suggest(
         self,
-        player_state: Any,
+        scenario_user_state: Any,
         target_state: Any
     ) -> Dict[str, Any]:
         """Analyze states and generate negotiation suggestion."""
         # Simple heuristic-based suggestions
 
         # Scenario 1: ScenarioUser has excess inventory, target has backlog
-        if player_state.inventory_after > 50 and target_state.backlog_after > 20:
+        if scenario_user_state.inventory_after > 50 and target_state.backlog_after > 20:
             return {
                 "suggested_type": "inventory_share",
                 "proposal": {
-                    "units": min(30, player_state.inventory_after - 40),
+                    "units": min(30, scenario_user_state.inventory_after - 40),
                     "direction": "give"
                 },
-                "rationale": f"You have excess inventory ({player_state.inventory_after} units) while {target_state.role} has high backlog ({target_state.backlog_after} units). Sharing inventory can reduce overall costs.",
+                "rationale": f"You have excess inventory ({scenario_user_state.inventory_after} units) while {target_state.role} has high backlog ({target_state.backlog_after} units). Sharing inventory can reduce overall costs.",
                 "confidence": 0.80,
                 "expected_benefit": {
                     "cost_reduction": 15,
@@ -778,7 +778,7 @@ class NegotiationService:
             }
 
         # Scenario 2: Target has excess, scenario_user has backlog
-        if target_state.inventory_after > 50 and player_state.backlog_after > 20:
+        if target_state.inventory_after > 50 and scenario_user_state.backlog_after > 20:
             return {
                 "suggested_type": "inventory_share",
                 "proposal": {
@@ -788,14 +788,14 @@ class NegotiationService:
                 "rationale": f"{target_state.role} has excess inventory while you have backlog. Request inventory sharing to improve service level.",
                 "confidence": 0.75,
                 "expected_benefit": {
-                    "backlog_reduction": min(30, player_state.backlog_after),
+                    "backlog_reduction": min(30, scenario_user_state.backlog_after),
                     "service_improvement": 0.15,
                     "cost_savings": 12
                 }
             }
 
         # Scenario 3: Both have high costs - suggest order coordination
-        if player_state.total_cost > 60 and target_state.total_cost > 60:
+        if scenario_user_state.total_cost > 60 and target_state.total_cost > 60:
             return {
                 "suggested_type": "order_adjustment",
                 "proposal": {

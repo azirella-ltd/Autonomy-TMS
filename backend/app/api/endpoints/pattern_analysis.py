@@ -38,7 +38,7 @@ class PerformanceScoreRequest(BaseModel):
     service_level: float = Field(..., ge=0.0, le=1.0)
 
 
-class PlayerPatternsResponse(BaseModel):
+class ScenarioUserPatternsResponse(BaseModel):
     """ScenarioUser pattern analysis response."""
     scenario_user_id: int
     scenario_id: int
@@ -126,7 +126,7 @@ async def track_suggestion_outcome(
     This data feeds into pattern analysis and effectiveness metrics.
 
     **Triggers**:
-    - Automatically updates player_patterns table via database trigger
+    - Automatically updates scenario_user_patterns table via database trigger
     - Increments total_suggestions and total_accepted counters
     - Recalculates acceptance_rate
     """
@@ -186,8 +186,8 @@ async def calculate_performance_score(
         )
 
 
-@router.get("/scenarios/{scenario_id}/scenario_users/{scenario_user_id}/patterns", response_model=PlayerPatternsResponse)
-async def get_player_patterns(
+@router.get("/scenarios/{scenario_id}/scenario_users/{scenario_user_id}/patterns", response_model=ScenarioUserPatternsResponse)
+async def get_scenario_user_patterns(
     scenario_id: int,
     scenario_user_id: int,
     db: AsyncSession = Depends(get_db),
@@ -212,9 +212,9 @@ async def get_player_patterns(
     try:
         service = get_pattern_analysis_service(db)
 
-        patterns = await service.get_player_patterns(scenario_user_id, scenario_id)
+        patterns = await service.get_scenario_user_patterns(scenario_user_id, scenario_id)
 
-        return PlayerPatternsResponse(**patterns)
+        return ScenarioUserPatternsResponse(**patterns)
 
     except Exception as e:
         raise HTTPException(

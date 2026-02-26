@@ -65,11 +65,11 @@ const ScenarioBoard = () => {
   const [gameDetails, setGameDetails] = useState(null);
   const [assignedRole, setAssignedRole] = useState("");
   const [viewingRole, setViewingRole] = useState("");
-  const [assignedPlayerId, setAssignedPlayerId] = useState(null);
-  const [viewingPlayerId, setViewingPlayerId] = useState(null);
+  const [assignedScenarioUserId, setAssignedScenarioUserId] = useState(null);
+  const [viewingScenarioUserId, setViewingScenarioUserId] = useState(null);
   const [isSpectatorMode, setIsSpectatorMode] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [isPlayerTurn, setIsPlayerTurn] = useState(false);
+  const [isScenarioUserTurn, setIsScenarioUserTurn] = useState(false);
   const [associatedGames, setAssociatedGames] = useState([]);
   const [orderComment, setOrderComment] = useState("");
   const [orderHistory, setOrderHistory] = useState([]);
@@ -108,28 +108,28 @@ const ScenarioBoard = () => {
     timeBucket,
   ]);
 
-  const playerOptions = useMemo(
+  const scenarioUserOptions = useMemo(
     () => (Array.isArray(gameDetails?.scenarioUsers) ? gameDetails.scenarioUsers : []),
     [gameDetails?.scenarioUsers]
   );
   const isReadOnlyView =
-    !assignedPlayerId || viewingPlayerId !== assignedPlayerId;
+    !assignedScenarioUserId || viewingScenarioUserId !== assignedScenarioUserId;
 
   const handleRoleSelection = useCallback(
-    (playerIdValue) => {
-      const selected = playerOptions.find(
-        (scenarioUser) => String(user.id) === String(playerIdValue)
+    (scenarioUserIdValue) => {
+      const selected = scenarioUserOptions.find(
+        (scenarioUser) => String(user.id) === String(scenarioUserIdValue)
       );
       if (selected) {
-        setViewingPlayerId(selected.id);
+        setViewingScenarioUserId(selected.id);
         setViewingRole(selected.role);
       } else {
-        setViewingPlayerId(null);
+        setViewingScenarioUserId(null);
         setViewingRole("");
       }
       setOrderComment("");
     },
-    [playerOptions]
+    [scenarioUserOptions]
   );
 
   const siteTypeLabelMap = useMemo(
@@ -162,7 +162,7 @@ const ScenarioBoard = () => {
     if (!gameState || !viewingRole) {
       return false;
     }
-    return gameState.current_player_turn === viewingRole;
+    return gameState.current_scenario_user_turn === viewingRole;
   }, [gameState, viewingRole]);
 
   // Update game state when game ID changes
@@ -175,7 +175,7 @@ const ScenarioBoard = () => {
 
           // Update derived state
           if (state.current_round) {
-            setIsPlayerTurn(
+            setIsScenarioUserTurn(
               state.current_round.current_scenario_user_id === state.scenario_user_id
             );
           }
@@ -221,17 +221,17 @@ const ScenarioBoard = () => {
   }, [scenarioId, toast]);
 
   useEffect(() => {
-    if (!viewingPlayerId) {
+    if (!viewingScenarioUserId) {
       setViewingRole("");
       return;
     }
-    const selected = playerOptions.find(
-      (scenarioUser) => user.id === viewingPlayerId
+    const selected = scenarioUserOptions.find(
+      (scenarioUser) => user.id === viewingScenarioUserId
     );
     if (selected && selected.role !== viewingRole) {
       setViewingRole(selected.role);
     }
-  }, [playerOptions, viewingPlayerId, viewingRole]);
+  }, [scenarioUserOptions, viewingScenarioUserId, viewingRole]);
 
   // Load list of games created by this admin to allow quick switch
   useEffect(() => {
@@ -240,10 +240,10 @@ const ScenarioBoard = () => {
         const games = await simulationApi.getGames();
         const associated = (games || []).filter((g) => {
           const createdByUser = g.created_by === user?.id;
-          const isPlayer = Array.isArray(g.scenarioUsers)
+          const isScenarioUser = Array.isArray(g.scenarioUsers)
             ? g.scenarioUsers.some((p) => p.user_id === user?.id)
             : false;
-          return createdByUser || isPlayer;
+          return createdByUser || isScenarioUser;
         });
         setAssociatedGames(associated);
       } catch (e) {
@@ -263,13 +263,13 @@ const ScenarioBoard = () => {
   // Load order history and rounds data
   useEffect(() => {
     const fetchRounds = async () => {
-      if (scenarioId && viewingPlayerId) {
+      if (scenarioId && viewingScenarioUserId) {
         try {
           const rounds = await simulationApi.getRounds(scenarioId);
           const history = rounds
             .map((r) => {
-              const pr = (r.player_rounds || []).find(
-                (p) => p.scenario_user_id === viewingPlayerId
+              const pr = (r.scenario_user_periods || []).find(
+                (p) => p.scenario_user_id === viewingScenarioUserId
               );
               if (!pr) return null;
               const formattedDate = formatTimePeriodDate(
@@ -296,7 +296,7 @@ const ScenarioBoard = () => {
       }
     };
     fetchRounds();
-  }, [scenarioId, viewingPlayerId, gameStatus, timeBucket, periodLabelSingular]);
+  }, [scenarioId, viewingScenarioUserId, gameStatus, timeBucket, periodLabelSingular]);
 
   // Fetch game details on component mount
   useEffect(() => {
@@ -308,29 +308,29 @@ const ScenarioBoard = () => {
 
         const scenarioUsers = Array.isArray(game.scenarioUsers) ? game.scenarioUsers : [];
         const currentUserId = user?.id;
-        const assignedPlayer =
+        const assignedScenarioUser =
           scenarioUsers.find((p) => p.user_id === currentUserId) || null;
 
-        if (assignedPlayer) {
-          setAssignedRole(assignedPlayer.role);
-          setViewingRole(assignedPlayer.role);
-          setAssignedPlayerId(assignedPlayer.id);
-          setViewingPlayerId(assignedPlayer.id);
+        if (assignedScenarioUser) {
+          setAssignedRole(assignedScenarioUser.role);
+          setViewingRole(assignedScenarioUser.role);
+          setAssignedScenarioUserId(assignedScenarioUser.id);
+          setViewingScenarioUserId(assignedScenarioUser.id);
           setIsSpectatorMode(false);
-          setIsPlayerTurn(game.current_player_turn === assignedPlayer.role);
+          setIsScenarioUserTurn(game.current_scenario_user_turn === assignedScenarioUser.role);
         } else {
           const existingViewer =
-            scenarioUsers.find((p) => p.id === viewingPlayerId) || scenarioUsers[0] || null;
+            scenarioUsers.find((p) => p.id === viewingScenarioUserId) || scenarioUsers[0] || null;
           setAssignedRole("");
-          setAssignedPlayerId(null);
-          setIsPlayerTurn(false);
+          setAssignedScenarioUserId(null);
+          setIsScenarioUserTurn(false);
           setIsSpectatorMode(true);
           if (existingViewer) {
             setViewingRole(existingViewer.role);
-            setViewingPlayerId(existingViewer.id);
+            setViewingScenarioUserId(existingViewer.id);
           } else {
             setViewingRole("");
-            setViewingPlayerId(null);
+            setViewingScenarioUserId(null);
           }
         }
 
@@ -351,7 +351,7 @@ const ScenarioBoard = () => {
     };
 
     fetchGameDetails();
-  }, [scenarioId, navigate, toast, user?.id, viewingPlayerId]);
+  }, [scenarioId, navigate, toast, user?.id, viewingScenarioUserId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -452,14 +452,14 @@ const ScenarioBoard = () => {
   // Check if it's the scenarioUser's turn
   useEffect(() => {
     if (!assignedRole || !gameState) {
-      if (isPlayerTurn) {
-        setIsPlayerTurn(false);
+      if (isScenarioUserTurn) {
+        setIsScenarioUserTurn(false);
       }
       return;
     }
 
-    const currentPlayerTurn = gameState.current_player_turn === assignedRole;
-    if (currentPlayerTurn && !isPlayerTurn) {
+    const currentScenarioUserTurn = gameState.current_scenario_user_turn === assignedRole;
+    if (currentScenarioUserTurn && !isScenarioUserTurn) {
       toast({
         title: "Your Turn!",
         description: "It's your turn to place an order.",
@@ -468,20 +468,20 @@ const ScenarioBoard = () => {
         isClosable: true,
       });
     }
-    if (currentPlayerTurn !== isPlayerTurn) {
-      setIsPlayerTurn(currentPlayerTurn);
+    if (currentScenarioUserTurn !== isScenarioUserTurn) {
+      setIsScenarioUserTurn(currentScenarioUserTurn);
     }
-  }, [assignedRole, gameState, isPlayerTurn, toast]);
+  }, [assignedRole, gameState, isScenarioUserTurn, toast]);
 
   // Handle order submission
   const handleOrderSubmit = async (quantity, comment) => {
-    if (!assignedPlayerId) {
+    if (!assignedScenarioUserId) {
       return;
     }
 
     const qty = parseInt(quantity, 10) || 0;
     try {
-      await simulationApi.submitOrder(scenarioId, assignedPlayerId, qty, comment);
+      await simulationApi.submitOrder(scenarioId, assignedScenarioUserId, qty, comment);
       toast({
         title: "Order submitted!",
         description: `Order of ${qty} units has been placed.`,
@@ -493,8 +493,8 @@ const ScenarioBoard = () => {
       const rounds = await simulationApi.getRounds(scenarioId);
       const history = rounds
         .map((r) => {
-          const pr = (r.player_rounds || []).find(
-            (p) => p.scenario_user_id === assignedPlayerId
+          const pr = (r.scenario_user_periods || []).find(
+            (p) => p.scenario_user_id === assignedScenarioUserId
           );
           if (!pr) return null;
           return {
@@ -605,17 +605,17 @@ const ScenarioBoard = () => {
                         <span className="text-sm text-muted-foreground">
                           Your Role
                         </span>
-                        {isSpectatorMode && playerOptions.length > 0 ? (
+                        {isSpectatorMode && scenarioUserOptions.length > 0 ? (
                           <Select
                             size="sm"
-                            value={viewingPlayerId ? String(viewingPlayerId) : ""}
+                            value={viewingScenarioUserId ? String(viewingScenarioUserId) : ""}
                             onChange={(event) =>
                               handleRoleSelection(event.target.value)
                             }
                             placeholder="Select role"
                             className="mt-1"
                           >
-                            {playerOptions.map((scenarioUser) => (
+                            {scenarioUserOptions.map((scenarioUser) => (
                               <SelectOption key={user.id} value={user.id}>
                                 {formatRoleLabel(user.role)}
                               </SelectOption>
@@ -636,14 +636,14 @@ const ScenarioBoard = () => {
               </Card>
 
               {/* Round timer component */}
-              {gameStatus === "in_progress" && viewingPlayerId && (
+              {gameStatus === "in_progress" && viewingScenarioUserId && (
                 <div className="w-full lg:w-[400px]">
                   <RoundTimer
                     scenarioId={scenarioId}
-                    scenarioUserId={viewingPlayerId}
+                    scenarioUserId={viewingScenarioUserId}
                     roundNumber={gameState?.current_round || 1}
                     onOrderSubmit={handleOrderSubmit}
-                    isPlayerTurn={viewingIsCurrent}
+                    isScenarioUserTurn={viewingIsCurrent}
                     orderComment={orderComment}
                     onCommentChange={setOrderComment}
                     readOnly={isReadOnlyView}

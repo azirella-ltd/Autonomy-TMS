@@ -52,7 +52,7 @@ class RLHFTrainingExample:
     # Required fields (no defaults) - must come first
     # Context (input features)
     game_state: Dict[str, Any]  # Inventory, backlog, pipeline, demand history
-    player_role: str  # Retailer, wholesaler, distributor, manufacturer
+    scenario_user_role: str  # Retailer, wholesaler, distributor, manufacturer
     round_number: int
 
     # AI recommendation
@@ -240,7 +240,7 @@ class RLHFDataCollector:
         return [
             RLHFTrainingExample(
                 game_state=feedback.game_state,
-                player_role=feedback.game_state.get("role", "unknown"),
+                scenario_user_role=feedback.game_state.get("role", "unknown"),
                 round_number=feedback.round_number,
                 ai_suggestion=feedback.ai_suggestion,
                 ai_reasoning=feedback.ai_reasoning,

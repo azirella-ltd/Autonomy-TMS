@@ -295,8 +295,8 @@ async def get_game_metrics(
         raise HTTPException(status_code=400, detail="No rounds found for this scenario")
 
     # Get all scenario_users in this scenario
-    players_result = await db.execute(select(ScenarioUser).where(ScenarioUser.scenario_id == scenario_id))
-    scenario_users = players_result.scalars().all()
+    scenario_users_result = await db.execute(select(ScenarioUser).where(ScenarioUser.scenario_id == scenario_id))
+    scenario_users = scenario_users_result.scalars().all()
     if not scenario_users:
         raise HTTPException(status_code=400, detail="No scenario_users found for this scenario")
     

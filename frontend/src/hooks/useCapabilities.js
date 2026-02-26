@@ -181,8 +181,8 @@ function getFallbackCapabilities(userType) {
       // Admin
       'view_tenants',
       'manage_tenants',
-      'view_players',
-      'manage_players',
+      'view_scenario_users',
+      'manage_scenario_users',
       'view_users',
       'create_user',
       'edit_user',

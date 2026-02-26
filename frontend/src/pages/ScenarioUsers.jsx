@@ -56,14 +56,14 @@ const resolveStrategyLabel = (scenarioUser) => {
   return agentStrategyLabels[key] ? ` - ${agentStrategyLabels[key]}` : '';
 };
 
-const PlayersPage = () => {
+const ScenarioUsersPage = () => {
   const [games, setGames] = useState([]);
   const [coreConfigs, setCoreConfigs] = useState([]);
   const [selectedCoreConfigId, setSelectedCoreConfigId] = useState('');
   const [users, setUsers] = useState([]);
   const [selectedGameId, setSelectedGameId] = useState('');
   const [loading, setLoading] = useState(true);
-  const [scenarioUsers, setPlayers] = useState([]);
+  const [scenarioUsers, setScenarioUsers] = useState([]);
 
   const [form, setForm] = useState({
     name: '',
@@ -73,11 +73,11 @@ const PlayersPage = () => {
     user_id: '',
   });
 
-  const fetchPlayers = useCallback(async (gameId) => {
+  const fetchScenarioUsers = useCallback(async (gameId) => {
     if (!gameId) return;
     try {
       const data = await simulationApi.getScenarioUsers(gameId);
-      setPlayers(data);
+      setScenarioUsers(data);
     } catch (e) {
       console.error(e);
       toast.error('Failed to load users');
@@ -116,8 +116,8 @@ const PlayersPage = () => {
   }, []);
 
   useEffect(() => {
-    fetchPlayers(selectedGameId);
-  }, [fetchPlayers, selectedGameId]);
+    fetchScenarioUsers(selectedGameId);
+  }, [fetchScenarioUsers, selectedGameId]);
 
   const handleAdd = async () => {
     if (!selectedGameId) return;
@@ -133,10 +133,10 @@ const PlayersPage = () => {
       if (payload.agent_type === 'AUTONOMY_DTCE_CENTRAL' || payload.agent_type === 'LLM_SUPERVISED') {
         payload.autonomy_override_pct = 0.05;
       }
-      await simulationApi.addPlayer(Number(selectedGameId), payload);
+      await simulationApi.addScenarioUser(Number(selectedGameId), payload);
       toast.success('User added');
       setForm(prev => ({ ...prev, name: '' }));
-      fetchPlayers(selectedGameId);
+      fetchScenarioUsers(selectedGameId);
     } catch (e) {
       console.error(e);
       const msg = e?.response?.data?.detail || 'Failed to add user';
@@ -157,7 +157,7 @@ const PlayersPage = () => {
       setGames((prev) => (Array.isArray(prev) ? [...prev, newGame] : [newGame]));
       const id = String(newGame.id);
       setSelectedGameId(id);
-      fetchPlayers(id);
+      fetchScenarioUsers(id);
     } catch (e) {
       console.error('Quick create failed', e);
       toast.error(e?.response?.data?.detail || e.message || 'Failed to create alternative');
@@ -355,4 +355,4 @@ const PlayersPage = () => {
   );
 };
 
-export default PlayersPage;
+export default ScenarioUsersPage;

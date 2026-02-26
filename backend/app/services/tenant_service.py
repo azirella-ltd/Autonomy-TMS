@@ -10,9 +10,9 @@ from ..models import (
     Scenario as Game,
     ScenarioStatus as GameStatus,
     ScenarioUser as ScenarioUser,
-    ScenarioUserRole as PlayerRole,
-    ScenarioUserType as PlayerType,
-    ScenarioUserStrategy as PlayerStrategy,
+    ScenarioUserRole as ScenarioUserRole,
+    ScenarioUserType as ScenarioUserType,
+    ScenarioUserStrategy as ScenarioUserStrategy,
 )
 from ..models.user import UserTypeEnum
 from ..models.supply_chain_config import (
@@ -254,41 +254,41 @@ class TenantService:
                 self.db.flush()
 
                 tenant_suffix = f"c{tenant.id}"
-                player_password_hash = get_password_hash(DEFAULT_ADMIN_PASSWORD)
+                scenario_user_password_hash = get_password_hash(DEFAULT_ADMIN_PASSWORD)
                 default_users = [
                     {
                         "username": f"retailer_{tenant_suffix}",
                         "email": f"retailer+{tenant_suffix}@autonomy.ai",
                         "full_name": "Retailer",
-                        "role": PlayerRole.RETAILER,
+                        "role": ScenarioUserRole.RETAILER,
                     },
                     {
                         "username": f"distributor_{tenant_suffix}",
                         "email": f"distributor+{tenant_suffix}@autonomy.ai",
                         "full_name": "Distributor",
-                        "role": PlayerRole.DISTRIBUTOR,
+                        "role": ScenarioUserRole.DISTRIBUTOR,
                     },
                     {
                         "username": f"manufacturer_{tenant_suffix}",
                         "email": f"manufacturer+{tenant_suffix}@autonomy.ai",
                         "full_name": "Factory",
-                        "role": PlayerRole.MANUFACTURER,
+                        "role": ScenarioUserRole.MANUFACTURER,
                     },
                     {
                         "username": f"wholesaler_{tenant_suffix}",
                         "email": f"wholesaler+{tenant_suffix}@autonomy.ai",
                         "full_name": "Wholesaler",
-                        "role": PlayerRole.WHOLESALER,
+                        "role": ScenarioUserRole.WHOLESALER,
                     },
                 ]
 
-                player_users = []
+                scenario_user_records = []
                 for spec in default_users:
                     user = User(
                         username=spec["username"],
                         email=spec["email"],
                         full_name=spec["full_name"],
-                        hashed_password=player_password_hash,
+                        hashed_password=scenario_user_password_hash,
                         user_type=UserTypeEnum.USER,
                         tenant_id=tenant.id,
                         is_active=True,
@@ -296,17 +296,17 @@ class TenantService:
                     )
                     self.db.add(user)
                     self.db.flush()
-                    player_users.append((user, spec["role"], spec["full_name"]))
+                    scenario_user_records.append((user, spec["role"], spec["full_name"]))
 
                 scenario_users = []
-                for user_obj, role_enum, display_name in player_users:
+                for user_obj, role_enum, display_name in scenario_user_records:
                     scenario_user = ScenarioUser(
                         scenario_id=game.id,
                         user_id=user_obj.id,
                         name=display_name,
                         role=role_enum,
-                        type=PlayerType.AI,
-                        strategy=PlayerStrategy.MANUAL,
+                        type=ScenarioUserType.AI,
+                        strategy=ScenarioUserStrategy.MANUAL,
                         is_ai=True,
                         ai_strategy="naive",
                     )
@@ -321,7 +321,7 @@ class TenantService:
                         "user_id": user_obj.id,
                         "strategy": "naive",
                     }
-                    for user_obj, role_enum, _ in player_users
+                    for user_obj, role_enum, _ in scenario_user_records
                 }
                 self.db.add(game)
 

@@ -21,7 +21,7 @@ router = APIRouter()
 
 
 # ============================================================================
-# PLAYER STATS ENDPOINTS
+# SCENARIO USER STATS ENDPOINTS
 # ============================================================================
 
 @router.get("/scenario_users/{scenario_user_id}/stats", response_model=ScenarioUserStats)
@@ -37,14 +37,14 @@ async def get_scenario_user_stats(
 
 
 @router.get("/scenario_users/{scenario_user_id}/progress", response_model=ScenarioUserProgressResponse)
-async def get_player_progress(
+async def get_scenario_user_progress(
     scenario_user_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Get complete scenario_user progress including stats, achievements, badges."""
     service = get_gamification_service(db)
-    progress = await service.get_player_progress(scenario_user_id)
+    progress = await service.get_scenario_user_progress(scenario_user_id)
 
     if not progress:
         raise HTTPException(
@@ -184,7 +184,7 @@ async def update_achievement(
 
 
 @router.post("/scenario_users/{scenario_user_id}/check-achievements", response_model=AchievementCheckResponse)
-async def check_player_achievements(
+async def check_scenario_user_achievements(
     scenario_user_id: int,
     scenario_id: Optional[int] = Query(None, description="Scenario ID to check achievements for"),
     db: AsyncSession = Depends(get_db),
@@ -197,7 +197,7 @@ async def check_player_achievements(
 
 
 @router.get("/scenario_users/{scenario_user_id}/achievements", response_model=List[dict])
-async def get_player_achievements(
+async def get_scenario_user_achievements(
     scenario_user_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -318,7 +318,7 @@ async def update_leaderboard_rankings(
 # ============================================================================
 
 @router.get("/scenario_users/{scenario_user_id}/notifications", response_model=List[AchievementNotification])
-async def get_player_notifications(
+async def get_scenario_user_notifications(
     scenario_user_id: int,
     limit: int = Query(10, ge=1, le=100, description="Number of notifications to return"),
     db: AsyncSession = Depends(get_db),
@@ -357,7 +357,7 @@ async def mark_notification_shown(
 # ============================================================================
 
 @router.get("/scenario_users/{scenario_user_id}/badges", response_model=List[ScenarioUserBadge])
-async def get_player_badges(
+async def get_scenario_user_badges(
     scenario_user_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)

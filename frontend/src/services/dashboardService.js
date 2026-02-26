@@ -62,7 +62,7 @@ export const getHumanDashboard = async (gameId = null) => {
         game_name: 'Demo Game',
         current_round: 5,
         max_rounds: 12,
-        player_role: 'RETAILER',
+        scenario_user_role: 'RETAILER',
         scenario_user_id: 1,
         metrics: {
           current_inventory: 42,

@@ -44,7 +44,7 @@ import { getModelStatus } from '../services/modelService';
 import { useSystemConfig } from '../contexts/SystemConfigContext.jsx';
 import { LLM_BASE_MODEL_OPTIONS, DEFAULT_LLM_BASE_MODEL } from '../constants/llmModels';
 
-const playerRoles = [
+const scenarioUserRoles = [
   { value: 'retailer', label: 'Retailer' },
   { value: 'wholesaler', label: 'Wholesaler' },
   { value: 'distributor', label: 'Distributor' },
@@ -247,7 +247,7 @@ const CreateMixedGame = () => {
   const [availableUsers, setAvailableUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
 
-  const [scenarioUsers, setPlayers] = useState([]);
+  const [scenarioUsers, setScenarioUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [configs, setConfigs] = useState([]);
   const [activeConfigId, setActiveConfigId] = useState(null);
@@ -590,13 +590,13 @@ const CreateMixedGame = () => {
 
     const overrides = statePayload?.autonomy_overrides ?? game?.autonomy_overrides ?? config?.autonomy_overrides ?? {};
 
-    const rawPlayers = Array.isArray(statePayload?.scenarioUsers)
+    const rawScenarioUsers = Array.isArray(statePayload?.scenarioUsers)
       ? statePayload.scenarioUsers
       : Array.isArray(game?.scenarioUsers)
         ? game.scenarioUsers
         : [];
 
-    const mappedPlayers = rawPlayers.reduce((acc, record) => {
+    const mappedScenarioUsers = rawScenarioUsers.reduce((acc, record) => {
       const roleValue = String(record?.role || '').toLowerCase();
       if (!roleValue) {
         return acc;
@@ -623,8 +623,8 @@ const CreateMixedGame = () => {
       return acc;
     }, {});
 
-    const playersSnapshot = playerRoles.map(({ value: roleValue, label }) => {
-      const entry = mappedPlayers[roleValue];
+    const scenarioUsersSnapshot = scenarioUserRoles.map(({ value: roleValue, label }) => {
+      const entry = mappedScenarioUsers[roleValue];
       if (entry) {
         return { ...entry, displayName: entry.displayName || label };
       }
@@ -663,7 +663,7 @@ const CreateMixedGame = () => {
       sitePolicies: sitePoliciesSnapshot,
       systemConfig: systemConfigSnapshot,
       policy: policySnapshot,
-      scenarioUsers: playersSnapshot,
+      scenarioUsers: scenarioUsersSnapshot,
       autonomyLlm: autonomySnapshot,
       autonomyOverrides: overrides,
       supplyChainConfigId:
@@ -950,7 +950,7 @@ const CreateMixedGame = () => {
             snapshotAutonomy.volatility_window != null ? snapshotAutonomy.volatility_window : null,
         });
 
-        setPlayers((snapshot.scenarioUsers || []).map((scenarioUser) => ({ ...scenarioUser })));
+        setScenarioUsers((snapshot.scenarioUsers || []).map((scenarioUser) => ({ ...scenarioUser })));
 
         if (snapshot.supplyChainConfig) {
           setActiveSupplyChainConfig(snapshot.supplyChainConfig);
@@ -1108,8 +1108,8 @@ const CreateMixedGame = () => {
     if (!activeSupplyChainConfig) {
       return;
     }
-    setPlayers((prevPlayers) => {
-      const existingByRole = new Map(prevPlayers.map((scenarioUser) => [user.role, scenarioUser]));
+    setScenarioUsers((prevScenarioUsers) => {
+      const existingByRole = new Map(prevScenarioUsers.map((scenarioUser) => [user.role, scenarioUser]));
       const defaults = playableSites.map((node) => {
         const nodeType = normalizeSiteType(node?.type);
         const roleKey = playableTypeToRole[nodeType];
@@ -1260,37 +1260,37 @@ const CreateMixedGame = () => {
     [activeSupplyChainConfig, buildDefaultSitePolicy, clampToRange, sitePolicyBounds, normalizeSiteName]
   );
 
-  const handlePlayerTypeChange = (index, type) => {
-    setPlayers((prevPlayers) =>
-      prevPlayers.map((scenarioUser, i) => {
+  const handleScenarioUserTypeChange = (index, type) => {
+    setScenarioUsers((prevScenarioUsers) =>
+      prevScenarioUsers.map((scenarioUser, i) => {
         if (i !== index) {
           return scenarioUser;
         }
-        const updatedPlayer = {
+        const updatedScenarioUser = {
           ...scenarioUser,
           scenarioUserType: type,
         };
         if (type === 'human') {
-          updatedPlayer.strategy = agentStrategies[0].options[0].value;
+          updatedScenarioUser.strategy = agentStrategies[0].options[0].value;
           if (scenarioUser.role === 'retailer' && !scenarioUser.userId && user) {
-            updatedPlayer.userId = user.id;
+            updatedScenarioUser.userId = user.id;
           }
-          updatedPlayer.autonomyOverridePct = undefined;
+          updatedScenarioUser.autonomyOverridePct = undefined;
         } else if (type === 'ai') {
-          updatedPlayer.userId = null;
-          updatedPlayer.strategy = updatedPlayer.strategy || agentStrategies[0].options[0].value;
-          if (!updatedPlayer.llmModel) {
-            updatedPlayer.llmModel = DEFAULT_LLM_BASE_MODEL;
+          updatedScenarioUser.userId = null;
+          updatedScenarioUser.strategy = updatedScenarioUser.strategy || agentStrategies[0].options[0].value;
+          if (!updatedScenarioUser.llmModel) {
+            updatedScenarioUser.llmModel = DEFAULT_LLM_BASE_MODEL;
           }
         }
-        return updatedPlayer;
+        return updatedScenarioUser;
       })
     );
   };
 
   const handleStrategyChange = (index, strategy) => {
-    setPlayers((prevPlayers) =>
-      prevPlayers.map((scenarioUser, i) => {
+    setScenarioUsers((prevScenarioUsers) =>
+      prevScenarioUsers.map((scenarioUser, i) => {
         if (i !== index) {
           return scenarioUser;
         }
@@ -1308,16 +1308,16 @@ const CreateMixedGame = () => {
   };
 
   const handleUserChange = (index, userId) => {
-    setPlayers((prevPlayers) =>
-      prevPlayers.map((scenarioUser, i) =>
+    setScenarioUsers((prevScenarioUsers) =>
+      prevScenarioUsers.map((scenarioUser, i) =>
         i === index ? { ...scenarioUser, userId: userId || null } : scenarioUser
       )
     );
   };
 
   const handleCanSeeDemandChange = (index, canSeeDemand) => {
-    setPlayers((prevPlayers) =>
-      prevPlayers.map((scenarioUser, i) => (i === index ? { ...scenarioUser, canSeeDemand } : scenarioUser))
+    setScenarioUsers((prevScenarioUsers) =>
+      prevScenarioUsers.map((scenarioUser, i) => (i === index ? { ...scenarioUser, canSeeDemand } : scenarioUser))
     );
   };
 
@@ -1325,11 +1325,11 @@ const CreateMixedGame = () => {
     if (e) e.preventDefault();
 
     // Validate that each human role has a user assigned
-    const invalidPlayers = scenarioUsers.filter(
+    const invalidScenarioUsers = scenarioUsers.filter(
       (p) => p.scenarioUserType === 'human' && !p.userId
     );
 
-    if (invalidPlayers.length > 0) {
+    if (invalidScenarioUsers.length > 0) {
       toast.error('Validation Error', {
         description: 'Please assign a user to all human roles',
       });
@@ -1458,7 +1458,7 @@ const CreateMixedGame = () => {
             standard_cost: parseFloat(pricingConfig.manufacturer.standard_cost),
           },
         },
-        player_assignments: scenarioUsers.map((scenarioUser) => {
+        scenario_user_assignments: scenarioUsers.map((scenarioUser) => {
           const role = String(scenarioUser?.role || '').toLowerCase();
           const isAi = scenarioUser.scenarioUserType === 'ai';
           const normalizedStrategy = isAi ? normalizeStrategyForPayload(scenarioUser.strategy) : null;
@@ -1566,7 +1566,7 @@ const CreateMixedGame = () => {
               updatedAutonomy.volatility_window != null ? updatedAutonomy.volatility_window : null,
           });
 
-          setPlayers((snapshot.scenarioUsers || []).map((scenarioUser) => ({ ...scenarioUser })));
+          setScenarioUsers((snapshot.scenarioUsers || []).map((scenarioUser) => ({ ...scenarioUser })));
 
           if (snapshot.supplyChainConfig) {
             setActiveSupplyChainConfig(snapshot.supplyChainConfig);
@@ -1683,11 +1683,11 @@ const CreateMixedGame = () => {
     { label: 'Backlog Cost Range', value: formatCurrencyRange(summarySystemConfig?.min_backlog_cost, summarySystemConfig?.max_backlog_cost) },
   ], [summarySystemConfig, formatRangeValue, formatCurrencyRange]);
 
-  const summaryPlayers = scenarioUsers;
+  const summaryScenarioUsers = scenarioUsers;
 
-  const playerSummaryRows = useMemo(() =>
-    playerRoles.map(({ value, label }) => {
-      const scenarioUser = (summaryPlayers || []).find((entry) => entry.role === value) || {};
+  const scenarioUserSummaryRows = useMemo(() =>
+    scenarioUserRoles.map(({ value, label }) => {
+      const scenarioUser = (summaryScenarioUsers || []).find((entry) => entry.role === value) || {};
       const isHuman = scenarioUser.scenarioUserType === 'human';
       const assignmentLabel = isHuman
         ? (scenarioUser.userId ? userLookup.get(Number(scenarioUser.userId)) || `User #${scenarioUser.userId}` : 'Unassigned')
@@ -1713,14 +1713,14 @@ const CreateMixedGame = () => {
         canSeeDemand: Boolean(scenarioUser.canSeeDemand ?? (value === 'retailer')),
       };
     }),
-    [summaryPlayers, userLookup]
+    [summaryScenarioUsers, userLookup]
   );
 
   const summaryNodePolicies = sitePolicies;
   const summaryPricingConfig = pricingConfig;
 
   const roleParameterRows = useMemo(() =>
-    playerRoles.map(({ value, label }) => {
+    scenarioUserRoles.map(({ value, label }) => {
       const nodeKey = normalizeSiteName(value);
       return {
         roleKey: value,
@@ -2301,7 +2301,7 @@ const CreateMixedGame = () => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {playerSummaryRows.map((row) => (
+                          {scenarioUserSummaryRows.map((row) => (
                             <TableRow key={row.roleKey}>
                               <TableCell>{row.roleLabel}</TableCell>
                               <TableCell>
@@ -2448,7 +2448,7 @@ const CreateMixedGame = () => {
                               <Button
                                 type="button"
                                 variant={scenarioUser.scenarioUserType === 'human' ? 'default' : 'outline'}
-                                onClick={() => handlePlayerTypeChange(index, 'human')}
+                                onClick={() => handleScenarioUserTypeChange(index, 'human')}
                                 size="sm"
                                 className={scenarioUser.scenarioUserType === 'human' ? 'bg-green-600 hover:bg-green-700' : ''}
                               >
@@ -2457,7 +2457,7 @@ const CreateMixedGame = () => {
                               <Button
                                 type="button"
                                 variant={scenarioUser.scenarioUserType === 'ai' ? 'default' : 'outline'}
-                                onClick={() => handlePlayerTypeChange(index, 'ai')}
+                                onClick={() => handleScenarioUserTypeChange(index, 'ai')}
                                 size="sm"
                                 className={scenarioUser.scenarioUserType === 'ai' ? 'bg-purple-600 hover:bg-purple-700' : ''}
                               >
@@ -2503,7 +2503,7 @@ const CreateMixedGame = () => {
                                   <select
                                     value={scenarioUser.llmModel}
                                     onChange={(e) =>
-                                      setPlayers((prev) =>
+                                      setScenarioUsers((prev) =>
                                         prev.map((p, i) => (i === index ? { ...p, llmModel: e.target.value } : p))
                                       )
                                     }
@@ -2533,7 +2533,7 @@ const CreateMixedGame = () => {
                                       const next = clampOverridePercent(
                                         Number.isFinite(raw) ? raw : scenarioUser.autonomyOverridePct
                                       );
-                                      setPlayers((prev) =>
+                                      setScenarioUsers((prev) =>
                                         prev.map((p, i) =>
                                           i === index ? { ...p, autonomyOverridePct: next } : p
                                         )

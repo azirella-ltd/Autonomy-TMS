@@ -6,7 +6,7 @@
  * @param {Object} supplyChainConfig - Supply chain configuration with site metadata
  * @returns {Array} Array of site objects with id, role, name, location
  */
-export function transformPlayersToSites(scenarioUsers, supplyChainConfig = null) {
+export function transformScenarioUsersToSites(scenarioUsers, supplyChainConfig = null) {
   if (!scenarioUsers || !Array.isArray(scenarioUsers)) return [];
 
   return scenarioUsers.map((scenarioUser) => {
@@ -41,7 +41,7 @@ export function transformPlayersToSites(scenarioUsers, supplyChainConfig = null)
 }
 
 // Backward compatibility alias
-export const transformPlayersToNodes = transformPlayersToSites;
+export const transformScenarioUsersToNodes = transformScenarioUsersToSites;
 
 /**
  * Generate approximate geographic locations based on supply chain role
@@ -129,13 +129,13 @@ export function transformConnectionsToEdges(scenarioUsers, supplyChainConfig = n
   if (supplyChainConfig && supplyChainConfig.lanes) {
     supplyChainConfig.lanes.forEach((lane) => {
       // Find scenarioUser IDs that correspond to these sites
-      const fromPlayer = scenarioUsers.find((p) => p.site_id === lane.from_site_id);
-      const toPlayer = scenarioUsers.find((p) => p.site_id === lane.to_site_id);
+      const fromScenarioUser = scenarioUsers.find((p) => p.site_id === lane.from_site_id);
+      const toScenarioUser = scenarioUsers.find((p) => p.site_id === lane.to_site_id);
 
-      if (fromPlayer && toPlayer) {
+      if (fromScenarioUser && toScenarioUser) {
         edges.push({
-          from: fromPlayer.scenario_user_id || fromPlayer.id,
-          to: toPlayer.scenario_user_id || toPlayer.id,
+          from: fromScenarioUser.scenario_user_id || fromScenarioUser.id,
+          to: toScenarioUser.scenario_user_id || toScenarioUser.id,
           flowSpeed: 1,
         });
       }
@@ -208,7 +208,7 @@ export function transformGameHistory(rounds) {
 
   return rounds.map((round) => ({
     round_number: round.round_number,
-    scenarioUsers: round.scenarioUsers || round.player_rounds || [],
+    scenarioUsers: round.scenarioUsers || round.scenario_user_periods || [],
     timestamp: round.created_at || round.timestamp,
   }));
 }
@@ -231,7 +231,7 @@ export function extractVisualizationData(gameState) {
   const scenarioUsers = gameState.scenarioUsers || [];
   const supplyChainConfig = gameState.supply_chain_config || null;
 
-  const sites = transformPlayersToSites(scenarioUsers, supplyChainConfig);
+  const sites = transformScenarioUsersToSites(scenarioUsers, supplyChainConfig);
   const edges = transformConnectionsToEdges(scenarioUsers, supplyChainConfig);
   const inventoryData = buildInventoryData(scenarioUsers);
   const activeFlows = identifyActiveFlows(scenarioUsers);

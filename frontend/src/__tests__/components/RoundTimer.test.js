@@ -7,7 +7,7 @@ jest.mock('../../services/api', () => ({
   default: {
     getRoundStatus: jest.fn().mockResolvedValue({
       ends_at: new Date(Date.now() + 60_000).toISOString(),
-      submitted_players: []
+      submitted_scenario_users: []
     })
   }
 }));
@@ -48,7 +48,7 @@ describe('RoundTimer', () => {
         scenarioUserId={456}
         roundNumber={1}
         onOrderSubmit={jest.fn()}
-        isPlayerTurn={false}
+        isScenarioUserTurn={false}
       />
     );
 

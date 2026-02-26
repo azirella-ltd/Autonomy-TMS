@@ -9,7 +9,7 @@ const WebSocketContext = createContext(null);
 export const WebSocketProvider = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [gameState, setGameState] = useState(null);
-  const [scenarioUsers, setPlayers] = useState([]);
+  const [scenarioUsers, setScenarioUsers] = useState([]);
   const [currentRound, setCurrentRound] = useState(0);
   const [gameStatus, setGameStatus] = useState('idle');
   const callbacks = useRef(new Map());
@@ -47,7 +47,7 @@ export const WebSocketProvider = ({ children }) => {
     switch (type) {
       case 'game_state':
         setGameState(messageData.state || messageData);
-        setPlayers(messageData.scenarioUsers || []);
+        setScenarioUsers(messageData.scenarioUsers || []);
         setCurrentRound(messageData.current_round || messageData.currentRound || 0);
         setGameStatus(messageData.status || 'idle');
         break;
@@ -75,14 +75,14 @@ export const WebSocketProvider = ({ children }) => {
         });
         break;
 
-      case 'player_joined':
-        toast.info('ScenarioUser Joined', {
+      case 'scenario_user_joined':
+        toast.info('User Joined', {
           description: `${messageData.scenario_user_name} has joined the game.`,
         });
         break;
 
-      case 'player_left':
-        toast.warning('ScenarioUser Left', {
+      case 'scenario_user_left':
+        toast.warning('User Left', {
           description: `${messageData.scenario_user_name} has left the game.`,
         });
         break;

@@ -34,7 +34,7 @@ class GamificationService:
         self.points_per_level = 10  # Level = floor(sqrt(points / 10)) + 1
 
     # ========================================================================
-    # PLAYER STATS MANAGEMENT
+    # SCENARIO USER STATS MANAGEMENT
     # ========================================================================
 
     async def get_or_create_scenario_user_stats(self, scenario_user_id: int) -> ScenarioUserStats:
@@ -134,7 +134,7 @@ class GamificationService:
         """Calculate points needed for next level."""
         return ((current_level) ** 2) * self.points_per_level
 
-    async def get_player_progress(self, scenario_user_id: int) -> Optional[ScenarioUserProgressResponse]:
+    async def get_scenario_user_progress(self, scenario_user_id: int) -> Optional[ScenarioUserProgressResponse]:
         """Get complete scenario_user progress including stats, achievements, badges."""
         stats = await self.get_or_create_scenario_user_stats(scenario_user_id)
 
@@ -231,12 +231,12 @@ class GamificationService:
 
             if await self._check_criteria(scenario_user_id, scenario_id, stats, achievement.criteria):
                 # Unlock achievement
-                player_achievement = ScenarioUserAchievement(
+                scenario_user_achievement = ScenarioUserAchievement(
                     scenario_user_id=scenario_user_id,
                     achievement_id=achievement.id,
                     scenario_id=scenario_id
                 )
-                self.db.add(player_achievement)
+                self.db.add(scenario_user_achievement)
                 newly_unlocked.append(achievement)
                 total_points_earned += achievement.points
 
@@ -388,11 +388,11 @@ class GamificationService:
         )
 
         entries = []
-        for entry, scenario_user_name, player_role in entries_result.all():
+        for entry, scenario_user_name, scenario_user_role in entries_result.all():
             entries.append(LeaderboardEntryWithPlayer(
                 **entry.__dict__,
                 scenario_user_name=scenario_user_name,
-                player_role=player_role
+                player_role=scenario_user_role
             ))
 
         # Get total count
@@ -403,8 +403,8 @@ class GamificationService:
         total_entries = count_result.scalar()
 
         # Get requesting scenario_user's rank if provided
-        player_rank = None
-        player_entry = None
+        scenario_user_rank = None
+        scenario_user_entry = None
         if scenario_user_id:
             rank_result = await self.db.execute(
                 select(LeaderboardEntry)
@@ -413,17 +413,17 @@ class GamificationService:
                     LeaderboardEntry.scenario_user_id == scenario_user_id
                 ))
             )
-            player_entry_obj = rank_result.scalar_one_or_none()
-            if player_entry_obj:
-                player_rank = player_entry_obj.rank
-                player_entry = LeaderboardEntryWithPlayer(**player_entry_obj.__dict__)
+            scenario_user_entry_obj = rank_result.scalar_one_or_none()
+            if scenario_user_entry_obj:
+                scenario_user_rank = scenario_user_entry_obj.rank
+                scenario_user_entry = LeaderboardEntryWithPlayer(**scenario_user_entry_obj.__dict__)
 
         return LeaderboardResponse(
             leaderboard=leaderboard,
             entries=entries,
             total_entries=total_entries,
-            player_rank=player_rank,
-            player_entry=player_entry
+            player_rank=scenario_user_rank,
+            player_entry=scenario_user_entry
         )
 
     async def update_leaderboard(self, leaderboard_id: int):
@@ -444,7 +444,7 @@ class GamificationService:
 
         # Calculate scores based on metric
         metric = leaderboard.metric
-        player_scores = []
+        scenario_user_scores = []
 
         for stats in all_stats:
             score = None
@@ -458,11 +458,11 @@ class GamificationService:
                 score = float(stats.avg_service_level or 0)
 
             if score is not None:
-                player_scores.append((stats.scenario_user_id, score))
+                scenario_user_scores.append((stats.scenario_user_id, score))
 
         # Sort and assign ranks
         ascending = metric == 'avg_cost'  # Lower is better for costs
-        player_scores.sort(key=lambda x: x[1], reverse=not ascending)
+        scenario_user_scores.sort(key=lambda x: x[1], reverse=not ascending)
 
         # Clear existing entries
         await self.db.execute(
@@ -470,7 +470,7 @@ class GamificationService:
         )
 
         # Insert new entries
-        for rank, (scenario_user_id, score) in enumerate(player_scores, start=1):
+        for rank, (scenario_user_id, score) in enumerate(scenario_user_scores, start=1):
             entry = LeaderboardEntry(
                 leaderboard_id=leaderboard_id,
                 scenario_user_id=scenario_user_id,

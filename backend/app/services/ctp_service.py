@@ -38,7 +38,7 @@ from .atp_service import ATPService, get_atp_service
 logger = logging.getLogger(__name__)
 
 
-def _get_player_node(db: Session, scenario_user: ScenarioUser, game: Game) -> Optional[Node]:
+def _get_scenario_user_node(db: Session, scenario_user: ScenarioUser, game: Game) -> Optional[Node]:
     """
     Look up the Node for a scenario_user based on their site_key.
 
@@ -186,7 +186,7 @@ class CTPService:
             CTPResult with capacity breakdown and component constraints
         """
         # Step 1: Get production capacity from node configuration
-        node = _get_player_node(self.db, scenario_user, game)
+        node = _get_scenario_user_node(self.db, scenario_user, game)
         if not node:
             logger.warning(f"No node found for scenario_user {scenario_user.id} (site_key={scenario_user.site_key})")
             # Return zero CTP if no node configured
@@ -287,7 +287,7 @@ class CTPService:
         from app.services.sc_planning.stochastic_sampler import StochasticSampler
 
         # Get node for capacity lookup
-        node = _get_player_node(self.db, scenario_user, game)
+        node = _get_scenario_user_node(self.db, scenario_user, game)
         if not node:
             logger.warning(f"No node found for scenario_user {scenario_user.id}")
             return ProbabilisticCTPResult(
@@ -425,7 +425,7 @@ class CTPService:
         """
         projections = []
 
-        node = _get_player_node(self.db, scenario_user, game)
+        node = _get_scenario_user_node(self.db, scenario_user, game)
         if not node:
             logger.warning(f"No node found for scenario_user {scenario_user.id} (site_key={scenario_user.site_key})")
             return []  # Return empty projections if no node
@@ -553,7 +553,7 @@ class CTPService:
         )
 
         # Get lead times
-        node = _get_player_node(self.db, scenario_user, game)
+        node = _get_scenario_user_node(self.db, scenario_user, game)
         production_lead_time = self._get_production_lead_time(node)
         shipping_lead_time = self._get_shipping_lead_time(node)
         total_lead_time = production_lead_time + shipping_lead_time
@@ -700,7 +700,7 @@ class CTPService:
         try:
             from app.models.production_order import ProductionOrder
 
-            node = _get_player_node(self.db, scenario_user, current_round.game)
+            node = _get_scenario_user_node(self.db, scenario_user, current_round.game)
             if not node:
                 return 0
 
@@ -765,7 +765,7 @@ class CTPService:
         total_component_atp = 0
 
         # Get manufacturer's node for site lookup
-        manufacturer_node = _get_player_node(self.db, scenario_user, game)
+        manufacturer_node = _get_scenario_user_node(self.db, scenario_user, game)
         if not manufacturer_node:
             logger.warning(f"No node found for manufacturer scenario_user {scenario_user.id}")
             return 10000  # Fallback to unlimited if no node config
@@ -820,7 +820,7 @@ class CTPService:
         try:
             # Find upstream scenario_users (component suppliers) in the same game
             # For simulation, component suppliers are typically "component_supplier" or similar node types
-            upstream_players = (
+            upstream_scenario_users = (
                 self.db.query(ScenarioUser)
                 .filter(
                     ScenarioUser.scenario_id == game.id,
@@ -829,12 +829,12 @@ class CTPService:
                 .all()
             )
 
-            for upstream_player in upstream_players:
+            for upstream_scenario_user in upstream_scenario_users:
                 # Check if this scenario_user has the component in their inventory
-                if upstream_player.inventory and upstream_player.inventory.current_stock:
+                if upstream_scenario_user.inventory and upstream_scenario_user.inventory.current_stock:
                     # For simplicity, assume all upstream scenario_users can supply components
                     # In a real implementation, you'd check item types and supply chains
-                    upstream_atp = max(0, upstream_player.inventory.current_stock - 50)  # Reserve safety stock
+                    upstream_atp = max(0, upstream_scenario_user.inventory.current_stock - 50)  # Reserve safety stock
                     total_component_atp += upstream_atp
 
             if total_component_atp > 0:
@@ -960,7 +960,7 @@ class CTPService:
             from app.models.inventory_projection import CtpProjection
 
             # Get node for scenario_user
-            node = _get_player_node(self.db, scenario_user, game)
+            node = _get_scenario_user_node(self.db, scenario_user, game)
             if not node:
                 logger.warning(f"Cannot save CTP - no node for scenario_user {scenario_user.id}")
                 return None

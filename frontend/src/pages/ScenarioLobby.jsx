@@ -36,7 +36,7 @@ const ScenarioLobby = () => {
       setIsCreating(true);
       const newGame = await simulationApi.createGame({
         name: `Game ${new Date().toLocaleString()}`,
-        max_players: 4,
+        max_scenario_users: 4,
         settings: {
           round_duration: 60, // seconds
           max_rounds: 20,
@@ -153,7 +153,7 @@ const ScenarioLobby = () => {
                           <div className="flex items-center text-sm text-gray-500">
                             <UserGroupIcon className="flex-shrink-0 mr-1.5 h-5 w-5 text-gray-400" />
                             <p>
-                              {game.users.length}/{game.max_players} scenarioUsers
+                              {game.users.length}/{game.max_scenario_users} scenarioUsers
                             </p>
                           </div>
                           {game.status === 'in_progress' && (

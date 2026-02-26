@@ -807,12 +807,12 @@ const TenantScenarioSupervisionPanel = ({
                         {(() => {
                           if (!nodeState) return null;
                           const rawName = nodeState.scenario_user_name || nodeState.display_name;
-                          const role = nodeState.player_role
-                            ? nodeState.player_role.toLowerCase().replace(/_/g, ' ')
+                          const role = nodeState.scenario_user_role
+                            ? nodeState.scenario_user_role.toLowerCase().replace(/_/g, ' ')
                             : null;
                           const isAi = Boolean(nodeState.is_ai);
-                          const strategy = nodeState.player_strategy
-                            ? nodeState.player_strategy.replace(/_/g, ' ')
+                          const strategy = nodeState.scenario_user_strategy
+                            ? nodeState.scenario_user_strategy.replace(/_/g, ' ')
                             : null;
                           const parts = [];
                           if (rawName) {

@@ -113,7 +113,7 @@ class SimulationToSCAdapter:
 
             # Get scenario_user's current inventory from game state
             # This depends on how game state is stored - check game.config
-            inventory_qty = self._get_player_inventory(scenario_user, round_number)
+            inventory_qty = self._get_scenario_user_inventory(scenario_user, round_number)
 
             # Create InvLevel record
             inv_level = InvLevel(
@@ -141,7 +141,7 @@ class SimulationToSCAdapter:
 
         return records_created
 
-    def _get_player_inventory(self, scenario_user: ScenarioUser, round_number: int) -> float:
+    def _get_scenario_user_inventory(self, scenario_user: ScenarioUser, round_number: int) -> float:
         """
         Extract scenario_user's current inventory from game state
 
@@ -156,10 +156,10 @@ class SimulationToSCAdapter:
         # Structure: game.config['nodes'][role]['inventory']
         game_config = self.game.config or {}
         nodes_state = game_config.get('nodes', {})
-        player_state = nodes_state.get(scenario_user.role, {})
+        scenario_user_state = nodes_state.get(scenario_user.role, {})
 
         # Get inventory (default to 12 for simulation initial state)
-        inventory = player_state.get('inventory', 12)
+        inventory = scenario_user_state.get('inventory', 12)
 
         return float(inventory)
 
@@ -314,7 +314,7 @@ class SimulationToSCAdapter:
         """
         print(f"  Converting {len(supply_plans)} supply plans to scenario_user orders...")
 
-        player_orders = {}
+        scenario_user_orders = {}
 
         # Get node mapping
         await self.db.refresh(self.config, ['nodes'])
@@ -330,17 +330,17 @@ class SimulationToSCAdapter:
                 continue
 
             # Aggregate orders for this scenario_user
-            if role not in player_orders:
-                player_orders[role] = 0
+            if role not in scenario_user_orders:
+                scenario_user_orders[role] = 0
 
-            player_orders[role] += plan.planned_order_quantity
+            scenario_user_orders[role] += plan.planned_order_quantity
 
             print(f"    OK {role}: order {plan.planned_order_quantity} "
                   f"(type={plan.plan_type}, from site={plan.source_site_id})")
 
-        print(f"  OK Converted to {len(player_orders)} scenario_user orders")
+        print(f"  OK Converted to {len(scenario_user_orders)} scenario_user orders")
 
-        return player_orders
+        return scenario_user_orders
 
     async def get_current_inventory(self, role: str) -> float:
         """
@@ -363,7 +363,7 @@ class SimulationToSCAdapter:
         if not scenario_user:
             return 0.0
 
-        return self._get_player_inventory(scenario_user, self.game.current_round)
+        return self._get_scenario_user_inventory(scenario_user, self.game.current_round)
 
     async def record_actual_demand(
         self,

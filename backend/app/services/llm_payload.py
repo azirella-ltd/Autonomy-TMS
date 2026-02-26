@@ -389,8 +389,8 @@ def build_llm_decision_payload(
     history_by_role: Dict[str, List[Dict[str, Any]]] = {}
     orders_by_role_round: Dict[str, Dict[int, int]] = {}
 
-    for round_rec, player_obj, game_round in scenario_user_period_rows:
-        role_name = str(player_obj.role.value if hasattr(player_obj.role, "value") else player_obj.role).lower()
+    for round_rec, scenario_user_obj, game_round in scenario_user_period_rows:
+        role_name = str(scenario_user_obj.role.value if hasattr(scenario_user_obj.role, "value") else scenario_user_obj.role).lower()
         round_number = _safe_int(getattr(game_round, "round_number", 0))
 
         order_up = _safe_int(
@@ -419,7 +419,7 @@ def build_llm_decision_payload(
 
         history_by_role.setdefault(role_name, []).append(entry)
 
-    players_with_inventory = (
+    scenario_users_with_inventory = (
         db.query(ScenarioUser, ScenarioUserInventory)
         .outerjoin(ScenarioUserInventory, ScenarioUserInventory.scenario_user_id == ScenarioUser.id)
         .filter(ScenarioUser.scenario_id == game.id)
@@ -428,7 +428,7 @@ def build_llm_decision_payload(
 
     roles_section: Dict[str, Dict[str, Any]] = {}
     role_key_to_raw: Dict[str, str] = {}
-    for scenario_user, inventory in players_with_inventory:
+    for scenario_user, inventory in scenario_users_with_inventory:
         if not scenario_user or not getattr(scenario_user, "role", None):
             continue
 

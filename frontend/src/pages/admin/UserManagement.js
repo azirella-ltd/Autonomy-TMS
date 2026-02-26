@@ -34,7 +34,7 @@ const parseErrorMessage = (error, fallback) => {
   return fallback;
 };
 
-function GroupPlayerManagement() {
+function GroupScenarioUserManagement() {
   const navigate = useNavigate();
   const { isTenantAdmin, user } = useAuth();
   const systemAdmin = isSystemAdminUser(user);
@@ -42,7 +42,7 @@ function GroupPlayerManagement() {
   const parsedTenantId = typeof rawTenantId === 'number' ? rawTenantId : Number(rawTenantId);
   const tenantId = Number.isFinite(parsedTenantId) ? parsedTenantId : null;
 
-  const [scenarioUsers, setPlayers] = useState([]);
+  const [scenarioUsers, setScenarioUsers] = useState([]);
   const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -71,9 +71,9 @@ function GroupPlayerManagement() {
     }
   }, []);
 
-  const loadPlayers = useCallback(async () => {
+  const loadScenarioUsers = useCallback(async () => {
     if (!tenantId) {
-      setPlayers([]);
+      setScenarioUsers([]);
       return [];
     }
 
@@ -85,11 +85,11 @@ function GroupPlayerManagement() {
       const filtered = data.filter(
         (item) => resolveUserType(item) === 'user' && item.tenant_id === tenantId,
       );
-      setPlayers(filtered);
+      setScenarioUsers(filtered);
       return filtered;
     } catch (error) {
       console.error('Error loading scenarioUsers:', error);
-      setPlayers([]);
+      setScenarioUsers([]);
       throw error;
     }
   }, [tenantId]);
@@ -108,7 +108,7 @@ function GroupPlayerManagement() {
     const fetchAll = async () => {
       setLoading(true);
       try {
-        await Promise.all([loadTenants(), loadPlayers()]);
+        await Promise.all([loadTenants(), loadScenarioUsers()]);
       } catch (error) {
         toast.error('Failed to load user information');
       } finally {
@@ -117,7 +117,7 @@ function GroupPlayerManagement() {
     };
 
     fetchAll();
-  }, [tenantId, isTenantAdmin, systemAdmin, loadTenants, loadPlayers]);
+  }, [tenantId, isTenantAdmin, systemAdmin, loadTenants, loadScenarioUsers]);
 
   const tenantMap = useMemo(() => {
     const map = {};
@@ -156,7 +156,7 @@ function GroupPlayerManagement() {
         toast.success('User created successfully');
       }
       setEditorOpen(false);
-      await loadPlayers();
+      await loadScenarioUsers();
     } catch (error) {
       const message = parseErrorMessage(error, 'Failed to save user');
       toast.error(message);
@@ -172,7 +172,7 @@ function GroupPlayerManagement() {
     try {
       await api.delete(`/users/${scenarioUser.id}/`);
       toast.success('User deleted');
-      await loadPlayers();
+      await loadScenarioUsers();
     } catch (error) {
       const message = parseErrorMessage(error, 'Failed to delete user');
       toast.error(message);
@@ -308,4 +308,4 @@ function GroupPlayerManagement() {
   );
 }
 
-export default GroupPlayerManagement;
+export default GroupScenarioUserManagement;

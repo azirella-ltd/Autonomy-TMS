@@ -283,7 +283,7 @@ const Dashboard = () => {
   const sliderMax = totalRounds > 0 ? totalRounds : FALLBACK_TOTAL_ROUNDS;
   const sliderValue = Math.min(Math.max(currentRoundRaw, 0), sliderMax);
   const progressPercent = sliderMax ? Math.round((sliderValue / sliderMax) * 100) : 0;
-  const playerRoleLabel = dashboardData?.player_role ? dashboardData.player_role.replace(/_/g, ' ') : null;
+  const scenarioUserRoleLabel = dashboardData?.scenario_user_role ? dashboardData.scenario_user_role.replace(/_/g, ' ') : null;
 
   const demandSeries = useMemo(() => {
     if (!timeSeries.length) {
@@ -407,8 +407,8 @@ const Dashboard = () => {
                     Overview of your supply chain performance
                   </p>
                   <div className="flex gap-2 mt-1">
-                    {playerRoleLabel && (
-                      <Badge variant="default" className="capitalize">{playerRoleLabel}</Badge>
+                    {scenarioUserRoleLabel && (
+                      <Badge variant="default" className="capitalize">{scenarioUserRoleLabel}</Badge>
                     )}
                     <Badge variant="secondary">Round {sliderValue} / {sliderMax}</Badge>
                   </div>

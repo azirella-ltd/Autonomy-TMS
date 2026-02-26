@@ -62,7 +62,7 @@ const ScenarioRoom = () => {
   const [roundPhase, setRoundPhase] = useState("waiting"); // 'waiting', 'fulfillment', 'replenishment', 'completed'
   const [atpData, setAtpData] = useState(null);
   const [pipelineData, setPipelineData] = useState([]);
-  const [playersCompleted, setPlayersCompleted] = useState(0);
+  const [scenarioUsersCompleted, setScenarioUsersCompleted] = useState(0);
   const [demandHistory, setDemandHistory] = useState([]);
 
   // Agent Copilot Mode state (Phase 2)
@@ -150,7 +150,7 @@ const ScenarioRoom = () => {
             // DAG Sequential: Phase transition (FULFILLMENT → REPLENISHMENT → COMPLETED)
             console.log("Phase changed to:", data.phase);
             setRoundPhase(data.phase.toLowerCase());
-            setPlayersCompleted(0); // Reset counter on phase change
+            setScenarioUsersCompleted(0); // Reset counter on phase change
             if (data.phase.toUpperCase() === "FULFILLMENT") {
               // Fetch ATP data when fulfillment phase starts
               fetchATPData();
@@ -173,13 +173,13 @@ const ScenarioRoom = () => {
 
           case "fulfillment_completed":
             // DAG Sequential: ScenarioUser submitted fulfillment
-            setPlayersCompleted((prev) => prev + 1);
-            if (data.scenario_user_id !== currentPlayer?.id) {
+            setScenarioUsersCompleted((prev) => prev + 1);
+            if (data.scenario_user_id !== currentScenarioUser?.id) {
               toast.success(`${data.node_key} completed fulfillment`);
             }
             break;
 
-          case "all_players_ready_for_replenishment":
+          case "all_scenario_users_ready_for_replenishment":
             // DAG Sequential: All users submitted fulfillment
             toast.success("All users completed fulfillment. Transitioning to replenishment phase.");
             break;
@@ -211,7 +211,7 @@ const ScenarioRoom = () => {
           case "override_approved":
             // Phase 2 Copilot: Manager approved override
             console.log("Override approved:", data);
-            if (data.scenario_user_id === currentPlayer?.id) {
+            if (data.scenario_user_id === currentScenarioUser?.id) {
               toast.success(data.message);
               setPendingApproval(false);
               setOverrideDialogOpen(false);
@@ -225,7 +225,7 @@ const ScenarioRoom = () => {
           case "override_rejected":
             // Phase 2 Copilot: Manager rejected override
             console.log("Override rejected:", data);
-            if (data.scenario_user_id === currentPlayer?.id) {
+            if (data.scenario_user_id === currentScenarioUser?.id) {
               toast.error(data.message);
               setPendingApproval(false);
               setOverrideDialogOpen(false);
@@ -342,11 +342,11 @@ const ScenarioRoom = () => {
 
   // DAG Sequential: Fetch ATP data for fulfillment phase
   const fetchATPData = async () => {
-    if (!currentPlayer?.id || !game?.use_dag_sequential) return;
+    if (!currentScenarioUser?.id || !game?.use_dag_sequential) return;
 
     try {
       const response = await simulationApi.get(
-        `/mixed-scenarios/${scenarioId}/atp/${currentPlayer.id}`
+        `/mixed-scenarios/${scenarioId}/atp/${currentScenarioUser.id}`
       );
       setAtpData(response.data);
     } catch (error) {
@@ -357,11 +357,11 @@ const ScenarioRoom = () => {
 
   // DAG Sequential: Fetch pipeline data for replenishment phase
   const fetchPipelineData = async () => {
-    if (!currentPlayer?.id || !game?.use_dag_sequential) return;
+    if (!currentScenarioUser?.id || !game?.use_dag_sequential) return;
 
     try {
       const response = await simulationApi.get(
-        `/mixed-scenarios/${scenarioId}/pipeline/${currentPlayer.id}`
+        `/mixed-scenarios/${scenarioId}/pipeline/${currentScenarioUser.id}`
       );
       setPipelineData(response.data.in_transit || []);
     } catch (error) {
@@ -387,7 +387,7 @@ const ScenarioRoom = () => {
 
   // DAG Sequential: Submit fulfillment decision
   const handleFulfillmentSubmit = async (fulfillQty) => {
-    if (!currentPlayer?.id) {
+    if (!currentScenarioUser?.id) {
       toast.error("User not found");
       return;
     }
@@ -397,7 +397,7 @@ const ScenarioRoom = () => {
       const response = await simulationApi.post(
         `/mixed-scenarios/${scenarioId}/rounds/${game.current_round}/fulfillment`,
         {
-          scenario_user_id: currentPlayer.id,
+          scenario_user_id: currentScenarioUser.id,
           fulfill_qty: fulfillQty,
         }
       );
@@ -424,7 +424,7 @@ const ScenarioRoom = () => {
 
   // DAG Sequential: Submit replenishment decision
   const handleReplenishmentSubmit = async (orderQty) => {
-    if (!currentPlayer?.id) {
+    if (!currentScenarioUser?.id) {
       toast.error("User not found");
       return;
     }
@@ -434,7 +434,7 @@ const ScenarioRoom = () => {
       const response = await simulationApi.post(
         `/mixed-scenarios/${scenarioId}/rounds/${game.current_round}/replenishment`,
         {
-          scenario_user_id: currentPlayer.id,
+          scenario_user_id: currentScenarioUser.id,
           order_qty: orderQty,
         }
       );
@@ -508,11 +508,11 @@ const ScenarioRoom = () => {
     );
   }
 
-  const currentPlayer = game.users.find((p) => p.user_id === user.id);
+  const currentScenarioUser = game.users.find((p) => p.user_id === user.id);
   const isGameMaster = game.created_by === user.id;
   const isGameActive = game.status === "in_progress";
-  const isPlayerReady = currentPlayer?.is_ready;
-  const allPlayersReady =
+  const isScenarioUserReady = currentScenarioUser?.is_ready;
+  const allScenarioUsersReady =
     game.users.every((p) => p.is_ready) && game.users.length >= 2;
 
   // Tab configuration
@@ -549,7 +549,7 @@ const ScenarioRoom = () => {
             <div className="space-y-4 max-w-md mx-auto">
               <div className="bg-muted/50 p-4 rounded-lg">
                 <h3 className="font-medium mb-2">
-                  Users ({game.users.length}/{game.max_players})
+                  Users ({game.users.length}/{game.max_scenario_users})
                 </h3>
                 <ul className="space-y-2">
                   {game.users.map((scenarioUser) => (
@@ -566,13 +566,13 @@ const ScenarioRoom = () => {
                         {user.is_ready && " \u2713"}
                         {user.user_id === game.created_by && " \uD83D\uDC51"}
                       </span>
-                      {user.user_id === user.id && !isPlayerReady && (
+                      {user.user_id === user.id && !isScenarioUserReady && (
                         <Button
                           size="sm"
                           variant="default"
                           onClick={async () => {
                             try {
-                              await simulationApi.setPlayerReady(scenarioId, {
+                              await simulationApi.setScenarioUserReady(scenarioId, {
                                 is_ready: true,
                               });
                               toast.success("You are ready!");
@@ -594,7 +594,7 @@ const ScenarioRoom = () => {
                 <div className="pt-4">
                   <Button
                     onClick={startSimulation}
-                    disabled={!allPlayersReady || isSubmitting}
+                    disabled={!allScenarioUsersReady || isSubmitting}
                     fullWidth
                     loading={isSubmitting}
                   >
@@ -616,8 +616,8 @@ const ScenarioRoom = () => {
           {game?.use_dag_sequential && (
             <DecisionPhaseIndicator
               phase={roundPhase}
-              playersCompleted={playersCompleted}
-              totalPlayers={game.users.length}
+              scenarioUsersCompleted={scenarioUsersCompleted}
+              totalScenarioUsers={game.users.length}
               currentRound={game.current_round}
               phaseStartedAt={game.phase_started_at}
             />
@@ -645,19 +645,19 @@ const ScenarioRoom = () => {
                 <div className="grid grid-cols-3 gap-4">
                   <div className="text-center">
                     <div className="text-2xl font-bold">
-                      {currentPlayer?.inventory || 0}
+                      {currentScenarioUser?.inventory || 0}
                     </div>
                     <div className="text-sm text-muted-foreground">Inventory</div>
                   </div>
                   <div className="text-center">
                     <div className="text-2xl font-bold">
-                      {currentPlayer?.backlog || 0}
+                      {currentScenarioUser?.backlog || 0}
                     </div>
                     <div className="text-sm text-muted-foreground">Backlog</div>
                   </div>
                   <div className="text-center">
                     <div className="text-2xl font-bold">
-                      {currentPlayer?.incoming_order || 0}
+                      {currentScenarioUser?.incoming_order || 0}
                     </div>
                     <div className="text-sm text-muted-foreground">Incoming</div>
                   </div>
@@ -670,14 +670,14 @@ const ScenarioRoom = () => {
                       <FulfillmentForm
                         atp={atpData.current_atp}
                         demand={
-                          (currentPlayer?.incoming_order || 0) +
-                          (currentPlayer?.backlog || 0)
+                          (currentScenarioUser?.incoming_order || 0) +
+                          (currentScenarioUser?.backlog || 0)
                         }
-                        currentInventory={currentPlayer?.inventory || 0}
-                        backlog={currentPlayer?.backlog || 0}
-                        agentMode={currentPlayer?.agent_mode || 'manual'}
+                        currentInventory={currentScenarioUser?.inventory || 0}
+                        backlog={currentScenarioUser?.backlog || 0}
+                        agentMode={currentScenarioUser?.agent_mode || 'manual'}
                         scenarioId={scenarioId}
-                        scenarioUserId={currentPlayer?.id}
+                        scenarioUserId={currentScenarioUser?.id}
                         onSubmit={handleFulfillmentSubmit}
                         disabled={isSubmitting || pendingApproval}
                       />
@@ -685,14 +685,14 @@ const ScenarioRoom = () => {
 
                     {roundPhase === 'replenishment' && (
                       <ReplenishmentForm
-                        currentInventory={currentPlayer?.inventory || 0}
+                        currentInventory={currentScenarioUser?.inventory || 0}
                         pipeline={pipelineData}
-                        backlog={currentPlayer?.backlog || 0}
+                        backlog={currentScenarioUser?.backlog || 0}
                         demandHistory={demandHistory}
                         currentRound={game.current_round}
-                        agentMode={currentPlayer?.agent_mode || 'manual'}
+                        agentMode={currentScenarioUser?.agent_mode || 'manual'}
                         scenarioId={scenarioId}
-                        scenarioUserId={currentPlayer?.id}
+                        scenarioUserId={currentScenarioUser?.id}
                         onSubmit={handleReplenishmentSubmit}
                         disabled={isSubmitting || pendingApproval}
                       />
@@ -719,7 +719,7 @@ const ScenarioRoom = () => {
                           <DecisionComparisonPanel
                             roundResults={roundComparisonResults}
                             currentRound={lastComparedRound || game.current_round - 1}
-                            scenarioUserId={currentPlayer?.id}
+                            scenarioUserId={currentScenarioUser?.id}
                           />
                         )}
                       </div>
@@ -733,8 +733,8 @@ const ScenarioRoom = () => {
                       className="block text-sm font-medium text-foreground mb-1"
                     >
                       Place Order (0-
-                      {currentPlayer?.inventory +
-                        (currentPlayer?.incoming_order || 0) +
+                      {currentScenarioUser?.inventory +
+                        (currentScenarioUser?.incoming_order || 0) +
                         10}
                       )
                     </label>
@@ -744,8 +744,8 @@ const ScenarioRoom = () => {
                         id="orderAmount"
                         min="0"
                         max={
-                          currentPlayer?.inventory +
-                          (currentPlayer?.incoming_order || 0) +
+                          currentScenarioUser?.inventory +
+                          (currentScenarioUser?.incoming_order || 0) +
                           10
                         }
                         value={orderAmount}
@@ -786,7 +786,7 @@ const ScenarioRoom = () => {
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Your Score:</span>
                       <span className="font-medium">
-                        {currentPlayer?.score || 0} pts
+                        {currentScenarioUser?.score || 0} pts
                       </span>
                     </div>
                   </div>
@@ -958,7 +958,7 @@ const ScenarioRoom = () => {
               <Card variant="outlined" padding="default">
                 <CardContent>
                   <h3 className="font-medium mb-3">
-                    ScenarioUsers ({game.users.length}/{game.max_players})
+                    ScenarioUsers ({game.users.length}/{game.max_scenario_users})
                   </h3>
                   <ul className="space-y-2">
                     {game.users.map((scenarioUser) => (
@@ -998,7 +998,7 @@ const ScenarioRoom = () => {
                         <Button
                           onClick={startGame}
                           disabled={
-                            !allPlayersReady || isSubmitting || isGameActive
+                            !allScenarioUsersReady || isSubmitting || isGameActive
                           }
                           fullWidth
                           variant="secondary"
@@ -1126,14 +1126,14 @@ const ScenarioRoom = () => {
                 {/* Probabilistic ATP Chart */}
                 <ProbabilisticATPChart
                   scenarioId={parseInt(scenarioId)}
-                  scenarioUserId={currentPlayer?.id}
+                  scenarioUserId={currentScenarioUser?.id}
                   nSimulations={100}
                 />
 
                 {/* Probabilistic Pipeline Chart */}
                 <ProbabilisticPipelineChart
                   scenarioId={parseInt(scenarioId)}
-                  scenarioUserId={currentPlayer?.id}
+                  scenarioUserId={currentScenarioUser?.id}
                   currentRound={game?.current_round}
                   nSimulations={100}
                 />
@@ -1141,8 +1141,8 @@ const ScenarioRoom = () => {
                 {/* ATP/CTP Historical Trend Chart */}
                 <ATPHistoryChart
                   scenarioId={parseInt(scenarioId)}
-                  scenarioUserId={currentPlayer?.id}
-                  showCTP={currentPlayer?.role === "MANUFACTURER"}
+                  scenarioUserId={currentScenarioUser?.id}
+                  showCTP={currentScenarioUser?.role === "MANUFACTURER"}
                   limit={20}
                 />
 
@@ -1157,7 +1157,7 @@ const ScenarioRoom = () => {
                   </p>
                   <ConformalATPChart
                     scenarioId={parseInt(scenarioId)}
-                    scenarioUserId={currentPlayer?.id}
+                    scenarioUserId={currentScenarioUser?.id}
                     coverage={0.90}
                     method="adaptive"
                   />
@@ -1169,7 +1169,7 @@ const ScenarioRoom = () => {
               <div className="max-h-[600px] overflow-y-auto">
                 <AISuggestion
                   scenarioId={scenarioId}
-                  scenarioUserRole={currentPlayer?.role || "RETAILER"}
+                  scenarioUserRole={currentScenarioUser?.role || "RETAILER"}
                   onAcceptSuggestion={(orderQty) => {
                     setOrderAmount(orderQty.toString());
                     setActiveTab("game");
@@ -1182,7 +1182,7 @@ const ScenarioRoom = () => {
               <div>
                 <AIAnalytics
                   scenarioId={scenarioId}
-                  scenarioUserRole={currentPlayer?.role || "RETAILER"}
+                  scenarioUserRole={currentScenarioUser?.role || "RETAILER"}
                 />
               </div>
             )}
@@ -1191,7 +1191,7 @@ const ScenarioRoom = () => {
               <div className="h-[600px]">
                 <AIConversation
                   scenarioId={scenarioId}
-                  scenarioUserRole={currentPlayer?.role || "RETAILER"}
+                  scenarioUserRole={currentScenarioUser?.role || "RETAILER"}
                 />
               </div>
             )}
@@ -1206,8 +1206,8 @@ const ScenarioRoom = () => {
               <div>
                 <NegotiationPanel
                   scenarioId={scenarioId}
-                  scenarioUserRole={currentPlayer?.role || "RETAILER"}
-                  currentPlayerId={currentPlayer?.id || user?.id}
+                  scenarioUserRole={currentScenarioUser?.role || "RETAILER"}
+                  currentScenarioUserId={currentScenarioUser?.id || user?.id}
                 />
               </div>
             )}
@@ -1216,7 +1216,7 @@ const ScenarioRoom = () => {
               <div>
                 <AchievementsPanel
                   scenarioId={scenarioId}
-                  scenarioUserId={currentPlayer?.id || user?.id}
+                  scenarioUserId={currentScenarioUser?.id || user?.id}
                 />
               </div>
             )}
@@ -1224,7 +1224,7 @@ const ScenarioRoom = () => {
             {activeTab === "leaderboard" && (
               <div>
                 <LeaderboardPanel
-                  scenarioUserId={currentPlayer?.id || user?.id}
+                  scenarioUserId={currentScenarioUser?.id || user?.id}
                 />
               </div>
             )}

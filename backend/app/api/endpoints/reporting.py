@@ -26,7 +26,7 @@ class ScenarioReportResponse(BaseModel):
     scenario_id: int
     generated_at: str
     overview: dict
-    player_performance: List[dict]
+    scenario_user_performance: List[dict]
     key_insights: List[str]
     recommendations: List[str]
     charts_data: dict
@@ -146,7 +146,7 @@ async def export_scenario_data(
 
 
 @router.get("/trends/{scenario_user_id}", response_model=TrendAnalysisResponse)
-async def get_player_trends(
+async def get_scenario_user_trends(
     scenario_user_id: int,
     metric: str = Query('cost', pattern='^(cost|service_level|inventory|bullwhip)$'),
     lookback: int = Query(10, ge=1, le=50, description="Number of recent scenarios to analyze"),
@@ -231,7 +231,7 @@ async def compare_scenarios(
 
 
 @router.get("/analytics/summary/{scenario_user_id}")
-async def get_player_analytics_summary(
+async def get_scenario_user_analytics_summary(
     scenario_user_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)

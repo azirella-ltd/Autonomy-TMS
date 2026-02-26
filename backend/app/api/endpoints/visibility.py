@@ -92,7 +92,7 @@ class VisibilityPermissionsResponse(BaseModel):
     updated_at: str
 
 
-class PlayerVisibilityPermissions(BaseModel):
+class ScenarioUserVisibilityPermissions(BaseModel):
     """ScenarioUser with visibility permissions."""
     scenario_user_id: int
     role: str
@@ -101,7 +101,7 @@ class PlayerVisibilityPermissions(BaseModel):
 
 class AllVisibilityPermissionsResponse(BaseModel):
     """Response containing all scenario_user permissions."""
-    scenario_users: List[PlayerVisibilityPermissions]
+    scenario_users: List[ScenarioUserVisibilityPermissions]
 
 
 class SnapshotResponse(BaseModel):

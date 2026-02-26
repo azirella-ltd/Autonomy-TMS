@@ -26,9 +26,9 @@ Game = Scenario
 GameStatus = ScenarioStatusDB
 GameStatusDB = ScenarioStatusDB
 ScenarioUser = ScenarioUser
-PlayerRole = ScenarioUserRole
-PlayerTypeDB = ScenarioUserTypeDB
-PlayerStrategyDB = ScenarioUserStrategyDB
+ScenarioUserRole = ScenarioUserRole
+ScenarioUserTypeDB = ScenarioUserTypeDB
+ScenarioUserStrategyDB = ScenarioUserStrategyDB
 ScenarioUserInventory = ScenarioUserInventory
 ScenarioRound = ScenarioRound
 ScenarioUserPeriod = ScenarioUserPeriod
@@ -57,14 +57,14 @@ from app.schemas.scenario_user import ScenarioUserAssignment, ScenarioUserType, 
 
 # Aliases for backwards compatibility
 GameCreate = ScenarioCreate
-PlayerCreate = ScenarioUserCreate
+ScenarioUserCreate = ScenarioUserCreate
 GameState = ScenarioState
-PlayerState = ScenarioUserState
+ScenarioUserState = ScenarioUserState
 GameStatus = ScenarioStatus
 GameInDBBase = ScenarioInDBBase
-PlayerAssignment = ScenarioUserAssignment
-PlayerType = ScenarioUserType
-PlayerStrategy = ScenarioUserStrategy
+ScenarioUserAssignment = ScenarioUserAssignment
+ScenarioUserType = ScenarioUserType
+ScenarioUserStrategy = ScenarioUserStrategy
 from app.schemas.simulation import (
     OrderRequest,
     Shipment,
@@ -919,7 +919,7 @@ class MixedScenarioService:
         return canonical
 
     @staticmethod
-    def _player_node_key(scenario_user: ScenarioUser) -> str:
+    def _scenario_user_node_key(scenario_user: ScenarioUser) -> str:
         if scenario_user is None:
             return ""
         site_key = getattr(scenario_user, "site_key", None)
@@ -6036,7 +6036,7 @@ class MixedScenarioService:
         cfg = game.config if game.config else {}
 
         for i, assignment in enumerate(game_data.player_assignments):
-            is_ai = assignment.scenario_user_type == PlayerType.AGENT
+            is_ai = assignment.scenario_user_type == ScenarioUserType.AGENT
             scenario_user = ScenarioUser(
                 scenario_id=game.id,
                 role=assignment.role,
@@ -6128,7 +6128,7 @@ class MixedScenarioService:
         self.db.refresh(game)
         return game
 
-    def add_player(self, scenario_id: int, player_data: PlayerCreate) -> ScenarioUser:
+    def add_scenario_user(self, scenario_id: int, scenario_user_data: ScenarioUserCreate) -> ScenarioUser:
         """Add a human or AI scenario_user to an existing game."""
 
         game = self.db.query(Game).filter(Game.id == scenario_id).first()
@@ -6137,21 +6137,21 @@ class MixedScenarioService:
 
         existing = (
             self.db.query(ScenarioUser)
-            .filter(ScenarioUser.scenario_id == scenario_id, ScenarioUser.role == PlayerRole[player_data.role.name])
+            .filter(ScenarioUser.scenario_id == scenario_id, ScenarioUser.role == ScenarioUserRole[scenario_user_data.role.name])
             .first()
         )
         if existing:
-            raise ValueError(f"A {player_data.role.value.lower()} is already registered for this game")
+            raise ValueError(f"A {scenario_user_data.role.value.lower()} is already registered for this game")
 
-        is_ai = bool(player_data.is_ai)
-        db_role = PlayerRole[player_data.role.name]
+        is_ai = bool(scenario_user_data.is_ai)
+        db_role = ScenarioUserRole[scenario_user_data.role.name]
         scenario_user = ScenarioUser(
             scenario_id=scenario_id,
-            user_id=player_data.user_id,
+            user_id=scenario_user_data.user_id,
             role=db_role,
-            name=player_data.name,
-            type=PlayerTypeDB.AI if is_ai else PlayerTypeDB.HUMAN,
-            strategy=PlayerStrategyDB.FIXED if is_ai else PlayerStrategyDB.MANUAL,
+            name=scenario_user_data.name,
+            type=ScenarioUserTypeDB.AI if is_ai else ScenarioUserTypeDB.HUMAN,
+            strategy=ScenarioUserStrategyDB.FIXED if is_ai else ScenarioUserStrategyDB.MANUAL,
             is_ai=is_ai,
             ai_strategy=("naive" if is_ai else None),
         )
@@ -6159,7 +6159,7 @@ class MixedScenarioService:
 
         cfg = dict(getattr(game, "config", {}) or {})
         node_policies = cfg.get("node_policies") or {}
-        role_key = self._normalise_key(player_data.role.value)
+        role_key = self._normalise_key(scenario_user_data.role.value)
         policy = node_policies.get(role_key, {})
         try:
             initial_inventory = int(policy.get("init_inventory", 12))
@@ -6178,9 +6178,9 @@ class MixedScenarioService:
         assignments = list(cfg.get("player_assignments") or [])
         assignments.append(
             {
-                "role": player_data.role.value,
+                "role": scenario_user_data.role.value,
                 "scenario_user_type": "AGENT" if is_ai else "HUMAN",
-                "user_id": player_data.user_id,
+                "user_id": scenario_user_data.user_id,
                 "strategy": "NAIVE" if is_ai else None,
                 "can_see_demand": False,
                 "llm_model": None,
@@ -6193,14 +6193,14 @@ class MixedScenarioService:
             getattr(game, "role_assignments", {}) or {},
             dict,
             default_factory=dict,
-            context="MixedScenarioService.add_ai_player role_assignments",
+            context="MixedScenarioService.add_scenario_user role_assignments",
             field_name="role_assignments",
             game=game,
         )
         role_assignments[role_key] = {
             "is_ai": is_ai,
             "agent_config_id": None,
-            "user_id": None if is_ai else player_data.user_id,
+            "user_id": None if is_ai else scenario_user_data.user_id,
         }
         game.role_assignments = role_assignments
         game.config = cfg
@@ -6365,9 +6365,9 @@ class MixedScenarioService:
         if autonomy_llm is not None:
             cfg["autonomy_llm"] = autonomy_llm
 
-        player_assignments_payload = payload.get("player_assignments")
-        if player_assignments_payload is not None:
-            self._apply_player_updates(game, cfg, player_assignments_payload)
+        scenario_user_assignments_payload = payload.get("player_assignments")
+        if scenario_user_assignments_payload is not None:
+            self._apply_scenario_user_updates(game, cfg, scenario_user_assignments_payload)
 
         game.config = cfg
         self.db.add(game)
@@ -6452,7 +6452,7 @@ class MixedScenarioService:
         self.db.refresh(scenario_user_period)
         return scenario_user_period
 
-    def _apply_player_updates(
+    def _apply_scenario_user_updates(
         self,
         game: Game,
         cfg: Dict[str, Any],
@@ -6460,7 +6460,7 @@ class MixedScenarioService:
     ) -> None:
         try:
             assignments = [
-                PlayerAssignment.model_validate(entry)
+                ScenarioUserAssignment.model_validate(entry)
                 for entry in assignments_payload
             ]
         except ValidationError as exc:
@@ -6469,25 +6469,25 @@ class MixedScenarioService:
         if not assignments:
             raise ValueError("At least one scenario_user assignment is required")
 
-        player_lookup: Dict[int, ScenarioUser] = {scenario_user.id: scenario_user for scenario_user in list(game.scenario_users or [])}
+        scenario_user_lookup: Dict[int, ScenarioUser] = {scenario_user.id: scenario_user for scenario_user in list(game.scenario_users or [])}
         prior_assignments, role_assignments_upgraded = self._upgrade_json_value(
             getattr(game, "role_assignments", {}) or {},
             dict,
             default_factory=dict,
-            context="MixedScenarioService._apply_player_updates role_assignments",
+            context="MixedScenarioService._apply_scenario_user_updates role_assignments",
             field_name="role_assignments",
             game=game,
         )
-        assignment_to_player: Dict[str, ScenarioUser] = {}
+        assignment_to_scenario_user: Dict[str, ScenarioUser] = {}
         for assignment_key, payload in prior_assignments.items():
             scenario_user_id = payload.get("scenario_user_id")
             if not scenario_user_id:
                 continue
-            scenario_user = player_lookup.get(scenario_user_id)
+            scenario_user = scenario_user_lookup.get(scenario_user_id)
             if scenario_user:
-                assignment_to_player[self._normalise_key(assignment_key)] = scenario_user
-        if not assignment_to_player:
-            assignment_to_player = {
+                assignment_to_scenario_user[self._normalise_key(assignment_key)] = scenario_user
+        if not assignment_to_scenario_user:
+            assignment_to_scenario_user = {
                 self._normalise_key(getattr(scenario_user.role, "value", scenario_user.role)):
                     scenario_user
                 for scenario_user in list(game.scenario_users or [])
@@ -6500,7 +6500,7 @@ class MixedScenarioService:
             cfg.get("autonomy_overrides") or {},
             dict,
             default_factory=dict,
-            context="MixedScenarioService._apply_player_updates autonomy_overrides",
+            context="MixedScenarioService._apply_scenario_user_updates autonomy_overrides",
             field_name="config",
             game=game,
         )
@@ -6535,15 +6535,15 @@ class MixedScenarioService:
                 }
             )
 
-            db_role = PlayerRole[assignment.role.name]
-            is_ai = assignment.scenario_user_type == PlayerType.AGENT
+            db_role = ScenarioUserRole[assignment.role.name]
+            is_ai = assignment.scenario_user_type == ScenarioUserType.AGENT
             strategy_value = (
                 assignment.strategy.value
                 if assignment.strategy is not None
                 else None
             )
 
-            scenario_user = assignment_to_player.get(assignment_key)
+            scenario_user = assignment_to_scenario_user.get(assignment_key)
             if scenario_user is None:
                 scenario_user = ScenarioUser(
                     scenario_id=game.id,
@@ -6554,25 +6554,25 @@ class MixedScenarioService:
                     can_see_demand=assignment.can_see_demand,
                     llm_model=assignment.llm_model if is_ai else None,
                     user_id=assignment.user_id if not is_ai else None,
-                    type=PlayerTypeDB.AI if is_ai else PlayerTypeDB.HUMAN,
+                    type=ScenarioUserTypeDB.AI if is_ai else ScenarioUserTypeDB.HUMAN,
                 )
                 scenario_user.strategy = (
-                    PlayerStrategyDB.MANUAL if not is_ai else scenario_user.strategy
+                    ScenarioUserStrategyDB.MANUAL if not is_ai else scenario_user.strategy
                 )
                 self.db.add(scenario_user)
                 self.db.flush()
-                assignment_to_player[assignment_key] = scenario_user
+                assignment_to_scenario_user[assignment_key] = scenario_user
             else:
                 scenario_user.role = db_role
                 scenario_user.name = f"{assignment.role.value.title()} ({'AI' if is_ai else 'Human'})"
                 scenario_user.is_ai = is_ai
-                scenario_user.type = PlayerTypeDB.AI if is_ai else PlayerTypeDB.HUMAN
+                scenario_user.type = ScenarioUserTypeDB.AI if is_ai else ScenarioUserTypeDB.HUMAN
                 scenario_user.ai_strategy = strategy_value if is_ai else None
                 scenario_user.can_see_demand = assignment.can_see_demand
                 scenario_user.llm_model = assignment.llm_model if is_ai else None
                 scenario_user.user_id = assignment.user_id if not is_ai else None
                 if not is_ai:
-                    scenario_user.strategy = PlayerStrategyDB.MANUAL
+                    scenario_user.strategy = ScenarioUserStrategyDB.MANUAL
 
             scenario_user.node_key = coverage_nodes[0] if coverage_nodes else None
 
@@ -6632,7 +6632,7 @@ class MixedScenarioService:
                 overrides.pop(assignment_key, None)
 
         # Remove scenario_users no longer present (only for games not yet started)
-        for assignment_key, scenario_user in list(assignment_to_player.items()):
+        for assignment_key, scenario_user in list(assignment_to_scenario_user.items()):
             if assignment_key in seen_assignments:
                 continue
             overrides.pop(assignment_key, None)
@@ -7232,7 +7232,7 @@ class MixedScenarioService:
 
         # AI ScenarioUsers
         if context.round_record:
-            self.process_ai_players(game_obj, context.round_record, context)
+            self.process_ai_scenario_users(game_obj, context.round_record, context)
 
         # Finalize Round
         self._finalize_round(game_obj, context)
@@ -7367,8 +7367,8 @@ class MixedScenarioService:
             # Get scenario_user orders (from agents/humans)
             # For now, use naive strategy as placeholder
             # TODO: Replace with actual agent/human decision logic
-            player_orders = await self._get_player_orders_for_round(game, target_round, db)
-            logger.info(f"  ✓ Got {len(player_orders)} scenario_user orders")
+            scenario_user_orders = await self._get_scenario_user_orders_for_round(game, target_round, db)
+            logger.info(f"  ✓ Got {len(scenario_user_orders)} scenario_user orders")
 
             # Step 6: Create Work Orders (Phase 3: Sprint 1 batch + Sprint 2 capacity + Sprint 3 aggregation)
             # Check game configuration flags
@@ -7379,7 +7379,7 @@ class MixedScenarioService:
                 # Sprint 3: Order aggregation (with optional capacity enforcement)
                 logger.info(f"  Step 6: Creating work orders (AGGREGATION{' + CAPACITY' if use_capacity else ''})...")
                 result = await adapter.create_work_orders_with_aggregation(
-                    player_orders,
+                    scenario_user_orders,
                     target_round,
                     use_capacity=use_capacity
                 )
@@ -7400,7 +7400,7 @@ class MixedScenarioService:
             elif use_capacity:
                 # Sprint 2: Capacity constraints only
                 logger.info(f"  Step 6: Creating work orders (BATCH + CAPACITY)...")
-                result = await adapter.create_work_orders_with_capacity(player_orders, target_round)
+                result = await adapter.create_work_orders_with_capacity(scenario_user_orders, target_round)
                 work_orders_created = len(result['created'])
 
                 # Log capacity details
@@ -7413,7 +7413,7 @@ class MixedScenarioService:
             else:
                 # Sprint 1: Batch operations only
                 logger.info(f"  Step 6: Creating work orders (BATCH)...")
-                work_orders_created = await adapter.create_work_orders_batch(player_orders, target_round)
+                work_orders_created = await adapter.create_work_orders_batch(scenario_user_orders, target_round)
                 logger.info(f"  ✓ Created {work_orders_created} work orders (BATCH)")
 
             # Step 7: Create ScenarioRound record
@@ -7432,7 +7432,7 @@ class MixedScenarioService:
 
             # Step 8: Apply Orders to Game State
             logger.info(f"  Step 8: Applying orders to game state...")
-            await self._apply_sc_planning_orders_to_game(game, player_orders, target_round, db)
+            await self._apply_sc_planning_orders_to_game(game, scenario_user_orders, target_round, db)
 
             # Step 9: Mark round complete
             game_round.completed_at = datetime.utcnow()
@@ -8220,7 +8220,7 @@ class MixedScenarioService:
         else:
             return 4.0
 
-    async def _get_player_orders_for_round(
+    async def _get_scenario_user_orders_for_round(
         self,
         game: Game,
         round_number: int,
@@ -8248,19 +8248,19 @@ class MixedScenarioService:
         )
         scenario_users = result.scalars().all()
 
-        player_orders = {}
+        scenario_user_orders = {}
         demand = self._get_current_demand(game, round_number)
 
         # Naive strategy: order = demand
         for scenario_user in scenario_users:
-            player_orders[scenario_user.role] = demand
+            scenario_user_orders[scenario_user.role] = demand
 
-        return player_orders
+        return scenario_user_orders
 
     async def _apply_sc_planning_orders_to_game(
         self,
         game: Game,
-        player_orders: Dict[str, float],
+        scenario_user_orders: Dict[str, float],
         round_number: int,
         db
     ) -> None:
@@ -8271,18 +8271,18 @@ class MixedScenarioService:
 
         Args:
             game: Game instance
-            player_orders: Dict mapping role → order quantity
+            scenario_user_orders: Dict mapping role → order quantity
             round_number: Current round number
             db: Async database session
         """
-        logger.info(f"    Applying {len(player_orders)} orders to game state...")
+        logger.info(f"    Applying {len(scenario_user_orders)} orders to game state...")
 
         # Get current config
         cfg = game.config or {}
         nodes_state = cfg.get("nodes", {})
 
         # Apply orders to each node
-        for role, order_qty in player_orders.items():
+        for role, order_qty in scenario_user_orders.items():
             if role not in nodes_state:
                 logger.warning(f"    ⚠️  Role {role} not found in game config")
                 continue
@@ -8320,7 +8320,7 @@ class MixedScenarioService:
 
 
 
-    def process_ai_players(self, game: Game, game_round: ScenarioRound, context: RoundContext) -> None:
+    def process_ai_scenario_users(self, game: Game, game_round: ScenarioRound, context: RoundContext) -> None:
         """Process AI scenario_users' moves for the current round."""
         scenario_users = self.db.query(ScenarioUser).filter(
             ScenarioUser.scenario_id == game.id,
@@ -8331,7 +8331,7 @@ class MixedScenarioService:
             return
 
         # 1. Resolve ScenarioUser Mappings
-        node_to_players = self._resolve_player_mappings(game, scenario_users, context)
+        node_to_scenario_users = self._resolve_scenario_user_mappings(game, scenario_users, context)
         
         # 2. Determine Processing Order (Downstream to Upstream)
         # This ensures downstream demand is available for upstream agents
@@ -8343,17 +8343,17 @@ class MixedScenarioService:
         # 3. Process Each Node
         for node_key in processing_nodes:
             # Skip if not assigned to any scenario_user
-            assigned_players = node_to_players.get(node_key)
-            if not assigned_players:
+            assigned_scenario_users = node_to_scenario_users.get(node_key)
+            if not assigned_scenario_users:
                 continue
                 
-            # Skip special nodes (though they shouldn't be in node_to_players usually)
+            # Skip special nodes (though they shouldn't be in node_to_scenario_users usually)
             node_type = context.topology.node_types.get(node_key, "")
             if node_type in {"market_demand", "market_supply"}:
                 continue
                 
             # Process for each scenario_user assigned (usually one)
-            for scenario_user in assigned_players:
+            for scenario_user in assigned_scenario_users:
                 self._process_single_agent(
                     node_key, 
                     scenario_user, 
@@ -8725,12 +8725,12 @@ class MixedScenarioService:
             }
         )
 
-    def _resolve_player_mappings(self, game: Game, scenario_users: List[ScenarioUser], context: RoundContext) -> Dict[str, List[ScenarioUser]]:
+    def _resolve_scenario_user_mappings(self, game: Game, scenario_users: List[ScenarioUser], context: RoundContext) -> Dict[str, List[ScenarioUser]]:
         """Map scenario_users to nodes based on configuration and assignments."""
         cfg = game.config or {}
         
         # 1. Build Assignment Lookup (Role -> [Node])
-        # This logic mimics the original _resolve_player_mappings but uses context/cfg
+        # This logic mimics the original _resolve_scenario_user_mappings but uses context/cfg
         node_assignment_lookup: Dict[str, List[str]] = defaultdict(list)
         for entry in cfg.get("player_assignments") or []:
             assignment_key = MixedScenarioService._canonical_role(
@@ -8747,8 +8747,8 @@ class MixedScenarioService:
                 node_assignment_lookup[node_key].append(assignment_key)
 
         # 2. Build ScenarioUser Lookup (Role -> [ScenarioUser])
-        player_index: Dict[int, ScenarioUser] = {scenario_user.id: scenario_user for scenario_user in scenario_users}
-        assignment_players: Dict[str, List[ScenarioUser]] = defaultdict(list)
+        scenario_user_index: Dict[int, ScenarioUser] = {scenario_user.id: scenario_user for scenario_user in scenario_users}
+        assignment_scenario_users: Dict[str, List[ScenarioUser]] = defaultdict(list)
         for raw_key, payload in (getattr(game, "role_assignments", {}) or {}).items():
             assignment_key = MixedScenarioService._canonical_role(raw_key)
             if not assignment_key:
@@ -8756,39 +8756,39 @@ class MixedScenarioService:
             scenario_user_id = payload.get("scenario_user_id")
             if not scenario_user_id:
                 continue
-            scenario_user = player_index.get(scenario_user_id)
+            scenario_user = scenario_user_index.get(scenario_user_id)
             if scenario_user:
-                assignment_players[assignment_key].append(scenario_user)
+                assignment_scenario_users[assignment_key].append(scenario_user)
 
         # 3. Map Nodes to ScenarioUsers
         captured_scenario_user_ids: Set[int] = {
             scenario_user.id
-            for bundle in assignment_players.values()
+            for bundle in assignment_scenario_users.values()
             for scenario_user in bundle
         }
-        legacy_node_to_players: Dict[str, List[ScenarioUser]] = defaultdict(list)
+        legacy_node_to_scenario_users: Dict[str, List[ScenarioUser]] = defaultdict(list)
         for scenario_user in scenario_users:
             if scenario_user.id in captured_scenario_user_ids:
                 continue
-            node_key = MixedScenarioService._player_node_key(scenario_user)
+            node_key = MixedScenarioService._scenario_user_node_key(scenario_user)
             if node_key:
-                legacy_node_to_players[node_key].append(scenario_user)
+                legacy_node_to_scenario_users[node_key].append(scenario_user)
 
-        node_to_players: Dict[str, List[ScenarioUser]] = defaultdict(list)
+        node_to_scenario_users: Dict[str, List[ScenarioUser]] = defaultdict(list)
         for node in context.topology.all_nodes:
             canonical_node = MixedScenarioService._canonical_role(node)
             if not canonical_node:
                 continue
             assignment_keys = node_assignment_lookup.get(canonical_node, [])
             for assignment_key in assignment_keys:
-                node_to_players[canonical_node].extend(
-                    assignment_players.get(assignment_key, [])
+                node_to_scenario_users[canonical_node].extend(
+                    assignment_scenario_users.get(assignment_key, [])
                 )
-            if not node_to_players.get(canonical_node) and legacy_node_to_players.get(canonical_node):
-                node_to_players[canonical_node].extend(legacy_node_to_players[canonical_node])
+            if not node_to_scenario_users.get(canonical_node) and legacy_node_to_scenario_users.get(canonical_node):
+                node_to_scenario_users[canonical_node].extend(legacy_node_to_scenario_users[canonical_node])
 
         # Deduplicate
-        for node_key, assigned in list(node_to_players.items()):
+        for node_key, assigned in list(node_to_scenario_users.items()):
             if not assigned:
                 continue
             unique: List[ScenarioUser] = []
@@ -8798,8 +8798,8 @@ class MixedScenarioService:
                     continue
                 seen_ids.add(scenario_user.id)
                 unique.append(scenario_user)
-            node_to_players[node_key] = unique
-        return node_to_players
+            node_to_scenario_users[node_key] = unique
+        return node_to_scenario_users
     
     def complete_round(self, game_round: ScenarioRound) -> None:
         """Complete the current round, updating scenario_user inventories and costs."""
@@ -9120,7 +9120,7 @@ class MixedScenarioService:
             if entry.get("period_end") is None and round_obj.period_end:
                 entry["period_end"] = round_obj.period_end.isoformat()
 
-            node_key = MixedScenarioService._player_node_key(scenario_user)
+            node_key = MixedScenarioService._scenario_user_node_key(scenario_user)
             if not node_key:
                 node_key = MixedScenarioService._normalise_key(getattr(scenario_user.role, "value", scenario_user.role))
             node_type = node_types_map.get(node_key) or MixedScenarioService._normalise_node_type(
@@ -9776,7 +9776,7 @@ class MixedScenarioService:
         current_period_start = game_record.get("current_period_start")
         
         # Get all scenario_users for the game, including node mappings and strategies
-        players_query = """
+        scenario_users_query = """
             SELECT p.id,
                    p.name,
                    p.role,
@@ -9790,12 +9790,12 @@ class MixedScenarioService:
             LEFT JOIN player_inventories pi ON p.id = pi.scenario_user_id
             WHERE p.scenario_id = :scenario_id
         """
-        players_rows = list(self.db.execute(text(players_query), {"scenario_id": scenario_id}).mappings())
+        scenario_users_rows = list(self.db.execute(text(scenario_users_query), {"scenario_id": scenario_id}).mappings())
 
-        player_states = []
-        node_player_map: Dict[str, Dict[str, Any]] = {}
-        player_lookup: Dict[int, Dict[str, Any]] = {}
-        for row in players_rows:
+        scenario_user_states = []
+        node_scenario_user_map: Dict[str, Dict[str, Any]] = {}
+        scenario_user_lookup: Dict[int, Dict[str, Any]] = {}
+        for row in scenario_users_rows:
             incoming_shipments_raw = row.get("incoming_shipments")
             if isinstance(incoming_shipments_raw, str):
                 try:
@@ -9807,9 +9807,9 @@ class MixedScenarioService:
 
             role_token = row.get("role")
             try:
-                role_value = PlayerRole(role_token) if role_token else PlayerRole.RETAILER
+                role_value = ScenarioUserRole(role_token) if role_token else ScenarioUserRole.RETAILER
             except Exception:
-                role_value = PlayerRole.RETAILER
+                role_value = ScenarioUserRole.RETAILER
 
             node_key = MixedScenarioService._normalise_key(row.get("node_key") or role_token)
             meta_payload = {
@@ -9820,11 +9820,11 @@ class MixedScenarioService:
                 "is_ai": bool(row.get("is_ai")),
             }
             if meta_payload["scenario_user_id"] is not None:
-                player_lookup[meta_payload["scenario_user_id"]] = meta_payload
-            if node_key and node_key not in node_player_map:
-                node_player_map[node_key] = meta_payload
+                scenario_user_lookup[meta_payload["scenario_user_id"]] = meta_payload
+            if node_key and node_key not in node_scenario_user_map:
+                node_scenario_user_map[node_key] = meta_payload
 
-            player_states.append(PlayerState(
+            scenario_user_states.append(ScenarioUserState(
                 id=row.get("id"),
                 name=row.get("name"),
                 role=role_value,
@@ -9914,18 +9914,18 @@ class MixedScenarioService:
             if key:
                 node_display_names.setdefault(key, str(label))
 
-        def _resolve_player_meta(node_key: str) -> Optional[Dict[str, Any]]:
+        def _resolve_scenario_user_meta(node_key: str) -> Optional[Dict[str, Any]]:
             canonical = MixedScenarioService._normalise_key(node_key)
             if not canonical:
                 return None
-            direct = node_player_map.get(canonical)
+            direct = node_scenario_user_map.get(canonical)
             if direct:
                 return direct
             assignment = role_assignments_raw.get(canonical)
             if assignment:
                 scenario_user_id = assignment.get("scenario_user_id")
-                if scenario_user_id in player_lookup:
-                    return player_lookup[scenario_user_id]
+                if scenario_user_id in scenario_user_lookup:
+                    return scenario_user_lookup[scenario_user_id]
             return None
 
         history_payload: List[Dict[str, Any]] = []
@@ -9939,7 +9939,7 @@ class MixedScenarioService:
                 node_key = MixedScenarioService._normalise_key(raw_node)
                 if not node_key:
                     continue
-                actor_meta = _resolve_player_meta(node_key) or {}
+                actor_meta = _resolve_scenario_user_meta(node_key) or {}
                 state_payload = {
                     "inventory": snapshot.get("inventory"),
                     "backlog": snapshot.get("backlog"),
@@ -9968,13 +9968,13 @@ class MixedScenarioService:
         if not history_payload:
             fallback_sequence = list(node_sequence) or list(node_display_names.keys())
             if not fallback_sequence:
-                fallback_sequence = [ps.node_key for ps in player_states if ps.node_key]
+                fallback_sequence = [ps.node_key for ps in scenario_user_states if ps.node_key]
             node_states_payload: Dict[str, Dict[str, Any]] = {}
             for raw_node in fallback_sequence:
                 node_key = MixedScenarioService._normalise_key(raw_node)
                 if not node_key:
                     continue
-                actor_meta = _resolve_player_meta(node_key) or {}
+                actor_meta = _resolve_scenario_user_meta(node_key) or {}
                 node_states_payload[node_key] = {
                     "inventory": None,
                     "backlog": None,
@@ -10003,7 +10003,7 @@ class MixedScenarioService:
             current_round=game_record["current_round"],
             max_rounds=game_record["max_rounds"],
             progression_mode=progression_mode,
-            scenario_users=player_states,
+            scenario_users=scenario_user_states,
             current_demand=None,  # Will be set by the round
             round_started_at=None,  # Will be set by the round
             round_ends_at=None,  # Will be set by the round

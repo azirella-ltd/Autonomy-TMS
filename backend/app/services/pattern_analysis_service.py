@@ -112,7 +112,7 @@ class PatternAnalysisService:
 
         return round(performance_score, 2)
 
-    async def get_player_patterns(
+    async def get_scenario_user_patterns(
         self, scenario_user_id: int, scenario_id: int
     ) -> Dict[str, Any]:
         """
@@ -365,7 +365,7 @@ class PatternAnalysisService:
         Returns:
             List of insight strings
         """
-        patterns = await self.get_player_patterns(
+        patterns = await self.get_scenario_user_patterns(
             scenario_user_id, scenario_id
         ) if scenario_user_id else None
         effectiveness = await self.get_ai_effectiveness(scenario_id)

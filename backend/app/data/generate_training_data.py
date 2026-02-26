@@ -101,7 +101,7 @@ class PIDHeuristicPolicy:
 def generate_synthetic_game(num_rounds: int = 100) -> Dict[str, Any]:
     """Generate a synthetic game with realistic supply chain dynamics."""
     # Game parameters
-    num_players = 4
+    num_scenario_users = 4
     roles = ["retailer", "wholesaler", "distributor", "manufacturer"]
     
     # Base demand pattern (weekly seasonality with some noise)

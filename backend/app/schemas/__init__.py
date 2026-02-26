@@ -2,7 +2,7 @@
 
 Terminology (Feb 2026):
 - Game -> Scenario
-- Player -> Participant (in DB/code)
+- Player -> ScenarioUser (in DB/code)
 - Player -> User (in UI)
 - Round -> Period
 """

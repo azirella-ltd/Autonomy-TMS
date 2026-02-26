@@ -571,7 +571,7 @@ class ATPService:
 
     # --- Helper Methods ---
 
-    def _get_player_node_id(self, scenario_user: ScenarioUser, game: Game) -> Optional[int]:
+    def _get_scenario_user_node_id(self, scenario_user: ScenarioUser, game: Game) -> Optional[int]:
         """Look up the Node ID for a scenario_user based on their site_key."""
         from app.models.supply_chain_config import Node
         if not scenario_user.site_key or not game.supply_chain_config_id:
@@ -600,7 +600,7 @@ class ATPService:
         """
         try:
             # Get node ID for this scenario_user
-            node_id = self._get_player_node_id(scenario_user, game) if game else None
+            node_id = self._get_scenario_user_node_id(scenario_user, game) if game else None
             if not node_id:
                 return 0  # No node configured, return 0 receipts
 
@@ -646,7 +646,7 @@ class ATPService:
         """
         try:
             # Get node ID for this scenario_user
-            node_id = self._get_player_node_id(scenario_user, game) if game else None
+            node_id = self._get_scenario_user_node_id(scenario_user, game) if game else None
             if not node_id:
                 return 0  # No node configured, return 0 allocated
 
@@ -695,7 +695,7 @@ class ATPService:
             from app.models.sc_entities import InvPolicy
 
             # Query by site_id (node_id maps to site in AWS SC model)
-            node_id = self._get_player_node_id(scenario_user, game) if game else None
+            node_id = self._get_scenario_user_node_id(scenario_user, game) if game else None
             policy = None
             if node_id:
                 policy = (
@@ -1020,7 +1020,7 @@ class ATPService:
             from app.models.inventory_projection import AtpProjection
 
             # Get node ID for scenario_user
-            node_id = self._get_player_node_id(scenario_user, game)
+            node_id = self._get_scenario_user_node_id(scenario_user, game)
             if not node_id:
                 logger.warning(f"Cannot save ATP - no node ID for scenario_user {scenario_user.id}")
                 return None

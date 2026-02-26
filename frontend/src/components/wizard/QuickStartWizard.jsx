@@ -70,7 +70,7 @@ const QuickStartWizard = ({ open, onClose, onComplete }) => {
   const [industry, setIndustry] = useState('general');
   const [difficulty, setDifficulty] = useState('beginner');
   const [features, setFeatures] = useState([]);
-  const [numPlayers, setNumPlayers] = useState(4);
+  const [numScenarioUsers, setNumScenarioUsers] = useState(4);
   const [useMonteCarlo, setUseMonteCarlo] = useState(false);
 
   const [recommendations, setRecommendations] = useState(null);
@@ -100,7 +100,7 @@ const QuickStartWizard = ({ open, onClose, onComplete }) => {
     setIndustry('general');
     setDifficulty('beginner');
     setFeatures([]);
-    setNumPlayers(4);
+    setNumScenarioUsers(4);
     setUseMonteCarlo(false);
     setRecommendations(null);
     setSelectedTemplate(null);
@@ -117,7 +117,7 @@ const QuickStartWizard = ({ open, onClose, onComplete }) => {
         difficulty,
         features,
         use_monte_carlo: useMonteCarlo,
-        num_players: numPlayers
+        num_scenario_users: numScenarioUsers
       });
 
       setRecommendations(response.data);
@@ -144,7 +144,7 @@ const QuickStartWizard = ({ open, onClose, onComplete }) => {
       onComplete({
         template: selectedTemplate,
         configuration: recommendations.configuration,
-        numPlayers,
+        numScenarioUsers,
         useMonteCarlo
       });
     }
@@ -239,8 +239,8 @@ const QuickStartWizard = ({ open, onClose, onComplete }) => {
             <FormField label="Number of ScenarioUsers" className="mb-4">
               <Input
                 type="number"
-                value={numPlayers}
-                onChange={(e) => setNumPlayers(Math.max(1, Math.min(10, parseInt(e.target.value) || 4)))}
+                value={numScenarioUsers}
+                onChange={(e) => setNumScenarioUsers(Math.max(1, Math.min(10, parseInt(e.target.value) || 4)))}
                 min={1}
                 max={10}
               />
@@ -371,7 +371,7 @@ const QuickStartWizard = ({ open, onClose, onComplete }) => {
                       </div>
                       <div className="flex justify-between text-sm">
                         <span>ScenarioUsers:</span>
-                        <span className="font-medium">{numPlayers}</span>
+                        <span className="font-medium">{numScenarioUsers}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span>Monte Carlo:</span>

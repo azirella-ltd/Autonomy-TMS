@@ -54,10 +54,10 @@ class ReportingService:
         overview = await self._calculate_overview(game, scenario_user_periods)
 
         # Calculate per-scenario_user performance
-        player_performance = await self._calculate_player_performance(scenario_id, scenario_user_periods)
+        scenario_user_performance = await self._calculate_scenario_user_performance(scenario_id, scenario_user_periods)
 
         # Generate insights
-        insights = await self._generate_insights(game, scenario_user_periods, player_performance)
+        insights = await self._generate_insights(game, scenario_user_periods, scenario_user_performance)
 
         # Generate recommendations
         recommendations = await self._generate_recommendations(game, scenario_user_periods, insights)
@@ -66,7 +66,7 @@ class ReportingService:
             "scenario_id": scenario_id,
             "generated_at": datetime.utcnow().isoformat(),
             "overview": overview,
-            "player_performance": player_performance,
+            "player_performance": scenario_user_performance,
             "key_insights": insights,
             "recommendations": recommendations,
             "charts_data": await self._prepare_charts_data(scenario_id, scenario_user_periods)
@@ -293,21 +293,21 @@ class ReportingService:
             "bullwhip_effect": round(bullwhip, 3) if bullwhip else None
         }
 
-    async def _calculate_player_performance(
+    async def _calculate_scenario_user_performance(
         self,
         scenario_id: int,
         scenario_user_periods: List[ScenarioUserPeriod]
     ) -> List[Dict[str, Any]]:
         """Calculate per-scenario_user performance metrics."""
         # Group by scenario_user
-        players_data = {}
+        scenario_users_data = {}
         for pr in scenario_user_periods:
-            if pr.scenario_user_id not in players_data:
-                players_data[pr.scenario_user_id] = []
-            players_data[pr.scenario_user_id].append(pr)
+            if pr.scenario_user_id not in scenario_users_data:
+                scenario_users_data[pr.scenario_user_id] = []
+            scenario_users_data[pr.scenario_user_id].append(pr)
 
         performance = []
-        for scenario_user_id, rounds in players_data.items():
+        for scenario_user_id, rounds in scenario_users_data.items():
             # Get scenario_user info
             scenario_user = await self.db.get(ScenarioUser, scenario_user_id)
             if not scenario_user:
@@ -346,17 +346,17 @@ class ReportingService:
     ) -> Optional[float]:
         """Calculate bullwhip effect (order variance amplification)."""
         # Group orders by scenario_user
-        players_orders = {}
+        scenario_users_orders = {}
         for pr in scenario_user_periods:
             if pr.order_quantity is None:
                 continue
-            if pr.scenario_user_id not in players_orders:
-                players_orders[pr.scenario_user_id] = []
-            players_orders[pr.scenario_user_id].append(pr.order_quantity)
+            if pr.scenario_user_id not in scenario_users_orders:
+                scenario_users_orders[pr.scenario_user_id] = []
+            scenario_users_orders[pr.scenario_user_id].append(pr.order_quantity)
 
         # Calculate variance for each scenario_user
         variances = []
-        for scenario_user_id, orders in players_orders.items():
+        for scenario_user_id, orders in scenario_users_orders.items():
             if len(orders) > 1:
                 variance = stdev(orders) ** 2
                 variances.append(variance)
@@ -371,14 +371,14 @@ class ReportingService:
         self,
         game: Game,
         scenario_user_periods: List[ScenarioUserPeriod],
-        player_performance: List[Dict]
+        scenario_user_performance: List[Dict]
     ) -> List[str]:
         """Generate key insights about game performance."""
         insights = []
 
         # Service level insights
         service_levels = [
-            p["service_level"] for p in player_performance
+            p["service_level"] for p in scenario_user_performance
             if p["service_level"] is not None
         ]
         if service_levels:
@@ -391,9 +391,9 @@ class ReportingService:
                 insights.append("Service levels below target - frequent stockouts occurred")
 
         # Cost insights
-        if player_performance:
-            best_performer = player_performance[0]
-            worst_performer = player_performance[-1]
+        if scenario_user_performance:
+            best_performer = scenario_user_performance[0]
+            worst_performer = scenario_user_performance[-1]
             cost_spread = worst_performer["total_cost"] - best_performer["total_cost"]
 
             insights.append(
@@ -406,12 +406,12 @@ class ReportingService:
                 )
 
         # Order variance insights
-        high_variance_players = [
-            p for p in player_performance
+        high_variance_scenario_users = [
+            p for p in scenario_user_performance
             if p.get("order_variance") and p["order_variance"] > 10
         ]
-        if high_variance_players:
-            roles = ", ".join(p["role"] for p in high_variance_players)
+        if high_variance_scenario_users:
+            roles = ", ".join(p["role"] for p in high_variance_scenario_users)
             insights.append(f"High order variability observed in: {roles}")
 
         return insights

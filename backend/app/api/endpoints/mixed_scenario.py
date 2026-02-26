@@ -371,7 +371,7 @@ async def submit_fulfillment_decision(
     from app.api.endpoints.websocket import (
         broadcast_fulfillment_completed,
         broadcast_phase_change,
-        broadcast_all_participants_ready,
+        broadcast_all_scenario_users_ready,
     )
 
     try:
@@ -504,8 +504,8 @@ async def submit_fulfillment_decision(
             scenario_user_id=scenario_user.id,
             participant_role=scenario_user.assignment_key or scenario_user.role,
             fulfill_qty=request.fulfill_qty,
-            participants_completed=fulfilled_count,
-            total_participants=total_participants,
+            scenario_users_completed=fulfilled_count,
+            total_scenario_users=total_participants,
         )
 
         # Check if ready to transition to REPLENISHMENT phase
@@ -515,7 +515,7 @@ async def submit_fulfillment_decision(
 
         if ready_to_transition:
             # Broadcast all scenario_users ready before transition
-            await broadcast_all_participants_ready(
+            await broadcast_all_scenario_users_ready(
                 scenario_id=scenario_id,
                 round_number=round_number,
                 phase="fulfillment",
@@ -529,8 +529,8 @@ async def submit_fulfillment_decision(
                 round_number=round_number,
                 new_phase="replenishment",
                 phase_started_at=round_obj.phase_started_at.isoformat() if round_obj.phase_started_at else None,
-                participants_completed=0,
-                total_participants=total_participants,
+                scenario_users_completed=0,
+                total_scenario_users=total_participants,
             )
 
             # Process autonomous agents' replenishment decisions
@@ -619,7 +619,7 @@ async def submit_replenishment_decision(
         broadcast_replenishment_completed,
         broadcast_phase_change,
         broadcast_round_completed,
-        broadcast_all_participants_ready,
+        broadcast_all_scenario_users_ready,
     )
 
     try:
@@ -732,8 +732,8 @@ async def submit_replenishment_decision(
             scenario_user_id=scenario_user.id,
             participant_role=scenario_user.assignment_key or scenario_user.role,
             order_qty=request.order_qty,
-            participants_completed=replenished_count,
-            total_participants=total_participants,
+            scenario_users_completed=replenished_count,
+            total_scenario_users=total_participants,
         )
 
         # Check if ready to transition to COMPLETED phase
@@ -744,7 +744,7 @@ async def submit_replenishment_decision(
         round_completed = False
         if ready_to_transition:
             # Broadcast all scenario_users ready before transition
-            await broadcast_all_participants_ready(
+            await broadcast_all_scenario_users_ready(
                 scenario_id=scenario_id,
                 round_number=round_number,
                 phase="replenishment",
@@ -759,8 +759,8 @@ async def submit_replenishment_decision(
                 round_number=round_number,
                 new_phase="completed",
                 phase_started_at=round_obj.phase_started_at.isoformat() if round_obj.phase_started_at else None,
-                participants_completed=total_participants,
-                total_participants=total_participants,
+                scenario_users_completed=total_participants,
+                total_scenario_users=total_participants,
             )
 
             # Broadcast round completed

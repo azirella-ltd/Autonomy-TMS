@@ -38,7 +38,7 @@ const AIAnalytics = ({ scenarioId, scenarioUserRole }) => {
       // Fetch all analytics data in parallel
       const [patternsData, effectivenessData, historyData, insightsData] =
         await Promise.all([
-          simulationApi.getPlayerPatterns(scenarioId),
+          simulationApi.getScenarioUserPatterns(scenarioId),
           simulationApi.getAIEffectiveness(scenarioId),
           simulationApi.getSuggestionHistory(scenarioId, 20),
           simulationApi.getInsights(scenarioId),
@@ -141,7 +141,7 @@ const AIAnalytics = ({ scenarioId, scenarioUserRole }) => {
     if (!effectiveness) return null;
 
     const { acceptance_rate, performance_comparison } = effectiveness;
-    const { ai_suggested, player_modified, improvement } =
+    const { ai_suggested, scenario_user_modified, improvement } =
       performance_comparison || {};
 
     return (
@@ -156,7 +156,7 @@ const AIAnalytics = ({ scenarioId, scenarioUserRole }) => {
           </div>
         </div>
 
-        {ai_suggested && player_modified && (
+        {ai_suggested && scenario_user_modified && (
           <div className="space-y-4">
             {/* Performance Comparison */}
             <div className="grid grid-cols-3 gap-4">
@@ -175,7 +175,7 @@ const AIAnalytics = ({ scenarioId, scenarioUserRole }) => {
                   ScenarioUser Modified
                 </div>
                 <div className="text-2xl font-bold text-gray-900">
-                  {player_modified.avg_performance_score?.toFixed(1) || "N/A"}
+                  {scenario_user_modified.avg_performance_score?.toFixed(1) || "N/A"}
                 </div>
                 <div className="text-xs text-gray-500 mt-1">Avg Score</div>
               </div>

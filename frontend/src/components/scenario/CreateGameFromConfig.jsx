@@ -137,7 +137,7 @@ const CreateGameFromConfig = () => {
         // Then create the game using the generated configuration
         const newGame = await gameService.createGame({
           ...gameConfig,
-          player_assignments: [
+          scenario_user_assignments: [
             // Default scenarioUser assignments can be added here or configured by the user
             { role: 'retailer', scenario_user_type: 'human' },
             { role: 'wholesaler', scenario_user_type: 'ai' },

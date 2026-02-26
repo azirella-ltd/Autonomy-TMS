@@ -71,7 +71,7 @@ class UserBehavior(SequentialTaskSet):
             "difficulty": random.choice(["beginner", "intermediate"]),
             "features": [],
             "use_monte_carlo": False,
-            "num_players": random.randint(2, 6)
+            "num_scenario_users": random.randint(2, 6)
         }
 
         self.client.post("/api/v1/templates/quick-start", json=payload)

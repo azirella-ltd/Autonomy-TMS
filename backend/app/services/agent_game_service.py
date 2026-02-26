@@ -24,7 +24,7 @@ from app.schemas.scenario import ScenarioCreate, DemandPattern
 Game = Scenario
 GameStatus = ScenarioStatus
 ScenarioUser = ScenarioUser
-PlayerRole = ScenarioUserRole
+ScenarioUserRole = ScenarioUserRole
 ScenarioRound = ScenarioRound
 ScenarioUserInventory = ScenarioUserInventory
 ScenarioUserPeriod = ScenarioUserPeriod
@@ -94,9 +94,9 @@ class AgentGameService:
         for site in sites:
             site_type = (site.type or "RETAILER").upper()
             try:
-                role = PlayerRole(site_type)
+                role = ScenarioUserRole(site_type)
             except (ValueError, AttributeError):
-                role = PlayerRole.RETAILER
+                role = ScenarioUserRole.RETAILER
             site_roles[site.name] = role.value
 
         site_names = SupplyChainLine._derive_role_sequence(material_lanes)
@@ -114,8 +114,8 @@ class AgentGameService:
         return topology
 
     @staticmethod
-    def _player_site_name(scenario_user: ScenarioUser) -> str:
-        """Extract the site name from a scenario_user created by ``_create_ai_players``."""
+    def _scenario_user_site_name(scenario_user: ScenarioUser) -> str:
+        """Extract the site name from a scenario_user created by ``_create_ai_scenario_users``."""
         name = scenario_user.name or ""
         return name[3:] if name.startswith("AI ") else name
 
@@ -151,7 +151,7 @@ class AgentGameService:
         config["agent_policies"] = self._default_policy_config(topology["site_names"])
         game.config = config
 
-        self._create_ai_players(game, topology)
+        self._create_ai_scenario_users(game, topology)
         self.db.commit()
         self.db.refresh(game)
         return game
@@ -226,12 +226,12 @@ class AgentGameService:
         config["agent_engine_state"] = line.to_dict()
         game.config = config
 
-        scenario_users = self._get_players_in_order(scenario_id, topology)
+        scenario_users = self._get_scenario_users_in_order(scenario_id, topology)
         round_record = self._get_or_create_round(game, current_demand)
 
         node_map = {node.name: node for node in line.nodes}
         for scenario_user in scenario_users:
-            label = self._player_site_name(scenario_user)
+            label = self._scenario_user_site_name(scenario_user)
             node = node_map.get(label)
             if node is None:
                 continue
@@ -306,11 +306,11 @@ class AgentGameService:
     def get_game_state(self, scenario_id: int) -> Dict[str, Any]:
         game = self._get_game(scenario_id)
 
-        scenario_users = self._get_players_in_order(scenario_id)
-        player_states: List[Dict[str, Any]] = []
+        scenario_users = self._get_scenario_users_in_order(scenario_id)
+        scenario_user_states: List[Dict[str, Any]] = []
         for scenario_user in scenario_users:
             inventory = scenario_user.inventory
-            player_states.append(
+            scenario_user_states.append(
                 {
                     "id": scenario_user.id,
                     "name": scenario_user.name,
@@ -329,7 +329,7 @@ class AgentGameService:
             "status": game.status,
             "current_round": game.current_round,
             "max_rounds": game.max_rounds,
-            "scenario_users": player_states,
+            "scenario_users": scenario_user_states,
             "demand_pattern": game.demand_pattern,
         }
 
@@ -518,15 +518,15 @@ class AgentGameService:
         except (TypeError, ValueError):
             return DEFAULT_CLASSIC_PARAMS["initial_demand"]
 
-    def _create_ai_players(self, game: Game, topology: Dict[str, Any]) -> None:
+    def _create_ai_scenario_users(self, game: Game, topology: Dict[str, Any]) -> None:
         """Create one AI scenario_user per site in the supply chain topology."""
         site_roles = topology["site_roles"]
         for site_name in topology["site_names"]:
-            role_value = site_roles.get(site_name, PlayerRole.RETAILER.value)
+            role_value = site_roles.get(site_name, ScenarioUserRole.RETAILER.value)
             try:
-                role = PlayerRole(role_value)
+                role = ScenarioUserRole(role_value)
             except (ValueError, AttributeError):
-                role = PlayerRole.RETAILER
+                role = ScenarioUserRole.RETAILER
             scenario_user = ScenarioUser(
                 scenario_id=game.id,
                 name=f"AI {site_name}",
@@ -536,10 +536,10 @@ class AgentGameService:
             self.db.add(scenario_user)
 
     def _initialise_inventories(self, game: Game, line: SupplyChainLine) -> None:
-        scenario_users = self._get_players_in_order(game.id)
+        scenario_users = self._get_scenario_users_in_order(game.id)
         node_map = {node.name: node for node in line.nodes}
         for scenario_user in scenario_users:
-            site_name = self._player_site_name(scenario_user)
+            site_name = self._scenario_user_site_name(scenario_user)
             node = node_map.get(site_name)
             if node is None:
                 continue
@@ -558,13 +558,13 @@ class AgentGameService:
             raise ValueError("Game not found")
         return game
 
-    def _get_players_in_order(
+    def _get_scenario_users_in_order(
         self, scenario_id: int, topology: Dict[str, Any] | None = None
     ) -> List[ScenarioUser]:
         scenario_users = self.db.query(ScenarioUser).filter(ScenarioUser.scenario_id == scenario_id).all()
         if topology:
             site_order = {name: i for i, name in enumerate(topology["site_names"])}
-            scenario_users.sort(key=lambda p: site_order.get(self._player_site_name(p), 999))
+            scenario_users.sort(key=lambda p: site_order.get(self._scenario_user_site_name(p), 999))
         return scenario_users
 
     def _get_or_create_round(self, game: Game, demand: int) -> ScenarioRound:

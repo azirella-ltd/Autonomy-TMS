@@ -46,7 +46,7 @@ const NAMES = [
 function generateDemoData() {
   const entries = [];
 
-  // Mix of human players and AI agents
+  // Mix of human scenario users and AI agents
   NAMES.forEach((name, idx) => {
     const isAgent = idx >= 8;
     const agentType = isAgent

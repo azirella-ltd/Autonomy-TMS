@@ -37,11 +37,11 @@ describe('AuthContext role helpers', () => {
   });
 
   it('checks hasRole / hasAnyRole / hasAllRoles', () => {
-    const user = { roles: ['player', 'moderator'], is_superuser: false };
+    const user = { roles: ['user', 'moderator'], is_superuser: false };
     const { result } = renderHook(() => React.useContext(AuthContext), { wrapper: wrapperWithUser(user) });
-    expect(result.current.hasRole('player')).toBe(true);
-    expect(result.current.hasAnyRole(['admin', 'player'])).toBe(true);
-    expect(result.current.hasAllRoles(['player', 'moderator'])).toBe(true);
-    expect(result.current.hasAllRoles(['player', 'admin'])).toBe(false);
+    expect(result.current.hasRole('user')).toBe(true);
+    expect(result.current.hasAnyRole(['admin', 'user'])).toBe(true);
+    expect(result.current.hasAllRoles(['user', 'moderator'])).toBe(true);
+    expect(result.current.hasAllRoles(['user', 'admin'])).toBe(false);
   });
 });

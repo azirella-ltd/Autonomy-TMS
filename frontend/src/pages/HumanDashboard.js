@@ -282,8 +282,8 @@ const HumanDashboard = () => {
   const renderChart = () => {
     if (!dashboardData?.time_series?.length) return null;
 
-    const { time_series, player_role } = dashboardData;
-    const chartData = formatChartData(time_series, player_role);
+    const { time_series, scenario_user_role } = dashboardData;
+    const chartData = formatChartData(time_series, scenario_user_role);
     const labels = chartData.map(item => `Week ${item.week}`);
 
     const datasets = [
@@ -326,8 +326,8 @@ const HumanDashboard = () => {
       }
     ];
 
-    const showDemand = player_role === 'RETAILER' || player_role === 'MANUFACTURER' || player_role === 'DISTRIBUTOR';
-    const showSupply = player_role === 'SUPPLIER' || player_role === 'MANUFACTURER' || player_role === 'DISTRIBUTOR';
+    const showDemand = scenario_user_role === 'RETAILER' || scenario_user_role === 'MANUFACTURER' || scenario_user_role === 'DISTRIBUTOR';
+    const showSupply = scenario_user_role === 'SUPPLIER' || scenario_user_role === 'MANUFACTURER' || scenario_user_role === 'DISTRIBUTOR';
 
     if (showDemand) {
       datasets.push({
@@ -450,8 +450,8 @@ const HumanDashboard = () => {
     );
   }
 
-  const { game_name, player_role, current_round, last_updated } = dashboardData;
-  const roleColor = ROLE_COLORS[player_role] || 'gray';
+  const { game_name, scenario_user_role, current_round, last_updated } = dashboardData;
+  const roleColor = ROLE_COLORS[scenario_user_role] || 'gray';
   const roleVariant = roleColor === 'blue' ? 'info' :
                       roleColor === 'green' ? 'success' :
                       roleColor === 'purple' ? 'default' :
@@ -473,7 +473,7 @@ const HumanDashboard = () => {
               </div>
               <div className="text-right">
                 <Badge variant={roleVariant} className="text-base p-2">
-                  {player_role || 'PLAYER'}
+                  {scenario_user_role || 'PLAYER'}
                 </Badge>
                 <p className="text-sm text-muted-foreground mt-1">
                   Round {current_round || 1}

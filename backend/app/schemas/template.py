@@ -179,7 +179,7 @@ class QuickStartRequest(BaseModel):
     difficulty: TemplateDifficulty = TemplateDifficulty.BEGINNER
     features: List[str] = Field(default_factory=list)  # Desired features
     use_monte_carlo: bool = False
-    num_players: int = Field(default=4, ge=1, le=10)
+    num_scenario_users: int = Field(default=4, ge=1, le=10)
 
 
 class QuickStartResponse(BaseModel):

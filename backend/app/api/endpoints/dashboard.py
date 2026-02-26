@@ -81,7 +81,7 @@ async def get_human_dashboard(
                 detail=f"Scenario with ID {scenario_id} not found"
             )
         # Verify user is a scenario_user in this scenario
-        player_check = (
+        scenario_user_check = (
             db.query(ScenarioUser)
             .filter(
                 ScenarioUser.user_id == current_user.id,
@@ -89,7 +89,7 @@ async def get_human_dashboard(
             )
             .first()
         )
-        if not player_check:
+        if not scenario_user_check:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You are not a scenario_user in this scenario"
@@ -119,7 +119,7 @@ async def get_human_dashboard(
         )
     
     # Get scenario metrics
-    metrics = crud.get_player_metrics(db, scenario_user_id=scenario_user.id, scenario_id=active_scenario.id)
+    metrics = crud.get_participant_metrics(db, scenario_user_id=scenario_user.id, scenario_id=active_scenario.id)
     
     # Get time series data for the scenario_user
     role_value = getattr(scenario_user.role, "name", str(scenario_user.role)).upper()
@@ -153,8 +153,8 @@ async def get_human_dashboard(
         scenario_name=active_scenario.name,
         current_round=active_scenario.current_round,
         max_rounds=active_scenario.max_rounds,
-        player_role=role_value,
-        metrics=schemas.PlayerMetrics(**metrics),
+        participant_role=role_value,
+        metrics=schemas.ParticipantMetrics(**metrics),
         time_series=time_series_points,
         last_updated=datetime.utcnow().isoformat()
     )

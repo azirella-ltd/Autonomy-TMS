@@ -15,7 +15,7 @@ const RoundTimer = ({
   scenarioUserId,
   roundNumber,
   onOrderSubmit,
-  isPlayerTurn,
+  isScenarioUserTurn,
   orderComment = "",
   onCommentChange,
   readOnly = false,
@@ -84,15 +84,15 @@ const RoundTimer = ({
         setRoundEndsAt(new Date(status.ends_at));
 
         // Check if scenarioUser has already submitted
-        if (status.submitted_players?.some((p) => p.id === scenarioUserId)) {
+        if (status.submitted_scenario_users?.some((p) => p.id === scenarioUserId)) {
           setHasSubmitted(true);
-          const playerOrder = status.submitted_players.find(
+          const scenarioUserOrder = status.submitted_scenario_users.find(
             (p) => p.id === scenarioUserId
           );
-          if (playerOrder) {
-            setOrderQuantity(playerOrder.quantity);
-            if (playerOrder.comment && onCommentChange) {
-              onCommentChange(playerOrder.comment);
+          if (scenarioUserOrder) {
+            setOrderQuantity(scenarioUserOrder.quantity);
+            if (scenarioUserOrder.comment && onCommentChange) {
+              onCommentChange(scenarioUserOrder.comment);
             }
           }
         }
@@ -120,7 +120,7 @@ const RoundTimer = ({
       setTimeLeft(diff);
 
       // If time's up and we haven't submitted, submit zero
-      if (diff <= 0 && !hasSubmitted && isPlayerTurn) {
+      if (diff <= 0 && !hasSubmitted && isScenarioUserTurn) {
         handleSubmit(0);
       }
     };
@@ -136,7 +136,7 @@ const RoundTimer = ({
         clearInterval(timerRef.current);
       }
     };
-  }, [roundEndsAt, hasSubmitted, isPlayerTurn, handleSubmit]);
+  }, [roundEndsAt, hasSubmitted, isScenarioUserTurn, handleSubmit]);
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -172,14 +172,14 @@ const RoundTimer = ({
             </Badge>
           ) : (
             <Badge
-              variant={isPlayerTurn ? "warning" : "secondary"}
+              variant={isScenarioUserTurn ? "warning" : "secondary"}
               className="p-1 rounded-md"
             >
               {readOnly
-                ? isPlayerTurn
+                ? isScenarioUserTurn
                   ? "Active"
                   : "Waiting"
-                : isPlayerTurn
+                : isScenarioUserTurn
                 ? "Your Turn"
                 : "Waiting..."}
             </Badge>
@@ -197,7 +197,7 @@ const RoundTimer = ({
         }`}
       />
 
-      {((isPlayerTurn && !hasSubmitted) || readOnly) && (
+      {((isScenarioUserTurn && !hasSubmitted) || readOnly) && (
         <div className="flex flex-col w-full gap-4 mt-4">
           <p className="text-sm text-gray-600">{instructionText}</p>
           <div className="flex w-full items-start gap-3">
@@ -233,13 +233,13 @@ const RoundTimer = ({
         </div>
       )}
 
-      {!readOnly && !isPlayerTurn && !hasSubmitted && (
+      {!readOnly && !isScenarioUserTurn && !hasSubmitted && (
         <p className="text-sm text-gray-500 text-center">
           Waiting for your turn to place an order...
         </p>
       )}
 
-      {readOnly && !isPlayerTurn && !hasSubmitted && (
+      {readOnly && !isScenarioUserTurn && !hasSubmitted && (
         <p className="text-sm text-gray-500 text-center">
           Waiting for this role to place an order...
         </p>

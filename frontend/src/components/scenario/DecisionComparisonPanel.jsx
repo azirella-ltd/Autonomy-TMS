@@ -233,12 +233,12 @@ const DecisionComparisonPanel = ({
                   </TableHeader>
                   <TableBody>
                     {roundResults.map((result, idx) => {
-                      const isCurrentPlayer = result.scenario_user_id === scenarioUserId;
+                      const isCurrentScenarioUser = result.scenario_user_id === scenarioUserId;
                       return (
                         <TableRow
                           key={idx}
                           className={cn(
-                            isCurrentPlayer && 'bg-primary/5',
+                            isCurrentScenarioUser && 'bg-primary/5',
                             'hover:bg-muted/50'
                           )}
                         >
@@ -247,12 +247,12 @@ const DecisionComparisonPanel = ({
                               <span
                                 className={cn(
                                   'text-sm',
-                                  isCurrentPlayer && 'font-semibold'
+                                  isCurrentScenarioUser && 'font-semibold'
                                 )}
                               >
-                                {result.player_role}
+                                {result.scenario_user_role}
                               </span>
-                              {isCurrentPlayer && (
+                              {isCurrentScenarioUser && (
                                 <Badge variant="info" size="sm">You</Badge>
                               )}
                             </div>

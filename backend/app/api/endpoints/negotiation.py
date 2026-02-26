@@ -221,7 +221,7 @@ async def respond_to_negotiation(
 
 
 @router.get("/scenarios/{scenario_id}/list", response_model=NegotiationsListResponse)
-async def get_player_negotiations(
+async def get_scenario_user_negotiations(
     scenario_id: int,
     status_filter: Optional[str] = None,
     limit: int = 20,
@@ -244,7 +244,7 @@ async def get_player_negotiations(
         scenario_user_id = await resolve_scenario_user_id(scenario_id, current_user, db)
         negotiation_service = get_negotiation_service(db)
 
-        negotiations = await negotiation_service.get_player_negotiations(
+        negotiations = await negotiation_service.get_scenario_user_negotiations(
             scenario_id=scenario_id,
             scenario_user_id=scenario_user_id,
             status_filter=status_filter,

@@ -138,7 +138,7 @@ class AuthService:
 
         is_system_admin = bool(user.is_superuser or user_type == UserTypeEnum.SYSTEM_ADMIN)
         is_tenant_admin = user_type == UserTypeEnum.TENANT_ADMIN
-        is_player = user_type == UserTypeEnum.USER
+        is_scenario_user = user_type == UserTypeEnum.USER
 
         # Check if the account is locked
         if user.failed_login_attempts >= settings.MAX_LOGIN_ATTEMPTS and \
@@ -161,7 +161,7 @@ class AuthService:
                     "Incorrect password. Please contact your system administrator for assistance."
                 )
                 contact_role = "systemadmin"
-            elif is_player:
+            elif is_scenario_user:
                 message = (
                     "Incorrect password. Please contact your tenant admin for assistance."
                 )

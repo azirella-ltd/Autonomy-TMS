@@ -124,8 +124,8 @@ const UserRoleManagement = () => {
         { id: 'view_tenants', label: 'View Organizations', description: 'View organizations' },
         { id: 'create_tenant', label: 'Create Organizations', description: 'Create new organizations' },
         { id: 'manage_tenants', label: 'Manage Organizations', description: 'Full organization management' },
-        { id: 'view_players', label: 'View ScenarioUsers', description: 'View users' },
-        { id: 'manage_players', label: 'Manage ScenarioUsers', description: 'Manage users' },
+        { id: 'view_scenario_users', label: 'View ScenarioUsers', description: 'View users' },
+        { id: 'manage_scenario_users', label: 'Manage ScenarioUsers', description: 'Manage users' },
         { id: 'view_users', label: 'View Users', description: 'View users' },
         { id: 'create_user', label: 'Create Users', description: 'Create new users' },
         { id: 'edit_user', label: 'Edit Users', description: 'Edit user information' },
@@ -145,7 +145,7 @@ const UserRoleManagement = () => {
         'view_sc_configs', 'view_inventory_models', 'view_tenant_configs', 'manage_tenant_configs', 'view_ntier_visibility',
         'view_order_planning', 'view_demand_planning', 'view_supply_planning', 'view_optimization',
         'use_ai_assistant', 'view_trm_training', 'view_gnn_training', 'view_model_setup',
-        'view_tenants', 'manage_tenants', 'view_players', 'manage_players', 'view_users', 'create_user', 'edit_user',
+        'view_tenants', 'manage_tenants', 'view_scenario_users', 'manage_scenario_users', 'view_users', 'create_user', 'edit_user',
       ],
     },
     USER: {
@@ -157,7 +157,7 @@ const UserRoleManagement = () => {
         'view_games', 'play_game',
         'view_sc_configs', 'view_ntier_visibility',
         'view_order_planning',
-        'view_tenants', 'view_players',
+        'view_tenants', 'view_scenario_users',
       ],
     },
     GAME_MANAGER: {
@@ -169,7 +169,7 @@ const UserRoleManagement = () => {
         'view_games', 'create_game', 'play_game', 'manage_games',
         'view_sc_configs', 'view_ntier_visibility',
         'view_order_planning', 'view_demand_planning', 'view_supply_planning',
-        'view_tenants', 'view_players',
+        'view_tenants', 'view_scenario_users',
       ],
     },
     ANALYST: {
@@ -182,7 +182,7 @@ const UserRoleManagement = () => {
         'view_sc_configs', 'view_ntier_visibility',
         'view_order_planning', 'view_demand_planning', 'view_supply_planning', 'view_optimization',
         'view_trm_training', 'view_gnn_training', 'view_model_setup',
-        'view_tenants', 'view_players',
+        'view_tenants', 'view_scenario_users',
       ],
     },
   };

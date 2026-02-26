@@ -315,7 +315,7 @@ def add_participant(
     """
     scenario_service = MixedScenarioService(db)
     try:
-        scenario_user = scenario_service.add_player(scenario_id, participant_in)
+        scenario_user = scenario_service.add_scenario_user(scenario_id, participant_in)
         return ScenarioUserResponse.model_validate(scenario_user)
     except AutonomyLLMError as exc:
         raise HTTPException(

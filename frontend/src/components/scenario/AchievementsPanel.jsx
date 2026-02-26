@@ -30,11 +30,11 @@ const AchievementsPanel = ({ scenarioId, scenarioUserId }) => {
       setAllAchievements(allData)
 
       // Fetch scenarioUser's unlocked achievements
-      const playerResponse = await fetch(`/api/v1/gamification/scenarioUsers/${scenarioUserId}/achievements`, {
+      const scenarioUserResponse = await fetch(`/api/v1/gamification/scenarioUsers/${scenarioUserId}/achievements`, {
         credentials: 'include'
       })
-      if (!playerResponse.ok) throw new Error('Failed to fetch scenarioUser achievements')
-      const scenarioUserData = await playerResponse.json()
+      if (!scenarioUserResponse.ok) throw new Error('Failed to fetch scenarioUser achievements')
+      const scenarioUserData = await scenarioUserResponse.json()
       setAchievements(scenarioUserData)
     } catch (error) {
       console.error('Error fetching achievements:', error)
@@ -242,7 +242,7 @@ const AchievementsPanel = ({ scenarioId, scenarioUserId }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredAchievements.map((achievement) => {
           const isUnlocked = unlockedAchievementIds.has(achievement.id)
-          const playerAchievement = achievements.find(a => a.achievement_id === achievement.id)
+          const scenarioUserAchievement = achievements.find(a => a.achievement_id === achievement.id)
 
           return (
             <div
@@ -283,9 +283,9 @@ const AchievementsPanel = ({ scenarioId, scenarioUserId }) => {
                 <span className={`text-sm font-medium ${isUnlocked ? 'text-indigo-600' : 'text-gray-400'}`}>
                   {achievement.points} points
                 </span>
-                {isUnlocked && playerAchievement && (
+                {isUnlocked && scenarioUserAchievement && (
                   <span className="text-xs text-gray-500">
-                    {new Date(playerAchievement.unlocked_at).toLocaleDateString()}
+                    {new Date(scenarioUserAchievement.unlocked_at).toLocaleDateString()}
                   </span>
                 )}
               </div>

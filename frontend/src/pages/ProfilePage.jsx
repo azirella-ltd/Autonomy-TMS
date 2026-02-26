@@ -84,7 +84,7 @@ const ProfilePage = () => {
             currentStreak: 5,
             highestStreak: 8,
             rank: 7,
-            totalPlayers: 1245,
+            totalScenarioUsers: 1245,
           },
           achievements: [
             { id: 1, name: 'First Win', description: 'Win your first game', icon: 'trophy', earned: true, date: '2023-01-20' },
@@ -441,7 +441,7 @@ const ProfilePage = () => {
                     <div className="ml-4">
                       <h3 className="text-lg font-medium text-primary">Welcome back, {profile.username}!</h3>
                       <div className="mt-2 text-sm text-primary/80">
-                        <p>You're currently ranked <span className="font-semibold">#{profile.stats.rank}</span> out of {profile.stats.totalPlayers} users.</p>
+                        <p>You're currently ranked <span className="font-semibold">#{profile.stats.rank}</span> out of {profile.stats.totalScenarioUsers} users.</p>
                         <p className="mt-1">You've played {profile.stats.gamesPlayed} games with a {profile.stats.winRate}% win rate.</p>
                       </div>
                       <div className="mt-4">

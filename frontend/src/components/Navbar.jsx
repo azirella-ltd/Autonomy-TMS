@@ -17,7 +17,7 @@ import {
   LogOut as LogoutIcon,
   LayoutDashboard as DashboardIcon,
   Gamepad2 as GamesIcon,
-  Users as PlayersIcon,
+  Users as ScenarioUsersIcon,
   HelpCircle as HelpIcon,
   Bell as NotificationsIcon,
   BarChart3 as AnalyticsIcon,
@@ -228,7 +228,7 @@ const Navbar = () => {
       return [
         { name: "Dashboard", path: "/admin", icon: DashboardIcon },
         { name: "Scenarios", path: "/games", icon: GamesIcon },
-        { name: "Users", path: "/scenarioUsers", icon: PlayersIcon },
+        { name: "Users", path: "/scenarioUsers", icon: ScenarioUsersIcon },
         { name: "Analytics", path: "/analytics", icon: AnalyticsIcon },
       ];
     }
@@ -237,7 +237,7 @@ const Navbar = () => {
     return [
       { name: "Dashboard", path: "/dashboard", icon: DashboardIcon },
       { name: "Games", path: "/games", icon: GamesIcon },
-      { name: "Users", path: "/scenarioUsers", icon: PlayersIcon },
+      { name: "Users", path: "/scenarioUsers", icon: ScenarioUsersIcon },
       { name: "Analytics", path: "/analytics", icon: AnalyticsIcon },
     ];
   };

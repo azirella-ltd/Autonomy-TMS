@@ -151,7 +151,7 @@ Select an industry vertical:
 {
   "industry": "retail",
   "difficulty": "beginner",
-  "num_players": 4,
+  "num_scenario_users": 4,
   "features": ["ai_agents"]
 }
 \`\`\`

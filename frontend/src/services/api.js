@@ -984,9 +984,11 @@ simulationApi.getRoundStatus = simulationApi.getPeriodStatus;
 
 // ScenarioUser aliases (ScenarioUser -> ScenarioUser)
 simulationApi.getScenarioUsers = simulationApi.getScenarioUsers;
+// Backward-compatible alias (player -> scenarioUser)
 simulationApi.addPlayer = simulationApi.addScenarioUser;
 simulationApi.getScenarioUserStats = simulationApi.getScenarioUserStats;
 simulationApi.getPlayerProgress = simulationApi.getScenarioUserProgress;
+simulationApi.getPlayerNegotiations = simulationApi.getScenarioUserNegotiations;
 
 // Backward-compatible named export
 export const mixedGameApi = simulationApi;

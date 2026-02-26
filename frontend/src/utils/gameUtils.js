@@ -68,7 +68,7 @@ export const validateOrder = (scenarioUser, amount) => {
  * @param {number} index - ScenarioUser index or position
  * @returns {string} Tailwind CSS color class
  */
-export const getPlayerColor = (index) => {
+export const getScenarioUserColor = (index) => {
   const colors = [
     'bg-blue-100 text-blue-800',
     'bg-green-100 text-green-800',
@@ -166,7 +166,7 @@ export const getRoundTimeRemaining = (game) => {
  * @param {Array} scenarioUsers - Array of scenarioUser objects
  * @returns {Array} Sorted array of scenarioUsers
  */
-export const sortPlayersByScore = (scenarioUsers = []) => {
+export const sortScenarioUsersByScore = (scenarioUsers = []) => {
   return [...scenarioUsers].sort((a, b) => (b.score || 0) - (a.score || 0));
 };
 
@@ -176,24 +176,24 @@ export const sortPlayersByScore = (scenarioUsers = []) => {
  * @param {string} userId - The current user's ID
  * @returns {number} The scenarioUser's position (1-based)
  */
-export const getPlayerPosition = (game, userId) => {
+export const getScenarioUserPosition = (game, userId) => {
   if (!game?.scenarioUsers?.length || !userId) return 0;
   
-  const sortedPlayers = sortPlayersByScore(game.scenarioUsers);
-  return sortedPlayers.findIndex(p => p.user_id === userId) + 1;
+  const sortedScenarioUsers = sortScenarioUsersByScore(game.scenarioUsers);
+  return sortedScenarioUsers.findIndex(p => p.user_id === userId) + 1;
 };
 
 const gameUtils = {
   formatDuration,
   calculateScore,
   validateOrder,
-  getPlayerColor,
+  getScenarioUserColor,
   formatTime,
   getGameStatusBadge,
   calculateGameProgress,
   getRoundTimeRemaining,
-  sortPlayersByScore,
-  getPlayerPosition,
+  sortScenarioUsersByScore,
+  getScenarioUserPosition,
 };
 
 export default gameUtils;

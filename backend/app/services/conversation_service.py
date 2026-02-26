@@ -54,7 +54,7 @@ class ConversationService:
         try:
             # Get game and scenario_user
             game = await self._get_game(scenario_id)
-            scenario_user = await self._get_player(scenario_user_id)
+            scenario_user = await self._get_scenario_user(scenario_user_id)
 
             # Get conversation history
             history = await self.get_conversation_history(
@@ -79,7 +79,7 @@ class ConversationService:
                 message=message,
                 history=history,
                 context=context_snapshot,
-                player_role=scenario_user.role,
+                scenario_user_role=scenario_user.role,
             )
 
             # Get AI response
@@ -183,7 +183,7 @@ class ConversationService:
         message: str,
         history: List[Dict[str, Any]],
         context: Dict[str, Any],
-        player_role: str,
+        scenario_user_role: str,
     ) -> str:
         """Build LLM prompt with conversation history."""
 
@@ -195,7 +195,7 @@ class ConversationService:
                 role = "You" if msg["role"] == "assistant" else "ScenarioUser"
                 conversation_context += f"{role}: {msg['content']}\n"
 
-        prompt = f"""You are an AI supply chain advisor for the {player_role} role.
+        prompt = f"""You are an AI supply chain advisor for the {scenario_user_role} role.
 The scenario_user is asking: "{message}"
 
 {conversation_context}
@@ -261,7 +261,7 @@ Respond in JSON format:
             "current_backlog": current_round.current_backlog if current_round else 0,
             "incoming_shipment": current_round.incoming_shipment if current_round else 0,
             "recent_demand": recent_demand,
-            "player_role": scenario_user.role,
+            "scenario_user_role": scenario_user.role,
             "timestamp": datetime.utcnow().isoformat(),
         }
 
@@ -302,7 +302,7 @@ Respond in JSON format:
             raise ValueError(f"Game {scenario_id} not found")
         return game
 
-    async def _get_player(self, scenario_user_id: int) -> ScenarioUser:
+    async def _get_scenario_user(self, scenario_user_id: int) -> ScenarioUser:
         """Get scenario_user by ID."""
         result = await self.db.execute(
             select(ScenarioUser).filter(ScenarioUser.id == scenario_user_id)

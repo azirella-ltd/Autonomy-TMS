@@ -118,7 +118,7 @@ const ReportsPanel = ({ scenarioId }) => {
     )
   }
 
-  const { overview, player_performance, key_insights, recommendations, charts_data } = report
+  const { overview, scenario_user_performance, key_insights, recommendations, charts_data } = report
 
   return (
     <div className="space-y-6">
@@ -295,7 +295,7 @@ const ReportsPanel = ({ scenarioId }) => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {player_performance.map((scenarioUser, index) => (
+                {scenario_user_performance.map((scenarioUser, index) => (
                   <tr key={user.scenario_user_id} className={index < 3 ? 'bg-yellow-50' : ''}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="text-2xl">

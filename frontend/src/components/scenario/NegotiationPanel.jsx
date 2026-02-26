@@ -22,14 +22,14 @@ import simulationApi from "../../services/api";
  * - Impact simulation
  * - Negotiation messaging
  */
-const NegotiationPanel = ({ scenarioId, scenarioUserRole, currentPlayerId }) => {
+const NegotiationPanel = ({ scenarioId, scenarioUserRole, currentScenarioUserId }) => {
   const [negotiations, setNegotiations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [selectedNegotiation, setSelectedNegotiation] = useState(null);
 
   // Create form state
-  const [targetPlayer, setTargetPlayer] = useState("");
+  const [targetScenarioUser, setTargetScenarioUser] = useState("");
   const [negotiationType, setNegotiationType] = useState("order_adjustment");
   const [proposal, setProposal] = useState({});
   const [message, setMessage] = useState("");
@@ -42,7 +42,7 @@ const NegotiationPanel = ({ scenarioId, scenarioUserRole, currentPlayerId }) => 
   const fetchNegotiations = async () => {
     try {
       setIsLoading(true);
-      const response = await simulationApi.getPlayerNegotiations(scenarioId);
+      const response = await simulationApi.getScenarioUserNegotiations(scenarioId);
       setNegotiations(response.negotiations || []);
     } catch (error) {
       console.error("Failed to fetch negotiations:", error);
@@ -53,7 +53,7 @@ const NegotiationPanel = ({ scenarioId, scenarioUserRole, currentPlayerId }) => 
   };
 
   const createNegotiation = async () => {
-    if (!targetPlayer) {
+    if (!targetScenarioUser) {
       toast.error("Please select a target scenarioUser");
       return;
     }
@@ -62,7 +62,7 @@ const NegotiationPanel = ({ scenarioId, scenarioUserRole, currentPlayerId }) => 
       setIsCreating(true);
 
       const proposalData = {
-        target_scenario_user_id: parseInt(targetPlayer),
+        target_scenario_user_id: parseInt(targetScenarioUser),
         negotiation_type: negotiationType,
         proposal: proposal,
         message: message || undefined,
@@ -73,7 +73,7 @@ const NegotiationPanel = ({ scenarioId, scenarioUserRole, currentPlayerId }) => 
 
       // Reset form
       setShowCreateForm(false);
-      setTargetPlayer("");
+      setTargetScenarioUser("");
       setProposal({});
       setMessage("");
 
@@ -171,8 +171,8 @@ const NegotiationPanel = ({ scenarioId, scenarioUserRole, currentPlayerId }) => 
             Target User
           </label>
           <select
-            value={targetPlayer}
-            onChange={(e) => setTargetPlayer(e.target.value)}
+            value={targetScenarioUser}
+            onChange={(e) => setTargetScenarioUser(e.target.value)}
             className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500"
           >
             <option value="">Select user...</option>

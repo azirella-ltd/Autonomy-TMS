@@ -109,19 +109,19 @@ async def broadcast_phase_change(
     round_number: int,
     new_phase: str,
     phase_started_at: str = None,
-    players_completed: int = 0,
-    total_players: int = 0
+    scenario_users_completed: int = 0,
+    total_scenario_users: int = 0
 ):
     """
     Broadcast when round phase changes (FULFILLMENT → REPLENISHMENT → COMPLETED).
 
     Args:
-        scenario_id: Game ID
+        scenario_id: Scenario ID
         round_number: Current round number
         new_phase: New phase name ('fulfillment', 'replenishment', 'completed')
         phase_started_at: ISO timestamp when phase started
-        players_completed: Number of scenario_users who have completed current phase
-        total_players: Total scenario_users in game
+        scenario_users_completed: Number of scenario_users who have completed current phase
+        total_scenario_users: Total scenario_users in scenario
     """
     message = {
         "type": "round_phase_change",
@@ -129,8 +129,8 @@ async def broadcast_phase_change(
         "round_number": round_number,
         "phase": new_phase,
         "phase_started_at": phase_started_at,
-        "players_completed": players_completed,
-        "total_players": total_players,
+        "players_completed": scenario_users_completed,
+        "total_players": total_scenario_users,
     }
 
     await manager.broadcast_to_game(scenario_id, message)
@@ -148,7 +148,7 @@ async def broadcast_scenario_user_action_required(
     Notify a specific scenario_user that action is required.
 
     Args:
-        scenario_id: Game ID
+        scenario_id: Scenario ID
         scenario_user_id: ScenarioUser who needs to act
         round_number: Current round
         phase: Current phase
@@ -173,19 +173,19 @@ async def broadcast_fulfillment_completed(
     scenario_user_id: int,
     participant_role: str,
     fulfill_qty: int,
-    players_completed: int,
-    total_players: int
+    scenario_users_completed: int,
+    total_scenario_users: int
 ):
     """
     Broadcast when a scenario_user submits their fulfillment decision.
 
     Args:
-        scenario_id: Game ID
+        scenario_id: Scenario ID
         scenario_user_id: ScenarioUser who submitted
-        player_role: ScenarioUser's role (e.g., 'Retailer')
+        participant_role: ScenarioUser's role (e.g., 'Retailer')
         fulfill_qty: Quantity fulfilled
-        players_completed: Total scenario_users who have completed fulfillment
-        total_players: Total scenario_users in game
+        scenario_users_completed: Total scenario_users who have completed fulfillment
+        total_scenario_users: Total scenario_users in scenario
     """
     message = {
         "type": "fulfillment_completed",
@@ -193,8 +193,8 @@ async def broadcast_fulfillment_completed(
         "scenario_user_id": scenario_user_id,
         "participant_role": participant_role,
         "fulfill_qty": fulfill_qty,
-        "players_completed": players_completed,
-        "total_players": total_players,
+        "players_completed": scenario_users_completed,
+        "total_players": total_scenario_users,
     }
 
     await manager.broadcast_to_game(scenario_id, message)
@@ -205,19 +205,19 @@ async def broadcast_replenishment_completed(
     scenario_user_id: int,
     participant_role: str,
     order_qty: int,
-    players_completed: int,
-    total_players: int
+    scenario_users_completed: int,
+    total_scenario_users: int
 ):
     """
     Broadcast when a scenario_user submits their replenishment order.
 
     Args:
-        scenario_id: Game ID
+        scenario_id: Scenario ID
         scenario_user_id: ScenarioUser who submitted
-        player_role: ScenarioUser's role (e.g., 'Wholesaler')
+        participant_role: ScenarioUser's role (e.g., 'Wholesaler')
         order_qty: Quantity ordered
-        players_completed: Total scenario_users who have completed replenishment
-        total_players: Total scenario_users in game
+        scenario_users_completed: Total scenario_users who have completed replenishment
+        total_scenario_users: Total scenario_users in scenario
     """
     message = {
         "type": "replenishment_completed",
@@ -225,8 +225,8 @@ async def broadcast_replenishment_completed(
         "scenario_user_id": scenario_user_id,
         "participant_role": participant_role,
         "order_qty": order_qty,
-        "players_completed": players_completed,
-        "total_players": total_players,
+        "players_completed": scenario_users_completed,
+        "total_players": total_scenario_users,
     }
 
     await manager.broadcast_to_game(scenario_id, message)
@@ -242,7 +242,7 @@ async def broadcast_round_completed(
     Broadcast when a round is completed and ready for next round.
 
     Args:
-        scenario_id: Game ID
+        scenario_id: Scenario ID
         round_number: Completed round number
         next_round: Next round number (None if game finished)
         game_finished: Whether the game has finished
@@ -258,7 +258,7 @@ async def broadcast_round_completed(
     await manager.broadcast_to_game(scenario_id, message)
 
 
-async def broadcast_all_players_ready(
+async def broadcast_all_scenario_users_ready(
     scenario_id: int,
     round_number: int,
     phase: str
@@ -267,7 +267,7 @@ async def broadcast_all_players_ready(
     Broadcast when all scenario_users have completed their actions for a phase.
 
     Args:
-        scenario_id: Game ID
+        scenario_id: Scenario ID
         round_number: Current round
         phase: Phase that was just completed ('fulfillment' or 'replenishment')
     """
@@ -294,7 +294,7 @@ async def broadcast_agent_recommendation_ready(
     Broadcast when agent recommendation is ready.
 
     Args:
-        scenario_id: Game ID
+        scenario_id: Scenario ID
         scenario_user_id: ScenarioUser ID who received recommendation
         phase: Phase type ("fulfillment" or "replenishment")
         recommendation: RecommendationResult dict
@@ -321,7 +321,7 @@ async def send_override_requires_approval(
     Notify scenario_user that their override requires approval.
 
     Args:
-        scenario_id: Game ID
+        scenario_id: Scenario ID
         scenario_user_id: ScenarioUser ID who needs approval
         proposal_id: Decision proposal ID
         authority_check: AuthorityCheckResult dict
@@ -359,7 +359,7 @@ async def broadcast_override_approved(
     Broadcast when manager approves an override.
 
     Args:
-        scenario_id: Game ID
+        scenario_id: Scenario ID
         scenario_user_id: ScenarioUser ID whose override was approved
         proposal_id: Decision proposal ID
         approved_by: Manager who approved
@@ -389,7 +389,7 @@ async def broadcast_override_rejected(
     Broadcast when manager rejects an override.
 
     Args:
-        scenario_id: Game ID
+        scenario_id: Scenario ID
         scenario_user_id: ScenarioUser ID whose override was rejected
         proposal_id: Decision proposal ID
         rejected_by: Manager who rejected
@@ -423,7 +423,7 @@ async def broadcast_atp_threshold_breach(
     Broadcast when ATP falls below safety threshold.
 
     Args:
-        scenario_id: Game ID
+        scenario_id: Scenario ID
         scenario_user_id: ScenarioUser ID with low ATP
         current_atp: Current ATP value
         threshold: Safety stock threshold
@@ -454,7 +454,7 @@ async def broadcast_ctp_capacity_constraint(
     Broadcast when production capacity is insufficient to meet demand.
 
     Args:
-        scenario_id: Game ID
+        scenario_id: Scenario ID
         scenario_user_id: ScenarioUser ID (manufacturer)
         demand: Requested production quantity
         available_ctp: Available CTP
@@ -486,7 +486,7 @@ async def broadcast_allocation_conflict(
     Broadcast when multiple customers request more than available ATP.
 
     Args:
-        scenario_id: Game ID
+        scenario_id: Scenario ID
         scenario_user_id: ScenarioUser ID (supplier node)
         total_demand: Total demand from all customers
         available_atp: Available ATP
@@ -516,7 +516,7 @@ async def broadcast_atp_projection_update(
     Broadcast updated ATP projection (e.g., after new order placed).
 
     Args:
-        scenario_id: Game ID
+        scenario_id: Scenario ID
         scenario_user_id: ScenarioUser ID
         projection: List of ATPPeriod dicts
     """
@@ -543,7 +543,7 @@ async def broadcast_component_constraint(
     Broadcast when component availability constrains production.
 
     Args:
-        scenario_id: Game ID
+        scenario_id: Scenario ID
         scenario_user_id: ScenarioUser ID (manufacturer)
         component_name: Name of constrained component
         required: Required quantity
@@ -580,8 +580,8 @@ async def websocket_endpoint(
     - Sends the current game state on connection
     - Broadcasts updates to all scenario_users when the game state changes
     """
-    # Verify the game and scenario_user exist
-    game = db.query(Game).filter(Game.id == scenario_id).first()
+    # Verify the scenario and scenario_user exist
+    game = db.query(Scenario).filter(Scenario.id == scenario_id).first()
     if not game:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
