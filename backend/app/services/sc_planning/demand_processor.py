@@ -33,9 +33,9 @@ class DemandProcessor:
     Combines forecasts, actual orders, and reservations to calculate net demand.
     """
 
-    def __init__(self, config_id: int, customer_id: int):
+    def __init__(self, config_id: int, tenant_id: int):
         self.config_id = config_id
-        self.customer_id = customer_id
+        self.tenant_id = tenant_id
 
     async def process_demand(
         self,
@@ -112,7 +112,7 @@ class DemandProcessor:
 
             result = await db.execute(
                 select(Forecast).filter(
-                    Forecast.customer_id == self.customer_id,
+                    Forecast.customer_id == self.tenant_id,
                     Forecast.config_id == self.config_id,
                     Forecast.forecast_date >= start_date,
                     Forecast.forecast_date < end_date,
@@ -148,7 +148,7 @@ class DemandProcessor:
 
             result = await db.execute(
                 select(OutboundOrderLine).filter(
-                    OutboundOrderLine.customer_id == self.customer_id,
+                    OutboundOrderLine.customer_id == self.tenant_id,
                     OutboundOrderLine.config_id == self.config_id,
                     OutboundOrderLine.requested_delivery_date >= start_date,
                     OutboundOrderLine.requested_delivery_date < end_date
@@ -181,7 +181,7 @@ class DemandProcessor:
 
             result = await db.execute(
                 select(Reservation).filter(
-                    Reservation.customer_id == self.customer_id,
+                    Reservation.customer_id == self.tenant_id,
                     Reservation.config_id == self.config_id,
                     Reservation.reservation_date >= start_date,
                     Reservation.reservation_date < end_date

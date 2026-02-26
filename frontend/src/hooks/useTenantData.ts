@@ -1,5 +1,5 @@
 /**
- * useCustomerData Hook - Customer data fetching
+ * useTenantData Hook - Tenant/Organization data fetching
  */
 
 import { useState, useEffect } from 'react';
@@ -11,7 +11,7 @@ interface SkuPanelData {
   [key: string]: any;
 }
 
-interface CustomerDataReturn {
+interface TenantDataReturn {
   currentSkuPanel: SkuPanelData | null;
   productId: string | null;
   isLoading: boolean;
@@ -20,13 +20,13 @@ interface CustomerDataReturn {
   loading: boolean;
 }
 
-export function useCustomerData(customerId?: string): CustomerDataReturn {
+export function useTenantData(tenantId?: string): TenantDataReturn {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
   useEffect(() => {
-    if (!customerId) {
+    if (!tenantId) {
       setData(null);
       return;
     }
@@ -38,7 +38,7 @@ export function useCustomerData(customerId?: string): CustomerDataReturn {
     const fetchData = async () => {
       try {
         // Simulated data
-        setData({ id: customerId, name: `Customer ${customerId}` });
+        setData({ id: tenantId, name: `Organization ${tenantId}` });
       } catch (err) {
         setError(err as Error);
       } finally {
@@ -47,7 +47,7 @@ export function useCustomerData(customerId?: string): CustomerDataReturn {
     };
 
     fetchData();
-  }, [customerId]);
+  }, [tenantId]);
 
   return {
     currentSkuPanel: null,
@@ -59,4 +59,4 @@ export function useCustomerData(customerId?: string): CustomerDataReturn {
   };
 }
 
-export default useCustomerData;
+export default useTenantData;

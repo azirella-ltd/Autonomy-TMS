@@ -36,43 +36,43 @@ const parseErrorMessage = (error, fallback) => {
 
 function GroupPlayerManagement() {
   const navigate = useNavigate();
-  const { isGroupAdmin, user } = useAuth();
+  const { isTenantAdmin, user } = useAuth();
   const systemAdmin = isSystemAdminUser(user);
-  const rawCustomerId = user?.customer_id;
-  const parsedCustomerId = typeof rawCustomerId === 'number' ? rawCustomerId : Number(rawCustomerId);
-  const customerId = Number.isFinite(parsedCustomerId) ? parsedCustomerId : null;
+  const rawTenantId = user?.tenant_id;
+  const parsedTenantId = typeof rawTenantId === 'number' ? rawTenantId : Number(rawTenantId);
+  const tenantId = Number.isFinite(parsedTenantId) ? parsedTenantId : null;
 
   const [scenarioUsers, setPlayers] = useState([]);
-  const [customers, setCustomers] = useState([]);
+  const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editorOpen, setEditorOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
 
   useEffect(() => {
-    if (!isGroupAdmin) {
+    if (!isTenantAdmin) {
       navigate('/unauthorized');
       return;
     }
     if (systemAdmin) {
       navigate('/system/users', { replace: true });
     }
-  }, [isGroupAdmin, navigate, systemAdmin]);
+  }, [isTenantAdmin, navigate, systemAdmin]);
 
-  const loadCustomers = useCallback(async () => {
+  const loadTenants = useCallback(async () => {
     try {
-      const response = await api.get('/groups');
+      const response = await api.get('/tenants');
       const data = Array.isArray(response.data) ? response.data : [];
-      setCustomers(data);
+      setTenants(data);
       return data;
     } catch (error) {
-      console.error('Error loading customers:', error);
-      setCustomers([]);
+      console.error('Error loading tenants:', error);
+      setTenants([]);
       throw error;
     }
   }, []);
 
   const loadPlayers = useCallback(async () => {
-    if (!customerId) {
+    if (!tenantId) {
       setPlayers([]);
       return [];
     }
@@ -83,7 +83,7 @@ function GroupPlayerManagement() {
       });
       const data = Array.isArray(response.data) ? response.data : [];
       const filtered = data.filter(
-        (item) => resolveUserType(item) === 'user' && item.customer_id === customerId,
+        (item) => resolveUserType(item) === 'user' && item.tenant_id === tenantId,
       );
       setPlayers(filtered);
       return filtered;
@@ -92,15 +92,15 @@ function GroupPlayerManagement() {
       setPlayers([]);
       throw error;
     }
-  }, [customerId]);
+  }, [tenantId]);
 
   useEffect(() => {
-    if (!isGroupAdmin || systemAdmin) {
+    if (!isTenantAdmin || systemAdmin) {
       setLoading(false);
       return;
     }
 
-    if (!customerId) {
+    if (!tenantId) {
       setLoading(false);
       return;
     }
@@ -108,7 +108,7 @@ function GroupPlayerManagement() {
     const fetchAll = async () => {
       setLoading(true);
       try {
-        await Promise.all([loadCustomers(), loadPlayers()]);
+        await Promise.all([loadTenants(), loadPlayers()]);
       } catch (error) {
         toast.error('Failed to load user information');
       } finally {
@@ -117,15 +117,15 @@ function GroupPlayerManagement() {
     };
 
     fetchAll();
-  }, [customerId, isGroupAdmin, systemAdmin, loadCustomers, loadPlayers]);
+  }, [tenantId, isTenantAdmin, systemAdmin, loadTenants, loadPlayers]);
 
-  const customerMap = useMemo(() => {
+  const tenantMap = useMemo(() => {
     const map = {};
-    (customers || []).forEach((c) => {
+    (tenants || []).forEach((c) => {
       map[c.id] = c.name;
     });
     return map;
-  }, [customers]);
+  }, [tenants]);
 
   const handleCreateUser = () => {
     setSelectedUser(null);
@@ -138,7 +138,7 @@ function GroupPlayerManagement() {
   };
 
   const handleSaveUser = async (userData) => {
-    if (!customerId) {
+    if (!tenantId) {
       toast.error('Your account is not linked to a customer. Please contact your system administrator.');
       throw new Error('No customer ID');
     }
@@ -150,7 +150,7 @@ function GroupPlayerManagement() {
       } else {
         await api.post('/users', {
           ...userData,
-          group_id: customerId,
+          tenant_id: tenantId,
           user_type: userData.user_type || 'USER',
         });
         toast.success('User created successfully');
@@ -166,11 +166,11 @@ function GroupPlayerManagement() {
 
   const handleDeleteUser = async (scenarioUser) => {
     if (!scenarioUser) return;
-    const confirmMessage = `Are you sure you want to delete ${user.username || 'this user'}?`;
+    const confirmMessage = `Are you sure you want to delete ${scenarioUser.username || 'this user'}?`;
     if (!window.confirm(confirmMessage)) return;
 
     try {
-      await api.delete(`/users/${user.id}/`);
+      await api.delete(`/users/${scenarioUser.id}/`);
       toast.success('User deleted');
       await loadPlayers();
     } catch (error) {
@@ -179,11 +179,11 @@ function GroupPlayerManagement() {
     }
   };
 
-  if (!isGroupAdmin || systemAdmin) {
+  if (!isTenantAdmin || systemAdmin) {
     return null;
   }
 
-  if (!customerId) {
+  if (!tenantId) {
     return (
       <div className="flex justify-center items-center min-h-[60vh]">
         <Alert variant="warning">
@@ -207,7 +207,7 @@ function GroupPlayerManagement() {
         <div>
           <h1 className="text-2xl font-semibold">User Management</h1>
           <p className="text-sm text-muted-foreground">
-            Manage users and assign capabilities within your customer.
+            Manage users and assign capabilities within your organization.
           </p>
         </div>
         <Button onClick={handleCreateUser} leftIcon={<Plus className="h-4 w-4" />}>
@@ -228,31 +228,31 @@ function GroupPlayerManagement() {
             <TableRow>
               <TableHead className="font-semibold">Username</TableHead>
               <TableHead className="font-semibold">Email</TableHead>
-              <TableHead className="font-semibold">Group</TableHead>
+              <TableHead className="font-semibold">Organization</TableHead>
               <TableHead className="font-semibold">Type</TableHead>
               <TableHead className="font-semibold">Capabilities</TableHead>
               <TableHead className="text-right font-semibold">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {users.length === 0 ? (
+            {scenarioUsers.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center">
-                  <span className="text-muted-foreground">No users found for your customer yet.</span>
+                  <span className="text-muted-foreground">No users found for your organization yet.</span>
                 </TableCell>
               </TableRow>
             ) : (
-              users.map((scenarioUser) => {
+              scenarioUsers.map((scenarioUser) => {
                 const type = resolveUserType(scenarioUser);
-                const capCount = Array.isArray(user.capabilities) ? user.capabilities.length : 0;
+                const capCount = Array.isArray(scenarioUser.capabilities) ? scenarioUser.capabilities.length : 0;
                 return (
-                  <TableRow key={user.id}>
-                    <TableCell>{user.username}</TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell>{customerMap[user.customer_id] || '—'}</TableCell>
+                  <TableRow key={scenarioUser.id}>
+                    <TableCell>{scenarioUser.username}</TableCell>
+                    <TableCell>{scenarioUser.email}</TableCell>
+                    <TableCell>{tenantMap[scenarioUser.tenant_id] || '—'}</TableCell>
                     <TableCell>
                       <Badge variant={type === 'user' ? 'success' : 'secondary'}>
-                        {type === 'user' ? 'User' : type === 'groupadmin' ? 'Customer Admin' : 'User'}
+                        {type === 'user' ? 'User' : (type === 'tenantadmin' || type === 'groupadmin') ? 'Organization Admin' : 'User'}
                       </Badge>
                     </TableCell>
                     <TableCell>

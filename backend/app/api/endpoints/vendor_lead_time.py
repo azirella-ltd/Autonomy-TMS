@@ -263,7 +263,7 @@ async def create_vendor_lead_time(
     Returns:
         Created vendor lead time
     """
-    company_id = current_user.customer_id
+    company_id = current_user.tenant_id
 
     # Verify trading partner exists
     stmt = select(TradingPartner).where(TradingPartner.id == lead_time.tpartner_id)
@@ -313,7 +313,7 @@ async def bulk_create_vendor_lead_times(
     bulk_request: BulkVendorLeadTimeCreate
 ):
     """Bulk create vendor lead times"""
-    company_id = current_user.customer_id
+    company_id = current_user.tenant_id
     created_count = 0
 
     for lead_time in bulk_request.lead_times:
@@ -443,7 +443,7 @@ async def resolve_lead_time(
     Returns:
         Resolved lead time with hierarchy level
     """
-    company_id = current_user.customer_id
+    company_id = current_user.tenant_id
 
     result = await resolve_vendor_lead_time(
         db,

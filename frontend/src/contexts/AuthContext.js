@@ -4,7 +4,7 @@ import simulationApi from '../services/api';
 import { toast } from 'react-toastify';
 import {
   isSystemAdmin,
-  isGroupAdmin as isGroupAdminUtil,
+  isTenantAdmin as isTenantAdminUtil,
   getUserType,
 } from '../utils/authUtils';
 
@@ -228,8 +228,8 @@ export function AuthProvider({ children }) {
       return userType === 'systemadmin';
     }
 
-    if (normalized === 'groupadmin' || normalized === 'admin') {
-      return userType === 'groupadmin' || userType === 'systemadmin';
+    if (normalized === 'tenantadmin' || normalized === 'groupadmin' || normalized === 'admin') {
+      return userType === 'tenantadmin' || userType === 'systemadmin';
     }
 
     if (normalized === 'scenarioUser' || normalized === 'user') {
@@ -249,14 +249,15 @@ export function AuthProvider({ children }) {
     return roles.every((r) => hasRole(r));
   }, [hasRole]);
 
-  const isCustomerAdmin = useMemo(() => {
+  const isTenantAdmin = useMemo(() => {
     if (!user) return false;
     if (isSystemAdmin(user)) return true;
-    return isGroupAdminUtil(user);
+    return isTenantAdminUtil(user);
   }, [user]);
 
-  // Backward-compatible alias
-  const isGroupAdmin = isCustomerAdmin;
+  // Backward-compatible aliases
+  const isCustomerAdmin = isTenantAdmin;
+  const isGroupAdmin = isTenantAdmin;
 
   const value = useMemo(() => ({
     isAuthenticated,
@@ -270,12 +271,13 @@ export function AuthProvider({ children }) {
     hasRole,
     hasAnyRole,
     hasAllRoles,
-    isCustomerAdmin,
+    isTenantAdmin,
+    isCustomerAdmin, // backward-compatible alias
     isGroupAdmin, // backward-compatible alias
     showTimeoutWarning,
     timeLeft,
     resetTimers, // Export resetTimers to allow manual reset from components
-  }), [isAuthenticated, user, loading, error, login, logout, refreshUser, hasRole, hasAnyRole, hasAllRoles, isCustomerAdmin, showTimeoutWarning, timeLeft, resetTimers]);
+  }), [isAuthenticated, user, loading, error, login, logout, refreshUser, hasRole, hasAnyRole, hasAllRoles, isTenantAdmin, showTimeoutWarning, timeLeft, resetTimers]);
 
   return (
     <AuthContext.Provider value={value}>

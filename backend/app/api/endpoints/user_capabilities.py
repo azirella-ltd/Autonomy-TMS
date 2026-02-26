@@ -51,9 +51,9 @@ def update_user_capabilities(
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Group admins can only manage users in their customer organization
-    if current_user.user_type == UserType.GROUP_ADMIN:
-        if not current_user.customer_id or target_user.customer_id != current_user.customer_id:
+    # Tenant admins can only manage users in their customer organization
+    if current_user.user_type == UserType.TENANT_ADMIN:
+        if not current_user.tenant_id or target_user.tenant_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=403,
                 detail="You can only manage users within your group"
@@ -115,7 +115,7 @@ def get_user_capabilities(
     """
     Get a user's capabilities.
 
-    Group admins can view users in their customer organization.
+    Tenant admins can view users in their customer organization.
     System admins can view any user.
     """
     # Check if current user has permission to view capabilities
@@ -130,9 +130,9 @@ def get_user_capabilities(
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Group admins can only view users in their customer organization
-    if current_user.user_type == UserType.GROUP_ADMIN:
-        if not current_user.customer_id or target_user.customer_id != current_user.customer_id:
+    # Tenant admins can only view users in their customer organization
+    if current_user.user_type == UserType.TENANT_ADMIN:
+        if not current_user.tenant_id or target_user.tenant_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=403,
                 detail="You can only view users within your group"
@@ -156,7 +156,7 @@ def list_group_users(
     """
     List all users that the current user can manage.
 
-    Group admins see users in their customer organization.
+    Tenant admins see users in their customer organization.
     System admins see all users.
     """
     # Check if current user has permission to view users
@@ -168,11 +168,11 @@ def list_group_users(
 
     # Build query based on user type
     query = db.query(User)
-    if current_user.user_type == UserType.GROUP_ADMIN:
-        # Group admins only see users in their customer organization
-        if not current_user.customer_id:
+    if current_user.user_type == UserType.TENANT_ADMIN:
+        # Tenant admins only see users in their tenant organization
+        if not current_user.tenant_id:
             return {"users": []}
-        query = query.filter(User.customer_id == current_user.customer_id)
+        query = query.filter(User.tenant_id == current_user.tenant_id)
 
     # Execute query
     users = query.all()
@@ -186,7 +186,7 @@ def list_group_users(
                 "user_type": user.user_type.value,
                 "capabilities": get_user_capabilities_list(user, db),
                 "is_active": user.is_active,
-                "customer_id": user.customer_id,
+                "tenant_id": user.tenant_id,
             }
             for user in users
         ]

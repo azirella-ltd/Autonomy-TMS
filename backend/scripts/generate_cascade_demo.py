@@ -37,7 +37,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy import func
 
 from app.db.session import sync_engine
-from app.models.customer import Customer
+from app.models.tenant import Tenant
 from app.models.supply_chain_config import SupplyChainConfig, Site
 from app.models.planning_cascade import AllocationCommit, CommitStatus
 from app.models.powell_allocation import PowellAllocation
@@ -557,14 +557,14 @@ def main():
         # ------------- Prerequisites -------------
         print("\n0. Validating prerequisites...")
 
-        customer = db.query(Customer).filter(Customer.name == "Food Dist").first()
-        if not customer:
-            print("ERROR: 'Food Dist' customer not found. Run seed_dot_foods_demo.py first.")
+        tenant = db.query(Tenant).filter(Tenant.name == "Food Dist").first()
+        if not tenant:
+            print("ERROR: 'Food Dist' tenant not found. Run seed_dot_foods_demo.py first.")
             sys.exit(1)
-        print(f"   Customer: {customer.name} (id={customer.id})")
+        print(f"   Tenant: {tenant.name} (id={tenant.id})")
 
         config = db.query(SupplyChainConfig).filter(
-            SupplyChainConfig.customer_id == customer.id
+            SupplyChainConfig.tenant_id == tenant.id
         ).first()
         if not config:
             print("ERROR: No SC config for Food Dist. Run seed_dot_foods_demo.py first.")
@@ -582,7 +582,7 @@ def main():
         print("\n" + "-" * 60)
         print("Step 1: Planning Cascade")
         print("-" * 60)
-        cascade_result = step1_run_cascade(db, config.id, customer.id, user_id)
+        cascade_result = step1_run_cascade(db, config.id, tenant.id, user_id)
 
         # ------------- Step 2: Materialize Allocations -------------
         print("\n" + "-" * 60)

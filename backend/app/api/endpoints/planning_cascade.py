@@ -245,7 +245,7 @@ class CategoryPolicyInput(BaseModel):
 class PolicyEnvelopeCreate(BaseModel):
     """Create policy envelope request"""
     config_id: int
-    customer_id: int
+    tenant_id: int
     mode: str = Field("INPUT", description="FULL or INPUT")
     service_tiers: List[ServiceTierTargetInput]
     category_policies: List[CategoryPolicyInput]
@@ -267,7 +267,7 @@ class CustomerPlanOrder(BaseModel):
 class SupplyBaselinePackCreate(BaseModel):
     """Create SupBP request"""
     config_id: int
-    customer_id: int
+    tenant_id: int
     policy_envelope_id: int
     mode: str = Field("FULL", description="FULL or INPUT")
     customer_plan: Optional[List[CustomerPlanOrder]] = None
@@ -288,7 +288,7 @@ class AllocationCommitReview(BaseModel):
 class CascadeRunRequest(BaseModel):
     """Run full cascade request"""
     config_id: int
-    customer_id: int
+    tenant_id: int
     mode: str = Field("INPUT", description="FULL or INPUT")
     agent_mode: str = Field("copilot", description="copilot or autonomous")
     use_food_dist_defaults: bool = False
@@ -297,7 +297,7 @@ class CascadeRunRequest(BaseModel):
 class FeedBackSignalCreate(BaseModel):
     """Create feed-back signal request"""
     config_id: int
-    customer_id: int
+    tenant_id: int
     signal_type: str
     metric_name: str
     metric_value: float
@@ -351,7 +351,7 @@ def create_policy_envelope(
     try:
         envelope = service.create_policy_envelope(
             config_id=request.config_id,
-            customer_id=request.customer_id,
+            customer_id=request.tenant_id,
             params=params,
         )
         return envelope
@@ -430,7 +430,7 @@ def create_supply_baseline_pack(
     try:
         supbp = service.generate_supply_baseline_pack(
             config_id=request.config_id,
-            customer_id=request.customer_id,
+            customer_id=request.tenant_id,
             policy_envelope_id=request.policy_envelope_id,
             policy_envelope_hash=envelope.hash,
             inventory_state=inventory_state,
@@ -711,13 +711,13 @@ def run_cascade(
         if request.use_food_dist_defaults:
             result = orchestrator.run_cascade_for_food_dist(
                 config_id=request.config_id,
-                customer_id=request.customer_id,
+                customer_id=request.tenant_id,
                 user_id=user_id,
             )
         else:
             result = orchestrator.run_cascade(
                 config_id=request.config_id,
-                customer_id=request.customer_id,
+                customer_id=request.tenant_id,
                 user_id=user_id,
             )
 
@@ -763,7 +763,7 @@ def create_feed_back_signal(
     try:
         signal = orchestrator.record_feed_back_signal(
             config_id=request.config_id,
-            customer_id=request.customer_id,
+            customer_id=request.tenant_id,
             signal_type=request.signal_type,
             metric_name=request.metric_name,
             metric_value=request.metric_value,
@@ -858,15 +858,15 @@ class LayerLicenseUpdate(BaseModel):
     package_tier: Optional[str] = None
 
 
-@router.get("/layer-license/{customer_id}", tags=["License"])
+@router.get("/layer-license/{tenant_id}", tags=["License"])
 async def get_layer_licenses(
-    customer_id: int,
+    tenant_id: int,
     db: Session = Depends(get_db),
 ):
     """Get all layer licenses for a customer"""
     from app.models.planning_cascade import LayerLicense, LayerName, LayerMode
 
-    result = await db.execute(select(LayerLicense).where(LayerLicense.customer_id == customer_id))
+    result = await db.execute(select(LayerLicense).where(LayerLicense.customer_id == tenant_id))
     licenses = result.scalars().all()
 
     # Build full map with defaults for missing layers
@@ -889,12 +889,12 @@ async def get_layer_licenses(
             "expires_at": lic.expires_at.isoformat() if lic.expires_at else None,
         }
 
-    return {"customer_id": customer_id, "layers": layer_map}
+    return {"tenant_id": tenant_id, "layers": layer_map}
 
 
-@router.put("/layer-license/{customer_id}", tags=["License"])
+@router.put("/layer-license/{tenant_id}", tags=["License"])
 def update_layer_license(
-    customer_id: int,
+    tenant_id: int,
     request: LayerLicenseUpdate,
     user_id: Optional[int] = None,
     db: Session = Depends(get_sync_db),
@@ -910,7 +910,7 @@ def update_layer_license(
         raise HTTPException(status_code=400, detail=str(e))
 
     existing = db.query(LayerLicense).filter_by(
-        customer_id=customer_id, layer=layer_name
+        customer_id=tenant_id, layer=layer_name
     ).first()
 
     if existing:
@@ -931,12 +931,12 @@ def update_layer_license(
         db.add(new_license)
 
     db.commit()
-    return {"status": "ok", "customer_id": customer_id, "layer": request.layer, "mode": request.mode}
+    return {"status": "ok", "tenant_id": tenant_id, "layer": request.layer, "mode": request.mode}
 
 
-@router.put("/layer-license/{customer_id}/package/{tier}", tags=["License"])
+@router.put("/layer-license/{tenant_id}/package/{tier}", tags=["License"])
 def set_package_tier(
-    customer_id: int,
+    tenant_id: int,
     tier: str,
     user_id: Optional[int] = None,
     db: Session = Depends(get_sync_db),
@@ -992,7 +992,7 @@ def set_package_tier(
 
     for layer_name, mode in config.items():
         existing = db.query(LayerLicense).filter_by(
-            customer_id=customer_id, layer=layer_name
+            customer_id=tenant_id, layer=layer_name
         ).first()
 
         if existing:
@@ -1003,7 +1003,7 @@ def set_package_tier(
                 existing.activated_at = now
         else:
             db.add(LayerLicense(
-                customer_id=customer_id,
+                customer_id=tenant_id,
                 layer=layer_name,
                 mode=mode,
                 package_tier=tier,
@@ -1012,7 +1012,7 @@ def set_package_tier(
             ))
 
     db.commit()
-    return {"status": "ok", "customer_id": customer_id, "tier": tier, "layers": {k.value: v.value for k, v in config.items()}}
+    return {"status": "ok", "tenant_id": tenant_id, "tier": tier, "layers": {k.value: v.value for k, v in config.items()}}
 
 
 # =============================================================================

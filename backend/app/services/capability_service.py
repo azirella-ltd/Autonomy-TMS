@@ -23,7 +23,7 @@ def get_user_capabilities(user: User, db: Session) -> CapabilitySet:
     Get all capabilities for a user.
 
     This considers:
-    1. User type (SYSTEM_ADMIN, GROUP_ADMIN, USER)
+    1. User type (SYSTEM_ADMIN, TENANT_ADMIN, USER)
     2. Assigned RBAC roles (from database)
     3. Custom capability overrides
 

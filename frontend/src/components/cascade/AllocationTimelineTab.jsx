@@ -261,7 +261,7 @@ const PolicyContextPanel = ({ policy }) => {
 // AllocationTimelineTab
 // ---------------------------------------------------------------------------
 
-const AllocationTimelineTab = ({ configId, customerId }) => {
+const AllocationTimelineTab = ({ configId, tenantId }) => {
   // Product & location selection
   const [products, setProducts] = useState([]);
   const [locations, setLocations] = useState([]);

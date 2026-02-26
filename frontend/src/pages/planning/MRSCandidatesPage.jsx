@@ -60,7 +60,7 @@ const EMPTY_ROW = {
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
-const MRSCandidatesPage = ({ configId, customerId, policyEnvelopeId }) => {
+const MRSCandidatesPage = ({ configId, tenantId, policyEnvelopeId }) => {
   // --- shared state ---
   const [activeTab, setActiveTab] = useState(0);
   const [layerMode, setLayerMode] = useState(null);   // 'active' | 'input' | 'disabled'
@@ -81,10 +81,10 @@ const MRSCandidatesPage = ({ configId, customerId, policyEnvelopeId }) => {
   // Load layer license to determine mode
   // -----------------------------------------------------------------------
   useEffect(() => {
-    if (!customerId) return;
+    if (!tenantId) return;
     const loadLicense = async () => {
       try {
-        const license = await getLayerLicenses(customerId);
+        const license = await getLayerLicenses(tenantId);
         const mrsMode = license?.layers?.mrs?.mode || 'disabled';
         setLayerMode(mrsMode);
       } catch (err) {
@@ -93,7 +93,7 @@ const MRSCandidatesPage = ({ configId, customerId, policyEnvelopeId }) => {
       }
     };
     loadLicense();
-  }, [customerId]);
+  }, [tenantId]);
 
   // -----------------------------------------------------------------------
   // In ACTIVE mode, load the SupBP once the mode is known
@@ -155,7 +155,7 @@ const MRSCandidatesPage = ({ configId, customerId, policyEnvelopeId }) => {
       setError(null);
       const result = await createSupplyBaselinePack({
         config_id: configId,
-        customer_id: customerId,
+        tenant_id: tenantId,
         policy_envelope_id: policyEnvelopeId,
         mode: 'INPUT',
         customer_plan: customerPlan.filter(

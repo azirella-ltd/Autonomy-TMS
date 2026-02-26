@@ -25,7 +25,7 @@ from app.models.supply_chain_config import (
     Market,
     MarketDemand,
 )
-from app.models.customer import Customer
+from app.models.tenant import Tenant
 from app.core.time_buckets import TimeBucket
 from app.services.scenario_branching_service import (
     ScenarioBranchingService,

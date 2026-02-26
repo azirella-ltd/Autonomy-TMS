@@ -14,7 +14,7 @@ from sqlalchemy import select, delete
 
 from app.db.session import async_session_factory
 from app.models.supply_chain_config import SupplyChainConfig
-from app.models.customer import Customer
+from app.models.tenant import Tenant
 from app.models.scenario import Scenario
 from app.models.aws_sc_planning import (
     OrderAggregationPolicy,
@@ -40,20 +40,20 @@ async def test_scenario_service_integration():
         )
         config = result.scalar_one_or_none()
 
-        result = await db.execute(select(Customer).filter(Customer.id == 2))
-        customer = result.scalar_one_or_none()
+        result = await db.execute(select(Tenant).filter(Tenant.id == 2))
+        tenant = result.scalar_one_or_none()
 
-        if not config or not customer:
-            print("❌ Config or customer not found")
+        if not config or not tenant:
+            print("❌ Config or tenant not found")
             return False
 
         # Clean up any existing test data
         await db.execute(delete(AggregatedOrder).filter(
-            AggregatedOrder.customer_id == customer.id,
+            AggregatedOrder.tenant_id == tenant.id,
             AggregatedOrder.config_id == config.id
         ))
         await db.execute(delete(OrderAggregationPolicy).filter(
-            OrderAggregationPolicy.customer_id == customer.id,
+            OrderAggregationPolicy.tenant_id == tenant.id,
             OrderAggregationPolicy.config_id == config.id
         ))
         await db.commit()
@@ -79,7 +79,7 @@ async def test_scenario_service_integration():
         print("TEST 1: Scenario without aggregation flag")
         scenario1 = Scenario(
             name="No Aggregation Test",
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             supply_chain_config_id=config.id,
             use_aws_sc_planning=True,
             max_rounds=10,
@@ -122,7 +122,7 @@ async def test_scenario_service_integration():
         print("TEST 2: Scenario with aggregation flag enabled")
         scenario2 = Scenario(
             name="Aggregation Test",
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             supply_chain_config_id=config.id,
             use_aws_sc_planning=True,
             max_rounds=10,
@@ -149,7 +149,7 @@ async def test_scenario_service_integration():
             order_multiple=10.0,
             fixed_order_cost=100.0,
             is_active=True,
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             config_id=config.id
         )
         db.add(policy)
@@ -196,7 +196,7 @@ async def test_scenario_service_integration():
         await db.commit()
 
         await db.execute(delete(OrderAggregationPolicy).filter(
-            OrderAggregationPolicy.customer_id == customer.id,
+            OrderAggregationPolicy.tenant_id == tenant.id,
             OrderAggregationPolicy.config_id == config.id
         ))
         await db.commit()
@@ -207,7 +207,7 @@ async def test_scenario_service_integration():
 
         scenario3 = Scenario(
             name="Aggregation + Capacity Test",
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             supply_chain_config_id=config.id,
             use_aws_sc_planning=True,
             max_rounds=10,
@@ -236,7 +236,7 @@ async def test_scenario_service_integration():
             capacity_type='production',
             capacity_period='week',
             allow_overflow=False,
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             config_id=config.id
         )
         db.add(capacity)
@@ -253,7 +253,7 @@ async def test_scenario_service_integration():
             order_multiple=10.0,
             fixed_order_cost=100.0,
             is_active=True,
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             config_id=config.id
         )
         db.add(policy)
@@ -339,11 +339,11 @@ async def test_scenario_service_integration():
         await db.commit()
 
         await db.execute(delete(ProductionCapacity).filter(
-            ProductionCapacity.customer_id == customer.id,
+            ProductionCapacity.tenant_id == tenant.id,
             ProductionCapacity.config_id == config.id
         ))
         await db.execute(delete(OrderAggregationPolicy).filter(
-            OrderAggregationPolicy.customer_id == customer.id,
+            OrderAggregationPolicy.tenant_id == tenant.id,
             OrderAggregationPolicy.config_id == config.id
         ))
         await db.commit()

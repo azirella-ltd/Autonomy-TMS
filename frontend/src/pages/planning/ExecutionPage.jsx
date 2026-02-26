@@ -649,7 +649,7 @@ function CDCMonitorTab() {
 // Main Component
 // ---------------------------------------------------------------------------
 
-const ExecutionPage = ({ configId, customerId }) => {
+const ExecutionPage = ({ configId, tenantId }) => {
   const [tabIndex, setTabIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [licenses, setLicenses] = useState(null);
@@ -657,13 +657,13 @@ const ExecutionPage = ({ configId, customerId }) => {
 
   useEffect(() => {
     loadLicenses();
-  }, [customerId]);
+  }, [tenantId]);
 
   const loadLicenses = async () => {
     try {
       setLoading(true);
-      if (customerId) {
-        const data = await getLayerLicenses(customerId);
+      if (tenantId) {
+        const data = await getLayerLicenses(tenantId);
         setLicenses(data);
         // Check if execution layer includes TRM capability
         const execLayer = (data.layers || []).find((l) => l.layer === 'execution');

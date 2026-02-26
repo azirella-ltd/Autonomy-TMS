@@ -40,7 +40,7 @@ if str(BACKEND_ROOT) not in sys.path:
 from sqlalchemy.orm import Session, sessionmaker
 from app.db.session import sync_engine
 from app.models.user import User, UserTypeEnum, PowellRoleEnum
-from app.models.customer import Customer, CustomerMode
+from app.models.tenant import Tenant, TenantMode
 from app.models.rbac import Role, Permission
 from app.core.security import get_password_hash
 from app.core.capabilities import (
@@ -70,11 +70,11 @@ DEFAULT_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")
 # User configurations (Powell-aligned)
 DEMO_USERS = [
     {
-        "username": "fd_group_admin",
+        "username": "fd_tenant_admin",
         "email": "admin@distdemo.com",
         "full_name": "Food Dist Admin",
-        "user_type": UserTypeEnum.GROUP_ADMIN,
-        "is_group_admin": True,
+        "user_type": UserTypeEnum.TENANT_ADMIN,
+        "is_tenant_admin": True,
         "powell_role": None,  # Customer admin uses built-in capabilities
         "site_scope": None,  # Full access
         "product_scope": None,  # Full access
@@ -82,14 +82,14 @@ DEMO_USERS = [
     # ==========================================================================
     # DEMO USER: Single user with ALL Powell capabilities (no login/logout needed)
     # Lands on Executive Dashboard, can navigate to all Powell dashboards
-    # NOTE: user_type=USER with DEMO_ALL role (NOT GROUP_ADMIN)
+    # NOTE: user_type=USER with DEMO_ALL role (NOT TENANT_ADMIN)
     # ==========================================================================
     {
         "username": "demo",
         "email": "demo@distdemo.com",
         "full_name": "Demo User (All Roles)",
-        "user_type": UserTypeEnum.USER,  # USER, not GROUP_ADMIN
-        "is_group_admin": False,
+        "user_type": UserTypeEnum.USER,  # USER, not TENANT_ADMIN
+        "is_tenant_admin": False,
         "powell_role": "DEMO_ALL",  # Union of SC_VP + SOP_DIRECTOR + MPS_MANAGER capabilities
         "site_scope": None,  # Full access
         "product_scope": None,  # Full access
@@ -102,7 +102,7 @@ DEMO_USERS = [
         "email": "scvp@distdemo.com",
         "full_name": "Sarah Chen (VP Supply Chain)",
         "user_type": UserTypeEnum.USER,
-        "is_group_admin": False,
+        "is_tenant_admin": False,
         "powell_role": "SC_VP",
         "site_scope": None,  # Full access (strategic level)
         "product_scope": None,  # Full access (strategic level)
@@ -112,7 +112,7 @@ DEMO_USERS = [
         "email": "sopdir@distdemo.com",
         "full_name": "Michael Torres (S&OP Director)",
         "user_type": UserTypeEnum.USER,
-        "is_group_admin": False,
+        "is_tenant_admin": False,
         "powell_role": "SOP_DIRECTOR",
         "site_scope": None,  # Full access (for demo; production would restrict)
         "product_scope": ["CATEGORY_Frozen", "CATEGORY_Refrigerated"],  # Product category scope
@@ -122,7 +122,7 @@ DEMO_USERS = [
         "email": "mpsmanager@distdemo.com",
         "full_name": "Jennifer Park (MPS Manager)",
         "user_type": UserTypeEnum.USER,
-        "is_group_admin": False,
+        "is_tenant_admin": False,
         "powell_role": "MPS_MANAGER",
         "site_scope": ["REGION_Central", "SITE_DC-Chicago", "SITE_DC-Indianapolis"],  # Site scope
         "product_scope": None,  # Full product access within sites
@@ -137,7 +137,7 @@ DEMO_USERS = [
         "email": "atp@distdemo.com",
         "full_name": "David Kim (ATP Analyst)",
         "user_type": UserTypeEnum.USER,
-        "is_group_admin": False,
+        "is_tenant_admin": False,
         "powell_role": "ATP_ANALYST",
         "site_scope": ["REGION_Central", "SITE_DC-Chicago"],  # Assigned sites
         "product_scope": None,  # All products at assigned sites
@@ -147,7 +147,7 @@ DEMO_USERS = [
         "email": "rebalancing@distdemo.com",
         "full_name": "Maria Santos (Rebalancing Analyst)",
         "user_type": UserTypeEnum.USER,
-        "is_group_admin": False,
+        "is_tenant_admin": False,
         "powell_role": "REBALANCING_ANALYST",
         "site_scope": ["REGION_Central", "SITE_DC-Chicago", "SITE_DC-Indianapolis"],  # Cross-site scope
         "product_scope": None,  # All products for transfers
@@ -157,7 +157,7 @@ DEMO_USERS = [
         "email": "po@distdemo.com",
         "full_name": "James Wilson (PO Analyst)",
         "user_type": UserTypeEnum.USER,
-        "is_group_admin": False,
+        "is_tenant_admin": False,
         "powell_role": "PO_ANALYST",
         "site_scope": ["SITE_DC-Chicago"],  # Single site focus
         "product_scope": ["CATEGORY_Frozen", "CATEGORY_Refrigerated"],  # Product category scope
@@ -167,7 +167,7 @@ DEMO_USERS = [
         "email": "ordertracking@distdemo.com",
         "full_name": "Lisa Chen (Order Tracking Analyst)",
         "user_type": UserTypeEnum.USER,
-        "is_group_admin": False,
+        "is_tenant_admin": False,
         "powell_role": "ORDER_TRACKING_ANALYST",
         "site_scope": None,  # All sites (exceptions can come from anywhere)
         "product_scope": None,  # All products
@@ -208,7 +208,7 @@ def create_or_get_user(
     email: str,
     full_name: str,
     user_type: UserTypeEnum,
-    customer_id: int,
+    tenant_id: int,
     powell_role: PowellRoleEnum = None,
     site_scope: list = None,
     product_scope: list = None,
@@ -244,8 +244,8 @@ def create_or_get_user(
             print(f"  Fixing user '{username}' is_superuser: True -> False")
             existing.is_superuser = False
             updated = True
-        if customer_id and existing.customer_id != customer_id:
-            existing.customer_id = customer_id
+        if tenant_id and existing.tenant_id != tenant_id:
+            existing.tenant_id = tenant_id
             updated = True
         if updated:
             db.flush()
@@ -260,7 +260,7 @@ def create_or_get_user(
         full_name=full_name,
         hashed_password=get_password_hash(DEFAULT_PASSWORD),
         user_type=user_type,
-        customer_id=customer_id,
+        tenant_id=tenant_id,
         powell_role=powell_role,
         is_active=True,
         is_superuser=False,
@@ -274,23 +274,23 @@ def create_or_get_user(
     return user
 
 
-def create_or_get_customer(db: Session, admin_user: User) -> Customer:
-    """Create Food Dist customer or return existing one."""
-    existing = db.query(Customer).filter(Customer.name == FOOD_DIST_CUSTOMER_NAME).first()
+def create_or_get_tenant(db: Session, admin_user: User) -> Tenant:
+    """Create Food Dist tenant or return existing one."""
+    existing = db.query(Tenant).filter(Tenant.name == FOOD_DIST_CUSTOMER_NAME).first()
     if existing:
-        print(f"Customer '{FOOD_DIST_CUSTOMER_NAME}' already exists (id={existing.id})")
+        print(f"Tenant '{FOOD_DIST_CUSTOMER_NAME}' already exists (id={existing.id})")
         return existing
 
-    customer = Customer(
+    tenant = Tenant(
         name=FOOD_DIST_CUSTOMER_NAME,
         description=FOOD_DIST_DESCRIPTION,
         admin_id=admin_user.id,
-        mode=CustomerMode.PRODUCTION,  # Operational customer
+        mode=TenantMode.PRODUCTION,  # Operational tenant
     )
-    db.add(customer)
+    db.add(tenant)
     db.flush()
-    print(f"Created customer '{FOOD_DIST_CUSTOMER_NAME}' (id={customer.id})")
-    return customer
+    print(f"Created tenant '{FOOD_DIST_CUSTOMER_NAME}' (id={tenant.id})")
+    return tenant
 
 
 def create_powell_role(
@@ -346,8 +346,8 @@ def create_powell_role(
     return role
 
 
-def _generate_sc_config_for_group(customer_id: int):
-    """Generate Food Dist SC config for an existing customer using async generator."""
+def _generate_sc_config_for_group(tenant_id: int):
+    """Generate Food Dist SC config for an existing tenant using async generator."""
     from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
     from sqlalchemy.orm import sessionmaker as async_sessionmaker
     from app.core.db_urls import resolve_async_database_url
@@ -361,12 +361,12 @@ def _generate_sc_config_for_group(customer_id: int):
             try:
                 result = await generate_food_dist_config(
                     db=session,
-                    existing_customer_id=customer_id,
+                    existing_tenant_id=tenant_id,
                 )
                 config_id = result.get("config_id")
                 status = result.get("summary", {}).get("status")
                 if status == "already_exists":
-                    print(f"  SC config already exists for customer {customer_id} (config_id={config_id})")
+                    print(f"  SC config already exists for tenant {tenant_id} (config_id={config_id})")
                 else:
                     print(f"  Created SC config (id={config_id}) with:")
                     print(f"    Suppliers: {result.get('suppliers_created', 0)}")
@@ -400,25 +400,25 @@ def main():
         print("\n1. Ensuring permissions are seeded...")
         seed_default_permissions(db)
 
-        # Step 2: Create customer admin user first (needed for customer creation)
-        print("\n2. Creating customer admin user...")
-        admin_config = next(u for u in DEMO_USERS if u["is_group_admin"])
+        # Step 2: Create tenant admin user first (needed for tenant creation)
+        print("\n2. Creating tenant admin user...")
+        admin_config = next(u for u in DEMO_USERS if u["is_tenant_admin"])
         admin_user = create_or_get_user(
             db=db,
             username=admin_config["username"],
             email=admin_config["email"],
             full_name=admin_config["full_name"],
             user_type=admin_config["user_type"],
-            customer_id=None,  # Will be updated after customer creation
+            tenant_id=None,  # Will be updated after tenant creation
         )
         db.commit()
 
-        # Step 3: Create Food Dist customer
-        print("\n3. Creating Food Dist customer...")
-        customer = create_or_get_customer(db, admin_user)
+        # Step 3: Create Food Dist tenant
+        print("\n3. Creating Food Dist tenant...")
+        tenant = create_or_get_tenant(db, admin_user)
 
-        # Update admin user's customer_id
-        admin_user.customer_id = customer.id
+        # Update admin user's tenant_id
+        admin_user.tenant_id = tenant.id
         db.commit()
 
         # Step 4: Create RBAC service and Powell roles
@@ -427,7 +427,7 @@ def main():
 
         powell_roles = {}
         for role_name in POWELL_ROLE_CAPABILITIES.keys():
-            role = create_powell_role(db, rbac_service, role_name, customer_id=customer.id)
+            role = create_powell_role(db, rbac_service, role_name, customer_id=tenant.id)
             powell_roles[role_name] = role
 
         db.commit()
@@ -435,7 +435,7 @@ def main():
         # Step 5: Create other users and assign roles
         print("\n5. Creating Powell-aligned users...")
         for user_config in DEMO_USERS:
-            if user_config["is_group_admin"]:
+            if user_config["is_tenant_admin"]:
                 continue  # Already created
 
             # Convert powell_role string to enum (if specified)
@@ -453,13 +453,13 @@ def main():
                 email=user_config["email"],
                 full_name=user_config["full_name"],
                 user_type=user_config["user_type"],
-                customer_id=customer.id,
+                tenant_id=tenant.id,
                 powell_role=powell_role_enum,  # Store on user for landing page routing
                 site_scope=user_config.get("site_scope"),
                 product_scope=user_config.get("product_scope"),
             )
 
-            # Assign RBAC role for capabilities (can be customized by customer admin)
+            # Assign RBAC role for capabilities (can be customized by tenant admin)
             if powell_role_str:
                 role = powell_roles.get(powell_role_str)
                 if role and role not in user.roles:
@@ -468,21 +468,21 @@ def main():
 
         db.commit()
 
-        # Step 6: Generate Food Dist SC config for this customer (async)
-        print("\n6. Generating Food Dist supply chain config for customer...")
-        _generate_sc_config_for_group(customer.id)
+        # Step 6: Generate Food Dist SC config for this tenant (async)
+        print("\n6. Generating Food Dist supply chain config for tenant...")
+        _generate_sc_config_for_group(tenant.id)
 
         # Step 7: Print summary
         print("\n" + "=" * 70)
         print("Food Dist Demo Setup Complete!")
         print("=" * 70)
-        print(f"\nCustomer: {FOOD_DIST_CUSTOMER_NAME} (ID: {customer.id})")
-        print(f"Mode: {customer.mode.value}")
+        print(f"\nTenant: {FOOD_DIST_CUSTOMER_NAME} (ID: {tenant.id})")
+        print(f"Mode: {tenant.mode.value}")
         print(f"\nUsers created (password: {DEFAULT_PASSWORD}):")
         print("-" * 50)
 
         for user_config in DEMO_USERS:
-            powell_role = user_config.get("powell_role", "GROUP_ADMIN")
+            powell_role = user_config.get("powell_role", "TENANT_ADMIN")
             level = {
                 "SC_VP": "Strategic/CFA",
                 "SOP_DIRECTOR": "Tactical/S&OP",

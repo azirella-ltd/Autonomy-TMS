@@ -48,13 +48,13 @@ async def list_tenants(db: AsyncSession = Depends(get_db), current_user: User = 
         except ValueError:
             user_type = None
 
-    # Only SYSTEM_ADMIN sees all tenants; GROUP_ADMIN sees only their tenant
+    # Only SYSTEM_ADMIN sees all tenants; TENANT_ADMIN sees only their tenant
     if user_type == UserTypeEnum.SYSTEM_ADMIN:
         stmt = select(Tenant).options(joinedload(Tenant.admin))
         result = await db.execute(stmt)
         return result.scalars().unique().all()
 
-    is_tenant_admin = user_type == UserTypeEnum.GROUP_ADMIN
+    is_tenant_admin = user_type == UserTypeEnum.TENANT_ADMIN
 
     if is_tenant_admin and current_user.tenant_id:
         stmt = select(Tenant).options(joinedload(Tenant.admin)).filter(Tenant.id == current_user.tenant_id)
@@ -113,7 +113,7 @@ async def get_tenant_users(
 
     # Check permissions
     is_system_admin = user_type == UserTypeEnum.SYSTEM_ADMIN
-    is_tenant_admin = user_type == UserTypeEnum.GROUP_ADMIN
+    is_tenant_admin = user_type == UserTypeEnum.TENANT_ADMIN
 
     if not is_system_admin and not is_tenant_admin:
         raise HTTPException(status_code=403, detail="Not enough permissions")

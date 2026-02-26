@@ -351,14 +351,14 @@ class CalibrationFeedbackService:
 
     async def recalibrate_all_stale(
         self,
-        customer_id: int,
+        tenant_id: int,
         max_age_hours: int = RECALIBRATION_INTERVAL_HOURS,
     ) -> List[int]:
         """
         Recalibrate all belief states that haven't been updated recently.
 
         Args:
-            customer_id: Customer ID to recalibrate
+            tenant_id: Customer ID to recalibrate
             max_age_hours: Maximum hours since last recalibration
 
         Returns:
@@ -370,7 +370,7 @@ class CalibrationFeedbackService:
         result = await self.db.execute(
             select(PowellBeliefState)
             .where(
-                PowellBeliefState.customer_id == customer_id,
+                PowellBeliefState.tenant_id == tenant_id,
                 (PowellBeliefState.last_recalibration == None) |  # noqa: E711
                 (PowellBeliefState.last_recalibration < cutoff)
             )
@@ -385,12 +385,12 @@ class CalibrationFeedbackService:
             except Exception as e:
                 logger.error(f"Failed to recalibrate belief state {state.id}: {e}")
 
-        logger.info(f"Recalibrated {len(recalibrated_ids)} belief states for customer {customer_id}")
+        logger.info(f"Recalibrated {len(recalibrated_ids)} belief states for tenant {tenant_id}")
         return recalibrated_ids
 
     async def get_calibration_summary(
         self,
-        customer_id: int,
+        tenant_id: int,
         lookback_days: int = 7,
     ) -> Dict[str, Any]:
         """
@@ -400,7 +400,7 @@ class CalibrationFeedbackService:
         belief states for the customer.
 
         Args:
-            customer_id: Customer ID
+            tenant_id: Customer ID
             lookback_days: Days to look back
 
         Returns:
@@ -413,7 +413,7 @@ class CalibrationFeedbackService:
             select(PowellCalibrationLog)
             .join(PowellBeliefState)
             .where(
-                PowellBeliefState.customer_id == customer_id,
+                PowellBeliefState.tenant_id == tenant_id,
                 PowellCalibrationLog.observed_at >= cutoff,
             )
         )
@@ -441,7 +441,7 @@ class CalibrationFeedbackService:
         drift_result = await self.db.execute(
             select(func.count(PowellBeliefState.id))
             .where(
-                PowellBeliefState.customer_id == customer_id,
+                PowellBeliefState.tenant_id == tenant_id,
                 PowellBeliefState.drift_detected == True,  # noqa: E712
             )
         )

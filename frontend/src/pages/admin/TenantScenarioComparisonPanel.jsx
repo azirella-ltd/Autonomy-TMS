@@ -40,7 +40,7 @@ const formatCurrency = (value) => {
   return currencyFormatter.format(parsed);
 };
 
-const GroupGameComparisonPanel = ({
+const TenantScenarioComparisonPanel = ({
   games = [],
   loading = false,
   error = null,
@@ -63,7 +63,7 @@ const GroupGameComparisonPanel = ({
 
     const filteredByGroup = games.filter((game) => {
       if (!game) return false;
-      const targetGroup = game.customer_id ?? game?.config?.customer_id ?? null;
+      const targetGroup = game.tenant_id ?? game?.config?.tenant_id ?? null;
       if (groupId != null) {
         if (targetGroup != null && Number.isFinite(Number(targetGroup))) {
           return Number(targetGroup) === Number(groupId);
@@ -314,4 +314,4 @@ const GroupGameComparisonPanel = ({
   );
 };
 
-export default GroupGameComparisonPanel;
+export default TenantScenarioComparisonPanel;

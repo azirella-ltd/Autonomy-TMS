@@ -41,7 +41,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from sqlalchemy.orm import Session, sessionmaker
 from app.db.session import sync_engine
-from app.models.customer import Customer, CustomerMode
+from app.models.tenant import Tenant, TenantMode
 from app.models.user import User
 from app.models.supply_chain_config import SupplyChainConfig, Site, TransportationLane
 from app.models.sc_entities import (
@@ -718,13 +718,13 @@ def seed_mps_plan(db: Session, config: SupplyChainConfig, dc_site: Site,
     return item_count
 
 
-def seed_planning_cycles(db: Session, config: SupplyChainConfig, customer: Customer,
+def seed_planning_cycles(db: Session, config: SupplyChainConfig, tenant: Tenant,
                          user: User) -> int:
     """Create S&OP planning cycles with snapshots."""
     print("\n6. Seeding Planning Cycles...")
 
     existing = db.query(PlanningCycle).filter(
-        PlanningCycle.customer_id == customer.id,
+        PlanningCycle.tenant_id == tenant.id,
     ).count()
     if existing > 0:
         print(f"   Planning cycles already exist ({existing} cycles). Skipping.")
@@ -753,7 +753,7 @@ def seed_planning_cycles(db: Session, config: SupplyChainConfig, customer: Custo
             code=f"2026-W{week_num:02d}",
             cycle_type=CycleType.WEEKLY,
             description=f"Weekly S&OP planning cycle for week {week_num}",
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             config_id=config.id,
             period_start=cycle_start,
             period_end=cycle_end,
@@ -818,12 +818,12 @@ def seed_planning_cycles(db: Session, config: SupplyChainConfig, customer: Custo
     return count
 
 
-def seed_performance_metrics(db: Session, customer: Customer) -> int:
+def seed_performance_metrics(db: Session, tenant: Tenant) -> int:
     """Generate 12 months of agent performance metrics."""
     print("\n7. Seeding Performance Metrics (12 months)...")
 
     existing = db.query(PerformanceMetric).filter(
-        PerformanceMetric.customer_id == customer.id,
+        PerformanceMetric.tenant_id == tenant.id,
     ).count()
     if existing > 0:
         print(f"   Performance metrics already exist ({existing} records). Skipping.")
@@ -853,7 +853,7 @@ def seed_performance_metrics(db: Session, customer: Customer) -> int:
         agent_decisions_count = int(total_decisions * automation_pct / 100)
 
         overall = PerformanceMetric(
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             period_start=month_start,
             period_end=month_end,
             period_type="monthly",
@@ -882,7 +882,7 @@ def seed_performance_metrics(db: Session, customer: Customer) -> int:
             cat_agent_count = int(cat_decisions * min(100, cat_auto) / 100)
 
             cat_metric = PerformanceMetric(
-                customer_id=customer.id,
+                tenant_id=tenant.id,
                 period_start=month_start,
                 period_end=month_end,
                 period_type="monthly",
@@ -909,12 +909,12 @@ def seed_performance_metrics(db: Session, customer: Customer) -> int:
     return count
 
 
-def seed_sop_worklist(db: Session, customer: Customer) -> int:
+def seed_sop_worklist(db: Session, tenant: Tenant) -> int:
     """Generate S&OP worklist items."""
     print("\n8. Seeding S&OP Worklist Items...")
 
     existing = db.query(SOPWorklistItem).filter(
-        SOPWorklistItem.customer_id == customer.id,
+        SOPWorklistItem.tenant_id == tenant.id,
     ).count()
     if existing > 0:
         print(f"   Worklist items already exist ({existing} records). Skipping.")
@@ -925,7 +925,7 @@ def seed_sop_worklist(db: Session, customer: Customer) -> int:
         urgency_map = {"URGENT": DecisionUrgency.URGENT, "STANDARD": DecisionUrgency.STANDARD, "LOW": DecisionUrgency.LOW}
 
         item = SOPWorklistItem(
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             item_code=item_def["item_code"],
             item_name=item_def["item_name"],
             category=item_def["category"],
@@ -949,12 +949,12 @@ def seed_sop_worklist(db: Session, customer: Customer) -> int:
     return count
 
 
-def seed_agent_decisions(db: Session, customer: Customer, products: list) -> int:
+def seed_agent_decisions(db: Session, tenant: Tenant, products: list) -> int:
     """Generate agent decision records."""
     print("\n9. Seeding Agent Decisions...")
 
     existing = db.query(AgentDecision).filter(
-        AgentDecision.customer_id == customer.id,
+        AgentDecision.tenant_id == tenant.id,
     ).count()
     if existing > 0:
         print(f"   Agent decisions already exist ({existing} records). Skipping.")
@@ -1034,7 +1034,7 @@ def seed_agent_decisions(db: Session, customer: Customer, products: list) -> int
         }
 
         decision = AgentDecision(
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             decision_type=template["type"],
             item_code=product.id,
             item_name=product.description or sku,
@@ -1214,7 +1214,7 @@ ORDER_TRACKING_DECISION_TEMPLATES = [
 
 
 def seed_trm_worklist_decisions(
-    db: Session, customer: Customer, config: SupplyChainConfig,
+    db: Session, tenant: Tenant, config: SupplyChainConfig,
     dc_site: Site, site_map: dict, products: list,
 ) -> int:
     """
@@ -1233,7 +1233,7 @@ def seed_trm_worklist_decisions(
 
     # Check for existing TRM-specialist decisions (avoid duplicates)
     existing = db.query(AgentDecision).filter(
-        AgentDecision.customer_id == customer.id,
+        AgentDecision.tenant_id == tenant.id,
         AgentDecision.agent_type == "trm_specialist",
     ).count()
     if existing > 0:
@@ -1451,7 +1451,7 @@ def seed_trm_worklist_decisions(
             }
 
             decision = AgentDecision(
-                customer_id=customer.id,
+                tenant_id=tenant.id,
                 decision_type=decision_type,
                 item_code=product.id,
                 item_name=product.description or sku,
@@ -1524,7 +1524,7 @@ def seed_trm_worklist_decisions(
                     float(decision.agent_confidence or 0),
                 ]
                 replay_entry = TRMReplayBuffer(
-                    customer_id=customer.id,
+                    tenant_id=tenant.id,
                     config_id=config.id,
                     trm_type=trm_type,
                     decision_log_id=decision.id,
@@ -1552,7 +1552,7 @@ def seed_trm_worklist_decisions(
 
 
 def seed_trm_decision_logs(
-    db: Session, customer: Customer, config: SupplyChainConfig,
+    db: Session, tenant: Tenant, config: SupplyChainConfig,
     dc_site: Site, products: list,
 ) -> int:
     """
@@ -1563,7 +1563,7 @@ def seed_trm_decision_logs(
 
     # Check for existing
     existing_atp = db.query(ATPDecisionLog).filter(
-        ATPDecisionLog.customer_id == customer.id,
+        ATPDecisionLog.tenant_id == tenant.id,
     ).count()
     if existing_atp > 0:
         print(f"   TRM decision logs already exist ({existing_atp} ATP records). Skipping.")
@@ -1603,7 +1603,7 @@ def seed_trm_decision_logs(
         fulfilled = min(qty, available) if source != DecisionSource.AI_MODIFIED else int(qty * random.uniform(0.5, 0.9))
 
         log_entry = ATPDecisionLog(
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             config_id=config.id,
             site_id=dc_site.id,
             product_id=int(product.id.split("_")[-1].replace("FP", "1").replace("RD", "2").replace("DP", "3").replace("FD", "4").replace("BV", "5")[:3]) if product.id.split("_")[-1][:2].isalpha() else 1,
@@ -1671,7 +1671,7 @@ def seed_trm_decision_logs(
         source = DecisionSource.AI_MODIFIED if i < 3 else DecisionSource.AI_ACCEPTED
 
         log_entry = RebalancingDecisionLog(
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             config_id=config.id,
             product_id=i + 1,
             decision_date=TODAY - timedelta(days=days_ago),
@@ -1727,7 +1727,7 @@ def seed_trm_decision_logs(
         source = DecisionSource.AI_MODIFIED if i % 3 == 0 else DecisionSource.AI_ACCEPTED
 
         log_entry = PODecisionLog(
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             config_id=config.id,
             site_id=dc_site.id,
             product_id=i + 1,
@@ -1791,7 +1791,7 @@ def seed_trm_decision_logs(
         source = DecisionSource.AI_MODIFIED if i < 2 else DecisionSource.AI_ACCEPTED
 
         log_entry = OrderTrackingDecisionLog(
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             config_id=config.id,
             order_id=f"PO-DF-2026-{1000 + random.randint(0, 19)}",
             order_type="PO",
@@ -1846,7 +1846,7 @@ def seed_trm_decision_logs(
 
 
 def seed_purchase_orders(db: Session, config: SupplyChainConfig, dc_site: Site,
-                         site_map: dict, products: list, customer: Customer) -> int:
+                         site_map: dict, products: list, tenant: Tenant) -> int:
     """Generate purchase orders with line items."""
     print("\n10. Seeding Purchase Orders...")
 
@@ -1885,7 +1885,7 @@ def seed_purchase_orders(db: Session, config: SupplyChainConfig, dc_site: Site,
             supplier_site_id=supplier_site.id,
             destination_site_id=dc_site.id,
             config_id=config.id,
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             order_type="po",
             status=status,
             order_date=order_date,
@@ -2000,7 +2000,7 @@ def seed_inventory_optimization(db: Session, dc_site: Site, products: list,
     return count
 
 
-def seed_supply_plan_requests(db: Session, config: SupplyChainConfig, customer: Customer,
+def seed_supply_plan_requests(db: Session, config: SupplyChainConfig, tenant: Tenant,
                               user: User) -> int:
     """Generate supply plan request/result records (async plan generation history)."""
     if not HAS_SUPPLY_PLAN_REQUESTS:
@@ -2197,23 +2197,23 @@ def main():
 
     try:
         # --- Find Food Dist customer ---
-        customer = db.query(Customer).filter(Customer.name == "Food Dist").first()
-        if not customer:
-            print("\nERROR: Food Dist customer not found!")
+        tenant = db.query(Tenant).filter(Tenant.name == "Food Dist").first()
+        if not tenant:
+            print("\nERROR: Food Dist tenant not found!")
             print("Run seed_dot_foods_demo.py first.")
             return
 
-        print(f"\nFound customer: {customer.name} (ID: {customer.id}, Mode: {customer.mode})")
+        print(f"\nFound customer: {tenant.name} (ID: {tenant.id}, Mode: {tenant.mode})")
 
         # --- Find SC config ---
         config = db.query(SupplyChainConfig).filter(
-            SupplyChainConfig.customer_id == customer.id,
+            SupplyChainConfig.tenant_id == tenant.id,
             SupplyChainConfig.name.ilike("%Food Dist%"),
         ).first()
         if not config:
             # Try any config in this customer
             config = db.query(SupplyChainConfig).filter(
-                SupplyChainConfig.customer_id == customer.id,
+                SupplyChainConfig.tenant_id == tenant.id,
             ).first()
         if not config:
             print("\nERROR: No supply chain config found for Food Dist customer!")
@@ -2253,7 +2253,7 @@ def main():
         print(f"Found {len(products)} products")
 
         # --- Find company ---
-        company_id = f"FD_CORP_{customer.id}"
+        company_id = f"FD_CORP_{tenant.id}"
 
         # --- Find demo user ---
         user = db.query(User).filter(User.email == "demo@distdemo.com").first()
@@ -2270,16 +2270,16 @@ def main():
         total += seed_inventory_levels(db, config, dc_site, products, company_id)
         total += seed_supply_plans(db, config, dc_site, site_map, products, company_id)
         total += seed_mps_plan(db, config, dc_site, products, user)
-        total += seed_planning_cycles(db, config, customer, user)
-        total += seed_performance_metrics(db, customer)
-        total += seed_sop_worklist(db, customer)
-        total += seed_agent_decisions(db, customer, products)
-        total += seed_purchase_orders(db, config, dc_site, site_map, products, customer)
+        total += seed_planning_cycles(db, config, tenant, user)
+        total += seed_performance_metrics(db, tenant)
+        total += seed_sop_worklist(db, tenant)
+        total += seed_agent_decisions(db, tenant, products)
+        total += seed_purchase_orders(db, config, dc_site, site_map, products, tenant)
         total += seed_inventory_optimization(db, dc_site, products, company_id)
-        total += seed_supply_plan_requests(db, config, customer, user)
+        total += seed_supply_plan_requests(db, config, tenant, user)
         total += seed_production_orders(db, config, dc_site, products, user)
-        total += seed_trm_worklist_decisions(db, customer, config, dc_site, site_map, products)
-        total += seed_trm_decision_logs(db, customer, config, dc_site, products)
+        total += seed_trm_worklist_decisions(db, tenant, config, dc_site, site_map, products)
+        total += seed_trm_decision_logs(db, tenant, config, dc_site, products)
 
         db.commit()
 

@@ -20,7 +20,7 @@ import {
 } from '../../components/common';
 import { ArrowLeft, Pencil, Eye, ChevronRight } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { isGroupAdmin as isGroupAdminUser } from '../../utils/authUtils';
+import { isTenantAdmin as isTenantAdminUser } from '../../utils/authUtils';
 import ScenarioTreeViewer from '../../components/supply-chain-config/ScenarioTreeViewer';
 import DecisionProposalManager from '../../components/supply-chain-config/DecisionProposalManager';
 import { api } from '../../services/api';
@@ -57,18 +57,18 @@ const ScenarioTreeManager = () => {
 
   const handleConfigChange = (updatedConfig) => {
     if (updatedConfig?.id && updatedConfig.id !== parseInt(configId)) {
-      navigate(`/admin/customer/supply-chain-configs/${updatedConfig.id}/scenarios`);
+      navigate(`/admin/tenant/supply-chain-configs/${updatedConfig.id}/scenarios`);
     } else {
       loadConfig();
     }
   };
 
   const handleBack = () => {
-    navigate('/admin/customer/supply-chain-configs');
+    navigate('/admin/tenant/supply-chain-configs');
   };
 
   const handleEdit = () => {
-    navigate(`/admin/customer/supply-chain-configs/edit/${configId}`);
+    navigate(`/admin/tenant/supply-chain-configs/edit/${configId}`);
   };
 
   const handleViewEffective = async () => {
@@ -102,7 +102,7 @@ const ScenarioTreeManager = () => {
     );
   }
 
-  const canAccess = user?.is_superuser || isGroupAdminUser(user);
+  const canAccess = user?.is_superuser || isTenantAdminUser(user);
   if (!canAccess) {
     return <Navigate to="/unauthorized" replace />;
   }

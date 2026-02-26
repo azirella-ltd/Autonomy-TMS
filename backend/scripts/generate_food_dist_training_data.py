@@ -14,28 +14,28 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sqlalchemy import select
 from app.db.session import async_session_factory
 from app.models.supply_chain_config import SupplyChainConfig
-from app.models.customer import Customer
+from app.models.tenant import Tenant
 
 
 async def generate_training_data():
     """Generate synthetic training data for Food Dist."""
     async with async_session_factory() as db:
-        # Find Food Dist customer and config
+        # Find Food Dist tenant and config
         result = await db.execute(
-            select(Customer).where(Customer.name == "Food Dist")
+            select(Tenant).where(Tenant.name == "Food Dist")
         )
-        customer = result.scalar_one_or_none()
+        tenant = result.scalar_one_or_none()
 
-        if not customer:
-            print("ERROR: Food Dist customer not found")
+        if not tenant:
+            print("ERROR: Food Dist tenant not found")
             return
 
-        print(f"Found Food Dist customer: id={customer.id}")
+        print(f"Found Food Dist tenant: id={tenant.id}")
 
         # Find supply chain config
         result = await db.execute(
             select(SupplyChainConfig).where(
-                SupplyChainConfig.customer_id == customer.id
+                SupplyChainConfig.tenant_id == tenant.id
             )
         )
         config = result.scalar_one_or_none()
@@ -57,7 +57,7 @@ async def generate_training_data():
         stats = await generate_synthetic_trm_data(
             db=db,
             config_id=config.id,
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             num_days=365,
             num_orders_per_day=50,
             num_decisions_per_day=20,

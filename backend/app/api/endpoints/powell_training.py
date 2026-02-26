@@ -245,7 +245,7 @@ async def list_trm_types():
 
 @router.get("/configs", response_model=List[PowellTrainingConfigResponse])
 async def list_powell_training_configs(
-    customer_id: int,
+    tenant_id: int,
     include_inactive: bool = False,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session)
@@ -253,11 +253,11 @@ async def list_powell_training_configs(
     """
     List all Powell training configurations for a customer.
     """
-    if current_user.customer_id != customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
+    if current_user.tenant_id != tenant_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     query = select(PowellTrainingConfig).where(
-        PowellTrainingConfig.customer_id == customer_id
+        PowellTrainingConfig.customer_id == tenant_id
     )
     if not include_inactive:
         query = query.where(PowellTrainingConfig.is_active == True)
@@ -322,7 +322,7 @@ async def list_powell_training_configs(
 
 @router.post("/configs", response_model=PowellTrainingConfigResponse)
 async def create_powell_training_config(
-    customer_id: int,
+    tenant_id: int,
     config: PowellTrainingConfigCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_async_session)
@@ -332,7 +332,7 @@ async def create_powell_training_config(
 
     Only Customer Admin can create training configurations.
     """
-    if current_user.customer_id != customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
+    if current_user.tenant_id != tenant_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     # Verify hierarchy configs exist if specified
@@ -341,7 +341,7 @@ async def create_powell_training_config(
             select(PlanningHierarchyConfig).where(
                 and_(
                     PlanningHierarchyConfig.id == config.sop_hierarchy_config_id,
-                    PlanningHierarchyConfig.customer_id == customer_id
+                    PlanningHierarchyConfig.customer_id == tenant_id
                 )
             )
         )
@@ -350,7 +350,7 @@ async def create_powell_training_config(
 
     # Create main config
     db_config = PowellTrainingConfig(
-        customer_id=customer_id,
+        customer_id=tenant_id,
         config_id=config.config_id,
         name=config.name,
         description=config.description,
@@ -485,7 +485,7 @@ async def start_training_run(
     if not config:
         raise HTTPException(status_code=404, detail="Configuration not found")
 
-    if current_user.customer_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
+    if current_user.tenant_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     # Create training run record
@@ -618,7 +618,7 @@ async def list_training_sites(
     if not config:
         raise HTTPException(status_code=404, detail="Configuration not found")
 
-    if current_user.customer_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
+    if current_user.tenant_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     # Get all site training configs for this powell config
@@ -689,7 +689,7 @@ async def train_site(
     if not config:
         raise HTTPException(status_code=404, detail="Configuration not found")
 
-    if current_user.customer_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
+    if current_user.tenant_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     from app.services.powell.powell_training_service import PowellTrainingService
@@ -726,7 +726,7 @@ async def train_all_sites(
     if not config:
         raise HTTPException(status_code=404, detail="Configuration not found")
 
-    if current_user.customer_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
+    if current_user.tenant_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     from app.services.powell.powell_training_service import PowellTrainingService
@@ -761,7 +761,7 @@ async def get_site_progress(
     if not config:
         raise HTTPException(status_code=404, detail="Configuration not found")
 
-    if current_user.customer_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
+    if current_user.tenant_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     # Get site training configs
@@ -914,7 +914,7 @@ async def generate_synthetic_trm_data(
     if not config:
         raise HTTPException(status_code=404, detail="Configuration not found")
 
-    if current_user.customer_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
+    if current_user.tenant_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     start_time = time.time()
@@ -985,7 +985,7 @@ async def get_training_data_stats(
     if not config:
         raise HTTPException(status_code=404, detail="Configuration not found")
 
-    if current_user.customer_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
+    if current_user.tenant_id != config.customer_id and current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
         raise HTTPException(status_code=403, detail="Not authorized")
 
     # Count records

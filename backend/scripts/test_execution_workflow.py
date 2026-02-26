@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from app.db.session import async_session_factory
 from app.models.supply_chain_config import SupplyChainConfig
-from app.models.customer import Customer
+from app.models.tenant import Tenant
 from app.models.aws_sc_planning import InboundOrderLine, OutboundOrderLine, InvLevel
 
 
@@ -27,7 +27,7 @@ async def test_execution_workflow():
     print()
 
     async with async_session_factory() as db:
-        # 1. Get a test config and customer
+        # 1. Get a test config and tenant
         print("1. Loading configuration...")
         result = await db.execute(
             select(SupplyChainConfig).filter(
@@ -40,15 +40,15 @@ async def test_execution_workflow():
             print("   ❌ No config found")
             return False
 
-        result = await db.execute(select(Customer).filter(Customer.id == 2))
-        customer = result.scalar_one_or_none()
+        result = await db.execute(select(Tenant).filter(Tenant.id == 2))
+        tenant = result.scalar_one_or_none()
 
-        if not customer:
-            print("   ❌ No customer found")
+        if not tenant:
+            print("   ❌ No tenant found")
             return False
 
         print(f"   ✓ Config: {config.name} (ID: {config.id})")
-        print(f"   ✓ Customer: {customer.name} (ID: {customer.id})")
+        print(f"   ✓ Tenant: {tenant.name} (ID: {tenant.id})")
         print()
 
         # 2. Load nodes and items
@@ -83,7 +83,7 @@ async def test_execution_workflow():
             in_transit_qty=8.0,
             backorder_qty=0.0,
             snapshot_date=date.today(),
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             config_id=config.id
         )
 
@@ -117,7 +117,7 @@ async def test_execution_workflow():
             # Status
             status='delivered',
             # Multi-tenancy
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             config_id=config.id,
             round_number=1
         )
@@ -164,7 +164,7 @@ async def test_execution_workflow():
             # Lead time
             lead_time_days=14,
             # Multi-tenancy
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             config_id=config.id,
             round_number=1
         )
@@ -204,7 +204,7 @@ async def test_execution_workflow():
         # Count inventory snapshots
         result = await db.execute(
             select(InvLevel).filter(
-                InvLevel.customer_id == customer.id,
+                InvLevel.tenant_id == tenant.id,
                 InvLevel.config_id == config.id
             )
         )
@@ -213,7 +213,7 @@ async def test_execution_workflow():
         # Count outbound orders
         result = await db.execute(
             select(OutboundOrderLine).filter(
-                OutboundOrderLine.customer_id == customer.id,
+                OutboundOrderLine.tenant_id == tenant.id,
                 OutboundOrderLine.config_id == config.id
             )
         )
@@ -222,7 +222,7 @@ async def test_execution_workflow():
         # Count inbound orders
         result = await db.execute(
             select(InboundOrderLine).filter(
-                InboundOrderLine.customer_id == customer.id,
+                InboundOrderLine.tenant_id == tenant.id,
                 InboundOrderLine.config_id == config.id
             )
         )

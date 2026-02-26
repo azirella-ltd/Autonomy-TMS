@@ -140,7 +140,7 @@ async def create_production_process(
     Returns:
         Created production process
     """
-    company_id = current_user.customer_id
+    company_id = current_user.tenant_id
 
     # Verify site exists
     stmt = select(Site).where(Site.id == process.site_id)
@@ -194,7 +194,7 @@ async def bulk_create_production_processes(
     bulk_request: BulkProductionProcessCreate
 ):
     """Bulk create production processes"""
-    company_id = current_user.customer_id
+    company_id = current_user.tenant_id
     created_count = 0
 
     for process in bulk_request.processes:

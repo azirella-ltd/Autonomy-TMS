@@ -212,7 +212,7 @@ const AllocationWithUncertainty = ({ allocated, requested, lowerBound, upperBoun
   );
 };
 
-const AllocationAgentWorklist = ({ configId, customerId }) => {
+const AllocationAgentWorklist = ({ configId, tenantId }) => {
   const [loading, setLoading] = useState(true);
   const [worklistItems, setWorklistItems] = useState([]);
   const [selectedCommit, setSelectedCommit] = useState(null);

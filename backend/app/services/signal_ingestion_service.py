@@ -214,7 +214,7 @@ class SignalIngestionService:
                 "final": final_confidence,
             },
             "magnitude_hint": magnitude_hint,
-            "correlation_customer_id": correlation.get("correlation_id") if correlation else None,
+            "correlation_group_id": correlation.get("correlation_id") if correlation else None,
         }
 
         # 11. If auto-apply, route to ForecastAdjustmentTRM
@@ -607,10 +607,10 @@ class SignalIngestionService:
         # Check if any existing correlation group contains these signals
         existing_corr = None
         for cs in correlated_signals:
-            if cs.correlation_customer_id:
+            if cs.correlation_group_id:
                 corr_result = await self.db.execute(
                     select(EdgeSignalCorrelation).where(
-                        EdgeSignalCorrelation.correlation_id == cs.correlation_customer_id
+                        EdgeSignalCorrelation.correlation_id == cs.correlation_group_id
                     )
                 )
                 existing_corr = corr_result.scalar_one_or_none()
@@ -632,7 +632,7 @@ class SignalIngestionService:
             for c in all_confs:
                 product *= (1.0 - c)
             existing_corr.combined_confidence = 1.0 - product
-            signal.correlation_customer_id = existing_corr.correlation_id
+            signal.correlation_group_id = existing_corr.correlation_id
             return existing_corr.to_dict()
         else:
             # Create new correlation group
@@ -658,9 +658,9 @@ class SignalIngestionService:
             self.db.add(corr)
 
             # Update all correlated signals with group id
-            signal.correlation_customer_id = corr_id
+            signal.correlation_group_id = corr_id
             for cs in correlated_signals:
-                cs.correlation_customer_id = corr_id
+                cs.correlation_group_id = corr_id
 
             return corr.to_dict()
 

@@ -164,7 +164,7 @@ const CADENCE_OPTIONS = [
   { value: 'manual', label: 'Manual', description: 'On-demand only' },
 ];
 
-const GroupSettingsPanel = ({
+const TenantSettingsPanel = ({
   groupId,
   groupInfo,
   selectedConfigId,
@@ -265,7 +265,7 @@ const GroupSettingsPanel = ({
       }).catch(() => null);
 
       // Save CDC settings
-      await api.put(`/groups/${groupId}/cdc-settings`, cdcSettings).catch(() => null);
+      await api.put(`/tenants/${groupId}/cdc-settings`, cdcSettings).catch(() => null);
 
       setSuccess('Settings saved successfully');
       setTimeout(() => setSuccess(null), 3000);
@@ -658,4 +658,4 @@ const GroupSettingsPanel = ({
   );
 };
 
-export default GroupSettingsPanel;
+export default TenantSettingsPanel;

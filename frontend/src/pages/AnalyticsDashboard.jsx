@@ -168,7 +168,7 @@ const AnalyticsDashboard = () => {
             <PolicyEffectiveness
               key={`pol-${refreshKey}`}
               configId={selectedGame.supply_chain_config_id}
-              customerId={selectedGame.customer_id}
+              tenantId={selectedGame.tenant_id}
             />
           </TabsContent>
 

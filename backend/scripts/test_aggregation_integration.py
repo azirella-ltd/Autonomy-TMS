@@ -14,7 +14,7 @@ from sqlalchemy import select, delete
 
 from app.db.session import async_session_factory
 from app.models.supply_chain_config import SupplyChainConfig
-from app.models.customer import Customer
+from app.models.tenant import Tenant
 from app.models.scenario import Scenario
 from app.models.aws_sc_planning import (
     OrderAggregationPolicy,
@@ -40,17 +40,17 @@ async def test_aggregation_integration():
         )
         config = result.scalar_one_or_none()
 
-        result = await db.execute(select(Customer).filter(Customer.id == 2))
-        customer = result.scalar_one_or_none()
+        result = await db.execute(select(Tenant).filter(Tenant.id == 2))
+        tenant = result.scalar_one_or_none()
 
-        if not config or not customer:
-            print("❌ Config or customer not found")
+        if not config or not tenant:
+            print("❌ Config or tenant not found")
             return False
 
         # Create test scenario
         scenario = Scenario(
             name="Aggregation Integration Test",
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             supply_chain_config_id=config.id,
             use_aws_sc_planning=True,
             max_rounds=10,
@@ -67,11 +67,11 @@ async def test_aggregation_integration():
 
         # Setup: Clean up any existing aggregation data (orders first, then policies)
         await db.execute(delete(AggregatedOrder).filter(
-            AggregatedOrder.customer_id == customer.id,
+            AggregatedOrder.tenant_id == tenant.id,
             AggregatedOrder.config_id == config.id
         ))
         await db.execute(delete(OrderAggregationPolicy).filter(
-            OrderAggregationPolicy.customer_id == customer.id,
+            OrderAggregationPolicy.tenant_id == tenant.id,
             OrderAggregationPolicy.config_id == config.id
         ))
         await db.commit()
@@ -109,7 +109,7 @@ async def test_aggregation_integration():
             fixed_order_cost=100.0,
             variable_cost_per_unit=5.0,
             is_active=True,
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             config_id=config.id
         )
         policies.append(policy1)
@@ -124,7 +124,7 @@ async def test_aggregation_integration():
             fixed_order_cost=100.0,
             variable_cost_per_unit=5.0,
             is_active=True,
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             config_id=config.id
         )
         policies.append(policy2)
@@ -296,7 +296,7 @@ async def test_aggregation_integration():
         await db.commit()
 
         await db.execute(delete(OrderAggregationPolicy).filter(
-            OrderAggregationPolicy.customer_id == customer.id,
+            OrderAggregationPolicy.tenant_id == tenant.id,
             OrderAggregationPolicy.config_id == config.id
         ))
         await db.commit()

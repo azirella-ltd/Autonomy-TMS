@@ -122,7 +122,7 @@ const TIER_LABELS = {
   enterprise: 'Enterprise',
 };
 
-const CascadeDashboard = ({ configId, customerId, mode: propMode }) => {
+const CascadeDashboard = ({ configId, tenantId, mode: propMode }) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
@@ -140,7 +140,7 @@ const CascadeDashboard = ({ configId, customerId, mode: propMode }) => {
 
   useEffect(() => {
     loadAll();
-  }, [configId, customerId]);
+  }, [configId, tenantId]);
 
   const loadAll = async () => {
     setLoading(true);
@@ -153,9 +153,9 @@ const CascadeDashboard = ({ configId, customerId, mode: propMode }) => {
   };
 
   const loadLayerLicenses = async () => {
-    if (!customerId) return;
+    if (!tenantId) return;
     try {
-      const data = await getLayerLicenses(customerId);
+      const data = await getLayerLicenses(tenantId);
       const modes = {};
       let tier = null;
       for (const [key, val] of Object.entries(data.layers || {})) {
@@ -202,7 +202,7 @@ const CascadeDashboard = ({ configId, customerId, mode: propMode }) => {
       setRunning(true);
       await api.post('/planning-cascade/cascade/run', {
         config_id: configId,
-        customer_id: customerId,
+        tenant_id: tenantId,
         mode: isFullMode ? 'FULL' : 'INPUT',
       });
       setRunDialogOpen(false);

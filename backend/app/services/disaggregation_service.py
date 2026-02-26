@@ -155,7 +155,7 @@ class DisaggregationService:
     - VFA: Value-based allocation
 
     Usage:
-        service = DisaggregationService(db, customer_id)
+        service = DisaggregationService(db, tenant_id)
         await service.load_hierarchies()
         await service.load_learned_splits()  # Optional: load ML-based splits
 
@@ -171,11 +171,11 @@ class DisaggregationService:
     def __init__(
         self,
         db: AsyncSession,
-        customer_id: int,
+        tenant_id: int,
         disaggregation_rules: Optional[Dict[str, DisaggregationRule]] = None
     ):
         self.db = db
-        self.customer_id = customer_id
+        self.tenant_id = tenant_id
         self.rules = disaggregation_rules or DEFAULT_DISAGGREGATION_RULES
 
         # Hierarchy caches
@@ -199,7 +199,7 @@ class DisaggregationService:
         """Load site hierarchy with children information."""
         result = await self.db.execute(
             select(SiteHierarchyNode).where(
-                SiteHierarchyNode.customer_id == self.customer_id
+                SiteHierarchyNode.tenant_id == self.tenant_id
             )
         )
         nodes = result.scalars().all()
@@ -231,7 +231,7 @@ class DisaggregationService:
         """Load product hierarchy with children and split factors."""
         result = await self.db.execute(
             select(ProductHierarchyNode).where(
-                ProductHierarchyNode.customer_id == self.customer_id
+                ProductHierarchyNode.tenant_id == self.tenant_id
             )
         )
         nodes = result.scalars().all()
@@ -745,11 +745,11 @@ class ValueBasedDisaggregator:
 
 async def disaggregate_sop_to_mps(
     db: AsyncSession,
-    customer_id: int,
+    tenant_id: int,
     sop_records: List[AggregatedRecord]
 ) -> List[DisaggregatedRecord]:
     """Disaggregate S&OP plans (Country x Family x Month) to MPS level (Site x Group x Week)."""
-    service = DisaggregationService(db, customer_id)
+    service = DisaggregationService(db, tenant_id)
     await service.load_hierarchies()
     await service.load_learned_splits()
 
@@ -763,11 +763,11 @@ async def disaggregate_sop_to_mps(
 
 async def disaggregate_mps_to_mrp(
     db: AsyncSession,
-    customer_id: int,
+    tenant_id: int,
     mps_records: List[AggregatedRecord]
 ) -> List[DisaggregatedRecord]:
     """Disaggregate MPS plans (Site x Group x Week) to MRP level (Site x SKU x Day)."""
-    service = DisaggregationService(db, customer_id)
+    service = DisaggregationService(db, tenant_id)
     await service.load_hierarchies()
     await service.load_learned_splits()
 

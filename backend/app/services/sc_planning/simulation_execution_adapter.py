@@ -81,11 +81,11 @@ class SimulationExecutionAdapter:
         self.game = game
         self.db = db
         self.config = game.supply_chain_config
-        self.customer_id = game.customer_id
+        self.tenant_id = game.tenant_id
         self.config_id = game.supply_chain_config_id
 
-        if not self.customer_id:
-            raise ValueError(f"Game {game.id} has no customer_id - cannot use SC execution")
+        if not self.tenant_id:
+            raise ValueError(f"Game {game.id} has no tenant_id - cannot use SC execution")
 
         if not self.config_id:
             raise ValueError(f"Game {game.id} has no config_id - cannot use SC execution")
@@ -93,7 +93,7 @@ class SimulationExecutionAdapter:
         # Phase 3: Execution cache for performance
         self.cache: Optional[ExecutionCache] = None
         if use_cache:
-            self.cache = ExecutionCache(db, self.config_id, self.customer_id)
+            self.cache = ExecutionCache(db, self.config_id, self.tenant_id)
 
         # Phase 5: Stochastic sampler for distribution sampling
         self.stochastic_sampler = StochasticSampler(scenario_id=game.id, use_cache=use_cache)
@@ -129,7 +129,7 @@ class SimulationExecutionAdapter:
         # Delete old snapshots for this game round
         await self.db.execute(
             delete(InvLevel).filter(
-                InvLevel.customer_id == self.customer_id,
+                InvLevel.customer_id == self.tenant_id,
                 InvLevel.config_id == self.config_id
             )
         )
@@ -172,7 +172,7 @@ class SimulationExecutionAdapter:
                 safety_stock_qty=0,
                 reorder_point_qty=0,
                 snapshot_date=snapshot_date,
-                customer_id=self.customer_id,
+                tenant_id=self.tenant_id,
                 config_id=self.config_id
             )
 
@@ -203,7 +203,7 @@ class SimulationExecutionAdapter:
                 and_(
                     InboundOrderLine.product_id == product_id,
                     InboundOrderLine.to_site_id == site_id,
-                    InboundOrderLine.customer_id == self.customer_id,
+                    InboundOrderLine.customer_id == self.tenant_id,
                     InboundOrderLine.config_id == self.config_id,
                     InboundOrderLine.scenario_id == self.game.id,
                     InboundOrderLine.status.in_(['open', 'confirmed']),
@@ -294,7 +294,7 @@ class SimulationExecutionAdapter:
             # Status
             status='delivered',
             # Multi-tenancy
-            customer_id=self.customer_id,
+            tenant_id=self.tenant_id,
             config_id=self.config_id,
             scenario_id=self.game.id,
             round_number=round_number
@@ -402,7 +402,7 @@ class SimulationExecutionAdapter:
                 # Lead time
                 lead_time_days=lead_time_days,
                 # Multi-tenancy
-                customer_id=self.customer_id,
+                tenant_id=self.tenant_id,
                 config_id=self.config_id,
                 scenario_id=self.game.id,
                 round_number=round_number
@@ -531,7 +531,7 @@ class SimulationExecutionAdapter:
                 status='open',
                 vendor_status='confirmed',
                 lead_time_days=lead_time_days,
-                customer_id=self.customer_id,
+                tenant_id=self.tenant_id,
                 config_id=self.config_id,
                 scenario_id=self.game.id,
                 round_number=round_number
@@ -626,7 +626,7 @@ class SimulationExecutionAdapter:
         result = await self.db.execute(
             select(InboundOrderLine).filter(
                 and_(
-                    InboundOrderLine.customer_id == self.customer_id,
+                    InboundOrderLine.customer_id == self.tenant_id,
                     InboundOrderLine.config_id == self.config_id,
                     InboundOrderLine.scenario_id == self.game.id,
                     InboundOrderLine.status == 'open',
@@ -924,7 +924,7 @@ class SimulationExecutionAdapter:
             status='open',
             vendor_status='confirmed',
             lead_time_days=lead_time_days,
-            customer_id=self.customer_id,
+            tenant_id=self.tenant_id,
             config_id=self.config_id,
             scenario_id=self.game.id,
             round_number=round_number
@@ -945,7 +945,7 @@ class SimulationExecutionAdapter:
         result = await self.db.execute(
             update(ProductionCapacity)
             .filter(
-                ProductionCapacity.customer_id == self.customer_id,
+                ProductionCapacity.tenant_id == self.tenant_id,
                 ProductionCapacity.config_id == self.config_id
             )
             .values(current_capacity_used=0)
@@ -1192,7 +1192,7 @@ class SimulationExecutionAdapter:
                 fixed_cost_saved=fixed_cost_savings,
                 total_order_cost=(adjusted_qty * (policy.variable_cost_per_unit or 0) + (policy.fixed_order_cost or 0)),
                 status='placed',
-                customer_id=self.customer_id,
+                tenant_id=self.tenant_id,
                 config_id=self.config_id
             )
             aggregated_records.append(agg_record)

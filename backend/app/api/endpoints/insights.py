@@ -48,12 +48,12 @@ async def get_insights_service(
     current_user: User = Depends(get_current_user)
 ) -> InsightsActionsService:
     """Get insights service with user context."""
-    if not current_user.customer_id:
+    if not current_user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User must belong to a group"
         )
-    return create_insights_service(db, current_user.customer_id, current_user)
+    return create_insights_service(db, current_user.tenant_id, current_user)
 
 
 # ============================================================================
@@ -104,7 +104,7 @@ async def get_dashboard(
     - Recent actions list
 
     Results are filtered by the user's scope (site_scope, product_scope).
-    GROUP_ADMIN users see all data.
+    TENANT_ADMIN users see all data.
     """
     context = HierarchyContext(
         site_level=site_level,
@@ -378,13 +378,13 @@ async def record_action(
 
     Note: This endpoint is hidden from the OpenAPI schema.
     """
-    if not current_user.customer_id:
+    if not current_user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User must belong to a group"
         )
 
-    service = create_insights_service(db, current_user.customer_id, current_user)
+    service = create_insights_service(db, current_user.tenant_id, current_user)
     action = await service.record_action(body)
 
     return ActionResponse(

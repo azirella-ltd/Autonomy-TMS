@@ -11,7 +11,7 @@
  * while maintaining consistent navigation patterns for each role.
  *
  * Routing Priority:
- * 1. SYSTEM_ADMIN always → /admin/customers
+ * 1. SYSTEM_ADMIN always → /admin/tenants
  * 2. Powell role checked FIRST for all other users (from user.powell_role field)
  * 3. Falls back to user_type based routing if no Powell role
  *
@@ -28,8 +28,8 @@
  * - DEMO_ALL: → /executive-dashboard (has all capabilities for demos)
  *
  * Fallback Routing (user_type based, if no Powell role):
- * - GROUP_ADMIN (Learning Customer): → /admin (Learning Home - game-centric training dashboard)
- * - GROUP_ADMIN (Production Customer): → /admin/production (Configuration-focused dashboard)
+ * - TENANT_ADMIN (Learning Tenant): → /admin (Learning Home - game-centric training dashboard)
+ * - TENANT_ADMIN (Production Tenant): → /admin/production (Configuration-focused dashboard)
  *   Features: Supply Chains, Scenarios (tree), Users, Settings (hierarchies, data sources, CDC)
  * - USER: → Active game or /scenarios/play
  *
@@ -103,13 +103,13 @@ const DashboardRouter = () => {
     const handleRedirect = async () => {
       if (!user) return;
 
-      // SYSTEM_ADMIN: Always go to Customer Management (skip Powell check)
+      // SYSTEM_ADMIN: Always go to Organization Management (skip Powell check)
       if (user.user_type === 'SYSTEM_ADMIN') {
-        navigate('/admin/customers', { replace: true });
+        navigate('/admin/tenants', { replace: true });
         return;
       }
 
-      // Check Powell role FIRST for ALL non-system users (USER, GROUP_ADMIN, etc.)
+      // Check Powell role FIRST for ALL non-system users (USER, TENANT_ADMIN, etc.)
       // Powell role is stored on user record - determines landing page (fixed)
       // Capabilities determine what user can do (customizable by customer admin)
       const { powellRole } = await getPowellRoleFromAPI();
@@ -142,14 +142,14 @@ const DashboardRouter = () => {
         return;
       }
 
-      // GROUP_ADMIN without Powell role: Route based on customer mode
-      if (user.user_type === 'GROUP_ADMIN') {
+      // TENANT_ADMIN without Powell role: Route based on tenant mode
+      if (user.user_type === 'TENANT_ADMIN' || user.user_type === 'GROUP_ADMIN') {
         try {
-          if (user.customer_id) {
-            const response = await api.get(`/customers/${user.customer_id}`);
-            const customer = response.data;
+          if (user.tenant_id) {
+            const response = await api.get(`/tenants/${user.tenant_id}`);
+            const tenant = response.data;
 
-            if (customer.mode === 'learning') {
+            if (tenant.mode === 'learning') {
               // Learning customers go to Learning Home (training-focused admin dashboard)
               navigate('/admin', { replace: true });
             } else {
@@ -157,11 +157,11 @@ const DashboardRouter = () => {
               navigate('/admin/production', { replace: true });
             }
           } else {
-            // No customer assigned, default to production admin
+            // No tenant assigned, default to production admin
             navigate('/admin/production', { replace: true });
           }
         } catch (err) {
-          console.error('Failed to fetch customer info:', err);
+          console.error('Failed to fetch tenant info:', err);
           // Default to production admin on error
           navigate('/admin/production', { replace: true });
         }

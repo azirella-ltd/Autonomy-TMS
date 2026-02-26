@@ -60,7 +60,7 @@ const ScenarioBoard = () => {
   const { scenarioId } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
-  const { user, isGroupAdmin } = useAuth();
+  const { user, isTenantAdmin } = useAuth();
   const [gameState, setGameState] = useState(null);
   const [gameDetails, setGameDetails] = useState(null);
   const [assignedRole, setAssignedRole] = useState("");
@@ -241,7 +241,7 @@ const ScenarioBoard = () => {
         const associated = (games || []).filter((g) => {
           const createdByUser = g.created_by === user?.id;
           const isPlayer = Array.isArray(g.scenarioUsers)
-            ? g.users.some((p) => p.user_id === user?.id)
+            ? g.scenarioUsers.some((p) => p.user_id === user?.id)
             : false;
           return createdByUser || isPlayer;
         });
@@ -309,7 +309,7 @@ const ScenarioBoard = () => {
         const scenarioUsers = Array.isArray(game.scenarioUsers) ? game.scenarioUsers : [];
         const currentUserId = user?.id;
         const assignedPlayer =
-          users.find((p) => p.user_id === currentUserId) || null;
+          scenarioUsers.find((p) => p.user_id === currentUserId) || null;
 
         if (assignedPlayer) {
           setAssignedRole(assignedPlayer.role);
@@ -320,7 +320,7 @@ const ScenarioBoard = () => {
           setIsPlayerTurn(game.current_player_turn === assignedPlayer.role);
         } else {
           const existingViewer =
-            users.find((p) => p.id === viewingPlayerId) || scenarioUsers[0] || null;
+            scenarioUsers.find((p) => p.id === viewingPlayerId) || scenarioUsers[0] || null;
           setAssignedRole("");
           setAssignedPlayerId(null);
           setIsPlayerTurn(false);
@@ -525,7 +525,7 @@ const ScenarioBoard = () => {
       title={gameDetails?.supply_chain_name || gameDetails?.name || "Simulation"}
     >
       <div className="p-4">
-        {isGroupAdmin && (
+        {isTenantAdmin && (
           <Button
             size="sm"
             variant="outline"

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { isGroupAdmin as isGroupAdminUser } from '../utils/authUtils';
+import { isTenantAdmin as isTenantAdminUser } from '../utils/authUtils';
 import simulationApi, { collaborationApi } from '../services/api';
 import { getModelStatus } from '../services/modelService';
 import { emitStartupNotices } from '../utils/startupNotices';
@@ -81,9 +81,9 @@ const ScenariosList = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
-  const isGroupAdmin = isGroupAdminUser(user);
-  const restrictLifecycleActions = isGroupAdmin;
-  const scConfigBasePath = isGroupAdmin ? '/admin/customer/supply-chain-configs' : '/supply-chain-config';
+  const isTenantAdmin = isTenantAdminUser(user);
+  const restrictLifecycleActions = isTenantAdmin;
+  const scConfigBasePath = isTenantAdmin ? '/admin/tenant/supply-chain-configs' : '/supply-chain-config';
   const supervisionPathBase = '/admin?section=supervision';
   const toast = useToast();
 
@@ -153,8 +153,8 @@ const ScenariosList = () => {
     const fetchCollabScenarios = async () => {
       try {
         setCollabLoading(true);
-        const customerId = user?.customer_id;
-        const data = await collaborationApi.getScenarios(customerId);
+        const tenantId = user?.tenant_id;
+        const data = await collaborationApi.getScenarios(tenantId);
         setCollabScenarios(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error('Failed to load collaboration scenarios:', err);
@@ -164,7 +164,7 @@ const ScenariosList = () => {
       }
     };
     fetchCollabScenarios();
-  }, [user?.customer_id]);
+  }, [user?.tenant_id]);
 
   useEffect(() => {
     if (location.state?.refresh) {

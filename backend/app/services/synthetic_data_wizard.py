@@ -66,7 +66,7 @@ class WizardState:
     # Collected data
     archetype: Optional[CompanyArchetype] = None
     company_name: Optional[str] = None
-    customer_name: Optional[str] = None
+    tenant_name: Optional[str] = None
     admin_email: Optional[str] = None
     admin_name: Optional[str] = None
 
@@ -104,7 +104,7 @@ class WizardState:
             "current_step": self.current_step.value,
             "archetype": self.archetype.value if self.archetype else None,
             "company_name": self.company_name,
-            "customer_name": self.customer_name,
+            "tenant_name": self.tenant_name,
             "admin_email": self.admin_email,
             "admin_name": self.admin_name,
             "num_sites": self.num_sites,
@@ -134,7 +134,7 @@ class WizardState:
         if data.get("archetype"):
             state.archetype = CompanyArchetype(data["archetype"])
         state.company_name = data.get("company_name")
-        state.customer_name = data.get("customer_name")
+        state.tenant_name = data.get("tenant_name")
         state.admin_email = data.get("admin_email")
         state.admin_name = data.get("admin_name")
 
@@ -417,8 +417,8 @@ class SyntheticDataWizard:
             config_items.append(f"- Archetype: {state.archetype.value}")
         if state.company_name:
             config_items.append(f"- Company Name: {state.company_name}")
-        if state.customer_name:
-            config_items.append(f"- Customer Name: {state.customer_name}")
+        if state.tenant_name:
+            config_items.append(f"- Customer Name: {state.tenant_name}")
         if state.admin_email:
             config_items.append(f"- Admin Email: {state.admin_email}")
         if state.admin_name:
@@ -596,8 +596,8 @@ class SyntheticDataWizard:
         # Company details
         if "company_name" in extracted:
             state.company_name = extracted["company_name"]
-        if "customer_name" in extracted:
-            state.customer_name = extracted["customer_name"]
+        if "tenant_name" in extracted:
+            state.tenant_name = extracted["tenant_name"]
         if "admin_email" in extracted:
             state.admin_email = extracted["admin_email"]
         if "admin_name" in extracted:
@@ -697,7 +697,7 @@ class SyntheticDataWizard:
             errors.append("Company archetype is required")
         if not state.company_name:
             errors.append("Company name is required")
-        if not state.customer_name:
+        if not state.tenant_name:
             errors.append("Customer name is required")
         if not state.admin_email:
             errors.append("Admin email is required")
@@ -713,7 +713,7 @@ class SyntheticDataWizard:
     def build_generation_request(self, state: WizardState) -> GenerationRequest:
         """Build a GenerationRequest from the wizard state."""
         return GenerationRequest(
-            customer_name=state.customer_name,
+            tenant_name=state.tenant_name,
             archetype=state.archetype,
             company_name=state.company_name,
             admin_email=state.admin_email,
@@ -759,7 +759,7 @@ class SyntheticDataWizard:
             # Update state
             state.current_step = WizardStep.COMPLETE
             state.result = {
-                "customer_id": result.customer_id,
+                "tenant_id": result.tenant_id,
                 "config_id": result.config_id,
                 "admin_user_id": result.admin_user_id,
                 "nodes_created": result.nodes_created,

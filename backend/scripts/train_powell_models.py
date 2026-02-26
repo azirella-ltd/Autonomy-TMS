@@ -39,7 +39,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy import text
 
 from app.db.session import sync_engine
-from app.models.customer import Customer
+from app.models.tenant import Tenant
 from app.models.supply_chain_config import SupplyChainConfig
 
 logging.basicConfig(
@@ -679,14 +679,14 @@ def main():
         # ------------- Prerequisites -------------
         print("\n0. Validating prerequisites...")
 
-        customer = db.query(Customer).filter(Customer.name == "Food Dist").first()
-        if not customer:
-            print("ERROR: 'Food Dist' customer not found. Run seed_dot_foods_demo.py first.")
+        tenant = db.query(Tenant).filter(Tenant.name == "Food Dist").first()
+        if not tenant:
+            print("ERROR: 'Food Dist' tenant not found. Run seed_dot_foods_demo.py first.")
             sys.exit(1)
-        print(f"   Customer: {customer.name} (id={customer.id})")
+        print(f"   Tenant: {tenant.name} (id={tenant.id})")
 
         config = db.query(SupplyChainConfig).filter(
-            SupplyChainConfig.customer_id == customer.id
+            SupplyChainConfig.tenant_id == tenant.id
         ).first()
         if not config:
             print("ERROR: No SC config for Food Dist. Run seed_dot_foods_demo.py first.")
@@ -697,7 +697,7 @@ def main():
         print("\n" + "-" * 60)
         print("Phase A: Setup Training Config")
         print("-" * 60)
-        powell_config_id, run_id = phase_a_setup(db, config.id, customer.id)
+        powell_config_id, run_id = phase_a_setup(db, config.id, tenant.id)
 
         # ---- Phase B ----
         print("\n" + "-" * 60)

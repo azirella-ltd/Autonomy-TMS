@@ -79,8 +79,8 @@ class RegisterRequest(UserCreate):
     pass
 
 
-def _normalize_customer_admin_context(user: User) -> None:
-    """Ensure customer admins surface their managed customer relationship."""
+def _normalize_tenant_admin_context(user: User) -> None:
+    """Ensure tenant admins surface their managed tenant relationship."""
 
     if not user:
         return
@@ -92,16 +92,16 @@ def _normalize_customer_admin_context(user: User) -> None:
         except ValueError:
             user_type = None
 
-    if user_type != UserTypeEnum.GROUP_ADMIN:
+    if user_type != UserTypeEnum.TENANT_ADMIN:
         return
 
-    customer_id = getattr(user, "customer_id", None)
-    if customer_id not in (None, 0):
+    tenant_id = getattr(user, "tenant_id", None)
+    if tenant_id not in (None, 0):
         return
 
-    admin_customer = getattr(user, "admin_of_customer", None)
-    if admin_customer is not None:
-        user.customer_id = admin_customer.id
+    admin_tenant = getattr(user, "admin_of_customer", None)
+    if admin_tenant is not None:
+        user.tenant_id = admin_tenant.id
 
 
 def _ensure_default_setup_sync(db: Session, user: User) -> None:
@@ -112,9 +112,9 @@ def _ensure_default_setup_sync(db: Session, user: User) -> None:
     created. This allows admins who have logged in before (and thus have a
     ``last_login`` value) to still get the default setup.
     """
-    # Only create default setup for admin users (SYSTEM_ADMIN or GROUP_ADMIN)
+    # Only create default setup for admin users (SYSTEM_ADMIN or TENANT_ADMIN)
     user_type = getattr(user, "user_type", None)
-    if user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.GROUP_ADMIN):
+    if user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.TENANT_ADMIN):
         return
 
     # Check if a configuration already exists for this user
@@ -125,16 +125,16 @@ def _ensure_default_setup_sync(db: Session, user: User) -> None:
     )
 
     if config is None:
-        # Create base configuration - customer_id required per AWS SC DM
-        # Use user's customer_id if available, otherwise skip creation
-        if not user.customer_id:
-            logger.warning(f"Cannot create default config for user {user.id} - no customer_id assigned")
+        # Create base configuration - tenant_id required per AWS SC DM
+        # Use user's tenant_id if available, otherwise skip creation
+        if not user.tenant_id:
+            logger.warning(f"Cannot create default config for user {user.id} - no tenant_id assigned")
             return
         config = SupplyChainConfig(
             name="Default Supply Chain",
             is_active=True,
             created_by=user.id,
-            customer_id=user.customer_id,  # Required field
+            customer_id=user.tenant_id,  # Required field (maps to tenant)
             site_type_definitions=deepcopy(DEFAULT_SITE_TYPE_DEFINITIONS),
         )
         db.add(config)
@@ -372,7 +372,7 @@ async def login(
     set_csrf_cookie(response)
 
     # Attach group context for admins so frontend receives group assignments
-    _normalize_customer_admin_context(user)
+    _normalize_tenant_admin_context(user)
 
     # Return access token and user info
     return TokenResponse(

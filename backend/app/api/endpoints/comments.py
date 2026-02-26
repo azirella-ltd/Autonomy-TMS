@@ -392,7 +392,7 @@ async def delete_comment(
         raise HTTPException(status_code=404, detail="Comment not found")
 
     # Check ownership or admin status
-    is_admin = any(r.name in ['SYSTEM_ADMIN', 'GROUP_ADMIN'] for r in current_user.roles) if current_user.roles else False
+    is_admin = any(r.name in ['SYSTEM_ADMIN', 'TENANT_ADMIN'] for r in current_user.roles) if current_user.roles else False
     if comment.author_id != current_user.id and not is_admin:
         raise HTTPException(status_code=403, detail="You can only delete your own comments")
 

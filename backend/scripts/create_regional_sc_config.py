@@ -23,7 +23,7 @@ if str(BACKEND_ROOT) not in os.sys.path:  # type: ignore[attr-defined]
 
 from app.core.config import settings
 from app.core.time_buckets import TimeBucket
-from app.models import Customer
+from app.models import Tenant
 from app.models.supply_chain_config import (
     Item,
     ProductSiteConfig,
@@ -480,7 +480,7 @@ def _configure_demand(
 def ensure_multi_region_config(
     session: Session,
     *,
-    customer: Customer,
+    customer: Tenant,
     name: str,
     description: Optional[str] = None,
 ) -> Tuple[SupplyChainConfig, bool]:
@@ -562,7 +562,7 @@ def ensure_multi_region_config(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Create a multi-region SC config")
-    parser.add_argument("--customer-name", default="Beer Game", help="Customer to attach the configuration to")
+    parser.add_argument("--tenant-name", default="Beer Game", help="Tenant to attach the configuration to")
     parser.add_argument("--config-name", default="Complex_SC", help="Name of the configuration")
     parser.add_argument(
         "--description",
@@ -579,9 +579,9 @@ def main() -> None:
     SessionLocal = sessionmaker(bind=engine)
 
     with SessionLocal() as session:
-        customer = session.query(Customer).filter(Customer.name == args.customer_name).first()
+        customer = session.query(Tenant).filter(Tenant.name == args.tenant_name).first()
         if customer is None:
-            raise RuntimeError(f"Customer '{args.customer_name}' not found.")
+            raise RuntimeError(f"Tenant '{args.tenant_name}' not found.")
         config, created = ensure_multi_region_config(
             session,
             customer=customer,

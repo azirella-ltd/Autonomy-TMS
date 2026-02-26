@@ -21,7 +21,7 @@ from sqlalchemy.orm import selectinload
 from app.db.session import SessionLocal, async_session_factory
 from app.models.scenario import Scenario
 from app.models.scenario_user import ScenarioUser
-from app.models.customer import Customer
+from app.models.tenant import Tenant
 from app.models.supply_chain_config import SupplyChainConfig
 from app.services.mixed_scenario_service import MixedScenarioService
 
@@ -35,12 +35,12 @@ def test_legacy_mode():
 
     with SessionLocal() as db:
         # Get or create a test customer
-        customer = db.query(Customer).filter(Customer.name == "Test Customer").first()
-        if not customer:
-            customer = Customer(name="Test Customer", description="Test customer for dual-mode testing")
-            db.add(customer)
+        tenant = db.query(Tenant).filter(Tenant.name == "Test Customer").first()
+        if not tenant:
+            tenant = Tenant(name="Test Customer", description="Test customer for dual-mode testing")
+            db.add(tenant)
             db.commit()
-            db.refresh(customer)
+            db.refresh(tenant)
 
         # Get a supply chain config (use Default TBG if available)
         config = db.query(SupplyChainConfig).filter(
@@ -52,13 +52,13 @@ def test_legacy_mode():
             return False
 
         print(f"Using config: {config.name} (ID: {config.id})")
-        print(f"Using customer: {customer.name} (ID: {customer.id})")
+        print(f"Using customer: {tenant.name} (ID: {tenant.id})")
         print()
 
         # Create test scenario with LEGACY mode
         scenario = Scenario(
             name="Test Legacy Mode",
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             supply_chain_config_id=config.id,
             use_aws_sc_planning=False,  # LEGACY MODE
             max_rounds=1,
@@ -113,14 +113,14 @@ async def test_aws_sc_mode_async():
 
     async with async_session_factory() as db:
         # Get or create a test customer
-        result = await db.execute(select(Customer).filter(Customer.name == "Test Customer"))
-        customer = result.scalar_one_or_none()
+        result = await db.execute(select(Tenant).filter(Tenant.name == "Test Customer"))
+        tenant = result.scalar_one_or_none()
 
-        if not customer:
-            customer = Customer(name="Test Customer", description="Test customer for dual-mode testing")
-            db.add(customer)
+        if not tenant:
+            tenant = Tenant(name="Test Customer", description="Test customer for dual-mode testing")
+            db.add(tenant)
             await db.commit()
-            await db.refresh(customer)
+            await db.refresh(tenant)
 
         # Get a supply chain config
         result = await db.execute(
@@ -135,13 +135,13 @@ async def test_aws_sc_mode_async():
             return False
 
         print(f"Using config: {config.name} (ID: {config.id})")
-        print(f"Using customer: {customer.name} (ID: {customer.id})")
+        print(f"Using customer: {tenant.name} (ID: {tenant.id})")
         print()
 
         # Create test scenario with AWS SC mode
         scenario = Scenario(
             name="Test AWS SC Mode",
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             supply_chain_config_id=config.id,
             use_aws_sc_planning=True,  # AWS SC MODE
             max_rounds=1,

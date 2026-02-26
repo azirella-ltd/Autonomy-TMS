@@ -124,7 +124,7 @@ async def create_achievement(
 ):
     """Create a new achievement (admin only)."""
     # Check if user is admin
-    if current_user.user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.GROUP_ADMIN):
+    if current_user.user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.TENANT_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can create achievements"
@@ -148,7 +148,7 @@ async def update_achievement(
     current_user: User = Depends(get_current_user)
 ):
     """Update an achievement (admin only)."""
-    if current_user.user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.GROUP_ADMIN):
+    if current_user.user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.TENANT_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can update achievements"
@@ -280,7 +280,7 @@ async def create_leaderboard(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new leaderboard (admin only)."""
-    if current_user.user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.GROUP_ADMIN):
+    if current_user.user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.TENANT_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can create leaderboards"
@@ -303,7 +303,7 @@ async def update_leaderboard_rankings(
     current_user: User = Depends(get_current_user)
 ):
     """Recalculate leaderboard rankings (admin only)."""
-    if current_user.user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.GROUP_ADMIN):
+    if current_user.user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.TENANT_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can update leaderboard rankings"

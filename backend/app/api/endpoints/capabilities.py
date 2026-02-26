@@ -28,7 +28,7 @@ async def get_my_capabilities(
 
     Returns:
         - capabilities: List of capability strings for UI visibility control
-        - user_type: User classification (SYSTEM_ADMIN, GROUP_ADMIN, USER)
+        - user_type: User classification (SYSTEM_ADMIN, TENANT_ADMIN, USER)
         - powell_role: Powell Framework role for landing page routing (optional)
           - SC_VP → /executive-dashboard
           - SOP_DIRECTOR → /sop-worklist

@@ -2,13 +2,13 @@
  * Training Compare Page
  *
  * Allows users to compare performance across multiple completed scenarios.
- * Reuses the CustomerScenarioComparisonPanel component.
+ * Reuses the TenantScenarioComparisonPanel component.
  */
 
 import React, { useState, useEffect } from 'react';
 import simulationApi from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
-import CustomerScenarioComparisonPanel from '../admin/CustomerScenarioComparisonPanel';
+import TenantScenarioComparisonPanel from '../admin/TenantScenarioComparisonPanel';
 import {
   Card,
   CardContent,
@@ -66,12 +66,12 @@ const TrainingCompare = () => {
       )}
 
       {/* Comparison Panel */}
-      <CustomerScenarioComparisonPanel
+      <TenantScenarioComparisonPanel
         games={games}
         loading={loading}
         error={error}
         onRefresh={fetchGames}
-        customerId={user?.customer_id}
+        groupId={user?.tenant_id}
         currentUserId={user?.id}
         selectedSupplyChainId="all"
       />

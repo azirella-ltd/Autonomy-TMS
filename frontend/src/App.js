@@ -30,15 +30,15 @@ import PowellDashboard from "./pages/admin/PowellDashboard.jsx";
 import Users from "./pages/Users";
 import AdminUserManagement from "./pages/admin/UserManagement.js";
 import SystemAdminUserManagement from "./pages/admin/SystemAdminUserManagement.jsx";
-import CustomerAdminUserManagement from "./pages/admin/CustomerAdminUserManagement.jsx";
-import CustomerManagement from "./pages/admin/CustomerManagement.jsx";
+import TenantAdminUserManagement from "./pages/admin/TenantAdminUserManagement.jsx";
+import TenantManagement from "./pages/admin/TenantManagement.jsx";
 import Settings from "./pages/Settings";
 import SystemConfig from "./pages/SystemConfig.jsx";
 import Unauthorized from "./pages/Unauthorized";
 import SupplyChainConfigList from "./components/supply-chain-config/SupplyChainConfigList";
 import SupplyChainConfigForm from "./components/supply-chain-config/SupplyChainConfigForm";
-import CustomerSupplyChainConfigList from "./pages/admin/CustomerSupplyChainConfigList.jsx";
-import CustomerSupplyChainConfigForm from "./pages/admin/CustomerSupplyChainConfigForm.jsx";
+import TenantSupplyChainConfigList from "./pages/admin/TenantSupplyChainConfigList.jsx";
+import TenantSupplyChainConfigForm from "./pages/admin/TenantSupplyChainConfigForm.jsx";
 import ScenarioTreeManager from "./pages/admin/ScenarioTreeManager.jsx";
 import { ScenarioComparison } from "./components/stochastic";
 import SyntheticDataWizard from "./pages/admin/SyntheticDataWizard.jsx";
@@ -54,7 +54,7 @@ import KnowledgeBase from "./pages/admin/KnowledgeBase.jsx";
 import AgentBenchmarkDashboard from "./pages/admin/AgentBenchmarkDashboard.jsx";
 import RLHFDashboard from "./pages/admin/RLHFDashboard.jsx";
 import PerformanceLeaderboard from "./pages/admin/PerformanceLeaderboard.jsx";
-import ScenarioUsers from "./pages/ScenarioUsers.jsx";
+import ScenarioUsers from "./pages/Players.jsx";
 import DebugBanner from "./components/DebugBanner.jsx";
 import AnalyticsDashboard from "./pages/AnalyticsDashboard.jsx";
 import SystemDashboard from "./components/monitoring/SystemDashboard";
@@ -389,35 +389,35 @@ const AppContent = () => {
               element={<ExceptionWorkflows />}
             />
             <Route
-              path="/admin/customers"
-              element={<CustomerManagement />}
+              path="/admin/tenants"
+              element={<TenantManagement />}
             />
             <Route
               path="/admin/users"
               element={<AdminUserManagement />}
             />
             <Route
-              path="/admin/customer/users"
-              element={<CustomerAdminUserManagement />}
+              path="/admin/tenant/users"
+              element={<TenantAdminUserManagement />}
             />
             <Route
               path="/system/users"
               element={<SystemAdminUserManagement />}
             />
             <Route
-              path="/admin/customer/supply-chain-configs"
-              element={<CustomerSupplyChainConfigList />}
+              path="/admin/tenant/supply-chain-configs"
+              element={<TenantSupplyChainConfigList />}
             />
             <Route
-              path="/admin/customer/supply-chain-configs/new"
-              element={<CustomerSupplyChainConfigForm />}
+              path="/admin/tenant/supply-chain-configs/new"
+              element={<TenantSupplyChainConfigForm />}
             />
             <Route
-              path="/admin/customer/supply-chain-configs/edit/:id"
-              element={<CustomerSupplyChainConfigForm />}
+              path="/admin/tenant/supply-chain-configs/edit/:id"
+              element={<TenantSupplyChainConfigForm />}
             />
             <Route
-              path="/admin/customer/supply-chain-configs/:configId/scenarios"
+              path="/admin/tenant/supply-chain-configs/:configId/scenarios"
               element={<ScenarioTreeManager />}
             />
             <Route
@@ -429,7 +429,7 @@ const AppContent = () => {
               }
             />
             <Route
-              path="/admin/customer/planning-hierarchy"
+              path="/admin/tenant/planning-hierarchy"
               element={<PlanningHierarchyConfig />}
             />
             <Route

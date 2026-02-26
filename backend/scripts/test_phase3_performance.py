@@ -17,7 +17,7 @@ from sqlalchemy import select
 
 from app.db.session import async_session_factory
 from app.models.supply_chain_config import SupplyChainConfig
-from app.models.customer import Customer
+from app.models.tenant import Tenant
 from app.models.scenario import Scenario
 from app.services.sc_planning.simulation_execution_adapter import SimulationExecutionAdapter
 from app.services.aws_sc_planning.execution_cache import ExecutionCache
@@ -44,7 +44,7 @@ async def benchmark_cache_loading():
             return False
 
         # Benchmark cache load time
-        cache = ExecutionCache(db, config_id=config.id, customer_id=2)
+        cache = ExecutionCache(db, config_id=config.id, tenant_id=2)
 
         start = time.time()
         counts = await cache.load()
@@ -101,7 +101,7 @@ async def benchmark_batch_vs_single():
     print()
 
     async with async_session_factory() as db:
-        # Get config and customer
+        # Get config and tenant
         result = await db.execute(
             select(SupplyChainConfig).filter(
                 SupplyChainConfig.name.like("%Default%")
@@ -109,17 +109,17 @@ async def benchmark_batch_vs_single():
         )
         config = result.scalar_one_or_none()
 
-        result = await db.execute(select(Customer).filter(Customer.id == 2))
-        customer = result.scalar_one_or_none()
+        result = await db.execute(select(Tenant).filter(Tenant.id == 2))
+        tenant = result.scalar_one_or_none()
 
-        if not config or not customer:
-            print("❌ Config or customer not found")
+        if not config or not tenant:
+            print("❌ Config or tenant not found")
             return False
 
         # Create test scenario
         scenario = Scenario(
             name="Performance Test Scenario",
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             supply_chain_config_id=config.id,
             use_aws_sc_planning=True,
             max_rounds=10,

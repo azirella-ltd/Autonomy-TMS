@@ -301,11 +301,11 @@ def receive_external_demand_plan(
             imported_count += 1
 
         product_site_pairs = list({(str(fi.product_id), int(fi.site_id)) for fi in demand_plan.forecasts if str(fi.site_id).isdigit()})
-        if product_site_pairs and getattr(current_user, "customer_id", None):
+        if product_site_pairs and getattr(current_user, "tenant_id", None):
             background_tasks.add_task(
                 _trigger_conformal_forecast_hook,
                 product_site_pairs=product_site_pairs,
-                customer_id=current_user.customer_id,
+                customer_id=current_user.tenant_id,
             )
 
         return {
@@ -429,11 +429,11 @@ def apply_forecast_overrides(
         for o in request.overrides
         if str(o.site_id).isdigit()
     ]
-    if product_site_pairs and getattr(current_user, "customer_id", None):
+    if product_site_pairs and getattr(current_user, "tenant_id", None):
         background_tasks.add_task(
             _trigger_conformal_forecast_hook,
             product_site_pairs=list(set(product_site_pairs)),
-            customer_id=current_user.customer_id,
+            customer_id=current_user.tenant_id,
         )
 
     return ForecastOverrideResponse(

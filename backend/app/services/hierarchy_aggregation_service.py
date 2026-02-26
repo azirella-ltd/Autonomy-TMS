@@ -154,9 +154,9 @@ class HierarchyAggregationService:
     4. Disaggregate plans from higher levels to detailed levels
     """
 
-    def __init__(self, db: AsyncSession, customer_id: int, config_id: Optional[int] = None):
+    def __init__(self, db: AsyncSession, tenant_id: int, config_id: Optional[int] = None):
         self.db = db
-        self.customer_id = customer_id
+        self.tenant_id = tenant_id
         self.config_id = config_id
 
         # Cached hierarchy data
@@ -175,7 +175,7 @@ class HierarchyAggregationService:
         # Load site hierarchy nodes
         result = await self.db.execute(
             select(SiteHierarchyNode).where(
-                SiteHierarchyNode.customer_id == self.customer_id
+                SiteHierarchyNode.tenant_id == self.tenant_id
             ).order_by(SiteHierarchyNode.depth)
         )
         nodes = result.scalars().all()
@@ -221,7 +221,7 @@ class HierarchyAggregationService:
         # Load product hierarchy nodes
         result = await self.db.execute(
             select(ProductHierarchyNode).where(
-                ProductHierarchyNode.customer_id == self.customer_id
+                ProductHierarchyNode.tenant_id == self.tenant_id
             ).order_by(ProductHierarchyNode.depth)
         )
         nodes = result.scalars().all()
@@ -340,7 +340,7 @@ class HierarchyAggregationService:
         result = await self.db.execute(
             select(PlanningHierarchyConfig).where(
                 and_(
-                    PlanningHierarchyConfig.customer_id == self.customer_id,
+                    PlanningHierarchyConfig.tenant_id == self.tenant_id,
                     PlanningHierarchyConfig.planning_type == planning_type,
                     PlanningHierarchyConfig.is_active == True
                 )
@@ -524,7 +524,7 @@ class HierarchyAggregationService:
         # Load inventory levels
         inv_result = await self.db.execute(
             select(InvLevel).where(
-                InvLevel.connection_id == self.customer_id  # Using customer_id as connection
+                InvLevel.connection_id == self.tenant_id  # Using tenant_id as connection
             )
         )
         inv_levels = inv_result.scalars().all()
@@ -620,25 +620,25 @@ class HierarchyAggregationService:
 
 async def build_sop_dag(
     db: AsyncSession,
-    customer_id: int,
+    tenant_id: int,
     config_id: Optional[int] = None,
     as_of_date: Optional[date] = None
 ) -> HierarchicalPlanningDAG:
     """Build a DAG at S&OP level (Country × Family, Monthly)."""
-    service = HierarchyAggregationService(db, customer_id, config_id)
+    service = HierarchyAggregationService(db, tenant_id, config_id)
     await service.load_hierarchies()
     return await service.build_dag_for_planning_type(PlanningType.SOP, as_of_date)
 
 
 async def build_mps_dag(
     db: AsyncSession,
-    customer_id: int,
+    tenant_id: int,
     config_id: Optional[int] = None,
     as_of_date: Optional[date] = None,
     sop_constraints: Optional[Dict[str, Any]] = None
 ) -> HierarchicalPlanningDAG:
     """Build a DAG at MPS level (Site × Group, Weekly)."""
-    service = HierarchyAggregationService(db, customer_id, config_id)
+    service = HierarchyAggregationService(db, tenant_id, config_id)
     await service.load_hierarchies()
     return await service.build_dag_for_planning_type(
         PlanningType.MPS, as_of_date, parent_constraints=sop_constraints
@@ -647,13 +647,13 @@ async def build_mps_dag(
 
 async def build_execution_dag(
     db: AsyncSession,
-    customer_id: int,
+    tenant_id: int,
     config_id: Optional[int] = None,
     as_of_date: Optional[date] = None,
     mps_constraints: Optional[Dict[str, Any]] = None
 ) -> HierarchicalPlanningDAG:
     """Build a DAG at Execution level (Site × SKU, Hourly)."""
-    service = HierarchyAggregationService(db, customer_id, config_id)
+    service = HierarchyAggregationService(db, tenant_id, config_id)
     await service.load_hierarchies()
     return await service.build_dag_for_planning_type(
         PlanningType.EXECUTION, as_of_date, parent_constraints=mps_constraints

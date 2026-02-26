@@ -116,7 +116,7 @@ const STATUS_ICONS = {
   training_trm: <AIIcon color="warning" />
 };
 
-export default function AITrainingConfig({ customerId, hierarchyConfigs = [], supplyChainConfigs = [] }) {
+export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supplyChainConfigs = [] }) {
   const [configs, setConfigs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -162,12 +162,12 @@ export default function AITrainingConfig({ customerId, hierarchyConfigs = [], su
     seed: ''
   });
 
-  const effectiveCustomerId = customerId || localStorage.getItem('groupId') || 1;
+  const effectiveTenantId = tenantId || localStorage.getItem('tenantId') || 1;
 
   const fetchConfigs = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await api.get(`/powell-training/configs?group_id=${effectiveCustomerId}`);
+      const response = await api.get(`/powell-training/configs?tenant_id=${effectiveTenantId}`);
       setConfigs(response.data);
     } catch (err) {
       setError('Failed to load AI training configurations');
@@ -175,7 +175,7 @@ export default function AITrainingConfig({ customerId, hierarchyConfigs = [], su
     } finally {
       setLoading(false);
     }
-  }, [effectiveCustomerId]);
+  }, [effectiveTenantId]);
 
   useEffect(() => {
     fetchConfigs();
@@ -255,7 +255,7 @@ export default function AITrainingConfig({ customerId, hierarchyConfigs = [], su
         await api.put(`/powell-training/configs/${editingConfig.id}`, payload);
         setSuccess('Configuration updated successfully');
       } else {
-        await api.post(`/powell-training/configs?group_id=${effectiveCustomerId}`, payload);
+        await api.post(`/powell-training/configs?tenant_id=${effectiveTenantId}`, payload);
         setSuccess('Configuration created successfully');
       }
       handleCloseDialog();

@@ -10,7 +10,7 @@ Usage:
     python scripts/generate_food_dist_config.py
 
 Or with custom parameters:
-    python scripts/generate_food_dist_config.py --customer-name "Food Dist Demo" --admin-email "admin@example.com"
+    python scripts/generate_food_dist_config.py --tenant-name "Food Dist Demo" --admin-email "admin@example.com"
 """
 
 import asyncio
@@ -55,7 +55,7 @@ async def main(args):
     logger.info("=" * 60)
     logger.info("Food Dist Configuration Generator")
     logger.info("=" * 60)
-    logger.info(f"Customer Name: {args.customer_name}")
+    logger.info(f"Tenant Name: {args.tenant_name}")
     logger.info(f"Admin Email: {args.admin_email}")
     logger.info(f"Admin Name: {args.admin_name}")
     logger.info("=" * 60)
@@ -64,7 +64,7 @@ async def main(args):
         try:
             result = await generate_food_dist_config(
                 db=session,
-                customer_name=args.customer_name,
+                tenant_name=args.tenant_name,
                 admin_email=args.admin_email,
                 admin_name=args.admin_name,
             )
@@ -106,19 +106,19 @@ if __name__ == "__main__":
         description="Generate Food Dist supply chain configuration"
     )
     parser.add_argument(
-        "--customer-name",
+        "--tenant-name",
         default="Food Dist",
-        help="Name of the learning customer (default: Food Dist)"
+        help="Name of the learning tenant (default: Food Dist)"
     )
     parser.add_argument(
         "--admin-email",
         default="admin@distdemo.com",
-        help="Email for the customer admin (default: admin@distdemo.com)"
+        help="Email for the tenant admin (default: admin@distdemo.com)"
     )
     parser.add_argument(
         "--admin-name",
         default="Food Dist Admin",
-        help="Name for the customer admin (default: Food Dist Admin)"
+        help="Name for the tenant admin (default: Food Dist Admin)"
     )
     parser.add_argument(
         "-v", "--verbose",

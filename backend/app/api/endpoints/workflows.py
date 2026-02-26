@@ -47,7 +47,7 @@ def list_workflow_templates(
 ):
     """List workflow templates for the user's customer."""
     query = db.query(WorkflowTemplate).filter(
-        WorkflowTemplate.customer_id == current_user.customer_id
+        WorkflowTemplate.customer_id == current_user.tenant_id
     )
 
     if trigger_type:
@@ -76,7 +76,7 @@ def create_workflow_template(
 ):
     """Create a new workflow template."""
     # Verify user has access to the customer
-    if template_in.customer_id != current_user.customer_id:
+    if template_in.customer_id != current_user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot create template for a different customer"
@@ -112,7 +112,7 @@ def get_workflow_template(
     """Get a specific workflow template."""
     template = db.query(WorkflowTemplate).filter(
         WorkflowTemplate.id == template_id,
-        WorkflowTemplate.customer_id == current_user.customer_id
+        WorkflowTemplate.customer_id == current_user.tenant_id
     ).first()
 
     if not template:
@@ -134,7 +134,7 @@ def update_workflow_template(
     """Update a workflow template."""
     template = db.query(WorkflowTemplate).filter(
         WorkflowTemplate.id == template_id,
-        WorkflowTemplate.customer_id == current_user.customer_id
+        WorkflowTemplate.customer_id == current_user.tenant_id
     ).first()
 
     if not template:
@@ -169,7 +169,7 @@ def delete_workflow_template(
     """Delete a workflow template."""
     template = db.query(WorkflowTemplate).filter(
         WorkflowTemplate.id == template_id,
-        WorkflowTemplate.customer_id == current_user.customer_id
+        WorkflowTemplate.customer_id == current_user.tenant_id
     ).first()
 
     if not template:
@@ -204,7 +204,7 @@ async def trigger_workflow(
     """Manually trigger a workflow."""
     template = db.query(WorkflowTemplate).filter(
         WorkflowTemplate.id == template_id,
-        WorkflowTemplate.customer_id == current_user.customer_id
+        WorkflowTemplate.customer_id == current_user.tenant_id
     ).first()
 
     if not template:
@@ -251,7 +251,7 @@ def enable_workflow_template(
     """Enable a workflow template."""
     template = db.query(WorkflowTemplate).filter(
         WorkflowTemplate.id == template_id,
-        WorkflowTemplate.customer_id == current_user.customer_id
+        WorkflowTemplate.customer_id == current_user.tenant_id
     ).first()
 
     if not template:
@@ -277,7 +277,7 @@ def disable_workflow_template(
     """Disable a workflow template."""
     template = db.query(WorkflowTemplate).filter(
         WorkflowTemplate.id == template_id,
-        WorkflowTemplate.customer_id == current_user.customer_id
+        WorkflowTemplate.customer_id == current_user.tenant_id
     ).first()
 
     if not template:
@@ -309,7 +309,7 @@ def list_workflow_executions(
 ):
     """List workflow executions for the user's customer."""
     query = db.query(WorkflowExecution).join(WorkflowTemplate).filter(
-        WorkflowTemplate.customer_id == current_user.customer_id
+        WorkflowTemplate.customer_id == current_user.tenant_id
     )
 
     if template_id:
@@ -347,7 +347,7 @@ def get_workflow_execution(
     """Get a specific workflow execution."""
     execution = db.query(WorkflowExecution).join(WorkflowTemplate).filter(
         WorkflowExecution.id == execution_id,
-        WorkflowTemplate.customer_id == current_user.customer_id
+        WorkflowTemplate.customer_id == current_user.tenant_id
     ).first()
 
     if not execution:
@@ -377,7 +377,7 @@ def cancel_workflow_execution(
     """Cancel a running workflow execution."""
     execution = db.query(WorkflowExecution).join(WorkflowTemplate).filter(
         WorkflowExecution.id == execution_id,
-        WorkflowTemplate.customer_id == current_user.customer_id
+        WorkflowTemplate.customer_id == current_user.tenant_id
     ).first()
 
     if not execution:
@@ -456,7 +456,7 @@ def create_templates_from_defaults(
 
         # Check if template already exists
         existing = db.query(WorkflowTemplate).filter(
-            WorkflowTemplate.customer_id == current_user.customer_id,
+            WorkflowTemplate.customer_id == current_user.tenant_id,
             WorkflowTemplate.name == name
         ).first()
 
@@ -464,7 +464,7 @@ def create_templates_from_defaults(
             continue
 
         template = WorkflowTemplate(
-            customer_id=current_user.customer_id,
+            customer_id=current_user.tenant_id,
             name=name,
             description=defaults.get("description", ""),
             trigger_type=defaults["trigger_type"],

@@ -16,9 +16,9 @@ import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { isSystemAdmin as isSystemAdminUser } from '../../utils/authUtils';
 import { saveAdminDashboardPath } from '../../utils/adminDashboardState';
-import CustomerSupplyChainConfigList from './CustomerSupplyChainConfigList';
-import CustomerAdminUserManagement from './UserManagement';
-import CustomerSettingsPanel from './CustomerSettingsPanel';
+import TenantSupplyChainConfigList from './TenantSupplyChainConfigList';
+import TenantAdminUserManagement from './UserManagement';
+import TenantSettingsPanel from './TenantSettingsPanel';
 import { getSupplyChainConfigs } from '../../services/supplyChainConfigService';
 import {
   Card,
@@ -55,7 +55,7 @@ const tabItems = [
 ];
 
 const ProductionAdminDashboard = () => {
-  const { user, loading, isGroupAdmin } = useAuth();
+  const { user, loading, isTenantAdmin } = useAuth();
   const isSystemAdmin = isSystemAdminUser(user);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -67,10 +67,10 @@ const ProductionAdminDashboard = () => {
   );
   const [selectedSupplyChainId, setSelectedSupplyChainId] = useState(initialScParam);
 
-  const customerId = useMemo(() => {
-    const rawCustomer = user?.customer_id;
-    if (rawCustomer == null) return null;
-    const parsed = Number(rawCustomer);
+  const tenantId = useMemo(() => {
+    const rawTenant = user?.tenant_id;
+    if (rawTenant == null) return null;
+    const parsed = Number(rawTenant);
     return Number.isFinite(parsed) ? parsed : null;
   }, [user]);
 
@@ -80,7 +80,7 @@ const ProductionAdminDashboard = () => {
   const [selectedConfig, setSelectedConfig] = useState(null);
 
   // Customer info state
-  const [customerInfo, setCustomerInfo] = useState(null);
+  const [tenantInfo, setCustomerInfo] = useState(null);
 
   useEffect(() => {
     const section = searchParams.get('section') || 'sc';
@@ -162,19 +162,19 @@ const ProductionAdminDashboard = () => {
     refreshSupplyChains();
   }, [refreshSupplyChains]);
 
-  // Load customer info
+  // Load organization info
   useEffect(() => {
-    const loadCustomerInfo = async () => {
-      if (!customerId) return;
+    const loadTenantInfo = async () => {
+      if (!tenantId) return;
       try {
-        const response = await api.get(`/groups/${customerId}`);
+        const response = await api.get(`/tenants/${tenantId}`);
         setCustomerInfo(response.data);
       } catch (err) {
-        console.warn('Failed to load customer info', err);
+        console.warn('Failed to load organization info', err);
       }
     };
-    loadCustomerInfo();
-  }, [customerId]);
+    loadTenantInfo();
+  }, [tenantId]);
 
   // Supply chain options for dropdown
   const supplyChainOptions = useMemo(() => {
@@ -225,11 +225,11 @@ const ProductionAdminDashboard = () => {
     return <Navigate to="/unauthorized" replace />;
   }
 
-  if (isSystemAdmin && !isGroupAdmin) {
+  if (isSystemAdmin && !isTenantAdmin) {
     return <Navigate to="/system/users" replace />;
   }
 
-  if (!isGroupAdmin) {
+  if (!isTenantAdmin) {
     return <Navigate to="/unauthorized" replace />;
   }
 
@@ -240,7 +240,7 @@ const ProductionAdminDashboard = () => {
           <div className="flex flex-col gap-4 mb-4">
             <div>
               <h1 className="text-2xl font-bold mb-1">
-                {customerInfo?.name || 'Customer'} Administration
+                {tenantInfo?.name || 'Organization'} Administration
               </h1>
               <p className="text-sm text-muted-foreground">
                 Configure supply chain networks, manage scenarios and users, and adjust planning settings for your organization.
@@ -289,7 +289,7 @@ const ProductionAdminDashboard = () => {
 
       <div>
         {/* Supply Chains Tab */}
-        {activeTab === 'sc' && <CustomerSupplyChainConfigList />}
+        {activeTab === 'sc' && <TenantSupplyChainConfigList />}
 
         {/* Scenarios Tab - Git-like tree view */}
         {activeTab === 'scenarios' && (
@@ -320,7 +320,7 @@ const ProductionAdminDashboard = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => navigate(`/admin/customer/supply-chain-configs/${selectedConfig.id}/scenarios`)}
+                      onClick={() => navigate(`/admin/tenant/supply-chain-configs/${selectedConfig.id}/scenarios`)}
                     >
                       Open Full Tree Manager
                       <ChevronRight className="h-4 w-4 ml-1" />
@@ -344,13 +344,13 @@ const ProductionAdminDashboard = () => {
         )}
 
         {/* Users Tab */}
-        {activeTab === 'users' && <CustomerAdminUserManagement />}
+        {activeTab === 'users' && <TenantAdminUserManagement />}
 
         {/* Settings Tab */}
         {activeTab === 'settings' && (
-          <CustomerSettingsPanel
-            groupId={customerId}
-            groupInfo={customerInfo}
+          <TenantSettingsPanel
+            groupId={tenantId}
+            groupInfo={tenantInfo}
             selectedConfigId={selectedConfig?.id}
             onGroupInfoChange={setCustomerInfo}
           />

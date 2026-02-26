@@ -137,7 +137,7 @@ class AuthService:
             user_type = UserTypeEnum.SYSTEM_ADMIN if user.is_superuser else UserTypeEnum.USER
 
         is_system_admin = bool(user.is_superuser or user_type == UserTypeEnum.SYSTEM_ADMIN)
-        is_group_admin = user_type == UserTypeEnum.GROUP_ADMIN
+        is_tenant_admin = user_type == UserTypeEnum.TENANT_ADMIN
         is_player = user_type == UserTypeEnum.USER
 
         # Check if the account is locked
@@ -156,16 +156,16 @@ class AuthService:
             user.last_failed_login = datetime.utcnow()
             await self.db.commit()
 
-            if is_group_admin:
+            if is_tenant_admin:
                 message = (
                     "Incorrect password. Please contact your system administrator for assistance."
                 )
                 contact_role = "systemadmin"
             elif is_player:
                 message = (
-                    "Incorrect password. Please contact your group admin for assistance."
+                    "Incorrect password. Please contact your tenant admin for assistance."
                 )
-                contact_role = "groupadmin"
+                contact_role = "tenantadmin"
             elif is_system_admin:
                 message = (
                     "Incorrect password. Please verify your credentials or reach out to a fellow system administrator for support."

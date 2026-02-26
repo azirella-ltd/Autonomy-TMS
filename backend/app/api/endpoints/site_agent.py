@@ -1774,7 +1774,7 @@ class DirectiveReviewRequest(BaseModel):
 
 @router.get("/governance/pending")
 def get_governance_pending(
-    customer_id: int = Query(...),
+    tenant_id: int = Query(...),
     limit: int = Query(default=50, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -1787,7 +1787,7 @@ def get_governance_pending(
     then highest impact_score).
     """
     actions = DecisionGovernanceService.get_pending_decisions(
-        db, customer_id, limit=limit, offset=offset,
+        db, tenant_id, limit=limit, offset=offset,
     )
     return {
         "pending": [a.to_dict() for a in actions],
@@ -1831,14 +1831,14 @@ def resolve_governance_decision(
 
 @router.get("/governance/policies")
 def list_governance_policies(
-    customer_id: int = Query(...),
+    tenant_id: int = Query(...),
     include_inactive: bool = Query(default=False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """List governance policies for a customer."""
     query = db.query(DecisionGovernancePolicy).filter(
-        DecisionGovernancePolicy.customer_id == customer_id,
+        DecisionGovernancePolicy.customer_id == tenant_id,
     )
     if not include_inactive:
         query = query.filter(DecisionGovernancePolicy.is_active == True)
@@ -1853,14 +1853,14 @@ def list_governance_policies(
 
 @router.post("/governance/policies")
 def create_governance_policy(
-    customer_id: int = Query(...),
+    tenant_id: int = Query(...),
     body: GovernancePolicyCreateRequest = ...,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Create a new governance policy for a customer."""
     policy = DecisionGovernancePolicy(
-        customer_id=customer_id,
+        customer_id=tenant_id,
         action_type=body.action_type,
         category=body.category,
         agent_id=body.agent_id,
@@ -1928,7 +1928,7 @@ def deactivate_governance_policy(
 
 @router.get("/governance/stats")
 def get_governance_stats(
-    customer_id: int = Query(...),
+    tenant_id: int = Query(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -1939,7 +1939,7 @@ def get_governance_stats(
     avg impact score, auto-apply rate, human resolve rate,
     avg resolution time, override count.
     """
-    stats = DecisionGovernanceService.get_governance_stats(db, customer_id)
+    stats = DecisionGovernanceService.get_governance_stats(db, tenant_id)
     return stats
 
 
@@ -1947,7 +1947,7 @@ def get_governance_stats(
 
 @router.get("/governance/directives")
 def list_guardrail_directives(
-    customer_id: int = Query(...),
+    tenant_id: int = Query(...),
     status: Optional[str] = Query(default=None, description="Filter: PENDING|APPLIED|REJECTED|EXPIRED"),
     limit: int = Query(default=50, le=200),
     offset: int = Query(default=0, ge=0),
@@ -1962,7 +1962,7 @@ def list_guardrail_directives(
     raw content) and extracted structured fields.
     """
     query = db.query(GuardrailDirective).filter(
-        GuardrailDirective.customer_id == customer_id,
+        GuardrailDirective.customer_id == tenant_id,
     )
     if status:
         query = query.filter(GuardrailDirective.status == status)
@@ -1972,7 +1972,7 @@ def list_guardrail_directives(
     ).offset(offset).limit(limit).all()
 
     total = db.query(GuardrailDirective).filter(
-        GuardrailDirective.customer_id == customer_id,
+        GuardrailDirective.customer_id == tenant_id,
         *([GuardrailDirective.status == status] if status else []),
     ).count()
 
@@ -1997,7 +1997,7 @@ def get_guardrail_directive(
 
 @router.post("/governance/directives")
 def create_guardrail_directive(
-    customer_id: int = Query(...),
+    tenant_id: int = Query(...),
     body: DirectiveCreateRequest = ...,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -2012,7 +2012,7 @@ def create_guardrail_directive(
     The directive starts as PENDING until reviewed and applied/rejected.
     """
     directive = GuardrailDirective(
-        customer_id=customer_id,
+        customer_id=tenant_id,
         source_user_id=body.source_user_id,
         source_channel=body.source_channel,
         source_signal_id=body.source_signal_id,

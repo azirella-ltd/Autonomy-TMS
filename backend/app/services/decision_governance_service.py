@@ -65,7 +65,7 @@ class DecisionGovernanceService:
 
     Usage:
         service = DecisionGovernanceService()
-        service.gate_decision(db, agent_action, customer_id)
+        service.gate_decision(db, agent_action, tenant_id)
         # action.action_mode is now AUTOMATE/INFORM/INSPECT
         # If INSPECT: action.hold_until is set, execution_result = PENDING
     """
@@ -82,7 +82,7 @@ class DecisionGovernanceService:
         confidence_level: Optional[float],
         site_hierarchy_level: str,
         product_hierarchy_level: str,
-        customer_id: int,
+        tenant_id: int,
         db: Session,
         policy: Optional[DecisionGovernancePolicy] = None,
     ) -> Dict[str, Any]:
@@ -134,7 +134,7 @@ class DecisionGovernanceService:
 
         # 5. Override rate (0-100) — historical override frequency
         override_rate = DecisionGovernanceService._get_override_rate(
-            db, customer_id, action_type,
+            db, tenant_id, action_type,
         )
 
         # Weighted composite
@@ -185,7 +185,7 @@ class DecisionGovernanceService:
     def gate_decision(
         db: Session,
         action: AgentAction,
-        customer_id: int,
+        tenant_id: int,
     ) -> AgentAction:
         """
         Full governance pipeline for an AgentAction.
@@ -200,7 +200,7 @@ class DecisionGovernanceService:
         """
         # Find matching policy
         policy = DecisionGovernanceService.get_policy(
-            db, customer_id,
+            db, tenant_id,
             action.action_type,
             action.category.value if hasattr(action.category, 'value') else str(action.category),
             action.agent_id,
@@ -214,7 +214,7 @@ class DecisionGovernanceService:
             confidence_level=action.confidence_level,
             site_hierarchy_level=action.site_hierarchy_level.value if hasattr(action.site_hierarchy_level, 'value') else str(action.site_hierarchy_level),
             product_hierarchy_level=action.product_hierarchy_level.value if hasattr(action.product_hierarchy_level, 'value') else str(action.product_hierarchy_level),
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             db=db,
             policy=policy,
         )
@@ -231,7 +231,7 @@ class DecisionGovernanceService:
 
         # Check for active guardrail directives that might override mode
         directive = DecisionGovernanceService._find_active_directive(
-            db, customer_id, action.action_type,
+            db, tenant_id, action.action_type,
             action.category.value if hasattr(action.category, 'value') else str(action.category),
         )
         if directive:
@@ -353,7 +353,7 @@ class DecisionGovernanceService:
     @staticmethod
     def get_policy(
         db: Session,
-        customer_id: int,
+        tenant_id: int,
         action_type: Optional[str] = None,
         category: Optional[str] = None,
         agent_id: Optional[str] = None,
@@ -368,7 +368,7 @@ class DecisionGovernanceService:
           4. (customer)  — catch-all
         """
         base = db.query(DecisionGovernancePolicy).filter(
-            DecisionGovernancePolicy.customer_id == customer_id,
+            DecisionGovernancePolicy.tenant_id == tenant_id,
             DecisionGovernancePolicy.is_active == True,
         )
 
@@ -414,13 +414,13 @@ class DecisionGovernanceService:
     @staticmethod
     def get_pending_decisions(
         db: Session,
-        customer_id: int,
+        tenant_id: int,
         limit: int = 50,
         offset: int = 0,
     ) -> List[AgentAction]:
         """Get INSPECT decisions awaiting review, ordered by urgency."""
         return db.query(AgentAction).filter(
-            AgentAction.customer_id == customer_id,
+            AgentAction.tenant_id == tenant_id,
             AgentAction.action_mode == ActionMode.INSPECT,
             AgentAction.execution_result == ExecutionResult.PENDING,
         ).order_by(
@@ -429,10 +429,10 @@ class DecisionGovernanceService:
         ).offset(offset).limit(limit).all()
 
     @staticmethod
-    def get_governance_stats(db: Session, customer_id: int) -> Dict[str, Any]:
+    def get_governance_stats(db: Session, tenant_id: int) -> Dict[str, Any]:
         """Compute governance metrics for dashboard."""
         base = db.query(AgentAction).filter(
-            AgentAction.customer_id == customer_id,
+            AgentAction.tenant_id == tenant_id,
             AgentAction.impact_score != None,
         )
 
@@ -460,7 +460,7 @@ class DecisionGovernanceService:
         ).count()
 
         avg_impact = db.query(func.avg(AgentAction.impact_score)).filter(
-            AgentAction.customer_id == customer_id,
+            AgentAction.tenant_id == tenant_id,
             AgentAction.impact_score != None,
         ).scalar() or 0
 
@@ -485,7 +485,7 @@ class DecisionGovernanceService:
         # Average resolution time for human-resolved decisions
         avg_res_minutes = None
         resolved_with_time = db.query(AgentAction).filter(
-            AgentAction.customer_id == customer_id,
+            AgentAction.tenant_id == tenant_id,
             AgentAction.resolved_at != None,
             AgentAction.created_at != None,
         ).all()
@@ -541,7 +541,7 @@ class DecisionGovernanceService:
 
         # Create a new governance policy from the directive
         policy = DecisionGovernancePolicy(
-            customer_id=directive.customer_id,
+            tenant_id=directive.tenant_id,
             action_type=params.get("action_type"),
             category=params.get("category"),
             agent_id=params.get("agent_id"),
@@ -577,7 +577,7 @@ class DecisionGovernanceService:
 
         logger.info(
             "Applied guardrail directive %d → policy %d (customer=%d, user=%d)",
-            directive.id, policy.id, directive.customer_id, reviewer_user_id,
+            directive.id, policy.id, directive.tenant_id, reviewer_user_id,
         )
 
         return directive
@@ -612,7 +612,7 @@ class DecisionGovernanceService:
     @staticmethod
     def _get_override_rate(
         db: Session,
-        customer_id: int,
+        tenant_id: int,
         action_type: str,
     ) -> float:
         """
@@ -622,7 +622,7 @@ class DecisionGovernanceService:
           override_rate = (overridden_count / total_count) * 100
         """
         total = db.query(func.count(AgentAction.id)).filter(
-            AgentAction.customer_id == customer_id,
+            AgentAction.tenant_id == tenant_id,
             AgentAction.action_type == action_type,
         ).scalar() or 0
 
@@ -630,7 +630,7 @@ class DecisionGovernanceService:
             return 30.0  # Not enough data, assume moderate
 
         overridden = db.query(func.count(AgentAction.id)).filter(
-            AgentAction.customer_id == customer_id,
+            AgentAction.tenant_id == tenant_id,
             AgentAction.action_type == action_type,
             AgentAction.is_overridden == True,
         ).scalar() or 0
@@ -640,7 +640,7 @@ class DecisionGovernanceService:
     @staticmethod
     def _find_active_directive(
         db: Session,
-        customer_id: int,
+        tenant_id: int,
         action_type: str,
         category: str,
     ) -> Optional[GuardrailDirective]:
@@ -651,7 +651,7 @@ class DecisionGovernanceService:
         now = datetime.utcnow()
 
         directives = db.query(GuardrailDirective).filter(
-            GuardrailDirective.customer_id == customer_id,
+            GuardrailDirective.tenant_id == tenant_id,
             GuardrailDirective.status == "APPLIED",
             or_(
                 GuardrailDirective.effective_until == None,

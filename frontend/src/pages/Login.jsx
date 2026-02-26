@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import simulationApi, { api } from '../services/api';
 import {
-  isGroupAdmin,
+  isTenantAdmin,
   isSystemAdmin,
   resolvePostLoginDestination,
 } from '../utils/authUtils';
@@ -60,7 +60,7 @@ const Login = () => {
         navigate(destination, { replace: true });
         return;
       }
-      if (isGroupAdmin(user)) {
+      if (isTenantAdmin(user)) {
         navigate(destination, { replace: true });
         return;
       }
@@ -151,7 +151,7 @@ const Login = () => {
           return;
         }
 
-        if (!isGroupAdmin(loggedInUser)) {
+        if (!isTenantAdmin(loggedInUser)) {
           // Check for Powell capabilities BEFORE game-finding logic
           const hasPowellCaps = await checkPowellCapabilities();
           if (hasPowellCaps) {

@@ -54,7 +54,7 @@ user_scenarios = Table(
 class UserTypeEnum(str, Enum):
     """Application-level user type classification."""
     SYSTEM_ADMIN = "SYSTEM_ADMIN"
-    GROUP_ADMIN = "GROUP_ADMIN"
+    TENANT_ADMIN = "TENANT_ADMIN"
     USER = "USER"
 
 
@@ -171,7 +171,7 @@ class User(Base):
     tenant_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True)
 
     # Powell Framework Role - determines landing page for Production group users
-    # NULL means use user_type for routing (e.g., GROUP_ADMIN → /admin/production)
+    # NULL means use user_type for routing (e.g., TENANT_ADMIN → /admin/production)
     # This is separate from capabilities which can be customized by group admin
     powell_role: Mapped[Optional[PowellRoleEnum]] = mapped_column(
         SAEnum(PowellRoleEnum, name="powell_role_enum"),
@@ -187,7 +187,7 @@ class User(Base):
     )
 
     # Span of Control - Geographic and Product Scope (AIIO Framework)
-    # NULL or empty means full access (GROUP_ADMIN always has full access)
+    # NULL or empty means full access (TENANT_ADMIN always has full access)
     # These reference AWS SC hierarchy tables: site_hierarchy_node, product_hierarchy_node
     site_scope: Mapped[Optional[List]] = mapped_column(
         JSON,
@@ -218,32 +218,32 @@ class User(Base):
         return self.is_active
 
     @property
-    def is_admin(self) -> bool:
-        """Check if the user is classified as a group administrator."""
-        return self.user_type == UserTypeEnum.GROUP_ADMIN
+    def is_tenant_admin(self) -> bool:
+        """Check if the user is classified as a tenant administrator."""
+        return self.user_type == UserTypeEnum.TENANT_ADMIN
 
     def has_role(self, role: str) -> bool:
         """Legacy role helper for compatibility with older checks."""
         normalized = (role or "").strip().lower()
         if normalized in {"systemadmin", "system_admin", "superadmin"}:
             return self.user_type == UserTypeEnum.SYSTEM_ADMIN
-        if normalized in {"groupadmin", "group_admin", "admin"}:
-            return self.user_type == UserTypeEnum.GROUP_ADMIN
+        if normalized in {"tenantadmin", "tenant_admin", "admin"}:
+            return self.user_type == UserTypeEnum.TENANT_ADMIN
         if normalized in {"player", "user"}:
             return self.user_type == UserTypeEnum.USER
         return False
 
     @property
     def has_full_site_scope(self) -> bool:
-        """Check if user has full site access (GROUP_ADMIN or no restrictions)."""
-        if self.user_type == UserTypeEnum.GROUP_ADMIN:
+        """Check if user has full site access (TENANT_ADMIN or no restrictions)."""
+        if self.user_type == UserTypeEnum.TENANT_ADMIN:
             return True
         return not self.site_scope or len(self.site_scope) == 0
 
     @property
     def has_full_product_scope(self) -> bool:
-        """Check if user has full product access (GROUP_ADMIN or no restrictions)."""
-        if self.user_type == UserTypeEnum.GROUP_ADMIN:
+        """Check if user has full product access (TENANT_ADMIN or no restrictions)."""
+        if self.user_type == UserTypeEnum.TENANT_ADMIN:
             return True
         return not self.product_scope or len(self.product_scope) == 0
 
@@ -298,7 +298,7 @@ class User(Base):
         Returns:
             True if user has access, False otherwise
         """
-        if self.user_type == UserTypeEnum.GROUP_ADMIN:
+        if self.user_type == UserTypeEnum.TENANT_ADMIN:
             return True
         if not self.functional_scope or len(self.functional_scope) == 0:
             return True

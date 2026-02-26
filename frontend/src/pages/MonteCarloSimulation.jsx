@@ -114,7 +114,7 @@ const MonteCarloSimulation = () => {
     try {
       const payload = {
         ...newRun,
-        customer_id: user?.customer_id || 1,
+        tenant_id: user?.tenant_id || 1,
       };
 
       await api.post('/monte-carlo/runs', payload);

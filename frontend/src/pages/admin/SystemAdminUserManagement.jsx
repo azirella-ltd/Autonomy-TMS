@@ -30,7 +30,7 @@ const BASE_FORM = {
   username: '',
   email: '',
   password: '',
-  customerId: '',
+  tenantId: '',
 };
 
 const parseErrorMessage = (error, fallback) => {
@@ -49,7 +49,7 @@ function SystemAdminUserManagement() {
   const systemAdmin = isSystemAdminUser(user);
 
   const [admins, setAdmins] = useState([]);
-  const [customers, setCustomers] = useState([]);
+  const [organizations, setOrganizations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -62,28 +62,28 @@ function SystemAdminUserManagement() {
     }
   }, [systemAdmin, navigate]);
 
-  const loadCustomers = useCallback(async () => {
+  const loadOrganizations = useCallback(async () => {
     try {
-      const response = await api.get('/groups');
+      const response = await api.get('/tenants');
       const data = Array.isArray(response.data) ? response.data : [];
-      setCustomers(data);
+      setOrganizations(data);
       return data;
     } catch (error) {
-      console.error('Error loading customers:', error);
-      setCustomers([]);
+      console.error('Error loading organizations:', error);
+      setOrganizations([]);
       throw error;
     }
   }, []);
 
   const loadAdmins = useCallback(async () => {
     try {
-      const response = await api.get('/users', { params: { user_type: 'GROUP_ADMIN', limit: 250 } });
+      const response = await api.get('/users', { params: { user_type: 'TENANT_ADMIN', limit: 250 } });
       const data = Array.isArray(response.data) ? response.data : [];
-      const filtered = data.filter((item) => resolveUserType(item) === 'groupadmin');
+      const filtered = data.filter((item) => resolveUserType(item) === 'tenantadmin');
       setAdmins(filtered);
       return filtered;
     } catch (error) {
-      console.error('Error loading customer administrators:', error);
+      console.error('Error loading organization administrators:', error);
       setAdmins([]);
       throw error;
     }
@@ -97,7 +97,7 @@ function SystemAdminUserManagement() {
     const fetchAll = async () => {
       setLoading(true);
       try {
-        await Promise.all([loadCustomers(), loadAdmins()]);
+        await Promise.all([loadOrganizations(), loadAdmins()]);
       } catch (error) {
         toast.error('Failed to load user information');
       } finally {
@@ -106,20 +106,20 @@ function SystemAdminUserManagement() {
     };
 
     fetchAll();
-  }, [systemAdmin, loadCustomers, loadAdmins]);
+  }, [systemAdmin, loadOrganizations, loadAdmins]);
 
-  const customerMap = useMemo(() => {
+  const tenantMap = useMemo(() => {
     const map = {};
-    (customers || []).forEach((c) => {
+    (organizations || []).forEach((c) => {
       map[c.id] = c.name;
     });
     return map;
-  }, [customers]);
+  }, [organizations]);
 
   const handleOpenDialog = () => {
-    const defaultCustomerId = customers.length === 1 ? String(customers[0].id) : '';
+    const defaultOrgId = organizations.length === 1 ? String(organizations[0].id) : '';
     setEditingUser(null);
-    setForm({ ...BASE_FORM, customerId: defaultCustomerId });
+    setForm({ ...BASE_FORM, tenantId: defaultOrgId });
     setDialogOpen(true);
   };
 
@@ -136,7 +136,7 @@ function SystemAdminUserManagement() {
       username: admin.username || '',
       email: admin.email || '',
       password: '',
-      customerId: admin.customer_id ? String(admin.customer_id) : '',
+      tenantId: admin.tenant_id ? String(admin.tenant_id) : '',
     });
     setDialogOpen(true);
   };
@@ -147,23 +147,23 @@ function SystemAdminUserManagement() {
     const trimmedUsername = form.username.trim();
     const trimmedEmail = form.email.trim();
     const trimmedPassword = form.password.trim();
-    const trimmedCustomer = form.customerId.trim();
+    const trimmedTenant = form.tenantId.trim();
 
     if (!trimmedUsername || !trimmedEmail) {
       toast.error('Username and email are required.');
       return;
     }
 
-    if (!trimmedCustomer) {
-      toast.error('Please select a customer for this administrator.');
+    if (!trimmedTenant) {
+      toast.error('Please select an organization for this administrator.');
       return;
     }
 
     const payload = {
       username: trimmedUsername,
       email: trimmedEmail,
-      customer_id: Number(trimmedCustomer),
-      user_type: 'GROUP_ADMIN',
+      tenant_id: Number(trimmedTenant),
+      user_type: 'TENANT_ADMIN',
     };
 
     if (!editingUser) {
@@ -180,10 +180,10 @@ function SystemAdminUserManagement() {
     try {
       if (editingUser) {
         await api.put(`/users/${editingUser.id}`, payload);
-        toast.success('Customer administrator updated successfully');
+        toast.success('Organization administrator updated successfully');
       } else {
         await api.post('/users', payload);
-        toast.success('Customer administrator created successfully');
+        toast.success('Organization administrator created successfully');
       }
 
       handleCloseDialog();
@@ -198,12 +198,12 @@ function SystemAdminUserManagement() {
 
   const handleDeleteUser = async (admin) => {
     if (!admin) return;
-    const confirmMessage = `Are you sure you want to delete ${admin.username || 'this customer administrator'}?`;
+    const confirmMessage = `Are you sure you want to delete ${admin.username || 'this organization administrator'}?`;
     if (!window.confirm(confirmMessage)) return;
 
     try {
       await api.delete(`/users/${admin.id}`);
-      toast.success('Customer administrator deleted');
+      toast.success('Organization administrator deleted');
       await loadAdmins();
     } catch (error) {
       const message = parseErrorMessage(error, 'Failed to delete administrator');
@@ -227,13 +227,13 @@ function SystemAdminUserManagement() {
     <div className="max-w-5xl mx-auto my-8">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-semibold">Customer Administrator Management</h1>
+          <h1 className="text-2xl font-semibold">Organization Administrator Management</h1>
           <p className="text-sm text-muted-foreground">
-            Create and manage customer administrators across the platform.
+            Create and manage organization administrators across the platform.
           </p>
         </div>
         <Button onClick={handleOpenDialog} leftIcon={<Plus className="h-4 w-4" />}>
-          Add Customer Admin
+          Add Organization Admin
         </Button>
       </div>
 
@@ -243,7 +243,7 @@ function SystemAdminUserManagement() {
             <TableRow>
               <TableHead className="font-semibold">Username</TableHead>
               <TableHead className="font-semibold">Email</TableHead>
-              <TableHead className="font-semibold">Customer</TableHead>
+              <TableHead className="font-semibold">Organization</TableHead>
               <TableHead className="font-semibold">Type</TableHead>
               <TableHead className="text-right font-semibold">Actions</TableHead>
             </TableRow>
@@ -252,7 +252,7 @@ function SystemAdminUserManagement() {
             {admins.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-center">
-                  <span className="text-muted-foreground">No customer administrators found yet.</span>
+                  <span className="text-muted-foreground">No organization administrators found yet.</span>
                 </TableCell>
               </TableRow>
             ) : (
@@ -260,9 +260,9 @@ function SystemAdminUserManagement() {
                 <TableRow key={admin.id}>
                   <TableCell>{admin.username}</TableCell>
                   <TableCell>{admin.email}</TableCell>
-                  <TableCell>{customerMap[admin.customer_id] || '—'}</TableCell>
+                  <TableCell>{tenantMap[admin.tenant_id] || '—'}</TableCell>
                   <TableCell>
-                    <Badge>Customer Admin</Badge>
+                    <Badge>Organization Admin</Badge>
                   </TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="sm" onClick={() => handleEditUser(admin)}>
@@ -282,7 +282,7 @@ function SystemAdminUserManagement() {
       <Modal
         isOpen={dialogOpen}
         onClose={handleCloseDialog}
-        title={editingUser ? 'Edit Customer Admin' : 'Add Customer Admin'}
+        title={editingUser ? 'Edit Organization Admin' : 'Add Organization Admin'}
         size="md"
         footer={
           <div className="flex justify-end gap-2">
@@ -290,7 +290,7 @@ function SystemAdminUserManagement() {
               Cancel
             </Button>
             <Button type="submit" form="admin-form" disabled={saving}>
-              {saving ? 'Saving…' : editingUser ? 'Save Changes' : 'Add Customer Admin'}
+              {saving ? 'Saving…' : editingUser ? 'Save Changes' : 'Add Organization Admin'}
             </Button>
           </div>
         }
@@ -328,25 +328,25 @@ function SystemAdminUserManagement() {
             />
           </div>
           <div>
-            <Label htmlFor="customer">Customer</Label>
+            <Label htmlFor="organization">Organization</Label>
             <Select
-              value={form.customerId}
-              onValueChange={(value) => setForm((prev) => ({ ...prev, customerId: value }))}
+              value={form.tenantId}
+              onValueChange={(value) => setForm((prev) => ({ ...prev, tenantId: value }))}
             >
-              <SelectTrigger id="customer">
-                <SelectValue placeholder="Select a customer" />
+              <SelectTrigger id="organization">
+                <SelectValue placeholder="Select an organization" />
               </SelectTrigger>
               <SelectContent>
-                {customers.map((c) => (
+                {organizations.map((c) => (
                   <SelectItem key={c.id} value={String(c.id)}>
                     {c.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {customers.length === 0 && (
+            {organizations.length === 0 && (
               <p className="text-sm text-muted-foreground mt-1">
-                No customers available. Create a customer before adding administrators.
+                No organizations available. Create an organization before adding administrators.
               </p>
             )}
           </div>

@@ -11,7 +11,7 @@ const DEFAULT_FORM = {
     username: 'groupadmin',
     email: 'groupadmin@autonomy.ai',
     password: 'Autonomy@2025',
-    full_name: 'Group Administrator',
+    full_name: 'Organization Administrator',
   },
 };
 
@@ -20,11 +20,11 @@ const createDefaultForm = () => ({
   admin: { ...DEFAULT_FORM.admin },
 });
 
-const GroupManagement = () => {
-  const [groups, setGroups] = useState([]);
-  const [selectedGroupId, setSelectedGroupId] = useState(null);
+const TenantManagement = () => {
+  const [tenants, setTenants] = useState([]);
+  const [selectedTenantId, setSelectedTenantId] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingGroupId, setEditingGroupId] = useState(null);
+  const [editingTenantId, setEditingTenantId] = useState(null);
   const [form, setForm] = useState(createDefaultForm());
   const [logoPreview, setLogoPreview] = useState(DEFAULT_FORM.logo || '');
   const [logoFileName, setLogoFileName] = useState('');
@@ -36,19 +36,19 @@ const GroupManagement = () => {
   const autoCreationRequestedRef = useRef(false);
 
   const AUTO_CREATION_STEPS = [
-    'Creating default users…',
-    'Creating supply chain configuration…',
-    'Creating scenario…',
+    'Creating default users\u2026',
+    'Creating supply chain configuration\u2026',
+    'Creating scenario\u2026',
   ];
 
-  const selectedGroup = useMemo(
-    () => groups.find((group) => group.id === selectedGroupId) || null,
-    [groups, selectedGroupId]
+  const selectedTenant = useMemo(
+    () => tenants.find((tenant) => tenant.id === selectedTenantId) || null,
+    [tenants, selectedTenantId]
   );
 
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  const triggerAutoCreateDefaultGroup = useCallback(async () => {
+  const triggerAutoCreateDefaultTenant = useCallback(async () => {
     if (autoCreationRequestedRef.current) {
       return;
     }
@@ -61,27 +61,27 @@ const GroupManagement = () => {
       await delay(300);
       setAutoCreation((prev) => ({ ...prev, step: 1 }));
 
-      const response = await api.post('/groups/default');
-      const createdGroup = response?.data || response;
+      const response = await api.post('/tenants/default');
+      const createdTenant = response?.data || response;
 
       setAutoCreation((prev) => ({ ...prev, step: 2 }));
       await delay(300);
       setAutoCreation((prev) => ({ ...prev, completed: true }));
-      toast.success('Default Autonomy group created successfully');
+      toast.success('Default Autonomy organization created successfully');
 
-      if (createdGroup) {
-        const listResponse = await api.get('/groups');
-        const createdGroups = Array.isArray(listResponse.data) ? listResponse.data : [];
-        setGroups(createdGroups);
-        setSelectedGroupId(createdGroups[0]?.id || null);
+      if (createdTenant) {
+        const listResponse = await api.get('/tenants');
+        const createdTenants = Array.isArray(listResponse.data) ? listResponse.data : [];
+        setTenants(createdTenants);
+        setSelectedTenantId(createdTenants[0]?.id || null);
       }
 
       await delay(600);
       setAutoCreation((prev) => ({ ...prev, open: false }));
     } catch (error) {
-      console.error('Failed to auto-create default group:', error);
+      console.error('Failed to auto-create default organization:', error);
       const detail = error?.response?.data?.detail;
-      const message = typeof detail === 'string' ? detail : detail?.message || 'Failed to create default group. Please try again.';
+      const message = typeof detail === 'string' ? detail : detail?.message || 'Failed to create default organization. Please try again.';
       setAutoCreation({ open: true, step: 0, completed: false, error: message });
       toast.error(message);
       autoCreationRequestedRef.current = false;
@@ -94,14 +94,14 @@ const GroupManagement = () => {
     setAutoCreation({ open: false, step: 0, completed: false, error: null });
   }, []);
 
-  const openModal = useCallback((group = null) => {
-    if (group) {
-      setEditingGroupId(group.id);
-      const adminUser = group.admin || {};
+  const openModal = useCallback((tenant = null) => {
+    if (tenant) {
+      setEditingTenantId(tenant.id);
+      const adminUser = tenant.admin || {};
       setForm({
-        name: group.name || '',
-        description: group.description || '',
-        logo: group.logo || '',
+        name: tenant.name || '',
+        description: tenant.description || '',
+        logo: tenant.logo || '',
         admin: {
           username: adminUser.username || '',
           email: adminUser.email || '',
@@ -109,9 +109,9 @@ const GroupManagement = () => {
           full_name: adminUser.full_name || '',
         },
       });
-      setLogoPreview(group.logo || '');
+      setLogoPreview(tenant.logo || '');
     } else {
-      setEditingGroupId(null);
+      setEditingTenantId(null);
       const defaults = createDefaultForm();
       setForm(defaults);
       setLogoPreview(defaults.logo || '');
@@ -123,48 +123,48 @@ const GroupManagement = () => {
   const closeModal = useCallback(() => {
     setIsModalOpen(false);
     setSaving(false);
-    setEditingGroupId(null);
+    setEditingTenantId(null);
     const defaults = createDefaultForm();
     setForm(defaults);
     setLogoPreview(defaults.logo || '');
     setLogoFileName('');
   }, []);
 
-  const fetchGroups = useCallback(
+  const fetchTenants = useCallback(
     async (nextSelectedId = null) => {
       setIsLoading(true);
       try {
-        const response = await api.get('/groups');
+        const response = await api.get('/tenants');
         const data = Array.isArray(response.data) ? response.data : [];
-        setGroups(data);
+        setTenants(data);
 
         if (data.length === 0) {
-          setSelectedGroupId(null);
-          await triggerAutoCreateDefaultGroup();
+          setSelectedTenantId(null);
+          await triggerAutoCreateDefaultTenant();
           return;
         }
 
-        if (nextSelectedId && data.some((group) => group.id === nextSelectedId)) {
-          setSelectedGroupId(nextSelectedId);
+        if (nextSelectedId && data.some((tenant) => tenant.id === nextSelectedId)) {
+          setSelectedTenantId(nextSelectedId);
         } else {
-          setSelectedGroupId((prev) =>
-            prev && data.some((group) => group.id === prev) ? prev : data[0]?.id || null
+          setSelectedTenantId((prev) =>
+            prev && data.some((tenant) => tenant.id === prev) ? prev : data[0]?.id || null
           );
         }
       } catch (error) {
-        console.error('Failed to load groups:', error);
-        setGroups([]);
-        toast.error('Failed to load groups.');
+        console.error('Failed to load organizations:', error);
+        setTenants([]);
+        toast.error('Failed to load organizations.');
       } finally {
         setIsLoading(false);
       }
     },
-    [triggerAutoCreateDefaultGroup]
+    [triggerAutoCreateDefaultTenant]
   );
 
   useEffect(() => {
-    fetchGroups();
-  }, [fetchGroups]);
+    fetchTenants();
+  }, [fetchTenants]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -219,47 +219,47 @@ const GroupManagement = () => {
 
     const trimmedName = form.name.trim();
     if (!trimmedName) {
-      toast.error('Group name is required.');
+      toast.error('Organization name is required.');
       return;
     }
 
     setSaving(true);
 
     try {
-      if (editingGroupId) {
-        await api.put(`/groups/${editingGroupId}`, {
+      if (editingTenantId) {
+        await api.put(`/tenants/${editingTenantId}`, {
           name: trimmedName,
           description: form.description,
           logo: form.logo,
         });
-        toast.success('Group updated successfully');
+        toast.success('Organization updated successfully');
         closeModal();
-        await fetchGroups(editingGroupId);
+        await fetchTenants(editingTenantId);
       } else {
-        const { data } = await api.post('/groups', {
+        const { data } = await api.post('/tenants', {
           ...form,
           name: trimmedName,
         });
-        toast.success('Group created successfully');
+        toast.success('Organization created successfully');
         closeModal();
-        await fetchGroups(data?.id);
+        await fetchTenants(data?.id);
       }
     } catch (error) {
-      console.error('Failed to save group:', error);
-      toast.error('Failed to save group. Please try again.');
+      console.error('Failed to save organization:', error);
+      toast.error('Failed to save organization. Please try again.');
     } finally {
       setSaving(false);
     }
   };
 
   const handleEditSelected = () => {
-    if (!selectedGroup) return;
-    openModal(selectedGroup);
+    if (!selectedTenant) return;
+    openModal(selectedTenant);
   };
 
   const handleRequestDeleteSelected = () => {
-    if (!selectedGroup) return;
-    setDeleteTarget(selectedGroup);
+    if (!selectedTenant) return;
+    setDeleteTarget(selectedTenant);
     setDeleting(false);
   };
 
@@ -272,21 +272,21 @@ const GroupManagement = () => {
     if (!deleteTarget) return;
 
     setDeleting(true);
-    const groupId = deleteTarget.id;
+    const tenantId = deleteTarget.id;
 
     try {
-      await api.delete(`/groups/${groupId}`);
-      toast.success('Group deleted');
+      await api.delete(`/tenants/${tenantId}`);
+      toast.success('Organization deleted');
       setDeleteTarget(null);
-      setSelectedGroupId((prev) => (prev === groupId ? null : prev));
-      await fetchGroups();
+      setSelectedTenantId((prev) => (prev === tenantId ? null : prev));
+      await fetchTenants();
     } catch (error) {
-      console.error('Failed to delete group:', error);
-      toast.error('Failed to delete group. Please try again.');
+      console.error('Failed to delete organization:', error);
+      toast.error('Failed to delete organization. Please try again.');
     } finally {
       setDeleting(false);
     }
-  }, [deleteTarget, fetchGroups]);
+  }, [deleteTarget, fetchTenants]);
 
   if (isLoading) {
     return (
@@ -299,47 +299,47 @@ const GroupManagement = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8">
-        <h1 className="text-3xl font-bold text-gray-800">Group Management</h1>
+        <h1 className="text-3xl font-bold text-gray-800">Organization Management</h1>
         <div className="flex flex-wrap gap-3">
           <button
             type="button"
             onClick={() => openModal(null)}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
           >
-            <FaPlus /> Add Group
+            <FaPlus /> Add Organization
           </button>
           <button
             type="button"
             onClick={handleEditSelected}
-            disabled={!selectedGroup}
+            disabled={!selectedTenant}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${
-              selectedGroup
+              selectedTenant
                 ? 'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
                 : 'border border-gray-200 text-gray-400 bg-gray-100 cursor-not-allowed'
             }`}
           >
-            <FaEdit /> Edit Group
+            <FaEdit /> Edit Organization
           </button>
           <button
             type="button"
             onClick={handleRequestDeleteSelected}
-            disabled={!selectedGroup}
+            disabled={!selectedTenant}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${
-              selectedGroup
+              selectedTenant
                 ? 'border border-red-200 text-red-600 bg-white hover:bg-red-50'
                 : 'border border-gray-200 text-gray-400 bg-gray-100 cursor-not-allowed'
             }`}
           >
-            <FaTrash /> Delete Group
+            <FaTrash /> Delete Organization
           </button>
         </div>
       </div>
 
-      {groups.length === 0 ? (
+      {tenants.length === 0 ? (
         <div className="table-surface p-8 text-center">
-          <h2 className="text-lg font-semibold text-gray-800">No groups yet</h2>
+          <h2 className="text-lg font-semibold text-gray-800">No organizations yet</h2>
           <p className="mt-2 text-sm text-gray-600">
-            Create your first group to get started.
+            Create your first organization to get started.
           </p>
         </div>
       ) : (
@@ -353,28 +353,28 @@ const GroupManagement = () => {
                       scope="col"
                       className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                     >
-                      Group
+                      Organization
                     </th>
                     <th
                       scope="col"
                       className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                     >
-                      Group Admin
+                      Organization Admin
                     </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {groups.map((group) => {
-                    const isSelected = group.id === selectedGroupId;
+                  {tenants.map((tenant) => {
+                    const isSelected = tenant.id === selectedTenantId;
                     const adminName =
-                      group.admin?.full_name || group.admin?.username || '—';
-                    const adminEmail = group.admin?.email;
+                      tenant.admin?.full_name || tenant.admin?.username || '\u2014';
+                    const adminEmail = tenant.admin?.email;
 
                     return (
                       <tr
-                        key={group.id}
-                        onClick={() => setSelectedGroupId(group.id)}
-                        onDoubleClick={() => openModal(group)}
+                        key={tenant.id}
+                        onClick={() => setSelectedTenantId(tenant.id)}
+                        onDoubleClick={() => openModal(tenant)}
                         className={`cursor-pointer transition-colors ${
                           isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'
                         }`}
@@ -382,11 +382,11 @@ const GroupManagement = () => {
                       >
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm font-medium text-gray-900">
-                            {group.name || '—'}
+                            {tenant.name || '\u2014'}
                           </div>
-                          {group.description ? (
+                          {tenant.description ? (
                             <div className="text-sm text-gray-500 mt-1">
-                              {group.description}
+                              {tenant.description}
                             </div>
                           ) : null}
                         </td>
@@ -406,7 +406,7 @@ const GroupManagement = () => {
             </div>
           </div>
           <p className="mt-3 text-sm text-gray-500">
-            Select a group to enable editing or deletion.
+            Select an organization to enable editing or deletion.
           </p>
         </>
       )}
@@ -416,24 +416,24 @@ const GroupManagement = () => {
           <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
               <h2 className="text-xl font-semibold text-gray-800">
-                {editingGroupId ? 'Edit Group' : 'Add New Group'}
+                {editingTenantId ? 'Edit Organization' : 'Add New Organization'}
               </h2>
               <button
                 type="button"
                 onClick={closeModal}
                 className="text-gray-500 hover:text-gray-700"
               >
-                ✕
+                \u2715
               </button>
             </div>
 
             <form onSubmit={handleSubmit} className="px-6 py-6 space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="group-name">
-                  Group Name
+                <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="tenant-name">
+                  Organization Name
                 </label>
                 <input
-                  id="group-name"
+                  id="tenant-name"
                   name="name"
                   type="text"
                   value={form.name}
@@ -444,26 +444,26 @@ const GroupManagement = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="group-description">
+                <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="tenant-description">
                   Description
                 </label>
                 <textarea
-                  id="group-description"
+                  id="tenant-description"
                   name="description"
                   value={form.description}
                   onChange={handleChange}
                   rows={3}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Add a short description for this group"
+                  placeholder="Add a short description for this organization"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="group-logo">
-                  Group Logo
+                <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="tenant-logo">
+                  Organization Logo
                 </label>
                 <input
-                  id="group-logo"
+                  id="tenant-logo"
                   name="logo"
                   type="text"
                   value={form.logo || ''}
@@ -499,7 +499,7 @@ const GroupManagement = () => {
                       className="h-20 w-20 rounded-md object-contain border border-gray-200 bg-gray-50 p-2"
                     />
                     <p className="text-sm text-gray-500">
-                      Preview of the logo that will be saved for this group.
+                      Preview of the logo that will be saved for this organization.
                     </p>
                   </div>
                 )}
@@ -510,9 +510,9 @@ const GroupManagement = () => {
                   Supply Chain Configurations
                 </label>
                 <p className="text-sm text-gray-500 px-3 py-2 border border-gray-200 rounded-md bg-gray-50">
-                  {editingGroupId
-                    ? 'Supply chain configurations can be managed in the Supply Chain Config page after the group is created.'
-                    : 'A default supply chain configuration will be created with this group.'}
+                  {editingTenantId
+                    ? 'Supply chain configurations can be managed in the Supply Chain Config page after the organization is created.'
+                    : 'A default supply chain configuration will be created with this organization.'}
                 </p>
               </div>
 
@@ -527,9 +527,9 @@ const GroupManagement = () => {
                     type="text"
                     value={form.admin.username}
                     onChange={handleChange}
-                    disabled={Boolean(editingGroupId)}
+                    disabled={Boolean(editingTenantId)}
                     className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      editingGroupId ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
+                      editingTenantId ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
                     }`}
                   />
                 </div>
@@ -543,9 +543,9 @@ const GroupManagement = () => {
                     type="email"
                     value={form.admin.email}
                     onChange={handleChange}
-                    disabled={Boolean(editingGroupId)}
+                    disabled={Boolean(editingTenantId)}
                     className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      editingGroupId ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
+                      editingTenantId ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
                     }`}
                   />
                 </div>
@@ -559,9 +559,9 @@ const GroupManagement = () => {
                     type="text"
                     value={form.admin.full_name}
                     onChange={handleChange}
-                    disabled={Boolean(editingGroupId)}
+                    disabled={Boolean(editingTenantId)}
                     className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      editingGroupId ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
+                      editingTenantId ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
                     }`}
                   />
                 </div>
@@ -575,10 +575,10 @@ const GroupManagement = () => {
                     type="password"
                     value={form.admin.password}
                     onChange={handleChange}
-                    disabled={Boolean(editingGroupId)}
-                    placeholder={editingGroupId ? 'Admin password management is handled separately' : ''}
+                    disabled={Boolean(editingTenantId)}
+                    placeholder={editingTenantId ? 'Admin password management is handled separately' : ''}
                     className={`w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      editingGroupId ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
+                      editingTenantId ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
                     }`}
                   />
                 </div>
@@ -600,7 +600,7 @@ const GroupManagement = () => {
                   }`}
                   disabled={saving}
                 >
-                  {saving ? 'Saving…' : editingGroupId ? 'Save Changes' : 'Create Group'}
+                  {saving ? 'Saving\u2026' : editingTenantId ? 'Save Changes' : 'Create Organization'}
                 </button>
               </div>
             </form>
@@ -612,13 +612,13 @@ const GroupManagement = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
             <div className="px-6 py-5 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-800">Delete Group</h2>
+              <h2 className="text-lg font-semibold text-gray-800">Delete Organization</h2>
             </div>
             <div className="px-6 py-6 space-y-4">
               <p className="text-sm text-gray-700">
                 Are you sure you want to delete{' '}
-                <span className="font-semibold">{deleteTarget.name || 'this group'}</span>? This action cannot be undone and
-                will remove all associated supply chain configurations, games, and users.
+                <span className="font-semibold">{deleteTarget.name || 'this organization'}</span>? This action cannot be undone and
+                will remove all associated supply chain configurations, scenarios, and users.
               </p>
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200">
@@ -640,7 +640,7 @@ const GroupManagement = () => {
                   deleting ? 'opacity-75 cursor-not-allowed' : ''
                 }`}
               >
-                {deleting ? 'Deleting…' : 'Delete'}
+                {deleting ? 'Deleting\u2026' : 'Delete'}
               </button>
             </div>
           </div>
@@ -650,7 +650,7 @@ const GroupManagement = () => {
       {autoCreation.open && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-6 space-y-4">
-            <h2 className="text-lg font-semibold text-gray-800">Creating default Autonomy group…</h2>
+            <h2 className="text-lg font-semibold text-gray-800">Creating default Autonomy organization\u2026</h2>
             <ul className="space-y-2 text-sm text-gray-700">
               {AUTO_CREATION_STEPS.map((step, index) => {
                 const isActive = index === autoCreation.step;
@@ -681,7 +681,7 @@ const GroupManagement = () => {
                 </button>
               </div>
             ) : (
-              <p className="text-xs text-gray-500">This may take a few moments…</p>
+              <p className="text-xs text-gray-500">This may take a few moments\u2026</p>
             )}
           </div>
         </div>
@@ -690,4 +690,4 @@ const GroupManagement = () => {
   );
 };
 
-export default GroupManagement;
+export default TenantManagement;

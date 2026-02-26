@@ -86,8 +86,8 @@ const UserRoleManagement = () => {
         { id: 'delete_sc_config', label: 'Delete SC Config', description: 'Delete configurations' },
         { id: 'view_inventory_models', label: 'View Inventory Models', description: 'View inventory models' },
         { id: 'manage_inventory_models', label: 'Manage Inventory Models', description: 'Manage inventory models' },
-        { id: 'view_group_configs', label: 'View Group Configs', description: 'View group configurations' },
-        { id: 'manage_group_configs', label: 'Manage Group Configs', description: 'Manage group configurations' },
+        { id: 'view_tenant_configs', label: 'View Organization Configs', description: 'View organization configurations' },
+        { id: 'manage_tenant_configs', label: 'Manage Organization Configs', description: 'Manage organization configurations' },
         { id: 'view_ntier_visibility', label: 'View N-Tier Visibility', description: 'Access N-tier visibility' },
       ],
     },
@@ -121,9 +121,9 @@ const UserRoleManagement = () => {
     collaboration: {
       label: 'Collaboration',
       capabilities: [
-        { id: 'view_groups', label: 'View Customers', description: 'View customers' },
-        { id: 'create_group', label: 'Create Customers', description: 'Create new customers' },
-        { id: 'manage_groups', label: 'Manage Customers', description: 'Full customer management' },
+        { id: 'view_tenants', label: 'View Organizations', description: 'View organizations' },
+        { id: 'create_tenant', label: 'Create Organizations', description: 'Create new organizations' },
+        { id: 'manage_tenants', label: 'Manage Organizations', description: 'Full organization management' },
         { id: 'view_players', label: 'View ScenarioUsers', description: 'View users' },
         { id: 'manage_players', label: 'Manage ScenarioUsers', description: 'Manage users' },
         { id: 'view_users', label: 'View Users', description: 'View users' },
@@ -135,17 +135,17 @@ const UserRoleManagement = () => {
   };
 
   const roleTemplates = {
-    GROUP_ADMIN: {
-      label: 'Customer Admin',
-      description: 'Full access to customer management and scenario creation',
+    TENANT_ADMIN: {
+      label: 'Organization Admin',
+      description: 'Full access to organization management and scenario creation',
       capabilities: [
         'view_dashboard', 'view_analytics', 'view_sc_analytics',
         'view_insights',
         'view_games', 'create_game', 'play_game', 'delete_game', 'manage_games',
-        'view_sc_configs', 'view_inventory_models', 'view_group_configs', 'manage_group_configs', 'view_ntier_visibility',
+        'view_sc_configs', 'view_inventory_models', 'view_tenant_configs', 'manage_tenant_configs', 'view_ntier_visibility',
         'view_order_planning', 'view_demand_planning', 'view_supply_planning', 'view_optimization',
         'use_ai_assistant', 'view_trm_training', 'view_gnn_training', 'view_model_setup',
-        'view_groups', 'manage_groups', 'view_players', 'manage_players', 'view_users', 'create_user', 'edit_user',
+        'view_tenants', 'manage_tenants', 'view_players', 'manage_players', 'view_users', 'create_user', 'edit_user',
       ],
     },
     USER: {
@@ -157,7 +157,7 @@ const UserRoleManagement = () => {
         'view_games', 'play_game',
         'view_sc_configs', 'view_ntier_visibility',
         'view_order_planning',
-        'view_groups', 'view_players',
+        'view_tenants', 'view_players',
       ],
     },
     GAME_MANAGER: {
@@ -169,7 +169,7 @@ const UserRoleManagement = () => {
         'view_games', 'create_game', 'play_game', 'manage_games',
         'view_sc_configs', 'view_ntier_visibility',
         'view_order_planning', 'view_demand_planning', 'view_supply_planning',
-        'view_groups', 'view_players',
+        'view_tenants', 'view_players',
       ],
     },
     ANALYST: {
@@ -182,7 +182,7 @@ const UserRoleManagement = () => {
         'view_sc_configs', 'view_ntier_visibility',
         'view_order_planning', 'view_demand_planning', 'view_supply_planning', 'view_optimization',
         'view_trm_training', 'view_gnn_training', 'view_model_setup',
-        'view_groups', 'view_players',
+        'view_tenants', 'view_players',
       ],
     },
   };
@@ -274,7 +274,7 @@ const UserRoleManagement = () => {
         <div>
           <h1 className="text-2xl font-bold">User Role & Capability Management</h1>
           <p className="text-sm text-muted-foreground">
-            Assign roles and customize capabilities for users in your customer organization
+            Assign roles and customize capabilities for users in your organization
           </p>
         </div>
       </div>
@@ -330,9 +330,9 @@ const UserRoleManagement = () => {
             </Card>
             <Card>
               <CardContent className="pt-4">
-                <p className="text-sm text-muted-foreground">Customer Admins</p>
+                <p className="text-sm text-muted-foreground">Organization Admins</p>
                 <p className="text-3xl font-bold text-primary">
-                  {users.filter(u => u.user_type === 'GROUP_ADMIN').length}
+                  {users.filter(u => u.user_type === 'TENANT_ADMIN' || u.user_type === 'GROUP_ADMIN').length}
                 </p>
               </CardContent>
             </Card>
@@ -348,7 +348,7 @@ const UserRoleManagement = () => {
               <CardContent className="pt-4">
                 <p className="text-sm text-muted-foreground">Custom Roles</p>
                 <p className="text-3xl font-bold text-blue-600">
-                  {users.filter(u => !['GROUP_ADMIN', 'USER', 'SYSTEM_ADMIN'].includes(u.user_type)).length}
+                  {users.filter(u => !['TENANT_ADMIN', 'GROUP_ADMIN', 'USER', 'SYSTEM_ADMIN'].includes(u.user_type)).length}
                 </p>
               </CardContent>
             </Card>
@@ -379,7 +379,7 @@ const UserRoleManagement = () => {
                       </TableCell>
                       <TableCell>{user.email}</TableCell>
                       <TableCell>
-                        <Badge variant={user.user_type === 'GROUP_ADMIN' ? 'default' : 'secondary'}>
+                        <Badge variant={(user.user_type === 'TENANT_ADMIN' || user.user_type === 'GROUP_ADMIN') ? 'default' : 'secondary'}>
                           {getUserRoleLabel(user.user_type)}
                         </Badge>
                       </TableCell>

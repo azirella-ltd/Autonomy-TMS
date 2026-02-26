@@ -103,7 +103,7 @@ class TriggerType(str, Enum):
 class TriggerContext:
     """Context information for an agent trigger."""
     trigger_type: TriggerType
-    customer_id: int
+    tenant_id: int
     entity_type: str              # product, site, order, etc.
     entity_id: str
     priority: int = 5             # 1=highest, 10=lowest
@@ -361,7 +361,7 @@ class AgentOrchestratorService:
 
         # Create the action record
         action = AgentAction(
-            customer_id=trigger.customer_id,
+            tenant_id=trigger.tenant_id,
             action_mode=mode,
             action_type=result["decision"].get("action_type", "unknown"),
             category=self._determine_category(agent_type),
@@ -489,7 +489,7 @@ class AgentOrchestratorService:
             upper = point * 1.2
 
         return await self.reasoning_service.get_or_create_belief_state(
-            customer_id=trigger.customer_id,
+            tenant_id=trigger.tenant_id,
             entity_type=entity_type,
             entity_id=trigger.entity_id,
             point_estimate=point,
@@ -504,7 +504,7 @@ class AgentOrchestratorService:
 
     async def run_planning_cycle(
         self,
-        customer_id: int,
+        tenant_id: int,
         cycle_type: str,  # "daily", "weekly", "monthly"
     ) -> List[AgentAction]:
         """
@@ -515,7 +515,7 @@ class AgentOrchestratorService:
         - Weekly: S&OP GraphSAGE → Execution tGNN → TRM agents
         - Monthly: Full S&OP optimization
         """
-        logger.info(f"Starting {cycle_type} planning cycle for customer {customer_id}")
+        logger.info(f"Starting {cycle_type} planning cycle for tenant {tenant_id}")
 
         actions = []
 
@@ -523,9 +523,9 @@ class AgentOrchestratorService:
             # Run S&OP GraphSAGE first
             trigger = TriggerContext(
                 trigger_type=TriggerType.PLANNING_CYCLE,
-                customer_id=customer_id,
+                tenant_id=tenant_id,
                 entity_type="network",
-                entity_id=f"customer_{customer_id}",
+                entity_id=f"customer_{tenant_id}",
                 priority=1,
                 payload={"cycle_type": cycle_type},
             )
@@ -536,9 +536,9 @@ class AgentOrchestratorService:
             # Run Execution tGNN to generate allocations
             trigger = TriggerContext(
                 trigger_type=TriggerType.PLANNING_CYCLE,
-                customer_id=customer_id,
+                tenant_id=tenant_id,
                 entity_type="network",
-                entity_id=f"customer_{customer_id}",
+                entity_id=f"customer_{tenant_id}",
                 priority=2,
                 payload={"cycle_type": cycle_type},
             )
@@ -553,14 +553,14 @@ class AgentOrchestratorService:
 
     async def on_new_order(
         self,
-        customer_id: int,
+        tenant_id: int,
         order_id: str,
         order_data: Dict[str, Any],
     ) -> List[AgentAction]:
         """Handle new customer order event."""
         trigger = TriggerContext(
             trigger_type=TriggerType.NEW_ORDER,
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             entity_type="order",
             entity_id=order_id,
             priority=2,
@@ -570,7 +570,7 @@ class AgentOrchestratorService:
 
     async def on_inventory_update(
         self,
-        customer_id: int,
+        tenant_id: int,
         site_id: str,
         product_id: str,
         new_level: float,
@@ -584,7 +584,7 @@ class AgentOrchestratorService:
 
         trigger = TriggerContext(
             trigger_type=trigger_type,
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             entity_type="site",
             entity_id=f"{site_id}_{product_id}",
             priority=1 if trigger_type == TriggerType.STOCKOUT_RISK else 5,
@@ -599,7 +599,7 @@ class AgentOrchestratorService:
 
     async def on_forecast_update(
         self,
-        customer_id: int,
+        tenant_id: int,
         product_id: str,
         old_forecast: Dict[str, float],
         new_forecast: Dict[str, float],
@@ -607,7 +607,7 @@ class AgentOrchestratorService:
         """Handle demand forecast update."""
         trigger = TriggerContext(
             trigger_type=TriggerType.FORECAST_UPDATE,
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             entity_type="product",
             entity_id=product_id,
             priority=3,
@@ -625,7 +625,7 @@ class AgentOrchestratorService:
     async def on_cdc_result(
         self,
         cdc_result: CDCResult,
-        customer_id: int,
+        tenant_id: int,
     ) -> List[AgentAction]:
         """
         Handle CDC result from data import.
@@ -651,7 +651,7 @@ class AgentOrchestratorService:
 
         # Step 1: Trigger workflows based on CDC
         workflow_result = await import_service.trigger_workflows_from_cdc(
-            cdc_result, customer_id
+            cdc_result, tenant_id
         )
 
         # Step 2: Check for persistent conditions
@@ -667,7 +667,7 @@ class AgentOrchestratorService:
 
             if condition_types:
                 active_conditions = await condition_service.check_conditions(
-                    customer_id=customer_id,
+                    tenant_id=tenant_id,
                     condition_types=condition_types,
                 )
 
@@ -675,7 +675,7 @@ class AgentOrchestratorService:
                 if active_conditions:
                     condition_actions = await self._process_conditions(
                         conditions=active_conditions,
-                        customer_id=customer_id,
+                        tenant_id=tenant_id,
                     )
                     actions.extend(condition_actions)
 
@@ -684,7 +684,7 @@ class AgentOrchestratorService:
         for agent_name in agent_triggers:
             trigger = TriggerContext(
                 trigger_type=TriggerType.CDC_SIGNIFICANT_CHANGE,
-                customer_id=customer_id,
+                tenant_id=tenant_id,
                 entity_type="data_import",
                 entity_id=f"{cdc_result.data_type.value}_{cdc_result.version_hash}",
                 priority=3,
@@ -704,7 +704,7 @@ class AgentOrchestratorService:
     async def _process_conditions(
         self,
         conditions: List[ConditionState],
-        customer_id: int,
+        tenant_id: int,
     ) -> List[AgentAction]:
         """
         Process active conditions and trigger appropriate responses.
@@ -727,9 +727,9 @@ class AgentOrchestratorService:
             logger.info(f"Triggering S&OP cycle: {soop_reason}")
             soop_trigger = TriggerContext(
                 trigger_type=TriggerType.SOOP_TRIGGER,
-                customer_id=customer_id,
+                tenant_id=tenant_id,
                 entity_type="network",
-                entity_id=f"customer_{customer_id}",
+                entity_id=f"customer_{tenant_id}",
                 priority=1,
                 payload={"reason": soop_reason},
             )
@@ -743,13 +743,13 @@ class AgentOrchestratorService:
             # Check if scenario evaluation is needed
             if action_spec.get("requires_scenario_eval"):
                 # Query real current state from DB
-                current_state = await self._get_current_state(customer_id, entity_id)
+                current_state = await self._get_current_state(tenant_id, entity_id)
 
                 # Evaluate scenarios
                 recommended, comparison = await scenario_service.evaluate_and_recommend(
                     condition_type=condition_type,
                     entity_id=entity_id,
-                    customer_id=customer_id,
+                    tenant_id=tenant_id,
                     context=action_spec.get("context", {}),
                     current_state=current_state,
                 )
@@ -784,7 +784,7 @@ class AgentOrchestratorService:
 
                     # Create the agent action
                     action = AgentAction(
-                        customer_id=customer_id,
+                        tenant_id=tenant_id,
                         action_mode=mode,
                         action_type=f"scenario_recommendation_{condition_type}",
                         category=self._determine_category_from_condition(condition_type),
@@ -831,7 +831,7 @@ class AgentOrchestratorService:
                 trigger_type = self._map_condition_to_trigger(condition_type)
                 trigger = TriggerContext(
                     trigger_type=trigger_type,
-                    customer_id=customer_id,
+                    tenant_id=tenant_id,
                     entity_type=action_spec["entity_type"],
                     entity_id=entity_id,
                     priority=action_spec["priority"],
@@ -870,7 +870,7 @@ class AgentOrchestratorService:
 
     async def check_plan_deviation(
         self,
-        customer_id: int,
+        tenant_id: int,
         current_state: Dict[str, Any],
         previous_plan: Dict[str, Any],
     ) -> List[AgentAction]:
@@ -888,7 +888,7 @@ class AgentOrchestratorService:
 
         # Analyze deviation
         deviation_analysis = await condition_service.check_plan_deviation(
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             current_state=current_state,
             previous_plan=previous_plan,
         )
@@ -903,7 +903,7 @@ class AgentOrchestratorService:
             if action_type == "trigger_soop_review":
                 # Trigger S&OP review
                 soop_actions = await self.run_planning_cycle(
-                    customer_id=customer_id,
+                    tenant_id=tenant_id,
                     cycle_type="weekly",
                 )
                 actions.extend(soop_actions)
@@ -912,9 +912,9 @@ class AgentOrchestratorService:
                 # Trigger execution level replanning
                 trigger = TriggerContext(
                     trigger_type=TriggerType.PLAN_DEVIATION,
-                    customer_id=customer_id,
+                    tenant_id=tenant_id,
                     entity_type="network",
-                    entity_id=f"customer_{customer_id}",
+                    entity_id=f"customer_{tenant_id}",
                     priority=2,
                     payload={
                         "deviation_score": deviation_score,
@@ -933,9 +933,9 @@ class AgentOrchestratorService:
                 # Trigger forecast recalibration
                 trigger = TriggerContext(
                     trigger_type=TriggerType.FORECAST_UPDATE,
-                    customer_id=customer_id,
+                    tenant_id=tenant_id,
                     entity_type="forecast",
-                    entity_id=f"customer_{customer_id}",
+                    entity_id=f"customer_{tenant_id}",
                     priority=3,
                     payload={
                         "reason": "forecast_deviation",
@@ -948,7 +948,7 @@ class AgentOrchestratorService:
         # Log deviation action
         if deviation_score > 10:  # Only log significant deviations
             action = AgentAction(
-                customer_id=customer_id,
+                tenant_id=tenant_id,
                 action_mode=ActionMode.INFORM if deviation_score > 25 else ActionMode.AUTOMATE,
                 action_type="plan_deviation_detected",
                 category=ActionCategory.OTHER,
@@ -960,7 +960,7 @@ class AgentOrchestratorService:
                 reasoning_chain={"deviation_analysis": deviation_analysis},
                 alternatives_considered={"recommended_actions": deviation_analysis["recommended_actions"]},
                 site_hierarchy_level=SiteHierarchyLevel.COMPANY,
-                site_key=f"customer_{customer_id}",
+                site_key=f"customer_{tenant_id}",
                 product_hierarchy_level=ProductHierarchyLevel.CATEGORY,
                 product_key="all",
                 time_bucket=TimeBucketType.DAY,
@@ -986,7 +986,7 @@ class AgentOrchestratorService:
 
     async def run_complete_workflow(
         self,
-        customer_id: int,
+        tenant_id: int,
         tier: ImportTier,
         imported_data: List[Dict[str, Any]],
         previous_snapshot: Optional[Any] = None,
@@ -1002,7 +1002,7 @@ class AgentOrchestratorService:
         5. Action recording
 
         Args:
-            customer_id: Customer ID
+            tenant_id: Customer ID
             tier: Import tier (transactional, operational, tactical)
             imported_data: The newly imported data
             previous_snapshot: Previous data snapshot for CDC
@@ -1012,7 +1012,7 @@ class AgentOrchestratorService:
         """
         from app.models.sync_job import SyncJobExecution, SyncDataType
 
-        logger.info(f"Starting complete workflow for customer {customer_id}, tier {tier.value}")
+        logger.info(f"Starting complete workflow for tenant {tenant_id}, tier {tier.value}")
 
         # Initialize services
         import_service = DataImportSchedulerService(self.db)
@@ -1021,7 +1021,7 @@ class AgentOrchestratorService:
 
         result = {
             "tier": tier.value,
-            "customer_id": customer_id,
+            "tenant_id": tenant_id,
             "cdc_analysis": None,
             "conditions_detected": [],
             "actions_created": [],
@@ -1055,7 +1055,7 @@ class AgentOrchestratorService:
         }
 
         # Step 3: Process CDC result (triggers conditions, agents, etc.)
-        actions = await self.on_cdc_result(cdc_result, customer_id)
+        actions = await self.on_cdc_result(cdc_result, tenant_id)
         result["actions_created"] = [
             {
                 "id": a.id,
@@ -1067,7 +1067,7 @@ class AgentOrchestratorService:
         ]
 
         # Step 4: Run condition check for all types
-        all_conditions = await condition_service.check_conditions(customer_id)
+        all_conditions = await condition_service.check_conditions(tenant_id)
         result["conditions_detected"] = [
             {
                 "type": c.condition_type.value,
@@ -1091,7 +1091,7 @@ class AgentOrchestratorService:
 
         return result
 
-    async def _get_current_state(self, customer_id: int, entity_id: str) -> Dict[str, Any]:
+    async def _get_current_state(self, tenant_id: int, entity_id: str) -> Dict[str, Any]:
         """
         Query current supply chain state from DB for scenario evaluation.
 
@@ -1277,7 +1277,7 @@ def create_orchestrator_with_handlers(db: AsyncSession) -> AgentOrchestratorServ
         async def gnn_soop_handler(trigger: TriggerContext, scope: AgentScope) -> Dict:
             try:
                 payload = trigger.payload or {}
-                config_id = payload.get("config_id") or payload.get("customer_id")
+                config_id = payload.get("config_id") or payload.get("tenant_id")
                 if config_id:
                     sop_svc = SOPInferenceService(db, config_id=config_id)
                     result = await sop_svc.analyze_network()

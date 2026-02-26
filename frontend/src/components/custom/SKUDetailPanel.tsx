@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { ArrowLeft, AlertCircle, CheckCircle2, Pencil, Trash2, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useCustomerData } from "@/hooks/useCustomerData";
+import { useTenantData } from "@/hooks/useTenantData";
 
 // Default fallback SKU data structure for loading state
 const defaultSkuData = {
@@ -22,8 +22,8 @@ const defaultSkuData = {
 interface SKUDetailPanelProps {
   onBack?: () => void;
   showBackButton?: boolean;
-  data?: string; // Deprecated: now reads from useCustomerData
-  dataSource?: string; // Deprecated: now reads from useCustomerData
+  data?: string; // Deprecated: now reads from useTenantData
+  dataSource?: string; // Deprecated: now reads from useTenantData
   isDPWorkflow?: boolean;
   isValidationDetail?: boolean;
   customerAlignmentFlags?: Array<{
@@ -70,7 +70,7 @@ export function SKUDetailPanel({
   } = useToast();
 
   // Use consolidated customer data hook
-  const { currentSkuPanel, productId, isLoading } = useCustomerData();
+  const { currentSkuPanel, productId, isLoading } = useTenantData();
   const skuData = currentSkuPanel || defaultSkuData;
 
   // Compute validation counts - handle missing summary fields by counting from checks array

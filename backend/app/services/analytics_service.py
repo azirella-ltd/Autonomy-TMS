@@ -194,7 +194,7 @@ class AnalyticsService:
         result = await self.db.execute(
             select(ProductionCapacity).filter(
                 ProductionCapacity.config_id == game.supply_chain_config_id,
-                ProductionCapacity.customer_id == game.customer_id
+                ProductionCapacity.tenant_id == game.tenant_id
             )
         )
         capacities = result.scalars().all()
@@ -301,13 +301,13 @@ class AnalyticsService:
     # POLICY EFFECTIVENESS
     # ============================================================================
 
-    async def get_policy_effectiveness(self, config_id: int, customer_id: int) -> Dict:
+    async def get_policy_effectiveness(self, config_id: int, tenant_id: int) -> Dict:
         """
         Get policy effectiveness metrics
 
         Args:
             config_id: Supply chain config ID
-            customer_id: Customer ID
+            tenant_id: Tenant ID
 
         Returns:
             Dictionary with policy effectiveness metrics
@@ -318,7 +318,7 @@ class AnalyticsService:
         result = await self.db.execute(
             select(OrderAggregationPolicy).filter(
                 OrderAggregationPolicy.config_id == config_id,
-                OrderAggregationPolicy.customer_id == customer_id,
+                OrderAggregationPolicy.tenant_id == tenant_id,
                 OrderAggregationPolicy.is_active == True
             )
         )
@@ -356,7 +356,7 @@ class AnalyticsService:
         result = await self.db.execute(
             select(ProductionCapacity).filter(
                 ProductionCapacity.config_id == config_id,
-                ProductionCapacity.customer_id == customer_id
+                ProductionCapacity.tenant_id == tenant_id
             )
         )
         cap_policies = result.scalars().all()
@@ -379,7 +379,7 @@ class AnalyticsService:
 
         return {
             'config_id': config_id,
-            'customer_id': customer_id,
+            'tenant_id': tenant_id,
             'policies': policies
         }
 

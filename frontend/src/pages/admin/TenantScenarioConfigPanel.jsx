@@ -52,7 +52,7 @@ const statusColor = (status = '') => {
   return 'secondary';
 };
 
-const GroupGameConfigPanel = ({
+const TenantScenarioConfigPanel = ({
   games = [],
   loading = false,
   error = null,
@@ -66,8 +66,8 @@ const GroupGameConfigPanel = ({
 }) => {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
-  const { isGroupAdmin } = useAuth();
-  const restrictLifecycleActions = Boolean(isGroupAdmin);
+  const { isTenantAdmin } = useAuth();
+  const restrictLifecycleActions = Boolean(isTenantAdmin);
 
   const filteredGames = useMemo(() => {
     if (!Array.isArray(games) || games.length === 0) {
@@ -78,7 +78,7 @@ const GroupGameConfigPanel = ({
 
     return games.filter((game) => {
       if (!game) return false;
-      const targetGroup = game.customer_id ?? game?.config?.customer_id ?? null;
+      const targetGroup = game.tenant_id ?? game?.config?.tenant_id ?? null;
       if (groupId != null) {
         if (targetGroup != null) {
           if (Number(targetGroup) !== Number(groupId)) {
@@ -186,7 +186,7 @@ const GroupGameConfigPanel = ({
           <div>
             <h2 className="text-lg font-bold">Scenario Configuration</h2>
             <p className="text-sm text-muted-foreground">
-              Review recent mixed scenario setups and create new sessions for your customer.
+              Review recent mixed scenario setups and create new sessions for your organization.
             </p>
           </div>
           <div className="flex flex-col md:flex-row gap-2 items-stretch md:items-center">
@@ -218,7 +218,7 @@ const GroupGameConfigPanel = ({
           </div>
         ) : filteredGames.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-muted-foreground mb-2">No scenarios found for your customer yet.</p>
+            <p className="text-muted-foreground mb-2">No scenarios found for your organization yet.</p>
             <p className="text-sm text-muted-foreground">
               Configure a new mixed scenario to get your users started.
             </p>
@@ -360,4 +360,4 @@ const GroupGameConfigPanel = ({
   );
 };
 
-export default GroupGameConfigPanel;
+export default TenantScenarioConfigPanel;

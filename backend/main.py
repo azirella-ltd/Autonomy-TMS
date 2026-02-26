@@ -286,8 +286,8 @@ CHECKPOINT_ROOT = BACKEND_ROOT / "checkpoints" / "supply_chain_configs"
 _USERNAME_ALIASES = {
     "systemadmin": "systemadmin@autonomy.ai",
     "superadmin": "systemadmin@autonomy.ai",
-    "groupadmin": "groupadmin@autonomy.ai",
-    "defaultadmin": "groupadmin@autonomy.ai",
+    "tenantadmin": "tenantadmin@autonomy.ai",
+    "defaultadmin": "tenantadmin@autonomy.ai",
 }
 
 # Logger used across helpers/routes
@@ -306,7 +306,7 @@ class MeResponse(BaseModel):
     email: str
     name: str
     role: str
-    customer_id: Optional[int] = None
+    tenant_id: Optional[int] = None
     user_type: Optional[str] = None
     is_superuser: bool = False
 
@@ -678,7 +678,7 @@ async def me(user: Dict[str, Any] = Depends(get_current_user)):
         email=user["email"],
         name=display_name,
         role=user.get("role", "user"),
-        customer_id=user.get("customer_id"),
+        tenant_id=user.get("tenant_id"),
         user_type=user.get("user_type"),
         is_superuser=bool(user.get("is_superuser", False)),
     )
@@ -747,7 +747,7 @@ async def list_users(
     limit: int = 250,
     offset: int = 0,
     user_type: Optional[str] = None,
-    customer_id: Optional[int] = None,
+    tenant_id: Optional[int] = None,
     search: Optional[str] = None,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -756,12 +756,12 @@ async def list_users(
         query = db.query(User).order_by(User.created_at.desc())
 
         if not _is_system_admin_user(current_user):
-            customer_filter = _extract_customer_id(current_user)
-            if not customer_filter:
+            tenant_filter = _extract_tenant_id(current_user)
+            if not tenant_filter:
                 return []
-            query = query.filter(User.customer_id == customer_filter)
-        elif customer_id is not None:
-            query = query.filter(User.customer_id == customer_id)
+            query = query.filter(User.tenant_id == tenant_filter)
+        elif tenant_id is not None:
+            query = query.filter(User.tenant_id == tenant_id)
 
         if user_type:
             normalized = user_type.strip().upper()
@@ -800,10 +800,10 @@ async def list_supply_chain_configs(
     try:
         query = db.query(SupplyChainConfig).order_by(SupplyChainConfig.created_at.desc())
         if not _is_system_admin_user(current_user):
-            customer_filter = _extract_customer_id(current_user)
-            if not customer_filter:
+            tenant_filter = _extract_tenant_id(current_user)
+            if not tenant_filter:
                 return []
-            query = query.filter(SupplyChainConfig.customer_id == customer_filter)
+            query = query.filter(SupplyChainConfig.tenant_id == tenant_filter)
 
         configs = query.all()
         return [_serialize_supply_chain_config(cfg) for cfg in configs]
@@ -960,13 +960,13 @@ def update_supply_chain_config_basic(
         if not update_data:
             return _serialize_supply_chain_config_detail(config)
 
-        if "customer_id" in update_data:
+        if "tenant_id" in update_data:
             if not _is_system_admin_user(current_user):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Only system admins can reassign configurations to another customer",
+                    detail="Only system admins can reassign configurations to another tenant",
                 )
-            config.customer_id = update_data["customer_id"]
+            config.tenant_id = update_data["tenant_id"]
 
         if "name" in update_data:
             config.name = (update_data["name"] or "").strip()
@@ -1195,7 +1195,6 @@ def _default_tenant_payload() -> TenantCreate:
 
 
 # Backward-compatible aliases
-_default_customer_payload = _default_tenant_payload
 _default_group_payload = _default_tenant_payload
 
 
@@ -1210,7 +1209,7 @@ def _serialize_user_record(user: User) -> Dict[str, Any]:
         "email": user.email,
         "username": user.username,
         "full_name": getattr(user, "full_name", None),
-        "customer_id": user.customer_id,
+        "tenant_id": user.tenant_id,
         "user_type": user_type,
         "is_active": bool(getattr(user, "is_active", True)),
         "is_superuser": bool(getattr(user, "is_superuser", False)),
@@ -1224,8 +1223,8 @@ def _normalize_role_from_user(user_type: Optional[str], is_superuser: bool) -> s
     token = (user_type or "").strip().lower()
     if is_superuser or token in {"system_admin", "systemadmin", "superadmin"}:
         return "systemadmin"
-    if token in {"group_admin", "groupadmin"}:
-        return "groupadmin"
+    if token in {"tenant_admin", "tenantadmin"}:
+        return "tenantadmin"
     return "user"
 
 
@@ -1239,7 +1238,7 @@ def _build_user_payload_from_model(user: User) -> Dict[str, Any]:
         "email": data["email"],
         "name": name,
         "role": role,
-        "customer_id": data.get("customer_id"),
+        "tenant_id": data.get("tenant_id"),
         "is_superuser": bool(data.get("is_superuser")),
         "user_type": user_type,
     }
@@ -1280,7 +1279,7 @@ def _serialize_supply_chain_config(cfg: SupplyChainConfig) -> Dict[str, Any]:
         "name": cfg.name,
         "description": cfg.description,
         "is_active": bool(cfg.is_active),
-        "customer_id": cfg.customer_id,
+        "tenant_id": cfg.tenant_id,
         "parent_config_id": cfg.parent_config_id,
         "base_config_id": getattr(cfg, "base_config_id", None),
         "scenario_type": getattr(cfg, "scenario_type", "BASELINE") or "BASELINE",
@@ -1337,12 +1336,12 @@ def _ensure_can_view_supply_chain_config(user: Dict[str, Any], config: SupplyCha
     if user.get("is_superuser"):
         return
 
-    config_customer_id = getattr(config, "customer_id", None)
-    if config_customer_id is None:
+    config_tenant_id = getattr(config, "tenant_id", None)
+    if config_tenant_id is None:
         return
 
-    user_customer_id = _as_int(user.get("customer_id"))
-    if user_customer_id is not None and user_customer_id == int(config_customer_id):
+    user_tenant_id = _as_int(user.get("tenant_id"))
+    if user_tenant_id is not None and user_tenant_id == int(config_tenant_id):
         return
 
     raise HTTPException(
@@ -1355,9 +1354,9 @@ def _ensure_can_manage_supply_chain_config(user: Dict[str, Any], config: SupplyC
     if user.get("is_superuser"):
         return
 
-    config_customer_id = getattr(config, "customer_id", None)
-    user_customer_id = _as_int(user.get("customer_id"))
-    if config_customer_id is None or user_customer_id is None:
+    config_tenant_id = getattr(config, "tenant_id", None)
+    user_tenant_id = _as_int(user.get("tenant_id"))
+    if config_tenant_id is None or user_tenant_id is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this configuration",
@@ -1365,8 +1364,8 @@ def _ensure_can_manage_supply_chain_config(user: Dict[str, Any], config: SupplyC
 
     role_token = str(user.get("role") or "").strip().lower()
     user_type_token = str(user.get("user_type") or "").strip().lower()
-    if user_customer_id == int(config_customer_id) and (
-        role_token == "groupadmin" or user_type_token in {"group_admin", "groupadmin"}
+    if user_tenant_id == int(config_tenant_id) and (
+        role_token == "tenantadmin" or user_type_token in {"tenant_admin", "tenantadmin"}
     ):
         return
 
@@ -1380,7 +1379,7 @@ def _serialize_supply_chain_config_detail(cfg: SupplyChainConfig) -> Dict[str, A
     payload = _serialize_supply_chain_config(cfg)
     payload["time_bucket"] = cfg.time_bucket.value if getattr(cfg, "time_bucket", None) else None
     payload["description"] = cfg.description
-    payload["customer_id"] = cfg.customer_id
+    payload["tenant_id"] = cfg.tenant_id
     payload["is_active"] = bool(cfg.is_active)
     definitions, labels = _ensure_site_type_definitions(
         {
@@ -1918,8 +1917,8 @@ def _is_system_admin_user(user: Any) -> bool:
     return False
 
 
-def _extract_customer_id(user: Any) -> Optional[int]:
-    gid = user.get("customer_id") if isinstance(user, dict) else getattr(user, "customer_id", None)
+def _extract_tenant_id(user: Any) -> Optional[int]:
+    gid = user.get("tenant_id") if isinstance(user, dict) else getattr(user, "tenant_id", None)
     try:
         return int(gid) if gid is not None else None
     except (TypeError, ValueError):
@@ -1927,7 +1926,7 @@ def _extract_customer_id(user: Any) -> Optional[int]:
 
 
 # Backward-compatible alias
-_extract_group_id = _extract_customer_id
+_extract_customer_id = _extract_tenant_id
 
 
 def _iso(dt: Optional[datetime]) -> Optional[str]:
@@ -4867,7 +4866,7 @@ def _serialize_game(game: DbGame) -> Dict[str, Any]:
         "max_rounds": game.max_rounds or 0,
         "created_at": _iso(game.created_at),
         "updated_at": _iso(getattr(game, "updated_at", None)),
-        "customer_id": game.customer_id,
+        "tenant_id": game.tenant_id,
         "created_by": game.created_by,
         "is_public": bool(getattr(game, "is_public", True)),
         "config": config,
@@ -4889,8 +4888,8 @@ def _get_game_for_user(db: Session, user: Any, scenario_id: int) -> DbGame:
         raise HTTPException(status_code=404, detail="Game not found")
     if _is_system_admin_user(user):
         return game
-    user_customer_id = _extract_customer_id(user)
-    if user_customer_id is None or user_customer_id != game.customer_id:
+    user_tenant_id = _extract_tenant_id(user)
+    if user_tenant_id is None or user_tenant_id != game.tenant_id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     return game
 
@@ -4903,9 +4902,9 @@ def _touch_game(game: DbGame) -> None:
 async def create_mixed_scenario(payload: GameCreate, user: Dict[str, Any] = Depends(get_current_user)):
     db = SyncSessionLocal()
     try:
-        customer_id = _extract_customer_id(user)
-        if customer_id is None and not _is_system_admin_user(user):
-            raise HTTPException(status_code=403, detail="Customer membership required to create games")
+        tenant_id = _extract_tenant_id(user)
+        if tenant_id is None and not _is_system_admin_user(user):
+            raise HTTPException(status_code=403, detail="Tenant membership required to create games")
         if payload.supply_chain_config_id is None:
             raise HTTPException(status_code=400, detail="supply_chain_config_id is required to create a mixed game")
 
@@ -4927,7 +4926,7 @@ async def create_mixed_scenario(payload: GameCreate, user: Dict[str, Any] = Depe
             current_round=0,
             max_rounds=payload.max_rounds or 0,
             created_at=datetime.utcnow(),
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             created_by=user.get("id"),
             is_public=payload.is_public,
             demand_pattern=config.get("demand_pattern", {}),
@@ -5059,10 +5058,10 @@ async def list_mixed_scenarios(user: Dict[str, Any] = Depends(get_current_user))
     try:
         query = db.query(DbGame).order_by(DbGame.created_at.desc())
         if not _is_system_admin_user(user):
-            customer_id = _extract_customer_id(user)
-            if customer_id is None:
+            tenant_id = _extract_tenant_id(user)
+            if tenant_id is None:
                 return []
-            query = query.filter(DbGame.customer_id == customer_id)
+            query = query.filter(DbGame.tenant_id == tenant_id)
         games = query.all()
         if not games:
             ensure_default_tenant_and_scenario(db)
@@ -5694,11 +5693,11 @@ async def finish_game(scenario_id: int, user: Dict[str, Any] = Depends(get_curre
 
 # Simple model status for UI banner
 # ------------------------------------------------------------------------------
-# Customer management
+# Tenant management
 # ------------------------------------------------------------------------------
 
-@api.get("/customers", response_model=List[TenantSchema], tags=["customers"])
-def list_customers_endpoint(
+@api.get("/tenants", response_model=List[TenantSchema], tags=["tenants"])
+def list_tenants_endpoint(
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: Session = Depends(get_sync_session),
 ):
@@ -5707,7 +5706,7 @@ def list_customers_endpoint(
     return service.get_tenants()
 
 
-@api.post("/customers/default", response_model=TenantSchema, tags=["customers"])
+@api.post("/tenants/default", response_model=TenantSchema, tags=["tenants"])
 def ensure_default_tenant_endpoint(
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: Session = Depends(get_sync_session),
@@ -5721,7 +5720,7 @@ def ensure_default_tenant_endpoint(
     return service.create_tenant(payload)
 
 
-@api.post("/customers", response_model=TenantSchema, status_code=status.HTTP_201_CREATED, tags=["customers"])
+@api.post("/tenants", response_model=TenantSchema, status_code=status.HTTP_201_CREATED, tags=["tenants"])
 def create_tenant_endpoint(
     tenant_in: TenantCreate,
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -5732,27 +5731,27 @@ def create_tenant_endpoint(
     return service.create_tenant(tenant_in)
 
 
-@api.put("/customers/{customer_id}", response_model=TenantSchema, tags=["customers"])
+@api.put("/tenants/{tenant_id}", response_model=TenantSchema, tags=["tenants"])
 def update_tenant_endpoint(
-    customer_id: int,
+    tenant_id: int,
     tenant_update: TenantUpdate,
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: Session = Depends(get_sync_session),
 ):
     require_system_admin(current_user)
     service = TenantService(db)
-    return service.update_tenant(customer_id, tenant_update)
+    return service.update_tenant(tenant_id, tenant_update)
 
 
-@api.delete("/customers/{customer_id}", tags=["customers"])
+@api.delete("/tenants/{tenant_id}", tags=["tenants"])
 def delete_tenant_endpoint(
-    customer_id: int,
+    tenant_id: int,
     current_user: Dict[str, Any] = Depends(get_current_user),
     db: Session = Depends(get_sync_session),
 ):
     require_system_admin(current_user)
     service = TenantService(db)
-    return service.delete_tenant(customer_id)
+    return service.delete_tenant(tenant_id)
 
 
 _MODEL_STATUS = {

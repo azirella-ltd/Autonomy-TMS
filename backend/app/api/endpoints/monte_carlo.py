@@ -37,7 +37,7 @@ class MonteCarloRunCreate(BaseModel):
     supply_chain_config_id: int = Field(..., description="Supply chain configuration ID")
     mps_plan_id: Optional[int] = Field(None, description="Optional MPS plan ID to simulate")
     scenario_id: Optional[int] = Field(None, description="Optional scenario ID for integration")
-    customer_id: int = Field(..., description="Customer ID")
+    tenant_id: int = Field(..., description="Tenant ID")
 
     num_scenarios: int = Field(1000, description="Number of scenarios to run", ge=100, le=10000)
     random_seed: Optional[int] = Field(None, description="Random seed for reproducibility")
@@ -55,7 +55,7 @@ class MonteCarloRunResponse(BaseModel):
     config_name: Optional[str]
     mps_plan_id: Optional[int]
     scenario_id: Optional[int]
-    customer_id: int
+    tenant_id: int
 
     num_scenarios: int
     random_seed: Optional[int]
@@ -209,7 +209,7 @@ def check_monte_carlo_permission(user: User, action: str) -> None:
 async def run_monte_carlo_simulation(
     run_id: int,
     config_id: int,
-    customer_id: int,
+    tenant_id: int,
     num_scenarios: int,
     random_seed: Optional[int],
     start_date: date,
@@ -219,7 +219,7 @@ async def run_monte_carlo_simulation(
     engine = MonteCarloEngine(
         run_id=run_id,
         config_id=config_id,
-        customer_id=customer_id,
+        customer_id=tenant_id,
         num_scenarios=num_scenarios,
         random_seed=random_seed
     )
@@ -275,7 +275,7 @@ async def create_monte_carlo_run(
         supply_chain_config_id=run_create.supply_chain_config_id,
         mps_plan_id=run_create.mps_plan_id,
         scenario_id=run_create.scenario_id,
-        customer_id=run_create.customer_id,
+        customer_id=run_create.tenant_id,
         name=run_create.name,
         description=run_create.description,
         num_scenarios=run_create.num_scenarios,
@@ -296,7 +296,7 @@ async def create_monte_carlo_run(
         run_monte_carlo_simulation,
         run_id=run.id,
         config_id=run_create.supply_chain_config_id,
-        customer_id=run_create.customer_id,
+        tenant_id=run_create.tenant_id,
         num_scenarios=run_create.num_scenarios,
         random_seed=run_create.random_seed,
         start_date=start_date,
@@ -316,7 +316,7 @@ async def create_monte_carlo_run(
 
 @router.get("/runs", response_model=List[MonteCarloRunResponse])
 async def list_monte_carlo_runs(
-    customer_id: Optional[int] = None,
+    tenant_id: Optional[int] = None,
     config_id: Optional[int] = None,
     status_filter: Optional[str] = None,
     limit: int = 50,
@@ -328,8 +328,8 @@ async def list_monte_carlo_runs(
 
     query = select(MonteCarloRun).order_by(desc(MonteCarloRun.created_at))
 
-    if customer_id:
-        query = query.filter(MonteCarloRun.customer_id == customer_id)
+    if tenant_id:
+        query = query.filter(MonteCarloRun.customer_id == tenant_id)
     if config_id:
         query = query.filter(MonteCarloRun.supply_chain_config_id == config_id)
     if status_filter:

@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from app.db.session import async_session_factory
 from app.models.supply_chain_config import SupplyChainConfig
-from app.models.customer import Customer
+from app.models.tenant import Tenant
 from app.models.scenario import Scenario
 from app.models.aws_sc_planning import ProductionCapacity
 
@@ -286,17 +286,17 @@ async def example_4_scenario_configuration():
         )
         config = result.scalar_one_or_none()
 
-        result = await db.execute(select(Customer).filter(Customer.id == 2))
-        customer = result.scalar_one_or_none()
+        result = await db.execute(select(Tenant).filter(Tenant.id == 2))
+        tenant = result.scalar_one_or_none()
 
-        if not config or not customer:
-            print("❌ Config or customer not found")
+        if not config or not tenant:
+            print("❌ Config or tenant not found")
             return
 
         # Create scenario with capacity constraints enabled
         scenario = Scenario(
             name="Capacity Constrained Scenario",
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             supply_chain_config_id=config.id,
             use_aws_sc_planning=True,
             max_rounds=10,

@@ -50,7 +50,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.session import sync_engine, async_session_factory
-from app.models.customer import Customer, CustomerMode
+from app.models.tenant import Tenant, TenantMode
 from app.models.supply_chain_config import SupplyChainConfig, Site
 from app.models.user import User
 from app.models.powell import (
@@ -129,25 +129,25 @@ def step1_verify_base_data(db: Session):
     banner(1, "Verify Food Dist Base Data")
 
     # Flexible lookup: try "Food Dist" first, then "Food Distributor" variants
-    customer = db.query(Customer).filter(Customer.name == "Food Dist").first()
-    if not customer:
-        customer = db.query(Customer).filter(
-            Customer.name.ilike("Food Distribut%"),
-            Customer.mode != CustomerMode.LEARNING,  # Prefer production customer
+    tenant = db.query(Tenant).filter(Tenant.name == "Food Dist").first()
+    if not tenant:
+        tenant = db.query(Tenant).filter(
+            Tenant.name.ilike("Food Distribut%"),
+            Tenant.mode != TenantMode.LEARNING,  # Prefer production tenant
         ).first()
-    if not customer:
-        customer = db.query(Customer).filter(
-            Customer.name.ilike("Food Distribut%"),
+    if not tenant:
+        tenant = db.query(Tenant).filter(
+            Tenant.name.ilike("Food Distribut%"),
         ).first()
-    if not customer:
-        print("  ERROR: No Food Dist/Food Distributor customer found.")
+    if not tenant:
+        print("  ERROR: No Food Dist/Food Distributor tenant found.")
         print("  Run: docker compose exec backend python scripts/seed_food_dist_demo.py")
         print("  Or:  docker compose exec backend python scripts/generate_food_dist_config.py")
         sys.exit(1)
-    print(f"  Customer: {customer.name} (id={customer.id})")
+    print(f"  Tenant: {tenant.name} (id={tenant.id})")
 
     config = db.query(SupplyChainConfig).filter(
-        SupplyChainConfig.customer_id == customer.id
+        SupplyChainConfig.tenant_id == tenant.id
     ).first()
     if not config:
         print("  ERROR: No SC config for Food Dist.")
@@ -171,7 +171,7 @@ def step1_verify_base_data(db: Session):
         user_id = user.id if user else None
     print(f"  User ID: {user_id}")
 
-    return customer, config, dc_location_id, user_id
+    return tenant, config, dc_location_id, user_id
 
 
 # ===================================================================
@@ -1290,7 +1290,7 @@ def main():
 
     try:
         # Step 1: Verify base data (always run)
-        customer, config, dc_location_id, user_id = step1_verify_base_data(db)
+        tenant, config, dc_location_id, user_id = step1_verify_base_data(db)
 
         # Step 2: S&OP GraphSAGE
         if start_step <= 2 <= end_step:
@@ -1302,31 +1302,31 @@ def main():
 
         # Step 4: Generate TRM data (async)
         if start_step <= 4 <= end_step:
-            asyncio.run(step4_generate_trm_data(customer.id, config.id))
+            asyncio.run(step4_generate_trm_data(tenant.id, config.id))
 
         # Step 5: Train TRMs (async)
         if start_step <= 5 <= end_step:
-            asyncio.run(step5_train_trms(customer.id))
+            asyncio.run(step5_train_trms(tenant.id))
 
         # Step 6: Cascade demo
         if start_step <= 6 <= end_step:
-            step6_cascade_demo(db, config.id, customer.id, user_id, dc_location_id)
+            step6_cascade_demo(db, config.id, tenant.id, user_id, dc_location_id)
 
         # Step 7: SiteAgent decisions
         if start_step <= 7 <= end_step:
-            step7_seed_site_agent_decisions(db, config.id, dc_location_id, customer.id)
+            step7_seed_site_agent_decisions(db, config.id, dc_location_id, tenant.id)
 
         # Step 8: Belief state & policies
         if start_step <= 8 <= end_step:
-            step8_seed_belief_state_and_policies(db, customer.id, config.id)
+            step8_seed_belief_state_and_policies(db, tenant.id, config.id)
 
         # Step 9: CDC triggers
         if start_step <= 9 <= end_step:
-            step9_seed_cdc_triggers(db, customer.id, dc_location_id)
+            step9_seed_cdc_triggers(db, tenant.id, dc_location_id)
 
         # Step 10: Checkpoint + verification
         if start_step <= 10 <= end_step:
-            step10_checkpoint_and_verify(db, config.id, dc_location_id, customer.id)
+            step10_checkpoint_and_verify(db, config.id, dc_location_id, tenant.id)
 
         print("\n" + "=" * 70)
         print("  Powell Demo Prep COMPLETE")

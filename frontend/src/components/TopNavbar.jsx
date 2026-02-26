@@ -114,7 +114,7 @@ const TopNavbar = ({ sidebarOpen = true }) => {
   // Load supply chain config name
   useEffect(() => {
     const onSupplyChainRoute = location.pathname.includes('/supply-chain-config');
-    const onCustomerSupplyChainRoute = location.pathname.includes('/admin/customer/supply-chain-configs');
+    const onCustomerSupplyChainRoute = location.pathname.includes('/admin/tenant/supply-chain-configs');
     const onGameFromConfigRoute = location.pathname.includes('/scenarios/new-from-config');
 
     if (!(onSupplyChainRoute || onCustomerSupplyChainRoute || onGameFromConfigRoute)) {
@@ -196,7 +196,7 @@ const TopNavbar = ({ sidebarOpen = true }) => {
     { label: 'Admin Dashboard', icon: Shield, path: '/admin' },
     { label: 'TRM Model Training', icon: GraduationCap, path: '/admin/trm' },
     { label: 'GNN Model Training', icon: Brain, path: '/admin/gnn' },
-    { label: 'Customers', icon: Users, path: '/admin/customers' },
+    { label: 'Organizations', icon: Users, path: '/admin/tenants' },
     { label: 'Supply Chain Configs', icon: Network, path: '/system/supply-chain-configs' },
   ] : [];
 
@@ -211,7 +211,7 @@ const TopNavbar = ({ sidebarOpen = true }) => {
         {/* Left side - Logo & Context */}
         <div className="flex items-center gap-4">
           <Link
-            to={isSysAdmin ? '/admin/customers' : '/dashboard'}
+            to={isSysAdmin ? '/admin/tenants' : '/dashboard'}
             className="flex items-center gap-2 font-medium hover:opacity-80 transition-opacity"
           >
             <img
@@ -260,7 +260,7 @@ const TopNavbar = ({ sidebarOpen = true }) => {
               </div>
               <div className="hidden sm:block text-left mr-1">
                 <p className="text-sm font-medium text-foreground">{user?.name || user?.full_name || 'User'}</p>
-                <p className="text-xs text-muted-foreground">{user?.powell_role ? user.powell_role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : (user?.user_type === 'systemadmin' ? 'System Admin' : user?.user_type === 'groupadmin' ? 'Customer Admin' : '')}</p>
+                <p className="text-xs text-muted-foreground">{user?.powell_role ? user.powell_role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : (user?.user_type === 'systemadmin' ? 'System Admin' : (user?.user_type === 'tenantadmin' || user?.user_type === 'groupadmin') ? 'Organization Admin' : '')}</p>
               </div>
               {menuOpen ? (
                 <X className="h-4 w-4 text-muted-foreground" />

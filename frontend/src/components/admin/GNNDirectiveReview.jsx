@@ -391,8 +391,8 @@ const GNNDirectiveReview = () => {
               <div>
                 <Label className="mb-1 block">Reason Code *</Label>
                 <NativeSelect value={overrideForm.reason_code} onChange={(e) => setOverrideForm((p) => ({ ...p, reason_code: e.target.value }))}>
-                  <NativeSelectOption value="">Select a reason...</SelectOption>
-                  {REASON_CODES.map((rc) => <NativeSelectOption key={rc.value} value={rc.value}>{rc.label}</SelectOption>)}
+                  <SelectOption value="">Select a reason...</SelectOption>
+                  {REASON_CODES.map((rc) => <SelectOption key={rc.value} value={rc.value}>{rc.label}</SelectOption>)}
                 </NativeSelect>
               </div>
               <div>

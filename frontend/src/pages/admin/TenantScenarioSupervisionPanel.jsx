@@ -59,7 +59,7 @@ const statusColor = (status = '') => {
   return 'secondary';
 };
 
-const GroupGameSupervisionPanel = ({
+const TenantScenarioSupervisionPanel = ({
   games = [],
   loading = false,
   error = null,
@@ -91,7 +91,7 @@ const GroupGameSupervisionPanel = ({
       if (!game) return false;
 
       if (normalizedGroupId != null) {
-        const targetGroup = game.customer_id ?? game?.config?.customer_id ?? null;
+        const targetGroup = game.tenant_id ?? game?.config?.tenant_id ?? null;
         if (targetGroup != null) {
           if (Number(targetGroup) !== normalizedGroupId) {
             return false;
@@ -371,9 +371,9 @@ const GroupGameSupervisionPanel = ({
                           'llm_adaptive', 'llm_supervised', 'llm_global'];
 
     const agentsRequiringTraining = scenarioUsers
-      .filter(scenarioUser => user.is_ai)
+      .filter(scenarioUser => scenarioUser.is_ai)
       .filter(scenarioUser => {
-        const strategy = String(user.ai_strategy || '').toLowerCase();
+        const strategy = String(scenarioUser.ai_strategy || '').toLowerCase();
         const requiresGNN = gnnStrategies.some(s => strategy.includes(s));
         const requiresTRM = trmStrategies.some(s => strategy.includes(s));
         const isLLM = llmStrategies.some(s => strategy.includes(s));
@@ -390,12 +390,12 @@ const GroupGameSupervisionPanel = ({
     }
 
     const needsGNN = agentsRequiringTraining.some(scenarioUser => {
-      const strategy = String(user.ai_strategy || '').toLowerCase();
+      const strategy = String(scenarioUser.ai_strategy || '').toLowerCase();
       return gnnStrategies.some(s => strategy.includes(s));
     });
 
     const needsTRM = agentsRequiringTraining.some(scenarioUser => {
-      const strategy = String(user.ai_strategy || '').toLowerCase();
+      const strategy = String(scenarioUser.ai_strategy || '').toLowerCase();
       return trmStrategies.some(s => strategy.includes(s));
     });
 
@@ -582,7 +582,7 @@ const GroupGameSupervisionPanel = ({
             <div>
               <h2 className="text-lg font-bold">Scenario Supervision</h2>
               <p className="text-sm text-muted-foreground">
-                Monitor live sessions and orchestrate progress across your customer's scenarios.
+                Monitor live sessions and orchestrate progress across your organization's scenarios.
               </p>
             </div>
             <div className="flex flex-col sm:flex-row gap-3 items-center">
@@ -925,4 +925,4 @@ const GroupGameSupervisionPanel = ({
   );
 };
 
-export default GroupGameSupervisionPanel;
+export default TenantScenarioSupervisionPanel;

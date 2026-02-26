@@ -12,7 +12,7 @@ Usage:
 
 Options:
     --config-name "Default Beer Game"  (default: "Default Beer Game")
-    --customer-name "Default Customer" (default: "Default Customer")
+    --tenant-name "Default Tenant" (default: "Default Tenant")
     --horizon 52                 (default: 52 weeks)
 """
 
@@ -25,7 +25,7 @@ from sqlalchemy.orm import selectinload
 
 from app.db.session import SessionLocal, async_session_factory
 from app.models.supply_chain_config import SupplyChainConfig, Node, Lane, Item
-from app.models.customer import Customer
+from app.models.tenant import Tenant
 from app.models.aws_sc_planning import (
     InvPolicy,
     SourcingRules,
@@ -36,7 +36,7 @@ from app.models.aws_sc_planning import (
 
 async def convert_config_to_aws_sc(
     config_name: str = "Default Beer Game",
-    customer_name: str = "Default Customer",
+    tenant_name: str = "Default Tenant",
     horizon: int = 52
 ):
     """
@@ -44,7 +44,7 @@ async def convert_config_to_aws_sc(
 
     Args:
         config_name: Name of the SupplyChainConfig to convert
-        customer_name: Name of the Customer to use
+        tenant_name: Name of the Tenant to use
         horizon: Number of weeks to forecast
     """
     print("=" * 80)
@@ -79,15 +79,15 @@ async def convert_config_to_aws_sc(
         print(f"   ✓ Items: {len(config.items)}")
         print()
 
-        # Load customer
-        result = await db.execute(select(Customer).filter(Customer.name == customer_name))
-        customer = result.scalar_one_or_none()
+        # Load tenant
+        result = await db.execute(select(Tenant).filter(Tenant.name == tenant_name))
+        tenant = result.scalar_one_or_none()
 
-        if not customer:
-            print(f"❌ Customer '{customer_name}' not found")
+        if not tenant:
+            print(f"❌ Tenant '{tenant_name}' not found")
             return False
 
-        print(f"   ✓ Customer ID: {customer.id}")
+        print(f"   ✓ Tenant ID: {tenant.id}")
         print()
 
         # ================================================================
@@ -119,7 +119,7 @@ async def convert_config_to_aws_sc(
             reorder_point = attributes.get('reorder_point', 0)
 
             inv_policy = InvPolicy(
-                customer_id=customer.id,
+                customer_id=tenant.id,
                 config_id=config.id,
                 product_id=item.id,
                 site_id=node.id,
@@ -172,7 +172,7 @@ async def convert_config_to_aws_sc(
             lead_time_days = lead_time_weeks * 7
 
             sourcing_rule = SourcingRules(
-                customer_id=customer.id,
+                customer_id=tenant.id,
                 config_id=config.id,
                 product_id=item.id,
                 site_id=to_node.id,  # Destination
@@ -221,7 +221,7 @@ async def convert_config_to_aws_sc(
             capacity_hours = attributes.get('capacity_hours', 9999)
 
             production_process = ProductionProcess(
-                customer_id=customer.id,
+                customer_id=tenant.id,
                 config_id=config.id,
                 product_id=item.id,
                 site_id=node.id,
@@ -274,7 +274,7 @@ async def convert_config_to_aws_sc(
                 demand_qty = _get_demand_for_week(demand_pattern, week)
 
                 forecast = Forecast(
-                    customer_id=customer.id,
+                    customer_id=tenant.id,
                     config_id=config.id,
                     product_id=item.id,
                     site_id=retailer_node.id,
@@ -315,7 +315,7 @@ async def convert_config_to_aws_sc(
         print("Conversion Summary")
         print("=" * 80)
         print(f"Config:              {config.name} (ID: {config.id})")
-        print(f"Customer:            {customer.name} (ID: {customer.id})")
+        print(f"Customer:            {tenant.name} (ID: {tenant.id})")
         print(f"InvPolicy:           {inv_policies_created} records")
         print(f"SourcingRules:       {sourcing_rules_created} records")
         print(f"ProductionProcess:   {production_processes_created} records")
@@ -326,7 +326,7 @@ async def convert_config_to_aws_sc(
         print("Next steps:")
         print("1. Create a scenario with use_aws_sc_planning=True")
         print("2. Set scenario.supply_chain_config_id = {config.id}")
-        print("3. Set scenario.customer_id = {customer.id}")
+        print("3. Set scenario.customer_id = {tenant.id}")
         print("4. Start the scenario and observe AWS SC planning in action!")
         print("=" * 80)
 
@@ -372,13 +372,13 @@ def _get_demand_for_week(demand_pattern: dict, week: int) -> float:
         return 4.0
 
 
-async def verify_conversion(config_name: str, customer_name: str):
+async def verify_conversion(config_name: str, tenant_name: str):
     """
     Verify that the conversion was successful
 
     Args:
         config_name: Name of the config
-        customer_name: Name of the customer
+        tenant_name: Name of the tenant
     """
     print()
     print("=" * 80)
@@ -387,23 +387,23 @@ async def verify_conversion(config_name: str, customer_name: str):
     print()
 
     async with async_session_factory() as db:
-        # Get config and customer
+        # Get config and tenant
         result = await db.execute(
             select(SupplyChainConfig).filter(SupplyChainConfig.name == config_name)
         )
         config = result.scalar_one_or_none()
 
-        result = await db.execute(select(Customer).filter(Customer.name == customer_name))
-        customer = result.scalar_one_or_none()
+        result = await db.execute(select(Tenant).filter(Tenant.name == tenant_name))
+        tenant = result.scalar_one_or_none()
 
-        if not config or not customer:
-            print("❌ Config or customer not found")
+        if not config or not tenant:
+            print("❌ Config or tenant not found")
             return False
 
         # Count records
         inv_policy_count = await db.execute(
             select(InvPolicy).filter(
-                InvPolicy.customer_id == customer.id,
+                InvPolicy.customer_id == tenant.id,
                 InvPolicy.config_id == config.id
             )
         )
@@ -411,7 +411,7 @@ async def verify_conversion(config_name: str, customer_name: str):
 
         sourcing_rules_count = await db.execute(
             select(SourcingRules).filter(
-                SourcingRules.customer_id == customer.id,
+                SourcingRules.customer_id == tenant.id,
                 SourcingRules.config_id == config.id
             )
         )
@@ -419,7 +419,7 @@ async def verify_conversion(config_name: str, customer_name: str):
 
         production_process_count = await db.execute(
             select(ProductionProcess).filter(
-                ProductionProcess.customer_id == customer.id,
+                ProductionProcess.customer_id == tenant.id,
                 ProductionProcess.config_id == config.id
             )
         )
@@ -427,14 +427,14 @@ async def verify_conversion(config_name: str, customer_name: str):
 
         forecast_count = await db.execute(
             select(Forecast).filter(
-                Forecast.customer_id == customer.id,
+                Forecast.customer_id == tenant.id,
                 Forecast.config_id == config.id
             )
         )
         forecast_count = len(forecast_count.scalars().all())
 
         print(f"Config: {config.name} (ID: {config.id})")
-        print(f"Customer:  {customer.name} (ID: {customer.id})")
+        print(f"Customer:  {tenant.name} (ID: {tenant.id})")
         print()
         print(f"InvPolicy:         {inv_policy_count:3d} records")
         print(f"SourcingRules:     {sourcing_rules_count:3d} records")
@@ -479,9 +479,9 @@ async def main():
         help='Name of the SupplyChainConfig to convert'
     )
     parser.add_argument(
-        '--customer-name',
-        default='Default Customer',
-        help='Name of the Customer to use'
+        '--tenant-name',
+        default='Default Tenant',
+        help='Name of the Tenant to use'
     )
     parser.add_argument(
         '--horizon',
@@ -498,16 +498,16 @@ async def main():
     args = parser.parse_args()
 
     if args.verify_only:
-        success = await verify_conversion(args.config_name, args.customer_name)
+        success = await verify_conversion(args.config_name, args.tenant_name)
     else:
         success = await convert_config_to_aws_sc(
             config_name=args.config_name,
-            customer_name=args.customer_name,
+            tenant_name=args.tenant_name,
             horizon=args.horizon
         )
 
         if success:
-            await verify_conversion(args.config_name, args.customer_name)
+            await verify_conversion(args.config_name, args.tenant_name)
 
     sys.exit(0 if success else 1)
 

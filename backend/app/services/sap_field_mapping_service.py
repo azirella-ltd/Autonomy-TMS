@@ -591,9 +591,9 @@ class SAPFieldMappingService:
     4. AI analysis - Claude for complex/ambiguous cases
     """
 
-    def __init__(self, db: AsyncSession, customer_id: int):
+    def __init__(self, db: AsyncSession, tenant_id: int):
         self.db = db
-        self.customer_id = customer_id
+        self.tenant_id = tenant_id
         self._mapping_history: Dict[str, str] = {}  # sap_field -> aws_field
         self._learned_mappings: Dict[str, Tuple[str, str]] = {}  # sap_field -> (entity, field)
         self._openai_client = None
@@ -1133,7 +1133,7 @@ Provide analysis in JSON format:
         """Export all learned mappings for persistence."""
         return {
             "version": "1.0",
-            "customer_id": self.customer_id,
+            "tenant_id": self.tenant_id,
             "timestamp": datetime.utcnow().isoformat(),
             "learned_mappings": {
                 k: {"entity": v[0], "field": v[1]}
@@ -1158,6 +1158,6 @@ Provide analysis in JSON format:
 
 
 # Convenience function
-def create_field_mapping_service(db: AsyncSession, customer_id: int) -> SAPFieldMappingService:
+def create_field_mapping_service(db: AsyncSession, tenant_id: int) -> SAPFieldMappingService:
     """Create a field mapping service for a customer."""
-    return SAPFieldMappingService(db, customer_id)
+    return SAPFieldMappingService(db, tenant_id)

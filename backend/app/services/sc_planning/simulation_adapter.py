@@ -55,11 +55,11 @@ class SimulationToSCAdapter:
         self.game = game
         self.db = db
         self.config = game.supply_chain_config
-        self.customer_id = game.customer_id
+        self.tenant_id = game.tenant_id
         self.config_id = game.supply_chain_config_id
 
-        if not self.customer_id:
-            raise ValueError(f"Game {game.id} has no customer_id - cannot use SC planning")
+        if not self.tenant_id:
+            raise ValueError(f"Game {game.id} has no tenant_id - cannot use SC planning")
 
     async def sync_inventory_levels(self, round_number: int) -> int:
         """
@@ -88,7 +88,7 @@ class SimulationToSCAdapter:
         # Delete old snapshots for this game (if any)
         await self.db.execute(
             delete(InvLevel).filter(
-                InvLevel.customer_id == self.customer_id,
+                InvLevel.customer_id == self.tenant_id,
                 InvLevel.config_id == self.config_id,
             )
         )
@@ -127,7 +127,7 @@ class SimulationToSCAdapter:
                 safety_stock_qty=0,  # TODO: Get from node policy
                 reorder_point_qty=0,
                 snapshot_date=snapshot_date,
-                customer_id=self.customer_id,
+                tenant_id=self.tenant_id,
                 config_id=self.config_id,
             )
 
@@ -208,7 +208,7 @@ class SimulationToSCAdapter:
         # Delete old forecasts for this game
         await self.db.execute(
             delete(Forecast).filter(
-                Forecast.customer_id == self.customer_id,
+                Forecast.customer_id == self.tenant_id,
                 Forecast.config_id == self.config_id,
                 Forecast.scenario_id == self.game.id,
             )
@@ -234,7 +234,7 @@ class SimulationToSCAdapter:
                 forecast_p90=demand_qty * 1.2,  # Optimistic
                 user_override_quantity=None,
                 is_active='true',
-                customer_id=self.customer_id,
+                tenant_id=self.tenant_id,
                 config_id=self.config_id,
                 scenario_id=self.game.id,
             )

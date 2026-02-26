@@ -19,7 +19,7 @@ import simulationApi from '../services/api';
 import { getSupplyChainConfigs, getProducts, getSites, getLanes } from '../services/supplyChainConfigService';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { isGroupAdmin as isGroupAdminUser } from '../utils/authUtils';
+import { isTenantAdmin as isTenantAdminUser } from '../utils/authUtils';
 
 const DEFAULTS = {
   supply_leadtime: { min: 0, max: 8 },
@@ -51,8 +51,8 @@ const SystemConfig = () => {
   const [loadingConfigs, setLoadingConfigs] = useState(true);
   const navigate = useNavigate();
   const { user } = useAuth();
-  const isGroupAdmin = isGroupAdminUser(user);
-  const scConfigBasePath = isGroupAdmin ? '/admin/customer/supply-chain-configs' : '/supply-chain-config';
+  const isTenantAdmin = isTenantAdminUser(user);
+  const scConfigBasePath = isTenantAdmin ? '/admin/tenant/supply-chain-configs' : '/supply-chain-config';
 
   useEffect(() => {
     let active = true;

@@ -84,7 +84,7 @@ class WizardMessageRequest(BaseModel):
 
 class DirectGenerationRequest(BaseModel):
     """Request for direct (non-wizard) data generation."""
-    group_name: str = Field(..., min_length=1, max_length=100)
+    tenant_name: str = Field(..., min_length=1, max_length=100)
     company_name: str = Field(..., min_length=1, max_length=100)
     archetype: str = Field(..., description="Company archetype: retailer, distributor, or manufacturer")
     admin_email: EmailStr
@@ -112,7 +112,7 @@ class DirectGenerationRequest(BaseModel):
 class GenerationResultResponse(BaseModel):
     """Response for data generation result."""
     success: bool
-    customer_id: Optional[int] = None
+    tenant_id: Optional[int] = None
     config_id: Optional[int] = None
     admin_user_id: Optional[int] = None
     nodes_created: Optional[int] = None
@@ -202,7 +202,7 @@ async def start_wizard_session(
     6. **Agent Configuration**: AI assistance settings
     7. **Review & Generate**: Final confirmation and creation
     """
-    if current_user.user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.GROUP_ADMIN):
+    if current_user.user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.TENANT_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only system administrators can create synthetic data"
@@ -251,7 +251,7 @@ async def get_wizard_session(
     - Collected configuration data
     - Conversation history
     """
-    if current_user.user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.GROUP_ADMIN):
+    if current_user.user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.TENANT_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only system administrators can access wizard sessions"
@@ -305,7 +305,7 @@ async def send_wizard_message(
     - "Use 100 products instead of the default"
     - "Enable autonomous agent mode"
     """
-    if current_user.user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.GROUP_ADMIN):
+    if current_user.user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.TENANT_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only system administrators can use wizard sessions"
@@ -375,7 +375,7 @@ async def generate_from_wizard(
     - Planning hierarchy configurations
     - AI agent configurations
     """
-    if current_user.user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.GROUP_ADMIN):
+    if current_user.user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.TENANT_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only system administrators can generate synthetic data"
@@ -435,7 +435,7 @@ async def delete_wizard_session(
     current_user: User = Depends(get_current_user)
 ):
     """Delete a wizard session."""
-    if current_user.user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.GROUP_ADMIN):
+    if current_user.user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.TENANT_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only system administrators can delete wizard sessions"
@@ -468,7 +468,7 @@ async def generate_synthetic_data(
     know exactly what configuration you want.
 
     **Required Fields:**
-    - `group_name`: Organization name
+    - `tenant_name`: Organization name
     - `company_name`: Company name for supply chain config
     - `archetype`: "retailer", "distributor", or "manufacturer"
     - `admin_email`: Email for the admin user
@@ -482,7 +482,7 @@ async def generate_synthetic_data(
     - `agent_mode`: "none", "copilot", or "autonomous"
     - `enable_gnn/llm/trm`: Enable specific AI agents
     """
-    if current_user.user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.GROUP_ADMIN):
+    if current_user.user_type not in (UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.TENANT_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only system administrators can generate synthetic data"
@@ -499,7 +499,7 @@ async def generate_synthetic_data(
 
     try:
         gen_request = GenerationRequest(
-            group_name=request.group_name,
+            tenant_name=request.tenant_name,
             archetype=archetype,
             company_name=request.company_name,
             admin_email=request.admin_email,
@@ -521,7 +521,7 @@ async def generate_synthetic_data(
 
         return GenerationResultResponse(
             success=True,
-            customer_id=result.customer_id,
+            tenant_id=result.customer_id,
             config_id=result.config_id,
             admin_user_id=result.admin_user_id,
             nodes_created=result.nodes_created,

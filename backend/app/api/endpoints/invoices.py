@@ -48,7 +48,7 @@ def check_invoice_permission(user: User, action: str):
     # Check if user has any of the required capabilities
     if user.roles:
         for role in user.roles:
-            if hasattr(role, 'name') and role.name in ['SYSTEM_ADMIN', 'GROUP_ADMIN']:
+            if hasattr(role, 'name') and role.name in ['SYSTEM_ADMIN', 'TENANT_ADMIN']:
                 return True
             if hasattr(role, 'permissions'):
                 for perm in role.permissions:

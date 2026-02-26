@@ -20,9 +20,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_TENANT_NAME = "Autonomy"
 DEFAULT_TENANT_DESCRIPTION = "Default Autonomy tenant"
 DEFAULT_TENANT_LOGO = "/autonomy_logo.svg"
-DEFAULT_ADMIN_USERNAME = "groupadmin"
-DEFAULT_ADMIN_EMAIL = "groupadmin@autonomy.ai"
-DEFAULT_ADMIN_FULL_NAME = "Group Administrator"
+DEFAULT_ADMIN_USERNAME = "tenantadmin"
+DEFAULT_ADMIN_EMAIL = "tenantadmin@autonomy.ai"
+DEFAULT_ADMIN_FULL_NAME = "Tenant Administrator"
 DEFAULT_ADMIN_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")
 
 # Backward compatibility aliases
@@ -42,7 +42,7 @@ def build_default_tenant_payload() -> TenantCreate:
             email=DEFAULT_ADMIN_EMAIL,
             password=DEFAULT_ADMIN_PASSWORD,
             full_name=DEFAULT_ADMIN_FULL_NAME,
-            user_type="GROUP_ADMIN",
+            user_type="TENANT_ADMIN",
         ),
     )
 

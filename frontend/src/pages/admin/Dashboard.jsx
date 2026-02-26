@@ -3,11 +3,11 @@ import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { isSystemAdmin as isSystemAdminUser } from '../../utils/authUtils';
 import { saveAdminDashboardPath } from '../../utils/adminDashboardState';
-import CustomerSupplyChainConfigList from './CustomerSupplyChainConfigList';
-import CustomerAdminUserManagement from './UserManagement';
-import CustomerScenarioConfigPanel from './CustomerScenarioConfigPanel';
-import CustomerScenarioSupervisionPanel from './CustomerScenarioSupervisionPanel';
-import CustomerScenarioComparisonPanel from './CustomerScenarioComparisonPanel';
+import TenantSupplyChainConfigList from './TenantSupplyChainConfigList';
+import TenantAdminUserManagement from './UserManagement';
+import TenantScenarioConfigPanel from './TenantScenarioConfigPanel';
+import TenantScenarioSupervisionPanel from './TenantScenarioSupervisionPanel';
+import TenantScenarioComparisonPanel from './TenantScenarioComparisonPanel';
 import simulationApi from '../../services/api';
 import { api } from '../../services/api';
 import { getSupplyChainConfigs } from '../../services/supplyChainConfigService';
@@ -52,7 +52,7 @@ const tabItems = [
 ];
 
 const AdminDashboard = () => {
-  const { user, loading, isGroupAdmin } = useAuth();
+  const { user, loading, isTenantAdmin } = useAuth();
   const isSystemAdmin = isSystemAdminUser(user);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -62,10 +62,10 @@ const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState(tabItems.some((tab) => tab.value === initialTab) ? initialTab : 'game');
   const [selectedSupplyChainId, setSelectedSupplyChainId] = useState(initialScParam);
 
-  const customerId = useMemo(() => {
-    const rawCustomer = user?.customer_id;
-    if (rawCustomer == null) return null;
-    const parsed = Number(rawCustomer);
+  const tenantId = useMemo(() => {
+    const rawTenant = user?.tenant_id;
+    if (rawTenant == null) return null;
+    const parsed = Number(rawTenant);
     return Number.isFinite(parsed) ? parsed : null;
   }, [user]);
 
@@ -325,11 +325,11 @@ const AdminDashboard = () => {
     return <Navigate to="/unauthorized" replace />;
   }
 
-  if (isSystemAdmin && !isGroupAdmin) {
+  if (isSystemAdmin && !isTenantAdmin) {
     return <Navigate to="/system/users" replace />;
   }
 
-  if (!isGroupAdmin) {
+  if (!isTenantAdmin) {
     return <Navigate to="/unauthorized" replace />;
   }
 
@@ -389,16 +389,16 @@ const AdminDashboard = () => {
 
       <div>
         {activeTab === 'sc' && (
-          <CustomerSupplyChainConfigList />
+          <TenantSupplyChainConfigList />
         )}
 
         {activeTab === 'game' && (
-          <CustomerScenarioConfigPanel
+          <TenantScenarioConfigPanel
             games={games}
             loading={gamesLoading}
             error={gamesError}
             onRefresh={refreshGames}
-            groupId={customerId}
+            groupId={tenantId}
             currentUserId={currentUserId}
             selectedSupplyChainId={selectedSupplyChainId}
             onSelectSupplyChain={(value) => handleSupplyChainChange({ target: { value } })}
@@ -407,27 +407,27 @@ const AdminDashboard = () => {
           />
         )}
 
-        {activeTab === 'users' && <CustomerAdminUserManagement />}
+        {activeTab === 'users' && <TenantAdminUserManagement />}
 
         {activeTab === 'supervision' && (
-          <CustomerScenarioSupervisionPanel
+          <TenantScenarioSupervisionPanel
             games={games}
             loading={gamesLoading}
             error={gamesError}
             onRefresh={refreshGames}
-            groupId={customerId}
+            groupId={tenantId}
             currentUserId={currentUserId}
             selectedSupplyChainId={selectedSupplyChainId}
           />
         )}
 
         {activeTab === 'comparison' && (
-          <CustomerScenarioComparisonPanel
+          <TenantScenarioComparisonPanel
             games={games}
             loading={gamesLoading}
             error={gamesError}
             onRefresh={refreshGames}
-            groupId={customerId}
+            groupId={tenantId}
             currentUserId={currentUserId}
             selectedSupplyChainId={selectedSupplyChainId}
           />

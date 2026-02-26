@@ -346,7 +346,7 @@ const TRMTrainingPanel = () => {
               ) : configsError ? (
                 <Alert variant="error">{configsError}</Alert>
               ) : supplyChainConfigs.length === 0 ? (
-                <Alert variant="warning">No supply chain configurations available for your customer.</Alert>
+                <Alert variant="warning">No supply chain configurations available for your organization.</Alert>
               ) : (
                 <NativeSelect
                   value={trainingConfig.supply_chain_config}

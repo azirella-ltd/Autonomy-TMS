@@ -108,7 +108,7 @@ class TenantService:
                 email=admin_data.email,
                 full_name=admin_data.full_name,
                 hashed_password=hashed_password,
-                user_type=UserTypeEnum.GROUP_ADMIN,
+                user_type=UserTypeEnum.TENANT_ADMIN,
                 is_active=True,
                 is_superuser=False,
             )

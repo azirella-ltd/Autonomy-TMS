@@ -47,7 +47,7 @@ from app.models import (
     AgentConfig,
     Scenario,
     ScenarioStatus,
-    Customer,
+    Tenant,
     TransportationLane as Lane,  # Import as Lane for backwards compatibility
     Market,
     MarketDemand,
@@ -706,7 +706,7 @@ def _iter_node_slots(config_payload: Dict[str, Any]) -> List[NodeSlot]:
     return slots
 
 
-def _ensure_node_user(session: Session, customer: Customer, slot: NodeSlot) -> User:
+def _ensure_node_user(session: Session, customer: Tenant, slot: NodeSlot) -> User:
     local_part = re.sub(r"[^0-9a-z]+", "_", slot.label.lower()).strip("_") or slot.key
     email = f"{local_part}@autonomy.ai"
     user = session.query(User).filter(User.email == email).first()
@@ -963,10 +963,10 @@ def ensure_customer_with_admin(
     admin_email: str,
     admin_full_name: str,
     password: str = DEFAULT_PASSWORD,
-) -> Tuple[Customer, bool]:
+) -> Tuple[Tenant, bool]:
     """Create or update a customer and its administrator."""
 
-    existing_customer = session.query(Customer).filter(Customer.name == customer_name).first()
+    existing_customer = session.query(Tenant).filter(Tenant.name == customer_name).first()
     admin_user = session.query(User).filter(User.email == admin_email).first()
 
     admin_created = False
@@ -978,7 +978,7 @@ def ensure_customer_with_admin(
             hashed_password=get_password_hash(password),
             is_active=True,
             is_superuser=False,
-            user_type=UserTypeEnum.GROUP_ADMIN,
+            user_type=UserTypeEnum.TENANT_ADMIN,
         )
         session.add(admin_user)
         session.flush()
@@ -994,8 +994,8 @@ def ensure_customer_with_admin(
         if admin_user.is_superuser:
             admin_user.is_superuser = False
             updated = True
-        if _normalize_user_type(admin_user.user_type) != UserTypeEnum.GROUP_ADMIN:
-            admin_user.user_type = UserTypeEnum.GROUP_ADMIN
+        if _normalize_user_type(admin_user.user_type) != UserTypeEnum.TENANT_ADMIN:
+            admin_user.user_type = UserTypeEnum.TENANT_ADMIN
             updated = True
         if not admin_user.is_active:
             admin_user.is_active = True
@@ -1024,7 +1024,7 @@ def ensure_customer_with_admin(
 
     print(f"[info] Creating customer '{customer_name}' and administrator user '{admin_email}'...")
 
-    customer = Customer(
+    customer = Tenant(
         name=customer_name,
         description=group_description,
         admin_id=admin_user.id,
@@ -1045,7 +1045,7 @@ def ensure_customer_with_admin(
     return customer, True
 
 
-def ensure_customer(session: Session) -> Tuple[Customer, bool]:
+def ensure_customer(session: Session) -> Tuple[Tenant, bool]:
     """Create the default Autonomy customer and admin user."""
 
     return ensure_customer_with_admin(
@@ -1067,7 +1067,7 @@ def ensure_named_group(
     admin_username: str,
     admin_email: str,
     admin_full_name: str,
-) -> Customer:
+) -> Tenant:
     customer, _ = ensure_customer_with_admin(
         session,
         customer_name=name,
@@ -1082,7 +1082,7 @@ def ensure_named_group(
 
 def ensure_supply_chain_config(
     session: Session,
-    customer: Customer,
+    customer: Tenant,
     *,
     name: Optional[str] = None,
     description: Optional[str] = None,
@@ -1381,7 +1381,7 @@ def ensure_supply_chain_config(
 
 def ensure_three_fg_inventory_config(
     session: Session,
-    customer: Customer,
+    customer: Tenant,
     *,
     name: str = "Three FG Beer Game",
     description: str = "Inventory-only simulation with three finished goods (Lager, IPA, Dark).",
@@ -1502,7 +1502,7 @@ def ensure_three_fg_inventory_config(
 
 def _create_inventory_only_config(
     session: Session,
-    customer: Customer,
+    customer: Tenant,
     *,
     name: Optional[str],
     description: Optional[str],
@@ -2431,7 +2431,7 @@ def _populate_config_lineage(session: Session, config: SupplyChainConfig) -> Non
     session.flush()
 
 
-def _get_parent_config(session: Session, customer: Customer, parent_name: str) -> Optional[SupplyChainConfig]:
+def _get_parent_config(session: Session, customer: Tenant, parent_name: str) -> Optional[SupplyChainConfig]:
     """Get a parent config by name within the same customer."""
     return (
         session.query(SupplyChainConfig)
@@ -2443,12 +2443,12 @@ def _get_parent_config(session: Session, customer: Customer, parent_name: str) -
     )
 
 
-def _get_root_config(session: Session, customer: Customer) -> Optional[SupplyChainConfig]:
+def _get_root_config(session: Session, customer: Tenant) -> Optional[SupplyChainConfig]:
     """Get the root config (Default Beer Game) for the customer by DB lookup name."""
     return _get_parent_config(session, customer, "Default Beer Game")
 
 
-def ensure_case_config(session: Session, customer: Customer) -> SupplyChainConfig:
+def ensure_case_config(session: Session, customer: Tenant) -> SupplyChainConfig:
     """Create or update the Case simulation configuration (Case built from Six-Packs).
 
     Lineage: Default Beer Game -> Case Beer Game (DB config names)
@@ -2656,7 +2656,7 @@ def ensure_case_config(session: Session, customer: Customer) -> SupplyChainConfi
     return config
 
 
-def ensure_six_pack_config(session: Session, customer: Customer) -> SupplyChainConfig:
+def ensure_six_pack_config(session: Session, customer: Tenant) -> SupplyChainConfig:
     """Create or update the Six-Pack simulation configuration (Case built from Six-Packs).
 
     Lineage: Default Beer Game -> Case Beer Game -> Six-Pack Beer Game (DB config names)
@@ -2886,7 +2886,7 @@ def ensure_six_pack_config(session: Session, customer: Customer) -> SupplyChainC
     return config
 
 
-def ensure_bottle_config(session: Session, customer: Customer) -> SupplyChainConfig:
+def ensure_bottle_config(session: Session, customer: Tenant) -> SupplyChainConfig:
     """Create or update the Bottle simulation configuration (Case <- Six-Pack <- Bottle <- Ingredients).
 
     Lineage: Default Beer Game -> Case Beer Game -> Six-Pack Beer Game -> Bottle Beer Game (DB config names)
@@ -3127,7 +3127,7 @@ def ensure_bottle_config(session: Session, customer: Customer) -> SupplyChainCon
     return config
 
 
-def ensure_multi_item_six_pack_config(session: Session, customer: Customer) -> SupplyChainConfig:
+def ensure_multi_item_six_pack_config(session: Session, customer: Tenant) -> SupplyChainConfig:
     """Create or update a multi-item Six-Pack simulation variant with mixed sourcing."""
 
     config = (
@@ -3324,7 +3324,7 @@ def ensure_multi_item_six_pack_config(session: Session, customer: Customer) -> S
 
 def ensure_default_game(
     session: Session,
-    customer: Customer,
+    customer: Tenant,
     *,
     config: Optional[SupplyChainConfig] = None,
     config_name: Optional[str] = None,
@@ -3408,7 +3408,7 @@ def ensure_default_game(
 
 def ensure_naive_unsupervised_game(
     session: Session,
-    customer: Customer,
+    customer: Tenant,
     config: SupplyChainConfig,
     *,
     demand_pattern_override: Optional[Dict[str, Any]] = None,
@@ -3483,7 +3483,7 @@ def ensure_naive_unsupervised_game(
 
 def ensure_pid_game(
     session: Session,
-    customer: Customer,
+    customer: Tenant,
     config: SupplyChainConfig,
     *,
     demand_pattern_override: Optional[Dict[str, Any]] = None,
@@ -3564,7 +3564,7 @@ def ensure_pid_game(
 
 def ensure_trm_game(
     session: Session,
-    customer: Customer,
+    customer: Tenant,
     config: SupplyChainConfig,
     *,
     demand_pattern_override: Optional[Dict[str, Any]] = None,
@@ -3645,7 +3645,7 @@ def ensure_trm_game(
 
 def configure_human_players_for_game(
     session: Session,
-    customer: Customer,
+    customer: Tenant,
     game: Game,
 ) -> None:
     """Ensure the default game uses human scenario_users mapped to role-specific accounts."""
@@ -3732,7 +3732,7 @@ def configure_human_players_for_game(
 
 def ensure_human_game_for_config(
     session: Session,
-    customer: Customer,
+    customer: Tenant,
     config: SupplyChainConfig,
     *,
     game_name: str,
@@ -3815,7 +3815,7 @@ def ensure_human_game_for_config(
 
 def ensure_hybrid_human_naive_game(
     session: Session,
-    customer: Customer,
+    customer: Tenant,
     config: SupplyChainConfig,
     *,
     game_name: str,
@@ -3829,7 +3829,7 @@ def ensure_hybrid_human_naive_game(
 
     Args:
         session: Database session
-        customer: Customer for the game
+        customer: Tenant for the game
         config: Supply chain configuration
         game_name: Name of the game
         description: Game description
@@ -4063,7 +4063,7 @@ def ensure_ai_agents(
     )
 
 
-def ensure_role_users(session: Session, customer: Customer) -> None:
+def ensure_role_users(session: Session, customer: Tenant) -> None:
     """Legacy helper retained for compatibility; node-scoped accounts are created per game."""
     print(
         "[info] Skipping legacy role user bootstrap; node-specific users are created when configuring games."
@@ -4520,7 +4520,7 @@ def _configure_game_agents(
 
 def ensure_autonomy_games(
     session: Session,
-    customer: Customer,
+    customer: Tenant,
     config: SupplyChainConfig,
     artifacts: Dict[str, Optional[Dict[str, Any]]],
     *,

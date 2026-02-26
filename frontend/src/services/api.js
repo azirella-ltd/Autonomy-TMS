@@ -126,7 +126,7 @@ export const simulationApi = {
     return data;
   },
   /**
-   * Get the root baseline config for the current user's customer.
+   * Get the root baseline config for the current user's organization.
    * Finds the config with parent_config_id=null and scenario_type=BASELINE.
    * Falls back to the first active config, then the first config.
    */
@@ -462,10 +462,10 @@ export const simulationApi = {
     }
   },
 
-  async getPolicyEffectiveness(configId, customerId) {
+  async getPolicyEffectiveness(configId, tenantId) {
     try {
       const { data } = await http.get(`/analytics/policies/${configId}`, {
-        params: { customer_id: customerId }
+        params: { tenant_id: tenantId }
       });
       return { success: true, data };
     } catch (error) {
@@ -509,8 +509,8 @@ export const simulationApi = {
     window.open(`/api/analytics/export/capacity/${scenarioId}/csv`, '_blank');
   },
 
-  exportPoliciesCSV(configId, customerId) {
-    window.open(`/api/analytics/export/policies/${configId}/csv?customer_id=${customerId}`, '_blank');
+  exportPoliciesCSV(configId, tenantId) {
+    window.open(`/api/analytics/export/policies/${configId}/csv?tenant_id=${tenantId}`, '_blank');
   },
 
   exportComparisonCSV(scenarioId) {
@@ -945,9 +945,9 @@ export const simulationApi = {
 // =============================================================================
 
 export const collaborationApi = {
-  async getScenarios(customerId, { level, status } = {}) {
+  async getScenarios(tenantId, { level, status } = {}) {
     const params = new URLSearchParams();
-    if (customerId) params.append('customer_id', customerId);
+    if (tenantId) params.append('tenant_id', tenantId);
     if (level) params.append('level', level);
     if (status) params.append('status', status);
     const { data } = await http.get(`/v1/collaboration/scenarios?${params.toString()}`);

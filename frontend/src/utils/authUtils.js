@@ -3,10 +3,14 @@ const USER_TYPE_ALIASES = {
   "system admin": "systemadmin",
   system_admin: "systemadmin",
   systemadmin: "systemadmin",
-  admin: "groupadmin",
-  groupadmin: "groupadmin",
-  "group admin": "groupadmin",
-  group_admin: "groupadmin",
+  admin: "tenantadmin",
+  tenantadmin: "tenantadmin",
+  "tenant admin": "tenantadmin",
+  tenant_admin: "tenantadmin",
+  // Backward-compatible aliases
+  groupadmin: "tenantadmin",
+  "group admin": "tenantadmin",
+  group_admin: "tenantadmin",
   player: "user",
   user: "user",
 };
@@ -62,7 +66,7 @@ export const getUserType = (user) => {
     return "systemadmin";
   }
   if (normalizedEmail === "groupadmin@autonomy.ai") {
-    return "groupadmin";
+    return "tenantadmin";
   }
 
   return "user";
@@ -70,20 +74,23 @@ export const getUserType = (user) => {
 
 export const isSystemAdmin = (user) => getUserType(user) === "systemadmin";
 
-export const isGroupAdmin = (user) => {
+export const isTenantAdmin = (user) => {
   const type = getUserType(user);
   if (type === "systemadmin") {
     return true;
   }
-  return type === "groupadmin";
+  return type === "tenantadmin";
 };
+
+// Backward-compatible alias
+export const isGroupAdmin = isTenantAdmin;
 
 export const getDefaultLandingPath = (user) => {
   if (isSystemAdmin(user)) {
     return "/system/users";
   }
 
-  if (isGroupAdmin(user)) {
+  if (isTenantAdmin(user)) {
     return "/admin?section=game";
   }
 

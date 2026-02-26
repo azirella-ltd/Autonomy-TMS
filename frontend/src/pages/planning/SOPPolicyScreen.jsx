@@ -43,7 +43,7 @@ import {
 } from '@mui/icons-material';
 import { api } from '../../services/api';
 
-const SOPPolicyScreen = ({ configId, customerId, mode = 'INPUT' }) => {
+const SOPPolicyScreen = ({ configId, tenantId, mode = 'INPUT' }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [envelope, setEnvelope] = useState(null);
@@ -125,7 +125,7 @@ const SOPPolicyScreen = ({ configId, customerId, mode = 'INPUT' }) => {
       setSaving(true);
       const response = await api.post('/planning-cascade/policy-envelope', {
         config_id: configId,
-        customer_id: customerId,
+        tenant_id: tenantId,
         mode: mode,
         service_tiers: serviceTiers,
         category_policies: categoryPolicies,

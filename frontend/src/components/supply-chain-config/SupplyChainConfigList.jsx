@@ -232,7 +232,7 @@ const SupplyChainConfigList = ({
       const { id, created_at, updated_at, is_active, ...configData } = config;
       await api.post('/supply-chain-config', {
         ...configData,
-        customer_id: config.customer_id ?? configData.customer_id ?? null,
+        tenant_id: config.tenant_id ?? configData.tenant_id ?? null,
         name: `${config.name} (Copy)`,
         is_active: false,
       });
@@ -496,7 +496,7 @@ const SupplyChainConfigList = ({
           <div>
             <h2 className="text-lg font-bold">{title}</h2>
             <p className="text-sm text-muted-foreground">
-              Manage the supply chain setups available for your customer&apos;s scenarios.
+              Manage the supply chain setups available for your organization&apos;s scenarios.
             </p>
           </div>
           {!readOnly && (

@@ -558,7 +558,7 @@ const MultiSelect = ({
 const ScenarioReport = () => {
   const { gameId } = useParams();
   const navigate = useNavigate();
-  const { isGroupAdmin } = useAuth();
+  const { isTenantAdmin } = useAuth();
   const isMdUp = useMediaQuery("(min-width: 768px)");
   const sankeyHeight = isMdUp ? 440 : 340;
   const [report, setReport] = useState(null);
@@ -1470,7 +1470,7 @@ const ScenarioReport = () => {
   }, [gameId]);
 
   useEffect(() => {
-    if (!supplyChainConfigId || !isGroupAdmin) {
+    if (!supplyChainConfigId || !isTenantAdmin) {
       return;
     }
 
@@ -1499,25 +1499,25 @@ const ScenarioReport = () => {
     return () => {
       ignore = true;
     };
-  }, [supplyChainConfigId, isGroupAdmin]);
+  }, [supplyChainConfigId, isTenantAdmin]);
 
   useEffect(() => {
     const configSites = Array.isArray(report?.config?.sites) ? report.config.sites : [];
     if (configSites.length) {
       setConfigSitesMeta(configSites);
-    } else if (!isGroupAdmin || !supplyChainConfigId) {
+    } else if (!isTenantAdmin || !supplyChainConfigId) {
       setConfigSitesMeta([]);
     }
-  }, [report?.config?.sites, isGroupAdmin, supplyChainConfigId]);
+  }, [report?.config?.sites, isTenantAdmin, supplyChainConfigId]);
 
   useEffect(() => {
     const configLanes = Array.isArray(report?.config?.lanes) ? report.config.lanes : [];
     if (configLanes.length) {
       setConfigLanesMeta(configLanes);
-    } else if (!isGroupAdmin || !supplyChainConfigId) {
+    } else if (!isTenantAdmin || !supplyChainConfigId) {
       setConfigLanesMeta([]);
     }
-  }, [report?.config?.lanes, isGroupAdmin, supplyChainConfigId]);
+  }, [report?.config?.lanes, isTenantAdmin, supplyChainConfigId]);
 
   // Due to length constraints, I'm providing a simplified implementation of sankeyResult
   // The full complex logic is preserved but condensed
@@ -1983,7 +1983,7 @@ const ScenarioReport = () => {
           >
             View 3D Visualizations
           </Button>
-          {isGroupAdmin && (
+          {isTenantAdmin && (
             <Button
               variant="outline"
               onClick={() => navigate(getAdminDashboardPath())}

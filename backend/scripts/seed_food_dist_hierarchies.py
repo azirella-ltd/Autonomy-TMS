@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.db.session import sync_engine
 from app.models.supply_chain_config import SupplyChainConfig, Site, TransportationLane
 from app.models.sc_entities import Product, Geography, ProductHierarchy, Company
-from app.models.customer import Customer
+from app.models.tenant import Tenant
 
 # =============================================================================
 # Geographic Hierarchy Configuration (AWS SC: geography table)
@@ -189,17 +189,17 @@ PRODUCT_PRICING = {
 }
 
 
-def find_food_dist_customer(db: Session) -> Customer:
-    """Find the Food Dist customer."""
-    customer = db.query(Customer).filter(Customer.name == "Food Dist").first()
-    if not customer:
-        raise ValueError("Food Dist customer not found. Run seed_dot_foods_demo.py first.")
-    return customer
+def find_food_dist_tenant(db: Session) -> Tenant:
+    """Find the Food Dist tenant."""
+    tenant = db.query(Tenant).filter(Tenant.name == "Food Dist").first()
+    if not tenant:
+        raise ValueError("Food Dist tenant not found. Run seed_dot_foods_demo.py first.")
+    return tenant
 
 
-def find_or_create_company(db: Session, customer: Customer) -> Company:
+def find_or_create_company(db: Session, tenant: Tenant) -> Company:
     """Find or create the Food Dist company record (AWS SC: company table)."""
-    company_id = f"DF_CORP_{customer.id}"
+    company_id = f"DF_CORP_{tenant.id}"
     company = db.query(Company).filter(Company.id == company_id).first()
     if company:
         print(f"   Found existing company: {company.description}")
@@ -356,9 +356,9 @@ def create_product_hierarchy(db: Session, company: Company) -> dict:
     return hierarchy_map
 
 
-def find_or_create_config(db: Session, customer: Customer, company: Company) -> SupplyChainConfig:
+def find_or_create_config(db: Session, tenant: Tenant, company: Company) -> SupplyChainConfig:
     """Find or create supply chain config."""
-    config = db.query(SupplyChainConfig).filter(SupplyChainConfig.customer_id == customer.id).first()
+    config = db.query(SupplyChainConfig).filter(SupplyChainConfig.tenant_id == tenant.id).first()
     if config:
         print(f"\n3. Found existing config: {config.name} (ID: {config.id})")
         return config
@@ -367,7 +367,7 @@ def find_or_create_config(db: Session, customer: Customer, company: Company) -> 
     config = SupplyChainConfig(
         name="Food Dist Distribution Network",
         description="AWS SC DM compliant foodservice redistribution network",
-        customer_id=customer.id,
+        tenant_id=tenant.id,
         is_active=True,
     )
     db.add(config)
@@ -558,7 +558,7 @@ def create_products(db: Session, config: SupplyChainConfig, company: Company, hi
     print(f"   Created/updated {product_count} products")
 
 
-def print_summary(db: Session, customer: Customer, config: SupplyChainConfig, company: Company):
+def print_summary(db: Session, tenant: Tenant, config: SupplyChainConfig, company: Company):
     """Print summary."""
     print("\n" + "=" * 70)
     print("Food Dist AWS SC DM Hierarchy Setup Complete!")
@@ -570,7 +570,7 @@ def print_summary(db: Session, customer: Customer, config: SupplyChainConfig, co
     product_count = db.query(Product).filter(Product.config_id == config.id).count()
     lane_count = db.query(TransportationLane).filter(TransportationLane.config_id == config.id).count()
 
-    print(f"\nGroup: {customer.name} (ID: {customer.id})")
+    print(f"\nGroup: {tenant.name} (ID: {tenant.id})")
     print(f"Company: {company.description} (ID: {company.id})")
     print(f"Config: {config.name} (ID: {config.id})")
 
@@ -604,19 +604,19 @@ def main():
     db: Session = SyncSessionLocal()
 
     try:
-        customer = find_food_dist_customer(db)
-        print(f"\nFound customer: {customer.name} (ID: {customer.id})")
+        tenant = find_food_dist_tenant(db)
+        print(f"\nFound tenant: {tenant.name} (ID: {tenant.id})")
 
-        company = find_or_create_company(db, customer)
+        company = find_or_create_company(db, tenant)
         geo_map = create_geography_hierarchy(db, company)
         hierarchy_map = create_product_hierarchy(db, company)
-        config = find_or_create_config(db, customer, company)
+        config = find_or_create_config(db, tenant, company)
         site_map = create_sites(db, config, company, geo_map)
         create_transportation_lanes(db, config, site_map)
         create_products(db, config, company, hierarchy_map)
 
         db.commit()
-        print_summary(db, customer, config, company)
+        print_summary(db, tenant, config, company)
 
     except Exception as e:
         print(f"\nError: {e}")

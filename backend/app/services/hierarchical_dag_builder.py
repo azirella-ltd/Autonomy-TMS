@@ -166,15 +166,15 @@ class HierarchicalDAGBuilder:
     3. Feed DAG to appropriate GNN model (S&OP GraphSAGE or Execution tGNN)
 
     Example:
-        builder = HierarchicalDAGBuilder(db_session, customer_id=1)
+        builder = HierarchicalDAGBuilder(db_session, tenant_id=1)
         dag = builder.build_dag(planning_type=PlanningType.SOP)
         pyg_data = dag.to_pyg_data()
         sop_outputs = sop_model(pyg_data)
     """
 
-    def __init__(self, db: Session, customer_id: int, config_id: Optional[int] = None):
+    def __init__(self, db: Session, tenant_id: int, config_id: Optional[int] = None):
         self.db = db
-        self.customer_id = customer_id
+        self.tenant_id = tenant_id
         self.config_id = config_id
 
         # Cache hierarchy nodes
@@ -184,7 +184,7 @@ class HierarchicalDAGBuilder:
     def get_planning_config(self, planning_type: PlanningType) -> Optional[PlanningHierarchyConfig]:
         """Get planning hierarchy configuration for the specified type"""
         query = select(PlanningHierarchyConfig).where(
-            PlanningHierarchyConfig.customer_id == self.customer_id,
+            PlanningHierarchyConfig.tenant_id == self.tenant_id,
             PlanningHierarchyConfig.planning_type == planning_type,
             PlanningHierarchyConfig.is_active == True
         )
@@ -277,7 +277,7 @@ class HierarchicalDAGBuilder:
         )
 
         config = PlanningHierarchyConfig(
-            customer_id=self.customer_id,
+            tenant_id=self.tenant_id,
             planning_type=planning_type,
             site_hierarchy_level=site_level,
             product_hierarchy_level=product_level,
@@ -338,7 +338,7 @@ class HierarchicalDAGBuilder:
         # First try to load from SiteHierarchyNode table
         hierarchy_nodes = self.db.execute(
             select(SiteHierarchyNode).where(
-                SiteHierarchyNode.customer_id == self.customer_id,
+                SiteHierarchyNode.tenant_id == self.tenant_id,
                 SiteHierarchyNode.hierarchy_level == target_level
             )
         ).scalars().all()
@@ -387,7 +387,7 @@ class HierarchicalDAGBuilder:
         # First try to load from ProductHierarchyNode table
         hierarchy_nodes = self.db.execute(
             select(ProductHierarchyNode).where(
-                ProductHierarchyNode.customer_id == self.customer_id,
+                ProductHierarchyNode.tenant_id == self.tenant_id,
                 ProductHierarchyNode.hierarchy_level == target_level
             )
         ).scalars().all()
@@ -568,7 +568,7 @@ class HierarchicalDAGBuilder:
         # Query aggregated plans from parent level
         parent_plans = self.db.execute(
             select(AggregatedPlan).where(
-                AggregatedPlan.customer_id == self.customer_id,
+                AggregatedPlan.tenant_id == self.tenant_id,
                 AggregatedPlan.status == 'approved'
             ).order_by(AggregatedPlan.period_start.desc())
         ).scalars().all()
@@ -642,32 +642,32 @@ class HierarchicalDAGBuilder:
 
 def build_sop_dag(
     db: Session,
-    customer_id: int,
+    tenant_id: int,
     config_id: Optional[int] = None,
     as_of_date: Optional[date] = None
 ) -> HierarchicalDAG:
     """Build DAG for S&OP planning (monthly buckets, family × country level)"""
-    builder = HierarchicalDAGBuilder(db, customer_id, config_id)
+    builder = HierarchicalDAGBuilder(db, tenant_id, config_id)
     return builder.build_dag(PlanningType.SOP, as_of_date)
 
 
 def build_mps_dag(
     db: Session,
-    customer_id: int,
+    tenant_id: int,
     config_id: Optional[int] = None,
     as_of_date: Optional[date] = None
 ) -> HierarchicalDAG:
     """Build DAG for MPS planning (weekly buckets, group × site level)"""
-    builder = HierarchicalDAGBuilder(db, customer_id, config_id)
+    builder = HierarchicalDAGBuilder(db, tenant_id, config_id)
     return builder.build_dag(PlanningType.MPS, as_of_date)
 
 
 def build_execution_dag(
     db: Session,
-    customer_id: int,
+    tenant_id: int,
     config_id: Optional[int] = None,
     as_of_date: Optional[date] = None
 ) -> HierarchicalDAG:
     """Build DAG for Execution (hourly buckets, SKU × site level)"""
-    builder = HierarchicalDAGBuilder(db, customer_id, config_id)
+    builder = HierarchicalDAGBuilder(db, tenant_id, config_id)
     return builder.build_dag(PlanningType.EXECUTION, as_of_date)

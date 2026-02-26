@@ -702,7 +702,7 @@ class MixedScenarioService:
             "id": config.id,
             "name": config.name,
             "description": config.description,
-            "customer_id": config.customer_id,
+            "tenant_id": config.tenant_id,
             "is_active": bool(config.is_active),
             "created_at": config.created_at,
             "updated_at": config.updated_at,
@@ -5854,9 +5854,9 @@ class MixedScenarioService:
         except Exception:
             demand_pattern = normalize_demand_pattern(DEFAULT_DEMAND_PATTERN)
 
-        customer_id = getattr(game, "customer_id", None) or config.get("customer_id")
-        if customer_id is not None and "customer_id" not in config:
-            config["customer_id"] = customer_id
+        tenant_id = getattr(game, "tenant_id", None) or config.get("tenant_id")
+        if tenant_id is not None and "tenant_id" not in config:
+            config["tenant_id"] = tenant_id
 
         progression_mode = config.get("progression_mode")
         if not progression_mode:
@@ -5893,7 +5893,7 @@ class MixedScenarioService:
             "started_at": getattr(game, "started_at", None),
             "completed_at": getattr(game, "completed_at", None) or getattr(game, "finished_at", None),
             "created_by": getattr(game, "created_by", None),
-            "customer_id": customer_id,
+            "tenant_id": tenant_id,
             "config": config,
             "progression_mode": progression_mode,
             "scenario_users": [],
@@ -5967,9 +5967,9 @@ class MixedScenarioService:
         if supply_chain_name:
             config["supply_chain_name"] = supply_chain_name
 
-        config_customer_id = getattr(config_record, "customer_id", None)
-        if config_customer_id is not None:
-            config["customer_id"] = config_customer_id
+        config_tenant_id = getattr(config_record, "tenant_id", None)
+        if config_tenant_id is not None:
+            config["tenant_id"] = config_tenant_id
 
         time_bucket = normalize_time_bucket(
             getattr(config_record, "time_bucket", TimeBucket.WEEK)
@@ -5984,7 +5984,7 @@ class MixedScenarioService:
             supply_chain_config_id=config["supply_chain_config_id"],
             time_bucket=time_bucket.value,
             start_date=DEFAULT_START_DATE,
-            customer_id=config_customer_id,
+            tenant_id=config_tenant_id,
         )
         self.db.add(game)
         self.db.flush()
@@ -6231,13 +6231,13 @@ class MixedScenarioService:
         sys_cfg = read_system_cfg()
         ranges = sys_cfg.dict() if sys_cfg else {}
 
-        if game.customer_id is None:
+        if game.tenant_id is None:
             existing_config = self._get_supply_chain_config(
                 cfg.get("supply_chain_config_id") or game.supply_chain_config_id
             )
-            if existing_config and getattr(existing_config, "customer_id", None) is not None:
-                game.customer_id = existing_config.customer_id
-                cfg.setdefault("customer_id", existing_config.customer_id)
+            if existing_config and getattr(existing_config, "tenant_id", None) is not None:
+                game.tenant_id = existing_config.tenant_id
+                cfg.setdefault("tenant_id", existing_config.tenant_id)
 
         def _check_range(key: str, value: Optional[Any]) -> None:
             if value is None:
@@ -6344,10 +6344,10 @@ class MixedScenarioService:
             else:
                 cfg.pop("supply_chain_name", None)
 
-            config_customer_id = getattr(config_record, "customer_id", None)
-            if config_customer_id is not None:
-                game.customer_id = config_customer_id
-                cfg["customer_id"] = config_customer_id
+            config_tenant_id = getattr(config_record, "tenant_id", None)
+            if config_tenant_id is not None:
+                game.tenant_id = config_tenant_id
+                cfg["tenant_id"] = config_tenant_id
 
             time_bucket = normalize_time_bucket(
                 getattr(config_record, "time_bucket", TimeBucket.WEEK)
@@ -7055,9 +7055,9 @@ class MixedScenarioService:
 
         user_type = self._resolve_user_type(current_user)
         if not current_user.is_superuser and user_type != UserTypeEnum.SYSTEM_ADMIN:
-            customer_id = getattr(current_user, "customer_id", None)
-            owns_customer = customer_id and customer_id == getattr(game, "customer_id", customer_id)
-            config_customer = None
+            tenant_id = getattr(current_user, "tenant_id", None)
+            owns_tenant = tenant_id and tenant_id == getattr(game, "tenant_id", tenant_id)
+            config_tenant = None
             cfg, _ = self._upgrade_json_value(
                 getattr(game, "config", {}) or {},
                 dict,
@@ -7067,8 +7067,8 @@ class MixedScenarioService:
                 game=game,
             )
             if cfg:
-                config_customer = cfg.get("customer_id")
-            if not owns_customer and config_customer not in (customer_id, None):
+                config_tenant = cfg.get("tenant_id")
+            if not owns_tenant and config_tenant not in (tenant_id, None):
                 raise PermissionError("Not enough permissions to delete this game")
 
         self.db.delete(game)
@@ -7258,8 +7258,8 @@ class MixedScenarioService:
         from app.db.session import SessionLocal
 
         # Validate required fields
-        if not game_obj.customer_id:
-            logger.error(f"Game {game_obj.id} has no customer_id - cannot use SC planning")
+        if not game_obj.tenant_id:
+            logger.error(f"Game {game_obj.id} has no tenant_id - cannot use SC planning")
             return None
 
         if not game_obj.supply_chain_config_id:
@@ -9675,7 +9675,7 @@ class MixedScenarioService:
             ("demand_pattern", "demand_pattern"),
             ("config", "config"),
             ("created_by", "created_by"),
-            ("customer_id", "customer_id"),
+            ("tenant_id", "tenant_id"),
             ("supply_chain_config_id", "supply_chain_config_id"),
             ("time_bucket", "time_bucket"),
             ("start_date", "start_date"),
@@ -9711,10 +9711,10 @@ class MixedScenarioService:
 
         user_type = self._resolve_user_type(current_user)
         if not current_user.is_superuser and user_type != UserTypeEnum.SYSTEM_ADMIN:
-            customer_id = getattr(current_user, "customer_id", None)
-            if user_type == UserTypeEnum.GROUP_ADMIN and customer_id and "customer_id" in columns:
-                filters.append("g.customer_id = :customer_id")
-                params["customer_id"] = customer_id
+            tenant_id = getattr(current_user, "tenant_id", None)
+            if user_type == UserTypeEnum.TENANT_ADMIN and tenant_id and "tenant_id" in columns:
+                filters.append("g.tenant_id = :tenant_id")
+                params["tenant_id"] = tenant_id
             elif "created_by" in columns:
                 filters.append("g.created_by = :created_by")
                 params["created_by"] = current_user.id

@@ -320,7 +320,7 @@ async def calculate_atp(
 
         # Create ATP projection
         atp_projection = AtpProjection(
-            company_id=current_user.customer_id,
+            company_id=current_user.tenant_id,
             product_id=request.product_id,
             site_id=request.site_id,
             atp_date=current_date,
@@ -489,7 +489,7 @@ async def calculate_ctp(
 
         # Create CTP projection
         ctp_projection = CtpProjection(
-            company_id=current_user.customer_id,
+            company_id=current_user.tenant_id,
             product_id=request.product_id,
             site_id=request.site_id,
             ctp_date=atp_proj.atp_date,
@@ -701,7 +701,7 @@ async def promise_order(
     order_promise = OrderPromise(
         order_id=request.order_id,
         order_line_number=request.order_line_number,
-        company_id=current_user.customer_id,
+        company_id=current_user.tenant_id,
         product_id=request.product_id,
         site_id=request.site_id,
         customer_id=request.customer_id,

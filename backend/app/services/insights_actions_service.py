@@ -82,17 +82,17 @@ class InsightsActionsService:
     5. Hierarchy drill-down navigation
     """
 
-    def __init__(self, db: AsyncSession, customer_id: int, user: Optional[User] = None):
+    def __init__(self, db: AsyncSession, tenant_id: int, user: Optional[User] = None):
         """
         Initialize the service.
 
         Args:
             db: Database session
-            customer_id: Customer ID for filtering
+            tenant_id: Customer ID for filtering
             user: Current user (for scope filtering)
         """
         self.db = db
-        self.customer_id = customer_id
+        self.tenant_id = tenant_id
         self.user = user
 
         # Cache for hierarchy lookups
@@ -112,7 +112,7 @@ class InsightsActionsService:
         # Load site hierarchy
         result = await self.db.execute(
             select(SiteHierarchyNode).where(
-                SiteHierarchyNode.customer_id == self.customer_id
+                SiteHierarchyNode.tenant_id == self.tenant_id
             )
         )
         for node in result.scalars().all():
@@ -127,7 +127,7 @@ class InsightsActionsService:
         # Load product hierarchy
         result = await self.db.execute(
             select(ProductHierarchyNode).where(
-                ProductHierarchyNode.customer_id == self.customer_id
+                ProductHierarchyNode.tenant_id == self.tenant_id
             )
         )
         for node in result.scalars().all():
@@ -194,15 +194,15 @@ class InsightsActionsService:
         """
         Build SQLAlchemy filter clause based on user's scope.
 
-        GROUP_ADMIN has full access.
+        TENANT_ADMIN has full access.
         Other users are filtered by their site_scope and product_scope.
         """
-        filters = [AgentAction.customer_id == self.customer_id]
+        filters = [AgentAction.tenant_id == self.tenant_id]
 
         if not self.user:
             return and_(*filters)
 
-        # GROUP_ADMIN has full access
+        # TENANT_ADMIN has full access
         if self.user.has_full_scope:
             return and_(*filters)
 
@@ -463,7 +463,7 @@ class InsightsActionsService:
             Created AgentAction record
         """
         action = AgentAction(
-            customer_id=self.customer_id,
+            tenant_id=self.tenant_id,
             action_mode=action_data.action_mode,
             action_type=action_data.action_type,
             category=action_data.category,
@@ -812,8 +812,8 @@ class InsightsActionsService:
 
 def create_insights_service(
     db: AsyncSession,
-    customer_id: int,
+    tenant_id: int,
     user: Optional[User] = None
 ) -> InsightsActionsService:
     """Create an insights actions service instance."""
-    return InsightsActionsService(db, customer_id, user)
+    return InsightsActionsService(db, tenant_id, user)

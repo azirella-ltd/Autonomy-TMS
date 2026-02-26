@@ -491,7 +491,7 @@ class ReasoningCaptureService:
 
     async def get_or_create_belief_state(
         self,
-        customer_id: int,
+        tenant_id: int,
         entity_type: EntityType,
         entity_id: str,
         point_estimate: float,
@@ -503,7 +503,7 @@ class ReasoningCaptureService:
         Get or create a belief state for the given entity.
 
         Args:
-            customer_id: Customer ID
+            tenant_id: Customer ID
             entity_type: Type of entity (demand, lead_time, etc.)
             entity_id: Entity identifier
             point_estimate: Point estimate value
@@ -517,7 +517,7 @@ class ReasoningCaptureService:
         # Try to find existing belief state
         result = await self.db.execute(
             select(PowellBeliefState).where(
-                PowellBeliefState.customer_id == customer_id,
+                PowellBeliefState.tenant_id == tenant_id,
                 PowellBeliefState.entity_type == entity_type,
                 PowellBeliefState.entity_id == entity_id,
             )
@@ -534,7 +534,7 @@ class ReasoningCaptureService:
         else:
             # Create new
             belief_state = PowellBeliefState(
-                customer_id=customer_id,
+                tenant_id=tenant_id,
                 entity_type=entity_type,
                 entity_id=entity_id,
                 point_estimate=point_estimate,

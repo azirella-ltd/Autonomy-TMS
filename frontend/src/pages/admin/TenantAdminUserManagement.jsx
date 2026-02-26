@@ -1,7 +1,7 @@
 /**
- * Customer Admin User Management
+ * Tenant Admin User Management
  *
- * Allows Customer Admins to manage users within their own organization and assign
+ * Allows Organization Admins to manage users within their own organization and assign
  * granular functional area capabilities based on UI_UX_REQUIREMENTS.md
  */
 
@@ -47,7 +47,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useCapabilities } from '../../hooks/useCapabilities';
 import UserEditor from '../../components/admin/UserEditor';
 
-const GroupAdminUserManagement = () => {
+const TenantAdminUserManagement = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { hasCapability, loading: capLoading } = useCapabilities();
@@ -58,25 +58,25 @@ const GroupAdminUserManagement = () => {
   const [editorOpen, setEditorOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
 
-  // Access allowed if user has manage_group_users capability or is admin
+  // Access allowed if user has manage_tenant_users capability or is admin
   const isSystemAdmin = user?.user_type === 'SYSTEM_ADMIN';
-  const isGroupAdmin = user?.user_type === 'GROUP_ADMIN';
-  const canViewUsers = hasCapability('view_users') || hasCapability('manage_group_users');
-  const canEditUsers = hasCapability('manage_group_users') || isGroupAdmin || isSystemAdmin;
+  const isTenantAdmin = user?.user_type === 'TENANT_ADMIN' || user?.user_type === 'GROUP_ADMIN';
+  const canViewUsers = hasCapability('view_users') || hasCapability('manage_tenant_users');
+  const canEditUsers = hasCapability('manage_tenant_users') || isTenantAdmin || isSystemAdmin;
 
   useEffect(() => {
-    if (!capLoading && user && !isSystemAdmin && !isGroupAdmin && !canViewUsers) {
+    if (!capLoading && user && !isSystemAdmin && !isTenantAdmin && !canViewUsers) {
       toast.error('Access denied. User management privileges required.');
       navigate('/unauthorized');
     }
-  }, [user, navigate, isSystemAdmin, isGroupAdmin, canViewUsers, capLoading]);
+  }, [user, navigate, isSystemAdmin, isTenantAdmin, canViewUsers, capLoading]);
 
   const loadUsers = useCallback(async () => {
-    if (!user?.customer_id) return;
+    if (!user?.tenant_id) return;
 
     try {
       setLoading(true);
-      const response = await api.get(`/customers/${user.customer_id}/users`);
+      const response = await api.get(`/tenants/${user.tenant_id}/users`);
       setUsers(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error('Error loading users:', error);
@@ -85,7 +85,7 @@ const GroupAdminUserManagement = () => {
     } finally {
       setLoading(false);
     }
-  }, [user?.customer_id]);
+  }, [user?.tenant_id]);
 
   useEffect(() => {
     loadUsers();
@@ -119,7 +119,7 @@ const GroupAdminUserManagement = () => {
       } else {
         await api.post('/users', {
           ...userData,
-          customer_id: user.customer_id,
+          tenant_id: user.tenant_id,
           user_type: 'USER',
         });
         toast.success('User created successfully');
@@ -172,6 +172,7 @@ const GroupAdminUserManagement = () => {
     switch (userType) {
       case 'SYSTEM_ADMIN':
         return 'destructive';
+      case 'TENANT_ADMIN':
       case 'GROUP_ADMIN':
         return 'warning';
       case 'USER':
@@ -208,7 +209,7 @@ const GroupAdminUserManagement = () => {
       {/* Info Alert */}
       <Alert variant="info" className="mb-6">
         <p className="text-sm">
-          As a Customer Admin, you can create and manage users within your organization.
+          As an Organization Admin, you can create and manage users within your organization.
           Assign granular capabilities to control access to specific functional areas
           (Planning, Execution, AI & Agents, Analytics, etc.).
         </p>
@@ -366,4 +367,4 @@ const GroupAdminUserManagement = () => {
   );
 };
 
-export default GroupAdminUserManagement;
+export default TenantAdminUserManagement;

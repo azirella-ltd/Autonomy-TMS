@@ -409,7 +409,7 @@ async def create_watchlist(
         name=watchlist.name,
         description=watchlist.description,
         created_by=current_user.id,
-        customer_id=current_user.customer_id,
+        customer_id=current_user.tenant_id,
         config_id=watchlist.config_id,
         product_filter=watchlist.product_filter,
         site_filter=watchlist.site_filter,

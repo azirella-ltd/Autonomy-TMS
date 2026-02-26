@@ -36,7 +36,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.db.session import async_session_factory, engine, Base
 from app.models.user import User, UserBase
-from app.models.customer import Customer
+from app.models.tenant import Tenant
 from app.models.supply_chain_config import SupplyChainConfig, Node, Lane, MarketDemand, NodeType
 from app.models.compatibility import Item
 from app.models.sc_entities import InvPolicy as ProductSiteConfig
@@ -65,45 +65,45 @@ async def create_default_environment():
         try:
             # Check if customer admin already exists
             result = await db.execute(
-                select(User).where(User.email == "groupadmin@autonomy.ai")
+                select(User).where(User.email == "tenantadmin@autonomy.ai")
             )
-            group_admin = result.scalars().first()
-            
-            if not group_admin:
-                # Create customer admin user
-                group_admin = User(
-                    username="groupadmin",
-                    email="groupadmin@autonomy.ai",
+            tenant_admin = result.scalars().first()
+
+            if not tenant_admin:
+                # Create tenant admin user
+                tenant_admin = User(
+                    username="tenantadmin",
+                    email="tenantadmin@autonomy.ai",
                     hashed_password=get_password_hash(os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")),
-                    full_name="Customer Admin",
+                    full_name="Tenant Admin",
                     is_superuser=False,
                     is_active=True
                 )
-                db.add(group_admin)
+                db.add(tenant_admin)
                 await db.flush()  # Flush to get the ID
-                logger.info("✅ Created customer admin user: groupadmin@autonomy.ai / Autonomy@2025")
+                logger.info("Created tenant admin user: tenantadmin@autonomy.ai / Autonomy@2025")
         
             # Check if default customer exists
             result = await db.execute(
-                select(Customer).where(Customer.name == "Default Simulation")
+                select(Tenant).where(Customer.name == "Default Simulation")
             )
-            default_customer = result.scalars().first()
+            default_tenant = result.scalars().first()
             
-            if not default_customer:
+            if not default_tenant:
                 # Create default customer
-                default_customer = Customer(
+                default_tenant = Tenant(
                     name="Default Simulation",
                     description="Default Customer for Autonomy",
-                    admin_id=group_admin.id
+                    admin_id=tenant_admin.id
                 )
-                db.add(default_customer)
+                db.add(default_tenant)
                 await db.flush()  # Flush to get the ID
-                logger.info(f"✅ Created default customer: {default_customer.name}")
+                logger.info(f"✅ Created default customer: {default_tenant.name}")
                 
-                # Update customer admin with customer_id
-                group_admin.customer_id = default_customer.id
+                # Update customer admin with tenant_id
+                tenant_admin.tenant_id = default_tenant.id
                 await db.flush()
-                logger.info(f"✅ Updated customer admin with customer_id: {group_admin.customer_id}")
+                logger.info(f"Updated tenant admin with tenant_id: {tenant_admin.tenant_id}")
             
             # Check if default supply chain config exists
             result = await db.execute(
@@ -116,8 +116,8 @@ async def create_default_environment():
                 default_config = SupplyChainConfig(
                     name="Default Simulation",
                     description="Default supply chain configuration",
-                    customer_id=default_customer.id,
-                    created_by=group_admin.id
+                    tenant_id=default_tenant.id,
+                    created_by=tenant_admin.id
                 )
                 db.add(default_config)
                 await db.flush()
@@ -200,7 +200,7 @@ async def create_default_environment():
                     full_name=f"AI {role.capitalize()}",
                     is_superuser=False,
                     is_active=True,
-                    customer_id=default_customer.id  # Add AI users to the default customer
+                    tenant_id=default_tenant.id  # Add AI users to the default customer
                 )
                 db.add(ai_user)
                 await db.flush()
@@ -222,8 +222,8 @@ async def create_default_environment():
                     current_round=0,
                     status=ScenarioStatus.CREATED,
                     supply_chain_config_id=default_config.id,
-                    customer_id=default_customer.id,
-                    created_by=group_admin.id
+                    tenant_id=default_tenant.id,
+                    created_by=tenant_admin.id
                 )
                 db.add(default_scenario)
                 await db.flush()

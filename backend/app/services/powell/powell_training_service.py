@@ -945,7 +945,7 @@ class PowellTrainingService:
                         site_id=site.id,
                         site_name=site.name,
                         master_type=site.master_type or "INVENTORY",
-                        customer_id=self.config.customer_id,
+                        tenant_id=self.config.tenant_id,
                         config_id=self.config.config_id,
                         device=str(self.device),
                     )

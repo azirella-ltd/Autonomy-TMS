@@ -14,9 +14,9 @@ import { IconButton, Badge } from './common';
 import { cn } from '../lib/utils/cn';
 import { useAuth } from '../contexts/AuthContext';
 import { useCapabilities } from '../hooks/useCapabilities';
-import { useCustomerMode } from '../hooks/useCustomerMode';
+import { useTenantMode } from '../hooks/useTenantMode';
 import { getFilteredNavigation } from '../config/navigationConfig';
-import { isSystemAdmin, isGroupAdmin as checkIsGroupAdmin } from '../utils/authUtils';
+import { isSystemAdmin, isTenantAdmin as checkIsTenantAdmin } from '../utils/authUtils';
 
 const DRAWER_WIDTH = 280;
 const DRAWER_WIDTH_COLLAPSED = 65;
@@ -54,19 +54,19 @@ const Tooltip = ({ children, title, placement = 'right' }) => {
 const CapabilityAwareSidebar = ({ open, onToggle }) => {
   const { user } = useAuth();
   const { hasCapability, loading: capabilitiesLoading } = useCapabilities();
-  const { customerMode, loading: customerModeLoading } = useCustomerMode();
+  const { tenantMode, loading: tenantModeLoading } = useTenantMode();
   const [expandedSections, setExpandedSections] = useState({});
   const navigate = useNavigate();
   const location = useLocation();
 
   const isSysAdmin = isSystemAdmin(user);
-  const isGrpAdmin = checkIsGroupAdmin(user);
+  const isGrpAdmin = checkIsTenantAdmin(user);
 
-  // Get filtered navigation based on user capabilities and customer mode
+  // Get filtered navigation based on user capabilities and tenant mode
   const navigation = useMemo(() => {
-    if (capabilitiesLoading || customerModeLoading) return [];
-    return getFilteredNavigation(hasCapability, isSysAdmin, isGrpAdmin, customerMode);
-  }, [hasCapability, isSysAdmin, isGrpAdmin, capabilitiesLoading, customerModeLoading, customerMode]);
+    if (capabilitiesLoading || tenantModeLoading) return [];
+    return getFilteredNavigation(hasCapability, isSysAdmin, isGrpAdmin, tenantMode);
+  }, [hasCapability, isSysAdmin, isGrpAdmin, capabilitiesLoading, tenantModeLoading, tenantMode]);
 
   const handleSectionToggle = (sectionId) => {
     setExpandedSections((prev) => ({

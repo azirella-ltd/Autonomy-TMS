@@ -101,13 +101,13 @@ class AATPEngine:
         config: Optional[AATPConfig] = None,
         pegging_service=None,
         config_id: Optional[int] = None,
-        customer_id: Optional[int] = None,
+        tenant_id: Optional[int] = None,
     ):
         self.site_key = site_key
         self.config = config or AATPConfig()
         self._pegging_service = pegging_service  # Optional PeggingService for DB persistence
         self._config_id = config_id
-        self._customer_id = customer_id
+        self._tenant_id = tenant_id
 
         # Allocations by product:location -> priority -> qty
         self.allocations: Dict[str, Dict[Priority, float]] = defaultdict(
@@ -257,7 +257,7 @@ class AATPEngine:
                     quantity=result.available_qty,
                     priority=order.priority.value,
                     config_id=self._config_id or 0,
-                    customer_id=self._customer_id or 0,
+                    tenant_id=self._tenant_id or 0,
                 )
 
                 self._pegging_service.record_aatp_consumption(
@@ -270,7 +270,7 @@ class AATPEngine:
                     priority=order.priority.value,
                     consumption_detail=consumption_detail_dicts,
                     config_id=self._config_id,
-                    customer_id=self._customer_id,
+                    tenant_id=self._tenant_id,
                     pegging_id=pegging.id if pegging else None,
                 )
             except Exception as e:

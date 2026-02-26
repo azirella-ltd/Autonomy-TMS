@@ -13,7 +13,7 @@ from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 from app.models.user import User
-from app.models.customer import Customer
+from app.models.tenant import Tenant
 
 def main():
     # Create database connection
@@ -26,28 +26,28 @@ def main():
 
         print("\n=== User Status ===")
         for user in users:
-            customer = db.execute(select(Customer).where(Customer.id == user.customer_id)).scalars().first() if user.customer_id else None
+            tenant = db.execute(select(Tenant).where(Tenant.id == user.tenant_id)).scalars().first() if user.tenant_id else None
             print(f"User: {user.email} ({user.username})")
             print(f"  ID: {user.id}")
             print(f"  User Type: {user.user_type}")
-            print(f"  Customer ID: {user.customer_id}")
-            print(f"  Customer: {customer.name if customer else 'NONE'}")
+            print(f"  Tenant ID: {user.tenant_id}")
+            print(f"  Tenant: {tenant.name if tenant else 'NONE'}")
             print()
 
-        # Get all customers
-        customers = db.execute(select(Customer)).scalars().all()
+        # Get all tenants
+        tenants = db.execute(select(Tenant)).scalars().all()
 
         print("\n=== Customers ===")
-        for customer in customers:
-            admin = db.execute(select(User).where(User.id == customer.admin_id)).scalars().first() if customer.admin_id else None
-            print(f"Customer: {customer.name}")
-            print(f"  ID: {customer.id}")
-            print(f"  Admin ID: {customer.admin_id}")
+        for tenant in tenants:
+            admin = db.execute(select(User).where(User.id == tenant.admin_id)).scalars().first() if tenant.admin_id else None
+            print(f"Customer: {tenant.name}")
+            print(f"  ID: {tenant.id}")
+            print(f"  Admin ID: {tenant.admin_id}")
             print(f"  Admin: {admin.email if admin else 'NONE'}")
 
             # Count users in this customer
             users_in_customer = db.execute(
-                select(User).where(User.customer_id == customer.id)
+                select(User).where(User.tenant_id == tenant.id)
             ).scalars().all()
             print(f"  Users in customer: {len(users_in_customer)}")
             for u in users_in_customer:
@@ -56,24 +56,24 @@ def main():
 
         # Fix orphaned users (users without a customer)
         orphaned = db.execute(
-            select(User).where(User.customer_id.is_(None))
+            select(User).where(User.tenant_id.is_(None))
         ).scalars().all()
 
         if orphaned:
             print("\n=== Fixing Orphaned Users ===")
 
             # Get or create default customer
-            default_customer = db.execute(
-                select(Customer).where(Customer.name == "Beer Game")
+            default_tenant = db.execute(
+                select(Tenant).where(Tenant.name == "Beer Game")
             ).scalars().first()
 
-            if not default_customer:
+            if not default_tenant:
                 # Try Autonomy customer
-                default_customer = db.execute(
-                    select(Customer).where(Customer.name == "Autonomy")
+                default_tenant = db.execute(
+                    select(Tenant).where(Tenant.name == "Autonomy")
                 ).scalars().first()
 
-            if not default_customer:
+            if not default_tenant:
                 print("ERROR: No default customer found! Creating default customer...")
                 # Get first user to be admin
                 first_user = users[0] if users else None
@@ -81,40 +81,40 @@ def main():
                     print("ERROR: No users found! Cannot create customer.")
                     return
 
-                default_customer = Customer(
+                default_tenant = Tenant(
                     name="Beer Game",
                     description="Default simulation customer",
                     admin_id=first_user.id
                 )
-                db.add(default_customer)
+                db.add(default_tenant)
                 db.flush()
-                print(f"Created default customer with ID {default_customer.id}")
+                print(f"Created default customer with ID {default_tenant.id}")
 
             for user in orphaned:
-                print(f"Assigning {user.email} to customer '{default_customer.name}' (ID: {default_customer.id})")
-                user.customer_id = default_customer.id
+                print(f"Assigning {user.email} to customer '{default_tenant.name}' (ID: {default_tenant.id})")
+                user.tenant_id = default_tenant.id
                 db.add(user)
 
             db.commit()
             print(f"Fixed {len(orphaned)} orphaned users")
         else:
-            print("\n✅ No orphaned users found - all users are assigned to customers")
+            print("\n✅ No orphaned users found - all users are assigned to tenants")
 
         # Verify customer admin assignments
         print("\n=== Verifying Customer Admin Assignments ===")
-        for customer in customers:
-            if customer.admin_id:
-                admin = db.execute(select(User).where(User.id == customer.admin_id)).scalars().first()
-                if admin and admin.customer_id != customer.id:
-                    print(f"⚠️  Customer '{customer.name}' admin '{admin.email}' is in wrong customer!")
-                    print(f"   Admin's customer_id: {admin.customer_id}, Expected: {customer.id}")
+        for tenant in tenants:
+            if tenant.admin_id:
+                admin = db.execute(select(User).where(User.id == tenant.admin_id)).scalars().first()
+                if admin and admin.tenant_id != tenant.id:
+                    print(f"⚠️  Customer '{tenant.name}' admin '{admin.email}' is in wrong customer!")
+                    print(f"   Admin's customer_id: {admin.tenant_id}, Expected: {tenant.id}")
                     print(f"   Fixing...")
-                    admin.customer_id = customer.id
+                    admin.tenant_id = tenant.id
                     db.add(admin)
                     db.commit()
                     print(f"   ✅ Fixed!")
                 elif admin:
-                    print(f"✅ Customer '{customer.name}' admin '{admin.email}' correctly assigned")
+                    print(f"✅ Customer '{tenant.name}' admin '{admin.email}' correctly assigned")
 
 if __name__ == "__main__":
     main()

@@ -55,7 +55,7 @@ from app.models.planning_hierarchy import (
     PlanningType, SiteHierarchyLevel, ProductHierarchyLevel, TimeBucketType,
     DEFAULT_PLANNING_TEMPLATES
 )
-from app.models.customer import Customer
+from app.models.tenant import Tenant
 from app.models.user import User
 from app.models.agent_config import AgentConfig
 
@@ -334,7 +334,7 @@ ARCHETYPE_CONFIGS = {
 @dataclass
 class GenerationRequest:
     """Request for synthetic data generation."""
-    customer_name: str
+    tenant_name: str
     archetype: CompanyArchetype
     company_name: str
     admin_email: str
@@ -363,7 +363,7 @@ class GenerationRequest:
 @dataclass
 class GenerationResult:
     """Result of synthetic data generation."""
-    customer_id: int
+    tenant_id: int
     config_id: int
     admin_user_id: int
 
@@ -383,7 +383,7 @@ class SyntheticDataGenerator:
     Usage:
         generator = SyntheticDataGenerator(db)
         result = await generator.generate(GenerationRequest(
-            customer_name="ACME Corp",
+            tenant_name="ACME Corp",
             archetype=CompanyArchetype.MANUFACTURER,
             company_name="ACME Manufacturing",
             admin_email="admin@acme.com",
@@ -417,14 +417,14 @@ class SyntheticDataGenerator:
 
         logger.info(f"Generating synthetic data for {request.archetype.value}: {request.company_name}")
 
-        # 1. Create customer
-        customer = await self._create_customer()
+        # 1. Create tenant
+        tenant = await self._create_tenant()
 
         # 2. Create admin user
-        admin_user = await self._create_admin_user(customer.id)
+        admin_user = await self._create_admin_user(tenant.id)
 
         # 3. Create supply chain config
-        sc_config = await self._create_supply_chain_config(customer.id)
+        sc_config = await self._create_supply_chain_config(tenant.id)
 
         # 4. Create sites
         sites = await self._create_sites(sc_config.id)
@@ -436,25 +436,25 @@ class SyntheticDataGenerator:
         items = await self._create_items(sc_config.id)
 
         # 7. Create hierarchies
-        await self._create_site_hierarchy(customer.id, sites)
-        await self._create_product_hierarchy(customer.id, items)
+        await self._create_site_hierarchy(tenant.id, sites)
+        await self._create_product_hierarchy(tenant.id, items)
 
         # 8. Create forecasts
-        forecasts = await self._create_forecasts(customer.id, sites, items)
+        forecasts = await self._create_forecasts(tenant.id, sites, items)
 
         # 9. Create inventory levels and policies
-        policies = await self._create_inventory_policies(customer.id, sites, items)
+        policies = await self._create_inventory_policies(tenant.id, sites, items)
 
         # 10. Create planning hierarchy configurations
-        await self._create_planning_configs(customer.id, sc_config.id)
+        await self._create_planning_configs(tenant.id, sc_config.id)
 
         # 11. Create agent configurations
-        await self._create_agent_configs(customer.id, sc_config.id)
+        await self._create_agent_configs(tenant.id, sc_config.id)
 
         await self.db.commit()
 
         return GenerationResult(
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             config_id=sc_config.id,
             admin_user_id=admin_user.id,
             sites_created=len(sites),
@@ -471,19 +471,19 @@ class SyntheticDataGenerator:
             }
         )
 
-    async def _create_customer(self) -> Customer:
-        """Create the customer (organization)."""
-        customer = Customer(
-            name=self.request.customer_name,
+    async def _create_tenant(self) -> Tenant:
+        """Create the tenant (organization)."""
+        tenant = Tenant(
+            name=self.request.tenant_name,
             description=f"{self.config.description} - {self.request.company_name}",
             is_active=True
         )
-        self.db.add(customer)
+        self.db.add(tenant)
         await self.db.flush()
-        return customer
+        return tenant
 
-    async def _create_admin_user(self, customer_id: int) -> User:
-        """Create the customer administrator user."""
+    async def _create_admin_user(self, tenant_id: int) -> User:
+        """Create the tenant administrator user."""
         from app.core.security import get_password_hash
         from app.services.bootstrap import DEFAULT_ADMIN_PASSWORD
 
@@ -493,18 +493,18 @@ class SyntheticDataGenerator:
             full_name=self.request.admin_name,
             is_active=True,
             is_superuser=False,
-            customer_id=customer_id
+            tenant_id=tenant_id
         )
         self.db.add(user)
         await self.db.flush()
         return user
 
-    async def _create_supply_chain_config(self, customer_id: int) -> SupplyChainConfig:
+    async def _create_supply_chain_config(self, tenant_id: int) -> SupplyChainConfig:
         """Create the supply chain configuration."""
         config = SupplyChainConfig(
             name=f"{self.request.company_name} SC",
             description=self.config.description,
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             is_active=True
         )
         self.db.add(config)
@@ -604,15 +604,15 @@ class SyntheticDataGenerator:
         await self.db.flush()
         return items
 
-    async def _create_site_hierarchy(self, customer_id: int, sites: List[Site]):
+    async def _create_site_hierarchy(self, tenant_id: int, sites: List[Site]):
         """Create site hierarchy nodes."""
         # Create company level
         company = SiteHierarchyNode(
-            customer_id=customer_id,
-            code=f"COMPANY_{customer_id}",
+            tenant_id=tenant_id,
+            code=f"COMPANY_{tenant_id}",
             name=self.request.company_name,
             hierarchy_level=SiteHierarchyLevel.COMPANY,
-            hierarchy_path=f"COMPANY_{customer_id}",
+            hierarchy_path=f"COMPANY_{tenant_id}",
             depth=0,
             is_plannable=True
         )
@@ -624,7 +624,7 @@ class SyntheticDataGenerator:
         region_names = ["AMERICAS", "EMEA", "APAC", "LATAM"][:self.config.regions]
         for i, name in enumerate(region_names):
             region = SiteHierarchyNode(
-                customer_id=customer_id,
+                tenant_id=tenant_id,
                 code=f"REG_{name}",
                 name=name,
                 parent_id=company.id,
@@ -651,7 +651,7 @@ class SyntheticDataGenerator:
             region_countries = country_names.get(region.name, [])[:self.config.countries_per_region]
             for cname in region_countries:
                 country = SiteHierarchyNode(
-                    customer_id=customer_id,
+                    tenant_id=tenant_id,
                     code=f"CTY_{cname}",
                     name=cname,
                     parent_id=region.id,
@@ -672,7 +672,7 @@ class SyntheticDataGenerator:
         for i, sc_site in enumerate(inventory_sites):
             country = countries[i % len(countries)]
             hierarchy_node = SiteHierarchyNode(
-                customer_id=customer_id,
+                tenant_id=tenant_id,
                 code=sc_site.name,
                 name=sc_site.name,
                 site_id=sc_site.id,
@@ -687,7 +687,7 @@ class SyntheticDataGenerator:
 
         await self.db.flush()
 
-    async def _create_product_hierarchy(self, customer_id: int, items: List[Item]):
+    async def _create_product_hierarchy(self, tenant_id: int, items: List[Item]):
         """Create product hierarchy nodes."""
         categories = []
         families = []
@@ -698,7 +698,7 @@ class SyntheticDataGenerator:
 
         for i, name in enumerate(category_names):
             category = ProductHierarchyNode(
-                customer_id=customer_id,
+                tenant_id=tenant_id,
                 code=f"CAT_{name.upper()}",
                 name=name,
                 hierarchy_level=ProductHierarchyLevel.CATEGORY,
@@ -718,7 +718,7 @@ class SyntheticDataGenerator:
             for i in range(self.config.product_families_per_category):
                 fname = family_names[i % len(family_names)]
                 family = ProductHierarchyNode(
-                    customer_id=customer_id,
+                    tenant_id=tenant_id,
                     code=f"FAM_{category.name[:3].upper()}_{fname.upper()}",
                     name=f"{category.name} - {fname}",
                     parent_id=category.id,
@@ -740,7 +740,7 @@ class SyntheticDataGenerator:
             for i in range(min(5, self.config.products_per_family // 2)):
                 suffix = group_suffixes[i % len(group_suffixes)]
                 group = ProductHierarchyNode(
-                    customer_id=customer_id,
+                    tenant_id=tenant_id,
                     code=f"GRP_{family.code}_{suffix}",
                     name=f"{family.name} - Group {suffix}",
                     parent_id=family.id,
@@ -759,7 +759,7 @@ class SyntheticDataGenerator:
         for i, item in enumerate(items):
             group = groups[i % len(groups)]
             product = ProductHierarchyNode(
-                customer_id=customer_id,
+                tenant_id=tenant_id,
                 code=item.name,
                 name=item.name,
                 product_id=str(item.id),
@@ -773,7 +773,7 @@ class SyntheticDataGenerator:
 
         await self.db.flush()
 
-    async def _create_forecasts(self, customer_id: int, sites: List[Site], items: List[Item]) -> List[Forecast]:
+    async def _create_forecasts(self, tenant_id: int, sites: List[Site], items: List[Item]) -> List[Forecast]:
         """Create demand forecasts."""
         forecasts = []
         demand_sites = [s for s in sites if s.master_type == "MARKET_DEMAND"]
@@ -816,7 +816,7 @@ class SyntheticDataGenerator:
                         forecast_p10=round(max(0, mean_demand - 1.28 * std)),
                         forecast_p50=round(mean_demand),
                         forecast_p90=round(mean_demand + 1.28 * std),
-                        connection_id=customer_id
+                        connection_id=tenant_id
                     )
                     self.db.add(forecast)
                     forecasts.append(forecast)
@@ -824,7 +824,7 @@ class SyntheticDataGenerator:
         await self.db.flush()
         return forecasts
 
-    async def _create_inventory_policies(self, customer_id: int, sites: List[Site], items: List[Item]) -> List[InvPolicy]:
+    async def _create_inventory_policies(self, tenant_id: int, sites: List[Site], items: List[Item]) -> List[InvPolicy]:
         """Create inventory policies."""
         policies = []
         inventory_sites = [s for s in sites if s.master_type == "INVENTORY"]
@@ -840,7 +840,7 @@ class SyntheticDataGenerator:
                     review_period_days=self.config.default_review_period_days,
                     min_order_qty=10,
                     max_order_qty=10000,
-                    connection_id=customer_id
+                    connection_id=tenant_id
                 )
                 self.db.add(policy)
                 policies.append(policy)
@@ -848,11 +848,11 @@ class SyntheticDataGenerator:
         await self.db.flush()
         return policies
 
-    async def _create_planning_configs(self, customer_id: int, config_id: int):
+    async def _create_planning_configs(self, tenant_id: int, config_id: int):
         """Create planning hierarchy configurations."""
         for template in DEFAULT_PLANNING_TEMPLATES:
             config = PlanningHierarchyConfig(
-                customer_id=customer_id,
+                tenant_id=tenant_id,
                 config_id=config_id,
                 planning_type=template["planning_type"],
                 site_hierarchy_level=template["site_hierarchy_level"],
@@ -874,7 +874,7 @@ class SyntheticDataGenerator:
 
         await self.db.flush()
 
-    async def _create_agent_configs(self, customer_id: int, config_id: int):
+    async def _create_agent_configs(self, tenant_id: int, config_id: int):
         """Create AI agent configurations."""
         for strategy in self.config.agent_strategies:
             agent_config = AgentConfig(

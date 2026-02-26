@@ -768,7 +768,7 @@ export const NAVIGATION_CONFIG = [
       },
       {
         label: 'Supply Chain Configs',
-        path: '/admin/customer/supply-chain-configs',
+        path: '/admin/tenant/supply-chain-configs',
         icon: NetworkIcon,
         requiredCapability: 'view_sc_configs',
       },
@@ -788,14 +788,14 @@ export const NAVIGATION_CONFIG = [
         label: 'SAP Data Management',
         path: '/admin/sap-data',
         icon: DatabaseIcon,
-        requiredCapability: 'manage_group_users',
+        requiredCapability: 'manage_tenant_users',
         description: 'SAP connections, field mapping, and data ingestion',
       },
       {
         label: 'Knowledge Base',
         path: '/admin/knowledge-base',
         icon: BookOpenIcon,
-        requiredCapability: 'manage_group_users',
+        requiredCapability: 'manage_tenant_users',
         description: 'Upload documents for AI agent context (RAG)',
       },
     ],
@@ -813,28 +813,28 @@ export const NAVIGATION_CONFIG = [
         label: 'PicoClaw Fleet',
         path: '/admin/picoclaw',
         icon: ExecutionIcon,
-        requiredCapability: 'manage_group_users',
+        requiredCapability: 'manage_tenant_users',
         description: 'Edge CDC monitors — fleet health, alerts, configuration',
       },
       {
         label: 'OpenClaw Gateway',
         path: '/admin/openclaw',
         icon: CollaborationIcon,
-        requiredCapability: 'manage_group_users',
+        requiredCapability: 'manage_tenant_users',
         description: 'Chat gateway — skills, channels, LLM config, sessions',
       },
       {
         label: 'Signal Ingestion',
         path: '/admin/signals',
         icon: ActivityIcon,
-        requiredCapability: 'manage_group_users',
+        requiredCapability: 'manage_tenant_users',
         description: 'Captured signals — monitoring, review queue, source reliability',
       },
       {
         label: 'Edge Security',
         path: '/admin/edge-security',
         icon: AdminIcon,
-        requiredCapability: 'manage_group_users',
+        requiredCapability: 'manage_tenant_users',
         description: 'CVE tracking, deployment checklist, integration health',
       },
     ],
@@ -854,10 +854,10 @@ export const SYSTEM_ADMIN_NAVIGATION = [
         icon: DashboardIcon,
       },
       {
-        label: 'Customers',
-        path: '/admin/customers',
+        label: 'Organizations',
+        path: '/admin/tenants',
         icon: AdminIcon,
-        description: 'Manage all customers (System Admin only)',
+        description: 'Manage all organizations (System Admin only)',
       },
       {
         label: 'System Users',
@@ -1064,7 +1064,7 @@ export const LEARNING_NAVIGATION = [
       },
       {
         label: 'Scenario Configurations',
-        path: '/admin/customer/supply-chain-configs',
+        path: '/admin/tenant/supply-chain-configs',
         icon: NetworkIcon,
         requiredCapability: 'view_sc_configs',
         description: 'Configure learning scenarios',
@@ -1080,24 +1080,25 @@ export const LEARNING_NAVIGATION = [
  * This is separate from "AI Model Training" (TRM/GNN/RL training)
  * which can happen in BOTH Learning and Production customers.
  */
-export const CUSTOMER_MODES = {
+export const TENANT_MODES = {
   LEARNING: 'learning',      // User education mode
   PRODUCTION: 'production',  // Real data, real planning
 };
 
-// Backward-compatible alias
-export const GROUP_MODES = CUSTOMER_MODES;
+// Backward-compatible aliases
+export const CUSTOMER_MODES = TENANT_MODES;
+export const GROUP_MODES = TENANT_MODES;
 
 /**
- * Get filtered navigation based on user capabilities and customer mode
+ * Get filtered navigation based on user capabilities and tenant mode
  *
  * @param {Function} hasCapability - Function to check if user has capability
  * @param {boolean} isSystemAdmin - Whether user is system admin
- * @param {boolean} isGroupAdmin - Whether user is customer admin (GROUP_ADMIN type)
- * @param {string} customerMode - Customer mode: 'learning' or 'production' (default: 'production')
+ * @param {boolean} isTenantAdmin - Whether user is organization admin (TENANT_ADMIN type)
+ * @param {string} tenantMode - Tenant mode: 'learning' or 'production' (default: 'production')
  * @returns {Array} Filtered navigation sections with enabled/disabled state
  */
-export function getFilteredNavigation(hasCapability, isSystemAdmin, isGroupAdmin, customerMode = 'production') {
+export function getFilteredNavigation(hasCapability, isSystemAdmin, isTenantAdmin, tenantMode = 'production') {
   // System admins get special navigation
   if (isSystemAdmin) {
     return SYSTEM_ADMIN_NAVIGATION.map(section => ({
@@ -1111,16 +1112,16 @@ export function getFilteredNavigation(hasCapability, isSystemAdmin, isGroupAdmin
   }
 
   // Learning customers get simplified navigation (user education mode)
-  // For admin sections, show if user is GROUP_ADMIN OR has any admin capability
+  // For admin sections, show if user is TENANT_ADMIN OR has any admin capability
   const hasAdminCapability = hasCapability('view_customers') ||
     hasCapability('view_users') ||
     hasCapability('view_sc_configs') ||
     hasCapability('manage_roles');
 
-  if (customerMode === CUSTOMER_MODES.LEARNING) {
+  if (tenantMode === TENANT_MODES.LEARNING) {
     return LEARNING_NAVIGATION
       .filter(section => {
-        if (section.adminOnly && !isGroupAdmin && !hasAdminCapability) {
+        if (section.adminOnly && !isTenantAdmin && !hasAdminCapability) {
           return false;
         }
         return true;
@@ -1144,8 +1145,8 @@ export function getFilteredNavigation(hasCapability, isSystemAdmin, isGroupAdmin
   // Filter and mark items as enabled/disabled based on capabilities
   return NAVIGATION_CONFIG
     .filter(section => {
-      // Show admin sections if user is GROUP_ADMIN or has admin-related capabilities
-      if (section.adminOnly && !isGroupAdmin && !hasAdminCapability) {
+      // Show admin sections if user is TENANT_ADMIN or has admin-related capabilities
+      if (section.adminOnly && !isTenantAdmin && !hasAdminCapability) {
         return false;
       }
       return true;

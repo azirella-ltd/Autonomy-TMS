@@ -14,7 +14,7 @@ from sqlalchemy import select, delete
 
 from app.db.session import async_session_factory
 from app.models.supply_chain_config import SupplyChainConfig
-from app.models.customer import Customer
+from app.models.tenant import Tenant
 from app.models.scenario import Scenario
 from app.models.aws_sc_planning import (
     OrderAggregationPolicy,
@@ -34,7 +34,7 @@ async def test_analytics_integration():
     print()
 
     async with async_session_factory() as db:
-        # Setup: Get test config and customer
+        # Setup: Get test config and tenant
         result = await db.execute(
             select(SupplyChainConfig).filter(
                 SupplyChainConfig.name.like("%Default%")
@@ -42,11 +42,11 @@ async def test_analytics_integration():
         )
         config = result.scalar_one_or_none()
 
-        result = await db.execute(select(Customer).filter(Customer.id == 2))
-        customer = result.scalar_one_or_none()
+        result = await db.execute(select(Tenant).filter(Tenant.id == 2))
+        tenant = result.scalar_one_or_none()
 
-        if not config or not customer:
-            print("❌ Config or customer not found")
+        if not config or not tenant:
+            print("❌ Config or tenant not found")
             return False
 
         # Clean up any existing test data
@@ -58,15 +58,15 @@ async def test_analytics_integration():
             )
         ))
         await db.execute(delete(AggregatedOrder).filter(
-            AggregatedOrder.customer_id == customer.id,
+            AggregatedOrder.tenant_id == tenant.id,
             AggregatedOrder.config_id == config.id
         ))
         await db.execute(delete(ProductionCapacity).filter(
-            ProductionCapacity.customer_id == customer.id,
+            ProductionCapacity.tenant_id == tenant.id,
             ProductionCapacity.config_id == config.id
         ))
         await db.execute(delete(OrderAggregationPolicy).filter(
-            OrderAggregationPolicy.customer_id == customer.id,
+            OrderAggregationPolicy.tenant_id == tenant.id,
             OrderAggregationPolicy.config_id == config.id
         ))
         await db.execute(delete(Scenario).filter(
@@ -97,7 +97,7 @@ async def test_analytics_integration():
         # Create scenario with aggregation enabled
         scenario1 = Scenario(
             name="Analytics Test - Aggregation",
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             supply_chain_config_id=config.id,
             use_aws_sc_planning=True,
             max_rounds=10,
@@ -123,7 +123,7 @@ async def test_analytics_integration():
             order_multiple=10.0,
             fixed_order_cost=100.0,
             is_active=True,
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             config_id=config.id
         )
         db.add(policy)
@@ -193,7 +193,7 @@ async def test_analytics_integration():
         # Create scenario with capacity enabled
         scenario2 = Scenario(
             name="Analytics Test - Capacity",
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             supply_chain_config_id=config.id,
             use_aws_sc_planning=True,
             max_rounds=10,
@@ -220,7 +220,7 @@ async def test_analytics_integration():
             capacity_type='production',
             capacity_period='week',
             allow_overflow=False,
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             config_id=config.id
         )
         db.add(capacity)
@@ -266,7 +266,7 @@ async def test_analytics_integration():
         await db.execute(delete(InboundOrderLine).filter(InboundOrderLine.scenario_id == scenario2.id))
         await db.delete(scenario2)
         await db.execute(delete(ProductionCapacity).filter(
-            ProductionCapacity.customer_id == customer.id,
+            ProductionCapacity.tenant_id == tenant.id,
             ProductionCapacity.config_id == config.id
         ))
         await db.commit()
@@ -276,7 +276,7 @@ async def test_analytics_integration():
 
         # Clean up any remaining policies from previous tests
         await db.execute(delete(OrderAggregationPolicy).filter(
-            OrderAggregationPolicy.customer_id == customer.id,
+            OrderAggregationPolicy.tenant_id == tenant.id,
             OrderAggregationPolicy.config_id == config.id
         ))
         await db.commit()
@@ -284,7 +284,7 @@ async def test_analytics_integration():
         # Create scenario with aggregation
         scenario3 = Scenario(
             name="Analytics Test - Policy",
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             supply_chain_config_id=config.id,
             use_aws_sc_planning=True,
             max_rounds=10,
@@ -307,7 +307,7 @@ async def test_analytics_integration():
             order_multiple=10.0,
             fixed_order_cost=100.0,
             is_active=True,
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             config_id=config.id
         )
         db.add(policy)
@@ -327,7 +327,7 @@ async def test_analytics_integration():
         print(f"  ✓ Created 3 rounds of aggregated orders")
 
         # Test policy effectiveness analytics
-        metrics = await analytics.get_policy_effectiveness(config.id, customer.id)
+        metrics = await analytics.get_policy_effectiveness(config.id, tenant.id)
 
         # Filter for aggregation policies only
         agg_policies = [p for p in metrics['policies'] if p['type'] == 'aggregation']
@@ -367,7 +367,7 @@ async def test_analytics_integration():
         # Create scenario with all features
         scenario4 = Scenario(
             name="Analytics Test - Comparison",
-            customer_id=customer.id,
+            tenant_id=tenant.id,
             supply_chain_config_id=config.id,
             use_aws_sc_planning=True,
             max_rounds=10,
@@ -411,7 +411,7 @@ async def test_analytics_integration():
 
         # Final cleanup
         await db.execute(delete(OrderAggregationPolicy).filter(
-            OrderAggregationPolicy.customer_id == customer.id,
+            OrderAggregationPolicy.tenant_id == tenant.id,
             OrderAggregationPolicy.config_id == config.id
         ))
         await db.commit()

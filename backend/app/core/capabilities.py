@@ -63,8 +63,8 @@ class Capability(str, Enum):
     DELETE_SC_CONFIG = "delete_sc_config"
     VIEW_INVENTORY_MODELS = "view_inventory_models"
     MANAGE_INVENTORY_MODELS = "manage_inventory_models"
-    VIEW_GROUP_CONFIGS = "view_group_configs"
-    MANAGE_GROUP_CONFIGS = "manage_group_configs"
+    VIEW_TENANT_CONFIGS = "view_tenant_configs"
+    MANAGE_TENANT_CONFIGS = "manage_tenant_configs"
     VIEW_NTIER_VISIBILITY = "view_ntier_visibility"
 
     # Planning & Optimization
@@ -190,9 +190,9 @@ class Capability(str, Enum):
     MANAGE_ORDER_TRACKING_WORKLIST = "manage_order_tracking_worklist"  # Override exception actions
 
     # Collaboration
-    VIEW_GROUPS = "view_groups"
-    CREATE_GROUP = "create_group"
-    MANAGE_GROUPS = "manage_groups"
+    VIEW_TENANTS = "view_tenants"
+    CREATE_TENANT = "create_tenant"
+    MANAGE_TENANTS = "manage_tenants"
     VIEW_PLAYERS = "view_players"
     MANAGE_PLAYERS = "manage_players"
     VIEW_USERS = "view_users"
@@ -214,7 +214,7 @@ class Capability(str, Enum):
     MANAGE_GOVERNANCE = "manage_governance"
     MANAGE_PERMISSIONS = "manage_permissions"
     MANAGE_ROLES = "manage_roles"  # Configure roles and permissions
-    MANAGE_GROUP_USERS = "manage_group_users"  # Manage users within a group (SAP data mgmt access)
+    MANAGE_TENANT_USERS = "manage_tenant_users"  # Manage users within a tenant (SAP data mgmt access)
     MANAGE_APPROVAL_TEMPLATES = "manage_approval_templates"  # Configure multi-level approval workflows
 
     # System-level
@@ -244,7 +244,7 @@ SYSTEM_ADMIN_CAPABILITIES = CapabilitySet(
     capabilities={Capability.SYSTEM_ADMIN}  # Grants everything
 )
 
-GROUP_ADMIN_CAPABILITIES = CapabilitySet(
+TENANT_ADMIN_CAPABILITIES = CapabilitySet(
     capabilities={
         # Overview
         Capability.VIEW_DASHBOARD,
@@ -276,11 +276,11 @@ GROUP_ADMIN_CAPABILITIES = CapabilitySet(
         Capability.DELETE_GAME,
         Capability.MANAGE_GAMES,
 
-        # Supply Chain - View and manage group configs
+        # Supply Chain - View and manage tenant configs
         Capability.VIEW_SC_CONFIGS,
         Capability.VIEW_INVENTORY_MODELS,
-        Capability.VIEW_GROUP_CONFIGS,
-        Capability.MANAGE_GROUP_CONFIGS,
+        Capability.VIEW_TENANT_CONFIGS,
+        Capability.MANAGE_TENANT_CONFIGS,
         Capability.VIEW_NTIER_VISIBILITY,
 
         # Planning - View and manage
@@ -309,7 +309,7 @@ GROUP_ADMIN_CAPABILITIES = CapabilitySet(
         Capability.VIEW_OPTIMIZATION,
         Capability.RUN_OPTIMIZATION,
 
-        # Supply Chain Planning Entities - Full access for Group Admin
+        # Supply Chain Planning Entities - Full access for Tenant Admin
         Capability.VIEW_PRODUCTION_ORDERS,
         Capability.MANAGE_PRODUCTION_ORDERS,
         Capability.RELEASE_PRODUCTION_ORDERS,
@@ -364,12 +364,12 @@ GROUP_ADMIN_CAPABILITIES = CapabilitySet(
         Capability.VIEW_POWELL,
         Capability.VIEW_ATP_CTP,
 
-        # Powell Framework Dashboards (all 3 for GROUP_ADMIN to enable demo access)
+        # Powell Framework Dashboards (all 3 for TENANT_ADMIN to enable demo access)
         Capability.VIEW_EXECUTIVE_DASHBOARD,  # SC_VP landing
         Capability.VIEW_SOP_WORKLIST,         # SOP_DIRECTOR landing
         Capability.VIEW_AGENT_DECISIONS,      # MPS_MANAGER landing
 
-        # Planning Cascade - Full access to all layers (GROUP_ADMIN)
+        # Planning Cascade - Full access to all layers (TENANT_ADMIN)
         Capability.VIEW_CASCADE_DASHBOARD,
         Capability.VIEW_SOP_POLICY,
         Capability.MANAGE_SOP_POLICY,
@@ -382,7 +382,7 @@ GROUP_ADMIN_CAPABILITIES = CapabilitySet(
         Capability.VIEW_EXECUTION_DASHBOARD,
         Capability.MANAGE_EXECUTION_DASHBOARD,
 
-        # TRM Specialist Worklists - Full access to all TRMs (GROUP_ADMIN)
+        # TRM Specialist Worklists - Full access to all TRMs (TENANT_ADMIN)
         Capability.VIEW_ATP_WORKLIST,
         Capability.MANAGE_ATP_WORKLIST,
         Capability.VIEW_REBALANCING_WORKLIST,
@@ -392,9 +392,9 @@ GROUP_ADMIN_CAPABILITIES = CapabilitySet(
         Capability.VIEW_ORDER_TRACKING_WORKLIST,
         Capability.MANAGE_ORDER_TRACKING_WORKLIST,
 
-        # Collaboration - Full access within group
-        Capability.VIEW_GROUPS,
-        Capability.MANAGE_GROUPS,
+        # Collaboration - Full access within tenant
+        Capability.VIEW_TENANTS,
+        Capability.MANAGE_TENANTS,
         Capability.VIEW_PLAYERS,
         Capability.MANAGE_PLAYERS,
         Capability.VIEW_USERS,
@@ -402,7 +402,7 @@ GROUP_ADMIN_CAPABILITIES = CapabilitySet(
         Capability.EDIT_USER,
         Capability.MANAGE_PERMISSIONS,
         Capability.MANAGE_ROLES,
-        Capability.MANAGE_GROUP_USERS,
+        Capability.MANAGE_TENANT_USERS,
         Capability.MANAGE_APPROVAL_TEMPLATES,
 
         # Collaboration Hub (Sprint 5) - Full access
@@ -439,8 +439,8 @@ USER_CAPABILITIES = CapabilitySet(
 # - SOP_DIRECTOR (S&OP Level): Tactical, accepts/overrides AI recommendations
 # - MPS_MANAGER (tGNN+TRM Level): Operational, works with AI agents for execution
 #
-# IMPORTANT: AI model training (TRM, GNN, RL) is GROUP_ADMIN responsibility,
-# not SC_VP. GROUP_ADMIN manages training cadence for both Training and
+# IMPORTANT: AI model training (TRM, GNN, RL) is TENANT_ADMIN responsibility,
+# not SC_VP. TENANT_ADMIN manages training cadence for both Training and
 # Operational groups.
 #
 # See POWELL_APPROACH.md for framework documentation
@@ -453,7 +453,7 @@ USER_CAPABILITIES = CapabilitySet(
 # - Set global constraints and strategic parameters
 # - Approve major planning decisions (MPS, consensus demand)
 # - Full visibility across all sites and products
-# NOTE: AI model training is GROUP_ADMIN responsibility (VIEW only for SC_VP)
+# NOTE: AI model training is TENANT_ADMIN responsibility (VIEW only for SC_VP)
 SC_VP_CAPABILITIES = CapabilitySet(
     capabilities={
         # Powell Dashboard - Executive Dashboard (SC_VP landing page)
@@ -482,8 +482,8 @@ SC_VP_CAPABILITIES = CapabilitySet(
         Capability.EDIT_SC_CONFIG,
         Capability.VIEW_INVENTORY_MODELS,
         Capability.MANAGE_INVENTORY_MODELS,
-        Capability.VIEW_GROUP_CONFIGS,
-        Capability.MANAGE_GROUP_CONFIGS,
+        Capability.VIEW_TENANT_CONFIGS,
+        Capability.MANAGE_TENANT_CONFIGS,
         Capability.VIEW_NTIER_VISIBILITY,
 
         # Strategic Planning - Full authority
@@ -519,7 +519,7 @@ SC_VP_CAPABILITIES = CapabilitySet(
         Capability.MANAGE_CAPACITY_PLANNING,
         Capability.VIEW_RESOURCE_CAPACITY,
 
-        # AI Model Training - VIEW ONLY (training is GROUP_ADMIN responsibility)
+        # AI Model Training - VIEW ONLY (training is TENANT_ADMIN responsibility)
         Capability.USE_AI_ASSISTANT,
         Capability.VIEW_AI_AGENTS,
         Capability.VIEW_TRM_TRAINING,
@@ -615,7 +615,7 @@ SOP_DIRECTOR_CAPABILITIES = CapabilitySet(
         # Supply Chain Design - View only (strategic decisions)
         Capability.VIEW_SC_CONFIGS,
         Capability.VIEW_INVENTORY_MODELS,
-        Capability.VIEW_GROUP_CONFIGS,
+        Capability.VIEW_TENANT_CONFIGS,
         Capability.VIEW_NTIER_VISIBILITY,
 
         # S&OP Planning - Full tactical authority
@@ -788,7 +788,7 @@ MPS_MANAGER_CAPABILITIES = CapabilitySet(
         # Supply Chain Design - View only
         Capability.VIEW_SC_CONFIGS,
         Capability.VIEW_INVENTORY_MODELS,
-        Capability.VIEW_GROUP_CONFIGS,
+        Capability.VIEW_TENANT_CONFIGS,
         Capability.VIEW_NTIER_VISIBILITY,
 
         # Planning - Operational execution focus
@@ -908,7 +908,7 @@ _TRM_SPECIALIST_BASE = {
     Capability.VIEW_ATP_CTP,
     Capability.VIEW_SC_CONFIGS,
     Capability.VIEW_INVENTORY_MODELS,
-    Capability.VIEW_GROUP_CONFIGS,
+    Capability.VIEW_TENANT_CONFIGS,
 
     # Operational context (read-only)
     Capability.VIEW_ORDER_PLANNING,
@@ -1006,7 +1006,7 @@ def get_capabilities_for_user_type(user_type: str) -> CapabilitySet:
     Get the default capability set for a user type or Powell-aligned role.
 
     Args:
-        user_type: User type enum value (SYSTEM_ADMIN, GROUP_ADMIN, USER)
+        user_type: User type enum value (SYSTEM_ADMIN, TENANT_ADMIN, USER)
                    or Powell role (SC_VP, SOP_DIRECTOR, MPS_MANAGER)
 
     Returns:
@@ -1016,8 +1016,8 @@ def get_capabilities_for_user_type(user_type: str) -> CapabilitySet:
 
     if user_type_upper == "SYSTEM_ADMIN":
         return SYSTEM_ADMIN_CAPABILITIES
-    elif user_type_upper == "GROUP_ADMIN":
-        return GROUP_ADMIN_CAPABILITIES
+    elif user_type_upper == "TENANT_ADMIN":
+        return TENANT_ADMIN_CAPABILITIES
     elif user_type_upper == "USER":
         return USER_CAPABILITIES
     # Powell Framework aligned roles
@@ -1156,7 +1156,7 @@ def get_navigation_capabilities() -> dict:
             "items": {
                 "/system/supply-chain-configs": [Capability.VIEW_SC_CONFIGS],
                 "/admin/model-setup": [Capability.VIEW_MODEL_SETUP],
-                "/admin/group/supply-chain-configs": [Capability.VIEW_GROUP_CONFIGS],
+                "/admin/tenant/supply-chain-configs": [Capability.VIEW_TENANT_CONFIGS],
             }
         },
 
@@ -1220,9 +1220,9 @@ def get_navigation_capabilities() -> dict:
 
         # Collaboration category
         "collaboration": {
-            "category_capability": Capability.VIEW_GROUPS,
+            "category_capability": Capability.VIEW_TENANTS,
             "items": {
-                "/admin/groups": [Capability.VIEW_GROUPS],
+                "/admin/tenants": [Capability.VIEW_TENANTS],
                 "/players": [Capability.VIEW_PLAYERS],
                 "/admin/users": [Capability.VIEW_USERS],
             }

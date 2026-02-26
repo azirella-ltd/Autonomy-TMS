@@ -33,7 +33,7 @@ import {
 } from "lucide-react";
 import { cn } from "../lib/utils/cn";
 import { useAuth } from "../contexts/AuthContext";
-import { isSystemAdmin, isGroupAdmin } from "../utils/authUtils";
+import { isSystemAdmin, isTenantAdmin } from "../utils/authUtils";
 import simulationApi, { api } from "../services/api";
 import { getSupplyChainConfigById } from "../services/supplyChainConfigService";
 
@@ -44,7 +44,7 @@ const Navbar = () => {
   const [gameInfo, setGameInfo] = useState(null);
   const [systemConfigName, setSystemConfigName] = useState(null);
   const [supplyChainConfigName, setSupplyChainConfigName] = useState(null);
-  const [customerMode, setCustomerMode] = useState(null); // 'learning' or 'production'
+  const [tenantMode, setTenantMode] = useState(null); // 'learning' or 'production'
   const menuRef = useRef(null);
   const buttonRef = useRef(null);
   const navigate = useNavigate();
@@ -58,24 +58,24 @@ const Navbar = () => {
     setCurrentPath(location.pathname);
   }, [location]);
 
-  // Fetch customer mode for GROUP_ADMIN users
+  // Fetch tenant mode for TENANT_ADMIN users
   useEffect(() => {
-    const fetchCustomerMode = async () => {
-      if (user?.user_type === 'GROUP_ADMIN' && user?.customer_id) {
+    const fetchTenantMode = async () => {
+      if ((user?.user_type === 'TENANT_ADMIN' || user?.user_type === 'GROUP_ADMIN') && user?.tenant_id) {
         try {
-          const response = await api.get(`/customers/${user.customer_id}`);
-          setCustomerMode(response.data.mode || 'learning');
+          const response = await api.get(`/tenants/${user.tenant_id}`);
+          setTenantMode(response.data.mode || 'learning');
         } catch (error) {
-          console.error('Failed to fetch customer mode:', error);
-          setCustomerMode('learning'); // Default to learning on error
+          console.error('Failed to fetch tenant mode:', error);
+          setTenantMode('learning'); // Default to learning on error
         }
       } else if (user?.user_type === 'SYSTEM_ADMIN') {
-        setCustomerMode(null); // System admin doesn't have a customer mode
+        setTenantMode(null); // System admin doesn't have a tenant mode
       }
     };
 
     if (user) {
-      fetchCustomerMode();
+      fetchTenantMode();
     }
   }, [user]);
 
@@ -159,15 +159,15 @@ const Navbar = () => {
     const onSupplyChainRoute = location.pathname.includes(
       "/supply-chain-config"
     );
-    const onGroupSupplyChainRoute = location.pathname.includes(
-      "/admin/customer/supply-chain-configs"
+    const onTenantSupplyChainRoute = location.pathname.includes(
+      "/admin/tenant/supply-chain-configs"
     );
     const onGameFromConfigRoute = location.pathname.includes(
       "/scenarios/new-from-config"
     );
 
     if (
-      !(onSupplyChainRoute || onGroupSupplyChainRoute || onGameFromConfigRoute)
+      !(onSupplyChainRoute || onTenantSupplyChainRoute || onGameFromConfigRoute)
     ) {
       setSupplyChainConfigName(null);
       return;
@@ -201,10 +201,10 @@ const Navbar = () => {
   }, [supplyChainConfigId, location.pathname]);
 
   const isSysAdmin = isSystemAdmin(user);
-  // Check for GROUP_ADMIN specifically (not SYSTEM_ADMIN)
-  const isGrpAdmin = !isSysAdmin && isGroupAdmin(user);
-  const isProductionMode = customerMode === 'production';
-  const isLearningMode = customerMode === 'learning';
+  // Check for TENANT_ADMIN specifically (not SYSTEM_ADMIN)
+  const isGrpAdmin = !isSysAdmin && isTenantAdmin(user);
+  const isProductionMode = tenantMode === 'production';
+  const isLearningMode = tenantMode === 'learning';
 
   // Build navigation based on role and group mode
   const getNavigation = () => {
@@ -214,7 +214,7 @@ const Navbar = () => {
     }
 
     if (isGrpAdmin && isProductionMode) {
-      // GROUP_ADMIN (Production): Insights-driven navigation
+      // TENANT_ADMIN (Production): Insights-driven navigation
       return [
         { name: "Insights", path: "/insights", icon: InsightsIcon },
         { name: "Planning", path: "/planning", icon: PlanningIcon },
@@ -224,7 +224,7 @@ const Navbar = () => {
     }
 
     if (isGrpAdmin && isLearningMode) {
-      // GROUP_ADMIN (Learning): Learning-focused navigation
+      // TENANT_ADMIN (Learning): Learning-focused navigation
       return [
         { name: "Dashboard", path: "/admin", icon: DashboardIcon },
         { name: "Scenarios", path: "/games", icon: GamesIcon },
@@ -318,13 +318,13 @@ const Navbar = () => {
   // Build admin menu items based on role and group mode
   const getAdminMenuItems = () => {
     if (isSysAdmin) {
-      // SYSTEM_ADMIN: Group management and system-wide configuration
+      // SYSTEM_ADMIN: Organization management and system-wide configuration
       return [
         {
-          label: "Groups Management",
+          label: "Organization Management",
           icon: GroupsIcon,
           onClick: () => {
-            navigate("/admin/customers");
+            navigate("/admin/tenants");
             handleMenuClose();
           },
         },
@@ -356,7 +356,7 @@ const Navbar = () => {
     }
 
     if (isGrpAdmin && isLearningMode) {
-      // GROUP_ADMIN (Learning): Learning-focused admin menu
+      // TENANT_ADMIN (Learning): Learning-focused admin menu
       return [
         {
           label: "Learning Home",
@@ -394,7 +394,7 @@ const Navbar = () => {
           label: "Supply Chain Configs",
           icon: NetworkIcon,
           onClick: () => {
-            navigate("/admin/customer/supply-chain-configs");
+            navigate("/admin/tenant/supply-chain-configs");
             handleMenuClose();
           },
         },
@@ -434,7 +434,7 @@ const Navbar = () => {
     }
 
     if (isGrpAdmin && isProductionMode) {
-      // GROUP_ADMIN (Production): Operations-focused admin menu with model training access
+      // TENANT_ADMIN (Production): Operations-focused admin menu with model training access
       return [
         {
           label: "Insights & Actions",
@@ -488,7 +488,7 @@ const Navbar = () => {
           label: "Supply Chain Configs",
           icon: NetworkIcon,
           onClick: () => {
-            navigate("/admin/customer/supply-chain-configs");
+            navigate("/admin/tenant/supply-chain-configs");
             handleMenuClose();
           },
         },
@@ -540,7 +540,7 @@ const Navbar = () => {
           <Link
             to={
               isSysAdmin
-                ? "/admin/customers"
+                ? "/admin/tenants"
                 : isGrpAdmin && isProductionMode
                 ? "/insights"
                 : isGrpAdmin && isLearningMode
@@ -642,7 +642,7 @@ const Navbar = () => {
                   {user?.name || user?.full_name || "User"}
                 </p>
                 <p className="text-xs text-muted-foreground leading-tight">
-                  {user?.powell_role ? user.powell_role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : (user?.user_type === 'systemadmin' ? 'System Admin' : user?.user_type === 'groupadmin' ? 'Customer Admin' : '')}
+                  {user?.powell_role ? user.powell_role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : (user?.user_type === 'systemadmin' ? 'System Admin' : (user?.user_type === 'tenantadmin' || user?.user_type === 'groupadmin') ? 'Organization Admin' : '')}
                 </p>
               </div>
               {menuOpen ? (

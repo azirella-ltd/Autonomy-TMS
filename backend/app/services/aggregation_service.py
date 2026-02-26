@@ -185,7 +185,7 @@ class AggregationService:
     4. Computes statistical moments
 
     Usage:
-        service = AggregationService(db, customer_id)
+        service = AggregationService(db, tenant_id)
         await service.load_hierarchies()
 
         # Aggregate demand to S&OP level (Country x Family x Month)
@@ -200,11 +200,11 @@ class AggregationService:
     def __init__(
         self,
         db: AsyncSession,
-        customer_id: int,
+        tenant_id: int,
         aggregation_rules: Optional[Dict[str, AggregationRule]] = None
     ):
         self.db = db
-        self.customer_id = customer_id
+        self.tenant_id = tenant_id
         self.rules = aggregation_rules or DEFAULT_AGGREGATION_RULES
 
         # Hierarchy caches
@@ -222,7 +222,7 @@ class AggregationService:
         """Load site hierarchy structure."""
         result = await self.db.execute(
             select(SiteHierarchyNode).where(
-                SiteHierarchyNode.customer_id == self.customer_id
+                SiteHierarchyNode.tenant_id == self.tenant_id
             )
         )
         nodes = result.scalars().all()
@@ -256,7 +256,7 @@ class AggregationService:
         """Load product hierarchy structure."""
         result = await self.db.execute(
             select(ProductHierarchyNode).where(
-                ProductHierarchyNode.customer_id == self.customer_id
+                ProductHierarchyNode.tenant_id == self.tenant_id
             )
         )
         nodes = result.scalars().all()
@@ -526,11 +526,11 @@ class AggregationService:
 
 async def aggregate_to_sop_level(
     db: AsyncSession,
-    customer_id: int,
+    tenant_id: int,
     detailed_records: List[DetailedRecord]
 ) -> List[AggregatedRecord]:
     """Aggregate records to S&OP level (Country x Family x Month)."""
-    service = AggregationService(db, customer_id)
+    service = AggregationService(db, tenant_id)
     await service.load_hierarchies()
     return service.aggregate(
         detailed_records,
@@ -542,11 +542,11 @@ async def aggregate_to_sop_level(
 
 async def aggregate_to_mps_level(
     db: AsyncSession,
-    customer_id: int,
+    tenant_id: int,
     detailed_records: List[DetailedRecord]
 ) -> List[AggregatedRecord]:
     """Aggregate records to MPS level (Site x Group x Week)."""
-    service = AggregationService(db, customer_id)
+    service = AggregationService(db, tenant_id)
     await service.load_hierarchies()
     return service.aggregate(
         detailed_records,

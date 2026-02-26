@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from app.db.session import SessionLocal
 from app.models.supply_chain_config import SupplyChainConfig
-from app.models.customer import Customer
+from app.models.tenant import Tenant
 from app.services.aws_sc_planning.planner import AWSSupplyChainPlanner
 
 
@@ -33,26 +33,26 @@ async def test_planner_with_group_id():
 
         # Get Complex_SC customer (customer_id=3) which has planning data
         result = await db.execute(
-            select(Customer).filter(Customer.name == "Complex_SC")
+            select(Tenant).filter(Tenant.name == "Complex_SC")
         )
-        customer = result.scalar_one_or_none()
+        tenant = result.scalar_one_or_none()
 
-        if not customer:
-            print("❌ Complex_SC customer not found")
+        if not tenant:
+            print("❌ Complex_SC tenant not found")
             return False
 
-        print(f"✓ Found customer: {customer.name} (ID={customer.id})")
+        print(f"✓ Found tenant: {tenant.name} (ID={tenant.id})")
 
         # Get the config for this customer
         result = await db.execute(
             select(SupplyChainConfig).filter(
-                SupplyChainConfig.customer_id == customer.id
+                SupplyChainConfig.tenant_id == tenant.id
             ).limit(1)
         )
         config = result.scalar_one_or_none()
 
         if not config:
-            print(f"❌ No config found for customer {customer.id}")
+            print(f"❌ No config found for tenant {tenant.id}")
             return False
 
         print(f"✓ Found config: {config.name} (ID={config.id})")
@@ -79,12 +79,12 @@ async def test_planner_with_group_id():
         try:
             planner_new = AWSSupplyChainPlanner(
                 config_id=config.id,
-                customer_id=customer.id,
+                tenant_id=tenant.id,
                 planning_horizon=7
             )
             print(f"✓ NEW planner created successfully")
             print(f"  - config_id: {planner_new.config_id}")
-            print(f"  - customer_id: {planner_new.customer_id}")
+            print(f"  - customer_id: {planner_new.tenant_id}")
             print(f"  - planning_horizon: {planner_new.planning_horizon}")
             print()
         except Exception as e:
@@ -124,7 +124,7 @@ async def test_planner_with_group_id():
                 # Verify all plans have customer_id set
                 print("6. Verifying supply plans have customer_id...")
                 print("-" * 80)
-                plans_with_group = sum(1 for p in supply_plans if p.customer_id == customer.id)
+                plans_with_group = sum(1 for p in supply_plans if p.tenant_id == tenant.id)
                 print(f"  - Plans with customer_id: {plans_with_group}/{len(supply_plans)}")
 
                 if plans_with_group == len(supply_plans):
@@ -151,7 +151,7 @@ async def test_planner_with_group_id():
         print("    accept and use customer_id for filtering")
         print("  ✓ Planning execution works with customer-based filtering")
         if is_valid and len(supply_plans) > 0:
-            print(f"  ✓ Supply plans generated with customer_id={customer.id}")
+            print(f"  ✓ Supply plans generated with tenant_id={tenant.id}")
         print()
         print("=" * 80)
 

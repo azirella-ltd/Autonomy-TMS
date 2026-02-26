@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import SessionLocal
 from app.models.supply_chain_config import SupplyChainConfig
-from app.models.customer import Customer
+from app.models.tenant import Tenant
 from app.models.aws_sc_planning import Forecast, SupplyPlan, InvPolicy
 
 
@@ -35,20 +35,20 @@ async def verify_multi_tenancy():
         print("1. Customers and Supply Chain Configurations")
         print("-" * 80)
 
-        result = await db.execute(select(Customer))
-        customers = result.scalars().all()
+        result = await db.execute(select(Tenant))
+        tenants = result.scalars().all()
 
-        print(f"Found {len(customers)} customers:\n")
+        print(f"Found {len(tenants)} tenants:\n")
 
-        for customer in customers:
+        for tenant in tenants:
             configs = await db.execute(
                 select(SupplyChainConfig).filter(
-                    SupplyChainConfig.customer_id == customer.id
+                    SupplyChainConfig.tenant_id == tenant.id
                 )
             )
             configs = configs.scalars().all()
 
-            print(f"  Customer {customer.id}: {customer.name}")
+            print(f"  Customer {tenant.id}: {tenant.name}")
             print(f"  Configs: {len(configs)}")
             for cfg in configs[:3]:  # Show first 3
                 print(f"    - {cfg.id}: {cfg.name}")
@@ -62,8 +62,8 @@ async def verify_multi_tenancy():
         print("\n2. Data Isolation by Customer")
         print("-" * 80)
 
-        for customer in customers[:3]:  # Check first 3 customers
-            print(f"\n  Customer {customer.id}: {customer.name}")
+        for tenant in tenants[:3]:  # Check first 3 tenants
+            print(f"\n  Customer {tenant.id}: {tenant.name}")
 
             # Count records per table
             tables = [
@@ -74,7 +74,7 @@ async def verify_multi_tenancy():
 
             for table_name, model in tables:
                 count = await db.execute(
-                    select(model).filter(model.customer_id == customer.id)
+                    select(model).filter(model.customer_id == tenant.id)
                 )
                 count = len(count.scalars().all())
                 print(f"    {table_name:20}: {count:5} records")
@@ -85,12 +85,12 @@ async def verify_multi_tenancy():
         print("\n\n3. Foreign Key Integrity")
         print("-" * 80)
 
-        # Check that forecast.customer_id matches config.customer_id
+        # Check that forecast.customer_id matches config.tenant_id
         query = text("""
             SELECT
                 COUNT(*) as total,
-                SUM(CASE WHEN f.customer_id = sc.customer_id THEN 1 ELSE 0 END) as matching,
-                SUM(CASE WHEN f.customer_id != sc.customer_id THEN 1 ELSE 0 END) as mismatched
+                SUM(CASE WHEN f.customer_id = CAST(sc.tenant_id AS VARCHAR) THEN 1 ELSE 0 END) as matching,
+                SUM(CASE WHEN f.customer_id != CAST(sc.tenant_id AS VARCHAR) THEN 1 ELSE 0 END) as mismatched
             FROM forecast f
             INNER JOIN supply_chain_configs sc ON f.config_id = sc.id
             WHERE f.customer_id IS NOT NULL
@@ -139,10 +139,10 @@ async def verify_multi_tenancy():
         print("-" * 80)
 
         # Get a sample customer and config
-        first_customer = customers[0]
+        first_tenant = tenants[0]
         configs = await db.execute(
             select(SupplyChainConfig).filter(
-                SupplyChainConfig.customer_id == first_customer.id
+                SupplyChainConfig.tenant_id == first_tenant.id
             ).limit(1)
         )
         first_config = configs.scalar_one_or_none()
@@ -154,7 +154,7 @@ async def verify_multi_tenancy():
             start = time.perf_counter()
             forecasts = await db.execute(
                 select(Forecast).filter(
-                    Forecast.customer_id == first_customer.id,
+                    Forecast.customer_id == first_tenant.id,
                     Forecast.config_id == first_config.id
                 )
             )
@@ -162,7 +162,7 @@ async def verify_multi_tenancy():
             elapsed = (time.perf_counter() - start) * 1000  # Convert to ms
 
             print(f"\n  Query: SELECT * FROM forecast")
-            print(f"         WHERE customer_id = {first_customer.id} AND config_id = {first_config.id}")
+            print(f"         WHERE customer_id = {first_tenant.id} AND config_id = {first_config.id}")
             print(f"\n  Results: {len(forecasts)} records in {elapsed:.2f}ms")
             print(f"  Performance: {'✅ Fast' if elapsed < 100 else '⚠️ Slow'}")
 
@@ -174,7 +174,7 @@ async def verify_multi_tenancy():
         print("=" * 80)
 
         checks = [
-            ("Customers and configs loaded", len(customers) > 0),
+            ("Customers and configs loaded", len(tenants) > 0),
             ("Data isolation by customer", True),  # Verified above
             ("Foreign key integrity", mismatched == 0),
             ("Composite indexes exist", len(rows) > 0),

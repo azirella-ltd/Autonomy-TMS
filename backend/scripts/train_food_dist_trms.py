@@ -34,7 +34,7 @@ except ImportError:
 
 from sqlalchemy import select
 from app.db.session import async_session_factory
-from app.models.customer import Customer
+from app.models.tenant import Tenant
 from app.models.trm_training_data import TRMReplayBuffer
 
 logging.basicConfig(level=logging.INFO)
@@ -285,17 +285,17 @@ async def train_trm_models():
         return
 
     async with async_session_factory() as db:
-        # Find Food Dist customer
+        # Find Food Dist tenant
         result = await db.execute(
-            select(Customer).where(Customer.name == "Food Dist")
+            select(Tenant).where(Tenant.name == "Food Dist")
         )
-        customer = result.scalar_one_or_none()
+        tenant = result.scalar_one_or_none()
 
-        if not customer:
-            print("ERROR: Food Dist customer not found")
+        if not tenant:
+            print("ERROR: Food Dist tenant not found")
             return
 
-        print(f"\nFound Food Dist customer: id={customer.id}")
+        print(f"\nFound Food Dist tenant: id={tenant.id}")
 
         # TRM types to train
         trm_types = {
@@ -316,7 +316,7 @@ async def train_trm_models():
 
             # Load data
             logger.info(f"Loading replay buffer data for {trm_type}...")
-            data = await load_replay_buffer_data(db, customer.id, trm_type, limit=5000)
+            data = await load_replay_buffer_data(db, tenant.id, trm_type, limit=5000)
 
             states, actions, rewards, next_states, dones, is_expert = data
 

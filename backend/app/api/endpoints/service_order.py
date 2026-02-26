@@ -150,7 +150,7 @@ async def create_service_order(
     order: ServiceOrderCreate
 ):
     """Create service order"""
-    company_id = current_user.customer_id
+    company_id = current_user.tenant_id
 
     service_order = ServiceOrder(
         company_id=company_id,
@@ -188,7 +188,7 @@ async def bulk_create_service_orders(
     orders: List[ServiceOrderCreate]
 ):
     """Bulk create service orders"""
-    company_id = current_user.customer_id
+    company_id = current_user.tenant_id
     created_count = 0
 
     for order in orders:

@@ -47,7 +47,7 @@ from app.models.planning_hierarchy import (
     SiteHierarchyNode, ProductHierarchyNode,
     SiteHierarchyLevel, ProductHierarchyLevel
 )
-from app.models.customer import Customer, CustomerMode, ClockMode
+from app.models.tenant import Tenant, TenantMode, ClockMode
 from app.models.user import User
 from app.models.agent_config import AgentConfig
 from app.models.supplier import VendorProduct, VendorLeadTime
@@ -508,28 +508,28 @@ class FoodDistConfigGenerator:
 
     def __init__(self, db: AsyncSession):
         self.db = db
-        self.customer: Optional[Customer] = None
+        self.tenant: Optional[Tenant] = None
         self.sc_config: Optional[SupplyChainConfig] = None
         self.products: Dict[str, Product] = {}
         self.nodes: Dict[str, Node] = {}
 
     async def generate(
         self,
-        customer_name: str = "Food Dist",
+        tenant_name: str = "Food Dist",
         admin_email: str = "admin@distdemo.com",
         admin_name: str = "Food Dist Admin",
         random_seed: Optional[int] = 42,
-        existing_customer_id: Optional[int] = None,
+        existing_tenant_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Generate the complete Food Dist configuration.
 
         Args:
-            customer_name: Name of the customer
-            admin_email: Email for the customer admin
-            admin_name: Name for the customer admin
+            tenant_name: Name of the tenant
+            admin_email: Email for the tenant admin
+            admin_name: Name for the tenant admin
             random_seed: Seed for reproducible random generation
-            existing_customer_id: If provided, skip customer/admin creation and use this customer
+            existing_tenant_id: If provided, skip tenant/admin creation and use this tenant
 
         Returns:
             Summary of created entities
@@ -537,35 +537,35 @@ class FoodDistConfigGenerator:
         if random_seed:
             random.seed(random_seed)
 
-        logger.info(f"Generating Food Dist configuration: {customer_name}")
+        logger.info(f"Generating Food Dist configuration: {tenant_name}")
 
-        # 1. Create or load customer
+        # 1. Create or load tenant
         admin = None
-        if existing_customer_id:
-            # Use existing customer — skip admin/customer creation
+        if existing_tenant_id:
+            # Use existing tenant — skip admin/tenant creation
             result = await self.db.execute(
-                select(Customer).where(Customer.id == existing_customer_id)
+                select(Tenant).where(Tenant.id == existing_tenant_id)
             )
-            self.customer = result.scalar_one_or_none()
-            if not self.customer:
-                raise ValueError(f"Customer with id={existing_customer_id} not found")
-            logger.info(f"Using existing customer: {self.customer.name} (ID: {self.customer.id})")
+            self.tenant = result.scalar_one_or_none()
+            if not self.tenant:
+                raise ValueError(f"Tenant with id={existing_tenant_id} not found")
+            logger.info(f"Using existing tenant: {self.tenant.name} (ID: {self.tenant.id})")
         else:
-            admin, self.customer = await self._create_admin_and_customer(customer_name, admin_email, admin_name)
+            admin, self.tenant = await self._create_admin_and_tenant(tenant_name, admin_email, admin_name)
 
-        # 2b. Check if config already exists for this customer
+        # 2b. Check if config already exists for this tenant
         existing_config = await self.db.execute(
             select(SupplyChainConfig).where(
-                SupplyChainConfig.customer_id == self.customer.id,
+                SupplyChainConfig.tenant_id == self.tenant.id,
                 SupplyChainConfig.name == "Food Dist Distribution Network",
             )
         )
         existing_config = existing_config.scalar_one_or_none()
         if existing_config:
-            logger.info(f"SC config already exists for customer {self.customer.id}: {existing_config.name} (ID: {existing_config.id})")
+            logger.info(f"SC config already exists for tenant {self.tenant.id}: {existing_config.name} (ID: {existing_config.id})")
             return {
-                "customer_id": self.customer.id,
-                "customer_name": self.customer.name,
+                "tenant_id": self.tenant.id,
+                "tenant_name": self.tenant.name,
                 "admin_user_id": admin.id if admin else None,
                 "config_id": existing_config.id,
                 "dc_node_id": None,
@@ -617,8 +617,8 @@ class FoodDistConfigGenerator:
         await self.db.commit()
 
         return {
-            "customer_id": self.customer.id,
-            "customer_name": customer_name,
+            "tenant_id": self.tenant.id,
+            "tenant_name": tenant_name,
             "admin_user_id": admin.id if admin else None,
             "config_id": self.sc_config.id,
             "dc_node_id": dc_node.id,
@@ -643,46 +643,46 @@ class FoodDistConfigGenerator:
             }
         }
 
-    async def _create_admin_and_customer(self, customer_name: str, email: str, name: str) -> tuple[User, Customer]:
-        """Create the Food Dist customer and admin user together.
+    async def _create_admin_and_tenant(self, tenant_name: str, email: str, name: str) -> tuple[User, Tenant]:
+        """Create the Food Dist tenant and admin user together.
 
-        Note: Customer requires admin_id, admin requires customer_id - we handle this
-        by creating admin first without customer_id, then customer with admin_id,
-        then updating admin with customer_id.
+        Note: Tenant requires admin_id, admin requires tenant_id - we handle this
+        by creating admin first without tenant_id, then tenant with admin_id,
+        then updating admin with tenant_id.
         """
         from app.core.security import get_password_hash
         from app.services.bootstrap import DEFAULT_ADMIN_PASSWORD
 
-        # 1. Create admin user first (without customer_id initially)
+        # 1. Create admin user first (without tenant_id initially)
         user = User(
             email=email,
             hashed_password=get_password_hash(DEFAULT_ADMIN_PASSWORD),
             full_name=name,
             is_active=True,
             is_superuser=False,
-            user_type="GROUP_ADMIN",
+            user_type="TENANT_ADMIN",
         )
         self.db.add(user)
         await self.db.flush()
         logger.info(f"Created admin user: {user.email} (ID: {user.id})")
 
-        # 2. Create customer with admin_id
-        customer = Customer(
-            name=customer_name,
+        # 2. Create tenant with admin_id
+        tenant = Tenant(
+            name=tenant_name,
             description="Food Dist Learning Environment - Foodservice redistribution simulation",
             admin_id=user.id,
-            mode=CustomerMode.LEARNING,
+            mode=TenantMode.LEARNING,
             clock_mode=ClockMode.TURN_BASED,
         )
-        self.db.add(customer)
+        self.db.add(tenant)
         await self.db.flush()
-        logger.info(f"Created customer: {customer.name} (ID: {customer.id})")
+        logger.info(f"Created tenant: {tenant.name} (ID: {tenant.id})")
 
-        # 3. Update user with customer_id
-        user.customer_id = customer.id
+        # 3. Update user with tenant_id
+        user.tenant_id = tenant.id
         await self.db.flush()
 
-        return user, customer
+        return user, tenant
 
     async def _create_sc_config(self) -> SupplyChainConfig:
         """Create the supply chain configuration."""
@@ -690,7 +690,7 @@ class FoodDistConfigGenerator:
             name="Food Dist Distribution Network",
             description="Foodservice redistribution network - "
                        "Multi-temperature distribution with 2-4 day delivery capability",
-            customer_id=self.customer.id,
+            tenant_id=self.tenant.id,
             is_active=True,
             site_type_definitions=[
                 {"type": "SUPPLIER", "label": "Supplier", "order": 0, "is_required": False, "master_type": "market_supply"},
@@ -1092,7 +1092,7 @@ class FoodDistConfigGenerator:
         """Create site hierarchy."""
         # Company level
         company = SiteHierarchyNode(
-            customer_id=self.customer.id,
+            tenant_id=self.tenant.id,
             code="FOODDIST_CORP",
             name="Food Dist Corporation",
             hierarchy_level=SiteHierarchyLevel.COMPANY,
@@ -1161,7 +1161,7 @@ class FoodDistConfigGenerator:
                 continue  # skip empty regions
 
             region_node = SiteHierarchyNode(
-                customer_id=self.customer.id,
+                tenant_id=self.tenant.id,
                 code=f"REG_{region_code}",
                 name=f"{region_info['name']} Region",
                 parent_id=company.id,
@@ -1176,7 +1176,7 @@ class FoodDistConfigGenerator:
 
             for state_abbr, sites in region_info["states"].items():
                 state_node = SiteHierarchyNode(
-                    customer_id=self.customer.id,
+                    tenant_id=self.tenant.id,
                     code=f"ST_{state_abbr}",
                     name=STATE_NAMES.get(state_abbr, state_abbr),
                     parent_id=region_node.id,
@@ -1191,7 +1191,7 @@ class FoodDistConfigGenerator:
 
                 for site_node_obj, site_label in sites:
                     site_hier = SiteHierarchyNode(
-                        customer_id=self.customer.id,
+                        tenant_id=self.tenant.id,
                         code=site_node_obj.name,
                         name=site_label,
                         site_id=site_node_obj.id,
@@ -1217,7 +1217,7 @@ class FoodDistConfigGenerator:
             cat_code = f"CAT_{group_def.temperature.value.upper()}"
             if cat_code not in category_nodes:
                 category = ProductHierarchyNode(
-                    customer_id=self.customer.id,
+                    tenant_id=self.tenant.id,
                     code=cat_code,
                     name=f"{group_def.temperature.value.title()} Products",
                     hierarchy_level=ProductHierarchyLevel.CATEGORY,
@@ -1233,7 +1233,7 @@ class FoodDistConfigGenerator:
 
             # Family (product group)
             family = ProductHierarchyNode(
-                customer_id=self.customer.id,
+                tenant_id=self.tenant.id,
                 code=group_def.code,
                 name=group_def.name,
                 parent_id=category.id,
@@ -1250,7 +1250,7 @@ class FoodDistConfigGenerator:
                 if product_def.sku in self.products:
                     product = self.products[product_def.sku]
                     prod_node = ProductHierarchyNode(
-                        customer_id=self.customer.id,
+                        tenant_id=self.tenant.id,
                         code=product_def.sku,
                         name=product_def.name,
                         product_id=str(product.id),
@@ -1414,10 +1414,10 @@ class FoodDistConfigGenerator:
 
 async def generate_food_dist_config(
     db: AsyncSession,
-    customer_name: str = "Food Dist",
+    tenant_name: str = "Food Dist",
     admin_email: str = "admin@distdemo.com",
     admin_name: str = "Food Dist Admin",
-    existing_customer_id: Optional[int] = None,
+    existing_tenant_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Convenience function to generate Food Dist configuration.
@@ -1426,15 +1426,15 @@ async def generate_food_dist_config(
         from app.services.food_dist_config_generator import generate_food_dist_config
         result = await generate_food_dist_config(db)
 
-        # Or with existing customer:
-        result = await generate_food_dist_config(db, existing_customer_id=14)
+        # Or with existing tenant:
+        result = await generate_food_dist_config(db, existing_tenant_id=14)
     """
     generator = FoodDistConfigGenerator(db)
     return await generator.generate(
-        customer_name=customer_name,
+        tenant_name=tenant_name,
         admin_email=admin_email,
         admin_name=admin_name,
-        existing_customer_id=existing_customer_id,
+        existing_tenant_id=existing_tenant_id,
     )
 
 

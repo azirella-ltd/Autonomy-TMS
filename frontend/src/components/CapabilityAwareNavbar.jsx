@@ -49,7 +49,7 @@ import { Avatar, AvatarFallback } from './ui/avatar';
 import { cn } from '../lib/utils/cn';
 import { useAuth } from '../contexts/AuthContext';
 import { useCapabilities } from '../hooks/useCapabilities';
-import { isSystemAdmin, isGroupAdmin } from '../utils/authUtils';
+import { isSystemAdmin, isTenantAdmin } from '../utils/authUtils';
 import { getFilteredNavigation } from '../config/navigationConfig';
 
 const CapabilityAwareNavbar = () => {
@@ -61,7 +61,7 @@ const CapabilityAwareNavbar = () => {
   const location = useLocation();
 
   const isSysAdmin = isSystemAdmin(user);
-  const isGrpAdmin = isGroupAdmin(user);
+  const isGrpAdmin = isTenantAdmin(user);
 
   // Get filtered navigation based on user capabilities
   const navigation = useMemo(() => {
@@ -237,7 +237,7 @@ const CapabilityAwareNavbar = () => {
             </IconButton>
 
             <Link
-              to={isSysAdmin ? '/admin/customers' : '/dashboard'}
+              to={isSysAdmin ? '/admin/tenants' : '/dashboard'}
               className="flex items-center no-underline"
             >
               <img
@@ -303,7 +303,7 @@ const CapabilityAwareNavbar = () => {
                         {user?.name || user?.full_name || user?.email || 'User'}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {user?.powell_role ? user.powell_role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : (user?.user_type === 'systemadmin' ? 'System Admin' : user?.user_type === 'groupadmin' ? 'Customer Admin' : '')}
+                        {user?.powell_role ? user.powell_role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : (user?.user_type === 'systemadmin' ? 'System Admin' : (user?.user_type === 'tenantadmin' || user?.user_type === 'groupadmin') ? 'Organization Admin' : '')}
                       </p>
                     </div>
                     <ChevronDown className="h-4 w-4 text-muted-foreground" />

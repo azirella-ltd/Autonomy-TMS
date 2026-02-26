@@ -25,7 +25,7 @@ print(f"Using database at: {DATABASE_URL}")
 try:
     from app.db.base_class import Base, engine, SessionLocal
     from app.models import (
-        Customer,
+        Tenant,
         Game,
         GameStatus,
         ScenarioUser,
@@ -47,16 +47,16 @@ except ImportError as e:
 # Constants
 DEFAULT_CUSTOMER_NAME = "Default TBG"
 DEFAULT_CUSTOMER_DESCRIPTION = "Default Autonomy simulation customer"
-DEFAULT_ADMIN_USERNAME = "groupadmin"
-DEFAULT_ADMIN_EMAIL = "groupadmin@autonomy.ai"
+DEFAULT_ADMIN_USERNAME = "tenantadmin"
+DEFAULT_ADMIN_EMAIL = "tenantadmin@autonomy.ai"
 DEFAULT_ADMIN_FULL_NAME = "Customer Administrator"
 DEFAULT_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")
 DEFAULT_GAME_NAME = "Default Simulation"
 DEFAULT_AGENT_TYPE = "pid_heuristic"
 
-def ensure_customer(session: Session) -> Tuple[Customer, bool]:
+def ensure_customer(session: Session) -> Tuple[Tenant, bool]:
     """Create the default customer and admin if they do not already exist."""
-    existing_customer = session.query(Customer).filter(Customer.name == DEFAULT_CUSTOMER_NAME).first()
+    existing_customer = session.query(Tenant).filter(Tenant.name == DEFAULT_CUSTOMER_NAME).first()
     
     if existing_customer:
         print(f"Customer '{DEFAULT_CUSTOMER_NAME}' already exists with ID: {existing_customer.id}")
@@ -115,7 +115,7 @@ def ensure_customer(session: Session) -> Tuple[Customer, bool]:
     admin_user = SimpleUser(user_id)
     
     # Create the customer
-    customer = Customer(
+    customer = Tenant(
         name=DEFAULT_CUSTOMER_NAME,
         description=DEFAULT_CUSTOMER_DESCRIPTION,
         admin_id=admin_user.id,
@@ -138,7 +138,7 @@ def ensure_customer(session: Session) -> Tuple[Customer, bool]:
 
     return customer, True
 
-def ensure_default_game(session: Session, customer: Customer) -> Game:
+def ensure_default_game(session: Session, customer: Tenant) -> Game:
     """Ensure the default scenario exists for the supplied customer."""
     sc_config = ensure_supply_chain_config(session, customer)
     existing_game = session.query(Game).filter(

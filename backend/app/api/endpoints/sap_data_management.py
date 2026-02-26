@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db, require_customer_admin
+from app.api.deps import get_current_user, get_db, require_tenant_admin
 from app.models.user import User
 from app.services.sap_deployment_service import (
     SAPDeploymentService,
@@ -164,7 +164,7 @@ class ZTableAnalysisResponse(BaseModel):
 
 # Deployment Status Models
 class DeploymentStatusResponse(BaseModel):
-    customer_id: int
+    tenant_id: int
     phase: str
     connection_configured: bool
     connection_tested: bool
@@ -264,11 +264,11 @@ class DashboardSummaryResponse(BaseModel):
 @router.post("/connections", response_model=ConnectionResponse, tags=["sap-connections"])
 async def create_connection(
     request: ConnectionCreateRequest,
-    current_user: User = Depends(require_customer_admin),
+    current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new SAP connection configuration."""
-    service = create_deployment_service(db, current_user.customer_id)
+    service = create_deployment_service(db, current_user.tenant_id)
 
     try:
         system_type = SAPSystemType(request.system_type)
@@ -306,7 +306,7 @@ async def list_connections(
     db: AsyncSession = Depends(get_db),
 ):
     """List all SAP connections for the group."""
-    service = create_deployment_service(db, current_user.customer_id)
+    service = create_deployment_service(db, current_user.tenant_id)
     connections = await service.get_connections()
 
     return [
@@ -326,11 +326,11 @@ async def list_connections(
 @router.post("/connections/{connection_id}/test", response_model=ConnectionTestResponse, tags=["sap-connections"])
 async def test_connection(
     connection_id: int,
-    current_user: User = Depends(require_customer_admin),
+    current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Test an SAP connection."""
-    service = create_deployment_service(db, current_user.customer_id)
+    service = create_deployment_service(db, current_user.tenant_id)
     success, message = await service.test_connection(connection_id)
     return ConnectionTestResponse(success=success, message=message)
 
@@ -346,7 +346,7 @@ async def discover_tables(
     db: AsyncSession = Depends(get_db),
 ):
     """Discover available tables from an SAP connection."""
-    service = create_deployment_service(db, current_user.customer_id)
+    service = create_deployment_service(db, current_user.tenant_id)
 
     try:
         tables = await service.discover_tables(connection_id)
@@ -371,11 +371,11 @@ async def discover_tables(
 async def configure_table(
     connection_id: int,
     request: TableConfigRequest,
-    current_user: User = Depends(require_customer_admin),
+    current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Configure a table for extraction."""
-    service = create_deployment_service(db, current_user.customer_id)
+    service = create_deployment_service(db, current_user.tenant_id)
 
     table = await service.configure_table(
         connection_id=connection_id,
@@ -405,7 +405,7 @@ async def discover_z_tables(
     db: AsyncSession = Depends(get_db),
 ):
     """Discover Z-tables (custom SAP tables) from connection."""
-    service = create_deployment_service(db, current_user.customer_id)
+    service = create_deployment_service(db, current_user.tenant_id)
     z_tables = await service.discover_z_tables(connection_id)
     return z_tables
 
@@ -421,7 +421,7 @@ async def match_field(
     db: AsyncSession = Depends(get_db),
 ):
     """Match a single SAP field to the best AWS SC field."""
-    service = create_field_mapping_service(db, current_user.customer_id)
+    service = create_field_mapping_service(db, current_user.tenant_id)
 
     result = await service.match_field(
         sap_field=request.sap_field,
@@ -450,7 +450,7 @@ async def match_fields_batch(
     db: AsyncSession = Depends(get_db),
 ):
     """Match multiple SAP fields in batch."""
-    service = create_field_mapping_service(db, current_user.customer_id)
+    service = create_field_mapping_service(db, current_user.tenant_id)
 
     results = await service.match_fields_batch(
         fields=request.fields,
@@ -464,11 +464,11 @@ async def match_fields_batch(
 @router.post("/field-mapping/confirm", tags=["sap-field-mapping"])
 async def confirm_mapping(
     request: ConfirmMappingRequest,
-    current_user: User = Depends(require_customer_admin),
+    current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Confirm a field mapping (adds to learned mappings)."""
-    service = create_field_mapping_service(db, current_user.customer_id)
+    service = create_field_mapping_service(db, current_user.tenant_id)
     await service.confirm_mapping(
         sap_field=request.sap_field,
         aws_entity=request.aws_entity,
@@ -480,11 +480,11 @@ async def confirm_mapping(
 @router.delete("/field-mapping/{sap_field}", tags=["sap-field-mapping"])
 async def reject_mapping(
     sap_field: str,
-    current_user: User = Depends(require_customer_admin),
+    current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Reject a learned mapping."""
-    service = create_field_mapping_service(db, current_user.customer_id)
+    service = create_field_mapping_service(db, current_user.tenant_id)
     await service.reject_mapping(sap_field)
     return {"status": "rejected", "sap_field": sap_field}
 
@@ -495,28 +495,28 @@ async def get_mapping_statistics(
     db: AsyncSession = Depends(get_db),
 ):
     """Get statistics about current field mappings."""
-    service = create_field_mapping_service(db, current_user.customer_id)
+    service = create_field_mapping_service(db, current_user.tenant_id)
     return await service.get_mapping_statistics()
 
 
 @router.get("/field-mapping/export", tags=["sap-field-mapping"])
 async def export_mappings(
-    current_user: User = Depends(require_customer_admin),
+    current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Export all learned mappings."""
-    service = create_field_mapping_service(db, current_user.customer_id)
+    service = create_field_mapping_service(db, current_user.tenant_id)
     return await service.export_mappings()
 
 
 @router.post("/field-mapping/import", tags=["sap-field-mapping"])
 async def import_mappings(
     data: Dict[str, Any],
-    current_user: User = Depends(require_customer_admin),
+    current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Import previously exported mappings."""
-    service = create_field_mapping_service(db, current_user.customer_id)
+    service = create_field_mapping_service(db, current_user.tenant_id)
     count = await service.import_mappings(data)
     return {"status": "imported", "mappings_count": count}
 
@@ -532,7 +532,7 @@ async def analyze_z_table(
     db: AsyncSession = Depends(get_db),
 ):
     """Analyze a Z-table and suggest entity/field mappings."""
-    service = create_field_mapping_service(db, current_user.customer_id)
+    service = create_field_mapping_service(db, current_user.tenant_id)
 
     analysis = await service.analyze_z_table(
         table_name=request.table_name,
@@ -565,11 +565,11 @@ async def get_deployment_status(
     db: AsyncSession = Depends(get_db),
 ):
     """Get overall deployment status for the group."""
-    service = create_deployment_service(db, current_user.customer_id)
+    service = create_deployment_service(db, current_user.tenant_id)
     status = await service.get_deployment_status()
 
     return DeploymentStatusResponse(
-        customer_id=status.customer_id,
+        tenant_id=status.customer_id,
         phase=status.phase.value,
         connection_configured=status.connection_configured,
         connection_tested=status.connection_tested,
@@ -590,11 +590,11 @@ async def get_deployment_status(
 @router.post("/deployment-status/validate", tags=["sap-deployment"])
 async def validate_configuration(
     connection_id: int,
-    current_user: User = Depends(require_customer_admin),
+    current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Validate the entire configuration."""
-    service = create_deployment_service(db, current_user.customer_id)
+    service = create_deployment_service(db, current_user.tenant_id)
     is_valid, errors, warnings = await service.validate_configuration(connection_id)
 
     return {
@@ -611,11 +611,11 @@ async def validate_configuration(
 @router.post("/jobs", response_model=JobResponse, tags=["sap-ingestion"])
 async def create_job(
     request: CreateJobRequest,
-    current_user: User = Depends(require_customer_admin),
+    current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new ingestion job."""
-    service = create_ingestion_monitoring_service(db, current_user.customer_id)
+    service = create_ingestion_monitoring_service(db, current_user.tenant_id)
 
     try:
         job_type = JobType(request.job_type)
@@ -646,11 +646,11 @@ async def create_job(
 @router.post("/jobs/{job_id}/start", response_model=JobResponse, tags=["sap-ingestion"])
 async def start_job(
     job_id: int,
-    current_user: User = Depends(require_customer_admin),
+    current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Start an ingestion job."""
-    service = create_ingestion_monitoring_service(db, current_user.customer_id)
+    service = create_ingestion_monitoring_service(db, current_user.tenant_id)
     job = await service.start_job(job_id)
 
     return JobResponse(
@@ -676,7 +676,7 @@ async def update_job_progress(
     db: AsyncSession = Depends(get_db),
 ):
     """Update job progress."""
-    service = create_ingestion_monitoring_service(db, current_user.customer_id)
+    service = create_ingestion_monitoring_service(db, current_user.tenant_id)
 
     job = await service.update_job_progress(
         job_id=job_id,
@@ -693,11 +693,11 @@ async def update_job_progress(
 async def complete_job(
     job_id: int,
     status: str = "completed",
-    current_user: User = Depends(require_customer_admin),
+    current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Mark a job as completed."""
-    service = create_ingestion_monitoring_service(db, current_user.customer_id)
+    service = create_ingestion_monitoring_service(db, current_user.tenant_id)
 
     try:
         job_status = JobStatus(status)
@@ -729,7 +729,7 @@ async def list_jobs(
     db: AsyncSession = Depends(get_db),
 ):
     """List ingestion jobs."""
-    service = create_ingestion_monitoring_service(db, current_user.customer_id)
+    service = create_ingestion_monitoring_service(db, current_user.tenant_id)
 
     if active_only:
         jobs = await service.get_active_jobs()
@@ -761,7 +761,7 @@ async def get_job(
     db: AsyncSession = Depends(get_db),
 ):
     """Get a specific job."""
-    service = create_ingestion_monitoring_service(db, current_user.customer_id)
+    service = create_ingestion_monitoring_service(db, current_user.tenant_id)
     job = await service.get_job(job_id)
 
     if not job:
@@ -796,7 +796,7 @@ async def list_insights(
     db: AsyncSession = Depends(get_db),
 ):
     """List data ingestion insights."""
-    service = create_ingestion_monitoring_service(db, current_user.customer_id)
+    service = create_ingestion_monitoring_service(db, current_user.tenant_id)
 
     severity_enum = None
     if severity:
@@ -838,7 +838,7 @@ async def acknowledge_insight(
     db: AsyncSession = Depends(get_db),
 ):
     """Acknowledge an insight."""
-    service = create_ingestion_monitoring_service(db, current_user.customer_id)
+    service = create_ingestion_monitoring_service(db, current_user.tenant_id)
     insight = await service.acknowledge_insight(insight_id, current_user.email)
 
     if not insight:
@@ -860,7 +860,7 @@ async def list_actions(
     db: AsyncSession = Depends(get_db),
 ):
     """List remediation actions."""
-    service = create_ingestion_monitoring_service(db, current_user.customer_id)
+    service = create_ingestion_monitoring_service(db, current_user.tenant_id)
 
     status_enum = None
     if status:
@@ -906,7 +906,7 @@ async def update_action(
     db: AsyncSession = Depends(get_db),
 ):
     """Update an action's status."""
-    service = create_ingestion_monitoring_service(db, current_user.customer_id)
+    service = create_ingestion_monitoring_service(db, current_user.tenant_id)
 
     try:
         status = ActionStatus(request.status)
@@ -937,7 +937,7 @@ async def get_dashboard_summary(
     db: AsyncSession = Depends(get_db),
 ):
     """Get dashboard summary for SAP data management."""
-    service = create_ingestion_monitoring_service(db, current_user.customer_id)
+    service = create_ingestion_monitoring_service(db, current_user.tenant_id)
     summary = await service.get_dashboard_summary()
 
     return DashboardSummaryResponse(**summary)
@@ -1000,7 +1000,7 @@ async def suggest_config_name(
     Uses T001 company name, or T001W plant names as fallback.
     Call this before build-config/preview to pre-fill the config name.
     """
-    sap_data = await _load_sap_data(db, current_user.customer_id, connection_id)
+    sap_data = await _load_sap_data(db, current_user.tenant_id, connection_id)
     suggested = SAPConfigBuilder.suggest_config_name(sap_data)
     return {"suggested_name": suggested}
 
@@ -1022,14 +1022,14 @@ async def preview_config_build(
     and returns a preview without creating anything in the database.
     """
     # Load SAP data from connection
-    sap_data = await _load_sap_data(db, current_user.customer_id, request.connection_id)
+    sap_data = await _load_sap_data(db, current_user.tenant_id, request.connection_id)
 
     # Auto-suggest name if using default
     config_name = request.config_name
     if config_name == "SAP Import":
         config_name = SAPConfigBuilder.suggest_config_name(sap_data)
 
-    builder = SAPConfigBuilder(db, current_user.customer_id)
+    builder = SAPConfigBuilder(db, current_user.tenant_id)
     preview = await builder.preview(
         sap_data=sap_data,
         config_name=config_name,
@@ -1056,14 +1056,14 @@ async def build_config_from_sap(
     Creates all entities (sites, products, lanes, sourcing rules, BOM,
     inventory, forecasts) in the database from extracted SAP tables.
     """
-    sap_data = await _load_sap_data(db, current_user.customer_id, request.connection_id)
+    sap_data = await _load_sap_data(db, current_user.tenant_id, request.connection_id)
 
     # Auto-suggest name if using default
     config_name = request.config_name
     if config_name == "SAP Import":
         config_name = SAPConfigBuilder.suggest_config_name(sap_data)
 
-    builder = SAPConfigBuilder(db, current_user.customer_id)
+    builder = SAPConfigBuilder(db, current_user.tenant_id)
     result = await builder.build(
         sap_data=sap_data,
         config_name=config_name,
@@ -1143,14 +1143,14 @@ async def start_config_build(
     Step 1: Start a config build — creates config record, validates tables,
     detects Z-tables, and returns table inventory with anomalies.
     """
-    sap_data = await _load_sap_data(db, current_user.customer_id, request.connection_id)
+    sap_data = await _load_sap_data(db, current_user.tenant_id, request.connection_id)
 
     # Auto-suggest name if using default
     config_name = request.config_name
     if config_name == "SAP Import":
         config_name = SAPConfigBuilder.suggest_config_name(sap_data)
 
-    builder = SAPConfigBuilder(db, current_user.customer_id)
+    builder = SAPConfigBuilder(db, current_user.tenant_id)
     result = await builder.start_build(
         sap_data=sap_data,
         config_name=config_name,
@@ -1182,9 +1182,9 @@ async def execute_build_step(
     if step_number < 2 or step_number > 8:
         raise HTTPException(status_code=400, detail="Step must be between 2 and 8")
 
-    sap_data = await _load_sap_data(db, current_user.customer_id, request.connection_id)
+    sap_data = await _load_sap_data(db, current_user.tenant_id, request.connection_id)
 
-    builder = SAPConfigBuilder(db, current_user.customer_id)
+    builder = SAPConfigBuilder(db, current_user.tenant_id)
     result = await builder.build_step(
         config_id=config_id,
         step=step_number,
@@ -1214,9 +1214,9 @@ async def complete_config_build(
 
     Checks which steps are already done and runs the rest.
     """
-    sap_data = await _load_sap_data(db, current_user.customer_id, request.connection_id)
+    sap_data = await _load_sap_data(db, current_user.tenant_id, request.connection_id)
 
-    builder = SAPConfigBuilder(db, current_user.customer_id)
+    builder = SAPConfigBuilder(db, current_user.tenant_id)
     result = await builder.build_remaining(
         config_id=config_id,
         sap_data=sap_data,
@@ -1240,7 +1240,7 @@ async def get_build_status(
     db: AsyncSession = Depends(get_db),
 ):
     """Get current build status for a config (completed steps, entity counts)."""
-    builder = SAPConfigBuilder(db, current_user.customer_id)
+    builder = SAPConfigBuilder(db, current_user.tenant_id)
     status = await builder.get_build_status(config_id)
 
     if "error" in status:
@@ -1263,7 +1263,7 @@ async def delete_config_build(
 
     Use this to cancel a partial build or remove an unwanted config.
     """
-    builder = SAPConfigBuilder(db, current_user.customer_id)
+    builder = SAPConfigBuilder(db, current_user.tenant_id)
     deleted = await builder.delete_build(config_id)
 
     if not deleted:
@@ -1293,9 +1293,9 @@ async def analyze_z_table_deep(
     Calls SAPFieldMappingService.analyze_z_table() for per-field mapping
     with confidence scores, entity inference, and AI integration guidance.
     """
-    sap_data = await _load_sap_data(db, current_user.customer_id, request.connection_id)
+    sap_data = await _load_sap_data(db, current_user.tenant_id, request.connection_id)
 
-    builder = SAPConfigBuilder(db, current_user.customer_id)
+    builder = SAPConfigBuilder(db, current_user.tenant_id)
     result = await builder.analyze_z_table_deep(request.table_name, sap_data)
 
     if "error" in result:
@@ -1395,7 +1395,7 @@ class UserImportRequest(BaseModel):
 
 @router.get("/user-import/role-mappings")
 async def list_role_mappings(
-    current_user: User = Depends(require_customer_admin),
+    current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """List all role mapping rules for the current group."""
@@ -1403,7 +1403,7 @@ async def list_role_mappings(
 
     result = await db.execute(
         sa_select(SAPRoleMapping)
-        .where(SAPRoleMapping.customer_id == current_user.customer_id)
+        .where(SAPRoleMapping.customer_id == current_user.tenant_id)
         .order_by(SAPRoleMapping.priority)
     )
     mappings = result.scalars().all()
@@ -1413,12 +1413,12 @@ async def list_role_mappings(
 @router.post("/user-import/role-mappings")
 async def create_role_mapping(
     body: RoleMappingCreateRequest,
-    current_user: User = Depends(require_customer_admin),
+    current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new role mapping rule."""
     mapping = SAPRoleMapping(
-        customer_id=current_user.customer_id,
+        customer_id=current_user.tenant_id,
         agr_name_pattern=body.agr_name_pattern,
         pattern_type=body.pattern_type,
         powell_role=body.powell_role,
@@ -1437,7 +1437,7 @@ async def create_role_mapping(
 @router.delete("/user-import/role-mappings/{mapping_id}")
 async def delete_role_mapping(
     mapping_id: int,
-    current_user: User = Depends(require_customer_admin),
+    current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a role mapping rule."""
@@ -1446,7 +1446,7 @@ async def delete_role_mapping(
     result = await db.execute(
         sa_select(SAPRoleMapping).where(
             SAPRoleMapping.id == mapping_id,
-            SAPRoleMapping.customer_id == current_user.customer_id,
+            SAPRoleMapping.customer_id == current_user.tenant_id,
         )
     )
     mapping = result.scalar_one_or_none()
@@ -1463,11 +1463,11 @@ async def delete_role_mapping(
 @router.post("/user-import/preview")
 async def preview_user_import(
     body: UserImportRequest,
-    current_user: User = Depends(require_customer_admin),
+    current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Dry-run: show proposed user mappings without creating records."""
-    service = SAPUserProvisioningService(db, current_user.customer_id)
+    service = SAPUserProvisioningService(db, current_user.tenant_id)
     raw_data = {
         "usr02": body.usr02,
         "usr21": body.usr21,
@@ -1484,11 +1484,11 @@ async def preview_user_import(
 @router.post("/user-import/execute")
 async def execute_user_import(
     body: UserImportRequest,
-    current_user: User = Depends(require_customer_admin),
+    current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Commit import: create/update Autonomy users from SAP data."""
-    service = SAPUserProvisioningService(db, current_user.customer_id)
+    service = SAPUserProvisioningService(db, current_user.tenant_id)
     raw_data = {
         "usr02": body.usr02,
         "usr21": body.usr21,
@@ -1511,7 +1511,7 @@ async def execute_user_import(
 async def list_import_logs(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    current_user: User = Depends(require_customer_admin),
+    current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Return paginated import audit history."""
@@ -1520,7 +1520,7 @@ async def list_import_logs(
     # Count
     count_q = await db.execute(
         sa_select(func.count(SAPUserImportLog.id)).where(
-            SAPUserImportLog.customer_id == current_user.customer_id
+            SAPUserImportLog.customer_id == current_user.tenant_id
         )
     )
     total = count_q.scalar() or 0
@@ -1528,7 +1528,7 @@ async def list_import_logs(
     # Fetch
     result = await db.execute(
         sa_select(SAPUserImportLog)
-        .where(SAPUserImportLog.customer_id == current_user.customer_id)
+        .where(SAPUserImportLog.customer_id == current_user.tenant_id)
         .order_by(SAPUserImportLog.started_at.desc())
         .offset(offset)
         .limit(limit)

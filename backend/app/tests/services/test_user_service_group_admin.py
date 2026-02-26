@@ -64,7 +64,7 @@ def create_customer_with_admin(session, name, username, email):
         session,
         username=username,
         email=email,
-        user_type=UserTypeEnum.GROUP_ADMIN,
+        user_type=UserTypeEnum.TENANT_ADMIN,
     )
     customer = models.Customer(
         name=name,
@@ -94,7 +94,7 @@ def create_player(session, customer, username, email):
     return player
 
 
-def test_group_admin_lists_only_players_in_their_customer(db_session):
+def test_tenant_admin_lists_only_players_in_their_customer(db_session):
     customer_a, admin_a = create_customer_with_admin(db_session, "Customer A", "admin_a", "admin_a@example.com")
     customer_b, _ = create_customer_with_admin(db_session, "Customer B", "admin_b", "admin_b@example.com")
 
@@ -109,7 +109,7 @@ def test_group_admin_lists_only_players_in_their_customer(db_session):
     assert all(player.customer_id == customer_a.id for player in players)
 
 
-def test_group_admin_create_player_defaults_to_customer_and_type(db_session):
+def test_tenant_admin_create_player_defaults_to_customer_and_type(db_session):
     customer, admin = create_customer_with_admin(db_session, "Customer A", "admin", "admin@example.com")
     service = UserService(db_session)
 
@@ -127,7 +127,7 @@ def test_group_admin_create_player_defaults_to_customer_and_type(db_session):
     assert new_player.is_superuser is False
 
 
-def test_group_admin_cannot_create_non_player(db_session):
+def test_tenant_admin_cannot_create_non_player(db_session):
     _, admin = create_customer_with_admin(db_session, "Customer A", "admin", "admin@example.com")
     service = UserService(db_session)
 
@@ -137,7 +137,7 @@ def test_group_admin_cannot_create_non_player(db_session):
                 username="bad_user",
                 email="bad_user@example.com",
                 password="SecurePass1!",
-                user_type=UserTypeEnum.GROUP_ADMIN,
+                user_type=UserTypeEnum.TENANT_ADMIN,
             ),
             admin,
         )
@@ -145,7 +145,7 @@ def test_group_admin_cannot_create_non_player(db_session):
     assert exc.value.status_code == status.HTTP_403_FORBIDDEN
 
 
-def test_group_admin_updates_player_in_customer(db_session):
+def test_tenant_admin_updates_player_in_customer(db_session):
     customer, admin = create_customer_with_admin(db_session, "Customer A", "admin", "admin@example.com")
     player = create_player(db_session, customer, "player", "player@example.com")
     service = UserService(db_session)
@@ -159,7 +159,7 @@ def test_group_admin_updates_player_in_customer(db_session):
     assert updated.email == "updated@example.com"
 
 
-def test_group_admin_cannot_update_player_in_other_customer(db_session):
+def test_tenant_admin_cannot_update_player_in_other_customer(db_session):
     _, admin = create_customer_with_admin(db_session, "Customer A", "admin", "admin@example.com")
     other_customer, _ = create_customer_with_admin(db_session, "Customer B", "other_admin", "other_admin@example.com")
     other_player = create_player(db_session, other_customer, "player_b", "player_b@example.com")
@@ -175,7 +175,7 @@ def test_group_admin_cannot_update_player_in_other_customer(db_session):
     assert exc.value.status_code == status.HTTP_403_FORBIDDEN
 
 
-def test_group_admin_deletes_player_in_customer(db_session):
+def test_tenant_admin_deletes_player_in_customer(db_session):
     customer, admin = create_customer_with_admin(db_session, "Customer A", "admin", "admin@example.com")
     player = create_player(db_session, customer, "player", "player@example.com")
     service = UserService(db_session)
@@ -186,7 +186,7 @@ def test_group_admin_deletes_player_in_customer(db_session):
     assert db_session.get(models.User, player.id) is None
 
 
-def test_group_admin_cannot_delete_player_in_other_customer(db_session):
+def test_tenant_admin_cannot_delete_player_in_other_customer(db_session):
     _, admin = create_customer_with_admin(db_session, "Customer A", "admin", "admin@example.com")
     other_customer, _ = create_customer_with_admin(db_session, "Customer B", "other_admin", "other_admin@example.com")
     other_player = create_player(db_session, other_customer, "player_b", "player_b@example.com")

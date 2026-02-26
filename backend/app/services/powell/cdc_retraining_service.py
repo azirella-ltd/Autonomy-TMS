@@ -67,10 +67,10 @@ class CDCRetrainingService:
     checkpoint deployment.
     """
 
-    def __init__(self, db: Session, site_key: str, customer_id: int):
+    def __init__(self, db: Session, site_key: str, tenant_id: int):
         self.db = db
         self.site_key = site_key
-        self.customer_id = customer_id
+        self.tenant_id = tenant_id
         self.decision_tracker = SiteAgentDecisionTracker(db)
         self.reward_calculator = RewardCalculator()
 

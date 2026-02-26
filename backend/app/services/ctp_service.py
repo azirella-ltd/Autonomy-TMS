@@ -967,7 +967,7 @@ class CTPService:
 
             # Create CTP projection record
             ctp_record = CtpProjection(
-                company_id=game.customer_id or 1,
+                company_id=game.tenant_id or 1,
                 product_id=product_id,
                 site_id=node.id,
                 ctp_date=date.today(),

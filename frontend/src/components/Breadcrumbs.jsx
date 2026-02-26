@@ -100,8 +100,10 @@ const ROUTE_LABELS = {
   settings: 'Settings',
   'ai-assistant': 'AI Assistant',
   production: 'Production',
-  group: 'Customer',
-  customer: 'Customer',
+  group: 'Organization',
+  customer: 'Organization',
+  tenant: 'Organization',
+  tenants: 'Organizations',
 };
 
 const Breadcrumbs = () => {

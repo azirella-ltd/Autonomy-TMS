@@ -261,7 +261,7 @@ const UserEditor = ({ open, user, onClose, onSave }) => {
               disabled={saving}
             >
               <SelectOption value="USER">User</SelectOption>
-              <SelectOption value="GROUP_ADMIN">Customer Admin</SelectOption>
+              <SelectOption value="TENANT_ADMIN">Organization Admin</SelectOption>
             </NativeSelect>
           </FormField>
 

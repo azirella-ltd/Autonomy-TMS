@@ -179,7 +179,7 @@ const SupplyChainConfigForm = ({
     name: '',
     description: '',
     is_active: false,
-    customer_id: defaultGroupId ? String(defaultGroupId) : '',
+    tenant_id: defaultGroupId ? String(defaultGroupId) : '',
     time_bucket: 'week',
   };
 
@@ -196,7 +196,7 @@ const SupplyChainConfigForm = ({
   const [pendingStepIndex, setPendingStepIndex] = useState(null);
 
   // Data state
-  const [config, setConfig] = useState({ ...DEFAULT_CONFIG, customer_id: null });
+  const [config, setConfig] = useState({ ...DEFAULT_CONFIG, tenant_id: null });
   const [products, setProducts] = useState(isEditMode ? [] : CLASSIC_SUPPLY_CHAIN.products);
   const [sites, setSites] = useState(isEditMode ? [] : CLASSIC_SUPPLY_CHAIN.sites);
   const [lanes, setLanes] = useState(isEditMode ? [] : CLASSIC_SUPPLY_CHAIN.lanes);
@@ -310,10 +310,10 @@ const SupplyChainConfigForm = ({
       handleDeleteTypeCancel();
     }
   };
-  // Customer selection state
-  const [customers, setCustomers] = useState([]);
-  const [customersLoading, setCustomersLoading] = useState(false);
-  const [customersError, setCustomersError] = useState(null);
+  // Organization selection state
+  const [organizations, setOrganizations] = useState([]);
+  const [organizationsLoading, setOrganizationsLoading] = useState(false);
+  const [organizationsError, setOrganizationsError] = useState(null);
 
   // Formik form
   const validateForm = useCallback((values) => {
@@ -323,9 +323,9 @@ const SupplyChainConfigForm = ({
     }
 
     if (allowGroupSelection) {
-      const groupValue = values.customer_id ?? '';
+      const groupValue = values.tenant_id ?? '';
       if (!String(groupValue).trim()) {
-        errors.customer_id = 'Customer is required';
+        errors.tenant_id = 'Organization is required';
       }
     }
 
@@ -346,7 +346,7 @@ const SupplyChainConfigForm = ({
         setLoading(true);
 
         const effectiveGroupId =
-          values.customer_id || (defaultGroupId ? String(defaultGroupId) : '');
+          values.tenant_id || (defaultGroupId ? String(defaultGroupId) : '');
 
         const payload = {
           name: values.name,
@@ -359,11 +359,11 @@ const SupplyChainConfigForm = ({
           })),
         };
 
-        // Only include customer_id in the payload if:
+        // Only include tenant_id in the payload if:
         // 1. Creating a new config (not edit mode), OR
         // 2. Editing and allowGroupSelection is true (system admin)
         if (effectiveGroupId && (!isEditMode || allowGroupSelection)) {
-          payload.customer_id = Number(effectiveGroupId);
+          payload.tenant_id = Number(effectiveGroupId);
         }
 
         if (isEditMode) {
@@ -387,19 +387,19 @@ const SupplyChainConfigForm = ({
   const { setFieldValue, setValues } = formik;
 
   const basicInfoFingerprint = useMemo(() => {
-    const groupIdValue = formik.values.customer_id ? String(formik.values.customer_id) : '';
+    const groupIdValue = formik.values.tenant_id ? String(formik.values.tenant_id) : '';
     return JSON.stringify({
       name: formik.values.name || '',
       description: formik.values.description || '',
       is_active: Boolean(formik.values.is_active),
-      customer_id: groupIdValue,
+      tenant_id: groupIdValue,
       time_bucket: (formik.values.time_bucket || 'week').toLowerCase(),
     });
   }, [
     formik.values.name,
     formik.values.description,
     formik.values.is_active,
-    formik.values.customer_id,
+    formik.values.tenant_id,
     formik.values.time_bucket,
   ]);
 
@@ -429,32 +429,32 @@ const SupplyChainConfigForm = ({
 
   useEffect(() => {
     if (!allowGroupSelection) {
-      setFieldValue('customer_id', defaultGroupId ? String(defaultGroupId) : '', false);
+      setFieldValue('tenant_id', defaultGroupId ? String(defaultGroupId) : '', false);
       return;
     }
 
     let isMounted = true;
 
-    const loadCustomers = async () => {
+    const loadOrganizations = async () => {
       try {
-        setCustomersLoading(true);
-        const response = await api.get('/groups');
+        setOrganizationsLoading(true);
+        const response = await api.get('/tenants');
         if (!isMounted) return;
-        setCustomers(response.data || []);
-        setCustomersError(null);
+        setOrganizations(response.data || []);
+        setOrganizationsError(null);
       } catch (err) {
-        console.error('Error loading customers:', err);
+        console.error('Error loading organizations:', err);
         if (!isMounted) return;
-        setCustomers([]);
-        setCustomersError('Unable to load customers');
+        setOrganizations([]);
+        setOrganizationsError('Unable to load organizations');
       } finally {
         if (isMounted) {
-          setCustomersLoading(false);
+          setOrganizationsLoading(false);
         }
       }
     };
 
-    loadCustomers();
+    loadOrganizations();
 
     return () => {
       isMounted = false;
@@ -463,7 +463,7 @@ const SupplyChainConfigForm = ({
 
   useEffect(() => {
     if (!isEditMode && allowGroupSelection) {
-      setFieldValue('customer_id', defaultGroupId ? String(defaultGroupId) : '', false);
+      setFieldValue('tenant_id', defaultGroupId ? String(defaultGroupId) : '', false);
     }
   }, [allowGroupSelection, defaultGroupId, isEditMode, setFieldValue]);
 
@@ -522,7 +522,7 @@ const SupplyChainConfigForm = ({
         name: configData.name,
         description: configData.description || '',
         is_active: configData.is_active || false,
-        customer_id: configData.customer_id ? String(configData.customer_id) : '',
+        tenant_id: configData.tenant_id ? String(configData.tenant_id) : '',
         time_bucket: (configData.time_bucket || 'week').toLowerCase(),
       };
       setValues(savedValues);
@@ -569,7 +569,7 @@ const SupplyChainConfigForm = ({
       name: savedBasicInfo.name,
       description: savedBasicInfo.description,
       is_active: savedBasicInfo.is_active,
-      customer_id: savedBasicInfo.customer_id,
+      tenant_id: savedBasicInfo.tenant_id,
       time_bucket: savedBasicInfo.time_bucket,
     });
     setNodeTypeDefinitions(
@@ -597,12 +597,12 @@ const SupplyChainConfigForm = ({
       };
 
       if (allowGroupSelection) {
-        const groupValue = formik.values.customer_id ? String(formik.values.customer_id).trim() : '';
+        const groupValue = formik.values.tenant_id ? String(formik.values.tenant_id).trim() : '';
         if (groupValue) {
           const parsed = Number(groupValue);
-          payload.customer_id = Number.isNaN(parsed) ? null : parsed;
+          payload.tenant_id = Number.isNaN(parsed) ? null : parsed;
         } else {
-          payload.customer_id = null;
+          payload.tenant_id = null;
         }
       }
 
@@ -615,7 +615,7 @@ const SupplyChainConfigForm = ({
         name: updatedConfig.name || '',
         description: updatedConfig.description || '',
         is_active: Boolean(updatedConfig.is_active),
-        customer_id: updatedConfig.customer_id ? String(updatedConfig.customer_id) : '',
+        tenant_id: updatedConfig.tenant_id ? String(updatedConfig.tenant_id) : '',
         time_bucket: (updatedConfig.time_bucket || 'week').toLowerCase(),
       };
 
@@ -784,33 +784,33 @@ const SupplyChainConfigForm = ({
               </div>
               {allowGroupSelection && (
                 <div className="col-span-12">
-                  <Label htmlFor="customer_id">Customer</Label>
+                  <Label htmlFor="tenant_id">Organization</Label>
                   <Select
-                    value={formik.values.customer_id}
-                    onValueChange={(value) => formik.setFieldValue('customer_id', value)}
-                    disabled={loading || customersLoading}
+                    value={formik.values.tenant_id}
+                    onValueChange={(value) => formik.setFieldValue('tenant_id', value)}
+                    disabled={loading || organizationsLoading}
                   >
-                    <SelectTrigger id="customer_id" className={formik.touched.customer_id && formik.errors.customer_id ? 'border-destructive' : ''}>
-                      <SelectValue placeholder="Select a customer" />
+                    <SelectTrigger id="tenant_id" className={formik.touched.tenant_id && formik.errors.tenant_id ? 'border-destructive' : ''}>
+                      <SelectValue placeholder="Select an organization" />
                     </SelectTrigger>
                     <SelectContent>
-                      {customers.length === 0 && !customersLoading ? (
+                      {organizations.length === 0 && !organizationsLoading ? (
                         <SelectItem value="" disabled>
-                          No customers available
+                          No organizations available
                         </SelectItem>
                       ) : (
-                        customers.map((customer) => (
-                          <SelectItem key={customer.id} value={String(customer.id)}>
-                            {customer.name}
+                        organizations.map((org) => (
+                          <SelectItem key={org.id} value={String(org.id)}>
+                            {org.name}
                           </SelectItem>
                         ))
                       )}
                     </SelectContent>
                   </Select>
-                  {formik.touched.customer_id && formik.errors.customer_id ? (
-                    <span className="text-sm text-destructive mt-1">{formik.errors.customer_id}</span>
-                  ) : customersError ? (
-                    <span className="text-sm text-destructive mt-1">{customersError}</span>
+                  {formik.touched.tenant_id && formik.errors.tenant_id ? (
+                    <span className="text-sm text-destructive mt-1">{formik.errors.tenant_id}</span>
+                  ) : organizationsError ? (
+                    <span className="text-sm text-destructive mt-1">{organizationsError}</span>
                   ) : null}
                 </div>
               )}
@@ -954,7 +954,7 @@ const SupplyChainConfigForm = ({
               <p className="text-sm">Time Bucket: {formik.values.time_bucket}</p>
               <p className="text-sm">Status: {formik.values.is_active ? 'Active' : 'Inactive'}</p>
               {allowGroupSelection && (
-                <p className="text-sm">Customer ID: {formik.values.customer_id || (config.customer_id ? String(config.customer_id) : 'N/A')}</p>
+                <p className="text-sm">Organization ID: {formik.values.tenant_id || (config.tenant_id ? String(config.tenant_id) : 'N/A')}</p>
               )}
             </Card>
 

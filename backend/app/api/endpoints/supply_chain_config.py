@@ -316,12 +316,12 @@ def _coerce_transportation_lane_payload(payload: Dict[str, Any]) -> Dict[str, An
 _coerce_lane_payload = _coerce_transportation_lane_payload
 
 
-def _get_user_admin_customer_id(db: Session, user: models.User) -> Optional[int]:
+def _get_user_admin_tenant_id(db: Session, user: models.User) -> Optional[int]:
     """Return the group ID managed by the provided user, if any.
 
     Note: Uses user_type (not is_superuser) to determine admin status.
     SYSTEM_ADMIN users return None (they see all configs).
-    GROUP_ADMIN users return their administered group's ID.
+    TENANT_ADMIN users return their administered tenant's ID.
     """
     user_type = getattr(user, "user_type", None)
     if isinstance(user_type, str):
@@ -343,11 +343,11 @@ def _get_user_admin_customer_id(db: Session, user: models.User) -> Optional[int]
     if direct_group:
         return direct_group.id
 
-    # GROUP_ADMIN sees their group's configs
-    if user_type == UserTypeEnum.GROUP_ADMIN and user.customer_id:
+    # TENANT_ADMIN sees their tenant's configs
+    if user_type == UserTypeEnum.TENANT_ADMIN and user.tenant_id:
         group = (
             db.query(models.Customer)
-            .filter(models.Customer.id == user.customer_id)
+            .filter(models.Customer.id == user.tenant_id)
             .first()
         )
         if group:
@@ -366,10 +366,10 @@ def _ensure_user_can_manage_config(
     if user_type == UserTypeEnum.SYSTEM_ADMIN:
         return
 
-    admin_customer_id = _get_user_admin_customer_id(db, user)
+    admin_tenant_id = _get_user_admin_tenant_id(db, user)
     if config.customer_id is None:
         return
-    if admin_customer_id and config.customer_id == admin_customer_id:
+    if admin_tenant_id and config.customer_id == admin_tenant_id:
         return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
@@ -391,12 +391,12 @@ def _ensure_user_can_view_config(
     if config_customer_id is None:
         return
 
-    admin_customer_id = _get_user_admin_customer_id(db, user)
-    if admin_customer_id and config_customer_id == admin_customer_id:
+    admin_tenant_id = _get_user_admin_tenant_id(db, user)
+    if admin_tenant_id and config_customer_id == admin_tenant_id:
         return
 
-    user_customer_id = getattr(user, "customer_id", None)
-    if user_customer_id and user_customer_id == config_customer_id:
+    user_tenant_id = getattr(user, "tenant_id", None)
+    if user_tenant_id and user_tenant_id == config_customer_id:
         return
 
     raise HTTPException(
@@ -716,28 +716,28 @@ async def read_configs(
     current_user: models.User = Depends(deps.get_current_active_user),
 ):
     """Retrieve all supply chain configurations."""
-    # Only SYSTEM_ADMIN users see all configs; GROUP_ADMIN sees their group's configs
+    # Only SYSTEM_ADMIN users see all configs; TENANT_ADMIN sees their tenant's configs
     if current_user.user_type == UserTypeEnum.SYSTEM_ADMIN:
         return crud.supply_chain_config.get_multi(db, skip=skip, limit=limit)
 
-    # GROUP_ADMIN sees configs for their administered group
-    admin_customer_id = _get_user_admin_customer_id(db, current_user)
-    if admin_customer_id:
+    # TENANT_ADMIN sees configs for their administered tenant
+    admin_tenant_id = _get_user_admin_tenant_id(db, current_user)
+    if admin_tenant_id:
         return crud.supply_chain_config.get_multi(
             db,
             skip=skip,
             limit=limit,
-            customer_id=admin_customer_id,
+            customer_id=admin_tenant_id,
         )
 
-    # Regular users see configs for their assigned group
-    user_customer_id = getattr(current_user, "customer_id", None)
-    if user_customer_id:
+    # Regular users see configs for their assigned tenant
+    user_tenant_id = getattr(current_user, "tenant_id", None)
+    if user_tenant_id:
         return crud.supply_chain_config.get_multi(
             db,
             skip=skip,
             limit=limit,
-            customer_id=user_customer_id,
+            customer_id=user_tenant_id,
         )
 
     raise HTTPException(
@@ -756,19 +756,19 @@ def read_active_config(
     if user_type == UserTypeEnum.SYSTEM_ADMIN:
         config = crud.supply_chain_config.get_active(db)
     else:
-        admin_customer_id = _get_user_admin_customer_id(db, current_user)
-        if admin_customer_id:
+        admin_tenant_id = _get_user_admin_tenant_id(db, current_user)
+        if admin_tenant_id:
             config = (
                 db.query(SupplyChainConfig)
                 .filter(
-                    SupplyChainConfig.customer_id == admin_customer_id,
+                    SupplyChainConfig.customer_id == admin_tenant_id,
                     SupplyChainConfig.is_active == True,
                 )
                 .first()
             )
         else:
-            user_customer_id = getattr(current_user, "customer_id", None)
-            if not user_customer_id:
+            user_tenant_id = getattr(current_user, "tenant_id", None)
+            if not user_tenant_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="You do not have permission to view this configuration",
@@ -777,7 +777,7 @@ def read_active_config(
             config = (
                 db.query(SupplyChainConfig)
                 .filter(
-                    SupplyChainConfig.customer_id == user_customer_id,
+                    SupplyChainConfig.customer_id == user_tenant_id,
                     SupplyChainConfig.is_active == True,
                 )
                 .first()
@@ -799,32 +799,32 @@ def create_config(
     background_tasks: BackgroundTasks,
 ):
     """Create a new supply chain configuration."""
-    admin_customer_id = _get_user_admin_customer_id(db, current_user)
+    admin_tenant_id = _get_user_admin_tenant_id(db, current_user)
     user_type = getattr(current_user, "user_type", None)
 
     if user_type == UserTypeEnum.SYSTEM_ADMIN:
-        target_customer_id = config_in.customer_id
-        if target_customer_id is None:
+        target_tenant_id = config_in.customer_id
+        if target_tenant_id is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Customer is required to create a configuration",
+                detail="Tenant is required to create a configuration",
             )
 
-        if not db.query(models.Customer).filter(models.Customer.id == target_customer_id).first():
+        if not db.query(models.Customer).filter(models.Customer.id == target_tenant_id).first():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Specified customer not found",
+                detail="Specified tenant not found",
             )
 
         payload = config_in
     else:
-        if not admin_customer_id:
+        if not admin_tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have permission to create configurations",
             )
 
-        payload = config_in.copy(update={"customer_id": admin_customer_id})
+        payload = config_in.copy(update={"customer_id": admin_tenant_id})
 
     cfg = crud.supply_chain_config.create(db, obj_in=payload)
     # Attach creator if column exists
@@ -868,22 +868,22 @@ def update_config(
 
     if user_type == UserTypeEnum.SYSTEM_ADMIN:
         if "customer_id" in update_data:
-            new_customer_id = update_data["customer_id"]
-            if new_customer_id is None:
+            new_tenant_id = update_data["customer_id"]
+            if new_tenant_id is None:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Customer cannot be null",
+                    detail="Tenant cannot be null",
                 )
-            if not db.query(models.Customer).filter(models.Customer.id == new_customer_id).first():
+            if not db.query(models.Customer).filter(models.Customer.id == new_tenant_id).first():
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Specified customer not found",
+                    detail="Specified tenant not found",
                 )
     else:
         if "customer_id" in update_data and update_data["customer_id"] != config.customer_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="You cannot reassign this configuration to another customer",
+                detail="You cannot reassign this configuration to another tenant",
             )
         update_data.pop("customer_id", None)
 
@@ -2083,7 +2083,7 @@ def validate_supply_chain_config(
 
     # Validate access (must be in same group or be system admin)
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.customer_id != current_user.customer_id:
+        if config.customer_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to validate this configuration"
@@ -2164,7 +2164,7 @@ def create_scenario_branch(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if parent.customer_id != current_user.customer_id:
+        if parent.customer_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to branch from this configuration"
@@ -2242,7 +2242,7 @@ def get_effective_configuration(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.customer_id != current_user.customer_id:
+        if config.customer_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to view this configuration"
@@ -2325,7 +2325,7 @@ def update_scenario(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.customer_id != current_user.customer_id:
+        if config.customer_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to update this configuration"
@@ -2398,7 +2398,7 @@ def commit_scenario(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.customer_id != current_user.customer_id:
+        if config.customer_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to commit this configuration"
@@ -2456,7 +2456,7 @@ def rollback_scenario(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.customer_id != current_user.customer_id:
+        if config.customer_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to rollback this configuration"
@@ -2516,7 +2516,7 @@ def diff_scenarios(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.customer_id != current_user.customer_id or other_config.customer_id != current_user.customer_id:
+        if config.customer_id != current_user.tenant_id or other_config.customer_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to compare these configurations"
@@ -2574,7 +2574,7 @@ def get_scenario_tree(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.customer_id != current_user.customer_id:
+        if config.customer_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to view this configuration tree"
@@ -3075,30 +3075,30 @@ def get_config_tree(
     return build_tree(config)
 
 
-@router.get("/customer/{customer_id}/root", response_model=Optional[schemas.SupplyChainConfig])
-def get_customer_root_config(
-    customer_id: int,
+@router.get("/tenant/{tenant_id}/root", response_model=Optional[schemas.SupplyChainConfig])
+def get_tenant_root_config(
+    tenant_id: int,
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_active_user),
 ) -> Optional[SupplyChainConfig]:
-    """Get the root configuration for a customer.
+    """Get the root configuration for a tenant.
 
     Returns the config that has no parent_config_id (the root of the lineage tree).
     """
     user_type = getattr(current_user, "user_type", None)
     if user_type != UserTypeEnum.SYSTEM_ADMIN:
-        admin_customer_id = _get_user_admin_customer_id(db, current_user)
-        user_customer_id = getattr(current_user, "customer_id", None)
-        if admin_customer_id != customer_id and user_customer_id != customer_id:
+        admin_tenant_id = _get_user_admin_tenant_id(db, current_user)
+        user_tenant_id = getattr(current_user, "tenant_id", None)
+        if admin_tenant_id != tenant_id and user_tenant_id != tenant_id:
             raise HTTPException(
                 status_code=403,
-                detail="You do not have access to this customer's configurations"
+                detail="You do not have access to this tenant's configurations"
             )
 
     root_config = (
         db.query(SupplyChainConfig)
         .filter(
-            SupplyChainConfig.customer_id == customer_id,
+            SupplyChainConfig.customer_id == tenant_id,
             SupplyChainConfig.parent_config_id.is_(None),
         )
         .first()
@@ -3107,31 +3107,31 @@ def get_customer_root_config(
     return root_config
 
 
-@router.get("/customer/{customer_id}/tree", response_model=List[ConfigTreeNode])
-def get_customer_config_tree(
-    customer_id: int,
+@router.get("/tenant/{tenant_id}/tree", response_model=List[ConfigTreeNode])
+def get_tenant_config_tree(
+    tenant_id: int,
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_active_user),
 ) -> List[ConfigTreeNode]:
-    """Get the full config tree for a customer.
+    """Get the full config tree for a tenant.
 
     Returns all root configs (configs with no parent) and their descendants.
     """
     user_type = getattr(current_user, "user_type", None)
     if user_type != UserTypeEnum.SYSTEM_ADMIN:
-        admin_customer_id = _get_user_admin_customer_id(db, current_user)
-        user_customer_id = getattr(current_user, "customer_id", None)
-        if admin_customer_id != customer_id and user_customer_id != customer_id:
+        admin_tenant_id = _get_user_admin_tenant_id(db, current_user)
+        user_tenant_id = getattr(current_user, "tenant_id", None)
+        if admin_tenant_id != tenant_id and user_tenant_id != tenant_id:
             raise HTTPException(
                 status_code=403,
-                detail="You do not have access to this customer's configurations"
+                detail="You do not have access to this tenant's configurations"
             )
 
     # Get all root configs (no parent)
     root_configs = (
         db.query(SupplyChainConfig)
         .filter(
-            SupplyChainConfig.customer_id == customer_id,
+            SupplyChainConfig.customer_id == tenant_id,
             SupplyChainConfig.parent_config_id.is_(None),
         )
         .all()

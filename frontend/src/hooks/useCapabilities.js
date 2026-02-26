@@ -78,7 +78,7 @@ function getFallbackCapabilities(userType) {
     return ['system_admin'];
   }
 
-  if (type === 'GROUP_ADMIN') {
+  if (type === 'TENANT_ADMIN' || type === 'GROUP_ADMIN') {
     return [
       // Overview
       'view_dashboard',
@@ -114,8 +114,8 @@ function getFallbackCapabilities(userType) {
       // Supply Chain
       'view_sc_configs',
       'view_inventory_models',
-      'view_group_configs',
-      'manage_group_configs',
+      'view_tenant_configs',
+      'manage_tenant_configs',
 
       // Planning - All
       'view_sop',
@@ -179,8 +179,8 @@ function getFallbackCapabilities(userType) {
       'view_powell',
 
       // Admin
-      'view_groups',
-      'manage_groups',
+      'view_tenants',
+      'manage_tenants',
       'view_players',
       'manage_players',
       'view_users',
@@ -188,7 +188,7 @@ function getFallbackCapabilities(userType) {
       'edit_user',
       'manage_permissions',
       'manage_roles',
-      'manage_group_users',
+      'manage_tenant_users',
       'manage_approval_templates',
     ];
   }

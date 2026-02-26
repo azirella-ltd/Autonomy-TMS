@@ -127,7 +127,7 @@ async def read_user(
 
     if user_service.is_customer_admin(current_user):
         if (
-            user.customer_id == current_user.customer_id
+            user.tenant_id == current_user.tenant_id
             and user_service.get_user_type(user) == UserTypeEnum.USER
         ):
             return user
@@ -181,11 +181,11 @@ async def update_user_capabilities(
 
     # Permission checks
     is_system_admin = current_user.user_type == UserTypeEnum.SYSTEM_ADMIN
-    is_customer_admin = current_user.user_type == UserTypeEnum.GROUP_ADMIN
+    is_customer_admin = current_user.user_type == UserTypeEnum.TENANT_ADMIN
 
     # Group admins can only manage users in their customer organization
     if is_customer_admin:
-        if not current_user.customer_id or target_user.customer_id != current_user.customer_id:
+        if not current_user.tenant_id or target_user.tenant_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=403,
                 detail="You can only manage users within your customer organization"
@@ -209,7 +209,7 @@ async def update_user_capabilities(
     success = rbac_service.sync_user_capabilities(
         user_id=user_id,
         capability_names=payload.capabilities,
-        tenant_id=target_user.customer_id
+        tenant_id=target_user.tenant_id
     )
 
     if not success:
@@ -262,13 +262,13 @@ async def get_user_capabilities_endpoint(
 
     # Permission checks
     is_system_admin = current_user.user_type == UserTypeEnum.SYSTEM_ADMIN
-    is_customer_admin = current_user.user_type == UserTypeEnum.GROUP_ADMIN
+    is_customer_admin = current_user.user_type == UserTypeEnum.TENANT_ADMIN
     is_self = current_user.id == user_id
 
     # Check permissions
     if not is_self and not is_system_admin:
         if is_customer_admin:
-            if not current_user.customer_id or target_user.customer_id != current_user.customer_id:
+            if not current_user.tenant_id or target_user.tenant_id != current_user.tenant_id:
                 raise HTTPException(
                     status_code=403,
                     detail="You can only view users within your group"
@@ -317,10 +317,10 @@ async def update_user_status(
 
     # Permission checks
     is_system_admin = current_user.user_type == UserTypeEnum.SYSTEM_ADMIN
-    is_customer_admin = current_user.user_type == UserTypeEnum.GROUP_ADMIN
+    is_customer_admin = current_user.user_type == UserTypeEnum.TENANT_ADMIN
 
     if is_customer_admin:
-        if not current_user.customer_id or target_user.customer_id != current_user.customer_id:
+        if not current_user.tenant_id or target_user.tenant_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=403,
                 detail="You can only manage users within your customer organization"

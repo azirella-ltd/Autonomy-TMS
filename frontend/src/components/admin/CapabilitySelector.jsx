@@ -104,8 +104,8 @@ const CAPABILITY_TREE = [
       { id: 'create_user', label: 'Create Users', description: 'Create new users' },
       { id: 'edit_user', label: 'Edit Users', description: 'Edit user details' },
       { id: 'manage_permissions', label: 'Manage Permissions', description: 'Assign user capabilities' },
-      { id: 'view_groups', label: 'View Groups', description: 'View group/company information' },
-      { id: 'manage_groups', label: 'Manage Groups', description: 'Configure group settings' },
+      { id: 'view_tenants', label: 'View Organizations', description: 'View organization information' },
+      { id: 'manage_tenants', label: 'Manage Organizations', description: 'Configure organization settings' },
     ],
   },
 ];

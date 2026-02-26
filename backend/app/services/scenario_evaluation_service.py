@@ -166,7 +166,7 @@ class ScenarioDefinition:
     confidence_level: float = 0.80
 
     # Context
-    customer_id: Optional[int] = None
+    tenant_id: Optional[int] = None
     trigger_condition: Optional[str] = None
     created_by: str = "agent"
 
@@ -245,7 +245,7 @@ class ScenarioEvaluationService:
         self,
         condition_type: str,
         entity_id: str,
-        customer_id: int,
+        tenant_id: int,
         context: Dict[str, Any],
     ) -> List[ScenarioDefinition]:
         """
@@ -257,7 +257,7 @@ class ScenarioEvaluationService:
         Args:
             condition_type: Type of condition (e.g., "atp_shortfall")
             entity_id: Entity with the condition
-            customer_id: Customer ID
+            tenant_id: Customer ID
             context: Additional context from the condition
 
         Returns:
@@ -267,19 +267,19 @@ class ScenarioEvaluationService:
 
         if condition_type == "atp_shortfall":
             scenarios = await self._create_atp_scenarios(
-                entity_id, customer_id, context
+                entity_id, tenant_id, context
             )
         elif condition_type == "inventory_below_safety":
             scenarios = await self._create_rebalance_scenarios(
-                entity_id, customer_id, context
+                entity_id, tenant_id, context
             )
         elif condition_type == "capacity_overload":
             scenarios = await self._create_capacity_scenarios(
-                entity_id, customer_id, context
+                entity_id, tenant_id, context
             )
         elif condition_type == "multi_site_shortfall":
             scenarios = await self._create_network_scenarios(
-                entity_id, customer_id, context
+                entity_id, tenant_id, context
             )
 
         logger.info(
@@ -291,7 +291,7 @@ class ScenarioEvaluationService:
     async def _create_atp_scenarios(
         self,
         entity_id: str,
-        customer_id: int,
+        tenant_id: int,
         context: Dict[str, Any],
     ) -> List[ScenarioDefinition]:
         """Create scenarios for ATP allocation decisions."""
@@ -308,7 +308,7 @@ class ScenarioEvaluationService:
             description="Continue with current allocation, accept shortfall",
             decision={"action": "none"},
             parameter_changes={},
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             trigger_condition="atp_shortfall",
         ))
 
@@ -324,7 +324,7 @@ class ScenarioEvaluationService:
                 "quantity": current_shortage,
             },
             parameter_changes={"allow_priority_consumption": True},
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             trigger_condition="atp_shortfall",
         ))
 
@@ -342,7 +342,7 @@ class ScenarioEvaluationService:
                 "enable_transfers": True,
                 "transfer_lead_time_days": 3,
             },
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             trigger_condition="atp_shortfall",
         ))
 
@@ -361,7 +361,7 @@ class ScenarioEvaluationService:
                 "lead_time_reduction_days": 5,
                 "cost_multiplier": 1.5,
             },
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             trigger_condition="atp_shortfall",
         ))
 
@@ -370,7 +370,7 @@ class ScenarioEvaluationService:
     async def _create_rebalance_scenarios(
         self,
         entity_id: str,
-        customer_id: int,
+        tenant_id: int,
         context: Dict[str, Any],
     ) -> List[ScenarioDefinition]:
         """Create scenarios for inventory rebalancing."""
@@ -383,7 +383,7 @@ class ScenarioEvaluationService:
             name="No Rebalancing (Baseline)",
             description="Accept current inventory distribution",
             decision={"action": "none"},
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             trigger_condition="inventory_below_safety",
         ))
 
@@ -395,7 +395,7 @@ class ScenarioEvaluationService:
             description="Transfer from single nearest site with excess",
             decision={"action": "transfer", "sources": 1},
             parameter_changes={"prioritize_proximity": True},
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             trigger_condition="inventory_below_safety",
         ))
 
@@ -407,7 +407,7 @@ class ScenarioEvaluationService:
             description="Combine inventory from multiple sites",
             decision={"action": "transfer", "sources": "multiple"},
             parameter_changes={"allow_partial_transfers": True},
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             trigger_condition="inventory_below_safety",
         ))
 
@@ -416,7 +416,7 @@ class ScenarioEvaluationService:
     async def _create_capacity_scenarios(
         self,
         entity_id: str,
-        customer_id: int,
+        tenant_id: int,
         context: Dict[str, Any],
     ) -> List[ScenarioDefinition]:
         """Create scenarios for capacity allocation."""
@@ -429,7 +429,7 @@ class ScenarioEvaluationService:
             name="Current Allocation (Baseline)",
             description="Continue with current production schedule",
             decision={"action": "none"},
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             trigger_condition="capacity_overload",
         ))
 
@@ -440,7 +440,7 @@ class ScenarioEvaluationService:
             name="Reschedule Production",
             description="Move production to periods with available capacity",
             decision={"action": "reschedule"},
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             trigger_condition="capacity_overload",
         ))
 
@@ -452,7 +452,7 @@ class ScenarioEvaluationService:
             description="Increase capacity through overtime",
             decision={"action": "overtime", "increase_pct": 0.15},
             parameter_changes={"cost_multiplier": 1.5},
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             trigger_condition="capacity_overload",
         ))
 
@@ -461,7 +461,7 @@ class ScenarioEvaluationService:
     async def _create_network_scenarios(
         self,
         entity_id: str,
-        customer_id: int,
+        tenant_id: int,
         context: Dict[str, Any],
     ) -> List[ScenarioDefinition]:
         """Create network-wide scenarios for multi-site conditions."""
@@ -474,7 +474,7 @@ class ScenarioEvaluationService:
             name="Current Flow (Baseline)",
             description="Continue with current network allocation",
             decision={"action": "none"},
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             trigger_condition="multi_site_shortfall",
         ))
 
@@ -486,7 +486,7 @@ class ScenarioEvaluationService:
             description="Re-optimize allocation across all sites",
             decision={"action": "optimize_flow"},
             num_simulations=200,  # More simulations for network-wide
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             trigger_condition="multi_site_shortfall",
         ))
 
@@ -497,7 +497,7 @@ class ScenarioEvaluationService:
             name="Prioritize Key Customers",
             description="Allocate to highest priority customers first",
             decision={"action": "prioritize", "priority_rule": "customer_tier"},
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             trigger_condition="multi_site_shortfall",
         ))
 
@@ -1068,7 +1068,7 @@ class ScenarioEvaluationService:
         self,
         condition_type: str,
         entity_id: str,
-        customer_id: int,
+        tenant_id: int,
         context: Dict[str, Any],
         current_state: Dict[str, Any],
     ) -> Tuple[ScenarioResult, ScenarioComparison]:
@@ -1084,7 +1084,7 @@ class ScenarioEvaluationService:
         scenarios = await self.create_scenarios_for_condition(
             condition_type=condition_type,
             entity_id=entity_id,
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             context=context,
         )
 

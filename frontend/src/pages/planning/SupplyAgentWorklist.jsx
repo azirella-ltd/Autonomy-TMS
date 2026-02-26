@@ -145,7 +145,7 @@ const QuantityWithInterval = ({ quantity, lowerBound, upperBound, showInterval =
   );
 };
 
-const SupplyAgentWorklist = ({ configId, customerId }) => {
+const SupplyAgentWorklist = ({ configId, tenantId }) => {
   const [loading, setLoading] = useState(true);
   const [worklistItems, setWorklistItems] = useState([]);
   const [selectedCommit, setSelectedCommit] = useState(null);

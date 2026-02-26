@@ -24,7 +24,6 @@ from app.services.audit_service import AuditService
 from app.core.deps import get_current_active_superuser
 from app.api.deps import get_current_user
 from app.core.permissions import RequirePermission
-from app.middleware.tenant_middleware import get_current_tenant
 
 router = APIRouter()
 
@@ -124,8 +123,8 @@ async def search_audit_logs(
     if current_user.user_type == UserTypeEnum.SYSTEM_ADMIN:
         # System admins can see all logs
         tenant_id = None
-    elif current_user.user_type == UserTypeEnum.GROUP_ADMIN:
-        # Group admins can see their tenant's logs
+    elif current_user.user_type == UserTypeEnum.TENANT_ADMIN:
+        # Tenant admins can see their tenant's logs
         tenant_id = current_user.tenant_id
     else:
         # Regular users can only see their own logs
@@ -196,8 +195,8 @@ async def get_audit_log(
     if current_user.user_type == UserTypeEnum.SYSTEM_ADMIN:
         # System admins can see all logs
         pass
-    elif current_user.user_type == UserTypeEnum.GROUP_ADMIN:
-        # Group admins can see their tenant's logs
+    elif current_user.user_type == UserTypeEnum.TENANT_ADMIN:
+        # Tenant admins can see their tenant's logs
         if log.tenant_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -250,7 +249,7 @@ async def get_user_activity(
     Admins can view any user's activity.
     """
     # Check permissions
-    if user_id != current_user.id and current_user.user_type not in [UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.GROUP_ADMIN]:
+    if user_id != current_user.id and current_user.user_type not in [UserTypeEnum.SYSTEM_ADMIN, UserTypeEnum.TENANT_ADMIN]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot view other users' activity"
@@ -322,11 +321,11 @@ async def get_audit_statistics(
     Get audit log statistics
 
     System admins see global statistics.
-    Group admins see their tenant's statistics.
+    Tenant admins see their tenant's statistics.
     """
     # Determine scope
     tenant_id = None
-    if current_user.user_type == UserTypeEnum.GROUP_ADMIN:
+    if current_user.user_type == UserTypeEnum.TENANT_ADMIN:
         tenant_id = current_user.tenant_id
     elif current_user.user_type != UserTypeEnum.SYSTEM_ADMIN:
         raise HTTPException(

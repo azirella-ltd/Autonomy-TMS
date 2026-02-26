@@ -88,7 +88,7 @@ class CascadeOrchestrator:
     def run_cascade(
         self,
         config_id: int,
-        customer_id: int,
+        tenant_id: int,
         user_id: Optional[int] = None,
         sop_params: Optional[SOPParameters] = None,
         customer_plan: Optional[List[Dict[str, Any]]] = None,
@@ -102,7 +102,7 @@ class CascadeOrchestrator:
 
         Args:
             config_id: Supply chain config ID
-            customer_id: Customer ID
+            tenant_id: Customer ID
             user_id: User running the cascade
             sop_params: S&OP parameters (optional, uses defaults if not provided)
             customer_plan: Customer's replenishment plan (INPUT mode)
@@ -124,7 +124,7 @@ class CascadeOrchestrator:
 
         policy_envelope = self.sop_service.create_policy_envelope(
             config_id=config_id,
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             params=sop_params,
             user_id=user_id,
         )
@@ -145,7 +145,7 @@ class CascadeOrchestrator:
 
         supply_baseline_pack = self.supply_baseline_service.generate_supply_baseline_pack(
             config_id=config_id,
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             policy_envelope_id=policy_envelope["id"],
             policy_envelope_hash=policy_envelope["hash"],
             inventory_state=inventory_state,
@@ -170,7 +170,7 @@ class CascadeOrchestrator:
 
         supply_commit = self.supply_agent.generate_supply_commit(
             config_id=config_id,
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             supply_baseline_pack_id=supply_baseline_pack["id"],
             supply_baseline_pack_hash=supply_baseline_pack["hash"],
             policy_envelope=policy_envelope,
@@ -188,7 +188,7 @@ class CascadeOrchestrator:
 
         allocation_commit = self.allocation_agent.generate_allocation_commit(
             config_id=config_id,
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             supply_commit_id=supply_commit["id"],
             supply_commit_hash=supply_commit["hash"],
             policy_envelope=policy_envelope,
@@ -236,7 +236,7 @@ class CascadeOrchestrator:
     def run_cascade_for_food_dist(
         self,
         config_id: int,
-        customer_id: int,
+        tenant_id: int,
         user_id: Optional[int] = None,
     ) -> CascadeResult:
         """
@@ -286,7 +286,7 @@ class CascadeOrchestrator:
 
         return self.run_cascade(
             config_id=config_id,
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             user_id=user_id,
             inventory_state=inventory_state,
             supplier_info=supplier_info,
@@ -352,7 +352,7 @@ class CascadeOrchestrator:
     def record_feed_back_signal(
         self,
         config_id: int,
-        customer_id: int,
+        tenant_id: int,
         signal_type: str,
         metric_name: str,
         metric_value: float,
@@ -368,7 +368,7 @@ class CascadeOrchestrator:
 
         Args:
             config_id: Supply chain config ID
-            customer_id: Customer ID
+            tenant_id: Customer ID
             signal_type: Type of signal (actual_otif, allocation_shortfall, etc.)
             metric_name: Name of the metric
             metric_value: Measured value
@@ -400,7 +400,7 @@ class CascadeOrchestrator:
 
         signal = FeedBackSignal(
             config_id=config_id,
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             signal_type=signal_type,
             measured_at_layer="execution",
             fed_back_to=fed_back_to,

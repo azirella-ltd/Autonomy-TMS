@@ -24,7 +24,6 @@ from app.models.rbac import (
 from app.core.deps import get_current_active_superuser
 from app.api.deps import get_current_user
 from app.core.permissions import PermissionChecker, RequirePermission
-from app.middleware.tenant_middleware import get_current_tenant
 
 router = APIRouter()
 

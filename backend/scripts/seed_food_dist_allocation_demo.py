@@ -41,7 +41,7 @@ from sqlalchemy import select
 
 from app.db.session import sync_engine
 from app.models.user import User, UserTypeEnum, PowellRoleEnum
-from app.models.customer import Customer
+from app.models.tenant import Tenant
 from app.models.supply_chain_config import SupplyChainConfig
 from app.models.sc_entities import Product
 from app.models.planning_hierarchy import (
@@ -1420,14 +1420,14 @@ def main():
         # Step 1: Validate prerequisites
         print("\n1. Validating prerequisites...")
 
-        customer = db.query(Customer).filter(Customer.name == "Food Dist").first()
-        if not customer:
-            print("ERROR: 'Food Dist' customer not found. Run seed_dot_foods_demo.py first.")
+        tenant = db.query(Tenant).filter(Tenant.name == "Food Dist").first()
+        if not tenant:
+            print("ERROR: 'Food Dist' tenant not found. Run seed_dot_foods_demo.py first.")
             sys.exit(1)
-        print(f"   Customer: {customer.name} (id={customer.id})")
+        print(f"   Tenant: {tenant.name} (id={tenant.id})")
 
         config = db.query(SupplyChainConfig).filter(
-            SupplyChainConfig.customer_id == customer.id
+            SupplyChainConfig.tenant_id == tenant.id
         ).first()
         if not config:
             print("ERROR: No SC config found for Food Dist. Run FoodDistConfigGenerator first.")
@@ -1472,7 +1472,7 @@ def main():
 
         # Step 2: Create demo users first (needed for reviewed_by references)
         print("\n2. Creating demo users...")
-        users = seed_demo_users(db, customer.id)
+        users = seed_demo_users(db, tenant.id)
         db.commit()
 
         alloc_mgr_id = users["alloc_manager"].id
@@ -1481,42 +1481,42 @@ def main():
 
         # Step 3: Seed site hierarchy
         print("\n3. Seeding site hierarchy...")
-        site_nodes = seed_site_hierarchy(db, customer.id)
+        site_nodes = seed_site_hierarchy(db, tenant.id)
         db.commit()
 
         # Step 4: Seed product hierarchy
         print("\n4. Seeding product hierarchy...")
-        product_nodes = seed_product_hierarchy(db, customer.id)
+        product_nodes = seed_product_hierarchy(db, tenant.id)
         db.commit()
 
         # Step 5: Seed layer licenses
         print("\n5. Seeding layer licenses...")
-        seed_layer_licenses(db, customer.id)
+        seed_layer_licenses(db, tenant.id)
         db.commit()
 
         # Step 6: Seed planning cascade
         print("\n6. Seeding planning cascade...")
-        seed_planning_cascade(db, config.id, customer.id, sop_user_id, alloc_mgr_id)
+        seed_planning_cascade(db, config.id, tenant.id, sop_user_id, alloc_mgr_id)
         db.commit()
 
         # Step 7: Seed inventory projections
         print("\n7. Seeding inventory projections...")
-        seed_inv_projections(db, config.id, customer.id, dc_node.id)
+        seed_inv_projections(db, config.id, tenant.id, dc_node.id)
         db.commit()
 
         # Step 8: Seed ATP projections
         print("\n8. Seeding ATP projections...")
-        seed_atp_projections(db, config.id, customer.id, dc_node.id)
+        seed_atp_projections(db, config.id, tenant.id, dc_node.id)
         db.commit()
 
         # Step 9: Seed order promises
         print("\n9. Seeding order promises...")
-        seed_order_promises(db, customer.id, dc_node.id)
+        seed_order_promises(db, tenant.id, dc_node.id)
         db.commit()
 
         # Step 10: Seed feedback signals and metrics
         print("\n10. Seeding feedback signals and metrics...")
-        seed_feedback_and_metrics(db, config.id, customer.id, alloc_mgr_id)
+        seed_feedback_and_metrics(db, config.id, tenant.id, alloc_mgr_id)
         db.commit()
 
         # Step 11: Seed daily powell_allocations for timeline view
@@ -1528,14 +1528,14 @@ def main():
         print("\n12. Seeding ATP agent decisions...")
         order_promise_user = users.get("order_promise_mgr")
         opm_id = order_promise_user.id if order_promise_user else alloc_mgr_id
-        seed_atp_decisions(db, customer.id, opm_id)
+        seed_atp_decisions(db, tenant.id, opm_id)
         db.commit()
 
         # Summary
         print("\n" + "=" * 70)
         print("Food Dist Allocation & ATP Demo Data Seeded Successfully!")
         print("=" * 70)
-        print(f"\nGroup: {customer.name} (id={customer.id})")
+        print(f"\nGroup: {tenant.name} (id={tenant.id})")
         print(f"SC Config: {config.name} (id={config.id})")
         print(f"DC Site: {dc_node.name} (id={dc_node.id})")
         print(f"\nData created:")

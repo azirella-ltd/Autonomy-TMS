@@ -571,8 +571,9 @@ class SiteAgentDecisionTracker:
                 title = f"{action_type}: {detail}"
 
             action = AgentAction(
-                customer_id=record.input_state.get("customer_id") or
-                             record.input_state.get("config_id"),
+                tenant_id=record.input_state.get("tenant_id") or
+                           record.input_state.get("customer_id") or
+                           record.input_state.get("config_id"),
                 action_type=action_type,
                 category=category,
                 title=title[:200],
@@ -586,12 +587,13 @@ class SiteAgentDecisionTracker:
             )
 
             # Apply governance gate — scores impact, assigns mode, sets hold
-            customer_id = (
+            tenant_id = (
+                record.input_state.get("tenant_id") or
                 record.input_state.get("customer_id") or
                 record.input_state.get("config_id")
             )
-            if customer_id:
-                DecisionGovernanceService.gate_decision(self.db, action, customer_id)
+            if tenant_id:
+                DecisionGovernanceService.gate_decision(self.db, action, tenant_id)
 
             self.db.add(action)
 
