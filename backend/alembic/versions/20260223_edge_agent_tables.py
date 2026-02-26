@@ -1,7 +1,7 @@
 """Create edge agent management tables
 
 Revision ID: 20260223_edge
-Revises: None
+Revises: 20260213_per_site_trm
 Create Date: 2026-02-23
 
 13 tables for PicoClaw fleet, OpenClaw gateway, signal ingestion,
@@ -24,7 +24,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = '20260223_edge'
-down_revision = None
+down_revision = '20260213_per_site_trm'
 branch_labels = None
 depends_on = None
 
