@@ -1159,25 +1159,61 @@ Use these books as references when writing executive summaries, competitive posi
 
 ---
 
-## Claude Skills Framework
+## Claude Skills Framework (Hybrid TRM + Skills Architecture)
 
 **Status**: IMPLEMENTED (2026-02-26)
 
-The platform uses Claude Skills as an alternative to TRM neural networks for execution-level decisions. Each skill encodes heuristic decision rules as a SKILL.md file, with RAG decision memory providing few-shot context from past decisions. Feature-flagged OFF by default (`USE_CLAUDE_SKILLS=false`).
+The platform uses a **hybrid TRM + Claude Skills** architecture at the execution level. TRMs (7M-parameter neural networks) are the PRIMARY decision path handling ~95% of decisions at <10ms latency. Claude Skills serve as the **exception handler** for the ~5% of novel situations where conformal prediction indicates low TRM confidence. This maps to LeCun's JEPA framework: TRMs = Actor, Claude Skills = Configurator.
+
+Each skill encodes heuristic decision rules as a SKILL.md file, with RAG decision memory providing few-shot context from past decisions. Feature-flagged OFF by default (`USE_CLAUDE_SKILLS=false`).
 
 **Key Documentation**:
 - [docs/CLAUDE_SKILLS_STRATEGY.md](docs/CLAUDE_SKILLS_STRATEGY.md) — Full strategic analysis: PicoClaw/OpenClaw vs Claude, TRM vs Skills+RAG, cost models, IP protection
 - [docs/CLAUDE_SKILLS_MIGRATION_PLAN.md](docs/CLAUDE_SKILLS_MIGRATION_PLAN.md) — Phased implementation roadmap
 - [docs/CLAUDE_SUBSCRIPTION_GUIDE.md](docs/CLAUDE_SUBSCRIPTION_GUIDE.md) — Subscription setup, pricing, smart routing config
+- [docs/Knowledge/LeCun_Critique_Planning_Agency_Analysis.md.pdf](docs/Knowledge/LeCun_Critique_Planning_Agency_Analysis.md.pdf) — Theoretical foundation: JEPA mapping, hybrid architecture rationale
 
-**Architecture**:
+**Architecture (LeCun JEPA Mapping)**:
 ```
-Deterministic Engine (unchanged, always runs first)
-    → Skill Orchestrator (routes to Claude or RAG cache)
-        → RAG Decision Memory (find similar past decisions)
-        → Claude API (Haiku for calculation, Sonnet for judgment)
-    → Fallback: engine-only result if skill fails
+GraphSAGE / tGNN = World Model (network-wide state representation)
+TRMs = Actor (fast, learned policy execution, ~95% of decisions)
+Claude Skills = Configurator (exception handling, ~5% of decisions)
+Bayesian / Causal AI = Critic (override effectiveness tracking)
+Conformal Prediction = Uncertainty Module (routing trigger)
 ```
+
+**Hybrid Execution Flow**:
+```
+Deterministic Engine (always runs first)
+    ↓
+TRM Exception Head (fast, <10ms, learned adjustments)
+    ↓
+Conformal Prediction Router:
+    ├── High confidence (tight intervals) → Accept TRM result ✓
+    └── Low confidence (wide intervals) → Escalate to Claude Skills
+        ↓
+    Claude Skills Exception Handler
+        ├── RAG Decision Memory (find similar past decisions)
+        ├── Claude API (Haiku for calculation, Sonnet for judgment)
+        └── Proposal validated against engine constraints
+    ↓
+Skills decisions recorded for TRM meta-learning (shift 95/5 boundary)
+```
+
+**Three Roles of Claude Skills**:
+1. **Exception Handler**: Reason about novel situations TRMs haven't learned yet
+2. **Orchestrator**: Assess TRM confidence, decide when to escalate (via conformal prediction)
+3. **Meta-Learner**: Skills decisions feed back into TRM training data, gradually teaching TRMs to handle previously-novel situations
+
+**Conformal Prediction Routing** (governs the TRM → Skills boundary):
+- `skill_escalation_threshold` (default: 0.6): TRM confidence below this triggers escalation
+- CDT `risk_bound` > (1 - threshold): High uncertainty triggers escalation
+- Conformal `interval_width` > 0.5: Wide prediction intervals trigger escalation
+
+**Constraint Validation** (all Skills proposals must pass):
+- Quantity deviation < `skill_max_deviation` (default: 30%) from engine baseline
+- Multipliers within [0.5, 2.0] safe range
+- Confidence gate: Skills confidence must be > 0.3
 
 **11 Skills by Routing Tier**:
 
@@ -1191,11 +1227,11 @@ Deterministic Engine (unchanged, always runs first)
 - `backend/app/services/skills/__init__.py` — Framework package
 - `backend/app/services/skills/base_skill.py` — `SkillDefinition`, `SkillResult`, `SkillError`, registry
 - `backend/app/services/skills/claude_client.py` — Claude API client with vLLM/Qwen fallback, prompt caching
-- `backend/app/services/skills/skill_orchestrator.py` — Routes decisions through skills with RAG context
+- `backend/app/services/skills/skill_orchestrator.py` — Exception handler and meta-learner (invoked only on escalation)
 - `backend/app/services/skills/*/SKILL.md` — 11 heuristic rule files (one per TRM type)
 - `backend/app/models/decision_embeddings.py` — pgvector 768-dim embeddings for RAG decision memory
 - `backend/app/services/decision_memory_service.py` — Embed/retrieve past decisions for few-shot context
-- `backend/app/services/powell/site_agent.py` — Integration point (`use_claude_skills` flag)
+- `backend/app/services/powell/site_agent.py` — Hybrid integration: `_should_escalate_to_skills()`, `_validate_skill_proposal()`, `_record_skill_decision_for_training()`
 
 **RAG Decision Memory** (cost reduction flywheel):
 - Cache hit (similarity > 0.95): Skip LLM entirely ($0)
@@ -1209,9 +1245,11 @@ CLAUDE_API_KEY=sk-ant-...          # From console.anthropic.com
 CLAUDE_MODEL_HAIKU=claude-haiku-4-5-20251001
 CLAUDE_MODEL_SONNET=claude-sonnet-4-6
 USE_CLAUDE_SKILLS=false            # Feature flag (enable when ready)
+SKILL_ESCALATION_THRESHOLD=0.6    # TRM confidence below this → Skills
+SKILL_MAX_DEVIATION=0.3           # Max allowed deviation for Skills proposals
 ```
 
-**Fallback**: vLLM + Qwen 3 via `LLM_API_BASE` for air-gapped customers. TRM neural networks remain as fallback when `use_claude_skills=False`.
+**Fallback chain**: Engine → TRM → Claude Skills → Engine-only. vLLM + Qwen 3 via `LLM_API_BASE` for air-gapped customers. TRM neural networks remain as the primary execution path; Claude Skills only activates for exceptions.
 
 **Self-Hosted LLM** (unchanged):
 - Qwen 3 8B via vLLM — 96.5% tool calling accuracy, OpenAI-compatible API, 8GB VRAM minimum
@@ -1235,7 +1273,7 @@ The platform has been refactored from Beer Game-centric to AWS SC-first. See [AR
 - ✅ CDC→Relearning autonomous feedback loop
 - ✅ Knowledge Base / RAG with pgvector
 - ✅ SAP integration (connections, field mapping, user import, monitoring)
-- ✅ Claude Skills framework (11 skills replacing TRM neural networks, feature-flagged)
+- ✅ Hybrid TRM + Claude Skills architecture (TRMs primary, Skills for exceptions, conformal routing)
 - ✅ RAG Decision Memory (pgvector-based decision embeddings for cost reduction)
 - ✅ PicoClaw/OpenClaw removed (replaced by Claude Skills ecosystem)
 - ✅ Beer Game repositioned as simulation/training module (not primary focus)

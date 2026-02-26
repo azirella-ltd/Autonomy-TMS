@@ -1,19 +1,40 @@
 """
-SiteAgent - Unified Execution Orchestrator
+SiteAgent - Unified Execution Orchestrator (Hybrid TRM + Claude Skills)
 
 The SiteAgent is the execution-level orchestrator that combines:
 - Deterministic engines (MRP, AATP, Inventory Buffer)
-- Learned TRM heads (exception handling, adjustments)
+- Learned TRM heads (fast policy execution, ~95% of decisions)
+- Claude Skills (exception handler for novel situations, ~5% of decisions)
 - CDC monitoring (event-driven replanning)
 
 Each site in the supply chain network has a SiteAgent responsible
 for all execution decisions at that location.
 
+Architecture (LeCun JEPA mapping):
+- GraphSAGE/tGNN = World Model (network-wide state representation)
+- TRMs = Actor (fast, learned policy execution)
+- Claude Skills = Configurator (orchestration, exception handling, meta-learning)
+- Bayesian/Causal AI = Critic (override effectiveness)
+- Conformal Prediction = Uncertainty Module (routing trigger)
+
+Execution Flow:
+1. Engine computes deterministic result (always runs)
+2. TRM adjusts if enabled (fast, <10ms, learned exceptions)
+3. Conformal prediction checks TRM confidence:
+   - Tight intervals (high confidence) → TRM result accepted
+   - Wide intervals (low confidence) → Escalate to Claude Skills
+4. Claude Skills handles exception (novel situation reasoning)
+5. Skill proposal validated against engine constraints
+6. Skill decisions feed back into TRM training (meta-learning)
+
 Key Principles:
 1. Engines are deterministic - auditable, testable, no surprises
 2. TRM heads learn exceptions only - bounded adjustments
-3. Engines can run without TRM - graceful degradation
-4. CDC monitor triggers out-of-cadence replanning
+3. TRMs are the PRIMARY decision path (~95% of decisions)
+4. Claude Skills handle only exceptions/novel situations (~5%)
+5. Conformal prediction governs routing between TRM and Skills
+6. Engines can run without TRM or Skills - graceful degradation
+7. CDC monitor triggers out-of-cadence replanning
 """
 
 from dataclasses import dataclass, field
@@ -94,20 +115,40 @@ class SiteAgentConfig:
     # Authorization protocol
     enable_authorization: bool = True  # Check authority boundaries before actions
 
-    # Claude Skills (feature-flagged, OFF by default)
-    use_claude_skills: bool = False  # If True, route through Claude Skills instead of TRM
+    # Claude Skills — hybrid exception handler (feature-flagged, OFF by default)
+    # When True, TRMs remain the PRIMARY path; Skills handle only exceptions
+    # where conformal prediction indicates low confidence (wide intervals).
+    use_claude_skills: bool = False
+
+    # Conformal prediction threshold for Skills escalation.
+    # When TRM confidence < this threshold (or CDT risk_bound > 1 - this),
+    # the decision is escalated to Claude Skills for reasoned judgment.
+    skill_escalation_threshold: float = 0.6
+
+    # Maximum allowed deviation for Skill proposals vs engine constraints.
+    # Skill proposals that deviate more than this fraction from engine
+    # baseline are rejected in favor of the TRM/engine result.
+    skill_max_deviation: float = 0.3
 
 
 @dataclass
 class ATPResponse:
-    """Response from ATP decision"""
+    """Response from ATP decision.
+
+    source values:
+        "deterministic" — Engine-only result (happy path or fallback)
+        "trm_adjusted"  — TRM adjusted the engine result
+        "skill:haiku"   — Claude Skills (Haiku) handled exception
+        "skill:sonnet"  — Claude Skills (Sonnet) handled exception
+    """
     order_id: str
     promised_qty: float
     promise_date: Any  # date
-    source: str  # "deterministic", "trm_adjusted", "exception"
+    source: str
     confidence: float = 1.0
     explanation: str = ""
     signal_context: Optional[Dict[str, Any]] = None  # Hive signal snapshot at decision time
+    escalation_reason: Optional[str] = None  # Why Skills was invoked (if applicable)
 
 
 @dataclass
@@ -368,16 +409,145 @@ class SiteAgent:
             logger.warning("Failed to initialize Skills orchestrator: %s. Falling back to TRM.", e)
             self._skill_orchestrator = None
 
+    def _should_escalate_to_skills(
+        self,
+        trm_confidence: float,
+        risk_assessment: Optional[Dict[str, Any]] = None,
+    ) -> tuple[bool, str]:
+        """Decide whether to escalate a TRM decision to Claude Skills.
+
+        Uses conformal prediction (CDT risk bounds) as the routing trigger.
+        When TRM confidence is low or conformal intervals are wide, the
+        decision is escalated to Claude Skills for reasoned judgment.
+
+        Args:
+            trm_confidence: TRM output confidence score (0-1).
+            risk_assessment: Optional CDT risk assessment dict with
+                'risk_bound' (P(loss > threshold)) and 'interval_width'.
+
+        Returns:
+            Tuple of (should_escalate, reason).
+        """
+        if not self.config.use_claude_skills or self._skill_orchestrator is None:
+            return False, ""
+
+        # Check 1: TRM confidence below escalation threshold
+        if trm_confidence < self.config.skill_escalation_threshold:
+            return True, f"trm_confidence={trm_confidence:.3f} < threshold={self.config.skill_escalation_threshold}"
+
+        # Check 2: CDT risk bound indicates high uncertainty
+        if risk_assessment:
+            risk_bound = risk_assessment.get("risk_bound", 0.0)
+            # Risk bound > (1 - escalation_threshold) means too risky for TRM alone
+            risk_threshold = 1.0 - self.config.skill_escalation_threshold
+            if risk_bound > risk_threshold:
+                return True, f"cdt_risk_bound={risk_bound:.3f} > threshold={risk_threshold:.3f}"
+
+            # Check 3: Conformal interval width (wider = more uncertainty)
+            interval_width = risk_assessment.get("interval_width", 0.0)
+            if interval_width > 0.5:  # Normalized: > 50% of value range
+                return True, f"conformal_interval_width={interval_width:.3f} (too wide)"
+
+        return False, ""
+
+    def _validate_skill_proposal(
+        self,
+        skill_decision: Dict[str, Any],
+        engine_result: Dict[str, Any],
+        trm_type: str,
+    ) -> tuple[bool, str]:
+        """Validate a Claude Skills proposal against engine constraints.
+
+        Every Skills proposal must pass constraint checking before execution.
+        This prevents the LLM from producing decisions that violate physical
+        or business constraints that the deterministic engine enforces.
+
+        Args:
+            skill_decision: The decision dict from Claude Skills.
+            engine_result: The baseline engine result for comparison.
+            trm_type: TRM type identifier for context-specific validation.
+
+        Returns:
+            Tuple of (is_valid, rejection_reason).
+        """
+        max_dev = self.config.skill_max_deviation
+
+        # Quantity-based validation (ATP, PO, inventory)
+        skill_qty = skill_decision.get("quantity", skill_decision.get("order_quantity"))
+        engine_qty = engine_result.get("available_qty", engine_result.get("quantity"))
+
+        if skill_qty is not None and engine_qty is not None and engine_qty > 0:
+            deviation = abs(skill_qty - engine_qty) / engine_qty
+            if deviation > max_dev:
+                return False, (
+                    f"quantity deviation {deviation:.1%} exceeds max {max_dev:.1%} "
+                    f"(skill={skill_qty}, engine={engine_qty})"
+                )
+
+        # Multiplier-based validation (inventory buffer)
+        multiplier = skill_decision.get("multiplier")
+        if multiplier is not None:
+            if multiplier < 0.5 or multiplier > 2.0:
+                return False, f"multiplier {multiplier} outside safe range [0.5, 2.0]"
+
+        # Confidence gate: reject Skills proposals with very low confidence
+        skill_confidence = skill_decision.get("confidence", 1.0)
+        if skill_confidence < 0.3:
+            return False, f"skill confidence {skill_confidence:.2f} too low"
+
+        return True, ""
+
+    async def _record_skill_decision_for_training(
+        self,
+        trm_type: str,
+        state_features: Dict[str, Any],
+        skill_decision: Dict[str, Any],
+        escalation_reason: str,
+    ) -> None:
+        """Record a Skills decision for TRM meta-learning.
+
+        Skills decisions (especially successful ones) feed back into TRM
+        training data, gradually shifting the 95/5 boundary by teaching
+        TRMs to handle situations they previously couldn't.
+        """
+        if self.db is None:
+            return
+
+        try:
+            from app.services.decision_memory_service import DecisionMemoryService
+            from app.db.kb_session import get_kb_session
+
+            state_summary = (
+                f"{trm_type} escalated: {escalation_reason}. "
+                f"State: {str(state_features)[:300]}"
+            )
+
+            async with get_kb_session() as kb_db:
+                svc = DecisionMemoryService(db=kb_db)
+                await svc.embed_decision(
+                    trm_type=trm_type,
+                    state_features=state_features,
+                    state_summary=state_summary,
+                    decision=skill_decision,
+                    decision_source="skill_exception",
+                    site_key=self.site_key,
+                )
+        except Exception as e:
+            logger.debug("Failed to record skill decision for training: %s", e)
+
     async def execute_atp(self, order: Order) -> ATPResponse:
         """
         Execute ATP decision for incoming order.
 
-        Flow:
+        Hybrid TRM + Claude Skills flow:
         1. Read hive signals (quality holds, rebalance inbound, etc.)
         2. AATPEngine computes deterministic availability
-        3. If shortage, ATPExceptionHead suggests resolution
-        4. Emit hive signals (shortage, demand surge/drop)
-        5. Return combined decision
+        3. If shortage → TRM exception head adjusts (fast, ~95% of cases)
+        4. Conformal prediction checks TRM confidence:
+           - High confidence → accept TRM result
+           - Low confidence → escalate to Claude Skills
+        5. Skills proposal validated against engine constraints
+        6. Skills decisions recorded for TRM meta-learning
         """
         # Step 0: Read relevant hive signals before decision
         signal_context = self._read_atp_signals()
@@ -389,7 +559,7 @@ class SiteAgent:
         base_result = self.aatp_engine.check_availability(order)
 
         if base_result.can_fulfill_full:
-            # Happy path - no TRM needed
+            # Happy path - no TRM or Skills needed
             self.aatp_engine.commit_consumption(order, base_result)
 
             return ATPResponse(
@@ -405,84 +575,121 @@ class SiteAgent:
         # Step 2: Shortage detected — emit signal
         self._emit_atp_shortage_signal(order, base_result)
 
-        # Step 2b: Try Claude Skills first (if enabled), then TRM, then engine-only
-        if self.config.use_claude_skills and self._skill_orchestrator:
+        # Step 3: TRM exception head (PRIMARY path — fast, learned)
+        trm_confidence = 0.0
+        trm_response = None
+        risk_assessment = None
+
+        if self.config.use_trm_adjustments and self.model is not None:
             try:
-                from app.services.skills.base_skill import SkillError
+                state = await self._encode_state()
+                order_context = self._order_to_tensor(order)
+                shortage_tensor = torch.tensor([[base_result.shortage_qty]], dtype=torch.float32)
+
+                with torch.no_grad():
+                    exception_decision = self.model.forward_atp_exception(
+                        state_embedding=state,
+                        order_context=order_context,
+                        shortage_qty=shortage_tensor
+                    )
+
+                trm_confidence = exception_decision.get('confidence', torch.tensor([[0.0]]))[0, 0].item()
+
+                # Extract CDT risk assessment if available
+                if 'risk_bound' in exception_decision:
+                    risk_assessment = {
+                        "risk_bound": exception_decision['risk_bound'][0, 0].item(),
+                        "interval_width": exception_decision.get('interval_width', torch.tensor([[0.0]]))[0, 0].item(),
+                    }
+
+                trm_response = self._apply_atp_exception(order, base_result, exception_decision)
+
+            except Exception as e:
+                logger.warning(f"TRM exception handling failed: {e}")
+                # TRM failed — will fall through to Skills or deterministic
+
+        # Step 4: Conformal prediction routing — should we escalate to Skills?
+        should_escalate, escalation_reason = self._should_escalate_to_skills(
+            trm_confidence, risk_assessment
+        )
+
+        if should_escalate and self._skill_orchestrator is not None:
+            # Step 5: Claude Skills exception handler (novel situation)
+            try:
+                state_features = {
+                    "order_id": order.order_id,
+                    "requested_qty": order.requested_qty,
+                    "available_qty": base_result.available_qty,
+                    "shortage_qty": base_result.shortage_qty,
+                    "priority": getattr(order, "priority", Priority(3)).value if hasattr(getattr(order, "priority", 3), "value") else getattr(order, "priority", 3),
+                    "trm_confidence": trm_confidence,
+                    "escalation_reason": escalation_reason,
+                }
                 skill_result = await self._skill_orchestrator.execute(
                     trm_type="atp_executor",
-                    state_features={
-                        "order_id": order.order_id,
-                        "requested_qty": order.requested_qty,
-                        "available_qty": base_result.available_qty,
-                        "shortage_qty": base_result.shortage_qty,
-                        "priority": getattr(order, "priority", 3),
-                    },
+                    state_features=state_features,
                     engine_result={
                         "available_qty": base_result.available_qty,
                         "available_date": str(base_result.available_date),
                     },
                     site_key=self.site_key,
                 )
-                promised = skill_result.decision.get("quantity", base_result.available_qty)
-                if promised > 0:
-                    self.aatp_engine.commit_consumption(order, base_result)
-                return ATPResponse(
-                    order_id=order.order_id,
-                    promised_qty=min(promised, order.requested_qty),
-                    promise_date=base_result.available_date,
-                    source=f"skill:{skill_result.model_used}",
-                    confidence=skill_result.confidence,
-                    explanation=skill_result.reasoning,
-                    signal_context=hive_snapshot or None,
+
+                # Step 5b: Validate Skills proposal against engine constraints
+                is_valid, rejection_reason = self._validate_skill_proposal(
+                    skill_result.decision,
+                    {"available_qty": base_result.available_qty},
+                    "atp_executor",
                 )
+
+                if is_valid:
+                    promised = skill_result.decision.get("quantity", base_result.available_qty)
+                    if promised > 0:
+                        self.aatp_engine.commit_consumption(order, base_result)
+
+                    # Step 6: Record for TRM meta-learning
+                    await self._record_skill_decision_for_training(
+                        trm_type="atp_executor",
+                        state_features=state_features,
+                        skill_decision=skill_result.decision,
+                        escalation_reason=escalation_reason,
+                    )
+
+                    return ATPResponse(
+                        order_id=order.order_id,
+                        promised_qty=min(promised, order.requested_qty),
+                        promise_date=base_result.available_date,
+                        source=f"skill:{skill_result.model_used}",
+                        confidence=skill_result.confidence,
+                        explanation=skill_result.reasoning,
+                        signal_context=hive_snapshot or None,
+                        escalation_reason=escalation_reason,
+                    )
+                else:
+                    logger.info(
+                        "Skills proposal rejected for ATP: %s. Using TRM/engine result.",
+                        rejection_reason,
+                    )
             except Exception as e:
-                logger.debug("Skill ATP failed, falling through to TRM/engine: %s", e)
+                logger.debug("Skill ATP exception failed, using TRM/engine: %s", e)
 
-        # Step 2c: Check if TRM is available
-        if not self.config.use_trm_adjustments or self.model is None:
-            # No TRM - return deterministic result
-            if base_result.available_qty > 0:
-                self.aatp_engine.commit_consumption(order, base_result)
+        # Step 7: Return TRM result if available, otherwise deterministic
+        if trm_response is not None:
+            trm_response.signal_context = hive_snapshot or None
+            return trm_response
 
-            return ATPResponse(
-                order_id=order.order_id,
-                promised_qty=base_result.available_qty,
-                promise_date=base_result.available_date,
-                source="deterministic",
-                confidence=1.0,
-                explanation=f"Shortage: {base_result.shortage_qty:.0f} units unavailable"
-            )
+        # Final fallback: deterministic engine-only
+        if base_result.available_qty > 0:
+            self.aatp_engine.commit_consumption(order, base_result)
 
-        # Step 3: Invoke TRM exception head
-        try:
-            state = await self._encode_state()
-            order_context = self._order_to_tensor(order)
-            shortage_tensor = torch.tensor([[base_result.shortage_qty]], dtype=torch.float32)
-
-            with torch.no_grad():
-                exception_decision = self.model.forward_atp_exception(
-                    state_embedding=state,
-                    order_context=order_context,
-                    shortage_qty=shortage_tensor
-                )
-
-            return self._apply_atp_exception(order, base_result, exception_decision)
-
-        except Exception as e:
-            logger.error(f"TRM exception handling failed: {e}")
-            # Fallback to deterministic
-            if base_result.available_qty > 0:
-                self.aatp_engine.commit_consumption(order, base_result)
-
-            return ATPResponse(
-                order_id=order.order_id,
-                promised_qty=base_result.available_qty,
-                promise_date=base_result.available_date,
-                source="deterministic",
-                confidence=1.0,
-                explanation=f"TRM error, fallback to deterministic"
-            )
+        return ATPResponse(
+            order_id=order.order_id,
+            promised_qty=base_result.available_qty,
+            promise_date=base_result.available_date,
+            source="deterministic",
+            confidence=1.0,
+            explanation=f"Shortage: {base_result.shortage_qty:.0f} units unavailable",
+        )
 
     def _apply_atp_exception(
         self,
@@ -579,10 +786,11 @@ class SiteAgent:
         """
         Execute replenishment planning for the site.
 
-        Flow:
-        1. MRPEngine computes net requirements
-        2. BufferCalculator provides targets
-        3. POTimingHead adjusts timing/expedite decisions
+        Hybrid TRM + Claude Skills flow:
+        1. MRPEngine computes net requirements (deterministic)
+        2. TRM adjusts timing/expedite (fast, PRIMARY path)
+        3. If TRM confidence low → escalate to Claude Skills
+        4. Skills proposal validated against engine constraints
         """
         # Step 1: Deterministic MRP
         net_requirements, planned_orders = self.mrp_engine.compute_net_requirements(
@@ -593,7 +801,7 @@ class SiteAgent:
             lead_times=lead_times
         )
 
-        # Step 2: Convert to PO recommendations
+        # Step 2: Convert to PO recommendations with TRM-first adjustments
         recommendations = []
 
         for po in planned_orders:
@@ -608,35 +816,11 @@ class SiteAgent:
                 source="deterministic"
             )
 
-            # Step 3a: Claude Skills PO adjustment (if enabled)
-            if self.config.use_claude_skills and self._skill_orchestrator:
-                try:
-                    skill_result = await self._skill_orchestrator.execute(
-                        trm_type="po_creation",
-                        state_features={
-                            "item_id": po.item_id,
-                            "quantity": po.quantity,
-                            "order_date": str(po.order_date),
-                            "order_type": po.order_type,
-                            "lead_time": lead_times.get(po.item_id, 7),
-                            "on_hand": on_hand_inventory.get(po.item_id, 0),
-                        },
-                        engine_result={
-                            "quantity": po.quantity,
-                            "order_date": str(po.order_date),
-                            "order_type": po.order_type,
-                        },
-                        site_key=self.site_key,
-                    )
-                    if skill_result.decision.get("action") == "create_po":
-                        rec.expedite = skill_result.decision.get("timing") == "immediate"
-                        rec.confidence = skill_result.confidence
-                        rec.source = f"skill:{skill_result.model_used}"
-                except Exception as e:
-                    logger.debug("Skill PO adjustment failed, falling through: %s", e)
+            # Step 3: TRM timing adjustment (PRIMARY — fast, learned)
+            trm_confidence = 0.0
+            risk_assessment = None
 
-            # Step 3b: TRM timing adjustments (if enabled and skills didn't run)
-            elif self.config.use_trm_adjustments and self.model is not None:
+            if self.config.use_trm_adjustments and self.model is not None:
                 try:
                     state = await self._encode_state()
                     po_context = self._po_to_tensor(po)
@@ -647,10 +831,71 @@ class SiteAgent:
                             po_context=po_context
                         )
 
+                    trm_confidence = timing_adj.get('confidence', torch.tensor([[0.0]]))[0, 0].item()
+
+                    if 'risk_bound' in timing_adj:
+                        risk_assessment = {
+                            "risk_bound": timing_adj['risk_bound'][0, 0].item(),
+                            "interval_width": timing_adj.get('interval_width', torch.tensor([[0.0]]))[0, 0].item(),
+                        }
+
                     rec = self._apply_timing_adjustment(rec, timing_adj)
 
                 except Exception as e:
                     logger.warning(f"TRM timing adjustment failed: {e}")
+
+            # Step 4: Conformal routing — escalate to Skills if low confidence
+            should_escalate, escalation_reason = self._should_escalate_to_skills(
+                trm_confidence, risk_assessment
+            )
+
+            if should_escalate and self._skill_orchestrator is not None:
+                try:
+                    state_features = {
+                        "item_id": po.item_id,
+                        "quantity": po.quantity,
+                        "order_date": str(po.order_date),
+                        "order_type": po.order_type,
+                        "lead_time": lead_times.get(po.item_id, 7),
+                        "on_hand": on_hand_inventory.get(po.item_id, 0),
+                        "trm_confidence": trm_confidence,
+                        "escalation_reason": escalation_reason,
+                    }
+                    skill_result = await self._skill_orchestrator.execute(
+                        trm_type="po_creation",
+                        state_features=state_features,
+                        engine_result={
+                            "quantity": po.quantity,
+                            "order_date": str(po.order_date),
+                            "order_type": po.order_type,
+                        },
+                        site_key=self.site_key,
+                    )
+
+                    # Validate Skills proposal
+                    is_valid, rejection_reason = self._validate_skill_proposal(
+                        skill_result.decision,
+                        {"quantity": po.quantity},
+                        "po_creation",
+                    )
+
+                    if is_valid and skill_result.decision.get("action") == "create_po":
+                        rec.expedite = skill_result.decision.get("timing") == "immediate"
+                        rec.confidence = skill_result.confidence
+                        rec.source = f"skill:{skill_result.model_used}"
+
+                        # Record for TRM meta-learning
+                        await self._record_skill_decision_for_training(
+                            trm_type="po_creation",
+                            state_features=state_features,
+                            skill_decision=skill_result.decision,
+                            escalation_reason=escalation_reason,
+                        )
+                    elif not is_valid:
+                        logger.info("Skills PO proposal rejected: %s", rejection_reason)
+
+                except Exception as e:
+                    logger.debug("Skill PO adjustment failed: %s", e)
 
             recommendations.append(rec)
 
@@ -689,53 +934,106 @@ class SiteAgent:
 
     async def get_inventory_adjustments(self) -> Dict[str, float]:
         """
-        Get inventory parameter adjustments from Skills or TRM.
+        Get inventory parameter adjustments.
+
+        Hybrid TRM + Claude Skills flow:
+        1. TRM computes multipliers (PRIMARY — fast, learned)
+        2. If TRM confidence low → escalate to Claude Skills
+        3. Skills proposal validated (multiplier within [0.5, 2.0])
 
         Returns dict with:
         - ss_multiplier: Safety stock adjustment
         - rop_multiplier: Reorder point adjustment
+        - confidence: Decision confidence
+        - source: Decision source ("trm_adjusted", "skill:*", "deterministic")
         """
-        # Try Claude Skills first (if enabled)
-        if self.config.use_claude_skills and self._skill_orchestrator:
+        # Step 1: TRM inventory adjustment (PRIMARY path)
+        trm_confidence = 0.0
+        trm_result = None
+        risk_assessment = None
+
+        if self.config.use_trm_adjustments and self.model is not None:
             try:
+                state = await self._encode_state()
+
+                with torch.no_grad():
+                    inv_output = self.model.forward_inventory_planning(state)
+
+                trm_confidence = inv_output['confidence'][0, 0].item()
+
+                if 'risk_bound' in inv_output:
+                    risk_assessment = {
+                        "risk_bound": inv_output['risk_bound'][0, 0].item(),
+                        "interval_width": inv_output.get('interval_width', torch.tensor([[0.0]]))[0, 0].item(),
+                    }
+
+                trm_result = {
+                    'ss_multiplier': inv_output['ss_multiplier'][0, 0].item(),
+                    'rop_multiplier': inv_output['rop_multiplier'][0, 0].item(),
+                    'confidence': trm_confidence,
+                    'source': 'trm_adjusted',
+                }
+
+            except Exception as e:
+                logger.warning(f"TRM inventory adjustment failed: {e}")
+
+        # Step 2: Conformal routing — escalate to Skills if low confidence
+        should_escalate, escalation_reason = self._should_escalate_to_skills(
+            trm_confidence, risk_assessment
+        )
+
+        if should_escalate and self._skill_orchestrator is not None:
+            try:
+                current_mult = trm_result['ss_multiplier'] if trm_result else 1.0
+                state_features = {
+                    "site_key": self.site_key,
+                    "current_multiplier": current_mult,
+                    "trm_confidence": trm_confidence,
+                    "escalation_reason": escalation_reason,
+                }
                 skill_result = await self._skill_orchestrator.execute(
                     trm_type="inventory_buffer",
-                    state_features={
-                        "site_key": self.site_key,
-                        "current_multiplier": 1.0,
-                    },
+                    state_features=state_features,
                     engine_result={"ss_multiplier": 1.0, "rop_multiplier": 1.0},
                     site_key=self.site_key,
                 )
-                multiplier = skill_result.decision.get("multiplier", 1.0)
-                return {
-                    "ss_multiplier": multiplier,
-                    "rop_multiplier": multiplier,
-                    "confidence": skill_result.confidence,
-                    "source": f"skill:{skill_result.model_used}",
-                }
+
+                # Validate Skills proposal
+                is_valid, rejection_reason = self._validate_skill_proposal(
+                    skill_result.decision,
+                    {"ss_multiplier": 1.0},
+                    "inventory_buffer",
+                )
+
+                if is_valid:
+                    multiplier = skill_result.decision.get("multiplier", 1.0)
+
+                    # Record for TRM meta-learning
+                    await self._record_skill_decision_for_training(
+                        trm_type="inventory_buffer",
+                        state_features=state_features,
+                        skill_decision=skill_result.decision,
+                        escalation_reason=escalation_reason,
+                    )
+
+                    return {
+                        "ss_multiplier": multiplier,
+                        "rop_multiplier": multiplier,
+                        "confidence": skill_result.confidence,
+                        "source": f"skill:{skill_result.model_used}",
+                        "escalation_reason": escalation_reason,
+                    }
+                else:
+                    logger.info("Skills buffer proposal rejected: %s", rejection_reason)
+
             except Exception as e:
-                logger.debug("Skill inventory buffer failed, falling through: %s", e)
+                logger.debug("Skill inventory buffer failed: %s", e)
 
-        # TRM path
-        if not self.config.use_trm_adjustments or self.model is None:
-            return {'ss_multiplier': 1.0, 'rop_multiplier': 1.0}
+        # Step 3: Return TRM result if available, otherwise neutral
+        if trm_result is not None:
+            return trm_result
 
-        try:
-            state = await self._encode_state()
-
-            with torch.no_grad():
-                inv_output = self.model.forward_inventory_planning(state)
-
-            return {
-                'ss_multiplier': inv_output['ss_multiplier'][0, 0].item(),
-                'rop_multiplier': inv_output['rop_multiplier'][0, 0].item(),
-                'confidence': inv_output['confidence'][0, 0].item()
-            }
-
-        except Exception as e:
-            logger.error(f"Inventory adjustment failed: {e}")
-            return {'ss_multiplier': 1.0, 'rop_multiplier': 1.0, 'confidence': 0.0}
+        return {'ss_multiplier': 1.0, 'rop_multiplier': 1.0, 'confidence': 0.0, 'source': 'deterministic'}
 
     async def check_cdc_trigger(self, metrics: SiteMetrics) -> TriggerEvent:
         """

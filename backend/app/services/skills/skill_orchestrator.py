@@ -1,12 +1,20 @@
 """
-Skill Orchestrator — routes decisions through Claude Skills with RAG context.
+Skill Orchestrator — Claude Skills as Exception Handler & Meta-Learner.
 
-Follows the same pattern as site_agent.py's TRM calls:
-    1. Deterministic engine runs first (unchanged)
-    2. Skill adjusts the engine result using heuristic rules + past decisions
-    3. Falls back to engine-only result on any failure
+In the hybrid TRM + Claude Skills architecture (LeCun JEPA mapping):
+    - TRMs = Actor (fast policy execution, ~95% of decisions)
+    - Claude Skills = Configurator (exception handling, ~5% of decisions)
 
-Decisions persist to existing powell_*_decisions tables (unchanged schema).
+The orchestrator is invoked ONLY when conformal prediction indicates
+low TRM confidence (wide prediction intervals = novel situation).
+
+Three roles:
+    1. Exception Handler: Reason about novel situations TRMs haven't seen
+    2. Orchestrator: Assess which TRM outputs to trust and when to escalate
+    3. Meta-Learner: Analyze TRM failures, generate training examples
+
+Decisions persist to existing powell_*_decisions tables (unchanged schema)
+AND to decision_embeddings for RAG retrieval and TRM retraining.
 """
 
 from __future__ import annotations
@@ -31,13 +39,24 @@ logger = logging.getLogger(__name__)
 
 class SkillOrchestrator:
     """
-    Routes execution decisions through Claude Skills.
+    Claude Skills exception handler and meta-learner.
+
+    Invoked by SiteAgent only when conformal prediction routing determines
+    that TRM confidence is too low for the current situation. Handles ~5%
+    of decisions — the novel/edge cases that TRMs haven't learned yet.
+
+    Skills decisions are recorded in the decision embedding store, feeding
+    back into TRM training to gradually shift the 95/5 boundary.
 
     Usage:
         orchestrator = SkillOrchestrator()
         result = await orchestrator.execute(
             trm_type="atp_executor",
-            state_features={"order_qty": 100, "available": 80, ...},
+            state_features={
+                "order_qty": 100, "available": 80,
+                "trm_confidence": 0.42,  # Low → escalated to Skills
+                "escalation_reason": "trm_confidence=0.42 < threshold=0.60",
+            },
             engine_result={"action": "partial_fulfill", "quantity": 80},
         )
     """
@@ -133,9 +152,9 @@ class SkillOrchestrator:
             except Exception as e:
                 logger.debug("RAG decision lookup failed (non-fatal): %s", e)
 
-        # 3. Build system prompt with RAG context
+        # 3. Build system prompt with RAG context + escalation metadata
         system_prompt = self._build_system_prompt(
-            base_prompt, similar_decisions, context
+            base_prompt, similar_decisions, context, state_features
         )
 
         # 4. Build user message with state + engine result
@@ -182,9 +201,27 @@ class SkillOrchestrator:
         base_prompt: str,
         similar_decisions: list[dict],
         context: Optional[dict[str, Any]],
+        state_features: Optional[dict[str, Any]] = None,
     ) -> str:
-        """Combine SKILL.md, RAG examples, and runtime context into system prompt."""
+        """Combine SKILL.md, escalation context, RAG examples, and runtime context."""
         parts = [base_prompt]
+
+        # Explain WHY this was escalated to Claude Skills (meta-context)
+        parts.append("\n\n## Escalation Context\n")
+        parts.append(
+            "You are handling an EXCEPTION — the TRM (fast neural network) "
+            "was not confident enough to decide autonomously. Your job is to "
+            "reason about this novel situation and provide a well-justified "
+            "decision. Your decision will be validated against engine constraints "
+            "and recorded for TRM retraining."
+        )
+        if state_features:
+            escalation_reason = state_features.get("escalation_reason", "")
+            trm_confidence = state_features.get("trm_confidence", "N/A")
+            if escalation_reason:
+                parts.append(f"Escalation reason: {escalation_reason}")
+            if trm_confidence != "N/A":
+                parts.append(f"TRM confidence was: {trm_confidence}")
 
         if similar_decisions:
             parts.append("\n\n## Past Similar Decisions (for reference)\n")
