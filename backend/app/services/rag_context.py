@@ -4,12 +4,15 @@ Standalone RAG context retrieval for LLM prompt augmentation.
 Call `get_rag_context(query)` from any async service to retrieve
 relevant knowledge base chunks formatted for LLM injection.
 
-Fail-safe: returns empty string on any error so LLM calls always proceed.
+Call `get_decision_context(trm_type, state_description)` to retrieve
+similar past decisions as few-shot examples for skill prompts.
+
+Fail-safe: returns empty string / empty list on any error so LLM calls always proceed.
 """
 
 import logging
 import os
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -65,3 +68,47 @@ async def get_rag_context(
     except Exception as e:
         logger.warning(f"RAG context retrieval failed (non-fatal): {e}")
         return ""
+
+
+async def get_decision_context(
+    trm_type: str,
+    state_description: str,
+    top_k: int = 3,
+    min_reward: float = 0.5,
+    site_key: Optional[str] = None,
+) -> list[dict[str, Any]]:
+    """Retrieve similar past decisions for skill prompt injection.
+
+    Safe to call from anywhere — manages its own DB session.
+    Returns empty list if decision memory is unavailable (never raises).
+
+    Args:
+        trm_type: TRM type identifier (e.g., "atp_executor").
+        state_description: Current state description to search for.
+        top_k: Number of similar decisions to retrieve.
+        min_reward: Minimum reward threshold (only return good decisions).
+        site_key: Optional site filter for scoping.
+
+    Returns:
+        List of similar decision dicts, or [] if unavailable.
+    """
+    if not RAG_ENABLED:
+        return []
+
+    try:
+        from app.db.kb_session import get_kb_session
+        from app.services.decision_memory_service import DecisionMemoryService
+
+        async with get_kb_session() as db:
+            svc = DecisionMemoryService(db=db)
+            return await svc.find_similar_decisions(
+                trm_type=trm_type,
+                state_description=state_description,
+                top_k=top_k,
+                min_reward=min_reward,
+                site_key=site_key,
+            )
+
+    except Exception as e:
+        logger.warning(f"Decision context retrieval failed (non-fatal): {e}")
+        return []
