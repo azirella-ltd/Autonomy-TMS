@@ -280,7 +280,7 @@ def create_exception(
         detection_method=data.detection_method,
         detection_details=data.detection_details,
         config_id=data.config_id,
-        customer_id=data.tenant_id,
+        tenant_id=data.tenant_id,
     )
 
     # Calculate variance if actual provided
@@ -581,7 +581,7 @@ def create_rule(
         product_ids=data.product_ids,
         site_ids=data.site_ids,
         config_id=data.config_id,
-        customer_id=data.tenant_id,
+        tenant_id=data.tenant_id,
     )
 
     db.add(rule)
