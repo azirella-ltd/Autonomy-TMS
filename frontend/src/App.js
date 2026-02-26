@@ -44,17 +44,14 @@ import { ScenarioComparison } from "./components/stochastic";
 import SyntheticDataWizard from "./pages/admin/SyntheticDataWizard.jsx";
 import PlanningHierarchyConfig from "./pages/admin/PlanningHierarchyConfig.jsx";
 import SAPDataManagement from "./pages/admin/SAPDataManagement.jsx";
-import PicoClawManagement from "./pages/admin/PicoClawManagement.jsx";
-import OpenClawManagement from "./pages/admin/OpenClawManagement.jsx";
-import SignalIngestionDashboard from "./pages/admin/SignalIngestionDashboard.jsx";
-import EdgeAgentSecurity from "./pages/admin/EdgeAgentSecurity.jsx";
+
 import HiveDashboard from "./pages/admin/HiveDashboard.jsx";
 import AuthorizationProtocolBoard from "./pages/admin/AuthorizationProtocolBoard.jsx";
 import KnowledgeBase from "./pages/admin/KnowledgeBase.jsx";
 import AgentBenchmarkDashboard from "./pages/admin/AgentBenchmarkDashboard.jsx";
 import RLHFDashboard from "./pages/admin/RLHFDashboard.jsx";
 import PerformanceLeaderboard from "./pages/admin/PerformanceLeaderboard.jsx";
-import ScenarioUsers from "./pages/Players.jsx";
+import ScenarioUsers from "./pages/ScenarioUsers.jsx";
 import DebugBanner from "./components/DebugBanner.jsx";
 import AnalyticsDashboard from "./pages/AnalyticsDashboard.jsx";
 import SystemDashboard from "./components/monitoring/SystemDashboard";
@@ -437,23 +434,8 @@ const AppContent = () => {
               element={<SAPDataManagement />}
             />
 
-            {/* Edge Agent Management (PicoClaw & OpenClaw) */}
-            <Route
-              path="/admin/picoclaw"
-              element={<PicoClawManagement />}
-            />
-            <Route
-              path="/admin/openclaw"
-              element={<OpenClawManagement />}
-            />
-            <Route
-              path="/admin/signals"
-              element={<SignalIngestionDashboard />}
-            />
-            <Route
-              path="/admin/edge-security"
-              element={<EdgeAgentSecurity />}
-            />
+
+
             <Route
               path="/admin/hive"
               element={<HiveDashboard />}

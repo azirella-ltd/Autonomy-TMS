@@ -26,13 +26,14 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy import select, update, func, and_, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.edge_agents import (
-    EdgeIngestedSignal,
-    EdgeSignalCorrelation,
-    EdgeSourceReliability,
-    EdgeOpenClawSession,
-    EdgeActivityLog,
-)
+# Edge agent models removed — PicoClaw/OpenClaw replaced by Claude Skills ecosystem.
+# Signal ingestion logic preserved for future Claude-based signal pipeline.
+# TODO: Refactor to use inline models or new signal tables.
+EdgeIngestedSignal = None
+EdgeSignalCorrelation = None
+EdgeSourceReliability = None
+EdgeOpenClawSession = None
+EdgeActivityLog = None
 
 import logging
 

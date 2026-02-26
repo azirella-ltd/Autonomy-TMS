@@ -1,9 +1,0 @@
-# PicoClaw CDC Monitor
-
-Name: CDC Monitor -- ${SITE_NAME}
-Site Key: ${SITE_KEY}
-Site Type: ${SITE_TYPE}
-Region: ${REGION}
-Products Monitored: All products at this location
-Alert Channel: #${SITE_KEY}-alerts
-Escalation: @supply-planner

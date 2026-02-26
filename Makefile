@@ -400,19 +400,6 @@ help:
         echo "  make init-env      - set up .env from template or host-specific file"; \
         echo "  make llm-check     - test LLM endpoint connectivity"; \
         echo ""; \
-        echo "OpenClaw (Chat Planning Interface):"; \
-        echo "  make openclaw-setup  - validate OpenClaw workspace config"; \
-        echo "  make openclaw-up     - start OpenClaw container"; \
-        echo "  make openclaw-down   - stop OpenClaw container"; \
-        echo "  make openclaw-logs   - tail OpenClaw logs"; \
-        echo ""; \
-        echo "PicoClaw (Edge CDC Fleet):"; \
-        echo "  make picoclaw-workspaces - generate per-site workspaces from config"; \
-        echo "  make picoclaw-fleet      - generate fleet docker-compose.picoclaw.yml"; \
-        echo "  make picoclaw-up         - start PicoClaw CDC fleet"; \
-        echo "  make picoclaw-down       - stop PicoClaw fleet"; \
-        echo "  make picoclaw-logs       - tail PicoClaw fleet logs"; \
-        echo "  make picoclaw-status     - show fleet container status"; \
         echo ""; \
         echo "AWS Deployment (Autonomy + SAP):"; \
         echo "  make aws-init      - initialize Terraform in deploy/aws/"; \
@@ -728,89 +715,8 @@ train-and-test-food-dist-gpu:
 		--device cuda; \
 	echo "\n[✓] GPU pipeline completed."
 
-# =========================================================================
-# OPENCLAW TARGETS (Chat-Based Planning Interface)
-# =========================================================================
 
-OPENCLAW_COMPOSE := -f docker-compose.yml -f deploy/openclaw/docker-compose.openclaw.yml
 
-# Validate OpenClaw workspace configuration
-openclaw-setup:
-	@echo "\n[+] Validating OpenClaw workspace configuration..."
-	@test -f deploy/openclaw/workspace/SOUL.md || { echo "[!] Missing SOUL.md — run from project root"; exit 1; }
-	@test -f deploy/openclaw/openclaw.json || { echo "[!] Missing openclaw.json"; exit 1; }
-	@skill_count=$$(ls -d deploy/openclaw/workspace/skills/*/SKILL.md 2>/dev/null | wc -l); \
-	echo "   SOUL.md:       OK"; \
-	echo "   openclaw.json: OK"; \
-	echo "   Skills found:  $$skill_count"; \
-	if [ "$$skill_count" -lt 1 ]; then echo "[!] No skills found in workspace/skills/"; exit 1; fi
-	@echo "\n[✓] OpenClaw workspace validated."
-
-# Start OpenClaw container (requires autonomy-network — run 'make up' first)
-openclaw-up: openclaw-setup
-	@echo "\n[+] Starting OpenClaw chat interface..."
-	$(DOCKER_COMPOSE_CMD) $(OPENCLAW_COMPOSE) up -d openclaw
-	@echo "\n[✓] OpenClaw started."
-	@echo "   Container: autonomy-openclaw"
-	@echo "   Network:   autonomy-network"
-
-# Stop OpenClaw container
-openclaw-down:
-	@echo "\n[+] Stopping OpenClaw..."
-	$(DOCKER_COMPOSE_CMD) $(OPENCLAW_COMPOSE) stop openclaw
-	@echo "\n[✓] OpenClaw stopped."
-
-# View OpenClaw logs
-openclaw-logs:
-	@$(DOCKER_COMPOSE_CMD) $(OPENCLAW_COMPOSE) logs -f --tail=200 openclaw
-
-# =========================================================================
-# PICOCLAW TARGETS (Edge CDC Monitoring Fleet)
-# =========================================================================
-
-PICOCLAW_COMPOSE := -f docker-compose.yml -f deploy/picoclaw/docker-compose.picoclaw.yml
-PICOCLAW_CONFIG_ID ?= 1
-
-# Generate per-site PicoClaw workspaces from supply chain config
-picoclaw-workspaces:
-	@echo "\n[+] Generating PicoClaw per-site workspaces..."
-	$(DOCKER_COMPOSE_CMD) exec backend python deploy/picoclaw/generate_workspaces.py \
-	  --config-id $(PICOCLAW_CONFIG_ID)
-	@echo "\n[✓] PicoClaw workspaces generated in deploy/picoclaw/workspaces/"
-
-# Generate fleet docker-compose from workspaces
-picoclaw-fleet:
-	@echo "\n[+] Generating PicoClaw fleet Docker Compose..."
-	python3 deploy/picoclaw/generate_fleet_compose.py \
-	  --workspaces-dir deploy/picoclaw/workspaces
-	@echo "\n[✓] Fleet compose generated: deploy/picoclaw/docker-compose.picoclaw.yml"
-
-# Start PicoClaw fleet (requires workspaces + fleet compose)
-picoclaw-up:
-	@test -f deploy/picoclaw/docker-compose.picoclaw.yml || { echo "[!] Fleet compose not found. Run: make picoclaw-fleet"; exit 1; }
-	@echo "\n[+] Starting PicoClaw CDC fleet..."
-	$(DOCKER_COMPOSE_CMD) $(PICOCLAW_COMPOSE) up -d
-	@echo "\n[✓] PicoClaw fleet started."
-
-# Stop PicoClaw fleet
-picoclaw-down:
-	@test -f deploy/picoclaw/docker-compose.picoclaw.yml || { echo "[!] No fleet compose found."; exit 0; }
-	@echo "\n[+] Stopping PicoClaw fleet..."
-	$(DOCKER_COMPOSE_CMD) $(PICOCLAW_COMPOSE) stop
-	@echo "\n[✓] PicoClaw fleet stopped."
-
-# View PicoClaw fleet logs
-picoclaw-logs:
-	@$(DOCKER_COMPOSE_CMD) $(PICOCLAW_COMPOSE) logs -f --tail=200
-
-# Show PicoClaw fleet container status
-picoclaw-status:
-	@echo "\n[+] PicoClaw fleet status:"
-	@if [ -f deploy/picoclaw/docker-compose.picoclaw.yml ]; then \
-		$(DOCKER_COMPOSE_CMD) $(PICOCLAW_COMPOSE) ps; \
-	else \
-		echo "   No fleet compose found. Run: make picoclaw-fleet"; \
-	fi
 
 # =========================================================================
 # AWS DEPLOYMENT TARGETS (Autonomy + SAP S/4HANA)

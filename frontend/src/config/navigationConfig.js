@@ -801,44 +801,8 @@ export const NAVIGATION_CONFIG = [
     ],
   },
 
-  // ============================================================================
-  // EDGE AGENTS (PicoClaw & OpenClaw)
-  // ============================================================================
-  {
-    section: 'Edge Agents',
-    divider: true,
-    adminOnly: true,
-    items: [
-      {
-        label: 'PicoClaw Fleet',
-        path: '/admin/picoclaw',
-        icon: ExecutionIcon,
-        requiredCapability: 'manage_tenant_users',
-        description: 'Edge CDC monitors — fleet health, alerts, configuration',
-      },
-      {
-        label: 'OpenClaw Gateway',
-        path: '/admin/openclaw',
-        icon: CollaborationIcon,
-        requiredCapability: 'manage_tenant_users',
-        description: 'Chat gateway — skills, channels, LLM config, sessions',
-      },
-      {
-        label: 'Signal Ingestion',
-        path: '/admin/signals',
-        icon: ActivityIcon,
-        requiredCapability: 'manage_tenant_users',
-        description: 'Captured signals — monitoring, review queue, source reliability',
-      },
-      {
-        label: 'Edge Security',
-        path: '/admin/edge-security',
-        icon: AdminIcon,
-        requiredCapability: 'manage_tenant_users',
-        description: 'CVE tracking, deployment checklist, integration health',
-      },
-    ],
-  },
+
+
 ];
 
 /**
@@ -926,30 +890,8 @@ export const SYSTEM_ADMIN_NAVIGATION = [
         icon: DatabaseIcon,
         description: 'Download SAP-format CSV files',
       },
-      {
-        label: 'PicoClaw Fleet',
-        path: '/admin/picoclaw',
-        icon: ExecutionIcon,
-        description: 'Edge CDC monitor fleet management',
-      },
-      {
-        label: 'OpenClaw Gateway',
-        path: '/admin/openclaw',
-        icon: CollaborationIcon,
-        description: 'Chat gateway and channel management',
-      },
-      {
-        label: 'Signal Ingestion',
-        path: '/admin/signals',
-        icon: ActivityIcon,
-        description: 'Signal capture monitoring and review',
-      },
-      {
-        label: 'Edge Security',
-        path: '/admin/edge-security',
-        icon: AdminIcon,
-        description: 'CVE tracking and deployment security',
-      },
+
+
       {
         label: 'Knowledge Base',
         path: '/admin/knowledge-base',
