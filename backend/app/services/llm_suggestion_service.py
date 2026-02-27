@@ -484,14 +484,10 @@ IMPORTANT:
             return self._fallback_conversation_response(context)
 
         try:
-            # Retrieve RAG context based on conversation prompt
-            from app.services.rag_context import get_rag_context
-            kb_context = await get_rag_context(prompt[:200], top_k=3, max_tokens=1500)
-
-            if self.provider == "openai":
-                response = await self._call_openai_conversation(prompt, kb_context=kb_context)
+            if self.provider in ("openai", "openai-compatible"):
+                response = await self._call_openai_conversation(prompt)
             elif self.provider == "anthropic":
-                response = await self._call_anthropic_conversation(prompt, kb_context=kb_context)
+                response = await self._call_anthropic_conversation(prompt)
             else:
                 return self._fallback_conversation_response(context)
 
@@ -505,7 +501,7 @@ IMPORTANT:
 
     async def _call_openai_conversation(self, prompt: str, kb_context: str = "") -> str:
         """Call OpenAI for conversation response."""
-        system_msg = "You are a helpful supply chain advisor."
+        system_msg = "You are a helpful supply chain advisor. Answer the user's question directly and concisely."
         if kb_context:
             system_msg += f"\n\nUse this reference knowledge to inform your response:\n{kb_context}"
         response = await self.client.chat.completions.create(
@@ -515,7 +511,7 @@ IMPORTANT:
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=500,
+            max_tokens=2000,
         )
         return response.choices[0].message.content
 

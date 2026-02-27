@@ -9,7 +9,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.models.base import Base
 from app.models.user import User
-from scripts.seed_default_group import SeedOptions, seed_default_data
+from scripts.seed_default_tenant import SeedOptions, seed_default_data
 from app.core.db_urls import resolve_sync_database_url
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

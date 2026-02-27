@@ -207,7 +207,7 @@ gpu-seed:
 	autonomy_flag=""; \
 	if [ -n "$(SKIP_AUTONOMY_GAMES)" ]; then autonomy_flag="--skip-autonomy-games"; fi; \
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.gpu.yml run --rm backend \
-		python3 scripts/seed_default_group.py --reset-games --run-dataset --run-training --force-dataset --force-training $$agent_flag $$autonomy_flag
+		python3 scripts/seed_default_tenant.py --reset-games --run-dataset --run-training --force-dataset --force-training $$agent_flag $$autonomy_flag
 
 gpu-bootstrap:
 	@$(MAKE) down
@@ -226,7 +226,7 @@ rebuild-gpu:
 	@echo "\n[+] Waiting for database to become available..."
 	@$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.gpu.yml exec -T backend python3 scripts/wait_for_db.py
 	@echo "\n[+] Seeding default data (humans, Naive, LLM, Autonomy GNN)..."
-	@$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.gpu.yml exec -T backend bash -lc 'python3 scripts/seed_default_group.py --reset-games --use-human-players'
+	@$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.gpu.yml exec -T backend bash -lc 'python3 scripts/seed_default_tenant.py --reset-games --use-human-players'
 	@$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.gpu.yml exec -T backend python3 scripts/ensure_agent_games.py
 	@echo "\n[✓] GPU rebuild complete. Default games are ready."
 

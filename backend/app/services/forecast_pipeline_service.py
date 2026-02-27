@@ -17,10 +17,7 @@ from app.db.session import sync_session_factory
 from app.models.forecast_pipeline import (
     ForecastPipelineRun,
     ForecastPipelineConfig,
-    ForecastPipelineCluster,
     ForecastPipelinePrediction,
-    ForecastPipelineMetric,
-    ForecastPipelineFeatureImportance,
     ForecastPipelinePublishLog,
 )
 from app.models.sc_entities import Forecast, OutboundOrderLine
@@ -86,24 +83,10 @@ class ForecastPipelineService:
             metrics = self._compute_metrics(history, clusters)
             feature_scores = self._feature_scores(history, cfg)
 
-            self.db.query(ForecastPipelineCluster).filter(ForecastPipelineCluster.run_id == run.id).delete()
+            # Persist only the forecast predictions (the actionable output).
+            # Clusters, metrics, and feature importance are folded into run_log
+            # JSON — they were previously written to separate tables but never read.
             self.db.query(ForecastPipelinePrediction).filter(ForecastPipelinePrediction.run_id == run.id).delete()
-            self.db.query(ForecastPipelineMetric).filter(ForecastPipelineMetric.run_id == run.id).delete()
-            self.db.query(ForecastPipelineFeatureImportance).filter(
-                ForecastPipelineFeatureImportance.run_id == run.id
-            ).delete()
-
-            for unique_id, cluster_id in clusters.items():
-                product_id, site_id = unique_id.split("|", 1)
-                self.db.add(
-                    ForecastPipelineCluster(
-                        run_id=run.id,
-                        unique_id=unique_id,
-                        product_id=product_id,
-                        site_id=site_id,
-                        cluster_id=cluster_id,
-                    )
-                )
 
             for row in forecasts:
                 self.db.add(
@@ -122,26 +105,18 @@ class ForecastPipelineService:
                     )
                 )
 
-            for metric in metrics:
-                self.db.add(ForecastPipelineMetric(run_id=run.id, **metric))
-
-            for rank, (feature_name, score) in enumerate(feature_scores, start=1):
-                self.db.add(
-                    ForecastPipelineFeatureImportance(
-                        run_id=run.id,
-                        feature_name=feature_name,
-                        importance_score=score,
-                        rank=rank,
-                    )
-                )
-
             run.status = "completed"
             run.completed_at = datetime.utcnow()
             run.records_processed = len(forecasts)
             run.run_log = {
                 "series_count": len(clusters),
                 "forecast_rows": len(forecasts),
-                "metric_rows": len(metrics),
+                "clusters": {uid: int(cid) for uid, cid in clusters.items()},
+                "metrics": metrics,
+                "feature_importance": [
+                    {"feature": name, "score": float(score)}
+                    for name, score in feature_scores
+                ],
             }
             self.db.flush()
             return run

@@ -38,7 +38,7 @@ try:
     from app.schemas.tenant import TenantCreate
     from app.schemas.user import UserCreate
     from app.services.tenant_service import TenantService
-    from scripts.seed_default_group import ensure_supply_chain_config
+    from scripts.seed_default_tenant import ensure_supply_chain_config
 except ImportError as e:
     print(f"Error importing application modules: {e}")
     print("Make sure you're running this script from the backend directory and all dependencies are installed.")

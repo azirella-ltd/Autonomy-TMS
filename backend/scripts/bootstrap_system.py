@@ -24,7 +24,7 @@ from sqlalchemy.orm import sessionmaker
 from app.db.init_db import init_db
 from app.db.session import sync_engine
 from app.services.llm_agent import check_autonomy_llm_access
-from scripts.seed_default_group import (
+from scripts.seed_default_tenant import (
     SeedOptions,
     run_seed_with_session,
 )

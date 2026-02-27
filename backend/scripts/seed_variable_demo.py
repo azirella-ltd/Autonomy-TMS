@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from scripts.seed_default_group import (
+from scripts.seed_default_tenant import (
     VARIABLE_BEER_GAME_CUSTOMER_NAME,
     build_seed_options_from_args,
     get_config_specs,

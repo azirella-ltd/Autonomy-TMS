@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from app.db.session import sync_engine
 from app.models.scenario import Scenario, ScenarioStatus
 from app.services.supply_chain_config_service import SupplyChainConfigService
-from scripts.seed_default_group import (
+from scripts.seed_default_tenant import (
     ensure_customer,
     ensure_supply_chain_config,
     ensure_ai_agents,

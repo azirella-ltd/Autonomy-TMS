@@ -903,7 +903,7 @@ class SeedOptions:
     preferred_agent_strategy: Optional[str] = None
     preferred_llm_model: Optional[str] = None
 
-FALLBACK_DB_FILENAME = "seed_default_group.sqlite"
+FALLBACK_DB_FILENAME = "seed_default_tenant.sqlite"
 FALLBACK_DB_PATH = BACKEND_ROOT / FALLBACK_DB_FILENAME
 
 

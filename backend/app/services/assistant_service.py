@@ -133,10 +133,10 @@ class AssistantService:
         general_results: List[ChunkResult] = []
 
         try:
-            # SC config-specific context
+            # SC config-specific context (limit to 3 to keep prompt size manageable)
             sc_results = await self.kb.search(
                 query=query,
-                top_k=5,
+                top_k=3,
                 category="supply_chain_config",
             )
         except Exception as e:
@@ -146,7 +146,7 @@ class AssistantService:
             # General knowledge base context
             general_results = await self.kb.search(
                 query=query,
-                top_k=3,
+                top_k=2,
             )
             # Deduplicate — remove general results that overlap with SC results
             sc_chunk_ids = {r.chunk_id for r in sc_results}
