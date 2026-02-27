@@ -14,7 +14,7 @@ import {
 import {
   ArrowForward as ArrowIcon,
   Settings as SOPIcon,
-  Assignment as MRSIcon,
+  Assignment as MPSIcon,
   LocalShipping as SupplyIcon,
   Category as AllocationIcon,
   PlayArrow as ExecutionIcon,
@@ -24,7 +24,7 @@ import { getArtifactLineage } from '../../services/planningCascadeApi';
 
 const TYPE_CONFIG = {
   policy_envelope: { label: 'Policy Envelope', icon: <SOPIcon fontSize="small" />, color: '#1976d2' },
-  supply_baseline_pack: { label: 'Supply Baseline Pack', icon: <MRSIcon fontSize="small" />, color: '#388e3c' },
+  supply_baseline_pack: { label: 'Supply Baseline Pack', icon: <MPSIcon fontSize="small" />, color: '#388e3c' },
   supply_commit: { label: 'Supply Commit', icon: <SupplyIcon fontSize="small" />, color: '#f57c00' },
   solver_baseline_pack: { label: 'Solver Baseline Pack', icon: <AllocationIcon fontSize="small" />, color: '#7b1fa2' },
   allocation_commit: { label: 'Allocation Commit', icon: <AllocationIcon fontSize="small" />, color: '#c62828' },
