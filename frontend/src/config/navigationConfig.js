@@ -676,6 +676,13 @@ export const NAVIGATION_CONFIG = [
         description: 'Tiny Recursive Model — narrow execution agents',
       },
       {
+        label: 'Claude Skills',
+        path: '/admin/skills',
+        icon: ActivityIcon,
+        requiredCapability: 'view_trm_training',
+        description: 'Skills monitoring — escalation rates, RAG memory, outcomes',
+      },
+      {
         label: 'Reinforcement Learning',
         path: '/admin/rl',
         icon: BrainIcon,

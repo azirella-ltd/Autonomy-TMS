@@ -46,6 +46,7 @@ import PlanningHierarchyConfig from "./pages/admin/PlanningHierarchyConfig.jsx";
 import SAPDataManagement from "./pages/admin/SAPDataManagement.jsx";
 
 import HiveDashboard from "./pages/admin/HiveDashboard.jsx";
+import SkillsDashboard from "./pages/admin/SkillsDashboard.jsx";
 import AuthorizationProtocolBoard from "./pages/admin/AuthorizationProtocolBoard.jsx";
 import KnowledgeBase from "./pages/admin/KnowledgeBase.jsx";
 import AgentBenchmarkDashboard from "./pages/admin/AgentBenchmarkDashboard.jsx";
@@ -439,6 +440,10 @@ const AppContent = () => {
             <Route
               path="/admin/hive"
               element={<HiveDashboard />}
+            />
+            <Route
+              path="/admin/skills"
+              element={<SkillsDashboard />}
             />
             <Route
               path="/admin/authorization-protocol"

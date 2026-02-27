@@ -4,6 +4,7 @@ Powell Relearning Job Registration
 Registers CDC relearning loop jobs with APScheduler:
 - Hourly at :30: Outcome collection for TRM decisions (SiteAgentDecision path)
 - Hourly at :32: TRM outcome collection for all 11 powell_*_decisions tables
+- Hourly at :33: Skill outcome collection (decision_embeddings, Claude Skills path)
 - Hourly at :35: CDT calibration (incremental, after outcomes collected)
 - Daily at 02:40: Causal matching for Tier 2 override signal strength
 - Daily at 03:00: GNN orchestration cycle (S&OP + Execution → directive broadcast)
@@ -32,6 +33,7 @@ def register_relearning_jobs(scheduler_service: 'SyncSchedulerService') -> None:
     Jobs:
     - outcome_collector: Hourly at :30 — compute actual outcomes (SiteAgentDecision)
     - trm_outcome_collector: Hourly at :32 — compute outcomes for all 11 powell_*_decisions
+    - skill_outcome_collector: Hourly at :33 — compute outcomes for Skills decisions
     - cdt_calibration: Hourly at :35 — incremental CDT calibration from new outcomes
     - cdc_retraining: Every 6h at :45 — evaluate and execute retraining if warranted
     """
@@ -96,6 +98,17 @@ def register_relearning_jobs(scheduler_service: 'SyncSchedulerService') -> None:
     )
     logger.info("Registered Powell GNN orchestration job (daily at 03:00)")
 
+    # Hourly: Skill outcome collection — decision_embeddings (at :33)
+    scheduler.add_job(
+        func=_run_skill_outcome_collection,
+        trigger=CronTrigger(minute=33),
+        id="powell_skill_outcome_collector",
+        name="Powell: Skill Outcome Collection (hourly)",
+        replace_existing=True,
+        misfire_grace_time=1800,
+    )
+    logger.info("Registered Powell skill outcome collection job (hourly at :33)")
+
     # Every 6 hours: Retraining evaluation (at :45)
     scheduler.add_job(
         func=_run_cdc_retraining,
@@ -154,6 +167,29 @@ def _run_trm_outcome_collection() -> None:
         )
     except Exception as e:
         logger.error(f"TRM outcome collection job failed: {e}")
+    finally:
+        db.close()
+
+
+def _run_skill_outcome_collection() -> None:
+    """Collect outcomes for Claude Skills decisions in decision_embeddings."""
+    from app.db.session import sync_session_factory
+
+    logger.info("Starting scheduled skill outcome collection")
+
+    db = sync_session_factory()
+    try:
+        from app.services.powell.outcome_collector import OutcomeCollectorService
+
+        service = OutcomeCollectorService(db)
+        stats = service.collect_skill_outcomes()
+        logger.info(
+            f"Skill outcome collection completed: "
+            f"{stats['succeeded']} computed, {stats['failed']} failed "
+            f"out of {stats['processed']} processed"
+        )
+    except Exception as e:
+        logger.error(f"Skill outcome collection job failed: {e}")
     finally:
         db.close()
 

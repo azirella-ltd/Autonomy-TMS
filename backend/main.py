@@ -6037,6 +6037,8 @@ from app.api.endpoints.fulfillment_orders import router as fulfillment_orders_ro
 api.include_router(fulfillment_orders_router, prefix="/fulfillment-orders", tags=["fulfillment-orders"])
 from app.api.endpoints.planning_scenarios import router as planning_scenarios_router
 api.include_router(planning_scenarios_router, tags=["planning-scenarios"])
+from app.api.endpoints.skills_monitoring import router as skills_monitoring_router
+api.include_router(skills_monitoring_router, tags=["skills-monitoring"])
 
 # ------------------------------------------------------------------------------
 # Mount routers
