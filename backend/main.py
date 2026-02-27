@@ -575,6 +575,50 @@ async def startup_event():
         except Exception as e:
             logger.warning(f"KB table initialization failed (non-critical): {e}")
 
+        # Re-index any SC configs missing from the knowledge base
+        try:
+            from app.db.kb_session import get_kb_session
+            from app.db.session import sync_session_factory
+            from app.models.supply_chain_config import SupplyChainConfig
+            from app.services.sc_config_indexer import ScConfigIndexer
+
+            sync_db = sync_session_factory()
+            try:
+                all_configs = sync_db.query(
+                    SupplyChainConfig.id, SupplyChainConfig.name, SupplyChainConfig.tenant_id
+                ).all()
+            finally:
+                sync_db.close()
+
+            if all_configs:
+                async with get_kb_session() as kb_db:
+                    from sqlalchemy import text as sa_text
+                    result = await kb_db.execute(sa_text(
+                        "SELECT DISTINCT tags::text FROM kb_documents "
+                        "WHERE category = 'supply_chain_config' AND tags IS NOT NULL"
+                    ))
+                    indexed_config_ids = set()
+                    for (tags_str,) in result:
+                        import json as _json
+                        for tag in _json.loads(tags_str):
+                            if tag.startswith("config_id:"):
+                                indexed_config_ids.add(int(tag.split(":")[1]))
+
+                    missing = [c for c in all_configs if c.id not in indexed_config_ids]
+                    if missing:
+                        logger.info(f"KB missing {len(missing)} SC config(s) — re-indexing")
+                        for cfg_id, cfg_name, tenant_id in missing:
+                            try:
+                                indexer = ScConfigIndexer(kb_db=kb_db, tenant_id=tenant_id)
+                                await indexer.index_config(cfg_id)
+                                logger.info(f"  Indexed '{cfg_name}' (id={cfg_id})")
+                            except Exception as idx_err:
+                                logger.warning(f"  Failed to index '{cfg_name}': {idx_err}")
+                    else:
+                        logger.info(f"KB has all {len(all_configs)} SC config(s) indexed")
+        except Exception as e:
+            logger.warning(f"SC config KB sync check failed (non-critical): {e}")
+
         # Hydrate conformal suite from persisted belief states
         try:
             from app.services.conformal_orchestrator import ConformalOrchestrator
