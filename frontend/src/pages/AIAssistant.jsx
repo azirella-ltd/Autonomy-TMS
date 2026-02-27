@@ -175,7 +175,7 @@ const AIAssistant = () => {
           <p className="text-sm text-muted-foreground">
             This AI Assistant will integrate with Claude API to provide real-time, context-aware
             supply chain guidance, optimization recommendations, and natural language insights.
-            It will have access to your game data, supply chain configurations, and ML model outputs.
+            It will have access to your scenario data, supply chain configurations, and ML model outputs.
           </p>
         </CardContent>
       </Card>

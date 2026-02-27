@@ -46,7 +46,7 @@ export const WebSocketTester = ({ gameId }) => {
                 {isConnected ? 'Connected' : 'Disconnected'}
               </span>
             </p>
-            <p>Game ID: {gameId || 'Not set'}</p>
+            <p>Scenario ID: {gameId || 'Not set'}</p>
             <p>Access Token: {accessToken ? 'Present' : 'Missing'}</p>
           </div>
 

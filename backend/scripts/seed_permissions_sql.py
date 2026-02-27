@@ -84,11 +84,11 @@ PERMISSIONS = [
     ("manage_llm_agents", "llm_agents", "manage", "Configure LLM agents", "AI & Agents"),
 
     # Simulation (5)
-    ("view_games", "games", "view", "View simulation sessions", "Simulation"),
-    ("create_game", "games", "create", "Create new simulation sessions", "Simulation"),
-    ("play_game", "games", "play", "Participate in simulations", "Simulation"),
-    ("manage_games", "games", "manage", "Administer simulation sessions", "Simulation"),
-    ("view_game_analytics", "game_analytics", "view", "View simulation performance metrics", "Simulation"),
+    ("view_simulations", "simulations", "view", "View simulation sessions", "Simulation"),
+    ("create_simulation", "simulations", "create", "Create new simulation sessions", "Simulation"),
+    ("play_simulation", "simulations", "play", "Participate in simulations", "Simulation"),
+    ("manage_simulations", "simulations", "manage", "Administer simulation sessions", "Simulation"),
+    ("view_scenario_analytics", "game_analytics", "view", "View simulation performance metrics", "Simulation"),
 
     # Administration (6)
     ("view_users", "users", "view", "View user list", "Administration"),

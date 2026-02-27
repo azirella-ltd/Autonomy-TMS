@@ -16,7 +16,7 @@ const Tutorial = ({ onClose, showOnboarding = false }) => {
       showSkip: true,
     },
     {
-      title: 'Game Objective',
+      title: 'Scenario Objective',
       content: 'Your goal is to minimize costs while meeting customer demand. You\'ll need to balance inventory levels, backorders, and ordering to achieve the best possible score.',
       image: '/images/tutorial/objective.svg',
       showNext: true,

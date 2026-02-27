@@ -45,7 +45,7 @@ export default function ScenarioVisualizations() {
         setError(null);
 
         // Fetch current game state
-        const stateResponse = await simulationApi.getGameState(scenarioId);
+        const stateResponse = await simulationApi.getScenarioState(scenarioId);
         setGameState(stateResponse);
 
         // Extract visualization data from current state
@@ -54,7 +54,7 @@ export default function ScenarioVisualizations() {
 
         // Fetch game history for timeline visualization
         try {
-          const historyResponse = await simulationApi.getRounds(scenarioId);
+          const historyResponse = await simulationApi.getPeriods(scenarioId);
           const formattedHistory = transformGameHistory(historyResponse);
           setGameHistory(formattedHistory);
         } catch (histError) {
@@ -65,7 +65,7 @@ export default function ScenarioVisualizations() {
         setLoading(false);
       } catch (err) {
         console.error('Failed to fetch game data:', err);
-        setError(err.message || 'Failed to load game data');
+        setError(err.message || 'Failed to load scenario data');
         setLoading(false);
       }
     };
@@ -119,7 +119,7 @@ export default function ScenarioVisualizations() {
               </Button>
               <h1 className="text-xl font-semibold">Supply Chain Visualizations</h1>
             </div>
-            <p className="text-sm text-muted-foreground">Game ID: {scenarioId}</p>
+            <p className="text-sm text-muted-foreground">Scenario ID: {scenarioId}</p>
           </div>
 
           {/* Tabs */}

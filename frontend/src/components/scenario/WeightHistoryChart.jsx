@@ -245,7 +245,7 @@ const WeightHistoryChart = ({ scenarioId, refreshInterval = null }) => {
       <Card className="mb-4" padding="none">
         <CardContent className="p-6">
           <Alert variant="info" icon={Activity}>
-            No weight history yet. Weights will be recorded as the game progresses and adaptive learning runs.
+            No weight history yet. Weights will be recorded as the scenario progresses and adaptive learning runs.
           </Alert>
         </CardContent>
       </Card>

@@ -77,7 +77,7 @@ const DOCUMENTATION_STRUCTURE = [
     icon: <Video className="h-4 w-4" />,
     children: [
       { id: 'video-intro', title: 'Introduction (5min)' },
-      { id: 'video-setup', title: 'Game Setup (10min)' },
+      { id: 'video-setup', title: 'Scenario Setup (10min)' },
       { id: 'video-analytics', title: 'Analytics Dashboard (8min)' }
     ]
   }
@@ -122,7 +122,7 @@ Get up and running in 5 minutes with our Quick Start Wizard.
 
 ## Step 1: Launch Quick Start Wizard
 
-Navigate to **Create New Game** and select **Quick Start Wizard**.
+Navigate to **Create New Scenario** and select **Quick Start Wizard**.
 
 ## Step 2: Choose Your Industry
 
@@ -185,7 +185,7 @@ Products that flow through the network. Each item can have:
 - **Lead time**: Shipping delays
 - **Cost**: Inventory holding and ordering costs
 
-## Game Mechanics
+## Simulation Mechanics
 
 ### Order Cycle
 1. **Receive shipments** from upstream

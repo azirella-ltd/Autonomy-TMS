@@ -9,7 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import DashboardRouter from "./pages/DashboardRouter";
 import ScenariosList from "./pages/ScenariosList";
 import CreateScenario from "./pages/CreateScenario";
-import CreateGameFromConfig from "./components/scenario/CreateGameFromConfig";
+import CreateScenarioFromConfig from "./components/scenario/CreateScenarioFromConfig";
 import ScenarioBoard from "./pages/ScenarioBoard";
 import PlayGame from "./pages/PlayGame";
 import ScenarioReport from "./pages/ScenarioReport.jsx";
@@ -196,7 +196,7 @@ const AppContent = () => {
             <Route
               path="/scenarios/play"
               element={
-                <CapabilityProtectedRoute requiredCapability="play_game">
+                <CapabilityProtectedRoute requiredCapability="play_simulation">
                   <PlayGame />
                 </CapabilityProtectedRoute>
               }
@@ -205,7 +205,7 @@ const AppContent = () => {
             <Route
               path="/scenarios"
               element={
-                <CapabilityProtectedRoute requiredCapability="view_games">
+                <CapabilityProtectedRoute requiredCapability="view_simulations">
                   <ScenariosList />
                 </CapabilityProtectedRoute>
               }
@@ -214,7 +214,7 @@ const AppContent = () => {
             <Route
               path="/scenarios/new"
               element={
-                <CapabilityProtectedRoute requiredCapability="create_game">
+                <CapabilityProtectedRoute requiredCapability="create_simulation">
                   <CreateScenario />
                 </CapabilityProtectedRoute>
               }
@@ -223,8 +223,8 @@ const AppContent = () => {
             <Route
               path="/scenarios/new-from-config/:configId"
               element={
-                <CapabilityProtectedRoute requiredCapability="create_game">
-                  <CreateGameFromConfig />
+                <CapabilityProtectedRoute requiredCapability="create_simulation">
+                  <CreateScenarioFromConfig />
                 </CapabilityProtectedRoute>
               }
             />
@@ -243,7 +243,7 @@ const AppContent = () => {
             <Route
               path="/scenarios/:scenarioId/edit"
               element={
-                <CapabilityProtectedRoute requiredCapability="manage_games">
+                <CapabilityProtectedRoute requiredCapability="manage_simulations">
                   <CreateScenario />
                 </CapabilityProtectedRoute>
               }
@@ -252,7 +252,7 @@ const AppContent = () => {
             <Route
               path="/scenarios/:scenarioId"
               element={
-                <CapabilityProtectedRoute requiredCapability="play_game">
+                <CapabilityProtectedRoute requiredCapability="play_simulation">
                   {isGamePage ? (
                     <WebSocketProvider>
                       <ScenarioBoard />
@@ -267,7 +267,7 @@ const AppContent = () => {
             <Route
               path="/scenarios/:scenarioId/report"
               element={
-                <CapabilityProtectedRoute requiredCapability="view_game_analytics">
+                <CapabilityProtectedRoute requiredCapability="view_scenario_analytics">
                   <ScenarioReport />
                 </CapabilityProtectedRoute>
               }
@@ -276,7 +276,7 @@ const AppContent = () => {
             <Route
               path="/scenarios/:scenarioId/visualizations"
               element={
-                <CapabilityProtectedRoute requiredCapability="view_game_analytics">
+                <CapabilityProtectedRoute requiredCapability="view_scenario_analytics">
                   <ScenarioVisualizations />
                 </CapabilityProtectedRoute>
               }
@@ -294,7 +294,7 @@ const AppContent = () => {
             <Route
               path="/training/reports"
               element={
-                <CapabilityProtectedRoute requiredCapability="view_games">
+                <CapabilityProtectedRoute requiredCapability="view_simulations">
                   <TrainingReports />
                 </CapabilityProtectedRoute>
               }

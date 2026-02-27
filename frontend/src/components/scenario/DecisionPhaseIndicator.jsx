@@ -9,7 +9,7 @@
  * Props:
  * - phase: Current phase ('waiting', 'fulfillment', 'replenishment', 'completed')
  * - scenarioUsersCompleted: Number of scenarioUsers who have submitted their decision
- * - totalScenarioUsers: Total number of scenarioUsers in the game
+ * - totalScenarioUsers: Total number of scenarioUsers in the scenario
  * - currentRound: Current round number
  * - phaseStartedAt: Timestamp when current phase started (optional)
  */

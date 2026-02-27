@@ -42,7 +42,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Spinner } from '../components/common';
 import { useAuth } from '../contexts/AuthContext';
-import { getUserGames } from '../services/dashboardService';
+import { getUserScenarios } from '../services/dashboardService';
 import { api } from '../services/api';
 
 /**
@@ -124,10 +124,10 @@ const DashboardRouter = () => {
 
       // No Powell role - route based on user_type
 
-      // USER without Powell capabilities: Redirect to active game
+      // USER without Powell capabilities: Redirect to active scenario
       if (user.user_type === 'USER') {
         try {
-          const games = await getUserGames();
+          const games = await getUserScenarios();
           if (games.length > 0) {
             const activeGame = games.find(
               (g) => g.status === 'IN_PROGRESS' || g.status === 'STARTED'

@@ -88,13 +88,13 @@ const CAPABILITY_TREE = [
     ],
   },
   {
-    category: 'Gamification',
+    category: 'Simulation',
     capabilities: [
-      { id: 'view_games', label: 'View Games', description: 'View supply chain game sessions' },
-      { id: 'create_game', label: 'Create Games', description: 'Create new game sessions' },
-      { id: 'play_game', label: 'Play Games', description: 'Participate in games' },
-      { id: 'manage_games', label: 'Manage Games', description: 'Administer game sessions' },
-      { id: 'view_game_analytics', label: 'View Game Analytics', description: 'View game performance metrics' },
+      { id: 'view_simulations', label: 'View Scenarios', description: 'View simulation sessions' },
+      { id: 'create_simulation', label: 'Create Scenarios', description: 'Create new simulation sessions' },
+      { id: 'play_simulation', label: 'Run Scenarios', description: 'Participate in scenarios' },
+      { id: 'manage_simulations', label: 'Manage Scenarios', description: 'Administer simulation sessions' },
+      { id: 'view_scenario_analytics', label: 'View Game Analytics', description: 'View game performance metrics' },
     ],
   },
   {

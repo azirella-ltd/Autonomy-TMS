@@ -20,14 +20,14 @@ import {
 } from '../common';
 import { cn } from '../../lib/utils/cn';
 import {
-  createGameFromConfig as createGameFromConfigService,
+  createScenarioFromConfig as createScenarioFromConfigService,
   getAllConfigs as getAllConfigsService,
   getSupplyChainConfigById,
 } from '../../services/supplyChainConfigService';
 import { getModelStatus } from '../../services/modelService';
-import * as gameService from '../../services/gameService';
+import * as scenarioService from '../../services/scenarioService';
 
-const CreateGameFromConfig = () => {
+const CreateScenarioFromConfig = () => {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
 
@@ -35,7 +35,7 @@ const CreateGameFromConfig = () => {
   const [submitting, setSubmitting] = useState(false);
   const [configs, setConfigs] = useState([]);
   const [selectedConfig, setSelectedConfig] = useState('');
-  const [gameData, setGameData] = useState({
+  const [scenarioData, setGameData] = useState({
     name: '',
     description: '',
     max_rounds: 52,
@@ -122,21 +122,21 @@ const CreateGameFromConfig = () => {
       return;
     }
 
-    if (!gameData.name.trim()) {
-      enqueueSnackbar('Please enter a game name', { variant: 'warning' });
+    if (!scenarioData.name.trim()) {
+      enqueueSnackbar('Please enter a scenario name', { variant: 'warning' });
       return;
     }
 
     setSubmitting(true);
 
     try {
-      // First, create a game configuration from the supply chain config
-      const gameConfig = await createGameFromConfigService(selectedConfig, gameData);
+      // First, create a scenario configuration from the supply chain config
+      const scenarioConfig = await createScenarioFromConfigService(selectedConfig, scenarioData);
 
-      if (gameConfig) {
-        // Then create the game using the generated configuration
-        const newGame = await gameService.createGame({
-          ...gameConfig,
+      if (scenarioConfig) {
+        // Then create the scenario using the generated configuration
+        const newScenario = await scenarioService.createScenario({
+          ...scenarioConfig,
           scenario_user_assignments: [
             // Default scenarioUser assignments can be added here or configured by the user
             { role: 'retailer', scenario_user_type: 'human' },
@@ -145,9 +145,9 @@ const CreateGameFromConfig = () => {
             { role: 'manufacturer', scenario_user_type: 'ai' },
           ]
         });
-        enqueueSnackbar('Game created successfully!', { variant: 'success' });
-        navigate(`/scenarios/${newGame.id}`);
-        return newGame;
+        enqueueSnackbar('Scenario created successfully!', { variant: 'success' });
+        navigate(`/scenarios/${newScenario.id}`);
+        return newScenario;
       } else {
         throw new Error('Failed to create game configuration');
       }
@@ -180,7 +180,7 @@ const CreateGameFromConfig = () => {
       )}
       <Card>
         <CardHeader>
-          <CardTitle>Create Game from Supply Chain Configuration</CardTitle>
+          <CardTitle>Create Scenario from Supply Chain Configuration</CardTitle>
           <CardDescription>Select a supply chain configuration to create a new game</CardDescription>
         </CardHeader>
         <hr className="border-border" />
@@ -267,11 +267,11 @@ const CreateGameFromConfig = () => {
                 </div>
               )}
 
-              <FormField label="Game Name" required className="mt-4">
+              <FormField label="Scenario Name" required className="mt-4">
                 <Input
                   id="name"
                   name="name"
-                  value={gameData.name}
+                  value={scenarioData.name}
                   onChange={handleInputChange}
                   required
                 />
@@ -281,7 +281,7 @@ const CreateGameFromConfig = () => {
                 <Textarea
                   id="description"
                   name="description"
-                  value={gameData.description}
+                  value={scenarioData.description}
                   onChange={handleInputChange}
                   rows={3}
                 />
@@ -293,7 +293,7 @@ const CreateGameFromConfig = () => {
                     type="number"
                     id="max_rounds"
                     name="max_rounds"
-                    value={gameData.max_rounds}
+                    value={scenarioData.max_rounds}
                     onChange={handleInputChange}
                     min={1}
                     max={1000}
@@ -306,11 +306,11 @@ const CreateGameFromConfig = () => {
                     <input
                       type="checkbox"
                       name="is_public"
-                      checked={gameData.is_public}
+                      checked={scenarioData.is_public}
                       onChange={handleInputChange}
                       className="mr-2 h-4 w-4 rounded border-input text-primary focus:ring-ring"
                     />
-                    <span className="text-sm">Public Game</span>
+                    <span className="text-sm">Public Scenario</span>
                   </label>
                 </div>
               </div>
@@ -330,7 +330,7 @@ const CreateGameFromConfig = () => {
                 disabled={!selectedConfig || submitting}
                 loading={submitting}
               >
-                {submitting ? 'Creating...' : 'Create Game'}
+                {submitting ? 'Creating...' : 'Create Scenario'}
               </Button>
             </div>
           </form>
@@ -346,7 +346,7 @@ const CreateGameFromConfig = () => {
             <hr className="border-border" />
             <CardContent className="pt-4">
               <p className="text-muted-foreground">
-                Select a configuration to see a preview of the game settings that will be generated.
+                Select a configuration to see a preview of the scenario settings that will be generated.
               </p>
             </CardContent>
           </Card>
@@ -356,4 +356,4 @@ const CreateGameFromConfig = () => {
   );
 };
 
-export default CreateGameFromConfig;
+export default CreateScenarioFromConfig;

@@ -319,7 +319,7 @@ const OverrideApprovalDialog = ({
           {/* Waiting Message (for non-managers) */}
           {!canApprove && approvalStatus === 'pending' && (
             <Alert variant="info">
-              <AlertTitle>Game Paused</AlertTitle>
+              <AlertTitle>Scenario Paused</AlertTitle>
               <AlertDescription>
                 The game is paused while a manager reviews your decision. You can wait here or come
                 back later. You'll be notified when a decision is made.

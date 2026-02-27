@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Alert, AlertDescription, AlertTitle, Spinner } from '../components/common';
-import { getUserGames } from '../services/dashboardService';
+import { getUserScenarios } from '../services/dashboardService';
 import { useAuth } from '../contexts/AuthContext';
 import { AlertTriangle } from 'lucide-react';
 
 /**
- * PlayGame - Redirects scenarioUsers to their active game
+ * PlayGame - Redirects scenarioUsers to their active scenario
  * This is the landing page for USER user type
  */
 const PlayGame = () => {
@@ -21,7 +21,7 @@ const PlayGame = () => {
         setLoading(true);
 
         // Fetch user's games
-        const games = await getUserGames();
+        const games = await getUserScenarios();
 
         if (games.length === 0) {
           setError('You are not assigned to any games. Please contact your facilitator.');
@@ -29,17 +29,17 @@ const PlayGame = () => {
           return;
         }
 
-        // Find first active game or use most recent
-        const activeGame = games.find(g =>
+        // Find first active scenario or use most recent
+        const activeScenario = games.find(g =>
           g.status === 'IN_PROGRESS' || g.status === 'STARTED'
         );
-        const targetGame = activeGame || games[0];
+        const targetScenario = activeScenario || games[0];
 
         // Redirect to game board
-        navigate(`/scenarios/${targetGame.id}`, { replace: true });
+        navigate(`/scenarios/${targetScenario.id}`, { replace: true });
       } catch (err) {
-        console.error('Failed to load game:', err);
-        setError('Unable to load your game. Please try again later.');
+        console.error('Failed to load scenario:', err);
+        setError('Unable to load your scenario. Please try again later.');
         setLoading(false);
       }
     };
@@ -52,12 +52,12 @@ const PlayGame = () => {
       {loading ? (
         <>
           <Spinner size="lg" />
-          <h2 className="text-xl font-semibold mt-6">Loading your game...</h2>
+          <h2 className="text-xl font-semibold mt-6">Loading your scenario...</h2>
         </>
       ) : error ? (
         <Alert variant="warning" className="max-w-md">
           <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>No Active Game</AlertTitle>
+          <AlertTitle>No Active Scenario</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}

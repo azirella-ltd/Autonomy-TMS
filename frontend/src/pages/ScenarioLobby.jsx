@@ -13,11 +13,11 @@ const ScenarioLobby = () => {
   const fetchGames = async () => {
     try {
       setIsLoading(true);
-      const data = await simulationApi.getGames();
+      const data = await simulationApi.getScenarios();
       setGames(data);
     } catch (error) {
       console.error('Failed to fetch games:', error);
-      toast.error('Failed to load games. Please try again.');
+      toast.error('Failed to load scenarios. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -34,7 +34,7 @@ const ScenarioLobby = () => {
   const handleCreateGame = async () => {
     try {
       setIsCreating(true);
-      const newGame = await simulationApi.createGame({
+      const newGame = await simulationApi.createScenario({
         name: `Game ${new Date().toLocaleString()}`,
         max_scenario_users: 4,
         settings: {
@@ -65,7 +65,7 @@ const ScenarioLobby = () => {
   return (
     <div className="max-w-7xl mx-auto pad-8">
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Game Lobby</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Scenario Lobby</h1>
         <div className="flex space-x-3">
           <button
             onClick={fetchGames}
@@ -106,7 +106,7 @@ const ScenarioLobby = () => {
               d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
             />
           </svg>
-          <h3 className="mt-2 text-sm font-medium text-gray-900">No games available</h3>
+          <h3 className="mt-2 text-sm font-medium text-gray-900">No scenarios available</h3>
           <p className="mt-1 text-sm text-gray-500">Get started by creating a new game.</p>
           <div className="mt-6">
             <button
@@ -171,7 +171,7 @@ const ScenarioLobby = () => {
                           onClick={() => joinGame(game.id)}
                           className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-full shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                         >
-                          Join Game
+                          Join Scenario
                         </button>
                       ) : game.status === 'in_progress' ? (
                         <button

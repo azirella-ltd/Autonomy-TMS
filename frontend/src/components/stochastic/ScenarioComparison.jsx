@@ -74,7 +74,7 @@ const ScenarioDialog = ({ open, onClose, onSave, scenario }) => {
             />
           </FormField>
           <Alert variant="info">
-            Configure the scenario parameters (stochastic distributions, policies, etc.) using the game configuration interface.
+            Configure the scenario parameters (stochastic distributions, policies, etc.) using the scenario configuration interface.
           </Alert>
         </div>
       </ModalBody>

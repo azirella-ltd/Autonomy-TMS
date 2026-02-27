@@ -98,7 +98,7 @@ export const formatTime = (timestamp) => {
  * @param {string} status - Game status
  * @returns {Object} { text: string, color: string }
  */
-export const getGameStatusBadge = (status) => {
+export const getScenarioStatusBadge = (status) => {
   switch (status) {
     case 'waiting':
       return { 
@@ -138,7 +138,7 @@ export const getGameStatusBadge = (status) => {
  * @param {Object} game - The game object
  * @returns {number} Progress percentage (0-100)
  */
-export const calculateGameProgress = (game) => {
+export const calculateScenarioProgress = (game) => {
   if (!game || !game.current_round || !game.settings?.max_rounds) {
     return 0;
   }
@@ -151,7 +151,7 @@ export const calculateGameProgress = (game) => {
  * @param {Object} game - The game object
  * @returns {number} Seconds remaining in the current round
  */
-export const getRoundTimeRemaining = (game) => {
+export const getPeriodTimeRemaining = (game) => {
   if (!game || !game.round_ends_at) return 0;
   
   const now = new Date();
@@ -183,17 +183,17 @@ export const getScenarioUserPosition = (game, userId) => {
   return sortedScenarioUsers.findIndex(p => p.user_id === userId) + 1;
 };
 
-const gameUtils = {
+const scenarioUtils = {
   formatDuration,
   calculateScore,
   validateOrder,
   getScenarioUserColor,
   formatTime,
-  getGameStatusBadge,
-  calculateGameProgress,
-  getRoundTimeRemaining,
+  getScenarioStatusBadge,
+  calculateScenarioProgress,
+  getPeriodTimeRemaining,
   sortScenarioUsersByScore,
   getScenarioUserPosition,
 };
 
-export default gameUtils;
+export default scenarioUtils;

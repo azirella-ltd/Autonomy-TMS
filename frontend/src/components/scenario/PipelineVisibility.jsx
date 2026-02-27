@@ -212,7 +212,7 @@ const PipelineVisibility = ({
           {arriving.soon.length > 0 && (
             <Badge variant="secondary" size="sm" className="gap-1">
               <ScheduleIcon className="h-3 w-3" />
-              {arriving.soon.reduce((s, sh) => s + sh.quantity, 0)} in 2-3 rounds
+              {arriving.soon.reduce((s, sh) => s + sh.quantity, 0)} in 2-3 periods
             </Badge>
           )}
         </div>
@@ -256,8 +256,8 @@ const PipelineVisibility = ({
                     <TableHead>TO #</TableHead>
                     <TableHead>Origin</TableHead>
                     <TableHead className="text-right">Quantity</TableHead>
-                    <TableHead className="text-right">Order Round</TableHead>
-                    <TableHead className="text-right">Arrival Round</TableHead>
+                    <TableHead className="text-right">Order Period</TableHead>
+                    <TableHead className="text-right">Arrival Period</TableHead>
                     <TableHead className="text-right">ETA</TableHead>
                   </TableRow>
                 </TableHeader>

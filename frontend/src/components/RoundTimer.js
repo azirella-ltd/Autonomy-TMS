@@ -80,7 +80,7 @@ const RoundTimer = ({
   useEffect(() => {
     const fetchRoundStatus = async () => {
       try {
-        const status = await simulationApi.getRoundStatus(gameId);
+        const status = await simulationApi.getPeriodStatus(gameId);
         setRoundEndsAt(new Date(status.ends_at));
 
         // Check if scenarioUser has already submitted

@@ -33,7 +33,7 @@ const AISuggestion = ({ scenarioId, scenarioUserRole, onAcceptSuggestion }) => {
 
       const response = await simulationApi.requestAISuggestion(scenarioId, scenarioUserRole.toLowerCase(), {
         priority,
-        notes: "User requested suggestion from game interface",
+        notes: "User requested suggestion from scenario interface",
       });
 
       setSuggestion(response.data);

@@ -89,7 +89,7 @@ const ScenarioRoom = () => {
   // Fetch game data
   const fetchGame = useCallback(async () => {
     try {
-      const gameData = await simulationApi.getGame(scenarioId);
+      const gameData = await simulationApi.getScenario(scenarioId);
       setGame(gameData);
       return gameData;
     } catch (error) {
@@ -318,7 +318,7 @@ const ScenarioRoom = () => {
   const startSimulation = async () => {
     try {
       setIsSubmitting(true);
-      const response = await simulationApi.startGame(scenarioId);  // API still uses game terminology
+      const response = await simulationApi.startScenario(scenarioId);  // API still uses game terminology
       toast.success("Simulation started!");
       emitStartupNotices(response, (message) => toast.warn(message));
     } catch (error) {
@@ -768,7 +768,7 @@ const ScenarioRoom = () => {
               {/* Game status and history */}
               <Card variant="outlined" padding="default">
                 <CardContent>
-                  <h3 className="font-medium mb-3">Game Status</h3>
+                  <h3 className="font-medium mb-3">Scenario Status</h3>
                   <div className="space-y-2">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">
@@ -917,7 +917,7 @@ const ScenarioRoom = () => {
             {activeTab === "chat" && (
               <Card variant="outlined" padding="none" className="overflow-hidden flex flex-col h-96">
                 <div className="p-3 border-b border-border">
-                  <h3 className="text-sm font-medium">Game Chat</h3>
+                  <h3 className="text-sm font-medium">Scenario Chat</h3>
                 </div>
                 <div className="flex-1 overflow-y-auto p-3 space-y-3">
                   {chatMessages.length > 0 ? (
@@ -1010,14 +1010,14 @@ const ScenarioRoom = () => {
                           onClick={async () => {
                             if (
                               window.confirm(
-                                "Are you sure you want to end the game?"
+                                "Are you sure you want to end the scenario?"
                               )
                             ) {
                               try {
                                 await simulationApi.endGame(scenarioId);
-                                toast.success("Game ended");
+                                toast.success("Scenario ended");
                               } catch (error) {
-                                toast.error("Failed to end game");
+                                toast.error("Failed to end scenario");
                               }
                             }
                           }}
@@ -1037,7 +1037,7 @@ const ScenarioRoom = () => {
             {activeTab === "stats" && (
               <Card variant="outlined" padding="default">
                 <CardContent>
-                  <h3 className="font-medium mb-3">Game Statistics</h3>
+                  <h3 className="font-medium mb-3">Scenario Statistics</h3>
                   <div className="space-y-4">
                     <div>
                       <h4 className="text-sm font-medium text-muted-foreground mb-1">
@@ -1172,7 +1172,7 @@ const ScenarioRoom = () => {
                   scenarioUserRole={currentScenarioUser?.role || "RETAILER"}
                   onAcceptSuggestion={(orderQty) => {
                     setOrderAmount(orderQty.toString());
-                    setActiveTab("game");
+                    setActiveTab("scenario");
                   }}
                 />
               </div>

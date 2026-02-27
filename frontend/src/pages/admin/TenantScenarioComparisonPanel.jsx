@@ -246,7 +246,7 @@ const TenantScenarioComparisonPanel = ({
                     checked={allSelected}
                     indeterminate={someSelected}
                     onCheckedChange={handleToggleAll}
-                    aria-label="Select all completed games"
+                    aria-label="Select all completed scenarios"
                   />
                 </TableHead>
                 <TableHead>Name</TableHead>
@@ -290,7 +290,7 @@ const TenantScenarioComparisonPanel = ({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Game Name</TableHead>
+                  <TableHead>Scenario Name</TableHead>
                   <TableHead className="text-right">Holding Cost</TableHead>
                   <TableHead className="text-right">Backlog Cost</TableHead>
                   <TableHead className="text-right">Total Cost</TableHead>

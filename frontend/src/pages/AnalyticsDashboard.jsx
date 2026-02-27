@@ -21,23 +21,23 @@ import simulationApi from '../services/api';
 const AnalyticsDashboard = () => {
   const [activeTab, setActiveTab] = useState('aggregation');
   const [games, setGames] = useState([]);
-  const [selectedGameId, setSelectedGameId] = useState('');
-  const [selectedGame, setSelectedGame] = useState(null);
+  const [selectedScenarioId, setSelectedGameId] = useState('');
+  const [selectedScenario, setSelectedGame] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
-    fetchGames();
+    fetchScenarios();
   }, []);
 
-  const fetchGames = async () => {
+  const fetchScenarios = async () => {
     setLoading(true);
     setError(null);
 
     try {
       // Fetch available games
-      const result = await simulationApi.getGames();
+      const result = await simulationApi.getScenarios();
 
       if (result.success && result.data) {
         // Filter for games that use SC planning
@@ -45,19 +45,19 @@ const AnalyticsDashboard = () => {
         setGames(scPlanningGames);
 
         // Auto-select first game if available
-        if (scPlanningGames.length > 0 && !selectedGameId) {
+        if (scPlanningGames.length > 0 && !selectedScenarioId) {
           setSelectedGameId(scPlanningGames[0].id);
           setSelectedGame(scPlanningGames[0]);
         }
       }
     } catch (err) {
-      setError('Failed to load games');
+      setError('Failed to load scenarios');
     }
 
     setLoading(false);
   };
 
-  const handleGameChange = (event) => {
+  const handleScenarioChange = (event) => {
     const gameId = event.target.value;
     setSelectedGameId(gameId);
     const game = games.find(g => g.id === gameId);
@@ -69,8 +69,8 @@ const AnalyticsDashboard = () => {
   };
 
   const handleExportJSON = () => {
-    if (selectedGameId) {
-      simulationApi.exportAllJSON(selectedGameId);
+    if (selectedScenarioId) {
+      simulationApi.exportAllJSON(selectedScenarioId);
     }
   };
 
@@ -92,15 +92,15 @@ const AnalyticsDashboard = () => {
         <CardContent className="pt-6">
           <div className="flex flex-wrap items-center gap-4">
             <div className="min-w-[300px]">
-              <Label htmlFor="game-select">Select Game</Label>
+              <Label htmlFor="scenario-select">Select Scenario</Label>
               <select
-                id="game-select"
-                value={selectedGameId}
-                onChange={handleGameChange}
+                id="scenario-select"
+                value={selectedScenarioId}
+                onChange={handleScenarioChange}
                 disabled={loading || games.length === 0}
                 className="w-full mt-1 h-10 px-3 rounded-md border border-input bg-background disabled:opacity-50"
               >
-                <option value="">Select a game...</option>
+                <option value="">Select a scenario...</option>
                 {games.map((game) => (
                   <option key={game.id} value={game.id}>
                     {game.name} (ID: {game.id})
@@ -114,7 +114,7 @@ const AnalyticsDashboard = () => {
                 variant="ghost"
                 size="icon"
                 onClick={handleRefresh}
-                disabled={!selectedGameId}
+                disabled={!selectedScenarioId}
                 title="Refresh data"
               >
                 <RefreshCw className="h-4 w-4" />
@@ -122,7 +122,7 @@ const AnalyticsDashboard = () => {
 
               <Button
                 onClick={handleExportJSON}
-                disabled={!selectedGameId}
+                disabled={!selectedScenarioId}
               >
                 <Download className="h-4 w-4 mr-2" />
                 Export All (JSON)
@@ -133,7 +133,7 @@ const AnalyticsDashboard = () => {
           {games.length === 0 && !loading && (
             <Alert className="mt-4">
               <AlertDescription>
-                No games with AWS SC planning features found. Create a game with advanced features enabled to view analytics.
+                No scenarios with AWS SC planning features found. Create a scenario with advanced features enabled to view analytics.
               </AlertDescription>
             </Alert>
           )}
@@ -147,7 +147,7 @@ const AnalyticsDashboard = () => {
       </Card>
 
       {/* Tabs */}
-      {selectedGameId && selectedGame && (
+      {selectedScenarioId && selectedScenario && (
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="mb-6">
             <TabsTrigger value="aggregation">Order Aggregation</TabsTrigger>
@@ -157,23 +157,23 @@ const AnalyticsDashboard = () => {
           </TabsList>
 
           <TabsContent value="aggregation">
-            <AggregationAnalytics key={`agg-${refreshKey}`} gameId={selectedGameId} />
+            <AggregationAnalytics key={`agg-${refreshKey}`} gameId={selectedScenarioId} />
           </TabsContent>
 
           <TabsContent value="capacity">
-            <CapacityAnalytics key={`cap-${refreshKey}`} gameId={selectedGameId} />
+            <CapacityAnalytics key={`cap-${refreshKey}`} gameId={selectedScenarioId} />
           </TabsContent>
 
           <TabsContent value="policy">
             <PolicyEffectiveness
               key={`pol-${refreshKey}`}
-              configId={selectedGame.supply_chain_config_id}
-              tenantId={selectedGame.tenant_id}
+              configId={selectedScenario.supply_chain_config_id}
+              tenantId={selectedScenario.tenant_id}
             />
           </TabsContent>
 
           <TabsContent value="comparative">
-            <ComparativeAnalytics key={`comp-${refreshKey}`} gameId={selectedGameId} />
+            <ComparativeAnalytics key={`comp-${refreshKey}`} gameId={selectedScenarioId} />
           </TabsContent>
         </Tabs>
       )}

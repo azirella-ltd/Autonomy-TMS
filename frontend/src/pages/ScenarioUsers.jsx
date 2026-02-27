@@ -88,7 +88,7 @@ const ScenarioUsersPage = () => {
     (async () => {
       try {
         const [gamesData, usersRes, cfgs] = await Promise.all([
-          simulationApi.getGames(),
+          simulationApi.getScenarios(),
           api.get('/auth/users/'),
           (async () => {
             try {
@@ -152,7 +152,7 @@ const ScenarioUsersPage = () => {
         max_rounds: 20,
         demand_pattern: { type: 'classic', params: { initial_demand: 4, change_week: 6, final_demand: 8 } },
       };
-      const newGame = await simulationApi.createGame(payload);
+      const newGame = await simulationApi.createScenario(payload);
       toast.success('Alternative created');
       setGames((prev) => (Array.isArray(prev) ? [...prev, newGame] : [newGame]));
       const id = String(newGame.id);
@@ -180,7 +180,7 @@ const ScenarioUsersPage = () => {
         <h1 className="text-2xl font-bold text-foreground">Users</h1>
         <Button
           as={Link}
-          to="/games"
+          to="/scenarios"
           variant="outline"
           leftIcon={<ArrowLeft className="h-4 w-4" />}
         >
@@ -216,14 +216,14 @@ const ScenarioUsersPage = () => {
                 </Select>
               ) : (
                 <div className="flex items-center gap-3">
-                  <span className="text-sm text-muted-foreground">No games found.</span>
+                  <span className="text-sm text-muted-foreground">No scenarios found.</span>
                   <Button
                     variant="outline"
                     size="sm"
                     leftIcon={<Plus className="h-4 w-4" />}
                     onClick={quickCreateGame}
                   >
-                    Create Game
+                    Create Scenario
                   </Button>
                 </div>
               )}

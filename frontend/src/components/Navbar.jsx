@@ -16,7 +16,7 @@ import {
   Settings as SettingsIcon,
   LogOut as LogoutIcon,
   LayoutDashboard as DashboardIcon,
-  Gamepad2 as GamesIcon,
+  FlaskConical as ScenariosIcon,
   Users as ScenarioUsersIcon,
   HelpCircle as HelpIcon,
   Bell as NotificationsIcon,
@@ -41,7 +41,7 @@ const Navbar = () => {
   const { user, isAuthenticated, logout } = useAuth();
   const [currentPath, setCurrentPath] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
-  const [gameInfo, setGameInfo] = useState(null);
+  const [scenarioInfo, setGameInfo] = useState(null);
   const [systemConfigName, setSystemConfigName] = useState(null);
   const [supplyChainConfigName, setSupplyChainConfigName] = useState(null);
   const [tenantMode, setTenantMode] = useState(null); // 'learning' or 'production'
@@ -50,7 +50,7 @@ const Navbar = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams();
-  const { gameId, id: routeId, configId } = params;
+  const { scenarioId, id: routeId, configId } = params;
   const supplyChainConfigId = routeId || configId || null;
 
   // Update current path when location changes
@@ -138,22 +138,22 @@ const Navbar = () => {
     };
   }, [location.pathname, systemConfigName]);
 
-  // Load game information when on a game page
+  // Load game information when on a scenario page
   useEffect(() => {
-    const fetchGameInfo = async () => {
-      if (gameId) {
+    const fetchScenarioInfo = async () => {
+      if (scenarioId) {
         try {
-          const data = await simulationApi.getGame(gameId);
+          const data = await simulationApi.getScenario(scenarioId);
           setGameInfo(data);
         } catch (err) {
-          console.error("Failed to load game info", err);
+          console.error("Failed to load scenario info", err);
         }
       } else {
         setGameInfo(null);
       }
     };
-    fetchGameInfo();
-  }, [gameId]);
+    fetchScenarioInfo();
+  }, [scenarioId]);
 
   useEffect(() => {
     const onSupplyChainRoute = location.pathname.includes(
@@ -227,7 +227,7 @@ const Navbar = () => {
       // TENANT_ADMIN (Learning): Learning-focused navigation
       return [
         { name: "Dashboard", path: "/admin", icon: DashboardIcon },
-        { name: "Scenarios", path: "/games", icon: GamesIcon },
+        { name: "Scenarios", path: "/scenarios", icon: ScenariosIcon },
         { name: "Users", path: "/scenarioUsers", icon: ScenarioUsersIcon },
         { name: "Analytics", path: "/analytics", icon: AnalyticsIcon },
       ];
@@ -236,7 +236,7 @@ const Navbar = () => {
     // USER or default: Standard user navigation
     return [
       { name: "Dashboard", path: "/dashboard", icon: DashboardIcon },
-      { name: "Games", path: "/games", icon: GamesIcon },
+      { name: "Scenarios", path: "/scenarios", icon: ScenariosIcon },
       { name: "Users", path: "/scenarioUsers", icon: ScenarioUsersIcon },
       { name: "Analytics", path: "/analytics", icon: AnalyticsIcon },
     ];
@@ -272,14 +272,14 @@ const Navbar = () => {
       .substring(0, 2);
   };
 
-  const groupName = user?.group?.name || gameInfo?.group?.name;
-  const gameConfigName = gameInfo?.config?.name;
+  const groupName = user?.group?.name || scenarioInfo?.group?.name;
+  const scenarioConfigName = scenarioInfo?.config?.name;
   const scDisplayName =
-    supplyChainConfigName || gameConfigName || systemConfigName;
-  const gameName = gameInfo?.name;
+    supplyChainConfigName || scenarioConfigName || systemConfigName;
+  const scenarioName = scenarioInfo?.name;
   const onSystemAdminPage = location.pathname.startsWith("/system");
   const shouldShowContext =
-    !onSystemAdminPage && (groupName || scDisplayName || gameName);
+    !onSystemAdminPage && (groupName || scDisplayName || scenarioName);
 
   const contextParts = [];
   if (groupName) {
@@ -288,8 +288,8 @@ const Navbar = () => {
   if (scDisplayName) {
     contextParts.push(`Config: ${scDisplayName}`);
   }
-  if (gameName) {
-    contextParts.push(`Game: ${gameName}`);
+  if (scenarioName) {
+    contextParts.push(`Game: ${scenarioName}`);
   }
 
   if (!isAuthenticated) {

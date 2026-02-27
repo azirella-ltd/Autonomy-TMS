@@ -76,8 +76,8 @@ const ProfilePage = () => {
           avatar: user?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.username || 'User')}&background=random`,
           joinDate: '2023-01-15T10:30:00Z',
           stats: {
-            gamesPlayed: 42,
-            gamesWon: 28,
+            scenariosCompleted: 42,
+            scenariosWon: 28,
             winRate: 67,
             averageScore: 1245,
             totalPlayTime: '3d 7h 22m',
@@ -89,7 +89,7 @@ const ProfilePage = () => {
           achievements: [
             { id: 1, name: 'First Win', description: 'Win your first game', icon: 'trophy', earned: true, date: '2023-01-20' },
             { id: 2, name: 'Supply Chain Master', description: 'Win 25 games', icon: 'medal', earned: true, date: '2023-03-15' },
-            { id: 3, name: 'Perfect Game', description: 'Win a game with maximum score', icon: 'star', earned: false },
+            { id: 3, name: 'Perfect Game', description: 'Win a scenario with maximum score', icon: 'star', earned: false },
             { id: 4, name: 'Marathoner', description: 'Play for more than 10 hours', icon: 'clock', earned: true, date: '2023-04-02' },
             { id: 5, name: 'Social Butterfly', description: 'Play with 50 different users', icon: 'users', earned: false },
           ],
@@ -103,16 +103,16 @@ const ProfilePage = () => {
         };
 
         const mockLeaderboard = [
-          { id: 1, username: 'supplychainmaster', score: 24560, gamesPlayed: 87, winRate: 82, avatar: 'https://i.pravatar.cc/150?img=1' },
-          { id: 2, username: 'scplanner', score: 23120, gamesPlayed: 92, winRate: 78, avatar: 'https://i.pravatar.cc/150?img=2' },
-          { id: 3, username: 'logisticspro', score: 21890, gamesPlayed: 76, winRate: 81, avatar: 'https://i.pravatar.cc/150?img=3' },
-          { id: 4, username: 'inventoryguru', score: 20560, gamesPlayed: 68, winRate: 85, avatar: 'https://i.pravatar.cc/150?img=4' },
-          { id: 5, username: 'supplyqueen', score: 19870, gamesPlayed: 72, winRate: 79, avatar: 'https://i.pravatar.cc/150?img=5' },
-          { id: 6, username: 'demandwizard', score: 18730, gamesPlayed: 65, winRate: 76, avatar: 'https://i.pravatar.cc/150?img=6' },
-          { id: 7, username: mockProfile?.username || 'johndoe', score: mockProfile?.stats?.averageScore * 10 || 12450, gamesPlayed: mockProfile?.stats?.gamesPlayed || 42, winRate: mockProfile?.stats?.winRate || 67, avatar: mockProfile?.avatar, isCurrentUser: true },
-          { id: 8, username: 'logisticsninja', score: 12340, gamesPlayed: 51, winRate: 72, avatar: 'https://i.pravatar.cc/150?img=7' },
-          { id: 9, username: 'supplychainnewbie', score: 11890, gamesPlayed: 48, winRate: 68, avatar: 'https://i.pravatar.cc/150?img=8' },
-          { id: 10, username: 'scenthusiast', score: 10980, gamesPlayed: 43, winRate: 65, avatar: 'https://i.pravatar.cc/150?img=9' },
+          { id: 1, username: 'supplychainmaster', score: 24560, scenariosCompleted: 87, winRate: 82, avatar: 'https://i.pravatar.cc/150?img=1' },
+          { id: 2, username: 'scplanner', score: 23120, scenariosCompleted: 92, winRate: 78, avatar: 'https://i.pravatar.cc/150?img=2' },
+          { id: 3, username: 'logisticspro', score: 21890, scenariosCompleted: 76, winRate: 81, avatar: 'https://i.pravatar.cc/150?img=3' },
+          { id: 4, username: 'inventoryguru', score: 20560, scenariosCompleted: 68, winRate: 85, avatar: 'https://i.pravatar.cc/150?img=4' },
+          { id: 5, username: 'supplyqueen', score: 19870, scenariosCompleted: 72, winRate: 79, avatar: 'https://i.pravatar.cc/150?img=5' },
+          { id: 6, username: 'demandwizard', score: 18730, scenariosCompleted: 65, winRate: 76, avatar: 'https://i.pravatar.cc/150?img=6' },
+          { id: 7, username: mockProfile?.username || 'johndoe', score: mockProfile?.stats?.averageScore * 10 || 12450, scenariosCompleted: mockProfile?.stats?.scenariosCompleted || 42, winRate: mockProfile?.stats?.winRate || 67, avatar: mockProfile?.avatar, isCurrentUser: true },
+          { id: 8, username: 'logisticsninja', score: 12340, scenariosCompleted: 51, winRate: 72, avatar: 'https://i.pravatar.cc/150?img=7' },
+          { id: 9, username: 'supplychainnewbie', score: 11890, scenariosCompleted: 48, winRate: 68, avatar: 'https://i.pravatar.cc/150?img=8' },
+          { id: 10, username: 'scenthusiast', score: 10980, scenariosCompleted: 43, winRate: 65, avatar: 'https://i.pravatar.cc/150?img=9' },
         ];
 
         setProfile(mockProfile);
@@ -289,7 +289,7 @@ const ProfilePage = () => {
             <Tab value="overview">Overview</Tab>
             <Tab value="stats">Statistics</Tab>
             <Tab value="achievements">Achievements</Tab>
-            <Tab value="history">Game History</Tab>
+            <Tab value="history">Scenario History</Tab>
             <Tab value="leaderboard">Leaderboard</Tab>
           </TabsList>
         </Tabs>
@@ -384,8 +384,8 @@ const ProfilePage = () => {
                       <p className="text-lg font-semibold text-foreground">#{profile.stats.rank}</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-sm font-medium text-muted-foreground">Games</p>
-                      <p className="text-lg font-semibold text-foreground">{profile.stats.gamesPlayed}</p>
+                      <p className="text-sm font-medium text-muted-foreground">Scenarios</p>
+                      <p className="text-lg font-semibold text-foreground">{profile.stats.scenariosCompleted}</p>
                     </div>
                     <div className="text-center">
                       <p className="text-sm font-medium text-muted-foreground">Win Rate</p>
@@ -442,7 +442,7 @@ const ProfilePage = () => {
                       <h3 className="text-lg font-medium text-primary">Welcome back, {profile.username}!</h3>
                       <div className="mt-2 text-sm text-primary/80">
                         <p>You're currently ranked <span className="font-semibold">#{profile.stats.rank}</span> out of {profile.stats.totalScenarioUsers} users.</p>
-                        <p className="mt-1">You've played {profile.stats.gamesPlayed} games with a {profile.stats.winRate}% win rate.</p>
+                        <p className="mt-1">You've played {profile.stats.scenariosCompleted} games with a {profile.stats.winRate}% win rate.</p>
                       </div>
                       <div className="mt-4">
                         <Button onClick={() => setActiveTab('leaderboard')}>
@@ -537,17 +537,17 @@ const ProfilePage = () => {
             {activeTab === 'stats' && (
               <Card>
                 <CardHeader className="border-b border-border">
-                  <CardTitle>Game Statistics</CardTitle>
+                  <CardTitle>Scenario Statistics</CardTitle>
                 </CardHeader>
                 <CardContent className="pt-6">
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="bg-muted/50 p-4 rounded-lg">
-                      <h4 className="text-sm font-medium text-muted-foreground">Games Played</h4>
-                      <p className="mt-1 text-3xl font-semibold text-foreground">{profile.stats.gamesPlayed}</p>
+                      <h4 className="text-sm font-medium text-muted-foreground">Scenarios Completed</h4>
+                      <p className="mt-1 text-3xl font-semibold text-foreground">{profile.stats.scenariosCompleted}</p>
                     </div>
                     <div className="bg-muted/50 p-4 rounded-lg">
-                      <h4 className="text-sm font-medium text-muted-foreground">Games Won</h4>
-                      <p className="mt-1 text-3xl font-semibold text-foreground">{profile.stats.gamesWon}</p>
+                      <h4 className="text-sm font-medium text-muted-foreground">Scenarios Won</h4>
+                      <p className="mt-1 text-3xl font-semibold text-foreground">{profile.stats.scenariosWon}</p>
                     </div>
                     <div className="bg-muted/50 p-4 rounded-lg">
                       <h4 className="text-sm font-medium text-muted-foreground">Win Rate</h4>
@@ -641,7 +641,7 @@ const ProfilePage = () => {
                 <CardHeader className="border-b border-border">
                   <div className="flex justify-between items-center">
                     <div>
-                      <CardTitle>Game History</CardTitle>
+                      <CardTitle>Scenario History</CardTitle>
                       <CardDescription>Your recent game sessions and results</CardDescription>
                     </div>
                     <Select defaultValue="all" className="w-40">
@@ -655,7 +655,7 @@ const ProfilePage = () => {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Game</TableHead>
+                        <TableHead>Scenario</TableHead>
                         <TableHead>Date</TableHead>
                         <TableHead>Score</TableHead>
                         <TableHead>Position</TableHead>
@@ -794,7 +794,7 @@ const ProfilePage = () => {
                               </div>
                               <div className="mt-1 flex justify-between">
                                 <p className="text-sm text-muted-foreground">
-                                  {user.gamesPlayed} games - {user.winRate}% win rate
+                                  {user.scenariosCompleted} games - {user.winRate}% win rate
                                 </p>
                                 {user.isCurrentUser && (
                                   <Badge variant="info">

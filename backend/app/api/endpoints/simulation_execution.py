@@ -228,7 +228,7 @@ class InventoryLevelResponse(BaseModel):
 # ============================================================================
 
 @router.post("/execute-round", response_model=ExecuteRoundResponse)
-@require_capabilities(["manage_games"])
+@require_capabilities(["manage_simulations"])
 async def execute_round(
     *,
     db: AsyncSession = Depends(deps.get_db),
@@ -286,7 +286,7 @@ async def execute_round(
 # ============================================================================
 
 @router.get("/orders", response_model=List[OrderResponse])
-@require_capabilities(["view_games"])
+@require_capabilities(["view_simulations"])
 async def list_orders(
     *,
     db: AsyncSession = Depends(deps.get_db),
@@ -346,7 +346,7 @@ async def list_orders(
 
 
 @router.get("/orders/{order_id}", response_model=OrderResponse)
-@require_capabilities(["view_games"])
+@require_capabilities(["view_simulations"])
 async def get_order(
     *,
     db: AsyncSession = Depends(deps.get_db),
@@ -368,7 +368,7 @@ async def get_order(
 
 
 @router.get("/backlog", response_model=List[BacklogReportResponse])
-@require_capabilities(["view_games"])
+@require_capabilities(["view_simulations"])
 async def get_backlog_report(
     *,
     db: AsyncSession = Depends(deps.get_db),
@@ -456,7 +456,7 @@ async def get_backlog_report(
 # ============================================================================
 
 @router.get("/purchase-orders", response_model=List[PurchaseOrderResponse])
-@require_capabilities(["view_games"])
+@require_capabilities(["view_simulations"])
 async def list_purchase_orders(
     *,
     db: AsyncSession = Depends(deps.get_db),
@@ -534,7 +534,7 @@ async def list_purchase_orders(
 # ============================================================================
 
 @router.get("/shipments", response_model=List[TransferOrderResponse])
-@require_capabilities(["view_games"])
+@require_capabilities(["view_simulations"])
 async def list_shipments(
     *,
     db: AsyncSession = Depends(deps.get_db),
@@ -607,7 +607,7 @@ async def list_shipments(
 
 
 @router.get("/shipments/arriving", response_model=List[TransferOrderResponse])
-@require_capabilities(["view_games"])
+@require_capabilities(["view_simulations"])
 async def get_arriving_shipments(
     *,
     db: AsyncSession = Depends(deps.get_db),
@@ -666,7 +666,7 @@ async def get_arriving_shipments(
 # ============================================================================
 
 @router.get("/metrics", response_model=List[RoundMetricResponse])
-@require_capabilities(["view_games"])
+@require_capabilities(["view_simulations"])
 async def list_metrics(
     *,
     db: AsyncSession = Depends(deps.get_db),
@@ -711,7 +711,7 @@ async def list_metrics(
 
 
 @router.get("/metrics/summary", response_model=MetricsSummaryResponse)
-@require_capabilities(["view_games"])
+@require_capabilities(["view_simulations"])
 async def get_metrics_summary(
     *,
     db: AsyncSession = Depends(deps.get_db),
@@ -806,7 +806,7 @@ async def get_metrics_summary(
 # ============================================================================
 
 @router.post("/atp/calculate", response_model=ATPCalculationResponse)
-@require_capabilities(["view_games"])
+@require_capabilities(["view_simulations"])
 async def calculate_atp(
     *,
     db: AsyncSession = Depends(deps.get_db),
@@ -844,7 +844,7 @@ async def calculate_atp(
 # ============================================================================
 
 @router.get("/inventory", response_model=List[InventoryLevelResponse])
-@require_capabilities(["view_games"])
+@require_capabilities(["view_simulations"])
 async def list_inventory_levels(
     *,
     db: AsyncSession = Depends(deps.get_db),

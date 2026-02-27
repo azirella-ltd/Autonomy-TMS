@@ -18,7 +18,7 @@ const Tutorial = ({ runTutorial, onComplete }) => {
         <div>
           <h2 className="text-xl font-bold mb-2">Welcome to Autonomy!</h2>
           <p>
-            This interactive tutorial will guide you through the key features of the game.
+            This interactive tutorial will guide you through the key features of the scenario.
             You can skip this tutorial at any time or restart it from the help menu.
           </p>
         </div>
@@ -142,7 +142,7 @@ const Tutorial = ({ runTutorial, onComplete }) => {
       target: '[data-tutorial="reports-tab"]',
       content: (
         <div>
-          <h3 className="text-lg font-bold mb-2">Game Reports 📈</h3>
+          <h3 className="text-lg font-bold mb-2">Scenario Reports 📈</h3>
           <p>
             Generate comprehensive game reports with insights, recommendations,
             and performance analysis. Export your data in CSV, JSON, or Excel

@@ -150,8 +150,8 @@ const TenantScenarioSupervisionPanel = ({
     const result = await runAction(
       game.id,
       'start',
-      (id) => simulationApi.startGame(id, { debugLogging: debugLoggingEnabled }),
-      'Game started',
+      (id) => simulationApi.startScenario(id, { debugLogging: debugLoggingEnabled }),
+      'Scenario started',
     );
     if (!result) {
       return;
@@ -182,9 +182,9 @@ const TenantScenarioSupervisionPanel = ({
     }
   };
 
-  const handleStop = (gameId) => runAction(gameId, 'stop', simulationApi.stopGame, 'Game stopped');
+  const handleStop = (gameId) => runAction(gameId, 'stop', simulationApi.stopScenario, 'Game stopped');
   const handleNextRound = (gameId) =>
-    runAction(gameId, 'next_round', simulationApi.nextRound, 'Advanced to next round');
+    runAction(gameId, 'next_period', simulationApi.nextPeriod, 'Advanced to next period');
 
   const handleResetClick = (game) => {
     if (!game) return;
@@ -201,8 +201,8 @@ const TenantScenarioSupervisionPanel = ({
     const result = await runAction(
       game.id,
       'reset',
-      simulationApi.resetGame,
-      'Game reset to initial state',
+      simulationApi.resetScenario,
+      'Scenario reset to initial state',
     );
 
     if (result !== undefined) {
@@ -233,7 +233,7 @@ const TenantScenarioSupervisionPanel = ({
 
     const poll = async () => {
       try {
-        const state = await simulationApi.getGameState(monitoringGameId);
+        const state = await simulationApi.getScenarioState(monitoringGameId);
         const gameData = state?.game || {};
         if (cancelled) return;
 
@@ -324,8 +324,8 @@ const TenantScenarioSupervisionPanel = ({
     runAction(
       monitoringGameId,
       'stop',
-      simulationApi.stopGame,
-      'Game stopped automatically',
+      simulationApi.stopScenario,
+      'Scenario stopped automatically',
     ).catch(() => {
       autoStopRef.current.delete(monitoringGameId);
     });
@@ -350,7 +350,7 @@ const TenantScenarioSupervisionPanel = ({
       const currentRound = Number(game.current_round ?? 0);
       if (maxRounds > 0 && currentRound >= maxRounds && !autoStopRef.current.has(game.id)) {
         autoStopRef.current.add(game.id);
-        runAction(game.id, 'stop', simulationApi.stopGame, 'Game stopped automatically').catch(() => {
+        runAction(game.id, 'stop', simulationApi.stopScenario, 'Scenario stopped automatically').catch(() => {
           autoStopRef.current.delete(game.id);
         });
       }
@@ -458,7 +458,7 @@ const TenantScenarioSupervisionPanel = ({
                 <h4 className="font-bold">Confirm reset</h4>
                 <p className="text-sm text-muted-foreground">
                   {pendingResetGame?.name
-                    ? `Reset "${pendingResetGame.name}"? This will clear all recorded rounds and return the game to its initial setup.`
+                    ? `Reset "${pendingResetGame.name}"? This will clear all recorded rounds and return the scenario to its initial setup.`
                     : 'Reset this game? This will clear all recorded rounds.'}
                 </p>
                 <div className="flex justify-end gap-2">
@@ -544,7 +544,7 @@ const TenantScenarioSupervisionPanel = ({
               disabled={busy}
               leftIcon={<SkipForward className="h-4 w-4" />}
             >
-              {busy && actionState[game.id] === 'next_round' ? 'Advancing…' : 'Next Round'}
+              {busy && actionState[game.id] === 'next_period' ? 'Advancing…' : 'Next Period'}
             </Button>
           )}
           {!hideStopButton && (
@@ -694,7 +694,7 @@ const TenantScenarioSupervisionPanel = ({
       <Modal
         isOpen={Boolean(autoProgress) && autoDialogOpen}
         onClose={() => setAutoDialogOpen(false)}
-        title="Running unsupervised game"
+        title="Running unsupervised scenario"
         size="sm"
       >
         {autoProgress && (

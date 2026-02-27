@@ -41,7 +41,7 @@ const TrainingReports = () => {
   const fetchCompletedGames = async () => {
     try {
       setLoading(true);
-      const response = await simulationApi.listGames();
+      const response = await simulationApi.getScenarios();
       // Filter for completed games
       const completedGames = (response?.data || response || [])
         .filter(game =>
@@ -87,7 +87,7 @@ const TrainingReports = () => {
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Game Reports</h1>
+          <h1 className="text-2xl font-bold text-foreground">Scenario Reports</h1>
           <p className="text-muted-foreground mt-1">
             Review your completed training games and analyze your decisions
           </p>
@@ -108,7 +108,7 @@ const TrainingReports = () => {
         <Card>
           <CardContent className="py-12 text-center">
             <DocumentTextIcon className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-foreground">No Completed Games</h3>
+            <h3 className="text-lg font-semibold text-foreground">No Completed Scenarios</h3>
             <p className="text-muted-foreground mt-2">
               Complete some games to see reports here
             </p>

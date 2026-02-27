@@ -427,7 +427,7 @@ const Simulation = () => {
                   <div className="mt-4">
                     <ToggleControl
                       label="Enable RL model for decision making"
-                      description="Use reinforcement learning support during the game"
+                      description="Use reinforcement learning support during the scenario"
                       checked={config.useRlModel}
                       onChange={handleToggleChange('useRlModel')}
                     />

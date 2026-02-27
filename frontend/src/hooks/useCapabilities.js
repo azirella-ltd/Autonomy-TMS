@@ -105,11 +105,11 @@ function getFallbackCapabilities(userType) {
       'view_ntier_visibility',
 
       // Gamification
-      'view_games',
-      'create_game',
-      'play_game',
-      'delete_game',
-      'manage_games',
+      'view_simulations',
+      'create_simulation',
+      'play_simulation',
+      'delete_simulation',
+      'manage_simulations',
 
       // Supply Chain
       'view_sc_configs',
@@ -196,8 +196,8 @@ function getFallbackCapabilities(userType) {
   // Default: USER - Standard user access
   return [
     'view_dashboard',
-    'view_games',
-    'play_game',
+    'view_simulations',
+    'play_simulation',
   ];
 }
 

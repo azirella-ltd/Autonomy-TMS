@@ -94,15 +94,15 @@ const TopNavbar = ({ sidebarOpen = true }) => {
     };
   }, [location.pathname, systemConfigName]);
 
-  // Load game information when on a game page
+  // Load game information when on a scenario page
   useEffect(() => {
     const fetchGameInfo = async () => {
       if (gameId) {
         try {
-          const data = await simulationApi.getGame(gameId);
+          const data = await simulationApi.getScenario(gameId);
           setGameInfo(data);
         } catch (err) {
-          console.error('Failed to load game info', err);
+          console.error('Failed to load scenario info', err);
         }
       } else {
         setGameInfo(null);

@@ -888,7 +888,7 @@ const CreateMixedGame = () => {
     const loadGame = async () => {
       try {
         setInitializing(true);
-        const state = await simulationApi.getGameState(gameId);
+        const state = await simulationApi.getScenarioState(gameId);
         if (cancelled) return;
 
         const snapshot = buildGameSnapshot(state);
@@ -1504,9 +1504,9 @@ const CreateMixedGame = () => {
 
       let response;
       if (submissionAction === 'update') {
-        response = await simulationApi.updateGame(gameId, gameData);
+        response = await simulationApi.updateScenario(gameId, gameData);
       } else {
-        response = await simulationApi.createGame(gameData);
+        response = await simulationApi.createScenario(gameData);
       }
 
       if (submissionAction === 'update' && response) {
@@ -1580,7 +1580,7 @@ const CreateMixedGame = () => {
 
       if (submissionAction === 'update' && shouldResetAfterSave) {
         try {
-          await simulationApi.resetGame(gameId);
+          await simulationApi.resetScenario(gameId);
           setSavedSnapshot((prev) => (prev ? { ...prev, currentRound: 0, status: 'created' } : prev));
         } catch (resetError) {
           console.error('Error resetting alternative after update:', resetError);

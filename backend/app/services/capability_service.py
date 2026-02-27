@@ -41,7 +41,7 @@ def get_user_capabilities(user: User, db: Session) -> CapabilitySet:
 
     # Check powell_role first (more specific than user_type).
     # Without this, any USER with a powell_role (SC_VP, SOP_DIRECTOR, etc.)
-    # would only get {VIEW_DASHBOARD, VIEW_GAMES, PLAY_GAME}.
+    # would only get {VIEW_DASHBOARD, VIEW_SCENARIOS, PLAY_SCENARIO}.
     if hasattr(user, 'powell_role') and user.powell_role:
         role_caps = get_capabilities_for_user_type(user.powell_role.value)
         if role_caps.capabilities != USER_CAPABILITIES.capabilities:

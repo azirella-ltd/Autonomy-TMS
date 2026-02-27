@@ -4,7 +4,7 @@ import { api } from './api';
  * Get all games for the current user
  * @returns {Promise<Array>} List of games with basic info
  */
-export const getUserGames = async () => {
+export const getUserScenarios = async () => {
   try {
     const response = await api.get('/dashboard/user-games');
     return response.data;
@@ -94,7 +94,7 @@ export const getHumanDashboard = async (gameId = null) => {
 /**
  * Format time series data for chart display
  * @param {Array} timeSeries - Array of TimeSeriesPoint objects from API
- * @param {string} role - ScenarioUser's role in the game
+ * @param {string} role - ScenarioUser's role in the scenario
  * @returns {Array} Formatted data for chart
  */
 export const formatChartData = (timeSeries, role) => {

@@ -13,7 +13,7 @@ class WebSocketService {
 
   /**
    * Connect to the WebSocket server
-   * @param {string} gameId - The ID of the game to connect to
+   * @param {string} gameId - The ID of the scenario to connect to
    * @param {string} accessToken - The user's access token for authentication
    * @param {string} scenarioUserId - The ID of the scenarioUser connecting
    */

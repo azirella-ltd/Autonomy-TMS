@@ -143,7 +143,7 @@ const AgentWeightManager = ({ scenarioId, onWeightsChange }) => {
     try {
       await api.post(`/mixed-scenarios/${scenarioId}/set-agent-weights`, {
         weights: weights,
-        context_type: 'game',
+        context_type: 'scenario',
       });
 
       setSuccess('Agent weights saved successfully');

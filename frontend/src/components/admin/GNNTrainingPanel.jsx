@@ -293,7 +293,7 @@ const GNNTrainingPanel = ({ selectedConfig }) => {
 
             <FormField
               label="Timesteps per Run"
-              helperText="Game length in periods (default: 64)"
+              helperText="Scenario length in periods (default: 64)"
               className="mb-4"
             >
               <Input
@@ -696,7 +696,7 @@ const GNNTrainingPanel = ({ selectedConfig }) => {
                   <TableRow>
                     <TableCell>Message Passing</TableCell>
                     <TableCell>Aggregate neighbor features via attention</TableCell>
-                    <TableCell>3 rounds</TableCell>
+                    <TableCell>3 periods</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell>Temporal CNN</TableCell>

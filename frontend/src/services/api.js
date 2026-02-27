@@ -960,26 +960,7 @@ export const collaborationApi = {
   },
 };
 
-// =============================================================================
-// Backward Compatibility Aliases (DEPRECATED - use new terminology)
-// =============================================================================
-
-// Scenario aliases (Game -> Scenario)
-simulationApi.getGames = simulationApi.getScenarios;
-simulationApi.createGame = simulationApi.createScenario;
-simulationApi.updateGame = simulationApi.updateScenario;
-simulationApi.deleteGame = simulationApi.deleteScenario;
-simulationApi.startGame = simulationApi.startScenario;
-simulationApi.stopGame = simulationApi.stopScenario;
-simulationApi.resetGame = simulationApi.resetScenario;
-simulationApi.finishGame = simulationApi.finishScenario;
-simulationApi.getGameState = simulationApi.getScenarioState;
+// Backward compat alias — getReport is referenced across analytics pages
 simulationApi.getReport = simulationApi.getScenarioReport;
-simulationApi.getGame = simulationApi.getScenario;
-
-// Period aliases (Round -> Period)
-simulationApi.nextRound = simulationApi.nextPeriod;
-simulationApi.getRounds = simulationApi.getPeriods;
-simulationApi.getRoundStatus = simulationApi.getPeriodStatus;
 
 export default simulationApi;

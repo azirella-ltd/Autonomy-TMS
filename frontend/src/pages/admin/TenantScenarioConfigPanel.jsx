@@ -133,9 +133,9 @@ const TenantScenarioConfigPanel = ({
 
   const handleRestart = async (gameId) => {
     try {
-      await simulationApi.resetGame(gameId);
-      const startResponse = await simulationApi.startGame(gameId);
-      enqueueSnackbar('Game restarted', { variant: 'success' });
+      await simulationApi.resetScenario(gameId);
+      const startResponse = await simulationApi.startScenario(gameId);
+      enqueueSnackbar('Scenario restarted', { variant: 'success' });
       emitStartupNotices(startResponse, (message) =>
         enqueueSnackbar(message, { variant: 'warning' }),
       );
@@ -150,7 +150,7 @@ const TenantScenarioConfigPanel = ({
 
   const handleDelete = async (gameId, name) => {
     if (!window.confirm(`Delete game "${name}"? This cannot be undone.`)) return;
-    await runAction(gameId, 'delete', simulationApi.deleteGame, 'Game deleted');
+    await runAction(gameId, 'delete', simulationApi.deleteScenario, 'Scenario deleted');
   };
 
   const handleEdit = (game) => {

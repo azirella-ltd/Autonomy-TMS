@@ -264,7 +264,7 @@ export const getSiteTypeColor = (siteType) => {
 export const getNodeTypeColor = getSiteTypeColor;
 
 // Game creation from config
-export const createGameFromConfig = async (configId, gameData) => {
+export const createScenarioFromConfig = async (configId, gameData) => {
   const response = await api.post(`${SUPPLY_CHAIN_CONFIG_BASE_URL}/${configId}/create-game`, gameData);
   return response.data;
 };

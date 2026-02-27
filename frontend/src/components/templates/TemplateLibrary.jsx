@@ -224,7 +224,7 @@ const TemplateLibrary = ({ onSelectTemplate, filterCategory }) => {
           Template Library
         </h1>
         <p className="text-sm text-muted-foreground">
-          Browse and use pre-configured templates for your games
+          Browse and use pre-configured templates for your scenarios
         </p>
       </div>
 
@@ -255,7 +255,7 @@ const TemplateLibrary = ({ onSelectTemplate, filterCategory }) => {
               <SelectOption value="">All</SelectOption>
               <SelectOption value="distribution">Distribution</SelectOption>
               <SelectOption value="scenario">Scenario</SelectOption>
-              <SelectOption value="game">Game</SelectOption>
+              <SelectOption value="scenario">Scenario</SelectOption>
               <SelectOption value="supply_chain">Supply Chain</SelectOption>
             </Select>
           </div>

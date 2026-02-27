@@ -16,7 +16,7 @@ import { cn } from '../lib/utils/cn';
 /**
  * Check if user has Powell Framework capabilities via API.
  * Powell capabilities indicate the user should go through DashboardRouter
- * instead of being redirected to a game.
+ * instead of being redirected to a scenario.
  */
 const checkPowellCapabilities = async () => {
   try {
@@ -74,7 +74,7 @@ const Login = () => {
       }
 
       try {
-        const games = await simulationApi.getGames();
+        const games = await simulationApi.getScenarios();
         const assigned = games.find(g => Array.isArray(g.scenarioUsers) && g.users.some(p => p.user_id === user?.id));
         if (assigned) {
           navigate(`/scenarios/${assigned.id}` , { replace: true });
@@ -160,7 +160,7 @@ const Login = () => {
           }
 
           try {
-            const games = await simulationApi.getGames();
+            const games = await simulationApi.getScenarios();
             const assigned = games.find(g => Array.isArray(g.scenarioUsers) && g.users.some(p => p.user_id === loggedInUser?.id));
             if (assigned) {
               navigate(`/scenarios/${assigned.id}`, { replace: true });

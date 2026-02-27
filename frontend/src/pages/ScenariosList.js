@@ -30,7 +30,7 @@ import {
   Plus,
   Settings,
   Download,
-  Gamepad2,
+  FlaskConical,
   User,
   RotateCcw,
   RefreshCw,
@@ -133,7 +133,7 @@ const ScenariosList = () => {
   const fetchScenarios = useCallback(async () => {
     try {
       setLoading(true);
-      const list = await simulationApi.getGames();  // API uses scenarios endpoint
+      const list = await simulationApi.getScenarios();  // API uses scenarios endpoint
       setScenarios(Array.isArray(list) ? list : []);
       setError(null);
     } catch (err) {
@@ -178,7 +178,7 @@ const ScenariosList = () => {
       return;
     }
     try {
-      const response = await simulationApi.startGame(scenarioId);  // API uses scenarios endpoint
+      const response = await simulationApi.startScenario(scenarioId);  // API uses scenarios endpoint
       showSnackbar('Scenario started successfully', 'success');
       emitStartupNotices(response, (message) => showSnackbar(message, 'warning'));
       fetchScenarios();
@@ -193,7 +193,7 @@ const ScenariosList = () => {
       return;
     }
     try {
-      await simulationApi.resetGame(scenarioId);  // API uses scenarios endpoint
+      await simulationApi.resetScenario(scenarioId);  // API uses scenarios endpoint
       showSnackbar('Scenario reset successfully', 'success');
       fetchScenarios();
     } catch (error) {
@@ -207,8 +207,8 @@ const ScenariosList = () => {
       return;
     }
     try {
-      await simulationApi.resetGame(scenarioId);
-      const response = await simulationApi.startGame(scenarioId);
+      await simulationApi.resetScenario(scenarioId);
+      const response = await simulationApi.startScenario(scenarioId);
       showSnackbar('Scenario restarted', 'success');
       emitStartupNotices(response, (message) => showSnackbar(message, 'warning'));
       fetchScenarios();
@@ -223,7 +223,7 @@ const ScenariosList = () => {
       return;
     }
     try {
-      await simulationApi.deleteGame(scenarioId);  // API uses scenarios endpoint
+      await simulationApi.deleteScenario(scenarioId);  // API uses scenarios endpoint
       showSnackbar('Scenario deleted', 'success');
       fetchScenarios();
     } catch (error) {
@@ -305,7 +305,7 @@ const ScenariosList = () => {
             Supply Chain Config
           </Button>
           <Button variant="outline" onClick={() => navigate(scConfigBasePath)}>
-            <Gamepad2 className="h-4 w-4 mr-2" />
+            <FlaskConical className="h-4 w-4 mr-2" />
             Simulation Configuration
           </Button>
           <Button variant="outline" onClick={() => navigate('/users')}>
@@ -340,7 +340,7 @@ const ScenariosList = () => {
             Supply Chain Config
           </Button>
           <Button variant="outline" size="sm" onClick={() => navigate(scConfigBasePath)}>
-            <Gamepad2 className="h-4 w-4 mr-2" />
+            <FlaskConical className="h-4 w-4 mr-2" />
             Simulation Configuration
           </Button>
           <Button variant="outline" size="sm" onClick={() => navigate('/users')}>
@@ -382,8 +382,8 @@ const ScenariosList = () => {
               <TableHead>Name</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Mode</TableHead>
-              <TableHead>Current Round</TableHead>
-              <TableHead>Max Rounds</TableHead>
+              <TableHead>Current Period</TableHead>
+              <TableHead>Max Periods</TableHead>
               <TableHead>Demand Pattern</TableHead>
               <TableHead>Created At</TableHead>
               <TableHead>Actions</TableHead>
@@ -456,7 +456,7 @@ const ScenariosList = () => {
                               variant="outline"
                               onClick={() => navigate(`/scenarios/${scenario.id}`)}
                             >
-                              <Gamepad2 className="h-3 w-3 mr-1" />
+                              <FlaskConical className="h-3 w-3 mr-1" />
                               Board
                             </Button>
                             {(statusLower === 'finished' || statusLower === 'completed') && (
@@ -511,7 +511,7 @@ const ScenariosList = () => {
                               variant="outline"
                               onClick={() => handleResetScenario(scenario.id)}
                               disabled={statusLower === 'created'}
-                              title="Reset scenario back to round 0"
+                              title="Reset scenario back to period 0"
                             >
                               <RefreshCw className="h-3 w-3 mr-1" />
                               Reset

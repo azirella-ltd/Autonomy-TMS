@@ -86,7 +86,7 @@ export const getDefaultLandingPath = (user) => {
   }
 
   if (isTenantAdmin(user)) {
-    return "/admin?section=game";
+    return "/admin?section=scenarios";
   }
 
   // For all other users (including USER with Powell capabilities),

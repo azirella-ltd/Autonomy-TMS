@@ -170,7 +170,7 @@ const ScenarioBoard = () => {
     const fetchGameState = async () => {
       if (scenarioId) {
         try {
-          const state = await simulationApi.getGameState(scenarioId);
+          const state = await simulationApi.getScenarioState(scenarioId);
           setGameState(state);
 
           // Update derived state
@@ -237,7 +237,7 @@ const ScenarioBoard = () => {
   useEffect(() => {
     (async () => {
       try {
-        const games = await simulationApi.getGames();
+        const games = await simulationApi.getScenarios();
         const associated = (games || []).filter((g) => {
           const createdByUser = g.created_by === user?.id;
           const isScenarioUser = Array.isArray(g.scenarioUsers)
@@ -265,7 +265,7 @@ const ScenarioBoard = () => {
     const fetchRounds = async () => {
       if (scenarioId && viewingScenarioUserId) {
         try {
-          const rounds = await simulationApi.getRounds(scenarioId);
+          const rounds = await simulationApi.getPeriods(scenarioId);
           const history = rounds
             .map((r) => {
               const pr = (r.scenario_user_periods || []).find(
@@ -303,7 +303,7 @@ const ScenarioBoard = () => {
     const fetchGameDetails = async () => {
       try {
         setIsLoading(true);
-        const game = await simulationApi.getGame(scenarioId);
+        const game = await simulationApi.getScenario(scenarioId);
         setGameDetails(game);
 
         const scenarioUsers = Array.isArray(game.scenarioUsers) ? game.scenarioUsers : [];
@@ -490,7 +490,7 @@ const ScenarioBoard = () => {
         isClosable: true,
       });
       setOrderComment("");
-      const rounds = await simulationApi.getRounds(scenarioId);
+      const rounds = await simulationApi.getPeriods(scenarioId);
       const history = rounds
         .map((r) => {
           const pr = (r.scenario_user_periods || []).find(

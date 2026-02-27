@@ -29,7 +29,7 @@ import {
   Circle,
   Copy,
   MoreVertical,
-  Gamepad2,
+  FlaskConical,
   Play,
   Clock,
   AlertCircle,
@@ -201,7 +201,7 @@ const SupplyChainConfigList = ({
     }
   };
 
-  const handleCreateGame = (config) => {
+  const handleCreateScenario = (config) => {
     navigate(`/scenarios/new-from-config/${config.id}`);
   };
 
@@ -428,9 +428,9 @@ const SupplyChainConfigList = ({
                   )}
                   {!readOnly && (
                     <>
-                      <DropdownMenuItem onClick={() => handleCreateGame(config)}>
-                        <Gamepad2 className="h-4 w-4 mr-2" />
-                        Create Game
+                      <DropdownMenuItem onClick={() => handleCreateScenario(config)}>
+                        <FlaskConical className="h-4 w-4 mr-2" />
+                        Create Scenario
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleDuplicate(config)}>
                         <Copy className="h-4 w-4 mr-2" />

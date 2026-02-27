@@ -47,7 +47,7 @@ const ReportsPanel = ({ scenarioId }) => {
       setReport(data)
     } catch (error) {
       console.error('Error fetching report:', error)
-      toast.error('Failed to load game report')
+      toast.error('Failed to load scenario report')
     } finally {
       setLoading(false)
     }
@@ -128,7 +128,7 @@ const ReportsPanel = ({ scenarioId }) => {
           <div className="flex items-center">
             <DocumentChartBarIcon className="h-8 w-8 text-indigo-600 mr-3" />
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">Game Report</h2>
+              <h2 className="text-2xl font-bold text-gray-900">Scenario Report</h2>
               <p className="text-sm text-gray-600">
                 {overview.config_name} - {overview.status}
               </p>
@@ -218,7 +218,7 @@ const ReportsPanel = ({ scenarioId }) => {
       {/* Overview Section */}
       {activeSection === 'overview' && (
         <div className="bg-white rounded-lg shadow-md p-6">
-          <h3 className="text-xl font-bold text-gray-900 mb-4">Game Overview</h3>
+          <h3 className="text-xl font-bold text-gray-900 mb-4">Scenario Completeview</h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <MetricCard

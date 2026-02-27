@@ -440,10 +440,10 @@ const HumanDashboard = () => {
 
   if (!dashboardData) {
     return (
-      <PageLayout title="No Active Game">
+      <PageLayout title="No Active Scenario">
         <Alert className="mb-4">
           <AlertDescription>
-            You are not currently part of any active game.
+            You are not currently part of any active scenario.
           </AlertDescription>
         </Alert>
       </PageLayout>
@@ -487,7 +487,7 @@ const HumanDashboard = () => {
               </p>
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium">Game Progress</span>
+                  <span className="text-sm font-medium">Scenario Progress</span>
                   <span className="text-sm text-muted-foreground">
                     {`${sliderValue} / ${sliderDisplayMax}`} ({progressPercent}% complete)
                   </span>

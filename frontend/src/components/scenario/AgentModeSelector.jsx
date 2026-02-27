@@ -3,7 +3,7 @@
  *
  * Phase 4: Multi-Agent Orchestration
  * Allows scenarioUsers to dynamically switch between manual, copilot, and autonomous modes
- * during active gameplay.
+ * during active scenarioplay.
  *
  * Migrated to Autonomy UI Kit (shadcn/ui + Tailwind CSS + lucide-react)
  *

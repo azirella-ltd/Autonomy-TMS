@@ -87,7 +87,7 @@ const HelpCenter = ({ onClose, onStartTutorial }) => {
       ],
     },
     {
-      category: 'Gamification',
+      category: 'Simulation',
       icon: <TrophyIcon className="h-6 w-6" />,
       articles: [
         {

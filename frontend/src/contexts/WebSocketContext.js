@@ -8,10 +8,10 @@ const WebSocketContext = createContext(null);
 
 export const WebSocketProvider = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
-  const [gameState, setGameState] = useState(null);
+  const [scenarioState, setGameState] = useState(null);
   const [scenarioUsers, setScenarioUsers] = useState([]);
-  const [currentRound, setCurrentRound] = useState(0);
-  const [gameStatus, setGameStatus] = useState('idle');
+  const [currentPeriod, setCurrentRound] = useState(0);
+  const [scenarioStatus, setGameStatus] = useState('idle');
   const callbacks = useRef(new Map());
   const params = useParams();
   const { accessToken } = useAuth();
@@ -48,7 +48,7 @@ export const WebSocketProvider = ({ children }) => {
       case 'game_state':
         setGameState(messageData.state || messageData);
         setScenarioUsers(messageData.scenarioUsers || []);
-        setCurrentRound(messageData.current_round || messageData.currentRound || 0);
+        setCurrentRound(messageData.current_round || messageData.currentPeriod || 0);
         setGameStatus(messageData.status || 'idle');
         break;
 
@@ -56,20 +56,20 @@ export const WebSocketProvider = ({ children }) => {
         setCurrentRound(messageData.round_number || messageData.roundNumber);
         setGameStatus('in_progress');
         toast.info(`Round ${messageData.round_number || messageData.roundNumber} Started`, {
-          description: messageData.message || 'A new round has begun!',
+          description: messageData.message || 'A new period has begun!',
         });
         break;
 
       case 'round_ended':
         setGameStatus('round_ended');
         toast.info(`Round ${messageData.round_number || messageData.roundNumber} Ended`, {
-          description: messageData.message || 'The round has ended.',
+          description: messageData.message || 'The period has ended.',
         });
         break;
 
       case 'game_ended':
         setGameStatus('completed');
-        toast.success('Game Over', {
+        toast.success('Scenario Complete', {
           description: messageData.message || 'The game has ended.',
           duration: Infinity,
         });
@@ -77,13 +77,13 @@ export const WebSocketProvider = ({ children }) => {
 
       case 'scenario_user_joined':
         toast.info('User Joined', {
-          description: `${messageData.scenario_user_name} has joined the game.`,
+          description: `${messageData.scenario_user_name} has joined the scenario.`,
         });
         break;
 
       case 'scenario_user_left':
         toast.warning('User Left', {
-          description: `${messageData.scenario_user_name} has left the game.`,
+          description: `${messageData.scenario_user_name} has left the scenario.`,
         });
         break;
 
@@ -124,13 +124,13 @@ export const WebSocketProvider = ({ children }) => {
         case 'error':
           console.error('WebSocket error:', data);
           toast.error('Connection Error', {
-            description: data.message || 'There was a problem with the game connection.',
+            description: data.message || 'There was a problem with the scenario connection.',
           });
           break;
 
         case 'reconnect_failed':
           toast.error('Connection Lost', {
-            description: 'Unable to reconnect to the game server.',
+            description: 'Unable to reconnect to the scenario server.',
             duration: Infinity,
           });
           break;
@@ -155,7 +155,7 @@ export const WebSocketProvider = ({ children }) => {
       } catch (error) {
         console.error('Failed to connect to WebSocket:', error);
         toast.error('Connection Error', {
-          description: 'Failed to connect to the game server. Please try again.',
+          description: 'Failed to connect to the scenario server. Please try again.',
         });
       }
     };
@@ -172,10 +172,10 @@ export const WebSocketProvider = ({ children }) => {
   // Expose the WebSocket API to child components
   const api = {
     isConnected,
-    gameState,
+    scenarioState,
     scenarioUsers,
-    currentRound,
-    gameStatus,
+    currentPeriod,
+    scenarioStatus,
     send,
     on,
   };

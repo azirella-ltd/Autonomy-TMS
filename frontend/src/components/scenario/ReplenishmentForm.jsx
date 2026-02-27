@@ -308,8 +308,8 @@ const ReplenishmentForm = ({
                     <TableRow>
                       <TableHead>Quantity</TableHead>
                       <TableHead>Origin</TableHead>
-                      <TableHead>Arrival Round</TableHead>
-                      <TableHead>Rounds Until Arrival</TableHead>
+                      <TableHead>Arrival Period</TableHead>
+                      <TableHead>Periods Until Arrival</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

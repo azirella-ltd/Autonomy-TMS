@@ -26,7 +26,7 @@ import FilterBar from '../components/FilterBar';
 import KPIStat from '../components/KPIStat';
 import SkuTable from '../components/SkuTable';
 import { useAuth } from '../contexts/AuthContext';
-import { getHumanDashboard, getUserGames } from '../services/dashboardService';
+import { getHumanDashboard, getUserScenarios } from '../services/dashboardService';
 
 const FALLBACK_DEMAND_SERIES = [
   { name: 'W1', actual: 2100, forecast: 2200, target: 2000 },
@@ -141,18 +141,18 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState(null);
   const [assignmentModalOpen, setAssignmentModalOpen] = useState(false);
-  const [assignmentMessage, setAssignmentMessage] = useState('You are not assigned to a game yet. Please contact your facilitator to be added to a session.');
+  const [assignmentMessage, setAssignmentMessage] = useState('You are not assigned to a scenario yet. Please contact your facilitator to be added to a session.');
   const [error, setError] = useState(null);
   const [availableGames, setAvailableGames] = useState([]);
   const [selectedGameId, setSelectedGameId] = useState(null);
   const [gamesLoading, setGamesLoading] = useState(true);
 
-  // Redirect scenarioUsers to their active game board
+  // Redirect scenarioUsers to their active scenario board
   useEffect(() => {
     if (user && user.user_type === 'USER') {
       const fetchAndRedirect = async () => {
         try {
-          const games = await getUserGames();
+          const games = await getUserScenarios();
           if (games.length > 0) {
             const activeGame = games.find(g => g.status === 'IN_PROGRESS' || g.status === 'STARTED');
             const targetGame = activeGame || games[0];
@@ -164,7 +164,7 @@ const Dashboard = () => {
           }
         } catch (err) {
           console.error('Failed to fetch user games:', err);
-          setAssignmentMessage('Unable to load your game assignments.');
+          setAssignmentMessage('Unable to load your scenario assignments.');
           setAssignmentModalOpen(true);
           setGamesLoading(false);
         }
@@ -182,7 +182,7 @@ const Dashboard = () => {
     const fetchGames = async () => {
       setGamesLoading(true);
       try {
-        const games = await getUserGames();
+        const games = await getUserScenarios();
         if (!isMounted) return;
 
         setAvailableGames(games);
@@ -197,7 +197,7 @@ const Dashboard = () => {
       } catch (err) {
         if (!isMounted) return;
         console.error('Failed to fetch user games:', err);
-        setAssignmentMessage('Unable to load your game assignments.');
+        setAssignmentMessage('Unable to load your scenario assignments.');
         setAssignmentModalOpen(true);
       } finally {
         if (isMounted) {
@@ -237,7 +237,7 @@ const Dashboard = () => {
         if (status === 404) {
           setAssignmentMessage(err?.response?.data?.detail || 'We could not find data for this game.');
           setDashboardData(null);
-          setError('Game data not found.');
+          setError('Scenario data not found.');
         } else if (status === 403) {
           setAssignmentMessage('You do not have access to this game.');
           setDashboardData(null);
@@ -421,7 +421,7 @@ const Dashboard = () => {
                   <CardContent className="py-3">
                     <div className="flex items-center gap-3">
                       <span className="font-semibold text-sm min-w-[80px]">
-                        Select Game:
+                        Select Scenario:
                       </span>
                       <Select
                         value={selectedGameId || ''}
@@ -452,7 +452,7 @@ const Dashboard = () => {
 
               <Card className="mb-6 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700">
                 <CardHeader className="pb-2">
-                  <CardTitle>Game Progress</CardTitle>
+                  <CardTitle>Scenario Progress</CardTitle>
                 </CardHeader>
                 <CardContent className="pt-0">
                   <div className="flex flex-col gap-3">
@@ -599,12 +599,12 @@ const Dashboard = () => {
         closeOnEsc={false}
       >
         <ModalHeader>
-          <ModalTitle>Join a Game</ModalTitle>
+          <ModalTitle>Join a Scenario</ModalTitle>
         </ModalHeader>
         <ModalBody>
           <p className="mb-4">{assignmentMessage}</p>
           <p className="text-sm text-muted-foreground">
-            Once you have been assigned to a game, log in again to access the dashboard.
+            Once you have been assigned to a scenario, log in again to access the dashboard.
           </p>
         </ModalBody>
         <ModalFooter>

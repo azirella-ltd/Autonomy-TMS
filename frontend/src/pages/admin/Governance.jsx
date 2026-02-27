@@ -55,7 +55,7 @@ const Governance = () => {
     setAuditLogs([
       { id: 1, timestamp: new Date().toISOString(), user: 'systemadmin@autonomy.ai', action: 'LOGIN', resource: 'System', status: 'SUCCESS', ip: '172.29.56.211' },
       { id: 2, timestamp: new Date(Date.now() - 3600000).toISOString(), user: 'groupadmin@company.com', action: 'CREATE_USER', resource: 'User: john.doe@company.com', status: 'SUCCESS', ip: '172.29.56.200' },
-      { id: 3, timestamp: new Date(Date.now() - 7200000).toISOString(), user: 'scenarioUser@company.com', action: 'VIEW_GAME', resource: 'Game ID: 42', status: 'SUCCESS', ip: '172.29.56.150' },
+      { id: 3, timestamp: new Date(Date.now() - 7200000).toISOString(), user: 'scenarioUser@company.com', action: 'VIEW_SCENARIO', resource: 'Scenario ID: 42', status: 'SUCCESS', ip: '172.29.56.150' },
       { id: 4, timestamp: new Date(Date.now() - 10800000).toISOString(), user: 'systemadmin@autonomy.ai', action: 'UPDATE_CONFIG', resource: 'Supply Chain Config: Default Demo', status: 'SUCCESS', ip: '172.29.56.211' },
       { id: 5, timestamp: new Date(Date.now() - 14400000).toISOString(), user: 'scenarioUser@company.com', action: 'LOGIN', resource: 'System', status: 'FAILED', ip: '172.29.56.155' },
     ]);

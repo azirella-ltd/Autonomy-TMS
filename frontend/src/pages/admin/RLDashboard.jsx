@@ -113,7 +113,7 @@ const RLDashboard = () => {
             <li><strong>Start Training</strong>: Click "Start Training" - progress updates every 2 seconds</li>
             <li><strong>Monitor Progress</strong>: Watch mean reward (should increase), mean cost (should decrease)</li>
             <li><strong>Evaluate</strong>: After training completes, evaluate the model on 20 episodes</li>
-            <li><strong>Use in Games</strong>: Load trained agents in supply chain game configurations</li>
+            <li><strong>Use in Scenarios</strong>: Load trained agents in supply chain game configurations</li>
           </ol>
           <p className="text-xs text-muted-foreground mt-4">
             <strong>Training Time</strong>: ~90 minutes (CPU) or ~30 minutes (GPU) for 1M timesteps

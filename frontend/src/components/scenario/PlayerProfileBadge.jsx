@@ -95,7 +95,7 @@ const ScenarioUserProfileBadge = ({ scenarioUserId, compact = false }) => {
       {/* Quick Stats */}
       <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-gray-200">
         <div className="text-center">
-          <div className="text-xs text-gray-500">Games</div>
+          <div className="text-xs text-gray-500">Scenarios</div>
           <div className="text-lg font-bold text-gray-900">{stats.total_games_played}</div>
         </div>
         <div className="text-center">

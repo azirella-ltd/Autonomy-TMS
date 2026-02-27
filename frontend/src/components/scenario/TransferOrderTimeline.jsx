@@ -288,8 +288,8 @@ const TransferOrderTimeline = ({ scenarioId, transferOrders, analytics }) => {
         <TableHead>
           <TableRow>
             <TableCell>TO Number</TableCell>
-            <TableCell>Order Round</TableCell>
-            <TableCell>Arrival Round</TableCell>
+            <TableCell>Order Period</TableCell>
+            <TableCell>Arrival Period</TableCell>
             <TableCell>Quantity</TableCell>
             <TableCell>Status</TableCell>
           </TableRow>
@@ -387,8 +387,8 @@ const TransferOrderTimeline = ({ scenarioId, transferOrders, analytics }) => {
                 <TableRow>
                   <TableCell>TO Number</TableCell>
                   <TableCell>Route</TableCell>
-                  <TableCell>Order Round</TableCell>
-                  <TableCell>Arrival Round</TableCell>
+                  <TableCell>Order Period</TableCell>
+                  <TableCell>Arrival Period</TableCell>
                   <TableCell className="text-right">Quantity</TableCell>
                   <TableCell>Est. Delivery</TableCell>
                 </TableRow>

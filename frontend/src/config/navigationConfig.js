@@ -22,7 +22,7 @@
 
 import {
   LayoutDashboard as DashboardIcon,
-  Gamepad2 as GamesIcon,
+  FlaskConical as ScenariosIcon,
   Users as PeopleIcon,
   BarChart3 as AnalyticsIcon,
   TrendingUp as ForecastIcon,
@@ -619,15 +619,15 @@ export const NAVIGATION_CONFIG = [
       {
         label: 'Scenario Browser',
         path: '/scenarios',
-        icon: GamesIcon,
-        requiredCapability: 'view_games',
+        icon: ScenariosIcon,
+        requiredCapability: 'view_simulations',
         description: 'Browse and manage scenarios',
       },
       {
         label: 'Create Scenario',
         path: '/scenarios/new',
-        icon: GamesIcon,
-        requiredCapability: 'create_game',
+        icon: ScenariosIcon,
+        requiredCapability: 'create_simulation',
         description: 'Create new what-if scenario',
       },
       {
@@ -944,15 +944,15 @@ export const LEARNING_NAVIGATION = [
       {
         label: 'New Scenario',
         path: '/scenarios/new',
-        icon: GamesIcon,
-        requiredCapability: 'create_game',
+        icon: ScenariosIcon,
+        requiredCapability: 'create_simulation',
         description: 'Create a new learning scenario',
       },
       {
         label: 'My Scenarios',
         path: '/scenarios',
-        icon: GamesIcon,
-        requiredCapability: 'view_games',
+        icon: ScenariosIcon,
+        requiredCapability: 'view_simulations',
         description: 'View and join active scenarios',
       },
     ],
@@ -965,7 +965,7 @@ export const LEARNING_NAVIGATION = [
         label: 'Scenario Reports',
         path: '/training/reports',
         icon: AnalyticsIcon,
-        requiredCapability: 'view_games',
+        requiredCapability: 'view_simulations',
         description: 'Review scenario results and decisions',
       },
       {

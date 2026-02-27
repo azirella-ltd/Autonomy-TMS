@@ -30,12 +30,12 @@ const TrainingCompare = () => {
   const fetchGames = async () => {
     try {
       setLoading(true);
-      const response = await simulationApi.listGames();
+      const response = await simulationApi.getScenarios();
       setGames(response?.data || response || []);
       setError(null);
     } catch (err) {
       console.error('Error fetching games:', err);
-      setError('Failed to load games');
+      setError('Failed to load scenarios');
     } finally {
       setLoading(false);
     }
@@ -53,7 +53,7 @@ const TrainingCompare = () => {
     <div className="space-y-6">
       {/* Page Header */}
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Compare Games</h1>
+        <h1 className="text-2xl font-bold text-foreground">Compare Scenarios</h1>
         <p className="text-muted-foreground mt-1">
           Select completed games to compare performance metrics side by side
         </p>

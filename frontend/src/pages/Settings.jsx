@@ -33,7 +33,7 @@ const Settings = () => {
       allowFriendRequests: true,
       showInLeaderboards: true,
     },
-    game: {
+    simulation: {
       animationSpeed: 'normal',
       confirmBeforeLeavingGame: true,
       showTutorialTips: true,
@@ -45,7 +45,7 @@ const Settings = () => {
 
   // Load saved settings when component mounts
   useEffect(() => {
-    const savedSettings = localStorage.getItem('gameSettings');
+    const savedSettings = localStorage.getItem('simulationSettings');
     if (savedSettings) {
       try {
         setSettings(JSON.parse(savedSettings));
@@ -65,7 +65,7 @@ const Settings = () => {
       // await api.updateUserSettings(user.id, newSettings);
 
       // For now, just save to localStorage
-      localStorage.setItem('gameSettings', JSON.stringify(newSettings));
+      localStorage.setItem('simulationSettings', JSON.stringify(newSettings));
 
       // Update local state
       setSettings(newSettings);
@@ -388,7 +388,7 @@ const Settings = () => {
                   >
                     <Select
                       id="animation-speed"
-                      value={settings.game.animationSpeed}
+                      value={settings.simulation.animationSpeed}
                       onChange={(e) => handleSettingChange('game', 'animationSpeed', e.target.value)}
                       className="w-32"
                     >
@@ -504,23 +504,23 @@ const Settings = () => {
           </div>
         </div>
 
-        {/* Game Settings */}
+        {/* Simulation Settings */}
         <div className="py-6">
           <div className="md:grid md:grid-cols-3 md:gap-6">
             <SectionHeader
               icon={Settings2}
-              title="Game Settings"
-              description="Customize your game experience"
+              title="Simulation Settings"
+              description="Customize your scenario experience"
             />
             <div className="mt-5 md:mt-0 md:col-span-2">
               <Card variant="default" padding="none">
                 <CardContent className="p-6 space-y-6">
                   <SettingControl
-                    label="Confirm before leaving game"
-                    description="Show a confirmation dialog when leaving a game in progress"
+                    label="Confirm before leaving scenario"
+                    description="Show a confirmation dialog when leaving a scenario in progress"
                   >
                     <ToggleSwitch
-                      checked={settings.game.confirmBeforeLeavingGame}
+                      checked={settings.simulation.confirmBeforeLeavingGame}
                       onChange={() => toggleSetting('game', 'confirmBeforeLeavingGame')}
                       id="confirm-leave"
                     />
@@ -531,7 +531,7 @@ const Settings = () => {
                     description="Display helpful tips and tutorials"
                   >
                     <ToggleSwitch
-                      checked={settings.game.showTutorialTips}
+                      checked={settings.simulation.showTutorialTips}
                       onChange={() => toggleSetting('game', 'showTutorialTips')}
                       id="tutorial-tips"
                     />
@@ -556,7 +556,7 @@ const Settings = () => {
                           allowFriendRequests: true,
                           showInLeaderboards: true,
                         },
-                        game: {
+                        simulation: {
                           animationSpeed: 'normal',
                           confirmBeforeLeavingGame: true,
                           showTutorialTips: true,

@@ -28,7 +28,7 @@ import {
 } from '../../components/common';
 import {
   Database,
-  Gamepad2,
+  FlaskConical,
   Users,
   Eye,
   BarChart3,
@@ -43,7 +43,7 @@ import {
 import { cn } from '../../lib/utils/cn';
 
 const tabItems = [
-  { value: 'game', label: 'Games', icon: <Gamepad2 className="h-4 w-4" /> },
+  { value: 'scenarios', label: 'Scenarios', icon: <FlaskConical className="h-4 w-4" /> },
   { value: 'users', label: 'Users', icon: <Users className="h-4 w-4" /> },
   { value: 'sc', label: 'Supply Chains', icon: <Database className="h-4 w-4" /> },
   { value: 'training', label: 'AI Training', icon: <GraduationCap className="h-4 w-4" /> },
@@ -182,11 +182,11 @@ const AdminDashboard = () => {
   const refreshGames = useCallback(async () => {
     setGamesLoading(true);
     try {
-      const list = await simulationApi.getGames();
+      const list = await simulationApi.getScenarios();
       setGames(Array.isArray(list) ? list : []);
       setGamesError(null);
     } catch (error) {
-      const detail = error?.response?.data?.detail || error?.message || 'Unable to load games right now.';
+      const detail = error?.response?.data?.detail || error?.message || 'Unable to load scenarios right now.';
       setGames([]);
       setGamesError(detail);
     } finally {
@@ -343,7 +343,7 @@ const AdminDashboard = () => {
                 Tenant Administrator Workspace
               </h1>
               <p className="text-sm text-muted-foreground">
-                Configure your supply chain templates, manage scenarioUser access, and supervise active games from a single workspace.
+                Configure your supply chain templates, manage user access and supervise active scenarios from a single workspace.
               </p>
             </div>
           </div>
@@ -392,7 +392,7 @@ const AdminDashboard = () => {
           <TenantSupplyChainConfigList />
         )}
 
-        {activeTab === 'game' && (
+        {activeTab === 'scenarios' && (
           <TenantScenarioConfigPanel
             games={games}
             loading={gamesLoading}

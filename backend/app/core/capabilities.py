@@ -49,12 +49,12 @@ class Capability(str, Enum):
     APPROVE_RECOMMENDATIONS = "approve_recommendations"
     EXECUTE_RECOMMENDATIONS = "execute_recommendations"
 
-    # Gamification
-    VIEW_GAMES = "view_games"
-    CREATE_GAME = "create_game"
-    PLAY_GAME = "play_game"
-    DELETE_GAME = "delete_game"
-    MANAGE_GAMES = "manage_games"
+    # Simulation
+    VIEW_SIMULATIONS = "view_simulations"
+    CREATE_SIMULATION = "create_simulation"
+    PLAY_SIMULATION = "play_simulation"
+    DELETE_SIMULATION = "delete_simulation"
+    MANAGE_SIMULATIONS = "manage_simulations"
 
     # Supply Chain Design
     VIEW_SC_CONFIGS = "view_sc_configs"
@@ -269,12 +269,12 @@ TENANT_ADMIN_CAPABILITIES = CapabilitySet(
         Capability.MANAGE_SHIPMENTS,
         Capability.VIEW_INVENTORY_VISIBILITY,
 
-        # Gamification - Full access
-        Capability.VIEW_GAMES,
-        Capability.CREATE_GAME,
-        Capability.PLAY_GAME,
-        Capability.DELETE_GAME,
-        Capability.MANAGE_GAMES,
+        # Simulation - Full access
+        Capability.VIEW_SIMULATIONS,
+        Capability.CREATE_SIMULATION,
+        Capability.PLAY_SIMULATION,
+        Capability.DELETE_SIMULATION,
+        Capability.MANAGE_SIMULATIONS,
 
         # Supply Chain - View and manage tenant configs
         Capability.VIEW_SC_CONFIGS,
@@ -424,9 +424,9 @@ USER_CAPABILITIES = CapabilitySet(
         # Overview - Users only see their game dashboard
         Capability.VIEW_DASHBOARD,
 
-        # Gamification - Play games only
-        Capability.VIEW_GAMES,
-        Capability.PLAY_GAME,
+        # Simulation - Play scenarios only
+        Capability.VIEW_SIMULATIONS,
+        Capability.PLAY_SIMULATION,
     }
 )
 
@@ -1155,7 +1155,7 @@ def capability_to_permission_name(capability: Capability) -> str:
     """
     Convert a capability to RBAC permission name format.
 
-    Example: Capability.VIEW_GAMES -> "games.view"
+    Example: Capability.VIEW_SIMULATIONS -> "simulations.view"
     """
     name = capability.value
     parts = name.split('_', 1)
@@ -1184,12 +1184,12 @@ def get_navigation_capabilities() -> dict:
             }
         },
 
-        # Gamification category
-        "gamification": {
-            "category_capability": Capability.VIEW_GAMES,
+        # Simulation category
+        "simulation": {
+            "category_capability": Capability.VIEW_SIMULATIONS,
             "items": {
-                "/games": [Capability.VIEW_GAMES],
-                "/games/new": [Capability.CREATE_GAME],
+                "/scenarios": [Capability.VIEW_SIMULATIONS],
+                "/scenarios/new": [Capability.CREATE_SIMULATION],
             }
         },
 

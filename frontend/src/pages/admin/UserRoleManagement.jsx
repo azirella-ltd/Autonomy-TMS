@@ -68,13 +68,13 @@ const UserRoleManagement = () => {
       ],
     },
     gamification: {
-      label: 'Gamification',
+      label: 'Simulation',
       capabilities: [
-        { id: 'view_games', label: 'View Games', description: 'View game list' },
-        { id: 'create_game', label: 'Create Games', description: 'Create new games' },
-        { id: 'play_game', label: 'Play Games', description: 'Participate in games' },
-        { id: 'delete_game', label: 'Delete Games', description: 'Delete games' },
-        { id: 'manage_games', label: 'Manage Games', description: 'Full game management' },
+        { id: 'view_simulations', label: 'View Scenarios', description: 'View simulation list' },
+        { id: 'create_simulation', label: 'Create Scenarios', description: 'Create new simulations' },
+        { id: 'play_simulation', label: 'Run Scenarios', description: 'Participate in simulations' },
+        { id: 'delete_simulation', label: 'Delete Scenarios', description: 'Delete simulations' },
+        { id: 'manage_simulations', label: 'Manage Scenarios', description: 'Full simulation management' },
       ],
     },
     supply_chain: {
@@ -141,7 +141,7 @@ const UserRoleManagement = () => {
       capabilities: [
         'view_dashboard', 'view_analytics', 'view_sc_analytics',
         'view_insights',
-        'view_games', 'create_game', 'play_game', 'delete_game', 'manage_games',
+        'view_simulations', 'create_simulation', 'play_simulation', 'delete_simulation', 'manage_simulations',
         'view_sc_configs', 'view_inventory_models', 'view_tenant_configs', 'manage_tenant_configs', 'view_ntier_visibility',
         'view_order_planning', 'view_demand_planning', 'view_supply_planning', 'view_optimization',
         'use_ai_assistant', 'view_trm_training', 'view_gnn_training', 'view_model_setup',
@@ -150,23 +150,23 @@ const UserRoleManagement = () => {
     },
     USER: {
       label: 'User',
-      description: 'Basic access to play games and view information',
+      description: 'Basic access to run scenarios and view information',
       capabilities: [
         'view_dashboard', 'view_analytics',
         'view_insights',
-        'view_games', 'play_game',
+        'view_simulations', 'play_simulation',
         'view_sc_configs', 'view_ntier_visibility',
         'view_order_planning',
         'view_tenants', 'view_scenario_users',
       ],
     },
     GAME_MANAGER: {
-      label: 'Game Manager',
-      description: 'Create and manage games without admin access',
+      label: 'Scenario Manager',
+      description: 'Create and manage scenarios without admin access',
       capabilities: [
         'view_dashboard', 'view_analytics', 'view_sc_analytics',
         'view_insights',
-        'view_games', 'create_game', 'play_game', 'manage_games',
+        'view_simulations', 'create_simulation', 'play_simulation', 'manage_simulations',
         'view_sc_configs', 'view_ntier_visibility',
         'view_order_planning', 'view_demand_planning', 'view_supply_planning',
         'view_tenants', 'view_scenario_users',
@@ -178,7 +178,7 @@ const UserRoleManagement = () => {
       capabilities: [
         'view_dashboard', 'view_analytics', 'view_sc_analytics',
         'view_insights',
-        'view_games',
+        'view_simulations',
         'view_sc_configs', 'view_ntier_visibility',
         'view_order_planning', 'view_demand_planning', 'view_supply_planning', 'view_optimization',
         'view_trm_training', 'view_gnn_training', 'view_model_setup',

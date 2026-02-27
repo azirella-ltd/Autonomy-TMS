@@ -57,13 +57,13 @@ const ScenarioStats = () => {
         setStats(statsResponse);
         
         // Fetch game history
-        const historyResponse = await simulationApi.getGameHistory();
+        const historyResponse = await simulationApi.getScenarios();
         setHistory(historyResponse);
         
         setError(null);
       } catch (err) {
         console.error('Failed to fetch game stats:', err);
-        setError('Failed to load game statistics. Please try again later.');
+        setError('Failed to load scenario statistics. Please try again later.');
       } finally {
         setIsLoading(false);
       }
@@ -143,8 +143,8 @@ const ScenarioStats = () => {
   const prepareWinLossData = () => {
     if (!stats) return { labels: [], datasets: [] };
     
-    const wins = stats.games_won || 0;
-    const losses = (stats.games_played || 0) - wins;
+    const wins = stats.scenarios_won || 0;
+    const losses = (stats.scenarios_completed || 0) - wins;
     
     return {
       labels: ['Wins', 'Losses'],
@@ -266,7 +266,7 @@ const ScenarioStats = () => {
   );
 
   // Game history item
-  const GameHistoryItem = ({ game }) => {
+  const ScenarioHistoryItem = ({ game }) => {
     const scenarioUser = game.scenarioUsers?.find(p => p.user_id === user?.id);
     if (!scenarioUser) return null;
     
@@ -345,7 +345,7 @@ const ScenarioStats = () => {
     <div className="max-w-7xl mx-auto pad-8">
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Game Statistics</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Scenario Statistics</h1>
           <p className="mt-1 text-sm text-gray-500">Track your performance and game history</p>
         </div>
         <div className="flex space-x-2">
@@ -364,11 +364,11 @@ const ScenarioStats = () => {
       {/* Stats Grid */}
       <div className="grid grid-cols-1 gap-5 mt-5 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard 
-          title="Games Played" 
-          value={stats?.games_played || 0} 
+          title="Scenarios Completed" 
+          value={stats?.scenarios_completed || 0} 
           icon={TrophyIcon}
-          change={`${stats?.games_played_change || 0}%`}
-          changeType={stats?.games_played_change > 0 ? 'increase' : stats?.games_played_change < 0 ? 'decrease' : 'neutral'}
+          change={`${stats?.scenarios_completed_change || 0}%`}
+          changeType={stats?.scenarios_completed_change > 0 ? 'increase' : stats?.scenarios_completed_change < 0 ? 'decrease' : 'neutral'}
         />
         <StatCard 
           title="Win Rate" 
@@ -403,7 +403,7 @@ const ScenarioStats = () => {
           )}
         </div>
         <div className="card-surface pad-6 rounded-lg">
-          {stats?.games_played > 0 ? (
+          {stats?.scenarios_completed > 0 ? (
             <div className="h-64 flex items-center justify-center">
               <Pie data={prepareWinLossData()} options={winLossOptions} />
             </div>
@@ -415,10 +415,10 @@ const ScenarioStats = () => {
         </div>
       </div>
 
-      {/* Game History */}
+      {/* Scenario History */}
       <div className="mt-12">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-lg font-medium text-gray-900">Recent Games</h2>
+          <h2 className="text-lg font-medium text-gray-900">Recent Scenarios</h2>
           <span className="text-sm text-gray-500">
             Showing {filteredHistory.length} of {history.length} games
           </span>
@@ -427,15 +427,15 @@ const ScenarioStats = () => {
         {filteredHistory.length > 0 ? (
           <div className="space-y-4">
             {filteredHistory.map((game) => (
-              <GameHistoryItem key={game.id} game={game} />
+              <ScenarioHistoryItem key={game.id} game={game} />
             ))}
           </div>
         ) : (
           <div className="text-center py-12 card-surface rounded-lg">
             <UserGroupIcon className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">No games played yet</h3>
+            <h3 className="mt-2 text-sm font-medium text-gray-900">No scenarios played yet</h3>
             <p className="mt-1 text-sm text-gray-500">
-              Get started by joining or creating a game from the lobby.
+              Get started by joining or creating a scenario from the lobby.
             </p>
           </div>
         )}

@@ -19,7 +19,7 @@ const ROUTE_LABELS = {
   dashboard: 'Dashboard',
   analytics: 'Analytics',
   insights: 'Insights',
-  games: 'Games',
+  scenarios: 'Scenarios',
   admin: 'Administration',
   planning: 'Planning',
   visibility: 'Visibility',
@@ -91,8 +91,8 @@ const ROUTE_LABELS = {
   'system-config': 'System Config',
 
   // Game pages
-  new: 'Create Game',
-  report: 'Game Report',
+  new: 'Create Scenario',
+  report: 'Scenario Report',
   visualizations: 'Visualizations',
 
   // Other
