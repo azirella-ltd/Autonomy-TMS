@@ -65,11 +65,51 @@ class SkillOrchestrator:
         self,
         claude_client: Optional[ClaudeClient] = None,
         decision_memory_service=None,
+        tenant_id: Optional[int] = None,
     ):
         self._client = claude_client or ClaudeClient()
         self._decision_memory = decision_memory_service
+        self._tenant_id = tenant_id
         # Cache loaded SKILL.md prompts (they don't change at runtime)
         self._prompt_cache: dict[str, str] = {}
+
+    async def _find_similar_decisions(
+        self,
+        trm_type: str,
+        state_features: dict[str, Any],
+        top_k: int = 3,
+        min_reward: float = 0.5,
+    ) -> list[dict[str, Any]]:
+        """Retrieve tenant-scoped similar decisions from decision memory.
+
+        If a ``decision_memory_service`` was passed at construction it is
+        used directly (backwards-compatible for tests).  Otherwise, a new
+        session is opened for the duration of the query.
+        """
+        if self._decision_memory is not None:
+            return await self._decision_memory.find_similar_decisions(
+                trm_type=trm_type,
+                state_description=json.dumps(state_features, default=str),
+                top_k=top_k,
+                min_reward=min_reward,
+            )
+        if self._tenant_id is None:
+            return []
+        try:
+            from app.services.decision_memory_service import DecisionMemoryService
+            from app.db.kb_session import get_kb_session
+
+            async with get_kb_session() as kb_db:
+                svc = DecisionMemoryService(db=kb_db, tenant_id=self._tenant_id)
+                return await svc.find_similar_decisions(
+                    trm_type=trm_type,
+                    state_description=json.dumps(state_features, default=str),
+                    top_k=top_k,
+                    min_reward=min_reward,
+                )
+        except Exception as e:
+            logger.debug("Decision memory lookup failed: %s", e)
+            return []
 
     def _load_skill_prompt(self, skill: SkillDefinition) -> str:
         """Load and cache the SKILL.md prompt."""
@@ -139,18 +179,11 @@ class SkillOrchestrator:
         # 1. Load SKILL.md as system prompt
         base_prompt = self._load_skill_prompt(skill)
 
-        # 2. Retrieve similar past decisions from RAG decision memory
-        similar_decisions = []
-        if self._decision_memory:
-            try:
-                similar_decisions = await self._decision_memory.find_similar_decisions(
-                    trm_type=skill.trm_type,
-                    state_description=json.dumps(state_features, default=str),
-                    top_k=3,
-                    min_reward=0.5,
-                )
-            except Exception as e:
-                logger.debug("RAG decision lookup failed (non-fatal): %s", e)
+        # 2. Retrieve similar past decisions from RAG decision memory (tenant-scoped)
+        similar_decisions = await self._find_similar_decisions(
+            trm_type=skill.trm_type,
+            state_features=state_features,
+        )
 
         # 3. Build system prompt with RAG context + escalation metadata
         system_prompt = self._build_system_prompt(

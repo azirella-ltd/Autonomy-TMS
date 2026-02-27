@@ -115,6 +115,9 @@ class SiteAgentConfig:
     # Authorization protocol
     enable_authorization: bool = True  # Check authority boundaries before actions
 
+    # Tenant isolation — required for tenant-scoped decision memory (RAG)
+    tenant_id: Optional[int] = None
+
     # Claude Skills — hybrid exception handler (feature-flagged, OFF by default)
     # When True, TRMs remain the PRIMARY path; Skills handle only exceptions
     # where conformal prediction indicates low confidence (wide intervals).
@@ -403,6 +406,7 @@ class SiteAgent:
 
             self._skill_orchestrator = SkillOrchestrator(
                 claude_client=ClaudeClient(),
+                tenant_id=self.config.tenant_id,
             )
             logger.info("Claude Skills orchestrator initialized for site %s", self.site_key)
         except Exception as e:
@@ -523,7 +527,10 @@ class SiteAgent:
             )
 
             async with get_kb_session() as kb_db:
-                svc = DecisionMemoryService(db=kb_db)
+                svc = DecisionMemoryService(
+                    db=kb_db,
+                    tenant_id=self.config.tenant_id or 0,
+                )
                 await svc.embed_decision(
                     trm_type=trm_type,
                     state_features=state_features,

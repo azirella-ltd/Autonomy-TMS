@@ -25,19 +25,20 @@ def get_skills_stats(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """Get aggregated skills monitoring statistics."""
+    """Get aggregated skills monitoring statistics (scoped to current tenant)."""
     cutoff = datetime.utcnow() - timedelta(days=days)
+    tenant_id = current_user.tenant_id
 
     # Total decisions by source
     source_counts = db.execute(
         text("""
             SELECT decision_source, COUNT(*) as cnt
             FROM decision_embeddings
-            WHERE created_at > :cutoff
+            WHERE created_at > :cutoff AND tenant_id = :tenant_id
             GROUP BY decision_source
             ORDER BY cnt DESC
         """),
-        {"cutoff": cutoff},
+        {"cutoff": cutoff, "tenant_id": tenant_id},
     )
     source_breakdown = {row[0]: row[1] for row in source_counts.fetchall()}
 
@@ -49,11 +50,11 @@ def get_skills_stats(
                    AVG(reward) as avg_reward,
                    COUNT(CASE WHEN outcome IS NOT NULL THEN 1 END) as with_outcome
             FROM decision_embeddings
-            WHERE created_at > :cutoff
+            WHERE created_at > :cutoff AND tenant_id = :tenant_id
             GROUP BY trm_type, decision_source
             ORDER BY trm_type, decision_source
         """),
-        {"cutoff": cutoff},
+        {"cutoff": cutoff, "tenant_id": tenant_id},
     )
     type_breakdown = {}
     for row in type_counts.fetchall():
@@ -81,8 +82,9 @@ def get_skills_stats(
                 COUNT(CASE WHEN reward IS NULL THEN 1 END) as pending
             FROM decision_embeddings
             WHERE created_at > :cutoff AND decision_source = 'skill_exception'
+              AND tenant_id = :tenant_id
         """),
-        {"cutoff": cutoff},
+        {"cutoff": cutoff, "tenant_id": tenant_id},
     )
     reward_row = reward_stats.fetchone()
 
@@ -93,11 +95,11 @@ def get_skills_stats(
                    state_summary, created_at, outcome_recorded_at,
                    site_key
             FROM decision_embeddings
-            WHERE created_at > :cutoff
+            WHERE created_at > :cutoff AND tenant_id = :tenant_id
             ORDER BY created_at DESC
             LIMIT 20
         """),
-        {"cutoff": cutoff},
+        {"cutoff": cutoff, "tenant_id": tenant_id},
     )
     recent_decisions = [
         {
@@ -162,16 +164,23 @@ def get_rag_stats(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """Get RAG decision memory statistics."""
+    """Get RAG decision memory statistics (scoped to current tenant)."""
+    tenant_id = current_user.tenant_id
+
     # Total embeddings
     total = db.execute(
-        text("SELECT COUNT(*) FROM decision_embeddings"),
+        text("SELECT COUNT(*) FROM decision_embeddings WHERE tenant_id = :tenant_id"),
+        {"tenant_id": tenant_id},
     )
     total_count = total.scalar() or 0
 
     # With embeddings vs without
     with_embedding = db.execute(
-        text("SELECT COUNT(*) FROM decision_embeddings WHERE embedding IS NOT NULL"),
+        text("""
+            SELECT COUNT(*) FROM decision_embeddings
+            WHERE embedding IS NOT NULL AND tenant_id = :tenant_id
+        """),
+        {"tenant_id": tenant_id},
     )
     embedded_count = with_embedding.scalar() or 0
 
@@ -180,7 +189,9 @@ def get_rag_stats(
         text("""
             SELECT COUNT(*) FROM decision_embeddings
             WHERE outcome IS NOT NULL AND reward IS NOT NULL
+              AND tenant_id = :tenant_id
         """),
+        {"tenant_id": tenant_id},
     )
     outcome_count = with_outcome.scalar() or 0
 
@@ -188,8 +199,9 @@ def get_rag_stats(
     high_reward = db.execute(
         text("""
             SELECT COUNT(*) FROM decision_embeddings
-            WHERE reward > 0.5
+            WHERE reward > 0.5 AND tenant_id = :tenant_id
         """),
+        {"tenant_id": tenant_id},
     )
     high_reward_count = high_reward.scalar() or 0
 
@@ -201,9 +213,11 @@ def get_rag_stats(
                    COUNT(CASE WHEN reward > 0.5 THEN 1 END) as high_reward,
                    AVG(reward) as avg_reward
             FROM decision_embeddings
+            WHERE tenant_id = :tenant_id
             GROUP BY trm_type
             ORDER BY total DESC
         """),
+        {"tenant_id": tenant_id},
     )
     type_stats = [
         {

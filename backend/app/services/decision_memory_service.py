@@ -28,14 +28,20 @@ logger = logging.getLogger(__name__)
 
 
 class DecisionMemoryService:
-    """Manages the decision embedding store for RAG retrieval."""
+    """Manages the decision embedding store for RAG retrieval.
+
+    All operations are scoped to a single tenant to enforce multi-tenant
+    data isolation.  The ``tenant_id`` is required at construction time
+    and automatically applied to every write and every query.
+    """
 
     # Similarity thresholds
     CACHE_HIT_THRESHOLD = 0.95  # Near-exact match, skip LLM
     FEW_SHOT_THRESHOLD = 0.70   # Good match, use as example
 
-    def __init__(self, db: AsyncSession, embedding_service=None):
+    def __init__(self, db: AsyncSession, tenant_id: int, embedding_service=None):
         self.db = db
+        self.tenant_id = tenant_id
         self._embedding_service = embedding_service
 
     async def _get_embedding_service(self):
@@ -54,9 +60,11 @@ class DecisionMemoryService:
         decision_source: str = "skill",
         confidence: Optional[float] = None,
         site_key: Optional[str] = None,
-        tenant_id: Optional[int] = None,
     ) -> int:
         """Store a new decision with its state embedding.
+
+        The decision is automatically tagged with ``self.tenant_id`` for
+        multi-tenant isolation.
 
         Args:
             trm_type: TRM type identifier (e.g., "atp_executor")
@@ -66,7 +74,6 @@ class DecisionMemoryService:
             decision_source: Source of decision ("engine", "trm", "skill", "human_override")
             confidence: Decision confidence score
             site_key: Site identifier
-            tenant_id: Tenant identifier
 
         Returns:
             ID of the created decision embedding record.
@@ -83,7 +90,7 @@ class DecisionMemoryService:
         record = DecisionEmbedding(
             trm_type=trm_type,
             site_key=site_key,
-            tenant_id=tenant_id,
+            tenant_id=self.tenant_id,
             state_features=state_features,
             state_summary=state_summary,
             decision=decision,
@@ -131,6 +138,9 @@ class DecisionMemoryService:
     ) -> list[dict[str, Any]]:
         """Find similar past decisions using vector similarity search.
 
+        Results are scoped to ``self.tenant_id`` so that one tenant's
+        decisions never leak into another tenant's few-shot context.
+
         Args:
             trm_type: Filter by TRM type
             state_description: Current state description to embed and search for
@@ -159,6 +169,7 @@ class DecisionMemoryService:
                 1 - (embedding <=> :embedding::vector) AS similarity
             FROM decision_embeddings
             WHERE trm_type = :trm_type
+              AND tenant_id = :tenant_id
               AND embedding IS NOT NULL
               AND outcome IS NOT NULL
               AND (reward >= :min_reward OR reward IS NULL)
@@ -171,6 +182,7 @@ class DecisionMemoryService:
             result = await self.db.execute(sql, {
                 "embedding": embedding_str,
                 "trm_type": trm_type,
+                "tenant_id": self.tenant_id,
                 "min_reward": min_reward,
                 "site_key": site_key,
                 "top_k": top_k,
@@ -273,6 +285,7 @@ class DecisionMemoryService:
             record = DecisionEmbedding(
                 trm_type=trm_type,
                 site_key=row.site_key if hasattr(row, "site_key") else None,
+                tenant_id=self.tenant_id,
                 state_features=state_features,
                 state_summary=state_summary,
                 decision=decision,
