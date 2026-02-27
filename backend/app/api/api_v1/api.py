@@ -47,7 +47,7 @@ from app.api.endpoints import (
     powell_training_router,
     # AIIO Framework - Insights & Actions
     insights_router,
-    # Planning Cascade (S&OP → MRS → Supply Agent → Allocation Agent)
+    # Planning Cascade (S&OP → MPS → Supply Agent → Allocation Agent)
     planning_cascade_router,
     # Decision Metrics (Agent Performance) for Powell Framework Dashboards
     decision_metrics_router,
@@ -115,7 +115,7 @@ api_router.include_router(powell_training_router, prefix="/powell-training", tag
 # AIIO Framework - Insights & Actions Landing Page
 api_router.include_router(insights_router, tags=["insights"])
 
-# Planning Cascade (S&OP → MRS → Supply Agent → Allocation Agent)
+# Planning Cascade (S&OP → MPS → Supply Agent → Allocation Agent)
 api_router.include_router(planning_cascade_router, prefix="/planning-cascade", tags=["planning-cascade"])
 
 # Decision Metrics (Agent Performance) for Powell Framework Dashboards

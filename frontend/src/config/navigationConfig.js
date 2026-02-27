@@ -370,9 +370,9 @@ export const NAVIGATION_CONFIG = [
       },
       {
         label: 'Supply Baseline Pack',
-        path: '/planning/mrs-candidates',
+        path: '/planning/mps-candidates',
         icon: CompareIcon,
-        requiredCapability: 'view_mrs_candidates',
+        requiredCapability: 'view_mps_candidates',
         description: 'Layer 2: Candidate supply plans with cost vs service tradeoff',
       },
       // --- OPERATIONAL LAYERS ---

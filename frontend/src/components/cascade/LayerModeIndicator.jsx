@@ -37,7 +37,7 @@ const MODE_CONFIG = {
 
 const LAYER_NAMES = {
   sop: 'S&OP Strategic Planning',
-  mrs: 'MRS / Supply Baseline Pack',
+  mps: 'MPS / Supply Baseline Pack',
   supply_agent: 'Supply Agent',
   allocation_agent: 'Allocation Agent',
   execution: 'Execution',

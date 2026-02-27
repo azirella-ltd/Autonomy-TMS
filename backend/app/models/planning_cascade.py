@@ -48,7 +48,7 @@ class PolicySource(str, enum.Enum):
 class LayerName(str, enum.Enum):
     """Sellable cascade layers"""
     SOP = "sop"                        # S&OP Strategic Planning
-    MRS = "mrs"                        # Supply Baseline Layer (unified — BOM explosion conditional on topology)
+    MPS = "mps"                        # Supply Baseline Layer (unified — BOM explosion conditional on topology)
     SUPPLY_AGENT = "supply_agent"      # Supply Agent (Supply Commit)
     ALLOCATION_AGENT = "allocation_agent"  # Allocation Agent (Allocation Commit)
     EXECUTION = "execution"            # Execution (Foundation + TRM)
@@ -216,7 +216,7 @@ class SupplyBaselinePack(Base):
     Non-authoritative mathematical grounding for Supply Agent.
     Contains candidate supply plans that the agent may accept, reject, or blend.
 
-    In FULL mode: Multiple parameterized candidates from MRS/MRP engine.
+    In FULL mode: Multiple parameterized candidates from MPS/MRP engine.
     In INPUT mode: Single candidate from customer's existing MRP output.
     """
     __tablename__ = "supply_baseline_pack"
@@ -698,7 +698,7 @@ class LayerLicense(Base):
     Package tiers (bottom-up, each includes all below):
     - Foundation: execution only (deterministic engines)
     - AI Execution: execution + supply_agent + allocation_agent (TRM agents)
-    - Planning: + mrs (MRS candidate generation)
+    - Planning: + mps (MPS candidate generation)
     - Enterprise: + sop (S&OP simulation, full closed-loop)
     """
     __tablename__ = "layer_license"

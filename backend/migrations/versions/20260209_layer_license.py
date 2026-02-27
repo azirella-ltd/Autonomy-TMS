@@ -18,7 +18,7 @@ def upgrade():
         'layer_license',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
         sa.Column('customer_id', sa.Integer(), sa.ForeignKey('groups.id'), nullable=False),
-        sa.Column('layer', sa.Enum('sop', 'mrs', 'supply_agent', 'allocation_agent', 'execution',
+        sa.Column('layer', sa.Enum('sop', 'mps', 'supply_agent', 'allocation_agent', 'execution',
                                     name='layername'), nullable=False),
         sa.Column('mode', sa.Enum('active', 'input', 'disabled', name='layermode'),
                   nullable=False, server_default='input'),

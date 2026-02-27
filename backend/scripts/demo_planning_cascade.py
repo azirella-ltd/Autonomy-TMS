@@ -3,7 +3,7 @@
 Planning Cascade Demo Script
 
 Demonstrates the full planning cascade for a Food Dist distributor:
-S&OP → MRS → Supply Agent → Allocation Agent
+S&OP → MPS → Supply Agent → Allocation Agent
 
 Run with:
     cd backend
@@ -141,7 +141,7 @@ def demo_step_2_inventory_state():
 
 
 def demo_step_3_supply_candidates():
-    """Demonstrate MRS candidate generation"""
+    """Demonstrate MPS candidate generation"""
     console.rule("[bold blue]Step 3: Supply Baseline Pack (SupBP) Candidates[/bold blue]")
 
     # In FULL mode, we generate 5 candidate methods
@@ -317,8 +317,8 @@ def demo_cascade_flow():
     sop = tree.add("📋 S&OP Policy Envelope (θ_SOP)")
     sop.add("[dim]Service tiers, safety stock targets, expedite caps[/dim]")
 
-    mrs = tree.add("📦 MRS / Supply Baseline Pack (SupBP)")
-    mrs.add("[dim]5 candidate methods with tradeoff frontier[/dim]")
+    mps = tree.add("📦 MPS / Supply Baseline Pack (SupBP)")
+    mps.add("[dim]5 candidate methods with tradeoff frontier[/dim]")
 
     sc = tree.add("🚚 Supply Agent → Supply Commit (SC)")
     sc.add("[dim]PO recommendations with integrity/risk checks[/dim]")

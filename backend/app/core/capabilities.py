@@ -168,8 +168,8 @@ class Capability(str, Enum):
     VIEW_CASCADE_DASHBOARD = "view_cascade_dashboard"  # Cascade orchestration overview
     VIEW_SOP_POLICY = "view_sop_policy"  # Layer 1: View S&OP Policy Envelope parameters
     MANAGE_SOP_POLICY = "manage_sop_policy"  # Layer 1: Edit/approve Policy Envelope
-    VIEW_MRS_CANDIDATES = "view_mrs_candidates"  # Layer 2: View Supply Baseline Pack candidates
-    MANAGE_MRS_CANDIDATES = "manage_mrs_candidates"  # Layer 2: Select/blend SupBP candidates, upload plans
+    VIEW_MPS_CANDIDATES = "view_mps_candidates"  # Layer 2: View Supply Baseline Pack candidates
+    MANAGE_MPS_CANDIDATES = "manage_mps_candidates"  # Layer 2: Select/blend SupBP candidates, upload plans
     VIEW_SUPPLY_WORKLIST = "view_supply_worklist"  # Layer 3: View Supply Commits
     MANAGE_SUPPLY_WORKLIST = "manage_supply_worklist"  # Layer 3: Accept/Override/Reject Supply Commits
     VIEW_ALLOCATION_WORKLIST = "view_allocation_worklist"  # Layer 4: View Allocation Commits
@@ -373,8 +373,8 @@ TENANT_ADMIN_CAPABILITIES = CapabilitySet(
         Capability.VIEW_CASCADE_DASHBOARD,
         Capability.VIEW_SOP_POLICY,
         Capability.MANAGE_SOP_POLICY,
-        Capability.VIEW_MRS_CANDIDATES,
-        Capability.MANAGE_MRS_CANDIDATES,
+        Capability.VIEW_MPS_CANDIDATES,
+        Capability.MANAGE_MPS_CANDIDATES,
         Capability.VIEW_SUPPLY_WORKLIST,
         Capability.MANAGE_SUPPLY_WORKLIST,
         Capability.VIEW_ALLOCATION_WORKLIST,
@@ -539,7 +539,7 @@ SC_VP_CAPABILITIES = CapabilitySet(
         Capability.VIEW_CASCADE_DASHBOARD,
         Capability.VIEW_SOP_POLICY,
         Capability.MANAGE_SOP_POLICY,  # SC_VP owns Policy Envelope
-        Capability.VIEW_MRS_CANDIDATES,
+        Capability.VIEW_MPS_CANDIDATES,
         Capability.VIEW_SUPPLY_WORKLIST,
         Capability.VIEW_ALLOCATION_WORKLIST,
         Capability.VIEW_EXECUTION_DASHBOARD,
@@ -665,11 +665,11 @@ SOP_DIRECTOR_CAPABILITIES = CapabilitySet(
         Capability.VIEW_POWELL,
         Capability.VIEW_ATP_CTP,
 
-        # Planning Cascade - Tactical: owns L2 (MRS), manages L3-L4, views L1/L5
+        # Planning Cascade - Tactical: owns L2 (MPS), manages L3-L4, views L1/L5
         Capability.VIEW_CASCADE_DASHBOARD,
         Capability.VIEW_SOP_POLICY,  # Views PE from SC_VP (no manage)
-        Capability.VIEW_MRS_CANDIDATES,
-        Capability.MANAGE_MRS_CANDIDATES,  # SOP_DIRECTOR owns SupBP selection
+        Capability.VIEW_MPS_CANDIDATES,
+        Capability.MANAGE_MPS_CANDIDATES,  # SOP_DIRECTOR owns SupBP selection
         Capability.VIEW_SUPPLY_WORKLIST,
         Capability.MANAGE_SUPPLY_WORKLIST,  # Accept/Override Supply Commits
         Capability.VIEW_ALLOCATION_WORKLIST,
@@ -853,7 +853,7 @@ MPS_MANAGER_CAPABILITIES = CapabilitySet(
         # Planning Cascade - Operational: owns L3-L5, views L1-L2
         Capability.VIEW_CASCADE_DASHBOARD,
         Capability.VIEW_SOP_POLICY,  # Views PE (no manage)
-        Capability.VIEW_MRS_CANDIDATES,  # Views SupBP (no manage)
+        Capability.VIEW_MPS_CANDIDATES,  # Views SupBP (no manage)
         Capability.VIEW_SUPPLY_WORKLIST,
         Capability.MANAGE_SUPPLY_WORKLIST,  # MPS_MANAGER works with Supply Agent
         Capability.VIEW_ALLOCATION_WORKLIST,
@@ -1017,7 +1017,7 @@ EXECUTIVE_CAPABILITIES = CapabilitySet(
         # Planning Cascade - Read-only visibility
         Capability.VIEW_CASCADE_DASHBOARD,
         Capability.VIEW_SOP_POLICY,
-        Capability.VIEW_MRS_CANDIDATES,
+        Capability.VIEW_MPS_CANDIDATES,
         Capability.VIEW_SUPPLY_WORKLIST,
         Capability.VIEW_ALLOCATION_WORKLIST,
         Capability.VIEW_EXECUTION_DASHBOARD,
@@ -1231,7 +1231,7 @@ def get_navigation_capabilities() -> dict:
             "items": {
                 "/planning/cascade": [Capability.VIEW_CASCADE_DASHBOARD],
                 "/planning/sop-policy": [Capability.VIEW_SOP_POLICY],
-                "/planning/mrs-candidates": [Capability.VIEW_MRS_CANDIDATES],
+                "/planning/mps-candidates": [Capability.VIEW_MPS_CANDIDATES],
                 "/planning/supply-worklist": [Capability.VIEW_SUPPLY_WORKLIST],
                 "/planning/allocation-worklist": [Capability.VIEW_ALLOCATION_WORKLIST],
                 "/planning/execution": [Capability.VIEW_EXECUTION_DASHBOARD],

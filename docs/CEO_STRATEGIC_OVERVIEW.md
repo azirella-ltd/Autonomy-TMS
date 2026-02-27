@@ -414,7 +414,7 @@ The Powell cascade is designed as independently sellable layers:
 |---------|----------------|-------------------|
 | **Foundation** | Execution only | Deterministic engines (MRP, ATP, safety stock). CTP for order promising. Manual policy inputs. |
 | **AI Execution** | Execution + Supply + Allocation Agents | TRM agents + Supply & Allocation Agents. Customer provides policy parameters. AAP resolves cross-agent conflicts. |
-| **Planning** | Above + MRS (candidate generation) | Multiple supply plan candidates with tradeoff frontier. Customer provides strategic policy only. |
+| **Planning** | Above + MPS (candidate generation) | Multiple supply plan candidates with tradeoff frontier. Customer provides strategic policy only. |
 | **Enterprise** | All 5 layers | S&OP simulation optimizes everything. Full closed-loop with feed-back signals. |
 
 When a customer buys lower layers without upper layers, the same UI screens become **input screens** where the customer provides what the missing AI layer would have generated. This means every sale is a foot in the door for upselling upper layers.

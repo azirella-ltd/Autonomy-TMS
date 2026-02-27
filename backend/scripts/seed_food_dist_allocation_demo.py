@@ -318,7 +318,7 @@ def seed_layer_licenses(db: Session, customer_id: int):
 
     layers = [
         (LayerName.SOP, "enterprise"),
-        (LayerName.MRS, "planning"),
+        (LayerName.MPS, "planning"),
         (LayerName.SUPPLY_AGENT, "ai_execution"),
         (LayerName.ALLOCATION_AGENT, "ai_execution"),
         (LayerName.EXECUTION, "foundation"),
@@ -1077,7 +1077,7 @@ def _fix_enum_casing(engine):
         "product_hierarchy_level_enum": ["CATEGORY", "FAMILY", "GROUP", "PRODUCT"],
         "time_bucket_type_enum": ["HOUR", "DAY", "WEEK", "MONTH", "QUARTER", "YEAR"],
         # Auto-named enums (from planning_cascade.py Column(Enum(...))):
-        "layername": ["SOP", "MRS", "SUPPLY_AGENT", "ALLOCATION_AGENT", "EXECUTION"],
+        "layername": ["SOP", "MPS", "SUPPLY_AGENT", "ALLOCATION_AGENT", "EXECUTION"],
         "layermode": ["ACTIVE", "INPUT", "DISABLED"],
         "commitstatus": ["PROPOSED", "REVIEWED", "ACCEPTED", "OVERRIDDEN", "SUBMITTED", "AUTO_SUBMITTED", "REJECTED"],
         "policysource": ["AUTONOMY_SIM", "CUSTOMER_INPUT", "SYSTEM_DEFAULT"],

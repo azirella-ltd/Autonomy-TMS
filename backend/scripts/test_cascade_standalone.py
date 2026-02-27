@@ -57,9 +57,9 @@ print(f"\nFinancial Guardrails:")
 print(f"  • Inventory Cap: ${sop_params.total_inventory_cap:,.0f}")
 print(f"  • GMROI Target: {sop_params.gmroi_target}x")
 
-# Test 3: MRS Service (mock without DB)
+# Test 3: MPS Service (mock without DB)
 print("\n" + "=" * 60)
-print("TEST 3: MRS Candidate Generation Logic")
+print("TEST 3: MPS Candidate Generation Logic")
 print("=" * 60)
 
 from app.services.planning_cascade.supply_baseline_service import ProductInventoryState
@@ -119,7 +119,7 @@ print("""
 ✓ Planning Cascade Components Tested:
   1. FoodDistCascadeDataGenerator - Generates realistic distributor data
   2. SOPParameters - S&OP policy envelope with service tiers
-  3. ProductInventoryState - Inventory state for MRS
+  3. ProductInventoryState - Inventory state for MPS
   4. Integrity/Risk checks - Agent decision validation
 
 To run with database (full integration):

@@ -6,7 +6,7 @@ Supports both FULL mode (all layers) and INPUT mode (agents only).
 
 Endpoints:
 - Policy Envelope (S&OP parameters)
-- Supply Baseline Pack (MRS candidates)
+- Supply Baseline Pack (MPS candidates)
 - Supply Commit (Supply Agent decisions)
 - Allocation Commit (Allocation Agent decisions)
 - Feed-back Signals
@@ -388,7 +388,7 @@ def get_feed_back_signals(
 # Supply Baseline Pack Endpoints
 # =============================================================================
 
-@router.post("/supply-baseline-pack", tags=["MRS"])
+@router.post("/supply-baseline-pack", tags=["MPS"])
 def create_supply_baseline_pack(
     request: SupplyBaselinePackCreate,
     db: Session = Depends(get_sync_db),
@@ -443,7 +443,7 @@ def create_supply_baseline_pack(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/supply-baseline-pack/{supbp_id}", tags=["MRS"])
+@router.get("/supply-baseline-pack/{supbp_id}", tags=["MPS"])
 def get_supply_baseline_pack(
     supbp_id: int,
     db: Session = Depends(get_sync_db),
@@ -946,8 +946,8 @@ def set_package_tier(
 
     Tiers:
     - foundation: execution=active, all others=input
-    - ai_execution: execution+supply_agent+allocation_agent=active, mrs+sop=input
-    - planning: execution+supply_agent+allocation_agent+mrs=active, sop=input
+    - ai_execution: execution+supply_agent+allocation_agent=active, mps+sop=input
+    - planning: execution+supply_agent+allocation_agent+mps=active, sop=input
     - enterprise: all layers=active
     """
     from app.models.planning_cascade import LayerLicense, LayerName, LayerMode
@@ -958,28 +958,28 @@ def set_package_tier(
             LayerName.EXECUTION: LayerMode.ACTIVE,
             LayerName.ALLOCATION_AGENT: LayerMode.INPUT,
             LayerName.SUPPLY_AGENT: LayerMode.INPUT,
-            LayerName.MRS: LayerMode.INPUT,
+            LayerName.MPS: LayerMode.INPUT,
             LayerName.SOP: LayerMode.INPUT,
         },
         "ai_execution": {
             LayerName.EXECUTION: LayerMode.ACTIVE,
             LayerName.ALLOCATION_AGENT: LayerMode.ACTIVE,
             LayerName.SUPPLY_AGENT: LayerMode.ACTIVE,
-            LayerName.MRS: LayerMode.INPUT,
+            LayerName.MPS: LayerMode.INPUT,
             LayerName.SOP: LayerMode.INPUT,
         },
         "planning": {
             LayerName.EXECUTION: LayerMode.ACTIVE,
             LayerName.ALLOCATION_AGENT: LayerMode.ACTIVE,
             LayerName.SUPPLY_AGENT: LayerMode.ACTIVE,
-            LayerName.MRS: LayerMode.ACTIVE,
+            LayerName.MPS: LayerMode.ACTIVE,
             LayerName.SOP: LayerMode.INPUT,
         },
         "enterprise": {
             LayerName.EXECUTION: LayerMode.ACTIVE,
             LayerName.ALLOCATION_AGENT: LayerMode.ACTIVE,
             LayerName.SUPPLY_AGENT: LayerMode.ACTIVE,
-            LayerName.MRS: LayerMode.ACTIVE,
+            LayerName.MPS: LayerMode.ACTIVE,
             LayerName.SOP: LayerMode.ACTIVE,
         },
     }

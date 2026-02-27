@@ -1,9 +1,9 @@
 /**
- * MRS / Supply Baseline Pack Page
+ * MPS / Supply Baseline Pack Page
  *
- * Three-tab layout for the MRS cascade layer:
+ * Three-tab layout for the MPS cascade layer:
  *   1. Input/Review  - Upload customer plan (INPUT mode) or review candidates (ACTIVE mode)
- *   2. Feed-back     - Outcome signals targeted to "mrs"
+ *   2. Feed-back     - Outcome signals targeted to "mps"
  *   3. Lineage       - Artifact hash-chain lineage for the current SupBP
  *
  * Feed-forward from: S&OP Policy Envelope
@@ -60,7 +60,7 @@ const EMPTY_ROW = {
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
-const MRSCandidatesPage = ({ configId, tenantId, policyEnvelopeId }) => {
+const MPSCandidatesPage = ({ configId, tenantId, policyEnvelopeId }) => {
   // --- shared state ---
   const [activeTab, setActiveTab] = useState(0);
   const [layerMode, setLayerMode] = useState(null);   // 'active' | 'input' | 'disabled'
@@ -85,8 +85,8 @@ const MRSCandidatesPage = ({ configId, tenantId, policyEnvelopeId }) => {
     const loadLicense = async () => {
       try {
         const license = await getLayerLicenses(tenantId);
-        const mrsMode = license?.layers?.mrs?.mode || 'disabled';
-        setLayerMode(mrsMode);
+        const mpsMode = license?.layers?.mps?.mode || 'disabled';
+        setLayerMode(mpsMode);
       } catch (err) {
         console.error('Failed to load layer licenses', err);
         setLayerMode('disabled');
@@ -428,7 +428,7 @@ const MRSCandidatesPage = ({ configId, tenantId, policyEnvelopeId }) => {
     <Box sx={{ p: 3 }}>
       {/* Page header */}
       <Typography variant="h5" gutterBottom>
-        MRS / Supply Baseline Pack
+        MPS / Supply Baseline Pack
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         Review or provide the Supply Baseline Pack that feeds forward into the Supply Agent.
@@ -437,7 +437,7 @@ const MRSCandidatesPage = ({ configId, tenantId, policyEnvelopeId }) => {
       {/* Layer mode indicator */}
       {layerMode && (
         <Box mb={3}>
-          <LayerModeIndicator layer="mrs" mode={layerMode} />
+          <LayerModeIndicator layer="mps" mode={layerMode} />
         </Box>
       )}
 
@@ -461,7 +461,7 @@ const MRSCandidatesPage = ({ configId, tenantId, policyEnvelopeId }) => {
           {layerMode === 'active' && renderActiveMode()}
           {layerMode === 'disabled' && (
             <Alert severity="warning">
-              The MRS layer is not available in your current package. Contact your
+              The MPS layer is not available in your current package. Contact your
               administrator to upgrade.
             </Alert>
           )}
@@ -470,7 +470,7 @@ const MRSCandidatesPage = ({ configId, tenantId, policyEnvelopeId }) => {
 
       {/* Tab 2: Feed-back */}
       {activeTab === 1 && (
-        <FeedbackSignalCards configId={configId} fedBackTo="mrs" />
+        <FeedbackSignalCards configId={configId} fedBackTo="mps" />
       )}
 
       {/* Tab 3: Lineage */}
@@ -493,4 +493,4 @@ const MRSCandidatesPage = ({ configId, tenantId, policyEnvelopeId }) => {
   );
 };
 
-export default MRSCandidatesPage;
+export default MPSCandidatesPage;

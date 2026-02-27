@@ -4,7 +4,7 @@ End-to-End Planning Cascade + Hive Signal Test
 
 Verifies the full pipeline:
 1. S&OP Policy Envelope generation
-2. MRS candidate supply plan generation
+2. MPS candidate supply plan generation
 3. Supply Agent commit selection
 4. Allocation Agent demand distribution
 5. Hive signal injection via tGNNSiteDirective

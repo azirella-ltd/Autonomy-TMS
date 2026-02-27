@@ -2,7 +2,7 @@
  * Planning Cascade API Service
  *
  * Covers all 5 cascade layers:
- * S&OP → MRS → Supply Agent → Allocation Agent → Execution
+ * S&OP → MPS → Supply Agent → Allocation Agent → Execution
  *
  * Supports both FULL and INPUT modes for modular selling.
  */
@@ -58,7 +58,7 @@ export const getPolicyEnvelopeFeedback = async (configId) => {
 };
 
 // =============================================================================
-// Supply Baseline Pack (MRS Layer)
+// Supply Baseline Pack (MPS Layer)
 // =============================================================================
 
 export const createSupplyBaselinePack = async (data) => {

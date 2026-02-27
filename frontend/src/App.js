@@ -111,7 +111,7 @@ import SalesOperationsPlanning from "./pages/planning/SalesOperationsPlanning.js
 import InventoryOptimization from "./pages/planning/InventoryOptimization.jsx";
 import InventoryVisibility from "./pages/visibility/InventoryVisibility.jsx";
 import SOPPolicyPage from "./pages/planning/SOPPolicyPage.jsx";
-import MRSCandidatesPage from "./pages/planning/MRSCandidatesPage.jsx";
+import MPSCandidatesPage from "./pages/planning/MPSCandidatesPage.jsx";
 import SupplyWorklistPage from "./pages/planning/SupplyWorklistPage.jsx";
 import AllocationWorklistPage from "./pages/planning/AllocationWorklistPage.jsx";
 import ExecutionPage from "./pages/planning/ExecutionPage.jsx";
@@ -645,10 +645,10 @@ const AppContent = () => {
               }
             />
             <Route
-              path="/planning/mrs-candidates"
+              path="/planning/mps-candidates"
               element={
-                <CapabilityProtectedRoute requiredCapability="view_mrs_candidates">
-                  <MRSCandidatesPage />
+                <CapabilityProtectedRoute requiredCapability="view_mps_candidates">
+                  <MPSCandidatesPage />
                 </CapabilityProtectedRoute>
               }
             />

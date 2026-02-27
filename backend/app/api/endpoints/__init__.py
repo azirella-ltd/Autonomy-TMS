@@ -50,7 +50,7 @@ from .powell_training import router as powell_training_router
 # AIIO Framework - Insights & Actions Landing Page
 from .insights import router as insights_router
 
-# Planning Cascade (S&OP → MRS → Supply Agent → Allocation Agent)
+# Planning Cascade (S&OP → MPS → Supply Agent → Allocation Agent)
 from .planning_cascade import router as planning_cascade_router
 
 # Deployment Pipeline (Demo System Builder)

@@ -511,7 +511,7 @@ def main():
         print("-" * 70)
         print("  demo                 -> ALL LEVELS: Full access for demos (no login/logout)")
         print("  sc_vp                -> Strategic: Policy θ, approvals, S&OP Policy (L1)")
-        print("  sop_director         -> Tactical: MRS candidates (L2), Supply/Allocation (L3-L4)")
+        print("  sop_director         -> Tactical: MPS candidates (L2), Supply/Allocation (L3-L4)")
         print("  mps_manager          -> Operational: Supply/Allocation (L3-L4), Execution (L5)")
         print("  atp_analyst          -> Execution: ATP fulfillment decisions (accept/override)")
         print("  rebalancing_analyst  -> Execution: Inventory transfer decisions (accept/override)")

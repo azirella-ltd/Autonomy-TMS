@@ -276,7 +276,7 @@ from .condition_alert import (
     ConditionResolution
 )
 
-# 23. Planning Cascade (S&OP → MRS → Supply Agent → Allocation Agent)
+# 23. Planning Cascade (S&OP → MPS → Supply Agent → Allocation Agent)
 from .planning_cascade import (
     PolicyEnvelope, SupplyBaselinePack, SupplyCommit, SolverBaselinePack,
     AllocationCommit, FeedBackSignal, AgentDecisionMetrics,
@@ -544,7 +544,7 @@ __all__ = [
     'ConditionAlertType',
     'ConditionAlertSeverity',
     'ConditionResolution',
-    # Planning Cascade (S&OP → MRS → Supply Agent → Allocation Agent)
+    # Planning Cascade (S&OP → MPS → Supply Agent → Allocation Agent)
     'PolicyEnvelope',
     'SupplyBaselinePack',
     'SupplyCommit',

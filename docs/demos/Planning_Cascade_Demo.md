@@ -94,7 +94,7 @@ See also: [Powell Framework Demo](Powell_Framework_Demo.md) for role-based dashb
 │           │ feed-forward                                        │
 │           ▼                                                     │
 │  ┌──────────────────┐                                           │
-│  │ MRS / Supply     │ 5 candidate methods with                  │
+│  │ MPS / Supply     │ 5 candidate methods with                  │
 │  │ Baseline Pack    │ tradeoff frontier                         │
 │  └────────┬─────────┘                                           │
 │           │ feed-forward                                        │
@@ -165,9 +165,9 @@ See also: [Powell Framework Demo](Powell_Framework_Demo.md) for role-based dashb
 
 ---
 
-### Act 4: MRS Candidate Generation (3 min)
+### Act 4: MPS Candidate Generation (3 min)
 
-**Navigate to:** MRS Candidate Screen
+**Navigate to:** MPS Candidate Screen
 
 **Show the tradeoff frontier (FULL mode):**
 
@@ -407,7 +407,7 @@ make down
 
 ### Database Tables
 - `planning_policy_envelope` - S&OP parameters
-- `supply_baseline_pack` - MRS candidates
+- `supply_baseline_pack` - MPS candidates
 - `supply_commit` - Supply agent decisions
 - `allocation_commit` - Allocation agent decisions
 - `feed_back_signal` - Execution outcomes

@@ -1,5 +1,5 @@
 /**
- * MRS Candidate Screen
+ * MPS Candidate Screen
  *
  * Dual-mode screen for Master Replenishment Schedule candidates.
  *
@@ -92,7 +92,7 @@ const CANDIDATE_METHODS = {
   },
 };
 
-const MRSCandidateScreen = ({ configId, tenantId, policyEnvelopeId, mode = 'INPUT' }) => {
+const MPSCandidateScreen = ({ configId, tenantId, policyEnvelopeId, mode = 'INPUT' }) => {
   const [loading, setLoading] = useState(true);
   const [supBP, setSupBP] = useState(null);
   const [selectedCandidate, setSelectedCandidate] = useState(null);
@@ -580,7 +580,7 @@ const MRSCandidateScreen = ({ configId, tenantId, policyEnvelopeId, mode = 'INPU
         <Box mt={3}>
           <Alert severity="info">
             <Typography variant="caption">
-              Upgrade to MRS layer to enable multi-method optimization with tradeoff frontier visualization
+              Upgrade to MPS layer to enable multi-method optimization with tradeoff frontier visualization
             </Typography>
           </Alert>
         </Box>
@@ -625,4 +625,4 @@ const MRSCandidateScreen = ({ configId, tenantId, policyEnvelopeId, mode = 'INPU
   );
 };
 
-export default MRSCandidateScreen;
+export default MPSCandidateScreen;

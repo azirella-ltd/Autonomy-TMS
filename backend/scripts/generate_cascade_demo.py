@@ -7,7 +7,7 @@ through all four TRM execution services, persisting every decision to the
 corresponding powell_* table.
 
 Pipeline:
-  1. Run Planning Cascade (S&OP → MRS → SupplyAgent → AllocationAgent)
+  1. Run Planning Cascade (S&OP → MPS → SupplyAgent → AllocationAgent)
   2. Materialize AllocationCommit → PowellAllocations
   3. ATP Execution (ATPExecutorTRM with priority consumption)
   4. Inventory Rebalancing (InventoryRebalancingTRM)
@@ -132,7 +132,7 @@ def get_dc_site_id(db: Session, config_id: int) -> str:
 
 def step1_run_cascade(db: Session, config_id: int, customer_id: int, user_id: int):
     """Run the full planning cascade for Food Dist."""
-    print("\n  Running Planning Cascade (S&OP → MRS → SupplyAgent → AllocationAgent)...")
+    print("\n  Running Planning Cascade (S&OP → MPS → SupplyAgent → AllocationAgent)...")
     from app.services.planning_cascade.cascade_orchestrator import (
         CascadeOrchestrator, CascadeMode,
     )

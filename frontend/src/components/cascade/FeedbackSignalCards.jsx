@@ -2,7 +2,7 @@
  * Feedback Signal Cards
  *
  * Displays feed-back signals from execution with "Apply" button for re-tuning.
- * Used in S&OP Policy, MRS Candidates, and Execution feedback tabs.
+ * Used in S&OP Policy, MPS Candidates, and Execution feedback tabs.
  */
 import React, { useState, useEffect } from 'react';
 import {

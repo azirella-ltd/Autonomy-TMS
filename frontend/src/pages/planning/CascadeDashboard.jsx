@@ -2,7 +2,7 @@
  * Planning Cascade Dashboard
  *
  * Comprehensive view of the full planning cascade:
- * S&OP → MRS → Supply Agent → Allocation Agent → Execution
+ * S&OP → MPS → Supply Agent → Allocation Agent → Execution
  *
  * Enhanced with layer mode awareness for modular selling.
  * Shows feed-forward contracts, feed-back signals, and per-layer purchase status.
@@ -60,7 +60,7 @@ import { api } from '../../services/api';
 import { getLayerLicenses, getCascadeStatus, getFeedbackSignals } from '../../services/planningCascadeApi';
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
 
-const LAYER_KEYS = ['sop', 'mrs', 'supply_agent', 'allocation_agent', 'execution'];
+const LAYER_KEYS = ['sop', 'mps', 'supply_agent', 'allocation_agent', 'execution'];
 
 const CASCADE_STEPS = [
   {
@@ -74,12 +74,12 @@ const CASCADE_STEPS = [
     activeLabel: 'View S&OP Parameters',
   },
   {
-    label: 'MRS / Supply Baseline Pack',
+    label: 'MPS / Supply Baseline Pack',
     description: 'Candidate supply plans (5 methods)',
     icon: <AssignmentIcon />,
-    path: '/planning/mrs-candidates',
+    path: '/planning/mps-candidates',
     feedForward: 'SupBP',
-    layerKey: 'mrs',
+    layerKey: 'mps',
     inputLabel: 'Upload Supply Plan',
     activeLabel: 'View Candidates',
   },
@@ -168,7 +168,7 @@ const CascadeDashboard = ({ configId, tenantId, mode: propMode }) => {
       console.error('Failed to load layer licenses', error);
       // Default: execution active, rest input
       setLayerModes({
-        sop: 'input', mrs: 'input', supply_agent: 'input',
+        sop: 'input', mps: 'input', supply_agent: 'input',
         allocation_agent: 'input', execution: 'active',
       });
     }

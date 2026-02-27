@@ -8,7 +8,7 @@ This document defines the **Agentic Authorization Protocol (AAP)** -- a framewor
 
 **Inspiration**: Jordi Visser's "Agentic Inversion" (Feb 2026) describes how autonomous agents sustain continuous economic activity without per-transaction human oversight. The Kinaxis scenario comparison model -- where a planner creates an alternative scenario, evaluates impact, and brings it to a forum when net benefit crosses a threshold -- provides the UX precedent. The AAP combines these: agents run the Kinaxis workflow at machine speed, escalating to humans only when they can't resolve contention autonomously.
 
-**Relationship to Existing Architecture**: The AAP extends the Powell Framework's planning cascade (S&OP -> MRS -> Supply Agent -> Allocation Agent -> Execution) with a *lateral* authorization channel. Feed-forward contracts become the artifacts being evaluated. Feed-back signals become the evidence basis. The what-if engine (already supporting `run_what_if()` on PolicyEnvelope) expands to evaluate any proposed action by simulating the cascade forward. The **multi-stage CTP engine** and **full-level pegging** (see [CTP_CAPABILITIES.md](CTP_CAPABILITIES.md)) provide the feasibility data that feeds into scorecard evaluations -- agents can trace every unit of supply to demand before negotiating reallocation.
+**Relationship to Existing Architecture**: The AAP extends the Powell Framework's planning cascade (S&OP -> MPS -> Supply Agent -> Allocation Agent -> Execution) with a *lateral* authorization channel. Feed-forward contracts become the artifacts being evaluated. Feed-back signals become the evidence basis. The what-if engine (already supporting `run_what_if()` on PolicyEnvelope) expands to evaluate any proposed action by simulating the cascade forward. The **multi-stage CTP engine** and **full-level pegging** (see [CTP_CAPABILITIES.md](CTP_CAPABILITIES.md)) provide the feasibility data that feeds into scorecard evaluations -- agents can trace every unit of supply to demand before negotiating reallocation.
 
 ---
 
@@ -571,7 +571,7 @@ Procurement crosses the boundary from internal coordination to external market n
 |-----------|-------|
 | **Originator** | Supply Agent |
 | **Target** | Procurement Agent, Quality Agent |
-| **Trigger** | MRS generates a Min Cost supply plan requiring a supplier not on the approved vendor list. The cost savings are $45K annually. |
+| **Trigger** | MPS generates a Min Cost supply plan requiring a supplier not on the approved vendor list. The cost savings are $45K annually. |
 | **Authorization Surface** | Supply Agent wants cost optimization; Procurement Agent controls the approved vendor list; Quality Agent controls qualification standards |
 | **Scorecard Tradeoff** | Financial (GREEN: $45K savings) vs. Operational (AMBER: qualification takes 8-12 weeks) vs. Strategic (risk of unknown supplier quality) |
 | **Multi-Party** | Supply -> Procurement: "Qualify Supplier B?" Procurement -> Quality: "Run qualification process?" Quality: "6-week audit + 4-week trial. During trial, dual-source with existing supplier as backup." |
@@ -725,9 +725,9 @@ The Finance Agent evaluates: Does the additional $180K fit within the inventory 
 **Time horizon**: Weekly/monthly
 **Artifacts**: PolicyEnvelope (hash-linked)
 
-### 6.2 Tactical Level (MRS / Supply Baseline Pack)
+### 6.2 Tactical Level (MPS / Supply Baseline Pack)
 
-**Who negotiates**: MRS candidates represent different strategies (Min Cost, Service Max, Parametric CFA). The Supply Agent evaluates the tradeoff frontier.
+**Who negotiates**: MPS candidates represent different strategies (Min Cost, Service Max, Parametric CFA). The Supply Agent evaluates the tradeoff frontier.
 
 **Example**: The Supply Agent prefers the Service Max candidate but it requires 3 new suppliers not on the approved vendor list. The Procurement Agent must authorize new vendor qualification.
 

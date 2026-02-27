@@ -146,7 +146,7 @@ function getFallbackCapabilities(userType) {
       // Planning Cascade
       'view_cascade_dashboard',
       'view_sop_policy',
-      'view_mrs_candidates',
+      'view_mps_candidates',
       'view_supply_worklist',
       'view_allocation_worklist',
       'view_execution_dashboard',

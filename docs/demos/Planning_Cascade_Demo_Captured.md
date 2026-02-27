@@ -12,7 +12,7 @@
 Planning Cascade
 ├── 📋 S&OP Policy Envelope (θ_SOP)
 │   └── Service tiers, safety stock targets, expedite caps
-├── 📦 MRS / Supply Baseline Pack (SupBP)
+├── 📦 MPS / Supply Baseline Pack (SupBP)
 │   └── 5 candidate methods with tradeoff frontier
 ├── 🚚 Supply Agent → Supply Commit (SC)
 │   └── PO recommendations with integrity/risk checks
@@ -330,7 +330,7 @@ make up
 ### Database Tables
 
 - `policy_envelope` - S&OP parameters
-- `supply_baseline_pack` - MRS candidates
+- `supply_baseline_pack` - MPS candidates
 - `supply_commit` - Supply agent decisions
 - `allocation_commit` - Allocation agent decisions
 - `feed_back_signal` - Execution outcomes
