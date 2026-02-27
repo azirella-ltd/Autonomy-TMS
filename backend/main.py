@@ -6040,6 +6040,8 @@ api.include_router(deployment_router, prefix="/deployment", tags=["deployment"])
 
 
 api.include_router(knowledge_base_router, tags=["knowledge-base"])
+from app.api.endpoints.assistant import router as assistant_router
+api.include_router(assistant_router, tags=["assistant"])
 api.include_router(authorization_protocol_router, tags=["authorization-protocol"])
 from app.api.endpoints.fulfillment_orders import router as fulfillment_orders_router
 api.include_router(fulfillment_orders_router, prefix="/fulfillment-orders", tags=["fulfillment-orders"])

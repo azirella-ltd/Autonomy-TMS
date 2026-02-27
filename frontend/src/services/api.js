@@ -963,4 +963,19 @@ export const collaborationApi = {
 // Backward compat alias — getReport is referenced across analytics pages
 simulationApi.getReport = simulationApi.getScenarioReport;
 
+// =============================================================================
+// AI Assistant API
+// =============================================================================
+
+export const assistantApi = {
+  async sendMessage(message, conversationId = null, configId = null) {
+    const { data } = await http.post('/assistant/chat', {
+      message,
+      conversation_id: conversationId,
+      config_id: configId,
+    });
+    return data;
+  },
+};
+
 export default simulationApi;

@@ -415,6 +415,85 @@ class KnowledgeBaseService:
             raise
 
     # ------------------------------------------------------------------
+    # Programmatic Text Ingestion (for auto-generated content)
+    # ------------------------------------------------------------------
+
+    async def ingest_text(
+        self,
+        text_content: str,
+        title: str,
+        category: str = "general",
+        description: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        uploaded_by: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Ingest plain text directly (no file parsing step).
+
+        Convenience wrapper for programmatically generated content such as
+        auto-indexed supply chain config descriptions.
+
+        Args:
+            text_content: The text to chunk and embed.
+            title: Document title.
+            category: Document category for filtering.
+            description: Optional description.
+            tags: Optional tags for filtering.
+            uploaded_by: User ID of creator.
+
+        Returns:
+            Dict with document info and chunk count.
+        """
+        file_bytes = text_content.encode("utf-8")
+        filename = f"{category}_{title[:60].replace(' ', '_')}.txt"
+        return await self.ingest_document(
+            file_bytes=file_bytes,
+            filename=filename,
+            title=title,
+            category=category,
+            description=description,
+            tags=tags,
+            uploaded_by=uploaded_by,
+        )
+
+    # ------------------------------------------------------------------
+    # Bulk Deletion (for re-indexing)
+    # ------------------------------------------------------------------
+
+    async def delete_by_category_and_tag(self, category: str, tag: str) -> int:
+        """Delete all documents matching a category and containing a specific tag.
+
+        Used for re-indexing: delete old config docs before creating new ones.
+        Cascading delete removes associated chunks automatically.
+
+        Args:
+            category: Document category (e.g., "supply_chain_config").
+            tag: Tag string to match (e.g., "config_id:5").
+
+        Returns:
+            Number of documents deleted.
+        """
+        # Find matching documents
+        stmt = select(KBDocument).where(
+            KBDocument.tenant_id == self.tenant_id,
+            KBDocument.category == category,
+        )
+        result = await self.db.execute(stmt)
+        docs = result.scalars().all()
+
+        deleted = 0
+        for doc in docs:
+            doc_tags = doc.tags or []
+            if tag in doc_tags:
+                await self.db.delete(doc)
+                deleted += 1
+
+        if deleted:
+            await self.db.commit()
+            logger.info(f"Deleted {deleted} KB doc(s) matching category={category}, tag={tag}")
+
+        return deleted
+
+    # ------------------------------------------------------------------
     # Document Management
     # ------------------------------------------------------------------
 

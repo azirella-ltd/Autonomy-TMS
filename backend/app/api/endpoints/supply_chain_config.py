@@ -40,6 +40,60 @@ from app.services.mixed_scenario_service import MixedScenarioService
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+
+# ---------------------------------------------------------------------------
+# RAG Indexing Hook — auto-indexes SC config docs into tenant knowledge base
+# ---------------------------------------------------------------------------
+
+def _enqueue_rag_indexing(
+    background_tasks: Optional[BackgroundTasks],
+    config_id: int,
+    tenant_id: int,
+) -> None:
+    """Schedule background RAG indexing of a supply chain config."""
+    if background_tasks is None:
+        return
+    background_tasks.add_task(_index_config_to_rag, config_id, tenant_id)
+
+
+def _enqueue_rag_deletion(
+    background_tasks: Optional[BackgroundTasks],
+    config_id: int,
+    tenant_id: int,
+) -> None:
+    """Schedule background deletion of RAG docs for a config."""
+    if background_tasks is None:
+        return
+    background_tasks.add_task(_delete_config_from_rag, config_id, tenant_id)
+
+
+async def _index_config_to_rag(config_id: int, tenant_id: int) -> None:
+    """Background task: index SC config into tenant's knowledge base."""
+    try:
+        from app.db.kb_session import get_kb_session
+        from app.services.sc_config_indexer import ScConfigIndexer
+
+        async with get_kb_session() as db:
+            indexer = ScConfigIndexer(db=db, tenant_id=tenant_id)
+            result = await indexer.index_config(config_id)
+            logger.info(f"RAG indexed config {config_id}: {result.get('status', 'ok')}")
+    except Exception as e:
+        logger.warning(f"RAG indexing failed for config {config_id}: {e}")
+
+
+async def _delete_config_from_rag(config_id: int, tenant_id: int) -> None:
+    """Background task: delete KB docs for a deleted config."""
+    try:
+        from app.db.kb_session import get_kb_session
+        from app.services.sc_config_indexer import ScConfigIndexer
+
+        async with get_kb_session() as db:
+            indexer = ScConfigIndexer(db=db, tenant_id=tenant_id)
+            deleted = await indexer.delete_config_docs(config_id)
+            logger.info(f"RAG deleted {deleted} doc(s) for config {config_id}")
+    except Exception as e:
+        logger.warning(f"RAG deletion failed for config {config_id}: {e}")
+
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 TRAINING_ROOT = BACKEND_ROOT / "training_jobs"
 MODEL_ROOT = BACKEND_ROOT / "checkpoints" / "supply_chain_configs"
@@ -837,6 +891,7 @@ def create_config(
         pass
     cfg = _mark_config_requires_training(db, cfg)
     _enqueue_training(background_tasks, cfg.id)
+    _enqueue_rag_indexing(background_tasks, cfg.id, cfg.tenant_id)
     return cfg
 
 @router.get("/{config_id}", response_model=schemas.SupplyChainConfig)
@@ -893,6 +948,7 @@ def update_config(
         return updated
     updated = _mark_config_requires_training(db, updated)
     _enqueue_training(background_tasks, updated.id)
+    _enqueue_rag_indexing(background_tasks, updated.id, updated.tenant_id)
     return updated
 
 
@@ -975,11 +1031,14 @@ def delete_config(
     db: Session = Depends(deps.get_db),
     config_id: int,
     current_user: models.User = Depends(deps.get_current_active_user),
+    background_tasks: BackgroundTasks,
 ):
     """Delete a configuration."""
     config = get_config_or_404(db, config_id)
     _ensure_user_can_manage_config(db, current_user, config)
+    tenant_id = config.tenant_id
     crud.supply_chain_config.remove(db, id=config_id)
+    _enqueue_rag_deletion(background_tasks, config_id, tenant_id)
     return None
 
 # --- Item Endpoints ---
@@ -1011,6 +1070,7 @@ def create_product(
     product_in: schemas.ProductCreate,
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_active_user),
+    background_tasks: BackgroundTasks,
 ):
     """Create a new product in a configuration."""
     config = get_config_or_404(db, config_id)
@@ -1030,6 +1090,7 @@ def create_product(
 
     created = crud.product.create(db, obj_in=product_in)
     _mark_config_requires_training(db, config)
+    _enqueue_rag_indexing(background_tasks, config_id, config.tenant_id)
     return created
 
 
@@ -1063,6 +1124,7 @@ def update_product(
     product_in: schemas.ProductUpdate,
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_active_user),
+    background_tasks: BackgroundTasks,
 ):
     """Update a product."""
     config = get_config_or_404(db, config_id)
@@ -1077,6 +1139,7 @@ def update_product(
 
     updated = crud.product.update(db, db_obj=product, obj_in=product_in)
     _mark_config_requires_training(db, config)
+    _enqueue_rag_indexing(background_tasks, config_id, config.tenant_id)
     return updated
 
 
@@ -1087,6 +1150,7 @@ def delete_product(
     product_id: str,
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_active_user),
+    background_tasks: BackgroundTasks,
 ):
     """Delete a product."""
     config = get_config_or_404(db, config_id)
@@ -1101,6 +1165,7 @@ def delete_product(
 
     crud.product.remove(db, id=product_id)
     _mark_config_requires_training(db, config)
+    _enqueue_rag_indexing(background_tasks, config_id, config.tenant_id)
     return None
 
 
@@ -1334,6 +1399,7 @@ def create_site(
     config_id: int,
     site_in: schemas.SiteCreate,
     current_user: models.User = Depends(deps.get_current_active_user),
+    background_tasks: BackgroundTasks,
 ):
     """Create a new site in a configuration."""
     config = get_config_or_404(db, config_id)
@@ -1358,6 +1424,7 @@ def create_site(
 
     created = crud.site.create_with_config(db, obj_in=payload, config_id=config_id)
     _mark_config_requires_training(db, config)
+    _enqueue_rag_indexing(background_tasks, config_id, config.tenant_id)
     return created
 
 
@@ -1383,6 +1450,7 @@ def update_site(
     site_id: int,
     site_in: schemas.SiteUpdate,
     current_user: models.User = Depends(deps.get_current_active_user),
+    background_tasks: BackgroundTasks,
 ):
     """Update an existing site."""
     config = get_config_or_404(db, config_id)
@@ -1443,6 +1511,7 @@ def update_site(
         db_site.attributes = site_in.attributes
     updated = crud.site.update(db, db_obj=db_site, obj_in={})
     _mark_config_requires_training(db, config)
+    _enqueue_rag_indexing(background_tasks, config_id, config.tenant_id)
     return updated
 
 
@@ -1453,6 +1522,7 @@ def delete_site(
     config_id: int,
     site_id: int,
     current_user: models.User = Depends(deps.get_current_active_user),
+    background_tasks: BackgroundTasks,
 ):
     """Delete a site from the configuration."""
     config = get_config_or_404(db, config_id)
@@ -1467,6 +1537,7 @@ def delete_site(
 
     crud.site.remove(db, id=db_site.id)
     _mark_config_requires_training(db, config)
+    _enqueue_rag_indexing(background_tasks, config_id, config.tenant_id)
     return None
 
 
@@ -1513,6 +1584,7 @@ def create_transportation_lane(
     config_id: int,
     lane_in: Dict[str, Any] = Body(...),
     current_user: models.User = Depends(deps.get_current_active_user),
+    background_tasks: BackgroundTasks,
 ) -> Dict[str, Any]:
     """Create a new transportation lane connecting two sites."""
     config = get_config_or_404(db, config_id)
@@ -1567,6 +1639,7 @@ def create_transportation_lane(
     lane_payload = schemas.TransportationLaneCreate(**lane_data)
     created = crud.transportation_lane.create_with_config(db, obj_in=lane_payload, config_id=config_id)
     _mark_config_requires_training(db, config)
+    _enqueue_rag_indexing(background_tasks, config_id, config.tenant_id)
     return _transportation_lane_to_payload(created)
 
 
@@ -1579,6 +1652,7 @@ def update_transportation_lane(
     lane_id: int,
     lane_in: Dict[str, Any] = Body(...),
     current_user: models.User = Depends(deps.get_current_active_user),
+    background_tasks: BackgroundTasks,
 ) -> Dict[str, Any]:
     """Update an existing transportation lane."""
     config = get_config_or_404(db, config_id)
@@ -1620,6 +1694,7 @@ def update_transportation_lane(
     lane_update = schemas.TransportationLaneUpdate(**update_payload)
     updated = crud.transportation_lane.update(db, db_obj=lane, obj_in=lane_update)
     _mark_config_requires_training(db, config)
+    _enqueue_rag_indexing(background_tasks, config_id, config.tenant_id)
     return _transportation_lane_to_payload(updated)
 
 
@@ -1631,6 +1706,7 @@ def delete_transportation_lane(
     config_id: int,
     lane_id: int,
     current_user: models.User = Depends(deps.get_current_active_user),
+    background_tasks: BackgroundTasks,
 ):
     """Delete a transportation lane."""
     config = get_config_or_404(db, config_id)
@@ -1639,6 +1715,7 @@ def delete_transportation_lane(
 
     crud.transportation_lane.remove(db, id=lane.id)
     _mark_config_requires_training(db, config)
+    _enqueue_rag_indexing(background_tasks, config_id, config.tenant_id)
     return None
 
 
@@ -1825,6 +1902,7 @@ def create_market(
     config_id: int,
     market_in: schemas.MarketCreate,
     current_user: models.User = Depends(deps.get_current_active_user),
+    background_tasks: BackgroundTasks,
 ):
     config = get_config_or_404(db, config_id)
     _ensure_user_can_manage_config(db, current_user, config)
@@ -1838,6 +1916,7 @@ def create_market(
 
     created = crud.market.create_with_config(db, obj_in=market_in, config_id=config_id)
     _mark_config_requires_training(db, config)
+    _enqueue_rag_indexing(background_tasks, config_id, config.tenant_id)
     return created
 
 
@@ -1852,6 +1931,7 @@ def update_market(
     market_id: int,
     market_in: schemas.MarketUpdate,
     current_user: models.User = Depends(deps.get_current_active_user),
+    background_tasks: BackgroundTasks,
 ):
     config = get_config_or_404(db, config_id)
     _ensure_user_can_manage_config(db, current_user, config)
@@ -1869,6 +1949,7 @@ def update_market(
 
     updated = crud.market.update(db, db_obj=market, obj_in=market_in)
     _mark_config_requires_training(db, config)
+    _enqueue_rag_indexing(background_tasks, config_id, config.tenant_id)
     return updated
 
 
@@ -1882,6 +1963,7 @@ def delete_market(
     config_id: int,
     market_id: int,
     current_user: models.User = Depends(deps.get_current_active_user),
+    background_tasks: BackgroundTasks,
 ):
     config = get_config_or_404(db, config_id)
     _ensure_user_can_manage_config(db, current_user, config)
@@ -1895,6 +1977,7 @@ def delete_market(
         )
     crud.market.remove(db, id=market.id)
     _mark_config_requires_training(db, config)
+    _enqueue_rag_indexing(background_tasks, config_id, config.tenant_id)
     return None
 
 
@@ -1924,6 +2007,7 @@ def create_market_demand(
     config_id: int,
     demand_in: schemas.MarketDemandCreate,
     current_user: models.User = Depends(deps.get_current_active_user),
+    background_tasks: BackgroundTasks,
 ):
     config = get_config_or_404(db, config_id)
     _ensure_user_can_manage_config(db, current_user, config)
@@ -1957,6 +2041,7 @@ def create_market_demand(
 
     created = crud.market_demand.create(db, obj_in=demand_in)
     _mark_config_requires_training(db, config)
+    _enqueue_rag_indexing(background_tasks, config_id, config.tenant_id)
     return created
 
 
@@ -1971,6 +2056,7 @@ def update_market_demand(
     demand_id: int,
     demand_in: schemas.MarketDemandUpdate,
     current_user: models.User = Depends(deps.get_current_active_user),
+    background_tasks: BackgroundTasks,
 ):
     config = get_config_or_404(db, config_id)
     _ensure_user_can_manage_config(db, current_user, config)
@@ -1978,6 +2064,7 @@ def update_market_demand(
 
     updated = crud.market_demand.update(db, db_obj=demand, obj_in=demand_in)
     _mark_config_requires_training(db, config)
+    _enqueue_rag_indexing(background_tasks, config_id, config.tenant_id)
     return updated
 
 
@@ -1991,6 +2078,7 @@ def delete_market_demand(
     config_id: int,
     demand_id: int,
     current_user: models.User = Depends(deps.get_current_active_user),
+    background_tasks: BackgroundTasks,
 ):
     config = get_config_or_404(db, config_id)
     _ensure_user_can_manage_config(db, current_user, config)
@@ -1998,6 +2086,7 @@ def delete_market_demand(
 
     crud.market_demand.remove(db, id=demand.id)
     _mark_config_requires_training(db, config)
+    _enqueue_rag_indexing(background_tasks, config_id, config.tenant_id)
     return None
 # --- Scenario Integration Endpoints ---
 
