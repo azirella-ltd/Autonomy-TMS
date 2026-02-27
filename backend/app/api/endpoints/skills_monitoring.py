@@ -9,11 +9,10 @@ Provides endpoints for the frontend SkillsDashboard to display:
 """
 
 from datetime import datetime, timedelta
-from typing import Optional
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, text, and_, case
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_current_user
 
@@ -21,18 +20,16 @@ router = APIRouter(prefix="/skills-monitoring", tags=["skills-monitoring"])
 
 
 @router.get("/stats")
-async def get_skills_stats(
+def get_skills_stats(
     days: int = 30,
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     """Get aggregated skills monitoring statistics."""
-    from app.models.decision_embeddings import DecisionEmbedding
-
     cutoff = datetime.utcnow() - timedelta(days=days)
 
     # Total decisions by source
-    source_counts = await db.execute(
+    source_counts = db.execute(
         text("""
             SELECT decision_source, COUNT(*) as cnt
             FROM decision_embeddings
@@ -45,7 +42,7 @@ async def get_skills_stats(
     source_breakdown = {row[0]: row[1] for row in source_counts.fetchall()}
 
     # Per-TRM-type breakdown
-    type_counts = await db.execute(
+    type_counts = db.execute(
         text("""
             SELECT trm_type, decision_source, COUNT(*) as cnt,
                    AVG(confidence) as avg_confidence,
@@ -71,7 +68,7 @@ async def get_skills_stats(
         }
 
     # Reward distribution for skill decisions
-    reward_stats = await db.execute(
+    reward_stats = db.execute(
         text("""
             SELECT
                 COUNT(*) as total,
@@ -90,7 +87,7 @@ async def get_skills_stats(
     reward_row = reward_stats.fetchone()
 
     # Recent decisions (last 20)
-    recent = await db.execute(
+    recent = db.execute(
         text("""
             SELECT id, trm_type, decision_source, confidence, reward,
                    state_summary, created_at, outcome_recorded_at,
@@ -118,7 +115,7 @@ async def get_skills_stats(
     ]
 
     # Escalation rate (skill decisions / total TRM decisions)
-    total_trm = await db.execute(
+    total_trm = db.execute(
         text("""
             SELECT COUNT(*) FROM powell_atp_decisions WHERE created_at > :cutoff
             UNION ALL
@@ -160,28 +157,26 @@ async def get_skills_stats(
 
 
 @router.get("/rag-stats")
-async def get_rag_stats(
+def get_rag_stats(
     days: int = 30,
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
     """Get RAG decision memory statistics."""
-    cutoff = datetime.utcnow() - timedelta(days=days)
-
     # Total embeddings
-    total = await db.execute(
+    total = db.execute(
         text("SELECT COUNT(*) FROM decision_embeddings"),
     )
     total_count = total.scalar() or 0
 
     # With embeddings vs without
-    with_embedding = await db.execute(
+    with_embedding = db.execute(
         text("SELECT COUNT(*) FROM decision_embeddings WHERE embedding IS NOT NULL"),
     )
     embedded_count = with_embedding.scalar() or 0
 
     # With outcomes (useful for RAG)
-    with_outcome = await db.execute(
+    with_outcome = db.execute(
         text("""
             SELECT COUNT(*) FROM decision_embeddings
             WHERE outcome IS NOT NULL AND reward IS NOT NULL
@@ -190,7 +185,7 @@ async def get_rag_stats(
     outcome_count = with_outcome.scalar() or 0
 
     # High-reward decisions (>0.5) — best RAG examples
-    high_reward = await db.execute(
+    high_reward = db.execute(
         text("""
             SELECT COUNT(*) FROM decision_embeddings
             WHERE reward > 0.5
@@ -199,7 +194,7 @@ async def get_rag_stats(
     high_reward_count = high_reward.scalar() or 0
 
     # By TRM type
-    by_type = await db.execute(
+    by_type = db.execute(
         text("""
             SELECT trm_type, COUNT(*) as total,
                    COUNT(CASE WHEN outcome IS NOT NULL THEN 1 END) as with_outcome,

@@ -119,9 +119,10 @@ class Tenant(Base):
         "PlanningCycle", back_populates="tenant", cascade="all, delete-orphan"
     )
 
-    # SSO Providers
+    # SSO Providers (explicit FK needed — SSOProvider has both tenant_id and default_tenant_id)
     sso_providers: Mapped[List["SSOProvider"]] = relationship(
-        "SSOProvider", back_populates="tenant"
+        "SSOProvider", back_populates="tenant",
+        foreign_keys="SSOProvider.tenant_id",
     )
 
     # Audit Logs
