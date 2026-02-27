@@ -1278,6 +1278,7 @@ The platform has been refactored from Beer Game-centric to AWS SC-first. See [AR
 - ✅ Hybrid TRM + Claude Skills architecture (TRMs primary, Skills for exceptions, conformal routing)
 - ✅ RAG Decision Memory (pgvector-based decision embeddings for cost reduction)
 - ✅ PicoClaw/OpenClaw removed (replaced by Claude Skills ecosystem)
+- ✅ Executive Strategy Briefing (LLM-synthesized briefings with follow-up Q&A). See [docs/EXECUTIVE_BRIEFING.md](docs/EXECUTIVE_BRIEFING.md)
 - ✅ Beer Game repositioned as simulation/training module (not primary focus)
 
 ---

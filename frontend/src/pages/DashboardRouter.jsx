@@ -79,6 +79,8 @@ const getPowellRoleFromAPI = async () => {
 const getPowellLandingPage = (powellRole) => {
   switch (powellRole) {
     case 'SC_VP':
+    case 'EXECUTIVE':
+      return '/strategy-briefing';
     case 'DEMO_ALL':  // DEMO_ALL lands on executive dashboard (highest level)
       return '/executive-dashboard';
     case 'SOP_DIRECTOR':

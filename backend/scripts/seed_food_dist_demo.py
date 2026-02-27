@@ -69,30 +69,34 @@ DEFAULT_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")
 
 # User configurations (Powell-aligned)
 DEMO_USERS = [
+    # ==========================================================================
+    # TENANT ADMIN: Full access within tenant + DEMO_ALL for executive landing
+    # Use this account for demos — lands on /executive-dashboard, can navigate
+    # to all Powell dashboards, Strategy Briefing, admin, and planning pages.
+    # ==========================================================================
     {
         "username": "fd_tenant_admin",
         "email": "admin@distdemo.com",
         "full_name": "Food Dist Admin",
         "user_type": UserTypeEnum.TENANT_ADMIN,
         "is_tenant_admin": True,
-        "powell_role": None,  # Customer admin uses built-in capabilities
+        "powell_role": "DEMO_ALL",  # Lands on /executive-dashboard for demos
         "site_scope": None,  # Full access
         "product_scope": None,  # Full access
     },
     # ==========================================================================
-    # DEMO USER: Single user with ALL Powell capabilities (no login/logout needed)
-    # Lands on Executive Dashboard, can navigate to all Powell dashboards
-    # NOTE: user_type=USER with DEMO_ALL role (NOT TENANT_ADMIN)
+    # EXECUTIVE (CEO): Read-only strategic view, lands on /strategy-briefing
+    # AI-generated briefings with follow-up Q&A, dashboards, recommendations
     # ==========================================================================
     {
-        "username": "demo",
-        "email": "demo@distdemo.com",
-        "full_name": "Demo User (All Roles)",
-        "user_type": UserTypeEnum.USER,  # USER, not TENANT_ADMIN
+        "username": "exec",
+        "email": "exec@distdemo.com",
+        "full_name": "Executive (CEO)",
+        "user_type": UserTypeEnum.USER,
         "is_tenant_admin": False,
-        "powell_role": "DEMO_ALL",  # Union of SC_VP + SOP_DIRECTOR + MPS_MANAGER capabilities
-        "site_scope": None,  # Full access
-        "product_scope": None,  # Full access
+        "powell_role": "EXECUTIVE",
+        "site_scope": None,  # Full visibility
+        "product_scope": None,  # Full visibility
     },
     # ==========================================================================
     # Individual role users (for testing role-specific flows)

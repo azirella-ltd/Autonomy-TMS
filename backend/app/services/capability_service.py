@@ -13,6 +13,7 @@ from app.models.rbac import Role
 from app.core.capabilities import (
     Capability,
     CapabilitySet,
+    USER_CAPABILITIES,
     get_capabilities_for_user_type,
     get_navigation_capabilities,
 )
@@ -38,8 +39,17 @@ def get_user_capabilities(user: User, db: Session) -> CapabilitySet:
     if user.is_superuser or user.user_type == UserTypeEnum.SYSTEM_ADMIN:
         return CapabilitySet({cap for cap in Capability})
 
-    # Start with base capabilities from user type as fallback
-    base_caps = get_capabilities_for_user_type(user.user_type.value)
+    # Check powell_role first (more specific than user_type).
+    # Without this, any USER with a powell_role (SC_VP, SOP_DIRECTOR, etc.)
+    # would only get {VIEW_DASHBOARD, VIEW_GAMES, PLAY_GAME}.
+    if hasattr(user, 'powell_role') and user.powell_role:
+        role_caps = get_capabilities_for_user_type(user.powell_role.value)
+        if role_caps.capabilities != USER_CAPABILITIES.capabilities:
+            base_caps = role_caps
+        else:
+            base_caps = get_capabilities_for_user_type(user.user_type.value)
+    else:
+        base_caps = get_capabilities_for_user_type(user.user_type.value)
 
     # Get capabilities from RBAC roles if available
     try:

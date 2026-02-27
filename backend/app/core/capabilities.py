@@ -1000,6 +1000,44 @@ ORDER_TRACKING_ANALYST_CAPABILITIES = CapabilitySet(
     }
 )
 
+# Executive (CEO) - Read-only strategic view focused on briefings and dashboards
+#
+# Landing page: /strategy-briefing (AI-generated executive briefings)
+# Scope: Full visibility, no edit/manage capabilities
+# Purpose: CEO reads briefings, reviews recommendations, asks follow-up questions
+EXECUTIVE_CAPABILITIES = CapabilitySet(
+    capabilities={
+        # Powell Dashboard - Executive Dashboard + Strategy Briefing
+        Capability.VIEW_EXECUTIVE_DASHBOARD,
+
+        # Overview - Dashboard and analytics
+        Capability.VIEW_DASHBOARD,
+        Capability.VIEW_ANALYTICS,
+
+        # Planning Cascade - Read-only visibility
+        Capability.VIEW_CASCADE_DASHBOARD,
+        Capability.VIEW_SOP_POLICY,
+        Capability.VIEW_MRS_CANDIDATES,
+        Capability.VIEW_SUPPLY_WORKLIST,
+        Capability.VIEW_ALLOCATION_WORKLIST,
+        Capability.VIEW_EXECUTION_DASHBOARD,
+
+        # Powell Framework - Read-only agent monitoring
+        Capability.VIEW_POWELL,
+        Capability.VIEW_ATP_CTP,
+        Capability.VIEW_SOP_WORKLIST,
+        Capability.VIEW_AGENT_DECISIONS,
+
+        # Collaboration Hub - AI oversight
+        Capability.VIEW_COLLABORATION,
+        Capability.VIEW_AGENT_EXPLANATIONS,
+
+        # Recommendations - Review and approve
+        Capability.VIEW_RECOMMENDATIONS,
+        Capability.APPROVE_RECOMMENDATIONS,
+    }
+)
+
 
 def get_capabilities_for_user_type(user_type: str) -> CapabilitySet:
     """
@@ -1040,6 +1078,11 @@ def get_capabilities_for_user_type(user_type: str) -> CapabilitySet:
         return PO_ANALYST_CAPABILITIES
     elif user_type_upper == "ORDER_TRACKING_ANALYST":
         return ORDER_TRACKING_ANALYST_CAPABILITIES
+    # Special roles
+    elif user_type_upper == "DEMO_ALL":
+        return TENANT_ADMIN_CAPABILITIES  # Full access for demo
+    elif user_type_upper == "EXECUTIVE":
+        return EXECUTIVE_CAPABILITIES
     else:
         # Default to user capabilities if unknown
         return USER_CAPABILITIES

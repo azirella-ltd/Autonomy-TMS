@@ -87,6 +87,7 @@ class PowellRoleEnum(str, Enum):
     REBALANCING_ANALYST = "REBALANCING_ANALYST"
     PO_ANALYST = "PO_ANALYST"
     ORDER_TRACKING_ANALYST = "ORDER_TRACKING_ANALYST"
+    EXECUTIVE = "EXECUTIVE"  # CEO/Executive → /strategy-briefing
     DEMO_ALL = "DEMO_ALL"  # Special: has all Powell capabilities
 
 
