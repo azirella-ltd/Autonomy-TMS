@@ -60,7 +60,7 @@ class ClaudeClient:
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._http_client is None or self._http_client.is_closed:
-            self._http_client = httpx.AsyncClient(timeout=30.0)
+            self._http_client = httpx.AsyncClient(timeout=120.0)
         return self._http_client
 
     def _resolve_model(self, model_tier: str) -> str:

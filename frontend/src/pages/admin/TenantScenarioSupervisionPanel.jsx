@@ -64,7 +64,7 @@ const TenantScenarioSupervisionPanel = ({
   loading = false,
   error = null,
   onRefresh,
-  groupId = null,
+  tenantId = null,
   currentUserId = null,
   selectedSupplyChainId = 'all',
 }) => {
@@ -84,16 +84,16 @@ const TenantScenarioSupervisionPanel = ({
     }
 
     const normalizedSupplyChainId = String(selectedSupplyChainId ?? 'all');
-    const normalizedGroupId = groupId != null ? Number(groupId) : null;
+    const normalizedTenantId = tenantId != null ? Number(tenantId) : null;
     const normalizedUserId = currentUserId != null ? Number(currentUserId) : null;
 
     return games.filter((game) => {
       if (!game) return false;
 
-      if (normalizedGroupId != null) {
-        const targetGroup = game.tenant_id ?? game?.config?.tenant_id ?? null;
-        if (targetGroup != null) {
-          if (Number(targetGroup) !== normalizedGroupId) {
+      if (normalizedTenantId != null) {
+        const targetTenant = game.tenant_id ?? game?.config?.tenant_id ?? null;
+        if (targetTenant != null) {
+          if (Number(targetTenant) !== normalizedTenantId) {
             return false;
           }
         } else if (game.created_by != null) {
@@ -118,7 +118,7 @@ const TenantScenarioSupervisionPanel = ({
 
       return true;
     });
-  }, [games, groupId, currentUserId, selectedSupplyChainId]);
+  }, [games, tenantId, currentUserId, selectedSupplyChainId]);
 
   const setGameActionState = (gameId, state) => {
     setActionState((prev) => ({ ...prev, [gameId]: state }));

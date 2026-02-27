@@ -18,10 +18,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 from app.models.base import Base
 from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 from app.models.user import User, RefreshToken, UserTypeEnum
-from app.models.participant import Participant, ParticipantRole, ParticipantType, ParticipantStrategy
+from app.models.participant import ScenarioUser, ScenarioUserRole, ScenarioUserType, ScenarioUserStrategy
 from app.models.auth_models import PasswordHistory, PasswordResetToken
 from app.models.session import TokenBlacklist, UserSession
-from app.models.scenario import Scenario, ScenarioStatus, Round, ParticipantAction
+from app.models.scenario import Scenario, ScenarioStatus, Round, ScenarioUserAction
 from app.models.tenant import Tenant, TenantMode
 from app.models.supply_chain_config import SupplyChainConfig, Node, Lane, Market, MarketDemand
 from app.models.sc_entities import Product
@@ -45,8 +45,8 @@ from app.core.security import get_password_hash
 
 # Ensure all models are imported and registered with SQLAlchemy
 # This is necessary for proper relationship resolution
-_models = [Tenant, User, RefreshToken, Participant, PasswordHistory, PasswordResetToken,
-           TokenBlacklist, UserSession, Scenario, Round, ParticipantAction]
+_models = [Tenant, User, RefreshToken, ScenarioUser, PasswordHistory, PasswordResetToken,
+           TokenBlacklist, UserSession, Scenario, Round, ScenarioUserAction]
 
 # Log model registration
 logger.info(f"Registered models: {[model.__name__ for model in _models]}")

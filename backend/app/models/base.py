@@ -29,8 +29,8 @@ Base = declarative_base(cls=CustomBase)
 # Import all models to ensure they're registered with SQLAlchemy
 # This must be done after Base is defined
 from app.models.user import User, RefreshToken
-from app.models.participant import Participant
-from app.models.scenario import Scenario, Round, ParticipantAction
+from app.models.participant import ScenarioUser
+from app.models.scenario import Scenario, Round, ScenarioUserAction
 from app.models.auth_models import PasswordHistory, PasswordResetToken
 from app.models.session import TokenBlacklist, UserSession
 

@@ -513,7 +513,7 @@ class AuthorityDefinition(Base):
     Defines authority levels for agents and humans.
 
     Specifies which actions require approval and from whom.
-    Supports hierarchical overrides: Agent-specific > Role-based > Config-wide > Group-wide
+    Supports hierarchical overrides: Agent-specific > Role-based > Config-wide > Tenant-wide
     """
     __tablename__ = "authority_definitions"
 

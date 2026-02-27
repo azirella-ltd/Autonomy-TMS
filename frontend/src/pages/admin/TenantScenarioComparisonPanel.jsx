@@ -45,7 +45,7 @@ const TenantScenarioComparisonPanel = ({
   loading = false,
   error = null,
   onRefresh,
-  groupId = null,
+  tenantId = null,
   currentUserId = null,
   selectedSupplyChainId = 'all',
 }) => {
@@ -61,12 +61,12 @@ const TenantScenarioComparisonPanel = ({
 
     const normalizedSupplyChainId = String(selectedSupplyChainId ?? 'all');
 
-    const filteredByGroup = games.filter((game) => {
+    const filteredByTenant = games.filter((game) => {
       if (!game) return false;
-      const targetGroup = game.tenant_id ?? game?.config?.tenant_id ?? null;
-      if (groupId != null) {
-        if (targetGroup != null && Number.isFinite(Number(targetGroup))) {
-          return Number(targetGroup) === Number(groupId);
+      const targetTenant = game.tenant_id ?? game?.config?.tenant_id ?? null;
+      if (tenantId != null) {
+        if (targetTenant != null && Number.isFinite(Number(targetTenant))) {
+          return Number(targetTenant) === Number(tenantId);
         }
         if (game.created_by != null && Number.isFinite(Number(currentUserId))) {
           return Number(game.created_by) === Number(currentUserId);
@@ -75,7 +75,7 @@ const TenantScenarioComparisonPanel = ({
       return true;
     });
 
-    const filteredBySupplyChain = filteredByGroup.filter((game) => {
+    const filteredBySupplyChain = filteredByTenant.filter((game) => {
       if (normalizedSupplyChainId === 'all') {
         return true;
       }
@@ -102,7 +102,7 @@ const TenantScenarioComparisonPanel = ({
         const dateB = b.completed_at ? new Date(b.completed_at).getTime() : 0;
         return dateB - dateA;
       });
-  }, [games, groupId, currentUserId, selectedSupplyChainId]);
+  }, [games, tenantId, currentUserId, selectedSupplyChainId]);
 
   useEffect(() => {
     setSelectedIds((prev) => {

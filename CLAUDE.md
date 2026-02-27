@@ -28,11 +28,11 @@ When implementing any entity:
 | play_round | execute_period | Function name |
 | game_id | scenario_id | Database/API field |
 | player_id/participant_id | scenario_user_id | Database/API field |
-| Group | Customer | Organization/tenant boundary |
-| group_id | customer_id | Database/API field |
-| GroupMode | CustomerMode | Operating mode enum |
-| GroupService | CustomerService | Backend service |
-| Training Group | Learning Customer | Customer in education mode |
+| Group | Tenant | Organization/tenant boundary |
+| group_id | tenant_id | Database/API field |
+| GroupMode | TenantMode | Operating mode enum |
+| GroupService | TenantService | Backend service |
+| Training Group | Learning Tenant | Tenant in education mode |
 | node | site | AWS SC data model |
 | nodes | site (table) | AWS SC data model |
 | item | product | AWS SC data model |
@@ -54,23 +54,25 @@ When implementing any entity:
 - Use `Period`, `ScenarioUserPeriod` (not Round*, GameRound)
 - Frontend uses `simulationApi` with methods like `createScenario()`, `getScenarioUsers()`
 
-### Customer Modes vs AI Model Training
+### Tenant Modes vs AI Model Training
 
 **CRITICAL DISTINCTION**: Do not confuse these two uses of "training":
 
 | Term | Meaning | Examples |
 |------|---------|----------|
-| **Learning Customer** | Customer in education mode | Users run scenarios to learn how AI agents work, understand supply chain dynamics |
-| **AI Model Training** | Process of training ML models | TRM training, GNN training, RL training - happens in BOTH Learning and Production customers |
+| **Learning Tenant** | Tenant in education mode | Users run scenarios to learn how AI agents work, understand supply chain dynamics |
+| **AI Model Training** | Process of training ML models | TRM training, GNN training, RL training - happens in BOTH Learning and Production tenants |
 
-- **Learning Customer** (`CustomerMode.LEARNING`): Simplified navigation, game-like clock (turn-based/timed), focused on user education and building confidence with AI agents
-- **Production Customer** (`CustomerMode.PRODUCTION`): Full navigation, real data integration, real planning workflows
+- **Learning Tenant** (`TenantMode.LEARNING`): Simplified navigation, game-like clock (turn-based/timed), focused on user education and building confidence with AI agents
+- **Production Tenant** (`TenantMode.PRODUCTION`): Full navigation, real data integration, real planning workflows
 
-**Both customer modes support AI model training**:
-- Learning customers need to train agents for educational scenarios
-- Production customers need to train agents for real-world decision making
+**Both tenant modes support AI model training**:
+- Learning tenants need to train agents for educational scenarios
+- Production tenants need to train agents for real-world decision making
 
-The customer mode determines the **user experience**, not whether AI models can be trained.
+The tenant mode determines the **user experience**, not whether AI models can be trained.
+
+> **Terminology Note — Tenant vs Customer (Feb 2026)**: "Tenant" is the organizational boundary term (equivalent to AWS SC `company`). Do NOT use "Customer" for this purpose — in the AWS SC Data Model, "customer" means a trading partner (demand point) via `TradingPartner` with `tpartner_type='customer'`. The `customer_id` fields in AWS SC entities (Forecast, OutboundOrderLine, CustomerCost, FulfillmentOrder, etc.) correctly reference trading partners and must NOT be confused with the tenant/organization boundary.
 
 ---
 
@@ -399,7 +401,7 @@ make proxy-logs
 
 **Core Services** (`services/`):
 - `supply_chain_config_service.py`: DAG-based supply chain configuration
-- `customer_service.py`: Customer and session management
+- `tenant_service.py`: Tenant and session management
 - `auth_service.py`: JWT authentication and authorization
 - `conformal_orchestrator.py`: Automatic conformal prediction feedback loop for demand, lead time, price, yield, and service level (forecast load hooks, multi-entity actuals observation, drift monitoring, scheduled recalibration, suite ↔ DB persistence)
 - `agent_context_explainer.py`: Context-aware explainability orchestrator — authority boundaries, guardrails, policy parameters, conformal intervals, feature attribution, counterfactuals for all 11 TRM agents and both GNN models
@@ -421,7 +423,7 @@ make proxy-logs
 - `scenario.py`: Scenario, Period, ScenarioUserAction (simulation module)
 - `participant.py`: ScenarioUser, ScenarioUserRole, ScenarioUserPeriod (simulation module)
 - `agent_config.py`: AgentConfig, AgentScenarioConfig
-- `customer.py`: Customer model (Autonomy customer/tenant)
+- `tenant.py`: Tenant model (Autonomy organization/tenant)
 - `user.py`: User, Role, Permission
 - `rbac.py`: Role-Based Access Control
 - `gnn/`: GNN model definitions
@@ -466,7 +468,7 @@ make proxy-logs
 - `SyntheticDataWizard.jsx`: AI-guided company/data generation wizard
 - `ModelSetup.jsx`: Model architecture configuration
 - `UserManagement.jsx` / `UserRoleManagement.jsx`: User and role administration
-- `CustomerManagement.jsx`: Customer/tenant management
+- `TenantManagement.jsx`: Tenant management
 - `PlanningHierarchyConfig.jsx`: MPS/MRP/S&OP hierarchy configuration
 - `ScenarioTreeManager.jsx`: Git-like scenario branching
 - `AuthorizationProtocolBoard.jsx`: AAP cross-functional negotiation visualization
@@ -694,7 +696,7 @@ See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
 
 **Organization Tables**:
 - `users`: User accounts with role-based access
-- `customers`: Autonomy customers/tenants (equivalent to AWS SC `company`)
+- `tenants`: Autonomy tenants/organizations (equivalent to AWS SC `company`)
 - `roles`: RBAC roles
 - `permissions`: Granular permissions
 - `user_roles`: Role assignments
@@ -925,7 +927,7 @@ POST /api/v1/synthetic-data/wizard/sessions/{session_id}/generate
 - **Manufacturer**: Multi-tier production (Plants → Sub-Assy → Component), 160 SKUs, autonomous mode
 
 **What Gets Created**:
-- Customer (organization) and admin user
+- Tenant (organization) and admin user
 - Supply chain config with sites, transportation lanes, products
 - Site and product hierarchies (Company→Region→Country→Site, Category→Family→Group→Product)
 - Forecasts with P10/P50/P90 percentiles
@@ -1267,7 +1269,7 @@ The platform has been refactored from Beer Game-centric to AWS SC-first. See [AR
 - ✅ AWS SC entity compliance: 100% (35/35 entities)
 - ✅ Navigation: Planning (primary), Execution, AI & Agents, Simulation (secondary)
 - ✅ 96+ frontend pages implemented (planning, admin, analytics, execution, visibility)
-- ✅ Terminology renames: Game→Scenario, Player→User, Group→Customer, Round→Period
+- ✅ Terminology renames: Game→Scenario, Player→User, Group→Tenant, Round→Period
 - ✅ TRM Hive architecture fully implemented (30K+ lines)
 - ✅ AAP (Agentic Authorization Protocol) implemented
 - ✅ CDC→Relearning autonomous feedback loop
@@ -1297,7 +1299,7 @@ The backend uses `backend/main.py` as the FastAPI application entry point. Note:
 ### Seeding Process
 When running `make up` with `FORCE_GPU=1`, the system automatically runs `make db-bootstrap` which:
 1. Seeds Default TBG, Three FG TBG, and Variable TBG configs
-2. Creates default users and customers
+2. Creates default users and tenants
 3. Generates showcase scenarios with LLM and GNN agents
 
 ### Training Hyperparameters

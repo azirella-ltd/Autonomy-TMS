@@ -60,7 +60,7 @@ class UserTypeEnum(str, Enum):
 
 class PowellRoleEnum(str, Enum):
     """
-    Powell Framework role classification for Production group users.
+    Powell Framework role classification for Production tenant users.
 
     Determines landing page routing (fixed) while capabilities can be customized.
 
@@ -170,9 +170,9 @@ class User(Base):
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     tenant_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True)
 
-    # Powell Framework Role - determines landing page for Production group users
+    # Powell Framework Role - determines landing page for Production tenant users
     # NULL means use user_type for routing (e.g., TENANT_ADMIN → /admin/production)
-    # This is separate from capabilities which can be customized by group admin
+    # This is separate from capabilities which can be customized by tenant admin
     powell_role: Mapped[Optional[PowellRoleEnum]] = mapped_column(
         SAEnum(PowellRoleEnum, name="powell_role_enum"),
         nullable=True,
@@ -180,10 +180,10 @@ class User(Base):
         comment="Powell role determines landing page; capabilities can be customized"
     )
 
-    # Agent Explainability Override (user-level override of group default)
+    # Agent Explainability Override (user-level override of tenant default)
     explainability_level_override: Mapped[Optional[ExplainabilityLevel]] = mapped_column(
         SAEnum(ExplainabilityLevel, name="explainability_level_enum"),
-        nullable=True,  # NULL means use group default
+        nullable=True,  # NULL means use tenant default
     )
 
     # Span of Control - Geographic and Product Scope (AIIO Framework)

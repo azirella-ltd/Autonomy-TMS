@@ -154,7 +154,7 @@ async def get_human_dashboard(
         current_round=active_scenario.current_round,
         max_rounds=active_scenario.max_rounds,
         participant_role=role_value,
-        metrics=schemas.ParticipantMetrics(**metrics),
+        metrics=schemas.ScenarioUserMetrics(**metrics),
         time_series=time_series_points,
         last_updated=datetime.utcnow().isoformat()
     )

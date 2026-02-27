@@ -690,7 +690,7 @@ class AgentDecisionMetrics(Base):
 
 class LayerLicense(Base):
     """
-    Tracks which cascade layers a group has purchased.
+    Tracks which cascade layers a tenant has purchased.
 
     Enables modular selling: customers buy only the layers they need.
     Layers not purchased show INPUT screens for manual parameter entry.

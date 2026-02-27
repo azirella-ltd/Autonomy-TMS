@@ -21,27 +21,26 @@ from .scenario import (
     # Period schemas
     ScenarioPeriodBase, ScenarioPeriodCreate, ScenarioPeriod,
     PeriodBase, PeriodCreate, PeriodUpdate, Period,
-    ParticipantPeriodBase, ParticipantPeriodCreate, ParticipantPeriod,
-    # Participant schemas (re-exported from participant.py)
-    ParticipantState, ParticipantRole,
-    ParticipantAssignment, ParticipantResponse, ParticipantUpdate,
-    Participant, ParticipantCreate,
+    ScenarioUserPeriodBase, ScenarioUserPeriodCreate, ScenarioUserPeriod,
+    # ScenarioUser schemas (from scenario.py)
+    ScenarioUserState,
     # Action schemas
-    ParticipantActionBase, ParticipantActionCreate, ParticipantActionUpdate, ParticipantAction,
+    ScenarioUserActionBase, ScenarioUserActionCreate, ScenarioUserActionUpdate, ScenarioUserAction,
     # Order schemas
     OrderCreate, OrderResponse,
 )
 
 from .participant import (
-    ParticipantType, ParticipantStrategy,
+    ScenarioUserRole, ScenarioUserType, ScenarioUserStrategy,
+    ScenarioUserAssignment, ScenarioUserCreate, ScenarioUserResponse, ScenarioUser, ScenarioUserUpdate,
     # Function-related schemas (Feb 2026 expansion)
-    FunctionCategory, ParticipantFunction, AgentMode,
+    FunctionCategory, ScenarioUserFunction, AgentMode,
     FunctionAssignmentBase, FunctionAssignmentCreate, FunctionAssignmentUpdate,
-    FunctionAssignmentResponse, FunctionAssignmentWithParticipant, SiteFunctionSummary,
+    FunctionAssignmentResponse, FunctionAssignmentWithScenarioUser, SiteFunctionSummary,
 )
 
 from .agent_config import AgentConfig, AgentConfigCreate, AgentConfigUpdate, AgentConfigInDBBase as AgentConfigInDB
-from .dashboard import DashboardResponse, ScenarioUserMetrics as ParticipantMetrics, TimeSeriesPoint
+from .dashboard import DashboardResponse, ScenarioUserMetrics, TimeSeriesPoint
 from .tenant import TenantResponse, TenantCreate, TenantUpdate, TenantSummary, TenantModeEnum, TenantBase
 # AWS SC DM compliant schema imports
 from .supply_chain_config import (
@@ -135,20 +134,20 @@ __all__ = [
     # Period schemas
     'ScenarioPeriodBase', 'ScenarioPeriodCreate', 'ScenarioPeriod',
     'PeriodBase', 'PeriodCreate', 'PeriodUpdate', 'Period',
-    'ParticipantPeriodBase', 'ParticipantPeriodCreate', 'ParticipantPeriod',
+    'ScenarioUserPeriodBase', 'ScenarioUserPeriodCreate', 'ScenarioUserPeriod',
 
-    # Participant schemas
-    'ParticipantRole', 'ParticipantType', 'ParticipantStrategy',
-    'ParticipantAssignment', 'ParticipantCreate', 'ParticipantResponse',
-    'Participant', 'ParticipantUpdate', 'ParticipantState',
+    # ScenarioUser schemas
+    'ScenarioUserRole', 'ScenarioUserType', 'ScenarioUserStrategy',
+    'ScenarioUserAssignment', 'ScenarioUserCreate', 'ScenarioUserResponse',
+    'ScenarioUser', 'ScenarioUserUpdate', 'ScenarioUserState',
 
     # Function assignment schemas (Feb 2026 expansion)
-    'FunctionCategory', 'ParticipantFunction', 'AgentMode',
+    'FunctionCategory', 'ScenarioUserFunction', 'AgentMode',
     'FunctionAssignmentBase', 'FunctionAssignmentCreate', 'FunctionAssignmentUpdate',
-    'FunctionAssignmentResponse', 'FunctionAssignmentWithParticipant', 'SiteFunctionSummary',
+    'FunctionAssignmentResponse', 'FunctionAssignmentWithScenarioUser', 'SiteFunctionSummary',
 
     # Action schemas
-    'ParticipantActionBase', 'ParticipantActionCreate', 'ParticipantActionUpdate', 'ParticipantAction',
+    'ScenarioUserActionBase', 'ScenarioUserActionCreate', 'ScenarioUserActionUpdate', 'ScenarioUserAction',
 
     # Order schemas
     'OrderCreate', 'OrderResponse',
@@ -157,7 +156,7 @@ __all__ = [
     'AgentConfig', 'AgentConfigCreate', 'AgentConfigUpdate', 'AgentConfigInDB',
 
     # Dashboard
-    'DashboardResponse', 'ParticipantMetrics', 'TimeSeriesPoint',
+    'DashboardResponse', 'ScenarioUserMetrics', 'TimeSeriesPoint',
 
     # Tenant
     'TenantResponse', 'TenantCreate', 'TenantUpdate', 'TenantSummary', 'TenantModeEnum', 'TenantBase',

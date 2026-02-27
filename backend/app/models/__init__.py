@@ -37,8 +37,6 @@ from .tenant import Tenant, TenantMode, ClockMode
 from .participant import (
     ScenarioUser, ScenarioUserRole, ScenarioUserType, ScenarioUserStrategy, AgentMode,
     FunctionCategory, ScenarioUserFunction,
-    # Backward compatibility aliases
-    Participant, ParticipantRole, ParticipantType, ParticipantStrategy, ParticipantFunction,
 )
 
 # 3b. Function Assignments (Feb 2026 - expanded role architecture)
@@ -46,15 +44,13 @@ from .function_assignment import FunctionAssignment
 
 # 3. Scenario-related models
 from .supervisor_action import SupervisorAction
-from .scenario import Scenario, ScenarioStatus, Round, ScenarioUserAction, ParticipantAction
+from .scenario import Scenario, ScenarioStatus, Round, ScenarioUserAction
 from .agent_config import AgentConfig
 from .auth_models import PasswordHistory, PasswordResetToken
 from .session import TokenBlacklist, UserSession
 # Supply chain models
 from .supply_chain import (
     ScenarioUserInventory, Order, ScenarioRound, ScenarioUserPeriod, RoundPhase, UpstreamOrderType,
-    # Backward compatibility aliases
-    ParticipantInventory, ParticipantRound,
 )
 from .round_metric import RoundMetric
 from app.core.time_buckets import TimeBucket
@@ -149,8 +145,6 @@ from .chat import ChatMessage, AgentSuggestion, WhatIfAnalysis, MessageType, Sen
 from .achievement import (
     Achievement, ScenarioUserStats, ScenarioUserAchievement, Leaderboard,
     LeaderboardEntry, ScenarioUserBadge, AchievementNotification,
-    # Backward compatibility aliases
-    ParticipantStats, ParticipantAchievement, ParticipantBadge,
 )
 
 # 7. Enterprise Features - Option 1
@@ -318,6 +312,12 @@ from .collaboration_scenario import CollaborationScenario
 # 26. SAP User Import (SC-filtered user provisioning)
 from .sap_user_import import SAPUserImportLog, SAPRoleMapping
 
+# 27. Executive Briefing — LLM-Synthesized Strategy Briefings
+from .executive_briefing import (
+    ExecutiveBriefing, BriefingFollowup, BriefingSchedule,
+    BriefingType, BriefingStatus,
+)
+
 # Verify all models are properly registered
 registered_tables = set(Base.metadata.tables.keys())
 # Updated terminology: scenarios, scenario_users, scenario_user_actions
@@ -401,15 +401,6 @@ __all__ = [
     'FunctionCategory',
     'ScenarioUserFunction',
     'FunctionAssignment',
-    # Backward compatibility aliases
-    'Participant',
-    'ParticipantRole',
-    'ParticipantType',
-    'ParticipantStrategy',
-    'ParticipantAction',
-    'ParticipantInventory',
-    'ParticipantRound',
-    'ParticipantFunction',
     'AgentConfig',
     'PasswordHistory',
     'PasswordResetToken',
@@ -434,10 +425,6 @@ __all__ = [
     'Leaderboard',
     'LeaderboardEntry',
     'AchievementNotification',
-    # Backward compatibility aliases
-    'ParticipantStats',
-    'ParticipantAchievement',
-    'ParticipantBadge',
     # Option 1: Enterprise Features
     'Tenant',
     'SSOProvider',
@@ -593,6 +580,12 @@ __all__ = [
     # Decision Governance — AIIO Impact-Based Gating & Executive Directives
     'DecisionGovernancePolicy',
     'GuardrailDirective',
+    # Executive Briefing — LLM-Synthesized Strategy Briefings
+    'ExecutiveBriefing',
+    'BriefingFollowup',
+    'BriefingSchedule',
+    'BriefingType',
+    'BriefingStatus',
 ]
 
 # Note: SQLAlchemy will configure mappers lazily when first used.

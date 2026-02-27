@@ -525,6 +525,10 @@ async def startup_event():
             # Register governance sweeper jobs (auto-apply, escalation, directive expiry)
             register_governance_jobs(scheduler_service)
 
+            # Register executive briefing scheduler (hourly check for scheduled generation)
+            from app.services.executive_briefing_jobs import register_executive_briefing_jobs
+            register_executive_briefing_jobs(scheduler_service)
+
             # Batch calibrate CDT wrappers from historical decision data
             try:
                 from app.services.powell.cdt_calibration_service import CDTCalibrationService
@@ -5964,6 +5968,10 @@ api.include_router(decision_metrics_router, prefix="/decision-metrics", tags=["d
 # Hierarchical Metrics API (Gartner-aligned metrics with hierarchy drill-down)
 from app.api.endpoints.hierarchical_metrics import router as hierarchical_metrics_router
 api.include_router(hierarchical_metrics_router, prefix="/hierarchical-metrics", tags=["metrics", "gartner"])
+
+# Executive Briefing API (LLM-synthesized strategy briefings)
+from app.api.endpoints.executive_briefing import router as executive_briefing_router
+api.include_router(executive_briefing_router, prefix="/executive-briefing", tags=["executive-briefing"])
 
 # Full-Level Pegging & Multi-Stage CTP API
 from app.api.endpoints.pegging import router as pegging_router

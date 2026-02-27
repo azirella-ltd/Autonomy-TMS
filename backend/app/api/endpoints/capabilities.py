@@ -36,7 +36,7 @@ async def get_my_capabilities(
           - DEMO_ALL → /executive-dashboard (has all capabilities)
 
     Note: powell_role determines the fixed landing page, while capabilities
-    (which can be customized by group admin) control what the user can do.
+    (which can be customized by tenant admin) control what the user can do.
     """
     capabilities = get_user_capabilities_list(current_user, db)
 

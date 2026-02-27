@@ -8,10 +8,10 @@ const DEFAULT_FORM = {
   description: '',
   logo: '/autonomy_logo.svg',
   admin: {
-    username: 'groupadmin',
-    email: 'groupadmin@autonomy.ai',
+    username: 'tenantadmin',
+    email: 'tenantadmin@autonomy.ai',
     password: 'Autonomy@2025',
-    full_name: 'Organization Administrator',
+    full_name: 'Tenant Administrator',
   },
 };
 

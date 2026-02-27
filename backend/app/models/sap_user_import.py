@@ -75,7 +75,7 @@ class SAPRoleMapping(Base):
     """
     Configurable mapping from SAP AGR_NAME pattern to Autonomy powell_role.
 
-    Stored per group so each customer can define their own mappings.
+    Stored per tenant so each organization can define their own mappings.
     Patterns are evaluated in priority order; first match wins.
     """
     __tablename__ = "sap_role_mappings"

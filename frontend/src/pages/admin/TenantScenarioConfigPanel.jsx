@@ -57,7 +57,7 @@ const TenantScenarioConfigPanel = ({
   loading = false,
   error = null,
   onRefresh,
-  groupId = null,
+  tenantId = null,
   currentUserId = null,
   selectedSupplyChainId = 'all',
   onSelectSupplyChain,
@@ -78,10 +78,10 @@ const TenantScenarioConfigPanel = ({
 
     return games.filter((game) => {
       if (!game) return false;
-      const targetGroup = game.tenant_id ?? game?.config?.tenant_id ?? null;
-      if (groupId != null) {
-        if (targetGroup != null) {
-          if (Number(targetGroup) !== Number(groupId)) {
+      const targetTenant = game.tenant_id ?? game?.config?.tenant_id ?? null;
+      if (tenantId != null) {
+        if (targetTenant != null) {
+          if (Number(targetTenant) !== Number(tenantId)) {
             return false;
           }
         } else if (game.created_by != null && Number(game.created_by) !== Number(currentUserId)) {
@@ -99,7 +99,7 @@ const TenantScenarioConfigPanel = ({
       }
       return true;
     });
-  }, [games, groupId, currentUserId, selectedSupplyChainId]);
+  }, [games, tenantId, currentUserId, selectedSupplyChainId]);
 
   const handleCreateGame = () => {
     navigate('/scenarios/new');

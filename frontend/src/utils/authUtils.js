@@ -7,11 +7,6 @@ const USER_TYPE_ALIASES = {
   tenantadmin: "tenantadmin",
   "tenant admin": "tenantadmin",
   tenant_admin: "tenantadmin",
-  // Backward-compatible aliases
-  groupadmin: "tenantadmin",
-  "group admin": "tenantadmin",
-  group_admin: "tenantadmin",
-  player: "user",
   user: "user",
 };
 
@@ -65,7 +60,10 @@ export const getUserType = (user) => {
   ) {
     return "systemadmin";
   }
-  if (normalizedEmail === "groupadmin@autonomy.ai") {
+  if (
+    normalizedEmail === "tenantadmin@autonomy.ai" ||
+    normalizedEmail === "groupadmin@autonomy.ai"
+  ) {
     return "tenantadmin";
   }
 
@@ -81,9 +79,6 @@ export const isTenantAdmin = (user) => {
   }
   return type === "tenantadmin";
 };
-
-// Backward-compatible alias
-export const isGroupAdmin = isTenantAdmin;
 
 export const getDefaultLandingPath = (user) => {
   if (isSystemAdmin(user)) {

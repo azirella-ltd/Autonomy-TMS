@@ -13,27 +13,21 @@ describe('AuthContext role helpers', () => {
         hasRole: (role) => !!user && (user.is_superuser || (user.roles || []).includes(role)),
         hasAnyRole: (roles = []) => roles.length === 0 || roles.some((r) => !!user && (user.is_superuser || (user.roles || []).includes(r))),
         hasAllRoles: (roles = []) => roles.length === 0 || roles.every((r) => !!user && (user.is_superuser || (user.roles || []).includes(r))),
-        isTenantAdmin: !!user && (user.is_superuser || (user.roles || []).includes('groupadmin')),
-        isCustomerAdmin: !!user && (user.is_superuser || (user.roles || []).includes('groupadmin')), // backward-compatible alias
-        isGroupAdmin: !!user && (user.is_superuser || (user.roles || []).includes('groupadmin')), // backward-compatible alias
+        isTenantAdmin: !!user && (user.is_superuser || (user.roles || []).includes('tenantadmin')),
       }}
     >
       {children}
     </AuthContext.Provider>
   );
 
-  it('detects customer admin via roles and treats superusers as system admins', () => {
-    const userRoles = { roles: ['user', 'groupadmin'], is_superuser: false };
+  it('detects tenant admin via roles and treats superusers as system admins', () => {
+    const userRoles = { roles: ['user', 'tenantadmin'], is_superuser: false };
     const { result: r1 } = renderHook(() => React.useContext(AuthContext), { wrapper: wrapperWithUser(userRoles) });
     expect(r1.current.isTenantAdmin).toBe(true);
-    expect(r1.current.isCustomerAdmin).toBe(true); // backward-compatible alias
-    expect(r1.current.isGroupAdmin).toBe(true); // backward-compatible alias
 
     const userSuper = { roles: ['user'], is_superuser: true };
     const { result: r2 } = renderHook(() => React.useContext(AuthContext), { wrapper: wrapperWithUser(userSuper) });
     expect(r2.current.isTenantAdmin).toBe(true);
-    expect(r2.current.isCustomerAdmin).toBe(true); // backward-compatible alias
-    expect(r2.current.isGroupAdmin).toBe(true); // backward-compatible alias
   });
 
   it('checks hasRole / hasAnyRole / hasAllRoles', () => {

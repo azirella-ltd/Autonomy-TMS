@@ -112,6 +112,13 @@ export const NAVIGATION_CONFIG = [
         description: 'Strategic KPIs, performance summary, ROI',
       },
       {
+        label: 'Strategy Briefing',
+        path: '/strategy-briefing',
+        icon: BookOpenIcon,
+        requiredCapability: 'view_executive_dashboard',
+        description: 'AI-generated executive strategy briefings',
+      },
+      {
         label: 'S&OP Worklist',
         path: '/sop-worklist',
         icon: RecommendIcon,

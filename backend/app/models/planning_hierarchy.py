@@ -81,7 +81,7 @@ class PlanningType(str, Enum):
 class PlanningHierarchyConfig(Base):
     """
     Configures which hierarchy levels to use for different planning types.
-    This is a group-level configuration set by group administrators.
+    This is a tenant-level configuration set by tenant administrators.
 
     Example configurations:
     - S&OP: site_level=COUNTRY, product_level=FAMILY, time_bucket=MONTH, horizon_months=24

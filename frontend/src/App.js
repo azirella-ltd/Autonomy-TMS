@@ -122,6 +122,7 @@ import POWorklistPage from "./pages/planning/POWorklistPage.jsx";
 import OrderTrackingWorklistPage from "./pages/planning/OrderTrackingWorklistPage.jsx";
 import { TrainingLeaderboards, TrainingReports, TrainingCompare } from "./pages/training";
 import ExecutiveDashboard from "./pages/ExecutiveDashboard";
+import ExecutiveBriefingPage from "./pages/ExecutiveBriefingPage";
 import AgentPerformancePage from "./pages/AgentPerformancePage";
 import SOPWorklistPage from "./pages/SOPWorklistPage";
 import DemoSystemBuilder from "./pages/deployment/DemoSystemBuilder.jsx";
@@ -313,6 +314,14 @@ const AppContent = () => {
               element={
                 <CapabilityProtectedRoute requiredCapability="view_executive_dashboard">
                   <ExecutiveDashboard />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/strategy-briefing"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_executive_dashboard">
+                  <ExecutiveBriefingPage />
                 </CapabilityProtectedRoute>
               }
             />

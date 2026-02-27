@@ -1,7 +1,7 @@
 /**
- * Customer Settings Panel
+ * Tenant Settings Panel
  *
- * Production customer configuration settings including:
+ * Production tenant configuration settings including:
  * - Planning Hierarchy Levels (Product, Geography, Time)
  * - Data Sources (SAP, etc.)
  * - Data Import Cadence
@@ -165,10 +165,10 @@ const CADENCE_OPTIONS = [
 ];
 
 const TenantSettingsPanel = ({
-  groupId,
-  groupInfo,
+  tenantId,
+  tenantInfo,
   selectedConfigId,
-  onGroupInfoChange,
+  onTenantInfoChange,
 }) => {
   const [activeSection, setActiveSection] = useState('hierarchy');
   const [loading, setLoading] = useState(false);
@@ -213,11 +213,11 @@ const TenantSettingsPanel = ({
   // Load existing settings
   useEffect(() => {
     const loadSettings = async () => {
-      if (!groupId) return;
+      if (!tenantId) return;
       setLoading(true);
       try {
         // Try to load planning hierarchy configs
-        const response = await api.get(`/planning-hierarchy/group/${groupId}`).catch(() => null);
+        const response = await api.get(`/planning-hierarchy/tenant/${tenantId}`).catch(() => null);
         if (response?.data) {
           // Map to local state
           const configs = Array.isArray(response.data) ? response.data : [];
@@ -236,7 +236,7 @@ const TenantSettingsPanel = ({
         }
 
         // Load sync job configs if available
-        const syncResponse = await api.get(`/sync-jobs/group/${groupId}/summary`).catch(() => null);
+        const syncResponse = await api.get(`/sync-jobs/tenant/${tenantId}/summary`).catch(() => null);
         if (syncResponse?.data?.cadence) {
           setImportCadence(syncResponse.data.cadence);
         }
@@ -247,7 +247,7 @@ const TenantSettingsPanel = ({
       }
     };
     loadSettings();
-  }, [groupId]);
+  }, [tenantId]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -255,7 +255,7 @@ const TenantSettingsPanel = ({
     setSuccess(null);
     try {
       // Save hierarchy settings
-      await api.put(`/planning-hierarchy/group/${groupId}/batch`, {
+      await api.put(`/planning-hierarchy/tenant/${tenantId}/batch`, {
         hierarchies: Object.entries(hierarchySettings).map(([type, levels]) => ({
           planning_type: type.toUpperCase(),
           site_hierarchy_level: levels.site,
@@ -265,7 +265,7 @@ const TenantSettingsPanel = ({
       }).catch(() => null);
 
       // Save CDC settings
-      await api.put(`/tenants/${groupId}/cdc-settings`, cdcSettings).catch(() => null);
+      await api.put(`/tenants/${tenantId}/cdc-settings`, cdcSettings).catch(() => null);
 
       setSuccess('Settings saved successfully');
       setTimeout(() => setSuccess(null), 3000);
@@ -306,7 +306,7 @@ const TenantSettingsPanel = ({
         <div className="mb-6">
           <h2 className="text-xl font-bold mb-1 flex items-center gap-2">
             <Settings className="h-5 w-5" />
-            Customer Settings
+            Tenant Settings
           </h2>
           <p className="text-muted-foreground">
             Configure planning hierarchies, data integration, and event-based replanning thresholds.

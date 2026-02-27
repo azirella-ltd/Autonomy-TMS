@@ -255,10 +255,6 @@ export function AuthProvider({ children }) {
     return isTenantAdminUtil(user);
   }, [user]);
 
-  // Backward-compatible aliases
-  const isCustomerAdmin = isTenantAdmin;
-  const isGroupAdmin = isTenantAdmin;
-
   const value = useMemo(() => ({
     isAuthenticated,
     user,
@@ -272,11 +268,9 @@ export function AuthProvider({ children }) {
     hasAnyRole,
     hasAllRoles,
     isTenantAdmin,
-    isCustomerAdmin, // backward-compatible alias
-    isGroupAdmin, // backward-compatible alias
     showTimeoutWarning,
     timeLeft,
-    resetTimers, // Export resetTimers to allow manual reset from components
+    resetTimers,
   }), [isAuthenticated, user, loading, error, login, logout, refreshUser, hasRole, hasAnyRole, hasAllRoles, isTenantAdmin, showTimeoutWarning, timeLeft, resetTimers]);
 
   return (

@@ -1,6 +1,6 @@
 """
 API endpoints for managing user capabilities and roles.
-Allows group admins to assign capabilities to users within their customer organization.
+Allows tenant admins to assign capabilities to users within their organization.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -36,7 +36,7 @@ def update_user_capabilities(
     """
     Update user's role and custom capabilities.
 
-    Group admins can update users within their customer organization.
+    Tenant admins can update users within their organization.
     System admins can update any user (except other system admins).
     """
     # Check if current user has permission to manage capabilities
@@ -56,7 +56,7 @@ def update_user_capabilities(
         if not current_user.tenant_id or target_user.tenant_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=403,
-                detail="You can only manage users within your group"
+                detail="You can only manage users within your tenant"
             )
 
     # Prevent modifying system admin users (unless you are system admin)
@@ -76,7 +76,7 @@ def update_user_capabilities(
             detail=f"Invalid user type: {request.user_type}"
         )
 
-    # Prevent group admins from creating system admins
+    # Prevent tenant admins from creating system admins
     if new_user_type == UserType.SYSTEM_ADMIN:
         if current_user.user_type != UserType.SYSTEM_ADMIN:
             raise HTTPException(
@@ -135,7 +135,7 @@ def get_user_capabilities(
         if not current_user.tenant_id or target_user.tenant_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=403,
-                detail="You can only view users within your group"
+                detail="You can only view users within your tenant"
             )
 
     return {

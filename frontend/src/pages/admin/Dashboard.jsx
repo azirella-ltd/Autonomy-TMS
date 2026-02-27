@@ -340,7 +340,7 @@ const AdminDashboard = () => {
           <div className="flex flex-col gap-4 mb-4">
             <div>
               <h1 className="text-2xl font-bold mb-1">
-                Customer Administrator Workspace
+                Tenant Administrator Workspace
               </h1>
               <p className="text-sm text-muted-foreground">
                 Configure your supply chain templates, manage scenarioUser access, and supervise active games from a single workspace.
@@ -398,7 +398,7 @@ const AdminDashboard = () => {
             loading={gamesLoading}
             error={gamesError}
             onRefresh={refreshGames}
-            groupId={tenantId}
+            tenantId={tenantId}
             currentUserId={currentUserId}
             selectedSupplyChainId={selectedSupplyChainId}
             onSelectSupplyChain={(value) => handleSupplyChainChange({ target: { value } })}
@@ -415,7 +415,7 @@ const AdminDashboard = () => {
             loading={gamesLoading}
             error={gamesError}
             onRefresh={refreshGames}
-            groupId={tenantId}
+            tenantId={tenantId}
             currentUserId={currentUserId}
             selectedSupplyChainId={selectedSupplyChainId}
           />
@@ -427,7 +427,7 @@ const AdminDashboard = () => {
             loading={gamesLoading}
             error={gamesError}
             onRefresh={refreshGames}
-            groupId={tenantId}
+            tenantId={tenantId}
             currentUserId={currentUserId}
             selectedSupplyChainId={selectedSupplyChainId}
           />
