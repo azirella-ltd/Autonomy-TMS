@@ -848,7 +848,7 @@ def reduce_scenarios(
 # Rolling Horizon S&OP Endpoints
 # ============================================================================
 
-# Global SOP planner instance (would be per-group in production)
+# Global SOP planner instance (would be per-tenant in production)
 _sop_planners: dict = {}
 
 

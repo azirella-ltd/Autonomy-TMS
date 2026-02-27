@@ -79,12 +79,12 @@ const TenantSupplyChainConfigList = () => {
       <SupplyChainConfigList
         title={isSystemAdmin ? "All Supply Chain Configurations" : "My Supply Chain Configurations"}
         basePath="/admin/tenant/supply-chain-configs"
-        restrictToGroupId={isSystemAdmin ? null : restrictToTenantId}
+        restrictToTenantId={isSystemAdmin ? null : restrictToTenantId}
         enableTraining={canEdit}
         readOnly={!canEdit}
       />
       <SupplyChainConfigSankey
-        restrictToGroupId={isSystemAdmin ? null : restrictToTenantId}
+        restrictToTenantId={isSystemAdmin ? null : restrictToTenantId}
       />
       {canEdit && <TrainingPanel />}
     </div>

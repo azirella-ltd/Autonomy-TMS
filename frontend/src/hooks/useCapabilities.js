@@ -78,7 +78,7 @@ function getFallbackCapabilities(userType) {
     return ['system_admin'];
   }
 
-  if (type === 'TENANT_ADMIN' || type === 'GROUP_ADMIN') {
+  if (type === 'TENANT_ADMIN') {
     return [
       // Overview
       'view_dashboard',

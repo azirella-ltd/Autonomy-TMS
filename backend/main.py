@@ -1198,8 +1198,6 @@ def _default_tenant_payload() -> TenantCreate:
     return build_default_tenant_payload()
 
 
-# Backward-compatible aliases
-_default_group_payload = _default_tenant_payload
 
 
 def _serialize_user_record(user: User) -> Dict[str, Any]:
@@ -5720,7 +5718,7 @@ def ensure_default_tenant_endpoint(
     tenants = service.get_tenants()
     if tenants:
         return tenants[0]
-    payload = _default_group_payload()
+    payload = _default_tenant_payload()
     return service.create_tenant(payload)
 
 

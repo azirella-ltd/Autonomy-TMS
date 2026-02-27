@@ -495,9 +495,9 @@ Databricks (Data Lake) ↔ Autonomy Platform ↔ External Demand Planning
 - SSO/LDAP integration (SAML 2.0, OAuth 2.0)
 
 ### Authorization
-- Role-based access control: SYSTEM_ADMIN, GROUP_ADMIN, PLANNER, VIEWER
+- Role-based access control: SYSTEM_ADMIN, TENANT_ADMIN, PLANNER, VIEWER
 - Capability-based permissions per resource type
-- Resource-level scoping (own, group, all)
+- Resource-level scoping (own, tenant, all)
 
 ### Data Protection
 - Passwords hashed with bcrypt

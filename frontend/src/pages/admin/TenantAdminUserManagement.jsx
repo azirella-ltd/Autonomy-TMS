@@ -60,7 +60,7 @@ const TenantAdminUserManagement = () => {
 
   // Access allowed if user has manage_tenant_users capability or is admin
   const isSystemAdmin = user?.user_type === 'SYSTEM_ADMIN';
-  const isTenantAdmin = user?.user_type === 'TENANT_ADMIN' || user?.user_type === 'GROUP_ADMIN';
+  const isTenantAdmin = user?.user_type === 'TENANT_ADMIN';
   const canViewUsers = hasCapability('view_users') || hasCapability('manage_tenant_users');
   const canEditUsers = hasCapability('manage_tenant_users') || isTenantAdmin || isSystemAdmin;
 
@@ -173,7 +173,6 @@ const TenantAdminUserManagement = () => {
       case 'SYSTEM_ADMIN':
         return 'destructive';
       case 'TENANT_ADMIN':
-      case 'GROUP_ADMIN':
         return 'warning';
       case 'USER':
       default:

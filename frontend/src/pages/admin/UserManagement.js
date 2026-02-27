@@ -252,7 +252,7 @@ function GroupScenarioUserManagement() {
                     <TableCell>{tenantMap[scenarioUser.tenant_id] || '—'}</TableCell>
                     <TableCell>
                       <Badge variant={type === 'user' ? 'success' : 'secondary'}>
-                        {type === 'user' ? 'User' : (type === 'tenantadmin' || type === 'groupadmin') ? 'Organization Admin' : 'User'}
+                        {type === 'user' ? 'User' : type === 'tenantadmin' ? 'Organization Admin' : 'User'}
                       </Badge>
                     </TableCell>
                     <TableCell>

@@ -387,12 +387,12 @@ const SupplyChainConfigForm = ({
   const { setFieldValue, setValues } = formik;
 
   const basicInfoFingerprint = useMemo(() => {
-    const groupIdValue = formik.values.tenant_id ? String(formik.values.tenant_id) : '';
+    const tenantIdValue = formik.values.tenant_id ? String(formik.values.tenant_id) : '';
     return JSON.stringify({
       name: formik.values.name || '',
       description: formik.values.description || '',
       is_active: Boolean(formik.values.is_active),
-      tenant_id: groupIdValue,
+      tenant_id: tenantIdValue,
       time_bucket: (formik.values.time_bucket || 'week').toLowerCase(),
     });
   }, [

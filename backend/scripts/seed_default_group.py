@@ -82,7 +82,7 @@ from app.core.time_buckets import TimeBucket, DEFAULT_START_DATE
 # from backend.scripts.create_regional_sc_config import ensure_multi_region_config
 
 DEFAULT_CUSTOMER_NAME = "Beer Game"
-DEFAULT_GROUP_DESCRIPTION = "Default supply chain simulation scenarios"
+DEFAULT_TENANT_DESCRIPTION = "Default supply chain simulation scenarios"
 DEFAULT_ADMIN_USERNAME = "simulation_admin"
 DEFAULT_ADMIN_EMAIL = "simulation_admin@autonomy.ai"
 DEFAULT_ADMIN_FULL_NAME = "Simulation Administrator"
@@ -102,50 +102,50 @@ TRM_AGENT_DESCRIPTION = "Showcase scenario using TRM (Tiny Recursive Model) agen
 TRM_AGENT_STRATEGY = "trm"
 
 # Dedicated customer metadata for alternative DAG templates
-SIX_PACK_GROUP_NAME = "Six-Pack Beer Game"
-SIX_PACK_GROUP_DESCRIPTION = "Six-Pack supply chain simulation template"
+SIX_PACK_TENANT_NAME = "Six-Pack Beer Game"
+SIX_PACK_TENANT_DESCRIPTION = "Six-Pack supply chain simulation template"
 SIX_PACK_ADMIN_USERNAME = "sixpack_admin"
 SIX_PACK_ADMIN_EMAIL = "sixpack_admin@autonomy.ai"
 SIX_PACK_ADMIN_FULL_NAME = "Six-Pack Administrator"
 
-BOTTLE_GROUP_NAME = "Bottle Beer Game"
-BOTTLE_GROUP_DESCRIPTION = "Bottle supply chain simulation template"
+BOTTLE_TENANT_NAME = "Bottle Beer Game"
+BOTTLE_TENANT_DESCRIPTION = "Bottle supply chain simulation template"
 BOTTLE_ADMIN_USERNAME = "bottle_admin"
 BOTTLE_ADMIN_EMAIL = "bottle_admin@autonomy.ai"
 BOTTLE_ADMIN_FULL_NAME = "Bottle Administrator"
 
-MULTI_ITEM_GROUP_NAME = "Multi-Product SixPack Beer Game"
-MULTI_ITEM_GROUP_DESCRIPTION = "Multi-item Six-Pack supply chain template"
+MULTI_ITEM_TENANT_NAME = "Multi-Product SixPack Beer Game"
+MULTI_ITEM_TENANT_DESCRIPTION = "Multi-item Six-Pack supply chain template"
 MULTI_ITEM_ADMIN_USERNAME = "multisix_admin"
 MULTI_ITEM_ADMIN_EMAIL = "multisix_admin@autonomy.ai"
 MULTI_ITEM_ADMIN_FULL_NAME = "Multi-Product SixPack Administrator"
 
 THREE_FG_CUSTOMER_NAME = "Three FG Beer Game"
-THREE_FG_GROUP_DESCRIPTION = "Three finished-goods simulation template"
+THREE_FG_TENANT_DESCRIPTION = "Three finished-goods simulation template"
 THREE_FG_ADMIN_USERNAME = "ThreeFG_admin"
 THREE_FG_ADMIN_EMAIL = "ThreeFG_admin@autonomy.ai"
 THREE_FG_ADMIN_FULL_NAME = "Three FG Simulation Administrator"
 
 VARIABLE_BEER_GAME_CUSTOMER_NAME = "Variable Beer Game"
-VARIABLE_BEER_GAME_GROUP_DESCRIPTION = "Lognormal-demand simulation with three finished goods"
+VARIABLE_BEER_GAME_TENANT_DESCRIPTION = "Lognormal-demand simulation with three finished goods"
 VARIABLE_BEER_GAME_ADMIN_USERNAME = "VarSimulation_admin"
 VARIABLE_BEER_GAME_ADMIN_EMAIL = "VarSimulation_admin@autonomy.ai"
 VARIABLE_BEER_GAME_ADMIN_FULL_NAME = "Variable Simulation Administrator"
 
 THREE_FG_CUSTOMER_NAME = "Three FG Beer Game"
-THREE_FG_GROUP_DESCRIPTION = "Three finished-goods simulation template"
+THREE_FG_TENANT_DESCRIPTION = "Three finished-goods simulation template"
 THREE_FG_ADMIN_USERNAME = "ThreeFG_admin"
 THREE_FG_ADMIN_EMAIL = "ThreeFG_admin@autonomy.ai"
 THREE_FG_ADMIN_FULL_NAME = "Three FG Simulation Administrator"
 
 VARIABLE_BEER_GAME_CUSTOMER_NAME = "Variable Beer Game"
-VARIABLE_BEER_GAME_GROUP_DESCRIPTION = "Lognormal-demand simulation with three finished goods"
+VARIABLE_BEER_GAME_TENANT_DESCRIPTION = "Lognormal-demand simulation with three finished goods"
 VARIABLE_BEER_GAME_ADMIN_USERNAME = "VarSimulation_admin"
 VARIABLE_BEER_GAME_ADMIN_EMAIL = "VarSimulation_admin@autonomy.ai"
 VARIABLE_BEER_GAME_ADMIN_FULL_NAME = "Variable Simulation Administrator"
 
 COMPLEX_CUSTOMER_NAME = "Complex_SC"
-COMPLEX_GROUP_DESCRIPTION = (
+COMPLEX_TENANT_DESCRIPTION = (
     "Complex supply chain scenarios with multi-echelon networks and diverse suppliers."
 )
 COMPLEX_ADMIN_USERNAME = "complex_sc_admin"
@@ -958,7 +958,7 @@ def ensure_customer_with_admin(
     session: Session,
     *,
     customer_name: str,
-    group_description: str,
+    tenant_description: str,
     admin_username: str,
     admin_email: str,
     admin_full_name: str,
@@ -1005,8 +1005,8 @@ def ensure_customer_with_admin(
             session.flush()
 
     if existing_customer:
-        if existing_customer.description != group_description:
-            existing_customer.description = group_description
+        if existing_customer.description != tenant_description:
+            existing_customer.description = tenant_description
         if existing_customer.admin_id != admin_user.id:
             existing_customer.admin_id = admin_user.id
         session.add(existing_customer)
@@ -1026,7 +1026,7 @@ def ensure_customer_with_admin(
 
     customer = Tenant(
         name=customer_name,
-        description=group_description,
+        description=tenant_description,
         admin_id=admin_user.id,
     )
     session.add(customer)
@@ -1051,7 +1051,7 @@ def ensure_customer(session: Session) -> Tuple[Tenant, bool]:
     return ensure_customer_with_admin(
         session,
         customer_name=DEFAULT_CUSTOMER_NAME,
-        group_description=DEFAULT_GROUP_DESCRIPTION,
+        tenant_description=DEFAULT_TENANT_DESCRIPTION,
         admin_username=DEFAULT_ADMIN_USERNAME,
         admin_email=DEFAULT_ADMIN_EMAIL,
         admin_full_name=DEFAULT_ADMIN_FULL_NAME,
@@ -1059,7 +1059,7 @@ def ensure_customer(session: Session) -> Tuple[Tenant, bool]:
     )
 
 
-def ensure_named_group(
+def ensure_named_tenant(
     session: Session,
     *,
     name: str,
@@ -1071,7 +1071,7 @@ def ensure_named_group(
     customer, _ = ensure_customer_with_admin(
         session,
         customer_name=name,
-        group_description=description,
+        tenant_description=description,
         admin_username=admin_username,
         admin_email=admin_email,
         admin_full_name=admin_full_name,
@@ -4671,7 +4671,7 @@ def _build_config_specs() -> List[Dict[str, Any]]:
             "trm_game_name": TRM_AGENT_GAME_NAME,
             "autonomy_suffix": None,
             "customer_name": DEFAULT_CUSTOMER_NAME,
-            "group_description": DEFAULT_GROUP_DESCRIPTION,
+            "tenant_description": DEFAULT_TENANT_DESCRIPTION,
             "admin_username": DEFAULT_ADMIN_USERNAME,
             "admin_email": DEFAULT_ADMIN_EMAIL,
             "admin_full_name": DEFAULT_ADMIN_FULL_NAME,
@@ -4687,7 +4687,7 @@ def _build_config_specs() -> List[Dict[str, Any]]:
             "trm_game_name": f"{TRM_AGENT_GAME_NAME} (Three FG)",
             "autonomy_suffix": "Three FG Beer Game",
             "customer_name": THREE_FG_CUSTOMER_NAME,
-            "group_description": THREE_FG_GROUP_DESCRIPTION,
+            "tenant_description": THREE_FG_TENANT_DESCRIPTION,
             "admin_username": THREE_FG_ADMIN_USERNAME,
             "admin_email": THREE_FG_ADMIN_EMAIL,
             "admin_full_name": THREE_FG_ADMIN_FULL_NAME,
@@ -4708,7 +4708,7 @@ def _build_config_specs() -> List[Dict[str, Any]]:
             "trm_game_name": f"{TRM_AGENT_GAME_NAME} (Variable Beer Game)",
             "autonomy_suffix": "Variable Beer Game",
             "customer_name": VARIABLE_BEER_GAME_CUSTOMER_NAME,
-            "group_description": VARIABLE_BEER_GAME_GROUP_DESCRIPTION,
+            "tenant_description": VARIABLE_BEER_GAME_TENANT_DESCRIPTION,
             "admin_username": VARIABLE_BEER_GAME_ADMIN_USERNAME,
             "admin_email": VARIABLE_BEER_GAME_ADMIN_EMAIL,
             "admin_full_name": VARIABLE_BEER_GAME_ADMIN_FULL_NAME,
@@ -4729,7 +4729,7 @@ def _build_config_specs() -> List[Dict[str, Any]]:
             "trm_game_name": f"{TRM_AGENT_GAME_NAME} (Case Beer Game)",
             "autonomy_suffix": "Case Beer Game",
             "customer_name": DEFAULT_CUSTOMER_NAME,
-            "group_description": DEFAULT_GROUP_DESCRIPTION,
+            "tenant_description": DEFAULT_TENANT_DESCRIPTION,
             "admin_username": DEFAULT_ADMIN_USERNAME,
             "admin_email": DEFAULT_ADMIN_EMAIL,
             "admin_full_name": DEFAULT_ADMIN_FULL_NAME,
@@ -4746,7 +4746,7 @@ def _build_config_specs() -> List[Dict[str, Any]]:
             "trm_game_name": f"{TRM_AGENT_GAME_NAME} (Six-Pack Beer Game)",
             "autonomy_suffix": "Six-Pack Beer Game",
             "customer_name": DEFAULT_CUSTOMER_NAME,
-            "group_description": DEFAULT_GROUP_DESCRIPTION,
+            "tenant_description": DEFAULT_TENANT_DESCRIPTION,
             "admin_username": DEFAULT_ADMIN_USERNAME,
             "admin_email": DEFAULT_ADMIN_EMAIL,
             "admin_full_name": DEFAULT_ADMIN_FULL_NAME,
@@ -4761,7 +4761,7 @@ def _build_config_specs() -> List[Dict[str, Any]]:
             "pid_game_name": f"{PID_AGENT_GAME_NAME} (Bottle Beer Game)",
             "autonomy_suffix": "Bottle Beer Game",
             "customer_name": DEFAULT_CUSTOMER_NAME,
-            "group_description": DEFAULT_GROUP_DESCRIPTION,
+            "tenant_description": DEFAULT_TENANT_DESCRIPTION,
             "admin_username": DEFAULT_ADMIN_USERNAME,
             "admin_email": DEFAULT_ADMIN_EMAIL,
             "admin_full_name": DEFAULT_ADMIN_FULL_NAME,
@@ -4811,7 +4811,7 @@ def seed_default_data(
         customer, _ = ensure_customer_with_admin(
             session,
             customer_name=spec.get("customer_name") or spec["config_name"],
-            group_description=spec.get("group_description") or f"{spec['config_name']} customer",
+            tenant_description=spec.get("tenant_description") or f"{spec['config_name']} customer",
             admin_username=spec.get("admin_username") or f"{slug}_admin",
             admin_email=spec.get("admin_email") or f"{slug}_admin@autonomy.ai",
             admin_full_name=spec.get("admin_full_name") or f"{spec['config_name']} Administrator",
@@ -4966,7 +4966,7 @@ def seed_default_data(
             complex_customer, _ = ensure_customer_with_admin(
                 session,
                 customer_name=COMPLEX_CUSTOMER_NAME,
-                group_description=COMPLEX_GROUP_DESCRIPTION,
+                tenant_description=COMPLEX_TENANT_DESCRIPTION,
                 admin_username=COMPLEX_ADMIN_USERNAME,
                 admin_email=COMPLEX_ADMIN_EMAIL,
                 admin_full_name=COMPLEX_ADMIN_FULL_NAME,

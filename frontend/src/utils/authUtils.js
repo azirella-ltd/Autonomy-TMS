@@ -61,8 +61,7 @@ export const getUserType = (user) => {
     return "systemadmin";
   }
   if (
-    normalizedEmail === "tenantadmin@autonomy.ai" ||
-    normalizedEmail === "groupadmin@autonomy.ai"
+    normalizedEmail === "tenantadmin@autonomy.ai"
   ) {
     return "tenantadmin";
   }

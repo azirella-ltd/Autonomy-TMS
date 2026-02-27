@@ -217,7 +217,7 @@ const SANKEY_COLORS = {
   text: { secondary: '#6b7280' },
 };
 
-const SupplyChainConfigSankey = ({ restrictToGroupId = null }) => {
+const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
   const [configOptions, setConfigOptions] = useState([]);
   const [selectedConfigId, setSelectedConfigId] = useState(null);
   const [configsLoading, setConfigsLoading] = useState(true);
@@ -490,18 +490,18 @@ const SupplyChainConfigSankey = ({ restrictToGroupId = null }) => {
     try {
       setConfigsLoading(true);
       const data = await getSupplyChainConfigs();
-      const targetGroupId =
-        restrictToGroupId !== null && restrictToGroupId !== undefined
-          ? String(restrictToGroupId)
+      const targetTenantId =
+        restrictToTenantId !== null && restrictToTenantId !== undefined
+          ? String(restrictToTenantId)
           : null;
 
       const filtered = Array.isArray(data)
         ? data.filter((cfg) => {
-            if (targetGroupId === null) return true;
+            if (targetTenantId === null) return true;
             if (cfg?.tenant_id === undefined || cfg?.tenant_id === null) {
               return false;
             }
-            return String(cfg.tenant_id) === targetGroupId;
+            return String(cfg.tenant_id) === targetTenantId;
           })
         : [];
 
@@ -520,7 +520,7 @@ const SupplyChainConfigSankey = ({ restrictToGroupId = null }) => {
     } finally {
       setConfigsLoading(false);
     }
-  }, [restrictToGroupId]);
+  }, [restrictToTenantId]);
 
   useEffect(() => {
     fetchConfigs();
@@ -2557,7 +2557,7 @@ const SupplyChainConfigSankey = ({ restrictToGroupId = null }) => {
 };
 
 SupplyChainConfigSankey.propTypes = {
-  restrictToGroupId: PropTypes.number,
+  restrictToTenantId: PropTypes.number,
 };
 
 export default SupplyChainConfigSankey;

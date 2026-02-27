@@ -73,8 +73,8 @@ async def _index_config_to_rag(config_id: int, tenant_id: int) -> None:
         from app.db.kb_session import get_kb_session
         from app.services.sc_config_indexer import ScConfigIndexer
 
-        async with get_kb_session() as db:
-            indexer = ScConfigIndexer(db=db, tenant_id=tenant_id)
+        async with get_kb_session() as kb_db:
+            indexer = ScConfigIndexer(kb_db=kb_db, tenant_id=tenant_id)
             result = await indexer.index_config(config_id)
             logger.info(f"RAG indexed config {config_id}: {result.get('status', 'ok')}")
     except Exception as e:
@@ -87,8 +87,8 @@ async def _delete_config_from_rag(config_id: int, tenant_id: int) -> None:
         from app.db.kb_session import get_kb_session
         from app.services.sc_config_indexer import ScConfigIndexer
 
-        async with get_kb_session() as db:
-            indexer = ScConfigIndexer(db=db, tenant_id=tenant_id)
+        async with get_kb_session() as kb_db:
+            indexer = ScConfigIndexer(kb_db=kb_db, tenant_id=tenant_id)
             deleted = await indexer.delete_config_docs(config_id)
             logger.info(f"RAG deleted {deleted} doc(s) for config {config_id}")
     except Exception as e:

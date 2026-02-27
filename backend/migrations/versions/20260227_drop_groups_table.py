@@ -1,26 +1,19 @@
-"""Drop legacy groups table and consolidate on tenants.
+"""Consolidate 7 groups into 3 tenants and drop legacy groups table.
 
-The 'groups' table was the original organizational boundary table
-(created in 20240912120000). It was superseded by the Tenant model
-which maps to 'tenants' (created in 20260116_tenancy).
+Merges organizational groups into 3 canonical tenants:
+  1. The Beer Game (groups 1, 3, 4) — admin: tbg_admin@autonomy.com
+  2. Complex SC (group 2)           — admin: complex_sc_admin@autonomy.com
+  3. Food Distributor (groups 12, 13, 14) — admin: admin@distdemo.com
 
-Previous sessions already:
-- Renamed group_id → tenant_id across 60+ tables via ALTER
-- Updated all SQLAlchemy models to use ForeignKey("tenants.id")
-- Updated all code to reference Tenant / tenant_id
-
-This migration cleans up what remains in the DB:
-1. Drop tenants.customer_id (bridging FK to groups.id)
-2. Drop stale FK constraints that still reference groups
-3. Drop the groups table itself
-4. Rename group_mode_enum → tenant_mode_enum (PostgreSQL only)
+Then retargets all 69 FK constraints from groups → tenants, drops
+users.group_id, sso_providers.default_group_id, tenants.tenant_id (legacy),
+and finally drops the groups table.
 
 Fully idempotent — safe to run even if parts were already applied.
 
 Revision ID: 20260227_drop_groups
 Revises: 20260227_merge_heads
 Create Date: 2026-02-27 00:00:00.000000
-
 """
 from alembic import op
 import sqlalchemy as sa
@@ -30,203 +23,340 @@ down_revision = '20260227_merge_heads'
 branch_labels = None
 depends_on = None
 
-
-# --------------------------------------------------------------------------- #
-# FK constraints created by 20240912120000 that reference groups.id
-# Format: (constraint_name, table_name)
-# --------------------------------------------------------------------------- #
-LEGACY_FK_CONSTRAINTS = [
-    ('fk_users_group', 'users'),
-    ('fk_scc_group', 'supply_chain_configs'),
-    ('fk_games_group', 'games'),
-    ('fk_games_group', 'scenarios'),       # table may have been renamed
-]
+# Groups → Tenant mapping
+# Groups 1, 3, 4 → Tenant 1 (The Beer Game)
+# Group 2 → Tenant 2 (Complex SC)
+# Groups 12, 13, 14 → Tenant 3 (Food Distributor)
+CONSOLIDATION_MAP = {
+    3: 1,   # Three FG TBG → The Beer Game
+    4: 1,   # Variable TBG → The Beer Game
+    12: 3,  # Food Distributor Learning → Food Distributor
+    13: 3,  # Food Distributor → Food Distributor
+    14: 3,  # Food Dist → Food Distributor
+}
+# Groups 1 and 2 keep their IDs (1 → tenant 1, 2 → tenant 2)
 
 
 def _is_postgresql():
-    """Detect PostgreSQL dialect."""
     return op.get_bind().dialect.name == 'postgresql'
 
 
 def _table_exists(table_name):
-    """Check whether a table exists in the current database."""
     conn = op.get_bind()
     if _is_postgresql():
-        result = conn.execute(
-            sa.text(
-                "SELECT EXISTS ("
-                "  SELECT 1 FROM information_schema.tables "
-                "  WHERE table_schema = 'public' AND table_name = :tbl"
-                ")"
-            ),
-            {"tbl": table_name},
-        )
+        result = conn.execute(sa.text(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = :tbl)"
+        ), {"tbl": table_name})
         return result.scalar()
-    else:
-        # SQLite
-        result = conn.execute(
-            sa.text(
-                "SELECT COUNT(*) FROM sqlite_master "
-                "WHERE type='table' AND name = :tbl"
-            ),
-            {"tbl": table_name},
-        )
-        return result.scalar() > 0
+    result = conn.execute(sa.text(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = :tbl"
+    ), {"tbl": table_name})
+    return result.scalar() > 0
 
 
 def _column_exists(table_name, column_name):
-    """Check whether a column exists on a table."""
     conn = op.get_bind()
     if _is_postgresql():
-        result = conn.execute(
-            sa.text(
-                "SELECT EXISTS ("
-                "  SELECT 1 FROM information_schema.columns "
-                "  WHERE table_schema = 'public' "
-                "    AND table_name = :tbl AND column_name = :col"
-                ")"
-            ),
-            {"tbl": table_name, "col": column_name},
-        )
+        result = conn.execute(sa.text(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = :tbl AND column_name = :col)"
+        ), {"tbl": table_name, "col": column_name})
         return result.scalar()
-    else:
-        result = conn.execute(sa.text(f"PRAGMA table_info({table_name})"))
-        return any(row[1] == column_name for row in result)
-
-
-def _constraint_exists(constraint_name):
-    """Check whether a named constraint exists (PostgreSQL only)."""
-    if not _is_postgresql():
-        return False
-    conn = op.get_bind()
-    result = conn.execute(
-        sa.text(
-            "SELECT EXISTS ("
-            "  SELECT 1 FROM information_schema.table_constraints "
-            "  WHERE constraint_schema = 'public' "
-            "    AND constraint_name = :name"
-            ")"
-        ),
-        {"name": constraint_name},
-    )
-    return result.scalar()
+    result = conn.execute(sa.text(f"PRAGMA table_info({table_name})"))
+    return any(row[1] == column_name for row in result)
 
 
 def _enum_exists(enum_name):
-    """Check whether a PostgreSQL enum type exists."""
     if not _is_postgresql():
         return False
     conn = op.get_bind()
-    result = conn.execute(
-        sa.text(
-            "SELECT EXISTS ("
-            "  SELECT 1 FROM pg_type WHERE typname = :name"
-            ")"
-        ),
-        {"name": enum_name},
-    )
+    result = conn.execute(sa.text(
+        "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = :name)"
+    ), {"name": enum_name})
     return result.scalar()
 
 
 def upgrade():
-    # ------------------------------------------------------------------ #
-    # 1. Drop tenants.customer_id (bridging FK back to groups)
-    # ------------------------------------------------------------------ #
-    if _table_exists('tenants') and _column_exists('tenants', 'customer_id'):
-        # Drop the FK constraint first (name may vary)
-        if _is_postgresql():
-            # Find and drop any FK on tenants.customer_id
-            conn = op.get_bind()
-            fk_rows = conn.execute(sa.text(
-                "SELECT tc.constraint_name "
-                "FROM information_schema.table_constraints tc "
-                "JOIN information_schema.key_column_usage kcu "
-                "  ON tc.constraint_name = kcu.constraint_name "
-                "WHERE tc.table_name = 'tenants' "
-                "  AND tc.constraint_type = 'FOREIGN KEY' "
-                "  AND kcu.column_name = 'customer_id'"
-            )).fetchall()
-            for row in fk_rows:
-                try:
-                    op.drop_constraint(row[0], 'tenants', type_='foreignkey')
-                except Exception:
-                    pass
+    conn = op.get_bind()
 
-        try:
-            op.drop_column('tenants', 'customer_id')
-        except Exception:
-            pass  # Column may already be gone
+    # ================================================================== #
+    # STEP 1: Create/update 3 tenants from 7 groups
+    # ================================================================== #
+    if _table_exists('groups'):
+        # Tenant 1: The Beer Game (primary group = 1)
+        admin_row = conn.execute(sa.text(
+            "SELECT id FROM users WHERE email = 'tbg_admin@autonomy.com'"
+        )).first()
+        admin_1 = admin_row[0] if admin_row else 1
 
-    # ------------------------------------------------------------------ #
-    # 2. Drop legacy FK constraints that reference groups.id
-    # ------------------------------------------------------------------ #
-    for constraint_name, table_name in LEGACY_FK_CONSTRAINTS:
-        if _table_exists(table_name) and _constraint_exists(constraint_name):
+        existing = conn.execute(sa.text("SELECT id FROM tenants WHERE id = 1")).first()
+        if existing:
+            conn.execute(sa.text(
+                "UPDATE tenants SET name = 'The Beer Game', slug = 'the-beer-game', "
+                "subdomain = 'the-beer-game', mode = 'learning' WHERE id = 1"
+            ))
+        else:
+            conn.execute(sa.text("""
+                INSERT INTO tenants (id, name, slug, subdomain, status, billing_plan,
+                    admin_id, mode, max_users, max_games, max_supply_chain_configs,
+                    max_storage_mb, current_user_count, current_game_count,
+                    current_config_count, current_storage_mb, created_at)
+                VALUES (1, 'The Beer Game', 'the-beer-game', 'the-beer-game', 'ACTIVE',
+                    'FREE', :admin_id, 'learning', 100, 50, 20, 5000, 0, 0, 0, 0, NOW())
+            """), {"admin_id": admin_1})
+
+        # Tenant 2: Complex SC (already exists as id=2, update name)
+        admin_row = conn.execute(sa.text(
+            "SELECT id FROM users WHERE email = 'complex_sc_admin@autonomy.com'"
+        )).first()
+        admin_2 = admin_row[0] if admin_row else 2
+
+        existing = conn.execute(sa.text("SELECT id FROM tenants WHERE id = 2")).first()
+        if existing:
+            conn.execute(sa.text(
+                "UPDATE tenants SET name = 'Complex SC', slug = 'complex-sc', "
+                "subdomain = 'complex-sc', admin_id = :admin_id, mode = 'production' WHERE id = 2"
+            ), {"admin_id": admin_2})
+        else:
+            conn.execute(sa.text("""
+                INSERT INTO tenants (id, name, slug, subdomain, status, billing_plan,
+                    admin_id, mode, max_users, max_games, max_supply_chain_configs,
+                    max_storage_mb, current_user_count, current_game_count,
+                    current_config_count, current_storage_mb, created_at)
+                VALUES (2, 'Complex SC', 'complex-sc', 'complex-sc', 'ACTIVE',
+                    'FREE', :admin_id, 'production', 100, 50, 20, 5000, 0, 0, 0, 0, NOW())
+            """), {"admin_id": admin_2})
+
+        # Tenant 3: Food Distributor (consolidating groups 12, 13, 14)
+        admin_row = conn.execute(sa.text(
+            "SELECT id FROM users WHERE email = 'admin@distdemo.com'"
+        )).first()
+        admin_3 = admin_row[0] if admin_row else 57
+
+        existing = conn.execute(sa.text("SELECT id FROM tenants WHERE id = 3")).first()
+        if existing:
+            conn.execute(sa.text(
+                "UPDATE tenants SET name = 'Food Distributor', slug = 'food-distributor', "
+                "subdomain = 'food-distributor', admin_id = :admin_id, mode = 'production' WHERE id = 3"
+            ), {"admin_id": admin_3})
+        else:
+            conn.execute(sa.text("""
+                INSERT INTO tenants (id, name, slug, subdomain, status, billing_plan,
+                    admin_id, mode, max_users, max_games, max_supply_chain_configs,
+                    max_storage_mb, current_user_count, current_game_count,
+                    current_config_count, current_storage_mb, created_at)
+                VALUES (3, 'Food Distributor', 'food-distributor', 'food-distributor', 'ACTIVE',
+                    'FREE', :admin_id, 'production', 100, 50, 20, 5000, 0, 0, 0, 0, NOW())
+            """), {"admin_id": admin_3})
+
+    # ================================================================== #
+    # STEP 2: Reassign users.tenant_id from users.group_id
+    # ================================================================== #
+    if _column_exists('users', 'group_id'):
+        # Direct mappings: group 1→tenant 1, group 2→tenant 2
+        conn.execute(sa.text("UPDATE users SET tenant_id = 1 WHERE group_id = 1"))
+        conn.execute(sa.text("UPDATE users SET tenant_id = 2 WHERE group_id = 2"))
+        # Consolidated: groups 3,4 → tenant 1
+        conn.execute(sa.text("UPDATE users SET tenant_id = 1 WHERE group_id IN (3, 4)"))
+        # Consolidated: groups 12,13,14 → tenant 3
+        conn.execute(sa.text("UPDATE users SET tenant_id = 3 WHERE group_id IN (12, 13, 14)"))
+        # Catch-all for systemadmin or any other users without tenant_id
+        conn.execute(sa.text(
+            "UPDATE users SET tenant_id = 1 WHERE tenant_id IS NULL AND group_id IS NOT NULL"
+        ))
+
+    # ================================================================== #
+    # STEP 3: Reassign tenant_id in ALL tables (consolidate group IDs)
+    # ================================================================== #
+    # Find all tables with tenant_id column that have data pointing to old group IDs
+    if _is_postgresql():
+        tenant_id_tables = conn.execute(sa.text(
+            "SELECT table_name FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND column_name = 'tenant_id' "
+            "AND table_name != 'users' AND table_name != 'tenants'"
+        )).fetchall()
+
+        for (table_name,) in tenant_id_tables:
+            # Groups 3, 4 → Tenant 1 (The Beer Game)
+            try:
+                conn.execute(sa.text(
+                    f'UPDATE "{table_name}" SET tenant_id = 1 WHERE tenant_id IN (3, 4)'
+                ))
+            except Exception:
+                pass
+            # Groups 12, 13, 14 → Tenant 3 (Food Distributor)
+            try:
+                conn.execute(sa.text(
+                    f'UPDATE "{table_name}" SET tenant_id = 3 WHERE tenant_id IN (12, 13, 14)'
+                ))
+            except Exception:
+                pass
+
+    # Also handle company_id columns that reference groups
+    for table_name in ['atp_projection', 'ctp_projection', 'inv_projection', 'order_promise']:
+        if _table_exists(table_name) and _column_exists(table_name, 'company_id'):
+            try:
+                conn.execute(sa.text(
+                    f'UPDATE "{table_name}" SET company_id = 1 WHERE company_id IN (3, 4)'
+                ))
+                conn.execute(sa.text(
+                    f'UPDATE "{table_name}" SET company_id = 3 WHERE company_id IN (12, 13, 14)'
+                ))
+            except Exception:
+                pass
+
+    # ================================================================== #
+    # STEP 4: Drop ALL FK constraints referencing groups table
+    # ================================================================== #
+    if _is_postgresql() and _table_exists('groups'):
+        fk_rows = conn.execute(sa.text(
+            "SELECT tc.constraint_name, tc.table_name "
+            "FROM information_schema.table_constraints tc "
+            "JOIN information_schema.constraint_column_usage ccu "
+            "  ON tc.constraint_name = ccu.constraint_name "
+            "WHERE ccu.table_name = 'groups' "
+            "  AND tc.constraint_type = 'FOREIGN KEY'"
+        )).fetchall()
+
+        for constraint_name, table_name in fk_rows:
             try:
                 op.drop_constraint(constraint_name, table_name, type_='foreignkey')
             except Exception:
                 pass
 
-    # Also drop any remaining customer_id columns that reference groups
-    # (users, supply_chain_configs, scenarios/games may still have these)
+    # ================================================================== #
+    # STEP 5: Drop legacy columns
+    # ================================================================== #
+
+    # Drop tenants.tenant_id (legacy self-referential bridging column)
+    if _column_exists('tenants', 'tenant_id'):
+        # Drop unique constraint first
+        try:
+            op.drop_constraint('tenants_group_id_key', 'tenants', type_='unique')
+        except Exception:
+            pass
+        try:
+            op.drop_column('tenants', 'tenant_id')
+        except Exception:
+            pass
+
+    # Drop tenants.customer_id if it exists
+    if _column_exists('tenants', 'customer_id'):
+        try:
+            op.drop_column('tenants', 'customer_id')
+        except Exception:
+            pass
+
+    # Rename sso_providers.default_group_id → default_tenant_id
+    if _table_exists('sso_providers') and _column_exists('sso_providers', 'default_group_id'):
+        try:
+            op.alter_column('sso_providers', 'default_group_id', new_column_name='default_tenant_id')
+        except Exception:
+            pass
+
+    # Drop users.group_id
+    if _column_exists('users', 'group_id'):
+        try:
+            op.drop_column('users', 'group_id')
+        except Exception:
+            pass
+
+    # Drop customer_id columns from core tables
     for table_name in ['users', 'supply_chain_configs', 'scenarios', 'games']:
         if _table_exists(table_name) and _column_exists(table_name, 'customer_id'):
-            # Drop FK first if it exists
-            if _is_postgresql():
-                conn = op.get_bind()
-                fk_rows = conn.execute(sa.text(
-                    "SELECT tc.constraint_name "
-                    "FROM information_schema.table_constraints tc "
-                    "JOIN information_schema.key_column_usage kcu "
-                    "  ON tc.constraint_name = kcu.constraint_name "
-                    "WHERE tc.table_name = :tbl "
-                    "  AND tc.constraint_type = 'FOREIGN KEY' "
-                    "  AND kcu.column_name = 'customer_id'"
-                ), {"tbl": table_name}).fetchall()
-                for row in fk_rows:
-                    try:
-                        op.drop_constraint(row[0], table_name, type_='foreignkey')
-                    except Exception:
-                        pass
-
             try:
                 op.drop_column(table_name, 'customer_id')
             except Exception:
-                pass  # Column may already be gone
+                pass
 
-    # ------------------------------------------------------------------ #
-    # 3. Drop the groups table
-    # ------------------------------------------------------------------ #
-    if _table_exists('groups'):
-        # Drop any remaining FK constraints that reference groups first
-        if _is_postgresql():
-            conn = op.get_bind()
-            referencing_fks = conn.execute(sa.text(
-                "SELECT tc.constraint_name, tc.table_name "
-                "FROM information_schema.table_constraints tc "
+    # ================================================================== #
+    # STEP 6: Create new FK constraints referencing tenants
+    # ================================================================== #
+    if _is_postgresql():
+        # Get all tables with tenant_id that need FK to tenants
+        tenant_id_tables = conn.execute(sa.text(
+            "SELECT table_name FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND column_name = 'tenant_id' "
+            "AND table_name != 'tenants'"
+        )).fetchall()
+
+        for (table_name,) in tenant_id_tables:
+            # Check if FK already exists pointing to tenants
+            existing_fk = conn.execute(sa.text(
+                "SELECT COUNT(*) FROM information_schema.table_constraints tc "
                 "JOIN information_schema.constraint_column_usage ccu "
                 "  ON tc.constraint_name = ccu.constraint_name "
-                "WHERE ccu.table_name = 'groups' "
-                "  AND tc.constraint_type = 'FOREIGN KEY'"
-            )).fetchall()
-            for fk_name, fk_table in referencing_fks:
+                "WHERE tc.table_name = :tbl AND tc.constraint_type = 'FOREIGN KEY' "
+                "  AND ccu.table_name = 'tenants'"
+            ), {"tbl": table_name}).scalar()
+
+            if existing_fk == 0:
+                fk_name = f"fk_{table_name}_tenant_id"
                 try:
-                    op.drop_constraint(fk_name, fk_table, type_='foreignkey')
+                    op.create_foreign_key(
+                        fk_name, table_name, 'tenants',
+                        ['tenant_id'], ['id'],
+                        ondelete='CASCADE'
+                    )
+                except Exception:
+                    pass  # Table might have orphan rows
+
+        # FK for company_id columns → tenants
+        for table_name in ['atp_projection', 'ctp_projection', 'inv_projection', 'order_promise']:
+            if _table_exists(table_name) and _column_exists(table_name, 'company_id'):
+                fk_name = f"fk_{table_name}_company_tenant"
+                try:
+                    op.create_foreign_key(
+                        fk_name, table_name, 'tenants',
+                        ['company_id'], ['id'],
+                        ondelete='CASCADE'
+                    )
                 except Exception:
                     pass
 
+        # FK for sso_providers.default_tenant_id → tenants
+        if _table_exists('sso_providers') and _column_exists('sso_providers', 'default_tenant_id'):
+            try:
+                op.create_foreign_key(
+                    'fk_sso_providers_default_tenant', 'sso_providers', 'tenants',
+                    ['default_tenant_id'], ['id'],
+                    ondelete='SET NULL'
+                )
+            except Exception:
+                pass
+
+    # ================================================================== #
+    # STEP 7: Drop the groups table
+    # ================================================================== #
+    if _table_exists('groups'):
         op.drop_table('groups')
 
-    # ------------------------------------------------------------------ #
-    # 4. Rename group_mode_enum → tenant_mode_enum (PostgreSQL only)
-    # ------------------------------------------------------------------ #
+    # ================================================================== #
+    # STEP 8: Clean up stale tenant rows and reset sequence
+    # ================================================================== #
+    # Delete any tenant rows with IDs that don't match our 3 canonical tenants
+    try:
+        conn.execute(sa.text("DELETE FROM tenants WHERE id NOT IN (1, 2, 3)"))
+    except Exception:
+        pass  # FK violations mean data still references them
+
+    # Reset sequence
+    if _is_postgresql():
+        try:
+            conn.execute(sa.text(
+                "SELECT setval('tenants_id_seq', (SELECT COALESCE(MAX(id), 1) FROM tenants))"
+            ))
+        except Exception:
+            pass
+
+    # ================================================================== #
+    # STEP 9: Rename group_mode_enum → tenant_mode_enum
+    # ================================================================== #
     if _is_postgresql():
         if _enum_exists('group_mode_enum') and not _enum_exists('tenant_mode_enum'):
             op.execute("ALTER TYPE group_mode_enum RENAME TO tenant_mode_enum")
         elif _enum_exists('group_mode_enum') and _enum_exists('tenant_mode_enum'):
-            # Both exist — tenant_mode_enum wins, drop the stale one
-            # First check if any column still uses group_mode_enum
-            conn = op.get_bind()
             usage = conn.execute(sa.text(
                 "SELECT COUNT(*) FROM information_schema.columns "
                 "WHERE udt_name = 'group_mode_enum'"
@@ -236,64 +366,9 @@ def upgrade():
 
 
 def downgrade():
-    # ------------------------------------------------------------------ #
-    # 4. Rename tenant_mode_enum back to group_mode_enum
-    # ------------------------------------------------------------------ #
-    if _is_postgresql():
-        if _enum_exists('tenant_mode_enum') and not _enum_exists('group_mode_enum'):
-            op.execute("ALTER TYPE tenant_mode_enum RENAME TO group_mode_enum")
-
-    # ------------------------------------------------------------------ #
-    # 3. Recreate groups table
-    # ------------------------------------------------------------------ #
-    if not _table_exists('groups'):
-        op.create_table(
-            'groups',
-            sa.Column('id', sa.Integer(), primary_key=True),
-            sa.Column('name', sa.String(length=100), nullable=False),
-            sa.Column('description', sa.Text(), nullable=True),
-            sa.Column('logo', sa.String(length=255), nullable=True),
-            sa.Column('admin_id', sa.Integer(), nullable=False),
-            sa.ForeignKeyConstraint(['admin_id'], ['users.id'], ondelete='CASCADE'),
-            sa.UniqueConstraint('admin_id'),
-        )
-
-        # Re-add mode columns
-        if _is_postgresql():
-            mode_enum = sa.Enum('training', 'production', name='group_mode_enum')
-            mode_enum.create(op.get_bind(), checkfirst=True)
-            clock_enum = sa.Enum('turn_based', 'timed', 'realtime', name='clock_mode_enum')
-            clock_enum.create(op.get_bind(), checkfirst=True)
-        op.add_column('groups', sa.Column('mode', sa.Enum('training', 'production', name='group_mode_enum'),
-                                          nullable=False, server_default='production'))
-        op.add_column('groups', sa.Column('clock_mode', sa.Enum('turn_based', 'timed', 'realtime', name='clock_mode_enum'),
-                                          nullable=True))
-        op.add_column('groups', sa.Column('round_duration_seconds', sa.Integer(), nullable=True))
-        op.add_column('groups', sa.Column('data_refresh_schedule', sa.String(100), nullable=True))
-        op.add_column('groups', sa.Column('last_data_import', sa.DateTime(), nullable=True))
-
-    # ------------------------------------------------------------------ #
-    # 2. Re-add customer_id FK columns to users, supply_chain_configs, games/scenarios
-    # ------------------------------------------------------------------ #
-    target_table = 'scenarios' if _table_exists('scenarios') else 'games'
-    for table_name in ['users', 'supply_chain_configs', target_table]:
-        if _table_exists(table_name) and not _column_exists(table_name, 'customer_id'):
-            op.add_column(table_name, sa.Column('customer_id', sa.Integer(), nullable=True))
-            try:
-                fk_name = {
-                    'users': 'fk_users_group',
-                    'supply_chain_configs': 'fk_scc_group',
-                }.get(table_name, f'fk_{table_name}_group')
-                op.create_foreign_key(fk_name, table_name, 'groups', ['customer_id'], ['id'], ondelete='CASCADE')
-            except Exception:
-                pass
-
-    # ------------------------------------------------------------------ #
-    # 1. Re-add tenants.customer_id bridging FK
-    # ------------------------------------------------------------------ #
-    if _table_exists('tenants') and not _column_exists('tenants', 'customer_id'):
-        op.add_column('tenants', sa.Column('customer_id', sa.Integer(), nullable=True))
-        try:
-            op.create_foreign_key(None, 'tenants', 'groups', ['customer_id'], ['id'])
-        except Exception:
-            pass
+    # This migration consolidates data — downgrade would need to recreate
+    # groups and re-split data, which is not feasible automatically.
+    raise NotImplementedError(
+        "Cannot downgrade: group consolidation into tenants is irreversible. "
+        "Restore from database backup if needed."
+    )

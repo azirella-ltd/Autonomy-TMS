@@ -228,7 +228,7 @@ export function AuthProvider({ children }) {
       return userType === 'systemadmin';
     }
 
-    if (normalized === 'tenantadmin' || normalized === 'groupadmin' || normalized === 'admin') {
+    if (normalized === 'tenantadmin' || normalized === 'admin') {
       return userType === 'tenantadmin' || userType === 'systemadmin';
     }
 

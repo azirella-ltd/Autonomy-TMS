@@ -145,7 +145,7 @@ const DashboardRouter = () => {
       }
 
       // TENANT_ADMIN without Powell role: Route based on tenant mode
-      if (user.user_type === 'TENANT_ADMIN' || user.user_type === 'GROUP_ADMIN') {
+      if (user.user_type === 'TENANT_ADMIN') {
         try {
           if (user.tenant_id) {
             const response = await api.get(`/tenants/${user.tenant_id}`);

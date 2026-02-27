@@ -416,7 +416,7 @@ Content-Type: application/json
   "user": {
     "id": 5,
     "email": "user@company.com",
-    "role": "GROUP_ADMIN",
+    "role": "TENANT_ADMIN",
     "customer_id": 1
   }
 }
@@ -784,7 +784,7 @@ socket.on('supply_plan_update', (data) => {
 
 **Role Hierarchy**:
 1. **SYSTEM_ADMIN**: Full access to all features and all customers
-2. **GROUP_ADMIN**: Admin access within their customer org
+2. **TENANT_ADMIN**: Admin access within their customer org
 3. **PLANNER**: Can create/approve supply plans within their customer org
 4. **PLAYER**: Can play scenarios, view dashboards (read-only planning)
 
@@ -802,8 +802,8 @@ socket.on('supply_plan_update', (data) => {
 - **view_games**: View games
 - **manage_games**: Create/manage games
 - **view_analytics**: View dashboards
-- **manage_users**: User management (GROUP_ADMIN+)
-- **manage_configs**: Supply chain configuration (GROUP_ADMIN+)
+- **manage_users**: User management (TENANT_ADMIN+)
+- **manage_configs**: Supply chain configuration (TENANT_ADMIN+)
 
 **Permission Checks**:
 ```python
@@ -823,7 +823,7 @@ async def approve_supply_plan(task_id: str, current_user: User = Depends(get_cur
 - Each customer represents a company/organization
 - Users belong to one customer
 - Data is scoped to customer (supply chain configs, scenarios, plans)
-- GROUP_ADMIN can only see their customer's data
+- TENANT_ADMIN can only see their customer's data
 - SYSTEM_ADMIN can see all customers
 
 **API Scoping**:

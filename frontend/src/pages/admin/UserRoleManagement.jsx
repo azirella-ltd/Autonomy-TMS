@@ -332,7 +332,7 @@ const UserRoleManagement = () => {
               <CardContent className="pt-4">
                 <p className="text-sm text-muted-foreground">Organization Admins</p>
                 <p className="text-3xl font-bold text-primary">
-                  {users.filter(u => u.user_type === 'TENANT_ADMIN' || u.user_type === 'GROUP_ADMIN').length}
+                  {users.filter(u => u.user_type === 'TENANT_ADMIN').length}
                 </p>
               </CardContent>
             </Card>
@@ -348,7 +348,7 @@ const UserRoleManagement = () => {
               <CardContent className="pt-4">
                 <p className="text-sm text-muted-foreground">Custom Roles</p>
                 <p className="text-3xl font-bold text-blue-600">
-                  {users.filter(u => !['TENANT_ADMIN', 'GROUP_ADMIN', 'USER', 'SYSTEM_ADMIN'].includes(u.user_type)).length}
+                  {users.filter(u => !['TENANT_ADMIN', 'USER', 'SYSTEM_ADMIN'].includes(u.user_type)).length}
                 </p>
               </CardContent>
             </Card>
@@ -379,7 +379,7 @@ const UserRoleManagement = () => {
                       </TableCell>
                       <TableCell>{user.email}</TableCell>
                       <TableCell>
-                        <Badge variant={(user.user_type === 'TENANT_ADMIN' || user.user_type === 'GROUP_ADMIN') ? 'default' : 'secondary'}>
+                        <Badge variant={user.user_type === 'TENANT_ADMIN' ? 'default' : 'secondary'}>
                           {getUserRoleLabel(user.user_type)}
                         </Badge>
                       </TableCell>

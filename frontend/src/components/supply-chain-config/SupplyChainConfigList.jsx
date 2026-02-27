@@ -47,7 +47,7 @@ import { getSupplyChainConfigs, trainSupplyChainConfig } from '../../services/su
 const SupplyChainConfigList = ({
   title = 'Supply Chain Configurations',
   basePath = '/supply-chain-config',
-  restrictToGroupId = null,
+  restrictToTenantId = null,
   enableTraining = false,
   readOnly = false,  // When true, hides create/edit/delete actions
 } = {}) => {

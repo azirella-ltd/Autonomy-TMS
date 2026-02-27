@@ -7,7 +7,7 @@ Provides REST API for:
 3. Data ingestion monitoring
 4. Insights and actions
 
-Accessible to Group Admins and authorized users.
+Accessible to Tenant Admins and authorized users.
 """
 
 import logging
@@ -305,7 +305,7 @@ async def list_connections(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all SAP connections for the group."""
+    """List all SAP connections for the tenant."""
     service = create_deployment_service(db, current_user.tenant_id)
     connections = await service.get_connections()
 
@@ -564,7 +564,7 @@ async def get_deployment_status(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get overall deployment status for the group."""
+    """Get overall deployment status for the tenant."""
     service = create_deployment_service(db, current_user.tenant_id)
     status = await service.get_deployment_status()
 
@@ -1398,7 +1398,7 @@ async def list_role_mappings(
     current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all role mapping rules for the current group."""
+    """List all role mapping rules for the current tenant."""
     from sqlalchemy import select as sa_select
 
     result = await db.execute(

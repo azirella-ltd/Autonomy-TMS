@@ -371,7 +371,7 @@ async def login(
     # Ensure CSRF cookie is present after login (used by frontend for POSTs including refresh-token)
     set_csrf_cookie(response)
 
-    # Attach group context for admins so frontend receives group assignments
+    # Attach tenant context for admins so frontend receives tenant assignments
     _normalize_tenant_admin_context(user)
 
     # Return access token and user info

@@ -59,7 +59,7 @@ async def assistant_chat(
     to provide contextual answers with source citations.
     Supports multi-turn conversations via conversation_id.
     """
-    tenant_id = getattr(current_user, "tenant_id", None)
+    tenant_id = current_user.tenant_id
     if not tenant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

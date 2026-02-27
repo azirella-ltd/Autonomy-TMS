@@ -61,7 +61,7 @@ const Navbar = () => {
   // Fetch tenant mode for TENANT_ADMIN users
   useEffect(() => {
     const fetchTenantMode = async () => {
-      if ((user?.user_type === 'TENANT_ADMIN' || user?.user_type === 'GROUP_ADMIN') && user?.tenant_id) {
+      if (user?.user_type === 'TENANT_ADMIN' && user?.tenant_id) {
         try {
           const response = await api.get(`/tenants/${user.tenant_id}`);
           setTenantMode(response.data.mode || 'learning');
@@ -642,7 +642,7 @@ const Navbar = () => {
                   {user?.name || user?.full_name || "User"}
                 </p>
                 <p className="text-xs text-muted-foreground leading-tight">
-                  {user?.powell_role ? user.powell_role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : (user?.user_type === 'systemadmin' ? 'System Admin' : (user?.user_type === 'tenantadmin' || user?.user_type === 'groupadmin') ? 'Organization Admin' : '')}
+                  {user?.powell_role ? user.powell_role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : (user?.user_type === 'systemadmin' ? 'System Admin' : user?.user_type === 'tenantadmin' ? 'Organization Admin' : '')}
                 </p>
               </div>
               {menuOpen ? (

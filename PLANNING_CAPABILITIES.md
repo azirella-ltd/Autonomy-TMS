@@ -639,7 +639,7 @@ The wizard creates a complete planning environment:
 
 | Entity Type | What Gets Created |
 |-------------|-------------------|
-| **Organization** | Group (company), admin user with GROUP_ADMIN role |
+| **Organization** | Tenant (company), admin user with TENANT_ADMIN role |
 | **Network** | Sites, transportation lanes, market supply/demand |
 | **Products** | Products (SKUs) with cost, price, and category assignments |
 | **Hierarchies** | Site hierarchy (Company→Region→Country→Site), Product hierarchy (Category→Family→Group→Product) |

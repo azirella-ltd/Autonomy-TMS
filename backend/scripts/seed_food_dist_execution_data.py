@@ -29,7 +29,7 @@ engine = create_engine(db_url)
 
 # ─── Constants ───────────────────────────────────────────────────────────────
 CONFIG_ID = 22
-GROUP_ID = 13
+TENANT_ID = 13
 COMPANY_ID = "FD_CORP_13"
 DC_SITE_ID = 256
 USER_ID = 60  # demo@distdemo.com
@@ -244,7 +244,7 @@ def seed_transfer_orders(conn):
             RETURNING id
         """), {
             "ton": to_number, "src": DC_SITE_ID, "dst": cust_id,
-            "cid": CONFIG_ID, "gid": GROUP_ID, "comp": COMPANY_ID,
+            "cid": CONFIG_ID, "gid": TENANT_ID, "comp": COMPANY_ID,
             "status": status, "od": order_date, "sd": ship_date, "edd": est_delivery,
             "asd": actual_ship, "add": actual_delivery,
             "mode": random.choice(["LTL", "FTL", "PARCEL", "REEFER"]),
@@ -456,7 +456,7 @@ def seed_project_orders(conn):
         """), {
             "pon": f"PROJ-{str(i+1).zfill(4)}", "pid": f"PRJ-FD-{str(i+1).zfill(3)}",
             "pname": name, "sid": str(DC_SITE_ID),
-            "cid": CONFIG_ID, "gid": GROUP_ID, "comp": COMPANY_ID,
+            "cid": CONFIG_ID, "gid": TENANT_ID, "comp": COMPANY_ID,
             "status": status, "od": order_date,
             "rsd": req_start, "rcd": req_complete,
             "psd": req_start, "pcd": req_complete,
@@ -581,7 +581,7 @@ def seed_maintenance_orders(conn):
             "mon": f"MO-{order_date.strftime('%Y%m%d')}-{str(i+1).zfill(4)}",
             "aid": eq_id, "aname": eq_name, "acat": eq_type,
             "sid": str(DC_SITE_ID),
-            "cid": CONFIG_ID, "gid": GROUP_ID, "comp": COMPANY_ID,
+            "cid": CONFIG_ID, "gid": TENANT_ID, "comp": COMPANY_ID,
             "mtype": mtype, "status": status,
             "priority": "URGENT" if mtype == "EMERGENCY" else random.choice(["NORMAL", "NORMAL", "HIGH"]),
             "od": order_date, "ssd": sched_start, "sed": sched_end,
@@ -716,7 +716,7 @@ def seed_turnaround_orders(conn):
             "tan": f"TA-{order_date.strftime('%Y%m%d')}-{str(i+1).zfill(4)}",
             "from_sid": str(cust_id), "to_sid": str(DC_SITE_ID),
             "refurb_sid": str(DC_SITE_ID) if ta_type == "REFURBISH" else None,
-            "cid": CONFIG_ID, "gid": GROUP_ID, "comp": COMPANY_ID,
+            "cid": CONFIG_ID, "gid": TENANT_ID, "comp": COMPANY_ID,
             "rrc": reason_code, "rrd": reason_desc, "tat": ta_type,
             "status": status, "od": order_date,
             "erd": order_date + timedelta(days=random.randint(5, 14)),

@@ -51,7 +51,7 @@ async def get_insights_service(
     if not current_user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User must belong to a group"
+            detail="User must belong to a tenant"
         )
     return create_insights_service(db, current_user.tenant_id, current_user)
 
@@ -381,7 +381,7 @@ async def record_action(
     if not current_user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User must belong to a group"
+            detail="User must belong to a tenant"
         )
 
     service = create_insights_service(db, current_user.tenant_id, current_user)

@@ -303,7 +303,7 @@ const CapabilityAwareNavbar = () => {
                         {user?.name || user?.full_name || user?.email || 'User'}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {user?.powell_role ? user.powell_role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : (user?.user_type === 'systemadmin' ? 'System Admin' : (user?.user_type === 'tenantadmin' || user?.user_type === 'groupadmin') ? 'Organization Admin' : '')}
+                        {user?.powell_role ? user.powell_role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : (user?.user_type === 'systemadmin' ? 'System Admin' : user?.user_type === 'tenantadmin' ? 'Organization Admin' : '')}
                       </p>
                     </div>
                     <ChevronDown className="h-4 w-4 text-muted-foreground" />

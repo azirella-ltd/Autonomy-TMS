@@ -18,7 +18,7 @@ def update_database():
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until DATETIME DEFAULT NULL",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret VARCHAR(255) DEFAULT NULL",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN DEFAULT FALSE",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS user_type ENUM('SYSTEM_ADMIN','GROUP_ADMIN','PLAYER') NOT NULL DEFAULT 'PLAYER'"
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS user_type ENUM('SYSTEM_ADMIN','TENANT_ADMIN','PLAYER') NOT NULL DEFAULT 'PLAYER'"
         ]
         
         for query in alter_queries:
@@ -33,7 +33,7 @@ def update_database():
         try:
             session.execute(text(
                 "UPDATE users SET user_type = CASE WHEN is_superuser = 1 THEN 'SYSTEM_ADMIN' ELSE 'PLAYER' END "
-                "WHERE user_type IS NULL OR user_type = '' OR user_type NOT IN ('SYSTEM_ADMIN','GROUP_ADMIN','PLAYER')"
+                "WHERE user_type IS NULL OR user_type = '' OR user_type NOT IN ('SYSTEM_ADMIN','TENANT_ADMIN','PLAYER')"
             ))
             session.commit()
             print("Backfilled user_type column on existing records")
