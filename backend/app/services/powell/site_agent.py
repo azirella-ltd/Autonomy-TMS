@@ -37,6 +37,7 @@ Key Principles:
 7. CDC monitor triggers out-of-cadence replanning
 """
 
+import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -118,10 +119,13 @@ class SiteAgentConfig:
     # Tenant isolation — required for tenant-scoped decision memory (RAG)
     tenant_id: Optional[int] = None
 
-    # Claude Skills — hybrid exception handler (feature-flagged, OFF by default)
+    # Claude Skills — hybrid exception handler
     # When True, TRMs remain the PRIMARY path; Skills handle only exceptions
     # where conformal prediction indicates low confidence (wide intervals).
-    use_claude_skills: bool = False
+    # Reads from USE_CLAUDE_SKILLS env var at construction time.
+    use_claude_skills: bool = field(
+        default_factory=lambda: os.getenv("USE_CLAUDE_SKILLS", "false").lower() in ("true", "1", "yes")
+    )
 
     # Conformal prediction threshold for Skills escalation.
     # When TRM confidence < this threshold (or CDT risk_bound > 1 - this),

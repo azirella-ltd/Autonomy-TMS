@@ -324,19 +324,19 @@ reseed-db:
 	$(MAKE) --no-print-directory db-bootstrap; \
 	echo "\n[✓] Database reseeded."
 
-seed-default-group:
+seed-default-tenant:
 	@$(MAKE) --no-print-directory db-bootstrap
 
 seed-demo-configs:
-	@echo "\n[+] Seeding default demo group and configs..."; \
+	@echo "\n[+] Seeding default demo tenant and configs..."; \
 	$(DOCKER_COMPOSE_CMD) exec backend python3 scripts/seed_demo_configs.py $(SEED_ARGS)
 
 seed-three-fg-demo:
-	@echo "\n[+] Seeding Three FG demo group..."; \
+	@echo "\n[+] Seeding Three FG demo tenant..."; \
 	$(DOCKER_COMPOSE_CMD) exec backend python3 scripts/seed_three_fg_demo.py $(SEED_ARGS)
 
 seed-variable-demo:
-	@echo "\n[+] Seeding Variable demo group..."; \
+	@echo "\n[+] Seeding Variable demo tenant..."; \
 	$(DOCKER_COMPOSE_CMD) exec backend python3 scripts/seed_variable_demo.py $(SEED_ARGS)
 
 all_demo_configs:

@@ -10,7 +10,7 @@ from app.db.session import sync_engine
 from app.models.scenario import Scenario, ScenarioStatus
 from app.services.supply_chain_config_service import SupplyChainConfigService
 from scripts.seed_default_tenant import (
-    ensure_customer,
+    ensure_tenant,
     ensure_supply_chain_config,
     ensure_ai_agents,
     configure_human_players_for_game,
@@ -47,7 +47,7 @@ SHOWCASE_GAMES = [
 def ensure_agent_game(
     session,
     service: SupplyChainConfigService,
-    customer,
+    tenant,
     config,
     *,
     name: str,
@@ -58,7 +58,7 @@ def ensure_agent_game(
 ) -> None:
     scenario = (
         session.query(Scenario)
-        .filter(Scenario.customer_id == customer.id, Scenario.name == name)
+        .filter(Scenario.customer_id == tenant.id, Scenario.name == name)
         .first()
     )
     is_human = strategy == "human"
@@ -76,8 +76,8 @@ def ensure_agent_game(
         scenario = Scenario(
             name=name,
             description=description,
-            created_by=customer.admin_id,
-            customer_id=customer.id,
+            created_by=tenant.admin_id,
+            customer_id=tenant.id,
             status=ScenarioStatus.CREATED,
             max_rounds=base_config.get("max_rounds", 40),
             config=base_config,
@@ -100,7 +100,7 @@ def ensure_agent_game(
         scenario.status = ScenarioStatus.CREATED
 
     if is_human:
-        configure_human_players_for_game(session, customer, scenario)
+        configure_human_players_for_game(session, tenant, scenario)
         # Ensure autonomy strategy fields are cleared for human-controlled scenarios.
         if isinstance(scenario.config, str):
             try:
@@ -129,15 +129,15 @@ def main() -> None:
     Session = sessionmaker(bind=sync_engine, autoflush=False, autocommit=False)
     session = Session()
     try:
-        customer, _ = ensure_customer(session)
-        config = ensure_supply_chain_config(session, customer)
+        tenant, _ = ensure_tenant(session)
+        config = ensure_supply_chain_config(session, tenant)
         service = SupplyChainConfigService(session)
 
         for spec in SHOWCASE_GAMES:
             ensure_agent_game(
                 session,
                 service,
-                customer,
+                tenant,
                 config,
                 name=spec["name"],
                 description=spec["description"],

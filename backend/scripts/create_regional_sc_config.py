@@ -480,13 +480,13 @@ def _configure_demand(
 def ensure_multi_region_config(
     session: Session,
     *,
-    customer: Tenant,
+    tenant: Tenant,
     name: str,
     description: Optional[str] = None,
 ) -> Tuple[SupplyChainConfig, bool]:
     existing = (
         session.query(SupplyChainConfig)
-        .filter(SupplyChainConfig.customer_id == customer.id, SupplyChainConfig.name == name)
+        .filter(SupplyChainConfig.tenant_id == tenant.id, SupplyChainConfig.name == name)
         .first()
     )
     if existing:
@@ -513,8 +513,8 @@ def ensure_multi_region_config(
     config = SupplyChainConfig(
         name=name,
         description=description or "Multi-region, multi-echelon supply chain",
-        customer_id=customer.id,
-        created_by=customer.admin_id,
+        tenant_id=tenant.id,
+        created_by=tenant.admin_id,
         is_active=True,
         time_bucket=TimeBucket.WEEK,
     )
@@ -579,18 +579,18 @@ def main() -> None:
     SessionLocal = sessionmaker(bind=engine)
 
     with SessionLocal() as session:
-        customer = session.query(Tenant).filter(Tenant.name == args.tenant_name).first()
-        if customer is None:
+        tenant = session.query(Tenant).filter(Tenant.name == args.tenant_name).first()
+        if tenant is None:
             raise RuntimeError(f"Tenant '{args.tenant_name}' not found.")
         config, created = ensure_multi_region_config(
             session,
-            customer=customer,
+            tenant=tenant,
             name=args.config_name,
             description=args.description,
         )
         session.commit()
         if created:
-            print(f"[success] Created configuration '{config.name}' (id={config.id}) for customer '{customer.name}'.")
+            print(f"[success] Created configuration '{config.name}' (id={config.id}) for tenant '{tenant.name}'.")
         else:
             print(f"[info] Configuration '{config.name}' already present (id={config.id}).")
 

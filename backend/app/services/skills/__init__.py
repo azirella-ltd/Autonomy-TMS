@@ -1,23 +1,42 @@
 """
 Claude Skills Framework
 
-Replaces TRM neural networks with Claude-powered decision skills.
-Each skill encodes heuristic rules as SKILL.md prompts, with RAG decision
-memory providing few-shot context from past decisions.
+Hybrid TRM + Claude Skills architecture (LeCun JEPA pattern):
+- TRMs = Actor (fast policy execution, ~95% of decisions)
+- Claude Skills = Configurator (exception handling, ~5% of decisions)
 
 Architecture:
-    Deterministic Engine (unchanged)
+    Deterministic Engine (always runs first)
+        -> TRM adjustments (fast, <10ms, learned exceptions)
+        -> Conformal Prediction Router:
+            High confidence -> Accept TRM result
+            Low confidence -> Escalate to Claude Skills
         -> Skill Orchestrator (routes to Claude or cache)
             -> RAG Decision Memory (find similar past decisions)
             -> Claude API (Haiku for calculation, Sonnet for judgment)
         -> Fallback: engine-only result if skill fails
 
-Feature flag: USE_CLAUDE_SKILLS=false (off by default)
+Controlled by USE_CLAUDE_SKILLS env var (read by SiteAgentConfig).
 """
 
-from .base_skill import SkillDefinition, SkillResult, SkillError
+from .base_skill import SkillDefinition, SkillResult, SkillError, SKILL_REGISTRY
 from .skill_orchestrator import SkillOrchestrator
 from .claude_client import ClaudeClient
+
+# Import all skill subpackages to trigger registration
+from . import (  # noqa: F401
+    atp_executor,
+    forecast_adjustment,
+    inventory_buffer,
+    inventory_rebalancing,
+    maintenance_scheduling,
+    mo_execution,
+    order_tracking,
+    po_creation,
+    quality_disposition,
+    subcontracting,
+    to_execution,
+)
 
 __all__ = [
     "SkillDefinition",
@@ -25,4 +44,5 @@ __all__ = [
     "SkillError",
     "SkillOrchestrator",
     "ClaudeClient",
+    "SKILL_REGISTRY",
 ]
