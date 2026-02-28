@@ -32,7 +32,7 @@ make db-bootstrap
 
 ### Default Credentials
 - Email: systemadmin@autonomy.ai
-- Password: Autonomy@2025
+- Password: Autonomy@2026
 
 ## 3. Create Your First Game
 

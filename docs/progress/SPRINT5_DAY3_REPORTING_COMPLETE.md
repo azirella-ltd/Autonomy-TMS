@@ -708,7 +708,7 @@ curl http://localhost:8000/api/v1/reports/health
 # Login first
 curl -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  -d 'username=systemadmin@autonomy.ai&password=Autonomy@2025' \
+  -d 'username=systemadmin@autonomy.ai&password=Autonomy@2026' \
   -c /tmp/cookies.txt
 
 # Get game report

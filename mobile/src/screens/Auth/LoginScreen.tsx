@@ -170,7 +170,7 @@ export default function LoginScreen({ navigation }: any) {
           <View style={styles.demoHint}>
             <Text style={styles.demoText}>Demo Account:</Text>
             <Text style={styles.demoText}>systemadmin@autonomy.ai</Text>
-            <Text style={styles.demoText}>Autonomy@2025</Text>
+            <Text style={styles.demoText}>Autonomy@2026</Text>
           </View>
         </View>
       </ScrollView>

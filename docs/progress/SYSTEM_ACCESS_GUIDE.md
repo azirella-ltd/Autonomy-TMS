@@ -48,7 +48,7 @@
 - **Total Users**: 75 accounts
 - **System/Group Admins**: 5 accounts
 - **Players**: 70 accounts
-- **Default Password**: `Autonomy@2025` (all accounts)
+- **Default Password**: `Autonomy@2026` (all accounts)
 
 ---
 
@@ -57,7 +57,7 @@
 ### 1. System Administrator (RECOMMENDED)
 ```
 Email:    systemadmin@autonomy.ai
-Password: Autonomy@2025
+Password: Autonomy@2026
 Role:     PLAYER (with admin capabilities)
 Access:   Full system access
 ```
@@ -75,7 +75,7 @@ Access:   Full system access
 ### 2. Default TBG Administrator
 ```
 Email:    tbg_admin@autonomy.ai
-Password: Autonomy@2025
+Password: Autonomy@2026
 Role:     GROUP_ADMIN
 Group:    Default TBG (Classic Beer Game)
 ```
@@ -83,7 +83,7 @@ Group:    Default TBG (Classic Beer Game)
 ### 3. Complex Supply Chain Administrator
 ```
 Email:    complex_sc_admin@autonomy.ai
-Password: Autonomy@2025
+Password: Autonomy@2026
 Role:     GROUP_ADMIN
 Group:    Complex Supply Chain
 ```
@@ -91,7 +91,7 @@ Group:    Complex Supply Chain
 ### 4. Three Finished Goods TBG Administrator
 ```
 Email:    ThreeTBG_admin@autonomy.ai
-Password: Autonomy@2025
+Password: Autonomy@2026
 Role:     GROUP_ADMIN
 Group:    Three FG TBG
 ```
@@ -99,7 +99,7 @@ Group:    Three FG TBG
 ### 5. Variable TBG Administrator
 ```
 Email:    VarTBG_admin@autonomy.ai
-Password: Autonomy@2025
+Password: Autonomy@2026
 Role:     GROUP_ADMIN
 Group:    Variable TBG
 ```
@@ -109,7 +109,7 @@ Group:    Variable TBG
 ## 🎮 Standard Beer Game Players
 
 ### Classic 4-Echelon Supply Chain
-All passwords: `Autonomy@2025`
+All passwords: `Autonomy@2026`
 
 | Role | Email | Description |
 |------|-------|-------------|
@@ -193,7 +193,7 @@ tier1_b01@autonomy.ai through tier1_b08@autonomy.ai
 tier1_c01@autonomy.ai through tier1_c10@autonomy.ai
 ```
 
-**All Complex SC Players**: Password is `Autonomy@2025`
+**All Complex SC Players**: Password is `Autonomy@2026`
 
 ---
 
@@ -206,7 +206,7 @@ tier1_c01@autonomy.ai through tier1_c10@autonomy.ai
 ### Step 2: Login as System Administrator
 ```
 Email:    systemadmin@autonomy.ai
-Password: Autonomy@2025
+Password: Autonomy@2026
 ```
 
 ### Step 3: Explore the Dashboard
@@ -495,7 +495,7 @@ tensorboard --logdir logs/rl
 ## 🐛 Troubleshooting
 
 ### Cannot Login
-- **Check password**: Default is `Autonomy@2025`
+- **Check password**: Default is `Autonomy@2026`
 - **Check email format**: Must include `@autonomy.ai`
 - **Reset password**: Use `make reset-admin`
 
@@ -666,7 +666,7 @@ Before presenting to stakeholders:
 - ✅ Production-ready infrastructure
 
 **Access Now**: http://localhost:8088
-**Login**: `systemadmin@autonomy.ai` / `Autonomy@2025`
+**Login**: `systemadmin@autonomy.ai` / `Autonomy@2026`
 
 ---
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script to update all user passwords to 'Autonomy@2025'
+Script to update all user passwords to 'Autonomy@2026'
 """
 import asyncio
 import sys
@@ -33,7 +33,7 @@ async def update_passwords():
             # Update each user's password
             updated_count = 0
             for user in users:
-                user.hashed_password = pwd_context.hash("Autonomy@2025")
+                user.hashed_password = pwd_context.hash("Autonomy@2026")
                 session.add(user)
                 updated_count += 1
                 

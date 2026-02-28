@@ -52,10 +52,10 @@ python scripts/demo_powell_dashboards.py --seed
 
 | User | Email | Password | Access |
 |------|-------|----------|--------|
-| **Demo (All Roles)** | demo@distdemo.com | Autonomy@2025 | All dashboards |
-| SC_VP | scvp@distdemo.com | Autonomy@2025 | Executive Dashboard only |
-| SOP_DIRECTOR | sopdir@distdemo.com | Autonomy@2025 | S&OP Worklist only |
-| MPS_MANAGER | mpsmanager@distdemo.com | Autonomy@2025 | Agent Decisions only |
+| **Demo (All Roles)** | demo@distdemo.com | Autonomy@2026 | All dashboards |
+| SC_VP | scvp@distdemo.com | Autonomy@2026 | Executive Dashboard only |
+| SOP_DIRECTOR | sopdir@distdemo.com | Autonomy@2026 | S&OP Worklist only |
+| MPS_MANAGER | mpsmanager@distdemo.com | Autonomy@2026 | Agent Decisions only |
 
 **Recommendation:** Use `demo@distdemo.com` for demos to avoid login/logout.
 

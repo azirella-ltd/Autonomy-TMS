@@ -23,7 +23,7 @@ DEFAULT_TENANT_LOGO = "/autonomy_logo.svg"
 DEFAULT_ADMIN_USERNAME = "tenantadmin"
 DEFAULT_ADMIN_EMAIL = "tenantadmin@autonomy.ai"
 DEFAULT_ADMIN_FULL_NAME = "Tenant Administrator"
-DEFAULT_ADMIN_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")
+DEFAULT_ADMIN_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2026")
 
 # Backward compatibility aliases
 DEFAULT_CUSTOMER_NAME = DEFAULT_TENANT_NAME

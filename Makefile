@@ -116,7 +116,7 @@ up:
 	if [ "$(FORCE_GPU)" = "1" ]; then mode_label="GPU"; fi; \
 	echo "\n[✓] Local development server started ($${mode_label} mode)."; \
 	echo "   URL:     http://$(HOST):8088"; \
-	echo "   SystemAdmin: systemadmin@autonomy.ai / Autonomy@2025"; \
+	echo "   SystemAdmin: systemadmin@autonomy.ai / Autonomy@2026"; \
 	if [ "$(FORCE_GPU)" = "1" ]; then \
 		echo "   GPU:     $$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader 2>/dev/null || echo 'No GPU detected')"; \
 	fi
@@ -139,14 +139,14 @@ up-dev:
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.dev.yml up -d proxy frontend backend db create-users; \
 	echo "\n[✓] Local development server started with dev overrides (CPU mode)."; \
 	echo "   URL:     http://$(HOST):8088"; \
-	echo "   SystemAdmin: systemadmin@autonomy.ai / Autonomy@2025"
+	echo "   SystemAdmin: systemadmin@autonomy.ai / Autonomy@2026"
 
 up-remote:
 	@echo "\n[+] Building and starting full system for remote access..."; \
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.dev.yml up -d --build proxy frontend backend db create-users; \
 	echo "\n[✓] Remote server started."; \
 	echo "   URL:     http://$(REMOTE_HOST):8088"; \
-	echo "   SystemAdmin: systemadmin@autonomy.ai / Autonomy@2025"; \
+	echo "   SystemAdmin: systemadmin@autonomy.ai / Autonomy@2026"; \
 	echo "\n   For local development, use: make up-dev"
 
 up-tls:
@@ -154,7 +154,7 @@ up-tls:
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.dev.yml --profile tls up -d --build frontend backend db proxy-tls create-users; \
 	echo "\n[✓] Local HTTPS server started (self-signed)."; \
 	echo "   URL:     https://$(HOST):8443"; \
-	echo "   SystemAdmin: systemadmin@autonomy.ai / Autonomy@2025"; \
+	echo "   SystemAdmin: systemadmin@autonomy.ai / Autonomy@2026"; \
 	echo "\n   For remote HTTPS access, use: make up-remote-tls"
 
 up-remote-tls:
@@ -162,13 +162,13 @@ up-remote-tls:
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.dev.yml --profile tls up -d --build frontend backend db proxy-tls create-users; \
 	echo "\n[✓] Remote HTTPS server started (self-signed)."; \
 	echo "   URL:     https://$(REMOTE_HOST):8443"; \
-	echo "   SystemAdmin: systemadmin@autonomy.ai / Autonomy@2025"
+	echo "   SystemAdmin: systemadmin@autonomy.ai / Autonomy@2026"
 
 up-tls-only:
 	@echo "\n[+] Starting TLS-only proxy (no HTTP proxy on 8088)..."; \
 	$(DOCKER_COMPOSE_CMD) -f docker-compose.yml -f docker-compose.dev.yml --profile tls up -d --build frontend backend db proxy-tls create-users; \
 	echo "\n[✓] Started. Open https://172.29.20.187:8443 in your browser (self-signed)."; \
-	echo "   SystemAdmin login: systemadmin@autonomy.ai / Autonomy@2025"
+	echo "   SystemAdmin login: systemadmin@autonomy.ai / Autonomy@2026"
 
 rebuild-frontend:
 	@echo "\n[+] Rebuilding frontend image with dev overrides..."; \
@@ -345,7 +345,7 @@ all_demo_configs:
 	@$(MAKE) --no-print-directory seed-variable-demo SEED_ARGS="$(SEED_ARGS)"
 
 reset-admin:
-	@echo "\n[+] Resetting superadmin password to Autonomy@2025..."; \
+	@echo "\n[+] Resetting superadmin password to Autonomy@2026..."; \
 	$(DOCKER_COMPOSE_CMD) exec backend python scripts/reset_admin_password.py
 
 setup-default-env:
@@ -356,7 +356,7 @@ proxy-url:
 	@echo "Current host: $(HOST) (set with HOST=ip make ...)"; \
 	echo "HTTP:  http://$(HOST):8088"; \
 	echo "HTTPS: https://$(HOST):8443 (enable with: make up-tls)"; \
-	echo "Login: systemadmin@autonomy.ai / Autonomy@2025"; \
+	echo "Login: systemadmin@autonomy.ai / Autonomy@2026"; \
 	echo "To change host: HOST=your-ip make ..."
 
 help:
@@ -395,7 +395,7 @@ help:
 	echo "  make proxy-recreate - force-rebuild the proxy container without touching deps"; \
 	echo "  make proxy-logs    - tail proxy logs"; \
 	echo "  make seed          - run user seeder (system administrator user)"; \
-	echo "  make reset-admin   - reset system administrator password to Autonomy@2025"; \
+	echo "  make reset-admin   - reset system administrator password to Autonomy@2026"; \
 	echo "  make proxy-url     - print URLs and login info"; \
         echo "  make init-env      - set up .env from template or host-specific file"; \
         echo "  make llm-check     - test LLM endpoint connectivity"; \

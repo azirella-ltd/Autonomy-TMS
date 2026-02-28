@@ -6,7 +6,7 @@ Single orchestration script that trains all 3 Powell tiers in sequence
 and seeds consistent demo data across all 12 Powell tables.
 
 Pipeline:
-  Step 1:  Verify Food Dist base data exists (customer, config, sites, products)
+  Step 1:  Verify Food Dist base data exists (tenant, config, sites, products)
   Step 2:  Train S&OP GraphSAGE on Food Dist network
   Step 3:  Train Execution tGNN using S&OP embeddings
   Step 4:  Generate synthetic TRM training data (365 days)
@@ -125,7 +125,7 @@ def get_dc_site_id(db: Session, config_id: int) -> str:
 # ===================================================================
 
 def step1_verify_base_data(db: Session):
-    """Verify Food Dist customer, config, sites, and products exist."""
+    """Verify Food Dist tenant, config, sites, and products exist."""
     banner(1, "Verify Food Dist Base Data")
 
     # Flexible lookup: try "Food Dist" first, then "Food Distributor" variants

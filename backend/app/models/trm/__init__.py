@@ -21,6 +21,11 @@ from .order_tracking_trm_model import (
     OT_NUM_SEVERITIES,
     OT_NUM_ACTIONS,
 )
+from .inventory_buffer_trm_model import (
+    InventoryBufferTRMModel,
+    IB_STATE_DIM,
+    IB_NUM_ACTIONS,
+)
 
 # Registry mapping TRM type name to (model_class, state_dim) for training scripts
 MODEL_REGISTRY = {
@@ -28,6 +33,7 @@ MODEL_REGISTRY = {
     "rebalancing": (RebalancingTRMModel, REB_STATE_DIM),
     "po_creation": (POCreationTRMModel, PO_STATE_DIM),
     "order_tracking": (OrderTrackingTRMModel, OT_STATE_DIM),
+    "inventory_buffer": (InventoryBufferTRMModel, IB_STATE_DIM),
 }
 
 def load_trm_checkpoint(trm_type: str, checkpoint_path: str, device: str = "cpu"):
@@ -87,6 +93,7 @@ __all__ = [
     "RebalancingTRMModel",
     "POCreationTRMModel",
     "OrderTrackingTRMModel",
+    "InventoryBufferTRMModel",
     # Registry and loading
     "MODEL_REGISTRY",
     "load_trm_checkpoint",

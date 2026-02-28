@@ -15,7 +15,7 @@
 
 2. **Login**
    - Email: `systemadmin@autonomy.ai`
-   - Password: `Autonomy@2025`
+   - Password: `Autonomy@2026`
 
 3. **Create or Open Test Game**
    - Use existing game with AI suggestions enabled

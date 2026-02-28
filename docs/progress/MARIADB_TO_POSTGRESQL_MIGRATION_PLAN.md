@@ -1151,7 +1151,7 @@ TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "systemadmin@autonomy.ai",
-    "password": "Autonomy@2025"
+    "password": "Autonomy@2026"
   }' | jq -r '.access_token')
 
 echo "Token: $TOKEN"
@@ -1166,7 +1166,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 # Login
 TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"systemadmin@autonomy.ai","password":"Autonomy@2025"}' \
+  -d '{"email":"systemadmin@autonomy.ai","password":"Autonomy@2026"}' \
   | jq -r '.access_token')
 
 # Create game
@@ -1351,7 +1351,7 @@ docker compose up -d
 curl http://localhost:8000/health
 TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"systemadmin@autonomy.ai","password":"Autonomy@2025"}' \
+  -d '{"email":"systemadmin@autonomy.ai","password":"Autonomy@2026"}' \
   | jq -r '.access_token')
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/v1/users/me
 
@@ -1487,7 +1487,7 @@ echo ""
 echo "Test 5: Authentication"
 TOKEN=$(curl -sf -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"systemadmin@autonomy.ai","password":"Autonomy@2025"}' \
+  -d '{"email":"systemadmin@autonomy.ai","password":"Autonomy@2026"}' \
   | jq -r '.access_token')
 
 if [ -n "$TOKEN" ] && [ "$TOKEN" != "null" ]; then

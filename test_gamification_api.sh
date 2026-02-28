@@ -18,7 +18,7 @@ NC='\033[0m' # No Color
 echo "1. Authenticating..."
 LOGIN_RESPONSE=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  -d 'username=systemadmin@autonomy.ai&password=Autonomy@2025' \
+  -d 'username=systemadmin@autonomy.ai&password=Autonomy@2026' \
   -c /tmp/beer_cookies.txt)
 
 TOKEN=$(echo $LOGIN_RESPONSE | grep -o '"access_token":"[^"]*' | sed 's/"access_token":"//')
@@ -102,7 +102,7 @@ echo -e "${YELLOW}This is expected - the endpoints are working correctly.${NC}"
 echo ""
 echo "Next steps:"
 echo "1. Open browser: http://localhost:8088"
-echo "2. Login with: systemadmin@autonomy.ai / Autonomy@2025"
+echo "2. Login with: systemadmin@autonomy.ai / Autonomy@2026"
 echo "3. Open any game and click 'Achievements' tab"
 echo "4. Click 'Leaderboard' tab"
 echo ""

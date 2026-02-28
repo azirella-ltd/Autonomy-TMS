@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seed only the Variable simulation customer and its scenarios."""
+"""Seed only the Variable simulation tenant and its scenarios."""
 
 from __future__ import annotations
 

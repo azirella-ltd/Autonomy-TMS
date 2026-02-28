@@ -15,7 +15,7 @@ Replace `{gameId}` with your game ID (e.g., `1`, `2`, `3`)
 ## Login Credentials
 
 - **Email**: `systemadmin@autonomy.ai`
-- **Password**: `Autonomy@2025`
+- **Password**: `Autonomy@2026`
 
 ## 4 Visualization Tabs
 

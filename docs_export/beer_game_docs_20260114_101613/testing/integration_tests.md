@@ -150,7 +150,7 @@ Tests that require authentication follow this pattern:
 # Login
 login_data = {
     "username": "systemadmin@autonomy.ai",
-    "password": "Autonomy@2025"
+    "password": "Autonomy@2026"
 }
 response = await client.post("/api/v1/auth/login", data=login_data)
 token = response.json()["access_token"]
@@ -246,7 +246,7 @@ python -c "from app.db.init_db import init_db; init_db()"
 ## Test Data
 
 Tests use:
-- Default system admin: `systemadmin@autonomy.ai` / `Autonomy@2025`
+- Default system admin: `systemadmin@autonomy.ai` / `Autonomy@2026`
 - Test user: `testuser@example.com` / `TestPassword123!`
 - Default supply chain configs from seed data
 

@@ -26,8 +26,8 @@ try:
     from app.db.base_class import Base, engine, SessionLocal
     from app.models import (
         Tenant,
-        Game,
-        GameStatus,
+        Scenario,
+        ScenarioStatus,
         ScenarioUser,
         PlayerRole,
         PlayerStrategy,
@@ -50,7 +50,7 @@ DEFAULT_TENANT_DESCRIPTION = "Default Autonomy simulation tenant"
 DEFAULT_ADMIN_USERNAME = "tenantadmin"
 DEFAULT_ADMIN_EMAIL = "tenantadmin@autonomy.ai"
 DEFAULT_ADMIN_FULL_NAME = "Tenant Administrator"
-DEFAULT_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")
+DEFAULT_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2026")
 DEFAULT_GAME_NAME = "Default Simulation"
 DEFAULT_AGENT_TYPE = "pid_heuristic"
 
@@ -138,100 +138,94 @@ def ensure_tenant(session: Session) -> Tuple[Tenant, bool]:
 
     return tenant, True
 
-def ensure_default_game(session: Session, tenant: Tenant) -> Game:
+def ensure_default_scenario(session: Session, tenant: Tenant) -> Scenario:
     """Ensure the default scenario exists for the supplied tenant."""
     sc_config = ensure_supply_chain_config(session, tenant)
-    existing_game = session.query(Game).filter(
-        Game.name == DEFAULT_GAME_NAME,
+    existing = session.query(Scenario).filter(
+        Scenario.name == DEFAULT_GAME_NAME,
         Scenario.tenant_id == tenant.id
     ).first()
 
-    if existing_game:
-        print(f"Scenario '{DEFAULT_GAME_NAME}' already exists with ID: {existing_game.id}")
-        existing_game.supply_chain_config_id = sc_config.id
-        session.add(existing_game)
-        return existing_game
+    if existing:
+        print(f"Scenario '{DEFAULT_GAME_NAME}' already exists with ID: {existing.id}")
+        existing.supply_chain_config_id = sc_config.id
+        session.add(existing)
+        return existing
 
     print(f"Creating new scenario: {DEFAULT_GAME_NAME}")
 
-    # Create the scenario
-    game = Game(
+    scenario = Scenario(
         name=DEFAULT_GAME_NAME,
-        status=GameStatus.CREATED,
+        status=ScenarioStatus.CREATED,
         tenant_id=tenant.id,
         created_by=tenant.admin_id,
         max_rounds=52,  # Default number of periods
         supply_chain_config_id=sc_config.id,
     )
-    session.add(game)
+    session.add(scenario)
     session.flush()
 
-    # Create default scenario_users
-    _ensure_default_players(session, game)
-
-    # Create default AI agents
-    ensure_naive_agents(session, game)
+    _ensure_default_scenario_users(session, scenario)
+    ensure_naive_agents(session, scenario)
 
     session.commit()
 
-    print(f"Created scenario '{game.name}' with ID: {game.id}")
-    return game
+    print(f"Created scenario '{scenario.name}' with ID: {scenario.id}")
+    return scenario
 
-def _ensure_default_players(session: Session, game: Game) -> None:
+def _ensure_default_scenario_users(session: Session, scenario: Scenario) -> None:
     """Create placeholder AI scenario_users if none exist for the scenario."""
-    existing_players = session.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).count()
-    if existing_players > 0:
-        print(f"Scenario already has {existing_players} scenario_users")
+    existing_count = session.query(ScenarioUser).filter(
+        ScenarioUser.scenario_id == scenario.id
+    ).count()
+    if existing_count > 0:
+        print(f"Scenario already has {existing_count} scenario_users")
         return
 
     print("Creating default scenario_users for the scenario")
-    
-    # Define the default scenario_user roles and types
-    player_roles = [
+
+    roles = [
         (PlayerRole.RETAILER, PlayerType.AI, "Retailer AI"),
         (PlayerRole.WHOLESALER, PlayerType.AI, "Wholesaler AI"),
         (PlayerRole.DISTRIBUTOR, PlayerType.AI, "Distributor AI"),
         (PlayerRole.MANUFACTURER, PlayerType.AI, "Manufacturer AI"),
     ]
-    
-    for role, scenario_user_type, name in player_roles:
+
+    for role, scenario_user_type, name in roles:
         scenario_user = ScenarioUser(
-            scenario_id=game.id,
+            scenario_id=scenario.id,
             role=role,
             scenario_user_type=scenario_user_type,
             name=name,
             is_active=True,
         )
         session.add(scenario_user)
-    
-    session.flush()
-    print(f"Created {len(player_roles)} default scenario_users")
 
-def ensure_naive_agents(session: Session, game: Game) -> None:
+    session.flush()
+    print(f"Created {len(roles)} default scenario_users")
+
+def ensure_naive_agents(session: Session, scenario: Scenario) -> None:
     """Assign AI agents to each role in the scenario."""
-    # Get all AI scenario_users in the scenario
     scenario_users = session.query(ScenarioUser).filter(
-        ScenarioUser.scenario_id == game.id,
+        ScenarioUser.scenario_id == scenario.id,
         ScenarioUser.scenario_user_type == PlayerType.AI
     ).all()
-    
+
     if not scenario_users:
         print("No AI scenario_users found for the scenario")
         return
-    
+
     print(f"Ensuring {DEFAULT_AGENT_TYPE} AI agents for {len(scenario_users)} scenario_users")
-    
+
     for scenario_user in scenario_users:
-        # Check if agent config already exists
         existing_agent = session.query(AgentConfig).filter(
             AgentConfig.scenario_user_id == scenario_user.id
         ).first()
-        
+
         if existing_agent:
             print(f"Agent config already exists for scenario_user {scenario_user.id} ({scenario_user.role})")
             continue
-        
-        # Create a new agent config
+
         agent_config = AgentConfig(
             scenario_user_id=scenario_user.id,
             agent_type=DEFAULT_AGENT_TYPE,
@@ -240,7 +234,7 @@ def ensure_naive_agents(session: Session, game: Game) -> None:
         )
         session.add(agent_config)
         print(f"Created {DEFAULT_AGENT_TYPE} agent for scenario_user {scenario_user.id} ({scenario_user.role})")
-    
+
     session.flush()
 
 def main():

@@ -24,7 +24,7 @@ def login():
         f"{BASE_URL}/auth/login",
         data={
             "username": "systemadmin@autonomy.ai",
-            "password": "Autonomy@2025"
+            "password": "Autonomy@2026"
         }
     )
 

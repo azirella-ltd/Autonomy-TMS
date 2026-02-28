@@ -207,7 +207,7 @@ python scripts/demo_planning_cascade.py --no-pause --delay 2
 
 **Recommended:** Use the unified demo user for all demos:
 - Email: demo@distdemo.com
-- Password: Autonomy@2025
+- Password: Autonomy@2026
 
 This user has access to ALL Powell Framework dashboards - no logout needed!
 

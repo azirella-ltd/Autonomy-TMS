@@ -340,7 +340,7 @@ curl http://localhost:8000/health
 # Login
 TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"systemadmin@autonomy.ai","password":"Autonomy@2025"}' \
+  -d '{"email":"systemadmin@autonomy.ai","password":"Autonomy@2026"}' \
   | jq -r '.access_token')
 
 # Test authenticated endpoint

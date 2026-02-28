@@ -2,7 +2,7 @@
 Verify AWS SC Multi-Tenancy Implementation
 
 This script demonstrates that multi-tenancy is properly configured by:
-1. Showing customer-based data isolation
+1. Showing tenant-based data isolation
 2. Verifying foreign key constraints
 3. Testing composite index performance
 
@@ -30,9 +30,9 @@ async def verify_multi_tenancy():
         print()
 
         # ================================================================
-        # 1. Verify Customers and Configs
+        # 1. Verify Tenants and Configs
         # ================================================================
-        print("1. Customers and Supply Chain Configurations")
+        print("1. Tenants and Supply Chain Configurations")
         print("-" * 80)
 
         result = await db.execute(select(Tenant))
@@ -48,7 +48,7 @@ async def verify_multi_tenancy():
             )
             configs = configs.scalars().all()
 
-            print(f"  Customer {tenant.id}: {tenant.name}")
+            print(f"  Tenant {tenant.id}: {tenant.name}")
             print(f"  Configs: {len(configs)}")
             for cfg in configs[:3]:  # Show first 3
                 print(f"    - {cfg.id}: {cfg.name}")
@@ -59,11 +59,11 @@ async def verify_multi_tenancy():
         # ================================================================
         # 2. Verify Data Isolation
         # ================================================================
-        print("\n2. Data Isolation by Customer")
+        print("\n2. Data Isolation by Tenant")
         print("-" * 80)
 
         for tenant in tenants[:3]:  # Check first 3 tenants
-            print(f"\n  Customer {tenant.id}: {tenant.name}")
+            print(f"\n  Tenant {tenant.id}: {tenant.name}")
 
             # Count records per table
             tables = [
@@ -138,7 +138,7 @@ async def verify_multi_tenancy():
         print("\n\n5. Query Performance Test")
         print("-" * 80)
 
-        # Get a sample customer and config
+        # Get a sample tenant and config
         first_tenant = tenants[0]
         configs = await db.execute(
             select(SupplyChainConfig).filter(
@@ -174,8 +174,8 @@ async def verify_multi_tenancy():
         print("=" * 80)
 
         checks = [
-            ("Customers and configs loaded", len(tenants) > 0),
-            ("Data isolation by customer", True),  # Verified above
+            ("Tenants and configs loaded", len(tenants) > 0),
+            ("Data isolation by tenant", True),  # Verified above
             ("Foreign key integrity", mismatched == 0),
             ("Composite indexes exist", len(rows) > 0),
             ("Query performance acceptable", elapsed < 100 if first_config else True),

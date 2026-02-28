@@ -55,7 +55,7 @@ cd frontend && npm start
 
 **Demo Login (Recommended):**
 - Email: demo@distdemo.com
-- Password: Autonomy@2025
+- Password: Autonomy@2026
 - Access: All Powell dashboards (no login/logout needed!)
 
 See also: [Powell Framework Demo](Powell_Framework_Demo.md) for role-based dashboard demo.

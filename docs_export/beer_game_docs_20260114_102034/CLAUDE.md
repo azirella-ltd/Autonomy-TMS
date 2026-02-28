@@ -82,7 +82,7 @@ make rebuild-db
 # Reseed after rebuild
 make reseed-db
 
-# Reset admin password to Autonomy@2025
+# Reset admin password to Autonomy@2026
 make reset-admin
 ```
 
@@ -418,7 +418,7 @@ GPT_ID=g-...
 
 **Default Login**:
 - Email: systemadmin@autonomy.ai
-- Password: Autonomy@2025
+- Password: Autonomy@2026
 
 ## Notes
 

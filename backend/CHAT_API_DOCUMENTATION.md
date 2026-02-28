@@ -62,7 +62,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```http
 Content-Type: application/x-www-form-urlencoded
 
-username=systemadmin@autonomy.ai&password=Autonomy@2025
+username=systemadmin@autonomy.ai&password=Autonomy@2026
 ```
 
 **Response:**

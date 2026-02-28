@@ -295,7 +295,7 @@ make rebuild-db
 # Reseed after rebuild
 make reseed-db
 
-# Reset admin password to Autonomy@2025
+# Reset admin password to Autonomy@2026
 make reset-admin
 ```
 
@@ -1002,7 +1002,7 @@ GET  /api/v1/sap-data/actions             # Get remediation actions
 
 **Default Login**:
 - Email: systemadmin@autonomy.ai
-- Password: Autonomy@2025
+- Password: Autonomy@2026
 
 ---
 

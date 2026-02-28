@@ -46,12 +46,12 @@ def get_engine():
 
 
 def lookup_food_dist(conn):
-    """Find Food Dist customer, config, and user IDs."""
+    """Find Food Dist tenant, config, and user IDs."""
     row = conn.execute(text(
         "SELECT id FROM customers WHERE name ILIKE '%food dist%' OR name ILIKE '%dot foods%' LIMIT 1"
     )).fetchone()
     if not row:
-        log.error("Food Dist customer not found. Run seed_food_dist_demo.py first.")
+        log.error("Food Dist tenant not found. Run seed_food_dist_demo.py first.")
         sys.exit(1)
     customer_id = row[0]
 
@@ -59,7 +59,7 @@ def lookup_food_dist(conn):
         "SELECT id FROM supply_chain_configs WHERE customer_id = :gid ORDER BY id LIMIT 1"
     ), {"gid": customer_id}).fetchone()
     if not row:
-        log.error("No supply chain config found for Food Dist customer.")
+        log.error("No supply chain config found for Food Dist tenant.")
         sys.exit(1)
     config_id = row[0]
 
@@ -76,7 +76,7 @@ def lookup_food_dist(conn):
         row = conn.execute(text("SELECT id FROM users WHERE email = :e"), {"e": email}).fetchone()
         users[key] = row[0] if row else None
 
-    log.info(f"  Customer ID: {customer_id}, Config ID: {config_id}")
+    log.info(f"  Tenant ID: {customer_id}, Config ID: {config_id}")
     log.info(f"  Users found: {sum(1 for v in users.values() if v)}/{len(users)}")
     return customer_id, config_id, users
 
@@ -943,7 +943,7 @@ def main():
         ensure_table(conn)
 
         # Step 2: Lookup Food Dist context
-        log.info("\n[2/3] Looking up Food Dist customer, config, and users...")
+        log.info("\n[2/3] Looking up Food Dist tenant, config, and users...")
         customer_id, config_id, users = lookup_food_dist(conn)
 
         # Step 3: Clean and insert

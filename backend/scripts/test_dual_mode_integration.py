@@ -34,10 +34,10 @@ def test_legacy_mode():
     print()
 
     with SessionLocal() as db:
-        # Get or create a test customer
-        tenant = db.query(Tenant).filter(Tenant.name == "Test Customer").first()
+        # Get or create a test tenant
+        tenant = db.query(Tenant).filter(Tenant.name == "Test Tenant").first()
         if not tenant:
-            tenant = Tenant(name="Test Customer", description="Test customer for dual-mode testing")
+            tenant = Tenant(name="Test Tenant", description="Test tenant for dual-mode testing")
             db.add(tenant)
             db.commit()
             db.refresh(tenant)
@@ -52,7 +52,7 @@ def test_legacy_mode():
             return False
 
         print(f"Using config: {config.name} (ID: {config.id})")
-        print(f"Using customer: {tenant.name} (ID: {tenant.id})")
+        print(f"Using tenant: {tenant.name} (ID: {tenant.id})")
         print()
 
         # Create test scenario with LEGACY mode
@@ -112,12 +112,12 @@ async def test_aws_sc_mode_async():
     print()
 
     async with async_session_factory() as db:
-        # Get or create a test customer
-        result = await db.execute(select(Tenant).filter(Tenant.name == "Test Customer"))
+        # Get or create a test tenant
+        result = await db.execute(select(Tenant).filter(Tenant.name == "Test Tenant"))
         tenant = result.scalar_one_or_none()
 
         if not tenant:
-            tenant = Tenant(name="Test Customer", description="Test customer for dual-mode testing")
+            tenant = Tenant(name="Test Tenant", description="Test tenant for dual-mode testing")
             db.add(tenant)
             await db.commit()
             await db.refresh(tenant)
@@ -135,7 +135,7 @@ async def test_aws_sc_mode_async():
             return False
 
         print(f"Using config: {config.name} (ID: {config.id})")
-        print(f"Using customer: {tenant.name} (ID: {tenant.id})")
+        print(f"Using tenant: {tenant.name} (ID: {tenant.id})")
         print()
 
         # Create test scenario with AWS SC mode

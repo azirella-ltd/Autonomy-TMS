@@ -32,7 +32,7 @@ async def test_aggregation_integration():
     print()
 
     async with async_session_factory() as db:
-        # Setup: Get test config and customer
+        # Setup: Get test config and tenant
         result = await db.execute(
             select(SupplyChainConfig).filter(
                 SupplyChainConfig.name.like("%Default%")

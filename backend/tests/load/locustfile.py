@@ -31,7 +31,7 @@ class UserBehavior(SequentialTaskSet):
             # Use default credentials
             response = self.client.post("/api/v1/auth/login", data={
                 "username": "systemadmin@autonomy.ai",
-                "password": "Autonomy@2025"
+                "password": "Autonomy@2026"
             })
             if response.status_code == 200:
                 self.token = response.json().get("access_token")
@@ -170,7 +170,7 @@ class ConcurrentGameUser(HttpUser):
         """Login"""
         response = self.client.post("/api/v1/auth/login", data={
             "username": "systemadmin@autonomy.ai",
-            "password": "Autonomy@2025"
+            "password": "Autonomy@2026"
         })
         if response.status_code == 200:
             self.token = response.json().get("access_token")

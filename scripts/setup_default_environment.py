@@ -62,14 +62,14 @@ async def create_default_environment():
                     {
                         "username": "groupadmin",
                         "email": "groupadmin@autonomy.ai",
-                        "hashed_password": get_password_hash("Autonomy@2025"),
+                        "hashed_password": get_password_hash("Autonomy@2026"),
                         "full_name": "Group Admin",
                         "is_superuser": False,
                         "is_active": True
                     }
                 )
                 group_admin_id = result.lastrowid
-                logger.info("✅ Created group admin user: groupadmin@autonomy.ai / Autonomy@2025")
+                logger.info("✅ Created group admin user: groupadmin@autonomy.ai / Autonomy@2026")
             
             # Get the group admin user object
             result = await db.execute(
@@ -248,7 +248,7 @@ async def create_default_environment():
                         {
                             "username": f"ai_{role}",
                             "email": f"ai_{role}@autonomy.ai",
-                            "hashed_password": get_password_hash("Autonomy@2025"),
+                            "hashed_password": get_password_hash("Autonomy@2026"),
                             "full_name": f"AI {role.capitalize()}",
                             "is_superuser": False,
                             "is_active": True,

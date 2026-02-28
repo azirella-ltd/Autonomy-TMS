@@ -387,7 +387,7 @@ Response:
 
 **System Admin**:
 - Email: `systemadmin@autonomy.ai`
-- Password: `Autonomy@2025`
+- Password: `Autonomy@2026`
 - Should see: All 7 categories with all items
 
 **Group Admin** (if created):

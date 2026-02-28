@@ -19,7 +19,7 @@ def get_db_connection():
 
 def update_admin_password():
     # Generate a bcrypt hash for the password
-    password = "Autonomy@2025"
+    password = "Autonomy@2026"
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode('utf-8')
     
     print(f"Generated hash: {hashed_password}")

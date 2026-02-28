@@ -72,7 +72,7 @@ When the application is running, access interactive API documentation at:
 ```bash
 # Login
 curl -X POST http://localhost:8000/api/v1/auth/login \
-  -d "username=systemadmin@autonomy.ai&password=Autonomy@2025"
+  -d "username=systemadmin@autonomy.ai&password=Autonomy@2026"
 
 # Get current user
 curl -X GET http://localhost:8000/api/v1/auth/me \
@@ -168,7 +168,7 @@ make db-bootstrap
 
 ### Default Credentials
 - Email: systemadmin@autonomy.ai
-- Password: Autonomy@2025
+- Password: Autonomy@2026
 
 ## 3. Create Your First Game
 

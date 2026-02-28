@@ -42,7 +42,7 @@ model training. The tables below list every `make` target defined in the root
 | `make seed-default-tbg` | Seed only the Default TBG group/configs (includes Case, Six-Pack, Bottle variants). |
 | `make seed-three-fg-tbg` | Seed only the Three FG TBG group (assumes Default TBG already exists). |
 | `make seed-variable-tbg` | Seed only the Variable TBG group (assumes Default TBG already exists). |
-| `make reset-admin` | Reset the SystemAdmin password to `Autonomy@2025`. |
+| `make reset-admin` | Reset the SystemAdmin password to `Autonomy@2026`. |
 | `make bootstrap-system` | Initialise the database, seed defaults, rebuild training data, and retrain the Autonomy GNN. |
 | `make init-env` | Run the platform-specific environment setup script to generate `.env` files. |
 | `make help` | Print an annotated list of all available targets. |

@@ -166,7 +166,7 @@ Once authentication is fixed, the end-to-end flow should work as follows:
 # 1. Login
 curl -X POST http://localhost:8000/api/auth/login \
   -d "username=systemadmin@autonomy.ai" \
-  -d "password=Autonomy@2025"
+  -d "password=Autonomy@2026"
 
 # 2. Run MRP (use cookies from login)
 curl -X POST http://localhost:8000/api/mrp/run \

@@ -7,56 +7,49 @@ from enum import Enum as PyEnum
 # Add the project root to the Python path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Boolean, DateTime, ForeignKey, Enum, Float, JSON
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey, Enum, Float, JSON
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.ext.declarative import declarative_base
 from app.core.config import settings
 from app.core.security import get_password_hash
 
-# Create a base class for our models
+# Create a base class for our models (local to this legacy script)
 Base = declarative_base()
 
 # Enums
-class GameStatus(str, PyEnum):
+class ScenarioStatus(str, PyEnum):
     CREATED = "created"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     PAUSED = "paused"
 
-class PlayerRole(str, PyEnum):
+class ScenarioUserRole(str, PyEnum):
     RETAILER = "retailer"
     WHOLESALER = "wholesaler"
     DISTRIBUTOR = "distributor"
     MANUFACTURER = "manufacturer"
 
-# Models
-class Game(Base):
-    __tablename__ = "games"
-    
+# Models (local lightweight definitions for legacy init_db only)
+class Scenario(Base):
+    __tablename__ = "scenarios"
+
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
-    status = Column(Enum(GameStatus), default=GameStatus.CREATED)
+    status = Column(Enum(ScenarioStatus), default=ScenarioStatus.CREATED)
     current_round = Column(Integer, default=0)
     max_rounds = Column(Integer, default=52)
     demand_pattern = Column(JSON, default={
         "type": "classic",
-        "params": {
-            "initial_demand": 4,
-            "change_week": 6,
-            "final_demand": 8
-        }
+        "params": {"initial_demand": 4, "change_week": 6, "final_demand": 8}
     })
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
-    
-    # Relationships
-    scenario_users = relationship("ScenarioUser", back_populates="game")
-    rounds = relationship("ScenarioRound", back_populates="game")
-    users = relationship("User", secondary="user_games", back_populates="games")
+
+    scenario_users = relationship("ScenarioUser", back_populates="scenario")
 
 class User(Base):
     __tablename__ = 'users'
-    
+
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, index=True, nullable=False)
     email = Column(String(100), unique=True, index=True, nullable=False)
@@ -66,126 +59,18 @@ class User(Base):
     is_superuser = Column(Boolean(), default=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
-    
-    # Relationships
-    games = relationship("Game", secondary="user_games", back_populates="users")
-
-# Association table for many-to-many relationship between users and games
-user_games = Table(
-    'user_games',
-    Base.metadata,
-    Column('user_id', Integer, ForeignKey('users.id'), primary_key=True),
-    Column('scenario_id', Integer, ForeignKey('games.id'), primary_key=True)
-)
 
 class ScenarioUser(Base):
     __tablename__ = "scenario_users"
-    
+
     id = Column(Integer, primary_key=True, index=True)
-    scenario_id = Column(Integer, ForeignKey("games.id"), nullable=False)
-    user_id = Column(Integer, nullable=True)  # Null for AI scenario_users
-    role = Column(Enum(PlayerRole), nullable=False)
+    scenario_id = Column(Integer, ForeignKey("scenarios.id"), nullable=False)
+    user_id = Column(Integer, nullable=True)
+    role = Column(Enum(ScenarioUserRole), nullable=False)
     name = Column(String(100), nullable=False)
     is_ai = Column(Boolean, default=False)
-    
-    # Relationships
-    game = relationship("Game", back_populates="scenario_users")
-    inventory = relationship("ScenarioUserInventory", back_populates="scenario_user", uselist=False)
-    orders = relationship("Order", back_populates="scenario_user")
-    scenario_user_periods = relationship("ScenarioUserPeriod", back_populates="scenario_user")
 
-class ScenarioUserInventory(Base):
-    __tablename__ = "player_inventory"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    scenario_user_id = Column(Integer, ForeignKey("scenario_users.id"), nullable=False)
-    current_stock = Column(Integer, default=12)
-    incoming_shipments = Column(JSON, default=[])
-    backorders = Column(Integer, default=0)
-    cost = Column(Float, default=0.0)
-    
-    # Relationships
-    scenario_user = relationship("ScenarioUser", back_populates="inventory")
-
-class Order(Base):
-    __tablename__ = "orders"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    scenario_id = Column(Integer, ForeignKey("games.id"), nullable=False)
-    scenario_user_id = Column(Integer, ForeignKey("scenario_users.id"), nullable=False)
-    round_number = Column(Integer, nullable=False)
-    quantity = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    
-    # Relationships
-    scenario_user = relationship("ScenarioUser", back_populates="orders")
-    game = relationship("Game")
-
-class ScenarioRound(Base):
-    __tablename__ = "game_rounds"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    scenario_id = Column(Integer, ForeignKey("games.id"), nullable=False)
-    round_number = Column(Integer, nullable=False)
-    customer_demand = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    
-    # Relationships
-    game = relationship("Game", back_populates="rounds")
-    scenario_user_periods = relationship("ScenarioUserPeriod", back_populates="game_round")
-
-class ScenarioUserPeriod(Base):
-    __tablename__ = "scenario_user_periods"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    scenario_user_id = Column(Integer, ForeignKey("scenario_users.id"), nullable=False)
-    round_id = Column(Integer, ForeignKey("game_rounds.id"), nullable=False)
-    order_placed = Column(Integer, nullable=False)
-    order_received = Column(Integer, nullable=False)
-    inventory_before = Column(Integer, nullable=False)
-    inventory_after = Column(Integer, nullable=False)
-    backorders_before = Column(Integer, default=0)
-    backorders_after = Column(Integer, default=0)
-    holding_cost = Column(Float, default=0.0)
-    backorder_cost = Column(Float, default=0.0)
-    total_cost = Column(Float, default=0.0)
-    
-    # Relationships
-    scenario_user = relationship("ScenarioUser", back_populates="scenario_user_periods")
-    game_round = relationship("ScenarioRound", back_populates="scenario_user_periods")
-
-class Product(Base):
-    __tablename__ = "products"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False)
-    description = Column(String(255))
-    unit_cost = Column(Float, default=0.0)
-
-class SimulationRun(Base):
-    __tablename__ = "simulation_runs"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False)
-    description = Column(String(255))
-    start_time = Column(DateTime, default=datetime.datetime.utcnow)
-    end_time = Column(DateTime, nullable=True)
-    parameters = Column(JSON)  # Store simulation parameters
-    
-    # Relationships
-    steps = relationship("SimulationStep", back_populates="simulation_run")
-
-class SimulationStep(Base):
-    __tablename__ = "simulation_steps"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    simulation_run_id = Column(Integer, ForeignKey("simulation_runs.id"), nullable=False)
-    step_number = Column(Integer, nullable=False)
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
-    state = Column(JSON)  # Store the state of the simulation at this step
-    
-    # Relationships
-    simulation_run = relationship("SimulationRun", back_populates="steps")
+    scenario = relationship("Scenario", back_populates="scenario_users")
 
 def init_db():
     try:
@@ -219,7 +104,7 @@ def init_db():
             {
                 "username": "systemadmin",
                 "email": "systemadmin@autonomy.ai",
-                "password": os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025"),
+                "password": os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2026"),
                 "full_name": "System Admin",
                 "is_superuser": True,
                 "is_active": True

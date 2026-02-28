@@ -103,7 +103,7 @@ For future rebuilds, updated the following files to use correct defaults:
 ```bash
 curl -X POST http://localhost:8088/api/auth/login \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=systemadmin@autonomy.ai&password=Autonomy@2025&grant_type=password"
+  -d "username=systemadmin@autonomy.ai&password=Autonomy@2026&grant_type=password"
 ```
 
 **Result**: ✅ Success - 200 OK with JWT tokens
@@ -119,7 +119,7 @@ INFO:     172.18.0.5:42786 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
 
 ### Test 3: Login Page
 1. Navigate to `http://localhost:8088/login`
-2. Enter credentials: `systemadmin@autonomy.ai` / `Autonomy@2025`
+2. Enter credentials: `systemadmin@autonomy.ai` / `Autonomy@2026`
 3. Click "Login"
 
 **Result**: ✅ Should now login successfully
@@ -203,7 +203,7 @@ When rebuilding the frontend in the future:
 ### Primary Admin Login
 - **URL**: `http://localhost:8088/login`
 - **Email**: `systemadmin@autonomy.ai`
-- **Password**: `Autonomy@2025`
+- **Password**: `Autonomy@2026`
 
 ### All User Accounts
 See [SYSTEM_ACCESS_GUIDE.md](SYSTEM_ACCESS_GUIDE.md) for complete list of 75 user accounts.

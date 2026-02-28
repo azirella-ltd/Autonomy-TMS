@@ -354,7 +354,7 @@ Currently, the new features are placeholder UIs with "Coming Soon" sections. Fut
 **URL**: http://172.29.20.187:8088
 
 **Test Users**:
-- **System Admin**: systemadmin@autonomy.ai / Autonomy@2025
+- **System Admin**: systemadmin@autonomy.ai / Autonomy@2026
 - **Group Admin**: (create via user management)
 - **Player**: (create via user management)
 

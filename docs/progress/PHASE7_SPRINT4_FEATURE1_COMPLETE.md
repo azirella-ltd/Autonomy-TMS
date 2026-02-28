@@ -286,7 +286,7 @@ mysql -u beer_user -p beer_game < backend/migrations/sprint4_a2a_features.sql
 ```bash
 # Login
 TOKEN=$(curl -s -X POST "http://localhost:8000/api/v1/auth/login" \
-  -d "username=systemadmin@autonomy.ai&password=Autonomy@2025" \
+  -d "username=systemadmin@autonomy.ai&password=Autonomy@2026" \
   -H "Content-Type: application/x-www-form-urlencoded" | jq -r '.access_token')
 
 # Send message

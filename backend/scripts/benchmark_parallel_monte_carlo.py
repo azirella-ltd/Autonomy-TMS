@@ -183,7 +183,7 @@ async def main(args):
     print(f"Scenarios:        {args.scenarios}")
     print(f"Planning Horizon: {args.horizon} weeks")
     print(f"Config ID:        {args.config_id}")
-    print(f"Customer ID:         {args.customer_id}")
+    print(f"Tenant ID:           {args.customer_id}")
     print(f"CPU Cores:        {mp.cpu_count()}")
     print("="*80)
 
@@ -243,7 +243,7 @@ if __name__ == "__main__":
         "--customer-id",
         type=int,
         default=1,
-        help="Customer ID (default: 1)"
+        help="Tenant ID (default: 1)"
     )
     parser.add_argument(
         "--workers",

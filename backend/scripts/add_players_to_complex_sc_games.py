@@ -11,19 +11,19 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from sqlalchemy.orm import Session
 from app.db.base_class import SessionLocal
-from app.models import Game, ScenarioUser, PlayerType, PlayerStrategy, PlayerRole
+from app.models import Scenario, ScenarioUser, PlayerType, PlayerStrategy, PlayerRole
 from app.models.supply_chain_config import NodeType
 from typing import Dict, Any
 import json
 
 
-def _load_game_config_payload(game: Game) -> Dict[str, Any]:
-    """Load game configuration as dict."""
-    if isinstance(game.config, dict):
-        return game.config
-    if isinstance(game.config, str):
+def _load_scenario_config_payload(scenario: Scenario) -> Dict[str, Any]:
+    """Load scenario configuration as dict."""
+    if isinstance(scenario.config, dict):
+        return scenario.config
+    if isinstance(scenario.config, str):
         try:
-            return json.loads(game.config)
+            return json.loads(scenario.config)
         except json.JSONDecodeError:
             return {}
     return {}
@@ -47,32 +47,31 @@ def _player_role_for_node_type(node_type_str: str) -> PlayerRole:
         return PlayerRole.DISTRIBUTOR  # default for inventory nodes
 
 
-def add_players_to_game(session: Session, game: Game, agent_type: str = "naive") -> None:
+def add_scenario_users(session: Session, scenario: Scenario, agent_type: str = "naive") -> None:
     """Add AI scenario_users to a scenario based on its supply chain config."""
-    print(f"\n[info] Processing scenario {game.id}: {game.name}")
+    print(f"\n[info] Processing scenario {scenario.id}: {scenario.name}")
 
-    # Check if scenario_users already exist
-    existing_scenario_user_count = session.query(ScenarioUser).filter(ScenarioUser.scenario_id == game.id).count()
-    if existing_scenario_user_count > 0:
-        print(f"  [skip] Scenario already has {existing_scenario_user_count} scenario_users")
+    existing_count = session.query(ScenarioUser).filter(
+        ScenarioUser.scenario_id == scenario.id
+    ).count()
+    if existing_count > 0:
+        print(f"  [skip] Scenario already has {existing_count} scenario_users")
         return
 
-    # Get the supply chain config to find all sites
-    if not game.supply_chain_config_id:
+    if not scenario.supply_chain_config_id:
         print("  [error] Scenario has no supply_chain_config_id")
         return
 
     from app.models.supply_chain_config import SupplyChainConfig, Node as SCNode
 
     config = session.query(SupplyChainConfig).filter(
-        SupplyChainConfig.id == game.supply_chain_config_id
+        SupplyChainConfig.id == scenario.supply_chain_config_id
     ).first()
 
     if not config:
-        print(f"  [error] Could not find supply chain config {game.supply_chain_config_id}")
+        print(f"  [error] Could not find supply chain config {scenario.supply_chain_config_id}")
         return
 
-    # Get all nodes from the config
     nodes = session.query(SCNode).filter(SCNode.config_id == config.id).all()
 
     if not nodes:
@@ -81,17 +80,16 @@ def add_players_to_game(session: Session, game: Game, agent_type: str = "naive")
 
     print(f"  [info] Found {len(nodes)} nodes in config")
 
-    # Create a scenario_user for each node that's playable (has master_type = inventory or manufacturer)
     playable_master_types = {"inventory", "manufacturer"}
 
     created_count = 0
     for node in nodes:
         if node.master_type in playable_master_types:
             scenario_user = ScenarioUser(
-                scenario_id=game.id,
+                scenario_id=scenario.id,
                 role=_player_role_for_node_type(node.type),
                 name=f"{node.name} ({agent_type})",
-                node_key=node.name,  # Use node.name as key
+                node_key=node.name,
                 type=PlayerType.AI,
                 is_ai=True,
                 ai_strategy=agent_type,
@@ -104,7 +102,7 @@ def add_players_to_game(session: Session, game: Game, agent_type: str = "naive")
             print(f"    [+] Created scenario_user for {node.name} (type: {node.type}, master_type: {node.master_type})")
 
     session.flush()
-    print(f"  [success] Created {created_count} scenario_users for scenario {game.id}")
+    print(f"  [success] Created {created_count} scenario_users for scenario {scenario.id}")
 
 
 def main():
@@ -112,27 +110,28 @@ def main():
 
     try:
         # Find all Complex_SC scenarios (config_id = 12)
-        games = session.query(Game).filter(Game.supply_chain_config_id == 12).all()
+        scenarios = session.query(Scenario).filter(
+            Scenario.supply_chain_config_id == 12
+        ).all()
 
-        print(f"\n[info] Found {len(games)} Complex_SC scenarios")
+        print(f"\n[info] Found {len(scenarios)} Complex_SC scenarios")
 
-        for game in games:
-            # Determine agent type from scenario name
-            game_name_lower = game.name.lower()
-            if "naive" in game_name_lower:
+        for scenario in scenarios:
+            name_lower = scenario.name.lower()
+            if "naive" in name_lower:
                 agent_type = "naive"
-            elif "pid" in game_name_lower:
+            elif "pid" in name_lower:
                 agent_type = "pid_heuristic"
-            elif "trm" in game_name_lower:
+            elif "trm" in name_lower:
                 agent_type = "trm"
-            elif "llm" in game_name_lower or "autonomy" in game_name_lower:
+            elif "llm" in name_lower or "autonomy" in name_lower:
                 agent_type = "autonomy_llm"
-            elif "gnn" in game_name_lower:
+            elif "gnn" in name_lower:
                 agent_type = "ml_forecast"
             else:
-                agent_type = "naive"  # default
+                agent_type = "naive"
 
-            add_players_to_game(session, game, agent_type)
+            add_scenario_users(session, scenario, agent_type)
 
         session.commit()
         print("\n[success] All scenarios processed successfully!")

@@ -54,7 +54,7 @@ Use: **PHASE7_SPRINT4_BROWSER_TESTING_GUIDE.md**
 
 **Login Credentials**:
 - Email: `systemadmin@autonomy.ai`
-- Password: `Autonomy@2025`
+- Password: `Autonomy@2026`
 
 **API Documentation**: http://localhost:8000/docs
 

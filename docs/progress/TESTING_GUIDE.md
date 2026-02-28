@@ -48,7 +48,7 @@ Open your browser to:
 
 **Login Credentials**:
 - Email: `systemadmin@autonomy.ai`
-- Password: `Autonomy@2025`
+- Password: `Autonomy@2026`
 
 ### Step 4: Create a Quick Game
 

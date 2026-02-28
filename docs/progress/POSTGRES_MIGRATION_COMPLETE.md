@@ -181,16 +181,16 @@ psql postgresql://beer_user:change-me-user@localhost:5432/beer_game
 **System Admin:**
 - Email: `systemadmin@autonomy.ai`
 - Username: `systemadmin`
-- Password: `Autonomy@2025`
+- Password: `Autonomy@2026`
 
 **TBG Admin (Group Admin):**
 - Email: `tbg_admin@autonomy.ai`
-- Password: `Autonomy@2025`
+- Password: `Autonomy@2026`
 
 **Other Group Admins:**
-- Three FG TBG: `ThreeTBG_admin@autonomy.ai` / `Autonomy@2025`
-- Variable TBG: `VarTBG_admin@autonomy.ai` / `Autonomy@2025`
-- Complex SC: `complex_sc_admin@autonomy.ai` / `Autonomy@2025`
+- Three FG TBG: `ThreeTBG_admin@autonomy.ai` / `Autonomy@2026`
+- Variable TBG: `VarTBG_admin@autonomy.ai` / `Autonomy@2026`
+- Complex SC: `complex_sc_admin@autonomy.ai` / `Autonomy@2026`
 
 **Database:**
 - User: `beer_user`

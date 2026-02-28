@@ -33,7 +33,7 @@ npm run android
 
 Use the default credentials:
 - Email: systemadmin@autonomy.ai
-- Password: Autonomy@2025
+- Password: Autonomy@2026
 
 ### 5. Test Features
 

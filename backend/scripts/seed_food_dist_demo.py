@@ -2,7 +2,7 @@
 """
 Seed Food Dist Demo - Powell Framework Aligned Users
 
-Creates a Food Dist customer with users aligned to Powell SDAM levels:
+Creates a Food Dist tenant with users aligned to Powell SDAM levels:
 
 Primary Demo User (recommended for demos):
 - demo: Combined user with ALL Powell capabilities (no login/logout needed!)
@@ -21,7 +21,7 @@ Usage:
     cd backend && python scripts/seed_dot_foods_demo.py
 
 Demo Flow:
-    1. Login as demo@distdemo.com (password: Autonomy@2025)
+    1. Login as demo@distdemo.com (password: Autonomy@2026)
     2. Executive Dashboard shown by default
     3. Navigate to S&OP Worklist, Decision Performance via nav menu
     4. All Powell dashboards accessible without logout
@@ -65,7 +65,7 @@ from app.services.rbac_service import RBACService, seed_default_permissions
 
 FOOD_DIST_CUSTOMER_NAME = "Food Dist"
 FOOD_DIST_DESCRIPTION = "Food Dist - America's largest food redistributor. Powell Framework demo."
-DEFAULT_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")
+DEFAULT_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2026")
 
 # User configurations (Powell-aligned)
 DEMO_USERS = [
@@ -543,7 +543,7 @@ def main():
         print()
         print("\nRecommended Demo Flow:")
         print("-" * 70)
-        print("  1. Login as 'demo@distdemo.com' (password: Autonomy@2025)")
+        print("  1. Login as 'demo@distdemo.com' (password: Autonomy@2026)")
         print("  2. Lands on Executive Dashboard (SC_VP view)")
         print("  3. Navigate to Planning Cascade > S&OP Policy Envelope")
         print("  4. Walk through layers: SupBP > Supply Worklist > Allocation > Execution")

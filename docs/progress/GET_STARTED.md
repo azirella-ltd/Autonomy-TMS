@@ -81,7 +81,7 @@ python3 -m http.server 9000
 
 3. **Access frontend**:
    - Open: http://localhost:8088
-   - Login: `systemadmin@autonomy.ai` / `Autonomy@2025`
+   - Login: `systemadmin@autonomy.ai` / `Autonomy@2026`
 
 4. **Test quick start wizard**:
    - Click "Create New Game" → "Quick Start Wizard"

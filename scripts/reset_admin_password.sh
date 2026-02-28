@@ -19,7 +19,7 @@ if [[ "${compose_cmd}" == "docker-compose" ]]; then
   export DOCKER_API_VERSION="${DOCKER_API_VERSION:-1.44}"
 fi
 
-${compose_cmd} exec db mysql -u autonomy_user -p'Autonomy@2025' -e "
+${compose_cmd} exec db mysql -u autonomy_user -p'Autonomy@2026' -e "
   USE autonomy;
   UPDATE users
   SET hashed_password = '\$2b\$12\$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW'

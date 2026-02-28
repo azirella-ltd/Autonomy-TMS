@@ -106,7 +106,7 @@ curl -X POST http://localhost:8088/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "systemadmin@autonomy.ai",
-    "password": "Autonomy@2025"
+    "password": "Autonomy@2026"
   }' | jq -r '.access_token'
 ```
 
@@ -343,7 +343,7 @@ npm start
 
 **Test Flow 1: Login & Navigate**
 1. Launch app
-2. Login with systemadmin@autonomy.ai / Autonomy@2025
+2. Login with systemadmin@autonomy.ai / Autonomy@2026
 3. Navigate to Dashboard
 4. Tap on a game
 5. Verify game detail screen loads

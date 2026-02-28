@@ -11,7 +11,7 @@ db = SessionLocal()
 def update_all_passwords():
     try:
         # Generate bcrypt hash for the password
-        password_hash = bcrypt.using(rounds=12).hash("Autonomy@2025")
+        password_hash = bcrypt.using(rounds=12).hash("Autonomy@2026")
         
         # Update all users' passwords
         result = db.execute(

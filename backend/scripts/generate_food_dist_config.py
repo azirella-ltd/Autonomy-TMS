@@ -2,7 +2,7 @@
 """
 Script to generate the Food Dist supply chain configuration.
 
-This creates a learning customer with a realistic foodservice distribution
+This creates a learning tenant with a realistic foodservice distribution
 network modeled after Food Dist.
 
 Usage:
@@ -72,7 +72,7 @@ async def main(args):
             logger.info("\n" + "=" * 60)
             logger.info("Generation Complete!")
             logger.info("=" * 60)
-            logger.info(f"Customer ID: {result['customer_id']}")
+            logger.info(f"Tenant ID: {result['customer_id']}")
             logger.info(f"Config ID: {result['config_id']}")
             logger.info(f"Admin User ID: {result['admin_user_id']}")
             logger.info("-" * 40)
@@ -91,7 +91,7 @@ async def main(args):
 
             logger.info("\nTo login, use:")
             logger.info(f"  Email: {args.admin_email}")
-            logger.info("  Password: Autonomy@2025")
+            logger.info("  Password: Autonomy@2026")
 
         except Exception as e:
             logger.error(f"Generation failed: {e}")

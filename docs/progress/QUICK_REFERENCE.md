@@ -19,10 +19,10 @@
 ```
 URL:      http://localhost:8088
 Email:    systemadmin@autonomy.ai
-Password: Autonomy@2025
+Password: Autonomy@2026
 ```
 
-**All accounts use the same password**: `Autonomy@2025`
+**All accounts use the same password**: `Autonomy@2026`
 
 ---
 
@@ -166,7 +166,7 @@ Password: change-me-user
 
 | Problem | Solution |
 |---------|----------|
-| Can't login | Check password: `Autonomy@2025` |
+| Can't login | Check password: `Autonomy@2026` |
 | Services down | Run: `docker compose restart` |
 | GPU not working | Check: `nvidia-smi` |
 | API errors | View logs: `docker compose logs backend` |
@@ -206,7 +206,7 @@ Password: change-me-user
 ---
 
 **Status**: ✅ OPERATIONAL with GPU
-**Default Password**: `Autonomy@2025` (all accounts)
+**Default Password**: `Autonomy@2026` (all accounts)
 **Recommended Login**: `systemadmin@autonomy.ai`
 
 **Last Updated**: 2026-01-15

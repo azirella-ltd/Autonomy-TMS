@@ -145,7 +145,7 @@ SupplyChain3D, GeospatialSupplyChain, TimelineVisualization
 
 **Prerequisites**:
 1. System running: `make gpu-up` or `docker compose up`
-2. Login: `systemadmin@autonomy.ai` / `Autonomy@2025`
+2. Login: `systemadmin@autonomy.ai` / `Autonomy@2026`
 3. At least one game exists (can be created via UI)
 
 **Test Path 1: From GameReport**

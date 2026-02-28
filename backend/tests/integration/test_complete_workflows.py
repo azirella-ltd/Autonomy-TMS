@@ -33,7 +33,7 @@ async def _login_admin(client: AsyncClient) -> dict:
         "/api/v1/auth/login",
         data={
             "username": "systemadmin@autonomy.ai",
-            "password": "Autonomy@2025",
+            "password": "Autonomy@2026",
         },
     )
     if response.status_code != 200:

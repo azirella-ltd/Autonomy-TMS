@@ -17,7 +17,7 @@ API_BASE = f"{BASE_URL}/api/v1"
 # Test credentials
 TEST_USER = {
     "username": "systemadmin@autonomy.ai",
-    "password": "Autonomy@2025"
+    "password": "Autonomy@2026"
 }
 
 

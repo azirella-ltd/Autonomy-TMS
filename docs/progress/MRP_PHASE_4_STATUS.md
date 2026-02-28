@@ -137,7 +137,7 @@ When calling `POST /api/mrp/run` via HTTP API, the endpoint times out (>30 secon
 1. **Login via API**: ✅ Works
    ```bash
    curl -X POST http://localhost:8000/api/auth/login \
-     -d "username=systemadmin@autonomy.ai&password=Autonomy@2025"
+     -d "username=systemadmin@autonomy.ai&password=Autonomy@2026"
    # Returns JWT token successfully
    ```
 

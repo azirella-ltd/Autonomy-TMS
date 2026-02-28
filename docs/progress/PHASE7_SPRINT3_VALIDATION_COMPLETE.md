@@ -99,7 +99,7 @@ INFO:app.services.llm_suggestion_service:OpenAI client initialized
 ```bash
 # Login
 $ curl -X POST http://localhost:8000/api/v1/auth/login \
-  -d "username=systemadmin@autonomy.ai&password=Autonomy@2025"
+  -d "username=systemadmin@autonomy.ai&password=Autonomy@2026"
 
 # Request suggestion for WHOLESALER
 $ curl -X POST http://localhost:8000/api/v1/games/917/chat/request-suggestion?agent_name=wholesaler \

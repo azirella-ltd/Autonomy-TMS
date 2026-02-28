@@ -54,7 +54,7 @@ async def convert_config_to_aws_sc(
 
     async with async_session_factory() as db:
         # ================================================================
-        # 1. Load Configuration and Customer
+        # 1. Load Configuration and Tenant
         # ================================================================
         print(f"1. Loading configuration: {config_name}")
 
@@ -315,7 +315,7 @@ async def convert_config_to_aws_sc(
         print("Conversion Summary")
         print("=" * 80)
         print(f"Config:              {config.name} (ID: {config.id})")
-        print(f"Customer:            {tenant.name} (ID: {tenant.id})")
+        print(f"Tenant:              {tenant.name} (ID: {tenant.id})")
         print(f"InvPolicy:           {inv_policies_created} records")
         print(f"SourcingRules:       {sourcing_rules_created} records")
         print(f"ProductionProcess:   {production_processes_created} records")
@@ -434,7 +434,7 @@ async def verify_conversion(config_name: str, tenant_name: str):
         forecast_count = len(forecast_count.scalars().all())
 
         print(f"Config: {config.name} (ID: {config.id})")
-        print(f"Customer:  {tenant.name} (ID: {tenant.id})")
+        print(f"Tenant:    {tenant.name} (ID: {tenant.id})")
         print()
         print(f"InvPolicy:         {inv_policy_count:3d} records")
         print(f"SourcingRules:     {sourcing_rules_count:3d} records")

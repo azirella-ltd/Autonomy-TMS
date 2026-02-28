@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate synthetic TRM training data for Food Dist customer.
+Generate synthetic TRM training data for Food Dist tenant.
 
 Usage:
     docker compose exec backend python scripts/generate_food_dist_training_data.py

@@ -8,8 +8,8 @@ Pipeline:
 1. CDC fires a trigger (TriggerEvent with FULL_CFA)
 2. Check if retraining is warranted (enough decisions with outcomes)
 3. Load decisions via SiteAgentDecisionTracker.get_decisions_for_training()
-4. Convert to TrainingRecords and feed to TRMTrainer.add_experience()
-5. Execute TRMTrainer.train() (Offline RL / CQL for safety)
+4. Group decisions by TRM type and train each narrow model separately
+5. Use MODEL_REGISTRY narrow models (ATPTRMModel, POCreationTRMModel, etc.)
 6. Save checkpoint to filesystem + powell_site_agent_checkpoints
 7. Reload model in SiteAgent
 
@@ -19,6 +19,7 @@ Safety:
 - Cooldown prevents excessive training (min 6 hours between runs)
 """
 
+from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 import uuid
@@ -155,17 +156,17 @@ class CDCRetrainingService:
         """
         Execute the full retraining pipeline.
 
+        Groups decisions by TRM type and trains each narrow model separately
+        using MODEL_REGISTRY (ATPTRMModel, POCreationTRMModel, etc.).
+
         Steps:
         1. Load decisions with outcomes from DB
-        2. Convert to training experiences
-        3. Feed to TRMTrainer
-        4. Train model
-        5. Compare loss vs current checkpoint
-        6. Save checkpoint if improved
-        7. Record in DB
+        2. Group by TRM type
+        3. For each type with enough data: get narrow model, train, checkpoint
+        4. Compare loss vs current — skip if regression > 10%
 
         Returns:
-            TrainingResult if training succeeded, None if skipped/failed.
+            TrainingResult for the best-performing type, None if skipped/failed.
         """
         logger.info(f"Starting CDC retraining for {self.site_key}")
 
@@ -183,93 +184,128 @@ class CDCRetrainingService:
             )
             return None
 
-        # Step 2: Get or create model
-        model = self._get_or_create_model()
-        if model is None:
-            logger.warning(f"Could not create model for {self.site_key}")
-            return None
-
-        # Step 3: Create trainer and feed experiences
-        config = TrainingConfig(
-            method=training_method,
-            learning_rate=1e-4,
-            batch_size=min(64, len(decisions) // 4),
-            epochs=50,
-        )
-        trainer = TRMTrainer(model=model, config=config, reward_calculator=self.reward_calculator)
-
+        # Step 2: Group decisions by TRM type
         import numpy as np
 
+        decisions_by_type: Dict[str, list] = defaultdict(list)
         for decision in decisions:
-            input_state = decision.get("input_state", {})
-            # Extract feature vector — use stored features or construct from state
-            features = input_state.get("features")
-            if features is None:
-                # Construct minimal feature vector from available state
-                features = self._extract_features(input_state)
-
-            state_features = np.array(features, dtype=np.float32)
-            final_result = decision.get("final_result", {})
-            outcome = decision.get("actual_outcome", {})
             trm_type = decision.get("decision_type", "").replace("_exception", "")
+            if trm_type:
+                decisions_by_type[trm_type].append(decision)
 
-            # Determine action value
-            action = final_result.get("action_value", 0)
-            if isinstance(action, (list, tuple)):
-                action = action[0] if action else 0
+        # Step 3: Train each TRM type with enough data
+        best_result: Optional[TrainingResult] = None
 
-            trainer.add_experience(
-                state_features=state_features,
-                action=action,
-                outcome=outcome,
-                trm_type=trm_type,
-                expert_action=final_result.get("expert_action"),
+        for trm_type, type_decisions in decisions_by_type.items():
+            if len(type_decisions) < MIN_TRAINING_EXPERIENCES:
+                logger.debug(
+                    f"Skipping {trm_type}: only {len(type_decisions)} decisions "
+                    f"(need {MIN_TRAINING_EXPERIENCES})"
+                )
+                continue
+
+            model = self._get_or_create_model(trm_type)
+            if model is None:
+                continue
+
+            # Create trainer and feed experiences
+            config = TrainingConfig(
+                method=training_method,
+                learning_rate=1e-4,
+                batch_size=min(64, len(type_decisions) // 4),
+                epochs=50,
+            )
+            trainer = TRMTrainer(
+                model=model, config=config,
+                reward_calculator=self.reward_calculator,
             )
 
-        # Step 4: Train
-        try:
-            result = trainer.train()
-        except Exception as e:
-            logger.error(f"Training failed for {self.site_key}: {e}")
-            return None
+            for decision in type_decisions:
+                input_state = decision.get("input_state", {})
+                features = input_state.get("features")
+                if features is None:
+                    features = self._extract_features(input_state)
 
-        if result.final_loss == float("inf"):
-            logger.warning(f"Training produced infinite loss for {self.site_key}")
-            return None
+                state_features = np.array(features, dtype=np.float32)
+                final_result = decision.get("final_result", {})
+                outcome = decision.get("actual_outcome", {})
 
-        # Step 5: Compare loss vs current checkpoint
-        current_loss = self._get_current_loss()
-        if current_loss is not None and current_loss < float("inf"):
-            regression = (result.final_loss - current_loss) / max(current_loss, 1e-6)
-            if regression > MAX_REGRESSION_PCT:
-                logger.warning(
-                    f"New model regression for {self.site_key}: "
-                    f"current={current_loss:.4f}, new={result.final_loss:.4f} "
-                    f"(+{regression:.1%}). Keeping current model."
+                action = final_result.get("action_value", 0)
+                if isinstance(action, (list, tuple)):
+                    action = action[0] if action else 0
+
+                trainer.add_experience(
+                    state_features=state_features,
+                    action=action,
+                    outcome=outcome,
+                    trm_type=trm_type,
+                    expert_action=final_result.get("expert_action"),
                 )
-                return result
 
-        # Step 6: Save checkpoint
-        checkpoint_path = self._save_checkpoint(model, result, trigger_event, len(decisions))
+            # Train
+            try:
+                result = trainer.train()
+            except Exception as e:
+                logger.error(f"Training failed for {self.site_key}/{trm_type}: {e}")
+                continue
 
-        # Step 7: Mark previous checkpoints as inactive
-        self._deactivate_old_checkpoints()
+            if result.final_loss == float("inf"):
+                logger.warning(
+                    f"Training produced infinite loss for {self.site_key}/{trm_type}"
+                )
+                continue
 
-        # Step 8: Record new checkpoint in DB
-        self._record_checkpoint(checkpoint_path, result, len(decisions))
+            # Compare loss vs current checkpoint
+            current_loss = self._get_current_loss()
+            if current_loss is not None and current_loss < float("inf"):
+                regression = (result.final_loss - current_loss) / max(current_loss, 1e-6)
+                if regression > MAX_REGRESSION_PCT:
+                    logger.warning(
+                        f"New model regression for {self.site_key}/{trm_type}: "
+                        f"current={current_loss:.4f}, new={result.final_loss:.4f} "
+                        f"(+{regression:.1%}). Keeping current model."
+                    )
+                    continue
 
-        logger.info(
-            f"CDC retraining complete for {self.site_key}: "
-            f"loss={result.final_loss:.4f}, epochs={result.epochs_completed}, "
-            f"samples={len(decisions)}"
-        )
+            # Save checkpoint
+            checkpoint_path = self._save_checkpoint(
+                model, result, trigger_event, len(type_decisions),
+            )
+            self._deactivate_old_checkpoints()
+            self._record_checkpoint(checkpoint_path, result, len(type_decisions))
 
-        return result
+            logger.info(
+                f"CDC retraining complete for {self.site_key}/{trm_type}: "
+                f"loss={result.final_loss:.4f}, epochs={result.epochs_completed}, "
+                f"samples={len(type_decisions)}"
+            )
 
-    def _get_or_create_model(self):
-        """Get the current model or create a new one."""
+            if best_result is None or result.final_loss < best_result.final_loss:
+                best_result = result
+
+        return best_result
+
+    def _get_or_create_model(self, trm_type: str = "atp_executor"):
+        """Get a narrow TRM model from MODEL_REGISTRY for the given type.
+
+        Uses MODEL_REGISTRY narrow models (ATPTRMModel, POCreationTRMModel,
+        etc.) which have simple forward(x) signatures compatible with
+        TRMTrainer. Falls back to the first available model type if the
+        requested type is not in the registry.
+        """
         try:
-            from app.services.powell.site_agent_model import SiteAgentModel, SiteAgentModelConfig
+            import torch
+            from app.models.trm import MODEL_REGISTRY
+
+            if trm_type not in MODEL_REGISTRY:
+                logger.warning(
+                    f"TRM type '{trm_type}' not in MODEL_REGISTRY, "
+                    f"available: {list(MODEL_REGISTRY.keys())}"
+                )
+                return None
+
+            model_cls, state_dim = MODEL_REGISTRY[trm_type]
+            model = model_cls(state_dim=state_dim)
 
             # Try to load from latest checkpoint
             latest = (
@@ -282,29 +318,20 @@ class CDCRetrainingService:
                 .first()
             )
 
-            model_config = SiteAgentModelConfig()
-            if latest and latest.model_config:
-                try:
-                    model_config = SiteAgentModelConfig(**latest.model_config)
-                except Exception:
-                    pass
-
-            model = SiteAgentModel(model_config)
-
-            # Load weights if checkpoint exists
             if latest and latest.checkpoint_path and os.path.exists(latest.checkpoint_path):
                 try:
-                    import torch
                     checkpoint = torch.load(latest.checkpoint_path, map_location="cpu")
                     if "model_state_dict" in checkpoint:
-                        model.load_state_dict(checkpoint["model_state_dict"])
+                        model.load_state_dict(
+                            checkpoint["model_state_dict"], strict=False,
+                        )
                         logger.info(f"Loaded model weights from {latest.checkpoint_path}")
                 except Exception as e:
                     logger.warning(f"Could not load model weights: {e}")
 
             return model
         except Exception as e:
-            logger.error(f"Failed to create model: {e}")
+            logger.error(f"Failed to create model for {trm_type}: {e}")
             return None
 
     def _extract_features(self, input_state: Dict[str, Any]) -> List[float]:

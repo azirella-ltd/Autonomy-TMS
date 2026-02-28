@@ -10,7 +10,7 @@ const DEFAULT_FORM = {
   admin: {
     username: 'tenantadmin',
     email: 'tenantadmin@autonomy.ai',
-    password: 'Autonomy@2025',
+    password: 'Autonomy@2026',
     full_name: 'Tenant Administrator',
   },
 };

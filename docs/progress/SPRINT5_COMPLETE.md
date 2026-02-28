@@ -570,7 +570,7 @@ $ curl http://localhost:8000/api/v1/reports/health
 
 **Test Plan**:
 1. Open http://localhost:8088
-2. Login: `systemadmin@autonomy.ai` / `Autonomy@2025`
+2. Login: `systemadmin@autonomy.ai` / `Autonomy@2026`
 3. Navigate to any game
 4. Test Achievements tab (filters, progress, unlock)
 5. Test Leaderboard tab (rankings, switching)

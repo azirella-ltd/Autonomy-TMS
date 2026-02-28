@@ -337,7 +337,7 @@ Navigate to:
 - http://localhost:3000/planning/sourcing
 - http://localhost:3000/planning/kpi-monitoring
 
-Login with: systemadmin@autonomy.ai / Autonomy@2025
+Login with: systemadmin@autonomy.ai / Autonomy@2026
 
 ---
 

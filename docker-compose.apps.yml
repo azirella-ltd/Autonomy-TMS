@@ -26,7 +26,7 @@ services:
       - MYSQL_SERVER=db
       - MYSQL_PORT=3306
       - MYSQL_USER=autonomy_user
-      - MYSQL_PASSWORD=Autonomy@2025
+      - MYSQL_PASSWORD=Autonomy@2026
       - MYSQL_DB=autonomy
       - SECRET_KEY=your-secret-key-here
       - ALGORITHM=HS256
@@ -41,7 +41,7 @@ services:
       - DATABASE_URL=mysql+aiomysql://autonomy_user:Autonomy%402025@autonomy_db:3306/autonomy?ssl_mode=DISABLED
       - DB_HOST=autonomy_db
       - DB_USER=autonomy_user
-      - DB_PASSWORD=Autonomy@2025
+      - DB_PASSWORD=Autonomy@2026
       - DB_NAME=autonomy
       - DB_PORT=3306
       - DB_SSL_MODE=disable

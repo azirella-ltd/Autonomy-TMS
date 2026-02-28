@@ -25,7 +25,7 @@ docker compose ps
 
 **Default Admin Account**:
 - Email: `systemadmin@autonomy.ai`
-- Password: `Autonomy@2025`
+- Password: `Autonomy@2026`
 
 **Test User** (if needed):
 - Create via admin panel or registration

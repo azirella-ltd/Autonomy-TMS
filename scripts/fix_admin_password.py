@@ -10,14 +10,14 @@ def get_db_connection():
     return pymysql.connect(
         host=os.getenv('MYSQL_SERVER', 'db'),
         user=os.getenv('MYSQL_USER', 'autonomy_user'),
-        password=os.getenv('MYSQL_PASSWORD', 'Autonomy@2025'),
+        password=os.getenv('MYSQL_PASSWORD', 'Autonomy@2026'),
         database=os.getenv('MYSQL_DB', 'autonomy'),
         cursorclass=pymysql.cursors.DictCursor
     )
 
 def update_admin_password():
     # Generate a bcrypt hash for the password
-    password = "Autonomy@2025"
+    password = "Autonomy@2026"
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode('utf-8')
     
     print(f"Generated hash: {hashed_password}")

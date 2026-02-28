@@ -1,8 +1,8 @@
 """
-Test AWS SC Planner with Phase 2 customer_id Support
+Test AWS SC Planner with Phase 2 tenant_id Support
 
 This script tests that the AWSSupplyChainPlanner works correctly with
-the new customer_id parameter added in Phase 2.
+the new tenant_id parameter added in Phase 2.
 
 Usage:
     docker compose exec backend python scripts/test_aws_sc_planner_phase2.py
@@ -19,19 +19,19 @@ from app.services.aws_sc_planning.planner import AWSSupplyChainPlanner
 
 
 async def test_planner_with_group_id():
-    """Test AWSSupplyChainPlanner with customer_id filtering"""
+    """Test AWSSupplyChainPlanner with tenant_id filtering"""
 
     print("=" * 80)
-    print("Testing AWS SC Planner with Phase 2 customer_id Support")
+    print("Testing AWS SC Planner with Phase 2 tenant_id Support")
     print("=" * 80)
     print()
 
     async with SessionLocal() as db:
-        # Find a customer with a config that has AWS SC data
+        # Find a tenant with a config that has AWS SC data
         print("1. Finding suitable test configuration...")
         print("-" * 80)
 
-        # Get Complex_SC customer (customer_id=3) which has planning data
+        # Get Complex_SC tenant (tenant_id=3) which has planning data
         result = await db.execute(
             select(Tenant).filter(Tenant.name == "Complex_SC")
         )
@@ -43,7 +43,7 @@ async def test_planner_with_group_id():
 
         print(f"✓ Found tenant: {tenant.name} (ID={tenant.id})")
 
-        # Get the config for this customer
+        # Get the config for this tenant
         result = await db.execute(
             select(SupplyChainConfig).filter(
                 SupplyChainConfig.tenant_id == tenant.id
@@ -143,13 +143,13 @@ async def test_planner_with_group_id():
         print("=" * 80)
         print("Test Summary")
         print("=" * 80)
-        print(f"✅ Phase 2 customer_id support is working correctly!")
+        print(f"✅ Phase 2 tenant_id support is working correctly!")
         print()
         print("Key Changes Verified:")
-        print("  ✓ AWSSupplyChainPlanner requires customer_id parameter")
+        print("  ✓ AWSSupplyChainPlanner requires tenant_id parameter")
         print("  ✓ All sub-processors (DemandProcessor, InventoryTargetCalculator, NetRequirementsCalculator)")
-        print("    accept and use customer_id for filtering")
-        print("  ✓ Planning execution works with customer-based filtering")
+        print("    accept and use tenant_id for filtering")
+        print("  ✓ Planning execution works with tenant-based filtering")
         if is_valid and len(supply_plans) > 0:
             print(f"  ✓ Supply plans generated with tenant_id={tenant.id}")
         print()

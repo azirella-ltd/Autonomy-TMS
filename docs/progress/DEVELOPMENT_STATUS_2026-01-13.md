@@ -494,7 +494,7 @@ Support stochastic supply chain research:
 
 ### Default Credentials
 - **Email**: systemadmin@autonomy.ai
-- **Password**: Autonomy@2025
+- **Password**: Autonomy@2026
 
 ### Running Services
 ```bash

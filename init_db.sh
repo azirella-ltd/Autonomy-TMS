@@ -3,10 +3,10 @@
 #!/bin/bash
 
 # Get database credentials from environment variables or use defaults
-DB_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-Autonomy@2025}
+DB_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-Autonomy@2026}
 DB_NAME=${MYSQL_DATABASE:-autonomy}
 DB_USER=${MYSQL_USER:-autonomy_user}
-DB_PASSWORD=${MYSQL_PASSWORD:-Autonomy@2025}
+DB_PASSWORD=${MYSQL_PASSWORD:-Autonomy@2026}
 
 # Log the database initialization
 echo "Initializing database: $DB_NAME with user: $DB_USER"

@@ -250,7 +250,7 @@ RESPONSE=$(curl -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "systemadmin@autonomy.ai",
-    "password": "Autonomy@2025"
+    "password": "Autonomy@2026"
   }')
 
 TOKEN=$(echo $RESPONSE | jq -r '.access_token')

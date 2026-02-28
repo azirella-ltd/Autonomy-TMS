@@ -276,7 +276,7 @@ TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "systemadmin@autonomy.ai",
-    "password": "Autonomy@2025"
+    "password": "Autonomy@2026"
   }' | jq -r '.access_token')
 
 echo "Token: $TOKEN"
@@ -520,7 +520,7 @@ fi
 echo -n "Test 4: Authentication... "
 token=$(curl -sf -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"systemadmin@autonomy.ai","password":"Autonomy@2025"}' \
+  -d '{"email":"systemadmin@autonomy.ai","password":"Autonomy@2026"}' \
   | jq -r '.access_token')
 if [ -n "$token" ] && [ "$token" != "null" ]; then
     echo -e "${GREEN}PASS${NC}"

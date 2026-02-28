@@ -108,7 +108,7 @@ async def migrate_group_ids():
         print("-" * 80)
 
         # inv_level doesn't have config_id, need to infer from product_id + site_id
-        # For now, we'll skip this or use a default customer if there's ambiguity
+        # For now, we'll skip this or use a default tenant if there's ambiguity
         count_query = text("SELECT COUNT(*) as cnt FROM inv_level")
         result = await db.execute(count_query)
         total = result.scalar()

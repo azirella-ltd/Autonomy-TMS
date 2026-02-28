@@ -98,7 +98,7 @@ def init_db(drop_tables=False):
                 test_user = User(
                     username="systemadmin",
                     email="systemadmin@autonomy.ai",
-                    hashed_password=get_password_hash(os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")),
+                    hashed_password=get_password_hash(os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2026")),
                     full_name="System Admin",
                     is_active=True,
                     is_superuser=True
@@ -106,7 +106,7 @@ def init_db(drop_tables=False):
                 db.add(test_user)
                 db.commit()
                 print(
-                    "Created system administrator user: systemadmin@autonomy.ai / Autonomy@2025"
+                    "Created system administrator user: systemadmin@autonomy.ai / Autonomy@2026"
                 )
         
     except Exception as e:

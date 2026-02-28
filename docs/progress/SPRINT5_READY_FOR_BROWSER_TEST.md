@@ -99,7 +99,7 @@ STATUS: Up (healthy)
 
 **Step 1: Login** (1 minute)
 1. Open: http://localhost:8088
-2. Login: `systemadmin@autonomy.ai` / `Autonomy@2025`
+2. Login: `systemadmin@autonomy.ai` / `Autonomy@2026`
 3. Navigate to any game (or create one)
 
 **Step 2: Achievements Tab** (2 minutes)

@@ -2977,7 +2977,7 @@ http://localhost:5050      (Local)
 **System Administrator**:
 ```
 Email:    systemadmin@autonomy.ai
-Password: Autonomy@2025
+Password: Autonomy@2026
 ```
 - Full system access (SYSTEM_ADMIN role)
 - Create/manage groups, users, scenarios
@@ -2988,22 +2988,22 @@ Password: Autonomy@2025
 ```
 TBG Admin:
   Email:    tbg_admin@autonomy.ai
-  Password: Autonomy@2025
+  Password: Autonomy@2026
   Access:   Default TBG group scenarios
 
 Complex SC Admin:
   Email:    complex_sc_admin@autonomy.ai
-  Password: Autonomy@2025
+  Password: Autonomy@2026
   Access:   Complex SC multi-region scenarios
 
 Three FG Admin:
   Email:    ThreeTBG_admin@autonomy.ai
-  Password: Autonomy@2025
+  Password: Autonomy@2026
   Access:   Three finished goods scenarios
 
 Variable TBG Admin:
   Email:    VarTBG_admin@autonomy.ai
-  Password: Autonomy@2025
+  Password: Autonomy@2026
   Access:   Variable demand scenarios
 ```
 
@@ -3034,7 +3034,7 @@ http://localhost:8088
 ```
 
 **2. Login**:
-- Use `systemadmin@autonomy.ai` / `Autonomy@2025`
+- Use `systemadmin@autonomy.ai` / `Autonomy@2026`
 - Navigate to dashboard after login
 
 **3. Key Pages**:

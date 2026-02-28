@@ -159,7 +159,7 @@ SELECT * FROM schema_migrations WHERE version = 'sprint4_a2a_features';
 
 2. **Access the application**:
    - Frontend: http://localhost:8088
-   - Login: systemadmin@autonomy.ai / Autonomy@2025
+   - Login: systemadmin@autonomy.ai / Autonomy@2026
 
 3. **Test each feature**:
    - Create a new game with AI suggestions enabled

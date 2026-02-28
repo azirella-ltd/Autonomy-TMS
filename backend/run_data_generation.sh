@@ -2,7 +2,7 @@
 
 # Set database environment variables
 export MYSQL_USER=autonomy_user
-export MYSQL_PASSWORD=Autonomy@2025
+export MYSQL_PASSWORD=Autonomy@2026
 export MYSQL_HOST=db
 export MYSQL_DB=autonomy
 

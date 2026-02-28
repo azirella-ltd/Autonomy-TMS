@@ -130,7 +130,7 @@ EMBEDDING_API_BASE=http://ollama:11434/v1
 EMBEDDING_MODEL=nomic-embed-text
 
 # OPTIONAL: Default admin password (change post-deploy)
-AUTONOMY_DEFAULT_PASSWORD=Autonomy@2025
+AUTONOMY_DEFAULT_PASSWORD=Autonomy@2026
 ```
 
 See [Appendix A](#appendix-a-environment-variables) for full variable reference.
@@ -245,7 +245,7 @@ The wizard generates a complete customer with supply chain, products, forecasts,
 # Login as system admin
 TOKEN=$(curl -s -X POST http://localhost:8088/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"systemadmin@autonomy.ai","password":"Autonomy@2025"}' \
+  -d '{"email":"systemadmin@autonomy.ai","password":"Autonomy@2026"}' \
   | jq -r '.access_token')
 
 # Generate synthetic customer

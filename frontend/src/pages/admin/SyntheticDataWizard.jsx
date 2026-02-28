@@ -491,7 +491,7 @@ const SyntheticDataWizard = () => {
             <AlertTitle>Next Steps</AlertTitle>
             <Typography variant="body2">
               1. Log in with the admin credentials (default password:
-              Autonomy@2025)
+              Autonomy@2026)
               <br />
               2. Review the supply chain configuration
               <br />

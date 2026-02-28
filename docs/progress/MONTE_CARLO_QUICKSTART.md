@@ -9,7 +9,7 @@ Get started with probabilistic supply chain planning in under 5 minutes!
 1. **Backend running**: `make up` or `docker compose up`
 2. **Database initialized**: Tables created via `make db-bootstrap`
 3. **Frontend running**: Navigate to http://localhost:8088
-4. **User logged in**: Use systemadmin@autonomy.ai / Autonomy@2025
+4. **User logged in**: Use systemadmin@autonomy.ai / Autonomy@2026
 
 ---
 

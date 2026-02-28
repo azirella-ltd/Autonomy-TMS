@@ -2196,14 +2196,14 @@ def main():
     db = SessionLocal()
 
     try:
-        # --- Find Food Dist customer ---
+        # --- Find Food Dist tenant ---
         tenant = db.query(Tenant).filter(Tenant.name == "Food Dist").first()
         if not tenant:
             print("\nERROR: Food Dist tenant not found!")
             print("Run seed_dot_foods_demo.py first.")
             return
 
-        print(f"\nFound customer: {tenant.name} (ID: {tenant.id}, Mode: {tenant.mode})")
+        print(f"\nFound tenant: {tenant.name} (ID: {tenant.id}, Mode: {tenant.mode})")
 
         # --- Find SC config ---
         config = db.query(SupplyChainConfig).filter(
@@ -2211,12 +2211,12 @@ def main():
             SupplyChainConfig.name.ilike("%Food Dist%"),
         ).first()
         if not config:
-            # Try any config in this customer
+            # Try any config in this tenant
             config = db.query(SupplyChainConfig).filter(
                 SupplyChainConfig.tenant_id == tenant.id,
             ).first()
         if not config:
-            print("\nERROR: No supply chain config found for Food Dist customer!")
+            print("\nERROR: No supply chain config found for Food Dist tenant!")
             print("Run seed_food_dist_hierarchies.py first.")
             return
 

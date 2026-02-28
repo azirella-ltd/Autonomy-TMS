@@ -103,7 +103,7 @@ SELECT COUNT(*) FROM player_stats;  -- Result: 4
 
 ### Step 1: Login (1 minute)
 1. Open: http://localhost:8088
-2. Login: `systemadmin@autonomy.ai` / `Autonomy@2025`
+2. Login: `systemadmin@autonomy.ai` / `Autonomy@2026`
 3. Navigate to Dashboard
 
 ### Step 2: Join or Create a Game (2 minutes)
@@ -213,7 +213,7 @@ docker compose exec -T db mysql -u beer_user -p'change-me-user' beer_game \
 # Login first
 curl -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  -d 'username=systemadmin@autonomy.ai&password=Autonomy@2025' \
+  -d 'username=systemadmin@autonomy.ai&password=Autonomy@2026' \
   -c /tmp/beer_cookies.txt
 
 # Get achievements

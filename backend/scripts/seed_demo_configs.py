@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seed only the default demo customer and related configs/scenarios."""
+"""Seed only the default demo tenant and related configs/scenarios."""
 
 from __future__ import annotations
 

@@ -389,7 +389,7 @@ Expected output:
 1. Open Beer Game mobile app on your device
 2. Log in with test account:
    - Email: `systemadmin@autonomy.ai`
-   - Password: `Autonomy@2025`
+   - Password: `Autonomy@2026`
 
 3. **Option A: Use App Debug Mode**
    - If the app has debug mode, it may display the JWT token

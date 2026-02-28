@@ -3,7 +3,7 @@
 Seed Food Dist Allocation & ATP Demo Data
 
 Creates comprehensive allocation planning and ATP consumption/order promising
-demo data for the Food Dist customer. Seeds:
+demo data for the Food Dist tenant. Seeds:
 
 1. Site hierarchy (Company → Region → Country → Site)
 2. Product hierarchy (Category → Family → Group → Product)
@@ -65,7 +65,7 @@ from app.services.rbac_service import RBACService, seed_default_permissions
 # Seed for reproducibility
 random.seed(42)
 
-DEFAULT_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")
+DEFAULT_PASSWORD = os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2026")
 
 # =============================================================================
 # Customer → Priority Mapping

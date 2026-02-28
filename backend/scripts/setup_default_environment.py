@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script to set up the default environment with a customer admin, default customer,
+Script to set up the default environment with a tenant admin, default tenant,
 supply chain configuration, and a scenario with AI scenario_users.
 """
 import asyncio
@@ -56,14 +56,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 async def create_default_environment():
-    """Create the default environment with customer admin, customer, and scenario."""
+    """Create the default environment with tenant admin, tenant, and scenario."""
     # Create all tables if they don't exist
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     
     async with async_session_factory() as db:
         try:
-            # Check if customer admin already exists
+            # Check if tenant admin already exists
             result = await db.execute(
                 select(User).where(User.email == "tenantadmin@autonomy.ai")
             )
@@ -74,33 +74,33 @@ async def create_default_environment():
                 tenant_admin = User(
                     username="tenantadmin",
                     email="tenantadmin@autonomy.ai",
-                    hashed_password=get_password_hash(os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")),
+                    hashed_password=get_password_hash(os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2026")),
                     full_name="Tenant Admin",
                     is_superuser=False,
                     is_active=True
                 )
                 db.add(tenant_admin)
                 await db.flush()  # Flush to get the ID
-                logger.info("Created tenant admin user: tenantadmin@autonomy.ai / Autonomy@2025")
+                logger.info("Created tenant admin user: tenantadmin@autonomy.ai / Autonomy@2026")
         
-            # Check if default customer exists
+            # Check if default tenant exists
             result = await db.execute(
                 select(Tenant).where(Customer.name == "Default Simulation")
             )
             default_tenant = result.scalars().first()
             
             if not default_tenant:
-                # Create default customer
+                # Create default tenant
                 default_tenant = Tenant(
                     name="Default Simulation",
-                    description="Default Customer for Autonomy",
+                    description="Default Tenant for Autonomy",
                     admin_id=tenant_admin.id
                 )
                 db.add(default_tenant)
                 await db.flush()  # Flush to get the ID
-                logger.info(f"✅ Created default customer: {default_tenant.name}")
+                logger.info(f"✅ Created default tenant: {default_tenant.name}")
                 
-                # Update customer admin with tenant_id
+                # Update tenant admin with tenant_id
                 tenant_admin.tenant_id = default_tenant.id
                 await db.flush()
                 logger.info(f"Updated tenant admin with tenant_id: {tenant_admin.tenant_id}")
@@ -196,11 +196,11 @@ async def create_default_environment():
                 ai_user = User(
                     username=f"ai_{role}",
                     email=f"ai_{role}@autonomy.ai",
-                    hashed_password=get_password_hash(os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2025")),
+                    hashed_password=get_password_hash(os.getenv("AUTONOMY_DEFAULT_PASSWORD", "Autonomy@2026")),
                     full_name=f"AI {role.capitalize()}",
                     is_superuser=False,
                     is_active=True,
-                    tenant_id=default_tenant.id  # Add AI users to the default customer
+                    tenant_id=default_tenant.id  # Add AI users to the default tenant
                 )
                 db.add(ai_user)
                 await db.flush()

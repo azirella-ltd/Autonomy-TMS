@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seed only the Three FG demo customer and its scenarios."""
+"""Seed only the Three FG demo tenant and its scenarios."""
 
 from __future__ import annotations
 

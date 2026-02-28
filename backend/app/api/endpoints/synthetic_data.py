@@ -367,7 +367,7 @@ async def generate_from_wizard(
 
     **What Gets Created:**
     - Group (organization)
-    - Admin user with default password "Autonomy@2025"
+    - Admin user with default password "Autonomy@2026"
     - Supply chain configuration (nodes, lanes, items)
     - Site and product hierarchies
     - Forecasts and inventory levels

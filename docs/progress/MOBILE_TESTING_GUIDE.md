@@ -42,7 +42,7 @@ Create test accounts for different roles:
 ```bash
 # System Admin
 Email: systemadmin@autonomy.ai
-Password: Autonomy@2025
+Password: Autonomy@2026
 
 # Test Player 1
 Email: player1@test.com

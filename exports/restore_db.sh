@@ -45,4 +45,4 @@ sudo -u postgres psql -d "$DB_NAME" -c "SELECT id, username, email, role, is_sup
 
 echo ""
 echo "Done! Database restored successfully."
-echo "Login: systemadmin@autonomy.com / Autonomy@2025"
+echo "Login: systemadmin@autonomy.com / Autonomy@2026"

@@ -219,7 +219,7 @@ Add "Visualizations" action to game cards in GamesList.jsx
 1. **Login**:
    - Go to `http://localhost:8088/login`
    - Email: `systemadmin@autonomy.ai`
-   - Password: `Autonomy@2025`
+   - Password: `Autonomy@2026`
 
 2. **Navigate to Games List**:
    - Click "Games" in navbar or go to `http://localhost:8088/games`

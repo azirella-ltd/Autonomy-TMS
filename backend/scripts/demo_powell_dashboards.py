@@ -12,7 +12,7 @@ Prerequisites:
 
 Demo User:
     Email: demo@distdemo.com
-    Password: Autonomy@2025
+    Password: Autonomy@2026
     Access: All Powell dashboards (no login/logout needed!)
 
 Run:
@@ -269,7 +269,7 @@ def demo_navigation_flow():
 
     console.print(Panel(
         "[bold]RECOMMENDED DEMO FLOW[/bold]\n\n"
-        "1. Login as demo@distdemo.com (password: Autonomy@2025)\n"
+        "1. Login as demo@distdemo.com (password: Autonomy@2026)\n"
         "   → Lands on Executive Dashboard (SC_VP view)\n\n"
         "2. Show Executive Dashboard\n"
         "   → KPI cards: Agent Score, Override Rate, Touchless Rate\n"
@@ -351,7 +351,7 @@ def main():
         "1. Start the stack: make up\n"
         "2. Seed demo data: docker compose exec backend python scripts/seed_dot_foods_demo.py\n"
         "3. Open: http://localhost:8088\n"
-        "4. Login: demo@distdemo.com / Autonomy@2025\n"
+        "4. Login: demo@distdemo.com / Autonomy@2026\n"
         "5. Navigate: Executive Dashboard → S&OP Worklist → Agent Performance\n\n"
         "[bold]Demo Users:[/bold]\n"
         "• demo@distdemo.com - All access (recommended)\n"

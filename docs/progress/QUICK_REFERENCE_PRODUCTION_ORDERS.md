@@ -55,7 +55,7 @@ import requests
 # Login first
 login_response = requests.post(
     "http://localhost:8000/api/v1/auth/login",
-    json={"email": "systemadmin@autonomy.ai", "password": "Autonomy@2025"}
+    json={"email": "systemadmin@autonomy.ai", "password": "Autonomy@2026"}
 )
 
 # Get session cookie

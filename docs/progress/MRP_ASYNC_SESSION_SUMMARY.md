@@ -501,7 +501,7 @@ docker compose logs -f backend
 ```bash
 # Login
 curl -X POST http://localhost:8000/api/auth/login \
-  -d "username=systemadmin@autonomy.ai&password=Autonomy@2025" \
+  -d "username=systemadmin@autonomy.ai&password=Autonomy@2026" \
   -c cookies.txt
 
 # Run MRP

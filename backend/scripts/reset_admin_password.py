@@ -18,7 +18,7 @@ def reset_admin_password():
             return
 
         # New password
-        new_password = "Autonomy@2025"
+        new_password = "Autonomy@2026"
         hashed_password = get_password_hash(new_password)
 
         # Update password

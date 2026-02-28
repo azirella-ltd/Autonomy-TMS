@@ -21,7 +21,7 @@ ENV PYTHONPATH=/app
 ENV MYSQL_SERVER=db
 ENV MYSQL_PORT=3306
 ENV MYSQL_USER=autonomy_user
-ENV MYSQL_PASSWORD=Autonomy@2025
+ENV MYSQL_PASSWORD=Autonomy@2026
 ENV MYSQL_DB=autonomy
 
 # The command to run the script
