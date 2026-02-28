@@ -304,6 +304,29 @@ class DistributionEngine:
         self.seed = seed
         self.rng = np.random.default_rng(seed)
 
+    def fit_from_data(
+        self,
+        data: np.ndarray,
+        variable_type: Optional[str] = None,
+        candidates: Optional[list] = None,
+    ):
+        """Fit distributions to observed data and return ranked results.
+
+        Convenience wrapper around DistributionFitter.fit(). The best-fit
+        distribution can be cached for subsequent sampling via its config.
+
+        Args:
+            data: 1-D array of observed values
+            variable_type: Hint for candidate selection ("lead_time", "demand", "yield")
+            candidates: Explicit list of distribution types to try
+
+        Returns:
+            FitReport with best-fit distribution and all candidates ranked by AIC
+        """
+        from .distribution_fitter import DistributionFitter
+        fitter = DistributionFitter()
+        return fitter.fit(data, variable_type=variable_type, candidates=candidates)
+
 
 class StochasticVariable:
     """Helper class for managing a single stochastic variable

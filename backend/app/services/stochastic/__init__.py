@@ -65,6 +65,14 @@ from .distribution_engine import (
     validate_correlation_matrix,
 )
 
+from .distribution_fitter import (
+    DistributionFitter,
+    FitResult,
+    FitReport,
+)
+
+from .feature_extractor import DistributionFeatureExtractor
+
 __all__ = [
     # Distributions
     'Distribution',
@@ -100,4 +108,12 @@ __all__ = [
     'StochasticVariable',
     'create_distribution_preview',
     'validate_correlation_matrix',
+
+    # Distribution Fitter
+    'DistributionFitter',
+    'FitResult',
+    'FitReport',
+
+    # Feature Extractor
+    'DistributionFeatureExtractor',
 ]

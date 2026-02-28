@@ -388,3 +388,99 @@ async def get_distribution_types(
     ]
 
     return DistributionTypesResponse(types=types)
+
+
+# ============================================================================
+# DISTRIBUTION FITTING ENDPOINTS (Kravanja 2026 insights)
+# ============================================================================
+
+class FitDistributionRequest(BaseModel):
+    """Request to fit distributions to observed data"""
+    data: List[float] = Field(..., description="Array of observed values", min_length=2)
+    variable_type: Optional[str] = Field(
+        None,
+        description="Variable type hint for candidate selection: 'lead_time', 'demand', 'yield'",
+    )
+    candidates: Optional[List[str]] = Field(
+        None,
+        description="Explicit distribution types to try (overrides variable_type)",
+    )
+
+
+class FitCandidateResponse(BaseModel):
+    """A single fitted distribution candidate"""
+    dist_type: str
+    params: Dict[str, float]
+    ks_statistic: float
+    ks_pvalue: float
+    aic: float
+    bic: float
+
+
+class FitDistributionResponse(BaseModel):
+    """Response with distribution fitting results"""
+    best: FitCandidateResponse
+    candidates: List[FitCandidateResponse]
+    data_summary: Dict[str, float]
+    warnings: List[str]
+    distribution_config: Dict[str, Any] = Field(
+        ..., description="Platform-compatible config for the best-fit distribution"
+    )
+
+
+@router.post("/fit", response_model=FitDistributionResponse)
+async def fit_distribution(
+    request: FitDistributionRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Fit candidate distributions to observed data
+
+    Uses MLE (Maximum Likelihood Estimation) to fit multiple candidate
+    distributions, ranks them by AIC (Akaike Information Criterion), and
+    returns the best fit along with goodness-of-fit metrics (KS test).
+
+    Insight: Kravanja (2026) - "Stop Using Average and Standard Deviation for
+    Your Features." Supply chain data is rarely Normal; fitting the actual
+    distribution (Weibull for lead times, Lognormal for demand) yields better
+    tail-risk estimates and more meaningful features.
+
+    Requires authentication.
+    """
+    try:
+        from app.services.stochastic.distribution_fitter import DistributionFitter
+
+        fitter = DistributionFitter()
+        data_array = np.array(request.data, dtype=float)
+        report = fitter.fit(
+            data_array,
+            variable_type=request.variable_type,
+            candidates=request.candidates,
+        )
+
+        return FitDistributionResponse(
+            best=FitCandidateResponse(
+                dist_type=report.best.dist_type,
+                params=report.best.params,
+                ks_statistic=report.best.ks_statistic,
+                ks_pvalue=report.best.ks_pvalue,
+                aic=report.best.aic,
+                bic=report.best.bic,
+            ),
+            candidates=[
+                FitCandidateResponse(
+                    dist_type=c.dist_type,
+                    params=c.params,
+                    ks_statistic=c.ks_statistic,
+                    ks_pvalue=c.ks_pvalue,
+                    aic=c.aic,
+                    bic=c.bic,
+                )
+                for c in report.candidates
+            ],
+            data_summary=report.data_summary,
+            warnings=report.warnings,
+            distribution_config=fitter.to_distribution_config(report.best),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Distribution fitting failed: {str(e)}")

@@ -3,12 +3,14 @@ Inventory Target Calculator - Step 2 of SC Planning Process
 
 Calculates target inventory levels based on inventory policies.
 
-Supports 5 safety stock policy types:
+Supports 6 safety stock policy types:
 1. abs_level - Absolute level (fixed quantity)
 2. doc_dem - Days of coverage (demand-based)
 3. doc_fcst - Days of coverage (forecast-based)
 4. sl - Service level using King Formula: SS = z × √(LT × σ_d² + d² × σ_LT²)
-5. conformal - Conformal prediction-based (distribution-free guarantees)
+5. sl_fitted - Distribution-aware service level (fits Weibull/Lognormal/Gamma
+   to demand and lead time data, uses Monte Carlo when distributions are non-Normal)
+6. conformal - Conformal prediction-based (distribution-free guarantees)
 
 King Formula (sl policy):
   - Accounts for BOTH demand variability AND lead time variability
@@ -268,7 +270,10 @@ class InventoryTargetCalculator:
         - abs_level: Fixed quantity (absolute safety stock)
         - doc_dem: Days of coverage based on actual historical demand
         - doc_fcst: Days of coverage based on forecast
-        - sl: Service level (probabilistic with z-score)
+        - sl: Service level (probabilistic with z-score, assumes Normal)
+        - sl_fitted: Service level with fitted distributions (Kravanja 2026)
+        - conformal: Conformal prediction (distribution-free guarantee)
+        - sl_conformal_fitted: Hybrid — fitted Monte Carlo + conformal floor
 
         Reference: https://docs.[removed]
 
@@ -332,6 +337,61 @@ class InventoryTargetCalculator:
             safety_stock = z_score * math.sqrt(demand_variance_term + lead_time_variance_term)
             return safety_stock
 
+        elif policy.ss_policy == 'sl_fitted':
+            # Distribution-aware service level safety stock
+            # Fits actual distributions to demand and lead time data instead of
+            # assuming Normal (Kravanja 2026: "Stop Using Average and Standard
+            # Deviation for Your Features"). Uses Monte Carlo convolution when
+            # data is non-Normal; falls back to King Formula otherwise.
+            service_level = float(policy.service_level or 0.95)
+
+            # Get historical data arrays
+            demand_data = await self._get_demand_history_array(
+                product_id, site_id, start_date, lookback_days=90
+            )
+            lead_time_data = await self._get_lead_time_history_array(
+                product_id, site_id
+            )
+            lead_time = await self.get_replenishment_lead_time(product_id, site_id)
+
+            # Fit distributions
+            from ..stochastic.distribution_fitter import DistributionFitter
+            fitter = DistributionFitter()
+
+            demand_report = None
+            lt_report = None
+            if len(demand_data) >= fitter.MIN_SAMPLES_FOR_FIT:
+                demand_report = fitter.fit(demand_data, variable_type="demand")
+            if len(lead_time_data) >= fitter.MIN_SAMPLES_FOR_FIT:
+                lt_report = fitter.fit(lead_time_data, variable_type="lead_time")
+
+            # Check if both are Normal-like (KS p-value > 0.05 for Normal)
+            demand_is_normal = self._is_normal_like(demand_report)
+            lt_is_normal = self._is_normal_like(lt_report)
+
+            if demand_is_normal and lt_is_normal:
+                # Both Normal-like: use standard King Formula
+                z_score = self.get_z_score(service_level)
+                avg_d = float(np.mean(demand_data)) if len(demand_data) > 0 else 0.0
+                std_d = float(np.std(demand_data, ddof=1)) if len(demand_data) > 1 else 0.0
+                std_lt = float(np.std(lead_time_data, ddof=1)) if len(lead_time_data) > 1 else lead_time * 0.25
+                demand_var = lead_time * (std_d ** 2)
+                lt_var = (avg_d ** 2) * (std_lt ** 2)
+                safety_stock = z_score * math.sqrt(demand_var + lt_var)
+            else:
+                # Non-Normal: Monte Carlo convolution of fitted distributions
+                demand_dist = demand_report.best.distribution if demand_report else None
+                lt_dist = lt_report.best.distribution if lt_report else None
+                safety_stock = self._monte_carlo_safety_stock(
+                    demand_dist=demand_dist,
+                    lt_dist=lt_dist,
+                    avg_daily_demand=float(np.mean(demand_data)) if len(demand_data) > 0 else 0.0,
+                    avg_lead_time=lead_time,
+                    service_level=service_level,
+                )
+
+            return safety_stock
+
         elif policy.ss_policy == 'conformal':
             # Conformal prediction-based safety stock
             # Uses distribution-free prediction intervals for formal guarantees
@@ -356,6 +416,81 @@ class InventoryTargetCalculator:
             )
 
             return result['safety_stock']
+
+        elif policy.ss_policy == 'sl_conformal_fitted':
+            # Hybrid: distribution-fitted Monte Carlo + conformal floor
+            #
+            # Combines the best of both approaches:
+            # - sl_fitted: Fits actual distributions (Weibull, Lognormal, etc.)
+            #   for precise tail estimates via Monte Carlo DDLT simulation
+            # - conformal: Distribution-free guarantee as a lower bound
+            #
+            # Result = max(fitted_ss, conformal_ss) ensures we get:
+            # - Tighter intervals when the distribution fit is accurate
+            # - Guaranteed coverage when the fit is wrong (conformal floor)
+            service_level = float(policy.service_level or 0.95)
+
+            # --- Step 1: Fitted Monte Carlo safety stock ---
+            demand_data = await self._get_demand_history_array(
+                product_id, site_id, start_date, lookback_days=90
+            )
+            lead_time_data = await self._get_lead_time_history_array(
+                product_id, site_id
+            )
+            lead_time = await self.get_replenishment_lead_time(product_id, site_id)
+
+            from ..stochastic.distribution_fitter import DistributionFitter
+            fitter = DistributionFitter()
+
+            demand_report = None
+            lt_report = None
+            if len(demand_data) >= fitter.MIN_SAMPLES_FOR_FIT:
+                demand_report = fitter.fit(demand_data, variable_type="demand")
+            if len(lead_time_data) >= fitter.MIN_SAMPLES_FOR_FIT:
+                lt_report = fitter.fit(lead_time_data, variable_type="lead_time")
+
+            demand_is_normal = self._is_normal_like(demand_report)
+            lt_is_normal = self._is_normal_like(lt_report)
+
+            if demand_is_normal and lt_is_normal:
+                z_score = self.get_z_score(service_level)
+                avg_d = float(np.mean(demand_data)) if len(demand_data) > 0 else 0.0
+                std_d = float(np.std(demand_data, ddof=1)) if len(demand_data) > 1 else 0.0
+                std_lt = float(np.std(lead_time_data, ddof=1)) if len(lead_time_data) > 1 else lead_time * 0.25
+                demand_var = lead_time * (std_d ** 2)
+                lt_var = (avg_d ** 2) * (std_lt ** 2)
+                ss_fitted = z_score * math.sqrt(demand_var + lt_var)
+            else:
+                demand_dist = demand_report.best.distribution if demand_report else None
+                lt_dist = lt_report.best.distribution if lt_report else None
+                ss_fitted = self._monte_carlo_safety_stock(
+                    demand_dist=demand_dist,
+                    lt_dist=lt_dist,
+                    avg_daily_demand=float(np.mean(demand_data)) if len(demand_data) > 0 else 0.0,
+                    avg_lead_time=lead_time,
+                    service_level=service_level,
+                )
+
+            # --- Step 2: Conformal floor ---
+            ss_conformal = 0.0
+            try:
+                from ..conformal_prediction.suite import get_conformal_suite
+                suite = get_conformal_suite()
+                avg_daily_demand = self.calculate_avg_daily_forecast(
+                    product_id, site_id, net_demand, start_date, horizon_days=30
+                )
+                conformal_result = await self._calculate_conformal_safety_stock(
+                    suite, product_id, site_id, avg_daily_demand, lead_time,
+                    policy.conformal_demand_coverage or 0.90,
+                    policy.conformal_lead_time_coverage or 0.90
+                )
+                ss_conformal = conformal_result['safety_stock']
+            except Exception:
+                pass  # Conformal floor is advisory; fitted is primary
+
+            # Use the maximum: fitted gives precision, conformal gives guarantee
+            safety_stock = max(ss_fitted, ss_conformal)
+            return safety_stock
 
         else:
             # Fallback for policies without ss_policy set (backward compatibility)
@@ -602,6 +737,119 @@ class InventoryTargetCalculator:
             estimated_std_dev = avg_lead_time * 0.25
 
             return estimated_std_dev
+
+    # ------------------------------------------------------------------
+    # Distribution-aware helpers (sl_fitted policy)
+    # ------------------------------------------------------------------
+
+    async def _get_demand_history_array(
+        self, product_id: str, site_id: str, start_date: date, lookback_days: int
+    ) -> np.ndarray:
+        """Get historical demand quantities as a numpy array for fitting."""
+        async with SessionLocal() as db:
+            lookback_start = start_date - timedelta(days=lookback_days)
+            result = await db.execute(
+                select(OutboundOrderLine).filter(
+                    OutboundOrderLine.config_id == self.config_id,
+                    OutboundOrderLine.product_id == product_id,
+                    OutboundOrderLine.site_id == site_id,
+                    OutboundOrderLine.order_date >= lookback_start,
+                    OutboundOrderLine.order_date < start_date
+                )
+            )
+            orders = result.scalars().all()
+            if not orders:
+                return np.array([], dtype=float)
+            return np.array(
+                [float(o.ordered_quantity) for o in orders if o.ordered_quantity is not None],
+                dtype=float,
+            )
+
+    async def _get_lead_time_history_array(
+        self, product_id: str, site_id: str
+    ) -> np.ndarray:
+        """Get historical lead time values as a numpy array for fitting."""
+        async with SessionLocal() as db:
+            result = await db.execute(
+                select(VendorLeadTime).filter(
+                    VendorLeadTime.product_id == product_id,
+                    VendorLeadTime.site_id == site_id
+                ).order_by(VendorLeadTime.id.desc()).limit(100)
+            )
+            records = result.scalars().all()
+            lead_times = [
+                float(lt.lead_time_days)
+                for lt in records
+                if lt.lead_time_days is not None
+            ]
+            return np.array(lead_times, dtype=float) if lead_times else np.array([], dtype=float)
+
+    @staticmethod
+    def _is_normal_like(report) -> bool:
+        """Check if a FitReport indicates the data is Normal-like.
+
+        Returns True if no report (insufficient data) or if Normal fit
+        has KS p-value > 0.05 and is the best or near-best by AIC.
+        """
+        if report is None:
+            return True  # Insufficient data; assume Normal (fallback)
+        # Find the Normal candidate if it exists
+        for c in report.candidates:
+            if c.dist_type == "normal" and c.ks_pvalue > 0.05:
+                # Normal is plausible. Check if it's within 2 AIC of best.
+                if c.aic <= report.best.aic + 2.0:
+                    return True
+        return False
+
+    @staticmethod
+    def _monte_carlo_safety_stock(
+        demand_dist,
+        lt_dist,
+        avg_daily_demand: float,
+        avg_lead_time: int,
+        service_level: float,
+        n_simulations: int = 10_000,
+        seed: int = 42,
+    ) -> float:
+        """Compute safety stock via Monte Carlo convolution of distributions.
+
+        Samples demand-during-lead-time (DDLT) by:
+        1. Sampling lead times from lt_dist (or using avg if unavailable)
+        2. For each LT sample, summing that many demand samples from demand_dist
+        3. Safety stock = percentile(DDLT, service_level) - mean(DDLT)
+
+        This is the textbook approach when normality cannot be assumed.
+        """
+        rng = np.random.default_rng(seed)
+
+        # Sample lead times
+        if lt_dist is not None:
+            lt_samples = lt_dist.sample(size=n_simulations, seed=seed)
+            lt_samples = np.maximum(lt_samples, 1).astype(int)
+        else:
+            lt_samples = np.full(n_simulations, avg_lead_time, dtype=int)
+
+        # For each LT, sum that many daily demands
+        ddlt = np.zeros(n_simulations)
+        if demand_dist is not None:
+            # Pre-sample a large block and slice per LT
+            max_lt = int(np.max(lt_samples))
+            demand_block = demand_dist.sample(
+                size=n_simulations * max_lt, seed=seed + 1
+            ).reshape(n_simulations, max_lt)
+            demand_block = np.maximum(demand_block, 0)
+            for i in range(n_simulations):
+                ddlt[i] = np.sum(demand_block[i, :lt_samples[i]])
+        else:
+            # No demand distribution; use constant demand
+            ddlt = avg_daily_demand * lt_samples.astype(float)
+
+        # Safety stock = target percentile - expected DDLT
+        target = float(np.percentile(ddlt, service_level * 100))
+        expected = float(np.mean(ddlt))
+        safety_stock = max(0.0, target - expected)
+
+        return safety_stock
 
     async def calculate_review_period_demand(
         self,

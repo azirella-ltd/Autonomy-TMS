@@ -771,6 +771,91 @@ class SupplyChainConformalSuite:
         logger.info("Reset SupplyChainConformalSuite - all predictors cleared")
 
     # =========================================================================
+    # Distribution Fitting for Residuals (Kravanja 2026)
+    # =========================================================================
+
+    @staticmethod
+    def fit_residual_distribution(
+        residuals: List[float],
+        variable_type: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Fit a distribution to conformal prediction residuals.
+
+        Enriches conformal intervals with parametric distribution info.
+        When residuals are non-Normal (e.g., right-skewed lead time errors),
+        this provides diagnostic metadata and enables hybrid policies
+        (sl_conformal_fitted) to combine parametric precision with
+        conformal guarantees.
+
+        Args:
+            residuals: List of (predicted - actual) residuals
+            variable_type: Hint for candidate selection ("demand", "lead_time", "yield")
+
+        Returns:
+            Dict with distribution fit metadata, or None if insufficient data
+        """
+        try:
+            from ..stochastic.distribution_fitter import DistributionFitter
+        except ImportError:
+            logger.debug("DistributionFitter not available; skipping residual fitting")
+            return None
+
+        arr = np.array(residuals, dtype=float)
+        arr = arr[np.isfinite(arr)]
+
+        if len(arr) < DistributionFitter.MIN_SAMPLES_FOR_FIT:
+            return None
+
+        fitter = DistributionFitter()
+
+        # For residuals (which can be negative), use general candidates
+        # unless they're all positive (lead time errors are often positive)
+        try:
+            report = fitter.fit(arr, variable_type=None)
+        except Exception as e:
+            logger.debug("Residual distribution fitting failed: %s", e)
+            return None
+
+        # Check if Normal is a plausible model for the residuals
+        is_normal_like = False
+        normal_aic = float("inf")
+        for c in report.candidates:
+            if c.dist_type == "normal":
+                normal_aic = c.aic
+                if c.ks_pvalue > 0.05:
+                    is_normal_like = True
+                break
+
+        # If Normal wasn't a candidate, check best-fit
+        if normal_aic == float("inf"):
+            is_normal_like = report.best.dist_type == "normal"
+
+        # AIC gap: how much better is the best fit vs Normal?
+        aic_gap = normal_aic - report.best.aic if np.isfinite(normal_aic) else 0.0
+
+        metadata = {
+            "dist_type": report.best.dist_type,
+            "params": {k: round(v, 6) for k, v in report.best.params.items()},
+            "ks_statistic": round(report.best.ks_statistic, 6),
+            "ks_pvalue": round(report.best.ks_pvalue, 6),
+            "aic": round(report.best.aic, 4),
+            "is_normal_like": is_normal_like,
+            "normal_aic_gap": round(aic_gap, 4),
+            "n_residuals": len(arr),
+            "skewness": round(float(report.data_summary.get("skewness", 0.0)), 4),
+        }
+
+        if not is_normal_like:
+            logger.info(
+                "Residuals are non-Normal (best=%s, AIC gap=%.1f). "
+                "Consider sl_conformal_fitted for tighter intervals.",
+                report.best.dist_type, aic_gap,
+            )
+
+        return metadata
+
+    # =========================================================================
     # CoRel: Graph-Aware Relational Conformal Prediction
     # =========================================================================
 

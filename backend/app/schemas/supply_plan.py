@@ -15,6 +15,7 @@ class DemandModel(str, Enum):
     NORMAL = "normal"
     POISSON = "poisson"
     LOGNORMAL = "lognormal"
+    AUTO = "auto"  # Auto-detect best distribution from historical data
 
 
 class LeadTimeModel(str, Enum):
@@ -22,6 +23,9 @@ class LeadTimeModel(str, Enum):
     DETERMINISTIC = "deterministic"
     NORMAL = "normal"
     UNIFORM = "uniform"
+    WEIBULL = "weibull"        # Weibull (natural for time-to-event, always positive)
+    LOGNORMAL = "lognormal"    # Lognormal (right-skewed, always positive)
+    AUTO = "auto"              # Auto-detect best distribution from historical data
 
 
 class PrimaryObjective(str, Enum):

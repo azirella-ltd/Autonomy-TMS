@@ -6,9 +6,13 @@ distributions for Monte Carlo simulation in probabilistic supply planning.
 """
 
 from typing import Dict, List, Optional, Tuple
+import logging
 import numpy as np
-from scipy.stats import norm, poisson, uniform, lognorm
+from scipy.stats import norm, poisson, uniform, lognorm, weibull_min
+from scipy.special import gamma as gamma_fn
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.models.supply_chain_config import (
     SupplyChainConfig,
@@ -104,6 +108,14 @@ def sample_demand(
             mu = np.log(mean_demand) - 0.5 * sigma**2
             samples = lognorm.rvs(s=sigma, scale=np.exp(mu), size=horizon)
 
+        elif parameters.demand_model == "auto":
+            # Auto-detect best distribution from demand pattern data
+            # Insight: Kravanja (2026) — fitting the actual distribution yields
+            # better tail estimates than assuming Normal
+            samples = _auto_sample_demand(
+                demand_pattern, mean_demand, horizon, parameters
+            )
+
         else:
             # Default to constant demand
             samples = np.full(horizon, mean_demand)
@@ -157,6 +169,28 @@ def sample_lead_times(
             upper = base_lead_time + delta
             sampled = uniform.rvs(loc=lower, scale=upper - lower)
             sampled_lead_time = max(1, int(round(sampled)))
+
+        elif parameters.lead_time_model == "weibull":
+            # Weibull distribution — natural for time-to-event data
+            # Always positive, right-skewed, captures reliability patterns
+            # shape k: <1 = decreasing hazard, =1 = exponential, >1 = increasing
+            sampled_lead_time = _sample_weibull_lead_time(
+                base_lead_time, parameters.lead_time_variability
+            )
+
+        elif parameters.lead_time_model == "lognormal":
+            # Lognormal — right-skewed, always positive
+            cv = max(0.01, parameters.lead_time_variability)
+            sigma = np.sqrt(np.log(1 + cv ** 2))
+            mu = np.log(base_lead_time) - 0.5 * sigma ** 2
+            sampled = lognorm.rvs(s=sigma, scale=np.exp(mu))
+            sampled_lead_time = max(1, int(round(float(sampled))))
+
+        elif parameters.lead_time_model == "auto":
+            # Auto-detect from historical lane data
+            sampled_lead_time = _auto_sample_lead_time(
+                session, lane, base_lead_time, parameters
+            )
 
         else:
             sampled_lead_time = base_lead_time
@@ -373,3 +407,129 @@ def compute_probability_below_threshold(
     num_below = np.sum(values_array < threshold)
 
     return num_below / len(values_array)
+
+
+# ============================================================================
+# Distribution-aware sampling helpers (Kravanja 2026 insights)
+# ============================================================================
+
+def _sample_weibull_lead_time(base_lead_time: float, cv: float) -> int:
+    """Sample a lead time from Weibull parameterized by mean and CV.
+
+    Weibull is the natural distribution for time-to-event data (lead times,
+    delivery times). Its shape parameter k captures reliability patterns:
+    - k < 1: decreasing hazard (early failures / improving)
+    - k = 1: constant hazard (exponential / random)
+    - k > 1: increasing hazard (wear-out / aging)
+
+    Args:
+        base_lead_time: Expected lead time (mean)
+        cv: Coefficient of variation
+
+    Returns:
+        Sampled lead time (integer, minimum 1)
+    """
+    cv = max(0.01, cv)
+    # Solve for shape k from CV using Newton's method approximation
+    # CV = sqrt(Gamma(1+2/k) / Gamma(1+1/k)^2 - 1)
+    k = _weibull_shape_from_cv(cv)
+    # Scale lambda so that E[X] = base_lead_time = lambda * Gamma(1 + 1/k)
+    lam = base_lead_time / gamma_fn(1 + 1.0 / k)
+    sampled = float(weibull_min.rvs(c=k, scale=lam))
+    return max(1, int(round(sampled)))
+
+
+def _weibull_shape_from_cv(cv: float, max_iter: int = 50) -> float:
+    """Estimate Weibull shape parameter k from coefficient of variation.
+
+    Uses bisection search since the CV-to-k relationship is monotonic:
+    higher k = lower CV (more regular), lower k = higher CV (more variable).
+    """
+    # CV = sqrt(Gamma(1+2/k) / Gamma(1+1/k)^2 - 1)
+    def cv_from_k(k: float) -> float:
+        g1 = gamma_fn(1 + 1.0 / k)
+        g2 = gamma_fn(1 + 2.0 / k)
+        var_ratio = g2 / (g1 ** 2) - 1
+        return np.sqrt(max(0, var_ratio))
+
+    # Bisection on k in [0.1, 50]
+    lo, hi = 0.1, 50.0
+    for _ in range(max_iter):
+        mid = (lo + hi) / 2
+        if cv_from_k(mid) > cv:
+            lo = mid  # Need higher k to reduce CV
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
+def _auto_sample_demand(
+    demand_pattern: dict,
+    mean_demand: float,
+    horizon: int,
+    parameters,
+) -> np.ndarray:
+    """Auto-detect best demand distribution and sample from it.
+
+    Tries to extract historical data from the demand_pattern JSON. If
+    enough historical values exist, fits candidate distributions and
+    samples from the best fit. Otherwise falls back to lognormal.
+    """
+    # Check for historical values in demand_pattern
+    historical = demand_pattern.get("historical_values", [])
+    if isinstance(historical, list) and len(historical) >= 10:
+        try:
+            from app.services.stochastic.distribution_fitter import DistributionFitter
+            fitter = DistributionFitter()
+            data = np.array(historical, dtype=float)
+            data = data[np.isfinite(data) & (data >= 0)]
+            if len(data) >= fitter.MIN_SAMPLES_FOR_FIT:
+                report = fitter.fit(data, variable_type="demand")
+                samples = report.best.distribution.sample(size=horizon)
+                return np.maximum(samples, 0)
+        except Exception as e:
+            logger.debug("Auto demand fit failed, using lognormal fallback: %s", e)
+
+    # Fallback: lognormal (better default than normal for demand)
+    cv = max(0.01, parameters.demand_variability)
+    sigma = np.sqrt(np.log(1 + cv ** 2))
+    mu = np.log(max(0.01, mean_demand)) - 0.5 * sigma ** 2
+    return lognorm.rvs(s=sigma, scale=np.exp(mu), size=horizon)
+
+
+def _auto_sample_lead_time(
+    session: Session,
+    lane: "TransportationLane",
+    base_lead_time: float,
+    parameters,
+) -> int:
+    """Auto-detect best lead time distribution and sample from it.
+
+    Queries historical lead time data for this lane. If enough records exist,
+    fits candidate distributions and samples. Otherwise defaults to Weibull.
+    """
+    try:
+        from app.models.supplier import VendorLeadTime
+        from app.services.stochastic.distribution_fitter import DistributionFitter
+
+        # Try to find historical LT data for this lane's destination
+        records = (
+            session.query(VendorLeadTime.lead_time_days)
+            .filter(VendorLeadTime.site_id == lane.to_site_id)
+            .order_by(VendorLeadTime.id.desc())
+            .limit(100)
+            .all()
+        )
+        lt_values = [float(r[0]) for r in records if r[0] is not None and r[0] > 0]
+
+        if len(lt_values) >= 5:
+            fitter = DistributionFitter()
+            data = np.array(lt_values, dtype=float)
+            report = fitter.fit(data, variable_type="lead_time")
+            sampled = float(report.best.distribution.sample(size=1)[0])
+            return max(1, int(round(sampled)))
+    except Exception as e:
+        logger.debug("Auto LT fit failed, using weibull fallback: %s", e)
+
+    # Fallback: Weibull with specified CV
+    return _sample_weibull_lead_time(base_lead_time, parameters.lead_time_variability)

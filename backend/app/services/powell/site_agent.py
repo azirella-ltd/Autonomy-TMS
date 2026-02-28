@@ -1167,6 +1167,59 @@ class SiteAgent:
 
         return data
 
+    async def _extract_distribution_features(self) -> Dict[str, float]:
+        """Extract distribution-aware features for decision metadata.
+
+        These features capture the shape of demand and lead time distributions
+        using native parameters (Weibull shape k, Lognormal sigma, etc.)
+        instead of just mean/std. Stored in decision metadata for future model
+        retraining — NOT fed to current TRM input tensors.
+
+        Insight: Kravanja (2026) — distribution parameters are more meaningful
+        features than mean/std for non-Normal supply chain data.
+
+        Returns:
+            Dictionary of distribution features (empty if extraction fails
+            or is disabled via config).
+        """
+        if not getattr(self.config, 'use_distribution_features', False):
+            return {}
+
+        features: Dict[str, float] = {}
+        try:
+            from app.services.stochastic.feature_extractor import DistributionFeatureExtractor
+            extractor = DistributionFeatureExtractor()
+
+            # Extract demand features from recent history
+            demand_history = self._recent_demand_values()
+            if demand_history is not None and len(demand_history) >= 10:
+                features.update(extractor.extract_demand_features(demand_history))
+
+            # Extract lead time features if available
+            lt_history = self._recent_lead_time_values()
+            if lt_history is not None and len(lt_history) >= 5:
+                features.update(extractor.extract_lead_time_features(lt_history))
+        except Exception as e:
+            logger.debug("Distribution feature extraction skipped: %s", e)
+
+        return features
+
+    def _recent_demand_values(self):
+        """Get recent demand values from the site's history buffer.
+
+        Returns numpy array or None if not available.
+        """
+        # Placeholder: in production this queries the demand history
+        # from the site's state buffer or the database
+        return None
+
+    def _recent_lead_time_values(self):
+        """Get recent lead time values from the site's history buffer.
+
+        Returns numpy array or None if not available.
+        """
+        return None
+
     def _order_to_tensor(self, order: Order) -> torch.Tensor:
         """Convert order to tensor for TRM"""
         # Encode order features

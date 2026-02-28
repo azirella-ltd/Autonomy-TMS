@@ -301,6 +301,66 @@ class ForecastPipelineService:
         else:
             return "lumpy"
 
+    @staticmethod
+    def _classify_demand_robust(
+        values: np.ndarray,
+        cv_sq_thresh: float = 0.49,
+        adi_thresh: float = 1.32,
+    ) -> Tuple[str, Dict]:
+        """Robust demand classification using MAD/median instead of std/mean.
+
+        Insight: Kravanja (2026) - mean and std are outlier-sensitive. A single
+        demand spike can inflate std and misclassify smooth demand as erratic.
+        MAD (Median Absolute Deviation) and median are robust to outliers while
+        preserving the Syntetos-Boylan classification framework.
+
+        Returns:
+            (pattern_name, metadata) where metadata includes robust stats and
+            optionally the best-fit distribution type for the non-zero values.
+        """
+        median_val = float(np.median(values))
+        mad_val = float(np.median(np.abs(values - median_val)))
+
+        # Robust CV^2 using MAD/median (analogous to std/mean)
+        # Scale MAD by 1.4826 to make it comparable to std for Normal data
+        scaled_mad = mad_val * 1.4826
+        robust_cv_sq = (scaled_mad / median_val) ** 2 if median_val > 0 else 0.0
+
+        non_zero = np.count_nonzero(values)
+        adi = len(values) / non_zero if non_zero > 0 else float("inf")
+
+        metadata: Dict = {
+            "median": median_val,
+            "mad": mad_val,
+            "scaled_mad": scaled_mad,
+            "robust_cv_sq": robust_cv_sq,
+            "adi": adi,
+            "n": len(values),
+            "pct_zeros": float(np.sum(values == 0) / len(values)) if len(values) > 0 else 0.0,
+        }
+
+        # Fit distribution to non-zero values when enough data
+        non_zero_values = values[values > 0]
+        if len(non_zero_values) >= 10:
+            try:
+                from app.services.stochastic.distribution_fitter import DistributionFitter
+                fitter = DistributionFitter()
+                report = fitter.fit(non_zero_values, variable_type="demand")
+                metadata["fitted_dist"] = report.best.dist_type
+                metadata["fitted_params"] = report.best.params
+                metadata["fitted_ks_pvalue"] = report.best.ks_pvalue
+            except Exception:
+                pass
+
+        if robust_cv_sq < cv_sq_thresh and adi < adi_thresh:
+            return "smooth", metadata
+        elif robust_cv_sq >= cv_sq_thresh and adi < adi_thresh:
+            return "erratic", metadata
+        elif robust_cv_sq < cv_sq_thresh and adi >= adi_thresh:
+            return "intermittent", metadata
+        else:
+            return "lumpy", metadata
+
     def _cluster_series(self, history: pd.DataFrame, cfg: ForecastPipelineConfig) -> Dict[str, int]:
         series_stats = history.groupby("unique_id")["actual"].agg(["mean", "std", "count"]).fillna(0.0)
         if series_stats.empty:
@@ -606,3 +666,47 @@ class ForecastPipelineService:
         ]
         pairs.sort(key=lambda x: x[1], reverse=True)
         return pairs[:5]
+
+    @staticmethod
+    def _compute_fitted_intervals(
+        residuals: np.ndarray, p50: float, step: int
+    ) -> Tuple[float, float]:
+        """Compute P10/P90 from fitted residual distribution.
+
+        Instead of assuming residuals are Normal (hardcoded z=1.28), fits the
+        actual residual distribution and uses its quantiles. Falls back to
+        Normal when there aren't enough residuals to fit reliably.
+
+        Insight: Kravanja (2026) — forecast residuals for lumpy or erratic
+        demand are often right-skewed (Lognormal) rather than symmetric
+        (Normal), making 1.28*sigma intervals systematically miscalibrated.
+
+        Args:
+            residuals: Forecast residuals from the training portion
+            p50: Point forecast (median) for this step
+            step: Forecast horizon step (1, 2, ...) for widening
+
+        Returns:
+            (p10, p90) interval bounds
+        """
+        if len(residuals) < 15:
+            # Not enough data to fit; use Normal assumption
+            spread = float(np.std(residuals)) * np.sqrt(step) if len(residuals) > 0 else 1.0
+            return max(0.0, p50 - 1.28 * spread), max(0.0, p50 + 1.28 * spread)
+
+        try:
+            from app.services.stochastic.distribution_fitter import DistributionFitter
+            fitter = DistributionFitter()
+            report = fitter.fit(residuals, candidates=["normal", "lognormal", "gamma"])
+
+            # Sample from fitted distribution and scale by sqrt(step)
+            samples = report.best.distribution.sample(size=5000, seed=42)
+            scaled = samples * np.sqrt(step)
+            p10_offset = float(np.percentile(scaled, 10))
+            p90_offset = float(np.percentile(scaled, 90))
+
+            return max(0.0, p50 + p10_offset), max(0.0, p50 + p90_offset)
+        except Exception:
+            # Fitting failed; fall back to Normal
+            spread = float(np.std(residuals)) * np.sqrt(step)
+            return max(0.0, p50 - 1.28 * spread), max(0.0, p50 + 1.28 * spread)

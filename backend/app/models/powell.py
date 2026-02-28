@@ -156,6 +156,14 @@ class PowellBeliefState(Base):
         comment="Drift detection score (e.g., CUSUM statistic)"
     )
 
+    # Distribution fit metadata (Kravanja 2026)
+    # Stores fitted distribution type/params alongside conformal intervals
+    # for diagnostic enrichment and hybrid policies (sl_conformal_fitted)
+    distribution_fit: Mapped[Optional[Dict]] = mapped_column(
+        JSON,
+        comment="Fitted distribution metadata: {dist_type, params, ks_pvalue, is_normal_like}"
+    )
+
     # Metadata
     observation_count: Mapped[int] = mapped_column(
         Integer,
@@ -199,6 +207,7 @@ class PowellBeliefState(Base):
             "interval_width_mean": self.interval_width_mean,
             "drift_detected": self.drift_detected,
             "drift_score": self.drift_score,
+            "distribution_fit": self.distribution_fit,
             "observation_count": self.observation_count,
             "last_recalibration": self.last_recalibration.isoformat() if self.last_recalibration else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

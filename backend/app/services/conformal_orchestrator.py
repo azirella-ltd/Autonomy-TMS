@@ -172,6 +172,7 @@ class ConformalOrchestrator:
         residuals: List[float],
         coverage_history: List[int],
         method: ConformalMethod = ConformalMethod.ADAPTIVE,
+        distribution_fit_metadata: Optional[Dict] = None,
     ) -> PowellBeliefState:
         """Upsert calibration to PowellBeliefState."""
         result = await db.execute(
@@ -202,6 +203,22 @@ class ConformalOrchestrator:
         state.coverage_history = coverage_history[-100:]
         state.observation_count = len(residuals)
         state.last_recalibration = datetime.utcnow()
+
+        # Fit distribution to residuals (Kravanja 2026) for diagnostic enrichment
+        # and hybrid sl_conformal_fitted policy support
+        if distribution_fit_metadata is not None:
+            state.distribution_fit = distribution_fit_metadata
+        elif len(residuals) >= 10:
+            variable_hint = None
+            if entity_type == EntityType.DEMAND:
+                variable_hint = "demand"
+            elif entity_type == EntityType.LEAD_TIME:
+                variable_hint = "lead_time"
+            elif entity_type == EntityType.YIELD:
+                variable_hint = "yield"
+            state.distribution_fit = SupplyChainConformalSuite.fit_residual_distribution(
+                residuals, variable_type=variable_hint
+            )
 
         # Compute empirical coverage
         if coverage_history:
