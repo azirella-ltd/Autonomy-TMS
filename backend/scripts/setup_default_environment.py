@@ -85,7 +85,7 @@ async def create_default_environment():
         
             # Check if default tenant exists
             result = await db.execute(
-                select(Tenant).where(Customer.name == "Default Simulation")
+                select(Tenant).where(Tenant.name == "Default Simulation")
             )
             default_tenant = result.scalars().first()
             

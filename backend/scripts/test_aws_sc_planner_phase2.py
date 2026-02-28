@@ -62,7 +62,7 @@ async def test_planner_with_group_id():
         print("2. Testing OLD planner (config_id only)...")
         print("-" * 80)
         try:
-            # This should fail because __init__ now requires customer_id
+            # This should fail because __init__ now requires tenant_id
             planner_old = AWSSupplyChainPlanner(
                 config_id=config.id,
                 planning_horizon=7
@@ -73,8 +73,8 @@ async def test_planner_with_group_id():
             print(f"✓ OLD planner correctly rejected: {e}")
             print()
 
-        # Test NEW way (should work - config_id + customer_id)
-        print("3. Testing NEW planner (config_id + customer_id)...")
+        # Test NEW way (should work - config_id + tenant_id)
+        print("3. Testing NEW planner (config_id + tenant_id)...")
         print("-" * 80)
         try:
             planner_new = AWSSupplyChainPlanner(
@@ -84,7 +84,7 @@ async def test_planner_with_group_id():
             )
             print(f"✓ NEW planner created successfully")
             print(f"  - config_id: {planner_new.config_id}")
-            print(f"  - customer_id: {planner_new.tenant_id}")
+            print(f"  - tenant_id: {planner_new.tenant_id}")
             print(f"  - planning_horizon: {planner_new.planning_horizon}")
             print()
         except Exception as e:
@@ -121,16 +121,16 @@ async def test_planner_with_group_id():
                 print(f"  - Generated {len(supply_plans)} supply plans")
                 print()
 
-                # Verify all plans have customer_id set
-                print("6. Verifying supply plans have customer_id...")
+                # Verify all plans have tenant_id set
+                print("6. Verifying supply plans have tenant_id...")
                 print("-" * 80)
                 plans_with_group = sum(1 for p in supply_plans if p.tenant_id == tenant.id)
-                print(f"  - Plans with customer_id: {plans_with_group}/{len(supply_plans)}")
+                print(f"  - Plans with tenant_id: {plans_with_group}/{len(supply_plans)}")
 
                 if plans_with_group == len(supply_plans):
-                    print(f"✓ All plans have correct customer_id")
+                    print(f"✓ All plans have correct tenant_id")
                 else:
-                    print(f"⚠️  Some plans missing customer_id")
+                    print(f"⚠️  Some plans missing tenant_id")
                 print()
 
             except Exception as e:
