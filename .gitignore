@@ -43,8 +43,10 @@ logs/
 # Generated/train runs
 backend/runs/
 backend/checkpoints/
+backend/scripts/checkpoints/
 backend/training_jobs/
 backend/tmp/pyg_cache/
+*.pt
 
 # Editor
 .vscode/*
