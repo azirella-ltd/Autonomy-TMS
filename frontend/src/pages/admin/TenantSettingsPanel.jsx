@@ -67,7 +67,7 @@ const TIME_BUCKET_OPTIONS = [
   { value: 'quarter', label: 'Quarter', description: 'Quarterly planning (Strategic)' },
 ];
 
-// Planning types from Powell Framework
+// Planning types from Adaptive Decision Hierarchy
 const PLANNING_TYPES = {
   sop: { label: 'S&OP', color: 'blue', description: 'Sales & Operations Planning - Monthly strategic alignment' },
   mps: { label: 'MPS', color: 'purple', description: 'Master Production Schedule - Weekly production planning' },
@@ -345,7 +345,7 @@ const TenantSettingsPanel = ({
         {activeSection === 'hierarchy' && (
           <div className="space-y-4">
             <div className="text-sm text-muted-foreground mb-4">
-              <strong>Powell Framework:</strong> Higher hierarchy levels (longer horizons, aggregated data) use CFA/DLA policy classes.
+              <strong>Adaptive Decision Hierarchy:</strong> Higher hierarchy levels (longer horizons, aggregated data) use CFA/DLA policy classes.
               Lower levels (short horizons, detailed data) use VFA for value-based decisions.
             </div>
 
@@ -577,7 +577,7 @@ const TenantSettingsPanel = ({
           <div className="space-y-4">
             <div className="text-sm text-muted-foreground mb-4">
               <strong>CDC-Triggered Replanning:</strong> Event-driven replanning detects metric deviations early and triggers
-              out-of-cadence CFA/allocation runs before errors compound. (Powell Framework Key Insight #4)
+              out-of-cadence CFA/allocation runs before errors compound. (ADH Key Insight #4)
             </div>
 
             <div className="flex items-center gap-4 mb-6 p-4 border rounded-lg">

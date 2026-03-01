@@ -10,7 +10,7 @@
  * resolutions, the analyst reviews via Accept / Override / Reject.
  * Override reasons are captured for RL training (is_expert=True).
  *
- * Powell Framework: OrderTrackingTRM is a VFA (Value Function Approximation)
+ * Adaptive Decision Hierarchy: OrderTrackingTRM is a VFA (Value Function Approximation)
  * agent — narrow scope, per-order exception detection and recommended actions.
  */
 import React, { useMemo } from 'react';

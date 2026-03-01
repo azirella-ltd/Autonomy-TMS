@@ -1,8 +1,8 @@
 /**
  * AI Training Configuration Component
  *
- * Allows Customer Admin to configure and manage Powell framework AI model training:
- * - Create Powell Training Configurations
+ * Allows Customer Admin to configure and manage ADH (Adaptive Decision Hierarchy) AI model training:
+ * - Create ADH Training Configurations
  * - Link to hierarchy configs for S&OP and Execution levels
  * - Generate synthetic training data
  * - Start and monitor training runs
@@ -344,7 +344,7 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
           </Box>
 
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            {config.description || 'Powell AI training configuration'}
+            {config.description || 'AI training configuration'}
           </Typography>
 
           <Divider sx={{ my: 1 }} />
@@ -480,7 +480,7 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
           <AIIcon sx={{ mr: 1, fontSize: 28 }} />
           <Typography variant="h5" sx={{ flexGrow: 1 }}>
-            Powell AI Training Configuration
+            AI Training Configuration
           </Typography>
           <Button
             variant="outlined"
@@ -500,7 +500,7 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
         </Box>
 
         <Typography variant="body2" color="text.secondary">
-          Configure AI model training for the Powell framework. Select hierarchy levels for S&OP (strategic)
+          Configure AI model training for the Adaptive Decision Hierarchy. Select hierarchy levels for S&OP (strategic)
           and Execution (operational) models, configure training parameters, and manage synthetic data generation.
         </Typography>
 
@@ -512,7 +512,7 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
       {/* Config Cards */}
       {configs.length === 0 ? (
         <Alert severity="info">
-          No AI training configurations found. Create one to start training Powell framework models.
+          No AI training configurations found. Create one to start training decision hierarchy models.
         </Alert>
       ) : (
         <Grid container spacing={3}>

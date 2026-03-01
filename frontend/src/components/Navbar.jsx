@@ -383,7 +383,7 @@ const Navbar = () => {
           },
         },
         {
-          label: "Powell Framework",
+          label: "Decision Hierarchy",
           icon: NetworkIcon,
           onClick: () => {
             navigate("/admin/powell");
@@ -461,7 +461,7 @@ const Navbar = () => {
           },
         },
         {
-          label: "Powell Framework",
+          label: "Decision Hierarchy",
           icon: NetworkIcon,
           onClick: () => {
             navigate("/admin/powell");

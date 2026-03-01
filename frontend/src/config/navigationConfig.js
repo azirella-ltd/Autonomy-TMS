@@ -103,7 +103,7 @@ export const NAVIGATION_CONFIG = [
     section: 'Insights & Analytics',
     divider: true,
     items: [
-      // Worklists by Powell level (Strategic → Tactical → Operational)
+      // Worklists by ADH level (Strategic → Tactical → Operational)
       {
         label: 'Executive Dashboard',
         path: '/executive-dashboard',
@@ -281,6 +281,13 @@ export const NAVIGATION_CONFIG = [
         requiredCapability: 'view_demand_collaboration',
       },
       {
+        label: 'Consensus Planning',
+        path: '/planning/consensus',
+        icon: CollaborationIcon,
+        requiredCapability: 'view_demand_planning',
+        description: 'Multi-stakeholder forecast alignment and voting',
+      },
+      {
         label: 'Forecast Exceptions',
         path: '/planning/forecast-exceptions',
         icon: RiskIcon,
@@ -340,7 +347,7 @@ export const NAVIGATION_CONFIG = [
   },
 
   // ============================================================================
-  // PLANNING CASCADE — Modular Powell Layers (Independently Sellable)
+  // PLANNING CASCADE — Modular ADH Layers (Independently Sellable)
   // ============================================================================
   {
     section: 'Planning Cascade',

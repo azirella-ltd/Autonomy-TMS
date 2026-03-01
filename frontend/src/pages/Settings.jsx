@@ -410,44 +410,183 @@ const Settings = () => {
             <SectionHeader
               icon={Bell}
               title="Notifications"
-              description="Manage how you receive notifications"
+              description="Manage how and when you receive notifications"
             />
             <div className="mt-5 md:mt-0 md:col-span-2">
               <Card variant="default" padding="none">
                 <CardContent className="p-6 space-y-6">
-                  <SettingControl
-                    label="Email notifications"
-                    description="Receive email notifications"
-                  >
-                    <ToggleSwitch
-                      checked={settings.notifications.email}
-                      onChange={() => toggleSetting('notifications', 'email')}
-                      id="email-notifications"
-                    />
-                  </SettingControl>
+                  {/* Global Channels */}
+                  <div>
+                    <h4 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide mb-3">Delivery Channels</h4>
+                    <SettingControl
+                      label="Email notifications"
+                      description="Receive alerts and digests to your registered email"
+                    >
+                      <ToggleSwitch
+                        checked={settings.notifications.email}
+                        onChange={() => toggleSetting('notifications', 'email')}
+                        id="email-notifications"
+                      />
+                    </SettingControl>
 
-                  <SettingControl
-                    label="In-app notifications"
-                    description="Show notifications within the app"
-                  >
-                    <ToggleSwitch
-                      checked={settings.notifications.inApp}
-                      onChange={() => toggleSetting('notifications', 'inApp')}
-                      id="in-app-notifications"
-                    />
-                  </SettingControl>
+                    <SettingControl
+                      label="In-app notifications"
+                      description="Show real-time notification toasts and badge counts"
+                    >
+                      <ToggleSwitch
+                        checked={settings.notifications.inApp}
+                        onChange={() => toggleSetting('notifications', 'inApp')}
+                        id="in-app-notifications"
+                      />
+                    </SettingControl>
 
-                  <SettingControl
-                    label="Sound effects"
-                    description="Play sound for notifications"
-                    className="border-t border-border"
-                  >
-                    <ToggleSwitch
-                      checked={settings.notifications.sound}
-                      onChange={() => toggleSetting('notifications', 'sound')}
-                      id="sound-effects"
-                    />
-                  </SettingControl>
+                    <SettingControl
+                      label="Sound effects"
+                      description="Play sound for incoming notifications"
+                    >
+                      <ToggleSwitch
+                        checked={settings.notifications.sound}
+                        onChange={() => toggleSetting('notifications', 'sound')}
+                        id="sound-effects"
+                      />
+                    </SettingControl>
+                  </div>
+
+                  {/* Per-Alert-Type Preferences */}
+                  <div className="border-t border-border pt-4">
+                    <h4 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide mb-3">Alert Type Preferences</h4>
+                    <div className="space-y-3">
+                      {[
+                        { key: 'stockout', label: 'Stockout Alerts', desc: 'Low inventory and stockout risk warnings' },
+                        { key: 'overstock', label: 'Overstock Alerts', desc: 'Excess inventory and E&O risk warnings' },
+                        { key: 'lead_time', label: 'Lead Time Alerts', desc: 'Vendor lead time drift and delays' },
+                        { key: 'recommendations', label: 'Recommendation Actions', desc: 'New AI recommendations requiring review' },
+                        { key: 'escalations', label: 'Escalations', desc: 'Decisions escalated to your authority level' },
+                        { key: 'order_exceptions', label: 'Order Exceptions', desc: 'Order tracking and fulfillment issues' },
+                      ].map((alertType) => (
+                        <div key={alertType.key} className="flex items-center justify-between py-2 px-3 bg-muted/30 rounded-lg">
+                          <div>
+                            <p className="text-sm font-medium">{alertType.label}</p>
+                            <p className="text-xs text-muted-foreground">{alertType.desc}</p>
+                          </div>
+                          <ToggleSwitch
+                            checked={settings.notifications.alertTypes?.[alertType.key] !== false}
+                            onChange={() => {
+                              const current = settings.notifications.alertTypes?.[alertType.key] !== false;
+                              const newSettings = {
+                                ...settings,
+                                notifications: {
+                                  ...settings.notifications,
+                                  alertTypes: {
+                                    ...settings.notifications.alertTypes,
+                                    [alertType.key]: !current,
+                                  },
+                                },
+                              };
+                              saveSettings(newSettings);
+                            }}
+                            id={`alert-${alertType.key}`}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Digest Frequency */}
+                  <div className="border-t border-border pt-4">
+                    <h4 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide mb-3">Email Digest Frequency</h4>
+                    <SettingControl
+                      label="Email digest schedule"
+                      description="How often to receive email summaries of notifications"
+                    >
+                      <Select
+                        id="digest-frequency"
+                        value={settings.notifications.digestFrequency || 'daily'}
+                        onChange={(e) => {
+                          const newSettings = {
+                            ...settings,
+                            notifications: { ...settings.notifications, digestFrequency: e.target.value },
+                          };
+                          saveSettings(newSettings);
+                        }}
+                        className="w-36"
+                      >
+                        <SelectOption value="realtime">Real-time</SelectOption>
+                        <SelectOption value="hourly">Hourly</SelectOption>
+                        <SelectOption value="daily">Daily</SelectOption>
+                        <SelectOption value="weekly">Weekly</SelectOption>
+                      </Select>
+                    </SettingControl>
+                  </div>
+
+                  {/* Quiet Hours */}
+                  <div className="border-t border-border pt-4">
+                    <h4 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide mb-3">Quiet Hours</h4>
+                    <SettingControl
+                      label="Enable quiet hours"
+                      description="Suppress non-critical notifications during specified hours"
+                    >
+                      <ToggleSwitch
+                        checked={settings.notifications.quietHours?.enabled || false}
+                        onChange={() => {
+                          const current = settings.notifications.quietHours?.enabled || false;
+                          const newSettings = {
+                            ...settings,
+                            notifications: {
+                              ...settings.notifications,
+                              quietHours: {
+                                ...settings.notifications.quietHours,
+                                enabled: !current,
+                                start: settings.notifications.quietHours?.start || '22:00',
+                                end: settings.notifications.quietHours?.end || '07:00',
+                              },
+                            },
+                          };
+                          saveSettings(newSettings);
+                        }}
+                        id="quiet-hours"
+                      />
+                    </SettingControl>
+                    {settings.notifications.quietHours?.enabled && (
+                      <div className="flex items-center gap-3 ml-4 mt-2">
+                        <Label htmlFor="quiet-start" className="text-sm">From</Label>
+                        <Input
+                          id="quiet-start"
+                          type="time"
+                          value={settings.notifications.quietHours?.start || '22:00'}
+                          onChange={(e) => {
+                            const newSettings = {
+                              ...settings,
+                              notifications: {
+                                ...settings.notifications,
+                                quietHours: { ...settings.notifications.quietHours, start: e.target.value },
+                              },
+                            };
+                            saveSettings(newSettings);
+                          }}
+                          className="w-28"
+                        />
+                        <Label htmlFor="quiet-end" className="text-sm">To</Label>
+                        <Input
+                          id="quiet-end"
+                          type="time"
+                          value={settings.notifications.quietHours?.end || '07:00'}
+                          onChange={(e) => {
+                            const newSettings = {
+                              ...settings,
+                              notifications: {
+                                ...settings.notifications,
+                                quietHours: { ...settings.notifications.quietHours, end: e.target.value },
+                              },
+                            };
+                            saveSettings(newSettings);
+                          }}
+                          className="w-28"
+                        />
+                        <span className="text-xs text-muted-foreground">Critical alerts still delivered</span>
+                      </div>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             </div>

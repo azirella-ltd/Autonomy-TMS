@@ -1,7 +1,7 @@
 /**
  * Agent Performance Page - Detailed Performance Analysis
  *
- * Powell Framework Agent Performance Analysis Dashboard
+ * ADH Agent Performance Analysis Dashboard
  * Shows detailed Agent Performance Score and Human Override Rate
  * metrics with breakdowns by category/segment.
  *

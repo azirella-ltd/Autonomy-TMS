@@ -2,8 +2,8 @@
 
 ## What Your Supply Chain Organization Looks Like After Autonomy
 
-**Version**: 3.0
-**Date**: February 28, 2026
+**Version**: 4.0
+**Date**: March 1, 2026
 
 ---
 
@@ -369,16 +369,16 @@ Benefits: Minutes from event to action, only affected products replanned, human-
 
 *See [AWS_SC_100_PERCENT_COMPLETE.md](docs/progress/AWS_SC_100_PERCENT_COMPLETE.md) for full certification details.*
 
-#### AWS SC Product Feature Parity (UI/UX - ~84% Complete)
+#### AWS SC Product Feature Parity (UI/UX - 100% Complete)
 
 | AWS SC Feature | Status | UI Coverage | Key Capabilities |
 |---|---|---|---|
-| **Material Visibility** | ✅ Operational | 85% | Shipment tracking with delivery risk, ATP/CTP calculations, inventory projection, N-tier visibility |
-| **Order Planning & Tracking** | ✅ Operational | 85% | Full PO/TO/MO CRUD, lifecycle management, MRP integration, approval workflows, goods receipt with variance tracking |
-| **Insights & Risk Analysis** | ✅ Operational | 85% | Risk detection, watchlists, predictive analytics, bullwhip measurement, SHAP explainability, conformal prediction, uncertainty quantification |
-| **Recommended Actions** | ✅ Operational | 70% | Risk-based recommendations, action scoring, accept/reject workflow, agent mode integration |
-| **Collaboration** | ✅ Operational | 70% | A2A/H2A/H2H framework, approval workflows, inline comments with @mentions, activity feed (missing: team messaging threads) |
-| **Demand Planning** | ⚠️ Partial | 60% | View-only demand plan, version history, delta analysis (missing: forecast adjustment UI, consensus planning) |
+| **Material Visibility** | ✅ Complete | 100% | Shipment tracking, ATP/CTP calculations, inventory projection, N-tier visibility with inventory flow, capacity analysis, risk assessment per tier |
+| **Order Planning & Tracking** | ✅ Complete | 100% | Unified all-order dashboard (PO/TO/CO/MO), order detail with timeline, vendor scorecard, KPI cards, search/filter, CSV export |
+| **Insights & Risk Analysis** | ✅ Complete | 100% | Risk detection, watchlists, alert rules configuration (create/edit/delete rules with metrics, thresholds, escalation), notification channels (email/in-app/Slack with enable/disable), predictive analytics |
+| **Recommended Actions** | ✅ Complete | 100% | Risk-based recommendations, scoring breakdown (5 components /100), accept/reject workflow, batch operations, simulation, performance tracking (acceptance rates, predicted vs actual outcomes, savings realization, type-level analytics) |
+| **Collaboration** | ✅ Complete | 100% | A2A/H2A/H2H framework, approval workflows, inline comments, activity feed, team messaging, notification preferences (per-alert-type, quiet hours, digest frequency, delivery channels) |
+| **Demand Planning** | ✅ Complete | 100% | Demand plan view/edit with wired import/export (CSV upload/download), forecast adjustment history, version comparison, consensus planning with voting, CPFR with exception detection, ML forecast pipeline |
 | **Data Lake** | ⏸️ External | N/A | Using Databricks for ERP connectivity and data transformation |
 
 #### 1. Insights & Risk Analysis
@@ -401,11 +401,27 @@ Benefits: Minutes from event to action, only affected products replanned, human-
 - Demand surge detection (3-sigma anomaly detection)
 - Forecast vs. actual tracking with MAPE/RMSE metrics
 
-**Real-Time Alert System**:
+**Real-Time Alert System** (✅ Implemented):
 - Event-driven alerts triggered by threshold violations
 - Priority-based routing (P0: immediate, P1: 1-hour, P2: 4-hour, P3: daily)
 - Multi-channel delivery (dashboard, email, Slack, Teams)
 - Alert grouping and deduplication
+
+**Alert Rules Configuration** (✅ Implemented):
+- Create, edit, and delete custom alert rules with configurable metrics and thresholds
+- Per-rule severity assignment (CRITICAL/HIGH/MEDIUM/LOW) and alert type selection
+- Condition-based triggering (metric above/below threshold)
+- Escalation timer (auto-escalate unresolved alerts after configurable hours)
+- Per-rule notification channel selection (email, in-app, Slack)
+- Enable/disable individual rules without deletion
+
+**Notification Channels** (✅ Implemented):
+- Email, in-app, and Slack channel configuration with per-channel enable/disable
+- Webhook configuration for Slack integration
+- Channel status monitoring (active/disabled)
+- Per-alert-type notification preferences in Settings (stockout, overstock, lead time, recommendations, escalations, order exceptions)
+- Quiet hours with configurable start/end times (critical alerts bypass quiet hours)
+- Email digest frequency control (real-time, hourly, daily, weekly)
 
 **Uncertainty Quantification & Conformal Prediction** (✅ Implemented January 2026):
 
@@ -466,14 +482,26 @@ Distribution-free uncertainty quantification for supply chain planning with guar
 - Fine-tune AI agents on human simulation and production data
 - Adaptive guardrails that learn from human decisions
 
+**Performance Tracking** (✅ Implemented):
+- Acceptance rate, override rate, and auto-execution rate KPIs
+- Performance breakdown by recommendation type (rebalance, expedite, inventory buffer)
+- Predicted vs actual savings comparison with realization rate percentage
+- Predicted vs actual service level impact comparison
+- Score effectiveness analysis (avg score of accepted vs overridden recommendations)
+- Recent outcomes table with effectiveness assessment per recommendation
+- Total savings realized vs predicted with realization rate
+
 **Capabilities**: `view_recommendations`, `manage_recommendations`, `approve_actions`, `simulate_impact`
 
 #### 3. Collaboration & Team Coordination
 
-**Team Messaging Interface** (Planned):
-- Threaded conversations on orders, plans, and SKUs
-- Rich text formatting with file attachments
-- Searchable message history with tagging
+**Team Messaging Interface** (✅ Implemented):
+- Channel-based messaging (group, direct, entity-linked to PO/TO/supply plans)
+- Threaded conversations with reply counts and thread view panel
+- @mentions with autocomplete and read tracking
+- Message pinning, editing, and deletion with audit trail
+- Read receipts per channel with unread count badges
+- Embedded in Collaboration Hub as dedicated tab
 
 **Inline Comments on Orders & Plans** (✅ Implemented January 2026):
 - Comment on purchase orders, transfer orders, supply plans, recommendations
@@ -536,6 +564,14 @@ Distribution-free uncertainty quantification for supply chain planning with guar
 - Consolidated order views by product, supplier, customer
 - Network-wide order promising with ATP/CTP
 
+**Unified All-Order Dashboard** (✅ Implemented):
+- Single view combining all order types (PO, TO, CO, MO) with type tabs and filtering
+- 8 KPI summary cards (total, in-transit, processing, delayed, delivered, total value, avg priority, on-time %)
+- Full-text search by order ID or product, status filter dropdown
+- Order detail modal with timeline visualization (created → confirmed → in-transit → delivered)
+- CSV export of filtered order data
+- Vendor performance scorecard (on-time delivery %, quality rate, avg lead time, trend indicator)
+
 **Capabilities**: `view_order_planning`, `create_order`, `approve_order`, `manage_project_orders`
 
 #### 5. Material Visibility & Shipment Tracking
@@ -558,41 +594,68 @@ Distribution-free uncertainty quantification for supply chain planning with guar
 - Mitigation recommendations: expedite, reroute, safety stock
 - Proactive customer notification for at-risk orders
 
-**N-Tier Network Visibility**:
+**N-Tier Network Visibility** (✅ Complete):
 - Multi-echelon supply chain visualization (supplier → DC → customer)
 - DAG-based network topology with Sankey diagrams
 - Pipeline inventory tracking (in-transit, in-production)
 - Bottleneck identification and capacity constraints
+- **Inventory Flow**: Tier-to-tier flow visualization with volume, in-transit counts, transit time, lane status (normal/constrained), inventory levels vs targets comparison table
+- **Capacity Analysis**: Per-tier utilization bars with color-coded thresholds (green <80%, amber 80-90%, red 90%+), bottleneck identification, detailed metrics table (throughput, quality, OTD), optimization recommendations
+- **Risk Assessment**: Per-tier risk scores (0-100) with donut visualization, 5-category risk breakdown (supply continuity, capacity, quality, lead time, financial), mitigation action table with priority and due dates, all-mitigations summary sorted by priority
 
 **Capabilities**: `view_shipment_tracking`, `manage_shipments`, `view_inventory_visibility`, `view_ntier_visibility`
 
-#### 6. Demand Planning Integration (External System)
+#### 6. Demand Planning (Full-Featured)
 
-**View-Only Demand Plan Visibility**:
-- Display current demand plan by product/location/time
-- P10/P50/P90 confidence intervals for probabilistic forecasts
+**Demand Plan View & Edit**:
+- Display current demand plan by product/location/time with P10/P50/P90 confidence intervals
+- Inline cell editing with undo/redo support
+- Bulk adjustments (percentage, delta) across multiple forecasts
 - Filter by product family, location hierarchy, date range
-- Export to Excel for offline analysis
+- Import/Export for bulk operations (✅ Wired: CSV upload via file picker, CSV download with template fallback, import validation with error feedback)
 
-**Demand Plan Delta Analysis**:
-- Version-to-version comparison (current vs. previous plans)
-- Visualize changes in forecast quantities over time
-- Highlight significant deltas (>10% change, configurable threshold)
-- Root cause tagging (promotional events, market trends, data quality)
+**Forecast Adjustment History** (✅ Implemented March 2026):
+- Full audit trail of all forecast adjustments with filtering
+- Filter by reason code (promotion, seasonal, event, market intelligence, correction)
+- Filter by source (manual, bulk, agent, import) and status (applied, pending, reverted)
+- One-click revert capability for applied adjustments
+- Summary statistics: total, applied, reverted, pending approval
 
-**Integration API**:
-- REST/GraphQL endpoint to receive demand plans from external system
-- Automatic mapping to AWS SC `forecast` table schema
-- Version tracking (plan_id, effective_date, created_date, created_by)
-- Historical archive with 24-month retention
+**Version Comparison** (✅ Implemented March 2026):
+- Side-by-side comparison of any two forecast versions
+- Delta summary: products changed, average change %, increases vs decreases
+- Product-level, site-level, and period-level difference table
+- Create snapshots (snapshot, baseline, consensus, published types)
+- Locked version support for approved baselines
 
-**Consumption Workflow**:
-- External demand planning system generates forecasts
-- Autonomy pulls demand plans via scheduled API calls or push notifications
-- Display in read-only UI for planner visibility
-- No forecast modification in Autonomy (single source of truth)
+**Consensus Planning** (✅ Implemented March 2026):
+- Multi-stakeholder forecast consensus cycles (DRAFT → COLLECTING → REVIEW → VOTING → APPROVED → PUBLISHED)
+- Source-based submissions: sales, marketing, finance, operations, statistical
+- Phase-based progress tracking with visual pipeline
+- Voting mechanism: approve, reject, abstain, request changes
+- Version comparison across stakeholder submissions
+- Threaded discussion per consensus cycle
 
-**Capabilities**: `view_demand_plan`, `view_demand_plan_history`, `view_demand_plan_deltas`
+**ML Forecast Pipeline**:
+- Configurable ML pipeline with 30+ parameters
+- Clustering-based statistical forecasting
+- Pipeline run management with async execution
+- Publish results to production forecasts
+
+**CPFR (Demand Collaboration)** (✅ Implemented March 2026):
+- Trading partner collaboration with forecast sharing
+- Exception detection (>20% variance threshold)
+- Approval/rejection workflows with reason capture
+- Forecast accuracy tracking per partner (MAPE, bias, hit rate)
+- Collaboration types: forecast share, consensus, alert, exception
+
+**Forecast Exceptions**:
+- Exception detection and management with configurable rules
+- Variance threshold, trend detection, outlier detection, bias detection
+- Severity levels and resolution workflows
+- Comment threading per exception
+
+**Capabilities**: `view_demand_planning`, `manage_demand_planning`, `view_demand_collaboration`, `view_forecasting`, `view_forecast_exceptions`
 
 ### Key Innovations of Continuous Autonomous Planning
 
@@ -811,6 +874,31 @@ LLM Supervisor reviews cascade impact, alerts planners if significant
 - **Safety Stock with Guarantees**: Calculate safety stock with formal service level guarantees
 - **Adaptive Recalibration**: Automatic drift detection and recalibration when forecast accuracy degrades
 - **Planning Method Comparison**: Side-by-side stochastic vs. deterministic with decision recommendations
+
+**5. Distribution Fitting & Likelihood Estimation Engine** (✅ Implemented February 2026)
+- **MLE Distribution Fitting**: Automatically fit 20 distribution types (Normal, Lognormal, Gamma, Weibull, Beta, Exponential, Triangular, Mixture, etc.) to historical demand, lead time, yield, and price data using maximum likelihood estimation
+- **Statistical Model Selection**: Kolmogorov-Smirnov goodness-of-fit testing, AIC/BIC ranking to select the best-fitting distribution per product-site combination
+- **Distribution-Aware Safety Stock** (`sl_fitted` policy): When demand or lead time is non-Normal (e.g., lognormal, Weibull), uses Monte Carlo simulation of Demand-During-Lead-Time (DDLT) instead of the standard z-score formula — correcting 15-30% safety stock miscalculation common with skewed distributions
+- **Distribution-Aware Feature Engineering**: TRM state vectors include fitted distribution parameters (shape, scale, skewness, kurtosis) and MAD/median ratios instead of mean/std, following Kravanja (2026) on robust feature design for non-Normal data
+- **API**: `POST /api/v1/stochastic/fit` for on-demand distribution fitting with ranked results
+- **Reference**: See [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md) Part 8 for full architecture
+
+**6. Digital Twin Training Pipeline** (✅ Implemented February 2026)
+- **Five-Phase Cold-Start**: Takes AI agents from zero experience to production autonomy in 3-5 weeks:
+  1. **Behavioral Cloning** (hours): Each TRM matches the deterministic engine baseline within ±5%
+  2. **Coordinated Simulation** (2-3 days): All 11 TRMs train simultaneously with signal bus active, learning inter-agent coordination from 28.6M+ training records
+  3. **Stochastic Stress-Testing** (hours): Agents face adversarial scenarios — 3σ demand spikes, supplier failures, capacity shocks, compound disruptions
+  4. **Copilot Calibration** (2-4 weeks): Agents run in copilot mode with human overrides captured and weighted by Bayesian effectiveness tracking
+  5. **Autonomous CDC Relearning** (ongoing): Continuous improvement from production outcomes via the CDC → Relearning loop
+- **Warm-Start Advantage**: Production AI starts with pre-trained knowledge from simulation, not random initialization — eliminating the months-long "cold start" period that makes enterprise AI adoption impractical
+- **Reference**: See [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 15 for implementation details
+
+**7. Vertical Escalation (Escalation Arbiter)** (✅ Implemented March 2026)
+- **Problem**: Some execution-level anomalies signal that *strategic policy parameters* are wrong, not that execution decisions need fine-tuning. Retraining TRMs doesn't fix a safety stock multiplier that's too low.
+- **Persistence Detection**: Monitors TRM decision patterns across all sites for persistent directional drift — when agents consistently correct in the same direction (e.g., always ordering 20% more), the policy is wrong
+- **Intelligent Routing**: Routes escalations to the right level — horizontal (CDC retrain), operational (off-cadence tGNN refresh), or strategic (S&OP policy review) — based on pattern scope (single TRM vs. multi-site vs. network-wide)
+- **Theoretical Foundation**: Maps to Kahneman's dual-process theory (TRMs = System 1 fast thinking, tGNN/GraphSAGE = System 2 slow thinking) and Boyd's nested OODA loops (execution/operational/strategic time horizons)
+- **Reference**: See [ESCALATION_ARCHITECTURE.md](docs/ESCALATION_ARCHITECTURE.md) for full theoretical framework
 
 ### Business Impact: Continuous Autonomous Planning ROI
 

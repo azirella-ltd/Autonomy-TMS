@@ -338,7 +338,7 @@ export default function PlanningHierarchyConfig() {
               <Typography variant="body2">{config.horizon_months} months</Typography>
             </Grid>
             <Grid item xs={6}>
-              <Typography variant="caption" color="text.secondary">Powell Class</Typography>
+              <Typography variant="caption" color="text.secondary">Policy Class</Typography>
               <Chip label={config.powell_policy_class.toUpperCase()} size="small" color="primary" />
             </Grid>
             <Grid item xs={6}>
@@ -601,16 +601,16 @@ export default function PlanningHierarchyConfig() {
             </Grid>
 
             <Grid item xs={12}>
-              <Divider><Chip label="AI/Powell Framework" /></Divider>
+              <Divider><Chip label="AI / Decision Hierarchy" /></Divider>
             </Grid>
 
             {/* Powell Framework Settings */}
             <Grid item xs={12} sm={6}>
               <FormControl fullWidth>
-                <InputLabel>Powell Policy Class</InputLabel>
+                <InputLabel>Policy Class</InputLabel>
                 <Select
                   value={formData.powell_policy_class}
-                  label="Powell Policy Class"
+                  label="Policy Class"
                   onChange={(e) => handleFormChange('powell_policy_class', e.target.value)}
                 >
                   {POWELL_POLICY_CLASSES.map(cls => (
@@ -699,7 +699,7 @@ export default function PlanningHierarchyConfig() {
                   <TableCell>Product Level</TableCell>
                   <TableCell>Time</TableCell>
                   <TableCell>Horizon</TableCell>
-                  <TableCell>Powell</TableCell>
+                  <TableCell>Policy Class</TableCell>
                   <TableCell>Action</TableCell>
                 </TableRow>
               </TableHead>

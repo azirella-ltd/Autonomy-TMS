@@ -94,7 +94,7 @@ function getFallbackCapabilities(userType) {
       'view_predictions',
       'view_recommendations',
 
-      // Powell Dashboards
+      // ADH Dashboards
       'view_executive_dashboard',
       'view_sop_worklist',
       'view_agent_decisions',

@@ -97,7 +97,7 @@ export const getDefaultConfig = async () => {
 
 /**
  * List sites with per-TRM training status
- * @param {number} configId - Powell training config ID
+ * @param {number} configId - ADH training config ID
  * @returns {Promise} List of sites with training status
  */
 export const listTrainingSites = async (configId) => {
@@ -107,7 +107,7 @@ export const listTrainingSites = async (configId) => {
 
 /**
  * Train specific site
- * @param {number} configId - Powell training config ID
+ * @param {number} configId - ADH training config ID
  * @param {number} siteId - Site ID to train
  * @param {Object} config - Training config (trm_types, phases, epochs)
  * @returns {Promise} Training results
@@ -119,7 +119,7 @@ export const trainSite = async (configId, siteId, config = {}) => {
 
 /**
  * Train all operational sites
- * @param {number} configId - Powell training config ID
+ * @param {number} configId - ADH training config ID
  * @param {Object} config - Training config (trm_types, phases, epochs)
  * @returns {Promise} Training results
  */
@@ -130,7 +130,7 @@ export const trainAllSites = async (configId, config = {}) => {
 
 /**
  * Get detailed training progress for a specific site
- * @param {number} configId - Powell training config ID
+ * @param {number} configId - ADH training config ID
  * @param {number} siteId - Site ID
  * @returns {Promise} Detailed site progress
  */

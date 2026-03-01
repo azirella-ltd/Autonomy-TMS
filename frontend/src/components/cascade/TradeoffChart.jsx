@@ -27,7 +27,7 @@ const METHOD_LABELS = {
   PERIODIC_REVIEW_V1: 'Periodic Review (s,S)',
   MIN_COST_EOQ_V1: 'Min Cost EOQ',
   SERVICE_MAXIMIZED_V1: 'Service Maximized',
-  PARAMETRIC_CFA_V1: 'Parametric CFA (Powell)',
+  PARAMETRIC_CFA_V1: 'Parametric CFA',
   MRP_STANDARD_V1: 'Standard MRP',
   SAFETY_STOCK_OPTIMIZED_V1: 'Safety Stock Optimized',
   CUSTOMER_UPLOAD: 'Customer Upload',

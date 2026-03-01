@@ -1,7 +1,7 @@
 /**
  * Dashboard Router
  *
- * Routes users to appropriate dashboard based on their Powell role and user type.
+ * Routes users to appropriate dashboard based on their ADH role and user type.
  *
  * KEY DESIGN PRINCIPLE (Feb 2026):
  * - powell_role (stored on user) → Determines landing page (FIXED)
@@ -12,10 +12,10 @@
  *
  * Routing Priority:
  * 1. SYSTEM_ADMIN always → /admin/tenants
- * 2. Powell role checked FIRST for all other users (from user.powell_role field)
- * 3. Falls back to user_type based routing if no Powell role
+ * 2. ADH role checked FIRST for all other users (from user.powell_role field)
+ * 3. Falls back to user_type based routing if no ADH role
  *
- * Powell Framework Routing (role-based, checked first):
+ * Adaptive Decision Hierarchy Routing (role-based, checked first):
  * - SC_VP: → /executive-dashboard
  *   Focus: Strategic/CFA level, performance metrics, ROI, category automation
  *
@@ -35,7 +35,7 @@
  *
  * Demo User (demo@distdemo.com):
  * - Has powell_role=DEMO_ALL → lands on /executive-dashboard
- * - Has all Powell capabilities → can navigate to all Powell dashboards without logout
+ * - Has all ADH capabilities → can navigate to all ADH dashboards without logout
  */
 
 import React, { useEffect, useState } from 'react';
@@ -46,9 +46,9 @@ import { getUserScenarios } from '../services/dashboardService';
 import { api } from '../services/api';
 
 /**
- * Get Powell role from API response
+ * Get ADH role from API response
  *
- * Powell role is now stored on the user record (not derived from capabilities).
+ * ADH role is now stored on the user record (not derived from capabilities).
  * This allows capabilities to be customized while maintaining fixed landing pages.
  *
  * Returns: { powellRole: 'SC_VP' | 'SOP_DIRECTOR' | 'MPS_MANAGER' | 'DEMO_ALL' | null, capabilities: string[] }
@@ -70,9 +70,9 @@ const getPowellRoleFromAPI = async () => {
 };
 
 /**
- * Get landing page for Powell role
+ * Get landing page for ADH role
  *
- * Powell role determines the fixed landing page regardless of capabilities.
+ * ADH role determines the fixed landing page regardless of capabilities.
  * This allows customer admins to customize user capabilities while maintaining
  * consistent navigation patterns for each role.
  */
@@ -111,8 +111,8 @@ const DashboardRouter = () => {
         return;
       }
 
-      // Check Powell role FIRST for ALL non-system users (USER, TENANT_ADMIN, etc.)
-      // Powell role is stored on user record - determines landing page (fixed)
+      // Check ADH role FIRST for ALL non-system users (USER, TENANT_ADMIN, etc.)
+      // ADH role is stored on user record - determines landing page (fixed)
       // Capabilities determine what user can do (customizable by customer admin)
       const { powellRole } = await getPowellRoleFromAPI();
       const powellLanding = getPowellLandingPage(powellRole);
@@ -122,9 +122,9 @@ const DashboardRouter = () => {
         return;
       }
 
-      // No Powell role - route based on user_type
+      // No ADH role - route based on user_type
 
-      // USER without Powell capabilities: Redirect to active scenario
+      // USER without ADH capabilities: Redirect to active scenario
       if (user.user_type === 'USER') {
         try {
           const games = await getUserScenarios();
@@ -144,7 +144,7 @@ const DashboardRouter = () => {
         return;
       }
 
-      // TENANT_ADMIN without Powell role: Route based on tenant mode
+      // TENANT_ADMIN without ADH role: Route based on tenant mode
       if (user.user_type === 'TENANT_ADMIN') {
         try {
           if (user.tenant_id) {

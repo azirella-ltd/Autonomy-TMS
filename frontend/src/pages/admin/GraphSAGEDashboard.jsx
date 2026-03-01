@@ -164,7 +164,7 @@ const GraphSAGEDashboard = () => {
         if (updated) setSelectedPowellConfig(updated);
       }
     } catch (err) {
-      console.error('Failed to load Powell configs:', err);
+      console.error('Failed to load ADH configs:', err);
     }
   }, [selectedScConfig, selectedPowellConfig]);
 
@@ -330,7 +330,7 @@ const GraphSAGEDashboard = () => {
           <CardContent className="pt-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Powell Class</p>
+                <p className="text-sm text-muted-foreground">Policy Class</p>
                 <p className="text-lg font-bold">CFA</p>
                 <p className="text-xs text-muted-foreground">Cost Function Approximation</p>
               </div>

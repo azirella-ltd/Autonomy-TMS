@@ -1140,7 +1140,7 @@ const UserImportTab = () => {
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground mb-4">
-            Map SAP role patterns (AGR_NAME) to Autonomy powell_role. Rules are evaluated by priority (lower = first match wins).
+            Map SAP role patterns (AGR_NAME) to platform roles. Rules are evaluated by priority (lower = first match wins).
           </p>
           {roleMappings.length === 0 ? (
             <p className="text-muted-foreground text-sm italic">
@@ -1153,7 +1153,7 @@ const UserImportTab = () => {
                   <tr className="border-b">
                     <th className="text-left py-2 px-3">Pattern</th>
                     <th className="text-left py-2 px-3">Type</th>
-                    <th className="text-left py-2 px-3">Powell Role</th>
+                    <th className="text-left py-2 px-3">Platform Role</th>
                     <th className="text-left py-2 px-3">Priority</th>
                     <th className="text-left py-2 px-3">Description</th>
                     <th className="py-2 px-3"></th>
@@ -1185,7 +1185,7 @@ const UserImportTab = () => {
               <DialogHeader>
                 <DialogTitle>Add Role Mapping Rule</DialogTitle>
                 <DialogDescription>
-                  Map a SAP role name pattern to an Autonomy powell_role.
+                  Map a SAP role name pattern to a platform role.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 mt-4">
@@ -1209,7 +1209,7 @@ const UserImportTab = () => {
                     </NativeSelect>
                   </div>
                   <div>
-                    <label className="text-sm font-medium">Powell Role</label>
+                    <label className="text-sm font-medium">Platform Role</label>
                     <NativeSelect
                       value={newMapping.powell_role}
                       onChange={e => setNewMapping(p => ({ ...p, powell_role: e.target.value }))}
@@ -1343,7 +1343,7 @@ const UserImportTab = () => {
                     <th className="text-left py-2 px-2">Name</th>
                     <th className="text-left py-2 px-2">Email</th>
                     <th className="text-left py-2 px-2">SC Roles</th>
-                    <th className="text-left py-2 px-2">Powell Role</th>
+                    <th className="text-left py-2 px-2">Platform Role</th>
                     <th className="text-left py-2 px-2">Site Scope</th>
                     <th className="text-left py-2 px-2">Action</th>
                   </tr>

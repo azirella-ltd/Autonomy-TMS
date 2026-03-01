@@ -1,7 +1,7 @@
 /**
  * S&OP Worklist Page - SOP_DIRECTOR Landing Page
  *
- * Powell Framework Tactical Level Dashboard
+ * ADH Tactical Level Dashboard
  * Shows worklist items requiring attention with agent performance metrics
  *
  * Features:

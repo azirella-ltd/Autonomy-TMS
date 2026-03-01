@@ -239,7 +239,7 @@ export const submitTRMAction = async (payload) => {
 };
 
 // =============================================================================
-// Powell Allocation Timeline
+// ADH Allocation Timeline
 // =============================================================================
 
 export const getAllocationTimeline = async (configId, productId, locationId, daysPast = 5, daysFuture = 9) => {

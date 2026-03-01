@@ -539,13 +539,13 @@ const AdminDashboard = () => {
                   </CardContent>
                 </Card>
 
-                {/* Powell Framework Card */}
+                {/* Decision Hierarchy Card */}
                 <Card className="h-full hover:shadow-lg transition-all hover:-translate-y-1 border-2 border-blue-200 dark:border-blue-800">
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center">
                         <Network className="h-12 w-12 text-blue-600 mr-3" />
-                        <h3 className="text-xl font-semibold">Powell Framework</h3>
+                        <h3 className="text-xl font-semibold">Decision Hierarchy</h3>
                       </div>
                     </div>
 
@@ -558,7 +558,7 @@ const AdminDashboard = () => {
                       size="lg"
                       onClick={() => navigate('/admin/powell')}
                     >
-                      Go to Powell Dashboard
+                      Go to Decision Hierarchy
                       <ArrowRight className="h-4 w-4 ml-2" />
                     </Button>
                   </CardContent>

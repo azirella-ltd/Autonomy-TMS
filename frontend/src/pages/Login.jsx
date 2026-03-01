@@ -14,22 +14,22 @@ import { AlertCircle, Eye, EyeOff, HelpCircle, Mail, KeyRound } from 'lucide-rea
 import { cn } from '../lib/utils/cn';
 
 /**
- * Check if user has Powell Framework capabilities via API.
- * Powell capabilities indicate the user should go through DashboardRouter
+ * Check if user has ADH (Adaptive Decision Hierarchy) capabilities via API.
+ * ADH capabilities indicate the user should go through DashboardRouter
  * instead of being redirected to a scenario.
  */
 const checkPowellCapabilities = async () => {
   try {
     const response = await api.get('/capabilities/me');
     const capabilities = response.data.capabilities || [];
-    // Check for any Powell-specific capability
+    // Check for any ADH-specific capability
     return capabilities.some(cap =>
       cap === 'view_executive_dashboard' ||
       cap === 'view_sop_worklist' ||
       cap === 'view_agent_decisions'
     );
   } catch (e) {
-    console.error('Failed to check Powell capabilities:', e);
+    console.error('Failed to check ADH capabilities:', e);
     return false;
   }
 };

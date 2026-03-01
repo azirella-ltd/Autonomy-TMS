@@ -1,7 +1,7 @@
 /**
  * Executive Dashboard - SC_VP Landing Page
  *
- * Powell Framework Strategic Level Dashboard - Business Outcome Focused
+ * ADH Strategic Level Dashboard - Business Outcome Focused
  *
  * Layout:
  * - Row 1 left: Portfolio Treemap (Geography × Product, revenue size, margin color)

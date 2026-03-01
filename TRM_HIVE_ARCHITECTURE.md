@@ -3441,6 +3441,8 @@ Individual TRM heads read signals and features:
 
 ### 16.3 Cross-Site Agent Communication Paths
 
+> **See also**: [Section 16.9](#169-vertical-escalation-between-decision-tiers) adds a fourth dimension — vertical escalation from execution to operational/strategic tiers when persistent cross-site patterns indicate policy errors.
+
 There are exactly three ways agents at one site communicate with agents at another site:
 
 #### Path 1: tGNN Passive Propagation (Daily, Automatic)

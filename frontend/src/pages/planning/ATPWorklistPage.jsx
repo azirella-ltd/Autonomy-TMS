@@ -9,7 +9,7 @@
  * Uses the shared TRMDecisionWorklist component with ATP-specific columns,
  * summary cards, and override fields.
  *
- * Powell Framework: Execution layer, VFA policy class.
+ * Adaptive Decision Hierarchy: Execution layer, VFA policy class.
  */
 import React, { useState, useEffect } from 'react';
 import { Box, Typography, Chip } from '@mui/material';

@@ -22,17 +22,22 @@ Each TRM is paired 1:1 with a **deterministic engine**. The engine provides the 
 ┌──────────────────────────▼─────────────────────────────────┐
 │  Narrow TRMs  (VFA - Value Function Approximation)         │
 │  Updates: per-decision (< 10ms)                            │
-│  5 Engine-TRM pairs:                                        │
-│    ┌───────────────────┬───────────────────────────────┐   │
-│    │ Deterministic      │ Learned TRM                   │   │
-│    │ Engine             │ (adjustments on top)           │   │
-│    ├───────────────────┼───────────────────────────────┤   │
-│    │ AATPEngine         │ ATPExecutorTRM                   │   │
-│    │ MRPEngine          │ POCreationTRM                 │   │
-│    │ SafetyStockCalc    │ InventoryBufferTRM            │   │
-│    │ RebalancingEngine  │ InventoryRebalancingTRM       │   │
-│    │ OrderTrackingEngine│ OrderTrackingTRM              │   │
-│    └───────────────────┴───────────────────────────────┘   │
+│  11 Engine-TRM pairs:                                       │
+│    ┌───────────────────────┬─────────────────────────────┐  │
+│    │ Deterministic Engine   │ Learned TRM                 │  │
+│    ├───────────────────────┼─────────────────────────────┤  │
+│    │ AATPEngine             │ ATPExecutorTRM              │  │
+│    │ MRPEngine              │ POCreationTRM               │  │
+│    │ SafetyStockCalculator  │ InventoryBufferTRM          │  │
+│    │ RebalancingEngine      │ InventoryRebalancingTRM     │  │
+│    │ OrderTrackingEngine    │ OrderTrackingTRM            │  │
+│    │ MOExecutionEngine      │ MOExecutionTRM              │  │
+│    │ TOExecutionEngine      │ TOExecutionTRM              │  │
+│    │ QualityEngine          │ QualityDispositionTRM       │  │
+│    │ MaintenanceEngine      │ MaintenanceSchedulingTRM    │  │
+│    │ SubcontractingEngine   │ SubcontractingTRM           │  │
+│    │ ForecastAdjustmentEng  │ ForecastAdjustmentTRM       │  │
+│    └───────────────────────┴─────────────────────────────┘  │
 └────────────────────────────────────────────────────────────┘
 ```
 
@@ -48,7 +53,7 @@ The layered architecture ensures the system works at every level of capability:
 
 ---
 
-## The 5 Engine-TRM Pairs
+## The 11 Engine-TRM Pairs
 
 ### 1. AATP Engine → ATP Executor
 
@@ -129,9 +134,9 @@ The TRM wraps order-up-to logic with context-aware adjustments:
 
 ---
 
-### 3. Safety Stock Calculator → Safety Stock TRM
+### 3. Safety Stock Calculator → Inventory Buffer TRM
 
-**Purpose**: Adjust safety stock levels beyond what deterministic formulas compute, capturing context the formulas miss (seasonality, regime changes, recent stockouts).
+**Purpose**: Adjust inventory buffer levels beyond what deterministic formulas compute, capturing context the formulas miss (seasonality, regime changes, recent stockouts). *(Renamed from SafetyStockTRM, Feb 2026 — see Terminology Note in CLAUDE.md)*
 
 **Engine**: `engines/safety_stock_calculator.py` — `SafetyStockCalculator`
 
@@ -266,18 +271,227 @@ The TRM adds:
 
 ---
 
+### 6. MO Execution Engine → MO Execution TRM
+
+**Purpose**: Manufacturing order release timing, sequencing, split decisions, and expediting — balancing lead time adherence with production efficiency and setup cost minimization.
+
+**Engine**: `engines/mo_execution_engine.py` — `MOExecutionEngine`
+
+The engine evaluates material availability (BOM % complete), capacity availability, and sequences MOs using weighted scoring:
+
+```
+Sequence score = setup_time × 0.3 + due_date_urgency × 0.5 + priority × 0.2
+```
+
+| Component | Detail |
+|-----------|--------|
+| Input | `MOState(mo_id, product_id, planned_qty, due_date, priority, bom_availability, capacity_pct, ...)` |
+| Output | `MODecision(release_now, sequence_position, expedite, defer_days, split_quantities, priority_override)` |
+| Config | `MOExecutionConfig(material_threshold=0.95, capacity_threshold=0.85)` |
+| Deterministic? | 100% |
+
+**TRM**: `mo_execution_trm.py` — `MOExecutionTRM`
+
+The TRM adds:
+- Learned sequence adjustments (max ±3 position shift from engine baseline)
+- Priority overrides for customer-linked MOs near due date
+- Quantity adjustments when historical yield is poor (<90%)
+- Setup overrun buffers based on historical patterns
+
+| Component | Detail |
+|-----------|--------|
+| State vector | planned_qty, days_until_due, priority, material_availability, missing_components, capacity_util, resource_util, setup_time, run_time, queue_depth, queue_hours, avg_yield, avg_setup_overrun, late_completion_rate, customer_linked, site_criticality, supply_risk (17 dims) |
+| Action space | release_now (bool) + sequence_position (int) + expedite (bool) + defer_days (0-14) + split_quantities (list) + priority_override (1-5) |
+| Reward | `on_time_delivery * 0.4 + setup_cost * 0.3 + queue_holding_cost * 0.2 + yield_success * 0.1` |
+
+**Delegation**: Engine provides deterministic release/sequence decision. TRM refines if confidence > 0.7, else falls back to heuristic. Emits `MO_RELEASED` or `MO_DELAYED` signal. Persists to `powell_mo_decisions`.
+
+---
+
+### 7. TO Execution Engine → TO Execution TRM
+
+**Purpose**: Inter-site transfer order timing and consolidation — balancing source inventory depletion risk with destination stockout prevention.
+
+**Engine**: `engines/to_execution_engine.py` — `TOExecutionEngine`
+
+The engine validates source has minimum DOS (default 3 days), checks destination urgency, and evaluates consolidation opportunities within a 24-hour window (10% cost savings threshold):
+
+| Component | Detail |
+|-----------|--------|
+| Input | `TOState(to_id, source_site, dest_site, qty, days_until_needed, source_inventory, dest_inventory, ...)` |
+| Output | `TODecision(release_now, expedite, consolidate_with, defer_days, reroute_via)` |
+| Config | `TOExecutionConfig(min_source_dos=3, consolidation_window_hours=24, consolidation_savings_threshold=0.10)` |
+| Deterministic? | 100% |
+
+**TRM**: `to_execution_trm.py` — `TOExecutionTRM`
+
+The TRM adds:
+- Deferral adjustments based on transit time variability
+- Auto-release when destination has backlog AND source has >7 days supply
+- Expedite triggers when transit variability high (>0.3) and timing tight
+- Alternative route selection via network embeddings
+
+| Component | Detail |
+|-----------|--------|
+| State vector | planned_qty, days_until_needed, priority, transit_time, source_onhand, source_dos, source_committed, dest_onhand, dest_dos, dest_backlog, dest_safety_stock, dest_forecast, transport_cost, avg_transit_days, transit_variability, carrier_otp, lane_criticality, network_congestion (18 dims) |
+| Action space | release_now (bool) + expedite (bool) + consolidate_with (list[str]) + defer_days (0-7) + reroute_via (optional str) |
+| Reward | `stockout_prevention * 0.4 + transport_cost * 0.3 + consolidation_savings * 0.2 + source_depletion_risk * 0.1` |
+
+**Delegation**: Engine provides deterministic release/consolidate decision. TRM refines with transit variability awareness. Emits `TO_RELEASED` or `TO_DELAYED` signal. Persists to `powell_to_decisions`.
+
+---
+
+### 8. Quality Engine → Quality Disposition TRM
+
+**Purpose**: Quality hold/release/rework/scrap decisions — learning vendor-specific quality patterns to improve disposition accuracy over time.
+
+**Engine**: `engines/quality_engine.py` — `QualityEngine`
+
+The engine applies threshold-based rules: auto-accept if defect rate < 1%, auto-reject if critical defects present or major defect count > 3, evaluate rework if cost < 30% of product value with >80% success probability:
+
+| Component | Detail |
+|-----------|--------|
+| Input | `QualityState(lot_id, inspection_qty, defect_count, defect_rate, severity, vendor_quality, rework_cost, ...)` |
+| Output | `QualityDecision(disposition, quantities_by_disposition, return_to_vendor, vendor_notification)` |
+| Config | `QualityConfig(accept_threshold=0.01, reject_major_count=3, rework_cost_ceiling=0.30, scrap_cost_ceiling=0.50)` |
+| Deterministic? | 100% |
+
+**TRM**: `quality_disposition_trm.py` — `QualityDispositionTRM`
+
+The TRM adds:
+- Vendor-specific quality pattern learning from historical rejection outcomes
+- Avoids use-as-is if similar products led to customer complaints (>10%)
+- Skips rework if historical success rate low (<70%)
+- Returns to vendor if recent reject rate >15%
+- Adjusts acceptance thresholds based on downstream inventory pressure
+
+| Component | Detail |
+|-----------|--------|
+| State vector | inspection_qty, defect_count, defect_rate, severity_level, characteristics_pass_rate, unit_value, rework_cost, scrap_cost, vendor_quality, vendor_reject_rate, days_since_receipt, onhand, safety_stock, dos, pending_orders, product_defect_rate, rework_success_rate, use_as_is_complaint_rate (18 dims) |
+| Action space | disposition (accept/reject/rework/scrap/use_as_is/return_to_vendor) + quantity splits + return_to_vendor (bool) |
+| Reward | `quality_escape_penalty * 0.4 + rework_scrap_cost * 0.3 + inventory_availability * 0.2 + vendor_credibility * 0.1` |
+
+**Delegation**: Engine provides deterministic disposition. TRM overrides with vendor pattern awareness. Emits `QUALITY_REJECT` or `QUALITY_HOLD` signal. Persists to `powell_quality_decisions`.
+
+---
+
+### 9. Maintenance Engine → Maintenance Scheduling TRM
+
+**Purpose**: Preventive maintenance scheduling and deferral — learning safe deferral windows from breakdown history to maximize production uptime.
+
+**Engine**: `engines/maintenance_engine.py` — `MaintenanceEngine`
+
+The engine calculates deferral risk from asset age, MTBF, recent failures, and overdue days. Prevents deferral if defer count > 2, risk exceeds 30%, or asset is critical. Seeks production gaps for scheduling:
+
+| Component | Detail |
+|-----------|--------|
+| Input | `MaintenanceState(work_order_id, asset_id, criticality, days_since_last, mtbf, recent_failures, estimated_cost, ...)` |
+| Output | `MaintenanceDecision(decision_type, recommended_date, defer_to_date, defer_risk, outsource, combine_with)` |
+| Config | `MaintenanceConfig(max_defer_count=2, risk_threshold=0.30, outsource_cost_ceiling=1.5, combine_savings_threshold=0.15)` |
+| Deterministic? | 100% |
+
+**TRM**: `maintenance_scheduling_trm.py` — `MaintenanceSchedulingTRM`
+
+The TRM adds:
+- Learned breakdown rates after past deferral decisions
+- Historical cost overrun ratios (actual/estimated) for budget accuracy
+- Defers only if historical breakdown-after-defer rate < 30%
+- Aligns maintenance with MO schedule gaps (combines where possible)
+
+| Component | Detail |
+|-----------|--------|
+| State vector | days_since_last, frequency_days, days_overdue, defer_count, downtime_hours, estimated_cost, spare_parts_available, criticality, asset_age, mtbf, recent_failures, production_load, production_impact, next_gap_days, historical_breakdown_rate, cost_overrun_ratio (16 dims) |
+| Action space | decision_type (schedule/defer/expedite/combine/outsource/cancel) + recommended_date + defer_to_date + defer_risk (0-1) |
+| Reward | `breakdown_prevention * 0.4 + maintenance_cost * 0.3 + production_uptime * 0.2 + asset_longevity * 0.1` |
+
+**Delegation**: Engine provides deterministic schedule/defer decision. TRM refines using historical breakdown patterns. Emits `MAINTENANCE_DEFERRED` or `MAINTENANCE_URGENT` signal. Persists to `powell_maintenance_decisions`.
+
+---
+
+### 10. Subcontracting Engine → Subcontracting TRM
+
+**Purpose**: Make-vs-buy and external manufacturing routing — learning vendor reliability patterns to optimize cost, quality, and capacity utilization.
+
+**Engine**: `engines/subcontracting_engine.py` — `SubcontractingEngine`
+
+The engine checks internal capacity utilization (consider subcontracting above 90%), validates vendor quality (≥85%) and on-time delivery (≥80%), and evaluates cost savings (≥10% for external, accept up to 20% premium for capacity relief):
+
+| Component | Detail |
+|-----------|--------|
+| Input | `SubcontractingState(product_id, required_qty, internal_capacity, internal_cost, vendor_cost, vendor_quality, ip_sensitivity, ...)` |
+| Output | `SubcontractingDecision(decision_type, internal_qty, external_qty, recommended_vendor)` |
+| Config | `SubcontractingConfig(capacity_threshold=0.90, quality_floor=0.85, otp_floor=0.80, max_external_pct=0.70, max_single_vendor_pct=0.60)` |
+| Deterministic? | 100% |
+
+**TRM**: `subcontracting_trm.py` — `SubcontractingTRM`
+
+The TRM adds:
+- Vendor reject rate and late delivery pattern learning
+- Avoids subcontracting to vendors with >10% reject rate or >20% late rate
+- Routes critical/high-IP products internal unless vendor quality ≥ 92%
+- Adjusts cost comparison for historical quality losses at external vendor
+
+| Component | Detail |
+|-----------|--------|
+| State vector | required_qty, internal_capacity, internal_cost, internal_lead_time, internal_yield, vendor_cost, vendor_lead_time, vendor_quality, vendor_otp, critical_product, special_tooling, ip_sensitivity, current_external_pct, vendor_reject_rate, vendor_late_rate, demand_forecast_30d, backlog_qty (17 dims) |
+| Action space | decision_type (route_external/keep_internal/split/change_vendor) + internal_qty + external_qty + recommended_vendor |
+| Reward | `cost_efficiency * 0.3 + quality_outcome * 0.3 + delivery_otp * 0.2 + capacity_freed * 0.1 + ip_protection * 0.1` |
+
+**Delegation**: Engine provides deterministic make-vs-buy decision. TRM refines with vendor reliability learning. Emits `SUBCONTRACT_ROUTED` signal. Persists to `powell_subcontracting_decisions`.
+
+---
+
+### 11. Forecast Adjustment Engine → Forecast Adjustment TRM
+
+**Purpose**: Signal-driven forecast adjustments — learning which external signals (email, market intelligence, customer feedback) actually improve forecast accuracy.
+
+**Engine**: `engines/forecast_adjustment_engine.py` — `ForecastAdjustmentEngine`
+
+The engine filters signals below minimum confidence (30%), applies source reliability weights (email 0.5, market intel 0.8, competitor 0.6), scales adjustments by signal type (demand_increase 15%, disruption 35%, discontinuation 50%), and caps magnitude at ±50%:
+
+| Component | Detail |
+|-----------|--------|
+| Input | `SignalState(signal_type, source, direction, confidence, magnitude_hint, current_forecast, product_volatility, ...)` |
+| Output | `ForecastDecision(should_adjust, direction, adjustment_pct, auto_applicable, requires_human_review, time_horizon)` |
+| Config | `ForecastAdjustmentConfig(min_confidence=0.30, auto_apply_confidence=0.80, max_adjustment_pct=0.50)` |
+| Deterministic? | 100% |
+
+**TRM**: `forecast_adjustment_trm.py` — `ForecastAdjustmentTRM`
+
+The TRM adds:
+- Source reliability learning from historical signal accuracy (Bayesian posterior)
+- Dampens adjustments from historically inaccurate sources
+- Reduces confidence if product trend contradicts signal direction
+- Skips adjustment on high-volatility products with weak signals (<10%)
+
+| Component | Detail |
+|-----------|--------|
+| State vector | source_type, direction, confidence, magnitude_hint, current_forecast, forecast_confidence, historical_accuracy, source_accuracy, signal_type_accuracy, product_volatility, product_trend, seasonality_factor, current_dos, pending_orders, time_horizon (15 dims) |
+| Action space | should_adjust (bool) + direction (up/down/no_change) + adjustment_pct (-50% to +50%) + auto_applicable (bool) + requires_human_review (bool) + time_horizon_periods (int) |
+| Reward | `forecast_accuracy_improvement * 0.4 + signal_noise_penalty * 0.3 + timeliness * 0.2 + source_reliability * 0.1` |
+
+**Delegation**: Engine provides deterministic signal classification and base adjustment. TRM refines with learned source reliability weights. Emits `FORECAST_ADJUSTED`, `DEMAND_SURGE`, or `DEMAND_DROP` signal. Persists to `powell_forecast_adjustment_decisions`.
+
+---
+
 ## Training Pipeline
 
 ### Data Generation
 
-`synthetic_trm_data_generator.py` generates training data for all 5 TRM types. The generator **calls the actual engines** for expert labels, ensuring training data matches the deterministic baselines:
+`synthetic_trm_data_generator.py` generates training data for all 11 TRM types. The generator **calls the actual engines** for expert labels, ensuring training data matches the deterministic baselines:
 
 ```python
-# ATP: AATP engine check_availability() → expert action
+# ATP: AATPEngine.check_availability() → expert action
+# PO Creation: MRPEngine + SafetyStockCalculator → ROP/order-up-to
+# Inventory Buffer: SafetyStockCalculator.compute_safety_stock() → baseline + heuristic multiplier
 # Rebalancing: RebalancingEngine.evaluate_pair() → expert action
-# PO Creation: SafetyStockCalculator.compute_safety_stock() → ROP/order-up-to
 # Order Tracking: OrderTrackingEngine.evaluate_order() → expert action
-# Safety Stock: SafetyStockCalculator.compute_safety_stock() → baseline + heuristic multiplier
+# MO Execution: MOExecutionEngine.evaluate_mo() → release/sequence/defer
+# TO Execution: TOExecutionEngine.evaluate_to() → release/consolidate/defer
+# Quality: QualityEngine.evaluate_lot() → accept/reject/rework/scrap
+# Maintenance: MaintenanceEngine.evaluate_work_order() → schedule/defer/expedite
+# Subcontracting: SubcontractingEngine.evaluate() → internal/external/split
+# Forecast Adj: ForecastAdjustmentEngine.evaluate_signal() → adjust/ignore
 ```
 
 Each decision generates:
@@ -303,10 +517,16 @@ Each TRM type has a dedicated reward calculator in `RewardCalculator`:
 | TRM Type | Key Reward Components |
 |----------|----------------------|
 | `atp` | fill_rate, on_time_bonus, priority_weight |
-| `rebalancing` | service_improvement, transfer_cost_penalty |
 | `po_creation` | stockout_penalty, dos_target, cost_efficiency, timing_accuracy |
+| `inventory_buffer` | stockout_penalty, dos_target, excess_cost, stability_bonus |
+| `rebalancing` | service_improvement, transfer_cost_penalty |
 | `order_tracking` | correct_exception, resolution_speed, escalation_appropriateness |
-| `safety_stock` | stockout_penalty, dos_target, excess_cost, stability_bonus |
+| `mo_execution` | on_time_delivery, setup_cost, queue_holding_cost, yield_success |
+| `to_execution` | stockout_prevention, transport_cost, consolidation_savings, source_depletion |
+| `quality` | quality_escape_penalty, rework_scrap_cost, inventory_availability, vendor_credibility |
+| `maintenance` | breakdown_prevention, maintenance_cost, production_uptime, asset_longevity |
+| `subcontracting` | cost_efficiency, quality_outcome, delivery_otp, capacity_freed, ip_protection |
+| `forecast_adjustment` | forecast_accuracy_improvement, signal_noise_penalty, timeliness, source_reliability |
 
 ### Per-Site Learning-Depth Curriculum
 
@@ -333,6 +553,12 @@ Training is organized **per site x per TRM type** with a 3-phase progressive cur
 | InventoryBufferTRM | Yes | Yes | No |
 | InventoryRebalancingTRM | Yes | No | No |
 | OrderTrackingTRM | Yes | Yes | No |
+| MOExecutionTRM | No | Yes | No |
+| TOExecutionTRM | Yes | No | No |
+| QualityDispositionTRM | Yes | Yes | No |
+| MaintenanceSchedulingTRM | No | Yes | No |
+| SubcontractingTRM | No | Yes | No |
+| ForecastAdjustmentTRM | Yes | Yes | No |
 
 #### Checkpoint Naming & Fallback
 
@@ -361,7 +587,13 @@ SiteAgent (per site)
   ├── POCreationTRM (engine: MRPEngine)
   ├── InventoryBufferTRM (engine: SafetyStockCalculator)
   ├── InventoryRebalancingTRM (engine: RebalancingEngine)
-  └── OrderTrackingTRM (engine: OrderTrackingEngine)
+  ├── OrderTrackingTRM (engine: OrderTrackingEngine)
+  ├── MOExecutionTRM (engine: MOExecutionEngine)
+  ├── TOExecutionTRM (engine: TOExecutionEngine)
+  ├── QualityDispositionTRM (engine: QualityEngine)
+  ├── MaintenanceSchedulingTRM (engine: MaintenanceEngine)
+  ├── SubcontractingTRM (engine: SubcontractingEngine)
+  └── ForecastAdjustmentTRM (engine: ForecastAdjustmentEngine)
 ```
 
 The SiteAgent:
@@ -380,9 +612,15 @@ The SiteAgent:
 |------|-------|---------|
 | `engines/aatp_engine.py` | `AATPEngine` | Priority-based ATP consumption |
 | `engines/mrp_engine.py` | `MRPEngine` | Netting, BOM explosion, lot sizing |
-| `engines/safety_stock_calculator.py` | `SafetyStockCalculator` | 4 AWS SC policy types |
+| `engines/safety_stock_calculator.py` | `SafetyStockCalculator` | 4+1 AWS SC policy types (incl. sl_fitted) |
 | `engines/rebalancing_engine.py` | `RebalancingEngine` | Cross-location transfer rules |
 | `engines/order_tracking_engine.py` | `OrderTrackingEngine` | Threshold-based exception detection |
+| `engines/mo_execution_engine.py` | `MOExecutionEngine` | MO release, sequencing, capacity check |
+| `engines/to_execution_engine.py` | `TOExecutionEngine` | TO release, consolidation, routing |
+| `engines/quality_engine.py` | `QualityEngine` | Quality inspection disposition rules |
+| `engines/maintenance_engine.py` | `MaintenanceEngine` | PM scheduling, deferral risk, outsourcing |
+| `engines/subcontracting_engine.py` | `SubcontractingEngine` | Make-vs-buy evaluation |
+| `engines/forecast_adjustment_engine.py` | `ForecastAdjustmentEngine` | Signal classification and adjustment |
 | `engines/__init__.py` | — | Package exports |
 
 ### Narrow TRM Services (learned adjustments)
@@ -394,6 +632,12 @@ The SiteAgent:
 | `inventory_buffer_trm.py` | `InventoryBufferTRM` | `SafetyStockCalculator` |
 | `inventory_rebalancing_trm.py` | `InventoryRebalancingTRM` | `RebalancingEngine` |
 | `order_tracking_trm.py` | `OrderTrackingTRM` | `OrderTrackingEngine` |
+| `mo_execution_trm.py` | `MOExecutionTRM` | `MOExecutionEngine` |
+| `to_execution_trm.py` | `TOExecutionTRM` | `TOExecutionEngine` |
+| `quality_disposition_trm.py` | `QualityDispositionTRM` | `QualityEngine` |
+| `maintenance_scheduling_trm.py` | `MaintenanceSchedulingTRM` | `MaintenanceEngine` |
+| `subcontracting_trm.py` | `SubcontractingTRM` | `SubcontractingEngine` |
+| `forecast_adjustment_trm.py` | `ForecastAdjustmentTRM` | `ForecastAdjustmentEngine` |
 
 ### Training & Data
 
@@ -408,7 +652,7 @@ The SiteAgent:
 
 | File | Purpose |
 |------|---------|
-| `models/trm_training_data.py` | Decision logs, outcomes, replay buffer (all 5 types) |
+| `models/trm_training_data.py` | Decision logs, outcomes, replay buffer (all 11 types) |
 | `models/powell_training_config.py` | `TRMType` enum, `DEFAULT_TRM_REWARD_WEIGHTS` |
 | `models/powell_decisions.py` | Production decision persistence tables |
 

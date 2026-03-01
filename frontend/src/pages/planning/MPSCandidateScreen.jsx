@@ -87,7 +87,7 @@ const CANDIDATE_METHODS = {
   },
   PARAMETRIC_CFA: {
     name: 'Parametric CFA',
-    description: 'Powell Cost Function Approximation with learned θ',
+    description: 'Cost Function Approximation with learned θ',
     color: '#c62828',
   },
 };

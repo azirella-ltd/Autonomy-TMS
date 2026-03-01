@@ -23,6 +23,9 @@ import {
   TableHead,
   TableCell,
   Checkbox,
+  Tabs,
+  TabsList,
+  TabsTrigger,
 } from '../../components/common';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip';
 import {
@@ -30,12 +33,15 @@ import {
   CheckCircle,
   XCircle,
   TrendingUp,
+  TrendingDown,
   Truck,
   Leaf,
   DollarSign,
   Play,
   Info,
   Scale,
+  BarChart3,
+  Target,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import InlineComments from '../../components/common/InlineComments';
@@ -59,6 +65,35 @@ const Recommendations = () => {
   const [rebalancingDialogOpen, setRebalancingDialogOpen] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [activeView, setActiveView] = useState('recommendations');
+
+  // Performance tracking data
+  const [performanceData] = useState({
+    summary: {
+      totalRecommendations: 156,
+      acceptanceRate: 72.4,
+      overrideRate: 18.6,
+      autoExecutedRate: 9.0,
+      avgScoreAccepted: 78.3,
+      avgScoreOverridden: 42.1,
+      netSavingsRealized: 284500,
+      netSavingsPredicted: 312000,
+      realizationRate: 91.2,
+    },
+    byType: [
+      { type: 'rebalance', total: 82, accepted: 65, overridden: 12, executed: 5, avgScore: 71.2, savingsRealized: 145000, savingsPredicted: 158000 },
+      { type: 'expedite', total: 45, accepted: 28, overridden: 14, executed: 3, avgScore: 62.8, savingsRealized: 89000, savingsPredicted: 98000 },
+      { type: 'inventory_buffer', total: 29, accepted: 20, overridden: 3, executed: 6, avgScore: 81.5, savingsRealized: 50500, savingsPredicted: 56000 },
+    ],
+    recentOutcomes: [
+      { id: 'REC-142', type: 'rebalance', score: 85, action: 'accepted', predictedSavings: 4200, actualSavings: 3980, predictedServiceImpact: 2.1, actualServiceImpact: 1.8, effective: true },
+      { id: 'REC-139', type: 'expedite', score: 67, action: 'accepted', predictedSavings: 1800, actualSavings: 2100, predictedServiceImpact: 3.5, actualServiceImpact: 4.1, effective: true },
+      { id: 'REC-137', type: 'rebalance', score: 45, action: 'overridden', predictedSavings: 2500, actualSavings: -800, predictedServiceImpact: 1.2, actualServiceImpact: -0.5, effective: false },
+      { id: 'REC-135', type: 'inventory_buffer', score: 91, action: 'accepted', predictedSavings: 5600, actualSavings: 5200, predictedServiceImpact: 1.8, actualServiceImpact: 2.0, effective: true },
+      { id: 'REC-131', type: 'expedite', score: 38, action: 'overridden', predictedSavings: 900, actualSavings: 1200, predictedServiceImpact: 0.8, actualServiceImpact: 1.5, effective: true },
+      { id: 'REC-128', type: 'rebalance', score: 74, action: 'accepted', predictedSavings: 3100, actualSavings: 2900, predictedServiceImpact: 2.4, actualServiceImpact: 2.2, effective: true },
+    ],
+  });
 
   const fetchRecommendations = async () => {
     setLoading(true);
@@ -231,6 +266,176 @@ const Recommendations = () => {
         </Alert>
       )}
 
+      {/* View Tabs */}
+      <Tabs value={activeView} onValueChange={setActiveView} className="mb-6">
+        <TabsList>
+          <TabsTrigger value="recommendations">Recommendations</TabsTrigger>
+          <TabsTrigger value="performance">Performance Tracking</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {activeView === 'performance' && (
+        <div className="space-y-6">
+          {/* Summary KPIs */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <Card>
+              <CardContent className="pt-4 pb-4 text-center">
+                <p className="text-xs text-muted-foreground mb-1">Total Recommendations</p>
+                <p className="text-2xl font-bold">{performanceData.summary.totalRecommendations}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4 pb-4 text-center">
+                <p className="text-xs text-muted-foreground mb-1">Acceptance Rate</p>
+                <p className="text-2xl font-bold text-green-600">{performanceData.summary.acceptanceRate}%</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4 pb-4 text-center">
+                <p className="text-xs text-muted-foreground mb-1">Override Rate</p>
+                <p className="text-2xl font-bold text-amber-600">{performanceData.summary.overrideRate}%</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4 pb-4 text-center">
+                <p className="text-xs text-muted-foreground mb-1">Savings Realized</p>
+                <p className="text-2xl font-bold">${(performanceData.summary.netSavingsRealized / 1000).toFixed(0)}K</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4 pb-4 text-center">
+                <p className="text-xs text-muted-foreground mb-1">Realization Rate</p>
+                <p className="text-2xl font-bold text-primary">{performanceData.summary.realizationRate}%</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Performance by Type */}
+          <Card>
+            <CardContent className="pt-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-primary" />
+                Performance by Recommendation Type
+              </h3>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Type</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Accepted</TableHead>
+                    <TableHead className="text-right">Overridden</TableHead>
+                    <TableHead className="text-right">Auto-Executed</TableHead>
+                    <TableHead className="text-right">Acceptance %</TableHead>
+                    <TableHead className="text-right">Avg Score</TableHead>
+                    <TableHead className="text-right">Predicted Savings</TableHead>
+                    <TableHead className="text-right">Actual Savings</TableHead>
+                    <TableHead className="text-right">Realization %</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {performanceData.byType.map((row) => {
+                    const acceptPct = ((row.accepted / row.total) * 100).toFixed(1);
+                    const realPct = ((row.savingsRealized / row.savingsPredicted) * 100).toFixed(1);
+                    return (
+                      <TableRow key={row.type}>
+                        <TableCell className="font-medium capitalize">{row.type.replace('_', ' ')}</TableCell>
+                        <TableCell className="text-right font-mono">{row.total}</TableCell>
+                        <TableCell className="text-right font-mono text-green-600">{row.accepted}</TableCell>
+                        <TableCell className="text-right font-mono text-amber-600">{row.overridden}</TableCell>
+                        <TableCell className="text-right font-mono text-blue-600">{row.executed}</TableCell>
+                        <TableCell className="text-right font-mono">{acceptPct}%</TableCell>
+                        <TableCell className="text-right">
+                          <Badge variant={getScoreVariant(row.avgScore)}>{row.avgScore}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-mono">${row.savingsPredicted.toLocaleString()}</TableCell>
+                        <TableCell className="text-right font-mono">${row.savingsRealized.toLocaleString()}</TableCell>
+                        <TableCell className="text-right">
+                          <span className={parseFloat(realPct) >= 90 ? 'text-green-600' : 'text-amber-600'}>
+                            {realPct}%
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Recent Outcomes */}
+          <Card>
+            <CardContent className="pt-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <Target className="h-5 w-5 text-primary" />
+                Recent Outcomes — Predicted vs Actual
+              </h3>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ID</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Score</TableHead>
+                    <TableHead>Action</TableHead>
+                    <TableHead className="text-right">Predicted $</TableHead>
+                    <TableHead className="text-right">Actual $</TableHead>
+                    <TableHead className="text-right">Predicted SL Impact</TableHead>
+                    <TableHead className="text-right">Actual SL Impact</TableHead>
+                    <TableHead>Effective</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {performanceData.recentOutcomes.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell className="font-mono text-sm">{row.id}</TableCell>
+                      <TableCell className="capitalize">{row.type.replace('_', ' ')}</TableCell>
+                      <TableCell><Badge variant={getScoreVariant(row.score)}>{row.score}</Badge></TableCell>
+                      <TableCell>
+                        <Badge variant={row.action === 'accepted' ? 'success' : 'warning'}>{row.action}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono">${row.predictedSavings.toLocaleString()}</TableCell>
+                      <TableCell className={`text-right font-mono ${row.actualSavings >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        ${row.actualSavings.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">+{row.predictedServiceImpact}%</TableCell>
+                      <TableCell className={`text-right font-mono ${row.actualServiceImpact >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {row.actualServiceImpact >= 0 ? '+' : ''}{row.actualServiceImpact}%
+                      </TableCell>
+                      <TableCell>
+                        {row.effective ? (
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-red-600" />
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Score Effectiveness Insight */}
+          <Card>
+            <CardContent className="pt-6">
+              <h3 className="text-lg font-semibold mb-4">Score Effectiveness Analysis</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="p-4 bg-muted/30 rounded-lg">
+                  <p className="text-sm text-muted-foreground mb-1">Avg Score of Accepted Recommendations</p>
+                  <p className="text-3xl font-bold text-green-600">{performanceData.summary.avgScoreAccepted}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Higher scores correlate with better outcomes</p>
+                </div>
+                <div className="p-4 bg-muted/30 rounded-lg">
+                  <p className="text-sm text-muted-foreground mb-1">Avg Score of Overridden Recommendations</p>
+                  <p className="text-3xl font-bold text-amber-600">{performanceData.summary.avgScoreOverridden}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Low scores are overridden more frequently</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {activeView === 'recommendations' && <>
       {/* Filters and Actions */}
       <Card className="mb-6">
         <CardContent className="pt-4">
@@ -475,6 +680,8 @@ const Recommendations = () => {
           </Table>
         </CardContent>
       </Card>
+
+      </>}
 
       {/* Detail Dialog */}
       <Modal

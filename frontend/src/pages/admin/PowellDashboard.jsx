@@ -1,5 +1,5 @@
 /**
- * Powell Framework Dashboard
+ * Adaptive Decision Hierarchy Dashboard
  *
  * Full visualization of the Sequential Decision Analytics and Modeling (SDAM) framework.
  * Shows the complete workflow: State → Policy → Decision → Outcome
@@ -316,13 +316,13 @@ const PowellDashboard = () => {
         <ChevronRight className="h-4 w-4" />
         <Link to="/admin?section=training" className="hover:text-foreground">AI & Agents</Link>
         <ChevronRight className="h-4 w-4" />
-        <span className="text-foreground">Powell Framework</span>
+        <span className="text-foreground">Adaptive Decision Hierarchy</span>
       </nav>
 
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-bold mb-2">Powell SDAM Framework</h1>
+          <h1 className="text-3xl font-bold mb-2">Adaptive Decision Hierarchy</h1>
           <p className="text-muted-foreground">
             Sequential Decision Analytics: State → Policy → Decision → Outcome
           </p>
@@ -440,7 +440,7 @@ const PowellDashboard = () => {
             />
           </div>
 
-          {/* Powell Pipeline Visualization */}
+          {/* ADH Pipeline Visualization */}
           <Card className="mb-6">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">

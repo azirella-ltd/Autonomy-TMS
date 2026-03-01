@@ -40,6 +40,11 @@ import {
   Plus,
   Trash2,
   Eye,
+  Bell,
+  Mail,
+  MessageSquare,
+  Settings,
+  Edit2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { api } from '../../services/api';
@@ -72,6 +77,26 @@ const RiskAnalysis = () => {
 
   // Tab state
   const [tabValue, setTabValue] = useState('alerts');
+
+  // Alert rules state
+  const [alertRules, setAlertRules] = useState([
+    { id: 1, name: 'Critical Stockout Alert', type: 'STOCKOUT', severity: 'CRITICAL', threshold: 80, condition: 'above', metric: 'stockout_probability', enabled: true, channels: ['email', 'in_app'], escalateAfterHours: 4 },
+    { id: 2, name: 'High Overstock Warning', type: 'OVERSTOCK', severity: 'HIGH', threshold: 120, condition: 'above', metric: 'days_of_supply', enabled: true, channels: ['in_app'], escalateAfterHours: 24 },
+    { id: 3, name: 'Vendor Lead Time Drift', type: 'VENDOR_LEADTIME', severity: 'MEDIUM', threshold: 15, condition: 'above', metric: 'lead_time_variance_pct', enabled: true, channels: ['email', 'slack'], escalateAfterHours: 48 },
+    { id: 4, name: 'Low Inventory Coverage', type: 'STOCKOUT', severity: 'HIGH', threshold: 7, condition: 'below', metric: 'days_of_coverage', enabled: false, channels: ['email'], escalateAfterHours: 12 },
+  ]);
+  const [ruleDialogOpen, setRuleDialogOpen] = useState(false);
+  const [editingRule, setEditingRule] = useState(null);
+  const [ruleForm, setRuleForm] = useState({
+    name: '', type: 'STOCKOUT', severity: 'HIGH', threshold: 0, condition: 'above', metric: 'stockout_probability', enabled: true, channels: ['in_app'], escalateAfterHours: 24,
+  });
+
+  // Notification channels state
+  const [notifChannels, setNotifChannels] = useState([
+    { id: 'email', name: 'Email', type: 'email', config: { address: 'alerts@company.com' }, enabled: true },
+    { id: 'in_app', name: 'In-App', type: 'in_app', config: {}, enabled: true },
+    { id: 'slack', name: 'Slack', type: 'slack', config: { webhook: 'https://hooks.slack.com/services/...' }, enabled: false },
+  ]);
 
   // Fetch risk alerts
   const fetchAlerts = async () => {
@@ -497,6 +522,7 @@ const RiskAnalysis = () => {
         <TabsList>
           <TabsTrigger value="alerts">Risk Alerts</TabsTrigger>
           <TabsTrigger value="watchlists">Watchlists</TabsTrigger>
+          <TabsTrigger value="rules">Alert Rules & Channels</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -691,8 +717,263 @@ const RiskAnalysis = () => {
         </Card>
       )}
 
+      {tabValue === 'rules' && (
+        <div className="space-y-6">
+          {/* Alert Rules */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <Settings className="h-5 w-5" />
+                  Alert Rules
+                </h2>
+                <Button
+                  onClick={() => {
+                    setEditingRule(null);
+                    setRuleForm({ name: '', type: 'STOCKOUT', severity: 'HIGH', threshold: 0, condition: 'above', metric: 'stockout_probability', enabled: true, channels: ['in_app'], escalateAfterHours: 24 });
+                    setRuleDialogOpen(true);
+                  }}
+                  leftIcon={<Plus className="h-4 w-4" />}
+                >
+                  Create Rule
+                </Button>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Severity</TableHead>
+                    <TableHead>Condition</TableHead>
+                    <TableHead>Channels</TableHead>
+                    <TableHead>Escalation</TableHead>
+                    <TableHead>Enabled</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {alertRules.map((rule) => (
+                    <TableRow key={rule.id}>
+                      <TableCell className="font-medium">{rule.name}</TableCell>
+                      <TableCell><Badge variant="secondary">{getTypeLabel(rule.type)}</Badge></TableCell>
+                      <TableCell><Badge variant={getSeverityVariant(rule.severity)}>{rule.severity}</Badge></TableCell>
+                      <TableCell className="text-sm">{rule.metric.replace(/_/g, ' ')} {rule.condition} {rule.threshold}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          {rule.channels.map((ch) => (
+                            <Badge key={ch} variant="outline" className="text-xs">{ch}</Badge>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm">{rule.escalateAfterHours}h</TableCell>
+                      <TableCell>
+                        <Switch
+                          checked={rule.enabled}
+                          onCheckedChange={(checked) => {
+                            setAlertRules((prev) => prev.map((r) => r.id === rule.id ? { ...r, enabled: checked } : r));
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setEditingRule(rule);
+                              setRuleForm({ ...rule });
+                              setRuleDialogOpen(true);
+                            }}
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              if (window.confirm('Delete this alert rule?')) {
+                                setAlertRules((prev) => prev.filter((r) => r.id !== rule.id));
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Notification Channels */}
+          <Card>
+            <CardContent className="pt-6">
+              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <Bell className="h-5 w-5" />
+                Notification Channels
+              </h2>
+              <div className="space-y-4">
+                {notifChannels.map((ch) => (
+                  <div key={ch.id} className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      {ch.type === 'email' && <Mail className="h-5 w-5 text-blue-500" />}
+                      {ch.type === 'in_app' && <Bell className="h-5 w-5 text-green-500" />}
+                      {ch.type === 'slack' && <MessageSquare className="h-5 w-5 text-purple-500" />}
+                      <div>
+                        <p className="font-medium">{ch.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {ch.type === 'email' && ch.config.address}
+                          {ch.type === 'slack' && ch.config.webhook?.slice(0, 40) + '...'}
+                          {ch.type === 'in_app' && 'Browser push + in-app notifications'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge variant={ch.enabled ? 'success' : 'secondary'}>
+                        {ch.enabled ? 'Active' : 'Disabled'}
+                      </Badge>
+                      <Switch
+                        checked={ch.enabled}
+                        onCheckedChange={(checked) => {
+                          setNotifChannels((prev) => prev.map((c) => c.id === ch.id ? { ...c, enabled: checked } : c));
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       <AlertDetailDialog />
       <WatchlistDialog />
+
+      {/* Alert Rule Dialog */}
+      <Modal
+        isOpen={ruleDialogOpen}
+        onClose={() => setRuleDialogOpen(false)}
+        title={editingRule ? 'Edit Alert Rule' : 'Create Alert Rule'}
+        maxWidth="md"
+      >
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="rule-name">Rule Name</Label>
+            <Input
+              id="rule-name"
+              value={ruleForm.name}
+              onChange={(e) => setRuleForm({ ...ruleForm, name: e.target.value })}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Alert Type</Label>
+              <Select value={ruleForm.type} onValueChange={(v) => setRuleForm({ ...ruleForm, type: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="STOCKOUT">Stock-out</SelectItem>
+                  <SelectItem value="OVERSTOCK">Overstock</SelectItem>
+                  <SelectItem value="VENDOR_LEADTIME">Vendor Lead Time</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Severity</Label>
+              <Select value={ruleForm.severity} onValueChange={(v) => setRuleForm({ ...ruleForm, severity: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CRITICAL">Critical</SelectItem>
+                  <SelectItem value="HIGH">High</SelectItem>
+                  <SelectItem value="MEDIUM">Medium</SelectItem>
+                  <SelectItem value="LOW">Low</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <Label>Metric</Label>
+              <Select value={ruleForm.metric} onValueChange={(v) => setRuleForm({ ...ruleForm, metric: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="stockout_probability">Stockout Probability</SelectItem>
+                  <SelectItem value="days_of_supply">Days of Supply</SelectItem>
+                  <SelectItem value="days_of_coverage">Days of Coverage</SelectItem>
+                  <SelectItem value="lead_time_variance_pct">Lead Time Variance %</SelectItem>
+                  <SelectItem value="inventory_turns">Inventory Turns</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Condition</Label>
+              <Select value={ruleForm.condition} onValueChange={(v) => setRuleForm({ ...ruleForm, condition: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="above">Above</SelectItem>
+                  <SelectItem value="below">Below</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Threshold</Label>
+              <Input
+                type="number"
+                value={ruleForm.threshold}
+                onChange={(e) => setRuleForm({ ...ruleForm, threshold: parseFloat(e.target.value) })}
+              />
+            </div>
+          </div>
+          <div>
+            <Label>Escalate After (hours)</Label>
+            <Input
+              type="number"
+              value={ruleForm.escalateAfterHours}
+              onChange={(e) => setRuleForm({ ...ruleForm, escalateAfterHours: parseInt(e.target.value) })}
+            />
+          </div>
+          <div>
+            <Label className="mb-2 block">Notification Channels</Label>
+            <div className="flex gap-4">
+              {notifChannels.map((ch) => (
+                <label key={ch.id} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={ruleForm.channels.includes(ch.id)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setRuleForm({ ...ruleForm, channels: [...ruleForm.channels, ch.id] });
+                      } else {
+                        setRuleForm({ ...ruleForm, channels: ruleForm.channels.filter((c) => c !== ch.id) });
+                      }
+                    }}
+                    className="rounded border-input"
+                  />
+                  {ch.name}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-6">
+          <Button variant="ghost" onClick={() => setRuleDialogOpen(false)}>Cancel</Button>
+          <Button
+            disabled={!ruleForm.name}
+            onClick={() => {
+              if (editingRule) {
+                setAlertRules((prev) => prev.map((r) => r.id === editingRule.id ? { ...ruleForm, id: editingRule.id } : r));
+              } else {
+                setAlertRules((prev) => [...prev, { ...ruleForm, id: Date.now() }]);
+              }
+              setRuleDialogOpen(false);
+            }}
+          >
+            {editingRule ? 'Update' : 'Create'}
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 };

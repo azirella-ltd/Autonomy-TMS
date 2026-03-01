@@ -93,6 +93,7 @@ import VendorLeadTimes from "./pages/planning/VendorLeadTimes.jsx";
 import ProductionProcesses from "./pages/planning/ProductionProcesses.jsx";
 import ResourceCapacity from "./pages/planning/ResourceCapacity.jsx";
 import DemandCollaboration from "./pages/planning/DemandCollaboration.jsx";
+import ConsensusPlanning from "./pages/planning/ConsensusPlanning.jsx";
 import ForecastExceptions from "./pages/planning/ForecastExceptions.jsx";
 import Forecasting from "./pages/planning/Forecasting.jsx";
 import ServiceOrders from "./pages/execution/ServiceOrders.jsx";
@@ -308,7 +309,7 @@ const AppContent = () => {
               }
             />
 
-            {/* Powell Framework Dashboards */}
+            {/* Adaptive Decision Hierarchy Dashboards */}
             <Route
               path="/executive-dashboard"
               element={
@@ -627,7 +628,7 @@ const AppContent = () => {
               }
             />
 
-            {/* Planning Cascade — Modular Powell Layers */}
+            {/* Planning Cascade — Modular ADH Layers */}
             <Route
               path="/planning/cascade"
               element={
@@ -754,6 +755,15 @@ const AppContent = () => {
               element={
                 <CapabilityProtectedRoute requiredCapability="view_demand_collaboration">
                   <DemandCollaboration />
+                </CapabilityProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/planning/consensus"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_demand_planning">
+                  <ConsensusPlanning />
                 </CapabilityProtectedRoute>
               }
             />

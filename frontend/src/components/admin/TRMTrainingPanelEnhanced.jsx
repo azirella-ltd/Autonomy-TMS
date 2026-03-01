@@ -81,7 +81,7 @@ const TRM_FULL_NAMES = {
 
 const TRMTrainingPanelEnhanced = () => {
   const { user } = useAuth();
-  // Powell training configs
+  // ADH training configs
   const [powellConfigs, setPowellConfigs] = useState([]);
   const [selectedConfigId, setSelectedConfigId] = useState(null);
   const [configsLoading, setConfigsLoading] = useState(true);
@@ -101,12 +101,12 @@ const TRMTrainingPanelEnhanced = () => {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
 
-  // Load Powell training configs on mount
+  // Load ADH training configs on mount
   useEffect(() => {
     const loadConfigs = async () => {
       setConfigsLoading(true);
       try {
-        // Load from Powell training configs API
+        // Load from ADH training configs API
         const tenantId = user?.tenant_id || 1;
         const response = await api.get('/powell-training/configs', {
           params: { tenant_id: tenantId, include_inactive: false }
@@ -117,12 +117,12 @@ const TRMTrainingPanelEnhanced = () => {
           setSelectedConfigId(configs[0].id);
         }
       } catch (err) {
-        console.error('Failed to load Powell configs:', err);
+        console.error('Failed to load ADH configs:', err);
         // Fallback: try loading supply chain configs directly
         try {
           const fallbackResponse = await api.get('/supply-chain-config/');
           const scConfigs = fallbackResponse.data.items || fallbackResponse.data || [];
-          // Convert to minimal powell config shape
+          // Convert to minimal ADH config shape
           setPowellConfigs(scConfigs.map(sc => ({
             id: sc.id,
             name: sc.name,

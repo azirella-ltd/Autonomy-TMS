@@ -1686,7 +1686,7 @@ CREATE TABLE powell_cdc_thresholds (
 
 ##### 5.9.9 CDC-Triggered Relearning: Closing the Feedback Loop
 
-> **See also**: For vertical escalation from execution to operational/strategic tiers, see [Section 5.16](#516-vertical-escalation-cross-tier-decision-routing). The CDC loop described here is horizontal (execution→execution); Section 5.16 adds the vertical dimension.
+> **See also**: For vertical escalation from execution to operational/strategic tiers, see [Section 5.16](#516-vertical-escalation-cross-tier-decision-routing). For distribution-aware feature engineering and safety stock calibration that feeds into this loop, see [Section 5.17](#517-distribution-fitting-and-distribution-aware-feature-engineering). The CDC loop described here is horizontal (execution→execution); Section 5.16 adds the vertical dimension.
 
 The CDC monitor detects deviations, but detection alone is insufficient — the system must **learn from outcomes** to improve future decisions. This section documents the autonomous relearning pipeline that closes the Powell SDAM feedback loop.
 
@@ -5081,6 +5081,86 @@ The Arbiter evaluates after CDC and CDT in the relearning schedule:
 | `backend/app/services/powell/cdc_monitor.py` | Extended `ReplanAction` enum |
 | `backend/app/services/powell/relearning_jobs.py` | Scheduled job at :40 every 2h |
 | `docs/ESCALATION_ARCHITECTURE.md` | Full theoretical foundation |
+
+---
+
+#### 5.17 Distribution Fitting and Distribution-Aware Feature Engineering
+
+##### 5.17.1 The Normal Distribution Problem
+
+The standard safety stock formula `SS = z × σ × √LT` and the platform's existing `sl` inventory policy type both assume normally distributed demand and lead times. This assumption fails for:
+
+- **Retail demand**: Typically lognormal (positive skew from promotional spikes)
+- **Ocean freight lead times**: Typically Weibull or gamma (long right tail from port congestion, customs)
+- **Seasonal products**: Mixture distributions with distinct demand regimes per season
+- **Intermittent demand**: Poisson or negative binomial (spare parts, low-volume SKUs)
+
+When the actual distribution is non-Normal, the z-score formula systematically miscalculates safety stock — underestimating by 15-30% for lognormal demand (causing stockouts) or overestimating for thin-tailed distributions (causing excess inventory).
+
+##### 5.17.2 Distribution Fitting via Maximum Likelihood Estimation
+
+The `DistributionFitter` service (`backend/app/services/stochastic/distribution_fitter.py`) addresses this by fitting the platform's 20 supported distribution types to historical data using MLE:
+
+**Algorithm**:
+1. For each candidate distribution D in {Normal, Lognormal, Gamma, Weibull, Beta, Exponential, Triangular, Uniform, Poisson, NegBinomial, Empirical, Mixture, ...}:
+   - Compute MLE parameters θ̂ = argmax L(θ|data)
+   - Compute KS statistic and p-value (reject fit if p < 0.05)
+   - Compute AIC = 2k - 2ln(L̂) and BIC = k×ln(n) - 2ln(L̂)
+2. Rank valid fits by AIC (or BIC for small samples)
+3. Return best-fitting distribution with parameters
+
+**Powell Framework Mapping**: The fitted distribution becomes part of the **belief state Bₜ** in Powell's state decomposition (Sₜ = Rₜ ∪ Iₜ ∪ Bₜ). The distribution parameters encode the system's *belief* about the statistical process generating demand, lead times, or yields at each product-site combination. When the best-fit distribution changes (e.g., demand shifts from Normal to Lognormal after a new product launch), this represents a belief state transition that should trigger recalibration of downstream policies.
+
+**API**: `POST /api/v1/stochastic/fit` — accepts historical data array, returns ranked distribution fits with parameters, KS p-values, AIC/BIC scores, and a reference to the platform `Distribution` constructor for the winning fit.
+
+##### 5.17.3 The `sl_fitted` Safety Stock Policy
+
+The new `sl_fitted` policy type in `inventory_target_calculator.py` extends the existing 4 policy types (abs_level, doc_dem, doc_fcst, sl) with distribution-aware safety stock calculation:
+
+```
+if best_fit(demand) == Normal AND best_fit(lead_time) == Normal:
+    # Use standard z-score formula (fast, exact)
+    SS = z(α) × σ_demand × √mean_lead_time
+else:
+    # Monte Carlo simulation of Demand-During-Lead-Time (DDLT)
+    for i in 1..N_SIMULATIONS:
+        lt_sample = sample(fitted_lt_distribution)
+        ddlt[i] = sum(sample(fitted_demand_distribution) for _ in range(lt_sample))
+    SS = percentile(ddlt, 1-α) - mean(ddlt)
+```
+
+The Monte Carlo approach handles arbitrary distribution shapes, including the convolution of non-Normal demand with non-Normal lead time — a case where no closed-form solution exists. The number of simulations (default: 10,000) provides convergence to within 1% of the true safety stock at the target service level.
+
+**Backward compatibility**: The existing `sl` policy type and Normal-distribution paths are unchanged. The `sl_fitted` policy is additive — customers can adopt it per product-site combination where distribution fitting reveals non-Normal patterns.
+
+##### 5.17.4 Distribution-Aware Feature Engineering (Kravanja 2026)
+
+Motivated by Kravanja (2026) — *"Stop Using Average and Standard Deviation for Your Features"* — the `FeatureExtractor` service (`backend/app/services/stochastic/feature_extractor.py`) replaces summary-statistic features with distribution-parameter features in TRM state vectors:
+
+**Traditional features** (assume normality):
+- `mean_demand`, `std_demand`, `mean_lead_time`, `std_lead_time`
+
+**Distribution-aware features** (capture true shape):
+- `demand_dist_type` (categorical: normal, lognormal, gamma, weibull, ...)
+- `demand_shape`, `demand_scale` (fitted parameters)
+- `demand_cv`, `demand_skew`, `demand_kurtosis` (shape summary)
+- `demand_mad_ratio` (MAD/median — robust to outliers)
+- `lt_dist_type`, `lt_shape`, `lt_scale`
+
+The `_classify_demand_robust()` function uses MAD/median ratio instead of coefficient of variation (CV = σ/μ) to classify demand volatility. MAD (Median Absolute Deviation) is robust to the outliers that make standard deviation unreliable for skewed distributions — a lognormal distribution with a few large promotional spikes will have inflated σ but stable MAD.
+
+**Sampling modes**: The `DemandModel` and `LeadTimeModel` enums now include `AUTO` (fit best distribution automatically), `WEIBULL`, and `LOGNORMAL` alongside the existing `NORMAL` mode. The `AUTO` mode calls `DistributionFitter` once per product-site at the start of each planning cycle, caches the result, and uses it for all subsequent sampling in that cycle.
+
+**Decision metadata**: Distribution parameters are stored in the JSON metadata column of `powell_*_decisions` tables, making them available for offline analysis, retraining, and audit. This enables post-hoc analysis of whether distribution shifts correlate with decision quality changes — a direct input to the CDC → Relearning feedback loop.
+
+##### 5.17.5 Implementation Files
+
+| File | Purpose |
+|------|---------|
+| `backend/app/services/stochastic/distribution_fitter.py` | MLE fitting, KS test, AIC/BIC ranking across 20 distribution types |
+| `backend/app/services/stochastic/feature_extractor.py` | Distribution-aware feature extraction for TRM state vectors |
+| `backend/app/services/aws_sc_planning/inventory_target_calculator.py` | `sl_fitted` policy with Monte Carlo DDLT |
+| `backend/app/api/endpoints/stochastic.py` | `POST /api/v1/stochastic/fit` endpoint |
 
 ---
 

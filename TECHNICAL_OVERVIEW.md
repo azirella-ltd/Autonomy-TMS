@@ -4,8 +4,8 @@
 
 *Companion to [EXECUTIVE_SUMMARY.md](EXECUTIVE_SUMMARY.md). That document describes what changes for the organization, operations, and workforce. This document describes how the technology layers make it possible.*
 
-**Version**: 1.0
-**Date**: February 28, 2026
+**Version**: 2.0
+**Date**: March 1, 2026
 
 ---
 
@@ -472,6 +472,188 @@ The platform implements 100% of the AWS Supply Chain data model (35 entities) as
 
 ---
 
+## Part 8: Distribution Fitting and Likelihood Estimation
+
+### Why Point Estimates Break Safety Stock
+
+Traditional planning systems assume demand and lead times follow a normal distribution. This assumption is baked into the standard safety stock formula: `SS = z × σ × √LT`. When the actual distribution is skewed (lognormal demand), heavy-tailed (lead times with occasional long delays), or multimodal (seasonal products with distinct demand regimes), the normal assumption produces safety stock levels that are systematically wrong — either too low (stockouts) or too high (excess inventory).
+
+The platform addresses this through a **distribution fitting engine** that identifies the true statistical shape of each operational variable, and a **distribution-aware safety stock policy** that uses Monte Carlo simulation instead of closed-form z-score formulas when the data is non-Normal.
+
+### The Distribution Fitting Engine
+
+The `DistributionFitter` service (`backend/app/services/stochastic/distribution_fitter.py`) performs maximum likelihood estimation (MLE) across the platform's 20 supported distribution types and selects the best fit using statistical tests:
+
+```
+Historical data (demand, lead time, yield, price)
+    ↓
+MLE fitting across candidate distributions:
+    Normal, Lognormal, Gamma, Weibull, Beta, Exponential,
+    Triangular, Uniform, Poisson, NegativeBinomial,
+    Empirical, Mixture, ...
+    ↓
+Goodness-of-fit evaluation:
+    ├── Kolmogorov-Smirnov test (KS statistic + p-value)
+    ├── AIC (Akaike Information Criterion) — penalizes complexity
+    └── BIC (Bayesian Information Criterion) — stronger complexity penalty
+    ↓
+Ranked results: best-fitting distribution + parameters + confidence
+```
+
+The fitting results map back to the platform's `Distribution` constructors — a Weibull fit produces `Distribution(type="weibull", shape=k, scale=λ)` that integrates directly with the stochastic sampler, the Monte Carlo engine, and the safety stock calculator.
+
+**API endpoint**: `POST /api/v1/stochastic/fit` accepts historical data and returns ranked distribution fits with parameters, test statistics, and confidence scores.
+
+### Distribution-Aware Safety Stock: The `sl_fitted` Policy
+
+The standard `sl` (service level) policy calculates safety stock as `z × σ_demand × √mean_lead_time`, which assumes both demand and lead time are normally distributed. The new `sl_fitted` policy in `inventory_target_calculator.py` removes this assumption:
+
+1. **Fit distributions** to historical demand and lead time data using MLE
+2. **If both are Normal** → use the standard z-score formula (fast, exact)
+3. **If either is non-Normal** → simulate Demand-During-Lead-Time (DDLT) via Monte Carlo:
+   - Sample N demand values from the fitted demand distribution
+   - Sample N lead time values from the fitted lead time distribution
+   - Compute DDLT = Σ(demand × lead_time) for each sample
+   - Set safety stock = P(1-α) percentile of DDLT distribution − mean DDLT
+4. **Result**: Safety stock that provides the *actual* target service level, regardless of the underlying distribution shape
+
+This matters most for:
+- **Lognormal demand** (common in retail): Standard formula underestimates safety stock by 15-30%
+- **Weibull lead times** (common with ocean freight): Standard formula misses the long tail
+- **Seasonal products**: Mixture distributions capture distinct demand regimes
+
+### Distribution-Aware Feature Engineering
+
+Motivated by Kravanja (2026) — *"Stop Using Average and Standard Deviation for Your Features"* — the platform extracts **distribution parameters as features** instead of relying on summary statistics that assume normality.
+
+The `FeatureExtractor` service (`backend/app/services/stochastic/feature_extractor.py`) augments TRM state vectors with:
+
+| Traditional Feature | Distribution-Aware Replacement | Why It Matters |
+|---|---|---|
+| `mean_demand` | `demand_dist_type`, `demand_shape`, `demand_scale` | Captures skewness and tail behavior |
+| `std_demand` | `demand_cv`, `demand_skew`, `demand_kurtosis` | Distinguishes thin-tailed from heavy-tailed |
+| `mean_lead_time` | `lt_dist_type`, `lt_shape`, `lt_scale` | Captures delay probability distribution |
+| `demand_history_avg` | `demand_mad_ratio` (MAD/median) | Robust to outliers, better for non-Normal |
+
+The `_classify_demand_robust()` function uses MAD/median ratio (instead of CV) to classify demand volatility, because MAD (Median Absolute Deviation) is robust to the outliers that make standard deviation unreliable for skewed distributions.
+
+Distribution parameters are stored in decision metadata (JSON column on `powell_*_decisions` tables), making them available for both real-time TRM inference and offline retraining. The `AUTO` sampling mode in `DemandModel` and `LeadTimeModel` enums automatically fits the best distribution and samples from it, alongside the existing `NORMAL`, `WEIBULL`, and `LOGNORMAL` explicit modes.
+
+---
+
+## Part 9: The Digital Twin Training Pipeline — Cold-Start to Continuous Learning
+
+### The Cold-Start Problem
+
+When Autonomy deploys at a new customer site, the TRM agents have no site-specific experience. They've never seen this customer's demand patterns, supplier reliability, or seasonal dynamics. Deploying untrained models would produce decisions worse than simple rules. But waiting months for production data to accumulate before enabling AI defeats the value proposition.
+
+The solution is a **five-phase training pipeline** that uses the platform's simulation capabilities as a digital twin — progressively building agent competence from synthetic data through to production autonomy.
+
+### Five Phases: From Zero to Autonomous
+
+```
+Phase 1: Individual BC Warm-Start (Hours)
+    ↓ Each TRM can match engine baseline within ±5%
+Phase 2: Multi-Head Coordinated Traces (Days)
+    ↓ 11 TRMs learn to coordinate via signal bus
+Phase 3: Stochastic Stress-Testing (Hours)
+    ↓ Agents survive demand spikes, supplier failures, capacity shocks
+Phase 4: Copilot Calibration (Weeks)
+    ↓ Human overrides refine agent behavior for this customer's context
+Phase 5: Autonomous CDC Relearning (Ongoing)
+    ↓ Continuous improvement from production outcomes
+```
+
+**Phase 1 — Individual Behavioral Cloning** (implemented in `hive_curriculum.py`):
+
+Each of the 11 TRM types trains independently on curriculum-generated data. The curriculum progresses through complexity levels: single-site scenarios → 2-site chains → 4-site Beer Game → multi-echelon networks → production-scale topologies. At each level, 5,000+ scenarios generate supervised training pairs where the *engine baseline* serves as the teacher. After Phase 1, every TRM can reproduce the deterministic engine's decisions within ±5% — a safe starting point that guarantees no TRM decision is worse than the engine fallback.
+
+**Phase 2 — Multi-Head Coordinated Simulation** (implemented in `coordinated_sim_runner.py`):
+
+All 11 TRMs run simultaneously in SimPy and Beer Game simulations, with the signal bus active. This is where they learn *coordination* — how an ATP shortage signal should influence PO timing, how a maintenance deferral affects MO sequencing, how rebalancing decisions propagate through the network. Phase 2 generates 28.6M+ training records across 2-3 days of compute. The key difference from Phase 1: the training signal comes from *system outcomes* (total cost, service level) rather than per-decision accuracy.
+
+**Phase 3 — Stochastic Stress-Testing** (uses Monte Carlo engine):
+
+The trained agents face adversarial scenarios: demand spikes (3σ+), supplier failures (zero supply for 2+ weeks), capacity shocks (50% reduction), and compound disruptions. Agents that panic (massive over-ordering) or freeze (ignoring signals) are retrained with emphasis on the failure modes. This phase uses the platform's existing Monte Carlo simulation with variance reduction techniques (Latin hypercube sampling, antithetic variates).
+
+**Phase 4 — Copilot Calibration** (production, human-in-the-loop):
+
+The agents run in copilot mode — suggesting every decision but requiring human approval. Every override is captured with context (the override effectiveness tracking system described in Part 4). Over 2-4 weeks, the agents absorb the customer's specific judgment patterns: which suppliers they trust more than the data suggests, which customers they prioritize beyond the formal priority scheme, which forecast adjustments they routinely make based on market intelligence. The Bayesian posterior on each `(user, TRM type)` pair determines how much influence these overrides have on training.
+
+**Phase 5 — Autonomous CDC Relearning** (continuous, no end date):
+
+The CDC → Relearning loop takes over. Outcome collection (hourly), CDT calibration (hourly), and retraining evaluation (every 6 hours) run automatically. The agents improve continuously from their own production decisions. Skills decisions feed back into TRM training data, gradually shifting the 95/5 boundary as TRMs learn to handle situations that previously required escalation.
+
+**Timeline**: Phase 1 completes in hours (compute-bound). Phase 2 takes 2-3 days (data generation + training). Phase 3 takes hours. Phase 4 takes 2-4 weeks (human-paced). Phase 5 begins immediately after Phase 4 and runs indefinitely. Total time from deployment to autonomous operation: 3-5 weeks.
+
+---
+
+## Part 10: Vertical Escalation — When Execution Anomalies Signal Policy Errors
+
+### The Horizontal Limitation
+
+The CDC → Relearning loop described in Part 4 is *horizontal* — when a TRM's performance degrades, the system retrains that same TRM. This handles execution-level drift: the model's weights become stale, the conformal intervals widen, the system detects it and retrains. But some problems can't be solved at the execution level.
+
+Consider: the PO Creation TRM at every site consistently orders 20% more than the engine baseline, week after week. Retraining doesn't fix it — in fact, retraining *reinforces* it, because the 20% excess is the TRM's correct response to the current policy parameters (θ). The real problem is that the safety stock multiplier set at the S&OP level (Layer 4) is too low for current market conditions. The TRM is compensating for a strategic policy error by over-ordering at the execution level. No amount of execution-level retraining will fix a strategic-level problem.
+
+### Dual-Process Cognition: Kahneman Meets Supply Chain
+
+This maps directly to Daniel Kahneman's dual-process theory from *Thinking, Fast and Slow*:
+
+| Kahneman | Platform | Characteristics |
+|----------|----------|----------------|
+| **System 1** (fast, intuitive) | 11 TRM Agents (<10ms) | Pattern-matched, automatic, high throughput |
+| **System 2** (slow, deliberate) | tGNN (daily) + GraphSAGE (weekly) | Analytical, network-aware, resource-intensive |
+| **The Lazy Controller** | Conformal Prediction Router | System 2 activates only when System 1 signals uncertainty |
+| **Cognitive Strain** | Escalation Arbiter | Persistent anomalies force slow thinking |
+| **WYSIATI** (What You See Is All There Is) | TRM local-only state | Each TRM sees only its site — can't diagnose network-wide issues |
+
+Kahneman's key insight: System 1 works well most of the time through pattern matching, but it fails systematically on novel situations because it *substitutes* a simpler question for the hard one. TRMs do the same — they substitute "what does the pattern say?" for "is the policy still correct?" The Escalation Arbiter detects when this substitution is producing persistent errors.
+
+### Nested OODA Loops: Boyd's Framework Applied
+
+John Boyd's Observe-Orient-Decide-Act (OODA) loop maps onto three nested decision cycles at different time scales:
+
+- **Execution OODA** (TRMs, <10ms): Observe local state → Orient via trained weights → Decide order quantity → Act immediately
+- **Operational OODA** (tGNN, daily): Observe transactional data + S&OP embeddings → Orient via graph attention → Decide priority allocations → Act via site directives
+- **Strategic OODA** (GraphSAGE, weekly): Observe network topology + market signals → Orient via bottleneck analysis → Decide policy parameters θ → Act via S&OP embeddings
+
+Boyd's concept of *Schwerpunkt* (center of gravity) applies: the orientation phase is the center of gravity at each level. When orientation is wrong — stale TRM weights, outdated tGNN patterns, incorrect S&OP parameters — all downstream decisions are systematically biased. The Escalation Arbiter detects orientation failure at the execution level and triggers reorientation at the appropriate higher level.
+
+### The Escalation Arbiter
+
+The Arbiter (`backend/app/services/powell/escalation_arbiter.py`) runs every 2 hours (scheduled at :40) and monitors TRM decision patterns across all sites for **persistent directional drift**:
+
+```
+For each site, for each TRM type:
+    Collect recent decisions (48-hour window)
+    Compute:
+        direction  — running mean of adjustments from baseline (+/-)
+        magnitude  — running mean of |adjustment| as fraction of baseline
+        consistency — fraction of adjustments in the dominant direction
+
+    If consistency > 0.70 AND magnitude > threshold:
+        Signal detected → route to appropriate level
+```
+
+**Routing logic**:
+
+| Pattern | Diagnosis | Route |
+|---------|-----------|-------|
+| Single TRM, short duration | Execution noise | Horizontal → CDC retrain |
+| Single TRM, long duration, high consistency | Local policy drift | Vertical → off-cadence tGNN refresh |
+| Multiple TRMs at same site | Site-level policy error | Vertical → tGNN + allocation rebalance |
+| Same pattern across 30%+ of sites | Network-wide shift | Strategic → S&OP GraphSAGE re-inference |
+| Cross-site + demand signal correlation | Market regime change | Strategic → full S&OP consensus board |
+
+The Arbiter extends the existing `ReplanAction` enum with two new actions: `VERTICAL_OPERATIONAL` (trigger off-cadence tGNN refresh) and `VERTICAL_STRATEGIC` (create S&OP policy review request via the AAP authorization protocol). All escalation events are logged to the `powell_escalation_log` table with full evidence (persistence signals, cross-site patterns, diagnosis) for audit and tuning.
+
+**Cooldowns** prevent oscillation: 12 hours between operational escalations, 72 hours between strategic escalations. The system must accumulate at least 20 decisions before a pattern is considered meaningful.
+
+See [ESCALATION_ARCHITECTURE.md](docs/ESCALATION_ARCHITECTURE.md) for the full theoretical foundation including Powell 2026 framing (three stages of decision automation, 7 levels of AI, state variable decomposition) and the SOFAI meta-cognitive architecture reference.
+
+---
+
 ## Summary: The Architecture in One Paragraph
 
-Autonomy operates as a four-layer decision stack — strategic network analysis (GraphSAGE, weekly), tactical allocation (temporal GNN, daily), operational execution (TRM hive, milliseconds), and deterministic validation (engines, always) — where each layer constrains the layer below through policy parameters, directives, and hard constraints. Within each site, 11 narrow decision agents coordinate through a biologically-inspired signal bus with pheromone-like decay, organized into a six-phase decision cycle that ensures scouts observe before foragers act. Across sites, information flows along the supply chain DAG through inter-hive signals generated by the network-wide GNN, preserving local autonomy while maintaining global coherence. A conformal prediction router steers ~5% of low-confidence decisions to Claude Skills for deep reasoning, and every decision feeds a closed-loop learning pipeline — outcome collection, conformal calibration, Bayesian override tracking, and periodic retraining — that makes the system measurably smarter from every planning cycle it runs.
+Autonomy operates as a four-layer decision stack — strategic network analysis (GraphSAGE, weekly), tactical allocation (temporal GNN, daily), operational execution (TRM hive, milliseconds), and deterministic validation (engines, always) — where each layer constrains the layer below through policy parameters, directives, and hard constraints. Within each site, 11 narrow decision agents coordinate through a biologically-inspired signal bus with pheromone-like decay, organized into a six-phase decision cycle that ensures scouts observe before foragers act. Across sites, information flows along the supply chain DAG through inter-hive signals generated by the network-wide GNN, preserving local autonomy while maintaining global coherence. A conformal prediction router steers ~5% of low-confidence decisions to Claude Skills for deep reasoning, and every decision feeds a closed-loop learning pipeline — outcome collection, conformal calibration, Bayesian override tracking, and periodic retraining — that makes the system measurably smarter from every planning cycle it runs. Distribution-aware feature engineering replaces normal-distribution assumptions with MLE-fitted distributions for safety stock, demand classification, and TRM state vectors. A five-phase digital twin pipeline — behavioral cloning, coordinated simulation, stochastic stress-testing, copilot calibration, and autonomous relearning — takes agents from zero experience to production autonomy in 3-5 weeks. And when execution-level anomalies signal that strategic policy parameters are wrong, the Escalation Arbiter detects persistent directional drift and routes the problem to the appropriate higher tier — operational (tGNN refresh) or strategic (S&OP policy review) — closing the vertical feedback loop that connects execution outcomes to policy correction.
