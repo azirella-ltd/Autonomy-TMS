@@ -289,11 +289,8 @@ Comprehensive catalog of authoritative resources for teaching the LLM all levels
 | `Powell - RL and SO.pdf` / `Powell - RL and SO Book.pdf` | RL/Optimization | Academic |
 | `Powell - Optimal Learning.pdf` | Exploration | Academic |
 | `Powell - How to teach optimization.pdf` | Pedagogy | Academic |
-| `FG Supply Planning as AI Labor.pdf` | AI Supply Planning | Platform |
-| `Integrated Supply Planning as AI Labor.pdf` | Planning Cascade | Platform |
-| `Strategic Synthesis_ AI Labor UX for Demand & Supply Planners.pdf` | UX Framework | Platform |
-| `AI-as-Labor Operating Model_ Cross-Domain Ideation.md.pdf` | Operating Model | Platform |
-| `DAYBREAK 1 PAGE COMPANY STRATEGY MEMO .pdf` | Strategy | Platform |
+| `Strategic Synthesis_ Agentic UX for Demand & Supply Planners.pdf` | UX Framework | Platform |
+| `AUTONOMY 1 PAGE COMPANY STRATEGY MEMO .pdf` | Strategy | Platform |
 | `Conformal Prediction and Stochastic Programming Integration Guide.pdf` | Stochastic | Platform |
 | `Distributor Prototype using Powel Approach.pdf` | Decision framework | Platform |
 | `GNNs in SC Analytics and Optimization.pdf` | AI/ML | Academic |
@@ -319,7 +316,7 @@ Beer Game simulation resources — already cataloged in CLAUDE.md.
 | Inventory / Safety Stock | Strong | 5 academic papers + MIT MEIO |
 | Stochastic Programming | Strong | Stanford, 3 academic papers, conformal guide |
 | AI/ML in SC | Strong | GNN papers, TRM, Powell SDAM (8 docs) |
-| AI-as-Labor / UX | Strong | 4 platform strategy docs |
+| Agentic Operating Model / UX | Strong | 4 platform strategy docs |
 | Decision Framework (Powell) | **Excellent** | 8 Powell docs covering all 4 policy classes |
 
 ### What You Need (Gaps to Fill)

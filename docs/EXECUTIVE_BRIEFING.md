@@ -43,7 +43,7 @@ The `BriefingDataCollector` gathers a JSON "data pack" from these sources. Each 
 | Source | What It Provides | Service |
 |--------|-----------------|---------|
 | **Executive Dashboard** | Agent KPIs, ROI metrics, touchless rate, trends, S&OP worklist | `AgentPerformanceService` |
-| **Balanced Scorecard** | 4-tier Gartner hierarchy (ASSESS/DIAGNOSE/CORRECT/AI-as-Labor) | `HierarchicalMetricsService` |
+| **Balanced Scorecard** | 4-tier Gartner hierarchy (ASSESS/DIAGNOSE/CORRECT/AGENT PERFORMANCE) | `HierarchicalMetricsService` |
 | **Condition Alerts** | Active CRITICAL/WARNING alerts from last 7 days (ATP shortfall, inventory, capacity, orders, forecast) | `ConditionAlert` model |
 | **CDC Triggers** | Model drift events and recommended retraining actions | `powell_cdc_trigger_log` table |
 | **Override Effectiveness** | Human override quality by agent type, agent vs planner scores | `performance_metrics` table |

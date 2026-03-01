@@ -6,12 +6,16 @@ Registers CDC relearning loop jobs with APScheduler:
 - Hourly at :32: TRM outcome collection for all 11 powell_*_decisions tables
 - Hourly at :33: Skill outcome collection (decision_embeddings, Claude Skills path)
 - Hourly at :35: CDT calibration (incremental, after outcomes collected)
+- Every 2h at :40: Escalation Arbiter evaluation (vertical escalation detection)
 - Daily at 02:40: Causal matching for Tier 2 override signal strength
 - Daily at 03:00: GNN orchestration cycle (S&OP + Execution → directive broadcast)
 - Every 6h at :45: CDC-triggered retraining evaluation
 
 Part of the Powell SDAM feedback loop:
   Decision → Wait → Observe outcome → Compute reward → Calibrate CDT → Retrain if warranted
+
+The Escalation Arbiter adds vertical escalation (see docs/ESCALATION_ARCHITECTURE.md):
+  Persistent TRM drift → Diagnose → Operational (tGNN refresh) OR Strategic (S&OP review)
 """
 
 from typing import TYPE_CHECKING
@@ -108,6 +112,19 @@ def register_relearning_jobs(scheduler_service: 'SyncSchedulerService') -> None:
         misfire_grace_time=1800,
     )
     logger.info("Registered Powell skill outcome collection job (hourly at :33)")
+
+    # Every 2 hours at :40: Escalation Arbiter evaluation
+    # Detects persistent TRM drift and routes to tGNN/S&OP replanning.
+    # See docs/ESCALATION_ARCHITECTURE.md
+    scheduler.add_job(
+        func=_run_escalation_arbiter,
+        trigger=CronTrigger(hour="*/2", minute=40),
+        id="powell_escalation_arbiter",
+        name="Powell: Escalation Arbiter (every 2h)",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    logger.info("Registered Powell Escalation Arbiter job (every 2h at :40)")
 
     # Every 6 hours: Retraining evaluation (at :45)
     scheduler.add_job(
@@ -267,6 +284,52 @@ def _run_causal_matching() -> None:
         )
     except Exception as e:
         logger.error(f"Causal matching job failed: {e}")
+    finally:
+        db.close()
+
+
+def _run_escalation_arbiter() -> None:
+    """Evaluate all sites for persistent TRM drift → vertical escalation.
+
+    Kahneman System 1/2: Detects when TRMs (System 1) consistently fail,
+    triggering tGNN/GraphSAGE (System 2) replanning.
+    Boyd OODA: Inner loop anomaly triggers outer loop iteration.
+    """
+    from app.db.session import SessionLocal
+
+    logger.info("Starting scheduled Escalation Arbiter evaluation")
+
+    db = SessionLocal()
+    try:
+        from app.services.powell.escalation_arbiter import EscalationArbiter
+        from app.models.tenant import Tenant
+
+        # Run for each active tenant
+        tenants = db.query(Tenant.id).filter(Tenant.status == "active").all()
+        total_escalations = 0
+
+        for (tenant_id,) in tenants:
+            try:
+                arbiter = EscalationArbiter(db=db, tenant_id=tenant_id)
+                verdicts = arbiter.evaluate_all_sites()
+                total_escalations += len(verdicts)
+
+                for v in verdicts:
+                    logger.info(
+                        "Escalation [tenant=%d]: %s → %s (%s)",
+                        tenant_id, v.affected_sites, v.level, v.recommended_action,
+                    )
+            except Exception as e:
+                logger.warning(
+                    "Escalation Arbiter failed for tenant %d: %s", tenant_id, e
+                )
+
+        logger.info(
+            "Escalation Arbiter completed: %d escalation(s) across %d tenants",
+            total_escalations, len(tenants),
+        )
+    except Exception as e:
+        logger.error(f"Escalation Arbiter job failed: {e}")
     finally:
         db.close()
 

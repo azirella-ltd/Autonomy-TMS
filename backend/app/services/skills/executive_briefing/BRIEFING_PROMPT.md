@@ -24,7 +24,7 @@ Agent performance KPIs: autonomous decisions %, active agents/planners, agent sc
 - **Tier 1 ASSESS** (Strategic): Revenue Growth, EBIT Margin, ROCS, Gross Margin, Cost to Serve
 - **Tier 2 DIAGNOSE** (Tactical): Perfect Order Fulfillment (POF = OTD x IF x DF x DA), Cash-to-Cash Cycle (C2C = DIO + DSO - DPO), Order Fulfillment Cycle Time (OFCT)
 - **Tier 3 CORRECT** (Operational): Category-level KPIs (Demand Planning, Inventory, Procurement, Manufacturing, Fulfillment)
-- **Tier 4 AI-as-Labor**: Touchless Rate, Agent Score, Override Rate, Hive Stress, CDC Triggers/Day
+- **Tier 4 Agent Performance**: Touchless Rate, Agent Score, Override Rate, Hive Stress, CDC Triggers/Day
 
 Each metric includes: value, target, trend (direction + magnitude), status (success/warning/danger), and SCOR mapping.
 

@@ -216,7 +216,7 @@ For deeper context, TRMs can query the `powell_site_agent_decisions` table for r
 
 ### 2.6 External Channel Signal Ingestion
 
-The Hive's signal bus receives signals not only from internal TRM decisions but also from **external channels** captured by PicoClaw and OpenClaw (see [PICOCLAW_OPENCLAW_IMPLEMENTATION.md](PICOCLAW_OPENCLAW_IMPLEMENTATION.md) Phase 5).
+The Hive's signal bus receives signals not only from internal TRM decisions but also from **external channels** captured by the Signal Ingestion Service.
 
 #### Signal Sources and Capture Gateways
 
@@ -225,15 +225,15 @@ EXTERNAL WORLD                     CAPTURE GATEWAY              HIVE SIGNAL BUS
 ──────────────                     ───────────────              ───────────────
 Email (customer PO update) ───┐
 Slack (sales team @mention) ──┤
-Teams (planner message) ──────┤    OpenClaw                    ┌──────────────┐
-WhatsApp (field report) ──────┤    signal-capture     POST     │ Signal       │
-Telegram (supplier update) ───┤    skill           ─────────►  │ Ingestion    │
-Voice note (sales call) ──────┘    (LLM classifies)   /ingest │ Service      │
+Teams (planner message) ──────┤    Signal Ingestion            ┌──────────────┐
+WhatsApp (field report) ──────┤    Service              POST   │ Signal       │
+Telegram (supplier update) ───┤    (LLM classifies   ────────►│ Ingestion    │
+Voice note (sales call) ──────┘     via Claude Skills)  /ingest│ Service      │
                                                                │              │
 Weather API (severe alerts) ──┐                                │  Validates   │
-Economic data (PMI, CPI) ────┤    PicoClaw                    │  → FcstAdj   │
-News RSS (disruption) ───────┤    MARKET_SIGNAL.sh    POST    │    TRM eval  │
-Commodity prices ─────────────┤    (deterministic)  ─────────►│  → Confidence│
+Economic data (PMI, CPI) ────┤    Scheduled Jobs              │  → FcstAdj   │
+News RSS (disruption) ───────┤    (deterministic      POST    │    TRM eval  │
+Commodity prices ─────────────┤     cron scripts)    ────────►│  → Confidence│
 IoT sensor (temperature) ────┘    No LLM              /ingest │    gate      │
                                                                │  → HiveSignal│
                                                                └──────────────┘
@@ -241,14 +241,14 @@ IoT sensor (temperature) ────┘    No LLM              /ingest │    g
 
 #### How External Signals Enter the Hive
 
-External signals are ingested through the **Signal Ingestion Service** (new, see Phase 5) which:
+External signals are ingested through the **Signal Ingestion Service** which:
 
 1. **Validates** product_id and site_id against the supply chain config
 2. **Creates** a `ForecastAdjustmentState` from the captured signal
 3. **Evaluates** via ForecastAdjustmentTRM (source reliability × time decay × confidence)
 4. **Gates** by confidence threshold:
    - ≥0.8: Auto-apply → emit `FORECAST_ADJUSTED` on HiveSignalBus
-   - 0.3-0.8: Escalate to human via OpenClaw chat
+   - 0.3-0.8: Escalate to human via frontend worklist
    - <0.3: Reject and log
 5. **Correlates** multi-channel signals (2+ signals about same product/direction within 2h boost combined confidence)
 
@@ -2624,7 +2624,7 @@ The training paradigm follows MAPPO principles:
 
 ### 15.1 The Cold-Start Problem
 
-The TRM Hive cannot be trained from production data because production data does not exist until the hive is deployed. This is a classic chicken-and-egg problem in AI-as-Labor systems. The platform solves it through a **digital twin pipeline** — a stack of simulation capabilities that generates progressively more realistic training data without requiring a single real transaction.
+The TRM Hive cannot be trained from production data because production data does not exist until the hive is deployed. This is a classic chicken-and-egg problem in agentic planning systems. The platform solves it through a **digital twin pipeline** — a stack of simulation capabilities that generates progressively more realistic training data without requiring a single real transaction.
 
 The critical insight for hive training: **stigmergic coordination cannot be learned from isolated decision logs**. If you train each TRM head independently on historical ATP, PO, and inventory decisions, the heads learn individual policies but never learn to respond to each other's signals. The HiveSignalBus, UrgencyVector, and cross-head coordination patterns can only emerge from multi-head execution traces where all 11 TRMs run simultaneously against the same site state.
 
@@ -3610,7 +3610,7 @@ In production, the coordination stack maps to concrete deployment infrastructure
 **Deployment options**:
 - **Centralized** (current): All SiteAgents run in the same backend process. Cross-site communication is in-process function calls. tGNN and SiteAgents share the same database.
 - **Distributed** (future): Each site runs its own SiteAgent process (or container). tGNN runs centrally. Directives distributed via message queue (Kafka/RabbitMQ). AAP requests via REST API between sites.
-- **Edge** (PicoClaw): Ultra-lightweight SiteAgents run on edge hardware at physical sites. tGNN runs in cloud. Directives pushed via MQTT. CDC alerts via Telegram/Slack.
+- **Edge** (future): Lightweight SiteAgents run on edge hardware at physical sites. tGNN runs in cloud. Directives pushed via MQTT. CDC alerts via webhook notifications.
 
 ### 16.6 Digital Twin Training for Multi-Site Coordination
 
@@ -3723,6 +3723,66 @@ A concrete summary of all communication channels between two sites:
 - No real-time streaming between sites (tGNN operates on daily snapshots)
 
 The tGNN is the connective tissue. Everything a site needs to know about the network arrives through its `tGNNSiteDirective`. Everything the network needs to know about a site is captured in its `HiveFeedbackFeatures`. These two data structures are the complete interface contract between per-site execution (Layer 1) and network intelligence (Layer 2).
+
+---
+
+### 16.9 Vertical Escalation Between Decision Tiers
+
+> **Full reference**: See [docs/ESCALATION_ARCHITECTURE.md](docs/ESCALATION_ARCHITECTURE.md) for the complete theoretical foundation (Kahneman dual-process, Boyd OODA, Powell 2026 framing, SOFAI).
+
+The existing 4-layer coordination stack (Sections 16.1-16.8) is **horizontal** — each layer communicates within its tier. The **Escalation Arbiter** adds a **vertical dimension**, routing persistent anomalies upward through the tiers.
+
+#### The Vertical Flow
+
+```
+Layer 1 (Intra-Hive, <10ms):
+  TRM decisions recorded → persistence signals accumulated
+        │
+        ▼
+Escalation Arbiter (every 2h, evaluates persistence patterns):
+        │
+        ├── Horizontal: Existing CDC retrain loop (Layer 1 → Layer 1)
+        │
+        ├── Vertical-Operational: Off-cadence tGNN refresh (Layer 1 → Layer 2)
+        │   └── tGNN re-infers with updated state, produces new tGNNSiteDirective
+        │
+        └── Vertical-Strategic: S&OP policy review (Layer 1 → Layer 4)
+            └── AuthorizationRequest via AAP to S&OP Consensus Board
+```
+
+#### How This Maps to the Coordination Stack
+
+| Layer | Existing Function | Escalation Addition |
+|-------|------------------|-------------------|
+| **1. Intra-Hive** | UrgencyVector + HiveSignalBus | Persistence signals collected here (direction, magnitude, consistency) |
+| **2. tGNN Inter-Hive** | Daily allocations + tGNNSiteDirective | Off-cadence refresh triggered by Arbiter when operational escalation detected |
+| **3. AAP Cross-Authority** | Authorization negotiation | Strategic escalation routed through AAP (AuthorizationRequest with persistence evidence) |
+| **4. S&OP Consensus** | Weekly policy parameters θ | Anomaly-triggered policy review when network-wide drift detected |
+
+#### Dual-Process Cognition (Kahneman)
+
+The vertical escalation implements Kahneman's dual-process theory at the architecture level:
+
+- **System 1 (TRMs)**: Fast, automatic, pattern-matched decisions at <10ms. Operates within Layer 1. "Thinks fast."
+- **System 2 (tGNN/GraphSAGE)**: Slow, deliberate, network-aware analysis. Operates at Layers 2-4. "Thinks slow."
+- **The Lazy Controller (Escalation Arbiter)**: System 2 only activates when System 1 shows persistent failure. This avoids the computational cost of running network-wide analysis for every decision.
+
+#### Nested OODA Loops (Boyd)
+
+Three nested Observe-Orient-Decide-Act loops at different tempos:
+
+- **Execution OODA** (<10ms): TRM observes local state → orients via trained weights + tGNN directive → decides order quantity → acts immediately
+- **Operational OODA** (daily): tGNN observes transactional data + S&OP embeddings → orients via graph attention → decides priority allocations → pushes tGNNSiteDirective
+- **Strategic OODA** (weekly): GraphSAGE observes network topology + market signals → orients via bottleneck analysis → decides policy parameters θ → feeds to tGNN
+
+The Escalation Arbiter detects when the inner loop (Execution) can't converge because the outer loop's (Operational/Strategic) orientation is stale — Boyd's "Schwerpunkt" (center of gravity) has shifted but the outer loops haven't reacted.
+
+#### Implementation
+
+- **Service**: `backend/app/services/powell/escalation_arbiter.py`
+- **Model**: `backend/app/models/escalation_log.py` (`PowellEscalationLog`)
+- **Schedule**: Every 2h at :40 via `relearning_jobs.py`
+- **Config**: `SiteAgentConfig.enable_vertical_escalation`, `.escalation_persistence_window_hours`, `.escalation_consistency_threshold`
 
 ---
 

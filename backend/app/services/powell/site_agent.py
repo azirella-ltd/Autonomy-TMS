@@ -137,6 +137,14 @@ class SiteAgentConfig:
     # baseline are rejected in favor of the TRM/engine result.
     skill_max_deviation: float = 0.3
 
+    # Vertical Escalation — Escalation Arbiter
+    # When True, the Arbiter (every 2h) monitors TRM decision patterns
+    # for persistent directional drift and routes to tGNN/S&OP replanning.
+    # See docs/ESCALATION_ARCHITECTURE.md
+    enable_vertical_escalation: bool = True
+    escalation_persistence_window_hours: int = 48
+    escalation_consistency_threshold: float = 0.70
+
 
 @dataclass
 class ATPResponse:

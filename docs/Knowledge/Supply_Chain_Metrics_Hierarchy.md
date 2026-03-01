@@ -347,7 +347,7 @@ Operational metrics that enable root-cause analysis and surgical corrective acti
 
 ---
 
-## 5. Tier 4 — AGENT PERFORMANCE (AI-as-Labor Metrics)
+## 5. Tier 4 — AGENT PERFORMANCE (Agentic Operating Model Metrics)
 
 ### Purpose
 Metrics unique to AI-agent-driven supply chains. These measure the quality, trust, and autonomy of the TRM hive — not just supply chain outcomes, but **how well the agents produce those outcomes**.
@@ -474,7 +474,7 @@ The Autonomy platform expresses all metrics probabilistically rather than as poi
 | OEE | 87% | E[OEE] = 87%, P(OEE > 85%) = 80% |
 | Bullwhip Ratio | 1.8 | E[BWR] = 1.8, P(BWR < 2.0) = 65% |
 
-### Agent Perspective (Unique to AI-as-Labor)
+### Agent Perspective (Unique to Agentic Operating Model)
 
 | Metric | Point Estimate | Probabilistic Form |
 |--------|---------------|-------------------|

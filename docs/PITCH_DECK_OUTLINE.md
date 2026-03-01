@@ -196,7 +196,7 @@ The Compounding Loop:
 | Hive Architecture | ✅ 30,000+ lines |
 | Autonomous Feedback Loop | ✅ CDC → Relearning pipeline |
 | SAP Integration | ✅ Connections, field mapping, monitoring |
-| Edge Agents | ✅ PicoClaw ($10 hardware) + OpenClaw (chat) |
+| Claude Skills | ✅ Hybrid TRM + Claude Skills (exception handling, RAG decision memory) |
 | Knowledge Base / RAG | ✅ pgvector-powered |
 | Authorization Protocol | ✅ 25+ scenarios |
 | Stochastic Planning | ✅ 20 distributions, Monte Carlo |

@@ -771,6 +771,8 @@ The same `AuthorizationRequest` / `AuthorizationResponse` protocol works at ever
 
 ## 7. Escalation: When Agents Can't Resolve
 
+> **Note**: Sections 7.1-7.4 cover horizontal escalation (agent-to-agent within a tier). Section 7.5 covers vertical escalation (execution→operational→strategic) via the Escalation Arbiter. See [docs/ESCALATION_ARCHITECTURE.md](../ESCALATION_ARCHITECTURE.md) for the full theoretical foundation.
+
 ### 7.1 Escalation Triggers
 
 | Trigger | Description | Example |
@@ -843,8 +845,51 @@ The Ask Why pattern surfaces authorization context through `AgentContextExplaine
 
 This integrates with the three Board-as-Substrate adapters (Section 10):
 - **React UI**: `AskWhyPanel.jsx` renders authority context, guardrails, attribution, and counterfactuals as collapsible sections
-- **LLM Chat (OpenClaw)**: Agent formats authorization reasoning as natural language via explanation templates
+- **LLM Chat (Claude Skills)**: Agent formats authorization reasoning as natural language via explanation templates
 - **Agent Adapter**: Structured `ContextAwareExplanation` JSON for agent-to-agent authorization transparency
+
+### 7.5 Vertical Escalation via Escalation Arbiter
+
+> **Full reference**: See [docs/ESCALATION_ARCHITECTURE.md](../ESCALATION_ARCHITECTURE.md) for the complete theoretical foundation.
+
+Sections 7.1-7.4 cover **horizontal** escalation — agent-to-agent authorization requests within the same decision tier. The **Escalation Arbiter** adds **vertical** escalation: routing persistent execution-tier anomalies to higher decision tiers.
+
+**When strategic escalation is triggered**, the Arbiter creates an `AuthorizationRequest` targeting the S&OP consensus board (Section 8):
+
+```
+EscalationArbiter detects: 35% of sites show consistent upward drift in PO quantities
+                           over 48 hours, crossing strategic magnitude threshold
+    │
+    ▼
+AuthorizationRequest:
+    originator: "escalation_arbiter"
+    target: "sop_consensus_board"
+    action: "policy_parameter_review"
+    evidence: {
+        persistence_signals: [...],     # Per-site, per-TRM-type statistics
+        cross_site_pattern: {...},      # Network-wide drift analysis
+        recommended_adjustments: [...]  # Suggested policy θ changes
+    }
+    scorecard: {                        # Impact of NOT acting
+        financial: { total_cost_delta: +12% },
+        customer: { service_level_risk: "medium" },
+        operational: { inventory_turns_delta: -8% }
+    }
+```
+
+**In copilot mode**: The request is formatted for human review via `EscalationFormatter.format_escalation()`, presenting:
+- The persistence evidence (which sites, which TRMs, how much drift)
+- Ranked alternatives (keep current policy, adjust safety stock multipliers, re-source)
+- Net benefit calculations for each alternative
+
+**In autonomous mode**: S&OP functional agents evaluate the request using their authority boundaries:
+- If the recommended adjustment falls within the Policy Envelope → auto-approve
+- If it requires cross-functional consensus → triggers Section 8 negotiation process
+- If the net benefit exceeds the governance threshold → auto-resolve
+
+**Learning from vertical escalations**: Resolved escalations feed back into the Arbiter's pattern library. Over time, the system learns which persistence patterns require which tier's intervention, sharpening the routing accuracy.
+
+**Implementation**: `backend/app/services/powell/escalation_arbiter.py` — `_trigger_strategic_escalation()` method creates the `AuthorizationRequest`; resolution tracked in `powell_escalation_log`.
 
 ---
 
@@ -1609,7 +1654,7 @@ Over time:
 
 ### 12.3 The Compounding Loop
 
-This connects directly to Autonomy's core strategy (AI-as-Labor compounding loop):
+This connects directly to Autonomy's core strategy (agentic operating model compounding loop):
 
 ```
 More authorization threads resolved autonomously

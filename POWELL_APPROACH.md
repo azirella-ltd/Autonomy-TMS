@@ -1686,6 +1686,8 @@ CREATE TABLE powell_cdc_thresholds (
 
 ##### 5.9.9 CDC-Triggered Relearning: Closing the Feedback Loop
 
+> **See also**: For vertical escalation from execution to operational/strategic tiers, see [Section 5.16](#516-vertical-escalation-cross-tier-decision-routing). The CDC loop described here is horizontal (execution→execution); Section 5.16 adds the vertical dimension.
+
 The CDC monitor detects deviations, but detection alone is insufficient — the system must **learn from outcomes** to improve future decisions. This section documents the autonomous relearning pipeline that closes the Powell SDAM feedback loop.
 
 **Problem**: Without automated relearning, TRM models degrade over time as supply chain dynamics shift. Manual retraining requires data science intervention, creating a bottleneck. CDC triggers identify *when* conditions have changed, but the model needs to adapt *how* it responds.
@@ -4980,6 +4982,105 @@ Example (POCreationTRM, NORMAL level):
 2. **Active Guardrails** — Traffic-light indicators (green/yellow/red), threshold vs actual
 3. **Feature Attribution** — Horizontal bar charts for top-5 features, neighbor attention chips for GNN
 4. **Counterfactuals** — "If X were Y, decision would change to Z" statements
+
+---
+
+#### 5.16 Vertical Escalation: Cross-Tier Decision Routing
+
+> **Full reference**: See [docs/ESCALATION_ARCHITECTURE.md](docs/ESCALATION_ARCHITECTURE.md) for the complete theoretical foundation (Kahneman, Boyd OODA, Powell 2026, SOFAI).
+
+##### 5.16.1 The Dual-Process Gap
+
+The existing CDC→Relearning loop (Section 5.9.9) is **horizontal**: execution-tier anomalies trigger retraining of the same execution-tier model. This handles the case where a TRM's weights are stale, but fails when the root cause is at a higher tier.
+
+**The missing case**: When TRMs consistently correct in the same direction (e.g., always ordering 20% more than the deterministic engine suggests), the execution decisions aren't wrong — the policy parameters (θ) feeding them are. Retraining the TRM just teaches it to compensate harder for bad policy, rather than fixing the policy itself.
+
+This maps to Kahneman's dual-process theory:
+- **System 1 (TRMs)** operates automatically using trained patterns (<10ms)
+- **System 2 (tGNN/GraphSAGE)** deliberates analytically using full network state (daily/weekly)
+- **The Lazy Controller** (Escalation Arbiter) only activates System 2 when System 1 shows persistent failure
+
+And to Boyd's nested OODA loops:
+- Execution OODA (<10ms): TRM observe → orient → decide → act
+- Operational OODA (daily): tGNN observe → orient → decide → push directives
+- Strategic OODA (weekly): GraphSAGE observe → orient → decide → update policy θ
+- **Escalation = inner loop anomaly triggering outer loop iteration**
+
+##### 5.16.2 Persistence Detection Algorithm
+
+The Escalation Arbiter (scheduled every 2h at :40) queries recent TRM decisions from `powell_*_decisions` tables and computes **persistence signals**:
+
+| Metric | Formula | Meaning |
+|--------|---------|---------|
+| **Direction** | `mean(sign(adjustment))` | Systematic bias direction [-1, +1] |
+| **Magnitude** | `mean(\|adjustment / baseline\|)` | Strength of correction [0, ∞) |
+| **Consistency** | `max(frac_positive, frac_negative)` | How one-sided the drift is [0.5, 1.0] |
+| **Duration** | `max(created_at) - min(created_at)` | How long the pattern persists |
+
+Thresholds (configurable per tenant):
+- `CONSISTENCY_THRESHOLD = 0.70` — 70% same-direction adjustments
+- `MAGNITUDE_THRESHOLD_OPERATIONAL = 0.20` — 20% average adjustment
+- `MAGNITUDE_THRESHOLD_STRATEGIC = 0.35` — 35% average adjustment
+- `CROSS_SITE_FRACTION = 0.30` — 30% of sites showing same pattern
+- `PERSISTENCE_WINDOW_HOURS = 48` — Look-back window
+
+##### 5.16.3 Escalation Routing Table
+
+| Signal Pattern | Powell Diagnosis | Routing | Action |
+|---------------|-----------------|---------|--------|
+| Single TRM, short, low consistency | Execution noise (Wₜ₊₁ variability) | None → CDC | Existing horizontal loop |
+| Single TRM, long, high consistency | Bₜ drift (belief diverges from Rₜ) | Vertical-Operational | tGNN refresh for this site-product |
+| Multiple TRMs, same site | Site-level policy error (θ miscalibrated) | Vertical-Operational | tGNN refresh + allocation rebalance |
+| Multiple sites, same direction | Network-wide shift (exogenous regime change) | Vertical-Strategic | S&OP GraphSAGE re-inference |
+| Cross-site + demand signals | Market regime change | Vertical-Strategic | Full S&OP consensus board trigger |
+
+##### 5.16.4 Powell Framing: Which Tier Owns Which Decision
+
+Powell's "three framing questions" (Bridging Vol I, Ch 1) applied to escalation:
+
+1. **What are the performance metrics?**
+   - Execution tier: Fill rate, on-time delivery, order cycle time
+   - Operational tier: Allocation efficiency, inventory turns, cost per unit
+   - Strategic tier: Total cost, resilience score, service level portfolio
+
+2. **What are the types of decisions?**
+   - Execution: Continuous (order quantities), per-event (<10ms)
+   - Operational: Vectors (priority allocations per product-site), daily batch
+   - Strategic: Continuous (policy parameters θ), weekly negotiation
+
+3. **What are the sources of uncertainty?**
+   - The Arbiter uses Powell's "interaction matrices" to determine routing:
+   - Demand noise → Execution handles (normal CDC)
+   - Demand regime shift → Strategic handles (S&OP review)
+   - Supplier disruption → Operational/Strategic depending on scope
+
+##### 5.16.5 Integration with CDC Monitor and ReplanAction
+
+Extended `ReplanAction` enum with two new values:
+```python
+VERTICAL_OPERATIONAL = "vertical_operational"  # Off-cadence tGNN refresh
+VERTICAL_STRATEGIC = "vertical_strategic"      # S&OP policy review
+```
+
+The Arbiter evaluates after CDC and CDT in the relearning schedule:
+```
+:30 — Outcome collection (SiteAgentDecision)
+:32 — TRM outcome collection (11 tables)
+:33 — Skill outcome collection
+:35 — CDT calibration
+:40 — Escalation Arbiter evaluation (every 2h)  ← NEW
+:45 — CDC retraining evaluation (every 6h)
+```
+
+##### 5.16.6 Implementation Files
+
+| File | Purpose |
+|------|---------|
+| `backend/app/services/powell/escalation_arbiter.py` | Escalation Arbiter service (persistence detection, routing, logging) |
+| `backend/app/models/escalation_log.py` | `PowellEscalationLog` audit trail model |
+| `backend/app/services/powell/cdc_monitor.py` | Extended `ReplanAction` enum |
+| `backend/app/services/powell/relearning_jobs.py` | Scheduled job at :40 every 2h |
+| `docs/ESCALATION_ARCHITECTURE.md` | Full theoretical foundation |
 
 ---
 

@@ -1,0 +1,551 @@
+# Food Distribution Demo Guide
+
+**"Late February 2026 — A Week in the Life of FOODDIST_DC"**
+
+This guide walks through a comprehensive demo of the Autonomy platform using the Food Distribution network. The demo showcases all four Powell Framework levels — from executive strategy briefings down to individual TRM execution decisions — connected by six realistic supply chain storylines.
+
+---
+
+## Quick Start
+
+```bash
+# 1. Ensure Food Dist infrastructure is seeded (if not already)
+docker compose exec backend python -m scripts.seed_food_dist_demo
+docker compose exec backend python -m scripts.seed_food_dist_planning_data
+
+# 2. Seed the action layer (briefings, worklists, decisions, alerts)
+docker compose exec backend python -m scripts.seed_food_dist_deep_demo
+
+# 3. Login
+#    URL:      http://localhost:8088
+#    Email:    admin@distdemo.com   (or any role — see User Accounts below)
+#    Password: Autonomy@2026
+```
+
+The seed script is **idempotent** — re-run it anytime to reset the action layer data without touching the underlying network config, forecasts, or inventory policies.
+
+---
+
+## User Accounts
+
+Each account maps to a Powell Framework level and lands on the appropriate dashboard:
+
+| Email | Role | Powell Level | Landing Page |
+|-------|------|-------------|-------------|
+| `admin@distdemo.com` | Tenant Admin / Demo All | All levels | Executive Dashboard |
+| `exec@distdemo.com` | Executive (CEO) | Strategic | Strategy Briefing |
+| `scvp@distdemo.com` | VP Supply Chain | Strategic / CFA | Executive Dashboard |
+| `sopdir@distdemo.com` | S&OP Director | Tactical / S&OP | S&OP Worklist |
+| `mpsmanager@distdemo.com` | MPS Manager | Operational / TRM | Agent Decisions |
+| `atp@distdemo.com` | ATP Analyst | Execution / TRM | ATP Worklist |
+
+**Recommended for demos**: Use `admin@distdemo.com` — it has access to every page, so you can walk through all levels without logging out.
+
+Password for all accounts: **Autonomy@2026**
+
+---
+
+## The Network
+
+Food Dist operates a hub-and-spoke distribution network:
+
+```
+10 Suppliers                    FOODDIST_DC                    10 Customers
+ (Tyson, Kraft,     ────────►  West Valley City, UT  ────────►  (QUICKSERV, Metro
+  Rich Products,                    │                             Grocery, Restaurant
+  Nestle, etc.)               25 products                        Supply, etc.)
+                           5 temperature categories
+```
+
+**25 products** across 5 categories: Frozen Proteins (FP), Refrigerated Dairy (RD), Dry Pantry (DP), Frozen Desserts (FD), Beverages (BV).
+
+**To visualize the network**: Navigate to **Administration > Supply Chain Configs** (`/admin/tenant/supply-chain-configs`), select "Food Dist Distribution Network", and click the **Network** tab to see the interactive D3-Sankey diagram showing all suppliers → DC → customer flows.
+
+---
+
+## The Six Storylines
+
+The demo week (Mon Feb 24 – Fri Feb 28, 2026) features six interconnected storylines. Each one flows through all four Powell levels:
+
+### Story 1: March Madness Demand Surge
+
+> QUICKSERV and restaurant chains pre-order frozen proteins ahead of the NCAA tournament.
+
+- **Products**: Chicken Breast IQF (+35%), Turkey Breast Deli (+20%)
+- **Trigger**: Customer pre-order signals from QUICKSERV procurement
+- **Key decisions**: Forecast uplift, buffer increase (1.35x), expedited Tyson PO, priority ATP allocation
+- **Revenue opportunity**: $145K incremental
+
+### Story 2: Rich Products Weather Delay
+
+> A winter storm over Buffalo, NY delays Rich Products dairy shipments by 3 days.
+
+- **Products**: Cream Cheese, Greek Yogurt, Butter (all from RICHPROD supplier)
+- **Trigger**: Supplier delay notification — winter storm disruption
+- **Key decisions**: Split-source contingency (60/40 Rich/Land O'Lakes), emergency PO, cross-DC rebalancing
+- **Service risk**: $89K if no action taken
+
+### Story 3: Greek Yogurt Quality Hold
+
+> 2,400 cases fail texture consistency testing. Lot placed on quality hold.
+
+- **Products**: Greek Yogurt Plain
+- **Trigger**: Quality test failure on incoming lot
+- **Key decisions**: Disposition evaluation (rework vs scrap vs discount), backup PO, overflow storage transfer
+- **Inventory at risk**: $36K
+
+### Story 4: Ice Cream Spring Ramp-Up
+
+> Seasonal models detect spring transition starting 1 week early.
+
+- **Products**: Ice Cream Vanilla Premium, Sorbet Mango
+- **Trigger**: Seasonal demand model + temperature forecast
+- **Key decisions**: Buffer increase (1.25x), Kraft capacity coordination, overflow freezer transfer
+- **Capacity concern**: Kraft at 88% utilization
+
+### Story 5: QUICKSERV Arizona Expansion
+
+> Three new Phoenix locations opening March 1 with above-average stocking orders.
+
+- **Products**: Chicken Breast IQF
+- **Trigger**: Sales team input — new store opening plan
+- **Key decisions**: Forecast +25%, buffer +15%, safety stock replenishment PO
+- **Auto-executed**: Agent confidence 0.88 exceeded threshold — no human approval needed
+
+### Story 6: Dairy Cost Pressure
+
+> Butter and cheddar spot prices jump 12% due to reduced Upper Midwest output.
+
+- **Products**: Butter, Cheddar Block
+- **Trigger**: Market intelligence — commodity price spike
+- **Key decisions**: Forward contract evaluation, demand forecast adjustment (-8%)
+- **Margin impact**: $23K if sustained 30 days
+
+### How They Interconnect
+
+The storylines are not isolated — they create cascading effects:
+
+- Story 2 (weather delay) **compounds** Story 3 (quality hold) — both reduce dairy availability
+- Story 1 (March Madness) **overlaps** Story 5 (Arizona) — both increase chicken demand
+- Story 4 (ice cream ramp) is **constrained by** Story 2 — weather delay affects Kraft shipments
+- Story 6 (cost pressure) **influences** Story 2 contingency — Land O'Lakes premium is now 8% on top of already-elevated prices
+
+---
+
+## Demo Walkthrough — By Dashboard
+
+> **Tip**: Before starting the demo, open the **Network Topology** view (**Administration > Supply Chain Configs** → select "Food Dist Distribution Network" → **Network** tab) to orient the audience on the hub-and-spoke structure. You can also show the **Demand Planning** view (**Planning > Demand Planning**, `/planning/demand`) and **Inventory Optimization** page (**Planning > Inventory Optimization**, `/planning/inventory-optimization`) to establish the baseline state before walking through the storylines.
+
+### Level 1: Executive Dashboard
+
+**Navigation**: Insights & Analytics > **Executive Dashboard** (`/executive-dashboard`)
+
+**What you see**:
+- Service level: **94.2%** (above 92% target, but under pressure)
+- Fill rate: **96.1%**
+- Agent score: **72** (on -100 to +100 scale)
+- Override rate: **18%** (humans overriding 18% of agent recommendations)
+- Open exceptions: **8**
+
+**Key visualizations**:
+- KPI summary cards across the top with trend indicators
+- Agent score gauge showing 72/100 with color-coded zones
+- Exception count badge linking to Condition Alerts
+
+**Talking points**:
+- "The platform gives executives a real-time pulse on how AI agents are performing"
+- "Agent score of 72 means the AI is making better decisions than baseline in most cases"
+- "18% override rate is healthy — it means planners are engaged and the system is learning from their corrections"
+
+**Next step**: Click the Strategy Briefing link or navigate to it directly.
+
+---
+
+### Level 1: Strategy Briefing
+
+**Navigation**: Insights & Analytics > **Strategy Briefing** (`/strategy-briefing`)
+
+**What you see**:
+- Weekly briefing titled **"Weekly Strategy Briefing — Feb 24, 2026"**
+- Full narrative covering all 6 storylines
+- 5 scored recommendations (ranked 88 → 65)
+- 3 follow-up Q&A exchanges
+
+**Key visualizations**:
+- Recommendation cards with confidence scores and impact values
+- Color-coded priority ranking (88 = high confidence green, 65 = moderate amber)
+- Q&A thread with expandable answers
+
+**Talking points**:
+- "Every Monday, the platform generates an executive briefing synthesized by Claude Sonnet from all platform data"
+- "Recommendations are scored and ranked — the executive just reviews and approves"
+- "Follow-up Q&A lets executives drill into any recommendation with natural language questions"
+
+**Demo the Q&A**:
+1. Click on the first follow-up: *"What's our exposure if Rich Products delays extend to 5 days?"*
+2. Show the detailed answer with per-SKU analysis and contingency recommendation
+3. Click the March Madness revenue question to show ROI analysis ($145K opportunity, 17.7x ROI)
+
+---
+
+### Level 2: S&OP Worklist
+
+**Navigation**: Insights & Analytics > **S&OP Worklist** (`/sop-worklist`)
+
+**What you see**:
+- 6 items representing strategic/tactical issues for the S&OP Director
+- Mixed statuses: 2 accepted (green), 3 pending (yellow), 1 auto-executed (blue)
+- Impact values ranging from -$89K to +$145K
+- Agent recommendations with reasoning for each
+
+**Key visualizations**:
+- Status badges (accepted/pending/auto-executed) with color coding
+- Impact column with positive (green, opportunity) and negative (red, risk) dollar values
+- Urgency indicators (urgent/standard/low)
+- Expandable agent reasoning panels
+
+**Talking points**:
+- "This is where strategic decisions live — not individual SKU adjustments, but cross-functional trade-offs"
+- "Each item has an AI recommendation with confidence level and reasoning"
+- "The S&OP Director can accept, reject with a reason, or let the agent auto-execute"
+
+**Demo flow**:
+1. **Show the March Madness item** (accepted) — "The S&OP Director reviewed this Tuesday morning and approved the pre-positioning. The agent then auto-executed the downstream actions."
+2. **Show the Rich Products item** (pending) — "This is still pending because the contingency involves cost trade-offs the director wants to evaluate further."
+3. **Show the QUICKSERV Arizona item** (auto-executed) — "This one auto-executed because the agent confidence was 0.88, above the 0.60 threshold. No human needed."
+4. **Highlight the impact column** — "Every item shows the dollar impact — positive for opportunities, negative for risks. This helps the director prioritize."
+
+**Cross-reference**: After showing the S&OP Worklist, navigate to **Planning > S&OP** (`/planning/sop`) to show the S&OP Policy Envelope where these strategic parameters feed into the planning cascade.
+
+---
+
+### Level 3: Agent Decisions (Copilot Worklist)
+
+**Navigation**: Insights & Analytics > **MPS Worklist** (`/insights/actions`) — this shows the operational copilot decisions
+
+**What you see**:
+- 15 operational-level recommendations
+- Decision types: demand forecast, supply plan, ATP allocation, rebalancing, safety stock, replenishment
+- Status mix: 5 pending, 4 accepted, 3 auto-executed, 2 rejected, 1 expired
+- Each with confidence score, reasoning, and recommended values
+
+**Key visualizations**:
+- Decision cards with status badges and confidence gauges
+- Decision type filter tabs (Demand Forecast, Supply Plan, ATP, Inventory, Replenishment)
+- Override reason display on rejected decisions
+- Timeline showing when each decision was created and actioned
+
+**Talking points**:
+- "This is the operational planner's inbox — the AI proposes, the human disposes"
+- "Each recommendation shows the agent's confidence and detailed reasoning"
+- "When a planner rejects, they provide a reason — this feeds back into agent training"
+
+**Demo the override story**:
+1. Find the **Metro Grocery cream cheese ATP** decision (REJECTED)
+2. Show the override reason: *"Metro Grocery contractual minimum is 900 cases. Adjusted to 900 cases partial fill to meet contract obligation."*
+3. Explain: "The agent recommended 720 cases based on priority logic, but the planner knew about a contractual minimum the agent hadn't learned yet. This override gets recorded and the agent learns from it."
+4. Find the **Kraft expedite** decision (REJECTED)
+5. Show: "The planner rejected the $4.5K expedite because they called Kraft directly and negotiated a 15% volume increase at no premium. Human domain knowledge still matters."
+
+**Cross-reference**: Show the **Planning > Forecasting** page (`/planning/forecasting`) to display the demand forecast charts that underpin the forecast uplift decisions.
+
+---
+
+### Level 4: Condition Alerts
+
+**Navigation**: Insights & Analytics > **Exception Detection** (`/planning/execution/order-tracking-worklist`) or via the exception count badge on the Executive Dashboard
+
+**What you see**:
+- 8 condition alerts (6 active, 2 resolved)
+- Severity levels: 2 critical (red), 3 warning (amber), 3 info (blue)
+- Duration tracking (how long each condition has persisted)
+- Resolution tracking for resolved alerts
+
+**Key visualizations**:
+- Severity-colored alert cards (critical=red, warning=amber, info=blue)
+- Duration bars showing how long each condition has been active
+- Resolution status with agent/user attribution
+- Linked scenario evaluations (click to see what-if analysis)
+
+**Talking points**:
+- "The condition monitor runs continuously, checking 6 types of conditions against the database"
+- "Conditions escalate from info → warning → critical based on duration and severity"
+- "When an agent resolves a condition, it's recorded in the audit trail"
+
+**Highlight key alerts**:
+1. **Cream Cheese ATP Shortfall** (critical, 40 hours) — "This is the Rich Products weather delay cascading into an ATP shortage. Active for 40 hours."
+2. **Tenders Forecast Deviation** (resolved) — "The agent detected the QUICKSERV Arizona deviation, auto-adjusted the forecast, and the condition self-resolved."
+
+**Cross-reference**: Navigate to **Insights & Analytics > Risk Analysis** (`/analytics/risk`) to show the risk dashboard view with aggregated risk metrics.
+
+---
+
+### Level 4: Scenario Evaluations
+
+**Navigation**: **Insights & Analytics > Scenario Comparison** (`/sc-analytics`) or accessible from Condition Alert detail links
+
+**What you see**:
+- 3 what-if scenario evaluations with ranked alternatives
+- Each shows multiple scenarios with balanced scorecard scores
+- Trade-off analysis and probability of success
+
+**Key visualizations**:
+- Side-by-side scenario comparison cards with balanced scorecard radar charts
+- Score bars showing overall, financial, customer, and operational rankings
+- Cost vs service level trade-off scatter plot
+- Confidence percentage and probability of success indicators
+
+**Demo the Rich Products contingency**:
+1. Show 3 scenarios: Wait (score 62), Split source (score 88), Full switch (score 79)
+2. Point out the trade-off: "Split source achieves 94.8% service level at $2.1K. Full switch gets 96.1% but costs $5.4K — diminishing returns."
+3. "The agent recommended split source with 82% confidence. The human can see exactly why and decide."
+
+---
+
+### Level 5: Powell Execution Dashboards
+
+> **Overview**: Before diving into individual worklists, show the **Decision Cascade** dashboard (**AI & Agents > Decision Cascade**, `/admin/powell`) which provides a unified view of the Powell SDAM framework — state, policy, decisions, and outcomes across all TRM agents.
+
+#### ATP Worklist
+**Navigation**: Planning Cascade > TRM Worklists > **ATP Worklist** (`/planning/execution/atp-worklist`)
+
+**What you see**: 12 ATP consumption decisions showing priority-based allocation
+- P1-P2 orders (QUICKSERV): all fulfilled
+- P3 orders: mostly fulfilled, one partial (cream cheese shortage)
+- P4-P5 orders: deferred or rationed
+- Post-rebalancing fulfillments (Thursday/Friday)
+
+**Key visualizations**:
+- Priority-colored rows (P1=darkest, P5=lightest)
+- Fill percentage bars showing requested vs promised quantities
+- Consumption breakdown showing which priority tiers were consumed
+- Timeline showing fulfillment progression across the week
+
+**Talking point**: "ATP allocation follows strict priority rules. P1 QUICKSERV orders are always fulfilled first. Lower-priority orders get rationed when supply is constrained — but once the rebalancing resolves the shortage, they get fulfilled in the next cycle."
+
+**Cross-reference**: Navigate to **Execution > Order Promising (ATP/CTP)** (`/execution/atp-ctp`) to show the AATP allocation buckets by priority tier.
+
+#### PO Worklist
+**Navigation**: Planning Cascade > TRM Worklists > **PO Worklist** (`/planning/execution/po-worklist`)
+
+**What you see**: 6 purchase order decisions across 4 suppliers
+- Emergency POs (urgent): Land O'Lakes dairy, backup yogurt
+- Expedited POs: Tyson chicken for March Madness
+- Standard POs: Kraft ice cream, Conagra cheddar
+
+**Key visualizations**:
+- Urgency badges (urgent=red, standard=blue)
+- Supplier cards with expected cost and lead time
+- Confidence scores and trigger reasons
+- Days-of-supply indicators showing current inventory position
+
+**Talking point**: "The PO agent balances urgency against cost. Emergency POs to Land O'Lakes cost 8% more but prevent $89K in service failures."
+
+**Cross-reference**: Show **Execution > Purchase Orders** (`/planning/purchase-orders`) for the full PO management view.
+
+#### Rebalancing Worklist
+**Navigation**: Planning Cascade > TRM Worklists > **Rebalancing Worklist** (`/planning/execution/rebalancing-worklist`)
+
+**What you see**: 4 cross-location transfer recommendations
+- Executed transfers from overflow storage
+- Pre-positioning transfer to Phoenix staging
+- Emergency transfer from alternate DC
+
+**Key visualizations**:
+- From/To site pairs with directional arrows
+- Days-of-supply before/after comparison showing rebalancing impact
+- Confidence scores and cost estimates
+- Reason tags (stockout prevention, seasonal ramp, demand surge, supply disruption)
+
+**Cross-reference**: Show **Execution > Inventory Rebalancing** (`/execution/inventory-rebalancing`) for the network-wide rebalancing view.
+
+#### Order Exceptions
+**Navigation**: Planning Cascade > TRM Worklists > **Order Tracking Worklist** (`/planning/execution/order-tracking-worklist`)
+
+**What you see**: 5 order exceptions of different types
+- DELAYED (Rich Products), AT_RISK (QUICKSERV), PRICE_VARIANCE (dairy), EARLY_ARRIVAL (Tyson), QUALITY_HOLD (yogurt)
+
+**Key visualizations**:
+- Exception type badges with severity colors
+- Impact assessment descriptions and estimated cost
+- Recommended action for each exception
+- Linked orders with status tracking
+
+---
+
+### Decision Performance
+
+**Navigation**: Insights & Analytics > **Agent Performance** (`/agent-performance`)
+
+**What you see**:
+- Weekly performance metrics by category
+- Agent scores: 65-81 range across categories
+- Override rates: 8-24% by category
+- Automation percentage: 77-92%
+
+**Key metrics to highlight**:
+
+| Category | Agent Score | Override Rate | Automation |
+|----------|-----------|--------------|-----------|
+| Overall | 72 | 18% | 82% |
+| ATP Allocation | 81 | 8% | 92% |
+| Demand Forecast | 78 | 12% | 92% |
+| Inventory | 68 | 22% | 80% |
+| Supply Plan | 65 | 24% | 77% |
+
+**Key visualizations**:
+- Agent score bar chart by category with color-coded performance zones
+- Override rate trend showing progression over time
+- Automation percentage gauge
+- Category comparison radar chart
+
+**Talking points**:
+- "ATP has the highest agent score (81) and lowest override rate (8%) — the agent has learned this domain well"
+- "Supply Plan has the lowest score (65) and highest override rate (24%) — this is where human expertise still adds the most value"
+- "As the agent learns from overrides, we expect supply plan scores to climb and override rates to fall"
+
+---
+
+### Override Effectiveness
+
+**Navigation**: AI & Agents > **RLHF Feedback** (`/admin/rlhf`) — Override Effectiveness tab
+
+**What you see**: Bayesian posteriors for 3 users who override agent decisions
+
+| User | TRM Type | Effectiveness | Observations | Training Weight |
+|------|---------|--------------|-------------|----------------|
+| S&OP Director | Supply Plan | 73% | 11 | 1.54 |
+| MPS Manager | Demand Forecast | 56% | 9 | 1.25 |
+| ATP Analyst | ATP Allocation | 86% | 14 | 1.76 |
+
+**Key visualizations**:
+- Beta distribution curves for each user showing posterior shape
+- Effectiveness percentage gauges with credible intervals
+- Training weight bars showing how much each user's overrides influence agent learning
+- Observation count progression
+
+**Talking points**:
+- "The platform tracks whether human overrides actually lead to better outcomes"
+- "The ATP Analyst has an 86% effectiveness rate — their overrides are high quality and get high training weight (1.76)"
+- "The MPS Manager is at 56% — close to a coin flip. The system will gradually reduce the weight of their overrides in agent training"
+- "This is the judgment capture flywheel: good overrides teach the agent, poor overrides are down-weighted"
+
+---
+
+## Supporting Visualizations
+
+These pages provide additional context you can navigate to during the demo to illustrate specific storylines:
+
+| Page | Navigation | Route | When to Show |
+|------|-----------|-------|-------------|
+| **Network Topology** | Administration > Supply Chain Configs | `/admin/tenant/supply-chain-configs` | Opening — orient the audience on hub-and-spoke |
+| **Demand Planning** | Planning > Demand Planning | `/planning/demand` | Story 1 & 5 — show forecast uplift data |
+| **Forecast Editor** | Planning > Forecast Editor | `/planning/demand/edit` | Story 1 — drill into the March Madness forecast adjustment |
+| **Forecast Exceptions** | Planning > Forecast Exceptions | `/planning/forecast-exceptions` | Story 5 — show the Arizona deviation detection |
+| **Inventory Optimization** | Planning > Inventory Optimization | `/planning/inventory-optimization` | Story 3 & 4 — show safety stock policies and buffer levels |
+| **Inventory Visibility** | Execution > Visibility > Inventory Visibility | `/visibility/inventory` | Story 2 & 3 — show dairy inventory under pressure |
+| **Supply Planning** | Planning > Supply Planning | `/planning/supply-plan` | Story 2 — show the supply contingency plan |
+| **AATP Allocations** | Planning > AATP Allocations | `/execution/atp-ctp` | Story 1 — show priority allocation buckets |
+| **Sourcing & Allocation** | Planning > Sourcing & Allocation | `/planning/sourcing` | Story 2 — show sourcing rules for split-source contingency |
+| **Capacity Planning** | Planning > Capacity Planning | `/planning/capacity` | Story 4 — show Kraft at 88% utilization |
+| **KPI Monitoring** | Insights & Analytics > KPI Monitoring | `/planning/kpi-monitoring` | Wrap-up — show overall KPI trends |
+| **Hierarchical Metrics** | Insights & Analytics > Hierarchical Metrics | `/planning/metrics` | Wrap-up — show metrics rolled up by category |
+| **Risk Analysis** | Insights & Analytics > Risk Analysis | `/analytics/risk` | Story 2 & 6 — show risk exposure |
+| **Decision Cascade** | AI & Agents > Decision Cascade | `/admin/powell` | Technical deep-dive — show Powell SDAM framework |
+| **Execution Agents (TRM)** | AI & Agents > Execution Agents | `/admin/trm` | Technical deep-dive — show TRM training status |
+
+---
+
+## Advanced Demo Topics
+
+### The Compounding Loop
+
+Walk through how a single override creates long-term value:
+
+1. **ATP Analyst rejects** the Metro Grocery 720-case recommendation
+2. **Override reason captured**: "Contractual minimum is 900 cases"
+3. **Outcome measured**: The 900-case fill met the contract and avoided a $15K penalty
+4. **Bayesian posterior updated**: ATP Analyst effectiveness increases
+5. **Training weight increases**: Future overrides from this analyst carry more weight
+6. **Agent learns**: Next time it sees a Metro Grocery order, it checks contractual minimums
+7. **Override rate drops**: The agent handles this case autonomously next time
+
+**Where to show this**: Start at **Agent Performance** (`/agent-performance`), drill into the override detail, then navigate to **RLHF Feedback** (`/admin/rlhf`) to show the Bayesian posteriors.
+
+### Copilot vs Autonomous Mode
+
+Show the contrast between decisions that required human approval vs those that auto-executed:
+
+| Decision | Mode | Why |
+|----------|------|-----|
+| March Madness buffer increase | Copilot (accepted) | High dollar impact ($145K), wants human sign-off |
+| QUICKSERV Arizona forecast | Autonomous | Agent confidence 0.88 > threshold 0.60 |
+| Cream cheese emergency PO | Copilot (pending) | Involves supplier switch, cost trade-off |
+| Cheddar standard replenishment | Autonomous | Routine reorder, high confidence (0.95) |
+
+**Where to show this**: **S&OP Worklist** (`/sop-worklist`) shows the copilot/autonomous split at the strategic level; **MPS Worklist** (`/insights/actions`) shows it at the operational level.
+
+### The Autonomy Value Proposition
+
+Tie back to the Autonomy value proposition:
+
+1. **Before Autonomy**: 4 planners managing 25 SKUs each, reactive to disruptions
+2. **With Autonomy**: AI handles 82% of decisions autonomously, planners focus on the 18% that need judgment
+3. **Compounding effect**: Every override makes the AI better, gradually shifting the 82/18 boundary
+4. **End state**: Planners become *supervisors* of AI agents, not manual decision-makers
+
+---
+
+## Recommended Demo Flow (20 minutes)
+
+For a concise demo, follow this path:
+
+| Step | Duration | Page | What to Show |
+|------|----------|------|-------------|
+| 1 | 1 min | Network Topology (`/admin/tenant/supply-chain-configs`) | Orient: hub-and-spoke, 25 products, 10 suppliers, 10 customers |
+| 2 | 2 min | Executive Dashboard (`/executive-dashboard`) | KPIs: service level 94.2%, agent score 72, override rate 18% |
+| 3 | 3 min | Strategy Briefing (`/strategy-briefing`) | Weekly narrative, 5 recommendations, Q&A drill-down |
+| 4 | 3 min | S&OP Worklist (`/sop-worklist`) | 6 strategic items, accepted/pending/auto-executed statuses |
+| 5 | 3 min | MPS Worklist (`/insights/actions`) | 15 agent decisions, demo the override story (Metro Grocery) |
+| 6 | 2 min | ATP Worklist (`/planning/execution/atp-worklist`) | Priority-based allocation, P1-P5 fulfillment |
+| 7 | 2 min | PO Worklist (`/planning/execution/po-worklist`) | Emergency vs standard POs, cost trade-offs |
+| 8 | 2 min | Agent Performance (`/agent-performance`) | Category scores, override rates, automation % |
+| 9 | 2 min | RLHF Feedback (`/admin/rlhf`) | Bayesian posteriors, judgment capture flywheel |
+
+---
+
+## Troubleshooting
+
+### "No briefings found" or empty pages
+Re-run the seed script:
+```bash
+docker compose exec backend python -m scripts.seed_food_dist_deep_demo
+```
+
+### Tenant or config not found
+Ensure the base Food Dist infrastructure is seeded:
+```bash
+docker compose exec backend python -m scripts.seed_food_dist_demo
+docker compose exec backend python -m scripts.seed_food_dist_planning_data
+```
+
+### Users not found
+The seed script will fall back to the admin user for missing role users. Ensure `seed_food_dist_demo.py` has been run to create all demo users.
+
+### Re-running after changes
+The script is idempotent — it deletes action layer data for the demo date range (Feb 24-28, 2026) before reinserting. Infrastructure data (configs, forecasts, supply plans, hierarchies) is never touched.
+
+---
+
+## Files Reference
+
+| File | Purpose |
+|------|---------|
+| `backend/scripts/seed_food_dist_deep_demo.py` | Action layer seed (this demo's data) |
+| `backend/scripts/seed_food_dist_demo.py` | Tenant, users, config (prerequisite) |
+| `backend/scripts/seed_food_dist_planning_data.py` | Forecasts, inv policies, supply plans |
+| `backend/scripts/seed_food_dist_hierarchies.py` | Site/product hierarchies |
+| `backend/scripts/seed_food_dist_transactions.py` | Historical orders/shipments |
+| `backend/scripts/seed_food_dist_execution_data.py` | Base Powell decisions, agent configs |
+| `backend/scripts/seed_food_dist_allocation_demo.py` | Allocation demo scenarios |
+| `docs/FOOD_DIST_DEMO_GUIDE.md` | This guide |

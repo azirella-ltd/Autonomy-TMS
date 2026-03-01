@@ -460,10 +460,7 @@ make proxy-logs
 - `PowellDashboard.jsx`: Powell SDAM framework dashboard (state/policy/decision/outcomes)
 - `RLDashboard.jsx` / `RLHFDashboard.jsx`: RL and RLHF training interfaces
 - `KnowledgeBase.jsx`: RAG document management, vector search, embedding config
-- `PicoClawManagement.jsx`: Edge CDC fleet dashboard (heartbeats, alerts, service accounts)
-- `OpenClawManagement.jsx`: Multi-channel agent gateway (WhatsApp/Slack/Teams)
-- `SignalIngestionDashboard.jsx`: Signal monitoring, review queue, source reliability
-- `EdgeAgentSecurity.jsx`: CVE tracker, security checklist, deployment hardening
+- `SkillsDashboard.jsx`: Claude Skills monitoring (stats, RAG memory, escalation metrics)
 - `SAPDataManagement.jsx`: SAP integration (connections, field mapping, ingestion, insights)
 - `SyntheticDataWizard.jsx`: AI-guided company/data generation wizard
 - `ModelSetup.jsx`: Model architecture configuration
@@ -1036,7 +1033,11 @@ This consolidated knowledge base includes:
 
 Powell's framework provides a unified theoretical foundation for sequential decision-making under uncertainty. These documents are essential references for policy optimization, belief state management, and AI agent design. See [POWELL_APPROACH.md](POWELL_APPROACH.md) for integration strategy.
 
-- `Powell-SDAM-Nov242022_final_w_frontcover.pdf` (5.9MB, in `docs/Knowledge/`) - **Sequential Decision Analytics and Modeling (SDAM)**: The primary reference book covering the unified framework for decision-making under uncertainty. Defines the five core elements (State, Decision, Exogenous Information, Transition, Objective) and four policy classes (PFA, CFA, VFA, DLA).
+- `Powell-SDAM-Nov242022_final_w_frontcover.pdf` (5.9MB, in `docs/Knowledge/`) - **Sequential Decision Analytics and Modeling (SDAM), 1st Edition**: The original reference book covering the unified framework for decision-making under uncertainty. Defines the five core elements (State, Decision, Exogenous Information, Transition, Objective) and four policy classes (PFA, CFA, VFA, DLA).
+
+- `Powell-Kindle-SDAM-2nd-ed-Feb-9-2026-w_cover.pdf` (in `docs/Knowledge/`) - **Sequential Decision Analytics and Modeling, 2nd Edition** (Feb 2026): Major update with Python modules, "Framing the Problem" sections per chapter, and refined UMF notation. State variable decomposition: Rₜ (physical), Iₜ (information), Bₜ (belief). Policy as X^π(Sₜ|θ), transition S^M(Sₜ, xₜ, Wₜ₊₁). Styles of uncertainty: fine-grained variability, shifts, bursts, spikes, spatial events, systemic events, rare events, contingencies. State/decision-dependent exogenous processes. Ch 10: Supply chain management I (two-agent newsvendor). Ch 11: Supply chain management II — Beer Game as multiagent SDP.
+
+- `Powell-Bridging-Vol-I-Framing-Kindle-Jan-7-2026-w_cover.pdf` (in `docs/Knowledge/`) - **Bridging Reinforcement Learning and Stochastic Optimization, Vol I: Framing** (Jan 2026): The framing companion to SDAM. Three stages of decision automation (Framing → Modeling → Implementation). Three framing questions: (1) performance metrics (objectives, targets, limits), (2) types of decisions (binary, discrete, continuous, vectors; timing and who makes them), (3) sources of uncertainty (12 classes). Interaction matrices (decisions × metrics, uncertainty × metrics) for system analysis. 7 levels of AI: (1) rule-based logic, (2) statistics/ML, (3) pattern recognition, (4) LLMs, (5) deterministic optimization, (6) sequential decision problems, (7) creativity/reasoning/judgment. 3 classes of computer intelligence: human-specified, machine learning, optimization. Essential for correctly framing which tier should handle which decision.
 
 - `Powell - Application to Supply Chain Planning.pdf` (in `docs/`) - **Platform Analysis vs Powell Framework**: Detailed gap analysis mapping current Autonomy implementation to Powell's framework. Identifies integration opportunities for each planning level (Strategic, Tactical, Operational, Execution).
 
@@ -1052,29 +1053,11 @@ Powell's framework provides a unified theoretical foundation for sequential deci
 
 - `Powell Approach - Condensed.pdf` (in `docs/Knowledge/`) - **Powell Framework Quick Reference**: Condensed version of the Powell approach for quick reference.
 
-- `FG Supply Planning as AI Labor.pdf` (in `docs/Knowledge/`) - **FG Supply Planning Agent Specification**: Defines the FG Supply Planning Agent that owns the "Supply Commit" decision, grounded by the "Supply Baseline Pack" (SupBP). Key concepts:
-  - **Supply Commit (SC)**: Agent-owned decision artifact for what to buy/make/transfer, when, from whom
-  - **Supply Baseline Pack (SupBP)**: Mathematical grounding with multiple candidate supply plans (MRP_STANDARD, SAFETY_STOCK_OPTIMIZED, MIN_COST_LP, SERVICE_MAXIMIZED, PARAMETRIC_CFA)
-  - **UX Primitives**: Scheduled Tasks, Worklist, Chat, Task Log, Agent Configuration, Dashboards
-  - **Planning Cascade**: Demand Agent (UCF) → FG Supply Agent (SC) → Allocation Agent (AC) → Execution
-  - **Policy Classes**: Supply Plan Integrity (inventory balance, lead time feasibility, MOQ compliance, demand coverage) and Supply Outcome Risk (service risk, investment, concentration, expedite, E&O, stability)
-  - **Key Metrics**: Touchless Rate, Agent Score, User Score, Human Override Rate, Override Dependency Ratio, Downstream Coherence
+**Agentic Operating Model Strategy & UX Framework** (in `docs/Knowledge/`):
 
-- `Integrated Supply Planning as AI Labor.pdf` (in `docs/Knowledge/`) - **Full Planning Cascade Architecture**: Extends FG Supply Planning to cover the complete cascade from S&OP through Allocation Commit. Key concepts:
-  - **Full Cascade**: S&OP/IBP Layer → MPS/MRP Layer → Supply Planning Agent (SC) → Allocation Planning Agent (AC) → Execution
-  - **Feed-Forward Contracts**: Each layer produces versioned, hashable artifacts as grounding input to the next layer
-  - **Feed-Back Signals**: Outcome signals (OTIF, shortfalls, expedite frequency, E&O) re-tune upstream policy parameters
-  - **Allocation Commit (AC)**: Agent-owned decision for constraint-respecting distribution of supply across demand segments
-  - **Solver Baseline Pack (SBP)**: Non-authoritative allocation candidates (fair-share, priority heuristic, LP, MILP, hybrid)
-  - **Modular Selling**: Layers can be sold independently - when S&OP/MPS not purchased, same UI screens become **input screens** where customer provides policy parameters manually
-  - **Customer-Provided Inputs (when no S&OP/MPS)**: Safety stock targets (weeks-of-supply), OTIF floors by segment, allocation reserves, expedite caps, candidate supply plans (customer's MRP output), BOM/lead times
-  - **Upgrade Path**: Adding MPS/MRP generates multiple SupBP candidates; adding S&OP quantifies consequences of policy changes and tightens feedback loop
+These documents define the strategic vision and UX implementation for the agentic operating model in supply chain planning. Use as primary references when implementing Powell Framework dashboards and agent interfaces.
 
-**AI-as-Labor Strategy & UX Framework** (in `docs/Knowledge/`):
-
-These documents define the strategic vision and UX implementation for AI-as-Labor in supply chain planning. Use as primary references when implementing Powell Framework dashboards and agent interfaces.
-
-- `Strategic Synthesis_ AI Labor UX for Demand & Supply Planners.pdf` - **UX Implementation Guide**: Comprehensive UX framework for AI-agent-centric planning. Key concepts:
+- `Strategic Synthesis_ Agentic UX for Demand & Supply Planners.pdf` - **UX Implementation Guide**: Comprehensive UX framework for AI-agent-centric planning. Key concepts:
   - **Six UX Primitives**: (1) Scheduled Tasks & Digests (async AI work), (2) Worklist (exception triage), (3) Chat (natural language interaction), (4) Task Log (audit trail), (5) Agent Configuration (policy tuning), (6) Dashboards (KPI monitoring)
   - **Persona-Based Design**: VP Supply Chain (executive/strategic), S&OP Director (tactical/weekly), MPS Manager (operational/daily)
   - **Worklist as Primary UI**: Human-in-the-loop exception triage with Ask Why, Accept, Reject with override reason capture
@@ -1083,18 +1066,10 @@ These documents define the strategic vision and UX implementation for AI-as-Labo
   - **Key Insight**: "Planners don't want to plan; they want plans that work"
 
 - `AUTONOMY 1 PAGE COMPANY STRATEGY MEMO .pdf` - **Company Strategy**: One-page strategic memo defining Autonomy's positioning. Key concepts:
-  - **Core Belief**: AI-as-Labor operating model - agents own decisions by default, humans override with reasoning captured
+  - **Core Belief**: Agentic operating model - agents own decisions by default, humans override with reasoning captured
   - **Compounding Loop**: More decisions → Better AI → Less human effort → More decisions handled
   - **Judgment Layer Moat**: Human expertise captured in override patterns becomes competitive advantage
   - **Target Market**: Mid-market manufacturers frustrated with Kinaxis/SAP costs and complexity
-
-- `AI-as-Labor Operating Model_ Cross-Domain Ideation.md.pdf` - **Operating Model Metrics**: Defines key metrics for measuring AI-as-Labor success. Key concepts:
-  - **Agent Performance Score**: -100 to +100 scale measuring agent decision quality vs baseline/optimal. Positive = better than baseline, negative = worse
-  - **Human Override Rate**: 0-100% measuring the percentage of decisions overridden by humans. Lower = more trust in AI
-  - **Touchless Rate**: Percentage of decisions executed without any human intervention
-  - **Override Dependency Ratio**: Frequency of human overrides by decision type - identifies where AI needs improvement
-  - **Decision Policies**: Define which decisions agents own by default vs which require human approval
-  - **Feedback Loop**: Override reasons captured for continuous learning (RLHF-style)
 
 **Agentic Inversion & Machine-Speed Economics** (in `docs/`):
 
@@ -1104,7 +1079,7 @@ These documents define the strategic vision and UX implementation for AI-as-Labo
   - **Open-Source Acceleration**: Training remains centralized (capital-intensive) while inference distributes (commodity hardware). Cost of running an agent approaches zero → deploy thousands.
   - **The Overlap Moment**: Present is "unstable moment" where human and machine economies merge. Humans remain as prompters/overseers, gravitational center shifts to autonomous execution.
   - **From Paperwork to Code**: Procurement negotiations compress from months to minutes through parametric contracts. Legal/commercial coordination replaced by programmable logic.
-  - **Relevance to Autonomy**: The agentic inversion maps directly to the Powell Framework's copilot→autonomous progression. Override capture during the "overlap moment" trains agents for full autonomy. The article validates Autonomy's AI-as-Labor thesis at the macro level.
+  - **Relevance to Autonomy**: The agentic inversion maps directly to the Powell Framework's copilot→autonomous progression. Override capture during the "overlap moment" trains agents for full autonomy. The article validates Autonomy's agentic operating model thesis at the macro level.
   - Source: https://visserlabs.substack.com/p/the-agentic-inversion-what-moltbook
 
 **Agentic Authorization Protocol** (in `docs/`):
@@ -1123,12 +1098,26 @@ These documents define the strategic vision and UX implementation for AI-as-Labo
 
 **Powell Framework Quick Reference**:
 - **Five Core Elements**: State (Sₜ), Decision (xₜ), Exogenous Information (Wₜ₊₁), Transition Function (Sᴹ), Objective Function
+- **State Decomposition** (SDAM 2nd Ed): Rₜ (physical: inventory, backlog, pipeline, capacity), Iₜ (information: forecasts, lead times, supplier status), Bₜ (belief: CDT calibration, conformal intervals, TRM confidence)
 - **Four Policy Classes**:
   - **PFA** (Policy Function Approximation): Direct S→x mapping (e.g., base-stock rules)
   - **CFA** (Cost Function Approximation): Parameterized optimization (e.g., inventory policies with θ)
   - **VFA** (Value Function Approximation): Q-learning/TD learning (e.g., TRM agent)
   - **DLA** (Direct Lookahead): Model predictive control (e.g., MPC with GNN forecasts)
+- **Three Stages of Decision Automation** (Bridging Vol I): Framing (what metrics, what decisions, what uncertainties?) → Modeling (UMF five elements, policy class selection) → Implementation (solve, evaluate, deploy)
+- **7 Levels of AI** (Bridging Vol I): (1) Rule-based logic → Deterministic engine, (2) Statistics/ML → Conformal prediction, (3) Pattern recognition → TRM agents, (4) LLMs → Claude Skills, (5) Deterministic optimization → MPS/MRP solvers, (6) Sequential decision problems → Full SDAM framework, (7) Creativity/reasoning → Escalation Arbiter, S&OP consensus
+- **3 Classes of Computer Intelligence** (Bridging Vol I): Human-specified behaviors (engine rules, thresholds), Machine learning (TRM/GNN training, conformal calibration), Optimization (CFA parameter search, VFA estimation)
+- **Interaction Matrices** (Bridging Vol I): Decisions × Metrics and Uncertainty × Metrics matrices determine which tier should handle which problem
+- **Styles of Uncertainty** (SDAM 2nd Ed): Fine-grained variability, shifts, bursts, spikes, spatial events, systemic events, rare events, contingencies — each maps to different escalation routing
 - **Key Insight**: Current platform uses Monte Carlo for **evaluation**; Powell recommends **optimization over scenarios** to extract optimal policy parameters
+
+**Decision-Theoretic Frameworks** (cross-references):
+
+- **Kahneman's Dual-Process Theory**: System 1 (fast/intuitive) = TRM execution (<10ms). System 2 (slow/deliberate) = tGNN (daily) + GraphSAGE (weekly). The Escalation Arbiter acts as "The Lazy Controller" — System 2 only activates when System 1 shows persistent failure. See [ESCALATION_ARCHITECTURE.md](docs/ESCALATION_ARCHITECTURE.md).
+
+- **Boyd's OODA Loop**: Three nested Observe-Orient-Decide-Act loops at different time scales (Execution <10ms, Operational daily, Strategic weekly). "Schwerpunkt" = orientation as center of gravity (TRM trained weights). "Implicit Guidance & Control" = trained TRMs execute without explicit orders. "Mission Command" = push authority to lowest capable level, escalate only when problem exceeds local capability. See [ESCALATION_ARCHITECTURE.md](docs/ESCALATION_ARCHITECTURE.md).
+
+- **SOFAI Architecture** (arxiv:2110.01834): Meta-Cognitive module routes between System 1 and System 2 solvers — maps to the Escalation Arbiter routing between TRMs and tGNN/GraphSAGE. See [ESCALATION_ARCHITECTURE.md](docs/ESCALATION_ARCHITECTURE.md).
 
 **Beer Game Reference Materials** (in `docs/The_Beer_Game/`):
 - `Beer Game Calculations.pdf` (129KB) - Mathematical calculations and formulas

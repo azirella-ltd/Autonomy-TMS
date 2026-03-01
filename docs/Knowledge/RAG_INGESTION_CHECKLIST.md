@@ -45,11 +45,8 @@ done
 | [ ] | `Powell - RL and SO Book.pdf` | decision_framework |
 | [ ] | `Powell - Optimal Learning.pdf` | decision_framework |
 | [ ] | `Powell - How to teach optimization.pdf` | decision_framework |
-| [ ] | `FG Supply Planning as AI Labor.pdf` | ai_planning |
-| [ ] | `Integrated Supply Planning as AI Labor.pdf` | ai_planning |
-| [ ] | `Strategic Synthesis_ AI Labor UX for Demand & Supply Planners.pdf` | ai_planning |
-| [ ] | `AI-as-Labor Operating Model_ Cross-Domain Ideation.md.pdf` | ai_planning |
-| [ ] | `DAYBREAK 1 PAGE COMPANY STRATEGY MEMO .pdf` | strategy |
+| [ ] | `Strategic Synthesis_ Agentic UX for Demand & Supply Planners.pdf` | ai_planning |
+| [ ] | `AUTONOMY 1 PAGE COMPANY STRATEGY MEMO .pdf` | strategy |
 | [ ] | `Conformal Prediction and Stochastic Programming Integration Guide.pdf` | stochastic_planning |
 | [ ] | `Distributor Prototype using Powel Approach.pdf` | decision_framework |
 | [ ] | `GNNs in SC Analytics and Optimization.pdf` | ai_ml |
@@ -150,7 +147,7 @@ Use these categories when uploading to maintain consistent organization:
 | `order_execution` | Order management, exception handling, fulfillment |
 | `scor_framework` | SCOR Digital Standard, process reference |
 | `decision_framework` | Powell SDAM, policy classes, VFA/CFA |
-| `ai_planning` | AI-as-Labor, autonomous planning, agent architecture |
+| `ai_planning` | Agentic operating model, autonomous planning, agent architecture |
 | `ai_ml` | GNN, TRM, reinforcement learning |
 | `stochastic_planning` | Probabilistic planning, Monte Carlo, distributions |
 | `analyst_reports` | Gartner, IDC, Forrester, McKinsey, BCG |

@@ -306,6 +306,9 @@ from .decision_governance import (
     DecisionGovernancePolicy, GuardrailDirective,
 )
 
+# 24e. Escalation Arbiter — Vertical Escalation Audit Log
+from .escalation_log import PowellEscalationLog
+
 # 25. Collaboration Scenarios (Agentic Authorization Protocol demo data)
 from .collaboration_scenario import CollaborationScenario
 
@@ -580,6 +583,8 @@ __all__ = [
     # Decision Governance — AIIO Impact-Based Gating & Executive Directives
     'DecisionGovernancePolicy',
     'GuardrailDirective',
+    # Escalation Arbiter — Vertical Escalation Audit Log
+    'PowellEscalationLog',
     # Executive Briefing — LLM-Synthesized Strategy Briefings
     'ExecutiveBriefing',
     'BriefingFollowup',

@@ -529,22 +529,18 @@ Human override resolutions feed back into agent training via replay buffer (`is_
 
 ---
 
-## 10. Edge Agents & LLM Integration
+## 10. Claude Skills & LLM Integration
 
-### PicoClaw
+### Claude Skills (TRM Exception Handler)
 
-Ultra-lightweight Go binary (<10MB RAM) for edge CDC monitoring:
-- Heartbeat monitoring, alert routing via Telegram/Slack
-- Structured market data capture (weather, economic indicators, commodity prices)
-- Deployed in read-only containers only (pre-v1.0, no formal security audit)
+Hybrid TRM + Claude Skills architecture (replaces PicoClaw/OpenClaw, removed Feb 2026):
+- TRMs handle ~95% of decisions at <10ms latency
+- Claude Skills handle ~5% of exceptions when conformal prediction indicates low TRM confidence
+- 11 skills across 3 routing tiers: Deterministic ($0), Haiku (~$0.0018), Sonnet (~$0.0054)
+- RAG Decision Memory provides few-shot context from past decisions (pgvector 768-dim embeddings)
+- See [CLAUDE_SKILLS_STRATEGY.md](CLAUDE_SKILLS_STRATEGY.md) for migration rationale
 
-### OpenClaw
-
-Feature-rich agent platform for chat-based planning:
-- WhatsApp/Slack/Teams integration
-- Human escalation workflows
-- Channel context capture → ForecastAdjustmentTRM
-- Minimum version: v2026.2.15 (CVE-2026-25253 RCE patched)
+**Key files**: `backend/app/services/skills/` — `base_skill.py`, `claude_client.py`, `skill_orchestrator.py`, `*/SKILL.md` (11 heuristic rule files)
 
 ### Self-Hosted LLM
 
@@ -554,7 +550,7 @@ Feature-rich agent platform for chat-based planning:
 | Embeddings | Ollama | nomic-embed-text (~0.8GB VRAM) |
 | Hardware | NVIDIA RTX 4060 | 8GB VRAM total |
 
-Both expose OpenAI-compatible APIs. `backend/app/services/autonomy_client.py` checks `LLM_API_BASE` env var first (local), falls back to `OPENAI_API_KEY` (remote).
+Both expose OpenAI-compatible APIs. `backend/app/services/autonomy_client.py` checks `LLM_API_BASE` env var first (local), falls back to `OPENAI_API_KEY` (remote). Claude API (`CLAUDE_API_KEY`) used for Skills when available.
 
 ### Signal Ingestion Pipeline
 
@@ -564,7 +560,7 @@ Confidence-gated pipeline: Sanitize → Rate Limit → Dedup → Score → Gate 
 
 Sources: Email, Slack, voice transcripts, market data feeds → signals consumed by ForecastAdjustmentTRM.
 
-**Models**: `backend/app/models/edge_agents.py` — 13 SQLAlchemy models covering PicoClaw instances/heartbeats/alerts, OpenClaw config/channels/skills/sessions, ingested signals, correlations, source reliability.
+**Models**: `backend/app/models/edge_agents.py` — SQLAlchemy models covering ingested signals, correlations, and source reliability.
 
 ---
 

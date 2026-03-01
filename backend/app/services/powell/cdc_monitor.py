@@ -39,6 +39,9 @@ class ReplanAction(Enum):
     ALLOCATION_ONLY = "allocation"   # Rerun tGNN allocations only
     PARAM_ADJUSTMENT = "param_adj"   # Light parameter tweak (±10%)
     NONE = "none"                    # No action (within tolerance)
+    # Vertical escalation actions (Escalation Arbiter, see docs/ESCALATION_ARCHITECTURE.md)
+    VERTICAL_OPERATIONAL = "vertical_operational"  # Off-cadence tGNN refresh (persistent drift)
+    VERTICAL_STRATEGIC = "vertical_strategic"      # S&OP policy review (network-wide shift)
 
 
 @dataclass

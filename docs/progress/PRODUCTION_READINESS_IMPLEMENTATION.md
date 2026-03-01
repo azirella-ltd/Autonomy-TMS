@@ -82,7 +82,7 @@ StochasticAnalyticsService.analyze() (P10/P50/P90 — already real)
 ## Item 2: Recommendations — Wire Accept/Execute to Real Order Creation
 
 **Priority**: High
-**Impact**: Worklist "Accept" button does nothing — core AI-as-Labor UX is broken
+**Impact**: Worklist "Accept" button does nothing — core agentic operating model UX is broken
 
 ### Problem
 

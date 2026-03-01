@@ -1,6 +1,6 @@
 # Powell Framework Dashboard Demo
 
-**Autonomy Platform - AI-as-Labor Operating Model**
+**Autonomy Platform - Agentic Operating Model**
 
 *Demo Duration: 5-7 minutes*
 
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-This demo showcases Autonomy's **Powell Framework Dashboards** - role-based views aligned to the AI-as-Labor operating model. The system supports three persona-based landing pages:
+This demo showcases Autonomy's **Powell Framework Dashboards** - role-based views aligned to the agentic operating model. The system supports three persona-based landing pages:
 
 | Role | Landing Page | Focus |
 |------|--------------|-------|
@@ -17,7 +17,7 @@ This demo showcases Autonomy's **Powell Framework Dashboards** - role-based view
 | **MPS_MANAGER** | Agent Decisions | Operational execution monitoring |
 
 **Key Value Propositions:**
-1. AI agents own decisions by default (AI-as-Labor)
+1. AI agents own decisions by default (agentic operating model)
 2. Humans override with reasoning captured (governance)
 3. Agent Performance Score measures AI vs baseline
 4. Human Override Rate measures automation adoption
@@ -173,7 +173,7 @@ python scripts/demo_powell_dashboards.py --seed
 
 > "To summarize the Powell Framework approach:"
 
-> "ONE - AI-as-Labor. Agents own decisions by default. Humans override, not approve."
+> "ONE - Agentic Operating Model. Agents own decisions by default. Humans override, not approve."
 
 > "TWO - Transparency. Ask Why shows agent reasoning with evidence."
 

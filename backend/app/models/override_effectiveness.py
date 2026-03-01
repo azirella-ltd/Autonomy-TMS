@@ -15,7 +15,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.sql import func
 
-from app.db.base_class import Base
+from app.models.base import Base
 
 
 class OverrideEffectivenessPosterior(Base):

@@ -259,7 +259,7 @@ SiteAgent reloads model
 - Cooldown elapsed (minimum time between retraining runs)
 - Six condition monitors: ATP shortfall, inventory deviation, capacity utilization, orders past due, forecast deviation, quality events
 
-## AI-as-Labor Operating Model
+## Agentic Operating Model
 
 ### Core Metrics
 | Metric | Range | Description |

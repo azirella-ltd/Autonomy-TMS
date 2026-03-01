@@ -32,8 +32,7 @@ Autonomy's AI agents replace or assist human planners in supply chain decision-m
 | **RL (PPO)** | 2M | ~5ms | 75-90% | Policy learning | Low (black box) |
 | **Naive** | 0 | <1ms | Baseline (0%) | Benchmark | High (simple rule) |
 | **Optimizer** | N/A | ~500ms | 98-100% | Offline planning | High (mathematical) |
-| **PicoClaw** | 0 (deterministic) / Remote LLM (human query) | <100ms heartbeat / ~1-3s human query | N/A (gateway) | Edge CDC monitoring | Medium (workspace logs) |
-| **OpenClaw** | Remote LLM | ~1-3s | Depends on LLM | Chat interface, human escalation | High (natural language) |
+| **Claude Skills** | Claude Haiku/Sonnet (exception only) | ~200-500ms | 85-95% | TRM exception handler (~5% of decisions) | High (natural language) |
 
 ### Context-Aware Explainability
 
@@ -1525,101 +1524,63 @@ python backend/scripts/training/train_rl.py --evaluate --checkpoint best/best_mo
 
 ---
 
-## External Agent Runtimes (PicoClaw & OpenClaw)
+## Claude Skills — TRM Exception Handler
 
-**Last Updated**: 2026-02-25
+**Last Updated**: 2026-03-01
 
-> **Usage Guide**: For deployment and configuration instructions, see [docs/PICOCLAW_OPENCLAW_GUIDE.md](docs/PICOCLAW_OPENCLAW_GUIDE.md).
+> **Replaces**: PicoClaw and OpenClaw external agent runtimes (removed Feb 2026). See [docs/CLAUDE_SKILLS_STRATEGY.md](docs/CLAUDE_SKILLS_STRATEGY.md) for migration rationale.
 
-In addition to the built-in agent types above, Autonomy supports **external agent runtimes** that wrap the platform's REST APIs as thin orchestration layers. These do not replace the core computation (TRM, GNN, MRP engines) — they provide alternative interfaces for edge monitoring, chat-based planning, and inter-agent communication.
+The platform uses a **hybrid TRM + Claude Skills** architecture. TRMs handle ~95% of decisions at <10ms latency. Claude Skills serve as the exception handler for the ~5% of novel situations where conformal prediction indicates low TRM confidence.
 
-### PicoClaw — Edge CDC Gateway
-
-**GitHub**: https://github.com/sipeed/picoclaw | **Resource**: <10MB RAM, $10 hardware
-
-PicoClaw is an ultra-lightweight Go binary that acts as a deterministic CDC gateway at enterprise scale. Each supply chain site gets a PicoClaw instance that calls the Autonomy API and routes alerts — **no LLM for routine monitoring**.
-
-**Comparison to Built-in Agents**:
-
-| Aspect | Built-in SiteAgent | PicoClaw Instance |
-|---|---|---|
-| **Runtime** | Python + PyTorch | Go binary (<10MB) |
-| **Computation** | Deterministic engines + TRM inference locally | Calls Autonomy API for all computation |
-| **CDC Monitoring** | In-process, event-driven | Deterministic heartbeat (shell script, 30-min cron) |
-| **LLM Usage** | None (engines are deterministic) | Human queries only (~5-20/site/day) |
-| **Alerting** | Logs + WebSocket | Gateway to Telegram/Discord/Slack |
-| **Hardware** | Server with GPU | $10 ARM board or Docker container |
-| **Best For** | Production execution decisions | Lightweight monitoring + alert routing |
-
-**Dual-Mode Operation**: At 50+ sites, heartbeats execute as deterministic shell scripts (`HEARTBEAT.sh`). Below 50 sites (pilot), LLM-interpreted `HEARTBEAT.md` provides richer analysis. Mode auto-selects based on site count.
-
-**Market Data Capture**: PicoClaw instances also capture structured signals from weather APIs, economic indicators, commodity prices, and news feeds via deterministic scripts (`MARKET_SIGNAL.sh`). These feed into the ForecastAdjustmentTRM evaluation pipeline via the Signal Ingestion API. No LLM needed — pure API fetch → threshold check → signal submission.
-
-**Security Posture**: PicoClaw is pre-v1.0 with no formal security audit, no SECURITY.md, and a 95% AI-generated codebase. The Autonomy deployment model limits risk by using PicoClaw only for read-only API calls in deterministic mode (no LLM in the decision path, no execution authority). Deploy in read-only Docker containers with `--no-new-privileges --cap-drop ALL` and network restricted to the Autonomy API endpoint only. See [PICOCLAW_OPENCLAW_IMPLEMENTATION.md — Security](PICOCLAW_OPENCLAW_IMPLEMENTATION.md#security--risk-mitigation).
-
-### OpenClaw — Human Interface Layer
-
-**GitHub**: https://github.com/openclaw/openclaw | **Resource**: ~200MB RAM, any OS
-
-OpenClaw provides a chat-based interface to the planning cascade via WhatsApp, Slack, Teams, Discord, or Signal. It maps to the AI-as-Labor UX Primitives (Worklist, Ask Why, Chat, Task Log, Agent Config, Dashboards).
-
-**Comparison to Built-in Agents**:
-
-| Aspect | Built-in LLM Agent | OpenClaw Agent |
-|---|---|---|
-| **Interface** | React frontend only | WhatsApp/Slack/Teams/Discord/Signal |
-| **Override capture** | API endpoint | Natural language via chat ("Override because...") |
-| **Escalation** | WebSocket to frontend | Chat message with ranked options + Balanced Scorecard |
-| **Audit trail** | `powell_decision` table | `sessions_history` + decision table |
-| **Best For** | Automated planning workflows | Human-in-the-loop chat interaction |
-
-**AgentSkills**: Modular capability packages wrapping Autonomy API endpoints — `supply-plan-query`, `atp-check`, `ask-why`, `override-decision`, `escalate-authorization`, `kpi-dashboard`, `signal-capture`, `voice-signal`, `email-signal`. **IMPORTANT**: All skills must be authored in-house — never install from public ClawHub marketplace (see Security section below).
-
-**Channel Context Capture**: OpenClaw serves as a **structured signal ingestion gateway** for the ForecastAdjustmentTRM. Signals from email, Slack, Teams, WhatsApp, Telegram, and voice are captured by the `signal-capture` skill, classified by the LLM, and submitted to the Signal Ingestion API (`POST /api/v1/signals/ingest`). PicoClaw handles structured data feeds (weather, economic indicators, commodity prices) via deterministic scripts. See [PICOCLAW_OPENCLAW_IMPLEMENTATION.md Phase 5](PICOCLAW_OPENCLAW_IMPLEMENTATION.md#phase-5-channel-context-capture-signal-ingestion-from-external-sources).
-
-**Authorization Protocol Role**: At enterprise scale (50+ sites), OpenClaw handles **human escalation only** — formatting authorization requests that agents could not resolve autonomously. Agent-to-agent authorization uses the existing `ConditionMonitorService` (pure Python, DB-backed, <500ms, no LLM). At pilot scale (<50 sites), OpenClaw's `sessions_send` can handle agent-to-agent negotiation directly.
-
-**Security Posture**: OpenClaw has had 7+ CVEs including a critical RCE (CVE-2026-25253, CVSS 8.8). The ClawHub marketplace suffered a supply chain attack with 1,184 malicious skills discovered. **Minimum required version: v2026.2.15**. Deploy in read-only containers with loopback-only gateway binding behind an authenticated reverse proxy. Store all credentials in environment variables or secrets manager, never in config files. See [PICOCLAW_OPENCLAW_IMPLEMENTATION.md — Security](PICOCLAW_OPENCLAW_IMPLEMENTATION.md#security--risk-mitigation) for full risk matrix and deployment checklist.
-
-### Hybrid Architecture (Enterprise-Scale)
-
-The recommended architecture uses the tiered intelligence model:
+### Architecture (LeCun JEPA Mapping)
 
 ```
-TIER 3: HUMAN INTERFACE — OpenClaw (Chat: WhatsApp/Slack/Teams)
-  ├─ Planner chat sessions (supply queries, ask-why, overrides)
-  ├─ Human escalation (agent-unresolvable authorization requests)
-  └─ KPI digests and dashboard summaries
-  LLM calls: ~2K-7K/day
-       │
-       │ REST API
-       ▼
-TIER 2: LEARNED — Autonomy Backend (FastAPI + Powell)
-  ├─ Planning Cascade (S&OP → MPS → SC → AC)
-  ├─ TRM/GNN Models (PyTorch inference, <10ms)
-  ├─ Agent-to-Agent Authorization (ConditionMonitorService, <500ms, NO LLM)
-  ├─ Decision Integration (audit + RLHF)
-  └─ Self-Hosted LLM (vLLM + Qwen 3) — serves Tier 3 only
-  TRM/GNN inferences: ~10K-40K/day
-       │
-       │ REST API
-       ▼
-TIER 1: DETERMINISTIC — Autonomy Engines
-  ├─ AATP Engine, MRP, Safety Stock Calculator
-  └─ CDC Monitor (arithmetic threshold comparison)
-  Operations: ~250K-700K/day
-       │
-       │ REST API (heartbeat)
-       ▼
-EDGE: PicoClaw Swarm (deterministic gateway, NO routine LLM)
-  ├─ 223 instances (10 LDC + 3 RDC + 10 MFG + 100 SUP + 100 CUST)
-  ├─ Deterministic heartbeat: GET CDC status → if/else → gateway alert
-  └─ LLM only on human question via chat (~5-20 calls/site/day)
+GraphSAGE / tGNN = World Model (network-wide state representation)
+TRMs = Actor (fast, learned policy execution, ~95% of decisions)
+Claude Skills = Configurator (exception handling, ~5% of decisions)
+Bayesian / Causal AI = Critic (override effectiveness tracking)
+Conformal Prediction = Uncertainty Module (routing trigger)
 ```
+
+### Hybrid Execution Flow
+
+```
+Deterministic Engine (always runs first)
+    ↓
+TRM Exception Head (fast, <10ms, learned adjustments)
+    ↓
+Conformal Prediction Router:
+    ├── High confidence (tight intervals) → Accept TRM result ✓
+    └── Low confidence (wide intervals) → Escalate to Claude Skills
+        ↓
+    Claude Skills Exception Handler
+        ├── RAG Decision Memory (find similar past decisions)
+        ├── Claude API (Haiku for calculation, Sonnet for judgment)
+        └── Proposal validated against engine constraints
+    ↓
+Skills decisions recorded for TRM meta-learning (shift 95/5 boundary)
+```
+
+### 11 Skills by Routing Tier
+
+| Tier | Skills | Cost/Call | Notes |
+|------|--------|-----------|-------|
+| Deterministic | `atp_executor`, `order_tracking` | $0 | No LLM needed |
+| Haiku | `po_creation`, `inventory_rebalancing`, `inventory_buffer`, `to_execution` | ~$0.0018 | Calculation-heavy |
+| Sonnet | `mo_execution`, `quality_disposition`, `maintenance_scheduling`, `subcontracting`, `forecast_adjustment` | ~$0.0054 | Requires judgment |
+
+### Key Files
+
+- `backend/app/services/skills/base_skill.py` — `SkillDefinition`, `SkillResult`, registry
+- `backend/app/services/skills/claude_client.py` — Claude API client with vLLM/Qwen fallback
+- `backend/app/services/skills/skill_orchestrator.py` — Exception handler and meta-learner
+- `backend/app/services/skills/*/SKILL.md` — 11 heuristic rule files (one per TRM type)
+- `backend/app/models/decision_embeddings.py` — pgvector 768-dim embeddings for RAG decision memory
+- `backend/app/services/decision_memory_service.py` — Embed/retrieve past decisions for few-shot context
 
 ### Self-Hosted LLM Provider
 
-Both PicoClaw and OpenClaw require an LLM backend. For data sovereignty (keeping business data on-premise), self-host **Qwen 3 8B** via **vLLM**:
+For data sovereignty (air-gapped customers), self-host **Qwen 3 8B** via **vLLM** as a fallback when Claude API is unavailable:
 
 - **Why Qwen 3**: 96.5% tool calling accuracy (vs 81.5% DeepSeek V3), native structured JSON, hybrid reasoning+tool-calls in one pass
 - **Why vLLM**: OpenAI-compatible API, constrained JSON generation via Pydantic schemas, PagedAttention for concurrent requests
@@ -1627,8 +1588,6 @@ Both PicoClaw and OpenClaw require an LLM backend. For data sovereignty (keeping
 - **Deployment**: `docker-compose.llm.yml` overlay with `vllm/vllm-openai:latest` image
 
 See [INTEGRATION_GUIDE.md](INTEGRATION_GUIDE.md#self-hosted-llm-configuration) for full Docker Compose configuration and sizing guide.
-
-See [PICOCLAW_OPENCLAW_IMPLEMENTATION.md](PICOCLAW_OPENCLAW_IMPLEMENTATION.md) for the phased implementation roadmap.
 
 ---
 
