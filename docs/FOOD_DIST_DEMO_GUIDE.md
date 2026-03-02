@@ -2,7 +2,7 @@
 
 **"Late February 2026 — A Week in the Life of FOODDIST_DC"**
 
-This guide walks through a comprehensive demo of the Autonomy platform using the Food Distribution network. The demo showcases all four Powell Framework levels — from executive strategy briefings down to individual TRM execution decisions — connected by six realistic supply chain storylines.
+This guide walks through a comprehensive demo of the Autonomy platform using the Food Distribution network. The demo showcases all four Adaptive Decision Hierarchy (ADH) levels — from executive strategy briefings down to individual TRM execution decisions — connected by six realistic supply chain storylines.
 
 ---
 
@@ -28,16 +28,16 @@ The seed script is **idempotent** — re-run it anytime to reset the action laye
 
 ## User Accounts
 
-Each account maps to a Powell Framework level and lands on the appropriate dashboard:
+Each account maps to an ADH level and lands on the appropriate dashboard:
 
-| Email | Role | Powell Level | Landing Page |
+| Email | Role | ADH Level | Landing Page |
 |-------|------|-------------|-------------|
 | `admin@distdemo.com` | Tenant Admin / Demo All | All levels | Executive Dashboard |
 | `exec@distdemo.com` | Executive (CEO) | Strategic | Strategy Briefing |
-| `scvp@distdemo.com` | VP Supply Chain | Strategic / CFA | Executive Dashboard |
-| `sopdir@distdemo.com` | S&OP Director | Tactical / S&OP | S&OP Worklist |
-| `mpsmanager@distdemo.com` | MPS Manager | Operational / TRM | Agent Decisions |
-| `atp@distdemo.com` | ATP Analyst | Execution / TRM | ATP Worklist |
+| `scvp@distdemo.com` | VP Supply Chain | Strategic | Executive Dashboard |
+| `sopdir@distdemo.com` | S&OP Director | Tactical | S&OP Worklist |
+| `mpsmanager@distdemo.com` | MPS Manager | Operational | Agent Decisions |
+| `atp@distdemo.com` | ATP Analyst | Execution | ATP Worklist |
 
 **Recommended for demos**: Use `admin@distdemo.com` — it has access to every page, so you can walk through all levels without logging out.
 
@@ -61,11 +61,15 @@ Food Dist operates a hub-and-spoke distribution network:
 
 **To visualize the network**: Navigate to **Administration > Supply Chain Configs** (`/admin/tenant/supply-chain-configs`), select "Food Dist Distribution Network", and click the **Network** tab to see the interactive D3-Sankey diagram showing all suppliers → DC → customer flows.
 
+> **Screenshot 1 — Network Topology**
+> *Navigation: Administration > Supply Chain Configs > "Food Dist Distribution Network" > Network tab*
+> Capture the Sankey diagram showing 10 suppliers → FOODDIST_DC → 10 customers with material flows.
+
 ---
 
 ## The Six Storylines
 
-The demo week (Mon Feb 24 – Fri Feb 28, 2026) features six interconnected storylines. Each one flows through all four Powell levels:
+The demo week (Mon Feb 24 – Fri Feb 28, 2026) features six interconnected storylines. Each one flows through all four ADH levels:
 
 ### Story 1: March Madness Demand Surge
 
@@ -157,6 +161,10 @@ The storylines are not isolated — they create cascading effects:
 - "Agent score of 72 means the AI is making better decisions than baseline in most cases"
 - "18% override rate is healthy — it means planners are engaged and the system is learning from their corrections"
 
+> **Screenshot 2 — Executive Dashboard**
+> *Navigation: Insights & Analytics > Executive Dashboard (`/executive-dashboard`)*
+> Capture the KPI cards (service level, fill rate, agent score, override rate, open exceptions) and trend indicators.
+
 **Next step**: Click the Strategy Briefing link or navigate to it directly.
 
 ---
@@ -185,6 +193,10 @@ The storylines are not isolated — they create cascading effects:
 1. Click on the first follow-up: *"What's our exposure if Rich Products delays extend to 5 days?"*
 2. Show the detailed answer with per-SKU analysis and contingency recommendation
 3. Click the March Madness revenue question to show ROI analysis ($145K opportunity, 17.7x ROI)
+
+> **Screenshot 3 — Strategy Briefing**
+> *Navigation: Insights & Analytics > Strategy Briefing (`/strategy-briefing`)*
+> Capture the briefing narrative with the 5 scored recommendations visible. A second screenshot showing the expanded Q&A thread is also useful.
 
 ---
 
@@ -216,6 +228,10 @@ The storylines are not isolated — they create cascading effects:
 4. **Highlight the impact column** — "Every item shows the dollar impact — positive for opportunities, negative for risks. This helps the director prioritize."
 
 **Cross-reference**: After showing the S&OP Worklist, navigate to **Planning > S&OP** (`/planning/sop`) to show the S&OP Policy Envelope where these strategic parameters feed into the planning cascade.
+
+> **Screenshot 4 — S&OP Worklist**
+> *Navigation: Insights & Analytics > S&OP Worklist (`/sop-worklist`)*
+> Capture the 6-item worklist showing the mix of accepted (green), pending (yellow), and auto-executed (blue) status badges with impact values.
 
 ---
 
@@ -249,6 +265,10 @@ The storylines are not isolated — they create cascading effects:
 
 **Cross-reference**: Show the **Planning > Forecasting** page (`/planning/forecasting`) to display the demand forecast charts that underpin the forecast uplift decisions.
 
+> **Screenshot 5 — MPS Worklist (Agent Decisions)**
+> *Navigation: Insights & Analytics > MPS Worklist (`/insights/actions`)*
+> Capture the 15-item operational worklist. Ideally show one expanded decision card with reasoning visible, plus the rejected Metro Grocery decision with override reason.
+
 ---
 
 ### Level 4: Condition Alerts
@@ -278,6 +298,10 @@ The storylines are not isolated — they create cascading effects:
 
 **Cross-reference**: Navigate to **Insights & Analytics > Risk Analysis** (`/analytics/risk`) to show the risk dashboard view with aggregated risk metrics.
 
+> **Screenshot 6 — Condition Alerts**
+> *Navigation: Insights & Analytics > Exception Detection (`/planning/execution/order-tracking-worklist`)*
+> Capture the 8 alerts with severity color-coding (red/amber/blue) and duration bars. Show at least one resolved alert.
+
 ---
 
 ### Level 4: Scenario Evaluations
@@ -300,11 +324,15 @@ The storylines are not isolated — they create cascading effects:
 2. Point out the trade-off: "Split source achieves 94.8% service level at $2.1K. Full switch gets 96.1% but costs $5.4K — diminishing returns."
 3. "The agent recommended split source with 82% confidence. The human can see exactly why and decide."
 
+> **Screenshot 7 — Scenario Evaluation**
+> *Navigation: Insights & Analytics > Scenario Comparison (`/sc-analytics`)*
+> Capture the Rich Products contingency showing 3 ranked scenarios with balanced scorecard scores, cost vs service trade-off, and the agent's recommendation.
+
 ---
 
-### Level 5: Powell Execution Dashboards
+### Level 5: Execution Agent Worklists
 
-> **Overview**: Before diving into individual worklists, show the **Decision Cascade** dashboard (**AI & Agents > Decision Cascade**, `/admin/powell`) which provides a unified view of the Powell SDAM framework — state, policy, decisions, and outcomes across all TRM agents.
+> **Overview**: Before diving into individual worklists, show the **Decision Cascade** dashboard (**AI & Agents > Decision Cascade**, `/admin/powell`) which provides a unified view of the Adaptive Decision Hierarchy — state, policy, decisions, and outcomes across all TRM agents.
 
 #### ATP Worklist
 **Navigation**: Planning Cascade > TRM Worklists > **ATP Worklist** (`/planning/execution/atp-worklist`)
@@ -325,6 +353,10 @@ The storylines are not isolated — they create cascading effects:
 
 **Cross-reference**: Navigate to **Execution > Order Promising (ATP/CTP)** (`/execution/atp-ctp`) to show the AATP allocation buckets by priority tier.
 
+> **Screenshot 8 — ATP Worklist**
+> *Navigation: Planning Cascade > TRM Worklists > ATP Worklist (`/planning/execution/atp-worklist`)*
+> Capture the priority-colored rows showing P1-P5 fulfillment with fill percentage bars. Show the cream cheese partial fill.
+
 #### PO Worklist
 **Navigation**: Planning Cascade > TRM Worklists > **PO Worklist** (`/planning/execution/po-worklist`)
 
@@ -343,6 +375,10 @@ The storylines are not isolated — they create cascading effects:
 
 **Cross-reference**: Show **Execution > Purchase Orders** (`/planning/purchase-orders`) for the full PO management view.
 
+> **Screenshot 9 — PO Worklist**
+> *Navigation: Planning Cascade > TRM Worklists > PO Worklist (`/planning/execution/po-worklist`)*
+> Capture the 6 PO decisions showing emergency (red) vs standard (blue) urgency badges with supplier, cost, and lead time.
+
 #### Rebalancing Worklist
 **Navigation**: Planning Cascade > TRM Worklists > **Rebalancing Worklist** (`/planning/execution/rebalancing-worklist`)
 
@@ -359,6 +395,10 @@ The storylines are not isolated — they create cascading effects:
 
 **Cross-reference**: Show **Execution > Inventory Rebalancing** (`/execution/inventory-rebalancing`) for the network-wide rebalancing view.
 
+> **Screenshot 10 — Rebalancing Worklist**
+> *Navigation: Planning Cascade > TRM Worklists > Rebalancing Worklist (`/planning/execution/rebalancing-worklist`)*
+> Capture the 4 transfer recommendations with from/to arrows, days-of-supply before/after, and reason tags.
+
 #### Order Exceptions
 **Navigation**: Planning Cascade > TRM Worklists > **Order Tracking Worklist** (`/planning/execution/order-tracking-worklist`)
 
@@ -370,6 +410,10 @@ The storylines are not isolated — they create cascading effects:
 - Impact assessment descriptions and estimated cost
 - Recommended action for each exception
 - Linked orders with status tracking
+
+> **Screenshot 11 — Order Exceptions**
+> *Navigation: Planning Cascade > TRM Worklists > Order Tracking Worklist (`/planning/execution/order-tracking-worklist`)*
+> Capture the 5 exceptions with type badges (DELAYED, AT_RISK, PRICE_VARIANCE, EARLY_ARRIVAL, QUALITY_HOLD) and recommended actions.
 
 ---
 
@@ -404,6 +448,10 @@ The storylines are not isolated — they create cascading effects:
 - "Supply Plan has the lowest score (65) and highest override rate (24%) — this is where human expertise still adds the most value"
 - "As the agent learns from overrides, we expect supply plan scores to climb and override rates to fall"
 
+> **Screenshot 12 — Agent Performance**
+> *Navigation: Insights & Analytics > Agent Performance (`/agent-performance`)*
+> Capture the category breakdown table (ATP, Demand, Inventory, Supply) with agent scores, override rates, and automation percentages.
+
 ---
 
 ### Override Effectiveness
@@ -430,6 +478,10 @@ The storylines are not isolated — they create cascading effects:
 - "The MPS Manager is at 56% — close to a coin flip. The system will gradually reduce the weight of their overrides in agent training"
 - "This is the judgment capture flywheel: good overrides teach the agent, poor overrides are down-weighted"
 
+> **Screenshot 13 — Override Effectiveness (Bayesian Posteriors)**
+> *Navigation: AI & Agents > RLHF Feedback (`/admin/rlhf`) > Override Effectiveness tab*
+> Capture the 3-user table with Beta distribution curves, effectiveness percentages, and training weight bars.
+
 ---
 
 ## Supporting Visualizations
@@ -451,7 +503,7 @@ These pages provide additional context you can navigate to during the demo to il
 | **KPI Monitoring** | Insights & Analytics > KPI Monitoring | `/planning/kpi-monitoring` | Wrap-up — show overall KPI trends |
 | **Hierarchical Metrics** | Insights & Analytics > Hierarchical Metrics | `/planning/metrics` | Wrap-up — show metrics rolled up by category |
 | **Risk Analysis** | Insights & Analytics > Risk Analysis | `/analytics/risk` | Story 2 & 6 — show risk exposure |
-| **Decision Cascade** | AI & Agents > Decision Cascade | `/admin/powell` | Technical deep-dive — show Powell SDAM framework |
+| **Decision Cascade** | AI & Agents > Decision Cascade | `/admin/powell` | Technical deep-dive — show ADH framework |
 | **Execution Agents (TRM)** | AI & Agents > Execution Agents | `/admin/trm` | Technical deep-dive — show TRM training status |
 
 ---
@@ -549,3 +601,44 @@ The script is idempotent — it deletes action layer data for the demo date rang
 | `backend/scripts/seed_food_dist_execution_data.py` | Base Powell decisions, agent configs |
 | `backend/scripts/seed_food_dist_allocation_demo.py` | Allocation demo scenarios |
 | `docs/FOOD_DIST_DEMO_GUIDE.md` | This guide |
+
+---
+
+## Screenshot Capture Guide
+
+To complete this document for external distribution, capture the following 13 screenshots. Login as `admin@distdemo.com` (password: `Autonomy@2026`) at `http://localhost:8088`.
+
+**Prerequisites**: Run all three seed scripts first:
+```bash
+docker compose exec backend python -m scripts.seed_food_dist_demo
+docker compose exec backend python -m scripts.seed_food_dist_planning_data
+docker compose exec backend python -m scripts.seed_food_dist_deep_demo
+```
+
+| # | Screen | Navigation | Key Elements to Capture |
+|---|--------|-----------|------------------------|
+| 1 | Network Topology | Admin > SC Configs > "Food Dist" > Network tab | Sankey diagram: 10 suppliers → DC → 10 customers |
+| 2 | Executive Dashboard | Insights > Executive Dashboard | KPI cards: service 94.2%, agent score 72, override 18% |
+| 3 | Strategy Briefing | Insights > Strategy Briefing | Weekly narrative + 5 scored recommendations + Q&A |
+| 4 | S&OP Worklist | Insights > S&OP Worklist | 6 items with accepted/pending/auto-executed badges |
+| 5 | MPS Worklist (Agent Decisions) | Insights > MPS Worklist | 15 decisions, show expanded card + Metro Grocery override |
+| 6 | Condition Alerts | Insights > Exception Detection | 8 alerts with severity colors and duration bars |
+| 7 | Scenario Evaluation | Insights > Scenario Comparison | Rich Products 3-scenario comparison with scores |
+| 8 | ATP Worklist | Cascade > ATP Worklist | Priority P1-P5 rows with fill percentage bars |
+| 9 | PO Worklist | Cascade > PO Worklist | Emergency vs standard POs with urgency badges |
+| 10 | Rebalancing Worklist | Cascade > Rebalancing Worklist | 4 transfers with from/to arrows and DOS impact |
+| 11 | Order Exceptions | Cascade > Order Tracking Worklist | 5 exception types with badges and actions |
+| 12 | Agent Performance | Insights > Agent Performance | Category scores, override rates, automation % |
+| 13 | Override Effectiveness | AI & Agents > RLHF Feedback | Bayesian posteriors for 3 users |
+
+**Optional additional screenshots** (for appendix or extended version):
+
+| # | Screen | Navigation | When Useful |
+|---|--------|-----------|------------|
+| 14 | Demand Planning | Planning > Demand Planning | Show P10/P50/P90 forecast intervals |
+| 15 | Inventory Optimization | Planning > Inventory Optimization | Show safety stock policies |
+| 16 | Decision Cascade (ADH) | AI & Agents > Decision Cascade | Show 3-tier architecture diagram |
+| 17 | TRM Training Dashboard | AI & Agents > Execution Agents | Show agent training interface |
+| 18 | Risk Analysis | Insights > Risk Analysis | Show risk scoring dashboard |
+| 19 | Collaboration Hub | Planning > Collaboration Hub | Show messaging and comments |
+| 20 | Supply Plan | Planning > Supply Planning | Show generated PO/TO/MO requests |

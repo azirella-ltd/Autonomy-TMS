@@ -1,7 +1,7 @@
-# Autonomy Platform: Functional Capabilities Briefing
+# Autonomy Platform: Functional Capabilities
 
-**Version**: 1.0
-**Date**: March 1, 2026
+**Version**: 1.1
+**Date**: March 2, 2026
 
 ---
 
@@ -10,6 +10,10 @@
 Autonomy is an enterprise supply chain planning and execution platform that combines continuous event-driven planning, three-tier AI decision-making, stochastic uncertainty modeling, and digital twin simulation into a single operating environment.
 
 The platform is built on the AWS Supply Chain data model (100% compliant, 35/35 entities) and uses what we call the **Adaptive Decision Hierarchy (ADH)** — a layered architecture where strategic, operational, and execution decisions are made at appropriate time scales by appropriate models, with intelligent escalation between layers.
+
+> **Screenshot 1 — Executive Dashboard**
+> *Navigation: Insights & Analytics > Executive Dashboard*
+> Shows the role-adaptive landing page with strategic KPIs, performance summary, and AI agent activity overview.
 
 ---
 
@@ -24,6 +28,10 @@ The system replans only affected products and locations when events occur, rathe
 - **Incremental replanning**: Only affected SKU-location combinations are recalculated
 - **Guardrailed autonomy**: Routine decisions auto-execute within configurable bounds (max PO value, max safety stock change, min service level floor); exceptions escalate to planners
 
+> **Screenshot 2 — MPS Worklist (Exception-Driven Planning)**
+> *Navigation: Insights & Analytics > MPS Worklist*
+> Shows the prioritized exception worklist — the "14 items instead of 847" experience. Each item shows what happened, what the system recommends, why, and what happens if you do nothing.
+
 ### 2.2 Demand Planning
 
 - **Forecast management**: View, edit, import/export demand plans with P10/P50/P90 confidence intervals
@@ -33,6 +41,14 @@ The system replans only affected products and locations when events occur, rathe
 - **Version comparison**: Side-by-side comparison of any two forecast versions with delta analysis
 - **Forecast adjustment history**: Full audit trail with reason codes, source attribution, and one-click revert
 
+> **Screenshot 3 — Demand Plan View**
+> *Navigation: Planning > Demand Planning*
+> Shows the demand plan grid with P10/P50/P90 confidence intervals per product-location-period. Filter by product family, location, date range.
+
+> **Screenshot 4 — Consensus Planning**
+> *Navigation: Planning > Consensus Planning*
+> Shows multi-stakeholder forecast cycle with submissions from sales, marketing, finance, operations. Voting mechanism and progress tracking.
+
 ### 2.3 Supply Planning (MPS/MRP)
 
 Three-step AWS SC planning process:
@@ -41,12 +57,20 @@ Three-step AWS SC planning process:
 2. **Inventory target calculation**: Safety stock using 4 policy types (absolute level, days-of-coverage demand-based, days-of-coverage forecast-based, service level), with hierarchical overrides (Product-Site > Product > Site > Config)
 3. **Net requirements calculation**: Time-phased netting, multi-level BOM explosion, sourcing rule processing (buy/transfer/manufacture with priorities), lead time offsetting, supply plan generation (PO/TO/MO)
 
+> **Screenshot 5 — Master Production Schedule**
+> *Navigation: Planning > Master Production Schedule*
+> Shows the MPS plan with time-phased production quantities, frozen horizon, and approval workflow status.
+
 ### 2.4 Inventory Optimization
 
 - **4 standard safety stock policies** plus a fitted distribution policy (`sl_fitted`) that uses Monte Carlo simulation when demand/lead time distributions are non-Normal
 - **Hierarchical overrides**: 6-level InvPolicy, 5-level VendorLeadTime, 3-level SourcingRules
 - **Distribution fitting**: Maximum likelihood estimation across 20 distribution types (Normal, Lognormal, Gamma, Weibull, Beta, Exponential, Triangular, Mixture, etc.) with Kolmogorov-Smirnov testing and AIC/BIC model selection
 - **Conformal prediction**: Distribution-free prediction intervals with formal coverage guarantees — if we promise "90% coverage," actual coverage will be ≥90%
+
+> **Screenshot 6 — Inventory Optimization**
+> *Navigation: Planning > Inventory Optimization*
+> Shows safety stock policy configuration with hierarchical overrides. The 4 policy types and their parameters are visible per product-site combination.
 
 ### 2.5 Capacity Planning
 
@@ -64,11 +88,19 @@ Six order types (PO, TO, MO, Project, Maintenance, Turnaround) with full lifecyc
 - **Unified dashboard**: Single view combining all order types with KPI cards, search/filter, CSV export, vendor scorecard
 - **ATP/CTP promising**: Available-to-Promise and Capable-to-Promise with multi-level BOM explosion and time-phased projections
 
+> **Screenshot 7 — Unified Order Dashboard**
+> *Navigation: Execution > Order Management*
+> Shows all order types (PO/TO/MO) in a single view with 8 KPI summary cards, status filters, timeline visualization, and vendor scorecard.
+
 ---
 
 ## 3. AI Decision Architecture (Adaptive Decision Hierarchy)
 
 The ADH organizes decision-making into three tiers that operate at different time scales, with each tier producing parameters that constrain the tier below it.
+
+> **Screenshot 8 — Decision Cascade Overview**
+> *Navigation: AI & Agents > Decision Cascade*
+> Shows the three-tier architecture: Strategic (S&OP GraphSAGE) → Operational (Execution tGNN) → Execution (11 TRM agents). Includes state → policy → decision → outcome pipeline visualization.
 
 ### 3.1 Strategic Tier: S&OP GraphSAGE
 
@@ -83,7 +115,6 @@ The ADH organizes decision-making into three tiers that operate at different tim
 - **Function**: Generates priority allocations across Product × Location, provides context for execution agents
 - **Inputs**: Strategic embeddings + transactional data (orders, shipments, inventory)
 - **Outputs**: Priority × Product × Location allocations fed to each site as a directive
-- **Architecture**: Temporal GNN (GAT + GRU) consuming strategic structural embeddings
 
 ### 3.3 Execution Tier: 11 Narrow Decision Agents (TRM)
 
@@ -108,6 +139,10 @@ Each site operates 11 specialized Tiny Recursive Models (7M parameters, <10ms in
 - Agents within a site coordinate through a shared signal bus (urgency vectors, pheromone-based coordination)
 - Agents never call across sites — all cross-site information flows through the operational tier directive or cross-authority authorization
 
+> **Screenshot 9 — ATP Worklist (Agent-in-the-Loop)**
+> *Navigation: Planning Cascade > ATP Worklist*
+> Shows agent-generated ATP decisions with the Automate-Inform-Inspect-Override pattern: each decision shows the agent's recommendation, confidence score, reasoning, and Accept/Override buttons with reason capture.
+
 ### 3.4 Exception Handling: Hybrid Neural + LLM Architecture
 
 For the ~5% of decisions where neural agent confidence is low (determined by conformal prediction interval width), the system escalates to an LLM-based exception handler:
@@ -116,6 +151,10 @@ For the ~5% of decisions where neural agent confidence is low (determined by con
 - **Exception handling**: Claude or self-hosted Qwen 3 reasons about novel situations using heuristic rules and past decision memory (RAG)
 - **Constraint validation**: All exception handler proposals are validated against engine constraints (max 30% deviation from baseline)
 - **Meta-learning**: Exception decisions feed back into neural agent training, gradually teaching them to handle previously-novel situations and shifting the 95/5 boundary
+
+> **Screenshot 10 — Claude Skills Monitor**
+> *Navigation: AI & Agents > Claude Skills*
+> Shows exception escalation rates, RAG memory cache hit ratios, LLM call costs, and decision outcomes for the ~5% of decisions handled by the LLM exception path.
 
 ### 3.5 Vertical Escalation (Escalation Arbiter)
 
@@ -145,6 +184,10 @@ The system detects when execution-level anomalies indicate that *strategic polic
 - **Adaptive recalibration**: Automatic drift detection and recalibration when forecast accuracy degrades
 - **Multi-entity support**: Demand, lead time, price, yield, and service level variables
 
+> **Screenshot 11 — Uncertainty Quantification**
+> *Navigation: Insights & Analytics > Uncertainty Quantification*
+> Shows side-by-side stochastic vs. deterministic analysis with Monte Carlo simulation results, cost distribution (P10/P50/P90), and service level probability charts.
+
 ### 4.3 Distribution Fitting and Likelihood Estimation
 
 - **Automatic fitting**: MLE fitting across 20 distribution types per product-site combination
@@ -165,6 +208,10 @@ The platform includes a complete simulation environment that uses identical plan
 - **Strategy comparison**: Compare current ordering approach against optimized alternatives across 500+ simulated weeks
 - **Git-like plan versioning**: Branch/merge workflow for plan changes with full history, diff, and revert
 
+> **Screenshot 12 — Network Topology (Sankey Diagram)**
+> *Navigation: Administration > Supply Chain Configuration > (select a config) > Sankey tab*
+> Shows the DAG-based supply chain network visualization with material flow between sites. Useful for showing how the digital twin mirrors the real network.
+
 ### 5.2 Five-Phase Agent Training Pipeline
 
 Takes AI agents from zero experience to production autonomy in 3-5 weeks:
@@ -175,6 +222,10 @@ Takes AI agents from zero experience to production autonomy in 3-5 weeks:
 4. **Copilot Calibration** (2-4 weeks): Agents run in copilot mode with human overrides captured and weighted by Bayesian effectiveness tracking
 5. **Autonomous Relearning** (ongoing): Continuous improvement from production outcomes via autonomous feedback loop
 
+> **Screenshot 13 — TRM Training Dashboard**
+> *Navigation: AI & Agents > Execution Agents*
+> Shows the TRM training interface with curriculum phase selection, real-time loss charts, model manager, and testing tab with predefined scenarios.
+
 ### 5.3 Interactive Simulation (Beer Game Module)
 
 Multi-echelon supply chain simulation for training, validation, and confidence-building:
@@ -183,6 +234,10 @@ Multi-echelon supply chain simulation for training, validation, and confidence-b
 - **Mixed Human-AI**: Humans compete alongside or against AI agents
 - **Multiple strategies**: Naive, Conservative, Bullwhip, ML-Forecast, Optimizer, Reactive, LLM-powered
 - **Confidence metrics**: Win rate, cost differential, consistency, explainability, acceptance rate
+
+> **Screenshot 14 — Scenario Board (Human vs AI)**
+> *Navigation: Scenarios > (open an active scenario)*
+> Shows the real-time scenario board with inventory levels, order quantities, cost tracking, and bullwhip visualization. Human and AI decisions side by side.
 
 ---
 
@@ -205,6 +260,10 @@ When an AI agent identifies an action that crosses functional boundaries (e.g., 
 - **Activity feed**: Chronological feed of all planning actions with user attribution
 - **Notification system**: Configurable per-user preferences, digest emails, quiet hours, multi-channel delivery
 
+> **Screenshot 15 — Collaboration Hub**
+> *Navigation: Planning > Collaboration Hub*
+> Shows team messaging with threaded conversations, @mentions, inline comments on orders/plans, and activity feed.
+
 ### 6.3 Override Effectiveness Tracking
 
 Human overrides are tracked and scored using Bayesian Beta posteriors:
@@ -225,6 +284,14 @@ Human overrides are tracked and scored using Bayesian Beta posteriors:
 - **Customizable watchlists**: Critical product monitoring with multi-dimensional filters and alert escalation rules
 - **N-tier network visibility**: Multi-echelon visualization with inventory flow, capacity analysis, and per-tier risk assessment
 
+> **Screenshot 16 — N-Tier Network Visibility**
+> *Navigation: Execution > N-Tier Visibility*
+> Shows multi-echelon supply chain view with per-tier inventory flow, capacity utilization bars, risk scores (0-100), and mitigation action table.
+
+> **Screenshot 17 — Risk Analysis**
+> *Navigation: Insights & Analytics > Risk Analysis*
+> Shows risk detection dashboard with stock-out/overstock risk scoring, watchlists, and predictive analytics charts.
+
 ### 7.2 Context-Aware Explainability
 
 Every decision from all 11 execution agents and both network models supports multi-level explanation:
@@ -240,6 +307,10 @@ Every decision from all 11 execution agents and both network models supports mul
 
 LLM-synthesized briefings that summarize system state, decisions, and recommendations for executive review with follow-up Q&A capability.
 
+> **Screenshot 18 — Strategy Briefing**
+> *Navigation: Insights & Analytics > Strategy Briefing*
+> Shows AI-generated executive briefing with key metrics, trend analysis, risk alerts, and follow-up Q&A interface.
+
 ---
 
 ## 8. Integration and Deployment
@@ -252,12 +323,20 @@ LLM-synthesized briefings that summarize system state, decisions, and recommenda
 - **Data ingestion monitoring**: Real-time job tracking, quality metrics, anomaly detection
 - **Bidirectional flow**: Import master data and actuals from SAP; export AI recommendations back
 
+> **Screenshot 19 — SAP Data Management**
+> *Navigation: Administration > SAP Data Management*
+> Shows SAP connection configuration, field mapping interface, ingestion job monitoring, and AI-powered insights.
+
 ### 8.2 Synthetic Data Generation
 
 AI-guided wizard for generating complete synthetic supply chain data for rapid deployment and testing:
 
 - **Three archetypes**: Retailer (61 sites, 200 SKUs), Distributor (34 sites, 720 SKUs), Manufacturer (31 sites, 160 SKUs)
 - **Complete generation**: Tenant, admin user, supply chain config, sites, lanes, products, hierarchies, forecasts, inventory policies, planning configurations, agent configurations
+
+> **Screenshot 20 — Synthetic Data Wizard**
+> *Navigation: Administration > Synthetic Data Wizard*
+> Shows the AI-guided setup wizard with archetype selection, network configuration, and generation progress.
 
 ### 8.3 Deployment Options
 
@@ -268,28 +347,14 @@ AI-guided wizard for generating complete synthetic supply chain data for rapid d
 
 ---
 
-## 9. User Interface
+## 9. The AIIO Decision Framework
 
-### 9.1 Planning Pages (43+ pages)
+The user interface implements **Automate-Inform-Inspect-Override** across all planning and execution workflows:
 
-Master Production Scheduling, Demand Plan View/Edit, Supply Plan Generation, Inventory Optimization, Capacity Planning, S&OP, ATP/Rebalancing/PO/Order Tracking worklists, Lot Sizing, and execution pages.
-
-### 9.2 Administration Pages (25+ pages)
-
-TRM Dashboard, GNN Dashboard, GraphSAGE Dashboard, Hive Dashboard, ADH Dashboard, RL/RLHF Dashboards, Knowledge Base, Signal Ingestion, Edge Security, SAP Data Management, Synthetic Data Wizard, Model Setup, User/Role/Tenant Management, Authorization Protocol Board, Governance, Exception Workflows, Approval Templates.
-
-### 9.3 LLM-First Interaction
-
-Natural language interface for planners to query system state, review agent actions, and interact with recommendations without needing to navigate complex ERP-style screens.
-
-### 9.4 AIIO Decision Framework
-
-The user interface implements **Automate-Inform-Inspect-Override**:
-
-- **Automate**: Routine decisions execute within guardrails. Planners configure maximum bounds.
-- **Inform**: Daily digest of auto-executed actions. No pop-ups — review at your pace.
-- **Inspect**: Structured recommendations with drill-down, data grounding, plain-language explanation, side-by-side scenario comparison.
-- **Override**: When overriding, planners provide context (reason category, explanation, supporting files). This context becomes training data.
+- **Automate**: Routine decisions execute within guardrails. Planners configure maximum bounds (max PO value, max safety stock change, min service level floor, cost increase ceiling).
+- **Inform**: Daily digest of auto-executed actions. No pop-ups — review at your pace. Each action logged with full reasoning.
+- **Inspect**: Structured recommendations with drill-down into reasoning, underlying data, alternative scenarios, and plain-language explanation accessible to non-technical stakeholders.
+- **Override**: When overriding, planners provide context — reason category, free-text explanation, supporting files. This context becomes training data. The system learns not just *that* you disagreed, but *why*.
 
 **Measured progression**: ~45% auto-execute rate in week 1 → ~72% by week 12 → ~85% at steady state.
 
@@ -313,4 +378,35 @@ The user interface implements **Automate-Inform-Inspect-Override**:
 
 ---
 
-*For detailed technical architecture, see [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md). For AI agent specifications, see [TRM_AGENTS_EXPLAINED.md](TRM_AGENTS_EXPLAINED.md). For the decision hierarchy framework, see [POWELL_APPROACH.md](POWELL_APPROACH.md).*
+## Screenshot Capture Guide
+
+To complete this document, capture the following 20 screenshots. Login as `systemadmin@autonomy.ai` (password: `Autonomy@2026`) at `http://localhost:8088`.
+
+| # | Screen | Navigation Path |
+|---|--------|----------------|
+| 1 | Executive Dashboard | Insights & Analytics > Executive Dashboard |
+| 2 | MPS Worklist | Insights & Analytics > MPS Worklist |
+| 3 | Demand Plan View | Planning > Demand Planning |
+| 4 | Consensus Planning | Planning > Consensus Planning |
+| 5 | Master Production Schedule | Planning > Master Production Schedule |
+| 6 | Inventory Optimization | Planning > Inventory Optimization |
+| 7 | Order Management | Execution > Order Management |
+| 8 | Decision Cascade (ADH) | AI & Agents > Decision Cascade |
+| 9 | ATP Worklist | Planning Cascade > ATP Worklist |
+| 10 | Claude Skills Monitor | AI & Agents > Claude Skills |
+| 11 | Uncertainty Quantification | Insights & Analytics > Uncertainty Quantification |
+| 12 | Network Topology | Administration > Supply Chain Configuration > (select config) > Sankey |
+| 13 | TRM Training Dashboard | AI & Agents > Execution Agents |
+| 14 | Scenario Board | Scenarios > (open active scenario) |
+| 15 | Collaboration Hub | Planning > Collaboration Hub |
+| 16 | N-Tier Visibility | Execution > N-Tier Visibility |
+| 17 | Risk Analysis | Insights & Analytics > Risk Analysis |
+| 18 | Strategy Briefing | Insights & Analytics > Strategy Briefing |
+| 19 | SAP Data Management | Administration > SAP Data Management |
+| 20 | Synthetic Data Wizard | Administration > Synthetic Data Wizard |
+
+**Tip**: For the best screenshots, ensure you have a supply chain config loaded with data (run `make db-bootstrap` if needed). The Synthetic Data Wizard can generate a full manufacturer dataset for rich visuals.
+
+---
+
+*For detailed technical architecture, see [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md). For AI agent specifications, see [TRM_AGENTS_EXPLAINED.md](TRM_AGENTS_EXPLAINED.md).*
