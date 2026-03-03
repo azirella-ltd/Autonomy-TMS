@@ -11,6 +11,7 @@ Endpoints:
 
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
 from app.models.user import User
@@ -22,13 +23,14 @@ router = APIRouter()
 
 @router.get("/dashboard")
 async def get_hierarchical_dashboard(
-    site_level: str = Query("company", description="Site hierarchy level: company|region|country|site"),
+    site_level: str = Query("company", description="Site hierarchy level: company|region|site"),
     site_key: Optional[str] = Query(None, description="Specific node key at the site level"),
-    product_level: str = Query("category", description="Product hierarchy level: category|family|group|product"),
+    product_level: str = Query("category", description="Product hierarchy level: category|family|product"),
     product_key: Optional[str] = Query(None, description="Specific node key at the product level"),
-    time_bucket: str = Query("quarter", description="Time granularity: year|quarter|month|week"),
-    time_key: Optional[str] = Query(None, description="Specific time key (e.g., '2025-Q3', '2025-07')"),
+    time_bucket: str = Query("quarter", description="Time granularity: year|quarter|month"),
+    time_key: Optional[str] = Query(None, description="Specific time key (e.g., '2026-Q1', '2026-01')"),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Get Gartner-aligned hierarchical metrics dashboard.
@@ -38,15 +40,15 @@ async def get_hierarchical_dashboard(
     for each hierarchy dimension.
 
     Hierarchy dimensions:
-    - Site: Company > Region > Country > Site
-    - Product: Category > Family > Group > Product
-    - Time: Year > Quarter > Month > Week
+    - Site: Company > Region > Site
+    - Product: Category > Product
+    - Time: Year > Quarter > Month
     """
     customer_id = current_user.tenant_id or 1
-    service = HierarchicalMetricsService()
+    service = HierarchicalMetricsService(db=db)
 
     data = service.get_dashboard_metrics(
-        customer_id=customer_id,
+        tenant_id=customer_id,
         site_level=site_level,
         site_key=site_key,
         product_level=product_level,

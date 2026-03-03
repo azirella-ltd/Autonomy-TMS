@@ -29,9 +29,8 @@ from app.services.authorization_service import AuthorizationService
 router = APIRouter(prefix="/authorization-protocol", tags=["authorization-protocol"])
 
 
-# Singleton service (in-memory for now; pass db_session for DB-backed)
+# Singleton service (in-memory; threads submitted live via POST /threads)
 _service: Optional[AuthorizationService] = None
-_seeded: bool = False
 
 
 def _get_service() -> AuthorizationService:
@@ -40,72 +39,6 @@ def _get_service() -> AuthorizationService:
     if _service is None:
         _service = AuthorizationService()
     return _service
-
-
-def _seed_demo_threads() -> None:
-    """Seed demo threads for visualization when no real threads exist."""
-    global _seeded
-    if _seeded:
-        return
-    _seeded = True
-
-    svc = _get_service()
-    if svc.get_stats()["total"] > 0:
-        return
-
-    # Thread 1: Active — SO/ATP requesting expedite from Logistics
-    svc.submit_request(
-        requesting_agent="so_atp",
-        target_agent="logistics",
-        proposed_action={
-            "action_type": "request_expedite",
-            "description": "Expedite PO-4821 delivery from 5 days to 2 days for priority customer",
-            "po_id": "PO-4821",
-            "original_days": 5,
-            "target_days": 2,
-        },
-        net_benefit=0.04,
-        benefit_threshold=0.02,
-        justification="Priority A customer order at risk of missing SLA. Expedite cost offset by retention value.",
-        priority="HIGH",
-        site_key="plant_chicago",
-    )
-
-    # Thread 2: Auto-resolved — Plant requesting overtime from Finance (high net benefit)
-    svc.submit_request(
-        requesting_agent="plant",
-        target_agent="finance",
-        proposed_action={
-            "action_type": "overtime_authorization",
-            "description": "Authorize 40h weekend overtime to clear production backlog",
-            "hours": 40,
-            "cost_per_hour": 85,
-        },
-        net_benefit=0.08,
-        benefit_threshold=0.01,
-        justification="Production backlog growing 200 units/day. Weekend overtime clears 800 units.",
-        priority="MEDIUM",
-        site_key="plant_detroit",
-    )
-
-    # Thread 3: Auto-denied — Low net benefit cross-DC transfer
-    svc.submit_request(
-        requesting_agent="inventory",
-        target_agent="logistics",
-        proposed_action={
-            "action_type": "cross_dc_transfer",
-            "description": "Transfer 500 units SKU-A from DC-West to DC-East",
-            "sku": "SKU-A",
-            "from_site": "dc_west",
-            "to_site": "dc_east",
-            "qty": 500,
-        },
-        net_benefit=0.01,
-        benefit_threshold=0.05,
-        justification="DC-East low on SKU-A but demand forecast is moderate.",
-        priority="LOW",
-        site_key="dc_east",
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +80,6 @@ async def get_threads(
     current_user: User = Depends(get_current_user),
 ):
     """Get all authorization threads."""
-    _seed_demo_threads()
     svc = _get_service()
     threads = svc._all_threads()
     return {
@@ -162,7 +94,6 @@ async def get_thread(
     current_user: User = Depends(get_current_user),
 ):
     """Get a single thread by ID."""
-    _seed_demo_threads()
     svc = _get_service()
     thread = svc.get_thread(thread_id)
     if not thread:
@@ -271,7 +202,6 @@ async def get_stats(
     current_user: User = Depends(get_current_user),
 ):
     """Get aggregated authorization statistics."""
-    _seed_demo_threads()
     svc = _get_service()
     return svc.get_stats()
 

@@ -166,8 +166,8 @@ class BriefingDataCollector:
         """4-tier Gartner BSC from HierarchicalMetricsService."""
         try:
             from app.services.hierarchical_metrics_service import HierarchicalMetricsService
-            service = HierarchicalMetricsService()
-            data = service.get_dashboard_metrics(self.tenant_id)
+            service = HierarchicalMetricsService(db=self.db)
+            data = service.get_dashboard_metrics(tenant_id=self.tenant_id)
             # Keep only tier summaries, not full drill-down data
             tiers = data.get("tiers", {})
             return {"available": True, "data": {"tiers": tiers}}

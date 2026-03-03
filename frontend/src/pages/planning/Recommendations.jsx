@@ -44,6 +44,7 @@ import {
   Target,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { getSupplyChainConfigs } from '../../services/supplyChainConfigService';
 import InlineComments from '../../components/common/InlineComments';
 import { RebalancingWizard } from '../../components/recommendations';
 
@@ -67,33 +68,11 @@ const Recommendations = () => {
   const [success, setSuccess] = useState(null);
   const [activeView, setActiveView] = useState('recommendations');
 
-  // Performance tracking data
-  const [performanceData] = useState({
-    summary: {
-      totalRecommendations: 156,
-      acceptanceRate: 72.4,
-      overrideRate: 18.6,
-      autoExecutedRate: 9.0,
-      avgScoreAccepted: 78.3,
-      avgScoreOverridden: 42.1,
-      netSavingsRealized: 284500,
-      netSavingsPredicted: 312000,
-      realizationRate: 91.2,
-    },
-    byType: [
-      { type: 'rebalance', total: 82, accepted: 65, overridden: 12, executed: 5, avgScore: 71.2, savingsRealized: 145000, savingsPredicted: 158000 },
-      { type: 'expedite', total: 45, accepted: 28, overridden: 14, executed: 3, avgScore: 62.8, savingsRealized: 89000, savingsPredicted: 98000 },
-      { type: 'inventory_buffer', total: 29, accepted: 20, overridden: 3, executed: 6, avgScore: 81.5, savingsRealized: 50500, savingsPredicted: 56000 },
-    ],
-    recentOutcomes: [
-      { id: 'REC-142', type: 'rebalance', score: 85, action: 'accepted', predictedSavings: 4200, actualSavings: 3980, predictedServiceImpact: 2.1, actualServiceImpact: 1.8, effective: true },
-      { id: 'REC-139', type: 'expedite', score: 67, action: 'accepted', predictedSavings: 1800, actualSavings: 2100, predictedServiceImpact: 3.5, actualServiceImpact: 4.1, effective: true },
-      { id: 'REC-137', type: 'rebalance', score: 45, action: 'overridden', predictedSavings: 2500, actualSavings: -800, predictedServiceImpact: 1.2, actualServiceImpact: -0.5, effective: false },
-      { id: 'REC-135', type: 'inventory_buffer', score: 91, action: 'accepted', predictedSavings: 5600, actualSavings: 5200, predictedServiceImpact: 1.8, actualServiceImpact: 2.0, effective: true },
-      { id: 'REC-131', type: 'expedite', score: 38, action: 'overridden', predictedSavings: 900, actualSavings: 1200, predictedServiceImpact: 0.8, actualServiceImpact: 1.5, effective: true },
-      { id: 'REC-128', type: 'rebalance', score: 74, action: 'accepted', predictedSavings: 3100, actualSavings: 2900, predictedServiceImpact: 2.4, actualServiceImpact: 2.2, effective: true },
-    ],
-  });
+  // Performance tracking data - loaded from API
+  const [performanceData, setPerformanceData] = useState(null);
+
+  // Current SC config ID for RebalancingWizard
+  const [currentConfigId, setCurrentConfigId] = useState(null);
 
   const fetchRecommendations = async () => {
     setLoading(true);
@@ -224,6 +203,25 @@ const Recommendations = () => {
     fetchRecommendations();
   }, [statusFilter, typeFilter, minScore]);
 
+  // Load SC config and performance data once on mount
+  useEffect(() => {
+    const loadInitialData = async () => {
+      try {
+        const [configs, perfResp] = await Promise.all([
+          getSupplyChainConfigs(),
+          api.get('/recommendations/performance'),
+        ]);
+        if (configs && configs.length > 0) {
+          setCurrentConfigId(configs[0].id);
+        }
+        setPerformanceData(perfResp.data);
+      } catch (err) {
+        console.error('Failed to load initial recommendations data:', err);
+      }
+    };
+    loadInitialData();
+  }, []);
+
   const getScoreVariant = (score) => {
     if (score >= 75) return 'success';
     if (score >= 50) return 'info';
@@ -276,6 +274,12 @@ const Recommendations = () => {
 
       {activeView === 'performance' && (
         <div className="space-y-6">
+          {!performanceData ? (
+            <div className="flex justify-center py-8"><Spinner /></div>
+          ) : performanceData.summary.totalRecommendations === 0 ? (
+            <Card><CardContent className="pt-6 text-center text-muted-foreground">No recommendation decisions recorded yet. Accept or override recommendations to build performance history.</CardContent></Card>
+          ) : (
+          <>
           {/* Summary KPIs */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <Card>
@@ -287,25 +291,25 @@ const Recommendations = () => {
             <Card>
               <CardContent className="pt-4 pb-4 text-center">
                 <p className="text-xs text-muted-foreground mb-1">Acceptance Rate</p>
-                <p className="text-2xl font-bold text-green-600">{performanceData.summary.acceptanceRate}%</p>
+                <p className="text-2xl font-bold text-green-600">{performanceData.summary.acceptanceRate ?? '—'}%</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4 pb-4 text-center">
                 <p className="text-xs text-muted-foreground mb-1">Override Rate</p>
-                <p className="text-2xl font-bold text-amber-600">{performanceData.summary.overrideRate}%</p>
+                <p className="text-2xl font-bold text-amber-600">{performanceData.summary.overrideRate ?? '—'}%</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4 pb-4 text-center">
                 <p className="text-xs text-muted-foreground mb-1">Savings Realized</p>
-                <p className="text-2xl font-bold">${(performanceData.summary.netSavingsRealized / 1000).toFixed(0)}K</p>
+                <p className="text-2xl font-bold">${((performanceData.summary.netSavingsRealized || 0) / 1000).toFixed(0)}K</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4 pb-4 text-center">
                 <p className="text-xs text-muted-foreground mb-1">Realization Rate</p>
-                <p className="text-2xl font-bold text-primary">{performanceData.summary.realizationRate}%</p>
+                <p className="text-2xl font-bold text-primary">{performanceData.summary.realizationRate ?? '—'}%</p>
               </CardContent>
             </Card>
           </div>
@@ -378,8 +382,6 @@ const Recommendations = () => {
                     <TableHead>Action</TableHead>
                     <TableHead className="text-right">Predicted $</TableHead>
                     <TableHead className="text-right">Actual $</TableHead>
-                    <TableHead className="text-right">Predicted SL Impact</TableHead>
-                    <TableHead className="text-right">Actual SL Impact</TableHead>
                     <TableHead>Effective</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -387,18 +389,14 @@ const Recommendations = () => {
                   {performanceData.recentOutcomes.map((row) => (
                     <TableRow key={row.id}>
                       <TableCell className="font-mono text-sm">{row.id}</TableCell>
-                      <TableCell className="capitalize">{row.type.replace('_', ' ')}</TableCell>
+                      <TableCell className="capitalize">{row.type.replace(/_/g, ' ')}</TableCell>
                       <TableCell><Badge variant={getScoreVariant(row.score)}>{row.score}</Badge></TableCell>
                       <TableCell>
                         <Badge variant={row.action === 'accepted' ? 'success' : 'warning'}>{row.action}</Badge>
                       </TableCell>
-                      <TableCell className="text-right font-mono">${row.predictedSavings.toLocaleString()}</TableCell>
-                      <TableCell className={`text-right font-mono ${row.actualSavings >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        ${row.actualSavings.toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">+{row.predictedServiceImpact}%</TableCell>
-                      <TableCell className={`text-right font-mono ${row.actualServiceImpact >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {row.actualServiceImpact >= 0 ? '+' : ''}{row.actualServiceImpact}%
+                      <TableCell className="text-right font-mono">${(row.predictedSavings || 0).toLocaleString()}</TableCell>
+                      <TableCell className={`text-right font-mono ${(row.actualSavings || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        ${(row.actualSavings || 0).toLocaleString()}
                       </TableCell>
                       <TableCell>
                         {row.effective ? (
@@ -421,17 +419,19 @@ const Recommendations = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="p-4 bg-muted/30 rounded-lg">
                   <p className="text-sm text-muted-foreground mb-1">Avg Score of Accepted Recommendations</p>
-                  <p className="text-3xl font-bold text-green-600">{performanceData.summary.avgScoreAccepted}</p>
+                  <p className="text-3xl font-bold text-green-600">{performanceData.summary.avgScoreAccepted ?? '—'}</p>
                   <p className="text-xs text-muted-foreground mt-1">Higher scores correlate with better outcomes</p>
                 </div>
                 <div className="p-4 bg-muted/30 rounded-lg">
                   <p className="text-sm text-muted-foreground mb-1">Avg Score of Overridden Recommendations</p>
-                  <p className="text-3xl font-bold text-amber-600">{performanceData.summary.avgScoreOverridden}</p>
+                  <p className="text-3xl font-bold text-amber-600">{performanceData.summary.avgScoreOverridden ?? '—'}</p>
                   <p className="text-xs text-muted-foreground mt-1">Low scores are overridden more frequently</p>
                 </div>
               </div>
             </CardContent>
           </Card>
+          </>
+          )}
         </div>
       )}
 
@@ -878,6 +878,7 @@ const Recommendations = () => {
         footer={<Button variant="outline" onClick={() => setRebalancingDialogOpen(false)}>Close</Button>}
       >
         <RebalancingWizard
+          configId={currentConfigId}
           onComplete={(savedCount) => {
             setRebalancingDialogOpen(false);
             if (savedCount > 0) {

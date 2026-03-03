@@ -109,6 +109,65 @@ async def get_agent_performance(
     exec_data = service.get_executive_dashboard_data(customer_id, planning_cycle)
 
     # Add decision performance specific data
+    # Compute planner capacity from PerformanceMetric history
+    from app.models.decision_tracking import PerformanceMetric as PM
+    from sqlalchemy import asc as _asc
+
+    pm_rows = (
+        db.query(PM)
+        .filter(PM.tenant_id == customer_id, PM.category.is_(None))
+        .order_by(_asc(PM.period_start))
+        .all()
+    )
+
+    earliest = pm_rows[0] if pm_rows else None
+    latest_pm = pm_rows[-1] if pm_rows else None
+
+    from_planners = int(earliest.active_planners) if earliest and earliest.active_planners else None
+    current_planners = exec_data["summary"].get("active_planners")
+    skus_per_planner = (
+        round(float(latest_pm.skus_per_planner), 1)
+        if latest_pm and latest_pm.skus_per_planner and float(latest_pm.skus_per_planner) > 0
+        else None
+    )
+    efficiency_gain_pct = (
+        round((from_planners - current_planners) / from_planners * 100)
+        if from_planners and current_planners and from_planners > current_planners
+        else None
+    )
+
+    # Build key_events from periods when planner count decreased
+    key_events = []
+    if len(pm_rows) > 1:
+        _MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                       "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        prev_planners = None
+        for pm in pm_rows:
+            if pm.active_planners is None:
+                continue
+            curr = int(pm.active_planners)
+            mo = pm.period_start.month
+            yr = pm.period_start.year
+            date_label = f"{_MONTH_ABBR[mo - 1]} '{str(yr)[2:]}"
+            if prev_planners is None:
+                key_events.append({
+                    "date": date_label,
+                    "event": "Go-Live",
+                    "description": f"AI agent deployment begins with {curr} planners",
+                })
+            elif curr < prev_planners:
+                reduction = prev_planners - curr
+                key_events.append({
+                    "date": date_label,
+                    "event": f"Reduction (-{reduction})",
+                    "description": (
+                        f"{round(pm.automation_percentage or 0)}% automation achieved, "
+                        f"headcount {prev_planners}→{curr}"
+                    ),
+                })
+            prev_planners = curr
+        key_events = key_events[:6]  # cap at 6 events
+
     return {
         "success": True,
         "data": {
@@ -116,18 +175,13 @@ async def get_agent_performance(
             "trends": exec_data["trends"],
             "categories": exec_data.get("categories", []),
             "planner_capacity": {
-                "active_planners": exec_data["summary"]["active_planners"],
-                "from_planners": 25,
-                "skus_per_planner": 972,
-                "efficiency_gain_pct": 94,
+                "active_planners": current_planners,
+                "from_planners": from_planners,
+                "skus_per_planner": skus_per_planner,
+                "efficiency_gain_pct": efficiency_gain_pct,
                 "agent_automation_pct": exec_data["summary"]["autonomous_decisions_pct"],
             },
-            "key_events": [
-                {"date": "Aug '24", "event": "Go-Live", "description": "AI agent deployment begins with 25 planners"},
-                {"date": "Dec '24", "event": "RIF #1 (-3)", "description": "20% automation achieved, headcount 25→22"},
-                {"date": "Feb '25", "event": "RIF #2 + NPI #1", "description": "52% automation + 2,500 new SKUs, headcount 22→20"},
-                {"date": "Apr '25", "event": "RIF #3 + NPI #2", "description": "74% automation + 2,500 new SKUs, headcount 20→18"},
-            ],
+            "key_events": key_events,
         },
         "planning_cycle": planning_cycle or "Q3 2025",
     }

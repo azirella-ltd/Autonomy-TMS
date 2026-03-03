@@ -7,6 +7,7 @@ Provides guaranteed prediction intervals without distributional assumptions.
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import Optional, List
 from pydantic import BaseModel, Field
 import numpy as np
@@ -1085,94 +1086,149 @@ def calibrate_demo_data(
     db: Session = Depends(get_db),
 ):
     """
-    Calibrate conformal predictors with historical data and seed 2 past S&OP cycles.
-
-    Uses realistic supply chain data consistent with the Default System Config
-    (DC001/DC002, PROD001/PROD002, SUP001) to populate the Belief State tab.
+    Calibrate conformal predictors using real Forecast data for the tenant's
+    active supply chain config. Product, site, and supplier IDs are resolved
+    from the database — no hardcoded IDs.
     """
     from datetime import date, timedelta
+    from app.models.supply_chain_config import SupplyChainConfig, Site
+    from app.models.sc_entities import Product, Forecast
     from ...services.conformal_prediction import get_conformal_suite
     from ...services.powell.rolling_horizon_sop import (
         SOPPlanningCycle,
-        RollingHorizonSOP,
         RollingHorizonSOPConfig,
     )
     from ...services.powell.stochastic_program import StochasticSolution
 
     rng = np.random.default_rng(42)
 
-    # ── 1. Calibrate conformal suite with historical forecast vs actual ──
+    # ── Resolve real IDs from the tenant's SC config ──────────────────────────
+    config = (
+        db.query(SupplyChainConfig)
+        .filter(SupplyChainConfig.tenant_id == customer_id)
+        .first()
+    )
+    if not config:
+        return {"status": "error", "detail": f"No supply chain config found for tenant {customer_id}"}
+
+    # Pick up to 4 demand sites (MARKET_DEMAND)
+    demand_sites = (
+        db.query(Site)
+        .filter(Site.config_id == config.id, Site.master_type == "MARKET_DEMAND")
+        .limit(4)
+        .all()
+    )
+    # Pick up to 2 products with real forecast data
+    top_products = (
+        db.query(Product.id, func.sum(Forecast.forecast_p50).label("total"))
+        .join(Forecast, Forecast.product_id == Product.id)
+        .filter(Forecast.config_id == config.id, Forecast.is_active == "true")
+        .group_by(Product.id)
+        .order_by(func.sum(Forecast.forecast_p50).desc())
+        .limit(2)
+        .all()
+    )
+    # Pick up to 2 supplier (MARKET_SUPPLY) sites
+    supplier_sites = (
+        db.query(Site)
+        .filter(Site.config_id == config.id, Site.master_type == "MARKET_SUPPLY")
+        .limit(2)
+        .all()
+    )
+
+    if not top_products or not demand_sites:
+        return {"status": "error", "detail": "Insufficient forecast data to calibrate"}
+
+    # ── 1. Calibrate conformal suite with real average forecast volumes ────────
     suite = get_conformal_suite()
     n_points = 30
 
-    # Demand: 2 products × 2 sites with seasonal bias
-    demand_items = [
-        ("PROD001", 1, 100.0),  # DC001 primary
-        ("PROD001", 2, 80.0),   # DC002 secondary
-        ("PROD002", 1, 60.0),
-        ("PROD002", 2, 40.0),
-    ]
+    # Build demand calibration using real product/site IDs + real avg demand as base
+    demand_items = []
+    for prod_id, total_forecast in top_products:
+        avg_weekly = float(total_forecast or 100) / max(len(demand_sites), 1) / 52
+        base = max(avg_weekly, 1.0)
+        for site in demand_sites[:2]:
+            demand_items.append((prod_id, site.id, base))
+
     for prod, site, base in demand_items:
-        # Forecasts have slight bias + noise; actuals have more variance
         forecasts = (base + rng.normal(0, base * 0.05, n_points)).tolist()
-        actuals = [
-            f * (1.0 + rng.normal(0.02, 0.08))  # slight positive bias
-            for f in forecasts
-        ]
+        actuals = [f * (1.0 + rng.normal(0.02, 0.08)) for f in forecasts]
         suite.calibrate_demand(
-            product_id=prod,
+            product_id=str(prod),
             site_id=site,
             historical_forecasts=forecasts,
             historical_actuals=actuals,
         )
 
-    # Lead times: SUP001 (promised ~5 days, actual 4-7)
-    promised = (5.0 + rng.normal(0, 0.3, n_points)).tolist()
-    actual_lt = [p * (1.0 + rng.normal(0.05, 0.12)) for p in promised]
-    suite.calibrate_lead_time(
-        supplier_id="SUP001",
-        predicted_lead_times=promised,
-        actual_lead_times=actual_lt,
-    )
+    # Lead time calibration using real supplier IDs
+    for supplier in supplier_sites[:1]:
+        promised = (5.0 + rng.normal(0, 0.3, n_points)).tolist()
+        actual_lt = [p * (1.0 + rng.normal(0.05, 0.12)) for p in promised]
+        suite.calibrate_lead_time(
+            supplier_id=supplier.id,
+            predicted_lead_times=promised,
+            actual_lead_times=actual_lt,
+        )
 
-    # Yields: PROD001 manufacturing (expected 0.95, actual 0.90-0.98)
-    expected_yields = (0.95 + rng.normal(0, 0.005, n_points)).tolist()
-    actual_yields = [y * (1.0 + rng.normal(-0.01, 0.02)) for y in expected_yields]
-    suite.calibrate_yield(
-        product_id="PROD001",
-        process_id=None,
-        expected_yields=expected_yields,
-        actual_yields=actual_yields,
-    )
+    # Yield calibration using first product
+    first_prod_id = str(top_products[0][0]) if top_products else None
+    if first_prod_id:
+        expected_yields = (0.95 + rng.normal(0, 0.005, n_points)).tolist()
+        actual_yields = [y * (1.0 + rng.normal(-0.01, 0.02)) for y in expected_yields]
+        suite.calibrate_yield(
+            product_id=first_prod_id,
+            process_id=None,
+            expected_yields=expected_yields,
+            actual_yields=actual_yields,
+        )
 
     suite_summary = suite.get_calibration_summary()
     joint_coverage = suite.compute_joint_coverage()
 
-    # ── 2. Seed 2 past S&OP cycles ──────────────────────────────────────
+    # ── 2. Seed 2 past S&OP cycles using real cost scale ─────────────────────
+    # Compute monthly cost scale from Forecast × Product unit_cost
+    today = date.today()
+    horizon_end = date(today.year + 1, today.month, today.day)
+    rev_row = (
+        db.query(func.sum(Forecast.forecast_p50 * Product.unit_cost).label("annual_cogs"))
+        .join(Product, Forecast.product_id == Product.id)
+        .join(Site, Forecast.site_id == Site.id)
+        .filter(
+            Forecast.config_id == config.id,
+            Forecast.is_active == "true",
+            Site.master_type == "MARKET_DEMAND",
+            Forecast.forecast_date >= today,
+            Forecast.forecast_date < horizon_end,
+        )
+        .first()
+    )
+    monthly_cogs = float(rev_row.annual_cogs or 0) / 12 if rev_row else 50000.0
+
     planner = _get_sop_planner(customer_id)
     planner.cycle_history.clear()
 
-    today = date.today()
     cycles_spec = [
-        # (months_ago, expected_cost, realized_cost, service_level, n_gen, n_red, coverage, solve_s)
-        (2, 48520.0, 51340.0, 0.91, 100, 30, 0.77, 1.8),
-        (1, 45890.0, 46720.0, 0.94, 100, 30, 0.82, 2.1),
+        # (months_ago, cost_multiplier, realized_mult, service_level, n_gen, n_red, coverage, solve_s)
+        (2, 1.06, 1.12, 0.91, 100, 30, 0.77, 1.8),
+        (1, 1.00, 1.02, 0.94, 100, 30, 0.82, 2.1),
     ]
+    first_prod = str(top_products[0][0]) if top_products else "product_1"
+    second_prod = str(top_products[1][0]) if len(top_products) > 1 else first_prod
 
-    for months_ago, exp_cost, real_cost, svc, n_gen, n_red, cov, solve_t in cycles_spec:
+    for months_ago, cost_mult, real_mult, svc_lvl, n_gen, n_red, cov, solve_t in cycles_spec:
         planning_date = today - timedelta(days=30 * months_ago)
+        exp_cost = round(monthly_cogs * cost_mult, 2)
+        real_cost = round(monthly_cogs * real_mult, 2)
 
         solution = StochasticSolution(
             first_stage_decisions={
-                "capacity_MACHINE1": round(rng.uniform(140, 170), 1),
-                "safety_stock_PROD001": round(rng.uniform(25, 40), 1),
-                "safety_stock_PROD002": round(rng.uniform(15, 25), 1),
+                f"buffer_stock_{first_prod}": round(rng.uniform(25, 40), 1),
+                f"buffer_stock_{second_prod}": round(rng.uniform(15, 25), 1),
             },
             recourse_decisions={},
             expected_cost=exp_cost,
-            cost_distribution=sorted(
-                (exp_cost + rng.normal(0, exp_cost * 0.08, 30)).tolist()
-            ),
+            cost_distribution=sorted((exp_cost + rng.normal(0, exp_cost * 0.08, 30)).tolist()),
             var_95=round(exp_cost * 1.15, 2),
             cvar_95=round(exp_cost * 1.22, 2),
             solve_status="optimal",
@@ -1189,8 +1245,8 @@ def calibrate_demo_data(
             calibration_updates={},
             first_stage_decisions=solution.first_stage_decisions,
             realized_cost=real_cost,
-            service_level_achieved=svc,
-            coverage_met=svc >= cov,
+            service_level_achieved=svc_lvl,
+            coverage_met=svc_lvl >= cov,
         )
         planner.cycle_history.append(cycle)
 
@@ -1199,4 +1255,6 @@ def calibrate_demo_data(
         "suite_summary": suite_summary,
         "joint_coverage_guarantee": joint_coverage,
         "sop_cycles_seeded": len(planner.cycle_history),
+        "config_id": config.id,
+        "products_calibrated": [str(p[0]) for p in top_products],
     }

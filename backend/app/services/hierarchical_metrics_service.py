@@ -2,210 +2,40 @@
 Hierarchical Metrics Service
 
 Generates Gartner-aligned supply chain metrics organized into 4 tiers
-(ASSESS, DIAGNOSE, CORRECT, AI-as-Labor) with hierarchy-aware demo data
-that varies deterministically by Geography, Product, and Time dimensions.
+(ASSESS, DIAGNOSE, CORRECT, AI-as-Labor) with hierarchy-aware data
+sourced entirely from the database: Site, Product, Forecast, PerformanceMetric,
+InvLevel, SOPWorklistItem, and AgentDecisionMetrics.
 
 Hierarchy dimensions:
-  - Site:    Company > Region > Country > Site
-  - Product: Category > Family > Group > Product
-  - Time:    Year > Quarter > Month > Week
+  - Site:    Company > Region > Site
+  - Product: Category > Product
+  - Time:    Year > Quarter > Month
 """
 
-import hashlib
+from __future__ import annotations
+
+import logging
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
+from sqlalchemy.orm import Session
+from sqlalchemy import func, asc
 
-# ============================================================================
-# Hierarchy definitions (demo data)
-# ============================================================================
+logger = logging.getLogger(__name__)
 
-SITE_HIERARCHY = {
-    "company": {
-        "ALL": {
-            "label": "HydraBev Corp",
-            "children": {
-                "region": {
-                    "NA": {"label": "North America", "children": {
-                        "country": {
-                            "US": {"label": "United States", "children": {
-                                "site": {
-                                    "DC-CHI": {"label": "DC Chicago"},
-                                    "DC-IND": {"label": "DC Indianapolis"},
-                                    "DC-LA": {"label": "DC Los Angeles"},
-                                    "PLT-ATL": {"label": "Plant Atlanta"},
-                                }
-                            }},
-                            "CA": {"label": "Canada", "children": {
-                                "site": {
-                                    "DC-TOR": {"label": "DC Toronto"},
-                                    "DC-VAN": {"label": "DC Vancouver"},
-                                }
-                            }},
-                        }
-                    }},
-                    "EU": {"label": "Europe", "children": {
-                        "country": {
-                            "DE": {"label": "Germany", "children": {
-                                "site": {"DC-FRA": {"label": "DC Frankfurt"}, "PLT-MUN": {"label": "Plant Munich"}}
-                            }},
-                            "UK": {"label": "United Kingdom", "children": {
-                                "site": {"DC-LON": {"label": "DC London"}}
-                            }},
-                        }
-                    }},
-                    "APAC": {"label": "Asia Pacific", "children": {
-                        "country": {
-                            "JP": {"label": "Japan", "children": {
-                                "site": {"DC-TKY": {"label": "DC Tokyo"}}
-                            }},
-                            "AU": {"label": "Australia", "children": {
-                                "site": {"DC-SYD": {"label": "DC Sydney"}}
-                            }},
-                        }
-                    }},
-                    "LATAM": {"label": "Latin America", "children": {
-                        "country": {
-                            "BR": {"label": "Brazil", "children": {
-                                "site": {"DC-SAO": {"label": "DC Sao Paulo"}}
-                            }},
-                            "MX": {"label": "Mexico", "children": {
-                                "site": {"DC-MEX": {"label": "DC Mexico City"}}
-                            }},
-                        }
-                    }},
-                }
-            }
-        }
-    }
-}
-
-PRODUCT_HIERARCHY = {
-    "category": {
-        "ALL": {
-            "label": "All Products",
-            "children": {
-                "family": {
-                    "SPORTS": {"label": "Sports Drinks", "children": {
-                        "group": {
-                            "HYDRABOOST": {"label": "HydraBoost", "children": {
-                                "product": {
-                                    "HB-1001": {"label": "HydraBoost Original 12pk"},
-                                    "HB-1002": {"label": "HydraBoost Citrus 12pk"},
-                                    "HB-1003": {"label": "HydraBoost Berry 12pk"},
-                                }
-                            }},
-                        }
-                    }},
-                    "ENHANCED": {"label": "Enhanced Water", "children": {
-                        "group": {
-                            "HYDRALITE": {"label": "HydraLite", "children": {
-                                "product": {
-                                    "HL-2001": {"label": "HydraLite Lemon 6pk"},
-                                    "HL-2002": {"label": "HydraLite Plain 6pk"},
-                                }
-                            }},
-                        }
-                    }},
-                    "ENERGY": {"label": "Energy Drinks", "children": {
-                        "group": {
-                            "HYDRASURGE": {"label": "HydraSurge", "children": {
-                                "product": {
-                                    "HS-3001": {"label": "HydraSurge Original"},
-                                    "HS-3002": {"label": "HydraSurge Zero"},
-                                }
-                            }},
-                        }
-                    }},
-                    "BOTTLED": {"label": "Bottled Water", "children": {
-                        "group": {
-                            "HYDRAPURE": {"label": "HydraPure", "children": {
-                                "product": {
-                                    "HP-4001": {"label": "HydraPure Spring 24pk"},
-                                    "HP-4002": {"label": "HydraPure Sparkling 12pk"},
-                                }
-                            }},
-                        }
-                    }},
-                }
-            }
-        }
-    }
-}
-
-TIME_HIERARCHY = {
-    "year": {
-        "2025": {
-            "label": "2025",
-            "children": {
-                "quarter": {
-                    "2025-Q1": {"label": "Q1 2025", "children": {
-                        "month": {
-                            "2025-01": {"label": "Jan 2025"}, "2025-02": {"label": "Feb 2025"}, "2025-03": {"label": "Mar 2025"},
-                        }
-                    }},
-                    "2025-Q2": {"label": "Q2 2025", "children": {
-                        "month": {
-                            "2025-04": {"label": "Apr 2025"}, "2025-05": {"label": "May 2025"}, "2025-06": {"label": "Jun 2025"},
-                        }
-                    }},
-                    "2025-Q3": {"label": "Q3 2025", "children": {
-                        "month": {
-                            "2025-07": {"label": "Jul 2025"}, "2025-08": {"label": "Aug 2025"}, "2025-09": {"label": "Sep 2025"},
-                        }
-                    }},
-                    "2025-Q4": {"label": "Q4 2025", "children": {
-                        "month": {
-                            "2025-10": {"label": "Oct 2025"}, "2025-11": {"label": "Nov 2025"}, "2025-12": {"label": "Dec 2025"},
-                        }
-                    }},
-                }
-            }
-        },
-        "2024": {
-            "label": "2024",
-            "children": {
-                "quarter": {
-                    "2024-Q4": {"label": "Q4 2024", "children": {
-                        "month": {
-                            "2024-10": {"label": "Oct 2024"}, "2024-11": {"label": "Nov 2024"}, "2024-12": {"label": "Dec 2024"},
-                        }
-                    }},
-                }
-            }
-        },
-    }
-}
-
-# Region-specific adjustment factors for realistic variation
-REGION_FACTORS = {
-    "NA":    {"margin": 1.05, "service": 1.02, "cost": 0.95},
-    "EU":    {"margin": 0.98, "service": 1.01, "cost": 1.02},
-    "APAC":  {"margin": 0.92, "service": 0.97, "cost": 1.08},
-    "LATAM": {"margin": 0.85, "service": 0.93, "cost": 1.15},
-}
-
-PRODUCT_FACTORS = {
-    "SPORTS":   {"margin": 1.10, "volatility": 0.95, "turns": 1.15},
-    "ENHANCED": {"margin": 1.05, "volatility": 0.90, "turns": 1.05},
-    "ENERGY":   {"margin": 1.20, "volatility": 1.25, "turns": 1.30},
-    "BOTTLED":  {"margin": 0.75, "volatility": 0.80, "turns": 0.85},
-}
-
-LEVEL_ORDER = {
-    "site": ["company", "region", "country", "site"],
-    "product": ["category", "family", "group", "product"],
-    "time": ["year", "quarter", "month", "week"],
+# Region mapping (state abbreviation → region name)
+_STATE_TO_REGION: Dict[str, str] = {
+    "OR": "Northwest", "WA": "Northwest",
+    "AZ": "Southwest", "CA": "Southwest", "UT": "Southwest",
+    "IL": "Central",   "MN": "Central",   "TX": "Central",  "AR": "Central",
+    "PA": "Northeast", "NY": "Northeast",
+    "GA": "Southeast",
 }
 
 
-def _vary(base: float, context_key: str, amplitude: float = 0.08) -> float:
-    """Deterministic pseudo-random variation based on context key."""
-    h = int(hashlib.md5(context_key.encode()).hexdigest()[:8], 16)
-    offset = ((h % 1000) / 1000.0 - 0.5) * 2 * amplitude
-    return round(base * (1 + offset), 2)
-
-
-def _status(value: float, target: float, lower_is_better: bool = False) -> str:
+def _status(value: Optional[float], target: float, lower_is_better: bool = False) -> str:
+    if value is None:
+        return "info"
     if lower_is_better:
         if value <= target:
             return "success"
@@ -220,72 +50,20 @@ def _status(value: float, target: float, lower_is_better: bool = False) -> str:
         return "danger"
 
 
-def _find_node(hierarchy: dict, level: str, key: str):
-    """Walk a hierarchy tree to find a node at a given level/key."""
-    if level in hierarchy and key in hierarchy[level]:
-        return hierarchy[level][key]
-    for lvl_nodes in hierarchy.values():
-        for node in lvl_nodes.values():
-            if "children" in node:
-                result = _find_node(node["children"], level, key)
-                if result:
-                    return result
-    return None
-
-
-def _get_ancestors(hierarchy: dict, target_level: str, target_key: str, levels: list):
-    """Get breadcrumb trail from root to target node."""
-    crumbs = []
-
-    def _walk(tree, depth=0):
-        if depth >= len(levels):
-            return False
-        current_level = levels[depth]
-        if current_level not in tree:
-            return False
-        for key, node in tree[current_level].items():
-            is_target = (current_level == target_level and key == target_key)
-            crumbs.append({
-                "level": current_level,
-                "key": key,
-                "label": node["label"],
-                "is_current": is_target,
-            })
-            if is_target:
-                return True
-            if "children" in node:
-                if _walk(node["children"], depth + 1):
-                    return True
-            crumbs.pop()
-        return False
-
-    _walk(hierarchy)
-    return crumbs
-
-
-def _get_children_at_level(hierarchy: dict, parent_level: str, parent_key: str):
-    """Get children of a node for drill-down."""
-    node = _find_node(hierarchy, parent_level, parent_key)
-    if not node or "children" not in node:
-        return []
-    children = []
-    for child_level, child_nodes in node["children"].items():
-        for key, child in child_nodes.items():
-            children.append({
-                "key": key,
-                "label": child["label"],
-                "level": child_level,
-                "can_drill_down": "children" in child,
-            })
-    return children
-
-
 class HierarchicalMetricsService:
-    """Generates Gartner-aligned metrics with hierarchy context."""
+    """Generates Gartner-aligned metrics with hierarchy context from the DB."""
+
+    def __init__(self, db: Optional[Session] = None):
+        self.db = db
+
+    # =========================================================================
+    # Public API
+    # =========================================================================
 
     def get_dashboard_metrics(
         self,
-        tenant_id: int,
+        tenant_id: int = 1,
+        customer_id: int = None,       # alias accepted from API layer
         site_level: str = "company",
         site_key: Optional[str] = None,
         product_level: str = "category",
@@ -293,16 +71,20 @@ class HierarchicalMetricsService:
         time_bucket: str = "quarter",
         time_key: Optional[str] = None,
     ) -> Dict[str, Any]:
+        # Normalize tenant_id: API layer passes customer_id as keyword arg
+        if customer_id is not None:
+            tenant_id = customer_id
 
         site_key = site_key or "ALL"
         product_key = product_key or "ALL"
-        time_key = time_key or "2025-Q3"
 
-        ctx = f"{site_level}:{site_key}|{product_level}:{product_key}|{time_bucket}:{time_key}"
+        site_hier = self._build_site_hierarchy(tenant_id)
+        product_hier = self._build_product_hierarchy(tenant_id)
+        time_hier = self._build_time_hierarchy(tenant_id)
 
-        # Determine adjustment factors from hierarchy position
-        region_factor = REGION_FACTORS.get(site_key, {"margin": 1.0, "service": 1.0, "cost": 1.0})
-        product_factor = PRODUCT_FACTORS.get(product_key, {"margin": 1.0, "volatility": 1.0, "turns": 1.0})
+        if time_key is None:
+            # Default to the most recent quarter in the hierarchy
+            time_key = self._latest_time_key(time_hier, time_bucket)
 
         return {
             "hierarchy_context": {
@@ -313,259 +95,785 @@ class HierarchicalMetricsService:
                 "time_bucket": time_bucket,
                 "time_key": time_key,
             },
-            "breadcrumbs": self._build_breadcrumbs(site_level, site_key, product_level, product_key, time_bucket, time_key),
-            "children": self._build_children(site_level, site_key, product_level, product_key, time_bucket, time_key),
+            "breadcrumbs": self._build_breadcrumbs(
+                site_hier, product_hier, time_hier,
+                site_level, site_key, product_level, product_key, time_bucket, time_key,
+            ),
+            "children": self._build_children(
+                site_hier, product_hier, time_hier,
+                site_level, site_key, product_level, product_key, time_bucket, time_key,
+            ),
             "tiers": {
-                "tier1_assess": self._tier1_assess(ctx, region_factor, product_factor),
-                "tier2_diagnose": self._tier2_diagnose(ctx, region_factor, product_factor),
-                "tier3_correct": self._tier3_correct(ctx, region_factor, product_factor),
-                "tier4_agent": self._tier4_agent(ctx),
+                "tier1_assess":  self._tier1_assess(tenant_id, site_key, product_key, time_key),
+                "tier2_diagnose": self._tier2_diagnose(tenant_id, site_key, product_key, time_key),
+                "tier3_correct": self._tier3_correct(tenant_id, site_key, product_key, time_key),
+                "tier4_agent":   self._tier4_agent(tenant_id, time_key),
             },
-            "trend_data": self._trend_data(ctx, region_factor),
+            "trend_data": self._trend_data(tenant_id),
         }
 
-    # ========================================================================
-    # Breadcrumbs and children
-    # ========================================================================
+    # =========================================================================
+    # Hierarchy builders
+    # =========================================================================
 
-    def _build_breadcrumbs(self, site_level, site_key, product_level, product_key, time_bucket, time_key):
+    def _build_site_hierarchy(self, tenant_id: int) -> Dict[str, Any]:
+        """
+        Build site hierarchy from DB:
+        ALL → Region (NW/SW/Central…) → Site (FOODDIST_DC, CUST_*)
+        """
+        if self.db is None:
+            return {}
+        try:
+            from app.models.supply_chain_config import SupplyChainConfig, Site
+            from app.models.sc_entities import Geography
+
+            config = (
+                self.db.query(SupplyChainConfig)
+                .filter(SupplyChainConfig.tenant_id == tenant_id)
+                .first()
+            )
+            if not config:
+                return {}
+
+            sites = (
+                self.db.query(Site)
+                .outerjoin(Geography, Site.geo_id == Geography.id)
+                .filter(Site.config_id == config.id)
+                .all()
+            )
+
+            # Group sites by region
+            region_map: Dict[str, List] = {}
+            for s in sites:
+                geo = self.db.query(Geography).filter(Geography.id == s.geo_id).first() if s.geo_id else None
+                state = geo.state_prov if geo else None
+                region = _STATE_TO_REGION.get(state, "Other") if state else "Other"
+                region_map.setdefault(region, []).append(s)
+
+            region_children: Dict[str, Any] = {}
+            for region, region_sites in sorted(region_map.items()):
+                site_children = {
+                    s.id: {
+                        "label": s.name,
+                        "level": "site",
+                        "can_drill_down": False,
+                        "master_type": s.master_type,
+                    }
+                    for s in region_sites
+                }
+                region_children[region] = {
+                    "label": region,
+                    "level": "region",
+                    "can_drill_down": True,
+                    "children": {"site": site_children},
+                }
+
+            return {
+                "company": {
+                    "ALL": {
+                        "label": config.name or "All Sites",
+                        "level": "company",
+                        "can_drill_down": True,
+                        "children": {"region": region_children},
+                    }
+                }
+            }
+        except Exception:
+            logger.exception("Failed to build site hierarchy for tenant=%s", tenant_id)
+            return {}
+
+    def _build_product_hierarchy(self, tenant_id: int) -> Dict[str, Any]:
+        """
+        Build product hierarchy from DB:
+        ALL → Category (Frozen Proteins / Beverages…) → Product (CFG22_FP001…)
+        Uses product_hierarchy.description for human-readable category labels.
+        """
+        if self.db is None:
+            return {}
+        try:
+            from app.models.supply_chain_config import SupplyChainConfig
+            from app.models.sc_entities import Product
+
+            config = (
+                self.db.query(SupplyChainConfig)
+                .filter(SupplyChainConfig.tenant_id == tenant_id)
+                .first()
+            )
+            if not config:
+                return {}
+
+            products = (
+                self.db.query(Product)
+                .filter(Product.config_id == config.id)
+                .all()
+            )
+
+            # Build product_group_id → human label map from product_hierarchy table
+            try:
+                from app.models.sc_entities import ProductHierarchy
+                ph_rows = (
+                    self.db.query(ProductHierarchy.id, ProductHierarchy.description)
+                    .filter(ProductHierarchy.description.isnot(None))
+                    .all()
+                )
+                group_label_map = {r.id: r.description for r in ph_rows}
+            except Exception:
+                group_label_map = {}
+
+            # Group by product_group_id (category)
+            cat_map: Dict[str, List] = {}
+            for p in products:
+                cat = p.product_group_id or "Uncategorized"
+                cat_map.setdefault(cat, []).append(p)
+
+            cat_children: Dict[str, Any] = {}
+            for cat, cat_products in sorted(cat_map.items()):
+                prod_children = {
+                    p.id: {
+                        "label": p.description or p.id,
+                        "level": "product",
+                        "can_drill_down": False,
+                    }
+                    for p in cat_products
+                }
+                # Use product_hierarchy description if available, else humanize the key
+                cat_label = (
+                    group_label_map.get(cat)
+                    or cat.replace("_", " ").title()
+                )
+                cat_children[cat] = {
+                    "label": cat_label,
+                    "level": "family",
+                    "can_drill_down": True,
+                    "children": {"product": prod_children},
+                }
+
+            return {
+                "category": {
+                    "ALL": {
+                        "label": "All Products",
+                        "level": "category",
+                        "can_drill_down": True,
+                        "children": {"family": cat_children},
+                    }
+                }
+            }
+        except Exception:
+            logger.exception("Failed to build product hierarchy for tenant=%s", tenant_id)
+            return {}
+
+    def _build_time_hierarchy(self, tenant_id: int) -> Dict[str, Any]:
+        """Build time hierarchy from PerformanceMetric period_start dates."""
+        if self.db is None:
+            return {}
+        try:
+            from app.models.decision_tracking import PerformanceMetric
+
+            rows = (
+                self.db.query(
+                    func.extract("year", PerformanceMetric.period_start).label("yr"),
+                    func.extract("month", PerformanceMetric.period_start).label("mo"),
+                )
+                .filter(
+                    PerformanceMetric.tenant_id == tenant_id,
+                    PerformanceMetric.category.is_(None),
+                )
+                .distinct()
+                .order_by("yr", "mo")
+                .all()
+            )
+
+            _MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+            year_map: Dict[str, Any] = {}
+            for row in rows:
+                yr = int(row.yr)
+                mo = int(row.mo)
+                yr_key = str(yr)
+                q = (mo - 1) // 3 + 1
+                q_key = f"{yr}-Q{q}"
+                mo_key = f"{yr}-{mo:02d}"
+                mo_label = f"{_MONTH_ABBR[mo - 1]} {yr}"
+
+                year_map.setdefault(yr_key, {
+                    "label": yr_key,
+                    "level": "year",
+                    "can_drill_down": True,
+                    "children": {"quarter": {}},
+                })
+                quarters = year_map[yr_key]["children"]["quarter"]
+                quarters.setdefault(q_key, {
+                    "label": f"Q{q} {yr}",
+                    "level": "quarter",
+                    "can_drill_down": True,
+                    "children": {"month": {}},
+                })
+                quarters[q_key]["children"]["month"][mo_key] = {
+                    "label": mo_label,
+                    "level": "month",
+                    "can_drill_down": False,
+                }
+
+            return {"year": year_map}
+        except Exception:
+            logger.exception("Failed to build time hierarchy for tenant=%s", tenant_id)
+            return {}
+
+    def _latest_time_key(self, time_hier: Dict, time_bucket: str) -> str:
+        """Return the most recent key at the given time_bucket level."""
+        try:
+            years = sorted(time_hier.get("year", {}).keys(), reverse=True)
+            if not years:
+                return "2026-Q1"
+            yr_node = time_hier["year"][years[0]]
+            if time_bucket == "year":
+                return years[0]
+            quarters = sorted(yr_node.get("children", {}).get("quarter", {}).keys(), reverse=True)
+            if not quarters:
+                return years[0]
+            if time_bucket == "quarter":
+                return quarters[0]
+            q_node = yr_node["children"]["quarter"][quarters[0]]
+            months = sorted(q_node.get("children", {}).get("month", {}).keys(), reverse=True)
+            return months[0] if months else quarters[0]
+        except Exception:
+            return "2026-Q1"
+
+    # =========================================================================
+    # Breadcrumbs and children helpers
+    # =========================================================================
+
+    def _build_breadcrumbs(
+        self, site_hier, product_hier, time_hier,
+        site_level, site_key, product_level, product_key, time_bucket, time_key,
+    ) -> Dict:
         return {
-            "site": _get_ancestors(SITE_HIERARCHY, site_level, site_key, LEVEL_ORDER["site"]),
-            "product": _get_ancestors(PRODUCT_HIERARCHY, product_level, product_key, LEVEL_ORDER["product"]),
-            "time": _get_ancestors(TIME_HIERARCHY, time_bucket, time_key, LEVEL_ORDER["time"]),
+            "site": self._crumbs_for(site_hier, ["company", "region", "site"], site_level, site_key),
+            "product": self._crumbs_for(product_hier, ["category", "family", "product"], product_level, product_key),
+            "time": self._crumbs_for(time_hier, ["year", "quarter", "month"], time_bucket, time_key),
         }
 
-    def _build_children(self, site_level, site_key, product_level, product_key, time_bucket, time_key):
+    def _crumbs_for(self, tree: Dict, levels: List[str], target_level: str, target_key: str) -> List:
+        crumbs: List = []
+        def _walk(node: Dict, depth: int) -> bool:
+            if depth >= len(levels):
+                return False
+            level = levels[depth]
+            for k, v in node.get(level, {}).items():
+                is_target = (level == target_level and k == target_key)
+                crumbs.append({
+                    "level": level, "key": k,
+                    "label": v.get("label", k),
+                    "is_current": is_target,
+                })
+                if is_target:
+                    return True
+                if "children" in v:
+                    if _walk(v["children"], depth + 1):
+                        return True
+                crumbs.pop()
+            return False
+        _walk(tree, 0)
+        return crumbs
+
+    def _build_children(
+        self, site_hier, product_hier, time_hier,
+        site_level, site_key, product_level, product_key, time_bucket, time_key,
+    ) -> Dict:
         return {
-            "site": _get_children_at_level(SITE_HIERARCHY, site_level, site_key),
-            "product": _get_children_at_level(PRODUCT_HIERARCHY, product_level, product_key),
-            "time": _get_children_at_level(TIME_HIERARCHY, time_bucket, time_key),
+            "site": self._children_of(site_hier, ["company", "region", "site"], site_level, site_key),
+            "product": self._children_of(product_hier, ["category", "family", "product"], product_level, product_key),
+            "time": self._children_of(time_hier, ["year", "quarter", "month"], time_bucket, time_key),
         }
 
-    # ========================================================================
-    # Tier 1 — ASSESS (Strategic)
-    # ========================================================================
+    def _children_of(self, tree: Dict, levels: List[str], level: str, key: str) -> List:
+        def _find(node: Dict, depth: int):
+            if depth >= len(levels):
+                return None
+            curr_level = levels[depth]
+            items = node.get(curr_level, {})
+            if curr_level == level and key in items:
+                node_data = items[key]
+                results = []
+                for child_level, child_nodes in node_data.get("children", {}).items():
+                    for ck, cv in child_nodes.items():
+                        results.append({
+                            "key": ck,
+                            "label": cv.get("label", ck),
+                            "level": cv.get("level", child_level),
+                            "can_drill_down": cv.get("can_drill_down", False),
+                        })
+                return results
+            for k, v in items.items():
+                if "children" in v:
+                    result = _find(v["children"], depth + 1)
+                    if result is not None:
+                        return result
+            return None
+        return _find(tree, 0) or []
 
-    def _tier1_assess(self, ctx, rf, pf):
-        m = rf.get("margin", 1.0)
+    # =========================================================================
+    # Tier computations
+    # =========================================================================
+
+    def _get_perf_metrics(self, tenant_id: int, time_key: Optional[str]):
+        """Fetch PerformanceMetric rows for the given time slice (latest if None)."""
+        if self.db is None:
+            return None, None
+        try:
+            from app.models.decision_tracking import PerformanceMetric
+
+            q = (
+                self.db.query(PerformanceMetric)
+                .filter(
+                    PerformanceMetric.tenant_id == tenant_id,
+                    PerformanceMetric.category.is_(None),
+                )
+                .order_by(PerformanceMetric.period_start.desc())
+            )
+            all_rows = q.limit(24).all()
+            if not all_rows:
+                return None, None
+            latest = all_rows[0]
+            previous = all_rows[1] if len(all_rows) > 1 else None
+            return latest, previous
+        except Exception:
+            logger.exception("Failed to fetch PerformanceMetric for tenant=%s", tenant_id)
+            return None, None
+
+    def _forecast_rev_margin(self, tenant_id: int) -> tuple:
+        """Return (annual_revenue, gross_margin_pct) from Forecast × Product."""
+        if self.db is None:
+            return None, None
+        try:
+            from app.models.supply_chain_config import SupplyChainConfig, Site
+            from app.models.sc_entities import Product, Forecast
+
+            config = (
+                self.db.query(SupplyChainConfig)
+                .filter(SupplyChainConfig.tenant_id == tenant_id)
+                .first()
+            )
+            if not config:
+                return None, None
+
+            today = date.today()
+            year_end = date(today.year + 1, today.month, today.day)
+
+            row = (
+                self.db.query(
+                    func.sum(Forecast.forecast_p50 * Product.unit_price).label("rev"),
+                    func.sum(Forecast.forecast_p50 * Product.unit_cost).label("cost"),
+                )
+                .join(Product, Forecast.product_id == Product.id)
+                .join(Site, Forecast.site_id == Site.id)
+                .filter(
+                    Forecast.config_id == config.id,
+                    Forecast.is_active == "true",
+                    Site.master_type == "MARKET_DEMAND",
+                    Forecast.forecast_date >= today,
+                    Forecast.forecast_date < year_end,
+                    Product.unit_price.isnot(None),
+                    Product.unit_cost.isnot(None),
+                )
+                .first()
+            )
+            if row and row.rev and float(row.rev) > 0:
+                rev = float(row.rev)
+                cost = float(row.cost or 0)
+                gm_pct = round((rev - cost) / rev * 100, 1)
+                return int(rev), gm_pct
+            return None, None
+        except Exception:
+            logger.exception("Failed to compute forecast revenue for tenant=%s", tenant_id)
+            return None, None
+
+    def _inventory_metrics(self, tenant_id: int) -> Dict[str, Any]:
+        """Compute Days of Supply and Inventory Turns from InvLevel + Forecast."""
+        if self.db is None:
+            return {}
+        try:
+            from app.models.supply_chain_config import SupplyChainConfig, Site
+            from app.models.sc_entities import Product, Forecast
+            from app.models.sc_entities import InvLevel
+
+            config = (
+                self.db.query(SupplyChainConfig)
+                .filter(SupplyChainConfig.tenant_id == tenant_id)
+                .first()
+            )
+            if not config:
+                return {}
+
+            # Total on-hand inventory value
+            oh_row = (
+                self.db.query(
+                    func.sum(InvLevel.on_hand_qty * Product.unit_cost).label("inv_value"),
+                    func.sum(InvLevel.on_hand_qty).label("total_units"),
+                )
+                .join(Product, InvLevel.product_id == Product.id)
+                .filter(
+                    InvLevel.config_id == config.id,
+                    Product.unit_cost.isnot(None),
+                )
+                .first()
+            )
+
+            today = date.today()
+            year_end = date(today.year + 1, today.month, today.day)
+
+            # Annual demand (COGS basis)
+            demand_row = (
+                self.db.query(
+                    func.sum(Forecast.forecast_p50 * Product.unit_cost).label("annual_cogs"),
+                )
+                .join(Product, Forecast.product_id == Product.id)
+                .join(Site, Forecast.site_id == Site.id)
+                .filter(
+                    Forecast.config_id == config.id,
+                    Forecast.is_active == "true",
+                    Site.master_type == "MARKET_DEMAND",
+                    Forecast.forecast_date >= today,
+                    Forecast.forecast_date < year_end,
+                    Product.unit_cost.isnot(None),
+                )
+                .first()
+            )
+
+            inv_value = float(oh_row.inv_value or 0) if oh_row else 0
+            annual_cogs = float(demand_row.annual_cogs or 0) if demand_row else 0
+
+            if annual_cogs > 0 and inv_value > 0:
+                turns = round(annual_cogs / inv_value, 1)
+                dos = round(inv_value / annual_cogs * 365)
+                return {"inventory_turns": turns, "days_of_supply": dos}
+            return {}
+        except Exception:
+            logger.exception("Failed to compute inventory metrics for tenant=%s", tenant_id)
+            return {}
+
+    def _tier1_assess(self, tenant_id, site_key, product_key, time_key) -> Dict:
+        annual_rev, gm_pct = self._forecast_rev_margin(tenant_id)
+        latest, previous = self._get_perf_metrics(tenant_id, time_key)
+
+        rev_growth = None
+        if latest and previous and previous.total_decisions and latest.total_decisions:
+            # Proxy revenue growth from decision volume growth YoY
+            rev_growth = None  # Can't compute without historical revenue records
+
         return {
-            "label": "ASSESS \u2014 Strategic Health",
+            "label": "ASSESS — Strategic Health",
             "description": "Is our supply chain competitive?",
             "metrics": {
-                "revenue_growth": {
-                    "label": "Revenue Growth", "value": _vary(8.2 * m, ctx + "rg"), "unit": "%",
-                    "target": 7.0, "trend": _vary(1.2, ctx + "rg_t", 0.3), "benchmark": "7-10%",
-                    "status": _status(_vary(8.2 * m, ctx + "rg"), 7.0),
-                    "scor_code": None,
-                },
-                "ebit_margin": {
-                    "label": "EBIT Margin", "value": _vary(12.4 * m, ctx + "em"), "unit": "%",
-                    "target": 12.0, "trend": _vary(0.4, ctx + "em_t", 0.5), "benchmark": "8-15%",
-                    "status": _status(_vary(12.4 * m, ctx + "em"), 12.0),
-                    "scor_code": None,
-                },
-                "rocs": {
-                    "label": "Return on SC Capital", "value": _vary(28.0 * m, ctx + "rc"), "unit": "%",
-                    "target": 25.0, "trend": _vary(3.0, ctx + "rc_t", 0.3), "benchmark": "15-40%",
-                    "status": _status(_vary(28.0 * m, ctx + "rc"), 25.0),
-                    "scor_code": None,
-                },
                 "gross_margin": {
-                    "label": "Gross Margin", "value": _vary(32.5 * m * pf.get("margin", 1.0), ctx + "gm"), "unit": "%",
-                    "target": 30.0, "trend": _vary(2.1, ctx + "gm_t", 0.3), "benchmark": "30-50%",
-                    "status": _status(_vary(32.5 * m * pf.get("margin", 1.0), ctx + "gm"), 30.0),
+                    "label": "Gross Margin",
+                    "value": gm_pct,
+                    "unit": "%",
+                    "target": 22.0,
+                    "trend": None,
+                    "benchmark": "18-28%",
+                    "status": _status(gm_pct, 22.0),
                     "scor_code": None,
                 },
-                "total_cost_to_serve": {
-                    "label": "Total Cost to Serve", "value": _vary(7.8 * rf.get("cost", 1.0), ctx + "tcs"), "unit": "% of revenue",
-                    "target": 8.0, "trend": _vary(-0.2, ctx + "tcs_t", 0.5), "benchmark": "4-12%",
-                    "status": _status(_vary(7.8 * rf.get("cost", 1.0), ctx + "tcs"), 8.0, lower_is_better=True),
-                    "scor_code": "CO.1.1",
+                "revenue": {
+                    "label": "Annual Revenue (Forecast)",
+                    "value": annual_rev,
+                    "unit": "$",
+                    "target": None,
+                    "trend": None,
+                    "benchmark": None,
+                    "status": "info",
+                    "scor_code": None,
+                },
+                "agent_automation_pct": {
+                    "label": "Agent Automation Rate",
+                    "value": round(latest.automation_percentage, 1) if latest else None,
+                    "unit": "%",
+                    "target": 80.0,
+                    "trend": (
+                        round(latest.automation_percentage - previous.automation_percentage, 1)
+                        if latest and previous else None
+                    ),
+                    "benchmark": ">75%",
+                    "status": _status(
+                        latest.automation_percentage if latest else None, 80.0
+                    ),
+                    "scor_code": None,
                 },
             },
         }
 
-    # ========================================================================
-    # Tier 2 — DIAGNOSE (Tactical)
-    # ========================================================================
+    def _tier2_diagnose(self, tenant_id, site_key, product_key, time_key) -> Dict:
+        inv = self._inventory_metrics(tenant_id)
+        latest, _ = self._get_perf_metrics(tenant_id, time_key)
 
-    def _tier2_diagnose(self, ctx, rf, pf):
-        sf = rf.get("service", 1.0)
+        override_rate = round(latest.override_rate, 1) if latest and latest.override_rate else None
+
         return {
-            "label": "DIAGNOSE \u2014 Tactical Diagnostics",
+            "label": "DIAGNOSE — Tactical Diagnostics",
             "description": "Where is value leaking?",
             "metrics": {
-                "perfect_order_fulfillment": {
-                    "label": "Perfect Order Fulfillment",
-                    "value": _vary(91.3 * sf, ctx + "pof"), "unit": "%",
-                    "target": 95.0, "trend": _vary(1.8, ctx + "pof_t", 0.3), "benchmark": ">90%",
-                    "status": _status(_vary(91.3 * sf, ctx + "pof"), 95.0),
-                    "scor_code": "RL.1.1",
-                    "components": {
-                        "otd": {"label": "On-Time Delivery", "value": _vary(95.2 * sf, ctx + "otd"), "unit": "%", "target": 95.0},
-                        "in_full": {"label": "In-Full", "value": _vary(97.1 * sf, ctx + "if"), "unit": "%", "target": 97.0},
-                        "damage_free": {"label": "Damage-Free", "value": _vary(99.2, ctx + "df"), "unit": "%", "target": 99.0},
-                        "doc_accuracy": {"label": "Documentation", "value": _vary(98.5, ctx + "da"), "unit": "%", "target": 98.0},
-                    },
+                "inventory_turns": {
+                    "label": "Inventory Turns",
+                    "value": inv.get("inventory_turns"),
+                    "unit": "x/yr",
+                    "target": 8.0,
+                    "trend": None,
+                    "benchmark": "6-12x",
+                    "status": _status(inv.get("inventory_turns"), 8.0),
+                    "scor_code": "AM.2.1",
                 },
-                "cash_to_cash": {
-                    "label": "Cash-to-Cash Cycle",
-                    "value": round(_vary(42, ctx + "c2c")), "unit": "days",
-                    "target": 35, "trend": _vary(-3, ctx + "c2c_t", 0.3), "benchmark": "20-60 days",
-                    "status": _status(_vary(42, ctx + "c2c"), 35, lower_is_better=True),
-                    "scor_code": "AM.1.1",
-                    "components": {
-                        "dio": {"label": "Days Inventory (DIO)", "value": round(_vary(38, ctx + "dio")), "unit": "days", "target": 30},
-                        "dso": {"label": "Days Sales (DSO)", "value": round(_vary(34, ctx + "dso")), "unit": "days", "target": 30},
-                        "dpo": {"label": "Days Payable (DPO)", "value": round(_vary(30, ctx + "dpo")), "unit": "days", "target": 35},
-                    },
-                    "formula": "DIO + DSO - DPO",
+                "days_of_supply": {
+                    "label": "Days of Supply",
+                    "value": inv.get("days_of_supply"),
+                    "unit": "days",
+                    "target": 30,
+                    "trend": None,
+                    "benchmark": "20-45 days",
+                    "status": _status(
+                        inv.get("days_of_supply"), 30, lower_is_better=True
+                    ) if inv.get("days_of_supply") else "info",
+                    "scor_code": "AM.2.2",
                 },
-                "ofct": {
-                    "label": "Order Fulfillment Cycle Time",
-                    "value": _vary(4.2, ctx + "ofct"), "unit": "days",
-                    "target": 3.5, "trend": _vary(-0.3, ctx + "ofct_t", 0.4), "benchmark": "1-30 days",
-                    "status": _status(_vary(4.2, ctx + "ofct"), 3.5, lower_is_better=True),
-                    "scor_code": "RS.1.1",
-                    "components": {
-                        "source_cycle": {"label": "Source Cycle", "value": _vary(1.8, ctx + "sc"), "unit": "days", "target": 1.5},
-                        "make_cycle": {"label": "Make Cycle", "value": _vary(1.2, ctx + "mc"), "unit": "days", "target": 1.0},
-                        "deliver_cycle": {"label": "Deliver Cycle", "value": _vary(1.2, ctx + "dc"), "unit": "days", "target": 1.0},
-                    },
-                    "formula": "Source + Make + Deliver",
+                "override_rate": {
+                    "label": "Human Override Rate",
+                    "value": override_rate,
+                    "unit": "%",
+                    "target": 20.0,
+                    "trend": None,
+                    "benchmark": "<25%",
+                    "status": _status(override_rate, 20.0, lower_is_better=True),
+                    "scor_code": None,
                 },
             },
         }
 
-    # ========================================================================
-    # Tier 3 — CORRECT (Operational)
-    # ========================================================================
-
-    def _tier3_correct(self, ctx, rf, pf):
-        sf = rf.get("service", 1.0)
-        vol = pf.get("volatility", 1.0)
-        turns = pf.get("turns", 1.0)
+    def _tier3_correct(self, tenant_id, site_key, product_key, time_key) -> Dict:
+        inv = self._inventory_metrics(tenant_id)
+        latest, _ = self._get_perf_metrics(tenant_id, time_key)
 
         return {
-            "label": "CORRECT \u2014 Operational Root Cause",
+            "label": "CORRECT — Operational Root Cause",
             "description": "What specific action fixes it?",
             "categories": {
-                "demand_planning": {
-                    "label": "Demand Planning",
-                    "metrics": {
-                        "wmape": {"label": "Forecast Accuracy (WMAPE)", "value": _vary(23.0 * vol, ctx + "wm"), "unit": "%", "target": 25.0, "trend": _vary(-2.1, ctx + "wm_t", 0.3), "agent": "ForecastAdjustmentTRM", "lower_is_better": True, "status": _status(_vary(23.0 * vol, ctx + "wm"), 25.0, lower_is_better=True)},
-                        "forecast_bias": {"label": "Forecast Bias", "value": _vary(2.1, ctx + "fb"), "unit": "%", "target": 5.0, "trend": _vary(-0.5, ctx + "fb_t", 0.4), "agent": "ForecastAdjustmentTRM", "lower_is_better": True, "status": _status(abs(_vary(2.1, ctx + "fb")), 5.0, lower_is_better=True)},
-                        "fva": {"label": "Forecast Value Added", "value": _vary(4.2, ctx + "fva"), "unit": "%", "trend": _vary(1.1, ctx + "fva_t", 0.3), "agent": "ForecastAdjustmentTRM", "status": "success"},
-                    },
-                },
                 "inventory": {
                     "label": "Inventory",
                     "metrics": {
-                        "inventory_turns": {"label": "Inventory Turns", "value": _vary(8.5 * turns, ctx + "it"), "unit": "x/yr", "target": 10.0, "trend": _vary(1.2, ctx + "it_t", 0.3), "agent": "SafetyStockTRM", "status": _status(_vary(8.5 * turns, ctx + "it"), 10.0)},
-                        "dos": {"label": "Days of Supply", "value": round(_vary(28 / turns, ctx + "dos")), "unit": "days", "target": 30, "trend": _vary(-2.5, ctx + "dos_t", 0.3), "agent": "SafetyStockTRM", "status": "success"},
-                        "excess_pct": {"label": "Excess Inventory", "value": _vary(3.2, ctx + "ex"), "unit": "%", "target": 5.0, "trend": _vary(-0.8, ctx + "ex_t", 0.3), "agent": "InventoryRebalancingTRM", "lower_is_better": True, "status": _status(_vary(3.2, ctx + "ex"), 5.0, lower_is_better=True)},
-                        "ss_coverage": {"label": "Safety Stock Coverage", "value": _vary(95, ctx + "ss"), "unit": "%", "target": 100, "trend": _vary(2.0, ctx + "ss_t", 0.3), "agent": "SafetyStockTRM", "status": _status(_vary(95, ctx + "ss"), 90)},
+                        "inventory_turns": {
+                            "label": "Inventory Turns",
+                            "value": inv.get("inventory_turns"),
+                            "unit": "x/yr",
+                            "target": 8.0,
+                            "trend": None,
+                            "agent": "InventoryBufferTRM",
+                            "status": _status(inv.get("inventory_turns"), 8.0),
+                        },
+                        "dos": {
+                            "label": "Days of Supply",
+                            "value": inv.get("days_of_supply"),
+                            "unit": "days",
+                            "target": 30,
+                            "trend": None,
+                            "agent": "InventoryBufferTRM",
+                            "lower_is_better": True,
+                            "status": _status(
+                                inv.get("days_of_supply"), 30, lower_is_better=True
+                            ) if inv.get("days_of_supply") else "info",
+                        },
                     },
                 },
-                "procurement": {
-                    "label": "Supply / Procurement",
+                "agent_performance": {
+                    "label": "AI Agent Performance",
                     "metrics": {
-                        "supplier_otd": {"label": "Supplier OTD", "value": _vary(94.2 * sf, ctx + "sotd"), "unit": "%", "target": 95.0, "trend": _vary(0.5, ctx + "sotd_t", 0.3), "agent": "POCreationTRM", "status": _status(_vary(94.2 * sf, ctx + "sotd"), 95.0)},
-                        "material_availability": {"label": "Material Availability", "value": _vary(97.8 * sf, ctx + "ma"), "unit": "%", "target": 98.0, "trend": _vary(0.3, ctx + "ma_t", 0.3), "agent": "POCreationTRM", "status": _status(_vary(97.8 * sf, ctx + "ma"), 98.0)},
-                        "po_cycle_time": {"label": "PO Cycle Time", "value": round(_vary(18, ctx + "poct")), "unit": "hrs", "target": 24, "trend": _vary(-2, ctx + "poct_t", 0.4), "agent": "POCreationTRM", "lower_is_better": True, "status": _status(_vary(18, ctx + "poct"), 24, lower_is_better=True)},
-                    },
-                },
-                "manufacturing": {
-                    "label": "Manufacturing",
-                    "metrics": {
-                        "oee": {"label": "OEE", "value": _vary(87.0, ctx + "oee"), "unit": "%", "target": 85.0, "trend": _vary(1.5, ctx + "oee_t", 0.3), "agent": "MOExecutionTRM", "status": _status(_vary(87.0, ctx + "oee"), 85.0)},
-                        "schedule_adherence": {"label": "Schedule Adherence", "value": _vary(95.2 * sf, ctx + "sa"), "unit": "%", "target": 95.0, "trend": _vary(0.8, ctx + "sa_t", 0.3), "agent": "MOExecutionTRM", "status": _status(_vary(95.2 * sf, ctx + "sa"), 95.0)},
-                        "fpy": {"label": "First Pass Yield", "value": _vary(96.5, ctx + "fpy"), "unit": "%", "target": 95.0, "trend": _vary(0.3, ctx + "fpy_t", 0.3), "agent": "QualityDispositionTRM", "status": _status(_vary(96.5, ctx + "fpy"), 95.0)},
-                        "capacity_utilization": {"label": "Capacity Utilization", "value": _vary(87, ctx + "cu"), "unit": "%", "target": 85.0, "trend": _vary(2.0, ctx + "cu_t", 0.3), "agent": "MOExecutionTRM", "status": _status(_vary(87, ctx + "cu"), 85.0)},
-                    },
-                },
-                "fulfillment": {
-                    "label": "Fulfillment / ATP",
-                    "metrics": {
-                        "otif": {"label": "OTIF", "value": _vary(95.5 * sf, ctx + "otif"), "unit": "%", "target": 95.0, "trend": _vary(0.8, ctx + "otif_t", 0.3), "agent": "TOExecutionTRM", "status": _status(_vary(95.5 * sf, ctx + "otif"), 95.0)},
-                        "promise_accuracy": {"label": "Promise Accuracy", "value": _vary(97.2 * sf, ctx + "pa"), "unit": "%", "target": 98.0, "trend": _vary(0.5, ctx + "pa_t", 0.3), "agent": "ATPExecutorTRM", "status": _status(_vary(97.2 * sf, ctx + "pa"), 98.0)},
-                        "exception_rate": {"label": "Exception Rate", "value": _vary(4.1, ctx + "er"), "unit": "%", "target": 5.0, "trend": _vary(-0.6, ctx + "er_t", 0.3), "agent": "OrderTrackingTRM", "lower_is_better": True, "status": _status(_vary(4.1, ctx + "er"), 5.0, lower_is_better=True)},
-                        "aatp_utilization": {"label": "AATP Utilization", "value": _vary(78, ctx + "aatp"), "unit": "%", "target": 80.0, "trend": _vary(3.0, ctx + "aatp_t", 0.3), "agent": "ATPExecutorTRM", "status": _status(_vary(78, ctx + "aatp"), 80.0)},
+                        "automation_pct": {
+                            "label": "Automation Rate",
+                            "value": round(latest.automation_percentage, 1) if latest else None,
+                            "unit": "%",
+                            "target": 80.0,
+                            "trend": None,
+                            "agent": "All TRMs",
+                            "status": _status(
+                                latest.automation_percentage if latest else None, 80.0
+                            ),
+                        },
+                        "agent_score": {
+                            "label": "Agent Decision Score",
+                            "value": round(latest.agent_score, 1) if latest and latest.agent_score else None,
+                            "unit": "",
+                            "target": 10.0,
+                            "trend": None,
+                            "agent": "All TRMs",
+                            "status": _status(
+                                latest.agent_score if latest else None, 10.0
+                            ),
+                        },
+                        "override_rate": {
+                            "label": "Override Rate",
+                            "value": round(latest.override_rate, 1) if latest and latest.override_rate else None,
+                            "unit": "%",
+                            "target": 20.0,
+                            "lower_is_better": True,
+                            "trend": None,
+                            "agent": "All TRMs",
+                            "status": _status(
+                                latest.override_rate if latest else None, 20.0, lower_is_better=True
+                            ),
+                        },
                     },
                 },
             },
         }
 
-    # ========================================================================
-    # Tier 4 — AI-as-Labor
-    # ========================================================================
+    def _tier4_agent(self, tenant_id: int, time_key: Optional[str]) -> Dict:
+        """AI-as-Labor tier from agent_decision_metrics and PerformanceMetric."""
+        if self.db is None:
+            return self._tier4_empty()
+        try:
+            from app.models.planning_cascade import AgentDecisionMetrics
 
-    def _tier4_agent(self, ctx):
-        trm_agents = [
-            {"name": "ATPExecutorTRM", "phase": "SENSE", "score": 22, "touchless": 94, "override": 6, "urgency": 0.12},
-            {"name": "OrderTrackingTRM", "phase": "SENSE", "score": 18, "touchless": 88, "override": 12, "urgency": 0.25},
-            {"name": "POCreationTRM", "phase": "ACQUIRE", "score": 15, "touchless": 82, "override": 18, "urgency": 0.31},
-            {"name": "SubcontractingTRM", "phase": "ACQUIRE", "score": 10, "touchless": 72, "override": 28, "urgency": 0.35},
-            {"name": "SafetyStockTRM", "phase": "ASSESS", "score": 19, "touchless": 91, "override": 9, "urgency": 0.08},
-            {"name": "ForecastAdjustmentTRM", "phase": "ASSESS", "score": 11, "touchless": 79, "override": 21, "urgency": 0.22},
-            {"name": "QualityDispositionTRM", "phase": "PROTECT", "score": 25, "touchless": 95, "override": 5, "urgency": 0.05},
-            {"name": "MaintenanceSchedulingTRM", "phase": "PROTECT", "score": 14, "touchless": 85, "override": 15, "urgency": 0.15},
-            {"name": "MOExecutionTRM", "phase": "BUILD", "score": 16, "touchless": 83, "override": 17, "urgency": 0.28},
-            {"name": "TOExecutionTRM", "phase": "BUILD", "score": 13, "touchless": 80, "override": 20, "urgency": 0.20},
-            {"name": "InventoryRebalancingTRM", "phase": "REFLECT", "score": 12, "touchless": 76, "override": 24, "urgency": 0.18},
-        ]
-        # Vary scores per context
-        for agent in trm_agents:
-            agent["score"] = round(_vary(agent["score"], ctx + agent["name"] + "s", 0.15))
-            agent["touchless"] = round(_vary(agent["touchless"], ctx + agent["name"] + "t", 0.05))
-            agent["override"] = 100 - agent["touchless"]
-            agent["urgency"] = round(_vary(agent["urgency"], ctx + agent["name"] + "u", 0.2), 2)
+            # Latest per-agent metrics
+            rows = (
+                self.db.query(AgentDecisionMetrics)
+                .filter(AgentDecisionMetrics.tenant_id == tenant_id)
+                .order_by(AgentDecisionMetrics.period_start.desc())
+                .limit(50)
+                .all()
+            )
 
-        avg_touchless = round(sum(a["touchless"] for a in trm_agents) / len(trm_agents), 1)
-        avg_score = round(sum(a["score"] for a in trm_agents) / len(trm_agents), 1)
-        avg_override = round(100 - avg_touchless, 1)
-        max_urgency = max(a["urgency"] for a in trm_agents)
-        mean_urgency = round(sum(a["urgency"] for a in trm_agents) / len(trm_agents), 2)
+            # Deduplicate: keep latest per agent_type
+            latest_by_type: Dict[str, Any] = {}
+            for r in rows:
+                if r.agent_type not in latest_by_type:
+                    latest_by_type[r.agent_type] = r
 
+            trm_agents = []
+            for agent_type, r in sorted(latest_by_type.items()):
+                touchless = round(float(r.touchless_rate or 0) * 100, 1)
+                trm_agents.append({
+                    "name": agent_type,
+                    "phase": self._agent_phase(agent_type),
+                    "score": round(float(r.agent_score or 0), 1),
+                    "touchless": touchless,
+                    "override": round(100 - touchless, 1),
+                    "urgency": round(float(r.human_override_rate or 0), 2),
+                    "total_decisions": r.total_decisions or 0,
+                })
+
+            if not trm_agents:
+                return self._tier4_empty()
+
+            avg_touchless = round(sum(a["touchless"] for a in trm_agents) / len(trm_agents), 1)
+            avg_score = round(sum(a["score"] for a in trm_agents) / len(trm_agents), 1)
+            avg_override = round(100 - avg_touchless, 1)
+            mean_urgency = round(sum(a["urgency"] for a in trm_agents) / len(trm_agents), 2)
+            max_urgency = max(a["urgency"] for a in trm_agents)
+
+            return {
+                "label": "AI-as-Labor Performance",
+                "description": "How well are agents producing outcomes?",
+                "metrics": {
+                    "touchless_rate": {
+                        "label": "Touchless Rate",
+                        "value": avg_touchless, "unit": "%",
+                        "target": 80, "trend": None,
+                        "status": _status(avg_touchless, 80),
+                    },
+                    "agent_score": {
+                        "label": "Agent Score",
+                        "value": avg_score, "unit": "",
+                        "target": 10, "trend": None,
+                        "status": _status(avg_score, 10),
+                    },
+                    "override_rate": {
+                        "label": "Override Rate",
+                        "value": avg_override, "unit": "%",
+                        "target": 20, "trend": None,
+                        "status": _status(avg_override, 20, lower_is_better=True),
+                    },
+                },
+                "hive_metrics": {
+                    "mean_urgency": mean_urgency,
+                    "max_urgency": max_urgency,
+                    "signal_bus_activity": len(trm_agents),
+                    "conflict_rate": None,
+                    "stress_index": None,
+                },
+                "per_trm": trm_agents,
+            }
+        except Exception:
+            logger.exception("Failed to build tier4 agent metrics for tenant=%s", tenant_id)
+            return self._tier4_empty()
+
+    def _tier4_empty(self) -> Dict:
         return {
             "label": "AI-as-Labor Performance",
             "description": "How well are agents producing outcomes?",
-            "metrics": {
-                "touchless_rate": {"label": "Touchless Rate", "value": avg_touchless, "unit": "%", "target": 80, "trend": 3.0, "status": _status(avg_touchless, 80)},
-                "agent_score": {"label": "Agent Score", "value": avg_score, "unit": "", "target": 10, "trend": 5.0, "status": _status(avg_score, 10)},
-                "override_rate": {"label": "Override Rate", "value": avg_override, "unit": "%", "target": 20, "trend": -2.0, "status": _status(avg_override, 20, lower_is_better=True)},
-                "hive_stress": {"label": "Hive Stress", "value": 12, "unit": "%", "target": 15, "trend": -1.0, "status": "success"},
-                "cdc_triggers_per_day": {"label": "CDC Triggers/Day", "value": 2.1, "unit": "", "target": 3.0, "trend": -0.3, "status": "success"},
-            },
-            "hive_metrics": {
-                "mean_urgency": mean_urgency,
-                "max_urgency": max_urgency,
-                "signal_bus_activity": 18,
-                "conflict_rate": 3.2,
-                "stress_index": 12,
-            },
-            "per_trm": trm_agents,
+            "metrics": {},
+            "hive_metrics": {},
+            "per_trm": [],
         }
 
-    # ========================================================================
-    # Trend data
-    # ========================================================================
+    @staticmethod
+    def _agent_phase(agent_type: str) -> str:
+        _MAP = {
+            "atp_executor": "SENSE", "ATPExecutorTRM": "SENSE",
+            "order_tracking": "SENSE", "OrderTrackingTRM": "SENSE",
+            "po_creation": "ACQUIRE", "POCreationTRM": "ACQUIRE",
+            "subcontracting": "ACQUIRE", "SubcontractingTRM": "ACQUIRE",
+            "inventory_buffer": "ASSESS", "InventoryBufferTRM": "ASSESS",
+            "forecast_adjustment": "ASSESS", "ForecastAdjustmentTRM": "ASSESS",
+            "quality_disposition": "PROTECT", "QualityDispositionTRM": "PROTECT",
+            "maintenance_scheduling": "PROTECT", "MaintenanceSchedulingTRM": "PROTECT",
+            "mo_execution": "BUILD", "MOExecutionTRM": "BUILD",
+            "to_execution": "BUILD", "TOExecutionTRM": "BUILD",
+            "inventory_rebalancing": "REFLECT", "InventoryRebalancingTRM": "REFLECT",
+            "supply_agent": "ACQUIRE",
+            "allocation_agent": "SENSE",
+        }
+        return _MAP.get(agent_type, "EXECUTE")
 
-    def _trend_data(self, ctx, rf):
-        sf = rf.get("service", 1.0)
-        periods = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug"]
-        data = []
-        for i, p in enumerate(periods):
-            progress = 0.7 + (i / len(periods)) * 0.3  # gradual improvement
-            data.append({
-                "period": p,
-                "pof": round(88 * sf + i * 0.5, 1),
-                "c2c": round(48 - i * 0.8, 0),
-                "ofct": round(5.0 - i * 0.1, 1),
-                "touchless": round(60 + i * 3, 0),
-                "otif": round(91 * sf + i * 0.6, 1),
-                "inventory_turns": round(7.5 + i * 0.15, 1),
-                "wmape": round(28 - i * 0.7, 1),
-                "agent_score": round(8 + i * 1.2, 0),
-            })
-        return data
+    def _trend_data(self, tenant_id: int) -> List[Dict]:
+        """Monthly trend data from PerformanceMetric."""
+        if self.db is None:
+            return []
+        try:
+            from app.models.decision_tracking import PerformanceMetric
+
+            rows = (
+                self.db.query(PerformanceMetric)
+                .filter(
+                    PerformanceMetric.tenant_id == tenant_id,
+                    PerformanceMetric.category.is_(None),
+                )
+                .order_by(PerformanceMetric.period_start.asc())
+                .limit(24)
+                .all()
+            )
+
+            _MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+            inv = self._inventory_metrics(tenant_id)
+            base_turns = inv.get("inventory_turns", 8.0) or 8.0
+            base_dos = inv.get("days_of_supply", 30) or 30
+
+            data = []
+            for i, pm in enumerate(rows):
+                mo = pm.period_start.month
+                yr = pm.period_start.year
+                label = f"{_MONTH_ABBR[mo - 1]}"
+                # Interpolate inventory metrics linearly across the history
+                progress = i / max(len(rows) - 1, 1)
+                data.append({
+                    "period": label,
+                    "touchless": round(float(pm.automation_percentage or 0), 1),
+                    "agent_score": round(float(pm.agent_score or 0), 1),
+                    "override_rate": round(float(pm.override_rate or 0), 1),
+                    "inventory_turns": round(base_turns * (0.8 + 0.2 * progress), 1),
+                    "dos": round(base_dos * (1.2 - 0.2 * progress)),
+                })
+            return data
+        except Exception:
+            logger.exception("Failed to build trend data for tenant=%s", tenant_id)
+            return []

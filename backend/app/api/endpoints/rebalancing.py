@@ -5,16 +5,18 @@ Network-wide inventory rebalancing recommendations using LP optimization.
 """
 
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, date
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.db.session import get_sync_db as get_db
 from app.models.user import User
 from app.models.supply_chain_config import Node as DBNode, Lane as DBLane, SupplyChainConfig
+from app.models.sc_entities import InvLevel, InvPolicy, Forecast, Product
 from app.models.recommendations import Recommendation, RecommendationDecision
 from app.api.endpoints.auth import get_current_user
 from app.services.rebalancing_service import (
@@ -118,37 +120,97 @@ async def optimize_rebalancing(
         if not config:
             raise HTTPException(status_code=404, detail="Supply chain config not found")
 
-        # Load nodes with inventory data
-        db_nodes = db.query(DBNode).filter(DBNode.config_id == request.config_id).all()
+        # --- Real inventory data from InvLevel ---
+        # Sum on_hand_qty per site for the most recent inventory_date
+        max_date_sub = (
+            db.query(func.max(InvLevel.inventory_date))
+            .filter(InvLevel.config_id == request.config_id)
+            .scalar_subquery()
+        )
+        inv_by_site = (
+            db.query(InvLevel.site_id, func.sum(InvLevel.on_hand_qty).label("total_on_hand"))
+            .filter(InvLevel.config_id == request.config_id, InvLevel.inventory_date == max_date_sub)
+            .group_by(InvLevel.site_id)
+            .all()
+        )
+        inv_map = {row.site_id: float(row.total_on_hand or 0) for row in inv_by_site}
+
+        # --- Safety stock from InvPolicy (abs_level ss_quantity or ss_days × avg demand) ---
+        ss_by_site = (
+            db.query(InvPolicy.site_id, func.sum(InvPolicy.ss_quantity).label("total_ss"))
+            .filter(InvPolicy.config_id == request.config_id, InvPolicy.ss_policy == "abs_level")
+            .group_by(InvPolicy.site_id)
+            .all()
+        )
+        ss_map = {row.site_id: float(row.total_ss or 0) for row in ss_by_site}
+
+        # --- Demand forecast: avg weekly P50 per site for next 4 weeks ---
+        today = date.today()
+        from datetime import timedelta
+        horizon_end = today + timedelta(weeks=4)
+        demand_by_site = (
+            db.query(Forecast.site_id, func.avg(Forecast.forecast_p50).label("avg_weekly"))
+            .filter(
+                Forecast.config_id == request.config_id,
+                Forecast.is_active == "true",
+                Forecast.forecast_date >= today,
+                Forecast.forecast_date <= horizon_end,
+            )
+            .group_by(Forecast.site_id)
+            .all()
+        )
+        demand_map = {row.site_id: float(row.avg_weekly or 0) for row in demand_by_site}
+
+        # --- Avg unit cost for holding cost estimate ---
+        avg_cost_sub = (
+            db.query(func.avg(Product.unit_cost).label("avg_cost"))
+            .join(Forecast, Forecast.product_id == Product.id)
+            .filter(Forecast.config_id == request.config_id, Forecast.is_active == "true")
+            .scalar()
+        )
+        avg_unit_cost = float(avg_cost_sub or 5.0)
+        weekly_holding_cost = avg_unit_cost * 0.25 / 52  # 25% annual carrying cost
+
+        # Load nodes with real inventory data (INVENTORY + MANUFACTURER sites only)
+        db_nodes = db.query(DBNode).filter(
+            DBNode.config_id == request.config_id,
+            DBNode.master_type.in_(["INVENTORY", "MANUFACTURER"]),
+        ).all()
         for db_node in db_nodes:
-            # Get current inventory from node state or use defaults
-            current_inv = getattr(db_node, 'current_inventory', 100)
-            target_inv = getattr(db_node, 'target_inventory', 150)
-            safety_stock = getattr(db_node, 'safety_stock', 30)
-            demand = getattr(db_node, 'demand_forecast', 50)
+            current_inv = inv_map.get(db_node.id, 0.0)
+            safety_stock = ss_map.get(db_node.id, 0.0)
+            demand = demand_map.get(db_node.id, 0.0)
+            target_inv = safety_stock + demand  # 1 week of demand above safety stock
 
             nodes.append(Node(
                 id=db_node.id,
                 name=db_node.name,
                 current_inventory=current_inv,
-                target_inventory=target_inv,
+                target_inventory=max(target_inv, safety_stock * 1.5),
                 min_inventory=safety_stock,
-                max_inventory=getattr(db_node, 'max_inventory', 1000),
-                holding_cost_per_unit=getattr(db_node, 'holding_cost', 0.5),
-                backlog_cost_per_unit=getattr(db_node, 'backlog_cost', 2.0),
-                demand_forecast=demand
+                max_inventory=current_inv * 3 or 10000,
+                holding_cost_per_unit=weekly_holding_cost,
+                backlog_cost_per_unit=weekly_holding_cost * 4,
+                demand_forecast=demand,
             ))
 
-        # Load lanes
+        # Load lanes with real lead times and capacities
         db_lanes = db.query(DBLane).filter(DBLane.config_id == request.config_id).all()
         for db_lane in db_lanes:
+            # Extract lead time from supply_lead_time JSON
+            lt_json = db_lane.supply_lead_time or {}
+            if isinstance(lt_json, dict):
+                lead_time = int(lt_json.get("value", lt_json.get("min", 1)))
+            else:
+                lead_time = 1
+
             lanes.append(Lane(
                 id=db_lane.id,
-                source_node_id=db_lane.source_node_id,
-                dest_node_id=db_lane.dest_node_id,
-                transport_cost_per_unit=getattr(db_lane, 'transport_cost', 0.1),
-                lead_time_days=getattr(db_lane, 'lead_time', 1),
-                max_capacity=getattr(db_lane, 'capacity', 10000)
+                source_node_id=db_lane.from_site_id,
+                dest_node_id=db_lane.to_site_id,
+                transport_cost_per_unit=avg_unit_cost * 0.02,  # 2% of unit cost
+                lead_time_days=lead_time,
+                max_capacity=float(db_lane.capacity or 10000),
             ))
 
     elif request.nodes and request.lanes:
@@ -239,74 +301,27 @@ async def demo_rebalancing(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Run demo rebalancing with sample data.
-    Useful for testing and demonstration.
+    Run rebalancing optimization using the current user's supply chain config.
+    Falls back gracefully if no config exists for the tenant.
     """
-    # Sample 4-node supply chain network
-    nodes = [
-        Node(id=1, name="Retailer", current_inventory=25, target_inventory=100,
-             min_inventory=30, max_inventory=500, holding_cost_per_unit=0.5,
-             backlog_cost_per_unit=2.0, demand_forecast=50),
-        Node(id=2, name="Wholesaler", current_inventory=180, target_inventory=150,
-             min_inventory=40, max_inventory=600, holding_cost_per_unit=0.4,
-             backlog_cost_per_unit=1.8, demand_forecast=55),
-        Node(id=3, name="Distributor", current_inventory=220, target_inventory=200,
-             min_inventory=50, max_inventory=800, holding_cost_per_unit=0.35,
-             backlog_cost_per_unit=1.5, demand_forecast=60),
-        Node(id=4, name="Factory", current_inventory=350, target_inventory=300,
-             min_inventory=80, max_inventory=1000, holding_cost_per_unit=0.3,
-             backlog_cost_per_unit=1.2, demand_forecast=65),
-    ]
+    # Find the user's first SC config
+    config = (
+        db.query(SupplyChainConfig)
+        .filter(SupplyChainConfig.tenant_id == current_user.tenant_id)
+        .order_by(SupplyChainConfig.id)
+        .first()
+    )
+    if not config:
+        raise HTTPException(status_code=404, detail="No supply chain config found for your tenant")
 
-    lanes = [
-        Lane(id=1, source_node_id=2, dest_node_id=1, transport_cost_per_unit=0.15,
-             lead_time_days=2, max_capacity=200),
-        Lane(id=2, source_node_id=3, dest_node_id=2, transport_cost_per_unit=0.12,
-             lead_time_days=2, max_capacity=250),
-        Lane(id=3, source_node_id=4, dest_node_id=3, transport_cost_per_unit=0.10,
-             lead_time_days=3, max_capacity=300),
-        # Cross-dock option
-        Lane(id=4, source_node_id=3, dest_node_id=1, transport_cost_per_unit=0.20,
-             lead_time_days=1, max_capacity=100),
-    ]
-
-    service = RebalancingService(db)
-    result = service.optimize_rebalancing(
-        nodes=nodes,
-        lanes=lanes,
+    # Delegate to the real optimize endpoint via a synthetic request
+    synthetic_req = RebalancingRequest(
+        config_id=config.id,
         planning_horizon_days=7,
         min_transfer_quantity=10.0,
-        target_service_level=0.95
+        target_service_level=0.95,
     )
-
-    savings_pct = 0.0
-    if result.total_cost_before > 0:
-        savings_pct = (result.total_savings / result.total_cost_before) * 100
-
-    return RebalancingResponse(
-        success=result.success,
-        total_cost_before=result.total_cost_before,
-        total_cost_after=result.total_cost_after,
-        total_savings=result.total_savings,
-        savings_percentage=round(savings_pct, 2),
-        recommendations=[
-            TransferRecommendationResponse(
-                source_node_id=r.source_node_id,
-                source_node_name=r.source_node_name,
-                dest_node_id=r.dest_node_id,
-                dest_node_name=r.dest_node_name,
-                quantity=r.quantity,
-                transport_cost=r.transport_cost,
-                cost_saving=r.cost_saving,
-                priority=r.priority,
-                reason=r.reason
-            )
-            for r in result.recommendations
-        ],
-        recommendation_count=len(result.recommendations),
-        optimization_status=result.optimization_status + " (Demo Data)",
-        computation_time_ms=round(result.computation_time_ms, 2)
-    )
+    return await optimize_rebalancing(request=synthetic_req, db=db, current_user=current_user)
 
 
 @router.post("/save-recommendations")
