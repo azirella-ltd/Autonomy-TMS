@@ -5977,6 +5977,10 @@ api.include_router(forecast_adjustments_router, prefix="/forecast-adjustments", 
 from app.api.endpoints.forecast_pipeline import router as forecast_pipeline_router
 api.include_router(forecast_pipeline_router, prefix="/forecast-pipeline", tags=["forecast-pipeline", "demand-planning"])
 
+# Warm Start API
+from app.api.endpoints.warm_start import router as warm_start_router
+api.include_router(warm_start_router, tags=["warm-start"])
+
 # Consensus Planning API
 from app.api.endpoints.consensus_planning import router as consensus_planning_router
 api.include_router(consensus_planning_router, prefix="/consensus-planning", tags=["consensus-planning", "demand-planning"])

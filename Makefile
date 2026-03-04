@@ -339,10 +339,28 @@ seed-variable-demo:
 	@echo "\n[+] Seeding Variable demo tenant..."; \
 	$(DOCKER_COMPOSE_CMD) exec backend python3 scripts/seed_variable_demo.py $(SEED_ARGS)
 
+seed-tbg-sc-data:
+	@echo "\n[+] Seeding TBG configs with Product, InvPolicy, SourcingRules..."; \
+	$(DOCKER_COMPOSE_CMD) exec backend python3 scripts/seed_tbg_sc_data.py $(SEED_ARGS)
+
+warm-start-all:
+	@echo "\n[+] Generating warm start historical data for all configs..."; \
+	$(DOCKER_COMPOSE_CMD) exec backend python scripts/seed_warm_start_all_configs.py
+
+warm-start-food-dist:
+	@echo "\n[+] Generating warm start data for Food Distribution (config_id=22)..."; \
+	$(DOCKER_COMPOSE_CMD) exec backend python scripts/seed_warm_start_all_configs.py --config-id 22
+
+seed-food-dist-pipeline:
+	@echo "\n[+] Running forecast pipeline for Food Distribution..."; \
+	$(DOCKER_COMPOSE_CMD) exec backend python scripts/seed_food_dist_pipeline.py
+
 all_demo_configs:
 	@$(MAKE) --no-print-directory seed-demo-configs SEED_ARGS="$(SEED_ARGS)"
 	@$(MAKE) --no-print-directory seed-three-fg-demo SEED_ARGS="$(SEED_ARGS)"
 	@$(MAKE) --no-print-directory seed-variable-demo SEED_ARGS="$(SEED_ARGS)"
+	@$(MAKE) --no-print-directory warm-start-all
+	@$(MAKE) --no-print-directory seed-food-dist-pipeline
 
 reset-admin:
 	@echo "\n[+] Resetting superadmin password to Autonomy@2026..."; \

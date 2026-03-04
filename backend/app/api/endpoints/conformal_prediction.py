@@ -1083,7 +1083,6 @@ def reset_sop_planner(
 @router.post("/demo/calibrate")
 def calibrate_demo_data(
     customer_id: int = 1,
-    db: Session = Depends(get_db),
 ):
     """
     Calibrate conformal predictors using real Forecast data for the tenant's
@@ -1099,8 +1098,11 @@ def calibrate_demo_data(
         RollingHorizonSOPConfig,
     )
     from ...services.powell.stochastic_program import StochasticSolution
+    from ...db.session import sync_session_factory
 
     rng = np.random.default_rng(42)
+
+    db = sync_session_factory()
 
     # ── Resolve real IDs from the tenant's SC config ──────────────────────────
     config = (
@@ -1250,6 +1252,7 @@ def calibrate_demo_data(
         )
         planner.cycle_history.append(cycle)
 
+    db.close()
     return {
         "status": "calibrated",
         "suite_summary": suite_summary,
