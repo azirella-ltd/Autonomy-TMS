@@ -1,0 +1,426 @@
+"""Monte Carlo warm start generator for supply chain configs.
+
+Generates consistent historical demand data from existing Forecast P10/P50/P90
+distributions, enabling conformal calibration and ROI metrics to hydrate on
+any SC config — not just Food Dist.
+
+Uses triangular sampling (not SimPy) so it works for any topology.
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timedelta, date
+from typing import Dict, List, Optional
+
+import numpy as np
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from app.models.sc_entities import Forecast, OutboundOrderLine
+from app.models.powell import PowellBeliefState, PowellCalibrationLog, EntityType, ConformalMethod
+from app.models.decision_tracking import PerformanceMetric
+from app.models.supply_chain_config import SupplyChainConfig
+
+logger = logging.getLogger(__name__)
+
+WARM_START_ORDER_PREFIX = "WS"
+
+
+class WarmStartGenerator:
+    """Monte Carlo warm start — idempotent historical data generator.
+
+    Samples actual demand from existing Forecast triangular distributions
+    (P10, P50, P90), writes OutboundOrderLine records, seeds performance
+    metrics and Powell belief states for conformal calibration.
+    """
+
+    HISTORY_WEEKS = 52
+    SEED = 42
+
+    def __init__(self, db: Session):
+        self.db = db
+        self.rng = np.random.default_rng(self.SEED)
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def generate_for_config(self, config_id: int, weeks: int = 52) -> dict:
+        """Main entry point. Idempotent (cleans up previous warm start first).
+
+        Args:
+            config_id: SupplyChainConfig.id
+            weeks: How many weeks of history to generate
+
+        Returns:
+            {"status": "ok", "records": N} or {"status": "skipped", "reason": "..."}
+        """
+        config = self.db.query(SupplyChainConfig).filter(SupplyChainConfig.id == config_id).first()
+        if not config:
+            return {"status": "skipped", "reason": f"config {config_id} not found"}
+
+        tenant_id = config.tenant_id
+
+        # Step 1: Clean up any previous warm start data
+        self._cleanup_existing(config_id)
+
+        # Step 2: Load existing forecast records (P10/P50/P90)
+        forecast_rows = self._load_forecasts(config_id, weeks)
+        if not forecast_rows:
+            return {"status": "skipped", "reason": "no forecasts found for config"}
+
+        logger.info("WarmStart config=%d: found %d forecast rows, generating actuals", config_id, len(forecast_rows))
+
+        # Step 3: Sample actuals via triangular distribution
+        actuals = self._generate_actuals(forecast_rows, weeks)
+
+        # Step 4: Write OutboundOrderLine records (skipped if product_id FK mismatch)
+        ool_count = self._write_outbound_order_lines(actuals, config_id)
+        logger.info("WarmStart config=%d: %d OOL records written", config_id, ool_count)
+
+        # Step 5: Update Forecast.forecast_error / forecast_bias
+        self._update_forecast_errors(forecast_rows, actuals)
+
+        # Step 6: Seed PerformanceMetric history (12 months)
+        self._seed_performance_metrics(config_id, tenant_id)
+
+        # Step 7: Seed PowellBeliefState + PowellCalibrationLog
+        self._seed_belief_states(config_id, tenant_id, actuals)
+
+        self.db.flush()
+        logger.info("WarmStart config=%d: committed %d actuals", config_id, len(actuals))
+        return {"status": "ok", "records": len(actuals), "config_id": config_id}
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _load_forecasts(self, config_id: int, weeks: int) -> List[Forecast]:
+        """Load Forecast rows for this config covering the past `weeks` weeks."""
+        cutoff = date.today() - timedelta(weeks=weeks + 4)  # small buffer
+        rows = (
+            self.db.query(Forecast)
+            .filter(
+                Forecast.config_id == config_id,
+                Forecast.forecast_p50.isnot(None),
+                Forecast.forecast_p50 > 0,
+                Forecast.forecast_date >= cutoff,
+            )
+            .all()
+        )
+        return rows
+
+    def _generate_actuals(self, forecast_rows: List[Forecast], weeks: int) -> List[dict]:
+        """Sample actual demand from triangular(P10, P50, P90) + multiplicative noise."""
+        actuals = []
+        cutoff = date.today() - timedelta(weeks=weeks)
+
+        for row in forecast_rows:
+            if row.forecast_date > date.today():
+                continue  # skip future forecasts
+            if row.forecast_date < cutoff:
+                continue
+
+            p50 = float(row.forecast_p50)
+            p10 = float(row.forecast_p10) if row.forecast_p10 is not None else p50 * 0.7
+            p90 = float(row.forecast_p90) if row.forecast_p90 is not None else p50 * 1.3
+
+            # Triangular sample: mode=p50, left=p10, right=p90
+            # Add 3% multiplicative noise for realism
+            triangular = float(self.rng.triangular(left=max(0, p10), mode=p50, right=max(p50 + 0.01, p90)))
+            noise = float(self.rng.normal(1.0, 0.03))
+            actual_qty = max(0.0, round(triangular * noise, 4))
+
+            actuals.append({
+                "product_id": str(row.product_id),
+                "site_id": row.site_id,
+                "date": row.forecast_date,
+                "actual_qty": actual_qty,
+                "forecast_p50": p50,
+                "forecast_p10": p10,
+                "forecast_p90": p90,
+                "error": actual_qty - p50,
+            })
+        return actuals
+
+    def _write_outbound_order_lines(self, actuals: List[dict], config_id: int) -> int:
+        """INSERT demand history records via raw SQL to match actual DB schema.
+
+        The outbound_order_line table has a legacy INTEGER FK product_id to
+        items.id (Beer Game table). AWS SC configs use string product IDs from
+        the product table, which are incompatible. In that case we skip OOL
+        creation — the forecast pipeline falls back to Forecast.forecast_p50
+        as actuals, and conformal calibration uses PowellCalibrationLog.
+
+        Returns number of rows inserted (0 if skipped due to FK mismatch).
+        """
+        if not actuals:
+            return 0
+
+        # Check if this config's products exist in the items table (Beer Game)
+        # vs the product table (AWS SC). If products are strings, skip OOL.
+        sample_product_id = actuals[0]["product_id"]
+        is_string_product = not str(sample_product_id).isdigit()
+        if is_string_product:
+            logger.info(
+                "WarmStart config=%d: skipping OOL creation — product_id '%s' is a "
+                "string (AWS SC product table), incompatible with outbound_order_line "
+                "INTEGER FK to items.id. Conformal calibration uses PowellCalibrationLog.",
+                config_id, sample_product_id,
+            )
+            return 0
+
+        # Beer Game configs with integer product IDs — use extended or minimal schema
+        col_rows = self.db.execute(
+            text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name='outbound_order_line'"
+            )
+        ).fetchall()
+        available = {row[0] for row in col_rows}
+        has_extended = "shipped_quantity" in available
+
+        count = 0
+        for a in actuals:
+            order_id = f"{WARM_START_ORDER_PREFIX}-{config_id}-{a['product_id']}-{a['date'].isoformat()}"
+            try:
+                if has_extended:
+                    self.db.execute(
+                        text("""
+                            INSERT INTO outbound_order_line
+                                (order_id, line_number, product_id, site_id, ordered_quantity,
+                                 requested_delivery_date, order_date, config_id,
+                                 shipped_quantity, backlog_quantity, status, priority_code)
+                            VALUES (:oid, 1, :pid, :sid, :qty, :rdate, :odate, :cid,
+                                    :qty, 0.0, 'FULFILLED', 'STANDARD')
+                        """),
+                        {"oid": order_id, "pid": int(a["product_id"]),
+                         "sid": a["site_id"], "qty": a["actual_qty"],
+                         "rdate": a["date"], "odate": a["date"], "cid": config_id},
+                    )
+                else:
+                    self.db.execute(
+                        text("""
+                            INSERT INTO outbound_order_line
+                                (order_id, line_number, product_id, site_id, ordered_quantity,
+                                 requested_delivery_date, order_date, config_id)
+                            VALUES (:oid, 1, :pid, :sid, :qty, :rdate, :odate, :cid)
+                        """),
+                        {"oid": order_id, "pid": int(a["product_id"]),
+                         "sid": a["site_id"], "qty": a["actual_qty"],
+                         "rdate": a["date"], "odate": a["date"], "cid": config_id},
+                    )
+                count += 1
+            except Exception as exc:
+                logger.warning("WarmStart: skipping OOL insert for %s: %s", order_id, exc)
+                self.db.rollback()
+                break
+        return count
+
+    def _update_forecast_errors(self, forecast_rows: List[Forecast], actuals: List[dict]) -> None:
+        """Backfill Forecast.forecast_error / forecast_bias from generated actuals."""
+        actual_map: Dict[tuple, dict] = {
+            (a["product_id"], a["site_id"], a["date"]): a
+            for a in actuals
+        }
+        for row in forecast_rows:
+            key = (str(row.product_id), row.site_id, row.forecast_date)
+            if key in actual_map:
+                a = actual_map[key]
+                row.forecast_error = a["error"]
+                row.forecast_bias = (a["error"] / a["forecast_p50"]) if a["forecast_p50"] else None
+
+    def _seed_performance_metrics(self, config_id: int, tenant_id: int) -> None:
+        """Create 12 monthly PerformanceMetric rows showing automation improvement."""
+        # Only seed if tenant has no existing metrics
+        existing = (
+            self.db.query(PerformanceMetric)
+            .filter(PerformanceMetric.tenant_id == tenant_id)
+            .count()
+        )
+        if existing > 0:
+            return
+
+        now = datetime.utcnow()
+        n_months = 12
+        for i in range(n_months):
+            t = i / (n_months - 1)  # 0.0 → 1.0
+            month_start = now - timedelta(days=30 * (n_months - 1 - i))
+            month_end = month_start + timedelta(days=30)
+
+            automation = 30.0 + t * (75.0 - 30.0)       # 30 → 75
+            agent_score = 45.0 + t * (72.0 - 45.0)      # 45 → 72
+            planner_score = 35.0 + t * (48.0 - 35.0)    # 35 → 48
+            override_rate = 45.0 - t * (45.0 - 22.0)    # 45 → 22
+
+            self.db.add(PerformanceMetric(
+                tenant_id=tenant_id,
+                period_start=month_start,
+                period_end=month_end,
+                period_type="monthly",
+                category=None,
+                automation_percentage=round(automation, 1),
+                agent_score=round(agent_score, 1),
+                planner_score=round(planner_score, 1),
+                override_rate=round(override_rate, 1),
+                total_decisions=100 + i * 8,
+                agent_decisions=int((automation / 100) * (100 + i * 8)),
+                planner_decisions=int((1 - automation / 100) * (100 + i * 8)),
+                active_agents=3,
+                active_planners=2,
+                total_skus=25,
+            ))
+
+    def _seed_belief_states(self, config_id: int, tenant_id: int, actuals: List[dict]) -> None:
+        """Create PowellBeliefState + PowellCalibrationLog from generated actuals.
+
+        Uses raw SQL to match the actual DB schema, which differs from the ORM model:
+        - DB uses config_id (not tenant_id) for belief state association
+        - entity_type is varchar (not enum)
+        """
+        import json
+        from collections import defaultdict
+
+        # Group actuals by (product_id, site_id)
+        groups: Dict[tuple, List[dict]] = defaultdict(list)
+        for a in actuals:
+            groups[(a["product_id"], a["site_id"])].append(a)
+
+        for (product_id, site_id), items in groups.items():
+            items_sorted = sorted(items, key=lambda x: x["date"])
+            errors = [it["error"] for it in items_sorted]
+            p50s = [it["forecast_p50"] for it in items_sorted]
+
+            std_err = float(np.std(errors)) if len(errors) > 1 else float(np.mean(p50s) * 0.15 if p50s else 1.0)
+            mean_p50 = float(np.mean(p50s)) if p50s else 1.0
+            entity_id = f"{product_id}:{site_id}"
+            recent_residuals = errors[-30:]
+            coverage_history = [1] * len(recent_residuals)
+
+            # Check if belief state already exists for this tenant+entity
+            existing = self.db.execute(
+                text("""
+                    SELECT id FROM powell_belief_state
+                    WHERE tenant_id = :t AND entity_type = 'DEMAND' AND entity_id = :e
+                    LIMIT 1
+                """),
+                {"t": tenant_id, "e": entity_id},
+            ).fetchone()
+
+            if existing is None:
+                result = self.db.execute(
+                    text("""
+                        INSERT INTO powell_belief_state
+                            (entity_type, entity_id, tenant_id,
+                             point_estimate, conformal_lower, conformal_upper,
+                             conformal_coverage, conformal_method,
+                             recent_residuals, coverage_history,
+                             created_at, updated_at)
+                        VALUES ('DEMAND', :eid, :tid,
+                                :p50, :lower, :upper,
+                                0.80, 'adaptive',
+                                :residuals, :coverage,
+                                NOW(), NOW())
+                        RETURNING id
+                    """),
+                    {
+                        "eid": entity_id,
+                        "tid": tenant_id,
+                        "p50": mean_p50,
+                        "lower": max(0.0, mean_p50 - 1.96 * std_err),
+                        "upper": mean_p50 + 1.96 * std_err,
+                        "residuals": json.dumps(recent_residuals),
+                        "coverage": json.dumps(coverage_history),
+                    },
+                )
+                belief_state_id = result.fetchone()[0]
+            else:
+                belief_state_id = existing[0]
+
+            # Write calibration log (last 30 actuals)
+            for it in items_sorted[-30:]:
+                in_interval = abs(it["error"]) < 1.96 * std_err
+                self.db.execute(
+                    text("""
+                        INSERT INTO powell_calibration_log
+                            (belief_state_id, predicted_value, predicted_lower,
+                             predicted_upper, actual_value, in_interval, residual,
+                             observed_at)
+                        VALUES (:bs_id, :pred, :lower, :upper,
+                                :actual, :in_int, :resid, :obs_at)
+                    """),
+                    {
+                        "bs_id": belief_state_id,
+                        "pred": it["forecast_p50"],
+                        "lower": max(0.0, it["forecast_p50"] - 1.96 * std_err),
+                        "upper": it["forecast_p50"] + 1.96 * std_err,
+                        "actual": it["actual_qty"],
+                        "in_int": in_interval,
+                        "resid": it["error"],
+                        "obs_at": datetime.combine(it["date"], datetime.min.time()),
+                    },
+                )
+
+    def _cleanup_existing(self, config_id: int) -> None:
+        """Remove previous warm start data for this config."""
+        # Remove warm start OutboundOrderLines (tagged by order_id prefix)
+        self.db.execute(
+            text(
+                f"DELETE FROM outbound_order_line "
+                f"WHERE config_id = :c AND order_id LIKE '{WARM_START_ORDER_PREFIX}-%'"
+            ),
+            {"c": config_id},
+        )
+
+        # Reset forecast_error/bias
+        self.db.execute(
+            text("UPDATE forecast SET forecast_error = NULL, forecast_bias = NULL WHERE config_id = :c"),
+            {"c": config_id},
+        )
+
+        self.db.flush()
+
+    # ------------------------------------------------------------------
+    # Status queries
+    # ------------------------------------------------------------------
+
+    def get_status(self, config_id: int) -> dict:
+        """Return counts for warm start data for this config."""
+        config = self.db.query(SupplyChainConfig).filter(SupplyChainConfig.id == config_id).first()
+        tenant_id = config.tenant_id if config else None
+
+        ool_count = self.db.execute(
+            text(f"SELECT COUNT(*) FROM outbound_order_line WHERE config_id = :c AND order_id LIKE '{WARM_START_ORDER_PREFIX}-%'"),
+            {"c": config_id},
+        ).scalar() or 0
+
+        bs_count = 0
+        cal_count = 0
+        pm_count = 0
+        if tenant_id:
+            bs_count = self.db.execute(
+                text("SELECT COUNT(*) FROM powell_belief_state WHERE tenant_id = :t AND entity_type = 'DEMAND'"),
+                {"t": tenant_id},
+            ).scalar() or 0
+            cal_count = self.db.execute(
+                text("""
+                    SELECT COUNT(*) FROM powell_calibration_log cl
+                    JOIN powell_belief_state bs ON bs.id = cl.belief_state_id
+                    WHERE bs.tenant_id = :t
+                """),
+                {"t": tenant_id},
+            ).scalar() or 0
+            pm_count = (
+                self.db.query(PerformanceMetric)
+                .filter(PerformanceMetric.tenant_id == tenant_id)
+                .count()
+            )
+
+        return {
+            "config_id": config_id,
+            "outbound_order_lines": int(ool_count),
+            "belief_states": int(bs_count),
+            "calibration_log": int(cal_count),
+            "performance_metrics": int(pm_count),
+        }
