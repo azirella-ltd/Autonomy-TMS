@@ -64,7 +64,8 @@ class PurchaseOrder(Base):
 
     # Simulation extensions
     scenario_id = Column(Integer, ForeignKey("scenarios.id", ondelete="CASCADE"))  # Link to simulation session
-    order_round = Column(Integer)  # Round when PO was created
+    order_round = Column(Integer)    # Round when PO was created
+    arrival_round = Column(Integer)  # Round when PO shipment is due to arrive
 
     # Audit
     created_by_id = Column(Integer, ForeignKey("users.id"))

@@ -99,6 +99,28 @@ class SimulationExecutionAdapter:
         self.stochastic_sampler = StochasticSampler(scenario_id=game.id, use_cache=use_cache)
 
     # ============================================================================
+    # CONFIG HELPERS (replaces removed config.items / config.nodes / config.lanes)
+    # ============================================================================
+
+    async def _get_product(self) -> 'Optional[Product]':
+        """Get first product for this SC config (replaces removed config.items[0])."""
+        result = await self.db.execute(
+            select(Product)
+            .filter(Product.config_id == self.config_id)
+            .order_by(Product.id)
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def _refresh_sites(self):
+        """Refresh and return config sites (replaces config.nodes)."""
+        await self.db.refresh(self.config, ['sites'])
+
+    async def _refresh_lanes(self):
+        """Refresh and return config transportation lanes (replaces config.lanes)."""
+        await self.db.refresh(self.config, ['transportation_lanes'])
+
+    # ============================================================================
     # STATE SYNCHRONIZATION (Game → SC)
     # ============================================================================
 
@@ -124,12 +146,13 @@ class SimulationExecutionAdapter:
         scenario_users = result.scalars().all()
 
         # Get config data
-        await self.db.refresh(self.config, ['nodes', 'items'])
+        await self._refresh_sites()
+        item = await self._get_product()
 
         # Delete old snapshots for this game round
         await self.db.execute(
             delete(InvLevel).filter(
-                InvLevel.customer_id == self.tenant_id,
+                InvLevel.tenant_id == self.tenant_id,
                 InvLevel.config_id == self.config_id
             )
         )
@@ -137,20 +160,18 @@ class SimulationExecutionAdapter:
         records_created = 0
         snapshot_date = self.game.start_date + timedelta(days=round_number * 7)
 
+        # Get item (simulation typically has 1 product)
+        if not item:
+            print(f"    ⚠️  No products defined in config")
+            return 0
+
         # For each scenario_user, create inv_level record
         for scenario_user in scenario_users:
             # Get scenario_user's node
-            node = next((n for n in self.config.nodes if n.name == scenario_user.role), None)
+            node = next((n for n in self.config.sites if n.name == scenario_user.role), None)
             if not node:
                 print(f"    ⚠️  No node found for scenario_user role {scenario_user.role}")
                 continue
-
-            # Get item (simulation typically has 1 item: "Cases")
-            if not self.config.items:
-                print(f"    ⚠️  No items defined in config")
-                continue
-
-            item = self.config.items[0]
 
             # Get scenario_user's current inventory and backlog from game state
             inventory_qty, backlog_qty = self._get_scenario_user_inventory_and_backlog(
@@ -203,7 +224,7 @@ class SimulationExecutionAdapter:
                 and_(
                     InboundOrderLine.product_id == product_id,
                     InboundOrderLine.to_site_id == site_id,
-                    InboundOrderLine.customer_id == self.tenant_id,
+                    InboundOrderLine.tenant_id == self.tenant_id,
                     InboundOrderLine.config_id == self.config_id,
                     InboundOrderLine.scenario_id == self.game.id,
                     InboundOrderLine.status.in_(['open', 'confirmed']),
@@ -264,9 +285,9 @@ class SimulationExecutionAdapter:
         print(f"    Recording customer demand: {role} = {demand_qty}")
 
         # Get node and item
-        await self.db.refresh(self.config, ['nodes', 'items'])
-        node = next((n for n in self.config.nodes if n.name == role), None)
-        item = self.config.items[0] if self.config.items else None
+        await self._refresh_sites()
+        node = next((n for n in self.config.sites if n.name == role), None)
+        item = await self._get_product()
 
         if not node or not item:
             print(f"    ⚠️  Cannot record demand: node or item not found")
@@ -328,8 +349,9 @@ class SimulationExecutionAdapter:
         """
         print(f"  Creating work orders for round {round_number}...")
 
-        await self.db.refresh(self.config, ['nodes', 'items', 'lanes'])
-        item = self.config.items[0] if self.config.items else None
+        await self._refresh_sites()
+        await self._refresh_lanes()
+        item = await self._get_product()
 
         if not item:
             print(f"    ⚠️  No item found")
@@ -343,14 +365,14 @@ class SimulationExecutionAdapter:
                 continue
 
             # Get node for this scenario_user
-            node = next((n for n in self.config.nodes if n.name == role), None)
+            node = next((n for n in self.config.sites if n.name == role), None)
             if not node:
                 print(f"    ⚠️  No node found for role {role}")
                 continue
 
             # Find upstream source (from lane)
             upstream_lane = next(
-                (lane for lane in self.config.lanes if lane.to_site_id == node.id),
+                (lane for lane in self.config.transportation_lanes if lane.to_site_id == node.id),
                 None
             )
 
@@ -359,7 +381,7 @@ class SimulationExecutionAdapter:
                 continue
 
             upstream_node = next(
-                (n for n in self.config.nodes if n.id == upstream_lane.from_site_id),
+                (n for n in self.config.sites if n.id == upstream_lane.from_site_id),
                 None
             )
 
@@ -443,11 +465,10 @@ class SimulationExecutionAdapter:
         if self.cache and not self.cache.is_loaded():
             await self.cache.load()
 
-        # Get item (simulation has one item: "Case")
+        # Get item (simulation has one product)
         item = self.cache.get_first_item() if self.cache else None
         if not item:
-            await self.db.refresh(self.config, ['items'])
-            item = self.config.items[0] if self.config.items else None
+            item = await self._get_product()
 
         if not item:
             print(f"    ⚠️  No item found")
@@ -465,8 +486,9 @@ class SimulationExecutionAdapter:
             # Get node (use cache if available)
             node = self.cache.get_node_by_name(role) if self.cache else None
             if not node:
-                await self.db.refresh(self.config, ['nodes', 'lanes'])
-                node = next((n for n in self.config.nodes if n.name == role), None)
+                await self._refresh_sites()
+                await self._refresh_lanes()
+                node = next((n for n in self.config.sites if n.name == role), None)
 
             if not node:
                 print(f"    ⚠️  No node found for role {role}")
@@ -490,12 +512,12 @@ class SimulationExecutionAdapter:
             else:
                 # Slow path: query lanes
                 upstream_lane = next(
-                    (lane for lane in self.config.lanes if lane.to_site_id == node.id),
+                    (lane for lane in self.config.transportation_lanes if lane.to_site_id == node.id),
                     None
                 )
                 if upstream_lane:
                     upstream_node = next(
-                        (n for n in self.config.nodes if n.id == upstream_lane.from_site_id),
+                        (n for n in self.config.sites if n.id == upstream_lane.from_site_id),
                         None
                     )
                     if upstream_node:
@@ -626,7 +648,7 @@ class SimulationExecutionAdapter:
         result = await self.db.execute(
             select(InboundOrderLine).filter(
                 and_(
-                    InboundOrderLine.customer_id == self.tenant_id,
+                    InboundOrderLine.tenant_id == self.tenant_id,
                     InboundOrderLine.config_id == self.config_id,
                     InboundOrderLine.scenario_id == self.game.id,
                     InboundOrderLine.status == 'open',
@@ -637,8 +659,8 @@ class SimulationExecutionAdapter:
         orders = result.scalars().all()
 
         deliveries = {}
-        await self.db.refresh(self.config, ['nodes'])
-        node_id_to_name = {n.id: n.name for n in self.config.nodes}
+        await self._refresh_sites()
+        node_id_to_name = {n.id: n.name for n in self.config.sites}
 
         for order in orders:
             # Mark as received
@@ -727,8 +749,7 @@ class SimulationExecutionAdapter:
         # Get item
         item = self.cache.get_first_item() if self.cache else None
         if not item:
-            await self.db.refresh(self.config, ['items'])
-            item = self.config.items[0] if self.config.items else None
+            item = await self._get_product()
 
         if not item:
             print(f"    ⚠️  No item found")
@@ -764,7 +785,7 @@ class SimulationExecutionAdapter:
 
             # Fallback: Try to find upstream via lanes if sourcing rules don't exist
             if not upstream_node:
-                for lane in self.config.lanes:
+                for lane in self.config.transportation_lanes:
                     if lane.to_site_id == node.id:
                         upstream_node = self.cache.get_node(lane.from_site_id) if self.cache else None
                         if upstream_node:
@@ -992,8 +1013,7 @@ class SimulationExecutionAdapter:
         # Get item
         item = self.cache.get_first_item() if self.cache else None
         if not item:
-            await self.db.refresh(self.config, ['items'])
-            item = self.config.items[0] if self.config.items else None
+            item = await self._get_product()
 
         if not item:
             print(f"    ⚠️  No item found")
@@ -1030,7 +1050,7 @@ class SimulationExecutionAdapter:
 
             # Fallback: Try to find upstream via lanes if sourcing rules don't exist
             if not upstream_node:
-                for lane in self.config.lanes:
+                for lane in self.config.transportation_lanes:
                     if lane.to_site_id == node.id:
                         upstream_node = self.cache.get_node(lane.from_site_id) if self.cache else None
                         if upstream_node:

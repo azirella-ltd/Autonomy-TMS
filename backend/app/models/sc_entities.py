@@ -377,6 +377,8 @@ class InvLevel(Base):
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))
     round_number = Column(Integer)
+    backorder_qty = Column(Double)       # Unfulfilled demand carried as backorder
+    safety_stock_qty = Column(Double)    # Safety stock level (snapshot from inv_policy)
 
     # Relationships
     product = relationship("Product", back_populates="inv_levels")

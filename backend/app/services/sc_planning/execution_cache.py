@@ -33,7 +33,6 @@ from app.models.sc_planning import (
     ProductionCapacity,
     OrderAggregationPolicy
 )
-from app.models.compatibility import Item  # Temporary compat for type hints
 
 
 class ExecutionCache:
@@ -76,7 +75,7 @@ class ExecutionCache:
         self._aggregation_policies: Dict[Tuple[int, int, Optional[int]], OrderAggregationPolicy] = {}
         self._nodes: Dict[int, Node] = {}
         self._nodes_by_name: Dict[str, Node] = {}
-        self._items: Dict[int, Item] = {}
+        self._items: Dict[str, Product] = {}
         self._lanes: Dict[Tuple[int, int], TransportationLane] = {}
 
         # Cache statistics
@@ -148,7 +147,7 @@ class ExecutionCache:
         result = await self.db.execute(
             select(InvPolicy).filter(
                 InvPolicy.config_id == self.config_id,
-                InvPolicy.customer_id == self.tenant_id
+                InvPolicy.tenant_id == self.tenant_id
             )
         )
 
@@ -161,7 +160,7 @@ class ExecutionCache:
         result = await self.db.execute(
             select(SourcingRules).filter(
                 SourcingRules.config_id == self.config_id,
-                SourcingRules.customer_id == self.tenant_id
+                SourcingRules.tenant_id == self.tenant_id
             )
         )
 
@@ -176,7 +175,7 @@ class ExecutionCache:
         result = await self.db.execute(
             select(ProductionProcess).filter(
                 ProductionProcess.config_id == self.config_id,
-                ProductionProcess.customer_id == self.tenant_id
+                ProductionProcess.tenant_id == self.tenant_id
             )
         )
 
@@ -223,29 +222,21 @@ class ExecutionCache:
         config = result.scalar_one_or_none()
 
         if config:
-            await self.db.refresh(config, ['nodes'])
-            for node in config.nodes:
+            await self.db.refresh(config, ['sites'])
+            for node in config.sites:
                 self._nodes[node.id] = node
                 self._nodes_by_name[node.name] = node
 
     async def _load_items(self):
-        """Load all items for this config"""
-        from app.models.supply_chain_config import SupplyChainConfig
-
+        """Load all products for this config (queried directly — config.items relationship removed)"""
         result = await self.db.execute(
-            select(SupplyChainConfig).filter(
-                SupplyChainConfig.id == self.config_id
-            )
+            select(Product).filter(Product.config_id == self.config_id).order_by(Product.id)
         )
-        config = result.scalar_one_or_none()
-
-        if config:
-            await self.db.refresh(config, ['items'])
-            for item in config.items:
-                self._items[item.id] = item
+        for product in result.scalars():
+            self._items[product.id] = product
 
     async def _load_lanes(self):
-        """Load all lanes for this config"""
+        """Load all transportation lanes for this config"""
         from app.models.supply_chain_config import SupplyChainConfig
 
         result = await self.db.execute(
@@ -256,8 +247,8 @@ class ExecutionCache:
         config = result.scalar_one_or_none()
 
         if config:
-            await self.db.refresh(config, ['lanes'])
-            for lane in config.lanes:
+            await self.db.refresh(config, ['transportation_lanes'])
+            for lane in config.transportation_lanes:
                 key = (lane.from_site_id, lane.to_site_id)
                 self._lanes[key] = lane
 
@@ -454,16 +445,16 @@ class ExecutionCache:
         """
         return self._nodes_by_name.get(node_name)
 
-    def get_item(self, item_id: int) -> Optional[Item]:
-        """Get cached item by ID"""
+    def get_item(self, item_id: str) -> Optional[Product]:
+        """Get cached product by ID"""
         return self._items.get(item_id)
 
-    def get_first_item(self) -> Optional[Item]:
+    def get_first_item(self) -> Optional[Product]:
         """
-        Get first item (simulation may use a single item, e.g. 'Case')
+        Get first product (simulation may use a single product, e.g. 'TBG-CASES')
 
         Returns:
-            First item if any exist, None otherwise
+            First Product if any exist, None otherwise
         """
         return next(iter(self._items.values()), None)
 
