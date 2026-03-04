@@ -10,6 +10,7 @@ Registers CDC relearning loop jobs with APScheduler:
 - Daily at 02:40: Causal matching for Tier 2 override signal strength
 - Daily at 03:00: GNN orchestration cycle (S&OP + Execution → directive broadcast)
 - Every 6h at :45: CDC-triggered retraining evaluation
+- Weekly Sunday 03:30: Data drift monitor (long-horizon distributional shift detection)
 
 Part of the Powell SDAM feedback loop:
   Decision → Wait → Observe outcome → Compute reward → Calibrate CDT → Retrain if warranted
@@ -136,6 +137,20 @@ def register_relearning_jobs(scheduler_service: 'SyncSchedulerService') -> None:
         misfire_grace_time=3600,
     )
     logger.info("Registered Powell CDC retraining job (every 6h at :45)")
+
+    # Weekly Sunday 03:30: Data Drift Monitor — long-horizon distributional shift detection
+    # "Canary in the coal mine" — detects input/error distribution shifts weeks before CDC fires
+    # Scans 28/56/84-day windows for demand drift, forecast error drift, calibration drift
+    # HIGH/CRITICAL results → PowellEscalationLog(escalation_level="strategic")
+    scheduler.add_job(
+        func=_run_data_drift_scan,
+        trigger=CronTrigger(day_of_week="sun", hour=3, minute=30),
+        id="powell_data_drift_scan",
+        name="DataDrift: Weekly distributional shift scan",
+        replace_existing=True,
+        misfire_grace_time=7200,  # 2h grace — can run later on Sunday if missed
+    )
+    logger.info("Registered DataDrift weekly scan job (Sunday at 03:30)")
 
 
 # ---------------------------------------------------------------------------
@@ -394,5 +409,84 @@ def _run_cdc_retraining() -> None:
         )
     except Exception as e:
         logger.error(f"CDC retraining job failed: {e}")
+    finally:
+        db.close()
+
+
+def _run_data_drift_scan() -> None:
+    """
+    Weekly data drift scan across all active supply chain configs.
+
+    Detects long-horizon distributional shifts in:
+      - demand (input drift): ordered_quantity distribution
+      - forecast_error (model drift): (forecast - actual) residuals
+      - calibration (interval drift): prediction interval widths (p90 - p10)
+
+    Windows: 28d (4w canary), 56d (8w alarm), 84d (12w trend)
+    HIGH/CRITICAL results escalate to PowellEscalationLog (level="strategic")
+
+    This is intentionally separate from CDC (which fires hourly on metric threshold
+    breaches). DataDriftMonitor fires proactively when distributions are SHIFTING
+    over weeks, before model performance degrades enough to trigger CDC.
+    """
+    from app.db.session import SessionLocal
+    from datetime import date
+
+    logger.info("Starting weekly DataDrift distributional shift scan")
+
+    db = SessionLocal()
+    try:
+        from app.models.supply_chain_config import SupplyChainConfig
+        from app.services.powell.data_drift_monitor import DataDriftMonitor
+
+        monitor = DataDriftMonitor(db=db)
+
+        # Scan all active configs
+        configs = db.query(SupplyChainConfig).all()
+        if not configs:
+            logger.info("DataDrift: No SC configs found, skipping scan")
+            return
+
+        total_records = 0
+        total_drift = 0
+        total_alerts = 0
+        total_escalations = 0
+        failed_configs = 0
+
+        for config in configs:
+            try:
+                results = monitor.scan_config(config.id)
+                n_drift = sum(1 for r in results if r.drift_detected)
+                n_escalated = sum(
+                    1 for r in results
+                    if r.drift_severity in ("high", "critical")
+                )
+                total_records += len(results)
+                total_drift += n_drift
+                total_escalations += n_escalated
+
+                if n_drift > 0:
+                    total_alerts += 1
+
+                if n_escalated > 0:
+                    logger.warning(
+                        f"DataDrift: Config {config.id} ('{config.name}') — "
+                        f"{n_escalated} HIGH/CRITICAL drift records → escalated to S&OP"
+                    )
+            except Exception as exc:
+                failed_configs += 1
+                logger.warning(
+                    f"DataDrift: Scan failed for config {config.id}: {exc}",
+                    exc_info=True,
+                )
+
+        logger.info(
+            f"DataDrift weekly scan complete — "
+            f"{len(configs)} configs, {total_records} records written, "
+            f"{total_drift} drift detected, {total_alerts} alerts raised, "
+            f"{total_escalations} escalated, {failed_configs} configs failed"
+        )
+    except Exception as e:
+        logger.error(f"DataDrift weekly scan job failed: {e}", exc_info=True)
     finally:
         db.close()

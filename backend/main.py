@@ -6096,6 +6096,10 @@ api.include_router(planning_scenarios_router, tags=["planning-scenarios"])
 from app.api.endpoints.skills_monitoring import router as skills_monitoring_router
 api.include_router(skills_monitoring_router, tags=["skills-monitoring"])
 
+# Data Drift Monitor API (long-horizon distributional shift detection)
+from app.api.endpoints.data_drift import router as data_drift_router
+api.include_router(data_drift_router, tags=["data-drift"])
+
 # ------------------------------------------------------------------------------
 # Mount routers
 # ------------------------------------------------------------------------------
