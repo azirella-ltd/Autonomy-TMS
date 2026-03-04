@@ -45,6 +45,9 @@ import {
   Plus,
   Pencil,
   X,
+  AlertTriangle,
+  Zap,
+  History,
 } from 'lucide-react';
 import { api } from '../../services/api';
 
@@ -131,8 +134,12 @@ const ForecastPipelineManager = ({ configId, configName }) => {
   const [runs, setRuns] = useState([]);
   const [selectedConfigId, setSelectedConfigId] = useState('');
   const [loading, setLoading] = useState(false);
+  const [warmStartLoading, setWarmStartLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+
+  // Run mode: "full" runs stages 1-4, "incremental" runs stages 1+4 (no refit)
+  const [runMode, setRunMode] = useState('full');
 
   // Form state
   const [form, setForm] = useState({ ...DEFAULTS });
@@ -290,16 +297,34 @@ const ForecastPipelineManager = ({ configId, configName }) => {
     setLoading(true);
     setError(null);
     try {
-      await api.post('/forecast-pipeline/runs', {
+      const resp = await api.post('/forecast-pipeline/runs', {
         pipeline_config_id: resolvedConfigId,
         auto_start: true,
+        mode: runMode,
       });
-      setSuccess('Pipeline run started');
+      setSuccess(`Pipeline run started (${resp.data.mode === 'full' ? 'stages 1-4' : 'stages 1+4'})`);
       await loadRuns();
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to start pipeline run');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const triggerWarmStart = async () => {
+    if (!configId) {
+      setError('No supply chain config selected');
+      return;
+    }
+    setWarmStartLoading(true);
+    setError(null);
+    try {
+      await api.post(`/warm-start/provision/${configId}`);
+      setSuccess('Warm start queued — historical data is being generated in the background.');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to queue warm start');
+    } finally {
+      setWarmStartLoading(false);
     }
   };
 
@@ -371,7 +396,36 @@ const ForecastPipelineManager = ({ configId, configName }) => {
               <Label className="text-xs">Source Config</Label>
               <Input value={configName || `Config #${configId}`} disabled className="mt-1 h-8 text-sm" />
             </div>
-            <div className="flex gap-2">
+            <div>
+              <Label className="text-xs">Run Mode</Label>
+              <div className="flex mt-1 rounded-md overflow-hidden border border-input">
+                <button
+                  type="button"
+                  onClick={() => setRunMode('full')}
+                  className={`flex-1 h-8 text-xs px-2 flex items-center justify-center gap-1 transition-colors ${
+                    runMode === 'full'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-background text-muted-foreground hover:bg-muted'
+                  }`}
+                  title="Stages 1-4: full refit (clustering + model fitting)"
+                >
+                  <Zap className="h-3 w-3" /> Full (1-4)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRunMode('incremental')}
+                  className={`flex-1 h-8 text-xs px-2 flex items-center justify-center gap-1 transition-colors border-l border-input ${
+                    runMode === 'incremental'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-background text-muted-foreground hover:bg-muted'
+                  }`}
+                  title="Stages 1+4: prediction only, reuse cached clusters"
+                >
+                  <History className="h-3 w-3" /> Incremental (1+4)
+                </button>
+              </div>
+            </div>
+            <div className="flex gap-2 flex-wrap">
               <Button size="sm" onClick={startRun} disabled={loading || !resolvedConfigId}>
                 <Play className="h-3.5 w-3.5 mr-1" /> Start Run
               </Button>
@@ -379,16 +433,31 @@ const ForecastPipelineManager = ({ configId, configName }) => {
                 <RefreshCw className="h-3.5 w-3.5 mr-1" /> Refresh
               </Button>
             </div>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={openCreateForm}>
-                <Plus className="h-3.5 w-3.5 mr-1" /> New Config
+          </div>
+
+          <div className="flex gap-2 flex-wrap pt-1 border-t">
+            <Button size="sm" variant="outline" onClick={openCreateForm}>
+              <Plus className="h-3.5 w-3.5 mr-1" /> New Config
+            </Button>
+            {selectedConfig && (
+              <Button size="sm" variant="outline" onClick={openEditForm}>
+                <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
               </Button>
-              {selectedConfig && (
-                <Button size="sm" variant="outline" onClick={openEditForm}>
-                  <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
-                </Button>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={triggerWarmStart}
+              disabled={warmStartLoading || !configId}
+              title="Generate synthetic historical demand data from existing forecasts"
+            >
+              {warmStartLoading ? (
+                <RefreshCw className="h-3.5 w-3.5 mr-1 animate-spin" />
+              ) : (
+                <Database className="h-3.5 w-3.5 mr-1" />
               )}
-            </div>
+              Generate Historical Data
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -677,27 +746,56 @@ const ForecastPipelineManager = ({ configId, configName }) => {
               <TableRow>
                 <TableHead>Run ID</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Model</TableHead>
+                <TableHead>Stages</TableHead>
+                <TableHead>Drift</TableHead>
+                <TableHead>WAPE</TableHead>
                 <TableHead>Records</TableHead>
                 <TableHead>Started</TableHead>
-                <TableHead>Completed</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {runs.map((run) => (
                 <TableRow key={run.id}>
-                  <TableCell>{run.id}</TableCell>
+                  <TableCell className="font-mono text-xs">{run.id}</TableCell>
                   <TableCell>
                     <Badge variant={statusVariant(run.status)}>{run.status}</Badge>
                   </TableCell>
-                  <TableCell>{run.model_type}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="text-xs font-mono">
+                      {run.stages_executed || '1,2,3,4'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {run.drift_detected ? (
+                      <TooltipProvider delayDuration={200}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge variant="warning" className="cursor-help flex items-center gap-1 w-fit">
+                              <AlertTriangle className="h-3 w-3" /> Drift
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs text-xs">
+                            {run.drift_reason || 'Drift detected'}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    {run.drift_wape_current != null
+                      ? `${(run.drift_wape_current * 100).toFixed(1)}%`
+                      : '—'}
+                  </TableCell>
                   <TableCell>{run.records_processed || 0}</TableCell>
-                  <TableCell>{run.started_at ? new Date(run.started_at).toLocaleString() : '\u2014'}</TableCell>
-                  <TableCell>{run.completed_at ? new Date(run.completed_at).toLocaleString() : '\u2014'}</TableCell>
+                  <TableCell className="text-xs">
+                    {run.started_at ? new Date(run.started_at).toLocaleString() : '—'}
+                  </TableCell>
                   <TableCell className="space-x-2">
                     <Button size="sm" variant="outline" onClick={() => reExecuteRun(run.id)} disabled={loading}>
-                      Run
+                      Re-run
                     </Button>
                     <Button
                       size="sm"
@@ -711,8 +809,8 @@ const ForecastPipelineManager = ({ configId, configName }) => {
               ))}
               {runs.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
-                    No runs yet.
+                  <TableCell colSpan={8} className="text-center text-muted-foreground">
+                    No runs yet. Use "Start Run" to execute the forecast pipeline.
                   </TableCell>
                 </TableRow>
               )}

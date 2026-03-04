@@ -115,6 +115,7 @@ class PipelineConfigUpdate(BaseModel):
 class PipelineRunCreate(BaseModel):
     pipeline_config_id: int
     auto_start: bool = True
+    mode: str = Field("full", pattern="^(full|incremental)$")  # full=stages 1-4, incremental=stages 1+4
 
 
 class PublishRequest(BaseModel):
@@ -161,6 +162,11 @@ def _config_to_dict(cfg: ForecastPipelineConfig) -> dict:
         "feature_importance_threshold": cfg.feature_importance_threshold,
         "pca_variance_threshold": cfg.pca_variance_threshold,
         "pca_importance_threshold": cfg.pca_importance_threshold,
+        # Drift detection thresholds
+        "wape_drift_threshold": cfg.wape_drift_threshold,
+        "wape_relative_threshold": cfg.wape_relative_threshold,
+        "pattern_change_threshold": cfg.pattern_change_threshold,
+        "auto_refit_on_drift": cfg.auto_refit_on_drift,
         # Metadata
         "is_active": cfg.is_active,
         "created_at": cfg.created_at,
@@ -178,7 +184,7 @@ def list_configs(
     db: Session = Depends(get_sync_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
-    q = db.query(ForecastPipelineConfig).filter(ForecastPipelineConfig.customer_id == current_user.tenant_id)
+    q = db.query(ForecastPipelineConfig).filter(ForecastPipelineConfig.tenant_id == current_user.tenant_id)
     if config_id is not None:
         q = q.filter(ForecastPipelineConfig.config_id == config_id)
     items = q.order_by(ForecastPipelineConfig.updated_at.desc()).all()
@@ -203,7 +209,7 @@ def create_config(
     item = ForecastPipelineConfig(
         name=payload.name,
         description=payload.description,
-        customer_id=current_user.tenant_id,
+        tenant_id=current_user.tenant_id,
         config_id=payload.config_id,
         time_bucket=payload.time_bucket,
         forecast_horizon=payload.forecast_horizon,
@@ -253,7 +259,7 @@ def update_config(
         db.query(ForecastPipelineConfig)
         .filter(
             ForecastPipelineConfig.id == config_id,
-            ForecastPipelineConfig.customer_id == current_user.tenant_id,
+            ForecastPipelineConfig.tenant_id == current_user.tenant_id,
         )
         .first()
     )
@@ -293,7 +299,7 @@ def list_runs(
     db: Session = Depends(get_sync_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
-    q = db.query(ForecastPipelineRun).filter(ForecastPipelineRun.customer_id == current_user.tenant_id)
+    q = db.query(ForecastPipelineRun).filter(ForecastPipelineRun.tenant_id == current_user.tenant_id)
     if pipeline_config_id is not None:
         q = q.filter(ForecastPipelineRun.pipeline_config_id == pipeline_config_id)
     rows = q.order_by(ForecastPipelineRun.created_at.desc()).limit(limit).all()
@@ -309,6 +315,11 @@ def list_runs(
             "model_type": r.model_type,
             "forecast_metric": r.forecast_metric,
             "records_processed": r.records_processed,
+            "stages_executed": r.stages_executed,
+            "drift_detected": r.drift_detected,
+            "drift_reason": r.drift_reason,
+            "drift_wape_current": r.drift_wape_current,
+            "drift_wape_baseline": r.drift_wape_baseline,
             "run_log": r.run_log or {},
         }
         for r in rows
@@ -326,7 +337,7 @@ def create_run(
         db.query(ForecastPipelineConfig)
         .filter(
             ForecastPipelineConfig.id == payload.pipeline_config_id,
-            ForecastPipelineConfig.customer_id == current_user.tenant_id,
+            ForecastPipelineConfig.tenant_id == current_user.tenant_id,
             ForecastPipelineConfig.is_active.is_(True),
         )
         .first()
@@ -336,7 +347,7 @@ def create_run(
 
     run = ForecastPipelineRun(
         pipeline_config_id=cfg.id,
-        customer_id=cfg.customer_id,
+        tenant_id=cfg.tenant_id,
         config_id=cfg.config_id,
         status="pending",
         created_by_id=current_user.id,
@@ -346,9 +357,10 @@ def create_run(
     db.add(run)
     db.flush()
 
+    force_full = (payload.mode == "full")
     if payload.auto_start:
-        background_tasks.add_task(ForecastPipelineService.run_pipeline_task, run.id)
-    return {"id": run.id, "status": run.status, "auto_started": payload.auto_start}
+        background_tasks.add_task(ForecastPipelineService.run_pipeline_task, run.id, force_full)
+    return {"id": run.id, "status": run.status, "auto_started": payload.auto_start, "mode": payload.mode}
 
 
 @router.post("/runs/{run_id}/execute")
@@ -362,7 +374,7 @@ def execute_run(
         db.query(ForecastPipelineRun)
         .filter(
             ForecastPipelineRun.id == run_id,
-            ForecastPipelineRun.customer_id == current_user.tenant_id,
+            ForecastPipelineRun.tenant_id == current_user.tenant_id,
         )
         .first()
     )
@@ -390,7 +402,7 @@ def get_run(
         db.query(ForecastPipelineRun)
         .filter(
             ForecastPipelineRun.id == run_id,
-            ForecastPipelineRun.customer_id == current_user.tenant_id,
+            ForecastPipelineRun.tenant_id == current_user.tenant_id,
         )
         .first()
     )
@@ -407,7 +419,39 @@ def get_run(
         "model_type": run.model_type,
         "forecast_metric": run.forecast_metric,
         "records_processed": run.records_processed,
+        "stages_executed": run.stages_executed,
+        "drift_detected": run.drift_detected,
+        "drift_reason": run.drift_reason,
+        "drift_wape_current": run.drift_wape_current,
+        "drift_wape_baseline": run.drift_wape_baseline,
         "run_log": run.run_log or {},
+    }
+
+
+@router.get("/runs/{run_id}/drift-status")
+def get_drift_status(
+    run_id: int,
+    db: Session = Depends(get_sync_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Return drift detection results for a specific pipeline run."""
+    run = (
+        db.query(ForecastPipelineRun)
+        .filter(
+            ForecastPipelineRun.id == run_id,
+            ForecastPipelineRun.tenant_id == current_user.tenant_id,
+        )
+        .first()
+    )
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return {
+        "run_id": run.id,
+        "drift_detected": run.drift_detected,
+        "drift_reason": run.drift_reason,
+        "wape_current": run.drift_wape_current,
+        "wape_baseline": run.drift_wape_baseline,
+        "stages_executed": run.stages_executed,
     }
 
 
@@ -422,7 +466,7 @@ def publish_run(
         db.query(ForecastPipelineRun)
         .filter(
             ForecastPipelineRun.id == run_id,
-            ForecastPipelineRun.customer_id == current_user.tenant_id,
+            ForecastPipelineRun.tenant_id == current_user.tenant_id,
         )
         .first()
     )
@@ -447,7 +491,7 @@ def get_publish_log(
         db.query(ForecastPipelineRun)
         .filter(
             ForecastPipelineRun.id == run_id,
-            ForecastPipelineRun.customer_id == current_user.tenant_id,
+            ForecastPipelineRun.tenant_id == current_user.tenant_id,
         )
         .first()
     )

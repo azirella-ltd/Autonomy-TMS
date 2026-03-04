@@ -67,6 +67,12 @@ class ForecastPipelineConfig(Base):
     pca_variance_threshold = Column(Float, nullable=False, default=0.95)
     pca_importance_threshold = Column(Float, nullable=False, default=0.01)
 
+    # --- Drift Detection Thresholds ---
+    wape_drift_threshold = Column(Float, nullable=False, default=0.25)
+    wape_relative_threshold = Column(Float, nullable=False, default=0.30)
+    pattern_change_threshold = Column(Float, nullable=False, default=0.20)
+    auto_refit_on_drift = Column(Boolean, nullable=False, default=True)
+
     is_active = Column(Boolean, nullable=False, default=True)
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -96,6 +102,13 @@ class ForecastPipelineRun(Base):
     model_type = Column(String(50), nullable=False, default="clustered_naive")
     forecast_metric = Column(String(20), nullable=False, default="wape")
     records_processed = Column(Integer)
+
+    # --- Drift Detection Results ---
+    drift_detected = Column(Boolean, nullable=False, default=False)
+    drift_reason = Column(String, nullable=True)
+    drift_wape_current = Column(Float, nullable=True)
+    drift_wape_baseline = Column(Float, nullable=True)
+    stages_executed = Column(String(20), nullable=True, default="1,2,3,4")
 
     pipeline_config = relationship("ForecastPipelineConfig", back_populates="runs")
     predictions = relationship("ForecastPipelinePrediction", back_populates="run", cascade="all, delete-orphan")

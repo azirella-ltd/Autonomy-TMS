@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 import logging
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -17,6 +17,7 @@ from app.db.session import sync_session_factory
 from app.models.forecast_pipeline import (
     ForecastPipelineRun,
     ForecastPipelineConfig,
+    ForecastPipelineCluster,
     ForecastPipelinePrediction,
     ForecastPipelinePublishLog,
 )
@@ -37,24 +38,137 @@ class SeriesForecast:
     p90: float
 
 
+@dataclass
+class DriftSignal:
+    detected: bool
+    reason: str  # comma-separated list of triggered conditions
+    wape_current: Optional[float]
+    wape_baseline: Optional[float]
+
+
+class ForecastDriftDetector:
+    """Checks three drift conditions and returns a DriftSignal."""
+
+    def check(
+        self,
+        cfg: ForecastPipelineConfig,
+        history: pd.DataFrame,
+        current_wape: Optional[float],
+        db: Session,
+    ) -> DriftSignal:
+        reasons: List[str] = []
+
+        # 1. WAPE absolute threshold
+        if current_wape is not None and current_wape > cfg.wape_drift_threshold:
+            reasons.append(f"wape_absolute:{current_wape:.3f}>{cfg.wape_drift_threshold}")
+
+        # 2. WAPE relative drift (vs last published run)
+        baseline_wape = self._get_baseline_wape(cfg.id, db)
+        if baseline_wape is not None and current_wape is not None and baseline_wape > 0:
+            relative_change = abs(current_wape - baseline_wape) / baseline_wape
+            if relative_change > cfg.wape_relative_threshold:
+                reasons.append(
+                    f"wape_relative:{relative_change:.1%}>{cfg.wape_relative_threshold:.1%}"
+                )
+
+        # 3. Demand pattern stability
+        if not history.empty:
+            pattern_change_pct = self._check_pattern_changes(cfg.id, history, db)
+            if pattern_change_pct > cfg.pattern_change_threshold:
+                reasons.append(
+                    f"pattern_change:{pattern_change_pct:.1%}>{cfg.pattern_change_threshold:.1%}"
+                )
+
+        return DriftSignal(
+            detected=bool(reasons),
+            reason=",".join(reasons),
+            wape_current=current_wape,
+            wape_baseline=baseline_wape,
+        )
+
+    def _get_baseline_wape(self, pipeline_config_id: int, db: Session) -> Optional[float]:
+        """Return the overall WAPE from the most recent published/completed run."""
+        last_run = (
+            db.query(ForecastPipelineRun)
+            .filter(
+                ForecastPipelineRun.pipeline_config_id == pipeline_config_id,
+                ForecastPipelineRun.status.in_(["published", "completed"]),
+            )
+            .order_by(ForecastPipelineRun.created_at.desc())
+            .first()
+        )
+        if last_run is None or not last_run.run_log:
+            return None
+
+        metrics = last_run.run_log.get("metrics", [])
+        for m in metrics:
+            if m.get("metric_scope") == "overall" and m.get("metric_name") == "wape":
+                return float(m["metric_value"])
+        return None
+
+    def _check_pattern_changes(
+        self, pipeline_config_id: int, history: pd.DataFrame, db: Session
+    ) -> float:
+        """Return fraction of product-site pairs that changed demand pattern."""
+        last_run = (
+            db.query(ForecastPipelineRun)
+            .filter(
+                ForecastPipelineRun.pipeline_config_id == pipeline_config_id,
+                ForecastPipelineRun.status.in_(["published", "completed"]),
+            )
+            .order_by(ForecastPipelineRun.created_at.desc())
+            .first()
+        )
+        if last_run is None or not last_run.run_log:
+            return 0.0
+
+        # Previous cluster assignments stored in run_log
+        prev_clusters: Dict[str, int] = {
+            uid: cid
+            for uid, cid in last_run.run_log.get("clusters", {}).items()
+        }
+        if not prev_clusters:
+            return 0.0
+
+        # Classify current patterns using robust classifier
+        changed = 0
+        total = 0
+        for unique_id, group in history.groupby("unique_id"):
+            values = group.sort_values("demand_date")["actual"].astype(float).to_numpy()
+            if len(values) < 4:
+                continue
+            current_pattern, _ = ForecastPipelineService._classify_demand_robust(values)
+            prev_cluster = prev_clusters.get(str(unique_id))
+            if prev_cluster is None:
+                continue
+            # Compare current classification vs previous cluster id parity
+            # Heuristic: smooth/erratic = even cluster, intermittent/lumpy = odd cluster
+            current_parity = 0 if current_pattern in ("smooth", "erratic") else 1
+            prev_parity = int(prev_cluster) % 2
+            if current_parity != prev_parity:
+                changed += 1
+            total += 1
+
+        return changed / total if total > 0 else 0.0
+
+
 class ForecastPipelineService:
     def __init__(self, db: Session):
         self.db = db
 
-    @staticmethod
-    def run_pipeline_task(run_id: int) -> None:
-        """Background-task friendly wrapper with its own DB session."""
-        db = sync_session_factory()
-        try:
-            ForecastPipelineService(db).run_pipeline(run_id)
-            db.commit()
-        except Exception:
-            db.rollback()
-            logger.exception("Forecast pipeline run failed")
-        finally:
-            db.close()
+    def run_pipeline(self, run_id: int, force_full: bool = False) -> ForecastPipelineRun:
+        """Execute the 4-stage forecast pipeline.
 
-    def run_pipeline(self, run_id: int) -> ForecastPipelineRun:
+        Stages:
+          1. Ingestion + quality filter (ALWAYS)
+          2. Feature selection + clustering (CONDITIONAL — only on drift or force_full)
+          3. Model fitting (implicit in prediction step, CONDITIONAL)
+          4. Prediction generation (ALWAYS)
+
+        Args:
+            run_id: ForecastPipelineRun.id to execute
+            force_full: If True, always run stages 2+3 regardless of drift
+        """
         run = self.db.query(ForecastPipelineRun).filter(ForecastPipelineRun.id == run_id).first()
         if not run:
             raise ValueError(f"Forecast pipeline run {run_id} not found")
@@ -69,6 +183,7 @@ class ForecastPipelineService:
         self.db.flush()
 
         try:
+            # ── Stage 1: Ingestion, mapping, quality filter (ALWAYS) ──────────
             history = self._load_history(cfg)
             if history.empty:
                 raise ValueError("No historical demand data available for selected config")
@@ -78,14 +193,41 @@ class ForecastPipelineService:
             if history.empty:
                 raise ValueError("All series filtered out by data quality thresholds")
 
-            clusters = self._cluster_series(history, cfg)
+            # Estimate current WAPE from naive forecast (lag-1 prediction vs actuals)
+            quick_wape = self._estimate_current_wape(history)
+
+            # ── Drift detection ───────────────────────────────────────────────
+            detector = ForecastDriftDetector()
+            drift = detector.check(cfg, history, quick_wape, self.db)
+            run.drift_detected = drift.detected
+            run.drift_reason = drift.reason
+            run.drift_wape_current = drift.wape_current
+            run.drift_wape_baseline = drift.wape_baseline
+
+            run_full = force_full or drift.detected or cfg.auto_refit_on_drift
+
+            # ── Stage 2+3: Feature selection + clustering + fitting (CONDITIONAL)
+            if run_full:
+                clusters = self._cluster_series(history, cfg)
+                run.stages_executed = "1,2,3,4"
+                logger.info("Run %d: full pipeline (stages 1-4), drift=%s", run_id, drift.reason or "force")
+            else:
+                clusters = self._load_cached_clusters(cfg)
+                if not clusters:
+                    # No cached clusters available — must run full
+                    clusters = self._cluster_series(history, cfg)
+                    run.stages_executed = "1,2,3,4"
+                    logger.info("Run %d: no cached clusters, running full pipeline", run_id)
+                else:
+                    run.stages_executed = "1,4"
+                    logger.info("Run %d: incremental pipeline (stages 1+4), reusing %d clusters", run_id, len(clusters))
+
+            # ── Stage 4: Prediction generation (ALWAYS) ───────────────────────
             forecasts = self._predict_future(history, clusters, cfg)
             metrics = self._compute_metrics(history, clusters)
-            feature_scores = self._feature_scores(history, cfg)
+            feature_scores = self._feature_scores(history, cfg) if run_full else []
 
-            # Persist only the forecast predictions (the actionable output).
-            # Clusters, metrics, and feature importance are folded into run_log
-            # JSON — they were previously written to separate tables but never read.
+            # Persist predictions
             self.db.query(ForecastPipelinePrediction).filter(ForecastPipelinePrediction.run_id == run.id).delete()
 
             for row in forecasts:
@@ -111,6 +253,9 @@ class ForecastPipelineService:
             run.run_log = {
                 "series_count": len(clusters),
                 "forecast_rows": len(forecasts),
+                "stages_executed": run.stages_executed,
+                "drift_detected": run.drift_detected,
+                "drift_reason": run.drift_reason,
                 "clusters": {uid: int(cid) for uid, cid in clusters.items()},
                 "metrics": metrics,
                 "feature_importance": [
@@ -127,6 +272,50 @@ class ForecastPipelineService:
             run.error_message = str(exc)
             self.db.flush()
             raise
+
+    @staticmethod
+    def run_pipeline_task(run_id: int, force_full: bool = False) -> None:
+        """Background-task friendly wrapper with its own DB session."""
+        db = sync_session_factory()
+        try:
+            ForecastPipelineService(db).run_pipeline(run_id, force_full=force_full)
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("Forecast pipeline run failed")
+        finally:
+            db.close()
+
+    def _estimate_current_wape(self, history: pd.DataFrame) -> Optional[float]:
+        """Quick WAPE estimate using naive lag-1 forecast vs actuals."""
+        try:
+            df = history.sort_values(["unique_id", "demand_date"]).copy()
+            df["pred"] = df.groupby("unique_id")["actual"].shift(1)
+            eval_df = df.dropna(subset=["pred"])
+            if eval_df.empty:
+                return None
+            denom = float(eval_df["actual"].abs().sum()) or 1.0
+            wape = float((eval_df["actual"] - eval_df["pred"]).abs().sum() / denom)
+            return round(wape, 4)
+        except Exception:
+            return None
+
+    def _load_cached_clusters(self, cfg: ForecastPipelineConfig) -> Dict[str, int]:
+        """Load cluster assignments from the most recent published/completed run."""
+        last_run = (
+            self.db.query(ForecastPipelineRun)
+            .filter(
+                ForecastPipelineRun.pipeline_config_id == cfg.id,
+                ForecastPipelineRun.status.in_(["published", "completed"]),
+            )
+            .order_by(ForecastPipelineRun.created_at.desc())
+            .first()
+        )
+        if last_run is None or not last_run.run_log:
+            return {}
+
+        cached = last_run.run_log.get("clusters", {})
+        return {uid: int(cid) for uid, cid in cached.items()}
 
     def publish_run(self, run_id: int, published_by_id: int, notes: str | None = None) -> int:
         run = self.db.query(ForecastPipelineRun).filter(ForecastPipelineRun.id == run_id).first()
