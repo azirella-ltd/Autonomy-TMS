@@ -131,44 +131,44 @@ class ProductIdMapper:
         self._load_mapping()
 
     def _load_mapping(self):
-        """Load product name ↔ ID mapping from database."""
+        """Load product id ↔ description mapping from database.
+
+        Product.id is a VARCHAR PK (e.g. 'TBG-CASES-1') — there is no
+        separate 'name' field.  We index by both id and description.
+        """
         products = self.db.query(Product).filter(
             Product.config_id == self.config_id
         ).all()
 
         for product in products:
-            self._name_to_id[product.name] = product.id
-            self._id_to_name[product.id] = product.name
+            # Index by id (canonical identifier)
+            self._name_to_id[product.id] = product.id
+            # Also index by description (human-readable label) if set
+            if product.description:
+                self._name_to_id[product.description] = product.id
+            self._id_to_name[product.id] = product.id
 
-    def get_product_id(self, product_name: str) -> Optional[int]:
+    def get_product_id(self, product_name: str) -> Optional[str]:
         """
-        Get product ID from name.
+        Get product ID from name or description.
 
         Args:
-            product_name: Product name (e.g., "Cases")
+            product_name: Product id or description (e.g., "TBG-CASES-1")
 
         Returns:
-            Product ID (Integer) or None if not found
-
-        Example:
-            >>> mapper.get_product_id("Cases")
-            456
+            Product ID (string PK) or None if not found
         """
         return self._name_to_id.get(product_name)
 
-    def get_product_name(self, product_id: int) -> Optional[str]:
+    def get_product_name(self, product_id: str) -> Optional[str]:
         """
-        Get product name from ID.
+        Get product id (used as display name) from product id.
 
         Args:
-            product_id: Product ID (Integer)
+            product_id: Product string PK
 
         Returns:
-            Product name (String) or None if not found
-
-        Example:
-            >>> mapper.get_product_name(456)
-            "Cases"
+            Product ID string or None if not found
         """
         return self._id_to_name.get(product_id)
 
@@ -208,12 +208,12 @@ class SimulationIdMapper:
         """Get site name from ID."""
         return self.site_mapper.get_site_name(site_id)
 
-    def get_product_id(self, product_name: str) -> Optional[int]:
-        """Get product ID from name."""
+    def get_product_id(self, product_name: str) -> Optional[str]:
+        """Get product string PK from name/id/description."""
         return self.product_mapper.get_product_id(product_name)
 
-    def get_product_name(self, product_id: int) -> Optional[str]:
-        """Get product name from ID."""
+    def get_product_name(self, product_id: str) -> Optional[str]:
+        """Get product display name (same as id) from string PK."""
         return self.product_mapper.get_product_name(product_id)
 
 

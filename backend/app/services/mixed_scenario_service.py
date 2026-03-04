@@ -7163,13 +7163,243 @@ class MixedScenarioService:
             return None
 
         # 3. Route to appropriate execution mode
-        # Priority: SC Planning > DAG Sequential > Legacy
-        if game_obj.use_sc_planning:
+        # Priority: SC Execution > SC Planning > DAG Sequential > Legacy
+        use_sc_execution = (game_obj.config or {}).get('use_sc_execution', False)
+        if use_sc_execution:
+            return self._start_round_sc_execution(game_obj)
+        elif game_obj.use_sc_planning:
             return self._start_round_sc_planning(game_obj)
         elif game_obj.use_dag_sequential:
             return self._start_round_dag_sequential(game_obj)
         else:
             return self._start_round_legacy(game_obj)
+
+    def _start_round_sc_execution(self, game_obj: Game) -> Optional[ScenarioRound]:
+        """
+        SC Execution Mode round processing.
+
+        Drives round execution entirely through standard AWS SC entities:
+        InvLevel, InboundOrderLine, OutboundOrderLine, SourcingRules, PurchaseOrder.
+
+        This replaces engine.py logic — the Beer Game is just a special case of
+        iterative SC execution over a 4-site linear DAG.
+        """
+        from app.services.sc_execution.simulation_executor import SimulationExecutor
+
+        if not game_obj.supply_chain_config_id:
+            logger.error(
+                f"Game {game_obj.id} has no supply_chain_config_id - cannot use SC execution"
+            )
+            return None
+
+        total_rounds = game_obj.max_rounds or 52
+
+        latest_round: Optional[ScenarioRound] = (
+            self.db.query(ScenarioRound)
+            .filter(ScenarioRound.scenario_id == game_obj.id)
+            .order_by(ScenarioRound.round_number.desc())
+            .first()
+        )
+        if latest_round:
+            if latest_round.completed_at or latest_round.ended_at or latest_round.is_completed:
+                target_round = latest_round.round_number + 1
+            else:
+                target_round = latest_round.round_number
+        else:
+            current_round_value = game_obj.current_round or 0
+            target_round = current_round_value if current_round_value > 0 else 1
+
+        if target_round > total_rounds:
+            game_obj.status = GameStatusDB.FINISHED
+            self.db.commit()
+            return None
+
+        game_obj.current_round = target_round
+        self.db.add(game_obj)
+        self.db.commit()
+
+        logger.info(f"🚀 SC Execution Mode - Game {game_obj.id}, Round {target_round}")
+
+        # Initialize SC state on round 1 (create InvLevel records)
+        if target_round == 1:
+            from app.services.sc_execution.simulation_executor import SimulationExecutor as _SE
+            _init_executor = _SE(db=self.db, scenario=game_obj)
+            _init_executor._load_config()
+            _init_executor.initialize_game(
+                scenario_id=game_obj.id,
+                config_id=game_obj.supply_chain_config_id,
+            )
+            logger.info(f"  Initialized SC state for game {game_obj.id}")
+
+        # Market demand for this round
+        market_demand = self._get_current_demand(game_obj, target_round)
+
+        # Agent order decisions (one qty per role/site)
+        agent_decisions = self._get_sc_execution_agent_decisions(game_obj, target_round)
+
+        # Execute round via SC execution layer
+        executor = SimulationExecutor(db=self.db, scenario=game_obj)
+        executor._load_config()
+        round_result = executor.execute_round(
+            round_number=target_round,
+            agent_decisions=agent_decisions,
+            market_demand=market_demand,
+        )
+
+        # Create ScenarioRound record
+        round_record = ScenarioRound(
+            scenario_id=game_obj.id,
+            round_number=target_round,
+            customer_demand=int(market_demand),
+            is_completed=True,
+            started_at=datetime.datetime.utcnow(),
+            completed_at=datetime.datetime.utcnow(),
+            ended_at=datetime.datetime.utcnow(),
+        )
+        self.db.add(round_record)
+        self.db.flush()
+
+        # Persist per-user period records from round result
+        self._persist_sc_execution_period(game_obj, round_record, round_result)
+
+        self.db.commit()
+        logger.info(f"✅ SC Execution Round {target_round} Complete")
+        return round_record
+
+    def _get_sc_execution_agent_decisions(
+        self, game_obj: Game, round_number: int
+    ) -> Dict[str, float]:
+        """
+        Compute agent order quantities for an SC execution round.
+
+        Uses a base-stock policy: order = demand + max(0, safety_stock - on_hand).
+        For each ScenarioUser, matches their role to a Site by name (case-insensitive)
+        and reads current InvLevel to compute the order quantity.
+
+        Args:
+            game_obj: Game/Scenario instance
+            round_number: Current round number
+
+        Returns:
+            Dict mapping site name → order quantity
+        """
+        from app.models.sc_entities import InvLevel
+        from app.models.supply_chain_config import Site
+
+        demand = self._get_current_demand(game_obj, round_number)
+
+        scenario_users = (
+            self.db.query(ScenarioUser)
+            .filter(ScenarioUser.scenario_id == game_obj.id)
+            .all()
+        )
+
+        sites = (
+            self.db.query(Site)
+            .filter(Site.config_id == game_obj.supply_chain_config_id)
+            .all()
+        )
+        site_by_name_upper = {s.name.upper(): s for s in sites}
+
+        agent_decisions: Dict[str, float] = {}
+        for su in scenario_users:
+            role_str = su.role.value if hasattr(su.role, 'value') else str(su.role)
+            site = site_by_name_upper.get(role_str.upper())
+
+            order_qty = demand
+            if site:
+                inv = (
+                    self.db.query(InvLevel)
+                    .filter(InvLevel.site_id == site.id)
+                    .order_by(InvLevel.inventory_date.desc())
+                    .first()
+                )
+                if inv and inv.on_hand_qty is not None:
+                    # Base-stock: fill gap to safety stock then cover demand
+                    safety_stock = getattr(inv, 'safety_stock_qty', None) or 4.0
+                    gap = max(0.0, safety_stock - (inv.on_hand_qty or 0.0))
+                    order_qty = demand + gap
+
+            # Key is the site name (as used by SimulationExecutor)
+            site_name = site.name if site else role_str.capitalize()
+            agent_decisions[site_name] = float(order_qty)
+
+        return agent_decisions
+
+    def _persist_sc_execution_period(
+        self,
+        game_obj: Game,
+        round_record: ScenarioRound,
+        round_result: Dict,
+    ) -> None:
+        """
+        Persist ScenarioUserPeriod records from a SimulationExecutor round result.
+
+        Maps site-level cost/inventory data back to ScenarioUser rows so the
+        standard analytics (costs, inventory charts, bullwhip metrics) work
+        without changes.
+
+        Args:
+            game_obj: Game/Scenario instance
+            round_record: The ScenarioRound just created for this round
+            round_result: Dict returned by SimulationExecutor.execute_round()
+        """
+        from app.models.supply_chain_config import Site
+
+        scenario_users = (
+            self.db.query(ScenarioUser)
+            .filter(ScenarioUser.scenario_id == game_obj.id)
+            .all()
+        )
+
+        sites = (
+            self.db.query(Site)
+            .filter(Site.config_id == game_obj.supply_chain_config_id)
+            .all()
+        )
+        site_by_id = {s.id: s for s in sites}
+        site_by_name_upper = {s.name.upper(): s for s in sites}
+
+        # Build cost lookup: site_id (int) → cost dict
+        site_costs_by_id: Dict[int, Dict] = {}
+        for sc in round_result.get("steps", {}).get("costs", {}).get("site_costs", []):
+            try:
+                site_costs_by_id[int(sc["site_id"])] = sc
+            except (KeyError, TypeError, ValueError):
+                pass
+
+        # Build inventory snapshot lookup: site_id (str) → state dict
+        state_sites = round_result.get("state_snapshot", {}).get("sites", {})
+
+        agent_decisions = round_result.get("steps", {}).get("agent_decisions", {})
+
+        for su in scenario_users:
+            role_str = su.role.value if hasattr(su.role, 'value') else str(su.role)
+            site = site_by_name_upper.get(role_str.upper())
+            if not site:
+                continue
+
+            site_cost = site_costs_by_id.get(site.id, {})
+            site_state = state_sites.get(str(site.id), state_sites.get(site.id, {}))
+
+            on_hand = float(site_state.get("on_hand_qty", 0.0))
+            backorder = float(site_state.get("backorder_qty", 0.0))
+            order_placed = int(agent_decisions.get(site.name, 0))
+
+            period = ScenarioUserPeriod(
+                scenario_user_id=su.id,
+                scenario_round_id=round_record.id,
+                order_placed=order_placed,
+                order_received=0,
+                inventory_before=int(on_hand),
+                inventory_after=int(on_hand),
+                backorders_before=int(backorder),
+                backorders_after=int(backorder),
+                holding_cost=float(site_cost.get("holding_cost", 0.0)),
+                backorder_cost=float(site_cost.get("backlog_cost", 0.0)),
+                total_cost=float(site_cost.get("total_cost", 0.0)),
+            )
+            self.db.add(period)
 
     def _start_round_legacy(self, game_obj: Game) -> Optional[ScenarioRound]:
         """

@@ -252,6 +252,17 @@ class Node:
 class SupplyChainLine:
     """Supply chain simulation for an arbitrary sequential topology.
 
+    .. deprecated::
+        Legacy Beer Game simulation engine — retained for backwards compatibility
+        with existing scenarios only.
+
+        New scenarios should set ``scenario.config['use_sc_execution'] = True`` and
+        use :class:`~app.services.sc_execution.simulation_executor.SimulationExecutor`
+        which drives execution through standard AWS SC entities (InvLevel,
+        InboundOrderLine, OutboundOrderLine, SourcingRules, PurchaseOrder).
+        The Beer Game is simply a special case of iterative SC execution over a
+        4-site linear DAG — no custom engine code required.
+
     The topology is defined by ``material_lanes`` — a list of
     (upstream_site, downstream_site) tuples describing material flow.
     The engine derives the site ordering via topological sort and
