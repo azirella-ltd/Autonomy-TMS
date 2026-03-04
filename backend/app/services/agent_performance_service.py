@@ -313,19 +313,33 @@ class AgentPerformanceService:
             if not rows:
                 return None
 
-            # Stable pseudo-random automation split per category name
-            def _auto_pct(cat_name: str) -> int:
-                return 55 + (hash(cat_name) % 25)  # 55–79 %
+            # Look up real PerformanceMetric data per category
+            from app.models.performance_metrics import PerformanceMetric
+            cat_metrics = (
+                self.db.query(PerformanceMetric)
+                .filter(
+                    PerformanceMetric.tenant_id == tenant_id,
+                    PerformanceMetric.category.isnot(None),
+                )
+                .order_by(PerformanceMetric.period_start.desc())
+                .all()
+            )
+            # Build index: category -> latest metric
+            cat_metric_index = {}
+            for m in cat_metrics:
+                if m.category not in cat_metric_index:
+                    cat_metric_index[m.category] = m
 
             categories = []
             for row in rows:
                 cat = row.category or "Other"
                 rev = float(row.revenue or 0)
                 units = int(row.units or 0)
-                auto = _auto_pct(cat)
-                manual = 100 - auto
-                agent_score = 10 + (hash(cat) % 15)
-                planner_score = 3 + (hash(cat + "p") % 6)
+                m = cat_metric_index.get(cat)
+                auto = round(m.automation_percentage, 0) if m and m.automation_percentage is not None else None
+                manual = round(100 - auto, 0) if auto is not None else None
+                agent_score = round(m.agent_score, 1) if m and m.agent_score is not None else None
+                planner_score = round(m.planner_score, 1) if m and m.planner_score is not None else None
                 categories.append({
                     "name": cat,
                     "revenue": int(rev),
@@ -608,28 +622,28 @@ class AgentPerformanceService:
             first_metric = latest_metrics[-1] if latest_metrics else None
             last_metric = latest_metrics[0] if latest_metrics else None
 
-            automation_start = round(first_metric.automation_percentage, 0) if first_metric else 30
-            automation_now = round(last_metric.automation_percentage, 0) if last_metric else 78
+            automation_start = round(first_metric.automation_percentage, 0) if first_metric else None
+            automation_now = round(last_metric.automation_percentage, 0) if last_metric else None
 
             return {
-                "inventory_reduction_pct": 0,
-                "inventory_from": 0,
-                "inventory_to": 0,
-                "service_level": 0,
-                "forecast_accuracy_from": int(100 - automation_start),
-                "forecast_accuracy_to": int(automation_now),
-                "carrying_cost_reduction_pct": 0,
-                "revenue_increase_pct": 0,
-                "revenue_from": int(annual_rev * 0.85) if annual_rev else 0,
-                "revenue_to": annual_rev,
+                "inventory_reduction_pct": None,
+                "inventory_from": None,
+                "inventory_to": None,
+                "service_level": None,
+                "forecast_accuracy_from": int(100 - automation_start) if automation_start is not None else None,
+                "forecast_accuracy_to": int(automation_now) if automation_now is not None else None,
+                "carrying_cost_reduction_pct": None,
+                "revenue_increase_pct": None,
+                "revenue_from": int(annual_rev * 0.85) if annual_rev else None,
+                "revenue_to": annual_rev if annual_rev else None,
             }
         except Exception:
             logger.exception("Failed to build ROI metrics for tenant=%s", tenant_id)
             return {
-                "inventory_reduction_pct": 0, "inventory_from": 0, "inventory_to": 0,
-                "service_level": 0, "forecast_accuracy_from": 0, "forecast_accuracy_to": 0,
-                "carrying_cost_reduction_pct": 0, "revenue_increase_pct": 0,
-                "revenue_from": 0, "revenue_to": 0,
+                "inventory_reduction_pct": None, "inventory_from": None, "inventory_to": None,
+                "service_level": None, "forecast_accuracy_from": None, "forecast_accuracy_to": None,
+                "carrying_cost_reduction_pct": None, "revenue_increase_pct": None,
+                "revenue_from": None, "revenue_to": None,
             }
 
     def _build_key_insights(self, metrics: List) -> List[str]:
