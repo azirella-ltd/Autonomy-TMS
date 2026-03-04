@@ -79,7 +79,7 @@ class PurchaseOrderCreator:
 
         # Lead time from TransportationLane (via sourcing_rule FK)
         # supply_lead_time.value is in weeks/rounds (1 round = 1 week)
-        lead_time_rounds = 2  # fallback: 2-week Beer Game standard
+        lead_time_rounds = 2  # fallback when no TransportationLane configured — populate lane for accurate scheduling
         if sourcing_rule.transportation_lane_id:
             lane = self.db.query(TransportationLane).filter(
                 TransportationLane.id == sourcing_rule.transportation_lane_id

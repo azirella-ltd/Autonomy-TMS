@@ -12,25 +12,28 @@ class SupplyChainDataset(InMemoryDataset):
     This dataset handles loading and preprocessing of supply chain data for GNN training.
     """
     
-    def __init__(self, 
+    def __init__(self,
                  root: str = 'data/processed',
                  seq_len: int = 10,
                  pred_len: int = 1,
+                 num_nodes: int = 4,
                  transform: Optional[Callable] = None,
                  pre_transform: Optional[Callable] = None,
                  pre_filter: Optional[Callable] = None):
         """Initialize the dataset.
-        
+
         Args:
             root: Root directory where the dataset should be saved.
             seq_len: Length of input sequences
             pred_len: Length of prediction sequences
+            num_nodes: Number of supply chain nodes (sites). Default 4 for Beer Game compat.
             transform: A function/transform that takes in a Data object and returns a transformed version.
             pre_transform: A function/transform that takes in a Data object and returns a transformed version.
             pre_filter: A function that takes in a Data object and returns a boolean value.
         """
         self.seq_len = seq_len
         self.pred_len = pred_len
+        self.num_nodes = num_nodes
         self.data_dir = Path(root)
         
         # Initialize the parent class first to set up the directory structure
@@ -68,10 +71,10 @@ class SupplyChainDataset(InMemoryDataset):
         # Create raw directory if it doesn't exist
         self.raw_dir.mkdir(parents=True, exist_ok=True)
         
-        num_nodes = 4  # Retailer, Wholesaler, Distributor, Manufacturer
+        num_nodes = self.num_nodes
         num_features = 10
         num_time_steps = 1000
-        
+
         print("Generating random features and targets...")
         features = np.random.randn(num_time_steps, num_nodes, num_features).astype(np.float32)
         targets = np.random.randn(num_time_steps, num_nodes, 2).astype(np.float32)
@@ -130,7 +133,7 @@ class SupplyChainDataset(InMemoryDataset):
                 x=x.view(-1, x.size(-1)),
                 edge_index=edge_index,
                 y=y.view(-1, y.size(-1)),
-                num_nodes=4,
+                num_nodes=self.num_nodes,
                 seq_len=self.seq_len,
                 pred_len=self.pred_len
             )

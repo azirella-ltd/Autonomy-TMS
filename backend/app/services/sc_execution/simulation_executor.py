@@ -116,8 +116,14 @@ class SimulationExecutor:
         )
 
     def _get_product_id(self) -> str:
-        """Return the product ID for this config, falling back to 'TBG-CASES'."""
-        return self._product.id if self._product else "TBG-CASES"
+        """Return the product ID for this config. Raises if no product is seeded."""
+        if not self._product:
+            raise ValueError(
+                f"No product found for SC config {self.config_id}. "
+                "Run 'make seed-tbg-sc-data' to seed Product/InvPolicy/SourcingRules "
+                "before executing simulation rounds."
+            )
+        return self._product.id
 
     def _get_retailer_site_id(self) -> Optional[int]:
         """Return the site_id (int) of the retailer site."""

@@ -82,12 +82,11 @@ AWS_SC_NODE_FEATURES: List[str] = [
     "source_type",              # "buy", "transfer", "manufacture"
     "priority",                 # Sourcing priority
 
-    # Site context (one-hot encoded)
-    "site_type_0", "site_type_1", "site_type_2", "site_type_3",  # SC master_type
+    # Site context (one-hot encoded) — AWS SC master_type (4 categories)
+    "site_type_0", "site_type_1", "site_type_2", "site_type_3",
 
-    # Extensions for simulation compatibility (optional)
-    "role_retailer", "role_wholesaler", "role_distributor", "role_manufacturer",
-    "position_normalized",      # Position in DAG (0-1)
+    # Position in DAG (0-1)
+    "position_normalized",
 ]
 
 # Minimal subset for simulation compatibility
@@ -99,7 +98,6 @@ SIMULATION_COMPATIBLE_FEATURES: List[str] = [
     "supply_qty",               # Maps to incoming_shipments
     "order_qty",                # Maps to placed_order
     "lead_time_days",           # Maps to order_leadtime
-    "role_retailer", "role_wholesaler", "role_distributor", "role_manufacturer",
 ]
 
 

@@ -161,10 +161,13 @@ class Settings(BaseSettings):
     WEBSOCKET_PING_TIMEOUT: int = 5    # seconds
     WEBSOCKET_MAX_MESSAGE_SIZE: int = 1024 * 1024  # 1MB
     
-    # Game Settings
-    INITIAL_INVENTORY: int = 12
-    HOLDING_COST_PER_UNIT: float = 0.5
-    BACKORDER_COST_PER_UNIT: float = 1.0
+    # Scenario Settings
+    # DEPRECATED: The three constants below are legacy Beer Game defaults.
+    # New scenarios must seed InvLevel.on_hand_qty via 'make seed-tbg-sc-data'.
+    # Cost rates must come from InvPolicy.holding_cost_range / backlog_cost_range.
+    INITIAL_INVENTORY: int = 12          # DEPRECATED — legacy Beer Game init
+    HOLDING_COST_PER_UNIT: float = 0.5   # DEPRECATED — legacy Beer Game cost
+    BACKORDER_COST_PER_UNIT: float = 1.0  # DEPRECATED — legacy Beer Game cost
     DEFAULT_MAX_ROUNDS: int = 52
     
     # AI Settings

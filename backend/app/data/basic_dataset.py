@@ -7,23 +7,26 @@ from typing import Optional, Callable
 class BasicSupplyChainDataset(Dataset):
     """A basic PyTorch Dataset for supply chain data."""
     
-    def __init__(self, 
+    def __init__(self,
                  data_dir: str = 'data/basic_processed',
                  seq_len: int = 10,
                  pred_len: int = 1,
+                 num_nodes: int = 4,
                  transform: Optional[Callable] = None):
         """
         Initialize the dataset.
-        
+
         Args:
             data_dir: Directory to store/load the data
             seq_len: Length of input sequences
             pred_len: Length of prediction sequences
+            num_nodes: Number of supply chain nodes (sites). Default 4 for Beer Game compat.
             transform: Optional data transformation
         """
         self.data_dir = data_dir
         self.seq_len = seq_len
         self.pred_len = pred_len
+        self.num_nodes = num_nodes
         self.transform = transform
         
         # Create directory if it doesn't exist
@@ -51,7 +54,7 @@ class BasicSupplyChainDataset(Dataset):
         print("Generating sample data...")
         
         # Parameters
-        num_nodes = 4  # Number of nodes in the supply chain
+        num_nodes = self.num_nodes
         num_features = 10
         num_time_steps = 100
         
@@ -91,7 +94,7 @@ class BasicSupplyChainDataset(Dataset):
             'x': x,  # [seq_len, num_nodes, num_features]
             'y': y,  # [pred_len, num_nodes, 2]
             'edge_index': self.edge_index,
-            'num_nodes': 4,
+            'num_nodes': self.num_nodes,
             'seq_len': self.seq_len,
             'pred_len': self.pred_len
         }

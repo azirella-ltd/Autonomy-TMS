@@ -177,6 +177,18 @@ class AgentGameService:
             initial_demand=steady_demand,
         )
 
+        # --- SC execution path (opt-in via use_sc_execution flag in game.config) ---
+        if config.get("use_sc_execution"):
+            config["executor_mode"] = "sc_execution"
+            game.config = config
+            game.status = GameStatus.STARTED
+            game.current_round = 1
+            game.started_at = datetime.utcnow()
+            self.db.commit()
+            self.db.refresh(game)
+            return game
+
+        # --- Legacy SupplyChainLine path ---
         config["agent_engine_state"] = line.to_dict()
         game.config = config
         game.status = GameStatus.STARTED
@@ -200,6 +212,11 @@ class AgentGameService:
 
         topology = self._load_topology(game)
         config = self._ensure_agent_config(game, topology)
+
+        # --- SC execution path ---
+        if config.get("executor_mode") == "sc_execution":
+            return self._play_round_sc(game, config, topology)
+
         state = config.get("agent_engine_state")
         if not state:
             raise ValueError("Game engine state is missing; ensure the game is started")
@@ -615,6 +632,92 @@ class AgentGameService:
             generated = DemandGenerator.generate(DemandPatternType.CLASSIC, total_rounds)
 
         demand_pattern.pattern = generated
+
+    def _play_round_sc(
+        self, game: Game, config: Dict[str, Any], topology: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Execute one round via SimulationExecutor (SC entities path).
+
+        Called when ``config["executor_mode"] == "sc_execution"``.  Loads current
+        InvLevel state for each site, applies the configured agent policy to produce
+        order quantities, then delegates execution to SimulationExecutor which
+        handles PO creation, ATP, and state persistence against SC entities.
+        """
+        from app.services.sc_execution.simulation_executor import SimulationExecutor
+        from app.models.sc_entities import InvLevel, Product as ProductModel
+
+        demand_pattern = DemandPattern(**game.demand_pattern)
+        current_demand = self._get_current_demand(game.current_round, demand_pattern)
+
+        # Load current inventory state from InvLevel for policy obs
+        config_id = game.supply_chain_config_id
+        product = (
+            self.db.query(ProductModel)
+            .filter(ProductModel.config_id == config_id)
+            .first()
+        )
+        product_id = product.id if product else None
+
+        sites = (
+            self.db.query(Site)
+            .filter(Site.config_id == config_id)
+            .all()
+        )
+        site_obs: Dict[str, Dict[str, Any]] = {}
+        if product_id:
+            for site in sites:
+                inv = (
+                    self.db.query(InvLevel)
+                    .filter(
+                        InvLevel.site_id == site.id,
+                        InvLevel.product_id == product_id,
+                    )
+                    .first()
+                )
+                site_obs[site.name] = {
+                    "inventory": float(inv.on_hand_qty or 0) if inv else 0.0,
+                    "backlog": float(inv.backorder_qty or 0) if inv else 0.0,
+                    "pipeline_on_order": float(inv.in_transit_qty or 0) if inv else 0.0,
+                    "demand": float(current_demand),
+                }
+
+        # Apply agent policies to generate per-site order quantities
+        policies = self._build_policy_map(config)
+        agent_decisions: Dict[str, float] = {}
+        for site_name in topology["site_names"]:
+            policy = policies.get(site_name)
+            obs = site_obs.get(site_name, {
+                "inventory": 0.0, "backlog": 0.0,
+                "pipeline_on_order": 0.0, "demand": float(current_demand),
+            })
+            try:
+                qty = policy.order(obs) if policy else current_demand
+            except Exception:
+                qty = current_demand
+            agent_decisions[site_name] = float(max(0, qty))
+
+        # Delegate to SimulationExecutor (handles PO creation + SC entity updates)
+        executor = SimulationExecutor(db=self.db, scenario=game)
+        executor._load_config()
+        executor.execute_round(
+            round_number=game.current_round,
+            agent_decisions=agent_decisions,
+            market_demand=float(current_demand),
+        )
+
+        round_record = self._get_or_create_round(game, current_demand)
+        round_record.is_completed = True
+        round_record.completed_at = datetime.utcnow()
+
+        if game.current_round >= game.max_rounds:
+            game.status = GameStatus.FINISHED
+            game.finished_at = datetime.utcnow()
+        else:
+            game.current_round += 1
+            game.status = GameStatus.ROUND_COMPLETED
+
+        self.db.commit()
+        return self.get_game_state(game.id)
 
     def _normalise_role_label(self, role: str, topology: Dict[str, Any] | None = None) -> str:
         """Normalise a role string to the canonical site name used in policies."""

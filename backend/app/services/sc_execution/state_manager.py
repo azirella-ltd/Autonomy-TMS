@@ -7,10 +7,13 @@ The simulation absorbs state from SC tables each round.
 Reference: SC State Management
 """
 
+import logging
 from datetime import datetime
 from typing import Dict, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
+
+logger = logging.getLogger(__name__)
 
 from app.models.sc_entities import InvLevel, Product, SourcingRules, InvPolicy
 from app.models.supply_chain_config import Site, SupplyChainConfig, TransportationLane
@@ -120,24 +123,37 @@ class SCStateManager:
 
         site = self.db.query(Site).filter(Site.id == site_id).first()
 
-        # Lead time: from TransportationLane via sourcing rule FK
-        # supply_lead_time.value is in weeks/rounds (1 round = 1 week)
-        lead_time_days = 14  # fallback (2 weeks)
+        # Lead time: from TransportationLane via sourcing rule FK.
+        # supply_lead_time.value is in weeks/rounds (1 round = 1 week).
+        lead_time_days = 14  # 2-week fallback when no TransportationLane is configured
         if sourcing_rule and sourcing_rule.transportation_lane_id:
             lane = self.db.query(TransportationLane).filter(
                 TransportationLane.id == sourcing_rule.transportation_lane_id
             ).first()
             if lane and lane.supply_lead_time:
                 lead_time_days = int(lane.supply_lead_time.get("value", 2)) * 7
+        else:
+            logger.warning(
+                f"No TransportationLane for site {site_id}/product {product_id} — "
+                "defaulting to 14-day lead time. Populate TransportationLane for accurate scheduling."
+            )
 
-        # Cost rates from inv_policy simulation extension JSON
-        holding_cost_rate = 0.5
-        backlog_cost_rate = 1.0
+        # Derive cost rates from Product.unit_cost when InvPolicy lacks explicit rates.
+        # Holding: 25% annual / 52 weeks per unit per week.
+        # Backlog: 4× holding (standard penalty for unfulfilled demand).
+        product = self.db.query(Product).filter(Product.id == product_id).first()
+        unit_cost = (product.unit_cost or 0.0) if product else 0.0
+        default_holding = unit_cost * 0.25 / 52
+        default_backlog = default_holding * 4.0
+
         if inv_policy:
             hcr = inv_policy.holding_cost_range or {}
             bcr = inv_policy.backlog_cost_range or {}
-            holding_cost_rate = hcr.get("min", 0.5)
-            backlog_cost_rate = bcr.get("min", 1.0)
+            holding_cost_rate = hcr.get("min", default_holding)
+            backlog_cost_rate = bcr.get("min", default_backlog)
+        else:
+            holding_cost_rate = default_holding
+            backlog_cost_rate = default_backlog
 
         return {
             "site_id": site_id,

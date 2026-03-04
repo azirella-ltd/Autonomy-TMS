@@ -10,7 +10,7 @@ from typing import Dict, List
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
-from app.models.sc_entities import InvLevel, InvPolicy
+from app.models.sc_entities import InvLevel, InvPolicy, Product
 
 
 class CostCalculator:
@@ -71,15 +71,23 @@ class CostCalculator:
             )
         ).first()
 
-        # Default cost rates (Beer Game standard)
-        holding_cost_rate = 0.5
-        backlog_cost_rate = 1.0
+        # Derive cost rates from Product.unit_cost when InvPolicy lacks explicit rates.
+        # Holding: 25% annual cost / 52 weeks = unit_cost * 0.25 / 52 per unit per week.
+        # Backlog: 4× holding rate (industry standard penalty for unfulfilled demand).
+        # This replaces the former Beer Game hardcoded defaults (0.5 / 1.0).
+        product = self.db.query(Product).filter(Product.id == product_id).first()
+        unit_cost = (product.unit_cost or 0.0) if product else 0.0
+        default_holding = unit_cost * 0.25 / 52
+        default_backlog = default_holding * 4.0
 
         if inv_policy:
             hcr = inv_policy.holding_cost_range or {}
             bcr = inv_policy.backlog_cost_range or {}
-            holding_cost_rate = hcr.get("min", 0.5)
-            backlog_cost_rate = bcr.get("min", 1.0)
+            holding_cost_rate = hcr.get("min", default_holding)
+            backlog_cost_rate = bcr.get("min", default_backlog)
+        else:
+            holding_cost_rate = default_holding
+            backlog_cost_rate = default_backlog
 
         on_hand = inv_level.on_hand_qty or 0.0
         backorder = inv_level.backorder_qty or 0.0

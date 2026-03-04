@@ -84,7 +84,8 @@ try:  # pragma: no cover - optional when OpenAI deps absent
     from app.services.llm_agent import check_autonomy_llm_access
 except Exception:  # pragma: no cover - during tests without OpenAI deps
     check_autonomy_llm_access = None  # type: ignore[assignment]
-from app.services.engine import DEFAULT_STEADY_STATE_DEMAND
+# Default market demand (units/period) — defined locally, not imported from engine.py
+DEFAULT_STEADY_STATE_DEMAND: int = 4
 from app.core.demand_patterns import (
     normalize_demand_pattern,
     DEFAULT_DEMAND_PATTERN,
