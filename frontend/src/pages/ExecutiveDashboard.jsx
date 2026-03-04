@@ -398,6 +398,13 @@ const SOPWorklistPreview = ({ items, onViewAll }) => {
 // =============================================================================
 
 const ROICard = ({ data }) => {
+  const fmt = (v) => (v != null ? v : '--');
+  const invRed = data?.inventory_reduction_pct;
+  const svcLvl = data?.service_level;
+  const fcstFrom = data?.forecast_accuracy_from;
+  const fcstTo = data?.forecast_accuracy_to;
+  const revInc = data?.revenue_increase_pct;
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -409,32 +416,32 @@ const ROICard = ({ data }) => {
       <CardContent>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1">
-            <p className="text-2xl font-bold text-green-600">
-              -{data?.inventory_reduction_pct || 47}%
+            <p className={`text-2xl font-bold ${invRed != null ? 'text-green-600' : 'text-muted-foreground'}`}>
+              {invRed != null ? `-${invRed}%` : '--'}
             </p>
             <p className="text-xs text-muted-foreground">
               Inventory reduced
             </p>
           </div>
           <div className="space-y-1">
-            <p className="text-2xl font-bold text-green-600">
-              {data?.service_level || 105}%
+            <p className={`text-2xl font-bold ${svcLvl != null ? 'text-green-600' : 'text-muted-foreground'}`}>
+              {svcLvl != null ? `${svcLvl}%` : '--'}
             </p>
             <p className="text-xs text-muted-foreground">
               Service level maintained
             </p>
           </div>
           <div className="space-y-1">
-            <p className="text-2xl font-bold text-green-600">
-              {data?.forecast_accuracy_from || 68}% → {data?.forecast_accuracy_to || 86}%
+            <p className={`text-2xl font-bold ${fcstFrom != null ? 'text-green-600' : 'text-muted-foreground'}`}>
+              {fcstFrom != null && fcstTo != null ? `${fcstFrom}% → ${fcstTo}%` : '--'}
             </p>
             <p className="text-xs text-muted-foreground">
               Forecast accuracy
             </p>
           </div>
           <div className="space-y-1">
-            <p className="text-2xl font-bold text-green-600">
-              +{data?.revenue_increase_pct || 20}%
+            <p className={`text-2xl font-bold ${revInc != null ? 'text-green-600' : 'text-muted-foreground'}`}>
+              {revInc != null ? `+${revInc}%` : '--'}
             </p>
             <p className="text-xs text-muted-foreground">
               Revenue increased
@@ -450,7 +457,7 @@ const ROICard = ({ data }) => {
 // Model Confidence Card (Conformal Prediction Status)
 // =============================================================================
 
-const ModelConfidenceCard = ({ conformalStatus, onRecalibrate }) => {
+const ModelConfidenceCard = ({ conformalStatus, onRecalibrate, recalibrating }) => {
   const demandCoverage = conformalStatus?.summary?.demand_coverage_actual || 0;
   const leadTimeCoverage = conformalStatus?.summary?.lead_time_coverage_actual || 0;
   const jointCoverage = conformalStatus?.joint_coverage_guarantee || 0;
@@ -548,13 +555,14 @@ const ModelConfidenceCard = ({ conformalStatus, onRecalibrate }) => {
 
         {/* Recalibrate Button */}
         <Button
-          variant="outline"
+          variant="default"
           size="sm"
           className="w-full gap-2"
           onClick={onRecalibrate}
+          disabled={recalibrating}
         >
-          <RefreshCw className="h-4 w-4" />
-          Recalibrate Predictors
+          <RefreshCw className={`h-4 w-4 ${recalibrating ? 'animate-spin' : ''}`} />
+          {recalibrating ? 'Calibrating…' : 'Recalibrate Predictors Now'}
         </Button>
       </CardContent>
     </Card>
@@ -566,6 +574,17 @@ const ModelConfidenceCard = ({ conformalStatus, onRecalibrate }) => {
 // =============================================================================
 
 const PerformanceSummary = ({ summary }) => {
+  const agentScore = summary?.agent_score;
+  const plannerScore = summary?.planner_score;
+  const autonomousPct = summary?.autonomous_decisions_pct;
+
+  const perfDelta = (agentScore != null && plannerScore != null)
+    ? (agentScore - plannerScore).toFixed(1)
+    : null;
+  const overrideRate = autonomousPct != null
+    ? (100 - autonomousPct).toFixed(1)
+    : null;
+
   return (
     <div className="grid grid-cols-2 gap-4">
       <Card>
@@ -573,11 +592,13 @@ const PerformanceSummary = ({ summary }) => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Agent Performance</p>
-              <p className="text-2xl font-bold text-green-600">
-                +{((summary?.agent_score || 12) - (summary?.planner_score || 7)).toFixed(1)}%
+              <p className={`text-2xl font-bold ${perfDelta != null ? 'text-green-600' : 'text-muted-foreground'}`}>
+                {perfDelta != null ? `+${perfDelta}%` : '--'}
               </p>
               <p className="text-xs text-muted-foreground">
-                Agent decisions outperforming manual by {((summary?.agent_score || 12) - (summary?.planner_score || 7)).toFixed(1)} points
+                {perfDelta != null
+                  ? `Agent decisions outperforming manual by ${perfDelta} points`
+                  : 'No performance data yet'}
               </p>
             </div>
             <div className="p-3 bg-green-100 text-green-600 rounded-lg">
@@ -591,7 +612,9 @@ const PerformanceSummary = ({ summary }) => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Human Override Rate</p>
-              <p className="text-2xl font-bold text-amber-600">{(100 - (summary?.autonomous_decisions_pct || 78)).toFixed(1)}%</p>
+              <p className={`text-2xl font-bold ${overrideRate != null ? 'text-amber-600' : 'text-muted-foreground'}`}>
+                {overrideRate != null ? `${overrideRate}%` : '--'}
+              </p>
               <p className="text-xs text-muted-foreground">
                 Percentage of decisions overridden by humans
               </p>
@@ -618,6 +641,7 @@ const ExecutiveDashboard = () => {
   const [planningCycle, setPlanningCycle] = useState('Q3 2025');
   const [conformalStatus, setConformalStatus] = useState(null);
   const [gartnerMetrics, setGartnerMetrics] = useState(null);
+  const [recalibrating, setRecalibrating] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -654,26 +678,26 @@ const ExecutiveDashboard = () => {
         const response = await api.get('/conformal-prediction/suite/status');
         setConformalStatus(response.data);
       } catch (err) {
-        // API might not be available - use mock data for demo
-        setConformalStatus({
-          summary: {
-            demand_predictors: 12,
-            lead_time_predictors: 5,
-            yield_predictors: 3,
-            demand_coverage_actual: 88,
-            lead_time_coverage_actual: 82,
-          },
-          joint_coverage_guarantee: 0.72,
-          stale_predictors: [],
-        });
+        console.error('Failed to fetch conformal status:', err);
+        setConformalStatus(null);
       }
     };
 
     fetchConformalStatus();
   }, []);
 
-  const handleRecalibrate = () => {
-    navigate('/admin/powell?tab=belief-state');
+  const handleRecalibrate = async () => {
+    setRecalibrating(true);
+    try {
+      await api.post('/conformal-prediction/demo/calibrate');
+      // Refresh status after calibration
+      const response = await api.get('/conformal-prediction/suite/status');
+      setConformalStatus(response.data);
+    } catch (err) {
+      console.error('Recalibration failed:', err);
+    } finally {
+      setRecalibrating(false);
+    }
   };
 
   if (loading) {
@@ -734,6 +758,7 @@ const ExecutiveDashboard = () => {
           <ModelConfidenceCard
             conformalStatus={conformalStatus}
             onRecalibrate={handleRecalibrate}
+            recalibrating={recalibrating}
           />
           <ROICard data={roi} />
         </div>

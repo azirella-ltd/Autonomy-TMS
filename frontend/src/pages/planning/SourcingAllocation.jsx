@@ -117,8 +117,8 @@ const SourcingAllocation = () => {
       const response = await api.get('/sourcing-rules', { params });
       setSourcingRules(response.data || []);
     } catch (err) {
-      console.warn('Sourcing rules endpoint not available, using mock data');
-      setSourcingRules(generateMockData());
+      console.error('Failed to load sourcing rules:', err);
+      setSourcingRules([]);
     } finally {
       setLoading(false);
     }

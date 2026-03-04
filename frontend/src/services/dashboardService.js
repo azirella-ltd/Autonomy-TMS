@@ -53,40 +53,6 @@ export const getHumanDashboard = async (gameId = null) => {
     return formattedData;
   } catch (error) {
     console.error('Error fetching human dashboard:', error);
-    
-    // Return mock data in case of error for development
-    if (process.env.NODE_ENV === 'development') {
-      console.warn('Using mock dashboard data due to error');
-      return {
-        scenario_id: 1,
-        game_name: 'Demo Game',
-        current_round: 5,
-        max_rounds: 12,
-        scenario_user_role: 'RETAILER',
-        scenario_user_id: 1,
-        metrics: {
-          current_inventory: 42,
-          inventory_change: 5.5,
-          backlog: 12,
-          total_cost: 1250.75,
-          avg_weekly_cost: 250.15,
-          service_level: 0.85,
-          service_level_change: 0.02
-        },
-        time_series: Array.from({ length: 5 }, (_, i) => ({
-          week: i + 1,
-          inventory: Math.floor(Math.random() * 50) + 20,
-          order: Math.floor(Math.random() * 30) + 10,
-          cost: Math.floor(Math.random() * 300) + 100,
-          backlog: Math.floor(Math.random() * 20) + 5,
-          demand: Math.floor(Math.random() * 40) + 5,
-          supply: Math.floor(Math.random() * 40) + 5,
-          reason: 'Simulated decision based on mock data'
-        })),
-        last_updated: new Date().toISOString()
-      };
-    }
-    
     throw error;
   }
 };

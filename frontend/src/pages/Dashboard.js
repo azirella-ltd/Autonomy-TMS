@@ -28,72 +28,6 @@ import SkuTable from '../components/SkuTable';
 import { useAuth } from '../contexts/AuthContext';
 import { getHumanDashboard, getUserScenarios } from '../services/dashboardService';
 
-const FALLBACK_DEMAND_SERIES = [
-  { name: 'W1', actual: 2100, forecast: 2200, target: 2000 },
-  { name: 'W2', actual: 2250, forecast: 2300, target: 2050 },
-  { name: 'W3', actual: 2150, forecast: 2350, target: 2100 },
-  { name: 'W4', actual: 2300, forecast: 2400, target: 2100 },
-  { name: 'W5', actual: 2400, forecast: 2380, target: 2150 },
-  { name: 'W6', actual: 2350, forecast: 2450, target: 2150 },
-  { name: 'W7', actual: 2420, forecast: 2500, target: 2200 },
-  { name: 'W8', actual: 2380, forecast: 2480, target: 2200 },
-  { name: 'W9', actual: 2450, forecast: 2550, target: 2250 },
-  { name: 'W10', actual: 2480, forecast: 2580, target: 2250 },
-  { name: 'W11', actual: 2460, forecast: 2600, target: 2300 },
-  { name: 'W12', actual: 2520, forecast: 2650, target: 2300 },
-];
-
-const FALLBACK_STOCK_VS_SAFETY = [
-  { name: 'Widget A', stock: 1800, safety: 400 },
-  { name: 'Widget B', stock: 900, safety: 300 },
-  { name: 'Component C', stock: 7500, safety: 800 },
-  { name: 'Assembly D', stock: 1200, safety: 350 },
-  { name: 'Module E', stock: 320, safety: 100 },
-  { name: 'Part F', stock: 6780, safety: 500 },
-];
-
-const FALLBACK_STOCK_VS_FORECAST = [
-  { name: 'Widget A', stock: 1800, forecast: 2200 },
-  { name: 'Widget B', stock: 900, forecast: 1200 },
-  { name: 'Component C', stock: 7500, forecast: 3900 },
-  { name: 'Assembly D', stock: 1200, forecast: 1500 },
-  { name: 'Module E', stock: 320, forecast: 500 },
-  { name: 'Part F', stock: 6780, forecast: 5200 },
-];
-
-const FALLBACK_TOTAL_ROUNDS = 36;
-const FALLBACK_CURRENT_ROUND = 18;
-
-const FALLBACK_DECISION_TIMELINE = [
-  {
-    week: 18,
-    order: 2450,
-    reason: 'Anticipating a regional promotion and aligning safety stock.',
-    inventory: 1820,
-    backlog: 90,
-  },
-  {
-    week: 17,
-    order: 2320,
-    reason: 'Backlog declined after expedited shipment; stabilizing pipeline.',
-    inventory: 1765,
-    backlog: 110,
-  },
-  {
-    week: 16,
-    order: 2280,
-    reason: 'Maintained previous order to absorb variability from manufacturer delay.',
-    inventory: 1690,
-    backlog: 140,
-  },
-  {
-    week: 15,
-    order: 2200,
-    reason: 'Raised order size to offset three-week moving average increase.',
-    inventory: 1580,
-    backlog: 180,
-  },
-];
 
 const normalizeNumber = (value) => {
   if (value === null || value === undefined) {
@@ -278,16 +212,16 @@ const Dashboard = () => {
   const metrics = dashboardData?.metrics;
   const timeSeriesRaw = dashboardData?.time_series;
   const timeSeries = useMemo(() => timeSeriesRaw ?? [], [timeSeriesRaw]);
-  const totalRounds = normalizeNumber(dashboardData?.max_rounds) || FALLBACK_TOTAL_ROUNDS;
-  const currentRoundRaw = normalizeNumber(dashboardData?.current_round) ?? FALLBACK_CURRENT_ROUND;
-  const sliderMax = totalRounds > 0 ? totalRounds : FALLBACK_TOTAL_ROUNDS;
+  const totalRounds = normalizeNumber(dashboardData?.max_rounds) ?? 0;
+  const currentRoundRaw = normalizeNumber(dashboardData?.current_round) ?? 0;
+  const sliderMax = totalRounds > 0 ? totalRounds : 1;
   const sliderValue = Math.min(Math.max(currentRoundRaw, 0), sliderMax);
   const progressPercent = sliderMax ? Math.round((sliderValue / sliderMax) * 100) : 0;
   const scenarioUserRoleLabel = dashboardData?.scenario_user_role ? dashboardData.scenario_user_role.replace(/_/g, ' ') : null;
 
   const demandSeries = useMemo(() => {
     if (!timeSeries.length) {
-      return FALLBACK_DEMAND_SERIES;
+      return [];
     }
     return timeSeries.map((point) => ({
       name: `W${point.week}`,
@@ -299,7 +233,7 @@ const Dashboard = () => {
 
   const stockVsSafety = useMemo(() => {
     if (!timeSeries.length) {
-      return FALLBACK_STOCK_VS_SAFETY;
+      return [];
     }
     return timeSeries.slice(-6).map((point) => ({
       name: `Week ${point.week}`,
@@ -312,7 +246,7 @@ const Dashboard = () => {
 
   const stockVsForecast = useMemo(() => {
     if (!timeSeries.length) {
-      return FALLBACK_STOCK_VS_FORECAST;
+      return [];
     }
     return timeSeries.slice(-6).map((point) => ({
       name: `Week ${point.week}`,
@@ -323,7 +257,7 @@ const Dashboard = () => {
 
   const decisionTimeline = useMemo(() => {
     if (!timeSeries.length) {
-      return FALLBACK_DECISION_TIMELINE;
+      return [];
     }
     return [...timeSeries]
       .slice(-6)

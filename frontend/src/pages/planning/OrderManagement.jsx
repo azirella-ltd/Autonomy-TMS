@@ -138,8 +138,7 @@ const OrderManagement = () => {
       setOrders(ordersList);
     } catch (err) {
       console.error('Failed to fetch orders:', err);
-      // Use mock data for demo
-      setOrders(getMockOrders());
+      setOrders([]);
     } finally {
       setLoading(false);
     }
@@ -178,8 +177,17 @@ const OrderManagement = () => {
   }, [activeTab, orderType, fetchOrders]);
 
   useEffect(() => {
-    // Set available vendors for demo
-    setAvailableVendors(['VENDOR-A', 'VENDOR-B', 'VENDOR-C', 'VENDOR-D']);
+    const fetchVendors = async () => {
+      try {
+        const response = await api.get('/trading-partners', { params: { tpartner_type: 'supplier' } });
+        const ids = (response.data || []).map(v => v.id || v.tpartner_id).filter(Boolean);
+        setAvailableVendors(ids);
+      } catch (err) {
+        console.error('Failed to fetch vendors:', err);
+        setAvailableVendors([]);
+      }
+    };
+    fetchVendors();
   }, []);
 
   const fetchConsolidationOpportunities = async () => {
@@ -190,19 +198,8 @@ const OrderManagement = () => {
       });
       setConsolidationOpportunities(response.data.opportunities || []);
     } catch (err) {
-      // Use mock data
-      if (orderType === 'PO') {
-        setConsolidationOpportunities([
-          { type: 'by_vendor', vendor_id: 'VENDOR-A', order_count: 2, order_ids: ['PO-2026-001', 'PO-2026-002'], total_quantity: 2300, potential_savings: 'Reduced shipping costs' },
-          { type: 'by_vendor', vendor_id: 'VENDOR-B', order_count: 2, order_ids: ['PO-2026-003', 'PO-2026-004'], total_quantity: 2800, potential_savings: 'Reduced shipping costs' },
-          { type: 'by_vendor', vendor_id: 'VENDOR-C', order_count: 2, order_ids: ['PO-2026-005', 'PO-2026-006'], total_quantity: 3950, potential_savings: 'Reduced shipping costs' },
-        ]);
-      } else {
-        setConsolidationOpportunities([
-          { type: 'by_route', route: 'DC-EAST->STORE-001', order_count: 2, order_ids: ['TO-2026-001', 'TO-2026-002'], total_quantity: 800, potential_savings: 'Reduced transportation costs' },
-          { type: 'by_route', route: 'DC-WEST->STORE-002', order_count: 2, order_ids: ['TO-2026-003', 'TO-2026-004'], total_quantity: 1600, potential_savings: 'Reduced transportation costs' },
-        ]);
-      }
+      console.error('Failed to fetch consolidation opportunities:', err);
+      setConsolidationOpportunities([]);
     } finally {
       setLoading(false);
     }
@@ -214,18 +211,8 @@ const OrderManagement = () => {
       const response = await api.post(`/order-management/analyze?order_type=${orderType}`);
       setAnalysis(response.data);
     } catch (err) {
-      // Use mock data
-      setAnalysis({
-        orders_analyzed: 7,
-        total_value: 110000,
-        consolidation_opportunities: 3,
-        splitting_opportunities: 2,
-        suggestions: [
-          { suggestion_type: 'consolidate', description: 'Consolidate 2 orders to VENDOR-A', potential_savings: 250, affected_orders: ['PO-2026-001', 'PO-2026-002'], recommended_action: { action: 'consolidate' } },
-          { suggestion_type: 'split', description: 'Consider splitting large order PO-2026-005 (3500 units) across multiple vendors', potential_savings: 175, affected_orders: ['PO-2026-005'], recommended_action: { action: 'split', strategy: 'by_cost' } },
-          { suggestion_type: 'consolidate', description: 'Consolidate 2 orders to VENDOR-C', potential_savings: 180, affected_orders: ['PO-2026-005', 'PO-2026-006'], recommended_action: { action: 'consolidate' } },
-        ]
-      });
+      console.error('Failed to fetch order analysis:', err);
+      setAnalysis(null);
     } finally {
       setLoading(false);
     }

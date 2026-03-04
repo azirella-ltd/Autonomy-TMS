@@ -124,11 +124,13 @@ const CollaborationHub = () => {
   // ============================================================================
 
   const loadA2AData = async () => {
-    // Mock data for now - in production would load actual threads
-    setA2aThreads([
-      { agent1: 'demand_planner', agent2: 'supply_planner', message_count: 12 },
-      { agent1: 'supply_planner', agent2: 'inventory_optimizer', message_count: 8 },
-    ]);
+    try {
+      const response = await api.get('/collaboration/a2a/threads');
+      setA2aThreads(response.data || []);
+    } catch (err) {
+      console.error('Failed to load A2A threads:', err);
+      setA2aThreads([]);
+    }
   };
 
   const loadA2AThread = async (agent1, agent2) => {
@@ -171,27 +173,13 @@ const CollaborationHub = () => {
   // ============================================================================
 
   const loadH2AData = async () => {
-    // Mock data - in production would load actual agent suggestions
-    setAgentSuggestions([
-      {
-        id: 1,
-        agent_id: 'demand_planner',
-        product_id: 'PROD001',
-        suggested_quantity: 5000,
-        confidence: 0.92,
-        rationale: 'Based on demand forecast and trend analysis',
-        status: 'pending',
-      },
-      {
-        id: 2,
-        agent_id: 'inventory_optimizer',
-        product_id: 'PROD002',
-        suggested_quantity: 3500,
-        confidence: 0.87,
-        rationale: 'Optimized for cost-service trade-off',
-        status: 'pending',
-      },
-    ]);
+    try {
+      const response = await api.get('/collaboration/h2a/suggestions');
+      setAgentSuggestions(response.data || []);
+    } catch (err) {
+      console.error('Failed to load H2A suggestions:', err);
+      setAgentSuggestions([]);
+    }
   };
 
   const loadExplanation = async (suggestionId) => {
@@ -305,88 +293,11 @@ const CollaborationHub = () => {
   const loadActivityFeed = async () => {
     setLoading(true);
     try {
-      // Load from API in production; for now use mock data
-      setActivities([
-        {
-          id: 1,
-          type: 'h2h_approval',
-          actor: 'John Smith',
-          actor_type: 'human',
-          action: 'approved',
-          entity_type: 'Supply Plan',
-          entity_id: 'SP-2026-001',
-          message: 'Approved supply plan for Q1 2026 production',
-          timestamp: new Date(Date.now() - 5 * 60000).toISOString(),
-        },
-        {
-          id: 2,
-          type: 'a2a_coordination',
-          actor: 'Demand Planner Agent',
-          actor_type: 'agent',
-          action: 'sent',
-          entity_type: 'Coordination Message',
-          entity_id: null,
-          message: 'Requested inventory rebalancing from Supply Planner Agent',
-          timestamp: new Date(Date.now() - 15 * 60000).toISOString(),
-        },
-        {
-          id: 3,
-          type: 'h2a_decision',
-          actor: 'Sarah Johnson',
-          actor_type: 'human',
-          action: 'modified',
-          entity_type: 'Agent Suggestion',
-          entity_id: 'SUG-002',
-          message: 'Modified agent suggestion for PROD001 - reduced quantity by 10%',
-          timestamp: new Date(Date.now() - 30 * 60000).toISOString(),
-        },
-        {
-          id: 4,
-          type: 'recommendation',
-          actor: 'Inventory Optimizer',
-          actor_type: 'agent',
-          action: 'generated',
-          entity_type: 'Recommendation',
-          entity_id: 'REC-045',
-          message: 'Generated rebalancing recommendation for Atlanta DC',
-          timestamp: new Date(Date.now() - 45 * 60000).toISOString(),
-        },
-        {
-          id: 5,
-          type: 'h2h_request',
-          actor: 'Mike Davis',
-          actor_type: 'human',
-          action: 'requested',
-          entity_type: 'Approval Request',
-          entity_id: 'REQ-012',
-          message: 'Requested approval for policy override on safety stock levels',
-          timestamp: new Date(Date.now() - 60 * 60000).toISOString(),
-        },
-        {
-          id: 6,
-          type: 'po_acknowledgment',
-          actor: 'Supplier Portal',
-          actor_type: 'system',
-          action: 'acknowledged',
-          entity_type: 'Purchase Order',
-          entity_id: 'PO-2026-0123',
-          message: 'Supplier acknowledged PO-2026-0123 for component delivery',
-          timestamp: new Date(Date.now() - 90 * 60000).toISOString(),
-        },
-        {
-          id: 7,
-          type: 'forecast_override',
-          actor: 'Lisa Chen',
-          actor_type: 'human',
-          action: 'updated',
-          entity_type: 'Demand Forecast',
-          entity_id: 'PROD002-DC01',
-          message: 'Updated forecast for PROD002 at DC01 due to promotional event',
-          timestamp: new Date(Date.now() - 120 * 60000).toISOString(),
-        },
-      ]);
+      const response = await api.get('/collaboration/activity-feed');
+      setActivities(response.data || []);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to load activity feed');
+      console.error('Failed to load activity feed:', err);
+      setActivities([]);
     } finally {
       setLoading(false);
     }

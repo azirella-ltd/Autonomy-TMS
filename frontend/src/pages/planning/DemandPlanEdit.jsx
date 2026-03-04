@@ -109,8 +109,7 @@ const AdjustmentHistoryTab = ({ configId }) => {
       setAdjustments(historyResponse.data || []);
     } catch (err) {
       console.error('Failed to load adjustment history:', err);
-      // Use mock data for display when API isn't available
-      setAdjustments(generateMockAdjustments());
+      setAdjustments([]);
     } finally {
       setLoading(false);
     }
@@ -460,7 +459,7 @@ const VersionComparisonTab = ({ configId }) => {
       setVersions(response.data || []);
     } catch (err) {
       console.error('Failed to load versions:', err);
-      setVersions(generateMockVersions());
+      setVersions([]);
     } finally {
       setLoading(false);
     }
@@ -480,11 +479,7 @@ const VersionComparisonTab = ({ configId }) => {
       setComparison(response.data);
     } catch (err) {
       console.error('Failed to compare versions:', err);
-      // Generate mock comparison for display
-      setComparison(generateMockComparison(
-        versions.find(v => v.id.toString() === versionA),
-        versions.find(v => v.id.toString() === versionB)
-      ));
+      setComparison(null);
     } finally {
       setComparing(false);
     }
