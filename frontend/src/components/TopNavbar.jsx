@@ -2,7 +2,8 @@
  * TopNavbar - Autonomy UI Kit Version
  *
  * Top navigation bar using Tailwind CSS and lucide-react icons.
- * Provides user menu, notifications, and context breadcrumbs.
+ * Provides user menu, notifications, context breadcrumbs, and
+ * a central "Talk to me" AI prompt input with avatar.
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -20,12 +21,35 @@ import {
   Brain,
   Users,
   Network,
+  SendHorizontal,
+  Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { isSystemAdmin } from '../utils/authUtils';
 import simulationApi from '../services/api';
 import { getSupplyChainConfigById } from '../services/supplyChainConfigService';
 import { cn } from '../lib/utils/cn';
+
+// ─── AI Avatar ────────────────────────────────────────────────────────────────
+// A small circular avatar used alongside the "Talk to me" prompt.
+// Uses a violet-to-indigo gradient with a Sparkles icon to evoke AI/intelligence.
+const AIAvatar = ({ size = 'sm' }) => {
+  const dim = size === 'sm' ? 'h-7 w-7' : 'h-9 w-9';
+  const icon = size === 'sm' ? 'h-3.5 w-3.5' : 'h-4 w-4';
+  return (
+    <div
+      className={cn(
+        dim,
+        'rounded-full flex items-center justify-center flex-shrink-0',
+        'bg-gradient-to-br from-violet-500 via-purple-500 to-indigo-600',
+        'shadow-[0_0_10px_rgba(139,92,246,0.4)]',
+      )}
+      aria-hidden="true"
+    >
+      <Sparkles className={cn(icon, 'text-white')} />
+    </div>
+  );
+};
 
 const TopNavbar = ({ sidebarOpen = true }) => {
   const { user, isAuthenticated, logout } = useAuth();
@@ -34,6 +58,12 @@ const TopNavbar = ({ sidebarOpen = true }) => {
   const [gameInfo, setGameInfo] = useState(null);
   const [systemConfigName, setSystemConfigName] = useState(null);
   const [supplyChainConfigName, setSupplyChainConfigName] = useState(null);
+
+  // Talk-to-me state
+  const [talkInput, setTalkInput] = useState('');
+  const [talkFocused, setTalkFocused] = useState(false);
+  const talkInputRef = useRef(null);
+
   const menuRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
@@ -171,6 +201,30 @@ const TopNavbar = ({ sidebarOpen = true }) => {
       .substring(0, 2);
   };
 
+  // ── Talk to me ─────────────────────────────────────────────────────────────
+  const handleTalkSubmit = () => {
+    const prompt = talkInput.trim();
+    if (!prompt) return;
+    setTalkInput('');
+    setTalkFocused(false);
+    talkInputRef.current?.blur();
+    // Navigate to Skills dashboard with the prompt pre-filled via URL state.
+    // The receiving page can read location.state.initialPrompt to auto-populate.
+    navigate('/admin/skills', { state: { initialPrompt: prompt } });
+  };
+
+  const handleTalkKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleTalkSubmit();
+    }
+    if (e.key === 'Escape') {
+      setTalkInput('');
+      setTalkFocused(false);
+      talkInputRef.current?.blur();
+    }
+  };
+
   const groupName = user?.group?.name || gameInfo?.group?.name;
   const gameConfigName = gameInfo?.config?.name;
   const scDisplayName = supplyChainConfigName || gameConfigName || systemConfigName;
@@ -207,9 +261,10 @@ const TopNavbar = ({ sidebarOpen = true }) => {
         sidebarOpen ? "left-[280px]" : "left-16"
       )}
     >
-      <div className="flex items-center justify-between h-full px-4 md:px-6">
-        {/* Left side - Logo & Context */}
-        <div className="flex items-center gap-4">
+      <div className="flex items-center h-full px-4 md:px-6 gap-4">
+
+        {/* ── LEFT: Logo & Context ─────────────────────────────────────────── */}
+        <div className="flex items-center gap-4 flex-shrink-0">
           <Link
             to={isSysAdmin ? '/admin/tenants' : '/dashboard'}
             className="flex items-center gap-2 font-medium hover:opacity-80 transition-opacity"
@@ -222,14 +277,62 @@ const TopNavbar = ({ sidebarOpen = true }) => {
           </Link>
 
           {shouldShowContext && (
-            <span className="hidden md:block text-sm text-muted-foreground ml-4">
+            <span className="hidden lg:block text-sm text-muted-foreground">
               {contextParts.join(' | ')}
             </span>
           )}
         </div>
 
-        {/* Right side - Actions & User Menu */}
-        <div className="flex items-center gap-2">
+        {/* ── CENTER: Talk to me ────────────────────────────────────────────── */}
+        <div className="flex-1 flex justify-center px-2">
+          <div
+            className={cn(
+              'hidden md:flex items-center w-full max-w-lg gap-2.5',
+              'bg-accent/40 border rounded-full px-3 py-1.5',
+              'transition-all duration-200',
+              talkFocused
+                ? 'border-violet-400/60 bg-background ring-2 ring-violet-400/20 shadow-sm'
+                : 'border-border hover:border-muted-foreground/40 hover:bg-accent/60',
+            )}
+          >
+            {/* AI avatar */}
+            <AIAvatar size="sm" />
+
+            {/* Prompt input */}
+            <input
+              ref={talkInputRef}
+              type="text"
+              value={talkInput}
+              onChange={(e) => setTalkInput(e.target.value)}
+              onKeyDown={handleTalkKeyDown}
+              onFocus={() => setTalkFocused(true)}
+              onBlur={() => setTalkFocused(false)}
+              placeholder="Talk to me…"
+              className={cn(
+                'flex-1 bg-transparent text-sm outline-none min-w-0',
+                'text-foreground placeholder:text-muted-foreground/70',
+              )}
+              aria-label="Talk to the AI assistant"
+            />
+
+            {/* Send button — visible when there's content */}
+            <button
+              onClick={handleTalkSubmit}
+              aria-label="Send prompt"
+              className={cn(
+                'flex items-center justify-center h-6 w-6 rounded-full flex-shrink-0 transition-all duration-150',
+                talkInput.trim()
+                  ? 'bg-violet-500 text-white hover:bg-violet-600 opacity-100 scale-100'
+                  : 'opacity-0 scale-75 pointer-events-none',
+              )}
+            >
+              <SendHorizontal className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* ── RIGHT: Actions & User Menu ───────────────────────────────────── */}
+        <div className="flex items-center gap-2 flex-shrink-0">
           {!isSysAdmin && (
             <>
               <button
@@ -260,7 +363,15 @@ const TopNavbar = ({ sidebarOpen = true }) => {
               </div>
               <div className="hidden sm:block text-left mr-1">
                 <p className="text-sm font-medium text-foreground">{user?.name || user?.full_name || 'User'}</p>
-                <p className="text-xs text-muted-foreground">{user?.powell_role ? user.powell_role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : (user?.user_type === 'systemadmin' ? 'System Admin' : user?.user_type === 'tenantadmin' ? 'Organization Admin' : '')}</p>
+                <p className="text-xs text-muted-foreground">
+                  {user?.powell_role
+                    ? user.powell_role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+                    : user?.user_type === 'systemadmin'
+                      ? 'System Admin'
+                      : user?.user_type === 'tenantadmin'
+                        ? 'Organization Admin'
+                        : ''}
+                </p>
               </div>
               {menuOpen ? (
                 <X className="h-4 w-4 text-muted-foreground" />
