@@ -568,3 +568,147 @@ async def get_causal_matching_stats(
         "success": True,
         "data": stats,
     }
+
+
+# =============================================================================
+# Gartner SCOR Metric Hierarchy
+# =============================================================================
+
+@router.get("/metrics/hierarchy")
+async def get_metrics_hierarchy(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Return the full Gartner SCOR metric hierarchy.
+
+    Includes all defined metric codes with name, level (L1–L4), unit,
+    direction (higher_is_better), SCOR process category, and description.
+
+    Use to drive the metric selector UI and populate metric definitions.
+    """
+    from app.models.metrics_hierarchy import GARTNER_METRICS, TRM_METRIC_MAPPING, POWELL_LAYER_METRICS
+
+    metrics = {
+        code: {
+            "code": defn.code,
+            "name": defn.name,
+            "level": defn.level.value,
+            "unit": defn.unit,
+            "higher_is_better": defn.higher_is_better,
+            "description": defn.description,
+            "scor_process": defn.scor_process,
+        }
+        for code, defn in GARTNER_METRICS.items()
+    }
+
+    return {
+        "success": True,
+        "data": {
+            "metrics": metrics,
+            "trm_metric_mapping": TRM_METRIC_MAPPING,
+            "powell_layer_defaults": POWELL_LAYER_METRICS,
+            "total_metrics": len(metrics),
+        },
+    }
+
+
+@router.get("/metrics/config/{config_id}")
+async def get_metrics_config(
+    config_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Return the resolved MetricConfig for a supply chain config.
+
+    Merges per-config overrides (stored in SupplyChainConfig.metric_config)
+    on top of Gartner SCOR defaults.  Returns defaults if no overrides are set.
+    """
+    from app.models.supply_chain_config import SupplyChainConfig
+    from app.models.metrics_hierarchy import get_metric_config
+
+    config = db.query(SupplyChainConfig).filter(SupplyChainConfig.id == config_id).first()
+    if not config:
+        raise HTTPException(status_code=404, detail=f"Supply chain config {config_id} not found.")
+
+    mc = get_metric_config(getattr(config, "metric_config", None))
+    return {
+        "success": True,
+        "config_id": config_id,
+        "data": mc.to_dict(),
+    }
+
+
+class MetricConfigPatch(BaseModel):
+    sop_weights: Optional[Dict[str, float]] = None
+    tgnn_weights: Optional[Dict[str, float]] = None
+    trm_weights: Optional[Dict[str, Dict[str, float]]] = None
+
+
+@router.patch("/metrics/config/{config_id}")
+async def patch_metrics_config(
+    config_id: int,
+    body: MetricConfigPatch,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Update the Gartner SCOR metric config overrides for a supply chain config.
+
+    Only the keys present in the request body are updated; others retain
+    their current values.  Weights for each layer are validated to sum to 1.0
+    (within a tolerance of 0.01).
+    """
+    from app.models.supply_chain_config import SupplyChainConfig
+    from app.models.metrics_hierarchy import get_metric_config, GARTNER_METRICS
+
+    config = db.query(SupplyChainConfig).filter(SupplyChainConfig.id == config_id).first()
+    if not config:
+        raise HTTPException(status_code=404, detail=f"Supply chain config {config_id} not found.")
+
+    # Load existing overrides (or start from empty)
+    existing = dict(getattr(config, "metric_config", None) or {})
+
+    def _validate_weights(weights: Dict[str, float], layer: str) -> None:
+        for code in weights:
+            if code not in GARTNER_METRICS:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Unknown metric code '{code}' in {layer}_weights. "
+                           f"Valid codes: {sorted(GARTNER_METRICS.keys())}",
+                )
+        total = sum(weights.values())
+        if abs(total - 1.0) > 0.01:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{layer}_weights sum to {total:.4f}; must sum to 1.0 (±0.01).",
+            )
+
+    if body.sop_weights is not None:
+        _validate_weights(body.sop_weights, "sop")
+        existing["sop_weights"] = body.sop_weights
+
+    if body.tgnn_weights is not None:
+        _validate_weights(body.tgnn_weights, "tgnn")
+        existing["tgnn_weights"] = body.tgnn_weights
+
+    if body.trm_weights is not None:
+        for trm_type, weights in body.trm_weights.items():
+            _validate_weights(weights, f"trm[{trm_type}]")
+        trm = dict(existing.get("trm_weights") or {})
+        trm.update(body.trm_weights)
+        existing["trm_weights"] = trm
+
+    # Persist using a direct assignment so SQLAlchemy detects the change
+    from sqlalchemy.orm.attributes import flag_modified
+    config.metric_config = existing
+    flag_modified(config, "metric_config")
+    db.commit()
+
+    from app.models.metrics_hierarchy import get_metric_config as _gmc
+    mc = _gmc(config.metric_config)
+    return {
+        "success": True,
+        "config_id": config_id,
+        "data": mc.to_dict(),
+    }

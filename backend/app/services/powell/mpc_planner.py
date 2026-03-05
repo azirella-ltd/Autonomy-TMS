@@ -35,6 +35,12 @@ except ImportError:
     CVXPY_AVAILABLE = False
     cp = None
 
+from app.models.metrics_hierarchy import (
+    POWELL_LAYER_METRICS,
+    MetricConfig,
+    get_metric_config,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -144,7 +150,8 @@ class MPCSupplyPlanner:
         expediting_cost: float = 5.0,
         use_scenarios: bool = True,
         n_scenarios: int = 10,
-        safety_stock_periods: float = 2.0
+        safety_stock_periods: float = 2.0,
+        l2_metric_weights: Optional[Dict[str, float]] = None,
     ):
         """
         Initialize MPC planner.
@@ -162,6 +169,10 @@ class MPCSupplyPlanner:
             use_scenarios: Whether to use stochastic MPC
             n_scenarios: Number of scenarios for stochastic MPC
             safety_stock_periods: Target safety stock in periods of demand
+            l2_metric_weights: Gartner SCOR L2 metric weights for tGNN objective.
+                               If None, resolved from SupplyChainConfig.metric_config
+                               via get_l2_metric_weights().
+                               Defaults: FR=0.30, OTD=0.25, DOS=0.20, FA=0.15, SOLD=0.10
         """
         if holding_cost == 0.0:
             import warnings
@@ -185,10 +196,33 @@ class MPCSupplyPlanner:
         self.use_scenarios = use_scenarios
         self.n_scenarios = n_scenarios
         self.safety_stock_periods = safety_stock_periods
+        self.l2_metric_weights = l2_metric_weights
 
         # Solver settings
         self.solver_timeout = 30  # seconds
         self.mip_gap = 0.01  # 1% optimality gap acceptable
+
+    def get_l2_metric_weights(
+        self,
+        supply_chain_config_metric_config: Optional[dict] = None,
+    ) -> Dict[str, float]:
+        """Return resolved L2 Gartner SCOR metric weights for the tGNN objective.
+
+        Priority order:
+        1. self.l2_metric_weights (explicitly set on this planner instance)
+        2. supply_chain_config_metric_config (from SupplyChainConfig.metric_config JSON)
+        3. POWELL_LAYER_METRICS["tgnn"] global defaults
+
+        Args:
+            supply_chain_config_metric_config: Raw JSON from SupplyChainConfig.metric_config.
+
+        Returns:
+            Dict of {metric_code: weight} for L2 SCOR metrics.
+        """
+        if self.l2_metric_weights:
+            return self.l2_metric_weights
+        cfg = get_metric_config(supply_chain_config_metric_config)
+        return cfg.tgnn_weights
 
     def plan(
         self,

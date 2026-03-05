@@ -137,6 +137,15 @@ class SupplyChainConfig(Base):
     validation_errors = Column(JSON, nullable=True)  # List of validation error messages
     validated_at = Column(DateTime, nullable=True)
 
+    # Gartner SCOR metric hierarchy configuration (per-config overrides)
+    # Resolved via app.models.metrics_hierarchy.get_metric_config(metric_config)
+    # Keys: sop_weights, tgnn_weights, trm_weights — all optional (defaults used when absent)
+    metric_config = Column(
+        JSON,
+        nullable=True,
+        comment="Gartner SCOR metric config overrides. Keys: sop_weights, tgnn_weights, trm_weights.",
+    )
+
     # Training metadata
     needs_training = Column(Boolean, nullable=False, default=True)
     training_status = Column(String(50), nullable=False, default="pending")

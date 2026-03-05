@@ -25,6 +25,12 @@ from enum import Enum
 import numpy as np
 import logging
 
+from app.models.metrics_hierarchy import (
+    TRM_METRIC_MAPPING,
+    MetricConfig,
+    get_metric_config,
+)
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -103,6 +109,28 @@ class TrainingResult:
     validation_metrics: Dict[str, float]
     epochs_completed: int
     method_used: TrainingMethod
+
+
+@dataclass
+class MetricRewardBreakdown:
+    """
+    Named SCOR-level reward decomposition for a single TRM decision.
+
+    Produced by RewardCalculator.calculate_reward_with_breakdown() and logged
+    during training so that reward components are traceable to specific Gartner
+    L4 metric codes.
+
+    Fields:
+        trm_type   — e.g. "atp_executor", "po_creation"
+        components — dict of {metric_code: contribution} where each value is
+                     the raw metric score multiplied by its weight.
+        total_reward — weighted sum of components plus signal attribution bonus.
+        metric_config — the MetricConfig used to resolve weights (for audit).
+    """
+    trm_type: str
+    components: Dict[str, float]
+    total_reward: float
+    metric_config: MetricConfig
 
 
 class RewardCalculator:
@@ -282,21 +310,89 @@ class RewardCalculator:
 
         return bonus
 
+    @staticmethod
+    def _generic_reward(outcome: Dict[str, Any]) -> float:
+        """Fallback reward for TRM types without a dedicated calculator.
+
+        Uses outcome['reward'] directly if present, otherwise returns 0.0.
+        Logs a warning so missing calculators are visible during development.
+        """
+        if 'reward' in outcome:
+            return float(outcome['reward'])
+        logger.warning(
+            "RewardCalculator: no dedicated calculator for this TRM type and "
+            "outcome dict has no 'reward' key — returning 0.0. "
+            "Add a named calculator or include 'reward' in the outcome dict."
+        )
+        return 0.0
+
     def calculate_reward(self, trm_type: str, outcome: Dict[str, Any]) -> float:
-        """Calculate reward based on TRM type, with signal attribution bonus."""
-        calculators = {
-            'atp': self.atp_reward,
-            'rebalancing': self.rebalancing_reward,
-            'po_creation': self.po_creation_reward,
-            'order_tracking': self.order_tracking_reward,
+        """Calculate scalar reward for a TRM decision outcome.
+
+        Uses the Gartner L4 metrics as semantic labels but returns a single
+        float for compatibility with existing RL training loops.
+        For a named breakdown use calculate_reward_with_breakdown().
+        """
+        return self.calculate_reward_with_breakdown(
+            trm_type, outcome, metric_config=None
+        ).total_reward
+
+    def calculate_reward_with_breakdown(
+        self,
+        trm_type: str,
+        outcome: Dict[str, Any],
+        metric_config: Optional[MetricConfig] = None,
+    ) -> "MetricRewardBreakdown":
+        """Calculate reward and return a named Gartner L4 breakdown.
+
+        Args:
+            trm_type: TRM type string (must be a key in TRM_METRIC_MAPPING).
+            outcome: Outcome dict from the TRM decision.
+            metric_config: Optional per-config MetricConfig.  If None, uses
+                           global defaults from POWELL_LAYER_METRICS.
+
+        Returns:
+            MetricRewardBreakdown with per-metric contribution and total reward.
+        """
+        cfg = metric_config or get_metric_config(None)
+        weights = cfg.get_trm_weights(trm_type)
+
+        # Per-TRM calculators (canonical key = TRM_METRIC_MAPPING key)
+        legacy_calculators = {
+            'atp_executor':    self.atp_reward,
+            'atp':             self.atp_reward,   # legacy alias
+            'rebalancing':     self.rebalancing_reward,
+            'po_creation':     self.po_creation_reward,
+            'order_tracking':  self.order_tracking_reward,
             'inventory_buffer': self.inventory_buffer_reward,
         }
 
-        calculator = calculators.get(trm_type, lambda x: 0.0)
+        # Compute base scalar reward via legacy calculator or fallback
+        calculator = legacy_calculators.get(trm_type, self._generic_reward)
         base_reward = calculator(outcome)
 
-        # Add signal-attribution bonus (zero if no signal context in outcome)
-        return base_reward + self.signal_attribution_bonus(outcome)
+        # Build per-metric components using weights as allocation fractions.
+        # The base_reward scalar is decomposed proportionally so that
+        # sum(components.values()) == base_reward (before signal bonus).
+        metrics = TRM_METRIC_MAPPING.get(trm_type, [])
+        components: Dict[str, float] = {}
+        if metrics and weights:
+            total_weight = sum(weights.get(m, 0.0) for m in metrics) or 1.0
+            for m in metrics:
+                w = weights.get(m, 1.0 / len(metrics))
+                components[m] = base_reward * (w / total_weight)
+        else:
+            components["base"] = base_reward
+
+        signal_bonus = self.signal_attribution_bonus(outcome)
+        total = base_reward + signal_bonus
+
+        return MetricRewardBreakdown(
+            trm_type=trm_type,
+            components=components,
+            total_reward=total,
+            metric_config=cfg,
+        )
 
 
 class TRMTrainer:

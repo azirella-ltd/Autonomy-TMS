@@ -48,6 +48,15 @@ MODEL_REGISTRY = {
     "forecast_adjustment":    (ForecastAdjustmentTRMModel, FA_STATE_DIM),
 }
 
+from app.models.metrics_hierarchy import (
+    TRM_METRIC_MAPPING,
+    GARTNER_METRICS,
+    POWELL_LAYER_METRICS,
+    MetricConfig,
+    get_metric_config,
+)
+
+
 def load_trm_checkpoint(trm_type: str, checkpoint_path: str, device: str = "cpu"):
     """
     Load a per-TRM model from a checkpoint file.
@@ -116,4 +125,10 @@ __all__ = [
     # Registry and loading
     "MODEL_REGISTRY",
     "load_trm_checkpoint",
+    # Gartner SCOR metric hierarchy
+    "TRM_METRIC_MAPPING",
+    "GARTNER_METRICS",
+    "POWELL_LAYER_METRICS",
+    "MetricConfig",
+    "get_metric_config",
 ]

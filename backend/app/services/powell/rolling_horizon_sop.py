@@ -30,6 +30,12 @@ from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 import logging
 
+from app.models.metrics_hierarchy import (
+    POWELL_LAYER_METRICS,
+    MetricConfig,
+    get_metric_config,
+)
+
 import numpy as np
 
 from ..conformal_prediction.suite import SupplyChainConformalSuite
@@ -115,6 +121,13 @@ class RollingHorizonSOPConfig:
     backlog_cost: float = 0.0
     expediting_cost: float = 5.0
     production_cost: float = 1.0
+
+    # Gartner SCOR L1 metric weights for S&OP objective (Powell CFA layer).
+    # If None, resolved from SupplyChainConfig.metric_config via get_metric_config().
+    # Defaults: POF=0.40, SCCT=0.20, SCMC=0.25, C2C=0.15
+    # Override per-config by passing metric_config=get_metric_config(config.metric_config).
+    l1_metric_weights: Optional[Dict[str, float]] = None
+    l1_primary_metrics: Optional[List[str]] = None  # ordered list of L1 codes to use
 
     def __post_init__(self) -> None:
         if self.holding_cost == 0.0 or self.backlog_cost == 0.0:
@@ -210,6 +223,28 @@ class RollingHorizonSOP:
             f"{len(products)} products, {len(sites)} sites, "
             f"{len(suppliers)} suppliers, {len(resources)} resources"
         )
+
+    def get_l1_metric_weights(
+        self,
+        supply_chain_config_metric_config: Optional[dict] = None,
+    ) -> Dict[str, float]:
+        """Return resolved L1 Gartner SCOR metric weights for the S&OP objective.
+
+        Priority order:
+        1. self.config.l1_metric_weights (explicitly set on this planner instance)
+        2. supply_chain_config_metric_config (from SupplyChainConfig.metric_config JSON)
+        3. POWELL_LAYER_METRICS["sop"] global defaults
+
+        Args:
+            supply_chain_config_metric_config: Raw JSON from SupplyChainConfig.metric_config.
+
+        Returns:
+            Dict of {metric_code: weight} for L1 SCOR metrics.
+        """
+        if self.config.l1_metric_weights:
+            return self.config.l1_metric_weights
+        cfg = get_metric_config(supply_chain_config_metric_config)
+        return cfg.sop_weights
 
     def run_planning_cycle(
         self,

@@ -21,7 +21,33 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, asc
 
+from app.models.metrics_hierarchy import GARTNER_METRICS, GartnerLevel
+
 logger = logging.getLogger(__name__)
+
+# Mapping from dashboard metric key → Gartner metric code.
+# Used to annotate tier metric dicts with gartner_level and gartner_code.
+_METRIC_KEY_TO_GARTNER: Dict[str, str] = {
+    # Tier 1 (L1 Strategic)
+    "gross_margin":             "SCMC",
+    "revenue":                  "SCMC",
+    # Tier 2 (L2 Functional)
+    "inventory_turns":          "DOS",
+    "days_of_supply":           "DOS",
+    "fill_rate":                "FR",
+    "on_time_delivery":         "OTD",
+    "forecast_accuracy":        "FA",
+    "lost_sales":               "SOLD",
+    # Tier 3 (L3 Operational)
+    "safety_stock_fill_rate":   "SSFR",
+    "po_lead_time":             "POLTA",
+    "mfg_schedule_adherence":   "MSA",
+    "first_pass_yield":         "FPYR",
+    "inventory_record_accuracy": "IRA",
+    "lead_time_bias":           "LTBIAS",
+    "expedite_rate":            "EXPRT",
+    "buffer_level_adequacy":    "BLA",
+}
 
 # Region mapping (state abbreviation → region name)
 _STATE_TO_REGION: Dict[str, str] = {
@@ -103,14 +129,60 @@ class HierarchicalMetricsService:
                 site_hier, product_hier, time_hier,
                 site_level, site_key, product_level, product_key, time_bucket, time_key,
             ),
-            "tiers": {
+            "tiers": self._annotate_gartner_levels({
                 "tier1_assess":  self._tier1_assess(tenant_id, site_key, product_key, time_key),
                 "tier2_diagnose": self._tier2_diagnose(tenant_id, site_key, product_key, time_key),
                 "tier3_correct": self._tier3_correct(tenant_id, site_key, product_key, time_key),
                 "tier4_agent":   self._tier4_agent(tenant_id, time_key),
-            },
+            }),
             "trend_data": self._trend_data(tenant_id),
         }
+
+    # =========================================================================
+    # Gartner SCOR level annotation
+    # =========================================================================
+
+    @staticmethod
+    def _annotate_gartner_levels(tiers: Dict[str, Any]) -> Dict[str, Any]:
+        """Post-process the tiers dict to annotate each metric with its
+        Gartner SCOR level (L1–L4) and canonical metric code.
+
+        Walks every tier's "metrics" dict (and any nested "metrics" dicts)
+        and injects ``gartner_code`` and ``gartner_level`` fields where the
+        metric key is present in ``_METRIC_KEY_TO_GARTNER``.
+
+        This is a read-only enrichment — no existing keys are mutated.
+        """
+        def _enrich_metrics(metrics: dict) -> dict:
+            enriched = {}
+            for key, value in metrics.items():
+                if not isinstance(value, dict):
+                    enriched[key] = value
+                    continue
+                m = dict(value)
+                # Annotate at the top level if key is mapped
+                if key in _METRIC_KEY_TO_GARTNER:
+                    code = _METRIC_KEY_TO_GARTNER[key]
+                    defn = GARTNER_METRICS.get(code)
+                    if defn:
+                        m.setdefault("gartner_code", code)
+                        m.setdefault("gartner_level", defn.level.value)
+                # Recurse into nested "metrics" dicts (e.g. tier3 sub-sections)
+                if "metrics" in m and isinstance(m["metrics"], dict):
+                    m["metrics"] = _enrich_metrics(m["metrics"])
+                enriched[key] = m
+            return enriched
+
+        result = {}
+        for tier_key, tier_value in tiers.items():
+            if not isinstance(tier_value, dict):
+                result[tier_key] = tier_value
+                continue
+            t = dict(tier_value)
+            if "metrics" in t and isinstance(t["metrics"], dict):
+                t["metrics"] = _enrich_metrics(t["metrics"])
+            result[tier_key] = t
+        return result
 
     # =========================================================================
     # Hierarchy builders
