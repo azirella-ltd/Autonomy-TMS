@@ -40,7 +40,7 @@ def provision_warm_start(
     weeks: int = 52,
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_sync_db),
-    current_user: User = Depends(deps.require_group_admin),
+    current_user: User = Depends(deps.require_tenant_admin),
 ):
     """Generate historical demand data for a SC config.
 
@@ -56,7 +56,7 @@ def provision_warm_start_sync(
     config_id: int,
     weeks: int = 52,
     db: Session = Depends(get_sync_db),
-    current_user: User = Depends(deps.require_group_admin),
+    current_user: User = Depends(deps.require_tenant_admin),
 ):
     """Generate historical demand data synchronously (for scripts/testing)."""
     try:
