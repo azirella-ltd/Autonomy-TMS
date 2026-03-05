@@ -22,7 +22,7 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple, Union
 from dataclasses import asdict
 
-from .config import SimulationParams, NODES, NODE_INDEX
+from .config import SimulationParams
 from .sc_config import (
     SupplyChainParams,
     SimulationParamsV2,
@@ -263,109 +263,6 @@ class SCAdapter(TrainingDataAdapter):
                 wrapped[aws_field] = batch[bg_field]
 
         return wrapped
-
-
-class SimPyAdapter(SCAdapter):
-    """
-    Adapter for SimPy training data generation with SC compliance.
-
-    This adapter wraps the SimPy dataset generator to produce
-    SC-compliant training data from simulation simulations.
-
-    Example:
-        ```python
-        from app.rl.data_generator import generate_sim_training_windows
-        from app.rl.training_data_adapter import SimPyAdapter
-
-        adapter = SimPyAdapter(use_sc_fields=True)
-
-        # Generate SimPy data with SC fields
-        X, A, P, Y = adapter.generate_training_windows(
-            config_id=1,
-            num_runs=128,
-            timesteps=64
-        )
-
-        # X now contains SC fields in feature dimension
-        ```
-    """
-
-    def generate_training_windows(
-        self,
-        config_id: int,
-        num_runs: int = 128,
-        timesteps: int = 64,
-        window: int = 52,
-        horizon: int = 1,
-        db_url: Optional[str] = None,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Generate training windows with SC fields.
-
-        Args:
-            config_id: Supply chain configuration ID
-            num_runs: Number of simulation runs
-            timesteps: Timesteps per run
-            window: History window size
-            horizon: Forecast horizon
-            db_url: Database URL (optional)
-
-        Returns:
-            Tuple of (X, A, P, Y) with SC-compliant features
-        """
-        from app.rl.data_generator import generate_sim_training_windows
-        from app.core.config import settings
-
-        # Generate using existing function
-        X, A, P, Y = generate_sim_training_windows(
-            num_runs=num_runs,
-            T=timesteps,
-            window=window,
-            horizon=horizon,
-            supply_chain_config_id=config_id,
-            db_url=db_url or settings.SQLALCHEMY_DATABASE_URI,
-            use_simpy=True,
-        )
-
-        # X shape: [num_windows, T=window, N=4, F]
-        # Features in F dimension currently use simulation names
-
-        if self.use_sc_fields:
-            # Feature indices in current implementation:
-            # 0: inventory -> on_hand_qty
-            # 1: backlog -> backorder_qty
-            # 2: incoming_orders -> demand_qty
-            # 3: incoming_shipments -> supply_qty
-            # 4: on_order -> in_transit_qty
-            # 5-8: role_onehot
-            # 9: lead_time_order
-            # 10: lead_time_supply
-
-            # Features are already numeric arrays, no field names to change
-            # But we can add metadata about field mapping
-
-            X_metadata = {
-                "features": [
-                    "on_hand_qty",          # 0 (was inventory)
-                    "backorder_qty",        # 1 (was backlog)
-                    "demand_qty",           # 2 (was incoming_orders)
-                    "supply_qty",           # 3 (was incoming_shipments)
-                    "in_transit_qty",       # 4 (was on_order)
-                    "role_retailer",        # 5
-                    "role_wholesaler",      # 6
-                    "role_distributor",     # 7
-                    "role_manufacturer",    # 8
-                    "lead_time_days",       # 9 (was lead_time_order)
-                    "lead_time_days",       # 10 (was lead_time_supply)
-                ],
-                "schema": "aws_sc",
-            }
-
-            # Store metadata in X as attribute (if supported)
-            # Otherwise, return as separate dict
-            return X, A, P, Y, X_metadata
-        else:
-            return X, A, P, Y
 
 
 class RLEnvAdapter(SCAdapter):

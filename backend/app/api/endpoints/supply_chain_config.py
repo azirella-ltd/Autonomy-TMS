@@ -34,7 +34,8 @@ from app.models.supply_chain_config import (
 from app.models.user import UserTypeEnum
 from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 from app.schemas.scenario import ScenarioCreate
-from app.rl.data_generator import generate_sim_training_windows
+from app.rl.data_generator import load_sequences_from_db, DbLookupConfig
+from app.rl.config import SimulationParams
 from app.services.mixed_scenario_service import MixedScenarioService
 
 logger = logging.getLogger(__name__)
@@ -604,16 +605,16 @@ def _generate_training_dataset(
     dataset_filename = f"{slug}_dataset.npz"
     dataset_path = TRAINING_ROOT / dataset_filename
 
-    X, A, P, Y = generate_sim_training_windows(
-        num_runs=int(params.num_runs),
-        T=int(params.T),
+    db_url = settings.SQLALCHEMY_DATABASE_URI or None
+    if not db_url:
+        raise ValueError("Database URL not configured")
+    cfg = DbLookupConfig(database_url=db_url)
+    X, A, P, Y = load_sequences_from_db(
+        cfg,
+        SimulationParams(),
         window=int(params.window),
         horizon=int(params.horizon),
-        supply_chain_config_id=config.id,
-        db_url=settings.SQLALCHEMY_DATABASE_URI or None,
-        use_simpy=params.use_simpy,
-        sim_alpha=float(params.sim_alpha) if params.sim_alpha is not None else 0.3,
-        sim_wip_k=float(params.sim_wip_k) if params.sim_wip_k is not None else 1.0,
+        config_id=config.id,
     )
     np.savez(dataset_path, X=X, A=A, P=P, Y=Y)
 

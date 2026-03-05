@@ -31,7 +31,6 @@ except Exception as exc:  # pragma: no cover - depends on torch availability
 from app.rl.config import SimulationParams
 from app.rl.data_generator import (
     DbLookupConfig,
-    generate_sim_training_windows,
     load_sequences_from_db,
 )
 from app.core.db_urls import resolve_sync_database_url
@@ -120,12 +119,9 @@ def get_data(
         cfg = DbLookupConfig(database_url=db_url, steps_table=steps_table)
         return load_sequences_from_db(cfg, params=params, game_ids=None, window=window, horizon=horizon)
     if source == "sim":
-        return generate_sim_training_windows(
-            num_runs=128,
-            T=64,
-            window=window,
-            horizon=horizon,
-            params=params,
+        raise ValueError(
+            "Simulation-based data generation has been removed. "
+            "Use source='db' with a valid steps_table and db_url."
         )
     raise ValueError(f"Unknown source: {source}")
 

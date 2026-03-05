@@ -210,40 +210,19 @@ class GenerateDataRequest(BaseModel):
 
 @router.post("/model/generate-data", response_model=Dict[str, Any])
 async def generate_data(req: GenerateDataRequest):
-    """Generate synthetic training data (npz) using simulator with optional ranges."""
-    import numpy as np
-    from app.rl.data_generator import generate_sim_training_windows, SimulationParams
-    # Build ranges
-    ranges = None
-    if req.distribution == "uniform":
-        if req.param_ranges:
-            ranges = {k: (float(v[0]), float(v[1])) for k, v in req.param_ranges.items() if isinstance(v, (list, tuple)) and len(v) == 2}
-    elif req.distribution == "normal":
-        # Approximate normal by uniform over [mean-2std, mean+2std]
-        if req.normal_means and req.normal_stds:
-            ranges = {}
-            for k, mu in req.normal_means.items():
-                sigma = float(req.normal_stds.get(k, 0))
-                lo, hi = float(mu) - 2 * sigma, float(mu) + 2 * sigma
-                if lo > hi:
-                    lo, hi = hi, lo
-                ranges[k] = (lo, hi)
-    X, A, P, Y = generate_sim_training_windows(
-            num_runs=req.num_runs,
-            T=req.T,
-            window=req.window,
-            horizon=req.horizon,
-            params=SimulationParams(),
-            param_ranges=ranges,
-            randomize=True,
-            use_simpy=req.use_simpy,
-            sim_alpha=float(req.sim_alpha) if req.sim_alpha is not None else 0.3,
-            sim_wip_k=float(req.sim_wip_k) if req.sim_wip_k is not None else 1.0,
-        )
-    out_dir = Path("training_jobs"); out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"dataset_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.npz"
-    np.savez(out_path, X=X, A=A, P=P, Y=Y)
-    return {"path": str(out_path), "X": list(X.shape), "A": list(A.shape), "P": list(P.shape), "Y": list(Y.shape)}
+    """Generate training data from DB scenario history.
+
+    Simulation-based data generation has been removed. Use source='db' with a
+    valid supply_chain_config_id to extract windows from real scenario records.
+    """
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "Simulation-based data generation has been removed. "
+            "Use the /model/train endpoint with source='db' and a supply_chain_config_id "
+            "to generate training data from real scenario records."
+        ),
+    )
 
 @router.post("/model/job/{job_id}/stop", response_model=Dict[str, Any])
 async def stop_job(job_id: str):
@@ -539,24 +518,15 @@ import sys
 sys.path.insert(0, '.')
 
 from app.ml.automl import GNNHyperparameterOptimizer
-from app.rl.data_generator import generate_sim_training_windows, load_sequences_from_db, DbLookupConfig
+from app.rl.data_generator import load_sequences_from_db, DbLookupConfig
 from app.rl.config import SimulationParams
 from app.core.db_urls import resolve_sync_database_url
 
-# Data loader function
+# Data loader function — always uses DB (simulation-based generation removed)
 def load_data(window, horizon):
-    if '{req.source}' == 'sim':
-        return generate_sim_training_windows(
-            num_runs=128,
-            T=64,
-            window=window,
-            horizon=horizon,
-            params=SimulationParams()
-        )
-    else:
-        db_url = '{req.db_url or resolve_sync_database_url()}'
-        cfg = DbLookupConfig(database_url=db_url, steps_table='{req.steps_table}')
-        return load_sequences_from_db(cfg, params=SimulationParams(), scenario_ids=None, window=window, horizon=horizon)
+    db_url = '{req.db_url or resolve_sync_database_url()}'
+    cfg = DbLookupConfig(database_url=db_url, steps_table='{req.steps_table}')
+    return load_sequences_from_db(cfg, params=SimulationParams(), scenario_ids=None, window=window, horizon=horizon)
 
 # Run optimization
 optimizer = GNNHyperparameterOptimizer(

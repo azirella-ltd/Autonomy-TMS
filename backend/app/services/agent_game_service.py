@@ -30,7 +30,6 @@ ScenarioUserInventory = ScenarioUserInventory
 ScenarioUserPeriod = ScenarioUserPeriod
 GameCreate = ScenarioCreate
 
-from .engine import SupplyChainLine, DEFAULT_DEMAND_LEAD_TIME, DEFAULT_SHIPMENT_LEAD_TIME
 from .policy_factory import make_policy
 from .supply_chain_config_service import SupplyChainConfigService
 
@@ -99,7 +98,7 @@ class AgentGameService:
                 role = ScenarioUserRole.RETAILER
             site_roles[site.name] = role.value
 
-        site_names = SupplyChainLine._derive_role_sequence(material_lanes)
+        site_names = self._topological_sort(material_lanes)
 
         topology: Dict[str, Any] = {
             "material_lanes": material_lanes,
@@ -118,6 +117,39 @@ class AgentGameService:
         """Extract the site name from a scenario_user created by ``_create_ai_scenario_users``."""
         name = scenario_user.name or ""
         return name[3:] if name.startswith("AI ") else name
+
+    @staticmethod
+    def _topological_sort(material_lanes: List[Tuple[str, str]]) -> List[str]:
+        """Sort sites downstream-first using Kahn's algorithm.
+
+        material_lanes: list of (upstream_name, downstream_name) tuples.
+        Returns site names ordered with pure-demand sites first (e.g. retailer before factory).
+        """
+        from collections import deque
+        all_sites: set = set()
+        downstream_of: Dict[str, set] = {}
+        upstream_of: Dict[str, set] = {}
+        for up, down in material_lanes:
+            all_sites.add(up)
+            all_sites.add(down)
+            downstream_of.setdefault(up, set()).add(down)
+            upstream_of.setdefault(down, set()).add(up)
+
+        in_degree = {site: len(upstream_of.get(site, set())) for site in all_sites}
+        queue: deque = deque(sorted(s for s in all_sites if in_degree[s] == 0))
+        result: List[str] = []
+        while queue:
+            node = queue.popleft()
+            result.append(node)
+            for downstream in sorted(downstream_of.get(node, set())):
+                in_degree[downstream] -= 1
+                if in_degree[downstream] == 0:
+                    queue.append(downstream)
+        # Append any remaining nodes (cycle-safe)
+        for site in sorted(all_sites):
+            if site not in result:
+                result.append(site)
+        return result
 
     # ------------------------------------------------------------------
     # Game lifecycle helpers
@@ -163,40 +195,11 @@ class AgentGameService:
 
         topology = self._load_topology(game)
         config = self._ensure_agent_config(game, topology)
-        sim_params = self._load_simulation_parameters(game, config)
-        order_lead, ship_lead = self._extract_lead_times(sim_params)
-        policies = self._build_policy_map(config)
-        base_stocks = self._extract_base_stocks(config)
-        steady_demand = self._steady_state_demand(game)
-        line = SupplyChainLine(
-            material_lanes=topology["material_lanes"],
-            role_policies=policies,
-            base_stocks=base_stocks,
-            demand_lead_time=order_lead,
-            shipment_lead_time=ship_lead,
-            initial_demand=steady_demand,
-        )
-
-        # --- SC execution path (opt-in via use_sc_execution flag in game.config) ---
-        if config.get("use_sc_execution"):
-            config["executor_mode"] = "sc_execution"
-            game.config = config
-            game.status = GameStatus.STARTED
-            game.current_round = 1
-            game.started_at = datetime.utcnow()
-            self.db.commit()
-            self.db.refresh(game)
-            return game
-
-        # --- Legacy SupplyChainLine path ---
-        config["agent_engine_state"] = line.to_dict()
+        config["executor_mode"] = "sc_execution"
         game.config = config
         game.status = GameStatus.STARTED
         game.current_round = 1
         game.started_at = datetime.utcnow()
-
-        self._initialise_inventories(game, line)
-
         self.db.commit()
         self.db.refresh(game)
         return game
@@ -212,113 +215,7 @@ class AgentGameService:
 
         topology = self._load_topology(game)
         config = self._ensure_agent_config(game, topology)
-
-        # --- SC execution path ---
-        if config.get("executor_mode") == "sc_execution":
-            return self._play_round_sc(game, config, topology)
-
-        state = config.get("agent_engine_state")
-        if not state:
-            raise ValueError("Game engine state is missing; ensure the game is started")
-
-        demand_pattern = DemandPattern(**game.demand_pattern)
-        current_demand = self._get_current_demand(game.current_round, demand_pattern)
-
-        sim_params = self._load_simulation_parameters(game, config)
-        order_lead, ship_lead = self._extract_lead_times(sim_params)
-        policies = self._build_policy_map(config)
-        base_stocks = self._extract_base_stocks(config)
-        steady_demand = self._steady_state_demand(game)
-        line = SupplyChainLine(
-            material_lanes=topology["material_lanes"],
-            role_policies=policies,
-            base_stocks=base_stocks,
-            state=state,
-            demand_lead_time=order_lead,
-            shipment_lead_time=ship_lead,
-            initial_demand=steady_demand,
-        )
-
-        tick_stats = line.tick(current_demand)
-        config["agent_engine_state"] = line.to_dict()
-        game.config = config
-
-        scenario_users = self._get_scenario_users_in_order(scenario_id, topology)
-        round_record = self._get_or_create_round(game, current_demand)
-
-        node_map = {node.name: node for node in line.nodes}
-        for scenario_user in scenario_users:
-            label = self._scenario_user_site_name(scenario_user)
-            node = node_map.get(label)
-            if node is None:
-                continue
-            node_stats = tick_stats.get(label, {})
-
-            inventory_before = int(node_stats.get("inventory_before", node.inventory))
-            inventory_after = int(node_stats.get("inventory_after", node.inventory))
-            backlog_before = int(node_stats.get("backlog_before", node.backlog))
-            backlog_after = int(node_stats.get("backlog_after", node.backlog))
-            order_placed = int(node_stats.get("order_placed", 0))
-            order_received = int(node_stats.get("incoming_shipment", 0))
-
-            holding_cost = float(max(node.inventory, 0))
-            backlog_cost = float(node.backlog * 2)
-
-            scenario_user_period = (
-                self.db.query(ScenarioUserPeriod)
-                .filter(
-                    ScenarioUserPeriod.round_id == round_record.id,
-                    ScenarioUserPeriod.scenario_user_id == scenario_user.id,
-                )
-                .one_or_none()
-            )
-            if not scenario_user_period:
-                scenario_user_period = ScenarioUserPeriod(
-                    round_id=round_record.id,
-                    scenario_user_id=scenario_user.id,
-                    order_placed=order_placed,
-                    order_received=order_received,
-                    inventory_before=inventory_before,
-                    inventory_after=inventory_after,
-                    backorders_before=backlog_before,
-                    backorders_after=backlog_after,
-                    holding_cost=holding_cost,
-                    backorder_cost=backlog_cost,
-                    total_cost=holding_cost + backlog_cost,
-                )
-                self.db.add(scenario_user_period)
-            else:
-                scenario_user_period.order_placed = order_placed
-                scenario_user_period.order_received = order_received
-                scenario_user_period.inventory_before = inventory_before
-                scenario_user_period.inventory_after = inventory_after
-                scenario_user_period.backorders_before = backlog_before
-                scenario_user_period.backorders_after = backlog_after
-                scenario_user_period.holding_cost = holding_cost
-                scenario_user_period.backorder_cost = backlog_cost
-                scenario_user_period.total_cost = holding_cost + backlog_cost
-
-            inventory = scenario_user.inventory
-            if not inventory:
-                inventory = ScenarioUserInventory(scenario_user_id=scenario_user.id)
-                self.db.add(inventory)
-            inventory.current_stock = node.inventory
-            inventory.backorders = node.backlog
-            inventory.incoming_shipments = list(node.pipeline_shipments)
-            inventory.cost = node.cost
-
-        round_record.is_completed = True
-        round_record.completed_at = datetime.utcnow()
-
-        if game.current_round >= game.max_rounds:
-            game.status = GameStatus.FINISHED
-            game.finished_at = datetime.utcnow()
-        else:
-            game.current_round += 1
-            game.status = GameStatus.ROUND_COMPLETED
-
-        self.db.commit()
-        return self.get_game_state(scenario_id)
+        return self._play_round_sc(game, config, topology)
 
     def get_game_state(self, scenario_id: int) -> Dict[str, Any]:
         game = self._get_game(scenario_id)
@@ -422,28 +319,6 @@ class AgentGameService:
         game.config = config
         return config
 
-    def _load_simulation_parameters(self, game: Game, config: Dict[str, Any]) -> Dict[str, Any]:
-        sim_params = config.get("simulation_parameters")
-        if isinstance(sim_params, dict) and sim_params:
-            return sim_params
-
-        params: Dict[str, Any] = {}
-        service = self._get_supply_chain_service()
-        if service and game.supply_chain_config_id:
-            try:
-                snapshot = service.create_game_from_config(
-                    game.supply_chain_config_id,
-                    {"name": game.name or "Agent Game", "description": game.description or ""},
-                )
-                params = snapshot.get("simulation_parameters", {}) or {}
-            except Exception:
-                params = {}
-
-        if params:
-            config["simulation_parameters"] = params
-            game.config = config
-        return params
-
     def _resolve_demand_pattern(
         self, game_data: GameCreate, supply_chain_config_id: int
     ) -> Dict[str, Any]:
@@ -486,22 +361,6 @@ class AgentGameService:
         except Exception:
             return fallback
 
-    def _extract_lead_times(self, sim_params: Dict[str, Any]) -> tuple[int, int]:
-        order_lead = sim_params.get("demand_lead_time") or sim_params.get("order_leadtime")
-        ship_lead = sim_params.get("shipping_lead_time") or sim_params.get("supply_leadtime")
-
-        try:
-            order_val = int(order_lead) if order_lead is not None else DEFAULT_DEMAND_LEAD_TIME
-        except (TypeError, ValueError):
-            order_val = DEFAULT_DEMAND_LEAD_TIME
-
-        try:
-            ship_val = int(ship_lead) if ship_lead is not None else DEFAULT_SHIPMENT_LEAD_TIME
-        except (TypeError, ValueError):
-            ship_val = DEFAULT_SHIPMENT_LEAD_TIME
-
-        return max(0, order_val), max(0, ship_val)
-
     def _get_supply_chain_service(self) -> SupplyChainConfigService | None:
         if self._supply_chain_service is None:
             try:
@@ -515,25 +374,6 @@ class AgentGameService:
         for label, spec in config.get("agent_policies", {}).items():
             policy_map[label] = make_policy(spec.get("policy", "naive"), spec.get("params"))
         return policy_map
-
-    def _extract_base_stocks(self, config: Dict[str, Any]) -> Dict[str, int]:
-        base_stocks: Dict[str, int] = {}
-        for label, spec in config.get("agent_policies", {}).items():
-            params = spec.get("params") or {}
-            base_stocks[label] = int(params.get("base_stock", 20))
-        return base_stocks
-
-    def _steady_state_demand(self, game: Game) -> int:
-        try:
-            demand_pattern = DemandPattern(**game.demand_pattern)
-        except Exception:
-            return DEFAULT_CLASSIC_PARAMS["initial_demand"]
-
-        initial = self._get_current_demand(1, demand_pattern)
-        try:
-            return max(0, int(initial))
-        except (TypeError, ValueError):
-            return DEFAULT_CLASSIC_PARAMS["initial_demand"]
 
     def _create_ai_scenario_users(self, game: Game, topology: Dict[str, Any]) -> None:
         """Create one AI scenario_user per site in the supply chain topology."""
@@ -551,23 +391,6 @@ class AgentGameService:
                 is_ai=True,
             )
             self.db.add(scenario_user)
-
-    def _initialise_inventories(self, game: Game, line: SupplyChainLine) -> None:
-        scenario_users = self._get_scenario_users_in_order(game.id)
-        node_map = {node.name: node for node in line.nodes}
-        for scenario_user in scenario_users:
-            site_name = self._scenario_user_site_name(scenario_user)
-            node = node_map.get(site_name)
-            if node is None:
-                continue
-            inventory = scenario_user.inventory
-            if not inventory:
-                inventory = ScenarioUserInventory(scenario_user_id=scenario_user.id)
-                self.db.add(inventory)
-            inventory.current_stock = node.inventory
-            inventory.backorders = node.backlog
-            inventory.incoming_shipments = list(node.pipeline_shipments)
-            inventory.cost = node.cost
 
     def _get_game(self, scenario_id: int) -> Game:
         game = self.db.query(Game).filter(Game.id == scenario_id).first()
