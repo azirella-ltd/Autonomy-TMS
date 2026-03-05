@@ -20,6 +20,7 @@ Reference: https://docs.[removed]
 from datetime import date, timedelta
 from typing import Dict, List, Tuple, Optional, Set
 from collections import defaultdict
+import logging
 from sqlalchemy import select
 
 from app.db.session import SessionLocal
@@ -35,6 +36,9 @@ from app.models.sc_entities import (
 from app.models.supplier import VendorLeadTime
 from app.models.supply_chain_config import Node
 from app.models.sc_entities import Product
+from .planning_types import DemandEstimate, DemandEstimateDict
+
+logger = logging.getLogger(__name__)
 
 
 class NetRequirementsCalculator:
@@ -105,6 +109,106 @@ class NetRequirementsCalculator:
         print(f"  ✓ Generated {len(supply_plans)} supply plan entries")
 
         return supply_plans
+
+    async def calculate_requirements_with_intervals(
+        self,
+        net_demand: Dict[Tuple[str, str, date], float],
+        demand_estimates: DemandEstimateDict,
+        target_inventory: Dict[Tuple[str, str], float],
+        start_date: date,
+        scenario_id: Optional[int] = None
+    ) -> List[SupplyPlan]:
+        """
+        Calculate net requirements with conformal interval metadata on supply plans.
+
+        Same logic as calculate_requirements() but enriches each generated
+        SupplyPlan with demand and lead time conformal interval metadata.
+
+        Args:
+            net_demand: Scalar net demand (for netting calculations)
+            demand_estimates: Demand estimates with optional conformal intervals
+            target_inventory: Target inventory by (product_id, site_id)
+            start_date: Planning start date
+            scenario_id: Optional scenario ID
+
+        Returns:
+            List of SupplyPlan with conformal metadata columns populated
+        """
+        supply_plans = []
+
+        product_sites = set((prod_id, site_id) for prod_id, site_id, _ in net_demand.keys())
+
+        logger.info(f"Processing {len(product_sites)} product-site combinations with intervals...")
+
+        for product_id, site_id in product_sites:
+            current_inventory = await self.get_current_inventory(
+                product_id, site_id, start_date, scenario_id
+            )
+            scheduled_receipts = await self.get_scheduled_receipts(
+                product_id, site_id, start_date, scenario_id
+            )
+            target = target_inventory.get((product_id, site_id), 0)
+
+            plans = await self.time_phased_netting(
+                product_id, site_id, start_date,
+                current_inventory, scheduled_receipts, net_demand,
+                target, scenario_id
+            )
+
+            # Enrich plans with conformal demand interval metadata
+            for plan in plans:
+                self._attach_demand_interval(plan, demand_estimates)
+                await self._attach_lead_time_interval(plan)
+
+            supply_plans.extend(plans)
+
+        interval_count = sum(1 for p in supply_plans if p.joint_coverage is not None)
+        logger.info(f"Generated {len(supply_plans)} supply plans "
+                     f"({interval_count} with conformal intervals)")
+
+        return supply_plans
+
+    def _attach_demand_interval(
+        self,
+        plan: SupplyPlan,
+        demand_estimates: DemandEstimateDict,
+    ) -> None:
+        """Attach demand conformal interval metadata to a supply plan."""
+        # Find the demand estimate for this plan's product-site-date
+        key = (plan.product_id, plan.site_id, plan.plan_date)
+        estimate = demand_estimates.get(key)
+
+        if estimate and estimate.has_interval:
+            plan.demand_lower = estimate.lower
+            plan.demand_upper = estimate.upper
+            plan.demand_coverage = estimate.coverage
+            plan.conformal_method = estimate.method
+
+    async def _attach_lead_time_interval(self, plan: SupplyPlan) -> None:
+        """Attach lead time conformal interval metadata to a supply plan."""
+        try:
+            from ..conformal_prediction.suite import get_conformal_suite
+            suite = get_conformal_suite()
+
+            # Determine supplier key based on plan type
+            supplier_key = None
+            if plan.plan_type == 'po_request' and plan.supplier_id:
+                supplier_key = str(plan.supplier_id)
+            elif plan.plan_type == 'to_request' and plan.from_site_id:
+                supplier_key = str(plan.from_site_id)
+
+            if supplier_key and suite.has_lead_time_predictor(supplier_key):
+                lt_point = float(plan.lead_time_days or 1)
+                lt_lower, lt_upper = suite.predict_lead_time(supplier_key, lt_point)
+                plan.lead_time_lower = max(0, lt_lower)
+                plan.lead_time_upper = lt_upper
+                plan.lead_time_coverage = suite._lead_time_coverage
+
+                # Compute joint coverage
+                if plan.demand_coverage and plan.lead_time_coverage:
+                    plan.joint_coverage = plan.demand_coverage * plan.lead_time_coverage
+        except Exception as e:
+            logger.debug(f"Lead time interval enrichment failed for plan {plan.id}: {e}")
 
     async def time_phased_netting(
         self,

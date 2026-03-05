@@ -9,6 +9,7 @@ Uses triangular sampling (not SimPy) so it works for any topology.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, date
 from typing import Dict, List, Optional
@@ -89,6 +90,10 @@ class WarmStartGenerator:
         self._seed_belief_states(config_id, tenant_id, actuals)
 
         self.db.flush()
+
+        # Step 8: Generate initial executive briefing + ensure schedule exists
+        self._generate_initial_briefing(config_id, tenant_id)
+
         logger.info("WarmStart config=%d: committed %d actuals", config_id, len(actuals))
         return {"status": "ok", "records": len(actuals), "config_id": config_id}
 
@@ -361,6 +366,54 @@ class WarmStartGenerator:
                         "obs_at": datetime.combine(it["date"], datetime.min.time()),
                     },
                 )
+
+    def _ensure_briefing_schedule(self, tenant_id: int) -> None:
+        """Create a default weekly BriefingSchedule if one doesn't exist."""
+        from app.models.executive_briefing import BriefingSchedule
+
+        existing = (
+            self.db.query(BriefingSchedule)
+            .filter(BriefingSchedule.tenant_id == tenant_id)
+            .first()
+        )
+        if not existing:
+            self.db.add(BriefingSchedule(
+                tenant_id=tenant_id,
+                enabled=True,
+                briefing_type="weekly",
+                cron_day_of_week="mon",
+                cron_hour=6,
+                cron_minute=0,
+            ))
+            self.db.flush()
+            logger.info("WarmStart: created default weekly briefing schedule for tenant %d", tenant_id)
+
+    def _generate_initial_briefing(self, config_id: int, tenant_id: int) -> None:
+        """Generate an initial executive briefing and ensure schedule exists.
+
+        Commits warm start data first so BriefingDataCollector can see it.
+        Failures are non-fatal (logged but don't abort warm start).
+        """
+        try:
+            self._ensure_briefing_schedule(tenant_id)
+            self.db.commit()
+
+            from app.services.executive_briefing_service import ExecutiveBriefingService
+            service = ExecutiveBriefingService(self.db)
+            asyncio.run(service.generate_briefing(
+                tenant_id=tenant_id,
+                briefing_type="weekly",
+                requested_by=None,
+            ))
+            logger.info(
+                "WarmStart config=%d: initial executive briefing generated for tenant %d",
+                config_id, tenant_id,
+            )
+        except Exception as e:
+            logger.warning(
+                "WarmStart config=%d: briefing generation failed (non-fatal): %s",
+                config_id, e,
+            )
 
     def _cleanup_existing(self, config_id: int) -> None:
         """Remove previous warm start data for this config."""

@@ -64,6 +64,13 @@ class SOPPlanningCycle:
     # Decisions made
     first_stage_decisions: Dict[str, Any]
 
+    # Policy parameter uncertainty — bootstrap CIs from scenario subsamples
+    # {param_name: {"lower": float, "upper": float, "coverage": 0.90, "method": "bootstrap"}}
+    policy_param_intervals: Optional[Dict[str, Dict[str, float]]] = None
+
+    # Decision confidence — conformal coverage on first-stage decisions
+    decision_confidence: Optional[Dict[str, Any]] = None
+
     # Performance metrics (if actuals available)
     realized_cost: Optional[float] = None
     service_level_achieved: Optional[float] = None
@@ -86,6 +93,8 @@ class SOPPlanningCycle:
             "solve_time_seconds": self.solution.solve_time,
             "calibration_updates": self.calibration_updates,
             "first_stage_decisions": self.first_stage_decisions,
+            "policy_param_intervals": self.policy_param_intervals,
+            "decision_confidence": self.decision_confidence,
             "realized_cost": self.realized_cost,
             "service_level_achieved": self.service_level_achieved,
             "coverage_met": self.coverage_met,
@@ -327,13 +336,26 @@ class RollingHorizonSOP:
             max_investment=max_investment,
         )
 
+        # Attach conformal coverage to solution
+        solution.conformal_coverage = generator.compute_coverage_guarantee()
+
         logger.info(
             f"  Solved stochastic program: "
             f"expected_cost={solution.expected_cost:.2f}, "
             f"status={solution.solve_status}"
         )
 
-        # Step 4: Create cycle record
+        # Step 4: Compute policy parameter uncertainty via bootstrap
+        policy_intervals = self._bootstrap_policy_intervals(
+            scenarios, solution, program,
+        )
+
+        # Step 5: Compute decision confidence from conformal coverage
+        decision_confidence = self._compute_decision_confidence(
+            solution, generator.compute_coverage_guarantee(),
+        )
+
+        # Step 6: Create cycle record
         cycle = SOPPlanningCycle(
             cycle_id=cycle_id,
             planning_date=current_date,
@@ -343,6 +365,8 @@ class RollingHorizonSOP:
             n_scenarios_after_reduction=n_reduced,
             calibration_updates={},
             first_stage_decisions=solution.first_stage_decisions,
+            policy_param_intervals=policy_intervals,
+            decision_confidence=decision_confidence,
         )
 
         self.cycle_history.append(cycle)
@@ -354,6 +378,145 @@ class RollingHorizonSOP:
         )
 
         return cycle
+
+    def _bootstrap_policy_intervals(
+        self,
+        scenarios: list,
+        solution: StochasticSolution,
+        program: TwoStageStochasticProgram,
+        n_bootstrap: int = 20,
+        coverage: float = 0.90,
+    ) -> Optional[Dict[str, Dict[str, float]]]:
+        """
+        Compute bootstrap confidence intervals on extracted policy parameters.
+
+        Resamples scenarios with replacement and re-solves to get a distribution
+        of optimal θ*. The resulting intervals quantify how sensitive the optimal
+        policy is to scenario sampling — wider intervals indicate higher
+        uncertainty in the recommended policy.
+
+        Args:
+            scenarios: Original scenario set
+            solution: Solution from full scenario set
+            program: Stochastic program instance
+            n_bootstrap: Number of bootstrap samples
+            coverage: Target coverage level for intervals
+
+        Returns:
+            Dict of {param_name: {lower, upper, coverage, method}} or None
+        """
+        if not solution.extracted_policy_params:
+            return None
+
+        if len(scenarios) < 10:
+            return None
+
+        try:
+            rng = np.random.default_rng(42)
+            param_samples: Dict[str, List[float]] = {
+                k: [] for k in solution.extracted_policy_params
+            }
+
+            for _ in range(n_bootstrap):
+                # Resample scenarios with replacement
+                indices = rng.choice(len(scenarios), size=len(scenarios), replace=True)
+                boot_scenarios = [scenarios[i] for i in indices]
+
+                # Re-solve with resampled scenarios
+                boot_program = TwoStageStochasticProgram(
+                    scenarios=boot_scenarios,
+                    products=self.products,
+                    resources=self.resources,
+                    planning_horizon=self.config.stochastic_horizon_periods,
+                )
+                boot_program.capacity_cost = self.config.capacity_cost
+                boot_program.holding_cost = self.config.holding_cost
+                boot_program.backlog_cost = self.config.backlog_cost
+                boot_program.expediting_cost = self.config.expediting_cost
+                boot_program.production_cost = self.config.production_cost
+
+                boot_solution = boot_program.solve(
+                    risk_measure=self.config.risk_measure,
+                    cvar_alpha=self.config.cvar_alpha,
+                )
+
+                if boot_solution.extracted_policy_params:
+                    for k, v in boot_solution.extracted_policy_params.items():
+                        param_samples[k].append(v)
+
+            # Compute intervals
+            alpha = 1.0 - coverage
+            intervals = {}
+            for param_name, samples in param_samples.items():
+                if len(samples) < 5:
+                    continue
+                arr = np.array(samples)
+                intervals[param_name] = {
+                    "lower": round(float(np.percentile(arr, 100 * alpha / 2)), 4),
+                    "upper": round(float(np.percentile(arr, 100 * (1 - alpha / 2))), 4),
+                    "point": round(solution.extracted_policy_params[param_name], 4),
+                    "coverage": coverage,
+                    "method": "bootstrap",
+                    "n_samples": len(samples),
+                }
+
+            return intervals if intervals else None
+
+        except Exception as e:
+            logger.debug(f"Bootstrap policy intervals failed: {e}")
+            return None
+
+    def _compute_decision_confidence(
+        self,
+        solution: StochasticSolution,
+        conformal_coverage: float,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Compute decision confidence from conformal coverage and solution quality.
+
+        The confidence represents how trustworthy the first-stage decisions are,
+        combining:
+        1. Conformal coverage guarantee (from scenario generation)
+        2. Solution quality (optimality gap, cost distribution spread)
+        3. Scenario diversity (cost distribution coefficient of variation)
+        """
+        try:
+            # Base confidence from conformal coverage
+            coverage_score = conformal_coverage
+
+            # Solution quality score (tight gap = high confidence)
+            gap_score = max(0.0, 1.0 - solution.gap) if solution.gap else 1.0
+
+            # Cost distribution spread (low CV = high confidence)
+            cost_cv = 0.5
+            if solution.cost_distribution:
+                costs = np.array(solution.cost_distribution)
+                mean_cost = np.mean(costs)
+                if mean_cost > 0:
+                    cost_cv = float(np.std(costs) / mean_cost)
+            spread_score = max(0.0, 1.0 - cost_cv)
+
+            # Composite confidence
+            overall = 0.50 * coverage_score + 0.30 * gap_score + 0.20 * spread_score
+
+            if overall >= 0.80:
+                level = "high"
+            elif overall >= 0.60:
+                level = "moderate"
+            else:
+                level = "low"
+
+            return {
+                "overall": round(overall, 4),
+                "conformal_coverage_score": round(coverage_score, 4),
+                "solution_quality_score": round(gap_score, 4),
+                "cost_spread_score": round(spread_score, 4),
+                "confidence_level": level,
+            }
+
+        except Exception as e:
+            logger.debug(f"Decision confidence computation failed: {e}")
+            return None
 
     def observe_actuals(
         self,

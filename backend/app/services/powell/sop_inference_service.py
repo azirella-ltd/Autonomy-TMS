@@ -56,6 +56,12 @@ class NetworkAnalysis:
     # Network-level risk scores
     network_risk: Dict[str, float] = field(default_factory=dict)
 
+    # Conformal score bounds — uncertainty on S&OP scores from ensemble variance
+    # or MC-Dropout at inference. Per-site: {lower, upper, coverage, method}.
+    score_intervals: Dict[str, Dict[str, Dict[str, float]]] = field(
+        default_factory=dict
+    )
+
     # Ordered list of site keys (matches tensor index order)
     site_keys: List[str] = field(default_factory=list)
 
@@ -74,6 +80,7 @@ class NetworkAnalysis:
             "resilience": self.resilience,
             "safety_stock_multiplier": self.safety_stock_multiplier,
             "network_risk": self.network_risk,
+            "score_intervals": self.score_intervals,
             "site_keys": self.site_keys,
             "computed_at": self.computed_at.isoformat() if self.computed_at else None,
         }
@@ -451,7 +458,122 @@ class SOPInferenceService:
             "operational": float(network_risk[3]) if len(network_risk) > 3 else 0.0,
         }
 
+        # Compute score uncertainty via MC-Dropout (if model has dropout layers)
+        self._compute_score_intervals(
+            model, node_features, edge_index, edge_features,
+            site_keys, analysis,
+        )
+
         return analysis
+
+    def _compute_score_intervals(
+        self, model, node_features, edge_index, edge_features,
+        site_keys: List[str], analysis: NetworkAnalysis,
+        n_passes: int = 10, coverage: float = 0.90,
+    ) -> None:
+        """
+        Compute conformal-style score intervals via MC-Dropout.
+
+        Enables dropout at inference and runs N forward passes to estimate
+        prediction variance. The resulting intervals provide uncertainty
+        bounds on GraphSAGE scores with approximate coverage guarantees.
+
+        Falls back to perturbation-based intervals if no dropout layers exist.
+        """
+        import torch
+
+        has_dropout = any(
+            isinstance(m, torch.nn.Dropout) for m in model.modules()
+        )
+
+        score_names = [
+            "criticality", "bottleneck_risk", "concentration_risk",
+            "resilience", "safety_stock_multiplier",
+        ]
+
+        try:
+            if has_dropout:
+                # MC-Dropout: enable dropout at inference for N stochastic passes
+                model.train()  # Enables dropout
+                samples = {name: [] for name in score_names}
+
+                with torch.no_grad():
+                    for _ in range(n_passes):
+                        out = model(
+                            node_features.to(self._device),
+                            edge_index.to(self._device),
+                            edge_features.to(self._device),
+                        )
+                        for name in score_names:
+                            key_map = {
+                                "criticality": "criticality_score",
+                                "bottleneck_risk": "bottleneck_risk",
+                                "concentration_risk": "concentration_risk",
+                                "resilience": "resilience_score",
+                                "safety_stock_multiplier": "safety_stock_multiplier",
+                            }
+                            vals = out[key_map[name]].cpu().numpy().flatten()
+                            samples[name].append(vals)
+
+                model.eval()  # Restore eval mode
+
+                # Compute intervals from samples
+                alpha = 1.0 - coverage
+                for i, site_key in enumerate(site_keys):
+                    site_intervals = {}
+                    for name in score_names:
+                        vals = np.array([s[i] for s in samples[name]])
+                        lower = float(np.percentile(vals, 100 * alpha / 2))
+                        upper = float(np.percentile(vals, 100 * (1 - alpha / 2)))
+                        site_intervals[name] = {
+                            "lower": lower,
+                            "upper": upper,
+                            "coverage": coverage,
+                            "method": "mc_dropout",
+                        }
+                    analysis.score_intervals[site_key] = site_intervals
+            else:
+                # Perturbation-based: add small noise to inputs and measure output variance
+                model.eval()
+                samples = {name: [] for name in score_names}
+
+                with torch.no_grad():
+                    for _ in range(n_passes):
+                        noise = torch.randn_like(node_features) * 0.05
+                        perturbed = node_features + noise
+                        out = model(
+                            perturbed.to(self._device),
+                            edge_index.to(self._device),
+                            edge_features.to(self._device),
+                        )
+                        key_map = {
+                            "criticality": "criticality_score",
+                            "bottleneck_risk": "bottleneck_risk",
+                            "concentration_risk": "concentration_risk",
+                            "resilience": "resilience_score",
+                            "safety_stock_multiplier": "safety_stock_multiplier",
+                        }
+                        for name in score_names:
+                            vals = out[key_map[name]].cpu().numpy().flatten()
+                            samples[name].append(vals)
+
+                alpha = 1.0 - coverage
+                for i, site_key in enumerate(site_keys):
+                    site_intervals = {}
+                    for name in score_names:
+                        vals = np.array([s[i] for s in samples[name]])
+                        lower = float(np.percentile(vals, 100 * alpha / 2))
+                        upper = float(np.percentile(vals, 100 * (1 - alpha / 2)))
+                        site_intervals[name] = {
+                            "lower": lower,
+                            "upper": upper,
+                            "coverage": coverage,
+                            "method": "input_perturbation",
+                        }
+                    analysis.score_intervals[site_key] = site_intervals
+
+        except Exception as e:
+            logger.debug(f"Score interval computation failed: {e}")
 
     async def _cache_analysis(
         self, analysis: NetworkAnalysis, site_id_map: Dict[str, int]

@@ -99,7 +99,7 @@ services:
               count: all
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/health || exit 1"]
+      test: ["CMD", "python", "-c", "import http.client; conn = http.client.HTTPConnection('localhost', 8000); conn.request('GET', '/api/health'); r = conn.getresponse(); exit(0 if r.status == 200 else 1)"]
       interval: 30s
       timeout: 10s
       retries: 3

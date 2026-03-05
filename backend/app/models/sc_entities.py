@@ -557,6 +557,16 @@ class SupplyPlan(Base):
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))
     round_number = Column(Integer)
 
+    # Conformal prediction metadata — interval bounds used to generate this plan
+    demand_lower = Column(Double, nullable=True)       # Lower demand bound
+    demand_upper = Column(Double, nullable=True)       # Upper demand bound
+    demand_coverage = Column(Double, nullable=True)    # Coverage guarantee (e.g., 0.90)
+    lead_time_lower = Column(Double, nullable=True)    # Earliest arrival (days)
+    lead_time_upper = Column(Double, nullable=True)    # Latest arrival (days)
+    lead_time_coverage = Column(Double, nullable=True) # LT coverage guarantee
+    joint_coverage = Column(Double, nullable=True)     # demand_coverage × lead_time_coverage
+    conformal_method = Column(String(50), nullable=True)  # "adaptive", "split", "stored_percentiles"
+
     # Relationships
     product = relationship("Product")
     site = relationship("Site", foreign_keys=[site_id])

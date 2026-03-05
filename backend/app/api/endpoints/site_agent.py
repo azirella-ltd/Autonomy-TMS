@@ -58,7 +58,7 @@ class ATPCheckRequest(BaseModel):
 
 
 class ATPCheckResponse(BaseModel):
-    """Response from ATP check"""
+    """Response from ATP check with optional conformal prediction intervals"""
     order_id: str
     can_fulfill: bool
     promised_qty: float
@@ -68,6 +68,17 @@ class ATPCheckResponse(BaseModel):
     confidence: float
     explanation: str
     consumption_detail: Optional[List[Dict]] = None
+    # Conformal Decision Theory (CDT) risk bound
+    risk_bound: Optional[float] = Field(
+        None, description="P(loss > threshold) from CDT wrapper. Lower is safer."
+    )
+    risk_assessment: Optional[Dict[str, Any]] = Field(
+        None, description="Full CDT diagnostic: threshold, calibration_size, interval_width"
+    )
+    # Demand conformal interval for the order's product-location
+    demand_interval: Optional[Dict[str, Any]] = Field(
+        None, description="Conformal demand interval: {lower, upper, point, coverage, method}"
+    )
 
 
 class ReplenishmentRequest(BaseModel):
@@ -198,6 +209,26 @@ async def check_atp(
 
     result = await site_agent.execute_atp(order)
 
+    # Get demand conformal interval (optional enrichment)
+    demand_interval = None
+    try:
+        from app.services.conformal_prediction.suite import get_conformal_suite
+        suite = get_conformal_suite()
+        location_int = int(request.location_id) if request.location_id else None
+        if location_int and suite.has_demand_predictor(request.product_id, location_int):
+            interval = suite.predict_demand(
+                request.product_id, location_int, request.requested_qty
+            )
+            demand_interval = {
+                "lower": interval.lower,
+                "upper": interval.upper,
+                "point": interval.point_estimate,
+                "coverage": interval.coverage_target,
+                "method": interval.method,
+            }
+    except Exception:
+        pass  # Conformal enrichment is optional
+
     return ATPCheckResponse(
         order_id=result.order_id,
         can_fulfill=result.promised_qty >= request.requested_qty,
@@ -207,6 +238,9 @@ async def check_atp(
         source=result.source,
         confidence=result.confidence,
         explanation=result.explanation,
+        risk_bound=getattr(result, 'risk_bound', None),
+        risk_assessment=getattr(result, 'risk_assessment', None),
+        demand_interval=demand_interval,
     )
 
 
@@ -235,6 +269,26 @@ async def check_atp_batch(
 
         result = await site_agent.execute_atp(order)
 
+        # Get demand conformal interval (optional enrichment)
+        demand_interval = None
+        try:
+            from app.services.conformal_prediction.suite import get_conformal_suite
+            suite = get_conformal_suite()
+            location_int = int(req.location_id) if req.location_id else None
+            if location_int and suite.has_demand_predictor(req.product_id, location_int):
+                interval = suite.predict_demand(
+                    req.product_id, location_int, req.requested_qty
+                )
+                demand_interval = {
+                    "lower": interval.lower,
+                    "upper": interval.upper,
+                    "point": interval.point_estimate,
+                    "coverage": interval.coverage_target,
+                    "method": interval.method,
+                }
+        except Exception:
+            pass
+
         results.append(ATPCheckResponse(
             order_id=result.order_id,
             can_fulfill=result.promised_qty >= req.requested_qty,
@@ -244,6 +298,9 @@ async def check_atp_batch(
             source=result.source,
             confidence=result.confidence,
             explanation=result.explanation,
+            risk_bound=getattr(result, 'risk_bound', None),
+            risk_assessment=getattr(result, 'risk_assessment', None),
+            demand_interval=demand_interval,
         ))
 
     return results

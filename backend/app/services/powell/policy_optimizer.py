@@ -72,6 +72,10 @@ class OptimizationResult:
     parameter_sensitivities: Optional[Dict[str, float]] = None
     scenario_objectives: Optional[List[float]] = None
 
+    # Conformal-style parameter intervals from sensitivity analysis
+    # {param_name: {"lower": float, "upper": float, "coverage": float, "method": str}}
+    parameter_intervals: Optional[Dict[str, Dict[str, float]]] = None
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dictionary"""
         return {
@@ -84,6 +88,7 @@ class OptimizationResult:
             "status": self.status,
             "message": self.message,
             "parameter_sensitivities": self.parameter_sensitivities,
+            "parameter_intervals": self.parameter_intervals,
         }
 
 
@@ -291,6 +296,11 @@ class PolicyOptimizer:
         # Compute parameter sensitivities
         sensitivities = self._compute_sensitivities(optimal_params, param_names)
 
+        # Compute parameter intervals from sensitivity analysis
+        param_intervals = self._compute_parameter_intervals(
+            optimal_params, param_names, sensitivities, std_error,
+        )
+
         return OptimizationResult(
             optimal_parameters=optimal_params,
             optimal_objective=optimal_obj,
@@ -300,6 +310,7 @@ class PolicyOptimizer:
             confidence_interval=ci,
             status=status,
             parameter_sensitivities=sensitivities,
+            parameter_intervals=param_intervals,
         )
 
     def _grid_search(
@@ -364,6 +375,48 @@ class PolicyOptimizer:
             sensitivities[name] = float(sensitivity)
 
         return sensitivities
+
+    def _compute_parameter_intervals(
+        self,
+        optimal_params: Dict[str, float],
+        param_names: List[str],
+        sensitivities: Dict[str, float],
+        objective_std_error: float,
+        coverage: float = 0.90,
+    ) -> Dict[str, Dict[str, float]]:
+        """
+        Compute confidence intervals on optimal parameters.
+
+        Uses inverse sensitivity: if objective changes by std_error,
+        how much does each parameter need to change?
+        This gives the region of near-optimal parameter values.
+        """
+        intervals = {}
+        for name in param_names:
+            sensitivity = sensitivities.get(name, 0)
+            param = self.parameters[name]
+            point = optimal_params[name]
+
+            if abs(sensitivity) > 1e-10:
+                # Delta_param = z * std_error / |sensitivity|
+                z = 1.645 if coverage == 0.90 else 1.96
+                delta = z * objective_std_error / abs(sensitivity)
+                lower = max(param.lower_bound, point - delta)
+                upper = min(param.upper_bound, point + delta)
+            else:
+                # Flat sensitivity — parameter doesn't affect objective much
+                lower = param.lower_bound
+                upper = param.upper_bound
+
+            intervals[name] = {
+                "lower": round(lower, 4),
+                "upper": round(upper, 4),
+                "point": round(point, 4),
+                "coverage": coverage,
+                "method": "inverse_sensitivity",
+            }
+
+        return intervals
 
     def get_cache_stats(self) -> Dict[str, int]:
         """Get caching statistics"""

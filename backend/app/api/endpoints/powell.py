@@ -164,7 +164,7 @@ class ATPCheckRequest(BaseModel):
 
 
 class ATPCheckResponse(BaseModel):
-    """Response from ATP check"""
+    """Response from ATP check with optional conformal prediction intervals"""
     order_id: str
     can_fulfill: bool
     available_qty: float
@@ -172,6 +172,17 @@ class ATPCheckResponse(BaseModel):
     consumption_breakdown: Dict[int, float]
     confidence: float
     reasoning: str
+    # Conformal Decision Theory (CDT) risk bound
+    risk_bound: Optional[float] = Field(
+        None, description="P(loss > threshold) from CDT wrapper. Lower is safer."
+    )
+    risk_assessment: Optional[Dict[str, Any]] = Field(
+        None, description="Full CDT diagnostic: threshold, calibration_size, interval_width"
+    )
+    # Demand conformal interval for the order's product-location
+    demand_interval: Optional[Dict[str, Any]] = Field(
+        None, description="Conformal demand interval: {lower, upper, point, coverage, method}"
+    )
 
 
 class ATPCommitRequest(BaseModel):
@@ -626,6 +637,26 @@ async def check_atp(
 
     response = executor.check_atp(atp_request)
 
+    # Get demand conformal interval (optional enrichment)
+    demand_interval = None
+    try:
+        from app.services.conformal_prediction.suite import get_conformal_suite
+        suite = get_conformal_suite()
+        location_int = int(request.location_id) if request.location_id else None
+        if location_int and suite.has_demand_predictor(request.product_id, location_int):
+            interval = suite.predict_demand(
+                request.product_id, location_int, request.requested_qty
+            )
+            demand_interval = {
+                "lower": interval.lower,
+                "upper": interval.upper,
+                "point": interval.point_estimate,
+                "coverage": interval.coverage_target,
+                "method": interval.method,
+            }
+    except Exception:
+        pass  # Conformal enrichment is optional
+
     return ATPCheckResponse(
         order_id=response.order_id,
         can_fulfill=response.can_fulfill,
@@ -633,7 +664,10 @@ async def check_atp(
         promised_qty=response.promised_qty,
         consumption_breakdown=response.consumption_breakdown,
         confidence=response.confidence,
-        reasoning=response.reasoning
+        reasoning=response.reasoning,
+        risk_bound=getattr(response, 'risk_bound', None),
+        risk_assessment=getattr(response, 'risk_assessment', None),
+        demand_interval=demand_interval,
     )
 
 

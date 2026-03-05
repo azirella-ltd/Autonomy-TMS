@@ -258,6 +258,18 @@ class SupplyPlanResultResponse(BaseModel):
     created_at: datetime
     completed_at: datetime
 
+    # Conformal prediction summary across all supply plan lines
+    conformal_summary: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Summary of conformal interval coverage across plan lines"
+    )
+
+    # Plan-level confidence score (composite of all conformal sub-scores)
+    plan_confidence: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Composite plan confidence from conformal prediction calibration"
+    )
+
     class Config:
         json_schema_extra = {
             "example": {

@@ -133,6 +133,19 @@ class SupplyPlanResult(Base):
     # Raw scenario results (optional, for detailed analysis)
     scenario_results = Column(JSON, nullable=True)  # Can be large, may want to store separately
 
+    # Conformal prediction plan-level confidence score
+    plan_confidence = Column(JSON, nullable=True)
+    # {
+    #     "overall": 0.82,
+    #     "demand_coverage_score": 0.90,
+    #     "lead_time_coverage_score": 0.75,
+    #     "safety_stock_adequacy": 0.85,
+    #     "calibration_freshness": 0.92,
+    #     "joint_conformal_coverage": 0.81,
+    #     "confidence_level": "high",
+    #     "diagnostics": {...}
+    # }
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 

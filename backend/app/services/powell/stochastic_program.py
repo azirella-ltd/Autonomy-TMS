@@ -91,6 +91,9 @@ class StochasticSolution:
     # Policy extraction
     extracted_policy_params: Optional[Dict[str, float]] = None
 
+    # Conformal coverage guarantee from scenario generation
+    conformal_coverage: Optional[float] = None
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "first_stage_decisions": self.first_stage_decisions,
@@ -99,6 +102,7 @@ class StochasticSolution:
             "cvar_95": self.cvar_95,
             "solve_status": self.solve_status,
             "policy_params": self.extracted_policy_params,
+            "conformal_coverage": self.conformal_coverage,
         }
 
     def get_cost_percentiles(self) -> Dict[str, float]:

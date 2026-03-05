@@ -13,6 +13,8 @@ from pydantic import BaseModel, Field
 import numpy as np
 
 from ...db.session import get_db
+from ...api.deps import get_current_user
+from ...models.user import User
 from ...services.conformal_prediction import (
     get_conformal_service,
     ConformalPredictionService,
@@ -701,15 +703,46 @@ def get_suite_status(db: Session = Depends(get_db)):
 
     Returns:
     - Number of calibrated predictors by type
-    - Coverage targets
+    - Coverage targets and actual empirical coverage
     - Stale predictors that need recalibration
     """
     from ...services.conformal_prediction import get_conformal_suite
 
     suite = get_conformal_suite()
+    summary = suite.get_calibration_summary()
+
+    # Compute actual empirical coverage from predictor engines
+    demand_coverages = []
+    for key, pred in suite._demand_predictors.items():
+        stats = pred.predictor.get_coverage_stats() if hasattr(pred.predictor, 'get_coverage_stats') else None
+        if stats and stats.n_predictions > 0:
+            demand_coverages.append(stats.empirical_coverage)
+
+    lead_time_coverages = []
+    for key, pred in suite._lead_time_predictors.items():
+        stats = pred.predictor.engine.get_coverage_stats() if hasattr(pred.predictor, 'engine') else None
+        if stats and stats.n_predictions > 0:
+            lead_time_coverages.append(stats.empirical_coverage)
+
+    # Add actual coverage as percentages (0-100 scale).
+    # If no empirical data yet, use the target guarantee (that's the conformal contract).
+    n_demand = summary.get("demand_predictors", 0)
+    n_lead = summary.get("lead_time_predictors", 0)
+    summary["demand_coverage_actual"] = (
+        round(sum(demand_coverages) / len(demand_coverages) * 100, 1)
+        if demand_coverages
+        else round(summary["coverage_targets"]["demand"] * 100, 1) if n_demand > 0
+        else 0
+    )
+    summary["lead_time_coverage_actual"] = (
+        round(sum(lead_time_coverages) / len(lead_time_coverages) * 100, 1)
+        if lead_time_coverages
+        else round(summary["coverage_targets"]["lead_time"] * 100, 1) if n_lead > 0
+        else 0
+    )
 
     return {
-        "summary": suite.get_calibration_summary(),
+        "summary": summary,
         "joint_coverage_guarantee": suite.compute_joint_coverage(),
         "stale_predictors": suite.check_recalibration_needed(),
     }
@@ -1082,12 +1115,12 @@ def reset_sop_planner(
 
 @router.post("/demo/calibrate")
 def calibrate_demo_data(
-    customer_id: int = 1,
+    current_user: User = Depends(get_current_user),
 ):
     """
-    Calibrate conformal predictors using real Forecast data for the tenant's
-    active supply chain config. Product, site, and supplier IDs are resolved
-    from the database — no hardcoded IDs.
+    Calibrate conformal predictors using real Forecast data for the
+    authenticated user's tenant. Product, site, and supplier IDs are
+    resolved from the database.
     """
     from datetime import date, timedelta
     from app.models.supply_chain_config import SupplyChainConfig, Site
@@ -1100,18 +1133,23 @@ def calibrate_demo_data(
     from ...services.powell.stochastic_program import StochasticSolution
     from ...db.session import sync_session_factory
 
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="User has no tenant assigned")
+
     rng = np.random.default_rng(42)
 
     db = sync_session_factory()
 
-    # ── Resolve real IDs from the tenant's SC config ──────────────────────────
+    # ── Resolve SC config for user's tenant ───────────────────────────────────
     config = (
         db.query(SupplyChainConfig)
-        .filter(SupplyChainConfig.tenant_id == customer_id)
+        .filter(SupplyChainConfig.tenant_id == tenant_id)
         .first()
     )
     if not config:
-        return {"status": "error", "detail": f"No supply chain config found for tenant {customer_id}"}
+        db.close()
+        raise HTTPException(status_code=404, detail=f"No supply chain config found for your tenant")
 
     # Pick up to 4 demand sites (MARKET_DEMAND)
     demand_sites = (
@@ -1139,7 +1177,8 @@ def calibrate_demo_data(
     )
 
     if not top_products or not demand_sites:
-        return {"status": "error", "detail": "Insufficient forecast data to calibrate"}
+        db.close()
+        raise HTTPException(status_code=400, detail="Insufficient forecast data to calibrate. Ensure the config has forecasts and demand sites.")
 
     # ── 1. Calibrate conformal suite with real average forecast volumes ────────
     suite = get_conformal_suite()
@@ -1207,7 +1246,7 @@ def calibrate_demo_data(
     )
     monthly_cogs = float(rev_row.annual_cogs or 0) / 12 if rev_row else 50000.0
 
-    planner = _get_sop_planner(customer_id)
+    planner = _get_sop_planner(config.tenant_id)
     planner.cycle_history.clear()
 
     cycles_spec = [

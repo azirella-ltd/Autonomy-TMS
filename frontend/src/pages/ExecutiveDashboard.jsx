@@ -43,6 +43,7 @@ import {
   Button,
   Spinner,
   Alert,
+  useToast,
 } from '../components/common';
 import { api } from '../services/api';
 import { Treemap, ResponsiveContainer, Tooltip } from 'recharts';
@@ -635,6 +636,7 @@ const PerformanceSummary = ({ summary }) => {
 
 const ExecutiveDashboard = () => {
   const navigate = useNavigate();
+  const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [data, setData] = useState(null);
@@ -689,12 +691,28 @@ const ExecutiveDashboard = () => {
   const handleRecalibrate = async () => {
     setRecalibrating(true);
     try {
-      await api.post('/conformal-prediction/demo/calibrate');
+      const calibrateResponse = await api.post('/conformal-prediction/demo/calibrate');
       // Refresh status after calibration
       const response = await api.get('/conformal-prediction/suite/status');
       setConformalStatus(response.data);
+
+      const nPredictors = calibrateResponse.data?.suite_summary?.total_predictors ?? null;
+      toast({
+        title: 'Predictors Recalibrated',
+        description: nPredictors != null
+          ? `Successfully calibrated ${nPredictors} conformal predictors.`
+          : 'Conformal prediction suite recalibrated successfully.',
+        status: 'success',
+        duration: 5000,
+      });
     } catch (err) {
       console.error('Recalibration failed:', err);
+      toast({
+        title: 'Recalibration Failed',
+        description: err.response?.data?.detail || err.message || 'An unexpected error occurred.',
+        status: 'error',
+        duration: 7000,
+      });
     } finally {
       setRecalibrating(false);
     }

@@ -49,6 +49,11 @@ class ExecutionGNNOutput:
     propagation_impact: Dict[str, List[float]] = field(default_factory=dict)
     confidence: Dict[str, float] = field(default_factory=dict)
 
+    # Conformal prediction intervals on demand forecasts (site_key -> per-period intervals)
+    demand_interval: Dict[str, List[Dict[str, float]]] = field(default_factory=dict)
+    # Conformal interval on order recommendation (site_key -> {lower, upper, coverage, method})
+    allocation_interval: Dict[str, Dict[str, float]] = field(default_factory=dict)
+
     # Ordered list of site keys (matches tensor index order)
     site_keys: List[str] = field(default_factory=list)
 
@@ -65,6 +70,8 @@ class ExecutionGNNOutput:
             "order_recommendation": self.order_recommendation,
             "propagation_impact": self.propagation_impact,
             "confidence": self.confidence,
+            "demand_interval": self.demand_interval,
+            "allocation_interval": self.allocation_interval,
             "site_keys": self.site_keys,
             "computed_at": self.computed_at.isoformat() if self.computed_at else None,
         }
@@ -125,6 +132,9 @@ class ExecutionGNNInferenceService:
         output = self._run_inference(
             model, x_temporal, sop_embeddings, site_keys, str(checkpoint_path),
         )
+
+        # Enrich with conformal prediction intervals
+        self._enrich_with_conformal_intervals(output)
 
         logger.info(
             f"Execution tGNN inference complete for config {self.config_id}: "
@@ -338,6 +348,67 @@ class ExecutionGNNInferenceService:
 
         # Synthetic inference (when no checkpoint or model fails)
         return self._synthetic_inference(site_keys, x_temporal, checkpoint_path, now)
+
+    def _enrich_with_conformal_intervals(self, output: ExecutionGNNOutput) -> None:
+        """
+        Enrich tGNN outputs with conformal prediction intervals.
+
+        For each site's demand forecast and order recommendation, queries the
+        SupplyChainConformalSuite for calibrated intervals. This propagates
+        conformal coverage guarantees from the operational level up to the
+        tactical tGNN level.
+        """
+        try:
+            from app.services.conformal_orchestrator import get_conformal_suite
+            suite = get_conformal_suite()
+        except Exception:
+            return
+
+        for site_key in output.site_keys:
+            # Demand forecast intervals — one per forecast period
+            forecasts = output.demand_forecast.get(site_key, [])
+            if forecasts:
+                intervals = []
+                for point_val in forecasts:
+                    try:
+                        result = suite.predict_demand(site_key, float(point_val))
+                        intervals.append({
+                            "lower": result.lower,
+                            "upper": result.upper,
+                            "point": float(point_val),
+                            "coverage": result.coverage,
+                            "method": result.method,
+                        })
+                    except Exception:
+                        intervals.append({
+                            "lower": float(point_val),
+                            "upper": float(point_val),
+                            "point": float(point_val),
+                            "coverage": None,
+                            "method": "none",
+                        })
+                output.demand_interval[site_key] = intervals
+
+            # Allocation interval — conformal bound on recommended order qty
+            order_rec = output.order_recommendation.get(site_key)
+            if order_rec is not None:
+                try:
+                    result = suite.predict_demand(site_key, float(order_rec))
+                    output.allocation_interval[site_key] = {
+                        "lower": result.lower,
+                        "upper": result.upper,
+                        "point": float(order_rec),
+                        "coverage": result.coverage,
+                        "method": result.method,
+                    }
+                except Exception:
+                    output.allocation_interval[site_key] = {
+                        "lower": float(order_rec),
+                        "upper": float(order_rec),
+                        "point": float(order_rec),
+                        "coverage": None,
+                        "method": "none",
+                    }
 
     def _synthetic_inference(
         self, site_keys, x_temporal, checkpoint_path, now,

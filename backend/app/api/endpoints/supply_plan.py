@@ -240,6 +240,32 @@ def get_supply_plan_result(
             detail="Supply plan result not found"
         )
 
+    # Compute conformal summary from plan orders if available
+    conformal_summary = None
+    if result.orders:
+        plans_with_demand = sum(1 for o in result.orders if o.get('demand_coverage'))
+        plans_with_lt = sum(1 for o in result.orders if o.get('lead_time_coverage'))
+        total_plans = len(result.orders)
+        avg_demand_coverage = 0.0
+        avg_lt_coverage = 0.0
+        if plans_with_demand > 0:
+            avg_demand_coverage = sum(
+                o['demand_coverage'] for o in result.orders if o.get('demand_coverage')
+            ) / plans_with_demand
+        if plans_with_lt > 0:
+            avg_lt_coverage = sum(
+                o['lead_time_coverage'] for o in result.orders if o.get('lead_time_coverage')
+            ) / plans_with_lt
+
+        if plans_with_demand > 0 or plans_with_lt > 0:
+            conformal_summary = {
+                "demand_intervals_available": plans_with_demand,
+                "lead_time_intervals_available": plans_with_lt,
+                "total_plans": total_plans,
+                "avg_demand_coverage": round(avg_demand_coverage, 4),
+                "avg_lead_time_coverage": round(avg_lt_coverage, 4),
+            }
+
     return SupplyPlanResultResponse(
         task_id=task_id,
         status=plan_request.status,
@@ -261,8 +287,58 @@ def get_supply_plan_result(
         inventory_turns_expected=result.inventory_turns_expected,
         bullwhip_ratio_expected=result.bullwhip_ratio_expected,
         created_at=plan_request.created_at,
-        completed_at=plan_request.completed_at
+        completed_at=plan_request.completed_at,
+        conformal_summary=conformal_summary,
+        plan_confidence=result.plan_confidence,
     )
+
+
+@router.get("/confidence/{task_id}")
+def get_plan_confidence(
+    *,
+    db: Session = Depends(deps.get_db),
+    task_id: int,
+    current_user: User = Depends(deps.get_current_user),
+):
+    """
+    Get the plan-level confidence score for a completed supply plan.
+
+    Returns the composite confidence with diagnostic breakdown.
+    The confidence score is computed from conformal prediction calibration
+    coverage across demand, lead time, safety stock, and predictor freshness.
+    """
+    plan_request = db.query(SupplyPlanRequest).filter(
+        SupplyPlanRequest.id == task_id,
+        SupplyPlanRequest.user_id == current_user.id,
+    ).first()
+
+    if not plan_request:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Supply plan request {task_id} not found"
+        )
+
+    result = db.query(SupplyPlanResult).filter(
+        SupplyPlanResult.request_id == task_id
+    ).first()
+
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Supply plan result not found"
+        )
+
+    if not result.plan_confidence:
+        return {
+            "task_id": task_id,
+            "plan_confidence": None,
+            "message": "Plan confidence not available. Run planning with conformal intervals enabled."
+        }
+
+    return {
+        "task_id": task_id,
+        "plan_confidence": result.plan_confidence,
+    }
 
 
 @router.post("/compare", response_model=SupplyPlanComparisonResponse)

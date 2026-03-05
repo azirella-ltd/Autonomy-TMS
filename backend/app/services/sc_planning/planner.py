@@ -11,6 +11,7 @@ Orchestrates demand aggregation, safety stock calculation, and supply plan gener
 
 from datetime import date, timedelta
 from typing import Dict, List, Optional, Tuple
+import logging
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -21,6 +22,9 @@ from app.models.sc_entities import SupplyPlan
 from .demand_processor import DemandProcessor
 from .inventory_target_calculator import InventoryTargetCalculator
 from .net_requirements_calculator import NetRequirementsCalculator
+from .planning_types import DemandEstimateDict
+
+logger = logging.getLogger(__name__)
 
 
 class SupplyChainPlanner:
@@ -130,6 +134,79 @@ class SupplyChainPlanner:
         print()
 
         return supply_plans
+
+    async def run_planning_with_intervals(
+        self,
+        start_date: date,
+        scenario_id: Optional[int] = None,
+        include_confidence: bool = True,
+    ) -> Tuple[List[SupplyPlan], Optional[dict], DemandEstimateDict]:
+        """
+        Execute SC planning with conformal prediction intervals propagated
+        through all 3 steps.
+
+        Returns:
+            Tuple of:
+            - List of SupplyPlan recommendations (enriched with conformal metadata)
+            - Optional plan confidence score dict
+            - DemandEstimateDict for downstream consumers
+        """
+        logger.info("Starting SC Planning with Conformal Intervals")
+        logger.info(f"  Config ID: {self.config_id}, Start: {start_date}, "
+                     f"Horizon: {self.planning_horizon} days")
+
+        # ====================================================================
+        # STEP 1: DEMAND PROCESSING (with intervals)
+        # ====================================================================
+        demand_estimates = await self.demand_processor.process_demand_with_intervals(
+            start_date, self.planning_horizon
+        )
+
+        # Extract scalar dict for backward-compatible Steps 2 & 3
+        net_demand = {k: v.point for k, v in demand_estimates.items()}
+
+        interval_count = sum(1 for v in demand_estimates.values() if v.has_interval)
+        logger.info(f"Step 1 complete: {len(demand_estimates)} entries "
+                     f"({interval_count} with conformal intervals)")
+
+        # ====================================================================
+        # STEP 2: INVENTORY TARGET CALCULATION (unchanged — already supports conformal policies)
+        # ====================================================================
+        target_inventory = await self.inventory_target_calculator.calculate_targets(
+            net_demand, start_date
+        )
+        logger.info(f"Step 2 complete: {len(target_inventory)} targets")
+
+        # ====================================================================
+        # STEP 3: NET REQUIREMENTS CALCULATION (with interval metadata)
+        # ====================================================================
+        supply_plans = await self.net_requirements_calculator.calculate_requirements_with_intervals(
+            net_demand, demand_estimates, target_inventory, start_date, scenario_id
+        )
+        logger.info(f"Step 3 complete: {len(supply_plans)} supply plans")
+
+        # ====================================================================
+        # STEP 4: PLAN CONFIDENCE SCORE (optional)
+        # ====================================================================
+        plan_confidence = None
+        if include_confidence:
+            try:
+                from .plan_confidence import PlanConfidenceCalculator
+                from ..conformal_prediction.suite import get_conformal_suite
+
+                calculator = PlanConfidenceCalculator()
+                confidence = calculator.compute(
+                    demand_estimates=demand_estimates,
+                    supply_plans=supply_plans,
+                    target_inventory=target_inventory,
+                    suite=get_conformal_suite(),
+                )
+                plan_confidence = confidence.to_dict()
+                logger.info(f"Plan confidence: {confidence.overall:.2f} ({confidence.confidence_level})")
+            except Exception as e:
+                logger.warning(f"Plan confidence computation failed: {e}")
+
+        return supply_plans, plan_confidence, demand_estimates
 
     async def get_config(self) -> SupplyChainConfig:
         """Load supply chain configuration"""
