@@ -54,8 +54,25 @@ ALL_TRM_TYPES = [
     "maintenance_scheduling",
     "subcontracting",
     "forecast_adjustment",
-    "safety_stock",
+    "inventory_buffer",
 ]
+
+
+def get_tenant_id_from_config(config_id: int) -> int:
+    """Load tenant_id from supply chain config record. Falls back to 1."""
+    try:
+        from app.db.session import SessionLocal
+        from app.models.supply_chain_config import SupplyChainConfig
+        db = SessionLocal()
+        try:
+            cfg = db.query(SupplyChainConfig).filter(SupplyChainConfig.id == config_id).first()
+            if cfg and cfg.tenant_id:
+                return int(cfg.tenant_id)
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"Could not load tenant_id for config {config_id}: {e}")
+    return 1
 
 
 def parse_args():
@@ -81,9 +98,13 @@ def parse_args():
     parser.add_argument('--device', type=str, default='cpu',
                         help='Training device (cpu/cuda)')
 
+    # Tenant
+    parser.add_argument('--tenant-id', type=int, default=None,
+                        help='Tenant ID (auto-loaded from DB via config-id if not provided)')
+
     # Output
     parser.add_argument('--output-dir', type=str, default=None,
-                        help='Checkpoint output directory')
+                        help='Checkpoint output directory (default: checkpoints/trm_config{id}/)')
     parser.add_argument('--results-json', type=str, default=None,
                         help='Path to save results JSON')
 
@@ -134,6 +155,7 @@ async def train_site_trm(
     trm_type: str,
     site: dict,
     config_id: int,
+    tenant_id: int,
     epochs: int,
     num_samples: int,
     device: str,
@@ -145,7 +167,7 @@ async def train_site_trm(
         site_id=site["site_id"],
         site_name=site["site_name"],
         master_type=site["master_type"],
-        customer_id=1,
+        tenant_id=tenant_id,
         config_id=config_id,
         device=device,
         checkpoint_dir=output_dir,
@@ -203,14 +225,23 @@ async def main():
     if args.trm_types:
         trm_types = [t.strip() for t in args.trm_types.split(",")]
 
-    # Output directory
-    output_dir = Path(args.output_dir) if args.output_dir else None
+    # Resolve tenant_id from DB if not provided
+    tenant_id = args.tenant_id if args.tenant_id else get_tenant_id_from_config(args.config_id)
 
+    # Output directory — defaults to checkpoints/trm_config{id}/
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+    else:
+        output_dir = Path(__file__).parent.parent.parent / "checkpoints" / f"trm_config{args.config_id}"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info(f"Config ID: {args.config_id} | Tenant ID: {tenant_id}")
     logger.info(f"Sites: {[s['site_name'] for s in sites]}")
     logger.info(f"TRM types: {trm_types}")
     logger.info(f"Epochs per phase: {args.epochs}")
     logger.info(f"Samples per sub-phase: {args.num_samples}")
     logger.info(f"Device: {args.device}")
+    logger.info(f"Checkpoint dir: {output_dir}")
 
     start = time.time()
     all_results = []
@@ -223,6 +254,7 @@ async def main():
                     trm_type=trm_type,
                     site=site,
                     config_id=args.config_id,
+                    tenant_id=tenant_id,
                     epochs=args.epochs,
                     num_samples=args.num_samples,
                     device=args.device,

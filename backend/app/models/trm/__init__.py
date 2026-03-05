@@ -26,14 +26,26 @@ from .inventory_buffer_trm_model import (
     IB_STATE_DIM,
     IB_NUM_ACTIONS,
 )
+from .mo_execution_trm_model import MOExecutionTRMModel, MO_STATE_DIM, MO_NUM_ACTIONS
+from .to_execution_trm_model import TOExecutionTRMModel, TO_STATE_DIM, TO_NUM_ACTIONS
+from .quality_disposition_trm_model import QualityDispositionTRMModel, QD_STATE_DIM, QD_NUM_ACTIONS
+from .maintenance_scheduling_trm_model import MaintenanceSchedulingTRMModel, MS_STATE_DIM, MS_NUM_ACTIONS
+from .subcontracting_trm_model import SubcontractingTRMModel, SUB_STATE_DIM, SUB_NUM_ACTIONS
+from .forecast_adjustment_trm_model import ForecastAdjustmentTRMModel, FA_STATE_DIM, FA_NUM_ACTIONS
 
 # Registry mapping TRM type name to (model_class, state_dim) for training scripts
 MODEL_REGISTRY = {
-    "atp_executor": (ATPTRMModel, ATP_STATE_DIM),
-    "rebalancing": (RebalancingTRMModel, REB_STATE_DIM),
-    "po_creation": (POCreationTRMModel, PO_STATE_DIM),
-    "order_tracking": (OrderTrackingTRMModel, OT_STATE_DIM),
-    "inventory_buffer": (InventoryBufferTRMModel, IB_STATE_DIM),
+    "atp_executor":           (ATPTRMModel, ATP_STATE_DIM),
+    "rebalancing":            (RebalancingTRMModel, REB_STATE_DIM),
+    "po_creation":            (POCreationTRMModel, PO_STATE_DIM),
+    "order_tracking":         (OrderTrackingTRMModel, OT_STATE_DIM),
+    "inventory_buffer":       (InventoryBufferTRMModel, IB_STATE_DIM),
+    "mo_execution":           (MOExecutionTRMModel, MO_STATE_DIM),
+    "to_execution":           (TOExecutionTRMModel, TO_STATE_DIM),
+    "quality_disposition":    (QualityDispositionTRMModel, QD_STATE_DIM),
+    "maintenance_scheduling": (MaintenanceSchedulingTRMModel, MS_STATE_DIM),
+    "subcontracting":         (SubcontractingTRMModel, SUB_STATE_DIM),
+    "forecast_adjustment":    (ForecastAdjustmentTRMModel, FA_STATE_DIM),
 }
 
 def load_trm_checkpoint(trm_type: str, checkpoint_path: str, device: str = "cpu"):
@@ -88,12 +100,19 @@ __all__ = [
     "SupplyChainEncoder",
     "RecursiveRefinementBlock",
     "create_trm_model",
-    # Per-TRM models
+    # Per-TRM models (original 5)
     "ATPTRMModel",
     "RebalancingTRMModel",
     "POCreationTRMModel",
     "OrderTrackingTRMModel",
     "InventoryBufferTRMModel",
+    # Per-TRM models (extended 6)
+    "MOExecutionTRMModel",
+    "TOExecutionTRMModel",
+    "QualityDispositionTRMModel",
+    "MaintenanceSchedulingTRMModel",
+    "SubcontractingTRMModel",
+    "ForecastAdjustmentTRMModel",
     # Registry and loading
     "MODEL_REGISTRY",
     "load_trm_checkpoint",

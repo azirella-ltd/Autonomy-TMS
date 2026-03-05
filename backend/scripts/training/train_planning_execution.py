@@ -521,6 +521,10 @@ def main():
 
     args = parser.parse_args()
 
+    # Auto-derive checkpoint name from config ID when using default
+    if args.config_id and args.checkpoint_name == "planning_execution":
+        args.checkpoint_name = f"planning_execution_config{args.config_id}"
+
     # Device
     device = args.device
     if device == "cuda" and not torch.cuda.is_available():
