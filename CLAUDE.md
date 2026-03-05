@@ -54,25 +54,23 @@ When implementing any entity:
 - Use `Period`, `ScenarioUserPeriod` (not Round*, GameRound)
 - Frontend uses `simulationApi` with methods like `createScenario()`, `getScenarioUsers()`
 
-### Tenant Modes vs AI Model Training
+### Customer Tenant Model
 
-**CRITICAL DISTINCTION**: Do not confuse these two uses of "training":
+**Every Autonomy customer receives two tenants:**
 
-| Term | Meaning | Examples |
-|------|---------|----------|
-| **Learning Tenant** | Tenant in education mode | Users run scenarios to learn how AI agents work, understand supply chain dynamics |
-| **AI Model Training** | Process of training ML models | TRM training, GNN training, RL training - happens in BOTH Learning and Production tenants |
+| Tenant | Mode | Data Source | Purpose |
+|--------|------|-------------|---------|
+| **Operational Tenant** | `TenantMode.PRODUCTION` | SAP master data extraction | Real supply chain planning and execution |
+| **Learning Tenant** | `TenantMode.LEARNING` | Default TBG config + variants | Training, simulation, agent validation |
 
-- **Learning Tenant** (`TenantMode.LEARNING`): Simplified navigation, game-like clock (turn-based/timed), focused on user education and building confidence with AI agents
-- **Production Tenant** (`TenantMode.PRODUCTION`): Full navigation, real data integration, real planning workflows
+- **Operational Tenant**: Created using master data extracted from customer's SAP system (via SAP Data Management). Contains the customer's real supply chain topology, products, BOMs, forecasts, and inventory. Full navigation, real data integration, real planning workflows.
+- **Learning Tenant**: Pre-provisioned with the Default TBG (The Beer Game) config and all variants (Three FG TBG, Variable TBG, etc.). Simplified navigation, game-like clock (turn-based/timed), focused on user education and building confidence with AI agents. The Beer Game is ONLY used within the Learning Tenant — it is NOT referenced elsewhere in the platform.
 
-**Both tenant modes support AI model training**:
-- Learning tenants need to train agents for educational scenarios
-- Production tenants need to train agents for real-world decision making
-
-The tenant mode determines the **user experience**, not whether AI models can be trained.
+**Both tenant modes support AI model training** (TRM, GNN, RL) — the tenant mode determines the **user experience**, not whether AI models can be trained.
 
 > **Terminology Note — Tenant vs Customer (Feb 2026)**: "Tenant" is the organizational boundary term (equivalent to AWS SC `company`). Do NOT use "Customer" for this purpose — in the AWS SC Data Model, "customer" means a trading partner (demand point) via `TradingPartner` with `tpartner_type='customer'`. The `customer_id` fields in AWS SC entities (Forecast, OutboundOrderLine, CustomerCost, FulfillmentOrder, etc.) correctly reference trading partners and must NOT be confused with the tenant/organization boundary.
+
+> **CRITICAL**: `customer_id` must ONLY be used for AWS SC data model fields that reference trading partners. All internal platform code must use `tenant_id` for organizational boundary. Any use of `customer_id` as a substitute for `tenant_id` is a bug.
 
 ---
 

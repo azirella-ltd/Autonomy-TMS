@@ -219,7 +219,7 @@ async def run_monte_carlo_simulation(
     engine = MonteCarloEngine(
         run_id=run_id,
         config_id=config_id,
-        customer_id=tenant_id,
+        tenant_id=tenant_id,
         num_scenarios=num_scenarios,
         random_seed=random_seed
     )
@@ -275,7 +275,7 @@ async def create_monte_carlo_run(
         supply_chain_config_id=run_create.supply_chain_config_id,
         mps_plan_id=run_create.mps_plan_id,
         scenario_id=run_create.scenario_id,
-        customer_id=run_create.tenant_id,
+        tenant_id=run_create.tenant_id,
         name=run_create.name,
         description=run_create.description,
         num_scenarios=run_create.num_scenarios,
@@ -329,7 +329,7 @@ async def list_monte_carlo_runs(
     query = select(MonteCarloRun).order_by(desc(MonteCarloRun.created_at))
 
     if tenant_id:
-        query = query.filter(MonteCarloRun.customer_id == tenant_id)
+        query = query.filter(MonteCarloRun.tenant_id == tenant_id)
     if config_id:
         query = query.filter(MonteCarloRun.supply_chain_config_id == config_id)
     if status_filter:

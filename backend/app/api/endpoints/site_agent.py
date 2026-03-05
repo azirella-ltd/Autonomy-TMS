@@ -802,7 +802,11 @@ async def trigger_retraining(
 
     pipeline_id = str(uuid.uuid4())
 
-    svc = CDCRetrainingService(db=db, site_key=site_key, customer_id=0)
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="User has no tenant assigned")
+
+    svc = CDCRetrainingService(db=db, site_key=site_key, tenant_id=tenant_id)
 
     # Quick pre-check
     if not svc.evaluate_retraining_need(skip_trigger_check=True):
@@ -863,7 +867,7 @@ async def trigger_retraining(
         from app.db.session import SessionLocal
         bg_db = SessionLocal()
         try:
-            bg_svc = CDCRetrainingService(db=bg_db, site_key=site_key, customer_id=0)
+            bg_svc = CDCRetrainingService(db=bg_db, site_key=site_key, tenant_id=tenant_id)
             result = bg_svc.execute_retraining(trigger_event=manual_trigger)
             if result and result.final_loss < float("inf"):
                 logger.info(
@@ -1116,12 +1120,28 @@ async def run_gnn_orchestration_cycle(
     Normally runs daily via APScheduler; this endpoint allows manual trigger.
     """
     from app.services.powell.gnn_orchestration_service import GNNOrchestrationService
+    from app.models.supply_chain_config import SupplyChainConfig
 
-    # Use config_id from query or default to 1
-    config_id = 1  # TODO: accept from request when multi-config support is needed
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="User has no tenant assigned")
 
-    orchestrator = GNNOrchestrationService(db, config_id)
+    config = db.query(SupplyChainConfig).filter(
+        SupplyChainConfig.tenant_id == tenant_id
+    ).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="No supply chain config found for tenant")
+
+    orchestrator = GNNOrchestrationService(db, config.id)
     result = await orchestrator.run_full_cycle(force_recompute=force_recompute)
+
+    # Enrich response with conformal prediction intervals from execution GNN output
+    if "execution_output" in result and hasattr(result["execution_output"], "demand_interval"):
+        exec_out = result["execution_output"]
+        result["conformal_prediction"] = {
+            "demand_interval": exec_out.demand_interval if exec_out.demand_interval else {},
+            "allocation_interval": exec_out.allocation_interval if exec_out.allocation_interval else {},
+        }
 
     return {
         "success": len(result.get("errors", [])) == 0,
@@ -1136,9 +1156,19 @@ async def get_gnn_status(
 ):
     """Get status of last GNN inference cycle and S&OP embeddings."""
     from app.services.powell.sop_inference_service import SOPInferenceService
+    from app.models.supply_chain_config import SupplyChainConfig
+
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="User has no tenant assigned")
+
+    config = db.query(SupplyChainConfig).filter(
+        SupplyChainConfig.tenant_id == tenant_id
+    ).first()
 
     try:
-        sop_svc = SOPInferenceService(db, config_id=1)
+        config_id = config.id if config else 0
+        sop_svc = SOPInferenceService(db, config_id=config_id)
         embeddings = await sop_svc.get_embeddings_tensor()
         has_sop = embeddings is not None
     except Exception:
@@ -1893,9 +1923,9 @@ def list_governance_policies(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List governance policies for a customer."""
+    """List governance policies for a tenant."""
     query = db.query(DecisionGovernancePolicy).filter(
-        DecisionGovernancePolicy.customer_id == tenant_id,
+        DecisionGovernancePolicy.tenant_id == tenant_id,
     )
     if not include_inactive:
         query = query.filter(DecisionGovernancePolicy.is_active == True)
@@ -1915,9 +1945,9 @@ def create_governance_policy(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Create a new governance policy for a customer."""
+    """Create a new governance policy for a tenant."""
     policy = DecisionGovernancePolicy(
-        customer_id=tenant_id,
+        tenant_id=tenant_id,
         action_type=body.action_type,
         category=body.category,
         agent_id=body.agent_id,
@@ -2012,14 +2042,14 @@ def list_guardrail_directives(
     current_user: User = Depends(get_current_user),
 ):
     """
-    List guardrail directives for a customer.
+    List guardrail directives for a tenant.
 
     Executive instructions captured from voice, email, Slack, Teams, chat,
     or manual entry — each with full provenance (who, when, channel,
     raw content) and extracted structured fields.
     """
     query = db.query(GuardrailDirective).filter(
-        GuardrailDirective.customer_id == tenant_id,
+        GuardrailDirective.tenant_id == tenant_id,
     )
     if status:
         query = query.filter(GuardrailDirective.status == status)
@@ -2029,7 +2059,7 @@ def list_guardrail_directives(
     ).offset(offset).limit(limit).all()
 
     total = db.query(GuardrailDirective).filter(
-        GuardrailDirective.customer_id == tenant_id,
+        GuardrailDirective.tenant_id == tenant_id,
         *([GuardrailDirective.status == status] if status else []),
     ).count()
 
@@ -2069,7 +2099,7 @@ def create_guardrail_directive(
     The directive starts as PENDING until reviewed and applied/rejected.
     """
     directive = GuardrailDirective(
-        customer_id=tenant_id,
+        tenant_id=tenant_id,
         source_user_id=body.source_user_id,
         source_channel=body.source_channel,
         source_signal_id=body.source_signal_id,

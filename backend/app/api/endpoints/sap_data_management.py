@@ -569,7 +569,7 @@ async def get_deployment_status(
     status = await service.get_deployment_status()
 
     return DeploymentStatusResponse(
-        tenant_id=status.customer_id,
+        tenant_id=status.tenant_id,
         phase=status.phase.value,
         connection_configured=status.connection_configured,
         connection_tested=status.connection_tested,
@@ -1306,7 +1306,7 @@ async def analyze_z_table_deep(
 
 async def _load_sap_data(
     db: AsyncSession,
-    customer_id: int,
+    tenant_id: int,
     connection_id: int,
 ) -> Dict[str, "pd.DataFrame"]:
     """
@@ -1317,7 +1317,7 @@ async def _load_sap_data(
     """
     import pandas as pd
 
-    service = create_deployment_service(db, customer_id)
+    service = create_deployment_service(db, tenant_id)
     connection = service._connections.get(connection_id)
 
     if not connection:
@@ -1403,7 +1403,7 @@ async def list_role_mappings(
 
     result = await db.execute(
         sa_select(SAPRoleMapping)
-        .where(SAPRoleMapping.customer_id == current_user.tenant_id)
+        .where(SAPRoleMapping.tenant_id == current_user.tenant_id)
         .order_by(SAPRoleMapping.priority)
     )
     mappings = result.scalars().all()
@@ -1418,7 +1418,7 @@ async def create_role_mapping(
 ):
     """Create a new role mapping rule."""
     mapping = SAPRoleMapping(
-        customer_id=current_user.tenant_id,
+        tenant_id=current_user.tenant_id,
         agr_name_pattern=body.agr_name_pattern,
         pattern_type=body.pattern_type,
         powell_role=body.powell_role,
@@ -1446,7 +1446,7 @@ async def delete_role_mapping(
     result = await db.execute(
         sa_select(SAPRoleMapping).where(
             SAPRoleMapping.id == mapping_id,
-            SAPRoleMapping.customer_id == current_user.tenant_id,
+            SAPRoleMapping.tenant_id == current_user.tenant_id,
         )
     )
     mapping = result.scalar_one_or_none()
@@ -1520,7 +1520,7 @@ async def list_import_logs(
     # Count
     count_q = await db.execute(
         sa_select(func.count(SAPUserImportLog.id)).where(
-            SAPUserImportLog.customer_id == current_user.tenant_id
+            SAPUserImportLog.tenant_id == current_user.tenant_id
         )
     )
     total = count_q.scalar() or 0
@@ -1528,7 +1528,7 @@ async def list_import_logs(
     # Fetch
     result = await db.execute(
         sa_select(SAPUserImportLog)
-        .where(SAPUserImportLog.customer_id == current_user.tenant_id)
+        .where(SAPUserImportLog.tenant_id == current_user.tenant_id)
         .order_by(SAPUserImportLog.started_at.desc())
         .offset(offset)
         .limit(limit)

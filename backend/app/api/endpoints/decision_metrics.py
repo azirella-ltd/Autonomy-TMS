@@ -71,10 +71,11 @@ async def get_executive_dashboard(
     """
     service = AgentPerformanceService(db)
 
-    # Use user's customer if they have one, otherwise use demo customer ID
-    customer_id = current_user.tenant_id or 1
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="User has no tenant assigned")
 
-    data = service.get_executive_dashboard_data(customer_id, planning_cycle)
+    data = service.get_executive_dashboard_data(tenant_id, planning_cycle)
 
     return {
         "success": True,
@@ -104,9 +105,11 @@ async def get_agent_performance(
     - Category-level breakdown
     """
     service = AgentPerformanceService(db)
-    customer_id = current_user.tenant_id or 1
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="User has no tenant assigned")
 
-    exec_data = service.get_executive_dashboard_data(customer_id, planning_cycle)
+    exec_data = service.get_executive_dashboard_data(tenant_id, planning_cycle)
 
     # Add decision performance specific data
     # Compute planner capacity from PerformanceMetric history
@@ -115,7 +118,7 @@ async def get_agent_performance(
 
     pm_rows = (
         db.query(PM)
-        .filter(PM.tenant_id == customer_id, PM.category.is_(None))
+        .filter(PM.tenant_id == tenant_id, PM.category.is_(None))
         .order_by(_asc(PM.period_start))
         .all()
     )
@@ -204,10 +207,12 @@ async def get_sop_worklist(
     Returns worklist items with issues, impacts, and due dates.
     """
     service = AgentPerformanceService(db)
-    customer_id = current_user.tenant_id or 1
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="User has no tenant assigned")
 
-    items = service.get_sop_worklist_items(customer_id, status, category)
-    summary = service.get_sop_worklist_summary(customer_id)
+    items = service.get_sop_worklist_items(tenant_id, status, category)
+    summary = service.get_sop_worklist_summary(tenant_id)
 
     return {
         "success": True,
@@ -227,9 +232,11 @@ async def get_sop_worklist_summary(
 ):
     """Get just the S&OP worklist summary KPIs."""
     service = AgentPerformanceService(db)
-    customer_id = current_user.tenant_id or 1
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="User has no tenant assigned")
 
-    summary = service.get_sop_worklist_summary(customer_id)
+    summary = service.get_sop_worklist_summary(tenant_id)
 
     return {
         "success": True,
@@ -318,9 +325,11 @@ async def get_agent_decisions(
     """
     from app.models.decision_tracking import AgentDecision, DecisionStatus
 
-    customer_id = current_user.tenant_id or 1
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="User has no tenant assigned")
 
-    query = db.query(AgentDecision).filter(AgentDecision.customer_id == customer_id)
+    query = db.query(AgentDecision).filter(AgentDecision.tenant_id == tenant_id)
 
     if decision_type:
         query = query.filter(AgentDecision.decision_type == decision_type)
@@ -355,12 +364,13 @@ async def get_override_effectiveness(
     """
     from app.models.powell_decision import SiteAgentDecision
 
-    customer_id = current_user.tenant_id or 1
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="User has no tenant assigned")
     now = datetime.utcnow()
     cutoff = now - timedelta(days=days)
 
-    # We can't filter SiteAgentDecision by customer_id directly (it uses site_key),
-    # so we aggregate across all sites for now.
+    # TODO: Filter SiteAgentDecision by tenant's sites once site_key→tenant mapping is available
     base_q = db.query(SiteAgentDecision).filter(
         SiteAgentDecision.is_overridden == True,
         SiteAgentDecision.timestamp > cutoff,
@@ -627,7 +637,14 @@ async def get_metrics_config(
     from app.models.supply_chain_config import SupplyChainConfig
     from app.models.metrics_hierarchy import get_metric_config
 
-    config = db.query(SupplyChainConfig).filter(SupplyChainConfig.id == config_id).first()
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="User has no tenant assigned")
+
+    config = db.query(SupplyChainConfig).filter(
+        SupplyChainConfig.id == config_id,
+        SupplyChainConfig.tenant_id == tenant_id,
+    ).first()
     if not config:
         raise HTTPException(status_code=404, detail=f"Supply chain config {config_id} not found.")
 
@@ -662,7 +679,14 @@ async def patch_metrics_config(
     from app.models.supply_chain_config import SupplyChainConfig
     from app.models.metrics_hierarchy import get_metric_config, GARTNER_METRICS
 
-    config = db.query(SupplyChainConfig).filter(SupplyChainConfig.id == config_id).first()
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="User has no tenant assigned")
+
+    config = db.query(SupplyChainConfig).filter(
+        SupplyChainConfig.id == config_id,
+        SupplyChainConfig.tenant_id == tenant_id,
+    ).first()
     if not config:
         raise HTTPException(status_code=404, detail=f"Supply chain config {config_id} not found.")
 

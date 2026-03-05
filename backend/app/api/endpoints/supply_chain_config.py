@@ -816,7 +816,7 @@ def read_active_config(
             config = (
                 db.query(SupplyChainConfig)
                 .filter(
-                    SupplyChainConfig.customer_id == admin_tenant_id,
+                    SupplyChainConfig.tenant_id == admin_tenant_id,
                     SupplyChainConfig.is_active == True,
                 )
                 .first()
@@ -832,7 +832,7 @@ def read_active_config(
             config = (
                 db.query(SupplyChainConfig)
                 .filter(
-                    SupplyChainConfig.customer_id == user_tenant_id,
+                    SupplyChainConfig.tenant_id == user_tenant_id,
                     SupplyChainConfig.is_active == True,
                 )
                 .first()
@@ -3188,7 +3188,7 @@ def get_tenant_root_config(
     root_config = (
         db.query(SupplyChainConfig)
         .filter(
-            SupplyChainConfig.customer_id == tenant_id,
+            SupplyChainConfig.tenant_id == tenant_id,
             SupplyChainConfig.parent_config_id.is_(None),
         )
         .first()
@@ -3221,7 +3221,7 @@ def get_tenant_config_tree(
     root_configs = (
         db.query(SupplyChainConfig)
         .filter(
-            SupplyChainConfig.customer_id == tenant_id,
+            SupplyChainConfig.tenant_id == tenant_id,
             SupplyChainConfig.parent_config_id.is_(None),
         )
         .all()

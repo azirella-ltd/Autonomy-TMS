@@ -14,7 +14,7 @@
  * agent — narrow scope, per-order exception detection and recommended actions.
  */
 import React, { useMemo } from 'react';
-import { Box, Typography, Chip, Alert } from '@mui/material';
+import { Box, Typography, Chip, Alert, Tooltip as MuiTooltip } from '@mui/material';
 
 import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
@@ -172,6 +172,20 @@ const COLUMNS = [
     key: 'partner_name',
     label: 'Partner',
     render: (decision) => decision.partner_name || '—',
+  },
+  {
+    key: 'risk_bound',
+    label: 'CDT Risk',
+    render: (decision) => {
+      if (decision.risk_bound == null) return '—';
+      const pct = (decision.risk_bound * 100).toFixed(1);
+      const color = decision.risk_bound < 0.1 ? 'success' : decision.risk_bound < 0.3 ? 'warning' : 'error';
+      return (
+        <MuiTooltip title={`P(loss > threshold) = ${pct}% from Conformal Decision Theory`} arrow>
+          <Chip label={`${pct}%`} size="small" color={color} variant="outlined" />
+        </MuiTooltip>
+      );
+    },
   },
 ];
 

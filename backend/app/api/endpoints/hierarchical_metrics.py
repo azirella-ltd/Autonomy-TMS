@@ -10,7 +10,7 @@ Endpoints:
 """
 
 from typing import Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
@@ -44,11 +44,13 @@ async def get_hierarchical_dashboard(
     - Product: Category > Product
     - Time: Year > Quarter > Month
     """
-    customer_id = current_user.tenant_id or 1
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="User has no tenant assigned")
     service = HierarchicalMetricsService(db=db)
 
     data = service.get_dashboard_metrics(
-        tenant_id=customer_id,
+        tenant_id=tenant_id,
         site_level=site_level,
         site_key=site_key,
         product_level=product_level,

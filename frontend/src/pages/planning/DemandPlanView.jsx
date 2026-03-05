@@ -35,6 +35,7 @@ import {
   Save,
   X,
   Undo,
+  ShieldCheck,
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
 import { api } from '../../services/api';
@@ -464,6 +465,7 @@ const DemandPlanView = () => {
                 <TableHead className="text-right">P50 (Most Likely)</TableHead>
                 <TableHead className="text-right">Forecast Median</TableHead>
                 <TableHead className="text-right">P90 (High)</TableHead>
+                <TableHead className="text-center">Confidence</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Source</TableHead>
               </TableRow>
@@ -502,6 +504,32 @@ const DemandPlanView = () => {
                     {formatNumber(forecast.forecast_median ?? forecast.forecast_p50)}
                   </TableCell>
                   <TableCell className="text-right">{formatNumber(forecast.forecast_p90)}</TableCell>
+                  <TableCell className="text-center">
+                    {forecast.forecast_confidence != null ? (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge variant={
+                              forecast.forecast_confidence >= 0.85 ? 'success' :
+                              forecast.forecast_confidence >= 0.7 ? 'warning' :
+                              'destructive'
+                            } className="gap-1">
+                              <ShieldCheck className="h-3 w-3" />
+                              {(forecast.forecast_confidence * 100).toFixed(0)}%
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Conformal prediction confidence</p>
+                            {forecast.conformal_method && (
+                              <p className="text-xs">Method: {forecast.conformal_method}</p>
+                            )}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <Badge variant="secondary">{forecast.forecast_type || 'statistical'}</Badge>

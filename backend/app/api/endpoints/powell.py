@@ -214,6 +214,8 @@ class RebalanceResponse(BaseModel):
     source_dos_after: float
     dest_dos_before: float
     dest_dos_after: float
+    risk_bound: Optional[float] = Field(None, description="P(loss > threshold) from CDT wrapper")
+    risk_assessment: Optional[Dict[str, Any]] = Field(None, description="Full CDT diagnostic")
 
 
 class PORecommendationRequest(BaseModel):
@@ -234,6 +236,10 @@ class PORecommendationResponse(BaseModel):
     expected_cost: float
     confidence: float
     reasoning: str
+    risk_bound: Optional[float] = Field(None, description="P(loss > threshold) from CDT wrapper")
+    risk_assessment: Optional[Dict[str, Any]] = Field(None, description="Full CDT diagnostic")
+    lead_time_interval: Optional[Dict[str, float]] = Field(None, description="Conformal lead time interval")
+    demand_interval: Optional[Dict[str, float]] = Field(None, description="Conformal demand interval")
 
 
 class OrderExceptionRequest(BaseModel):
@@ -256,6 +262,8 @@ class OrderExceptionResponse(BaseModel):
     description: str
     impact_assessment: str
     confidence: float
+    risk_bound: Optional[float] = Field(None, description="P(loss > threshold) from CDT wrapper")
+    risk_assessment: Optional[Dict[str, Any]] = Field(None, description="Full CDT diagnostic")
 
 
 class TrainingStatusResponse(BaseModel):
@@ -1422,6 +1430,11 @@ class SOPAnalysisResponse(BaseModel):
     network_risk: Dict[str, float]
     site_keys: List[str]
     computed_at: Optional[str] = None
+    # Conformal prediction intervals on scores (MC-Dropout or input perturbation)
+    score_intervals: Optional[Dict[str, Dict[str, Dict[str, float]]]] = Field(
+        None,
+        description="Per-site score intervals: {site_key: {metric: {lower, upper, coverage}}}"
+    )
 
 
 class SOPSiteScoreResponse(BaseModel):
@@ -1433,6 +1446,11 @@ class SOPSiteScoreResponse(BaseModel):
     resilience: float
     safety_stock_multiplier: float
     embedding_dim: int = 0
+    # Per-score conformal intervals (if available from MC-Dropout)
+    score_intervals: Optional[Dict[str, Dict[str, float]]] = Field(
+        None,
+        description="Conformal intervals per metric: {metric: {lower, upper, coverage}}"
+    )
 
 
 @router.get("/sop/analysis/{config_id}", response_model=SOPAnalysisResponse)
@@ -1467,6 +1485,7 @@ async def get_sop_analysis(
             network_risk=analysis.network_risk,
             site_keys=analysis.site_keys,
             computed_at=analysis.computed_at.isoformat() if analysis.computed_at else None,
+            score_intervals=analysis.score_intervals if hasattr(analysis, 'score_intervals') else None,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -1499,4 +1518,13 @@ async def get_site_criticality(
                    f"Run GET /sop/analysis/{config_id} first."
         )
 
-    return SOPSiteScoreResponse(site_key=site_key, **scores)
+    # Include per-site score intervals if available from last analysis
+    site_intervals = None
+    try:
+        analysis = await svc.analyze_network(force_recompute=False)
+        if hasattr(analysis, 'score_intervals') and analysis.score_intervals:
+            site_intervals = analysis.score_intervals.get(site_key)
+    except Exception:
+        pass
+
+    return SOPSiteScoreResponse(site_key=site_key, score_intervals=site_intervals, **scores)

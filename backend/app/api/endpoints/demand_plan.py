@@ -38,6 +38,8 @@ class ForecastItemSchema(BaseModel):
     forecast_method: Optional[str] = None
     forecast_source: Optional[str] = None
     forecast_run_id: Optional[str] = None
+    forecast_confidence: Optional[float] = None
+    conformal_method: Optional[str] = None
 
 
 class ExternalDemandPlanSchema(BaseModel):
@@ -305,7 +307,7 @@ def receive_external_demand_plan(
             background_tasks.add_task(
                 _trigger_conformal_forecast_hook,
                 product_site_pairs=product_site_pairs,
-                customer_id=current_user.tenant_id,
+                tenant_id=current_user.tenant_id,
             )
 
         return {
@@ -447,7 +449,7 @@ def apply_forecast_overrides(
 
 async def _trigger_conformal_forecast_hook(
     product_site_pairs: List[Tuple[str, int]],
-    customer_id: int,
+    tenant_id: int,
 ) -> None:
     """Background task: notify conformal orchestrator of forecast load."""
     from app.db.session import async_session_factory
@@ -458,7 +460,7 @@ async def _trigger_conformal_forecast_hook(
             return
         async with async_session_factory() as db:
             orchestrator = ConformalOrchestrator.get_instance()
-            result = await orchestrator.on_forecasts_loaded(db, product_site_pairs, customer_id)
+            result = await orchestrator.on_forecasts_loaded(db, product_site_pairs, tenant_id)
             await db.commit()
             logger.info(f"Conformal forecast hook: {result}")
     except Exception as exc:

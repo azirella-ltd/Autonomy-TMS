@@ -248,7 +248,7 @@ def calculate_multi_stage_ctp(
     svc = MultiStageCTPService(
         db=db,
         config_id=req.config_id,
-        customer_id=req.tenant_id,
+        tenant_id=req.tenant_id,
     )
 
     result = svc.calculate_multi_stage_ctp(
@@ -282,7 +282,7 @@ def promise_order(
     svc = MultiStageCTPService(
         db=db,
         config_id=req.config_id,
-        customer_id=req.tenant_id,
+        tenant_id=req.tenant_id,
     )
 
     result = svc.promise_order(

@@ -644,6 +644,7 @@ const ExecutiveDashboard = () => {
   const [conformalStatus, setConformalStatus] = useState(null);
   const [gartnerMetrics, setGartnerMetrics] = useState(null);
   const [recalibrating, setRecalibrating] = useState(false);
+  const [planConfidence, setPlanConfidence] = useState(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -673,7 +674,7 @@ const ExecutiveDashboard = () => {
     fetchData();
   }, [planningCycle]);
 
-  // Fetch conformal prediction status
+  // Fetch conformal prediction status and latest plan confidence
   useEffect(() => {
     const fetchConformalStatus = async () => {
       try {
@@ -685,7 +686,23 @@ const ExecutiveDashboard = () => {
       }
     };
 
+    const fetchLatestPlanConfidence = async () => {
+      try {
+        const plansResp = await api.get('/supply-plan/list');
+        const completed = (plansResp.data.plans || []).filter(p => p.status === 'COMPLETED');
+        if (completed.length > 0) {
+          const resultResp = await api.get(`/supply-plan/result/${completed[0].id}`);
+          if (resultResp.data?.plan_confidence) {
+            setPlanConfidence(resultResp.data.plan_confidence);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch plan confidence:', err);
+      }
+    };
+
     fetchConformalStatus();
+    fetchLatestPlanConfidence();
   }, []);
 
   const handleRecalibrate = async () => {
@@ -778,6 +795,48 @@ const ExecutiveDashboard = () => {
             onRecalibrate={handleRecalibrate}
             recalibrating={recalibrating}
           />
+          {/* Plan-Level Confidence (from last completed supply plan) */}
+          {planConfidence && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Target className="h-5 w-5 text-blue-600" />
+                  Plan Confidence
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">Latest supply plan composite score</p>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-3 mb-3">
+                  <span className={`text-3xl font-bold ${
+                    planConfidence.confidence_level === 'high' ? 'text-green-600' :
+                    planConfidence.confidence_level === 'moderate' ? 'text-amber-600' : 'text-red-600'
+                  }`}>
+                    {(planConfidence.overall * 100).toFixed(0)}%
+                  </span>
+                  <Badge variant={
+                    planConfidence.confidence_level === 'high' ? 'success' :
+                    planConfidence.confidence_level === 'moderate' ? 'warning' : 'destructive'
+                  }>
+                    {planConfidence.confidence_level}
+                  </Badge>
+                </div>
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  <div className="flex justify-between">
+                    <span>Demand coverage</span>
+                    <span>{(planConfidence.demand_coverage_score * 100).toFixed(0)}%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Lead time coverage</span>
+                    <span>{(planConfidence.lead_time_coverage_score * 100).toFixed(0)}%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Safety stock adequacy</span>
+                    <span>{(planConfidence.safety_stock_adequacy * 100).toFixed(0)}%</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
           <ROICard data={roi} />
         </div>
       </div>

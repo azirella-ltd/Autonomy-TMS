@@ -12,7 +12,7 @@
  * Adaptive Decision Hierarchy: Execution layer, VFA policy class.
  */
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Chip } from '@mui/material';
+import { Box, Typography, Chip, Tooltip as MuiTooltip } from '@mui/material';
 
 import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
@@ -123,6 +123,20 @@ const ATP_COLUMNS = [
           : '\u2014'}
       </Typography>
     ),
+  },
+  {
+    key: 'risk_bound',
+    label: 'CDT Risk',
+    render: (decision) => {
+      if (decision.risk_bound == null) return '\u2014';
+      const pct = (decision.risk_bound * 100).toFixed(1);
+      const color = decision.risk_bound < 0.1 ? 'success' : decision.risk_bound < 0.3 ? 'warning' : 'error';
+      return (
+        <MuiTooltip title={`P(loss > threshold) = ${pct}% from CDT`} arrow>
+          <Chip label={`${pct}%`} size="small" color={color} variant="outlined" />
+        </MuiTooltip>
+      );
+    },
   },
 ];
 

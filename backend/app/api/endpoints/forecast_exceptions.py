@@ -127,7 +127,7 @@ def list_exceptions(
     if config_id:
         query = query.filter(ForecastException.config_id == config_id)
     if tenant_id:
-        query = query.filter(ForecastException.customer_id == tenant_id)
+        query = query.filter(ForecastException.tenant_id == tenant_id)
     if product_id:
         query = query.filter(ForecastException.product_id == product_id)
     if site_id:
@@ -189,13 +189,13 @@ def get_exception_summary(
     if config_id:
         query = query.filter(ForecastException.config_id == config_id)
     if tenant_id:
-        query = query.filter(ForecastException.customer_id == tenant_id)
+        query = query.filter(ForecastException.tenant_id == tenant_id)
 
     # Count by status
     status_counts = dict(
         db.query(ForecastException.status, func.count(ForecastException.id))
         .filter(ForecastException.config_id == config_id if config_id else True)
-        .filter(ForecastException.customer_id == tenant_id if tenant_id else True)
+        .filter(ForecastException.tenant_id == tenant_id if tenant_id else True)
         .group_by(ForecastException.status)
         .all()
     )
@@ -204,7 +204,7 @@ def get_exception_summary(
     severity_counts = dict(
         db.query(ForecastException.severity, func.count(ForecastException.id))
         .filter(ForecastException.config_id == config_id if config_id else True)
-        .filter(ForecastException.customer_id == tenant_id if tenant_id else True)
+        .filter(ForecastException.tenant_id == tenant_id if tenant_id else True)
         .group_by(ForecastException.severity)
         .all()
     )
@@ -213,7 +213,7 @@ def get_exception_summary(
     type_counts = dict(
         db.query(ForecastException.exception_type, func.count(ForecastException.id))
         .filter(ForecastException.config_id == config_id if config_id else True)
-        .filter(ForecastException.customer_id == tenant_id if tenant_id else True)
+        .filter(ForecastException.tenant_id == tenant_id if tenant_id else True)
         .group_by(ForecastException.exception_type)
         .all()
     )
@@ -552,7 +552,7 @@ def list_rules(
     if config_id:
         query = query.filter(ForecastExceptionRule.config_id == config_id)
     if tenant_id:
-        query = query.filter(ForecastExceptionRule.customer_id == tenant_id)
+        query = query.filter(ForecastExceptionRule.tenant_id == tenant_id)
     if is_active is not None:
         query = query.filter(ForecastExceptionRule.is_active == is_active)
 

@@ -36,6 +36,7 @@ import {
   Eye,
   ThumbsUp,
   ThumbsDown,
+  ShieldCheck,
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { getSupplyChainConfigs } from '../../services/supplyChainConfigService';
@@ -516,6 +517,92 @@ const SupplyPlanGeneration = () => {
                   {rec}
                 </Alert>
               ))}
+            </div>
+          )}
+
+          {/* Plan Confidence Score (Conformal Prediction) */}
+          {planResult.plan_confidence && (
+            <div className="mt-6">
+              <h3 className="text-md font-medium mb-4 flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5" />
+                Plan Confidence
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <Card className="border">
+                  <CardContent className="pt-4">
+                    <p className="text-xs uppercase text-muted-foreground">Overall Confidence</p>
+                    <p className={`text-3xl font-bold ${
+                      planResult.plan_confidence.confidence_level === 'high' ? 'text-green-600' :
+                      planResult.plan_confidence.confidence_level === 'moderate' ? 'text-amber-600' :
+                      'text-red-600'
+                    }`}>
+                      {(planResult.plan_confidence.overall * 100).toFixed(0)}%
+                    </p>
+                    <Badge variant={
+                      planResult.plan_confidence.confidence_level === 'high' ? 'success' :
+                      planResult.plan_confidence.confidence_level === 'moderate' ? 'warning' :
+                      'destructive'
+                    } className="mt-1">
+                      {planResult.plan_confidence.confidence_level}
+                    </Badge>
+                  </CardContent>
+                </Card>
+                <Card className="border">
+                  <CardContent className="pt-4">
+                    <p className="text-xs uppercase text-muted-foreground">Demand Coverage</p>
+                    <p className="text-2xl font-bold">
+                      {(planResult.plan_confidence.demand_coverage_score * 100).toFixed(0)}%
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Forecasts with conformal intervals
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="border">
+                  <CardContent className="pt-4">
+                    <p className="text-xs uppercase text-muted-foreground">Lead Time Coverage</p>
+                    <p className="text-2xl font-bold">
+                      {(planResult.plan_confidence.lead_time_coverage_score * 100).toFixed(0)}%
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Plans with LT intervals
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="border">
+                  <CardContent className="pt-4">
+                    <p className="text-xs uppercase text-muted-foreground">Safety Stock Adequacy</p>
+                    <p className="text-2xl font-bold">
+                      {(planResult.plan_confidence.safety_stock_adequacy * 100).toFixed(0)}%
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      SS targets covering demand-during-LT
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+              {planResult.plan_confidence.diagnostics && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  {Object.values(planResult.plan_confidence.diagnostics).join(' | ')}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Conformal Interval Summary */}
+          {planResult.conformal_summary && (
+            <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+              <p className="text-sm font-medium mb-1">Conformal Interval Coverage</p>
+              <div className="flex gap-4 text-xs text-muted-foreground">
+                <span>Plans with demand intervals: {planResult.conformal_summary.plans_with_demand_interval || 0}/{planResult.conformal_summary.total_plans || 0}</span>
+                <span>Plans with LT intervals: {planResult.conformal_summary.plans_with_lt_interval || 0}/{planResult.conformal_summary.total_plans || 0}</span>
+                {planResult.conformal_summary.avg_demand_coverage && (
+                  <span>Avg demand coverage: {(planResult.conformal_summary.avg_demand_coverage * 100).toFixed(0)}%</span>
+                )}
+                {planResult.conformal_summary.avg_lt_coverage && (
+                  <span>Avg LT coverage: {(planResult.conformal_summary.avg_lt_coverage * 100).toFixed(0)}%</span>
+                )}
+              </div>
             </div>
           )}
         </CardContent>

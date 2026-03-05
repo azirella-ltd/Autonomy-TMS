@@ -48,7 +48,7 @@ def list_planning_cycles(
 ):
     """List planning cycles for the user's customer."""
     query = db.query(PlanningCycle).filter(
-        PlanningCycle.customer_id == current_user.tenant_id
+        PlanningCycle.tenant_id == current_user.tenant_id
     )
 
     if cycle_type:
@@ -78,16 +78,17 @@ def create_planning_cycle(
     current_user: User = Depends(deps.get_current_active_user),
 ):
     """Create a new planning cycle."""
-    # Verify user has access to the customer
-    if cycle_in.customer_id != current_user.tenant_id:
+    # Verify user has access to the tenant
+    cycle_tenant = getattr(cycle_in, 'tenant_id', None) or getattr(cycle_in, 'customer_id', None)
+    if cycle_tenant and cycle_tenant != current_user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot create cycle for a different customer"
+            detail="Cannot create cycle for a different tenant"
         )
 
     service = PlanningCycleService(db)
     cycle = service.create_cycle(
-        customer_id=cycle_in.customer_id,
+        tenant_id=current_user.tenant_id,
         name=cycle_in.name,
         cycle_type=cycle_in.cycle_type,
         period_start=cycle_in.period_start,
@@ -109,7 +110,7 @@ def get_planning_cycle(
     """Get a specific planning cycle."""
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.customer_id == current_user.tenant_id
+        PlanningCycle.tenant_id == current_user.tenant_id
     ).first()
 
     if not cycle:
@@ -131,7 +132,7 @@ def update_planning_cycle(
     """Update a planning cycle."""
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.customer_id == current_user.tenant_id
+        PlanningCycle.tenant_id == current_user.tenant_id
     ).first()
 
     if not cycle:
@@ -168,7 +169,7 @@ def update_cycle_status(
     """Update the status of a planning cycle."""
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.customer_id == current_user.tenant_id
+        PlanningCycle.tenant_id == current_user.tenant_id
     ).first()
 
     if not cycle:
@@ -203,7 +204,7 @@ def delete_planning_cycle(
     """Delete a planning cycle (only draft cycles can be deleted)."""
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.customer_id == current_user.tenant_id
+        PlanningCycle.tenant_id == current_user.tenant_id
     ).first()
 
     if not cycle:
@@ -240,7 +241,7 @@ def list_cycle_snapshots(
     # Verify cycle access
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.customer_id == current_user.tenant_id
+        PlanningCycle.tenant_id == current_user.tenant_id
     ).first()
 
     if not cycle:
@@ -282,7 +283,7 @@ def create_snapshot(
     # Verify cycle access
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.customer_id == current_user.tenant_id
+        PlanningCycle.tenant_id == current_user.tenant_id
     ).first()
 
     if not cycle:
@@ -325,7 +326,7 @@ def get_snapshot(
     # Verify cycle access
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.customer_id == current_user.tenant_id
+        PlanningCycle.tenant_id == current_user.tenant_id
     ).first()
 
     if not cycle:
@@ -371,7 +372,7 @@ def get_snapshot_chain(
     # Verify cycle access
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.customer_id == current_user.tenant_id
+        PlanningCycle.tenant_id == current_user.tenant_id
     ).first()
 
     if not cycle:
@@ -425,7 +426,7 @@ def get_snapshot_deltas(
     # Verify cycle access
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.customer_id == current_user.tenant_id
+        PlanningCycle.tenant_id == current_user.tenant_id
     ).first()
 
     if not cycle:
@@ -464,7 +465,7 @@ def compare_snapshots(
     # Verify cycle access
     cycle = db.query(PlanningCycle).filter(
         PlanningCycle.id == cycle_id,
-        PlanningCycle.customer_id == current_user.tenant_id
+        PlanningCycle.tenant_id == current_user.tenant_id
     ).first()
 
     if not cycle:
@@ -512,9 +513,9 @@ def get_retention_stats(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
-    """Get retention statistics for the user's customer."""
+    """Get retention statistics for the user's tenant."""
     service = RetentionService(db)
-    stats = service.get_retention_stats(customer_id=current_user.tenant_id)
+    stats = service.get_retention_stats(tenant_id=current_user.tenant_id)
     return RetentionStatsResponse(**stats)
 
 

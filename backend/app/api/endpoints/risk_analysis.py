@@ -84,7 +84,7 @@ class WatchlistResponse(BaseModel):
     name: str
     description: Optional[str]
     created_by: int
-    customer_id: Optional[int]
+    tenant_id: Optional[int]
     config_id: Optional[int]
     product_filter: Optional[List[str]]
     site_filter: Optional[List[str]]
@@ -409,7 +409,7 @@ async def create_watchlist(
         name=watchlist.name,
         description=watchlist.description,
         created_by=current_user.id,
-        customer_id=current_user.tenant_id,
+        tenant_id=current_user.tenant_id,
         config_id=watchlist.config_id,
         product_filter=watchlist.product_filter,
         site_filter=watchlist.site_filter,

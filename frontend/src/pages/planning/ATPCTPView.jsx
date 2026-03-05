@@ -28,6 +28,7 @@ import {
   Search,
   AlertTriangle,
   Info,
+  ShieldCheck,
 } from 'lucide-react';
 import { Line, Bar } from 'react-chartjs-2';
 import { api } from '../../services/api';
@@ -660,6 +661,23 @@ const ATPCTPView = () => {
                 <p className="text-sm mt-1">
                   Confidence: {(promiseResult.confidence * 100).toFixed(0)}%
                 </p>
+                {promiseResult.risk_bound != null && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <Badge variant={promiseResult.risk_bound < 0.1 ? 'success' : promiseResult.risk_bound < 0.3 ? 'warning' : 'destructive'} className="gap-1">
+                      <ShieldCheck className="h-3 w-3" />
+                      Risk: {(promiseResult.risk_bound * 100).toFixed(1)}%
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">P(loss {'>'} threshold) from CDT</span>
+                  </div>
+                )}
+                {promiseResult.demand_interval && (
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    Demand interval: [{promiseResult.demand_interval.lower?.toFixed(0)} — {promiseResult.demand_interval.upper?.toFixed(0)}]
+                    {promiseResult.demand_interval.coverage && (
+                      <span className="ml-1">({(promiseResult.demand_interval.coverage * 100).toFixed(0)}% coverage)</span>
+                    )}
+                  </div>
+                )}
                 {promiseResult.confidence_factors &&
                   promiseResult.confidence_factors.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-2">
