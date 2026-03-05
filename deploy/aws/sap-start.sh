@@ -10,7 +10,7 @@
 set -euo pipefail
 
 INSTANCE_ID="${1:-${SAP_INSTANCE_ID:-}}"
-REGION="${AWS_REGION:-us-east-1}"
+REGION="${AWS_REGION:-eu-central-1}"
 
 # Try terraform output if no ID provided
 if [[ -z "$INSTANCE_ID" ]]; then
@@ -21,10 +21,11 @@ fi
 
 if [[ -z "$INSTANCE_ID" || "$INSTANCE_ID" == "N/A" ]]; then
     echo "Error: No SAP instance ID. Provide as argument or set SAP_INSTANCE_ID."
+    echo "  Usage: ./sap-start.sh i-0abc123def456"
     exit 1
 fi
 
-echo "Checking SAP instance $INSTANCE_ID..."
+echo "Checking SAP instance $INSTANCE_ID in $REGION..."
 STATE=$(aws ec2 describe-instances \
     --instance-ids "$INSTANCE_ID" \
     --region "$REGION" \
@@ -38,6 +39,10 @@ if [[ "$STATE" == "running" ]]; then
         --query 'Reservations[0].Instances[0].PublicIpAddress' \
         --output text)
     echo "SAP instance is already running at $IP"
+    echo ""
+    echo "  SAP GUI:   $IP:3200"
+    echo "  SAP HTTP:  http://$IP:8000"
+    echo "  SAP HTTPS: https://$IP:44300"
     exit 0
 fi
 
@@ -67,10 +72,16 @@ PRIVATE_IP=$(aws ec2 describe-instances \
 echo ""
 echo "SAP S/4HANA instance is running."
 echo "  Public IP:  $IP"
-echo "  Private IP: $PRIVATE_IP (use this from Autonomy)"
+echo "  Private IP: $PRIVATE_IP (use this from Autonomy backend)"
+echo ""
 echo "  SAP GUI:    $IP:3200"
 echo "  SAP HTTP:   http://$IP:8000"
 echo "  SAP HTTPS:  https://$IP:44300"
+echo "  Fiori:      https://$IP:44300/sap/bc/ui5_ui5/ui2/ushell/shells/abap/FioriLaunchpad.html"
 echo ""
-echo "Note: SAP services may take 5-10 minutes to fully start after boot."
-echo "Monitor with: ssh <user>@$IP 'sudo su - <sid>adm -c \"sapcontrol -nr 00 -function GetProcessList\"'"
+echo "  Hourly cost: ~EUR 2.90/hr (r5.4xlarge in eu-central-1)"
+echo ""
+echo "Note: SAP services take 5-10 minutes after boot to fully initialize."
+echo "Check with: ssh <user>@$IP 'sudo su - <sid>adm -c \"sapcontrol -nr 00 -function GetProcessList\"'"
+echo ""
+echo "Stop when done: ./sap-stop.sh $INSTANCE_ID"

@@ -1,27 +1,28 @@
 # ---------------------------------------------------------------------------
-# Autonomy + SAP S/4HANA — AWS Infrastructure
+# Autonomy + SAP S/4HANA — AWS Infrastructure (Frankfurt)
 # ---------------------------------------------------------------------------
 #
 # Provisions:
-#   1. VPC with public subnet, IGW, route table
+#   1. VPC with public subnets, IGW, route table
 #   2. Security groups (Autonomy web + SAP RFC/GUI)
-#   3. Autonomy EC2 instance (always-on, Docker Compose)
-#   4. SAP S/4HANA EC2 instance (on-demand, scheduled start/stop)
-#   5. Lambda + EventBridge for SAP instance scheduling
-#   6. IAM roles for Lambda and EC2
+#   3. Optional SSH key pair generation
+#   4. SAP CAL IAM role (cross-account trust for SAP Cloud Appliance Library)
+#   5. Autonomy EC2 instance (always-on, Docker Compose)
+#   6. SAP S/4HANA EC2 instance (on-demand, managed or imported from SAP CAL)
+#   7. Lambda + EventBridge for SAP instance scheduling (see sap_scheduler.tf)
 #
-# Usage:
-#   terraform init
-#   terraform plan -var="ssh_key_name=my-key"
-#   terraform apply -var="ssh_key_name=my-key"
+# Two-phase deployment:
+#   Phase 1 — Deploy VPC + IAM + Autonomy (sap_ami_id = ""):
+#     terraform init
+#     terraform apply
+#     → Copy sap_cal_role_arn output into SAP CAL portal
 #
-# SAP AMI:
-#   The sap_ami_id variable must be set to an SAP S/4HANA AMI.
-#   Options:
-#     a) SAP CAL — provision via cal.sap.com, snapshot to AMI
-#     b) AWS Marketplace — search "SAP S/4HANA" (BYOL)
-#     c) Manual install on SUSE/RHEL AMI
-#   Leave empty to skip SAP instance creation.
+#   Phase 2 — After SAP CAL provisions S/4HANA:
+#     Option A: Import CAL-created instance into Terraform state
+#       terraform import aws_instance.sap[0] i-0abc123def456
+#     Option B: Create AMI from CAL instance, set sap_ami_id
+#       terraform apply -var="sap_ami_id=ami-xxxxxxxx"
+#
 # ---------------------------------------------------------------------------
 
 terraform {
@@ -30,6 +31,18 @@ terraform {
     aws = {
       source  = "hashicorp/aws"
       version = "~> 5.0"
+    }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.0"
+    }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.0"
     }
   }
 }
@@ -48,11 +61,14 @@ provider "aws" {
 
 locals {
   create_sap = var.sap_ami_id != ""
+  create_key = var.create_ssh_key
 }
 
 # ---------------------------------------------------------------------------
 # Data Sources
 # ---------------------------------------------------------------------------
+
+data "aws_caller_identity" "current" {}
 
 data "aws_availability_zones" "available" {
   state = "available"
@@ -75,6 +91,34 @@ data "aws_ami" "ubuntu" {
 }
 
 # ---------------------------------------------------------------------------
+# SSH Key Pair (optional — generates a new key pair if create_ssh_key = true)
+# ---------------------------------------------------------------------------
+
+resource "tls_private_key" "ssh" {
+  count     = local.create_key ? 1 : 0
+  algorithm = "ED25519"
+}
+
+resource "aws_key_pair" "generated" {
+  count      = local.create_key ? 1 : 0
+  key_name   = "${var.project_name}-${var.environment}"
+  public_key = tls_private_key.ssh[0].public_key_openssh
+
+  tags = { Name = "${var.project_name}-ssh-key" }
+}
+
+resource "local_file" "ssh_private_key" {
+  count           = local.create_key ? 1 : 0
+  content         = tls_private_key.ssh[0].private_key_openssh
+  filename        = "${path.module}/${var.project_name}-${var.environment}.pem"
+  file_permission = "0600"
+}
+
+locals {
+  ssh_key_name = local.create_key ? aws_key_pair.generated[0].key_name : var.ssh_key_name
+}
+
+# ---------------------------------------------------------------------------
 # VPC & Networking
 # ---------------------------------------------------------------------------
 
@@ -93,7 +137,7 @@ resource "aws_internet_gateway" "igw" {
 
 resource "aws_subnet" "public_a" {
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 1)  # 10.0.1.0/24
+  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 1) # 10.0.1.0/24
   availability_zone       = data.aws_availability_zones.available.names[0]
   map_public_ip_on_launch = true
 
@@ -102,7 +146,7 @@ resource "aws_subnet" "public_a" {
 
 resource "aws_subnet" "public_b" {
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 2)  # 10.0.2.0/24
+  cidr_block              = cidrsubnet(var.vpc_cidr, 8, 2) # 10.0.2.0/24
   availability_zone       = data.aws_availability_zones.available.names[1]
   map_public_ip_on_launch = true
 
@@ -166,7 +210,7 @@ resource "aws_security_group" "autonomy" {
     description = "Autonomy HTTPS"
   }
 
-  # Allow all within VPC (for SAP ↔ Autonomy communication)
+  # Allow all within VPC (for SAP <-> Autonomy communication)
   ingress {
     from_port   = 0
     to_port     = 0
@@ -191,9 +235,8 @@ resource "aws_security_group" "autonomy" {
 }
 
 resource "aws_security_group" "sap" {
-  count       = local.create_sap ? 1 : 0
   name_prefix = "${var.project_name}-sap-"
-  description = "SAP S/4HANA RFC, GUI, HTTP"
+  description = "SAP S/4HANA RFC, GUI, HTTP, HANA"
   vpc_id      = aws_vpc.main.id
 
   # SSH
@@ -205,7 +248,7 @@ resource "aws_security_group" "sap" {
     description = "SSH"
   }
 
-  # SAP GUI (3200-3299)
+  # SAP GUI (dispatcher port 32NN where NN = instance number)
   ingress {
     from_port   = 3200
     to_port     = 3299
@@ -214,24 +257,25 @@ resource "aws_security_group" "sap" {
     description = "SAP GUI"
   }
 
-  # SAP RFC Gateway (3300-3399)
+  # SAP RFC Gateway (33NN)
   ingress {
     from_port   = 3300
     to_port     = 3399
     protocol    = "tcp"
     cidr_blocks = [var.vpc_cidr]
-    description = "SAP RFC (VPC only)"
+    description = "SAP RFC (VPC only - Autonomy backend connects here)"
   }
 
-  # SAP HTTP/HTTPS (8000-8001, 44300-44399)
+  # SAP ICM HTTP (8000-8001)
   ingress {
     from_port   = 8000
     to_port     = 8001
     protocol    = "tcp"
     cidr_blocks = var.allowed_web_cidrs
-    description = "SAP ICM HTTP"
+    description = "SAP ICM HTTP (Fiori, OData)"
   }
 
+  # SAP ICM HTTPS (443NN)
   ingress {
     from_port   = 44300
     to_port     = 44399
@@ -240,16 +284,25 @@ resource "aws_security_group" "sap" {
     description = "SAP ICM HTTPS"
   }
 
-  # SAP HANA DB (30015, 30013)
+  # SAP HANA DB (300NN SQL, 300NN-2 indexserver)
   ingress {
     from_port   = 30013
     to_port     = 30015
     protocol    = "tcp"
     cidr_blocks = [var.vpc_cidr]
-    description = "HANA DB (VPC only)"
+    description = "HANA DB (VPC only - never expose publicly)"
   }
 
-  # Intra-VPC
+  # SAP Message Server HTTP (81NN)
+  ingress {
+    from_port   = 8100
+    to_port     = 8199
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
+    description = "SAP Message Server (VPC only)"
+  }
+
+  # Intra-VPC (covers RFC, HANA, internal comms)
   ingress {
     from_port   = 0
     to_port     = 0
@@ -274,6 +327,188 @@ resource "aws_security_group" "sap" {
 }
 
 # ---------------------------------------------------------------------------
+# IAM — SAP CAL Cross-Account Role
+# ---------------------------------------------------------------------------
+# SAP Cloud Appliance Library (cal.sap.com) needs an IAM role in YOUR
+# account so it can provision EC2 instances, security groups, and EBS
+# volumes on your behalf.
+#
+# Setup flow:
+#   1. Go to cal.sap.com → Accounts → Create → Amazon Web Services
+#   2. SAP CAL shows you the Account ID and External ID to trust
+#   3. Set sap_cal_account_id and sap_cal_external_id in terraform.tfvars
+#   4. terraform apply  (creates this role)
+#   5. Copy the sap_cal_role_arn output back into SAP CAL
+#   6. Click Verify in SAP CAL
+# ---------------------------------------------------------------------------
+
+resource "aws_iam_role" "sap_cal" {
+  count = var.sap_cal_account_id != "" ? 1 : 0
+  name  = "${var.project_name}-sap-cal-provisioner"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "AllowSAPCALAssumeRole"
+      Effect = "Allow"
+      Principal = {
+        AWS = "arn:aws:iam::${var.sap_cal_account_id}:root"
+      }
+      Action = "sts:AssumeRole"
+      Condition = var.sap_cal_external_id != "" ? {
+        StringEquals = {
+          "sts:ExternalId" = var.sap_cal_external_id
+        }
+      } : {}
+    }]
+  })
+
+  max_session_duration = 7200
+
+  tags = { Name = "${var.project_name}-sap-cal-role" }
+}
+
+resource "aws_iam_role_policy" "sap_cal_ec2" {
+  count = var.sap_cal_account_id != "" ? 1 : 0
+  name  = "sap-cal-ec2-management"
+  role  = aws_iam_role.sap_cal[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "EC2FullForProvisioning"
+        Effect = "Allow"
+        Action = [
+          "ec2:RunInstances",
+          "ec2:TerminateInstances",
+          "ec2:StartInstances",
+          "ec2:StopInstances",
+          "ec2:RebootInstances",
+          "ec2:DescribeInstances",
+          "ec2:DescribeInstanceStatus",
+          "ec2:DescribeInstanceTypes",
+          "ec2:DescribeImages",
+          "ec2:DescribeKeyPairs",
+          "ec2:CreateKeyPair",
+          "ec2:DeleteKeyPair",
+          "ec2:ImportKeyPair",
+          "ec2:DescribeRegions",
+          "ec2:DescribeAvailabilityZones",
+          "ec2:GetConsoleOutput",
+          "ec2:CreateTags",
+          "ec2:DeleteTags",
+          "ec2:DescribeTags",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "EC2NetworkForProvisioning"
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeVpcs",
+          "ec2:DescribeSubnets",
+          "ec2:DescribeSecurityGroups",
+          "ec2:CreateSecurityGroup",
+          "ec2:DeleteSecurityGroup",
+          "ec2:AuthorizeSecurityGroupIngress",
+          "ec2:AuthorizeSecurityGroupEgress",
+          "ec2:RevokeSecurityGroupIngress",
+          "ec2:RevokeSecurityGroupEgress",
+          "ec2:DescribeRouteTables",
+          "ec2:DescribeInternetGateways",
+          "ec2:DescribeNatGateways",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:AllocateAddress",
+          "ec2:ReleaseAddress",
+          "ec2:AssociateAddress",
+          "ec2:DisassociateAddress",
+          "ec2:DescribeAddresses",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "EBSForProvisioning"
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateVolume",
+          "ec2:DeleteVolume",
+          "ec2:AttachVolume",
+          "ec2:DetachVolume",
+          "ec2:DescribeVolumes",
+          "ec2:DescribeVolumeStatus",
+          "ec2:ModifyVolume",
+          "ec2:CreateSnapshot",
+          "ec2:DeleteSnapshot",
+          "ec2:DescribeSnapshots",
+          "ec2:CopySnapshot",
+          "ec2:RegisterImage",
+          "ec2:DeregisterImage",
+          "ec2:CopyImage",
+          "ec2:DescribeImageAttribute",
+          "ec2:ModifyImageAttribute",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "IAMForInstanceProfiles"
+        Effect = "Allow"
+        Action = [
+          "iam:PassRole",
+          "iam:ListInstanceProfiles",
+          "iam:GetInstanceProfile",
+          "iam:CreateInstanceProfile",
+          "iam:DeleteInstanceProfile",
+          "iam:AddRoleToInstanceProfile",
+          "iam:RemoveRoleFromInstanceProfile",
+          "iam:CreateRole",
+          "iam:DeleteRole",
+          "iam:GetRole",
+          "iam:PutRolePolicy",
+          "iam:DeleteRolePolicy",
+          "iam:GetRolePolicy",
+          "iam:ListRolePolicies",
+          "iam:AttachRolePolicy",
+          "iam:DetachRolePolicy",
+          "iam:ListAttachedRolePolicies",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "S3ForBackupRestore"
+        Effect = "Allow"
+        Action = [
+          "s3:CreateBucket",
+          "s3:DeleteBucket",
+          "s3:ListBucket",
+          "s3:GetBucketLocation",
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:ListAllMyBuckets",
+        ]
+        Resource = "*"
+      },
+      {
+        Sid    = "CloudFormationForStacks"
+        Effect = "Allow"
+        Action = [
+          "cloudformation:CreateStack",
+          "cloudformation:DeleteStack",
+          "cloudformation:DescribeStacks",
+          "cloudformation:DescribeStackEvents",
+          "cloudformation:DescribeStackResources",
+          "cloudformation:GetTemplate",
+          "cloudformation:ListStacks",
+          "cloudformation:UpdateStack",
+        ]
+        Resource = "*"
+      },
+    ]
+  })
+}
+
+# ---------------------------------------------------------------------------
 # IAM — Autonomy EC2 Instance Profile
 # ---------------------------------------------------------------------------
 
@@ -283,8 +518,8 @@ resource "aws_iam_role" "autonomy_ec2" {
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
       Principal = { Service = "ec2.amazonaws.com" }
     }]
   })
@@ -293,6 +528,37 @@ resource "aws_iam_role" "autonomy_ec2" {
 resource "aws_iam_role_policy_attachment" "autonomy_ssm" {
   role       = aws_iam_role.autonomy_ec2.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+# Allow Autonomy instance to start/stop SAP instance
+resource "aws_iam_role_policy" "autonomy_sap_control" {
+  name = "sap-instance-control"
+  role = aws_iam_role.autonomy_ec2.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "ec2:StartInstances",
+        "ec2:StopInstances",
+        "ec2:DescribeInstances",
+        "ec2:DescribeInstanceStatus",
+      ]
+      Resource = "*"
+      Condition = {
+        StringEquals = {
+          "ec2:ResourceTag/Project"   = var.project_name
+          "ec2:ResourceTag/Component" = "sap"
+        }
+      }
+    },
+    {
+      Effect   = "Allow"
+      Action   = ["ec2:DescribeInstances", "ec2:DescribeInstanceStatus"]
+      Resource = "*"
+    }]
+  })
 }
 
 resource "aws_iam_instance_profile" "autonomy" {
@@ -307,7 +573,7 @@ resource "aws_iam_instance_profile" "autonomy" {
 resource "aws_instance" "autonomy" {
   ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.autonomy_instance_type
-  key_name               = var.ssh_key_name
+  key_name               = local.ssh_key_name
   subnet_id              = aws_subnet.public_a.id
   vpc_security_group_ids = [aws_security_group.autonomy.id]
   iam_instance_profile   = aws_iam_instance_profile.autonomy.name
@@ -321,10 +587,13 @@ resource "aws_instance" "autonomy" {
   user_data = <<-USERDATA
     #!/bin/bash
     set -euo pipefail
+    exec > /var/log/autonomy-bootstrap.log 2>&1
+
+    echo "[$(date)] Starting Autonomy bootstrap..."
 
     # System updates
     apt-get update -y
-    apt-get install -y docker.io docker-compose-v2 git make jq
+    apt-get install -y docker.io docker-compose-v2 git make jq awscli
 
     # Enable Docker
     systemctl enable docker
@@ -333,16 +602,16 @@ resource "aws_instance" "autonomy" {
 
     # Clone repository
     cd /home/ubuntu
-    git clone https://github.com/your-org/Autonomy.git || true
+    su - ubuntu -c "git clone ${var.autonomy_repo_url} Autonomy" || true
     cd Autonomy
 
     # Initialize environment
-    make init-env
+    su - ubuntu -c "cd /home/ubuntu/Autonomy && make init-env"
 
     # Start services
-    make up
+    su - ubuntu -c "cd /home/ubuntu/Autonomy && make up"
 
-    echo "Autonomy deployment complete" > /home/ubuntu/deploy-status.txt
+    echo "[$(date)] Autonomy deployment complete"
   USERDATA
 
   tags = {
@@ -362,15 +631,19 @@ resource "aws_eip" "autonomy" {
 # ---------------------------------------------------------------------------
 # SAP S/4HANA EC2 Instance (conditional)
 # ---------------------------------------------------------------------------
+# Created when sap_ami_id is set. Can also be populated by importing a
+# SAP CAL-provisioned instance:
+#   terraform import aws_instance.sap[0] i-0abc123def456
+# ---------------------------------------------------------------------------
 
 resource "aws_instance" "sap" {
   count = local.create_sap ? 1 : 0
 
   ami                    = var.sap_ami_id
   instance_type          = var.sap_instance_type
-  key_name               = var.ssh_key_name
+  key_name               = local.ssh_key_name
   subnet_id              = aws_subnet.public_a.id
-  vpc_security_group_ids = [aws_security_group.sap[0].id]
+  vpc_security_group_ids = [aws_security_group.sap.id]
 
   root_block_device {
     volume_size = var.sap_volume_size

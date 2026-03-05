@@ -1,17 +1,22 @@
 # ---------------------------------------------------------------------------
-# SAP Instance Start/Stop Automation
+# SAP Instance Start/Stop Automation (Frankfurt)
 # ---------------------------------------------------------------------------
 #
 # Uses Lambda + EventBridge to automatically start/stop the SAP instance
-# on a configurable schedule (default: weekdays 8 AM - 8 PM ET).
+# on a configurable schedule (default: weekdays 8 AM - 8 PM CET).
 #
-# Also provides manual start/stop via:
-#   aws lambda invoke --function-name autonomy-sap-start /dev/stdout
-#   aws lambda invoke --function-name autonomy-sap-stop  /dev/stdout
+# Manual invocation:
+#   ./sap-start.sh    # Shell script with status checks
+#   ./sap-stop.sh     # Shell script with cost info
+#   ./sap-status.sh   # Status + session cost estimate
 #
-# Or directly:
-#   aws ec2 start-instances --instance-ids <sap_instance_id>
-#   aws ec2 stop-instances  --instance-ids <sap_instance_id>
+# Or via Lambda:
+#   aws lambda invoke --function-name autonomy-sap-start --region eu-central-1 /dev/stdout
+#   aws lambda invoke --function-name autonomy-sap-stop  --region eu-central-1 /dev/stdout
+#
+# Or direct AWS CLI:
+#   aws ec2 start-instances --instance-ids <id> --region eu-central-1
+#   aws ec2 stop-instances  --instance-ids <id> --region eu-central-1
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
@@ -25,8 +30,8 @@ resource "aws_iam_role" "sap_scheduler" {
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
       Principal = { Service = "lambda.amazonaws.com" }
     }]
   })
@@ -42,25 +47,18 @@ resource "aws_iam_role_policy" "sap_scheduler" {
     Statement = [
       {
         Effect   = "Allow"
-        Action   = ["ec2:StartInstances", "ec2:StopInstances", "ec2:DescribeInstances"]
-        Resource = "*"
-        Condition = {
-          StringEquals = {
-            "ec2:ResourceTag/Project" = var.project_name
-            "ec2:ResourceTag/Component" = "sap"
-          }
-        }
+        Action   = ["ec2:StartInstances", "ec2:StopInstances"]
+        Resource = "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/${aws_instance.sap[0].id}"
       },
       {
-        # DescribeInstances doesn't support resource-level conditions
         Effect   = "Allow"
-        Action   = ["ec2:DescribeInstances"]
+        Action   = ["ec2:DescribeInstances", "ec2:DescribeInstanceStatus"]
         Resource = "*"
       },
       {
         Effect   = "Allow"
         Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
-        Resource = "arn:aws:logs:*:*:*"
+        Resource = "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:*"
       }
     ]
   })
@@ -85,25 +83,25 @@ data "archive_file" "sap_start" {
           ec2 = boto3.client('ec2', region_name=os.environ['AWS_REGION'])
           instance_id = os.environ['SAP_INSTANCE_ID']
 
-          # Check current state
           resp = ec2.describe_instances(InstanceIds=[instance_id])
           state = resp['Reservations'][0]['Instances'][0]['State']['Name']
 
           if state == 'running':
+              ip = resp['Reservations'][0]['Instances'][0].get('PublicIpAddress', 'pending')
               return {'statusCode': 200, 'body': json.dumps({
-                  'message': f'SAP instance {instance_id} is already running',
-                  'state': state
+                  'message': f'SAP instance {instance_id} is already running at {ip}',
+                  'state': state, 'ip': ip
               })}
 
           if state != 'stopped':
               return {'statusCode': 409, 'body': json.dumps({
-                  'message': f'SAP instance {instance_id} is in state {state}, cannot start',
+                  'message': f'SAP instance is in state {state}, cannot start',
                   'state': state
               })}
 
           ec2.start_instances(InstanceIds=[instance_id])
           return {'statusCode': 200, 'body': json.dumps({
-              'message': f'Starting SAP instance {instance_id}',
+              'message': f'Starting SAP instance {instance_id}. Services ready in ~10 min.',
               'state': 'pending'
           })}
     PYTHON
@@ -126,7 +124,6 @@ data "archive_file" "sap_stop" {
           ec2 = boto3.client('ec2', region_name=os.environ['AWS_REGION'])
           instance_id = os.environ['SAP_INSTANCE_ID']
 
-          # Check current state
           resp = ec2.describe_instances(InstanceIds=[instance_id])
           state = resp['Reservations'][0]['Instances'][0]['State']['Name']
 
@@ -138,13 +135,13 @@ data "archive_file" "sap_stop" {
 
           if state != 'running':
               return {'statusCode': 409, 'body': json.dumps({
-                  'message': f'SAP instance {instance_id} is in state {state}, cannot stop',
+                  'message': f'SAP instance is in state {state}, cannot stop',
                   'state': state
               })}
 
           ec2.stop_instances(InstanceIds=[instance_id])
           return {'statusCode': 200, 'body': json.dumps({
-              'message': f'Stopping SAP instance {instance_id}',
+              'message': f'Stopping SAP instance {instance_id}. EBS data preserved.',
               'state': 'stopping'
           })}
     PYTHON
@@ -189,13 +186,13 @@ resource "aws_lambda_function" "sap_stop" {
 }
 
 # ---------------------------------------------------------------------------
-# EventBridge Scheduled Rules
+# EventBridge Scheduled Rules (CET weekdays)
 # ---------------------------------------------------------------------------
 
 resource "aws_cloudwatch_event_rule" "sap_start" {
   count               = local.create_sap && var.sap_auto_schedule_enabled ? 1 : 0
   name                = "${var.project_name}-sap-auto-start"
-  description         = "Auto-start SAP instance on schedule"
+  description         = "Auto-start SAP instance (weekdays 8 AM CET / 9 AM CEST)"
   schedule_expression = var.sap_schedule_start
   state               = "ENABLED"
 }
@@ -219,7 +216,7 @@ resource "aws_lambda_permission" "sap_start_schedule" {
 resource "aws_cloudwatch_event_rule" "sap_stop" {
   count               = local.create_sap && var.sap_auto_schedule_enabled ? 1 : 0
   name                = "${var.project_name}-sap-auto-stop"
-  description         = "Auto-stop SAP instance on schedule"
+  description         = "Auto-stop SAP instance (weekdays 8 PM CET / 9 PM CEST)"
   schedule_expression = var.sap_schedule_stop
   state               = "ENABLED"
 }

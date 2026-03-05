@@ -1,29 +1,50 @@
 # ---------------------------------------------------------------------------
-# Example terraform.tfvars — Copy to terraform.tfvars and customize
+# Autonomy + SAP S/4HANA — terraform.tfvars (Frankfurt)
+# ---------------------------------------------------------------------------
+# Copy this to terraform.tfvars and customize.
+# terraform.tfvars is in .gitignore and will NOT be committed.
 # ---------------------------------------------------------------------------
 
-aws_region   = "us-east-1"
+aws_region   = "eu-central-1" # Frankfurt
 project_name = "autonomy"
 environment  = "dev"
 
-# SSH key pair (must exist in AWS)
-ssh_key_name = "my-ec2-keypair"
+# --- SSH Key ---
+# Option A: Auto-generate (recommended — writes .pem to this directory)
+create_ssh_key = true
 
-# Restrict SSH to your IP (recommended)
-allowed_ssh_cidrs = ["YOUR_IP/32"]
-allowed_web_cidrs = ["0.0.0.0/0"]
+# Option B: Use existing key pair from AWS console
+# create_ssh_key = false
+# ssh_key_name   = "my-existing-keypair"
 
-# Autonomy instance
-autonomy_instance_type = "t3.xlarge"    # 4 vCPU, 16 GB — $0.17/hr
+# --- Network Access ---
+# IMPORTANT: Replace with your actual IP! Run: curl -s ifconfig.me
+allowed_ssh_cidrs = ["YOUR_IP/32"]  # e.g. ["203.0.113.42/32"]
+allowed_web_cidrs = ["0.0.0.0/0"]   # Or restrict to your IP too
+
+# --- Autonomy Instance ---
+autonomy_instance_type = "t3.xlarge"    # 4 vCPU, 16 GB — ~EUR 0.19/hr
 autonomy_volume_size   = 100            # GB
+autonomy_repo_url      = "https://github.com/your-org/Autonomy.git"
 
-# SAP S/4HANA instance
-# Leave empty to skip SAP provisioning (deploy Autonomy first)
-sap_ami_id       = ""                   # Set after SAP CAL export
-sap_instance_type = "r5.4xlarge"        # 16 vCPU, 128 GB — $3.02/hr
-sap_volume_size   = 500                 # GB
+# --- SAP CAL ---
+# Go to cal.sap.com > Accounts > Create > AWS
+# SAP CAL shows you the Account ID and External ID to trust.
+# Set both, then terraform apply creates the IAM role.
+sap_cal_account_id  = "" # 12-digit AWS account ID from SAP CAL
+sap_cal_external_id = "" # External ID from SAP CAL
 
-# SAP auto start/stop schedule (UTC)
-sap_auto_schedule_enabled = true
-sap_schedule_start = "cron(0 13 ? * MON-FRI *)"  # 8 AM ET
-sap_schedule_stop  = "cron(0 1 ? * MON-FRI *)"   # 8 PM ET
+# --- SAP S/4HANA Instance ---
+# Phase 2: After SAP CAL provisions the instance, either:
+#   a) Create an AMI from the CAL instance and set it here
+#   b) Import the CAL instance: terraform import aws_instance.sap[0] i-xxx
+sap_ami_id        = ""            # Leave empty for Phase 1
+sap_instance_type = "r5.4xlarge"  # 16 vCPU, 128 GB — ~EUR 2.90/hr
+sap_volume_size   = 500           # GB (S/4HANA FAA minimum)
+
+# --- SAP Schedule ---
+# Disabled by default — use ./sap-start.sh and ./sap-stop.sh manually
+# Enable when you want automated weekday scheduling
+sap_auto_schedule_enabled = false
+sap_schedule_start = "cron(0 7 ? * MON-FRI *)"  # 8 AM CET / 9 AM CEST
+sap_schedule_stop  = "cron(0 19 ? * MON-FRI *)"  # 8 PM CET / 9 PM CEST

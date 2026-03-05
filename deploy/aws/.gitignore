@@ -4,8 +4,11 @@
 .terraform/
 .terraform.lock.hcl
 
-# User-specific variables
+# User-specific variables (contains IPs, external IDs)
 terraform.tfvars
 
 # Lambda zip artifacts
 *.zip
+
+# Generated SSH private keys
+*.pem
