@@ -32,7 +32,8 @@ ScenarioUserStrategyDB = ScenarioUserStrategyDB
 ScenarioUserInventory = ScenarioUserInventory
 ScenarioRound = ScenarioRound
 ScenarioUserPeriod = ScenarioUserPeriod
-from app.models.supply_chain_config import SupplyChainConfig, TransportationLane
+from app.models.supply_chain_config import SupplyChainConfig, TransportationLane, Site
+from app.models.sc_entities import InvPolicy, Product, InvLevel
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
 from app.models.agent_config import AgentConfig
 from app.models.user import User, UserTypeEnum
@@ -136,6 +137,64 @@ class MixedScenarioService:
         self.agent_manager = AgentManager()
         self._game_columns_cache: Optional[Sequence[str]] = None
         self._autonomy_probe_cache: Dict[str, Tuple[bool, str]] = {}
+
+    def _get_cost_rates_sync(self, config_id: int) -> tuple:
+        """Load holding and backlog cost rates from InvPolicy for a supply chain config.
+
+        Uses InvPolicy.holding_cost_range['min'] and backlog_cost_range['min'] for
+        the first product with an InvPolicy in the config. Falls back to
+        product.unit_cost * 0.25/52 (holding) and * 4 (backlog) when InvPolicy is absent.
+
+        Raises:
+            ValueError: If no product is found for the given config_id, with a descriptive
+                        message for debugging.
+        """
+        product = (
+            self.db.query(Product)
+            .join(InvPolicy, InvPolicy.product_id == Product.id)
+            .filter(Product.config_id == config_id)
+            .order_by(Product.id)
+            .first()
+        )
+        if not product:
+            product = (
+                self.db.query(Product)
+                .filter(Product.config_id == config_id)
+                .order_by(Product.id)
+                .first()
+            )
+        if not product:
+            raise ValueError(
+                f"No product found for supply chain config {config_id}. "
+                f"Cannot compute cost rates without a Product record. "
+                f"Seed the Product table for config {config_id} before running scenarios."
+            )
+
+        unit_cost = float(product.unit_cost or 0.0)
+        default_holding = unit_cost * 0.25 / 52
+        default_backlog = default_holding * 4.0
+
+        site = (
+            self.db.query(Site)
+            .filter(Site.config_id == config_id)
+            .first()
+        )
+        inv_policy = None
+        if site:
+            inv_policy = (
+                self.db.query(InvPolicy)
+                .filter(InvPolicy.site_id == site.id, InvPolicy.product_id == product.id)
+                .first()
+            )
+        if inv_policy:
+            hcr = inv_policy.holding_cost_range or {}
+            bcr = inv_policy.backlog_cost_range or {}
+            holding = hcr.get("min", default_holding)
+            backlog = bcr.get("min", default_backlog)
+        else:
+            holding = default_holding
+            backlog = default_backlog
+        return holding, backlog
 
     @staticmethod
     def _coerce_dict(value: Any) -> Dict[str, Any]:
@@ -3609,10 +3668,21 @@ class MixedScenarioService:
             on_order_total = sum(max(0, int(v)) for v in state.on_order_by_item.values()) if state.on_order_by_item else 0
             order_total = sum(max(0, int(v)) for v in state.current_round_demand.values()) if state.current_round_demand else 0
 
-            # Simple cost model: per-unit holding/backlog using system_config minima as defaults
-            system_cfg = (cfg.get("system_config") or {})
-            holding_rate = float(system_cfg.get("min_holding_cost", 0.5) or 0.5)
-            backlog_rate = float(system_cfg.get("min_backlog_cost", 5.0) or 5.0)
+            # Per-unit holding/backlog cost rates from InvPolicy (config-derived, not hardcoded)
+            config_id = getattr(game, "supply_chain_config_id", None)
+            if config_id:
+                try:
+                    holding_rate, backlog_rate = self._get_cost_rates_sync(config_id)
+                except ValueError as _cost_err:
+                    raise ValueError(
+                        f"Cannot compute round costs for scenario {game.id}: {_cost_err}"
+                    ) from _cost_err
+            else:
+                raise ValueError(
+                    f"Scenario {game.id} has no supply_chain_config_id. "
+                    f"Cannot load cost rates from InvPolicy. "
+                    f"Ensure the scenario is linked to a supply chain config."
+                )
             policy = context.node_policies.get(node_key, {}) if hasattr(context, "node_policies") else {}
             lost_sales_total = sum(max(0, int(v)) for v in getattr(state, "lost_sales_by_item", {}).values())
             policy_lost_sale_rate = policy.get("lost_sale_cost") if isinstance(policy, Mapping) else None
@@ -6162,10 +6232,60 @@ class MixedScenarioService:
         node_policies = cfg.get("node_policies") or {}
         role_key = self._normalise_key(scenario_user_data.role.value)
         policy = node_policies.get(role_key, {})
-        try:
-            initial_inventory = int(policy.get("init_inventory", 12))
-        except (TypeError, ValueError):
-            initial_inventory = 12
+        raw_init = policy.get("init_inventory")
+        if raw_init is not None:
+            try:
+                initial_inventory = int(raw_init)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"init_inventory for role '{role_key}' in scenario {scenario_id} config "
+                    f"could not be parsed as an integer (got {raw_init!r}). "
+                    f"Fix the node_policies.init_inventory value in the scenario config."
+                )
+        else:
+            # No init_inventory in scenario config — load from InvLevel for this config
+            config_id = getattr(game, "supply_chain_config_id", None)
+            if config_id:
+                _inv_site = (
+                    self.db.query(Site)
+                    .filter(Site.config_id == config_id)
+                    .filter(Site.master_type.in_(["INVENTORY", "MANUFACTURER"]))
+                    .order_by(Site.id)
+                    .first()
+                )
+                _inv_level = None
+                if _inv_site:
+                    _product = (
+                        self.db.query(Product)
+                        .filter(Product.config_id == config_id)
+                        .order_by(Product.id)
+                        .first()
+                    )
+                    if _product:
+                        _inv_level = (
+                            self.db.query(InvLevel)
+                            .filter(
+                                InvLevel.site_id == _inv_site.id,
+                                InvLevel.product_id == _product.id,
+                            )
+                            .first()
+                        )
+                if _inv_level and _inv_level.on_hand_qty is not None:
+                    initial_inventory = int(_inv_level.on_hand_qty)
+                else:
+                    raise ValueError(
+                        f"No init_inventory configured for role '{role_key}' in scenario {scenario_id}, "
+                        f"and no InvLevel record found for config {config_id}. "
+                        f"Set init_inventory in the node_policies config or seed InvLevel records "
+                        f"for supply chain config {config_id}."
+                    )
+            else:
+                raise ValueError(
+                    f"Scenario {scenario_id} has no supply_chain_config_id and no init_inventory "
+                    f"in node_policies for role '{role_key}'. "
+                    f"Cannot initialize inventory without either a node_policies.init_inventory value "
+                    f"or a linked supply chain config with InvLevel records."
+                )
 
         inventory = ScenarioUserInventory(
             scenario_user=scenario_user,
@@ -8385,9 +8505,15 @@ class MixedScenarioService:
                 # If human ordered less, AI would have had less backlog but higher holding cost
                 order_diff = human_decision - ai_suggestion
 
-                # Holding cost per unit ~ $0.50, backlog cost per unit ~ $1.00
-                holding_cost_rate = 0.50
-                backlog_cost_rate = 1.00
+                # Load cost rates from InvPolicy for the scenario's config
+                _feedback_config_id = getattr(game, "supply_chain_config_id", None)
+                if _feedback_config_id:
+                    holding_cost_rate, backlog_cost_rate = self._get_cost_rates_sync(_feedback_config_id)
+                else:
+                    raise ValueError(
+                        f"Cannot compute RLHF counterfactual costs for scenario {game.id}: "
+                        f"no supply_chain_config_id found. Ensure the scenario is linked to a supply chain config."
+                    )
 
                 ai_outcome = {
                     "total_cost": human_outcome["total_cost"] + (order_diff * holding_cost_rate),
@@ -9052,9 +9178,27 @@ class MixedScenarioService:
                 pr.backorders_after = abs(pr.inventory_after)
                 pr.inventory_after = 0
             
-            # Calculate costs (simplified)
-            pr.holding_cost = pr.inventory_after * 0.5  # $0.5 per unit per round
-            pr.backorder_cost = pr.backorders_after * 2  # $2 per backorder
+            # Calculate costs using InvPolicy rates for the scenario's config
+            scenario_user_obj = self.db.query(ScenarioUser).filter(
+                ScenarioUser.id == pr.scenario_user_id
+            ).first()
+            config_id = None
+            if scenario_user_obj and scenario_user_obj.scenario_id:
+                from app.models.scenario import Scenario as _Scenario
+                _scenario = self.db.query(_Scenario).filter(
+                    _Scenario.id == scenario_user_obj.scenario_id
+                ).first()
+                config_id = getattr(_scenario, "supply_chain_config_id", None)
+            if config_id:
+                _holding_rate, _backlog_rate = self._get_cost_rates_sync(config_id)
+            else:
+                raise ValueError(
+                    f"Cannot compute period costs for scenario_user {pr.scenario_user_id}: "
+                    f"no supply_chain_config_id found on the scenario. "
+                    f"Ensure the scenario is linked to a supply chain config."
+                )
+            pr.holding_cost = pr.inventory_after * _holding_rate
+            pr.backorder_cost = pr.backorders_after * _backlog_rate
             pr.total_cost = pr.holding_cost + pr.backorder_cost
             
             # Update inventory for next round

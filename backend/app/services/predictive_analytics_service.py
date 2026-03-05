@@ -553,15 +553,25 @@ class PredictiveAnalyticsService:
             return max(0, predicted_order)
 
     async def _predict_cost(self, features: np.ndarray) -> float:
-        """Predict cost from features."""
-        # Simple heuristic
-        inventory = features[0]
-        backlog = features[1]
-        holding_cost_rate = 0.5
-        backlog_cost_rate = 1.0
+        """Predict cost from features using historically-derived cost rates.
 
-        predicted_cost = inventory * holding_cost_rate + backlog * backlog_cost_rate
-        return predicted_cost
+        features[6] = holding_cost (actual per-period cost from ScenarioUserPeriod.holding_cost)
+        features[7] = backlog_cost (actual per-period cost from ScenarioUserPeriod.backlog_cost)
+
+        Cost rates are derived from actual historical costs divided by their corresponding
+        quantities to ensure rates reflect real InvPolicy data, not hardcoded Beer Game values.
+        """
+        inventory = float(features[0])
+        backlog = float(features[1])
+        last_holding_cost = float(features[6])  # actual historical holding cost
+        last_backlog_cost = float(features[7])   # actual historical backlog cost
+
+        # Derive effective rates from historical actuals
+        # (avoids hardcoding Beer Game-specific $0.50/$1.00 defaults)
+        holding_cost_rate = last_holding_cost / inventory if inventory > 0 else last_holding_cost
+        backlog_cost_rate = last_backlog_cost / backlog if backlog > 0 else last_backlog_cost
+
+        return inventory * holding_cost_rate + backlog * backlog_cost_rate
 
     async def generate_insights_report(
         self,

@@ -322,7 +322,11 @@ class SCStateManager:
         )
         if product:
             return product.id
-        return f"TBG-CASES-{config_id}"
+        raise ValueError(
+            f"No product found for supply chain config {config_id}. "
+            f"Ensure at least one Product record with a matching InvPolicy exists for this config before executing rounds. "
+            f"Run the DB bootstrap or seed the Product and InvPolicy tables for config {config_id}."
+        )
 
     def _calculate_atp(self, inv_level: Optional[InvLevel]) -> float:
         """ATP = on_hand - allocated - safety_stock (floor 0)."""

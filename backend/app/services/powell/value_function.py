@@ -304,8 +304,22 @@ class ValueFunctionApproximator:
         """
         inventory = state.get('inventory', 0)
         backlog = state.get('backlog', 0)
-        holding_cost_per_unit = state.get('holding_cost_per_unit', 0.5)
-        backlog_cost_per_unit = state.get('backlog_cost_per_unit', 2.0)
+        holding_cost_per_unit = state.get('holding_cost_per_unit')
+        if holding_cost_per_unit is None:
+            raise ValueError(
+                "VFA state dict is missing 'holding_cost_per_unit'. "
+                "Load this from InvPolicy.holding_cost_range['min'] (or "
+                "product.unit_cost * 0.25 / 52 as fallback) for the site/product "
+                "before calling _compute_immediate_cost()."
+            )
+        backlog_cost_per_unit = state.get('backlog_cost_per_unit')
+        if backlog_cost_per_unit is None:
+            raise ValueError(
+                "VFA state dict is missing 'backlog_cost_per_unit'. "
+                "Load this from InvPolicy.backlog_cost_range['min'] (or "
+                "holding_cost_per_unit * 4 as fallback) for the site/product "
+                "before calling _compute_immediate_cost()."
+            )
         ordering_cost_per_unit = state.get('ordering_cost_per_unit', 0.0)
 
         holding_cost = holding_cost_per_unit * max(0, inventory)

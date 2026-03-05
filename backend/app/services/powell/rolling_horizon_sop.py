@@ -107,12 +107,24 @@ class RollingHorizonSOPConfig:
     recalibration_trigger_coverage_gap: float = 0.05  # Recalibrate if gap > 5%
     auto_recalibrate: bool = True
 
-    # Cost parameters
+    # Cost parameters — must be populated from InvPolicy before use.
+    # holding_cost: InvPolicy.holding_cost_range['min'] or unit_cost * 0.25/52
+    # backlog_cost: InvPolicy.backlog_cost_range['min'] or holding_cost * 4
     capacity_cost: float = 100.0
-    holding_cost: float = 0.5
-    backlog_cost: float = 2.0
+    holding_cost: float = 0.0
+    backlog_cost: float = 0.0
     expediting_cost: float = 5.0
     production_cost: float = 1.0
+
+    def __post_init__(self) -> None:
+        if self.holding_cost == 0.0 or self.backlog_cost == 0.0:
+            import warnings
+            warnings.warn(
+                "RollingHorizonSOPConfig.holding_cost and backlog_cost are 0.0 (unset). "
+                "Load from InvPolicy.holding_cost_range / backlog_cost_range for the "
+                "config/product before passing to RollingHorizonSOP.",
+                stacklevel=2,
+            )
 
 
 class RollingHorizonSOP:

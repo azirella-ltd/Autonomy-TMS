@@ -138,8 +138,8 @@ class MPCSupplyPlanner:
     def __init__(
         self,
         horizon: int = 12,
-        holding_cost: float = 0.5,
-        backlog_cost: float = 2.0,
+        holding_cost: float = 0.0,
+        backlog_cost: float = 0.0,
         production_cost: float = 1.0,
         expediting_cost: float = 5.0,
         use_scenarios: bool = True,
@@ -151,14 +151,32 @@ class MPCSupplyPlanner:
 
         Args:
             horizon: Planning horizon (periods)
-            holding_cost: Cost per unit per period of inventory
-            backlog_cost: Cost per unit per period of backlog
+            holding_cost: Per-unit per-period inventory holding cost.
+                          Load from InvPolicy.holding_cost_range['min'] or
+                          product.unit_cost * 0.25 / 52 before constructing.
+            backlog_cost: Per-unit per-period backlog cost.
+                          Load from InvPolicy.backlog_cost_range['min'] or
+                          holding_cost * 4 before constructing.
             production_cost: Cost per unit produced
             expediting_cost: Premium for expedited production/delivery
             use_scenarios: Whether to use stochastic MPC
             n_scenarios: Number of scenarios for stochastic MPC
             safety_stock_periods: Target safety stock in periods of demand
         """
+        if holding_cost == 0.0:
+            import warnings
+            warnings.warn(
+                "MPCSupplyPlanner.holding_cost is 0.0 (unset). "
+                "Load from InvPolicy.holding_cost_range['min'] for the config/product.",
+                stacklevel=2,
+            )
+        if backlog_cost == 0.0:
+            import warnings
+            warnings.warn(
+                "MPCSupplyPlanner.backlog_cost is 0.0 (unset). "
+                "Load from InvPolicy.backlog_cost_range['min'] for the config/product.",
+                stacklevel=2,
+            )
         self.horizon = horizon
         self.holding_cost = holding_cost
         self.backlog_cost = backlog_cost

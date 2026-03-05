@@ -250,30 +250,27 @@ def check_autonomy_llm_access(
     try:
         session = AutonomyStrategistSession(model=target_model)
         session.reset()
-        # Minimal ping state adhering to the strategist schema
+        # Minimal ping state — uses AWS SC master_type, no Beer Game role names or hardcoded values
         ping_state: Dict[str, Any] = {
-            "role": "retailer",
-            "week": 0,
+            "master_type": "INVENTORY",
+            "period": 0,
             "toggles": {
-                "customer_demand_history_sharing": False,
+                "demand_history_sharing": False,
                 "volatility_signal_sharing": False,
                 "downstream_inventory_visibility": False,
             },
             "parameters": {
-                "holding_cost": 0.5,
-                "backlog_cost": 0.5,
-                "L_order": 2,
-                "L_ship": 2,
-                "L_prod": 4,
+                "holding_cost_rate": 0.0,
+                "backlog_cost_rate": 0.0,
+                "lead_time_periods": 1,
             },
             "local_state": {
-                "on_hand": 12,
-                "backlog": 0,
-                "incoming_orders_this_week": 0,
-                "received_shipment_this_week": 0,
-                "pipeline_orders_upstream": [0, 0],
-                "pipeline_shipments_inbound": [0, 0],
-                "optional": {},
+                "on_hand_qty": 0.0,
+                "backlog_qty": 0.0,
+                "incoming_orders": 0.0,
+                "received_shipment": 0.0,
+                "pipeline_orders": [],
+                "pipeline_shipments": [],
             },
         }
         session.decide(ping_state)

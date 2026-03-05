@@ -197,7 +197,7 @@ Respond in the following JSON format:
 IMPORTANT:
 - Order quantity must be a non-negative integer
 - Consider lead time when calculating order quantity
-- Balance inventory costs ($0.50/unit/round) vs. backlog costs ($1.00/unit/round)
+- Balance inventory holding costs vs. backlog/stockout costs (rates in the context above)
 - Aim for service level above 90%
 - Explain your reasoning clearly
 - Confidence should reflect uncertainty in demand forecasting
@@ -217,53 +217,56 @@ IMPORTANT:
         return prompt
 
     def _get_agent_objectives(self, agent_name: str) -> Dict[str, Any]:
-        """Get role-specific objectives and description."""
+        """Get site master_type-specific objectives and description.
 
+        agent_name should be an AWS SC master_type (INVENTORY, MANUFACTURER,
+        MARKET_SUPPLY, MARKET_DEMAND) or the site's display name.
+        """
         objectives_map = {
-            "retailer": {
-                "description": "You face customer demand directly and must balance customer service with inventory costs.",
+            "inventory": {
+                "description": "You are a storage and fulfillment site. Balance customer service against holding costs.",
                 "goals": [
                     "Maintain high service level (minimize backlog)",
                     "Keep inventory lean to reduce holding costs",
-                    "Anticipate demand trends early",
-                    "Build customer loyalty through reliability",
+                    "Smooth demand variability to reduce bullwhip effect upstream",
+                    "Coordinate replenishment with upstream sourcing rules",
                 ]
             },
-            "wholesaler": {
-                "description": "You buffer demand variability between retailers and distributors.",
+            "manufacturer": {
+                "description": "You transform input materials into output products. Manage production capacity and BOM constraints.",
                 "goals": [
-                    "Smooth order patterns to reduce bullwhip effect",
-                    "Maintain safety stock for demand spikes",
-                    "Coordinate with both upstream and downstream partners",
-                    "Balance responsiveness with cost efficiency",
+                    "Stabilize production schedules to reduce changeover costs",
+                    "Maintain buffer inventory for component availability",
+                    "Meet downstream demand reliably within capacity limits",
+                    "Optimize manufacturing throughput and yield",
                 ]
             },
-            "distributor": {
-                "description": "You manage the middle tier of the supply chain, coordinating between manufacturers and wholesalers.",
+            "market_supply": {
+                "description": "You are an upstream supply source. Release supply on demand within lead time constraints.",
                 "goals": [
-                    "Balance responsiveness with efficiency",
-                    "Anticipate wholesaler order patterns",
-                    "Maintain buffer inventory for variability",
-                    "Optimize total supply chain flow",
+                    "Fulfill replenishment orders reliably",
+                    "Communicate lead time changes promptly",
+                    "Minimize supply disruptions",
                 ]
             },
-            "factory": {
-                "description": "You produce goods with fixed lead time and capacity constraints.",
+            "market_demand": {
+                "description": "You represent terminal customer demand. Generate orders according to demand patterns.",
                 "goals": [
-                    "Stabilize production schedules",
-                    "Minimize production cost variability",
-                    "Meet distributor demand reliably",
-                    "Optimize manufacturing efficiency",
+                    "Place orders that reflect actual end-customer demand",
+                    "Avoid artificial demand amplification",
+                    "Provide accurate demand signals to upstream sites",
                 ]
             },
         }
 
+        # Normalize: strip spaces, lowercase, strip 'master_type_' prefix if present
+        key = agent_name.lower().strip().replace(" ", "_")
         return objectives_map.get(
-            agent_name.lower(),
+            key,
             {
-                "description": "Generic supply chain agent responsible for inventory management",
+                "description": f"Supply chain site agent ({agent_name}) responsible for inventory management",
                 "goals": [
-                    "Minimize total cost (inventory + backlog)",
+                    "Minimize total cost (holding + backlog)",
                     "Maintain adequate service level",
                     "Respond to demand changes efficiently",
                 ],

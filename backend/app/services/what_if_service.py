@@ -16,6 +16,8 @@ from app.models.chat import WhatIfAnalysis
 from app.models.scenario import Scenario
 from app.models.scenario_user import ScenarioUser
 from app.models.supply_chain import ScenarioUserPeriod
+from app.models.sc_entities import InvPolicy, Product
+from app.models.supply_chain_config import Site
 
 
 logger = logging.getLogger(__name__)
@@ -185,6 +187,11 @@ class WhatIfAnalysisService:
         recent_demand = [r.demand for r in recent_rounds if hasattr(r, 'demand') and r.demand is not None]
         projected_demand = sum(recent_demand) / len(recent_demand) if recent_demand else current_round.demand
 
+        # Load cost rates from InvPolicy for the scenario's config
+        holding_cost_rate, backlog_cost_rate = await self._get_cost_rates(
+            scenario_obj, scenario_user
+        )
+
         # Current state
         inventory = current_round.current_inventory
         backlog = current_round.current_backlog
@@ -204,8 +211,8 @@ class WhatIfAnalysisService:
         new_backlog = max(0, (backlog + demand_next) - fulfilled)
 
         # Calculate costs
-        inventory_cost = new_inventory * 0.50  # $0.50 per unit per round
-        backlog_cost = new_backlog * 1.00     # $1.00 per unit per round
+        inventory_cost = new_inventory * holding_cost_rate
+        backlog_cost = new_backlog * backlog_cost_rate
         total_cost = inventory_cost + backlog_cost
 
         # Baseline cost (with current order)
@@ -214,7 +221,7 @@ class WhatIfAnalysisService:
         baseline_fulfilled = min(baseline_available, backlog + demand_next)
         baseline_inventory = max(0, baseline_available - baseline_fulfilled)
         baseline_backlog = max(0, (backlog + demand_next) - baseline_fulfilled)
-        baseline_cost = (baseline_inventory * 0.50) + (baseline_backlog * 1.00)
+        baseline_cost = (baseline_inventory * holding_cost_rate) + (baseline_backlog * backlog_cost_rate)
 
         # Cost difference
         cost_difference = total_cost - baseline_cost
@@ -242,6 +249,74 @@ class WhatIfAnalysisService:
         logger.debug(f"Simulation result: {result}")
 
         return result
+
+    async def _get_cost_rates(self, scenario_obj, scenario_user) -> tuple:
+        """Load holding and backlog cost rates from InvPolicy for the scenario's config.
+
+        Falls back to product.unit_cost * 0.25/52 (holding) and * 4 (backlog).
+
+        Raises:
+            ValueError: If the scenario has no supply_chain_config_id or no product
+                        is found for the config — includes a descriptive message for debugging.
+        """
+        config_id = getattr(scenario_obj, 'supply_chain_config_id', None)
+        if not config_id:
+            raise ValueError(
+                f"Scenario {scenario_obj.id} has no supply_chain_config_id. "
+                f"Cannot load cost rates from InvPolicy. "
+                f"Ensure the scenario is linked to a supply chain config."
+            )
+
+        # Find the product for this config (prefer one with InvPolicy)
+        product_result = await self.db.execute(
+            select(Product)
+            .join(InvPolicy, InvPolicy.product_id == Product.id)
+            .filter(Product.config_id == config_id)
+            .order_by(Product.id)
+            .limit(1)
+        )
+        product = product_result.scalars().first()
+        if not product:
+            product_result2 = await self.db.execute(
+                select(Product).filter(Product.config_id == config_id).order_by(Product.id).limit(1)
+            )
+            product = product_result2.scalars().first()
+        if not product:
+            raise ValueError(
+                f"No product found for supply chain config {config_id}. "
+                f"Cannot load cost rates. Seed the Product table for config {config_id}."
+            )
+
+        unit_cost = float(product.unit_cost or 0.0)
+        default_holding = unit_cost * 0.25 / 52
+        default_backlog = default_holding * 4.0
+
+        # Find the first site for this config to look up InvPolicy
+        site_result = await self.db.execute(
+            select(Site).filter(Site.config_id == config_id).limit(1)
+        )
+        site = site_result.scalars().first()
+
+        inv_policy = None
+        if site:
+            ip_result = await self.db.execute(
+                select(InvPolicy).filter(
+                    InvPolicy.site_id == site.id,
+                    InvPolicy.product_id == product.id,
+                ).limit(1)
+            )
+            inv_policy = ip_result.scalars().first()
+
+        if inv_policy:
+            hcr = inv_policy.holding_cost_range or {}
+            bcr = inv_policy.backlog_cost_range or {}
+            holding_cost_rate = hcr.get("min", default_holding)
+            backlog_cost_rate = bcr.get("min", default_backlog)
+        else:
+            holding_cost_rate = default_holding
+            backlog_cost_rate = default_backlog
+
+        return holding_cost_rate, backlog_cost_rate
 
     async def _analyze_with_llm(
         self,

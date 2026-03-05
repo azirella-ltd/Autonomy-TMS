@@ -162,12 +162,26 @@ class TwoStageStochasticProgram:
             for s in scenarios:
                 s.probability /= total_prob
 
-        # Cost parameters (can be overridden)
-        self.capacity_cost = 100.0  # per unit of capacity
-        self.holding_cost = 0.5  # per unit per period
-        self.backlog_cost = 2.0  # per unit per period
-        self.expediting_cost = 5.0  # per unit expedited
-        self.production_cost = 1.0  # per unit produced
+        # Cost parameters — set via set_cost_rates() before calling solve().
+        # holding_cost: InvPolicy.holding_cost_range['min'] or unit_cost * 0.25/52
+        # backlog_cost: InvPolicy.backlog_cost_range['min'] or holding_cost * 4
+        self.capacity_cost = 100.0   # per unit of capacity
+        self.holding_cost = 0.0      # must be set from InvPolicy before solve()
+        self.backlog_cost = 0.0      # must be set from InvPolicy before solve()
+        self.expediting_cost = 5.0   # per unit expedited
+        self.production_cost = 1.0   # per unit produced
+
+    def set_cost_rates(self, holding_cost: float, backlog_cost: float) -> None:
+        """Set holding and backlog cost rates from InvPolicy before calling solve().
+
+        Args:
+            holding_cost: From InvPolicy.holding_cost_range['min'] or
+                          product.unit_cost * 0.25 / 52.
+            backlog_cost: From InvPolicy.backlog_cost_range['min'] or
+                          holding_cost * 4.
+        """
+        self.holding_cost = holding_cost
+        self.backlog_cost = backlog_cost
 
     def solve(
         self,
@@ -191,6 +205,20 @@ class TwoStageStochasticProgram:
         Returns:
             StochasticSolution with optimal decisions
         """
+        if self.holding_cost == 0.0:
+            raise ValueError(
+                "TwoStageStochasticProgram.holding_cost is 0.0 (unset). "
+                "Call set_cost_rates(holding_cost, backlog_cost) with values loaded from "
+                "InvPolicy.holding_cost_range['min'] (or product.unit_cost * 0.25 / 52) "
+                "before calling solve()."
+            )
+        if self.backlog_cost == 0.0:
+            raise ValueError(
+                "TwoStageStochasticProgram.backlog_cost is 0.0 (unset). "
+                "Call set_cost_rates(holding_cost, backlog_cost) with values loaded from "
+                "InvPolicy.backlog_cost_range['min'] (or holding_cost * 4) "
+                "before calling solve()."
+            )
         if not CVXPY_AVAILABLE:
             logger.warning("CVXPY not available, using heuristic solution")
             return self._solve_heuristic()

@@ -30,7 +30,7 @@ from app.models.scenario import Scenario
 
 # Aliases for backwards compatibility
 Game = Scenario
-from app.models.sc_entities import OutboundOrderLine, InvLevel
+from app.models.sc_entities import OutboundOrderLine, InvLevel, InvPolicy, Product
 from app.models.purchase_order import PurchaseOrder
 from app.models.transfer_order import TransferOrder
 from app.models.supply_chain_config import Node, SupplyChainConfig, TransportationLane
@@ -422,12 +422,10 @@ class SimulationExecutionEngine:
         """
         Calculate per-site costs and KPIs, save to RoundMetric table.
 
-        Classic simulation costs:
-        - Holding cost: $0.50 per unit per round
-        - Backlog cost: $1.00 per unit per round
+        Cost rates are loaded from InvPolicy for the config's product.
+        Fallback: unit_cost * 0.25 / 52 (holding), * 4 (backlog) from Product.unit_cost.
         """
-        holding_cost_rate = 0.5
-        backlog_cost_rate = 1.0
+        holding_cost_rate, backlog_cost_rate = await self._get_cost_rates(config_id, product_id)
 
         metrics_by_site = {}
 
@@ -829,3 +827,42 @@ class SimulationExecutionEngine:
         orders_fulfilled = fulfilled_result.scalar() or 0
 
         return int(orders_received), int(orders_fulfilled)
+
+    async def _get_cost_rates(self, config_id: int, product_id: str) -> tuple:
+        """Load holding and backlog cost rates from InvPolicy for the given config/product.
+
+        Uses InvPolicy.holding_cost_range['min'] and backlog_cost_range['min'].
+        Falls back to Product.unit_cost * 0.25/52 (holding) and * 4 (backlog).
+
+        Raises:
+            ValueError: If product_id is not found in the database for this config.
+        """
+        product_result = await self.db.execute(
+            select(Product).where(Product.id == product_id)
+        )
+        product = product_result.scalars().first()
+        if not product:
+            raise ValueError(
+                f"Product '{product_id}' not found in database for config {config_id}. "
+                f"Cannot compute cost rates. Ensure the Product table is seeded for this config."
+            )
+
+        unit_cost = float(product.unit_cost or 0.0)
+        default_holding = unit_cost * 0.25 / 52
+        default_backlog = default_holding * 4.0
+
+        inv_policy_result = await self.db.execute(
+            select(InvPolicy).where(InvPolicy.product_id == product_id).limit(1)
+        )
+        inv_policy = inv_policy_result.scalars().first()
+
+        if inv_policy:
+            hcr = inv_policy.holding_cost_range or {}
+            bcr = inv_policy.backlog_cost_range or {}
+            holding_cost_rate = hcr.get("min", default_holding)
+            backlog_cost_rate = bcr.get("min", default_backlog)
+        else:
+            holding_cost_rate = default_holding
+            backlog_cost_rate = default_backlog
+
+        return holding_cost_rate, backlog_cost_rate

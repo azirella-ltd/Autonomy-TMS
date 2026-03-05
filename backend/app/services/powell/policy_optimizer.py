@@ -536,12 +536,20 @@ def create_inventory_simulator(
     demand_mean: float,
     demand_std: float,
     lead_time: int,
-    holding_cost: float = 0.5,
-    stockout_cost: float = 2.0,
+    holding_cost: float,
+    stockout_cost: float,
     horizon: int = 52
 ) -> Callable[[Dict[str, float], int], float]:
     """
     Factory function to create inventory simulation for optimization.
+
+    Args:
+        holding_cost: Per-unit per-period holding cost.
+                      Load from InvPolicy.holding_cost_range['min'] or
+                      product.unit_cost * 0.25 / 52.
+        stockout_cost: Per-unit per-period backlog/stockout cost.
+                       Load from InvPolicy.backlog_cost_range['min'] or
+                       holding_cost * 4.
 
     Returns a simulator function compatible with PolicyOptimizer.
     """
