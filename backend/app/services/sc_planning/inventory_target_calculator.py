@@ -556,11 +556,15 @@ class InventoryTargetCalculator:
             rng = np.random.default_rng(42)
             ddlt_samples = np.zeros(n_simulations)
 
+            if len(lead_time_data) < 3:
+                raise ValueError(
+                    f"econ_optimal policy requires at least 3 lead time history "
+                    f"observations for product {product_id} at site {site_id}. "
+                    f"Found {len(lead_time_data)}. Populate VendorLeadTime records."
+                )
+
             for i in range(n_simulations):
-                if len(lead_time_data) > 0:
-                    lt = rng.choice(lead_time_data)
-                else:
-                    lt = lead_time
+                lt = rng.choice(lead_time_data)
                 lt_days = max(1, int(round(lt)))
                 daily_demands = rng.choice(demand_data, size=lt_days, replace=True)
                 ddlt_samples[i] = daily_demands.sum()
@@ -586,14 +590,13 @@ class InventoryTargetCalculator:
             return safety_stock
 
         else:
-            # Fallback for policies without ss_policy set (backward compatibility)
-            if policy.reorder_point:
-                return float(policy.reorder_point)
-
-            if policy.target_qty:
-                return float(policy.target_qty) * 0.20
-
-            return 0.0
+            raise ValueError(
+                f"Unknown or missing ss_policy '{policy.ss_policy}' for "
+                f"product {product_id} at site {site_id}. "
+                f"Supported policy types: abs_level, doc_dem, doc_fcst, sl, "
+                f"sl_fitted, conformal, sl_conformal_fitted, econ_optimal. "
+                f"Set InvPolicy.ss_policy explicitly for all tenants."
+            )
 
     def get_z_score(self, service_level: float) -> float:
         """

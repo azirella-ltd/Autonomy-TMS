@@ -217,9 +217,11 @@ class RewardCalculator:
     """
     Calculates rewards from TRM outcomes.
 
-    Each TRM type has different reward structures. Methods accept an optional
-    EconomicCostConfig to compute dollar-denominated rewards instead of
-    heuristic scaled values (Lokad economic drivers methodology).
+    Each TRM type has different reward structures. Economic reward methods
+    (po_creation, rebalancing, inventory_buffer) REQUIRE an EconomicCostConfig
+    with actual cost data — no defaults, no fallbacks. If cost data is not
+    available, a TypeError is raised requiring explicit configuration.
+    (Lokad economic drivers methodology.)
     """
 
     @staticmethod
@@ -242,89 +244,73 @@ class RewardCalculator:
     @staticmethod
     def rebalancing_reward(
         outcome: Dict[str, Any],
-        econ: Optional['EconomicCostConfig'] = None,
+        econ: 'EconomicCostConfig',
     ) -> float:
         """
         Rebalancing reward: service improvement minus transfer cost.
 
-        When EconomicCostConfig is provided, computes dollar-denominated
-        reward using actual economic costs (Lokad methodology). Without it,
-        falls back to legacy heuristic scaling.
+        Computes dollar-denominated reward using actual economic costs
+        (Lokad methodology). EconomicCostConfig is required — no fallbacks.
 
         outcome keys:
-        - service_improvement: percentage points improvement
-        - transfer_cost: actual cost incurred
         - was_executed: boolean
-        - units_transferred: quantity transferred (for economic mode)
-        - stockout_units_prevented: units of stockout avoided (for economic mode)
+        - transfer_cost: actual cost incurred
+        - stockout_units_prevented: units of stockout avoided
+
+        Raises:
+            TypeError: if econ is not provided
         """
+        if econ is None:
+            raise TypeError(
+                "EconomicCostConfig is required for rebalancing_reward. "
+                "Load from Product.unit_cost and InvPolicy cost parameters."
+            )
         if not outcome.get('was_executed', False):
             return -0.1  # Small penalty for rejected recommendations
 
-        if econ is not None:
-            # Dollar-denominated: value of stockouts prevented minus transfer cost
-            units_prevented = outcome.get('stockout_units_prevented', 0)
-            service_value = units_prevented * econ.stockout_cost_per_unit
-            cost_penalty = outcome.get('transfer_cost', 0)
-            return service_value - cost_penalty
-
-        # Legacy heuristic (no economic config)
-        service_value = outcome.get('service_improvement', 0) * 10
-        cost_penalty = outcome.get('transfer_cost', 0) / 1000
-
+        units_prevented = outcome.get('stockout_units_prevented', 0)
+        service_value = units_prevented * econ.stockout_cost_per_unit
+        cost_penalty = outcome.get('transfer_cost', 0)
         return service_value - cost_penalty
 
     @staticmethod
     def po_creation_reward(
         outcome: Dict[str, Any],
-        econ: Optional['EconomicCostConfig'] = None,
+        econ: 'EconomicCostConfig',
     ) -> float:
         """
         PO creation reward: avoid stockouts, minimize holding cost.
 
-        When EconomicCostConfig is provided, computes dollar-denominated
-        reward: stockout cost of unfulfilled demand minus holding cost of
-        excess inventory (Lokad methodology). Without it, falls back to
-        legacy heuristic scaling.
+        Computes dollar-denominated reward: stockout cost of unfulfilled
+        demand minus holding cost of excess inventory (Lokad methodology).
+        EconomicCostConfig is required — no fallbacks.
 
         outcome keys:
-        - days_of_supply_after: DOS after receipt
-        - target_dos: target days of supply
-        - ordering_cost: cost of the order
         - stockout_occurred: boolean
-        - unfulfilled_qty: units of demand not met (for economic mode)
-        - excess_qty: units above target (for economic mode)
-        - holding_days: days the excess was held (for economic mode)
+        - unfulfilled_qty: units of demand not met
+        - excess_qty: units above target
+        - holding_days: days the excess was held
+
+        Raises:
+            TypeError: if econ is not provided
         """
-        if econ is not None:
-            reward = 0.0
-            # Stockout cost: unfulfilled demand × stockout cost per unit
-            if outcome.get('stockout_occurred', False):
-                unfulfilled = outcome.get('unfulfilled_qty', 0)
-                reward -= unfulfilled * econ.stockout_cost_per_unit
-            # Holding cost: excess inventory × holding cost × days held
-            excess_qty = outcome.get('excess_qty', 0)
-            holding_days = outcome.get('holding_days', 1)
-            reward -= excess_qty * econ.holding_cost_per_unit_day * holding_days
-            # Ordering cost
-            reward -= econ.ordering_cost_per_order
-            return reward
-
-        # Legacy heuristic (no economic config)
+        if econ is None:
+            raise TypeError(
+                "EconomicCostConfig is required for po_creation_reward. "
+                "Load from Product.unit_cost and InvPolicy cost parameters."
+            )
+        reward = 0.0
+        # Stockout cost: unfulfilled demand × stockout cost per unit
         if outcome.get('stockout_occurred', False):
-            return -10.0
-
-        dos_after = outcome.get('days_of_supply_after', 0)
-        target = outcome.get('target_dos', 14)
-
-        dos_deviation = abs(dos_after - target) / target
-        dos_reward = 1.0 - min(1.0, dos_deviation)
-
-        if dos_after > target * 1.5:
-            excess_penalty = (dos_after - target * 1.5) / target * 0.5
-            dos_reward -= excess_penalty
-
-        return dos_reward
+            unfulfilled = outcome.get('unfulfilled_qty', 0)
+            reward -= unfulfilled * econ.stockout_cost_per_unit
+        # Holding cost: excess inventory × holding cost × days held
+        excess_qty = outcome.get('excess_qty', 0)
+        holding_days = outcome.get('holding_days', 1)
+        reward -= excess_qty * econ.holding_cost_per_unit_day * holding_days
+        # Ordering cost
+        reward -= econ.ordering_cost_per_order
+        return reward
 
     @staticmethod
     def order_tracking_reward(outcome: Dict[str, Any]) -> float:
@@ -360,59 +346,38 @@ class RewardCalculator:
     @staticmethod
     def inventory_buffer_reward(
         outcome: Dict[str, Any],
-        econ: Optional['EconomicCostConfig'] = None,
+        econ: 'EconomicCostConfig',
     ) -> float:
         """
         Inventory buffer reward: balance stockout prevention vs excess cost.
 
-        When EconomicCostConfig is provided, computes dollar-denominated
-        reward using actual holding and stockout costs (Lokad methodology).
-        Without it, falls back to legacy heuristic scaling.
+        Computes dollar-denominated reward using actual holding and stockout
+        costs (Lokad methodology). EconomicCostConfig is required — no fallbacks.
 
         outcome keys:
         - actual_stockout_occurred: boolean
-        - actual_dos_at_end: days of supply after the period
-        - target_dos: target days of supply
-        - excess_inventory_cost: cost of holding excess
-        - multiplier_applied: the SS multiplier that was applied
-        - stockout_qty: units of stockout (for economic mode)
-        - excess_qty: units above target SS (for economic mode)
-        - period_days: length of evaluation period (for economic mode)
+        - stockout_qty: units of stockout
+        - excess_qty: units above target SS
+        - period_days: length of evaluation period
+
+        Raises:
+            TypeError: if econ is not provided
         """
-        if econ is not None:
-            reward = 0.0
-            # Stockout cost
-            if outcome.get('actual_stockout_occurred', False):
-                stockout_qty = outcome.get('stockout_qty', 0)
-                reward -= stockout_qty * econ.stockout_cost_per_unit
-            # Holding cost for excess above target
-            excess_qty = outcome.get('excess_qty', 0)
-            period_days = outcome.get('period_days', 1)
-            reward -= excess_qty * econ.holding_cost_per_unit_day * period_days
-            return reward
-
-        # Legacy heuristic (no economic config)
+        if econ is None:
+            raise TypeError(
+                "EconomicCostConfig is required for inventory_buffer_reward. "
+                "Load from Product.unit_cost and InvPolicy cost parameters."
+            )
+        reward = 0.0
+        # Stockout cost
         if outcome.get('actual_stockout_occurred', False):
-            stockout_penalty = -2.0
-        else:
-            stockout_penalty = 0.5
-
-        actual_dos = outcome.get('actual_dos_at_end', 0)
-        target_dos = outcome.get('target_dos', 14)
-        if target_dos > 0:
-            dos_deviation = abs(actual_dos - target_dos) / target_dos
-            dos_reward = 1.0 - min(1.0, dos_deviation)
-        else:
-            dos_reward = 0.0
-
-        excess_cost = outcome.get('excess_inventory_cost', 0)
-        excess_penalty = -min(1.0, excess_cost / 1000)
-
-        multiplier = outcome.get('multiplier_applied', 1.0)
-        stability = 1.0 - min(1.0, abs(multiplier - 1.0) * 2)
-        stability_bonus = stability * 0.3
-
-        return stockout_penalty * 0.4 + dos_reward * 0.3 + excess_penalty * 0.2 + stability_bonus * 0.1
+            stockout_qty = outcome.get('stockout_qty', 0)
+            reward -= stockout_qty * econ.stockout_cost_per_unit
+        # Holding cost for excess above target
+        excess_qty = outcome.get('excess_qty', 0)
+        period_days = outcome.get('period_days', 1)
+        reward -= excess_qty * econ.holding_cost_per_unit_day * period_days
+        return reward
 
     @staticmethod
     def signal_attribution_bonus(outcome: Dict[str, Any]) -> float:
