@@ -133,11 +133,93 @@ class MetricRewardBreakdown:
     metric_config: MetricConfig
 
 
+@dataclass
+class EconomicCostConfig:
+    """Economic cost parameters for reward calculation.
+
+    Replaces heuristic scaling (/1000, -10.0 magic numbers) with actual
+    economic costs derived from InvPolicy and Product.unit_cost. This
+    implements Lokad's principle that optimization should be measured in
+    dollars, not arbitrary penalty units.
+
+    All fields are REQUIRED — no defaults. If cost data is not available
+    in the supply chain configuration, callers must raise an error rather
+    than silently falling back to heuristic values.
+    """
+    holding_cost_per_unit_day: float
+    stockout_cost_per_unit: float
+    ordering_cost_per_order: float
+    unit_cost: float
+
+    def __post_init__(self):
+        if self.holding_cost_per_unit_day <= 0:
+            raise ValueError(
+                f"holding_cost_per_unit_day must be positive, got {self.holding_cost_per_unit_day}. "
+                "Compute from Product.unit_cost * annual_holding_rate / 365."
+            )
+        if self.stockout_cost_per_unit <= 0:
+            raise ValueError(
+                f"stockout_cost_per_unit must be positive, got {self.stockout_cost_per_unit}. "
+                "Compute from holding_cost * stockout_multiplier."
+            )
+        if self.ordering_cost_per_order <= 0:
+            raise ValueError(
+                f"ordering_cost_per_order must be positive, got {self.ordering_cost_per_order}. "
+                "Load from SourcingRules or supply chain configuration."
+            )
+        if self.unit_cost <= 0:
+            raise ValueError(
+                f"unit_cost must be positive, got {self.unit_cost}. "
+                "Load from Product.unit_cost."
+            )
+
+    @classmethod
+    def from_product_cost(
+        cls,
+        unit_cost: float,
+        annual_holding_rate: float,
+        stockout_multiplier: float,
+        ordering_cost: float,
+    ) -> 'EconomicCostConfig':
+        """Create from product unit cost and cost ratios.
+
+        All parameters are required. Raises ValueError if any are missing
+        or non-positive.
+        """
+        if unit_cost is None or unit_cost <= 0:
+            raise ValueError(
+                f"unit_cost is required and must be positive, got {unit_cost}. "
+                "Load from Product.unit_cost in supply chain configuration."
+            )
+        if annual_holding_rate is None or annual_holding_rate <= 0:
+            raise ValueError(
+                f"annual_holding_rate is required and must be positive, got {annual_holding_rate}."
+            )
+        if stockout_multiplier is None or stockout_multiplier <= 0:
+            raise ValueError(
+                f"stockout_multiplier is required and must be positive, got {stockout_multiplier}."
+            )
+        if ordering_cost is None or ordering_cost <= 0:
+            raise ValueError(
+                f"ordering_cost is required and must be positive, got {ordering_cost}. "
+                "Load from SourcingRules or supply chain configuration."
+            )
+        holding = unit_cost * annual_holding_rate / 365.0
+        return cls(
+            holding_cost_per_unit_day=holding,
+            stockout_cost_per_unit=holding * stockout_multiplier,
+            ordering_cost_per_order=ordering_cost,
+            unit_cost=unit_cost,
+        )
+
+
 class RewardCalculator:
     """
     Calculates rewards from TRM outcomes.
 
-    Each TRM type has different reward structures.
+    Each TRM type has different reward structures. Methods accept an optional
+    EconomicCostConfig to compute dollar-denominated rewards instead of
+    heuristic scaled values (Lokad economic drivers methodology).
     """
 
     @staticmethod
@@ -158,45 +240,86 @@ class RewardCalculator:
         return (fill_rate + on_time_bonus) * priority_weight
 
     @staticmethod
-    def rebalancing_reward(outcome: Dict[str, Any]) -> float:
+    def rebalancing_reward(
+        outcome: Dict[str, Any],
+        econ: Optional['EconomicCostConfig'] = None,
+    ) -> float:
         """
-        Rebalancing reward: service improvement minus transfer cost
+        Rebalancing reward: service improvement minus transfer cost.
+
+        When EconomicCostConfig is provided, computes dollar-denominated
+        reward using actual economic costs (Lokad methodology). Without it,
+        falls back to legacy heuristic scaling.
 
         outcome keys:
         - service_improvement: percentage points improvement
         - transfer_cost: actual cost incurred
         - was_executed: boolean
+        - units_transferred: quantity transferred (for economic mode)
+        - stockout_units_prevented: units of stockout avoided (for economic mode)
         """
         if not outcome.get('was_executed', False):
             return -0.1  # Small penalty for rejected recommendations
 
-        service_value = outcome.get('service_improvement', 0) * 10  # Scale up
-        cost_penalty = outcome.get('transfer_cost', 0) / 1000  # Normalize
+        if econ is not None:
+            # Dollar-denominated: value of stockouts prevented minus transfer cost
+            units_prevented = outcome.get('stockout_units_prevented', 0)
+            service_value = units_prevented * econ.stockout_cost_per_unit
+            cost_penalty = outcome.get('transfer_cost', 0)
+            return service_value - cost_penalty
+
+        # Legacy heuristic (no economic config)
+        service_value = outcome.get('service_improvement', 0) * 10
+        cost_penalty = outcome.get('transfer_cost', 0) / 1000
 
         return service_value - cost_penalty
 
     @staticmethod
-    def po_creation_reward(outcome: Dict[str, Any]) -> float:
+    def po_creation_reward(
+        outcome: Dict[str, Any],
+        econ: Optional['EconomicCostConfig'] = None,
+    ) -> float:
         """
-        PO creation reward: avoid stockouts, minimize holding cost
+        PO creation reward: avoid stockouts, minimize holding cost.
+
+        When EconomicCostConfig is provided, computes dollar-denominated
+        reward: stockout cost of unfulfilled demand minus holding cost of
+        excess inventory (Lokad methodology). Without it, falls back to
+        legacy heuristic scaling.
 
         outcome keys:
         - days_of_supply_after: DOS after receipt
         - target_dos: target days of supply
         - ordering_cost: cost of the order
         - stockout_occurred: boolean
+        - unfulfilled_qty: units of demand not met (for economic mode)
+        - excess_qty: units above target (for economic mode)
+        - holding_days: days the excess was held (for economic mode)
         """
+        if econ is not None:
+            reward = 0.0
+            # Stockout cost: unfulfilled demand × stockout cost per unit
+            if outcome.get('stockout_occurred', False):
+                unfulfilled = outcome.get('unfulfilled_qty', 0)
+                reward -= unfulfilled * econ.stockout_cost_per_unit
+            # Holding cost: excess inventory × holding cost × days held
+            excess_qty = outcome.get('excess_qty', 0)
+            holding_days = outcome.get('holding_days', 1)
+            reward -= excess_qty * econ.holding_cost_per_unit_day * holding_days
+            # Ordering cost
+            reward -= econ.ordering_cost_per_order
+            return reward
+
+        # Legacy heuristic (no economic config)
         if outcome.get('stockout_occurred', False):
-            return -10.0  # Large penalty for stockout
+            return -10.0
 
         dos_after = outcome.get('days_of_supply_after', 0)
         target = outcome.get('target_dos', 14)
 
-        # Reward being close to target DOS
         dos_deviation = abs(dos_after - target) / target
         dos_reward = 1.0 - min(1.0, dos_deviation)
 
-        # Penalize excess inventory
         if dos_after > target * 1.5:
             excess_penalty = (dos_after - target * 1.5) / target * 0.5
             dos_reward -= excess_penalty
@@ -235,9 +358,16 @@ class RewardCalculator:
         return base_reward + speed_bonus + cost_bonus
 
     @staticmethod
-    def inventory_buffer_reward(outcome: Dict[str, Any]) -> float:
+    def inventory_buffer_reward(
+        outcome: Dict[str, Any],
+        econ: Optional['EconomicCostConfig'] = None,
+    ) -> float:
         """
-        Inventory buffer reward: balance stockout prevention vs excess cost
+        Inventory buffer reward: balance stockout prevention vs excess cost.
+
+        When EconomicCostConfig is provided, computes dollar-denominated
+        reward using actual holding and stockout costs (Lokad methodology).
+        Without it, falls back to legacy heuristic scaling.
 
         outcome keys:
         - actual_stockout_occurred: boolean
@@ -245,14 +375,28 @@ class RewardCalculator:
         - target_dos: target days of supply
         - excess_inventory_cost: cost of holding excess
         - multiplier_applied: the SS multiplier that was applied
+        - stockout_qty: units of stockout (for economic mode)
+        - excess_qty: units above target SS (for economic mode)
+        - period_days: length of evaluation period (for economic mode)
         """
-        # Heavy penalty for stockouts
+        if econ is not None:
+            reward = 0.0
+            # Stockout cost
+            if outcome.get('actual_stockout_occurred', False):
+                stockout_qty = outcome.get('stockout_qty', 0)
+                reward -= stockout_qty * econ.stockout_cost_per_unit
+            # Holding cost for excess above target
+            excess_qty = outcome.get('excess_qty', 0)
+            period_days = outcome.get('period_days', 1)
+            reward -= excess_qty * econ.holding_cost_per_unit_day * period_days
+            return reward
+
+        # Legacy heuristic (no economic config)
         if outcome.get('actual_stockout_occurred', False):
             stockout_penalty = -2.0
         else:
-            stockout_penalty = 0.5  # Reward for avoiding stockout
+            stockout_penalty = 0.5
 
-        # Reward being close to target DOS
         actual_dos = outcome.get('actual_dos_at_end', 0)
         target_dos = outcome.get('target_dos', 14)
         if target_dos > 0:
@@ -261,11 +405,9 @@ class RewardCalculator:
         else:
             dos_reward = 0.0
 
-        # Penalize excess inventory cost
         excess_cost = outcome.get('excess_inventory_cost', 0)
         excess_penalty = -min(1.0, excess_cost / 1000)
 
-        # Stability bonus: reward multipliers close to 1.0 (less disruption)
         multiplier = outcome.get('multiplier_applied', 1.0)
         stability = 1.0 - min(1.0, abs(multiplier - 1.0) * 2)
         stability_bonus = stability * 0.3

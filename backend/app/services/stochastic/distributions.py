@@ -485,6 +485,60 @@ class WeibullDistribution(Distribution):
         return np.sqrt(var)
 
 
+class LogLogisticDistribution(Distribution):
+    """Log-logistic (Fisk) distribution - fat-tailed, good for lead times.
+
+    Lokad identifies log-logistic as superior for lead time modeling due to its
+    heavier tails compared to lognormal. The distribution is parameterized by:
+    - alpha (scale): median of the distribution
+    - beta (shape): controls tail heaviness (lower = fatter tails)
+
+    scipy equivalent: stats.fisk(c=beta, scale=alpha)
+    """
+
+    def __init__(self, alpha: float, beta: float):
+        if alpha <= 0:
+            raise ValueError(f"alpha ({alpha}) must be > 0")
+        if beta <= 0:
+            raise ValueError(f"beta ({beta}) must be > 0")
+        self.alpha = float(alpha)
+        self.beta = float(beta)
+        self._dist = stats.fisk(c=self.beta, scale=self.alpha)
+
+    def sample(self, size: int = 1, seed: Optional[int] = None) -> np.ndarray:
+        rng = np.random.default_rng(seed)
+        # Log-logistic: transform uniform via quantile function
+        u = rng.uniform(0, 1, size)
+        return self.alpha * (u / (1 - u)) ** (1 / self.beta)
+
+    def pdf(self, x: np.ndarray) -> np.ndarray:
+        return self._dist.pdf(x)
+
+    def cdf(self, x: np.ndarray) -> np.ndarray:
+        return self._dist.cdf(x)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {'type': 'loglogistic', 'alpha': self.alpha, 'beta': self.beta}
+
+    @classmethod
+    def from_dict(cls, config: Dict[str, Any]) -> 'LogLogisticDistribution':
+        return cls(alpha=config['alpha'], beta=config['beta'])
+
+    def mean(self) -> float:
+        if self.beta > 1:
+            b_rad = np.pi / self.beta
+            return self.alpha * b_rad / np.sin(b_rad)
+        return float('inf')
+
+    def std(self) -> float:
+        if self.beta > 2:
+            b_rad = np.pi / self.beta
+            mean_val = self.alpha * b_rad / np.sin(b_rad)
+            second = self.alpha**2 * 2 * b_rad / np.sin(2 * b_rad)
+            return np.sqrt(second - mean_val**2)
+        return float('inf')
+
+
 class ExponentialDistribution(Distribution):
     """Exponential distribution - memoryless, inter-arrival times"""
 

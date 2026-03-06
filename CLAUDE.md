@@ -1027,6 +1027,21 @@ This consolidated knowledge base includes:
 - `04_Kinaxis_Master_Production_Scheduling.pdf` (1.7MB) - Kinaxis MPS guide
 - `14_Stanford_Stochastic_Programming_Solutions.pdf` (588KB) - Stochastic optimization
 
+**Lokad Quantitative Supply Chain Analysis** (in `docs/Knowledge/`):
+
+- `Lokad_Analysis_and_Integration_Guide.md` - **Comprehensive analysis of Lokad's methodology and technology** (75+ pages analyzed from lokad.com). Key concepts and integration opportunities:
+  - **Decision-Driven Optimization**: Output decisions (measured in $), not forecasts (measured in accuracy %). "Naked forecasts" (accuracy without decision integration) is an antipattern.
+  - **Prioritized Ordering**: Replace safety stock + reorder point with global marginal ROI ranking across all products. Fill from highest ROI down until budget/capacity binds.
+  - **Economic Loss Functions**: Train models with asymmetric economic losses (stockout cost ≠ holding cost), not MSE.
+  - **Non-Parametric Distributions**: Quantile grids (empirical PMFs) for intermittent/lumpy demand — no distributional assumptions needed.
+  - **Censored Demand**: Stockout periods censor true demand (actual was higher). Flag and handle, don't treat as real zeros.
+  - **Lead Time as First-Class Citizen**: Forecast lead times with same rigor as demand. Use log-logistic (fat-tailed), handle in-transit orders as censored observations.
+  - **CRPS Metric**: Continuous Ranked Probability Score as gold standard for probabilistic forecast evaluation. Same units as variable, backward-compatible with MAE.
+  - **Scenario-Based CFA Optimization**: Optimize policy parameters θ over Monte Carlo scenarios (CMA-ES/Bayesian optimization) — closes the gap between MC evaluation and MC optimization.
+  - **Antipatterns**: 22 named supply chain antipatterns including ABC analysis, safety stock formulas, EOQ, 100% service level targets, decoupling forecasting from optimization, S&OP resource destruction.
+  - **Stochastic Discrete Descent (SDD)**: Continuous parameterization of discrete optimization problems, SGD in continuous space, project back to integers. Applicable to TRM order quantity optimization.
+  - **Lokad's Gaps vs Autonomy**: No agent architecture (batch-only), no simulation/digital twin, no override learning, no conformal prediction, no multi-agent consensus, single-vendor dependency.
+
 **Warren B. Powell - Sequential Decision Analytics Framework** (in `docs/` and `docs/Knowledge/`):
 
 Powell's framework provides a unified theoretical foundation for sequential decision-making under uncertainty. These documents are essential references for policy optimization, belief state management, and AI agent design. See [POWELL_APPROACH.md](POWELL_APPROACH.md) for integration strategy.

@@ -3,7 +3,7 @@ Inventory Target Calculator - Step 2 of SC Planning Process
 
 Calculates target inventory levels based on inventory policies.
 
-Supports 6 safety stock policy types:
+Supports 7 safety stock policy types:
 1. abs_level - Absolute level (fixed quantity)
 2. doc_dem - Days of coverage (demand-based)
 3. doc_fcst - Days of coverage (forecast-based)
@@ -11,6 +11,8 @@ Supports 6 safety stock policy types:
 5. sl_fitted - Distribution-aware service level (fits Weibull/Lognormal/Gamma
    to demand and lead time data, uses Monte Carlo when distributions are non-Normal)
 6. conformal - Conformal prediction-based (distribution-free guarantees)
+7. econ_optimal - Marginal economic return (Lokad prioritized ordering):
+   stock one more unit only when expected stockout cost > holding cost
 
 King Formula (sl policy):
   - Accounts for BOTH demand variability AND lead time variability
@@ -492,13 +494,102 @@ class InventoryTargetCalculator:
             safety_stock = max(ss_fitted, ss_conformal)
             return safety_stock
 
+        elif policy.ss_policy == 'econ_optimal':
+            # Marginal economic return: find optimal stock level where the
+            # expected marginal value of one more unit turns negative.
+            #
+            # For each candidate stock level k:
+            #   marginal_value(k) = stockout_cost × P(demand > k-1) - holding_cost
+            # Optimal k* is the largest k where marginal_value(k) > 0.
+            #
+            # This is Lokad's "prioritized ordering" applied at the policy level.
+            # Requires economic cost data — raises error if not available.
+            #
+            # Reference: Lokad's quantitative supply chain methodology
+            product = await self._load_product(product_id)
+            if product is None or not product.unit_cost or product.unit_cost <= 0:
+                raise ValueError(
+                    f"econ_optimal policy requires Product.unit_cost for "
+                    f"product {product_id}. Set unit_cost in product master data."
+                )
+
+            unit_cost = float(product.unit_cost)
+            holding_rate = float(policy.annual_holding_rate or 0)
+            if holding_rate <= 0:
+                raise ValueError(
+                    f"econ_optimal policy requires InvPolicy.annual_holding_rate "
+                    f"for product {product_id} at site {site_id}. "
+                    f"Set annual_holding_rate (e.g. 0.25 for 25%/year) in inventory policy."
+                )
+
+            stockout_multiplier = float(policy.stockout_cost_multiplier or 0)
+            if stockout_multiplier <= 0:
+                raise ValueError(
+                    f"econ_optimal policy requires InvPolicy.stockout_cost_multiplier "
+                    f"for product {product_id} at site {site_id}. "
+                    f"Set stockout_cost_multiplier (e.g. 4.0) in inventory policy."
+                )
+
+            holding_cost_per_unit_day = unit_cost * holding_rate / 365.0
+            stockout_cost_per_unit = holding_cost_per_unit_day * stockout_multiplier
+
+            # Get lead time
+            lead_time = await self.get_replenishment_lead_time(product_id, site_id)
+
+            # Build demand-during-lead-time distribution
+            demand_data = await self._get_demand_history_array(
+                product_id, site_id, start_date, lookback_days=90
+            )
+            lead_time_data = await self._get_lead_time_history_array(
+                product_id, site_id
+            )
+
+            if len(demand_data) < 5:
+                raise ValueError(
+                    f"econ_optimal policy requires at least 5 demand history "
+                    f"observations for product {product_id} at site {site_id}. "
+                    f"Found {len(demand_data)}."
+                )
+
+            # Monte Carlo: sample demand-during-lead-time
+            n_simulations = 10_000
+            rng = np.random.default_rng(42)
+            ddlt_samples = np.zeros(n_simulations)
+
+            for i in range(n_simulations):
+                if len(lead_time_data) > 0:
+                    lt = rng.choice(lead_time_data)
+                else:
+                    lt = lead_time
+                lt_days = max(1, int(round(lt)))
+                daily_demands = rng.choice(demand_data, size=lt_days, replace=True)
+                ddlt_samples[i] = daily_demands.sum()
+
+            # Find optimal k where marginal value turns negative
+            max_reasonable = int(np.percentile(ddlt_samples, 99.9)) + 1
+            optimal_ss = 0
+
+            for k in range(1, max_reasonable + 1):
+                # P(demand > k-1) = probability of stockout at level k-1
+                p_stockout = np.mean(ddlt_samples > (k - 1))
+                marginal_value = stockout_cost_per_unit * p_stockout - holding_cost_per_unit_day
+                if marginal_value <= 0:
+                    optimal_ss = k - 1
+                    break
+            else:
+                optimal_ss = max_reasonable
+
+            # Safety stock = optimal level minus expected demand during lead time
+            expected_ddlt = float(np.mean(ddlt_samples))
+            safety_stock = max(0, optimal_ss - expected_ddlt)
+
+            return safety_stock
+
         else:
             # Fallback for policies without ss_policy set (backward compatibility)
-            # Use reorder_point as safety stock
             if policy.reorder_point:
                 return float(policy.reorder_point)
 
-            # Fallback to 20% of target_qty if no reorder point
             if policy.target_qty:
                 return float(policy.target_qty) * 0.20
 
@@ -741,6 +832,17 @@ class InventoryTargetCalculator:
     # ------------------------------------------------------------------
     # Distribution-aware helpers (sl_fitted policy)
     # ------------------------------------------------------------------
+
+    async def _load_product(self, product_id: str) -> Optional[Product]:
+        """Load Product record for economic cost lookup."""
+        async with SessionLocal() as db:
+            result = await db.execute(
+                select(Product).filter(
+                    Product.config_id == self.config_id,
+                    Product.product_id == product_id,
+                )
+            )
+            return result.scalar_one_or_none()
 
     async def _get_demand_history_array(
         self, product_id: str, site_id: str, start_date: date, lookback_days: int

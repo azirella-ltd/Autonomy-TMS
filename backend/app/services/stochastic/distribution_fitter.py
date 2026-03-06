@@ -148,6 +148,13 @@ def _scipy_to_platform(dist_type: str, scipy_params: tuple,
         params = {"alpha": float(a), "beta": float(b)}
         dist = BetaDistribution(alpha=a, beta=b)
 
+    elif dist_type == "loglogistic":
+        # scipy fisk.fit() returns (c, loc, scale) where c=shape(beta), scale=alpha(median)
+        c, _loc, scale = scipy_params
+        params = {"alpha": float(scale), "beta": float(c)}
+        from .distributions import LogLogisticDistribution
+        dist = LogLogisticDistribution(alpha=scale, beta=c)
+
     else:
         raise ValueError(f"Unsupported distribution type: {dist_type}")
 
@@ -163,6 +170,7 @@ def _get_scipy_dist(dist_type: str):
         "exponential": sp_stats.expon,
         "normal": sp_stats.norm,
         "beta": sp_stats.beta,
+        "loglogistic": sp_stats.fisk,
     }
     return mapping.get(dist_type)
 
@@ -176,6 +184,7 @@ def _count_params(dist_type: str) -> int:
         "exponential": 1,   # rate
         "normal": 2,        # mean, stddev
         "beta": 2,          # alpha, beta
+        "loglogistic": 2,   # alpha (scale/median), beta (shape)
     }
     return counts.get(dist_type, 2)
 
@@ -193,7 +202,7 @@ class DistributionFitter:
     - Yields: bounded [0,1] -> Beta, Truncated Normal
     """
 
-    LEAD_TIME_CANDIDATES = ["weibull", "lognormal", "gamma", "exponential"]
+    LEAD_TIME_CANDIDATES = ["weibull", "lognormal", "gamma", "loglogistic", "exponential"]
     DEMAND_CANDIDATES = ["lognormal", "gamma", "normal"]
     YIELD_CANDIDATES = ["beta"]
     GENERAL_CANDIDATES = ["normal", "lognormal", "gamma", "weibull", "exponential"]
@@ -206,6 +215,7 @@ class DistributionFitter:
         data: np.ndarray,
         variable_type: Optional[str] = None,
         candidates: Optional[List[str]] = None,
+        censored_mask: Optional[np.ndarray] = None,
     ) -> FitReport:
         """Fit candidate distributions to data and return ranked results.
 
@@ -213,6 +223,10 @@ class DistributionFitter:
             data: 1-D array of observed values
             variable_type: Hint for candidate selection ("lead_time", "demand", "yield")
             candidates: Explicit list of distribution types to try
+            censored_mask: Optional boolean array where True = censored observation
+                (e.g., stockout period where observed demand is a lower bound of
+                true demand). Censored observations are excluded from MLE fitting.
+                Inspired by Lokad's censored demand handling methodology.
 
         Returns:
             FitReport with best-fit distribution and all candidates ranked by AIC
@@ -220,8 +234,31 @@ class DistributionFitter:
         data = np.asarray(data, dtype=float).ravel()
         data = data[np.isfinite(data)]
 
+        # Apply censoring mask — exclude censored observations from fitting
+        if censored_mask is not None:
+            censored_mask = np.asarray(censored_mask, dtype=bool).ravel()
+            if len(censored_mask) == len(data):
+                n_censored = int(censored_mask.sum())
+                uncensored_data = data[~censored_mask]
+                if len(uncensored_data) >= self.MIN_SAMPLES_FOR_FIT:
+                    data = uncensored_data
+                    # Warning added below after warnings list is created
+                else:
+                    n_censored = 0  # Not enough uncensored data, use all
+            else:
+                censored_mask = None
+                n_censored = 0
+        else:
+            n_censored = 0
+
         warnings: List[str] = []
         n = len(data)
+
+        if n_censored > 0:
+            warnings.append(
+                f"Excluded {n_censored} censored observations (stockout periods). "
+                f"Fitting on {n} uncensored observations."
+            )
 
         # Data summary (always computed)
         summary = self._data_summary(data)

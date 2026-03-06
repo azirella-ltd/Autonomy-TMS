@@ -25,9 +25,11 @@ Multi-entity observation hooks:
 """
 
 import logging
+import math
 from datetime import datetime, timedelta, date
 from typing import Dict, List, Optional, Tuple
 
+import numpy as np
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
 
@@ -507,6 +509,20 @@ class ConformalOrchestrator:
         state.observation_count = (state.observation_count or 0) + 1
         state.point_estimate = predicted_value
 
+        # Compute running CRPS (Normal closed-form) for forecast quality tracking
+        if len(state.recent_residuals) >= MIN_OBSERVATIONS_FOR_CALIBRATION:
+            sigma = float(np.std(state.recent_residuals))
+            crps = self.compute_crps_normal(predicted_value, sigma, actual_value)
+            if state.distribution_fit is None:
+                state.distribution_fit = {}
+            # Exponential moving average of CRPS
+            prev_crps = state.distribution_fit.get("crps_score")
+            if prev_crps is not None:
+                alpha = 0.1  # EMA smoothing factor
+                state.distribution_fit["crps_score"] = alpha * crps + (1 - alpha) * prev_crps
+            else:
+                state.distribution_fit["crps_score"] = crps
+
         # Check drift when enough observations
         if len(state.coverage_history) >= MIN_OBSERVATIONS_FOR_CALIBRATION:
             window = state.coverage_history[-100:]
@@ -655,6 +671,115 @@ class ConformalOrchestrator:
             f"Emergency recalibration complete for {entity_type.value}:{entity_id}. "
             f"New interval: [{lower}, {upper}]"
         )
+
+    # =======================================================================
+    # CRPS: Continuous Ranked Probability Score (Lokad gold standard)
+    # =======================================================================
+
+    @staticmethod
+    def compute_crps_normal(mu: float, sigma: float, observed: float) -> float:
+        """Closed-form CRPS for Normal distribution.
+
+        CRPS(N(μ,σ²), x) = σ [z(2Φ(z)-1) + 2φ(z) - 1/√π]
+        where z = (x-μ)/σ, Φ = CDF, φ = PDF.
+
+        This is the gold standard metric for evaluating probabilistic
+        forecasts (Lokad methodology). Lower CRPS = better calibration.
+        """
+        from scipy import stats as sp_stats
+
+        if sigma <= 0:
+            # Degenerate: CRPS reduces to MAE
+            return abs(observed - mu)
+
+        z = (observed - mu) / sigma
+        phi_z = sp_stats.norm.pdf(z)
+        big_phi_z = sp_stats.norm.cdf(z)
+
+        return sigma * (z * (2 * big_phi_z - 1) + 2 * phi_z - 1.0 / math.sqrt(math.pi))
+
+    @staticmethod
+    def compute_crps_empirical(
+        cdf_values: np.ndarray,
+        grid_points: np.ndarray,
+        observed: float,
+    ) -> float:
+        """CRPS for discrete/empirical CDF via numerical integration.
+
+        CRPS = ∫(F(y) - 𝟙{y ≥ x})² dy
+
+        Use this when the forecast is a full distribution (quantile grid,
+        mixture, empirical CDF) rather than a parametric Normal.
+        """
+        indicator = (grid_points >= observed).astype(float)
+        integrand = (cdf_values - indicator) ** 2
+        return float(np.trapezoid(integrand, grid_points))
+
+    async def compute_crps_for_entity(
+        self,
+        db: AsyncSession,
+        entity_type: EntityType,
+        entity_id: str,
+    ) -> Optional[float]:
+        """Compute CRPS score from recent calibration log entries.
+
+        Uses the Normal closed-form with point_estimate as μ and
+        residual std dev as σ. Returns None if insufficient data.
+        """
+        result = await db.execute(
+            select(PowellBeliefState).where(
+                and_(
+                    PowellBeliefState.entity_type == entity_type,
+                    PowellBeliefState.entity_id == entity_id,
+                )
+            )
+        )
+        state = result.scalar_one_or_none()
+        if state is None or not state.recent_residuals:
+            return None
+
+        residuals = state.recent_residuals
+        if len(residuals) < MIN_OBSERVATIONS_FOR_CALIBRATION:
+            return None
+
+        mu = state.point_estimate or 0.0
+        sigma = float(np.std(residuals)) if len(residuals) > 1 else 0.0
+
+        # Compute CRPS for each recent observation and average
+        log_result = await db.execute(
+            select(PowellCalibrationLog)
+            .where(PowellCalibrationLog.belief_state_id == state.id)
+            .order_by(PowellCalibrationLog.observed_at.desc())
+            .limit(100)
+        )
+        logs = list(log_result.scalars().all())
+
+        if not logs:
+            return None
+
+        crps_scores = []
+        for log in logs:
+            if log.actual_value is not None and log.predicted_value is not None:
+                crps = self.compute_crps_normal(
+                    mu=log.predicted_value,
+                    sigma=sigma,
+                    observed=log.actual_value,
+                )
+                crps_scores.append(crps)
+
+        if not crps_scores:
+            return None
+
+        avg_crps = float(np.mean(crps_scores))
+
+        # Persist CRPS to belief state
+        if state.distribution_fit is None:
+            state.distribution_fit = {}
+        state.distribution_fit["crps_score"] = avg_crps
+        state.distribution_fit["crps_n_observations"] = len(crps_scores)
+        await db.flush()
+
+        return avg_crps
 
     # =======================================================================
     # GAP 5: Planning Staleness Check

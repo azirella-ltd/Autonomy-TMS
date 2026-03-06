@@ -23,7 +23,8 @@ from app.db.session import SessionLocal
 from app.models.sc_entities import (
     Forecast,
     OutboundOrderLine,
-    Reservation
+    Reservation,
+    InvLevel,
 )
 from .planning_types import DemandEstimate, DemandEstimateDict
 
@@ -45,18 +46,25 @@ class DemandProcessor:
         self,
         start_date: date,
         planning_horizon: int
-    ) -> Dict[Tuple[str, str, date], float]:
+    ) -> Tuple[Dict[Tuple[str, str, date], float], Dict[Tuple[str, str, date], bool]]:
         """
-        Process forecasts and actual orders to compute net demand
+        Process forecasts and actual orders to compute net demand.
+
+        Also detects censored demand periods (stockouts) where observed demand
+        is a lower bound of true demand. Censored flags should be used to
+        exclude these periods from distribution fitting. (Lokad methodology)
 
         Args:
             start_date: Planning start date
             planning_horizon: Number of days to plan ahead
 
         Returns:
-            Dict mapping (product_id, site_id, date) → net_demand_quantity
+            Tuple of:
+            - Dict mapping (product_id, site_id, date) → net_demand_quantity
+            - Dict mapping (product_id, site_id, date) → is_censored (True = stockout)
         """
         net_demand = {}
+        censored_flags = {}
         end_date = start_date + timedelta(days=planning_horizon)
 
         print(f"  Loading forecasts from {start_date} to {end_date}...")
@@ -71,11 +79,17 @@ class DemandProcessor:
         reservations = await self.load_reservations(start_date, planning_horizon)
         print(f"  ✓ Loaded {len(reservations)} reservation entries")
 
+        # Load inventory levels to detect stockout (censored demand) periods
+        print(f"  Loading inventory levels for censored demand detection...")
+        inv_levels = await self._load_inventory_levels(start_date, planning_horizon)
+        print(f"  ✓ Loaded {len(inv_levels)} inventory level entries")
+
         print(f"  Computing net demand...")
 
         # Consume forecast with actuals
         all_keys = set(forecasts.keys()) | set(actual_orders.keys()) | set(reservations.keys())
 
+        n_censored = 0
         for key in all_keys:
             product_id, site_id, demand_date = key
 
@@ -94,9 +108,49 @@ class DemandProcessor:
                 # Forecast covers actuals - use forecast
                 net_demand[key] = forecast_qty + reserved_qty
 
-        print(f"  ✓ Computed net demand for {len(net_demand)} entries")
+            # Censored demand detection: if inventory was zero or negative
+            # during this period, observed demand is a lower bound of true
+            # demand (stockout censoring). Flag for exclusion from fitting.
+            inv_key = (product_id, site_id, demand_date)
+            inv_qty = inv_levels.get(inv_key)
+            if inv_qty is not None and inv_qty <= 0:
+                censored_flags[key] = True
+                n_censored += 1
+            else:
+                censored_flags[key] = False
 
-        return net_demand
+        print(f"  ✓ Computed net demand for {len(net_demand)} entries "
+              f"({n_censored} censored/stockout periods detected)")
+
+        return net_demand, censored_flags
+
+    async def _load_inventory_levels(
+        self, start_date: date, horizon: int
+    ) -> Dict[Tuple[str, str, date], float]:
+        """Load inventory levels for censored demand detection.
+
+        Returns dict mapping (product_id, site_id, date) → on_hand_qty.
+        Periods with on_hand_qty <= 0 indicate stockout (censored demand).
+        """
+        async with SessionLocal() as db:
+            end_date = start_date + timedelta(days=horizon)
+
+            result = await db.execute(
+                select(InvLevel).filter(
+                    InvLevel.customer_id == self.tenant_id,
+                    InvLevel.config_id == self.config_id,
+                    InvLevel.inventory_date >= start_date,
+                    InvLevel.inventory_date < end_date,
+                )
+            )
+            levels = result.scalars().all()
+
+            inv_dict = {}
+            for lvl in levels:
+                key = (lvl.product_id, lvl.site_id, lvl.inventory_date)
+                inv_dict[key] = float(lvl.on_hand_qty or 0)
+
+            return inv_dict
 
     async def load_forecasts(
         self, start_date: date, horizon: int

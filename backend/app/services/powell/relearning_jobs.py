@@ -138,6 +138,20 @@ def register_relearning_jobs(scheduler_service: 'SyncSchedulerService') -> None:
     )
     logger.info("Registered Powell CDC retraining job (every 6h at :45)")
 
+    # Weekly Sunday 04:00: CFA Policy Optimization — re-optimize θ parameters
+    # Uses PolicyOptimizer (Differential Evolution) to find optimal inventory
+    # policy parameters across all active configs. Lokad principle: periodically
+    # re-optimize control variables against the latest stochastic distributions.
+    scheduler.add_job(
+        func=_run_cfa_optimization,
+        trigger=CronTrigger(day_of_week="sun", hour=4, minute=0),
+        id="powell_cfa_optimization",
+        name="Powell: CFA Policy Optimization (weekly)",
+        replace_existing=True,
+        misfire_grace_time=7200,
+    )
+    logger.info("Registered Powell CFA policy optimization job (Sunday at 04:00)")
+
     # Weekly Sunday 03:30: Data Drift Monitor — long-horizon distributional shift detection
     # "Canary in the coal mine" — detects input/error distribution shifts weeks before CDC fires
     # Scans 28/56/84-day windows for demand drift, forecast error drift, calibration drift
@@ -409,6 +423,103 @@ def _run_cdc_retraining() -> None:
         )
     except Exception as e:
         logger.error(f"CDC retraining job failed: {e}")
+    finally:
+        db.close()
+
+
+def _run_cfa_optimization() -> None:
+    """
+    Weekly CFA policy optimization using Differential Evolution.
+
+    For each active SupplyChainConfig, runs PolicyOptimizer.optimize()
+    on inventory policies and persists optimal θ to PowellPolicyParameters.
+
+    Implements Lokad's principle: control variables (policy parameters)
+    should be periodically re-optimized against the latest demand/lead-time
+    distributions rather than set once and forgotten.
+    """
+    from app.db.session import SessionLocal
+
+    logger.info("Starting weekly CFA policy optimization")
+
+    db = SessionLocal()
+    try:
+        from app.models.supply_chain_config import SupplyChainConfig
+        from app.services.powell.policy_optimizer import (
+            InventoryPolicyOptimizer,
+            PolicyParameter,
+        )
+        from app.models.powell import PowellPolicyParameters
+
+        configs = (
+            db.query(SupplyChainConfig)
+            .filter(SupplyChainConfig.is_active == True)
+            .all()
+        )
+
+        if not configs:
+            logger.info("CFA optimization: no active configs found, skipping")
+            return
+
+        total_optimized = 0
+        total_failed = 0
+
+        for config in configs:
+            try:
+                optimizer = InventoryPolicyOptimizer(
+                    db=db,
+                    config_id=config.id,
+                    tenant_id=config.tenant_id,
+                )
+                result = optimizer.optimize(method="differential_evolution")
+
+                if result and result.converged:
+                    # Persist optimal parameters
+                    for param_name, param_value in result.optimal_params.items():
+                        existing = (
+                            db.query(PowellPolicyParameters)
+                            .filter(
+                                PowellPolicyParameters.config_id == config.id,
+                                PowellPolicyParameters.parameter_name == param_name,
+                            )
+                            .first()
+                        )
+                        if existing:
+                            existing.parameter_value = param_value
+                            existing.updated_at = datetime.utcnow()
+                        else:
+                            db.add(PowellPolicyParameters(
+                                config_id=config.id,
+                                tenant_id=config.tenant_id,
+                                parameter_name=param_name,
+                                parameter_value=param_value,
+                                optimization_method="differential_evolution",
+                            ))
+
+                    db.commit()
+                    total_optimized += 1
+                    logger.info(
+                        f"CFA optimization completed for config {config.id} "
+                        f"('{config.name}'): cost={result.optimal_cost:.2f}, "
+                        f"iterations={result.iterations}"
+                    )
+                else:
+                    total_failed += 1
+                    logger.warning(
+                        f"CFA optimization did not converge for config {config.id}"
+                    )
+            except Exception as e:
+                total_failed += 1
+                logger.warning(
+                    f"CFA optimization failed for config {config.id}: {e}"
+                )
+
+        logger.info(
+            f"CFA policy optimization complete: {total_optimized} optimized, "
+            f"{total_failed} failed across {len(configs)} configs"
+        )
+    except Exception as e:
+        logger.error(f"CFA policy optimization job failed: {e}")
     finally:
         db.close()
 
