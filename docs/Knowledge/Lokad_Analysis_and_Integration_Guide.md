@@ -33,8 +33,8 @@ Lokad is a Paris-based supply chain optimization vendor (est. 2008) that has bui
 | Lokad Pillar | Autonomy Equivalent | Gap |
 |---|---|---|
 | All Possible Futures | Monte Carlo (1000+ scenarios), 20 distribution types, conformal prediction | None — strong alignment |
-| All Feasible Decisions | TRM agents enumerate discrete actions | Marginal ROI ranking not yet implemented |
-| Economic Drivers | Probabilistic Balanced Scorecard (Financial, Customer, Operational, Strategic) | Loss functions use MSE, not economic costs |
+| All Feasible Decisions | TRM agents enumerate discrete actions | `econ_optimal` policy implements marginal economic return |
+| Economic Drivers | Probabilistic Balanced Scorecard + `EconomicCostConfig` for dollar-denominated rewards | ✅ Closed — loss functions use actual economic costs |
 | Robotization | Agentic operating model (agents own decisions by default) | None — strong alignment |
 | Supply Chain Scientist | No direct equivalent | N/A — different business model |
 
@@ -53,9 +53,9 @@ Lokad is a Paris-based supply chain optimization vendor (est. 2008) that has bui
 
 **Lokad's alternative**: Probabilistic lead demand distributions → marginal economic return per unit → fill from highest ROI down until budget/capacity binds.
 
-**Autonomy's position**: Already partially aligned. `InventoryBufferTRM` treats the buffer as an "uncertainty absorber, NOT a hard demand target for MRP." The `sl_fitted` policy uses Monte Carlo DDLT for non-Normal distributions. However, the platform still offers `abs_level` and basic `sl` policies that rely on Normal assumptions.
+**Autonomy's position**: Substantially aligned. `InventoryBufferTRM` treats the buffer as an "uncertainty absorber, NOT a hard demand target for MRP." The `sl_fitted` policy uses Monte Carlo DDLT for non-Normal distributions. The `econ_optimal` policy (implemented March 2026) directly computes marginal economic return — the conceptual equivalent of Lokad's prioritized ordering applied at the policy level. The platform still offers `abs_level` and basic `sl` policies for backward compatibility, but `econ_optimal` is recommended for products with sufficient data history.
 
-**Action**: Implement marginal economic return scoring as a 5th policy type (`econ_optimal`). See Part 5 Priority #1.
+**Status**: ✅ Implemented — `econ_optimal` policy type with Monte Carlo marginal analysis. See POWELL_APPROACH.md §5.18.6.
 
 ### 2.2 ABC Analysis: "Actively Harmful"
 
@@ -231,7 +231,22 @@ Core principle: "Forecasts are intrinsically entangled with their underlying dec
 
 ## Part 5: Priority Enhancements for Autonomy (Ranked by Impact)
 
-### Priority 1 — Scenario-Based CFA Optimization (HIGH IMPACT, MEDIUM EFFORT)
+> **Implementation Status (March 2026)**: Priorities 1, 2, 5, 7, and 8 have been implemented. Priority 3 is partially addressed by the `econ_optimal` policy type. See POWELL_APPROACH.md §5.18 for full implementation details.
+>
+> | Priority | Status | Implementation |
+> |----------|--------|----------------|
+> | #1 CFA Optimization | ✅ Implemented | Weekly job in `relearning_jobs.py`, Differential Evolution via `PolicyOptimizer` |
+> | #2 Economic Loss Functions | ✅ Implemented | `EconomicCostConfig` in `trm_trainer.py`, 3 refactored reward methods |
+> | #3 Marginal ROI | ⚠️ Partial | `econ_optimal` policy type computes marginal return per product-location |
+> | #4 Non-Parametric PMFs | ❌ Not yet | Empirical distribution exists but PMF storage not added to forecast table |
+> | #5 Censored Demand | ✅ Implemented | `demand_processor.py` detects, `distribution_fitter.py` excludes |
+> | #6 StochasticValue Algebra | ❌ Not yet | |
+> | #7 CRPS Metric | ✅ Implemented | `conformal_orchestrator.py` — Normal closed-form + empirical integration |
+> | #8 Log-Logistic | ✅ Implemented | `LogLogisticDistribution` + fitter integration |
+> | #9 Censored Lead Time | ❌ Not yet | |
+> | #10-12 | ❌ Not yet | Infrastructure improvements |
+
+### Priority 1 — Scenario-Based CFA Optimization (HIGH IMPACT, MEDIUM EFFORT) ✅ IMPLEMENTED
 
 **What**: Implement optimization over Monte Carlo scenarios to extract optimal policy parameters θ.
 
@@ -248,7 +263,7 @@ Core principle: "Forecasts are intrinsically entangled with their underlying dec
 
 **Files to modify**: New service `backend/app/services/cfa_optimizer.py`, extend `stochastic_sampler.py` to accept parameterized θ, add scheduler entry in `relearning_jobs.py`
 
-### Priority 2 — Economic Loss Functions for TRM Training (HIGH IMPACT, LOW EFFORT)
+### Priority 2 — Economic Loss Functions for TRM Training (HIGH IMPACT, LOW EFFORT) ✅ IMPLEMENTED
 
 **What**: Replace generic MSE loss in TRM training with asymmetric economic loss functions.
 
@@ -284,7 +299,7 @@ These are differentiable, asymmetric, and economically grounded.
 
 **Files to modify**: `backend/app/services/stochastic/stochastic_sampler.py`, `backend/app/models/aws_sc_planning.py` (add JSONB column)
 
-### Priority 5 — Censored Demand Detection (MEDIUM IMPACT, LOW EFFORT)
+### Priority 5 — Censored Demand Detection (MEDIUM IMPACT, LOW EFFORT) ✅ IMPLEMENTED
 
 **What**: Flag periods where stockouts censored true demand. Exclude or up-weight censored periods in distribution fitting.
 
@@ -322,7 +337,7 @@ class StochasticValue:
 
 **Files to create**: `backend/app/services/stochastic/stochastic_value.py`
 
-### Priority 7 — CRPS as Primary Forecast Metric (MEDIUM IMPACT, LOW EFFORT)
+### Priority 7 — CRPS as Primary Forecast Metric (MEDIUM IMPACT, LOW EFFORT) ✅ IMPLEMENTED
 
 **What**: Add CRPS (Continuous Ranked Probability Score) alongside existing conformal prediction metrics as the primary probabilistic forecast quality score.
 
@@ -334,7 +349,7 @@ For discrete distributions: `CRPS(F, x) = Σ F(yₖ)² + Σ (F(yₖ) − 1)²` s
 
 **Files to modify**: `backend/app/services/conformal_orchestrator.py` (add CRPS computation), forecast evaluation endpoints
 
-### Priority 8 — Log-Logistic Distribution for Lead Times (LOW IMPACT, LOW EFFORT)
+### Priority 8 — Log-Logistic Distribution for Lead Times (LOW IMPACT, LOW EFFORT) ✅ IMPLEMENTED
 
 **What**: Add log-logistic as a candidate distribution in the distribution fitter, specifically targeting lead time data.
 

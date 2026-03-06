@@ -654,6 +654,48 @@ See [ESCALATION_ARCHITECTURE.md](docs/ESCALATION_ARCHITECTURE.md) for the full t
 
 ---
 
+## Part 11: Quantitative Supply Chain Economics — From Heuristic to Dollar-Denominated Decisions
+
+### The Problem with Heuristic Rewards
+
+Traditional planning AI optimizes proxy metrics — service level percentages, days of supply, normalized scores. The agents learn to hit these proxies without understanding the economic trade-offs that matter to the business. A 1% service level improvement at a $2 item is treated the same as at a $200 item. Holding cost penalties use fixed scaling factors rather than actual cost-per-unit-per-day.
+
+The platform now implements **dollar-denominated decision economics** throughout the agent stack, adopting principles from quantitative supply chain methodology: every stocking decision, every rebalancing transfer, and every purchase order is evaluated in terms of actual economic cost rather than heuristic scores.
+
+### Economic Loss Functions
+
+The `RewardCalculator` in `trm_trainer.py` now uses an `EconomicCostConfig` that loads actual holding cost, stockout cost, and ordering cost from the product's unit cost and the inventory policy parameters. All three cost components are **required** — the system raises an error if any are missing, enforcing explicit economic specification for every tenant.
+
+- **Holding cost**: `unit_cost × annual_holding_rate / 365` per unit per day
+- **Stockout cost**: `holding_cost × stockout_multiplier` per unit (typically 4x holding cost)
+- **Ordering cost**: Per-order fixed cost from sourcing rules
+
+Three reward methods — PO creation, inventory rebalancing, and inventory buffer — now compute rewards in dollar terms. An over-stocked warehouse generates a penalty proportional to `holding_cost × excess_units × days`, not a normalized `-10.0`. A stockout generates a penalty proportional to `stockout_cost × unfulfilled_units`, not a heuristic scaling factor.
+
+### Economically Optimal Safety Stock (`econ_optimal` Policy)
+
+A new inventory policy type implements **marginal economic return analysis**: for each candidate stock level, compute the expected marginal value of stocking one more unit. The optimal level is where the marginal cost of holding one more unit exceeds the marginal benefit of avoiding a stockout.
+
+This is computed via Monte Carlo simulation of demand-during-lead-time, requiring fitted demand and lead time distributions (no fallbacks to point estimates — historical data is required).
+
+### Probabilistic Forecast Scoring (CRPS)
+
+The conformal prediction orchestrator now computes the **Continuous Ranked Probability Score (CRPS)** — the gold standard for evaluating probabilistic forecasts. Unlike coverage and interval width (which measure calibration), CRPS measures the overall quality of the entire predictive distribution. It uses a closed-form solution for Normal distributions and numerical integration for empirical CDFs, tracked as an exponential moving average on each entity's belief state.
+
+### Censored Demand Detection
+
+When inventory hits zero, observed sales represent a lower bound of true demand — the demand was *censored* by the stockout. The demand processor now detects these periods by cross-referencing inventory levels, flags them, and excludes censored observations from distribution fitting. This prevents the systematic demand underestimation that occurs when stockout periods are treated as true demand observations.
+
+### Log-Logistic Distribution for Lead Times
+
+Lead time variability often exhibits fat-tailed behavior — most shipments arrive on time, but a significant minority arrives very late. The log-logistic distribution (scipy.stats.fisk) captures this pattern better than Weibull or lognormal alternatives. It is now included as a candidate in lead time distribution fitting.
+
+### Automated Policy Re-Optimization
+
+The CFA (Cost Function Approximation) policy optimizer — which performs global search over inventory policy parameters using Differential Evolution — is now scheduled as a weekly automated job. This closes the gap between having a sophisticated optimizer and actually running it regularly, ensuring policy parameters stay current as demand patterns and cost structures evolve.
+
+---
+
 ## Summary: The Architecture in One Paragraph
 
-Autonomy operates as a four-layer decision stack — strategic network analysis (GraphSAGE, weekly), tactical allocation (temporal GNN, daily), operational execution (TRM hive, milliseconds), and deterministic validation (engines, always) — where each layer constrains the layer below through policy parameters, directives, and hard constraints. Within each site, 11 narrow decision agents coordinate through a biologically-inspired signal bus with pheromone-like decay, organized into a six-phase decision cycle that ensures scouts observe before foragers act. Across sites, information flows along the supply chain DAG through inter-hive signals generated by the network-wide GNN, preserving local autonomy while maintaining global coherence. A conformal prediction router steers ~5% of low-confidence decisions to Claude Skills for deep reasoning, and every decision feeds a closed-loop learning pipeline — outcome collection, conformal calibration, Bayesian override tracking, and periodic retraining — that makes the system measurably smarter from every planning cycle it runs. Distribution-aware feature engineering replaces normal-distribution assumptions with MLE-fitted distributions for safety stock, demand classification, and TRM state vectors. A five-phase digital twin pipeline — behavioral cloning, coordinated simulation, stochastic stress-testing, copilot calibration, and autonomous relearning — takes agents from zero experience to production autonomy in 3-5 weeks. And when execution-level anomalies signal that strategic policy parameters are wrong, the Escalation Arbiter detects persistent directional drift and routes the problem to the appropriate higher tier — operational (tGNN refresh) or strategic (S&OP policy review) — closing the vertical feedback loop that connects execution outcomes to policy correction.
+Autonomy operates as a four-layer decision stack — strategic network analysis (GraphSAGE, weekly), tactical allocation (temporal GNN, daily), operational execution (TRM hive, milliseconds), and deterministic validation (engines, always) — where each layer constrains the layer below through policy parameters, directives, and hard constraints. Within each site, 11 narrow decision agents coordinate through a biologically-inspired signal bus with pheromone-like decay, organized into a six-phase decision cycle that ensures scouts observe before foragers act. Across sites, information flows along the supply chain DAG through inter-hive signals generated by the network-wide GNN, preserving local autonomy while maintaining global coherence. A conformal prediction router steers ~5% of low-confidence decisions to Claude Skills for deep reasoning, and every decision feeds a closed-loop learning pipeline — outcome collection, conformal calibration, Bayesian override tracking, and periodic retraining — that makes the system measurably smarter from every planning cycle it runs. Distribution-aware feature engineering replaces normal-distribution assumptions with MLE-fitted distributions for safety stock, demand classification, and TRM state vectors. A five-phase digital twin pipeline — behavioral cloning, coordinated simulation, stochastic stress-testing, copilot calibration, and autonomous relearning — takes agents from zero experience to production autonomy in 3-5 weeks. When execution-level anomalies signal that strategic policy parameters are wrong, the Escalation Arbiter detects persistent directional drift and routes the problem to the appropriate higher tier — operational (tGNN refresh) or strategic (S&OP policy review) — closing the vertical feedback loop that connects execution outcomes to policy correction. And throughout, every stocking decision, rebalancing transfer, and purchase order is evaluated in dollar-denominated economic terms — actual holding costs, stockout costs, and ordering costs from the product and policy configuration — with censored demand detection, CRPS-scored probabilistic forecasts, and automated weekly policy re-optimization ensuring the economic parameters stay calibrated to reality.

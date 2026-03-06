@@ -50,11 +50,15 @@
 Item-Node > Item > Node > Config (most specific wins)
 ```
 
-**3. Policy Types** (AWS SC Standard):
+**3. Policy Types** (AWS SC Standard + Extensions):
 - `abs_level`: Fixed safety stock quantity
 - `doc_dem`: Days of coverage based on demand
 - `doc_fcst`: Days of coverage based on forecast
 - `sl`: Service level with z-score calculation
+- `sl_fitted`: Service level with MLE-fitted distributions (Monte Carlo DDLT when non-Normal)
+- `conformal`: Conformal Risk Control safety stock with distribution-free guarantee
+- `sl_conformal_fitted`: Hybrid fitted + conformal
+- `econ_optimal`: Marginal economic return — stock one more unit only when E[stockout_cost × P(demand>k)] > holding_cost
 
 **4. Balanced Scorecard Perspectives**:
 - **Financial**: Total cost, inventory carrying cost, cash-to-cash cycle
@@ -246,7 +250,7 @@ where:
 
 **Document**: [AWS_SC_STOCHASTIC_MODELING_DESIGN.md](AWS_SC_STOCHASTIC_MODELING_DESIGN.md)
 
-**20 Supported Distributions**:
+**21 Supported Distributions**:
 
 | Distribution Type | Use Case | Parameters |
 |-------------------|----------|------------|
@@ -264,6 +268,7 @@ where:
 | **Binomial** | Successes in n trials | `n`, `p` |
 | **Negative Binomial** | Overdispersed Poisson | `r`, `p` |
 | **Empirical** | User-defined or historical | `values`, `probabilities` |
+| **Log-Logistic** | Fat-tailed lead times | `alpha` (scale), `beta` (shape) |
 | **Mixture** | Combined distributions | `distributions`, `weights` |
 | **Categorical** | Named categories | `categories`, `probabilities` |
 
@@ -910,12 +915,16 @@ def compute_balanced_scorecard(
 - ✅ Use `doc_dem` for mature products with stable demand history
 - ✅ Use `doc_fcst` for new products or products with changing demand
 - ✅ Use `sl` for critical/high-value products requiring specific service levels
+- ✅ Use `sl_fitted` when demand or lead time is non-Normal (lognormal, Weibull, etc.)
+- ✅ Use `econ_optimal` when explicit economic trade-off optimization is desired (requires unit_cost, holding_rate, stockout_multiplier, ≥5 demand + ≥3 lead time observations)
 - ✅ Respect hierarchical override logic (Item-Node > Item > Node > Config)
 
 **DON'T**:
 - ❌ Don't use `doc_dem` for new products (no demand history)
 - ❌ Don't use `doc_fcst` if forecast accuracy <70%
 - ❌ Don't set service level <80% or >99.5% (impractical extremes)
+- ❌ Don't use `econ_optimal` without sufficient demand and lead time history
+- ❌ Don't rely on fallback/default cost values — all economic parameters must be explicitly set per tenant
 - ❌ Don't forget to validate safety stock calculations
 
 ### 3. Planning Horizon
@@ -1081,6 +1090,18 @@ Before deploying planning logic:
 ### Books
 
 - `Powell-SDAM-Nov242022_final_w_frontcover.pdf` (5.9MB) - Sequential Decision Analytics and Modeling (comprehensive decision-making framework)
+
+### Lokad Quantitative Supply Chain Methodology
+
+- `docs/Knowledge/Lokad_Analysis_and_Integration_Guide.md` — Comprehensive analysis of Lokad's methodology with 12 ranked enhancement priorities
+
+**Key Principles Adopted**:
+1. **Economic loss functions**: Dollar-denominated rewards in TRM training (not heuristic proxies)
+2. **CRPS**: Continuous Ranked Probability Score for probabilistic forecast evaluation
+3. **Censored demand**: Detect stockout periods and exclude from distribution fitting
+4. **Log-logistic distribution**: Fat-tailed distribution for lead time modeling
+5. **Marginal economic return** (`econ_optimal`): Stock one more unit only when expected stockout cost exceeds holding cost
+6. **Automated CFA re-optimization**: Weekly Differential Evolution search over policy parameters
 
 ### Code Locations
 

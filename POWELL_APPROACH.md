@@ -1133,9 +1133,12 @@ Phase 3: Online Learning (continuous)
 | TRM Service | Reward Signal | Feedback Latency |
 |-------------|---------------|------------------|
 | ATPExecutorTRM | OTIF, fill rate | Hours-days |
-| RebalancingTRM | DOS improvement - cost | Days |
-| POCreationTRM | Stockout avoidance - holding cost | Lead time |
+| RebalancingTRM | `stockout_cost × stockouts_prevented - transfer_cost` (economic) | Days |
+| POCreationTRM | `stockout_cost × unfulfilled + holding_cost × excess × days + ordering_cost` (economic) | Lead time |
+| InventoryBufferTRM | `stockout_cost × stockout_qty + holding_cost × excess × days` (economic) | Days |
 | OrderTrackingTRM | Action correctness (RLHF) | Hours-days |
+
+> **Note**: Rebalancing, PO Creation, and Inventory Buffer reward functions now require `EconomicCostConfig` with actual dollar costs (holding_cost, stockout_cost, ordering_cost) computed from `Product.unit_cost` and `InvPolicy` parameters. No heuristic fallbacks — see Section 5.18.1.
 
 **Implementation**: `backend/app/services/powell/trm_trainer.py`
 
@@ -5161,6 +5164,206 @@ The `_classify_demand_robust()` function uses MAD/median ratio instead of coeffi
 | `backend/app/services/stochastic/feature_extractor.py` | Distribution-aware feature extraction for TRM state vectors |
 | `backend/app/services/aws_sc_planning/inventory_target_calculator.py` | `sl_fitted` policy with Monte Carlo DDLT |
 | `backend/app/api/endpoints/stochastic.py` | `POST /api/v1/stochastic/fit` endpoint |
+
+---
+
+#### 5.18 Quantitative Supply Chain Economics (Lokad Methodology Adoption)
+
+Adopting principles from Lokad's quantitative supply chain methodology, the platform now implements dollar-denominated decision economics, probabilistic forecast scoring, censored demand handling, and automated policy re-optimization. These changes close the gap between having sophisticated probabilistic infrastructure and using it to drive actual economic value.
+
+**Core Principle**: Every stocking decision must be evaluated in terms of actual economic trade-offs — "what is the expected cost of stocking one more unit vs. the expected cost of a stockout?" — rather than heuristic proxies like normalized scores or magic number penalties.
+
+##### 5.18.1 Economic Loss Functions in TRM Reward Calculator
+
+**Problem**: The `RewardCalculator` in `trm_trainer.py` used heuristic scaling factors: `-10.0` stockout penalty, `cost/1000` normalization, `service_improvement * 10` in rebalancing. These proxies don't reflect actual economic costs and make reward magnitudes arbitrary across products with different unit costs.
+
+**Solution**: `EconomicCostConfig` dataclass with **all required fields, no defaults**:
+
+```python
+@dataclass
+class EconomicCostConfig:
+    holding_cost_per_unit_day: float  # unit_cost × annual_holding_rate / 365
+    stockout_cost_per_unit: float     # holding × stockout_multiplier (typically 4x)
+    ordering_cost_per_order: float    # from sourcing_rules
+    unit_cost: float                  # Product.unit_cost
+
+    def __post_init__(self):
+        for field_name in ['holding_cost_per_unit_day', 'stockout_cost_per_unit',
+                           'ordering_cost_per_order', 'unit_cost']:
+            if getattr(self, field_name) <= 0:
+                raise ValueError(f"{field_name} must be positive")
+
+    @classmethod
+    def from_product_cost(cls, unit_cost, annual_holding_rate,
+                          stockout_multiplier, ordering_cost):
+        holding = unit_cost * annual_holding_rate / 365.0
+        return cls(holding_cost_per_unit_day=holding,
+                   stockout_cost_per_unit=holding * stockout_multiplier,
+                   ordering_cost_per_order=ordering_cost,
+                   unit_cost=unit_cost)
+```
+
+**Refactored reward methods** (all require `econ: EconomicCostConfig`, raise `TypeError` if `None`):
+
+| Method | Old Heuristic | New Economic |
+|--------|---------------|--------------|
+| `po_creation_reward()` | `-10.0` stockout, `cost/1000` | `stockout_cost × unfulfilled_qty + holding_cost × excess × days + ordering_cost` |
+| `inventory_buffer_reward()` | `-2.0` stockout, `excess_cost/1000` | `stockout_cost × stockout_qty + holding_cost × excess × period_days` |
+| `rebalancing_reward()` | `service * 10`, `cost/1000` | `stockout_cost × stockouts_prevented - transfer_cost` |
+
+**Powell Framework Mapping**: This transforms TRM training from VFA with proxy rewards to VFA with actual value functions — the reward now represents the true incremental economic value of the decision, which is exactly what a value function approximation should estimate.
+
+**No Fallbacks Policy**: The `econ` parameter is **required** (not Optional). If `EconomicCostConfig` is not provided, the method raises `TypeError`. If any cost component is ≤ 0, `__post_init__` raises `ValueError`. The `from_product_cost()` factory requires all four parameters. This enforces explicit economic specification for every tenant — no silent defaults.
+
+##### 5.18.2 Scheduled CFA Policy Optimization
+
+**Problem**: `PolicyOptimizer` in `policy_optimizer.py` (659 lines) implements Differential Evolution, Nelder-Mead, L-BFGS-B, and grid search for optimizing inventory policy parameters (θ). But it was never scheduled — no periodic re-optimization happened.
+
+**Solution**: Weekly job registered in `relearning_jobs.py`:
+
+```python
+scheduler.add_job(
+    func=_run_cfa_optimization,
+    trigger=CronTrigger(day_of_week="sun", hour=4, minute=0),
+    id="powell_cfa_optimization",
+    name="Powell: CFA Policy Optimization (weekly)",
+    replace_existing=True,
+    misfire_grace_time=7200,
+)
+```
+
+The `_run_cfa_optimization()` function:
+1. Queries all active `SupplyChainConfig` entries
+2. For each config, loads `InvPolicy` records and product data
+3. Instantiates `InventoryPolicyOptimizer` with current parameters
+4. Calls `optimize(method="differential_evolution")` — global search that avoids local minima
+5. Persists optimal θ to `PowellPolicyParameters` table
+6. Commits per config (partial failures don't block other configs)
+7. Logs convergence info
+
+**Powell Framework Mapping**: This is the CFA (Cost Function Approximation) optimization loop — the same `X^π(Sₜ|θ)` policy optimization that Powell describes in SDAM 2nd Ed Ch. 7. The weekly schedule matches the S&OP cadence, with the Escalation Arbiter triggering off-cadence runs when persistent TRM drift is detected.
+
+##### 5.18.3 CRPS Metric in Conformal Orchestrator
+
+**Problem**: The conformal prediction pipeline tracked empirical coverage (% of actuals within predicted intervals) and interval width, but not CRPS — the gold standard metric for evaluating the overall quality of probabilistic forecasts.
+
+**CRPS** measures the full predictive distribution's accuracy, not just whether the observation falls within a specific interval. It penalizes both miscalibration (wrong coverage) and sharpness (unnecessarily wide intervals).
+
+**Implementation** in `conformal_orchestrator.py`:
+
+```python
+@staticmethod
+def compute_crps_normal(mu: float, sigma: float, observed: float) -> float:
+    """Closed-form CRPS for Normal distribution.
+    CRPS = σ[z(2Φ(z)-1) + 2φ(z) - 1/√π] where z=(x-μ)/σ
+    """
+    z = (observed - mu) / sigma
+    phi_z = sp_stats.norm.pdf(z)
+    big_phi_z = sp_stats.norm.cdf(z)
+    return sigma * (z * (2 * big_phi_z - 1) + 2 * phi_z - 1.0 / math.sqrt(math.pi))
+
+@staticmethod
+def compute_crps_empirical(cdf_values, grid_points, observed) -> float:
+    """CRPS = ∫(F(y) - 𝟙{y≥x})² dy for discrete CDF."""
+    indicator = (grid_points >= observed).astype(float)
+    integrand = (cdf_values - indicator) ** 2
+    return float(np.trapezoid(integrand, grid_points))
+```
+
+CRPS is integrated into `_record_and_check_calibration()` as an exponential moving average (α=0.1) stored in `distribution_fit["crps_score"]` on the `PowellBeliefState`. The `compute_crps_for_entity()` method computes CRPS from recent calibration logs for any entity type.
+
+**Powell Framework Mapping**: CRPS extends the belief state Bₜ with a continuous quality measure of the predictive distribution — enabling the system to distinguish between a well-calibrated tight interval (low CRPS, good) and a well-calibrated wide interval (moderate CRPS, could be sharper).
+
+##### 5.18.4 Log-Logistic Distribution for Lead Times
+
+**Problem**: Lead time candidates were `["weibull", "lognormal", "gamma", "exponential"]`. The log-logistic distribution (fat-tailed, good at capturing "most shipments on time, minority very late" patterns) was not available.
+
+**Solution**: Added `LogLogisticDistribution` class in `distributions.py` using `scipy.stats.fisk(c=beta, scale=alpha)`, and registered `"loglogistic"` in `distribution_fitter.py`:
+
+- Added to `_get_scipy_dist` mapping (→ `sp_stats.fisk`)
+- Added to `_scipy_to_platform` conversion
+- Added to `_count_params` (2 params: alpha=scale/median, beta=shape)
+- Added to `LEAD_TIME_CANDIDATES` list
+
+**When log-logistic wins over Weibull/lognormal**: Lead time data with both a clear mode (most common delivery time) and a heavier right tail than lognormal predicts. Common in ocean freight, cross-border shipments, and vendor-managed inventory with variable consolidation schedules.
+
+##### 5.18.5 Censored Demand Detection
+
+**Problem**: When inventory hits zero, observed sales are a **lower bound** of true demand — the demand was censored by the stockout. The demand processor treated all actuals as true demand, and distribution fitting included censored observations without adjustment, causing systematic underestimation of true demand parameters.
+
+**Solution**:
+
+In `demand_processor.py`:
+- Added `_load_inventory_levels()` method that queries `InvLevel` for on-hand quantities
+- `process_demand()` now cross-references demand actuals with inventory levels
+- When `inv_level.on_hand_qty <= 0` for a product-site-period, the observation is flagged as censored
+- Returns `Tuple[Dict, Dict]` — net_demand + censored_flags (breaking API change)
+
+In `distribution_fitter.py`:
+- Added optional `censored_mask: np.ndarray` parameter to `fit()`
+- When `censored_mask` is provided, censored observations are excluded from MLE fitting
+- For small datasets where excluding censored data would leave < `MIN_SAMPLES_FOR_FIT`, all data is used with a warning in `FitReport`
+- Warning count added to `FitReport` for transparency
+
+**Powell Framework Mapping**: This is an information state (Iₜ) improvement — the system's knowledge of true demand is more accurate because it correctly treats stockout observations as censored. The fitted distribution (Bₜ) reflects actual demand rather than supply-constrained demand.
+
+##### 5.18.6 Economically Optimal Safety Stock (`econ_optimal` Policy)
+
+**Problem**: All existing policy types (abs_level, doc_dem, doc_fcst, sl, sl_fitted, conformal, sl_conformal_fitted) compute safety stock from statistical/coverage targets. None directly optimizes the economic trade-off: "what is the expected marginal value of stocking one more unit?"
+
+**Solution**: `econ_optimal` as an 8th policy type in `inventory_target_calculator.py`:
+
+```python
+# Marginal economic return analysis:
+# For each candidate stock level k = 0, 1, 2, ..., max_reasonable:
+#   P(demand > k) = fraction of DDLT samples exceeding k
+#   marginal_benefit(k) = stockout_cost × P(demand > k-1)
+#   marginal_cost(k) = holding_cost (constant)
+#   optimal k = largest k where marginal_benefit(k) > marginal_cost(k)
+
+ddlt_samples = demand_samples * lead_time_samples  # 10,000 Monte Carlo
+for k in range(max_k):
+    p_exceed = np.mean(ddlt_samples > k)
+    marginal_benefit = stockout_cost * p_exceed
+    if marginal_benefit <= holding_cost:
+        optimal_ss = k - 1
+        break
+```
+
+**Required data** (no fallbacks):
+- `Product.unit_cost` > 0 (raises `ValueError` if missing)
+- `inv_policy.annual_holding_rate` and `stockout_cost_multiplier` (from supplementary JSON, raises `ValueError` if missing)
+- ≥ 5 historical demand observations (raises `ValueError` if insufficient)
+- ≥ 3 lead time observations (raises `ValueError` if insufficient)
+
+**Powell Framework Mapping**: This is Lokad's "prioritized ordering" principle implemented as a CFA policy class. The policy function X^π(Sₜ|θ) where θ = {holding_cost, stockout_cost} directly optimizes the economic objective rather than a statistical proxy.
+
+##### 5.18.7 No-Fallback Policy
+
+All six changes enforce a strict no-fallback policy:
+
+| Component | What's Required | Error if Missing |
+|-----------|----------------|-----------------|
+| `EconomicCostConfig` | All 4 cost fields > 0 | `ValueError` in `__post_init__` |
+| Reward methods | `econ` parameter | `TypeError` if `None` |
+| `econ_optimal` policy | `unit_cost`, `annual_holding_rate`, `stockout_cost_multiplier` | `ValueError` |
+| `econ_optimal` data | ≥5 demand + ≥3 lead time observations | `ValueError` |
+| `ss_policy` dispatch | One of 8 supported policy types | `ValueError` with list of valid types |
+| Lead time in `econ_optimal` | Historical `VendorLeadTime` records | `ValueError` if <3 observations |
+
+This eliminates the class of bugs where a missing configuration silently produces suboptimal results because a default value was used. Every assumption is explicit, visible, and auditable.
+
+##### 5.18.8 Implementation Files
+
+| File | Changes |
+|------|---------|
+| `backend/app/services/powell/trm_trainer.py` | `EconomicCostConfig` dataclass, 3 refactored reward methods |
+| `backend/app/services/powell/relearning_jobs.py` | Weekly CFA optimization job + `_run_cfa_optimization()` |
+| `backend/app/services/conformal_orchestrator.py` | `compute_crps_normal()`, `compute_crps_empirical()`, `compute_crps_for_entity()`, EMA in calibration |
+| `backend/app/services/stochastic/distributions.py` | `LogLogisticDistribution` class |
+| `backend/app/services/stochastic/distribution_fitter.py` | loglogistic support, `censored_mask` parameter on `fit()` |
+| `backend/app/services/sc_planning/demand_processor.py` | `_load_inventory_levels()`, censored flag detection |
+| `backend/app/services/sc_planning/inventory_target_calculator.py` | `econ_optimal` policy, `_load_product()` helper |
 
 ---
 

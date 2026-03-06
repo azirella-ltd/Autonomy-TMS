@@ -140,7 +140,7 @@ The TRM wraps order-up-to logic with context-aware adjustments:
 
 **Engine**: `engines/safety_stock_calculator.py` — `SafetyStockCalculator`
 
-Implements the 4 AWS SC policy types:
+Implements the AWS SC policy types plus distribution-aware extensions:
 
 | Policy Type | Formula |
 |-------------|---------|
@@ -148,6 +148,8 @@ Implements the 4 AWS SC policy types:
 | `doc_dem` | SS = avg_daily_demand × days_of_coverage |
 | `doc_fcst` | SS = avg_daily_forecast × days_of_coverage |
 | `sl` (service level) | SS = z(SL) × √(LT × σ²_d + d² × σ²_LT) |
+| `sl_fitted` | Monte Carlo DDLT when demand/LT is non-Normal |
+| `econ_optimal` | Marginal economic return: stock where E[stockout_cost × P(demand>k)] > holding_cost |
 
 | Component | Detail |
 |-----------|--------|
@@ -517,9 +519,9 @@ Each TRM type has a dedicated reward calculator in `RewardCalculator`:
 | TRM Type | Key Reward Components |
 |----------|----------------------|
 | `atp` | fill_rate, on_time_bonus, priority_weight |
-| `po_creation` | stockout_penalty, dos_target, cost_efficiency, timing_accuracy |
-| `inventory_buffer` | stockout_penalty, dos_target, excess_cost, stability_bonus |
-| `rebalancing` | service_improvement, transfer_cost_penalty |
+| `po_creation` | **Economic**: `stockout_cost × unfulfilled_qty + holding_cost × excess × days + ordering_cost` |
+| `inventory_buffer` | **Economic**: `stockout_cost × stockout_qty + holding_cost × excess × period_days` |
+| `rebalancing` | **Economic**: `stockout_cost × stockouts_prevented - transfer_cost` |
 | `order_tracking` | correct_exception, resolution_speed, escalation_appropriateness |
 | `mo_execution` | on_time_delivery, setup_cost, queue_holding_cost, yield_success |
 | `to_execution` | stockout_prevention, transport_cost, consolidation_savings, source_depletion |
@@ -527,6 +529,14 @@ Each TRM type has a dedicated reward calculator in `RewardCalculator`:
 | `maintenance` | breakdown_prevention, maintenance_cost, production_uptime, asset_longevity |
 | `subcontracting` | cost_efficiency, quality_outcome, delivery_otp, capacity_freed, ip_protection |
 | `forecast_adjustment` | forecast_accuracy_improvement, signal_noise_penalty, timeliness, source_reliability |
+
+#### Dollar-Denominated Rewards (March 2026)
+
+Three reward methods (PO creation, inventory buffer, rebalancing) now use actual economic costs instead of heuristic scaling factors. An `EconomicCostConfig` dataclass is **required** for these methods — it loads `holding_cost_per_unit_day`, `stockout_cost_per_unit`, and `ordering_cost_per_order` from `Product.unit_cost` and `InvPolicy` parameters. No defaults or fallbacks — the system raises errors if cost data is missing.
+
+This means reward magnitudes are now proportional to actual dollar impact: a stockout on a $200 product generates a 20x larger penalty than on a $10 product, matching the business reality that the planning team experiences.
+
+`EconomicCostConfig.from_product_cost(unit_cost, annual_holding_rate, stockout_multiplier, ordering_cost)` is the factory method. All parameters are required.
 
 ### Per-Site Learning-Depth Curriculum
 

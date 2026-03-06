@@ -87,7 +87,7 @@ When implementing any entity:
 - **Supply Planning**: Net requirements calculation, multi-level BOM explosion, multi-sourcing with priorities
 - **Master Production Scheduling (MPS)**: Strategic production planning with rough-cut capacity checks
 - **Material Requirements Planning (MRP)**: Detailed component requirements from MPS
-- **Inventory Optimization**: 4 policy types (abs_level, doc_dem, doc_fcst, sl), hierarchical overrides
+- **Inventory Optimization**: 8 policy types (abs_level, doc_dem, doc_fcst, sl, sl_fitted, conformal, sl_conformal_fitted, econ_optimal), hierarchical overrides
 - **Capacity Planning**: Resource utilization analysis, bottleneck identification
 - **Order Management**: Inbound/outbound orders, shipment tracking, fulfillment
 - **Network Design**: DAG-based supply chain topology (35 AWS SC entities)
@@ -186,7 +186,7 @@ Narrow TRMs (VFA - Value Function Approximation)
 **Purpose**: Plan with uncertainty quantification instead of point estimates, enabling risk-aware decision-making.
 
 **Stochastic Framework**:
-- **20 Distribution Types**: Normal, lognormal, beta, gamma, Weibull, exponential, triangular, mixture, empirical, etc.
+- **21 Distribution Types**: Normal, lognormal, beta, gamma, Weibull, exponential, triangular, log-logistic, mixture, empirical, etc.
 - **Operational Variables** (stochastic): Lead times, yields, capacities, demand, forecast error
 - **Control Variables** (deterministic): Inventory targets, costs, policy parameters
 - **Monte Carlo Simulation**: 1000+ scenarios for full uncertainty propagation
@@ -382,7 +382,7 @@ make proxy-logs
 **AWS SC Planning Services** (`services/aws_sc_planning/`):
 - `planner.py`: Main AWS SC 3-step orchestrator (demand → targets → requirements)
 - `demand_processor.py`: Step 1 - Demand processing and aggregation
-- `inventory_target_calculator.py`: Step 2 - Safety stock and target calculation (4 policy types)
+- `inventory_target_calculator.py`: Step 2 - Safety stock and target calculation (8 policy types)
 - `net_requirements_calculator.py`: Step 3 - Time-phased netting, BOM explosion, supply plan generation
 - `stochastic_sampler.py`: Distribution sampling for operational variables
 - `beer_game_adapter.py`: Adapter for Beer Game integration
@@ -598,6 +598,7 @@ SiteAgent reloads model
 | `CDTCalibrationService.calibrate_incremental()` | Hourly (:35) | Feed new decision-outcome pairs into CDT wrappers |
 | `CDTCalibrationService.calibrate_all()` | Startup (batch) | Batch calibrate CDT wrappers from all historical data |
 | `CDCRetrainingService` | Every 6h (:45) | Evaluate & execute retraining when ≥100 experiences + CDC trigger + cooldown elapsed |
+| `_run_cfa_optimization()` | Weekly (Sun 04:00) | CFA policy parameter re-optimization via Differential Evolution across all active configs |
 | `ConditionMonitorService` | On-demand | 6 real-time DB condition checks (ATP shortfall, inventory, capacity, orders past due, forecast deviation) |
 
 Database tables: `powell_cdc_trigger_log`, `powell_site_agent_decisions`, `powell_site_agent_checkpoints`, `powell_cdc_thresholds`
@@ -633,11 +634,15 @@ See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
    - Time-phase demand across planning horizon
 
 2. **Inventory Target Calculation** ([inventory_target_calculator.py](backend/app/services/aws_sc_planning/inventory_target_calculator.py)):
-   - Calculate safety stock using 4 policy types:
+   - Calculate safety stock using 8 policy types:
      - `abs_level`: Fixed quantity
      - `doc_dem`: Days of coverage (demand-based)
      - `doc_fcst`: Days of coverage (forecast-based)
      - `sl`: Service level with z-score
+     - `sl_fitted`: Service level with MLE-fitted distributions (Monte Carlo DDLT)
+     - `conformal`: Conformal Risk Control with distribution-free guarantee
+     - `sl_conformal_fitted`: Hybrid fitted + conformal
+     - `econ_optimal`: Marginal economic return (stock where stockout_cost × P(demand>k) > holding_cost)
    - Apply hierarchical overrides (Product-Site > Product > Site > Config)
    - Generate target inventory levels
 
@@ -1010,8 +1015,9 @@ GET  /api/v1/sap-data/actions             # Get remediation actions
 This consolidated knowledge base includes:
 - Academic foundations (MPS/MRP, stochastic programming, safety stock)
 - Industry implementations (Kinaxis, SAP IBP, OMP)
-- Our stochastic modeling framework (20 distribution types)
-- Policy types (abs_level, doc_dem, doc_fcst, sl)
+- Our stochastic modeling framework (21 distribution types)
+- Policy types (abs_level, doc_dem, doc_fcst, sl, sl_fitted, conformal, sl_conformal_fitted, econ_optimal)
+- Lokad quantitative supply chain methodology
 - Probabilistic planning with balanced scorecard
 - Code examples and algorithms
 - Testing & validation procedures
@@ -1019,8 +1025,9 @@ This consolidated knowledge base includes:
 **Quick Reference**:
 - **Stochastic vs Deterministic**: Use distributions for operational variables (lead times, yields), fixed values for control variables (inventory targets, costs)
 - **Hierarchical Overrides**: Product-Site > Product > Site > Config (most specific wins)
-- **4 Policy Types**: abs_level (fixed), doc_dem (demand-based), doc_fcst (forecast-based), sl (service level)
+- **8 Policy Types**: abs_level (fixed), doc_dem (demand-based), doc_fcst (forecast-based), sl (service level), sl_fitted (MLE-fitted Monte Carlo), conformal (distribution-free), sl_conformal_fitted (hybrid), econ_optimal (marginal economic return)
 - **Balanced Scorecard**: Track Financial, Customer, Operational, and Strategic metrics with probability distributions
+- **No Fallbacks**: All economic parameters (holding_cost, stockout_cost, ordering_cost) must be explicitly set per tenant — errors raised for missing data
 
 **Key PDFs** (in `docs/Knowledge/`):
 - `01_MPS_Material_Requirements_Planning_Academic.pdf` - MPS/MRP fundamentals

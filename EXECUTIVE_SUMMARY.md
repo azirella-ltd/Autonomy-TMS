@@ -900,6 +900,16 @@ LLM Supervisor reviews cascade impact, alerts planners if significant
 - **Theoretical Foundation**: Maps to Kahneman's dual-process theory (TRMs = System 1 fast thinking, tGNN/GraphSAGE = System 2 slow thinking) and Boyd's nested OODA loops (execution/operational/strategic time horizons)
 - **Reference**: See [ESCALATION_ARCHITECTURE.md](docs/ESCALATION_ARCHITECTURE.md) for full theoretical framework
 
+**8. Quantitative Supply Chain Economics** (✅ Implemented March 2026)
+- **Dollar-Denominated Decisions**: AI agent reward functions now use actual economic costs (holding cost per unit per day, stockout cost per unit, ordering cost per order) computed from product unit cost and inventory policy parameters — replacing heuristic scaling factors
+- **Economically Optimal Safety Stock** (`econ_optimal` policy): Marginal economic return analysis — stock one more unit only when the expected stockout cost exceeds the holding cost. Monte Carlo simulation over fitted demand and lead time distributions with no fallbacks or defaults
+- **CRPS Forecast Scoring**: Continuous Ranked Probability Score — the gold standard for probabilistic forecast evaluation — integrated into the conformal prediction pipeline. Tracks forecast distribution quality, not just coverage
+- **Censored Demand Detection**: Automatic detection of stockout periods where observed demand understates true demand. Censored observations excluded from distribution fitting to prevent systematic underestimation
+- **Log-Logistic Lead Times**: Fat-tailed log-logistic distribution added for lead time fitting, capturing the "most shipments arrive on time, but some arrive very late" pattern better than Weibull or lognormal
+- **Automated Policy Re-Optimization**: Weekly CFA (Cost Function Approximation) job using Differential Evolution to re-optimize inventory policy parameters (θ), ensuring policies stay current as demand patterns evolve
+- **No Fallbacks**: All economic parameters are explicitly required for every tenant — the system raises errors rather than silently using defaults. Every cost assumption is visible and auditable
+- **Reference**: See [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md) Part 11 for architecture details
+
 ### Business Impact: Continuous Autonomous Planning ROI
 
 **Operational Benefits**:
