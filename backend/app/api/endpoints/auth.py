@@ -134,7 +134,7 @@ def _ensure_default_setup_sync(db: Session, user: User) -> None:
             name="Default Supply Chain",
             is_active=True,
             created_by=user.id,
-            customer_id=user.tenant_id,  # Required field (maps to tenant)
+            tenant_id=user.tenant_id,  # Required field (maps to tenant)
             site_type_definitions=deepcopy(DEFAULT_SITE_TYPE_DEFINITIONS),
         )
         db.add(config)

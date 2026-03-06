@@ -44,15 +44,15 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
-import { getSupplyChainConfigs } from '../services/supplyChainConfigService';
+import { useActiveConfig } from '../contexts/ActiveConfigContext';
 import MonteCarloResultsView from '../components/montecarlo/MonteCarloResultsView';
 
 const MonteCarloSimulation = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { effectiveConfigId, activeConfig } = useActiveConfig();
   const [currentTab, setCurrentTab] = useState('list');
   const [runs, setRuns] = useState([]);
-  const [configs, setConfigs] = useState([]);
   const [mpsPlans, setMpsPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedRun, setSelectedRun] = useState(null);
@@ -69,7 +69,6 @@ const MonteCarloSimulation = () => {
 
   useEffect(() => {
     loadRuns();
-    loadConfigs();
     loadMpsPlans();
 
     // Poll for running simulations every 5 seconds
@@ -92,15 +91,6 @@ const MonteCarloSimulation = () => {
     }
   };
 
-  const loadConfigs = async () => {
-    try {
-      const configs = await getSupplyChainConfigs();
-      setConfigs(configs || []);
-    } catch (error) {
-      console.error('Error loading configs:', error);
-    }
-  };
-
   const loadMpsPlans = async () => {
     try {
       const response = await api.get('/mps/plans');
@@ -114,6 +104,7 @@ const MonteCarloSimulation = () => {
     try {
       const payload = {
         ...newRun,
+        supply_chain_config_id: effectiveConfigId,
         tenant_id: user?.tenant_id || 1,
       };
 
@@ -406,20 +397,10 @@ const MonteCarloSimulation = () => {
             />
           </div>
           <div className="col-span-2">
-            <Label htmlFor="sim-config">Supply Chain Configuration *</Label>
-            <select
-              id="sim-config"
-              value={newRun.supply_chain_config_id}
-              onChange={(e) => setNewRun({ ...newRun, supply_chain_config_id: e.target.value })}
-              className="w-full mt-1 h-10 px-3 rounded-md border border-input bg-background"
-            >
-              <option value="">Select configuration</option>
-              {configs.map((config) => (
-                <option key={config.id} value={config.id}>
-                  {config.name}
-                </option>
-              ))}
-            </select>
+            <Label>Supply Chain Configuration</Label>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {activeConfig?.name || 'Loading...'}
+            </p>
           </div>
           <div className="col-span-2">
             <Label htmlFor="sim-mps">MPS Plan (Optional)</Label>
@@ -485,7 +466,7 @@ const MonteCarloSimulation = () => {
           </Button>
           <Button
             onClick={handleCreateRun}
-            disabled={!newRun.name || !newRun.supply_chain_config_id}
+            disabled={!newRun.name || !effectiveConfigId}
           >
             Create & Run
           </Button>

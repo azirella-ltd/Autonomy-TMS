@@ -60,12 +60,13 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useCapabilities } from '../hooks/useCapabilities';
 import { api } from '../services/api';
-import { getSupplyChainConfigs } from '../services/supplyChainConfigService';
+import { useActiveConfig } from '../contexts/ActiveConfigContext';
 
 const MasterProductionScheduling = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { hasCapability } = useCapabilities();
+  const { effectiveConfigId, activeConfig } = useActiveConfig();
 
   // State
   const [tabValue, setTabValue] = useState('plans');
@@ -73,8 +74,6 @@ const MasterProductionScheduling = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [selectedConfig, setSelectedConfig] = useState('');
-  const [configs, setConfigs] = useState([]);
   const [generatingOrders, setGeneratingOrders] = useState(false);
   const [generateOrdersDialog, setGenerateOrdersDialog] = useState({ open: false, plan: null });
   const [orderGenerationResult, setOrderGenerationResult] = useState(null);
@@ -86,7 +85,6 @@ const MasterProductionScheduling = () => {
   // Load data
   useEffect(() => {
     loadMPSPlans();
-    loadConfigs();
   }, []);
 
   const loadMPSPlans = async () => {
@@ -103,29 +101,19 @@ const MasterProductionScheduling = () => {
     }
   };
 
-  const loadConfigs = async () => {
-    try {
-      const configs = await getSupplyChainConfigs();
-      setConfigs(configs || []);
-    } catch (err) {
-      console.error('Error loading configs:', err);
-    }
-  };
-
   const handleCreateMPS = async () => {
-    if (!selectedConfig) {
-      alert('Please select a supply chain configuration');
+    if (!effectiveConfigId) {
+      alert('No active configuration found. Please contact your administrator.');
       return;
     }
 
     try {
       await api.post('/mps/plans', {
-        config_id: selectedConfig,
+        config_id: effectiveConfigId,
         planning_horizon: 52,
         user_id: user.id,
       });
       setCreateDialogOpen(false);
-      setSelectedConfig('');
       loadMPSPlans();
     } catch (err) {
       console.error('Error creating MPS plan:', err);
@@ -574,25 +562,15 @@ const MasterProductionScheduling = () => {
           </DialogHeader>
           <div className="py-4">
             <div className="mb-4">
-              <Label htmlFor="config-select">Supply Chain Configuration</Label>
-              <select
-                id="config-select"
-                value={selectedConfig}
-                onChange={(e) => setSelectedConfig(e.target.value)}
-                className="w-full mt-1 h-10 px-3 rounded-md border border-input bg-background"
-              >
-                <option value="">Select configuration...</option>
-                {configs.map((config) => (
-                  <option key={config.id} value={config.id}>
-                    {config.name}
-                  </option>
-                ))}
-              </select>
+              <Label>Supply Chain Configuration</Label>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {activeConfig?.name || 'Loading...'}
+              </p>
             </div>
             <Alert>
               <AlertTitle>Master Production Scheduling</AlertTitle>
               <AlertDescription>
-                This will create a new MPS plan for the selected supply chain configuration.
+                This will create a new MPS plan for the active baseline configuration.
                 You can configure planning horizon, demand sources, and capacity constraints after creation.
               </AlertDescription>
             </Alert>
@@ -601,7 +579,7 @@ const MasterProductionScheduling = () => {
             <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleCreateMPS} disabled={!selectedConfig}>
+            <Button onClick={handleCreateMPS} disabled={!effectiveConfigId}>
               Create MPS Plan
             </Button>
           </DialogFooter>

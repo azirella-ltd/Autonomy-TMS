@@ -28,6 +28,8 @@ from app.schemas.supply_plan import (
     SupplyPlanComparisonResponse,
     SupplyPlanExportRequest,
     SupplyPlanExportResponse,
+    ConfigComparisonRequest,
+    ConfigComparisonResponse,
 )
 from app.services.supply_plan_service import SupplyPlanService
 from app.services.stochastic_sampling import StochasticParameters
@@ -133,21 +135,25 @@ def generate_supply_plan(
     Creates a background task to run the plan generation and returns
     a task ID for status checking.
     """
-    # Validate configuration exists
+    # Resolve config: explicit or tenant's active baseline
+    effective_config_id = request_data.config_id
+    if effective_config_id is None:
+        effective_config_id = deps.get_active_baseline_config(db, current_user.tenant_id).id
+
     config = db.query(SupplyChainConfig).filter(
-        SupplyChainConfig.id == request_data.config_id
+        SupplyChainConfig.id == effective_config_id
     ).first()
 
     if not config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Supply chain configuration {request_data.config_id} not found"
+            detail=f"Supply chain configuration {effective_config_id} not found"
         )
 
     # Create supply plan request
     plan_request = SupplyPlanRequest(
         user_id=current_user.id,
-        config_id=request_data.config_id,
+        config_id=effective_config_id,
         config_name=config.name,
         agent_strategy=request_data.agent_strategy,
         num_scenarios=request_data.num_scenarios,
@@ -423,6 +429,106 @@ def compare_supply_plans(
         winner=winner,
         metrics=metrics,
         created_at=comparison.created_at
+    )
+
+
+@router.post("/compare-configs", response_model=ConfigComparisonResponse)
+def compare_config_plans(
+    *,
+    db: Session = Depends(deps.get_db),
+    request_data: ConfigComparisonRequest,
+    current_user: User = Depends(deps.get_current_user)
+) -> ConfigComparisonResponse:
+    """
+    Compare supply plans from baseline vs branch configs side-by-side.
+
+    Returns balanced scorecard deltas and configuration diff (topology,
+    sourcing rules, etc.) to support alternate sourcing evaluation.
+    """
+    # Load both plans
+    baseline_plan = db.query(SupplyPlanRequest).filter(
+        SupplyPlanRequest.id == request_data.baseline_plan_id
+    ).first()
+    branch_plan = db.query(SupplyPlanRequest).filter(
+        SupplyPlanRequest.id == request_data.branch_plan_id
+    ).first()
+
+    if not baseline_plan:
+        raise HTTPException(404, f"Baseline plan {request_data.baseline_plan_id} not found")
+    if not branch_plan:
+        raise HTTPException(404, f"Branch plan {request_data.branch_plan_id} not found")
+
+    for plan in [baseline_plan, branch_plan]:
+        if plan.status != PlanStatus.COMPLETED:
+            raise HTTPException(400, f"Plan {plan.id} is not completed (status: {plan.status})")
+
+    # Load results
+    baseline_result = db.query(SupplyPlanResult).filter(
+        SupplyPlanResult.request_id == baseline_plan.id
+    ).first()
+    branch_result = db.query(SupplyPlanResult).filter(
+        SupplyPlanResult.request_id == branch_plan.id
+    ).first()
+
+    if not baseline_result or not branch_result:
+        raise HTTPException(404, "One or both plans have no results")
+
+    # Build scorecards
+    def _scorecard(r):
+        return {
+            "total_cost": r.total_cost_expected,
+            "otif": r.otif_expected,
+            "fill_rate": r.fill_rate_expected,
+            "inventory_turns": r.inventory_turns_expected,
+            "total_cost_p10": getattr(r, "total_cost_p10", None),
+            "total_cost_p90": getattr(r, "total_cost_p90", None),
+        }
+
+    baseline_sc = _scorecard(baseline_result)
+    branch_sc = _scorecard(branch_result)
+
+    # Compute deltas
+    cost_delta = (branch_sc["total_cost"] or 0) - (baseline_sc["total_cost"] or 0)
+    baseline_cost = baseline_sc["total_cost"] or 1
+    cost_delta_pct = (cost_delta / baseline_cost) * 100 if baseline_cost else 0.0
+
+    # Config diff (topology + sourcing rules)
+    config_diff = {}
+    if baseline_plan.config_id and branch_plan.config_id:
+        try:
+            from app.services.scenario_branching_service import ScenarioBranchingService
+            branching = ScenarioBranchingService(db)
+            config_diff = branching.diff_scenarios(baseline_plan.config_id, branch_plan.config_id)
+        except Exception:
+            config_diff = {"error": "Could not compute config diff"}
+
+    # Generate recommendation
+    parts = []
+    if cost_delta < 0:
+        parts.append(f"Branch reduces cost by {abs(cost_delta_pct):.1f}%")
+    elif cost_delta > 0:
+        parts.append(f"Branch increases cost by {cost_delta_pct:.1f}%")
+
+    otif_delta = (branch_sc["otif"] or 0) - (baseline_sc["otif"] or 0)
+    if otif_delta > 0:
+        parts.append(f"OTIF improves by {otif_delta:.1f}pp")
+    elif otif_delta < 0:
+        parts.append(f"OTIF decreases by {abs(otif_delta):.1f}pp")
+
+    recommendation = ". ".join(parts) + "." if parts else None
+
+    return ConfigComparisonResponse(
+        baseline_plan_id=request_data.baseline_plan_id,
+        branch_plan_id=request_data.branch_plan_id,
+        cost_delta=cost_delta,
+        cost_delta_pct=cost_delta_pct,
+        otif_delta=otif_delta,
+        fill_rate_delta=(branch_sc["fill_rate"] or 0) - (baseline_sc["fill_rate"] or 0),
+        inventory_turns_delta=(branch_sc["inventory_turns"] or 0) - (baseline_sc["inventory_turns"] or 0),
+        baseline_scorecard=baseline_sc,
+        branch_scorecard=branch_sc,
+        config_diff=config_diff,
+        recommendation=recommendation,
     )
 
 

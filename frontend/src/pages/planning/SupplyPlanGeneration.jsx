@@ -39,16 +39,16 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { api } from '../../services/api';
-import { getSupplyChainConfigs } from '../../services/supplyChainConfigService';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
+import BranchPicker from '../../components/planning/BranchPicker';
 
 const SupplyPlanGeneration = () => {
+  const { effectiveConfigId, activeConfig, workingBranch } = useActiveConfig();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [configs, setConfigs] = useState([]);
   const [planRequests, setPlanRequests] = useState([]);
 
-  // Generation parameters
-  const [configId, setConfigId] = useState('');
+  // Generation parameters (configId resolved from context)
   const [agentStrategy, setAgentStrategy] = useState('ml_forecast');
   const [numScenarios, setNumScenarios] = useState(1000);
   const [planningHorizon, setPlanningHorizon] = useState(52);
@@ -77,7 +77,6 @@ const SupplyPlanGeneration = () => {
   const [statusPolling, setStatusPolling] = useState(null);
 
   useEffect(() => {
-    loadConfigs();
     loadPlanRequests();
   }, []);
 
@@ -111,15 +110,6 @@ const SupplyPlanGeneration = () => {
     }
   }, [activePlan, statusPolling]);
 
-  const loadConfigs = async () => {
-    try {
-      const configs = await getSupplyChainConfigs();
-      setConfigs(configs || []);
-    } catch (err) {
-      console.error('Error loading configs:', err);
-    }
-  };
-
   const loadPlanRequests = async () => {
     try {
       const response = await api.get('/supply-plan/list');
@@ -141,8 +131,8 @@ const SupplyPlanGeneration = () => {
   };
 
   const handleGeneratePlan = async () => {
-    if (!configId) {
-      setError('Please select a supply chain configuration');
+    if (!effectiveConfigId) {
+      setError('No active configuration found. Please contact your administrator.');
       return;
     }
 
@@ -152,7 +142,7 @@ const SupplyPlanGeneration = () => {
 
     try {
       const response = await api.post('/supply-plan/generate', {
-        config_id: parseInt(configId),
+        config_id: effectiveConfigId,
         agent_strategy: agentStrategy,
         num_scenarios: numScenarios,
         stochastic_params: stochasticParams,
@@ -232,18 +222,9 @@ const SupplyPlanGeneration = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <Label>Supply Chain Configuration</Label>
-            <Select value={configId} onValueChange={setConfigId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select configuration" />
-              </SelectTrigger>
-              <SelectContent>
-                {configs.map((config) => (
-                  <SelectItem key={config.id} value={String(config.id)}>
-                    {config.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-2 mt-1">
+              <BranchPicker />
+            </div>
           </div>
 
           <div>
@@ -367,7 +348,7 @@ const SupplyPlanGeneration = () => {
             <Button
               className="w-full"
               onClick={handleGeneratePlan}
-              disabled={loading || !configId}
+              disabled={loading || !effectiveConfigId}
               leftIcon={loading ? <Spinner size="sm" /> : <Play className="h-4 w-4" />}
             >
               {loading ? 'Generating...' : 'Generate Supply Plan'}

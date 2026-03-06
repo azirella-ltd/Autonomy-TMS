@@ -596,7 +596,7 @@ def list_collaboration_scenarios(
     from sqlalchemy import text as sa_text
 
     gid = tenant_id or current_user.tenant_id
-    query = "SELECT * FROM collaboration_scenarios WHERE customer_id = :gid"
+    query = "SELECT * FROM collaboration_scenarios WHERE tenant_id = :gid"
     params = {"gid": gid}
 
     if level:

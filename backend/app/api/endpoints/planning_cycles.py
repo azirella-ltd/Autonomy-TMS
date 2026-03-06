@@ -79,7 +79,7 @@ def create_planning_cycle(
 ):
     """Create a new planning cycle."""
     # Verify user has access to the tenant
-    cycle_tenant = getattr(cycle_in, 'tenant_id', None) or getattr(cycle_in, 'customer_id', None)
+    cycle_tenant = getattr(cycle_in, 'tenant_id', None)
     if cycle_tenant and cycle_tenant != current_user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

@@ -171,7 +171,7 @@ async def list_planning_configs(
         )
 
     query = select(PlanningHierarchyConfig).where(
-        PlanningHierarchyConfig.customer_id == tenant_id
+        PlanningHierarchyConfig.tenant_id == tenant_id
     )
 
     if not include_inactive:
@@ -184,7 +184,7 @@ async def list_planning_configs(
 
     return [PlanningHierarchyConfigResponse(
         id=c.id,
-        customer_id=c.customer_id,
+        tenant_id=c.tenant_id,
         config_id=c.config_id,
         planning_type=c.planning_type.value,
         site_hierarchy_level=c.site_hierarchy_level.value,
@@ -227,7 +227,7 @@ async def create_planning_config(
     existing = await db.execute(
         select(PlanningHierarchyConfig).where(
             and_(
-                PlanningHierarchyConfig.customer_id == tenant_id,
+                PlanningHierarchyConfig.tenant_id == tenant_id,
                 PlanningHierarchyConfig.planning_type == config.planning_type,
                 PlanningHierarchyConfig.config_id == config.config_id,
                 PlanningHierarchyConfig.is_active == True
@@ -241,7 +241,7 @@ async def create_planning_config(
         )
 
     db_config = PlanningHierarchyConfig(
-        customer_id=tenant_id,
+        tenant_id=tenant_id,
         config_id=config.config_id,
         planning_type=config.planning_type,
         site_hierarchy_level=config.site_hierarchy_level,
@@ -266,7 +266,7 @@ async def create_planning_config(
 
     return PlanningHierarchyConfigResponse(
         id=db_config.id,
-        customer_id=db_config.customer_id,
+        tenant_id=db_config.tenant_id,
         config_id=db_config.config_id,
         planning_type=db_config.planning_type.value,
         site_hierarchy_level=db_config.site_hierarchy_level.value,
@@ -324,7 +324,7 @@ async def create_config_from_template(
     config_name = name or template["name"]
 
     db_config = PlanningHierarchyConfig(
-        customer_id=tenant_id,
+        tenant_id=tenant_id,
         config_id=config_id,
         planning_type=template["planning_type"],
         site_hierarchy_level=template["site_hierarchy_level"],
@@ -349,7 +349,7 @@ async def create_config_from_template(
 
     return PlanningHierarchyConfigResponse(
         id=db_config.id,
-        customer_id=db_config.customer_id,
+        tenant_id=db_config.tenant_id,
         config_id=db_config.config_id,
         planning_type=db_config.planning_type.value,
         site_hierarchy_level=db_config.site_hierarchy_level.value,
@@ -393,7 +393,7 @@ async def update_planning_config(
         )
 
     # Verify user is admin of this customer
-    if current_user.tenant_id != db_config.customer_id and not current_user.is_system_admin:
+    if current_user.tenant_id != db_config.tenant_id and not current_user.is_system_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to update this configuration"
@@ -409,7 +409,7 @@ async def update_planning_config(
 
     return PlanningHierarchyConfigResponse(
         id=db_config.id,
-        customer_id=db_config.customer_id,
+        tenant_id=db_config.tenant_id,
         config_id=db_config.config_id,
         planning_type=db_config.planning_type.value,
         site_hierarchy_level=db_config.site_hierarchy_level.value,
@@ -452,7 +452,7 @@ async def delete_planning_config(
         )
 
     # Verify user is admin of this customer
-    if current_user.tenant_id != db_config.customer_id and not current_user.is_system_admin:
+    if current_user.tenant_id != db_config.tenant_id and not current_user.is_system_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to delete this configuration"
@@ -490,7 +490,7 @@ async def initialize_default_configs(
         existing = await db.execute(
             select(PlanningHierarchyConfig).where(
                 and_(
-                    PlanningHierarchyConfig.customer_id == tenant_id,
+                    PlanningHierarchyConfig.tenant_id == tenant_id,
                     PlanningHierarchyConfig.planning_type == template["planning_type"],
                     PlanningHierarchyConfig.is_active == True
                 )
@@ -500,7 +500,7 @@ async def initialize_default_configs(
             continue  # Skip if already exists
 
         db_config = PlanningHierarchyConfig(
-            customer_id=tenant_id,
+            tenant_id=tenant_id,
             planning_type=template["planning_type"],
             site_hierarchy_level=template["site_hierarchy_level"],
             product_hierarchy_level=template["product_hierarchy_level"],

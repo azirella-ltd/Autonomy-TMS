@@ -130,7 +130,7 @@ class SyncJobConfigResponse(SyncJobConfigBase):
                 "name": "Daily Material Master Sync",
                 "data_type": "material_master",
                 "cron_expression": "0 2 * * *",
-                "customer_id": 1,
+                "tenant_id": 1,
                 "is_enabled": True,
                 "is_delta_load": True,
                 "lookback_days": 1,

@@ -220,7 +220,7 @@ class ScenarioInDBBase(ScenarioBase):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     created_by: Optional[int] = Field(None, description="User ID of the scenario creator")
-    customer_id: Optional[int] = Field(None, description="Owning customer ID for the scenario")
+    tenant_id: Optional[int] = Field(None, description="Owning tenant ID for the scenario")
     config: Dict[str, Any] = Field(default_factory=dict, description="Raw configuration blob")
     scenario_users: List[ScenarioUserResponse] = Field(default_factory=list)
     time_bucket: TimeBucket = Field(TimeBucket.WEEK, description="Time aggregation unit for the simulation")

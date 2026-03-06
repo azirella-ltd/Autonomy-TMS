@@ -49,7 +49,7 @@ class ProductionOrderBase(BaseModel):
     """Base schema for production order."""
     item_id: int = Field(..., description="Item to produce")
     site_id: int = Field(..., description="Production site (node)")
-    config_id: int = Field(..., description="Supply chain configuration")
+    config_id: Optional[int] = Field(None, description="Supply chain config ID. If omitted, uses tenant's active baseline.")
     planned_quantity: int = Field(..., gt=0, description="Quantity to produce")
     planned_start_date: datetime = Field(..., description="Planned start date")
     planned_completion_date: datetime = Field(..., description="Planned completion date")

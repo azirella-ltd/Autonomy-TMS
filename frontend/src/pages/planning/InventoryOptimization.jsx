@@ -43,6 +43,8 @@ import {
   Info,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
+import BranchPicker from '../../components/planning/BranchPicker';
 
 /**
  * Tactical Inventory Optimization
@@ -71,11 +73,11 @@ const InventoryOptimization = () => {
   const [success, setSuccess] = useState(null);
   const [activeTab, setActiveTab] = useState('policies');
 
+  const { effectiveConfigId } = useActiveConfig();
+
   // Data states
   const [policies, setPolicies] = useState([]);
   const [optimizations, setOptimizations] = useState([]);
-  const [configs, setConfigs] = useState([]);
-  const [selectedConfig, setSelectedConfig] = useState('');
 
   // Optimization dialog
   const [runOptDialogOpen, setRunOptDialogOpen] = useState(false);
@@ -109,7 +111,6 @@ const InventoryOptimization = () => {
   const [conformalStatus, setConformalStatus] = useState(null);
 
   useEffect(() => {
-    loadConfigs();
     loadConformalStatus();
   }, []);
 
@@ -124,34 +125,17 @@ const InventoryOptimization = () => {
   };
 
   useEffect(() => {
-    if (selectedConfig) {
+    if (effectiveConfigId) {
       loadPolicies();
       loadOptimizations();
     }
-  }, [selectedConfig]);
-
-  const loadConfigs = async () => {
-    try {
-      const response = await api.get('/supply-chain-config/');
-      const items = response.data.items || response.data || [];
-      setConfigs(items);
-      if (items.length > 0) {
-        // Auto-select root baseline config (no parent, BASELINE type)
-        const root = items.find(c => !c.parent_config_id && c.scenario_type === 'BASELINE')
-          || items.find(c => c.is_active)
-          || items[0];
-        setSelectedConfig(root.id.toString());
-      }
-    } catch (err) {
-      console.error('Failed to load configs:', err);
-    }
-  };
+  }, [effectiveConfigId]);
 
   const loadPolicies = async () => {
     setLoading(true);
     try {
       const response = await api.get('/inv-policy', {
-        params: { config_id: selectedConfig, limit: 100 },
+        params: { config_id: effectiveConfigId, limit: 100 },
       });
       setPolicies(response.data.items || response.data || []);
     } catch (err) {
@@ -200,7 +184,7 @@ const InventoryOptimization = () => {
     setError(null);
     try {
       await api.post('/inv-policy', {
-        config_id: parseInt(selectedConfig),
+        config_id: effectiveConfigId,
         ...policyForm,
         ss_quantity: policyForm.ss_quantity ? parseFloat(policyForm.ss_quantity) : null,
         ss_days: policyForm.ss_days ? parseInt(policyForm.ss_days) : null,
@@ -554,21 +538,7 @@ const InventoryOptimization = () => {
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <Label htmlFor="config" className="text-sm">
-              Config:
-            </Label>
-            <Select value={selectedConfig} onValueChange={setSelectedConfig}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Select config" />
-              </SelectTrigger>
-              <SelectContent>
-                {configs.map((config) => (
-                  <SelectItem key={config.id} value={config.id.toString()}>
-                    {config.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <BranchPicker />
           </div>
           <Button variant="outline" onClick={() => { loadPolicies(); loadOptimizations(); }} leftIcon={<RefreshCw className="h-4 w-4" />}>
             Refresh

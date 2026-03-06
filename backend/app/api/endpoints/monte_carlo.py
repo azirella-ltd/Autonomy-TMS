@@ -34,7 +34,7 @@ class MonteCarloRunCreate(BaseModel):
     """Request schema for creating a Monte Carlo run"""
     name: str = Field(..., description="Simulation run name")
     description: Optional[str] = Field(None, description="Run description")
-    supply_chain_config_id: int = Field(..., description="Supply chain configuration ID")
+    supply_chain_config_id: Optional[int] = Field(None, description="Supply chain config ID. If omitted, uses tenant's active baseline.")
     mps_plan_id: Optional[int] = Field(None, description="Optional MPS plan ID to simulate")
     scenario_id: Optional[int] = Field(None, description="Optional scenario ID for integration")
     tenant_id: int = Field(..., description="Tenant ID")
@@ -249,12 +249,17 @@ async def create_monte_carlo_run(
     """
     check_monte_carlo_permission(current_user, "manage")
 
-    # Validate config exists
-    config = db.get(SupplyChainConfig, run_create.supply_chain_config_id)
+    # Resolve config: explicit or tenant's active baseline
+    effective_config_id = run_create.supply_chain_config_id
+    if effective_config_id is None:
+        from app.api.deps import get_active_baseline_config
+        effective_config_id = get_active_baseline_config(db, current_user.tenant_id).id
+
+    config = db.get(SupplyChainConfig, effective_config_id)
     if not config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Supply chain configuration {run_create.supply_chain_config_id} not found"
+            detail=f"Supply chain configuration {effective_config_id} not found"
         )
 
     # Validate MPS plan if provided
@@ -272,7 +277,7 @@ async def create_monte_carlo_run(
 
     # Create run record
     run = MonteCarloRun(
-        supply_chain_config_id=run_create.supply_chain_config_id,
+        supply_chain_config_id=effective_config_id,
         mps_plan_id=run_create.mps_plan_id,
         scenario_id=run_create.scenario_id,
         tenant_id=run_create.tenant_id,

@@ -120,7 +120,7 @@ class PlanObjectivesSchema(BaseModel):
 
 class SupplyPlanGenerateRequest(BaseModel):
     """Request to generate a supply plan."""
-    config_id: int = Field(..., gt=0, description="Supply chain configuration ID")
+    config_id: Optional[int] = Field(None, gt=0, description="Supply chain config ID. If omitted, uses tenant's active baseline.")
     agent_strategy: str = Field(default="trm", description="Agent strategy (naive, pid, trm, gnn, llm)")
     num_scenarios: int = Field(default=1000, ge=10, le=10000, description="Number of Monte Carlo scenarios")
 
@@ -343,6 +343,35 @@ class SupplyPlanExportRequest(BaseModel):
                 "format": "excel"
             }
         }
+
+
+class ConfigComparisonRequest(BaseModel):
+    """Request to compare supply plans from baseline vs branch configs."""
+    baseline_plan_id: int = Field(..., gt=0, description="Supply plan ID for baseline config")
+    branch_plan_id: int = Field(..., gt=0, description="Supply plan ID for branch config")
+
+
+class ConfigComparisonResponse(BaseModel):
+    """Side-by-side comparison of baseline vs branch supply plan results."""
+    baseline_plan_id: int
+    branch_plan_id: int
+
+    # Scorecard deltas (branch - baseline)
+    cost_delta: Optional[float] = None
+    cost_delta_pct: Optional[float] = None
+    otif_delta: Optional[float] = None
+    fill_rate_delta: Optional[float] = None
+    inventory_turns_delta: Optional[float] = None
+
+    # Full scorecards
+    baseline_scorecard: Dict[str, Any] = {}
+    branch_scorecard: Dict[str, Any] = {}
+
+    # Config topology/sourcing diff (from diff_scenarios)
+    config_diff: Dict[str, Any] = {}
+
+    # Human-readable summary
+    recommendation: Optional[str] = None
 
 
 class SupplyPlanExportResponse(BaseModel):

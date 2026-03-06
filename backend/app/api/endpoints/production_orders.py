@@ -260,6 +260,12 @@ async def create_production_order(
 
     Requires: MANAGE_PRODUCTION_ORDERS capability
     """
+    # Resolve config: explicit or tenant's active baseline
+    effective_config_id = order_data.config_id
+    if effective_config_id is None:
+        from app.api.deps import get_active_baseline_config
+        effective_config_id = get_active_baseline_config(db, current_user.tenant_id).id
+
     # Validate MPS plan exists if provided
     if order_data.mps_plan_id:
         mps_plan = db.query(MPSPlan).filter(MPSPlan.id == order_data.mps_plan_id).first()
@@ -285,7 +291,7 @@ async def create_production_order(
         mps_plan_id=order_data.mps_plan_id,
         item_id=order_data.item_id,
         site_id=order_data.site_id,
-        config_id=order_data.config_id,
+        config_id=effective_config_id,
         planned_quantity=order_data.planned_quantity,
         planned_start_date=order_data.planned_start_date,
         planned_completion_date=order_data.planned_completion_date,

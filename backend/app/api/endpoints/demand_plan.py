@@ -435,7 +435,7 @@ def apply_forecast_overrides(
         background_tasks.add_task(
             _trigger_conformal_forecast_hook,
             product_site_pairs=list(set(product_site_pairs)),
-            customer_id=current_user.tenant_id,
+            tenant_id=current_user.tenant_id,
         )
 
     return ForecastOverrideResponse(

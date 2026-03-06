@@ -74,7 +74,7 @@ async def create_sync_config(
 ):
     """Create a new sync job configuration."""
     # Verify user has access to the tenant
-    config_tenant = getattr(config_in, 'tenant_id', None) or getattr(config_in, 'customer_id', None)
+    config_tenant = getattr(config_in, 'tenant_id', None)
     if config_tenant and config_tenant != current_user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

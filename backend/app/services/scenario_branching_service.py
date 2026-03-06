@@ -48,6 +48,7 @@ class EntityType:
     BOM = "bom"
     ITEM = "item"
     CONFIG = "config"
+    SOURCING_RULE = "sourcing_rule"
 
 
 class Operation:
@@ -105,6 +106,8 @@ class ScenarioBranchingService:
         base_config_id = parent.base_config_id if parent.base_config_id else parent_config_id
 
         # Create child config
+        # Branches (WORKING/SIMULATION) are NOT active — only BASELINE configs
+        # can be active, enforced by uq_tenant_active_baseline partial index.
         child = SupplyChainConfig(
             name=name,
             description=description,
@@ -115,7 +118,7 @@ class ScenarioBranchingService:
             scenario_type=scenario_type,
             uses_delta_storage=True,
             version=1,
-            is_active=True,
+            is_active=False,
             branched_at=datetime.datetime.utcnow(),
             created_by=created_by,
             validation_status="unchecked",
@@ -326,8 +329,8 @@ class ScenarioBranchingService:
 
         diff = {"added": [], "removed": [], "modified": []}
 
-        # Compare each entity type
-        for entity_type in ["nodes", "lanes", "markets", "market_demands", "products", "boms"]:
+        # Compare each entity type (including sourcing rules for alternate sourcing diffs)
+        for entity_type in ["nodes", "lanes", "markets", "market_demands", "products", "boms", "sourcing_rules"]:
             entities_a = {e["id"]: e for e in effective_a.get(entity_type, [])}
             entities_b = {e["id"]: e for e in effective_b.get(entity_type, [])}
 
@@ -400,6 +403,7 @@ class ScenarioBranchingService:
             "market_demands": [self._serialize_market_demand(md) for md in config.market_demands],
             "products": self._load_products(config.id),
             "boms": self._load_boms(config.id),
+            "sourcing_rules": self._load_sourcing_rules(config.id),
         }
 
     def _serialize_node(self, node: Node) -> Dict[str, Any]:
@@ -474,6 +478,61 @@ class ScenarioBranchingService:
             ]
         except Exception:
             return []
+
+    def _load_sourcing_rules(self, config_id: int) -> List[Dict[str, Any]]:
+        """Load sourcing rules for a config from the SourcingRules table."""
+        try:
+            from app.models.sc_entities import SourcingRules
+            rules = self.db.query(SourcingRules).filter(
+                SourcingRules.config_id == config_id
+            ).all()
+            return [
+                {
+                    "id": r.id,
+                    "product_id": r.product_id,
+                    "product_group_id": getattr(r, "product_group_id", None),
+                    "from_site_id": getattr(r, "from_site_id", None),
+                    "to_site_id": getattr(r, "to_site_id", None),
+                    "tpartner_id": getattr(r, "tpartner_id", None),
+                    "sourcing_rule_type": r.sourcing_rule_type,
+                    "sourcing_priority": r.sourcing_priority,
+                    "sourcing_ratio": float(getattr(r, "sourcing_ratio", 0) or 0),
+                    "min_quantity": float(getattr(r, "min_quantity", 0) or 0),
+                    "max_quantity": float(getattr(r, "max_quantity", 0) or 0),
+                    "is_active": getattr(r, "is_active", "Y"),
+                }
+                for r in rules
+            ]
+        except Exception:
+            return []
+
+    def get_effective_sourcing_rules(self, config_id: int) -> List[Dict[str, Any]]:
+        """Get sourcing rules with parent-fallback for branch configs.
+
+        Branch-specific rules override parent rules.  Override key is
+        (product_id, to_site_id, sourcing_rule_type).
+        """
+        config = self.db.query(SupplyChainConfig).filter_by(id=config_id).first()
+        if not config:
+            return []
+
+        branch_rules = self._load_sourcing_rules(config_id)
+        if not config.parent_config_id:
+            return branch_rules
+
+        # Build set of keys that the branch overrides
+        overridden = {
+            (r["product_id"], r["to_site_id"], r["sourcing_rule_type"])
+            for r in branch_rules
+        }
+
+        parent_rules = self._load_sourcing_rules(config.parent_config_id)
+        inherited = [
+            r for r in parent_rules
+            if (r["product_id"], r["to_site_id"], r["sourcing_rule_type"]) not in overridden
+        ]
+
+        return branch_rules + inherited
 
     def _apply_delta(self, effective: Dict[str, Any], delta: ConfigDelta) -> None:
         """Apply a delta to an effective configuration"""

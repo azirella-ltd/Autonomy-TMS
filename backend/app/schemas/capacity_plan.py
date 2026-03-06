@@ -17,7 +17,7 @@ class CapacityPlanBase(BaseModel):
     """Base capacity plan schema with common fields."""
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
-    supply_chain_config_id: int = Field(..., gt=0)
+    supply_chain_config_id: Optional[int] = Field(None, gt=0, description="Supply chain config ID. If omitted, uses tenant's active baseline.")
     planning_horizon_weeks: int = Field(default=13, ge=1, le=104)
     bucket_size_days: int = Field(default=7, ge=1, le=30)
     start_date: datetime

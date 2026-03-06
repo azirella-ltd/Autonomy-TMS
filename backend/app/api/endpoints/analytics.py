@@ -87,7 +87,7 @@ async def get_capacity_metrics(
 @router.get("/policies/{config_id}", response_model=Dict)
 async def get_policy_effectiveness(
     config_id: int,
-    customer_id: int,
+    tenant_id: int,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -95,7 +95,7 @@ async def get_policy_effectiveness(
 
     Args:
         config_id: Supply chain configuration ID
-        customer_id: Customer ID for multi-tenancy
+        tenant_id: Tenant ID for multi-tenancy
 
     Returns:
         - Policy list with usage counts
@@ -103,7 +103,7 @@ async def get_policy_effectiveness(
         - Effectiveness scores
     """
     service = AnalyticsService(db)
-    metrics = await service.get_policy_effectiveness(config_id, customer_id)
+    metrics = await service.get_policy_effectiveness(config_id, tenant_id)
 
     return metrics
 
@@ -269,7 +269,7 @@ async def export_capacity_csv(
 @router.get("/export/policies/{config_id}/csv")
 async def export_policies_csv(
     config_id: int,
-    customer_id: int,
+    tenant_id: int,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -278,7 +278,7 @@ async def export_policies_csv(
     Returns a CSV file with policy effectiveness data
     """
     service = AnalyticsService(db)
-    metrics = await service.get_policy_effectiveness(config_id, customer_id)
+    metrics = await service.get_policy_effectiveness(config_id, tenant_id)
 
     # Create CSV in memory
     output = io.StringIO()

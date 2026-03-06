@@ -44,7 +44,7 @@ import {
   Target,
 } from 'lucide-react';
 import { api } from '../../services/api';
-import { getSupplyChainConfigs } from '../../services/supplyChainConfigService';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import InlineComments from '../../components/common/InlineComments';
 import { RebalancingWizard } from '../../components/recommendations';
 
@@ -68,11 +68,10 @@ const Recommendations = () => {
   const [success, setSuccess] = useState(null);
   const [activeView, setActiveView] = useState('recommendations');
 
+  const { effectiveConfigId } = useActiveConfig();
+
   // Performance tracking data - loaded from API
   const [performanceData, setPerformanceData] = useState(null);
-
-  // Current SC config ID for RebalancingWizard
-  const [currentConfigId, setCurrentConfigId] = useState(null);
 
   const fetchRecommendations = async () => {
     setLoading(true);
@@ -203,23 +202,17 @@ const Recommendations = () => {
     fetchRecommendations();
   }, [statusFilter, typeFilter, minScore]);
 
-  // Load SC config and performance data once on mount
+  // Load performance data once on mount
   useEffect(() => {
-    const loadInitialData = async () => {
+    const loadPerformanceData = async () => {
       try {
-        const [configs, perfResp] = await Promise.all([
-          getSupplyChainConfigs(),
-          api.get('/recommendations/performance'),
-        ]);
-        if (configs && configs.length > 0) {
-          setCurrentConfigId(configs[0].id);
-        }
+        const perfResp = await api.get('/recommendations/performance');
         setPerformanceData(perfResp.data);
       } catch (err) {
-        console.error('Failed to load initial recommendations data:', err);
+        console.error('Failed to load recommendations performance data:', err);
       }
     };
-    loadInitialData();
+    loadPerformanceData();
   }, []);
 
   const getScoreVariant = (score) => {
@@ -878,7 +871,7 @@ const Recommendations = () => {
         footer={<Button variant="outline" onClick={() => setRebalancingDialogOpen(false)}>Close</Button>}
       >
         <RebalancingWizard
-          configId={currentConfigId}
+          configId={effectiveConfigId}
           onComplete={(savedCount) => {
             setRebalancingDialogOpen(false);
             if (savedCount > 0) {

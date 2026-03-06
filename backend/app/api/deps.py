@@ -213,7 +213,7 @@ async def _lookup_service_account(
         name=sa.name,
         scope=sa.scope,
         site_key=sa.site_key,
-        tenant_id=sa.customer_id,
+        tenant_id=sa.customer_id,  # TODO: EdgeServiceAccount model removed (PicoClaw/OpenClaw cleanup)
     )
 
 
@@ -274,6 +274,38 @@ async def get_current_user_or_service_account(
         detail="Invalid credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+def get_active_baseline_config(db: Session, tenant_id: int):
+    """Get the active BASELINE SupplyChainConfig for a tenant.
+
+    Each tenant has exactly one active baseline, enforced by a unique partial
+    index (uq_tenant_active_baseline).  Planning endpoints call this when no
+    explicit config_id is provided.
+
+    Returns:
+        SupplyChainConfig instance.
+
+    Raises:
+        HTTPException 404 if no active baseline exists for the tenant.
+    """
+    from app.models.supply_chain_config import SupplyChainConfig
+
+    config = (
+        db.query(SupplyChainConfig)
+        .filter(
+            SupplyChainConfig.tenant_id == tenant_id,
+            SupplyChainConfig.is_active == True,
+            SupplyChainConfig.scenario_type == "BASELINE",
+        )
+        .first()
+    )
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No active baseline configuration for tenant {tenant_id}",
+        )
+    return config
 
 
 async def resolve_scenario_user_id(

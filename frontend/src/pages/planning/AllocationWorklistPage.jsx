@@ -34,7 +34,7 @@ import {
 } from '@mui/material';
 
 import { useAuth } from '../../contexts/AuthContext';
-import { getSupplyChainConfigs } from '../../services/supplyChainConfigService';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
 import ArtifactLineage from '../../components/cascade/ArtifactLineage';
 import CommitReviewPanel from '../../components/cascade/CommitReviewPanel';
@@ -78,41 +78,11 @@ const STATUS_COLORS = {
 
 const AllocationWorklistPage = ({ configId: propConfigId, tenantId: propTenantId }) => {
   const { user } = useAuth();
+  const { effectiveConfigId, activeConfig } = useActiveConfig();
 
-  // Auto-resolve configId and tenantId from user's organization when not provided as props
-  const [resolvedConfigId, setResolvedConfigId] = useState(propConfigId || null);
-  const [resolvedTenantId, setResolvedTenantId] = useState(propTenantId || user?.tenant_id || null);
-
-  useEffect(() => {
-    if (propConfigId) { setResolvedConfigId(propConfigId); return; }
-    if (propTenantId) setResolvedTenantId(propTenantId);
-    else if (user?.tenant_id) setResolvedTenantId(user.tenant_id);
-
-    // Fetch organization's first SC config when configId not provided
-    const resolveConfig = async () => {
-      try {
-        const configs = await getSupplyChainConfigs();
-        if (configs?.length > 0) {
-          // Pick the first config belonging to the user's organization (or the first active one)
-          const userTenantId = propTenantId || user?.tenant_id;
-          const tenantConfig = userTenantId
-            ? configs.find(c => c.tenant_id === userTenantId)
-            : null;
-          const activeConfig = configs.find(c => c.is_active);
-          const picked = tenantConfig || activeConfig || configs[0];
-          setResolvedConfigId(picked.id);
-          if (picked.tenant_id) setResolvedTenantId(picked.tenant_id);
-        }
-      } catch (err) {
-        console.error('Failed to resolve SC config:', err);
-        setError('Failed to determine supply chain configuration. Check that your organization has an active config.');
-      }
-    };
-    resolveConfig();
-  }, [propConfigId, propTenantId, user?.tenant_id]);
-
-  const configId = resolvedConfigId;
-  const tenantId = resolvedTenantId;
+  // Use prop if provided, otherwise resolve from active config context
+  const configId = propConfigId || effectiveConfigId;
+  const tenantId = propTenantId || user?.tenant_id || activeConfig?.tenant_id;
 
   // Layer license / mode
   const [mode, setMode] = useState(null); // 'active' | 'input' | 'disabled'

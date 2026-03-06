@@ -300,9 +300,14 @@ async def create_capacity_plan(
 
     Requires: MANAGE_CAPACITY_PLANNING capability
     """
-    # Validate supply chain config exists
+    # Resolve config: explicit or tenant's active baseline
+    effective_config_id = plan_data.supply_chain_config_id
+    if effective_config_id is None:
+        from app.api.deps import get_active_baseline_config
+        effective_config_id = get_active_baseline_config(db, current_user.tenant_id).id
+
     config = db.query(SupplyChainConfig).filter(
-        SupplyChainConfig.id == plan_data.supply_chain_config_id
+        SupplyChainConfig.id == effective_config_id
     ).first()
     if not config:
         raise HTTPException(status_code=404, detail="Supply chain config not found")
@@ -319,7 +324,7 @@ async def create_capacity_plan(
     plan = CapacityPlan(
         name=plan_data.name,
         description=plan_data.description,
-        supply_chain_config_id=plan_data.supply_chain_config_id,
+        supply_chain_config_id=effective_config_id,
         planning_horizon_weeks=plan_data.planning_horizon_weeks,
         bucket_size_days=plan_data.bucket_size_days,
         start_date=plan_data.start_date,

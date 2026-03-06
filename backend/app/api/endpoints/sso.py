@@ -50,7 +50,7 @@ class SSOProviderAdmin(BaseModel):
     allowed_domains: Optional[List[str]] = None
     auto_create_users: bool
     default_user_type: str
-    default_customer_id: Optional[int] = None
+    default_tenant_id: Optional[int] = None
     tenant_id: Optional[int] = None
     created_by: Optional[int] = None
     created_at: datetime
@@ -70,7 +70,7 @@ class SSOProviderCreate(BaseModel):
     allowed_domains: Optional[List[str]] = None
     auto_create_users: bool = True
     default_user_type: str = "USER"
-    default_customer_id: Optional[int] = None
+    default_tenant_id: Optional[int] = None
 
     @validator('config')
     def validate_config(cls, v, values):
@@ -100,7 +100,7 @@ class SSOProviderUpdate(BaseModel):
     allowed_domains: Optional[List[str]] = None
     auto_create_users: Optional[bool] = None
     default_user_type: Optional[str] = None
-    default_customer_id: Optional[int] = None
+    default_tenant_id: Optional[int] = None
 
 
 class LDAPLoginRequest(BaseModel):

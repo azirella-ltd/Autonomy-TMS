@@ -139,7 +139,7 @@ async def create_pipeline(
     """
     pipeline = DeploymentPipelineRun(
         config_template=request.config_template,
-        customer_id=getattr(current_user, 'tenant_id', None),
+        tenant_id=current_user.tenant_id,
         status="pending",
         current_step=0,
         total_steps=7,

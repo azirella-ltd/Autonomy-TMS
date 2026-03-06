@@ -856,16 +856,16 @@ async def run_mrp(
     run_id = str(uuid.uuid4())
     started_at = datetime.now()
 
-    # Get customer_id from supply chain config
+    # Get tenant_id from supply chain config
     config = db.get(SupplyChainConfig, mps_plan.supply_chain_config_id)
-    customer_id = config.customer_id if config else None
+    tenant_id = config.tenant_id if config else None
 
     # Create MRP run record with PENDING status
     mrp_run = MRPRunModel(
         run_id=run_id,
         mps_plan_id=mps_plan.id,
         config_id=mps_plan.supply_chain_config_id,
-        customer_id=customer_id,
+        tenant_id=tenant_id,
         status="PENDING",
         explode_bom_levels=request.explode_bom_levels,
         planning_horizon_weeks=request.planning_horizon_weeks,

@@ -30,7 +30,7 @@ import sqlalchemy as sa
 
 class MPSPlanCreate(BaseModel):
     """Request schema for creating a new MPS plan"""
-    config_id: int = Field(..., description="Supply chain configuration ID")
+    config_id: Optional[int] = Field(None, description="Supply chain config ID. If omitted, uses tenant's active baseline.")
     name: Optional[str] = Field(None, description="Plan name")
     description: Optional[str] = Field(None, description="Plan description")
     planning_horizon: int = Field(52, description="Planning horizon in weeks", ge=1, le=104)
@@ -457,12 +457,17 @@ async def create_mps_plan(
     """
     check_mps_permission(current_user, "manage", db)
 
-    # Verify config exists
-    config = db.get(SupplyChainConfig, plan_data.config_id)
+    # Resolve config: explicit or tenant's active baseline
+    effective_config_id = plan_data.config_id
+    if effective_config_id is None:
+        from app.api.deps import get_active_baseline_config
+        effective_config_id = get_active_baseline_config(db, current_user.tenant_id).id
+
+    config = db.get(SupplyChainConfig, effective_config_id)
     if not config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Supply chain config with id {plan_data.config_id} not found"
+            detail=f"Supply chain config with id {effective_config_id} not found"
         )
 
     # Calculate dates
@@ -472,7 +477,7 @@ async def create_mps_plan(
     # Generate name if not provided
     if not plan_data.name:
         plan_count = db.execute(
-            select(MPSPlan).where(MPSPlan.supply_chain_config_id == plan_data.config_id)
+            select(MPSPlan).where(MPSPlan.supply_chain_config_id == effective_config_id)
         ).scalars().all()
         plan_data.name = f"MPS Plan {len(plan_count) + 1} - {config.name}"
 
@@ -480,7 +485,7 @@ async def create_mps_plan(
     new_plan = MPSPlan(
         name=plan_data.name,
         description=plan_data.description,
-        supply_chain_config_id=plan_data.config_id,
+        supply_chain_config_id=effective_config_id,
         planning_horizon_weeks=plan_data.planning_horizon,
         bucket_size_days=plan_data.bucket_size_days,
         start_date=start_date,

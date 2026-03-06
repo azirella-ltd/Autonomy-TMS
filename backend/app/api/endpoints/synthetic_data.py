@@ -521,7 +521,7 @@ async def generate_synthetic_data(
 
         return GenerationResultResponse(
             success=True,
-            tenant_id=result.customer_id,
+            tenant_id=result.tenant_id,
             config_id=result.config_id,
             admin_user_id=result.admin_user_id,
             nodes_created=result.nodes_created,

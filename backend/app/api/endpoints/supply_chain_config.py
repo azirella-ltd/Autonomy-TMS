@@ -422,9 +422,9 @@ def _ensure_user_can_manage_config(
         return
 
     admin_tenant_id = _get_user_admin_tenant_id(db, user)
-    if config.customer_id is None:
+    if config.tenant_id is None:
         return
-    if admin_tenant_id and config.customer_id == admin_tenant_id:
+    if admin_tenant_id and config.tenant_id == admin_tenant_id:
         return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
@@ -442,16 +442,16 @@ def _ensure_user_can_view_config(
     if user_type == UserTypeEnum.SYSTEM_ADMIN:
         return
 
-    config_customer_id = getattr(config, "customer_id", None)
-    if config_customer_id is None:
+    config_tenant_id = getattr(config, "tenant_id", None)
+    if config_tenant_id is None:
         return
 
     admin_tenant_id = _get_user_admin_tenant_id(db, user)
-    if admin_tenant_id and config_customer_id == admin_tenant_id:
+    if admin_tenant_id and config_tenant_id == admin_tenant_id:
         return
 
     user_tenant_id = getattr(user, "tenant_id", None)
-    if user_tenant_id and user_tenant_id == config_customer_id:
+    if user_tenant_id and user_tenant_id == config_tenant_id:
         return
 
     raise HTTPException(
@@ -482,7 +482,7 @@ def _compute_config_hash(db: Session, config_id: int) -> Optional[str]:
             "name": config.name,
             "description": config.description,
             "is_active": bool(config.is_active),
-            "customer_id": config.customer_id,
+            "tenant_id": config.tenant_id,
         },
         "items": [
             {
@@ -782,7 +782,7 @@ async def read_configs(
             db,
             skip=skip,
             limit=limit,
-            customer_id=admin_tenant_id,
+            tenant_id=admin_tenant_id,
         )
 
     # Regular users see configs for their assigned tenant
@@ -792,7 +792,7 @@ async def read_configs(
             db,
             skip=skip,
             limit=limit,
-            customer_id=user_tenant_id,
+            tenant_id=user_tenant_id,
         )
 
     raise HTTPException(
@@ -805,43 +805,36 @@ def read_active_config(
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_active_user),
 ):
-    """Get the active supply chain configuration."""
-    # Use user_type (not is_superuser) to determine access
+    """Get the active BASELINE supply chain configuration for the user's tenant."""
     user_type = getattr(current_user, "user_type", None)
     if user_type == UserTypeEnum.SYSTEM_ADMIN:
-        config = crud.supply_chain_config.get_active(db)
+        # System admin: try their tenant first, fall back to any active baseline
+        tenant_id = getattr(current_user, "tenant_id", None)
+        if tenant_id:
+            config = deps.get_active_baseline_config(db, tenant_id)
+        else:
+            config = (
+                db.query(SupplyChainConfig)
+                .filter(
+                    SupplyChainConfig.is_active == True,
+                    SupplyChainConfig.scenario_type == "BASELINE",
+                )
+                .first()
+            )
     else:
         admin_tenant_id = _get_user_admin_tenant_id(db, current_user)
-        if admin_tenant_id:
-            config = (
-                db.query(SupplyChainConfig)
-                .filter(
-                    SupplyChainConfig.tenant_id == admin_tenant_id,
-                    SupplyChainConfig.is_active == True,
-                )
-                .first()
+        tenant_id = admin_tenant_id or getattr(current_user, "tenant_id", None)
+        if not tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to view this configuration",
             )
-        else:
-            user_tenant_id = getattr(current_user, "tenant_id", None)
-            if not user_tenant_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="You do not have permission to view this configuration",
-                )
-
-            config = (
-                db.query(SupplyChainConfig)
-                .filter(
-                    SupplyChainConfig.tenant_id == user_tenant_id,
-                    SupplyChainConfig.is_active == True,
-                )
-                .first()
-            )
+        config = deps.get_active_baseline_config(db, tenant_id)
 
     if not config:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No active configuration found",
+            detail="No active baseline configuration found",
         )
     return config
 
@@ -858,7 +851,7 @@ def create_config(
     user_type = getattr(current_user, "user_type", None)
 
     if user_type == UserTypeEnum.SYSTEM_ADMIN:
-        target_tenant_id = config_in.customer_id
+        target_tenant_id = config_in.tenant_id
         if target_tenant_id is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -879,7 +872,7 @@ def create_config(
                 detail="You do not have permission to create configurations",
             )
 
-        payload = config_in.copy(update={"customer_id": admin_tenant_id})
+        payload = config_in.copy(update={"tenant_id": admin_tenant_id})
 
     cfg = crud.supply_chain_config.create(db, obj_in=payload)
     # Attach creator if column exists
@@ -923,8 +916,8 @@ def update_config(
     user_type = getattr(current_user, "user_type", None)
 
     if user_type == UserTypeEnum.SYSTEM_ADMIN:
-        if "customer_id" in update_data:
-            new_tenant_id = update_data["customer_id"]
+        if "tenant_id" in update_data:
+            new_tenant_id = update_data["tenant_id"]
             if new_tenant_id is None:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -936,12 +929,12 @@ def update_config(
                     detail="Specified tenant not found",
                 )
     else:
-        if "customer_id" in update_data and update_data["customer_id"] != config.customer_id:
+        if "tenant_id" in update_data and update_data["tenant_id"] != config.tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You cannot reassign this configuration to another tenant",
             )
-        update_data.pop("customer_id", None)
+        update_data.pop("tenant_id", None)
 
     updated = crud.supply_chain_config.update(db, db_obj=config, obj_in=update_data)
     changed_keys = set(update_data.keys())
@@ -2173,7 +2166,7 @@ def validate_supply_chain_config(
 
     # Validate access (must be in same group or be system admin)
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.customer_id != current_user.tenant_id:
+        if config.tenant_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to validate this configuration"
@@ -2254,7 +2247,7 @@ def create_scenario_branch(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if parent.customer_id != current_user.tenant_id:
+        if parent.tenant_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to branch from this configuration"
@@ -2332,7 +2325,7 @@ def get_effective_configuration(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.customer_id != current_user.tenant_id:
+        if config.tenant_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to view this configuration"
@@ -2415,7 +2408,7 @@ def update_scenario(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.customer_id != current_user.tenant_id:
+        if config.tenant_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to update this configuration"
@@ -2488,7 +2481,7 @@ def commit_scenario(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.customer_id != current_user.tenant_id:
+        if config.tenant_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to commit this configuration"
@@ -2546,7 +2539,7 @@ def rollback_scenario(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.customer_id != current_user.tenant_id:
+        if config.tenant_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to rollback this configuration"
@@ -2606,7 +2599,7 @@ def diff_scenarios(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.customer_id != current_user.tenant_id or other_config.customer_id != current_user.tenant_id:
+        if config.tenant_id != current_user.tenant_id or other_config.tenant_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to compare these configurations"
@@ -2664,7 +2657,7 @@ def get_scenario_tree(
 
     # Validate access
     if current_user.type != UserTypeEnum.SYSTEM_ADMIN:
-        if config.customer_id != current_user.tenant_id:
+        if config.tenant_id != current_user.tenant_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to view this configuration tree"

@@ -45,6 +45,8 @@ import {
   Activity,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
+import BranchPicker from '../../components/planning/BranchPicker';
 
 // ---------------------------------------------------------------------------
 // Risk helpers
@@ -90,9 +92,7 @@ const formatNumber = (v) => {
 // ---------------------------------------------------------------------------
 
 const InventoryVisibility = () => {
-  // Config selector
-  const [configs, setConfigs] = useState([]);
-  const [selectedConfig, setSelectedConfig] = useState('');
+  const { effectiveConfigId } = useActiveConfig();
 
   // Data
   const [snapshot, setSnapshot] = useState([]);
@@ -121,37 +121,20 @@ const InventoryVisibility = () => {
   // Data fetching
   // -----------------------------------------------------------------------
 
-  const loadConfigs = useCallback(async () => {
-    try {
-      const res = await api.get('/supply-chain-config/');
-      const items = res.data.items || res.data || [];
-      setConfigs(items);
-      if (items.length > 0 && !selectedConfig) {
-        // Auto-select root baseline config (no parent, BASELINE type)
-        const root = items.find(c => !c.parent_config_id && c.scenario_type === 'BASELINE')
-          || items.find(c => c.is_active)
-          || items[0];
-        setSelectedConfig(root.id.toString());
-      }
-    } catch (err) {
-      console.error('Failed to load configs:', err);
-    }
-  }, [selectedConfig]);
-
   const fetchData = useCallback(async () => {
-    if (!selectedConfig) return;
+    if (!effectiveConfigId) return;
     setLoading(true);
     setError(null);
     try {
-      const params = { config_id: selectedConfig };
+      const params = { config_id: effectiveConfigId };
       if (siteFilter && siteFilter !== 'all') params.site_id = siteFilter;
       if (productFilter) params.product_id = productFilter;
       if (riskFilter && riskFilter !== 'all') params.risk_level = riskFilter;
 
       const [snapRes, summRes, healthRes] = await Promise.all([
         api.get('/inventory-visibility/snapshot', { params }),
-        api.get('/inventory-visibility/summary', { params: { config_id: selectedConfig } }),
-        api.get('/inventory-visibility/site-health', { params: { config_id: selectedConfig } }),
+        api.get('/inventory-visibility/summary', { params: { config_id: effectiveConfigId } }),
+        api.get('/inventory-visibility/site-health', { params: { config_id: effectiveConfigId } }),
       ]);
 
       setSnapshot(snapRes.data);
@@ -163,10 +146,9 @@ const InventoryVisibility = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedConfig, siteFilter, productFilter, riskFilter]);
+  }, [effectiveConfigId, siteFilter, productFilter, riskFilter]);
 
-  useEffect(() => { loadConfigs(); }, [loadConfigs]);
-  useEffect(() => { if (selectedConfig) fetchData(); }, [selectedConfig, fetchData]);
+  useEffect(() => { if (effectiveConfigId) fetchData(); }, [effectiveConfigId, fetchData]);
 
   // -----------------------------------------------------------------------
   // Sorting
@@ -237,18 +219,7 @@ const InventoryVisibility = () => {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Select value={selectedConfig} onValueChange={setSelectedConfig}>
-            <SelectTrigger className="w-[220px]">
-              <SelectValue placeholder="Select Configuration" />
-            </SelectTrigger>
-            <SelectContent>
-              {configs.map((c) => (
-                <SelectItem key={c.id} value={c.id.toString()}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <BranchPicker />
           <Button
             variant="outline"
             onClick={fetchData}

@@ -76,7 +76,7 @@ def create_workflow_template(
 ):
     """Create a new workflow template."""
     # Verify user has access to the tenant
-    template_tenant_id = getattr(template_in, 'tenant_id', None) or getattr(template_in, 'customer_id', None)
+    template_tenant_id = getattr(template_in, 'tenant_id', None)
     if template_tenant_id and template_tenant_id != current_user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

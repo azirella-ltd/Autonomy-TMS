@@ -91,7 +91,7 @@ class PlanningCycleBase(BaseModel):
 
 class PlanningCycleCreate(PlanningCycleBase):
     """Schema for creating a planning cycle."""
-    customer_id: int = Field(..., gt=0, description="Customer this cycle belongs to")
+    tenant_id: int = Field(..., gt=0, description="Tenant this cycle belongs to")
     owner_id: Optional[int] = Field(None, description="User who owns this cycle")
 
     class Config:
@@ -100,7 +100,7 @@ class PlanningCycleCreate(PlanningCycleBase):
                 "name": "Q1 2026 Weekly Planning",
                 "description": "Weekly S&OP planning cycle for Q1",
                 "cycle_type": "weekly",
-                "customer_id": 1,
+                "tenant_id": 1,
                 "period_start": "2026-01-01",
                 "period_end": "2026-03-31",
                 "planning_horizon_weeks": 26
@@ -133,7 +133,7 @@ class PlanningCycleStatusUpdate(BaseModel):
 class PlanningCycleResponse(PlanningCycleBase):
     """Schema for planning cycle response."""
     id: int
-    customer_id: int
+    tenant_id: int
     owner_id: Optional[int] = None
     status: CycleStatusEnum
 
@@ -156,7 +156,7 @@ class PlanningCycleResponse(PlanningCycleBase):
                 "id": 1,
                 "name": "Q1 2026 Weekly Planning",
                 "cycle_type": "weekly",
-                "customer_id": 1,
+                "tenant_id": 1,
                 "status": "planning",
                 "period_start": "2026-01-01",
                 "period_end": "2026-03-31",

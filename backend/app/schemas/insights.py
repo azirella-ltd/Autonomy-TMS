@@ -164,7 +164,7 @@ class ActionSummary(BaseModel):
 class ActionDetail(BaseModel):
     """Full detail view of an action (for INSPECT)."""
     id: int
-    customer_id: int
+    tenant_id: int
     action_mode: str
     action_type: str
     category: str

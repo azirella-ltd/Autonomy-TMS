@@ -351,7 +351,7 @@ def create_policy_envelope(
     try:
         envelope = service.create_policy_envelope(
             config_id=request.config_id,
-            customer_id=request.tenant_id,
+            tenant_id=request.tenant_id,
             params=params,
         )
         return envelope
@@ -430,7 +430,7 @@ def create_supply_baseline_pack(
     try:
         supbp = service.generate_supply_baseline_pack(
             config_id=request.config_id,
-            customer_id=request.tenant_id,
+            tenant_id=request.tenant_id,
             policy_envelope_id=request.policy_envelope_id,
             policy_envelope_hash=envelope.hash,
             inventory_state=inventory_state,
@@ -516,7 +516,7 @@ def generate_supply_commit(
     try:
         commit = agent.generate_supply_commit(
             config_id=supbp.config_id,
-            customer_id=supbp.customer_id,
+            tenant_id=supbp.tenant_id,
             supply_baseline_pack_id=supbp.id,
             supply_baseline_pack_hash=supbp.hash,
             policy_envelope=policy_envelope,
@@ -617,7 +617,7 @@ def generate_allocation_commit(
     try:
         commit = agent.generate_allocation_commit(
             config_id=supply_commit.config_id,
-            customer_id=supply_commit.customer_id,
+            tenant_id=supply_commit.tenant_id,
             supply_commit_id=supply_commit.id,
             supply_commit_hash=supply_commit.hash,
             policy_envelope=policy_envelope,
@@ -711,13 +711,13 @@ def run_cascade(
         if request.use_food_dist_defaults:
             result = orchestrator.run_cascade_for_food_dist(
                 config_id=request.config_id,
-                customer_id=request.tenant_id,
+                tenant_id=request.tenant_id,
                 user_id=user_id,
             )
         else:
             result = orchestrator.run_cascade(
                 config_id=request.config_id,
-                customer_id=request.tenant_id,
+                tenant_id=request.tenant_id,
                 user_id=user_id,
             )
 
@@ -763,7 +763,7 @@ def create_feed_back_signal(
     try:
         signal = orchestrator.record_feed_back_signal(
             config_id=request.config_id,
-            customer_id=request.tenant_id,
+            tenant_id=request.tenant_id,
             signal_type=request.signal_type,
             metric_name=request.metric_name,
             metric_value=request.metric_value,
@@ -866,7 +866,7 @@ async def get_layer_licenses(
     """Get all layer licenses for a customer"""
     from app.models.planning_cascade import LayerLicense, LayerName, LayerMode
 
-    result = await db.execute(select(LayerLicense).where(LayerLicense.customer_id == tenant_id))
+    result = await db.execute(select(LayerLicense).where(LayerLicense.tenant_id == tenant_id))
     licenses = result.scalars().all()
 
     # Build full map with defaults for missing layers
@@ -910,7 +910,7 @@ def update_layer_license(
         raise HTTPException(status_code=400, detail=str(e))
 
     existing = db.query(LayerLicense).filter_by(
-        customer_id=tenant_id, layer=layer_name
+        tenant_id=tenant_id, layer=layer_name
     ).first()
 
     if existing:
@@ -921,7 +921,7 @@ def update_layer_license(
             existing.activated_at = datetime.utcnow()
     else:
         new_license = LayerLicense(
-            customer_id=customer_id,
+            tenant_id=tenant_id,
             layer=layer_name,
             mode=layer_mode,
             package_tier=request.package_tier,
@@ -992,7 +992,7 @@ def set_package_tier(
 
     for layer_name, mode in config.items():
         existing = db.query(LayerLicense).filter_by(
-            customer_id=tenant_id, layer=layer_name
+            tenant_id=tenant_id, layer=layer_name
         ).first()
 
         if existing:
@@ -1003,7 +1003,7 @@ def set_package_tier(
                 existing.activated_at = now
         else:
             db.add(LayerLicense(
-                customer_id=tenant_id,
+                tenant_id=tenant_id,
                 layer=layer_name,
                 mode=mode,
                 package_tier=tier,
@@ -1399,7 +1399,7 @@ async def get_trm_decisions(
     decision_type = trm_to_decision_type[trm_type]
 
     stmt = select(AgentDecision).where(
-        AgentDecision.customer_id == config_id,  # config_id used as group context
+        AgentDecision.tenant_id == config_id,  # TODO: should filter by tenant_id, not config_id
         AgentDecision.decision_type == decision_type,
     )
 
@@ -1592,7 +1592,7 @@ async def get_trm_decision_detail(
         "reviewed_by": decision.user_id,
         "reviewed_at": decision.action_timestamp.isoformat() if decision.action_timestamp else None,
         "created_at": decision.created_at.isoformat() if decision.created_at else None,
-        "customer_id": decision.customer_id,
+        "tenant_id": decision.tenant_id,
     }
 
 
@@ -1625,7 +1625,7 @@ async def get_trm_summary(
     decision_type = trm_to_decision_type[trm_type]
 
     base_filters = [
-        AgentDecision.customer_id == config_id,
+        AgentDecision.tenant_id == config_id,  # TODO: should filter by tenant_id, not config_id
         AgentDecision.decision_type == decision_type,
     ]
 
@@ -1745,8 +1745,8 @@ async def _write_to_replay_buffer(
     reward = 1.0 if action == "accept" else -0.5
 
     entry = TRMReplayBuffer(
-        customer_id=decision.customer_id,
-        config_id=decision.customer_id,  # Use customer_id as config context
+        tenant_id=decision.tenant_id,
+        config_id=decision.tenant_id,  # TODO: should use actual config_id, not tenant_id
         trm_type=_trm_type_from_decision_type(decision.decision_type),
         decision_log_id=decision.id,
         decision_log_table="agent_decisions",

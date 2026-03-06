@@ -57,14 +57,14 @@ class CRUDSupplyChainConfig(CRUDBase[SupplyChainConfig, SupplyChainConfigCreate,
         )
             
     def create(self, db: Session, *, obj_in: SupplyChainConfigCreate) -> SupplyChainConfig:
-        # Ensure only one active config per customer
+        # Ensure only one active config per tenant
         if obj_in.is_active:
-            customer_id = getattr(obj_in, "customer_id", None)
+            tenant_id = getattr(obj_in, "tenant_id", None)
             query = db.query(self.model).filter(self.model.is_active == True)
-            if customer_id is not None:
-                query = query.filter(self.model.customer_id == customer_id)
+            if tenant_id is not None:
+                query = query.filter(self.model.tenant_id == tenant_id)
             else:
-                query = query.filter(self.model.customer_id.is_(None))
+                query = query.filter(self.model.tenant_id.is_(None))
             query.update({"is_active": False})
         return super().create(db, obj_in=obj_in)
 
@@ -78,10 +78,10 @@ class CRUDSupplyChainConfig(CRUDBase[SupplyChainConfig, SupplyChainConfigCreate,
                 self.model.id != db_obj.id,
                 self.model.is_active == True
             )
-            if db_obj.customer_id is not None:
-                query = query.filter(self.model.customer_id == db_obj.customer_id)
+            if db_obj.tenant_id is not None:
+                query = query.filter(self.model.tenant_id == db_obj.tenant_id)
             else:
-                query = query.filter(self.model.customer_id.is_(None))
+                query = query.filter(self.model.tenant_id.is_(None))
             query.update({"is_active": False})
 
         return super().update(db, db_obj=db_obj, obj_in=obj_in)

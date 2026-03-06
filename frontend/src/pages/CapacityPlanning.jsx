@@ -61,12 +61,13 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useCapabilities } from '../hooks/useCapabilities';
 import { api } from '../services/api';
-import { getSupplyChainConfigs } from '../services/supplyChainConfigService';
+import { useActiveConfig } from '../contexts/ActiveConfigContext';
 
 const CapacityPlanning = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { hasCapability } = useCapabilities();
+  const { effectiveConfigId, activeConfig } = useActiveConfig();
 
   // State
   const [tabValue, setTabValue] = useState('plans');
@@ -122,7 +123,6 @@ const CapacityPlanning = () => {
   });
 
   // Reference data
-  const [configs, setConfigs] = useState([]);
   const [sites, setSites] = useState([]);
 
   // Permissions
@@ -136,7 +136,6 @@ const CapacityPlanning = () => {
     }
     fetchPlans();
     fetchSummary();
-    fetchConfigs();
     fetchSites();
   }, [page, statusFilter, configFilter, scenarioFilter]);
 
@@ -170,14 +169,6 @@ const CapacityPlanning = () => {
     }
   };
 
-  const fetchConfigs = async () => {
-    try {
-      const configs = await getSupplyChainConfigs();
-      setConfigs(configs || []);
-    } catch (err) {
-      console.error('Failed to fetch configs:', err);
-    }
-  };
 
   const fetchSites = async () => {
     try {
@@ -210,7 +201,7 @@ const CapacityPlanning = () => {
 
   const handleCreatePlan = async () => {
     try {
-      await api.post('/capacity-plans', planForm);
+      await api.post('/capacity-plans', { ...planForm, supply_chain_config_id: effectiveConfigId });
       setCreateDialogOpen(false);
       fetchPlans();
       fetchSummary();
@@ -437,17 +428,9 @@ const CapacityPlanning = () => {
               </div>
               <div className="min-w-[200px]">
                 <Label htmlFor="config-filter">Config</Label>
-                <select
-                  id="config-filter"
-                  value={configFilter}
-                  onChange={(e) => setConfigFilter(e.target.value)}
-                  className="w-full mt-1 h-10 px-3 rounded-md border border-input bg-background"
-                >
-                  <option value="">All</option>
-                  {configs.map((config) => (
-                    <option key={config.id} value={config.id}>{config.name}</option>
-                  ))}
-                </select>
+                <p className="mt-1 h-10 flex items-center text-sm text-muted-foreground">
+                  {activeConfig?.name || 'Loading...'}
+                </p>
               </div>
               <div className="min-w-[200px]">
                 <Label htmlFor="type-filter">Type</Label>
@@ -853,18 +836,10 @@ const CapacityPlanning = () => {
               />
             </div>
             <div>
-              <Label htmlFor="plan-config">Supply Chain Config *</Label>
-              <select
-                id="plan-config"
-                value={planForm.supply_chain_config_id}
-                onChange={(e) => setPlanForm({ ...planForm, supply_chain_config_id: e.target.value })}
-                className="w-full mt-1 h-10 px-3 rounded-md border border-input bg-background"
-              >
-                <option value="">Select config...</option>
-                {configs.map((config) => (
-                  <option key={config.id} value={config.id}>{config.name}</option>
-                ))}
-              </select>
+              <Label>Supply Chain Config</Label>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {activeConfig?.name || 'Loading...'}
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -949,7 +924,7 @@ const CapacityPlanning = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreatePlan} disabled={!planForm.name || !planForm.supply_chain_config_id}>
+            <Button onClick={handleCreatePlan} disabled={!planForm.name || !effectiveConfigId}>
               Create
             </Button>
           </DialogFooter>
