@@ -118,6 +118,20 @@ class DecisionStreamChatRequest(BaseModel):
     config_id: Optional[int] = None
 
 
+class DataBlock(BaseModel):
+    """Structured data for inline visualization in chat messages.
+
+    block_type determines frontend rendering:
+      - metrics_row:  Array of KPI cards  (data.metrics[])
+      - table:        Data table           (data.columns[], data.rows[][])
+      - inventory_bar: Inventory position  (data.on_hand, .in_transit, .allocated, etc.)
+      - alert:        Alert box            (data.severity, data.message)
+    """
+    block_type: str
+    title: Optional[str] = None
+    data: Dict[str, Any] = Field(default_factory=dict)
+
+
 class DecisionStreamChatResponse(BaseModel):
     """Response from the conversational stream."""
     response: str
@@ -125,3 +139,7 @@ class DecisionStreamChatResponse(BaseModel):
     sources: List[Dict[str, Any]] = Field(default_factory=list)
     suggested_followups: List[str] = Field(default_factory=list)
     embedded_decisions: Optional[List[PendingDecisionItem]] = None
+    data_blocks: List[DataBlock] = Field(
+        default_factory=list,
+        description="Structured data blocks for inline visualization (charts, tables, KPI cards)",
+    )

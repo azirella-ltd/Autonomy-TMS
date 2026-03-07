@@ -27,6 +27,7 @@ import { Badge, Button, Card, CardContent, Input } from '../components/common';
 import AlertBanner from '../components/decision-stream/AlertBanner';
 import DigestMessage from '../components/decision-stream/DigestMessage';
 import DecisionCard from '../components/decision-stream/DecisionCard';
+import ChatDataBlock from '../components/decision-stream/ChatDataBlock';
 import { decisionStreamApi } from '../services/decisionStreamApi';
 import { simulationApi } from '../services/api';
 import { cn } from '../lib/utils/cn';
@@ -168,6 +169,7 @@ const DecisionStream = () => {
           role: 'assistant',
           content: result.response,
           sources: result.sources || [],
+          dataBlocks: result.data_blocks || [],
         };
         setChatHistory((prev) => [...prev, aiMessage]);
         setConversationId(result.conversation_id);
@@ -301,6 +303,13 @@ const DecisionStream = () => {
                 )}
               >
                 <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                {msg.dataBlocks?.length > 0 && (
+                  <div className="mt-2 space-y-2">
+                    {msg.dataBlocks.map((block, i) => (
+                      <ChatDataBlock key={i} block={block} />
+                    ))}
+                  </div>
+                )}
                 {msg.sources?.length > 0 && (
                   <div className="mt-2 pt-2 border-t border-muted">
                     <p className="text-xs text-muted-foreground mb-1">

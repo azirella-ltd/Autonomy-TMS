@@ -37,6 +37,7 @@ from app.models.powell_decisions import (
     PowellBufferDecision,
 )
 from app.models.supply_chain_config import SupplyChainConfig
+from app.models.sc_entities import Forecast, InvLevel, InvPolicy
 from app.services.knowledge_base_service import KnowledgeBaseService
 
 logger = logging.getLogger(__name__)
@@ -304,8 +305,15 @@ class DecisionStreamService:
         # RAG retrieval
         rag_results = await self._retrieve_context(message)
 
+        # Detect referenced decision and fetch rich data
+        enrichment = await self._enrich_from_message(message, conv["messages"], config_id)
+        data_blocks = enrichment.get("data_blocks", [])
+        enrichment_text = enrichment.get("context_text", "")
+
         # Collect brief decision context for the LLM
         decision_context = await self._get_brief_decision_context(config_id, powell_role)
+        if enrichment_text:
+            decision_context += "\n\n" + enrichment_text
 
         # Build prompt
         prompt = self._build_chat_prompt(message, conv["messages"], rag_results, decision_context)
@@ -336,6 +344,7 @@ class DecisionStreamService:
             "sources": sources,
             "suggested_followups": self._suggest_followups(message, response_text, decision_context),
             "embedded_decisions": None,
+            "data_blocks": data_blocks,
         }
 
     # ------------------------------------------------------------------
@@ -517,6 +526,383 @@ class DecisionStreamService:
                 f"The highest priority is: {top_desc}."
             )
 
+    async def _enrich_from_message(
+        self,
+        message: str,
+        history: List[Dict[str, str]],
+        config_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Detect referenced decisions/products and fetch real data for inline display.
+
+        Returns:
+            dict with 'data_blocks' (structured viz data) and 'context_text' (LLM context).
+        """
+        msg_lower = message.lower()
+        data_blocks: List[Dict[str, Any]] = []
+        context_parts: List[str] = []
+
+        # Extract product IDs mentioned in message or recent history
+        product_ids = set()
+        site_ids = set()
+        decision_type_hint = None
+
+        # Scan message + last few messages for product/site IDs and decision types
+        texts_to_scan = [message]
+        for m in history[-4:]:
+            texts_to_scan.append(m.get("content", ""))
+
+        for text in texts_to_scan:
+            # Find product IDs (e.g., CFG22_RD005, CFG22_FP001)
+            import re
+            for match in re.finditer(r'(CFG\d+_\w+)', text, re.IGNORECASE):
+                product_ids.add(match.group(1).upper())
+            # Find site IDs (e.g., FOODDIST_DC, FOODDIST_WH1)
+            for match in re.finditer(r'(FOODDIST_\w+)', text, re.IGNORECASE):
+                site_ids.add(match.group(1).upper())
+            # Detect decision type
+            tl = text.lower()
+            if "forecast" in tl:
+                decision_type_hint = "forecast_adjustment"
+            elif "rebalanc" in tl:
+                decision_type_hint = "rebalancing"
+            elif "atp" in tl or "fulfill" in tl:
+                decision_type_hint = "atp"
+            elif any(k in tl for k in ("po ", "purchase", "order qty")):
+                decision_type_hint = "po_creation"
+
+        if not product_ids and not site_ids:
+            return {"data_blocks": [], "context_text": ""}
+
+        # Fetch real data for mentioned products/sites
+        try:
+            # 1. Inventory position
+            inv_data = await self._fetch_inventory_data(product_ids, site_ids, config_id)
+            if inv_data:
+                data_blocks.append({
+                    "block_type": "table",
+                    "title": "Current Inventory Position",
+                    "data": {
+                        "columns": ["Product", "Site", "On Hand", "In Transit", "Allocated", "Available", "Safety Stock"],
+                        "rows": inv_data["rows"],
+                    },
+                })
+                context_parts.append(
+                    "=== LIVE INVENTORY DATA ===\n" + inv_data["text"] + "\n=== END INVENTORY ==="
+                )
+
+            # 2. Forecast data
+            fcst_data = await self._fetch_forecast_data(product_ids, site_ids, config_id)
+            if fcst_data:
+                data_blocks.append({
+                    "block_type": "table",
+                    "title": "Forecast (Next 4 Periods)",
+                    "data": {
+                        "columns": ["Product", "Period", "P10", "P50 (Base)", "P90", "Method"],
+                        "rows": fcst_data["rows"],
+                    },
+                })
+                context_parts.append(
+                    "=== LIVE FORECAST DATA ===\n" + fcst_data["text"] + "\n=== END FORECAST ==="
+                )
+
+            # 3. Inventory policy
+            policy_data = await self._fetch_policy_data(product_ids, site_ids, config_id)
+            if policy_data:
+                data_blocks.append({
+                    "block_type": "metrics_row",
+                    "title": "Inventory Policy",
+                    "data": {"metrics": policy_data["metrics"]},
+                })
+                context_parts.append(
+                    "=== INVENTORY POLICY ===\n" + policy_data["text"] + "\n=== END POLICY ==="
+                )
+
+            # 4. Decision detail — fetch the specific decision record
+            decision_detail = await self._fetch_decision_detail(
+                product_ids, decision_type_hint, config_id
+            )
+            if decision_detail:
+                data_blocks.append({
+                    "block_type": "metrics_row",
+                    "title": "Decision Detail",
+                    "data": {"metrics": decision_detail["metrics"]},
+                })
+                context_parts.append(
+                    "=== DECISION DETAIL ===\n" + decision_detail["text"] + "\n=== END DETAIL ==="
+                )
+
+        except Exception as e:
+            logger.warning(f"Data enrichment failed (non-fatal): {e}")
+
+        return {
+            "data_blocks": data_blocks,
+            "context_text": "\n\n".join(context_parts),
+        }
+
+    async def _fetch_inventory_data(
+        self, product_ids: set, site_ids: set, config_id: Optional[int]
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch current inventory levels for mentioned products."""
+        try:
+            query = select(InvLevel).where(InvLevel.product_id.in_(product_ids))
+            if config_id:
+                query = query.where(InvLevel.config_id == config_id)
+            query = query.order_by(desc(InvLevel.inventory_date)).limit(20)
+            result = await self.db.execute(query)
+            rows_raw = result.scalars().all()
+            if not rows_raw:
+                return None
+
+            # Deduplicate: keep latest per product-site
+            seen = set()
+            rows = []
+            text_lines = []
+            for r in rows_raw:
+                key = (r.product_id, r.site_id)
+                if key in seen:
+                    continue
+                seen.add(key)
+                on_hand = r.on_hand_qty or 0
+                in_transit = r.in_transit_qty or 0
+                allocated = r.allocated_qty or 0
+                available = r.available_qty or (on_hand - allocated)
+                ss = r.safety_stock_qty or 0
+                rows.append([
+                    str(r.product_id), str(r.site_id or ""),
+                    f"{on_hand:,.0f}", f"{in_transit:,.0f}",
+                    f"{allocated:,.0f}", f"{available:,.0f}", f"{ss:,.0f}",
+                ])
+                text_lines.append(
+                    f"  {r.product_id} @ site {r.site_id}: "
+                    f"on_hand={on_hand:.0f}, in_transit={in_transit:.0f}, "
+                    f"allocated={allocated:.0f}, available={available:.0f}, "
+                    f"safety_stock={ss:.0f}"
+                )
+            return {"rows": rows, "text": "\n".join(text_lines)}
+        except Exception as e:
+            logger.warning(f"Inventory data fetch failed: {e}")
+            try:
+                await self.db.rollback()
+            except Exception:
+                pass
+            return None
+
+    async def _fetch_forecast_data(
+        self, product_ids: set, site_ids: set, config_id: Optional[int]
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch recent forecasts for mentioned products."""
+        try:
+            query = select(Forecast).where(Forecast.product_id.in_(product_ids))
+            if config_id:
+                query = query.where(Forecast.config_id == config_id)
+            query = query.order_by(desc(Forecast.forecast_date)).limit(20)
+            result = await self.db.execute(query)
+            rows_raw = result.scalars().all()
+            if not rows_raw:
+                return None
+
+            # Deduplicate: keep latest 4 per product
+            seen_count: Dict[str, int] = {}
+            deduped = []
+            for r in rows_raw:
+                pid = r.product_id or ""
+                seen_count[pid] = seen_count.get(pid, 0) + 1
+                if seen_count[pid] <= 4:
+                    deduped.append(r)
+
+            rows = []
+            text_lines = []
+            for r in deduped[:8]:  # Cap for readability
+                p10 = r.forecast_p10 or 0
+                p50 = r.forecast_p50 or r.forecast_quantity or 0
+                p90 = r.forecast_p90 or 0
+                method = r.forecast_method or "unknown"
+                period = str(r.forecast_date) if r.forecast_date else "?"
+                rows.append([
+                    str(r.product_id), period,
+                    f"{p10:,.0f}", f"{p50:,.0f}", f"{p90:,.0f}", method,
+                ])
+                text_lines.append(
+                    f"  {r.product_id} period {period}: P10={p10:.0f}, P50={p50:.0f}, "
+                    f"P90={p90:.0f}, method={method}"
+                )
+            return {"rows": rows, "text": "\n".join(text_lines)}
+        except Exception as e:
+            logger.warning(f"Forecast data fetch failed: {e}")
+            try:
+                await self.db.rollback()
+            except Exception:
+                pass
+            return None
+
+    async def _fetch_policy_data(
+        self, product_ids: set, site_ids: set, config_id: Optional[int]
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch inventory policies for mentioned products (one per product)."""
+        try:
+            query = select(InvPolicy).where(InvPolicy.product_id.in_(product_ids))
+            if config_id:
+                query = query.where(InvPolicy.config_id == config_id)
+            query = query.limit(20)
+            result = await self.db.execute(query)
+            rows_raw = result.scalars().all()
+            if not rows_raw:
+                return None
+
+            # Deduplicate: keep first per product_id
+            seen = set()
+            metrics = []
+            text_lines = []
+            for r in rows_raw:
+                if r.product_id in seen:
+                    continue
+                seen.add(r.product_id)
+                policy_type = r.ss_policy or "unknown"
+                ss_qty = r.ss_quantity or 0
+                ss_days = r.ss_days or 0
+                sl = r.service_level or 0
+                metrics.append({"label": "Policy", "value": policy_type})
+                if ss_qty:
+                    metrics.append({"label": "Safety Stock", "value": f"{ss_qty:,.0f}", "unit": "units"})
+                if ss_days:
+                    metrics.append({"label": "SS Days", "value": str(ss_days), "unit": "days"})
+                if sl:
+                    metrics.append({"label": "SL Target", "value": f"{sl*100:.0f}", "unit": "%"})
+                text_lines.append(
+                    f"  {r.product_id}: policy={policy_type}, ss_qty={ss_qty:.0f}, "
+                    f"ss_days={ss_days}, service_level={sl:.2f}"
+                )
+            return {"metrics": metrics, "text": "\n".join(text_lines)}
+        except Exception as e:
+            logger.warning(f"Policy data fetch failed: {e}")
+            try:
+                await self.db.rollback()
+            except Exception:
+                pass
+            return None
+
+    async def _fetch_decision_detail(
+        self, product_ids: set, decision_type: Optional[str], config_id: Optional[int]
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch the specific decision record with full detail."""
+        if not decision_type:
+            return None
+
+        model_class = None
+        for cls, type_key in DECISION_TABLES:
+            if type_key == decision_type:
+                model_class = cls
+                break
+        if not model_class:
+            return None
+
+        try:
+            query = select(model_class).where(
+                model_class.product_id.in_(product_ids)
+            )
+            if config_id:
+                query = query.where(model_class.config_id == config_id)
+            query = query.order_by(desc(model_class.created_at)).limit(1)
+            result = await self.db.execute(query)
+            row = result.scalar_one_or_none()
+            if not row:
+                return None
+
+            metrics = []
+            text_parts = []
+
+            if decision_type == "forecast_adjustment":
+                cur = getattr(row, "current_forecast_value", None)
+                adj = getattr(row, "adjusted_forecast_value", None)
+                pct = getattr(row, "adjustment_pct", None)
+                direction = getattr(row, "adjustment_direction", "?")
+                signal = getattr(row, "signal_source", "?")
+                conf = getattr(row, "confidence", None)
+                reason = getattr(row, "reason", None)
+                if cur:
+                    metrics.append({"label": "Current Forecast", "value": f"{cur:,.0f}", "unit": "units"})
+                if adj:
+                    metrics.append({"label": "Adjusted Forecast", "value": f"{adj:,.0f}", "unit": "units"})
+                if pct:
+                    metrics.append({"label": "Change", "value": f"{pct:+.1f}", "unit": "%",
+                                    "status": "destructive" if abs(pct) > 20 else "warning"})
+                if conf:
+                    metrics.append({"label": "Confidence", "value": f"{conf*100:.0f}", "unit": "%"})
+                text_parts.append(
+                    f"Forecast adjustment {direction} {pct}% for {row.product_id}. "
+                    f"Signal source: {signal}. Current={cur}, Adjusted={adj}. "
+                    f"Confidence={conf}. Reason: {reason}"
+                )
+            elif decision_type == "rebalancing":
+                qty = getattr(row, "transfer_qty", None) or getattr(row, "recommended_qty", None)
+                src = getattr(row, "from_site", None) or getattr(row, "source_site_id", None)
+                dst = getattr(row, "to_site", None) or getattr(row, "destination_site_id", None)
+                src_dos = getattr(row, "source_dos_before", None)
+                dst_dos = getattr(row, "dest_dos_before", None)
+                cost = getattr(row, "expected_cost", None)
+                if qty:
+                    metrics.append({"label": "Transfer Qty", "value": f"{qty:,.0f}", "unit": "units"})
+                if src_dos:
+                    metrics.append({"label": f"Source DOS ({src})", "value": f"{src_dos:.1f}", "unit": "days"})
+                if dst_dos:
+                    metrics.append({"label": f"Dest DOS ({dst})", "value": f"{dst_dos:.1f}", "unit": "days"})
+                if cost:
+                    metrics.append({"label": "Est. Cost", "value": f"${cost:,.0f}"})
+                text_parts.append(
+                    f"Transfer {qty} of {row.product_id} from {src} to {dst}. "
+                    f"Source DOS={src_dos}, Dest DOS={dst_dos}, cost=${cost}"
+                )
+            elif decision_type == "atp":
+                req = getattr(row, "requested_qty", None)
+                promised = getattr(row, "promised_qty", None)
+                can = getattr(row, "can_fulfill", None)
+                priority = getattr(row, "order_priority", None)
+                conf = getattr(row, "confidence", None)
+                if req:
+                    metrics.append({"label": "Requested", "value": f"{req:,.0f}", "unit": "units"})
+                if promised:
+                    metrics.append({"label": "Promised", "value": f"{promised:,.0f}", "unit": "units"})
+                metrics.append({"label": "Can Fulfill", "value": "Yes" if can else "No",
+                                "status": "success" if can else "destructive"})
+                if priority:
+                    metrics.append({"label": "Priority", "value": str(priority)})
+                if conf:
+                    metrics.append({"label": "Confidence", "value": f"{conf*100:.0f}", "unit": "%"})
+                text_parts.append(
+                    f"ATP: requested={req}, promised={promised}, can_fulfill={can}, "
+                    f"priority={priority}, confidence={conf}"
+                )
+            elif decision_type == "po_creation":
+                qty = getattr(row, "recommended_qty", None) or getattr(row, "order_qty", None)
+                inv_pos = getattr(row, "inventory_position", None)
+                dos = getattr(row, "days_of_supply", None)
+                fcst_30 = getattr(row, "forecast_30_day", None)
+                trigger = getattr(row, "trigger_reason", None)
+                cost = getattr(row, "expected_cost", None)
+                if qty:
+                    metrics.append({"label": "Order Qty", "value": f"{qty:,.0f}", "unit": "units"})
+                if inv_pos:
+                    metrics.append({"label": "Inventory Position", "value": f"{inv_pos:,.0f}", "unit": "units"})
+                if dos:
+                    metrics.append({"label": "Days of Supply", "value": f"{dos:.1f}", "unit": "days"})
+                if fcst_30:
+                    metrics.append({"label": "30-Day Forecast", "value": f"{fcst_30:,.0f}", "unit": "units"})
+                if cost:
+                    metrics.append({"label": "Est. Cost", "value": f"${cost:,.0f}"})
+                text_parts.append(
+                    f"PO: qty={qty}, inv_position={inv_pos}, DOS={dos}, "
+                    f"forecast_30d={fcst_30}, trigger={trigger}, cost=${cost}"
+                )
+
+            return {"metrics": metrics, "text": "\n".join(text_parts)} if metrics else None
+        except Exception as e:
+            logger.warning(f"Decision detail fetch failed: {e}")
+            try:
+                await self.db.rollback()
+            except Exception:
+                pass
+            return None
+
     async def _get_brief_decision_context(
         self,
         config_id: Optional[int] = None,
@@ -555,8 +941,10 @@ class DecisionStreamService:
         parts.append(
             f"You are an AI supply chain planning assistant for {self.tenant_name}. "
             "You help planners understand and act on pending decisions in their supply chain. "
-            "When a user asks 'why' about a decision, explain the reasoning with specific data. "
-            "When a user wants to see details, suggest navigating to the relevant Console page. "
+            "IMPORTANT: You have access to live supply chain data (inventory, forecasts, policies, "
+            "decision details) injected below. Use this actual data to answer questions with "
+            "specific numbers and facts. Do NOT tell the user to navigate to another page — "
+            "the data is already here. Reference specific values from the data context. "
             "Keep answers concise and actionable."
         )
 
