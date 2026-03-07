@@ -559,7 +559,7 @@ const SankeyDiagram = ({
                       {topLabel && (
                         <text
                           x={centerX}
-                          y={node.side === 'right' ? node.y0 : node.y0 - 10}
+                          y={node.side === 'right' ? node.y0 : node.y0 - 1}
                           textAnchor={node.side === 'right' ? 'start' : node.side === 'left' ? 'end' : 'middle'}
                           fill={node.topLabelColor ?? DEFAULT_TEXT_PRIMARY}
                           fontSize={12}

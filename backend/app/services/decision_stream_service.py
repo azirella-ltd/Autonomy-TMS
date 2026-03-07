@@ -352,7 +352,7 @@ class DecisionStreamService:
         relevant_types = ROLE_RELEVANCE.get(powell_role) if powell_role else None
 
         all_decisions = []
-        cutoff = datetime.utcnow() - timedelta(days=7)
+        cutoff = datetime.utcnow() - timedelta(days=30)
 
         # Find config_ids for this tenant
         config_filter = None
