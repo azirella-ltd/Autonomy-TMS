@@ -363,6 +363,10 @@ class DecisionStreamService:
         enrichment = await self._enrich_from_message(message, conv["messages"], config_id)
         data_blocks = enrichment.get("data_blocks", [])
         enrichment_text = enrichment.get("context_text", "")
+        logger.info(
+            f"Chat enrichment: {len(data_blocks)} blocks, "
+            f"{len(enrichment_text)} chars context"
+        )
 
         # Collect brief decision context for the LLM
         decision_context = await self._get_brief_decision_context(config_id, powell_role)
@@ -1022,7 +1026,7 @@ class DecisionStreamService:
                 exc_type = getattr(row, "exception_type", None)
                 severity = getattr(row, "severity", None)
                 rec_action = getattr(row, "recommended_action", None)
-                desc = getattr(row, "description", None)
+                description = getattr(row, "description", None)
                 impact = getattr(row, "estimated_impact_cost", None)
                 conf = getattr(row, "confidence", None)
                 if order_id:
@@ -1041,7 +1045,7 @@ class DecisionStreamService:
                 text_parts.append(
                     f"Order exception {exc_type} on {order_id} ({severity}). "
                     f"Recommended: {rec_action}. Impact: {_CURRENCY_SYMBOL}{impact}. "
-                    f"Description: {desc}"
+                    f"Description: {description}"
                 )
             elif decision_type == "inventory_buffer":
                 base = getattr(row, "baseline_ss", None)
@@ -1100,6 +1104,10 @@ class DecisionStreamService:
             return results
         except Exception as e:
             logger.warning(f"RAG search failed (non-fatal): {e}")
+            try:
+                await self.db.rollback()
+            except Exception:
+                pass
             return []
 
     def _build_chat_prompt(

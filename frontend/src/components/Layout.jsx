@@ -43,7 +43,7 @@ const Layout = ({ children }) => {
         <TopNavbar sidebarOpen={sidebarOpen} />
 
         {/* Page Content */}
-        <main className="pt-16 pb-6 px-6">
+        <main className="pt-20 pb-6 px-6">
           {children}
         </main>
       </div>
