@@ -14,6 +14,8 @@ and AssistantService conversation pattern from assistant_service.py.
 """
 
 import logging
+import os
+import re
 import time
 import uuid
 from collections import OrderedDict
@@ -36,16 +38,43 @@ from app.models.powell_decisions import (
     PowellForecastAdjustmentDecision,
     PowellBufferDecision,
 )
-from app.models.supply_chain_config import SupplyChainConfig
-from app.models.sc_entities import Forecast, InvLevel, InvPolicy
+from app.models.supply_chain_config import SupplyChainConfig, Site
+from app.models.sc_entities import Product, Forecast, InvLevel, InvPolicy
 from app.services.knowledge_base_service import KnowledgeBaseService
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Configuration constants (extracted from inline magic numbers)
+# ---------------------------------------------------------------------------
+_CACHE_TTL_SECONDS = int(os.environ.get("DECISION_STREAM_CACHE_TTL", 1800))
+_MAX_CACHE_SIZE = int(os.environ.get("DECISION_STREAM_MAX_CACHE", 200))
+_DIGEST_MAX_DECISIONS = 20
+_ALERT_LOOKBACK_HOURS = 48
+_CDC_TRIGGER_LIMIT = 10
+_LLM_SUMMARY_MAX_DECISIONS = 10
+_LLM_SUMMARY_MAX_ALERTS = 5
+_RAG_RELEVANCE_THRESHOLD = 0.3
+_RAG_EXCERPT_MAX_LENGTH = 200
+_MAX_HISTORY_SIZE = 20
+_LLM_CONTEXT_HISTORY_WINDOW = 10
+_ENRICHMENT_HISTORY_WINDOW = 4
+_INVENTORY_FETCH_LIMIT = 20
+_FORECAST_FETCH_LIMIT = 20
+_FORECAST_PERIODS_PER_PRODUCT = 4
+_FORECAST_DISPLAY_MAX = 8
+_POLICY_FETCH_LIMIT = 20
+_FORECAST_CHANGE_ALERT_PCT = 20.0
+_DEFAULT_CONFIDENCE = 0.5
+_FINAL_RESPONSE_MAX_SOURCES = 5
+_DECISION_LOOKBACK_DAYS = 30
+_DECISIONS_PER_TABLE = 10
+_SUGGESTED_FOLLOWUP_MAX = 3
+_DIGEST_SUMMARY_MAX_DECISIONS = 5
+_CURRENCY_SYMBOL = os.environ.get("DECISION_STREAM_CURRENCY", "$")
+
 # In-memory conversation cache (same pattern as AssistantService)
 _STREAM_CONVERSATION_CACHE: OrderedDict[str, Dict[str, Any]] = OrderedDict()
-_CACHE_TTL_SECONDS = 1800  # 30 minutes
-_MAX_CACHE_SIZE = 200
 
 # Deep-link mapping for each decision type -> frontend Console route
 DEEP_LINK_MAP = {
@@ -325,17 +354,17 @@ class DecisionStreamService:
         conv["messages"].append({"role": "assistant", "content": response_text})
 
         # Trim history
-        if len(conv["messages"]) > 20:
-            conv["messages"] = conv["messages"][-20:]
+        if len(conv["messages"]) > _MAX_HISTORY_SIZE:
+            conv["messages"] = conv["messages"][-_MAX_HISTORY_SIZE:]
 
         # Extract sources
         sources = []
-        for r in rag_results[:5]:
-            if r.score > 0.3:
+        for r in rag_results[:_FINAL_RESPONSE_MAX_SOURCES]:
+            if r.score > _RAG_RELEVANCE_THRESHOLD:
                 sources.append({
                     "title": r.document_title,
                     "relevance": round(r.score, 3),
-                    "excerpt": r.content[:200] + "..." if len(r.content) > 200 else r.content,
+                    "excerpt": r.content[:_RAG_EXCERPT_MAX_LENGTH] + "..." if len(r.content) > _RAG_EXCERPT_MAX_LENGTH else r.content,
                 })
 
         return {
@@ -361,7 +390,7 @@ class DecisionStreamService:
         relevant_types = ROLE_RELEVANCE.get(powell_role) if powell_role else None
 
         all_decisions = []
-        cutoff = datetime.utcnow() - timedelta(days=30)
+        cutoff = datetime.utcnow() - timedelta(days=_DECISION_LOOKBACK_DAYS)
 
         # Find config_ids for this tenant
         config_filter = None
@@ -398,7 +427,7 @@ class DecisionStreamService:
                         model_class.config_id.in_(config_filter),
                         model_class.created_at >= cutoff,
                     )
-                ).order_by(desc(model_class.created_at)).limit(10)
+                ).order_by(desc(model_class.created_at)).limit(_DECISIONS_PER_TABLE)
 
                 result = await self.db.execute(query)
                 rows = result.scalars().all()
@@ -438,23 +467,23 @@ class DecisionStreamService:
         def sort_key(d):
             urgency = d.get("urgency") or 0.0
             # Low confidence = needs human more = should appear higher
-            confidence_inv = 1.0 - (d.get("confidence") or 0.5)
+            confidence_inv = 1.0 - (d.get("confidence") or _DEFAULT_CONFIDENCE)
             return (urgency, confidence_inv)
 
         decisions.sort(key=sort_key, reverse=True)
-        return decisions[:20]
+        return decisions[:_DIGEST_MAX_DECISIONS]
 
     async def _collect_alerts(self, config_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """Collect CDC triggers and condition alerts from the last 48 hours."""
         alerts = []
-        cutoff = datetime.utcnow() - timedelta(hours=48)
+        cutoff = datetime.utcnow() - timedelta(hours=_ALERT_LOOKBACK_HOURS)
 
         # CDC trigger log
         try:
             from app.models.powell_framework import PowellCDCTriggerLog
             query = select(PowellCDCTriggerLog).where(
                 PowellCDCTriggerLog.triggered_at >= cutoff,
-            ).order_by(desc(PowellCDCTriggerLog.triggered_at)).limit(10)
+            ).order_by(desc(PowellCDCTriggerLog.triggered_at)).limit(_CDC_TRIGGER_LIMIT)
 
             result = await self.db.execute(query)
             rows = result.scalars().all()
@@ -494,8 +523,8 @@ class DecisionStreamService:
             )
 
         # Build a compact summary for the LLM
-        decision_summaries = [d["summary"] for d in decisions[:10]]
-        alert_summaries = [a["message"] for a in alerts[:5]]
+        decision_summaries = [d["summary"] for d in decisions[:_LLM_SUMMARY_MAX_DECISIONS]]
+        alert_summaries = [a["message"] for a in alerts[:_LLM_SUMMARY_MAX_ALERTS]]
 
         role_context = ""
         if powell_role:
@@ -526,6 +555,56 @@ class DecisionStreamService:
                 f"The highest priority is: {top_desc}."
             )
 
+    async def _load_tenant_vocabulary(
+        self, config_id: Optional[int] = None,
+    ) -> Tuple[Dict[str, str], Dict[str, str]]:
+        """Load product IDs and site names for the tenant's DAG.
+
+        Returns:
+            (product_lookup, site_lookup) — both map lowercase token → canonical ID/name.
+        """
+        product_lookup: Dict[str, str] = {}  # lowercase → product_id
+        site_lookup: Dict[str, str] = {}     # lowercase → site name
+
+        try:
+            # Get config IDs for this tenant
+            if config_id:
+                cfg_ids = [config_id]
+            else:
+                result = await self.db.execute(
+                    select(SupplyChainConfig.id).where(
+                        SupplyChainConfig.tenant_id == self.tenant_id,
+                        SupplyChainConfig.is_active == True,
+                    )
+                )
+                cfg_ids = [row[0] for row in result.fetchall()]
+
+            if not cfg_ids:
+                return product_lookup, site_lookup
+
+            # Load products
+            result = await self.db.execute(
+                select(Product.id).where(Product.config_id.in_(cfg_ids))
+            )
+            for (pid,) in result.fetchall():
+                product_lookup[pid.lower()] = pid
+
+            # Load sites
+            result = await self.db.execute(
+                select(Site.name).where(Site.config_id.in_(cfg_ids))
+            )
+            for (sname,) in result.fetchall():
+                site_lookup[sname.lower()] = sname
+
+        except Exception as e:
+            logger.warning(f"Vocabulary load failed: {e}")
+            try:
+                await self.db.rollback()
+            except Exception:
+                pass
+
+        return product_lookup, site_lookup
+
     async def _enrich_from_message(
         self,
         message: str,
@@ -534,41 +613,53 @@ class DecisionStreamService:
     ) -> Dict[str, Any]:
         """Detect referenced decisions/products and fetch real data for inline display.
 
+        Uses the tenant's DAG vocabulary (product IDs, site names) to match
+        mentions in the conversation — no hardcoded patterns.
+
         Returns:
             dict with 'data_blocks' (structured viz data) and 'context_text' (LLM context).
         """
-        msg_lower = message.lower()
         data_blocks: List[Dict[str, Any]] = []
         context_parts: List[str] = []
 
-        # Extract product IDs mentioned in message or recent history
+        # Load tenant vocabulary from DAG
+        product_lookup, site_lookup = await self._load_tenant_vocabulary(config_id)
+
+        # Collect text to scan: current message + recent history
+        texts_to_scan = [message]
+        for m in history[-_ENRICHMENT_HISTORY_WINDOW:]:
+            texts_to_scan.append(m.get("content", ""))
+        combined_text = " ".join(texts_to_scan)
+        combined_lower = combined_text.lower()
+
+        # Match product IDs and site names from the tenant vocabulary
         product_ids = set()
         site_ids = set()
+        for token_lower, canonical in product_lookup.items():
+            if token_lower in combined_lower:
+                product_ids.add(canonical)
+        for token_lower, canonical in site_lookup.items():
+            if token_lower in combined_lower:
+                site_ids.add(canonical)
+
+        # Detect decision type from keywords
         decision_type_hint = None
-
-        # Scan message + last few messages for product/site IDs and decision types
-        texts_to_scan = [message]
-        for m in history[-4:]:
-            texts_to_scan.append(m.get("content", ""))
-
-        for text in texts_to_scan:
-            # Find product IDs (e.g., CFG22_RD005, CFG22_FP001)
-            import re
-            for match in re.finditer(r'(CFG\d+_\w+)', text, re.IGNORECASE):
-                product_ids.add(match.group(1).upper())
-            # Find site IDs (e.g., FOODDIST_DC, FOODDIST_WH1)
-            for match in re.finditer(r'(FOODDIST_\w+)', text, re.IGNORECASE):
-                site_ids.add(match.group(1).upper())
-            # Detect decision type
-            tl = text.lower()
-            if "forecast" in tl:
-                decision_type_hint = "forecast_adjustment"
-            elif "rebalanc" in tl:
-                decision_type_hint = "rebalancing"
-            elif "atp" in tl or "fulfill" in tl:
-                decision_type_hint = "atp"
-            elif any(k in tl for k in ("po ", "purchase", "order qty")):
-                decision_type_hint = "po_creation"
+        if "forecast" in combined_lower:
+            decision_type_hint = "forecast_adjustment"
+        elif "rebalanc" in combined_lower:
+            decision_type_hint = "rebalancing"
+        elif "atp" in combined_lower or "fulfill" in combined_lower:
+            decision_type_hint = "atp"
+        elif any(k in combined_lower for k in ("po ", "purchase", "order qty")):
+            decision_type_hint = "po_creation"
+        elif "buffer" in combined_lower or "safety stock" in combined_lower:
+            decision_type_hint = "inventory_buffer"
+        elif "maintenance" in combined_lower:
+            decision_type_hint = "maintenance"
+        elif "quality" in combined_lower:
+            decision_type_hint = "quality"
+        elif "subcontract" in combined_lower:
+            decision_type_hint = "subcontracting"
 
         if not product_ids and not site_ids:
             return {"data_blocks": [], "context_text": ""}
@@ -647,7 +738,7 @@ class DecisionStreamService:
             query = select(InvLevel).where(InvLevel.product_id.in_(product_ids))
             if config_id:
                 query = query.where(InvLevel.config_id == config_id)
-            query = query.order_by(desc(InvLevel.inventory_date)).limit(20)
+            query = query.order_by(desc(InvLevel.inventory_date)).limit(_INVENTORY_FETCH_LIMIT)
             result = await self.db.execute(query)
             rows_raw = result.scalars().all()
             if not rows_raw:
@@ -695,7 +786,7 @@ class DecisionStreamService:
             query = select(Forecast).where(Forecast.product_id.in_(product_ids))
             if config_id:
                 query = query.where(Forecast.config_id == config_id)
-            query = query.order_by(desc(Forecast.forecast_date)).limit(20)
+            query = query.order_by(desc(Forecast.forecast_date)).limit(_FORECAST_FETCH_LIMIT)
             result = await self.db.execute(query)
             rows_raw = result.scalars().all()
             if not rows_raw:
@@ -707,12 +798,12 @@ class DecisionStreamService:
             for r in rows_raw:
                 pid = r.product_id or ""
                 seen_count[pid] = seen_count.get(pid, 0) + 1
-                if seen_count[pid] <= 4:
+                if seen_count[pid] <= _FORECAST_PERIODS_PER_PRODUCT:
                     deduped.append(r)
 
             rows = []
             text_lines = []
-            for r in deduped[:8]:  # Cap for readability
+            for r in deduped[:_FORECAST_DISPLAY_MAX]:  # Cap for readability
                 p10 = r.forecast_p10 or 0
                 p50 = r.forecast_p50 or r.forecast_quantity or 0
                 p90 = r.forecast_p90 or 0
@@ -743,7 +834,7 @@ class DecisionStreamService:
             query = select(InvPolicy).where(InvPolicy.product_id.in_(product_ids))
             if config_id:
                 query = query.where(InvPolicy.config_id == config_id)
-            query = query.limit(20)
+            query = query.limit(_POLICY_FETCH_LIMIT)
             result = await self.db.execute(query)
             rows_raw = result.scalars().all()
             if not rows_raw:
@@ -825,7 +916,7 @@ class DecisionStreamService:
                     metrics.append({"label": "Adjusted Forecast", "value": f"{adj:,.0f}", "unit": "units"})
                 if pct:
                     metrics.append({"label": "Change", "value": f"{pct:+.1f}", "unit": "%",
-                                    "status": "destructive" if abs(pct) > 20 else "warning"})
+                                    "status": "destructive" if abs(pct) > _FORECAST_CHANGE_ALERT_PCT else "warning"})
                 if conf:
                     metrics.append({"label": "Confidence", "value": f"{conf*100:.0f}", "unit": "%"})
                 text_parts.append(
@@ -847,10 +938,10 @@ class DecisionStreamService:
                 if dst_dos:
                     metrics.append({"label": f"Dest DOS ({dst})", "value": f"{dst_dos:.1f}", "unit": "days"})
                 if cost:
-                    metrics.append({"label": "Est. Cost", "value": f"${cost:,.0f}"})
+                    metrics.append({"label": "Est. Cost", "value": f"{_CURRENCY_SYMBOL}{cost:,.0f}"})
                 text_parts.append(
                     f"Transfer {qty} of {row.product_id} from {src} to {dst}. "
-                    f"Source DOS={src_dos}, Dest DOS={dst_dos}, cost=${cost}"
+                    f"Source DOS={src_dos}, Dest DOS={dst_dos}, cost={_CURRENCY_SYMBOL}{cost}"
                 )
             elif decision_type == "atp":
                 req = getattr(row, "requested_qty", None)
@@ -888,10 +979,10 @@ class DecisionStreamService:
                 if fcst_30:
                     metrics.append({"label": "30-Day Forecast", "value": f"{fcst_30:,.0f}", "unit": "units"})
                 if cost:
-                    metrics.append({"label": "Est. Cost", "value": f"${cost:,.0f}"})
+                    metrics.append({"label": "Est. Cost", "value": f"{_CURRENCY_SYMBOL}{cost:,.0f}"})
                 text_parts.append(
                     f"PO: qty={qty}, inv_position={inv_pos}, DOS={dos}, "
-                    f"forecast_30d={fcst_30}, trigger={trigger}, cost=${cost}"
+                    f"forecast_30d={fcst_30}, trigger={trigger}, cost={_CURRENCY_SYMBOL}{cost}"
                 )
 
             return {"metrics": metrics, "text": "\n".join(text_parts)} if metrics else None
@@ -913,7 +1004,7 @@ class DecisionStreamService:
             decisions = await self._collect_pending_decisions(config_id, powell_role)
             if not decisions:
                 return "No pending decisions."
-            summaries = [d["summary"] for d in decisions[:5]]
+            summaries = [d["summary"] for d in decisions[:_DIGEST_SUMMARY_MAX_DECISIONS]]
             return f"Pending decisions ({len(decisions)} total): " + "; ".join(summaries)
         except Exception:
             return "Unable to load decision context."
@@ -955,7 +1046,7 @@ class DecisionStreamService:
         # RAG context
         if rag_results:
             context_lines = []
-            for r in rag_results[:5]:
+            for r in rag_results[:_FINAL_RESPONSE_MAX_SOURCES]:
                 context_lines.append(f"[Source: {r.document_title}]\n{r.content}")
             parts.append(
                 "=== KNOWLEDGE BASE ===\n"
@@ -964,7 +1055,7 @@ class DecisionStreamService:
             )
 
         # History
-        recent = history[-10:]
+        recent = history[-_LLM_CONTEXT_HISTORY_WINDOW:]
         if len(recent) > 1:
             history_lines = []
             for msg in recent[:-1]:
@@ -1017,4 +1108,4 @@ class DecisionStreamService:
             suggestions.append("What are the key risks right now?")
             suggestions.append("Show me the supply chain dashboard")
 
-        return suggestions[:3]
+        return suggestions[:_SUGGESTED_FOLLOWUP_MAX]
