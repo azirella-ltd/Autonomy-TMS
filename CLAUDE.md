@@ -14,6 +14,18 @@ When implementing any entity:
 3. Add extensions only when necessary for Beer Game or platform-specific features
 4. Document any extensions clearly as "Extension: " in model docstrings
 
+## CRITICAL: No Fallbacks, No Hardcoded Values
+
+**MANDATORY REQUIREMENT**: Code must NEVER use fallback values, hardcoded defaults, or `getattr(obj, "field", <default>)` patterns that silently mask missing data. All data must come from the database schema as defined.
+
+**Rules**:
+1. **Column names must match the actual DB schema** — never guess column names; check the model or table definition first
+2. **No silent fallbacks** — if data is missing, show nothing or raise an error; do not substitute fake/default values
+3. **No hardcoded entity references** — product IDs, site names, config IDs, order IDs must come from the tenant's data, never hardcoded
+4. **No hardcoded demo data** — all displayed data must come from DB or calculations on DB data
+5. **All economic parameters** (holding_cost, stockout_cost, ordering_cost) must be explicitly set per tenant — errors raised for missing data
+6. **Currency symbols, units, limits** — must be configurable via constants or environment variables, not inline literals
+
 ## Terminology Convention (Feb 2026)
 
 **IMPORTANT**: Use consistent terminology throughout the codebase:
@@ -809,9 +821,9 @@ make init-env
 DATABASE_TYPE=postgresql
 POSTGRESQL_HOST=db
 POSTGRESQL_PORT=5432
-POSTGRESQL_DATABASE=beer_game
-POSTGRESQL_USER=beer_user
-POSTGRESQL_PASSWORD=beer_password
+POSTGRESQL_DATABASE=autonomy
+POSTGRESQL_USER=autonomy_user
+POSTGRESQL_PASSWORD=<your-password>
 SECRET_KEY=<generate-random-key>
 LLM_API_BASE=http://localhost:8001/v1
 LLM_API_KEY=not-needed
@@ -1027,7 +1039,7 @@ This consolidated knowledge base includes:
 - **Hierarchical Overrides**: Product-Site > Product > Site > Config (most specific wins)
 - **8 Policy Types**: abs_level (fixed), doc_dem (demand-based), doc_fcst (forecast-based), sl (service level), sl_fitted (MLE-fitted Monte Carlo), conformal (distribution-free), sl_conformal_fitted (hybrid), econ_optimal (marginal economic return)
 - **Balanced Scorecard**: Track Financial, Customer, Operational, and Strategic metrics with probability distributions
-- **No Fallbacks**: All economic parameters (holding_cost, stockout_cost, ordering_cost) must be explicitly set per tenant — errors raised for missing data
+- **No Fallbacks**: See "CRITICAL: No Fallbacks, No Hardcoded Values" section above — applies to all data, not just economic parameters
 
 **Key PDFs** (in `docs/Knowledge/`):
 - `01_MPS_Material_Requirements_Planning_Academic.pdf` - MPS/MRP fundamentals

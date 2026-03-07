@@ -312,7 +312,7 @@ class SimulationNodeAgent(OpenAIResponsesAgent):
             model=model,
             instructions=instructions,
             response_schema=NODE_ACTION_SCHEMA,
-            response_name="beer_game_node_action",
+            response_name="simulation_node_action",
             tool_registry=tool_registry,
         )
 
@@ -331,7 +331,7 @@ class SimulationSupervisorAgent(OpenAIResponsesAgent):
             model=model,
             instructions=instructions,
             response_schema=SUPERVISOR_PATCH_SCHEMA,
-            response_name="beer_game_supervisor_patch",
+            response_name="simulation_supervisor_patch",
             tool_registry=tool_registry,
         )
 
@@ -350,7 +350,7 @@ class SimulationGlobalAgent(OpenAIResponsesAgent):
             model=model,
             instructions=instructions,
             response_schema=GLOBAL_TARGET_SCHEMA,
-            response_name="beer_game_global_targets",
+            response_name="simulation_global_targets",
             tool_registry=tool_registry,
         )
 

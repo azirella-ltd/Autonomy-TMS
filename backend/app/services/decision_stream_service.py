@@ -132,23 +132,29 @@ def _evict_stale():
 
 
 def _build_decision_summary(decision, decision_type: str) -> str:
-    """Build a human-readable one-line summary for any decision type."""
+    """Build a human-readable one-line summary for any decision type.
+
+    Column names must match the actual DB schema in powell_*_decisions tables.
+    """
     product = getattr(decision, "product_id", None) or ""
-    location = getattr(decision, "location_id", None) or getattr(decision, "source_site_id", None) or ""
+    location = getattr(decision, "location_id", None) or getattr(decision, "from_site", None) or ""
 
     if decision_type == "atp":
         qty = getattr(decision, "requested_qty", "?")
         return f"ATP: Fulfill {qty} units of {product} at {location}"
     elif decision_type == "rebalancing":
-        qty = getattr(decision, "transfer_qty", "?")
-        dest = getattr(decision, "destination_site_id", "?")
-        return f"Rebalance: Transfer {qty} of {product} from {location} to {dest}"
+        qty = getattr(decision, "recommended_qty", "?")
+        src = getattr(decision, "from_site", "?")
+        dest = getattr(decision, "to_site", "?")
+        return f"Rebalance: Transfer {qty} of {product} from {src} to {dest}"
     elif decision_type == "po_creation":
-        qty = getattr(decision, "order_qty", "?")
+        qty = getattr(decision, "recommended_qty", "?")
         return f"PO: Order {qty} units of {product} at {location}"
     elif decision_type == "order_tracking":
         severity = getattr(decision, "severity", "INFO")
-        return f"Order Exception ({severity}): {product} at {location}"
+        order_id = getattr(decision, "order_id", "?")
+        exc_type = getattr(decision, "exception_type", "")
+        return f"Order Exception ({severity}): {exc_type} on {order_id}"
     elif decision_type == "mo_execution":
         dt = getattr(decision, "decision_type", "release")
         return f"MO {dt}: {product} at {location}"
@@ -167,24 +173,32 @@ def _build_decision_summary(decision, decision_type: str) -> str:
         return f"Subcontracting {routing}: {product}"
     elif decision_type == "forecast_adjustment":
         direction = getattr(decision, "adjustment_direction", "?")
-        magnitude = getattr(decision, "adjustment_magnitude", "?")
-        return f"Forecast {direction} {magnitude}%: {product} at {location}"
+        pct = getattr(decision, "adjustment_pct", "?")
+        return f"Forecast {direction} {pct}%: {product}"
     elif decision_type == "inventory_buffer":
-        action = getattr(decision, "buffer_action", "adjust")
-        return f"Buffer {action}: {product} at {location}"
+        reason = getattr(decision, "reason", "adjust")
+        mult = getattr(decision, "multiplier", None)
+        base = getattr(decision, "baseline_ss", None)
+        adj = getattr(decision, "adjusted_ss", None)
+        if base and adj:
+            return f"Buffer {reason}: {product} at {location} ({base:.0f} -> {adj:.0f})"
+        return f"Buffer {reason}: {product} at {location}"
     return f"{decision_type}: {product} at {location}"
 
 
 def _get_suggested_action(decision, decision_type: str) -> str:
-    """Extract the suggested action text from a decision."""
+    """Extract the suggested action text from a decision.
+
+    Column names must match the actual DB schema in powell_*_decisions tables.
+    """
     if decision_type == "atp":
         if getattr(decision, "can_fulfill", False):
             return f"Fulfill {getattr(decision, 'promised_qty', '?')} units"
-        return "Cannot fulfill — suggest partial or backorder"
+        return f"Cannot fulfill — suggest partial ({getattr(decision, 'promised_qty', 0)} of {getattr(decision, 'requested_qty', '?')})"
     elif decision_type == "rebalancing":
-        return f"Transfer {getattr(decision, 'transfer_qty', '?')} units"
+        return f"Transfer {getattr(decision, 'recommended_qty', '?')} units"
     elif decision_type == "po_creation":
-        return f"Order {getattr(decision, 'order_qty', '?')} units"
+        return f"Order {getattr(decision, 'recommended_qty', '?')} units"
     elif decision_type == "order_tracking":
         return getattr(decision, "recommended_action", "Review exception")
     elif decision_type == "mo_execution":
@@ -198,9 +212,20 @@ def _get_suggested_action(decision, decision_type: str) -> str:
     elif decision_type == "subcontracting":
         return f"Route via {getattr(decision, 'routing_decision', 'internal')}"
     elif decision_type == "forecast_adjustment":
-        return f"Adjust forecast {getattr(decision, 'adjustment_direction', '')} {getattr(decision, 'adjustment_magnitude', '')}%"
+        direction = getattr(decision, "adjustment_direction", "")
+        pct = getattr(decision, "adjustment_pct", "")
+        cur = getattr(decision, "current_forecast_value", None)
+        adj = getattr(decision, "adjusted_forecast_value", None)
+        if cur and adj:
+            return f"Adjust forecast {direction} {pct}% ({cur:.0f} -> {adj:.0f})"
+        return f"Adjust forecast {direction} {pct}%"
     elif decision_type == "inventory_buffer":
-        return f"{getattr(decision, 'buffer_action', 'Adjust').title()} buffer level"
+        base = getattr(decision, "baseline_ss", None)
+        adj = getattr(decision, "adjusted_ss", None)
+        mult = getattr(decision, "multiplier", None)
+        if base and adj:
+            return f"Adjust buffer {base:.0f} -> {adj:.0f} ({mult:.2f}x)"
+        return f"Adjust buffer ({getattr(decision, 'reason', 'review')})"
     return "Review decision"
 
 
@@ -433,13 +458,21 @@ class DecisionStreamService:
                 rows = result.scalars().all()
 
                 for row in rows:
+                    # Extract site_id from the correct column per table schema
+                    if type_key == "rebalancing":
+                        site_id = getattr(row, "from_site", None)
+                    elif type_key == "order_tracking":
+                        site_id = None  # order_exceptions has order_id, not location
+                    else:
+                        site_id = getattr(row, "location_id", None)
+
                     all_decisions.append({
                         "id": row.id,
                         "decision_type": type_key,
                         "summary": _build_decision_summary(row, type_key),
                         "product_id": getattr(row, "product_id", None),
                         "product_name": None,
-                        "site_id": getattr(row, "location_id", None) or getattr(row, "source_site_id", None),
+                        "site_id": site_id,
                         "site_name": None,
                         "urgency": getattr(row, "urgency_at_time", None),
                         "confidence": getattr(row, "confidence", None),
@@ -925,9 +958,9 @@ class DecisionStreamService:
                     f"Confidence={conf}. Reason: {reason}"
                 )
             elif decision_type == "rebalancing":
-                qty = getattr(row, "transfer_qty", None) or getattr(row, "recommended_qty", None)
-                src = getattr(row, "from_site", None) or getattr(row, "source_site_id", None)
-                dst = getattr(row, "to_site", None) or getattr(row, "destination_site_id", None)
+                qty = getattr(row, "recommended_qty", None)
+                src = getattr(row, "from_site", None)
+                dst = getattr(row, "to_site", None)
                 src_dos = getattr(row, "source_dos_before", None)
                 dst_dos = getattr(row, "dest_dos_before", None)
                 cost = getattr(row, "expected_cost", None)
@@ -964,7 +997,7 @@ class DecisionStreamService:
                     f"priority={priority}, confidence={conf}"
                 )
             elif decision_type == "po_creation":
-                qty = getattr(row, "recommended_qty", None) or getattr(row, "order_qty", None)
+                qty = getattr(row, "recommended_qty", None)
                 inv_pos = getattr(row, "inventory_position", None)
                 dos = getattr(row, "days_of_supply", None)
                 fcst_30 = getattr(row, "forecast_30_day", None)
@@ -983,6 +1016,57 @@ class DecisionStreamService:
                 text_parts.append(
                     f"PO: qty={qty}, inv_position={inv_pos}, DOS={dos}, "
                     f"forecast_30d={fcst_30}, trigger={trigger}, cost={_CURRENCY_SYMBOL}{cost}"
+                )
+            elif decision_type == "order_tracking":
+                order_id = getattr(row, "order_id", None)
+                exc_type = getattr(row, "exception_type", None)
+                severity = getattr(row, "severity", None)
+                rec_action = getattr(row, "recommended_action", None)
+                desc = getattr(row, "description", None)
+                impact = getattr(row, "estimated_impact_cost", None)
+                conf = getattr(row, "confidence", None)
+                if order_id:
+                    metrics.append({"label": "Order", "value": order_id})
+                if exc_type:
+                    metrics.append({"label": "Exception", "value": exc_type})
+                if severity:
+                    sev_status = {"high": "destructive", "medium": "warning", "low": "info"}.get(severity, "info")
+                    metrics.append({"label": "Severity", "value": severity.title(), "status": sev_status})
+                if rec_action:
+                    metrics.append({"label": "Action", "value": rec_action})
+                if impact:
+                    metrics.append({"label": "Est. Impact", "value": f"{_CURRENCY_SYMBOL}{impact:,.0f}"})
+                if conf:
+                    metrics.append({"label": "Confidence", "value": f"{conf*100:.0f}", "unit": "%"})
+                text_parts.append(
+                    f"Order exception {exc_type} on {order_id} ({severity}). "
+                    f"Recommended: {rec_action}. Impact: {_CURRENCY_SYMBOL}{impact}. "
+                    f"Description: {desc}"
+                )
+            elif decision_type == "inventory_buffer":
+                base = getattr(row, "baseline_ss", None)
+                mult = getattr(row, "multiplier", None)
+                adj = getattr(row, "adjusted_ss", None)
+                reason = getattr(row, "reason", None)
+                demand_cv = getattr(row, "demand_cv", None)
+                cur_dos = getattr(row, "current_dos", None)
+                conf = getattr(row, "confidence", None)
+                if base:
+                    metrics.append({"label": "Baseline SS", "value": f"{base:,.0f}", "unit": "units"})
+                if adj:
+                    metrics.append({"label": "Adjusted SS", "value": f"{adj:,.0f}", "unit": "units"})
+                if mult:
+                    metrics.append({"label": "Multiplier", "value": f"{mult:.2f}x"})
+                if cur_dos:
+                    metrics.append({"label": "Current DOS", "value": f"{cur_dos:.1f}", "unit": "days"})
+                if demand_cv:
+                    metrics.append({"label": "Demand CV", "value": f"{demand_cv:.2f}"})
+                if conf:
+                    metrics.append({"label": "Confidence", "value": f"{conf*100:.0f}", "unit": "%"})
+                text_parts.append(
+                    f"Buffer adjustment for {row.product_id} at {getattr(row, 'location_id', '?')}: "
+                    f"baseline={base}, adjusted={adj}, multiplier={mult}. "
+                    f"Reason: {reason}. DOS={cur_dos}, demand_cv={demand_cv}"
                 )
 
             return {"metrics": metrics, "text": "\n".join(text_parts)} if metrics else None

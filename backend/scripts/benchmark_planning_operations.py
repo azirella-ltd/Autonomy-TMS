@@ -353,9 +353,9 @@ def _resolve_db_url(cli_url: Optional[str]) -> str:
             return val
     h = os.environ.get("POSTGRESQL_HOST", "db")
     pt = os.environ.get("POSTGRESQL_PORT", "5432")
-    u = os.environ.get("POSTGRESQL_USER", "beer_user")
-    pw = os.environ.get("POSTGRESQL_PASSWORD", "beer_password")
-    db = os.environ.get("POSTGRESQL_DATABASE", "beer_game")
+    u = os.environ.get("POSTGRESQL_USER", "autonomy_user")
+    pw = os.environ.get("POSTGRESQL_PASSWORD", "autonomy_password")
+    db = os.environ.get("POSTGRESQL_DATABASE", "autonomy")
     return f"postgresql://{u}:{pw}@{h}:{pt}/{db}"
 
 
