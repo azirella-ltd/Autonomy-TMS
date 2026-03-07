@@ -105,6 +105,13 @@ const DashboardRouter = () => {
     const handleRedirect = async () => {
       if (!user) return;
 
+      // Check UI mode preference — Decision Stream is the default
+      const uiMode = localStorage.getItem('ui:mode') || 'stream';
+      if (uiMode === 'stream' && user.user_type !== 'SYSTEM_ADMIN') {
+        navigate('/decision-stream', { replace: true });
+        return;
+      }
+
       // SYSTEM_ADMIN: Always go to Organization Management (skip Powell check)
       if (user.user_type === 'SYSTEM_ADMIN') {
         navigate('/admin/tenants', { replace: true });

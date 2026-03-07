@@ -1116,6 +1116,18 @@ These documents define the strategic vision and UX implementation for the agenti
   - **Agentic Consensus Board**: Functional agents continuously negotiate Policy Envelope parameters using feed-back signals as evidence.
   - **Research-Grounded**: CPFR (P&G/Walmart), multi-agent production routing (AAMAS 2024), agentic LLM consensus (2025), Oliver Wyman Supply Chain Triangle, TSMC allocation crisis.
 
+**Decision Intelligence Framework** (in `docs/Knowledge/`):
+
+- `Decision_Intelligence_Framework_Guide.md` - **Gartner DI Framework & Autonomy Alignment**: Comprehensive synthesis of Gartner's Decision Intelligence frameworks (2025-2026), Kozyrkov's applied data science model, and Pratt's Causal Decision Diagrams. Key concepts:
+  - **Gartner DIP Definition**: "Software solutions designed to support, automate, and augment decision-making for humans and machines." Inaugural Magic Quadrant (Jan 2026): Leaders SAS, FICO, Aera Technology.
+  - **Four DIP Lifecycle Capabilities**: Decision Modeling (→ Powell SDAM), Decision Orchestration (→ TRM Hive + AAP), Decision Monitoring (→ CDC + conformal + CRPS), Decision Governance (→ override tracking + CDT + escalation).
+  - **Four Critical Capabilities Use Cases**: Decision Stewardship (governance), Analysis (analytical/rules), Engineering (orchestration/execution), Science (blended AI + logic).
+  - **Three-Level Maturity**: Support (human in loop) → Augmentation (human on loop, copilot) → Automation (human out of loop, autonomous). Progression governed by measured decision quality, not arbitrary trust.
+  - **Supply Chain Technology Convergence**: Gartner 2025 SC Planning Hype Cycle identifies decision-centric planning + agentic AI + autonomous planning + explainable AI as four interdependent technologies. Prediction: 50% of SCM solutions use intelligent agents by 2030.
+  - **Decision-as-Asset**: Every recurring decision modeled with inputs, logic, constraints, ownership, measured outcomes — maps to Powell SDAM five elements and Pratt's CDD (Decision Levers, Outcomes, Externals, Intermediaries).
+  - **Competitive Positioning**: Autonomy as first purpose-built Decision Intelligence Platform for supply chain.
+  - **UI Enhancement Recommendations**: Decision Intelligence Dashboard, decision lifecycle status in worklists, maturity progression indicator, Causal Decision Diagram visualization, decision-back planning view.
+
 **Powell Framework Quick Reference**:
 - **Five Core Elements**: State (Sₜ), Decision (xₜ), Exogenous Information (Wₜ₊₁), Transition Function (Sᴹ), Objective Function
 - **State Decomposition** (SDAM 2nd Ed): Rₜ (physical: inventory, backlog, pipeline, capacity), Iₜ (information: forecasts, lead times, supplier status), Bₜ (belief: CDT calibration, conformal intervals, TRM confidence)
@@ -1138,6 +1150,12 @@ These documents define the strategic vision and UX implementation for the agenti
 - **Boyd's OODA Loop**: Three nested Observe-Orient-Decide-Act loops at different time scales (Execution <10ms, Operational daily, Strategic weekly). "Schwerpunkt" = orientation as center of gravity (TRM trained weights). "Implicit Guidance & Control" = trained TRMs execute without explicit orders. "Mission Command" = push authority to lowest capable level, escalate only when problem exceeds local capability. See [ESCALATION_ARCHITECTURE.md](docs/ESCALATION_ARCHITECTURE.md).
 
 - **SOFAI Architecture** (arxiv:2110.01834): Meta-Cognitive module routes between System 1 and System 2 solvers — maps to the Escalation Arbiter routing between TRMs and tGNN/GraphSAGE. See [ESCALATION_ARCHITECTURE.md](docs/ESCALATION_ARCHITECTURE.md).
+
+- **Gartner Decision Intelligence Framework** (2025-2026): DI = "a practical discipline that advances decision making by explicitly understanding and engineering how decisions are made, and how outcomes are evaluated, managed and improved via feedback." Inaugural Magic Quadrant for DIPs published January 2026 (Leaders: SAS, FICO, Aera Technology). Four DIP lifecycle capabilities: Decision Modeling (→ Powell SDAM five elements), Decision Orchestration (→ TRM Hive + AAP), Decision Monitoring (→ CDC + conformal + CRPS), Decision Governance (→ override tracking + CDT + escalation arbiter). Four use cases: Stewardship, Analysis, Engineering, Science. Three-level maturity: Support (manual) → Augmentation (copilot) → Automation (autonomous). Gartner predicts 50% of SCM solutions will use intelligent agents by 2030. See [Decision_Intelligence_Framework_Guide.md](docs/Knowledge/Decision_Intelligence_Framework_Guide.md) and [POWELL_APPROACH.md](POWELL_APPROACH.md) §5.19.
+
+- **Kozyrkov Decision Intelligence** (Google, 2018-2023): DI = "the discipline of turning information into better actions at any setting, at any scale." Three sub-disciplines: Applied Data Science + Social Science + Managerial Science. Three data analysis types: Analytics (exploration, zero decisions) → Statistics (few critical decisions under uncertainty) → ML/AI (many automated decisions at scale). Core principle: "Outcome = Decision Quality × Luck" — track decision quality, not just outcomes. Maps to: Analytics = BSC dashboards, Statistics = S&OP policy setting, ML/AI = TRM agents.
+
+- **Pratt Causal Decision Diagrams** (2019-2023): Four CDD components: Decision Levers (→ Powell xₜ), Outcomes (→ Objective function), Externals (→ Exogenous Wₜ₊₁), Intermediaries (→ State Sₜ leading indicators). Key contribution: model every recurring decision as a digital asset with inputs, logic, constraints, ownership, and measured outcomes. See "The Decision Intelligence Handbook" (O'Reilly, 2023).
 
 **Beer Game Reference Materials** (in `docs/The_Beer_Game/`):
 - `Beer Game Calculations.pdf` (129KB) - Mathematical calculations and formulas

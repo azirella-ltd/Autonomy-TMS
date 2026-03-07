@@ -7,6 +7,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Badge, Button, Card, CardContent, Input } from '../components/common';
 import {
   Bot,
@@ -24,6 +25,7 @@ import {
 import { assistantApi, simulationApi } from '../services/api';
 
 const AIAssistant = () => {
+  const location = useLocation();
   const [message, setMessage] = useState('');
   const [chatHistory, setChatHistory] = useState([
     {
@@ -40,6 +42,7 @@ const AIAssistant = () => {
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
   const [suggestedFollowups, setSuggestedFollowups] = useState([]);
   const [error, setError] = useState(null);
+  const initialPromptHandled = useRef(false);
 
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -118,6 +121,17 @@ const AIAssistant = () => {
     },
     [message, loading, conversationId, selectedConfigId],
   );
+
+  // Auto-submit initial prompt from "Talk to me" navbar input
+  useEffect(() => {
+    const initialPrompt = location.state?.initialPrompt;
+    if (initialPrompt && !initialPromptHandled.current) {
+      initialPromptHandled.current = true;
+      // Clear the location state so refreshing doesn't re-send
+      window.history.replaceState({}, '');
+      handleSendMessage(initialPrompt);
+    }
+  }, [location.state, handleSendMessage]);
 
   const handleNewConversation = () => {
     setChatHistory([

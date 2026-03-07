@@ -910,6 +910,14 @@ LLM Supervisor reviews cascade impact, alerts planners if significant
 - **No Fallbacks**: All economic parameters are explicitly required for every tenant — the system raises errors rather than silently using defaults. Every cost assumption is visible and auditable
 - **Reference**: See [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md) Part 11 for architecture details
 
+**9. Decision Intelligence Platform Architecture** (✅ Implemented, Gartner-aligned March 2026)
+- **Decision-Centric Architecture**: Gartner designated Decision Intelligence as "transformational" (2025 AI Hype Cycle) and published its inaugural Magic Quadrant for Decision Intelligence Platforms in January 2026. The platform implements the full DI lifecycle: decision modeling (Powell SDAM), orchestration (TRM Hive + AAP), monitoring (CDC + conformal prediction + CRPS), and governance (override tracking + CDT risk bounds + escalation arbiter)
+- **Decisions as Assets**: Every recurring supply chain decision — stocking, ordering, rebalancing, allocation — is modeled with defined inputs, logic, constraints, ownership, and measured outcomes across 11 specialized agent types
+- **Three-Level Maturity Progression**: Decision Support (human in the loop) → Decision Augmentation (human on the loop, copilot mode) → Decision Automation (human out of the loop, autonomous mode) — with progression governed by measured decision quality, not arbitrary trust thresholds
+- **Gartner Four Use Cases**: Decision Stewardship (override governance + audit), Decision Analysis (8 policy types + probabilistic BSC), Decision Engineering (11 TRM agents + AAP orchestration), Decision Science (hybrid TRM + Claude Skills + conformal routing)
+- **Agentic AI Alignment**: Gartner predicts 50% of SCM solutions will use intelligent agents by 2030. Autonomy already deploys 11 specialized agents per site with multi-site coordination — positioning years ahead of the market curve
+- **Reference**: See [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md) Part 12 and [Decision Intelligence Framework Guide](docs/Knowledge/Decision_Intelligence_Framework_Guide.md)
+
 ### Business Impact: Continuous Autonomous Planning ROI
 
 **Operational Benefits**:

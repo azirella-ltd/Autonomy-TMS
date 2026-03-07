@@ -1,0 +1,127 @@
+"""
+Pydantic Schemas for Decision Stream API
+
+The Decision Stream is the LLM-First UI that surfaces pending TRM decisions,
+CDC alerts, and condition monitor signals in a conversational "inbox" format.
+"""
+
+from datetime import datetime
+from typing import Optional, List, Dict, Any
+from enum import Enum
+from pydantic import BaseModel, Field
+
+
+# ============================================================================
+# Enums
+# ============================================================================
+
+class DecisionAction(str, Enum):
+    ACCEPT = "accept"
+    OVERRIDE = "override"
+    REJECT = "reject"
+
+
+class AlertSeverity(str, Enum):
+    INFO = "info"
+    WARNING = "warning"
+    CRITICAL = "critical"
+    EMERGENCY = "emergency"
+
+
+# ============================================================================
+# Decision Items
+# ============================================================================
+
+class PendingDecisionItem(BaseModel):
+    """A single pending TRM decision surfaced in the stream."""
+    id: int
+    decision_type: str = Field(
+        ..., description="TRM type: atp, po_creation, rebalancing, order_tracking, etc."
+    )
+    summary: str = Field(..., description="Human-readable one-line summary")
+    product_id: Optional[str] = None
+    product_name: Optional[str] = None
+    site_id: Optional[str] = None
+    site_name: Optional[str] = None
+    urgency: Optional[float] = Field(None, description="Urgency score 0-1 from HiveSignalMixin")
+    confidence: Optional[float] = Field(None, description="TRM confidence 0-1")
+    economic_impact: Optional[float] = Field(None, description="Estimated $ impact")
+    suggested_action: Optional[str] = Field(None, description="What the TRM recommends")
+    deep_link: str = Field(..., description="Frontend route for Console deep-link")
+    created_at: Optional[datetime] = None
+    context: Optional[Dict[str, Any]] = Field(
+        default=None, description="Additional context fields from the decision"
+    )
+
+    class Config:
+        from_attributes = True
+
+
+class AlertItem(BaseModel):
+    """A CDC trigger or condition monitor alert."""
+    id: Optional[int] = None
+    alert_type: str = Field(..., description="CDC trigger type or condition type")
+    message: str
+    severity: AlertSeverity = AlertSeverity.WARNING
+    source: str = Field(default="cdc", description="'cdc' or 'condition_monitor'")
+    created_at: Optional[datetime] = None
+    context: Optional[Dict[str, Any]] = None
+
+
+# ============================================================================
+# Digest Response
+# ============================================================================
+
+class DecisionDigestResponse(BaseModel):
+    """Response for GET /decision-stream/digest."""
+    digest_text: str = Field(
+        ..., description="LLM-synthesized natural language digest paragraph"
+    )
+    decisions: List[PendingDecisionItem] = Field(default_factory=list)
+    alerts: List[AlertItem] = Field(default_factory=list)
+    total_pending: int = 0
+    config_id: Optional[int] = None
+
+
+# ============================================================================
+# Action Request/Response
+# ============================================================================
+
+class DecisionActionRequest(BaseModel):
+    """Request to act on a decision (accept/override/reject)."""
+    decision_id: int
+    decision_type: str = Field(
+        ..., description="TRM type to dispatch to correct powell table"
+    )
+    action: DecisionAction
+    override_reason_code: Optional[str] = None
+    override_reason_text: Optional[str] = None
+    override_values: Optional[Dict[str, Any]] = None
+
+
+class DecisionActionResponse(BaseModel):
+    """Response after acting on a decision."""
+    success: bool = True
+    message: str
+    decision_id: int
+    new_status: str
+
+
+# ============================================================================
+# Chat Request/Response
+# ============================================================================
+
+class DecisionStreamChatRequest(BaseModel):
+    """Request for conversational interaction in the stream."""
+    message: str = Field(..., min_length=1)
+    conversation_id: Optional[str] = None
+    config_id: Optional[int] = None
+
+
+class DecisionStreamChatResponse(BaseModel):
+    """Response from the conversational stream."""
+    response: str
+    conversation_id: str
+    sources: List[Dict[str, Any]] = Field(default_factory=list)
+    suggested_followups: List[str] = Field(default_factory=list)
+    embedded_decisions: Optional[List[PendingDecisionItem]] = None

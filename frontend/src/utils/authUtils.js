@@ -84,13 +84,18 @@ export const getDefaultLandingPath = (user) => {
     return "/system/users";
   }
 
+  // Check UI mode preference — Decision Stream is the default for non-admin users
+  const uiMode = typeof localStorage !== 'undefined'
+    ? localStorage.getItem('ui:mode') || 'stream'
+    : 'stream';
+
   if (isTenantAdmin(user)) {
-    return "/admin?section=scenarios";
+    return uiMode === 'stream' ? '/decision-stream' : "/admin?section=scenarios";
   }
 
   // For all other users (including USER with Powell capabilities),
-  // route to /dashboard which triggers DashboardRouter for capability-based routing
-  return "/dashboard";
+  // route based on UI mode preference
+  return uiMode === 'stream' ? '/decision-stream' : "/dashboard";
 };
 
 const parseRedirectTarget = (target) => {

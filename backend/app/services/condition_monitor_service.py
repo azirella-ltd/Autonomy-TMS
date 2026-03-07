@@ -317,7 +317,38 @@ class ConditionMonitorService:
             f"{len(detected)} active conditions"
         )
 
+        # Broadcast alerts to Decision Stream WebSocket
+        if detected:
+            self._broadcast_condition_alerts(tenant_id, detected)
+
         return detected
+
+    def _broadcast_condition_alerts(
+        self, tenant_id: int, conditions: list
+    ) -> None:
+        """Push condition alerts to Decision Stream WebSocket (fire-and-forget)."""
+        try:
+            import asyncio
+            from app.api.endpoints.decision_stream_ws import ds_manager
+
+            for cond in conditions:
+                msg = {
+                    "type": "condition_alert",
+                    "data": {
+                        "type": "condition",
+                        "message": f"{cond.condition_type.value}: {cond.entity_key}",
+                        "severity": cond.severity.value if hasattr(cond.severity, 'value') else str(cond.severity),
+                        "entity_key": cond.entity_key,
+                        "condition_type": cond.condition_type.value,
+                    },
+                }
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(ds_manager.broadcast_to_tenant(tenant_id, msg))
+                except RuntimeError:
+                    break  # No running loop — skip all
+        except Exception:
+            pass  # Don't let WS errors affect condition monitoring
 
     async def _check_condition_type(
         self,

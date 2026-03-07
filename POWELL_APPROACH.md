@@ -5367,6 +5367,124 @@ This eliminates the class of bugs where a missing configuration silently produce
 
 ---
 
+#### 5.19 Decision Intelligence Framework (Gartner DI Alignment)
+
+Gartner designated Decision Intelligence as a "transformational" technology in the 2025 AI Hype Cycle and published its inaugural Magic Quadrant for Decision Intelligence Platforms (DIPs) in January 2026. This section maps Autonomy's Powell SDAM implementation to Gartner's DI framework.
+
+##### 5.19.1 Gartner DIP Definition
+
+> "Software solutions designed to support, automate, and augment decision-making for humans and machines. These platforms bring together data, analytics, knowledge, and AI, while also enabling collaboration across decision modeling, execution, monitoring, and governance."
+
+Gartner evaluates DIPs on their ability to "deliver decision-centric architectures that combine explicit decision modeling, AI-driven augmentation and automation and governance at scale."
+
+##### 5.19.2 Four Decision Lifecycle Capabilities
+
+Gartner requires DIPs to deliver across the full decision lifecycle:
+
+| DIP Capability | Description | Autonomy/Powell Implementation |
+|---|---|---|
+| **Decision Modeling** | Explicitly define decision structure, inputs, logic, constraints, ownership | Powell SDAM five elements: State Sₜ = (Rₜ, Iₜ, Bₜ), Decision xₜ, Exogenous Wₜ₊₁, Transition Sᴹ, Objective. Each TRM agent has defined action space, state encoding, and reward function. |
+| **Decision Orchestration** | Coordinate execution flows across systems and agents | TRM Hive 6-phase decision cycle (Scout → Analyze → Propose → Coordinate → Execute → Learn), AAP cross-authority protocol, HiveSignalBus intra-site, tGNN inter-site |
+| **Decision Monitoring** | Track outcomes, detect drift, measure quality | CDC relearning loop (hourly outcome collection, CDT calibration, CRPS scoring), conformal prediction intervals, drift detection via `CDCMonitor` |
+| **Decision Governance** | Ensure compliance, auditability, trustworthiness | Override effectiveness tracking (Bayesian Beta posteriors), CDT risk_bound P(loss > τ) on every decision, authority boundaries (AAP unilateral/requires-auth/forbidden), escalation arbiter for vertical routing |
+
+##### 5.19.3 Four Critical Capabilities Use Cases
+
+Gartner's 2026 Critical Capabilities report evaluates vendors across four use cases:
+
+| Use Case | Gartner Description | Autonomy Coverage |
+|---|---|---|
+| **Decision Stewardship** | Governance, monitoring, lifecycle management | ✅ `OverrideEffectivenessPosterior` tracks per-user/per-TRM-type decision quality with Bayesian posteriors. CDT risk_bound on every decision. `PowellEscalationLog` audit trail. CDC trigger history in `powell_cdc_trigger_log`. All 11 `powell_*_decisions` tables log full decision metadata. |
+| **Decision Analysis** | Analytical decisioning, rules-driven workflows | ✅ Deterministic engine (always runs first), 8 inventory policy types (abs_level, doc_dem, doc_fcst, sl, sl_fitted, conformal, sl_conformal_fitted, econ_optimal), probabilistic balanced scorecard (Financial, Customer, Operational, Strategic with P10/P50/P90) |
+| **Decision Engineering** | Orchestration, modeling, execution | ✅ 11 narrow TRM agents per site (<10ms each), TRM Hive with UrgencyVector + HiveSignalBus, AAP authorization protocol for cross-authority decisions, 6-phase decision cycle, multi-site coordination via tGNN directives |
+| **Decision Science** | Blended analytics + ML + logical reasoning | ✅ Hybrid TRM + Claude Skills (neural + symbolic), conformal prediction routing (threshold-based escalation), distribution-aware feature engineering (21 distribution types, MLE fitting), CRPS probabilistic scoring, censored demand detection |
+
+##### 5.19.4 Decision-as-Asset Model
+
+Gartner's core insight: "By digitizing and modeling decisions as assets, DI bridges the insight-to-action gap." This maps to Pratt's Causal Decision Diagram (CDD) framework:
+
+| CDD Component | Definition | Powell/Autonomy Mapping |
+|---|---|---|
+| **Decision Levers** | Actions the decision-maker can take | xₜ: Order quantity, safety stock adjustment, transfer amount, ATP allocation, MO release |
+| **Outcomes** | Ultimate measurable goals | Objective function: E[Total Cost], OTIF, inventory turns (dollar-denominated via `EconomicCostConfig`) |
+| **Externals** | Factors outside control | Wₜ₊₁: Demand variability, lead time uncertainty, supplier disruptions, quality issues |
+| **Intermediaries** | Leading indicators along the causal path | Rₜ: Fill rate, DOS, backlog level, pipeline position (computed in TRM state vectors) |
+
+Each decision is logged to the appropriate `powell_*_decisions` table with:
+- Full state context (input features from TRM state vector)
+- Action taken (decision output)
+- Confidence (CDT risk_bound)
+- Authority scope (unilateral vs. authorized)
+- Outcome (populated by `OutcomeCollectorService` after feedback horizon)
+- Override flag and quality score (if human overrode)
+
+##### 5.19.5 Three-Level DI Maturity Model
+
+Gartner and DI industry frameworks define three levels of human-AI collaboration:
+
+| DI Level | Label | Human Role | Agent Mode | Progression Criteria |
+|---|---|---|---|---|
+| Level 1 | Decision Support | In the Loop | Manual | — (entry level) |
+| Level 2 | Decision Augmentation | On the Loop | Copilot | Sufficient historical data for TRM training |
+| Level 3 | Decision Automation | Out of the Loop | Autonomous | Override posterior E[p] > 0.70, CDT risk_bound < 0.15, decision quality score > threshold |
+
+**Progression governance**: The transition from Level 2 (copilot) to Level 3 (autonomous) is controlled by measurable criteria, not arbitrary trust thresholds:
+- `OverrideEffectivenessPosterior.expected_value` > 0.70 (agent decisions are good enough that overrides rarely improve outcomes)
+- CDT `risk_bound` consistently < 0.15 (conformal prediction shows tight uncertainty intervals)
+- Decision quality score (from `OutcomeCollectorService`) above tenant-configured threshold
+- Minimum decision history count (configurable, default 500+ decisions)
+
+This implements Gartner's prediction: "By 2028, 25% of CDAO vision statements will become 'decision-centric' surpassing 'data-driven.'"
+
+##### 5.19.6 Supply Chain Technology Convergence
+
+Gartner's 2025 Hype Cycle for Supply Chain Planning Technologies identifies four interdependent technologies:
+
+| Technology | Hype Cycle Position | Autonomy Status |
+|---|---|---|
+| Explainable AI | Slope of Enlightenment | ✅ `AgentContextExplainer`, 39 templates × 3 verbosity, Ask Why API |
+| Autonomous Planning | Trough → Slope | ✅ 11 TRM agents in copilot/autonomous mode |
+| Agentic AI | Innovation Trigger | ✅ TRM Hive, multi-site coordination, AAP |
+| Decision-Centric Planning | Innovation Trigger | ✅ Powell SDAM, decision-as-asset logging, CDC feedback |
+
+Gartner prediction: "By 2030, 50% of cross-functional SCM solutions will use intelligent agents to autonomously execute decisions." Autonomy deploys 11 agents per site today.
+
+##### 5.19.7 DI Operating Model Mapping
+
+Mapping the Balodis DI operating model to Powell SDAM:
+
+| DI Activity | Description | Powell/Autonomy Implementation |
+|---|---|---|
+| **Decision Design** | Define structure, inputs, constraints, ownership | `SupplyChainConfig` topology + `InvPolicy` parameters + `SiteAgentConfig` authority boundaries + TRM action spaces |
+| **Decision Support** | Provide insights, scenarios, recommendations | Probabilistic BSC, what-if via embedded scenarios (Kinaxis-inspired), Ask Why endpoint with evidence citations |
+| **Decision Optimization** | Use AI/ML to improve decision quality | TRM agents (VFA), CFA policy optimization (weekly Differential Evolution), Monte Carlo evaluation |
+| **Decision Review** | Monitor outcomes, recalibrate, learn | CDC triggers, outcome collection (hourly), CDT calibration, override posterior updates, TRM retraining (every 6h) |
+
+**Enabling Factors**:
+- **Organizational Capabilities**: TRM curriculum (5-phase digital twin pipeline), simulation tenant for training
+- **Decision Culture**: Override capture with Bayesian scoring, causal inference (propensity matching → causal forests), learning from human judgment
+
+##### 5.19.8 Competitive Positioning via DI Framework
+
+| Gartner DIP Capability | SAS/FICO/Aera (DIP Leaders) | Autonomy |
+|---|---|---|
+| Decision Modeling | Generic business rules engines | Domain-specific: Powell SDAM with state decomposition (Rₜ, Iₜ, Bₜ) |
+| Decision Execution | Rules engines, workflow orchestration | Real-time neural agents (TRM, <10ms, 7M params) |
+| Decision Monitoring | BI dashboards, basic drift detection | Conformal prediction + CRPS + CDC triggers + outcome collection |
+| Decision Governance | Audit logs, compliance rules | Bayesian override tracking + causal inference (Athey & Imbens 2018) + CDT risk bounds |
+| Supply Chain Domain | Bolt-on or requires extensive customization | Native: 35 AWS SC entities, 8 policy types, 21 distributions |
+| Agentic AI | Early/experimental | 11 production agents per site, 4-layer multi-site coordination |
+| Probabilistic Planning | Limited | Monte Carlo, conformal prediction, CRPS, censored demand, fitted distributions |
+| Learning from Overrides | Basic logging | Bayesian posteriors → propensity matching → doubly robust → causal forests |
+
+**Positioning**: Autonomy is the first purpose-built Decision Intelligence Platform for supply chain — delivering Gartner's full DI lifecycle natively within the supply chain domain, rather than requiring horizontal DIP customization.
+
+##### 5.19.9 Reference
+
+See [Decision Intelligence Framework Guide](../docs/Knowledge/Decision_Intelligence_Framework_Guide.md) for full research synthesis including Kozyrkov (Google), Pratt (CDD framework), and Gartner source citations.
+
+---
+
 ## Part 3: Summary and Recommendations
 
 ### 3.1 Key Findings

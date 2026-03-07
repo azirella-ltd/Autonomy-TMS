@@ -538,6 +538,16 @@ This means reward magnitudes are now proportional to actual dollar impact: a sto
 
 `EconomicCostConfig.from_product_cost(unit_cost, annual_holding_rate, stockout_multiplier, ordering_cost)` is the factory method. All parameters are required.
 
+#### Decision Intelligence Alignment (March 2026)
+
+Each TRM decision maps to Gartner's Decision Intelligence lifecycle:
+- **Decision Modeling**: Powell SDAM five elements (State, Decision, Exogenous, Transition, Objective) define the structure of every TRM decision type
+- **Decision Orchestration**: The TRM Hive 6-phase decision cycle and AAP authorization protocol coordinate execution across 11 agent types
+- **Decision Monitoring**: CDC relearning loop (outcome collection hourly, CDT calibration, CRPS scoring) measures decision quality
+- **Decision Governance**: Override effectiveness tracking (Bayesian posteriors), CDT risk_bound P(loss > threshold) on every decision response, authority boundaries
+
+Every TRM decision is logged to its `powell_*_decisions` table as a trackable **decision asset** — with full state context, action, confidence, authority scope, and measured outcome. This implements the Gartner DI principle: "By digitizing and modeling decisions as assets, DI bridges the insight-to-action gap."
+
 ### Per-Site Learning-Depth Curriculum
 
 Training is organized **per site x per TRM type** with a 3-phase progressive curriculum based on data availability (not topology complexity):

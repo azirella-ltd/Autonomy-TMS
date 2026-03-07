@@ -1,0 +1,35 @@
+/**
+ * Decision Stream API Service
+ *
+ * API client for the Decision Stream LLM-First UI.
+ * Supports digest retrieval, decision actions, and conversational chat.
+ */
+
+import { api } from './api';
+
+export const decisionStreamApi = {
+  /**
+   * Get the decision digest: pending decisions, alerts, and LLM synthesis.
+   * @param {number} [configId] - Optional supply chain config ID
+   */
+  getDigest: (configId) =>
+    api
+      .get('/decision-stream/digest', { params: { config_id: configId } })
+      .then((r) => r.data),
+
+  /**
+   * Act on a decision (accept/override/reject).
+   * @param {Object} data - { decision_id, decision_type, action, override_reason_code?, override_reason_text?, override_values? }
+   */
+  actOnDecision: (data) =>
+    api.post('/decision-stream/action', data).then((r) => r.data),
+
+  /**
+   * Send a chat message with decision-context injection.
+   * @param {Object} data - { message, conversation_id?, config_id? }
+   */
+  chat: (data) =>
+    api.post('/decision-stream/chat', data).then((r) => r.data),
+};
+
+export default decisionStreamApi;

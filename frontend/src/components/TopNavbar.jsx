@@ -23,6 +23,7 @@ import {
   Network,
   SendHorizontal,
   Sparkles,
+  LayoutGrid,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { isSystemAdmin } from '../utils/authUtils';
@@ -63,6 +64,9 @@ const TopNavbar = ({ sidebarOpen = true }) => {
   const [talkInput, setTalkInput] = useState('');
   const [talkFocused, setTalkFocused] = useState(false);
   const talkInputRef = useRef(null);
+
+  // UI mode state (stream = Decision Stream, console = Planning Console)
+  const [uiMode, setUiMode] = useState(() => localStorage.getItem('ui:mode') || 'stream');
 
   const menuRef = useRef(null);
   const navigate = useNavigate();
@@ -201,6 +205,18 @@ const TopNavbar = ({ sidebarOpen = true }) => {
       .substring(0, 2);
   };
 
+  // ── Mode Toggle ────────────────────────────────────────────────────────────
+  const handleModeToggle = () => {
+    const newMode = uiMode === 'stream' ? 'console' : 'stream';
+    setUiMode(newMode);
+    localStorage.setItem('ui:mode', newMode);
+    if (newMode === 'stream') {
+      navigate('/decision-stream');
+    } else {
+      navigate('/dashboard');
+    }
+  };
+
   // ── Talk to me ─────────────────────────────────────────────────────────────
   const handleTalkSubmit = () => {
     const prompt = talkInput.trim();
@@ -208,9 +224,9 @@ const TopNavbar = ({ sidebarOpen = true }) => {
     setTalkInput('');
     setTalkFocused(false);
     talkInputRef.current?.blur();
-    // Navigate to Skills dashboard with the prompt pre-filled via URL state.
-    // The receiving page can read location.state.initialPrompt to auto-populate.
-    navigate('/admin/skills', { state: { initialPrompt: prompt } });
+    // Route to Decision Stream in stream mode, AI Assistant in console mode
+    const target = uiMode === 'stream' ? '/decision-stream' : '/ai-assistant';
+    navigate(target, { state: { initialPrompt: prompt } });
   };
 
   const handleTalkKeyDown = (e) => {
@@ -335,6 +351,22 @@ const TopNavbar = ({ sidebarOpen = true }) => {
         <div className="flex items-center gap-2 flex-shrink-0">
           {!isSysAdmin && (
             <>
+              <button
+                onClick={handleModeToggle}
+                className={cn(
+                  'p-2 rounded-full transition-colors',
+                  uiMode === 'stream'
+                    ? 'bg-violet-500/10 text-violet-500 hover:bg-violet-500/20'
+                    : 'hover:bg-accent text-muted-foreground hover:text-foreground',
+                )}
+                title={uiMode === 'stream' ? 'Switch to Planning Console' : 'Switch to Decision Stream'}
+              >
+                {uiMode === 'stream' ? (
+                  <LayoutGrid className="h-5 w-5" />
+                ) : (
+                  <Sparkles className="h-5 w-5" />
+                )}
+              </button>
               <button
                 onClick={() => navigate('/help')}
                 className="p-2 rounded-full hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"

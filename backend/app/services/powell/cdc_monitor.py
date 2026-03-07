@@ -207,7 +207,37 @@ class CDCMonitor:
         if db is not None:
             self._persist_trigger(db, event)
 
+        # Broadcast to Decision Stream WebSocket
+        self._broadcast_to_decision_stream(event)
+
         return event
+
+    def _broadcast_to_decision_stream(self, event: TriggerEvent) -> None:
+        """Push CDC trigger to Decision Stream WebSocket (fire-and-forget)."""
+        tenant_id = getattr(self, 'tenant_id', None)
+        if tenant_id is None:
+            return
+        try:
+            import asyncio
+            from app.api.endpoints.decision_stream_ws import ds_manager
+            msg = {
+                "type": "cdc_trigger",
+                "data": {
+                    "type": "cdc",
+                    "message": event.message,
+                    "severity": event.severity,
+                    "site_key": self.site_key,
+                    "reasons": [r.value for r in event.reasons],
+                    "timestamp": event.timestamp.isoformat(),
+                },
+            }
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(ds_manager.broadcast_to_tenant(tenant_id, msg))
+            except RuntimeError:
+                pass  # No running loop — skip broadcast
+        except Exception:
+            pass  # Don't let WS errors affect CDC logic
 
     def _persist_trigger(self, db: Session, event: TriggerEvent) -> None:
         """Persist a TriggerEvent to the powell_cdc_trigger_log table."""

@@ -124,6 +124,7 @@ import OrderTrackingWorklistPage from "./pages/planning/OrderTrackingWorklistPag
 import { TrainingLeaderboards, TrainingReports, TrainingCompare } from "./pages/training";
 import ExecutiveDashboard from "./pages/ExecutiveDashboard";
 import ExecutiveBriefingPage from "./pages/ExecutiveBriefingPage";
+import DecisionStream from "./pages/DecisionStream";
 import AgentPerformancePage from "./pages/AgentPerformancePage";
 import SOPWorklistPage from "./pages/SOPWorklistPage";
 import DemoSystemBuilder from "./pages/deployment/DemoSystemBuilder.jsx";
@@ -1076,6 +1077,10 @@ const AppContent = () => {
             <Route
               path="/ai-assistant"
               element={<AIAssistant />}
+            />
+            <Route
+              path="/decision-stream"
+              element={<DecisionStream />}
             />
 
             <Route

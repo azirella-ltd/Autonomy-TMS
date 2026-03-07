@@ -22,6 +22,7 @@
 
 import {
   LayoutDashboard as DashboardIcon,
+  Sparkles as SparklesIcon,
   FlaskConical as ScenariosIcon,
   Users as PeopleIcon,
   BarChart3 as AnalyticsIcon,
@@ -86,6 +87,13 @@ export const NAVIGATION_CONFIG = [
   {
     section: 'Home',
     items: [
+      {
+        label: 'Decision Stream',
+        path: '/decision-stream',
+        icon: SparklesIcon,
+        requiredCapability: null, // Always visible
+        description: 'LLM-first decision inbox with conversational triage',
+      },
       {
         label: 'Dashboard',
         path: '/dashboard',

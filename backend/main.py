@@ -6019,6 +6019,12 @@ api.include_router(hierarchical_metrics_router, prefix="/hierarchical-metrics", 
 from app.api.endpoints.executive_briefing import router as executive_briefing_router
 api.include_router(executive_briefing_router, prefix="/executive-briefing", tags=["executive-briefing"])
 
+# Decision Stream — LLM-First UI with Decision-Back Planning
+from app.api.endpoints.decision_stream import router as decision_stream_router
+api.include_router(decision_stream_router, tags=["decision-stream"])
+from app.api.endpoints.decision_stream_ws import router as decision_stream_ws_router
+app.include_router(decision_stream_ws_router)
+
 # Full-Level Pegging & Multi-Stage CTP API
 from app.api.endpoints.pegging import router as pegging_router
 api.include_router(pegging_router, prefix="/pegging", tags=["pegging", "ctp", "planning"])

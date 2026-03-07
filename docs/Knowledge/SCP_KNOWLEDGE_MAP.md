@@ -116,6 +116,20 @@ Comprehensive catalog of authoritative resources for teaching the LLM all levels
 
 **Gartner's Autonomy Spectrum**: Manual → Decision Support → Decision Augmentation → Decision Automation → **Autonomous Planning**
 
+**Decision Intelligence (2025-2026)**:
+| Resource | URL | Access | Notes |
+|----------|-----|--------|-------|
+| **MQ for Decision Intelligence Platforms** (Jan 2026) | https://www.gartner.com/en/documents/7363830 | Paid | Inaugural MQ. Leaders: SAS, FICO, Aera Technology |
+| Critical Capabilities for DIPs (Jan 2026) | https://www.gartner.com/en/documents/7367030 | Paid | 4 use cases: Stewardship, Analysis, Engineering, Science |
+| Hype Cycle for SC Planning Technologies 2025 | https://www.gartner.com/en/documents/6706434 | Paid | Decision-centric planning + agentic AI as newest innovations |
+| Market Guide for A&DI Platforms in SC (2025) | https://www.gartner.com/en/documents/4478399 | Paid | SC-specific DI market analysis |
+| Gartner IT Glossary: Decision Intelligence | https://www.gartner.com/en/information-technology/glossary/decision-intelligence | Free | Core DI definition |
+| Gartner Peer Insights (DIPs) | https://www.gartner.com/reviews/market/decision-intelligence-platforms | Free (reg) | Vendor reviews |
+
+**Key DI Statistics**: DI = "transformational" (2025 AI Hype Cycle), 5-20% current penetration, 2-5yr to mainstream. By 2026, 75% of Global 500 apply DI practices. By 2028, 25% of CDAO visions become "decision-centric". By 2030, 50% of SCM solutions use intelligent agents.
+
+**Platform Analysis**: See `docs/Knowledge/Decision_Intelligence_Framework_Guide.md` for full mapping of Gartner DI capabilities to Autonomy/Powell implementation.
+
 ### 2.2 Other Analysts
 
 | Resource | URL | Access | Focus |

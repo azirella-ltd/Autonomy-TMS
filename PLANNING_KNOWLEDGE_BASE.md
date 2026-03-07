@@ -1103,6 +1103,18 @@ Before deploying planning logic:
 5. **Marginal economic return** (`econ_optimal`): Stock one more unit only when expected stockout cost exceeds holding cost
 6. **Automated CFA re-optimization**: Weekly Differential Evolution search over policy parameters
 
+### Gartner Decision Intelligence Framework
+
+- `docs/Knowledge/Decision_Intelligence_Framework_Guide.md` — Synthesis of Gartner DI frameworks, Kozyrkov model, and Pratt CDDs
+
+**Key Concepts Applied**:
+1. **Decision-as-asset model**: Every recurring decision (stocking, ordering, rebalancing, allocation) modeled with inputs, logic, constraints, ownership, and measured outcomes — logged to `powell_*_decisions` tables
+2. **Four DIP lifecycle capabilities**: Modeling (Powell SDAM) → Orchestration (TRM Hive + AAP) → Monitoring (CDC + conformal + CRPS) → Governance (override tracking + CDT)
+3. **Three-level maturity**: Decision Support (manual) → Decision Augmentation (copilot) → Decision Automation (autonomous) — progression governed by override posterior, CDT confidence, and decision quality score
+4. **Causal Decision Diagrams**: Decision Levers (actions) → Intermediaries (leading indicators) → Outcomes (goals), with Externals (uncertainty) influencing the causal chain
+5. **Decision-centric planning**: Gartner 2025 SC Planning Hype Cycle — shift from periodic batch planning to continuous decision execution
+6. **Agentic AI**: Gartner predicts 50% of SCM solutions use intelligent agents by 2030; Autonomy deploys 11 per site today
+
 ### Code Locations
 
 **Backend Planning Services**:
