@@ -331,7 +331,7 @@ const DecisionCard = ({
               </Button>
             </div>
           </div>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   );
