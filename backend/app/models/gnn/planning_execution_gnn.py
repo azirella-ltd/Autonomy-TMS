@@ -1098,13 +1098,16 @@ class InterHiveSignal:
 
 @dataclass
 class tGNNSiteDirective:
-    """Per-site directive from tGNN containing all network-context a hive needs.
+    """Per-site directive from Network tGNN (Layer 2) containing network-context.
 
     Consumed by individual TRM heads within the site hive:
-    - SafetyStockTRM reads safety_stock_multiplier
+    - InventoryBufferTRM reads safety_stock_multiplier
     - POCreationTRM reads demand_forecast
     - RebalancingTRM reads lateral signals
     - ATPExecutorTRM reads allocation adjustments
+
+    Note: For intra-site cross-TRM coordination (Layer 1.5), see
+    SiteTGNNOutput in site_tgnn_inference_service.py.
     """
     site_key: str = ""
 

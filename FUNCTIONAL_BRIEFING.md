@@ -212,15 +212,16 @@ The platform includes a complete simulation environment that uses identical plan
 > *Navigation: Administration > Supply Chain Configuration > (select a config) > Sankey tab*
 > Shows the DAG-based supply chain network visualization with material flow between sites. Useful for showing how the digital twin mirrors the real network.
 
-### 5.2 Five-Phase Agent Training Pipeline
+### 5.2 Six-Phase Agent Training Pipeline
 
 Takes AI agents from zero experience to production autonomy in 3-5 weeks:
 
 1. **Behavioral Cloning** (hours): Each agent matches the deterministic engine baseline within ±5%
 2. **Coordinated Simulation** (2-3 days): All 11 agents train simultaneously with signal bus active, learning inter-agent coordination from 28.6M+ training records
-3. **Stochastic Stress-Testing** (hours): Agents face adversarial scenarios — 3σ demand spikes, supplier failures, capacity shocks, compound disruptions
-4. **Copilot Calibration** (2-4 weeks): Agents run in copilot mode with human overrides captured and weighted by Bayesian effectiveness tracking
-5. **Autonomous Relearning** (ongoing): Continuous improvement from production outcomes via autonomous feedback loop
+3. **Site Coordination Model Training** (~1 day): Cross-agent coordination model learns causal relationships from coordinated traces, then fine-tunes via reinforcement learning
+4. **Stochastic Stress-Testing** (3-5 days): Agents + site coordination model together face adversarial scenarios — 3σ demand spikes, supplier failures, capacity shocks, compound disruptions
+5. **Copilot Calibration** (2-4 weeks): Agents run in copilot mode with human overrides captured and weighted by Bayesian effectiveness tracking
+6. **Autonomous Relearning** (ongoing): Continuous improvement from production outcomes via autonomous feedback loop
 
 > **Screenshot 13 — TRM Training Dashboard**
 > *Navigation: AI & Agents > Execution Agents*

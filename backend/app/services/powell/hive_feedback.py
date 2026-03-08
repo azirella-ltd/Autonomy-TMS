@@ -1,21 +1,23 @@
 """
 Hive Feedback Features — Feed-Back Signals for tGNN Input.
 
-Aggregates local hive activity into 8 features that the tGNN consumes
+Aggregates local hive activity into 10 features that the tGNN consumes
 as additional input alongside transactional data. This closes the
 feedback loop: tGNN → hive directives → local TRM decisions → feedback → tGNN.
 
 Architecture reference: TRM_HIVE_ARCHITECTURE.md Section 7
 
 Features computed:
-  1. avg_urgency        — Mean urgency across 11 TRM slots
-  2. urgency_spread     — Std dev of active urgency values
-  3. signal_rate        — Signals emitted per cycle (recent)
-  4. conflict_rate      — Conflicts detected per cycle (recent)
-  5. cross_head_reward  — Average cross-head coordination reward
-  6. dominant_caste     — One-hot for most active signal caste (5 dims → 1 encoded)
-  7. ss_adjustment_dir  — Safety stock adjustment direction (-1/0/+1)
-  8. exception_rate     — Fraction of cycles with order exceptions
+  1. avg_urgency                    — Mean urgency across 11 TRM slots
+  2. urgency_spread                 — Std dev of active urgency values
+  3. signal_rate                    — Signals emitted per cycle (recent)
+  4. conflict_rate                  — Conflicts detected per cycle (recent)
+  5. cross_head_reward              — Average cross-head coordination reward
+  6. dominant_caste                 — One-hot for most active signal caste (5 dims → 1 encoded)
+  7. ss_adjustment_dir              — Safety stock adjustment direction (-1/0/+1)
+  8. exception_rate                 — Fraction of cycles with order exceptions
+  9. site_tgnn_adjustment_magnitude — Mean |urgency adjustment| from last Site tGNN cycle
+ 10. cross_trm_conflict_rate        — Rate of cross-TRM conflicts detected by Site tGNN
 """
 
 from __future__ import annotations
@@ -34,7 +36,7 @@ class HiveFeedbackFeatures:
     """Aggregated hive activity features for tGNN input.
 
     Computed from recent decision cycle results and the signal bus state.
-    These 8 features extend the tGNN's per-site input tensor.
+    These 10 features extend the tGNN's per-site input tensor.
     """
 
     avg_urgency: float = 0.0           # Mean urgency across 11 TRM slots
@@ -45,9 +47,11 @@ class HiveFeedbackFeatures:
     dominant_caste: int = 0            # 0=Scout,1=Forager,2=Nurse,3=Guard,4=Builder
     ss_adjustment_dir: float = 0.0     # -1 (decreased), 0 (unchanged), +1 (increased)
     exception_rate: float = 0.0        # Fraction of cycles with order exceptions
+    site_tgnn_adjustment_magnitude: float = 0.0  # Mean |urgency adj| from Site tGNN
+    cross_trm_conflict_rate: float = 0.0         # Cross-TRM conflicts from Site tGNN
 
     def to_tensor(self) -> np.ndarray:
-        """Return as a float32 array for tGNN input concatenation."""
+        """Return as a float32 array for tGNN input concatenation (10 dims)."""
         return np.array([
             self.avg_urgency,
             self.urgency_spread,
@@ -57,6 +61,8 @@ class HiveFeedbackFeatures:
             float(self.dominant_caste) / 4.0,  # Normalize to [0, 1]
             self.ss_adjustment_dir,
             self.exception_rate,
+            self.site_tgnn_adjustment_magnitude,
+            self.cross_trm_conflict_rate,
         ], dtype=np.float32)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -69,6 +75,8 @@ class HiveFeedbackFeatures:
             "dominant_caste": self.dominant_caste,
             "ss_adjustment_dir": self.ss_adjustment_dir,
             "exception_rate": round(self.exception_rate, 4),
+            "site_tgnn_adjustment_magnitude": round(self.site_tgnn_adjustment_magnitude, 4),
+            "cross_trm_conflict_rate": round(self.cross_trm_conflict_rate, 4),
         }
 
 

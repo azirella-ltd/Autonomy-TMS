@@ -450,15 +450,16 @@ python scripts/training/train_planning_execution.py --mode execution \
   --sop-checkpoint checkpoints/sop_model.pt
 ```
 
-**Digital Twin Training Pipeline** (5-phase cold-start from simulation):
+**Digital Twin Training Pipeline** (6-phase cold-start from simulation):
 
 | Phase | Description | Data Source | Records |
 |-------|-------------|-------------|---------|
 | 1 | Individual BC warm-start | Curriculum scenarios | ~2M |
 | 2 | Multi-head coordinated traces | SimPy/Beer Game | ~10M |
-| 3 | Stochastic stress-testing | Monte Carlo scenarios | ~20M |
-| 4 | Copilot calibration | Human override replay | ~4M |
-| 5 | Autonomous CDC relearning | Production outcomes | ~10M |
+| 3 | Site tGNN training (cross-TRM coordination) | Phase 2 traces + PPO | ~5.5K |
+| 4 | Stochastic stress-testing (TRMs + Site tGNN) | Monte Carlo scenarios | ~20M |
+| 5 | Copilot calibration (Site tGNN shadow mode) | Human override replay | ~4M |
+| 6 | Autonomous CDC relearning | Production outcomes | ~10M |
 
 Total: ~46M synthetic records, ~7-10 days compute. Stigmergic-only variant: ~10M records, ~5-8 days.
 

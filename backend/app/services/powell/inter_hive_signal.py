@@ -50,6 +50,11 @@ class InterHiveSignalType(str, Enum):
     FORECAST_REVISION = "forecast_revision"        # Network-level forecast revision
     POLICY_PARAMETER_UPDATE = "policy_param_update"  # S&OP policy parameters updated
 
+    # Site tGNN (Layer 1.5) signals — intra-site cross-TRM coordination
+    CROSS_TRM_BOTTLENECK = "cross_trm_bottleneck"  # Capacity starvation cascade detected
+    CROSS_TRM_SYNERGY = "cross_trm_synergy"        # Positive feedback loop detected
+    URGENCY_REBALANCE = "urgency_rebalance"        # Urgency redistribution recommended
+
 
 # ---------------------------------------------------------------------------
 # InterHiveSignal

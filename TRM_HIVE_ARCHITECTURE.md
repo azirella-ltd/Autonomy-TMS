@@ -1,5 +1,7 @@
 # TRM Hive Architecture: Collective Intelligence for Supply Chain Execution
 
+> **INTERNAL DOCUMENT** — Contains implementation details, file paths, and architecture specifications.
+
 **Status**: ✅ IMPLEMENTED (2026-02-25)
 **Author**: Architecture Analysis
 **Dependencies**: [POWELL_APPROACH.md](POWELL_APPROACH.md), [TRM_AGENTS_EXPLAINED.md](TRM_AGENTS_EXPLAINED.md), [AGENTIC_AUTHORIZATION_PROTOCOL.md](docs/AGENTIC_AUTHORIZATION_PROTOCOL.md)
@@ -52,6 +54,47 @@ The bee colony analogy is not decorative — it captures three structural proper
 2. **Stigmergy over direct communication**: Bees coordinate through environmental modification (pheromones), not point-to-point messages. Similarly, TRMs coordinate through shared state (urgency vector, signal bus) rather than calling each other's methods.
 
 3. **Graceful degradation**: If a bee caste fails, the colony adapts. If a TRM model is unavailable (`model is None`), the deterministic engine handles the decision. The hive continues with reduced capability, not failure.
+
+### Agent Architecture
+
+```mermaid
+graph TD
+    SOP["<b>Layer 4: S&OP GraphSAGE</b><br/>Policy parameters θ<br/><i>Weekly · CFA · ~500K params</i>"]
+    AAP["<b>Layer 3: AAP</b><br/>AuthorizationRequest/Response<br/><i>Ad Hoc</i>"]
+    NET["<b>Layer 2: Network tGNN</b><br/>tGNNSiteDirective<br/><i>Daily · CFA/VFA · ~473K params</i>"]
+    SITE["<b>Layer 1.5: Site tGNN</b><br/>GATv2+GRU · 22 causal edges<br/><i>Hourly · VFA · ~25K params</i>"]
+
+    subgraph HIVE["<b>Layer 1: TRM Hive</b> · HiveSignalBus + UrgencyVector · &lt;10ms · ~7M params/TRM"]
+        subgraph SC["Scout (Demand)"]
+            ATP["ATP Executor"]
+            OT["Order Tracking"]
+        end
+        subgraph FO["Forager (Supply)"]
+            PO["PO Creation"]
+            REB["Rebalancing"]
+            SUB["Subcontracting"]
+        end
+        subgraph NU["Nurse (Health)"]
+            BUF["Inventory Buffer"]
+            FA["Forecast Adj"]
+        end
+        subgraph GU["Guard (Integrity)"]
+            QD["Quality"]
+            MS["Maintenance"]
+        end
+        subgraph BU["Builder (Execution)"]
+            MO["MO Execution"]
+            TO["TO Execution"]
+        end
+    end
+
+    SOP -->|"θ params"| NET
+    AAP <-->|"AuthorizationRequest"| NET
+    NET -->|"tGNNSiteDirective"| SITE
+    SITE -->|"urgency Δ"| HIVE
+    HIVE -->|"HiveSignalBus signals"| SITE
+    SITE -->|"escalation"| NET
+```
 
 ---
 
@@ -2642,21 +2685,48 @@ The platform provides five simulation capabilities that compose into a complete 
 | **AWS SC Planning Engine** | 3-step planning cycle (demand → targets → net requirements) with stochastic sampling | `SupplyPlan` records (PO/TO/MO requests, probabilistic balanced scorecard) | Per planning run: full horizon of planned actions | Expert labels for PO, MO, TO, Rebalancing TRMs |
 | **Synthetic Data Generator** | Complete company archetypes (retailer, distributor, manufacturer) with network, products, forecasts, policies | Full `SupplyChainConfig` + forecasts + inv_policies + sourcing_rules | 1 company = 160-720 SKUs, 10-50 sites, full network topology | Topology diversity for GNN generalization |
 
-### 15.3 Five-Phase Digital Twin Training Pipeline
+### 15.3 Six-Phase Digital Twin Training Pipeline
 
-The pipeline progresses from zero data to a production-ready hive through five phases. Each phase builds on the artifacts of the previous phase. The first three phases use purely synthetic data; Phase 4 introduces copilot feedback; Phase 5 runs autonomously.
+The pipeline progresses from zero data to a production-ready hive through six phases. Each phase builds on the artifacts of the previous phase. The first four phases use purely synthetic data; Phase 5 introduces copilot feedback; Phase 6 runs autonomously.
 
 ```
 Phase 1: Individual Head Warm-Start (Behavioral Cloning)
     ↓ each TRM head learns to match deterministic engine baseline
 Phase 2: Multi-Head Simulation Traces (Coordinated BC)
     ↓ heads learn to run together; signals begin flowing
-Phase 3: Stochastic Stress-Testing (RL Fine-Tuning)
+Phase 3: Site tGNN Training (Cross-TRM Coordination Model)
+    ↓ learns causal relationships across 11 TRMs from traces
+Phase 4: Stochastic Stress-Testing (RL Fine-Tuning)
     ↓ Monte Carlo disruptions teach robustness and coordination
-Phase 4: Copilot Calibration (Human-in-the-Loop)
+Phase 5: Copilot Calibration (Human-in-the-Loop)
     ↓ human overrides correct systematic biases
-Phase 5: Autonomous CDC Relearning (Continuous Improvement)
+Phase 6: Autonomous CDC Relearning (Continuous Improvement)
     ↓ production outcomes close the feedback loop
+```
+
+#### Warm Start Pipeline (Interactive)
+
+```mermaid
+graph LR
+    P1["<b>Phase 1: TRM BC</b><br/>SyntheticTRMDataGenerator<br/><i>1-2 days</i>"]
+    P2["<b>Phase 2: CoordinatedSim</b><br/>MultiHeadTrace generation<br/><i>2-3 days · 28.6M records</i>"]
+    P3["<b>Phase 3: Site tGNN</b><br/>BC + PPO from traces<br/><i>~1 day · ~25K params</i>"]
+    P4["<b>Phase 4: Stochastic</b><br/>Monte Carlo + CQL/PPO<br/><i>3-5 days · 17.6M records</i>"]
+    P5["<b>Phase 5: Copilot</b><br/>Shadow mode + overrides<br/><i>2-4 weeks</i>"]
+    P6["<b>Phase 6: CDC Loop</b><br/>Outcome→CDT→Retrain<br/><i>Continuous</i>"]
+
+    P1 -->|"11 TRM checkpoints"| P2
+    P2 -->|"MultiHeadTrace"| P3
+    P3 -->|"site_tgnn_latest.pt"| P4
+    P4 -->|"stress-tested checkpoints"| P5
+    P5 -->|"calibrated"| P6
+    P6 -->|":25/:32/:35/:45"| P6
+
+    SIM(["CoordinatedSimRunner<br/>(SimPy/BeerGame)"])
+    SIM -.->|"hive_curriculum.py"| P1
+    SIM -.->|"run_episode()"| P2
+    SIM -.->|"Monte Carlo inject"| P4
+    SIM -.->|"counterfactual"| P6
 ```
 
 #### Phase 1: Individual Head Warm-Start (1-2 days compute)
@@ -2753,9 +2823,51 @@ For each MultiHeadTrace in dataset:
 
 **Key insight**: This is where stigmergic coordination emerges. The model learns that when ATP emits a SHORTAGE signal (urgency=0.8), POCreationTRM should respond with expedite, InventoryBufferTRM should increase buffers, and RebalancingTRM should look for cross-site transfers. These patterns only appear in multi-head traces.
 
-#### Phase 3: Stochastic Stress-Testing (3-5 days compute)
+#### Phase 3: Site tGNN Training (~1 day compute)
 
-**Goal**: Use Monte Carlo disruptions to teach the hive robustness — how to coordinate under uncertainty, not just under steady-state.
+**Goal**: Train the Site tGNN (Layer 1.5) to learn causal relationships across the 11 TRM agents within each site, using the coordinated traces from Phase 2.
+
+**Data Source**: MultiHeadTrace records from Phase 2, containing per-TRM urgency states, decisions, and outcomes for complete 6-phase decision cycles.
+
+**Process**:
+```
+1. Extract training data from MultiHeadTrace:
+   ├── Node features: 11 TRMs × 18 dims (urgency, decision counts,
+   │   confidence, override rate, reward EMA, signal density, etc.)
+   ├── Graph topology: 22 directed causal edges (static)
+   ├── Temporal sequences: hourly snapshots within each episode
+   └── Target: urgency adjustment deltas that maximize site BSC
+
+2. Phase 3a — Behavioral Cloning from traces:
+   ├── For each hourly window, compute ideal urgency adjustments
+   │   by comparing outcome quality across different urgency states
+   ├── Loss: MSE on urgency_adjustment + cross-head reward signal
+   ├── Epochs: 20
+   └── Validates: Site tGNN outputs non-trivial adjustments
+
+3. Phase 3b — PPO Fine-Tuning in simulation:
+   ├── State: 11-node feature vectors from CoordinatedSimRunner
+   ├── Action: urgency adjustments (continuous, [-0.3, +0.3])
+   ├── Reward: Composite site-level BSC delta
+   │   (fill_rate + cost_efficiency + capacity_utilization)
+   ├── Episodes: 500 per topology
+   └── PPO handles continuous action space + partial observability
+
+4. Validate:
+   ├── Compare site BSC with vs without Site tGNN adjustments
+   ├── Verify adjustments are small (mean |delta| < 0.15)
+   └── Check for degenerate behavior (all zeros, all max)
+```
+
+**Output**: Trained Site tGNN checkpoint (`site_tgnn_latest.pt`, ~25K parameters). The model captures cross-TRM causal chains — e.g., "MO volume spike → Quality load increase in 2-4 hours → Maintenance pressure → PO activity increase" — and pre-adjusts urgency to give downstream TRMs a head start.
+
+**Why Phase 3 must follow Phase 2**: The Site tGNN learns from *coordinated* execution traces where all 11 TRMs interact through the signal bus. Phase 1 traces (isolated heads, no signals) contain no cross-TRM causal information. Phase 2 traces contain exactly the causal patterns that the Site tGNN needs to learn.
+
+**Why Phase 3 must precede Phase 4**: Stochastic stress-testing (Phase 4) should evaluate the complete system — TRMs + Site tGNN together — not TRMs alone. Including the Site tGNN during stress-testing means the model learns to provide useful urgency adjustments under disruption conditions, not just steady-state.
+
+#### Phase 4: Stochastic Stress-Testing (3-5 days compute)
+
+**Goal**: Use Monte Carlo disruptions to teach the hive robustness — how to coordinate under uncertainty, not just under steady-state. Both TRMs and Site tGNN are active during stress-testing.
 
 **Data Source**: SimPy DAG Simulator with aggressive stochastic configuration
 
@@ -2773,6 +2885,7 @@ For each MultiHeadTrace in dataset:
    ├── 2500 runs per config (matches existing SimPy pipeline)
    ├── Each run: 64 periods with different random seeds
    ├── All 11 TRM heads active with Phase 2 checkpoints
+   ├── Site tGNN active with Phase 3 checkpoint (hourly urgency modulation)
    └── Full signal bus and urgency vector recording
 
 3. RL fine-tuning on stress traces:
@@ -2794,18 +2907,19 @@ For each MultiHeadTrace in dataset:
 | **Lead time spike** (+50% on key lane) | OrderTracking detects late shipments → SafetyStock increases buffer → PO adjusts timing → ForecastAdjustment accounts for pipeline delay |
 | **Bullwhip amplification** (demand variance ×3 at upstream) | ForecastAdjustment dampens upstream signal → PO smooths order quantities → SafetyStock moderates buffer swings → Rebalancing absorbs local excess |
 
-**Output**: Stress-tested hive checkpoints that have experienced thousands of disruption combinations. The hive learns not just individual response to disruption but coordinated multi-TRM response patterns.
+**Output**: Stress-tested hive checkpoints (TRMs + Site tGNN) that have experienced thousands of disruption combinations. The hive learns not just individual response to disruption but coordinated multi-TRM response patterns, with the Site tGNN providing predictive urgency modulation under stress.
 
 **Validation metric**: Compare hive performance (total cost, service level) under stress against:
 - Deterministic engine baseline (no TRM adjustments)
 - Phase 1 checkpoints (individual heads, no coordination)
 - Phase 2 checkpoints (coordination but no stress exposure)
+- Phase 3 checkpoints (Site tGNN without stress exposure)
 
 Expected improvement: 20-35% cost reduction vs deterministic baseline under stochastic conditions (per CLAUDE.md performance targets).
 
-#### Phase 4: Copilot Calibration (Ongoing, 2-4 weeks)
+#### Phase 5: Copilot Calibration (Ongoing, 2-4 weeks)
 
-**Goal**: Deploy the Phase 3 hive in copilot mode. Human planners review and override TRM decisions. Override patterns correct systematic biases the digital twin could not capture.
+**Goal**: Deploy the Phase 4 hive (TRMs + Site tGNN, stress-tested) in copilot mode. Human planners review and override TRM decisions. Override patterns correct systematic biases the digital twin could not capture.
 
 **Data Source**: Production decisions with human feedback
 
@@ -2838,9 +2952,9 @@ Expected improvement: 20-35% cost reduction vs deterministic baseline under stoc
 - Regulatory constraints (country-specific quality rules)
 - Organizational politics (protect capacity for VIP product line)
 
-**Key metric**: Human Override Rate should decrease from ~40-60% (initial copilot) to ~10-20% (calibrated hive) over 2-4 weeks. Below 10% signals readiness for autonomous mode.
+**Key metric**: Human Override Rate should decrease from ~40-60% (initial copilot) to ~10-20% (calibrated hive) over 2-4 weeks. Below 10% signals readiness for autonomous mode. During copilot mode, the Site tGNN runs in shadow mode — adjustments are logged but not applied — until shadow-mode BSC improvement exceeds a configurable threshold.
 
-#### Phase 5: Autonomous CDC Relearning (Continuous)
+#### Phase 6: Autonomous CDC Relearning (Continuous)
 
 **Goal**: The hive runs autonomously. The CDC → Relearning feedback loop continuously improves models from actual production outcomes.
 
@@ -2889,11 +3003,11 @@ New checkpoint → SiteAgent.reload_model()
 - Enables autonomous operation when `risk_bound < 0.10` and human escalation when `> 0.20`
 - Batch calibration at startup from historical data; incremental calibration hourly
 
-**Digital twin role in Phase 5**: The digital twin does not disappear in production. It serves three ongoing functions:
+**Digital twin role in Phase 6**: The digital twin does not disappear in production. It serves three ongoing functions:
 
-1. **Counterfactual evaluation**: Before deploying a new CDC-retrained checkpoint, run it against the same disruption scenarios from Phase 3. If stress-test performance degrades, reject the checkpoint even if production loss improved. This prevents catastrophic forgetting — the model should not "forget" how to handle supplier failures just because none occurred recently.
+1. **Counterfactual evaluation**: Before deploying a new CDC-retrained checkpoint, run it against the same disruption scenarios from Phase 4. If stress-test performance degrades, reject the checkpoint even if production loss improved. This prevents catastrophic forgetting — the model should not "forget" how to handle supplier failures just because none occurred recently.
 
-2. **Scenario pre-screening**: When CDCMonitor detects a condition (e.g., demand spike), immediately run the Phase 3 stress simulator with that specific scenario. Compare current hive behavior against the stress-trained baseline. If the hive already handles it well, suppress the CDC trigger (avoid unnecessary retraining).
+2. **Scenario pre-screening**: When CDCMonitor detects a condition (e.g., demand spike), immediately run the Phase 4 stress simulator with that specific scenario. Compare current hive behavior against the stress-trained baseline. If the hive already handles it well, suppress the CDC trigger (avoid unnecessary retraining).
 
 3. **Exploration budget**: Periodically (weekly) run the digital twin with randomized epsilon-greedy exploration on 5% of decisions. This generates training data for actions the production hive would never take, preventing the replay buffer from becoming too narrow. The explored decisions are evaluated in simulation, not production — no risk to real operations.
 
@@ -2903,10 +3017,11 @@ New checkpoint → SiteAgent.reload_model()
 |---|---|---|---|
 | Phase 1 (Individual BC) | 11 TRMs × 15K curriculum records = 165K | 1-2 days (CPU) | ~50MB |
 | Phase 2 (Multi-head traces) | 100 configs × 500 episodes × 52 periods × 11 heads = 28.6M | 2-3 days (GPU) | ~8GB |
-| Phase 3 (Stress-testing) | 2500 runs × 64 periods × 11 heads = 1.76M per config, ×10 configs = 17.6M | 3-5 days (GPU) | ~5GB |
-| Phase 4 (Copilot) | ~200-500 human-reviewed decisions/day × 20 days = 4K-10K | Ongoing | ~10MB |
-| Phase 5 (CDC relearning) | ~100-1000 decisions/day with outcomes | Ongoing | ~1MB/day |
-| **Total synthetic** | **~46M records** | **~7-10 days** | **~13GB** |
+| Phase 3 (Site tGNN training) | Reuses Phase 2 traces + 500 PPO episodes × 11 nodes = ~5.5K | ~1 day (GPU) | ~25MB |
+| Phase 4 (Stress-testing) | 2500 runs × 64 periods × 11 heads = 1.76M per config, ×10 configs = 17.6M | 3-5 days (GPU) | ~5GB |
+| Phase 5 (Copilot) | ~200-500 human-reviewed decisions/day × 20 days = 4K-10K | Ongoing | ~10MB |
+| Phase 6 (CDC relearning) | ~100-1000 decisions/day with outcomes | Ongoing | ~1MB/day |
+| **Total synthetic** | **~46M records** | **~8-12 days** | **~13GB** |
 
 The total dataset is modest by modern ML standards. For reference, Samsung's TRM was trained on 10K Sudoku puzzles (tiny). Our 46M records provide orders of magnitude more coverage because supply chain state spaces are lower-dimensional than general reasoning tasks.
 
@@ -3037,7 +3152,7 @@ For each stochastic variable (lead_time, demand, yield, capacity):
 make generate-hive-traces CONFIG_NAME="Default TBG" \
     NUM_CONFIGS=10 EPISODES_PER_CONFIG=500 PERIODS=52
 
-# Train hive from scratch (all 5 phases, synthetic only)
+# Train hive from scratch (all 6 phases, synthetic only)
 make train-hive-cold-start CONFIG_NAME="Default TBG" \
     TRAIN_DEVICE=cuda TRAIN_EPOCHS=50
 
@@ -3309,7 +3424,7 @@ The `SyntheticTRMDataGenerator` already produces three complexity levels (simple
 
 In production, the Autonomy platform manages a network of supply chain sites — factories, distribution centers, warehouses, retail locations, suppliers. A mid-market manufacturer might have 10-50 sites; a large distributor could have 200+. Each site runs its own TRM hive (11 agents). The question is: **how do 550 agents across 50 sites coordinate?**
 
-The answer is a four-layer coordination stack, where each layer operates at a different speed and scope:
+The answer is a five-layer coordination stack, where each layer operates at a different speed and scope:
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
@@ -3343,6 +3458,18 @@ The answer is a four-layer coordination stack, where each layer operates at a di
 │  Implementation: planning_execution_gnn.py, allocation_service.py        │
 │  Who: Fully automated; humans see via Dashboards UX primitive            │
 ├───────────────────────────────────────────────────────────────────────────┤
+│  LAYER 1.5: SITE tGNN (Intra-Site Cross-TRM Coordination)                │
+│  Scope: Single site, all 11 TRMs    Cadence: Hourly    Latency: <5ms    │
+│                                                                          │
+│  GATv2+GRU (~25K params) learns causal relationships between TRM        │
+│  decisions that reactive HiveSignalBus signals cannot capture.           │
+│  11 TRM-type nodes with ~22 directed causal edges.                      │
+│  Output: Per-TRM urgency_adjustment, confidence_modifier,               │
+│          coordination_signal — modulates UrgencyVector before cycle.     │
+│  Predictive: "if X continues, Y will happen in 3 cycles"               │
+│  Implementation: site_tgnn (proposed)                                    │
+│  Who: Fully automated; complements Layer 1 reactive signals              │
+├───────────────────────────────────────────────────────────────────────────┤
 │  LAYER 1: INTRA-HIVE SIGNALS (Per-Site Reflexive Coordination)           │
 │  Scope: Single site only    Cadence: Per-decision    Latency: <10ms      │
 │                                                                          │
@@ -3354,11 +3481,48 @@ The answer is a four-layer coordination stack, where each layer operates at a di
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
+### 16.1.1 Layer 1.5 — Site tGNN (Hourly, Intra-Site Cross-TRM Coordination)
+
+The Site tGNN operates within a single site across all 11 TRM agents, learning causal relationships between execution decisions that reactive HiveSignalBus signals cannot capture.
+
+**Architecture**: GATv2 + GRU (~25K parameters, <5ms inference)
+- **Graph**: 11 TRM-type nodes with ~22 directed causal edges
+- **Spatial**: 2-layer GATv2Conv with 2-head attention for cross-TRM message passing
+- **Temporal**: GRU maintains hidden state across hourly ticks
+- **Output**: Per-TRM urgency_adjustment [-0.3, +0.3], confidence_modifier [-0.2, +0.2], coordination_signal [0, 1]
+
+**Causal Edge Topology** (22 directed edges):
+- ATP → MO (commit triggers production), ATP → TO (commit triggers shipping), ATP → Buffer (consumption depletes)
+- MO → Quality (output requires inspection), MO → Maintenance (load increases urgency), MO → Subcontracting (overflow routes)
+- PO → TO (inbound transfer), PO → Buffer (pipeline comfort)
+- Quality → MO (reject → rework), Quality → Buffer (scrap hit), Quality → Subcontracting (shift)
+- Maintenance → MO (downtime), Maintenance → Subcontracting (overflow)
+- Forecast → ATP, PO, Buffer, MO (drives all planning)
+- Rebalancing → TO, Buffer (redistribution)
+- TO → Buffer (receipt replenishes)
+- Order Tracking → ATP (exception → reallocation), Order Tracking → Rebalancing (exception → trigger)
+
+**Integration**: Before the 6-phase decision cycle, Site tGNN modulates UrgencyVector:
+```python
+for trm_name, adj in site_tgnn_output.urgency_adjustments.items():
+    urgency_vector.adjust(trm_name, adj)  # Clamped to [0, 1]
+```
+
+**Training Pipeline** (3-phase):
+1. **Behavioral Cloning**: From MultiHeadTrace data (CoordinatedSimRunner)
+2. **PPO RL**: Fine-tuning with composite site BSC reward
+3. **Production Calibration**: From real decision-outcome pairs
+
+**Cold Start**: Returns neutral output (zero adjustments) when no model is trained. Feature-flagged OFF by default (`enable_site_tgnn=False`).
+
+**Key Insight**: HiveSignalBus (Layer 1) is reactive — "X just happened." Site tGNN (Layer 1.5) is predictive — "if X continues, Y will happen in 3 cycles." This fills the gap between reactive stigmergy and daily network-level inference.
+
 ### 16.2 The tGNN as Inter-Hive Connective Tissue
 
 The tGNN is the primary mechanism for cross-site coordination. It operates at a different timescale than intra-hive signals and serves a fundamentally different purpose.
 
 **Intra-hive signals** (Layer 1) answer: "What is happening at THIS site right now?"
+**Site tGNN** (Layer 1.5) answers: "What will happen at THIS site if current cross-TRM patterns continue?"
 **tGNN directives** (Layer 2) answer: "What is happening ACROSS THE NETWORK that this site should know about?"
 
 #### How the tGNN Sees the Network
@@ -3441,7 +3605,7 @@ Individual TRM heads read signals and features:
 
 ### 16.3 Cross-Site Agent Communication Paths
 
-> **See also**: [Section 16.9](#169-vertical-escalation-between-decision-tiers) adds a fourth dimension — vertical escalation from execution to operational/strategic tiers when persistent cross-site patterns indicate policy errors.
+> **See also**: [Section 16.9](#169-vertical-escalation-between-decision-tiers) adds a fifth dimension — vertical escalation from execution to operational/strategic tiers when persistent cross-site patterns indicate policy errors.
 
 There are exactly three ways agents at one site communicate with agents at another site:
 
@@ -3542,11 +3706,14 @@ Understanding the boundaries is as important as understanding the connections:
 | Layer | Can See | Cannot See |
 |---|---|---|
 | **Intra-Hive (Layer 1)** | Own site inventory, backlog, demand, all 11 TRM urgencies and signals | Other sites' inventory, other sites' TRM decisions, network topology |
+| **Site tGNN (Layer 1.5)** | All 11 TRM decision histories at this site, causal edge patterns, temporal trends | Other sites' TRM decisions, network topology, cross-site signals |
 | **tGNN (Layer 2)** | All sites' aggregate features (daily snapshot), full network graph | Individual TRM decisions, real-time urgency changes within a site |
 | **AAP (Layer 3)** | Both sites' scorecards for a specific proposed action | Global optimum (only evaluates pairwise, not network-wide) |
 | **S&OP Board (Layer 4)** | Enterprise-wide KPIs, policy parameter impacts | Execution-level details (individual orders, per-TRM decisions) |
 
-**Critical gap the tGNN bridges**: Intra-hive signals are invisible outside the site. The tGNN observes the *effects* of intra-hive coordination (via HiveFeedbackFeatures: urgency averages, shortage signal density, override rate) without seeing the signals themselves. This is by design — the tGNN learns network-level patterns from aggregated site behavior, not from individual TRM decisions.
+**Critical gap the Site tGNN bridges**: Layer 1 signals are reactive (event-driven) and cannot capture predictive cross-TRM causal chains. The Site tGNN (Layer 1.5) fills this gap by learning temporal patterns *within* a single site — e.g., "MO load increase consistently precedes Maintenance urgency spikes 3 cycles later." This predictive coordination resolves many cross-TRM conflicts before they require network-level replanning.
+
+**Critical gap the Network tGNN bridges**: Intra-hive signals (Layer 1) and Site tGNN patterns (Layer 1.5) are invisible outside the site. The Network tGNN (Layer 2) observes the *effects* of intra-site coordination (via HiveFeedbackFeatures: urgency averages, shortage signal density, override rate) without seeing the signals themselves. This is by design — the Network tGNN learns network-level patterns from aggregated site behavior, not from individual TRM decisions.
 
 ### 16.5 Multi-Site Physical Deployment Topology
 
@@ -3724,7 +3891,7 @@ A concrete summary of all communication channels between two sites:
 - No shared UrgencyVector across sites (urgency is per-site only)
 - No real-time streaming between sites (tGNN operates on daily snapshots)
 
-The tGNN is the connective tissue. Everything a site needs to know about the network arrives through its `tGNNSiteDirective`. Everything the network needs to know about a site is captured in its `HiveFeedbackFeatures`. These two data structures are the complete interface contract between per-site execution (Layer 1) and network intelligence (Layer 2).
+The tGNN is the connective tissue. Everything a site needs to know about the network arrives through its `tGNNSiteDirective`. Everything the network needs to know about a site is captured in its `HiveFeedbackFeatures`. These two data structures are the complete interface contract between per-site execution (Layers 1 and 1.5) and network intelligence (Layer 2). Within each site, the Site tGNN (Layer 1.5) provides learned predictive coordination that complements the reactive HiveSignalBus (Layer 1), resolving cross-TRM causal conflicts without requiring network-wide replanning.
 
 ---
 
@@ -3732,7 +3899,7 @@ The tGNN is the connective tissue. Everything a site needs to know about the net
 
 > **Full reference**: See [docs/ESCALATION_ARCHITECTURE.md](docs/ESCALATION_ARCHITECTURE.md) for the complete theoretical foundation (Kahneman dual-process, Boyd OODA, Powell 2026 framing, SOFAI).
 
-The existing 4-layer coordination stack (Sections 16.1-16.8) is **horizontal** — each layer communicates within its tier. The **Escalation Arbiter** adds a **vertical dimension**, routing persistent anomalies upward through the tiers.
+The existing 5-layer coordination stack (Sections 16.1-16.8) is **horizontal** — each layer communicates within its tier. The **Escalation Arbiter** adds a **vertical dimension**, routing persistent anomalies upward through the tiers.
 
 #### The Vertical Flow
 
@@ -3740,6 +3907,10 @@ The existing 4-layer coordination stack (Sections 16.1-16.8) is **horizontal** �
 Layer 1 (Intra-Hive, <10ms):
   TRM decisions recorded → persistence signals accumulated
         │
+        ▼
+Layer 1.5 (Site tGNN, hourly):
+  Predictive cross-TRM coordination may resolve conflict locally
+        │ (if conflict persists beyond Site tGNN capability)
         ▼
 Escalation Arbiter (every 2h, evaluates persistence patterns):
         │
@@ -3757,6 +3928,7 @@ Escalation Arbiter (every 2h, evaluates persistence patterns):
 | Layer | Existing Function | Escalation Addition |
 |-------|------------------|-------------------|
 | **1. Intra-Hive** | UrgencyVector + HiveSignalBus | Persistence signals collected here (direction, magnitude, consistency) |
+| **1.5 Site tGNN** | Predictive cross-TRM coordination | Before escalating to Network tGNN (Layer 2), the Site tGNN (Layer 1.5) provides learned intra-site coordination that may resolve cross-TRM conflicts without requiring network-wide replanning |
 | **2. tGNN Inter-Hive** | Daily allocations + tGNNSiteDirective | Off-cadence refresh triggered by Arbiter when operational escalation detected |
 | **3. AAP Cross-Authority** | Authorization negotiation | Strategic escalation routed through AAP (AuthorizationRequest with persistence evidence) |
 | **4. S&OP Consensus** | Weekly policy parameters θ | Anomaly-triggered policy review when network-wide drift detected |
@@ -3766,15 +3938,17 @@ Escalation Arbiter (every 2h, evaluates persistence patterns):
 The vertical escalation implements Kahneman's dual-process theory at the architecture level:
 
 - **System 1 (TRMs)**: Fast, automatic, pattern-matched decisions at <10ms. Operates within Layer 1. "Thinks fast."
+- **System 1.5 (Site tGNN)**: Learned predictive coordination across TRMs within a single site. Operates at Layer 1.5 (hourly). Provides an intermediate coordination path — many cross-TRM conflicts are resolved here without invoking full System 2 analysis.
 - **System 2 (tGNN/GraphSAGE)**: Slow, deliberate, network-aware analysis. Operates at Layers 2-4. "Thinks slow."
-- **The Lazy Controller (Escalation Arbiter)**: System 2 only activates when System 1 shows persistent failure. This avoids the computational cost of running network-wide analysis for every decision.
+- **The Lazy Controller (Escalation Arbiter)**: System 2 only activates when System 1 and System 1.5 show persistent failure. This avoids the computational cost of running network-wide analysis for every decision.
 
 #### Nested OODA Loops (Boyd)
 
-Three nested Observe-Orient-Decide-Act loops at different tempos:
+Four nested Observe-Orient-Decide-Act loops at different tempos:
 
 - **Execution OODA** (<10ms): TRM observes local state → orients via trained weights + tGNN directive → decides order quantity → acts immediately
-- **Operational OODA** (daily): tGNN observes transactional data + S&OP embeddings → orients via graph attention → decides priority allocations → pushes tGNNSiteDirective
+- **Intra-Site OODA** (hourly): Site tGNN observes cross-TRM decision patterns → orients via causal graph attention → decides urgency adjustments → modulates UrgencyVector before next decision cycle
+- **Operational OODA** (daily): Network tGNN observes transactional data + S&OP embeddings → orients via graph attention → decides priority allocations → pushes tGNNSiteDirective
 - **Strategic OODA** (weekly): GraphSAGE observes network topology + market signals → orients via bottleneck analysis → decides policy parameters θ → feeds to tGNN
 
 The Escalation Arbiter detects when the inner loop (Execution) can't converge because the outer loop's (Operational/Strategic) orientation is stale — Boyd's "Schwerpunkt" (center of gravity) has shifted but the outer loops haven't reacted.

@@ -1,5 +1,7 @@
 # Autonomy: Executive Summary
 
+> **INTERNAL DOCUMENT** — Contains implementation details, file paths, and architecture specifications.
+
 ## What Your Supply Chain Organization Looks Like After Autonomy
 
 **Version**: 4.0
@@ -14,6 +16,32 @@ Most supply chain organizations operate the same way they did a decade ago. Plan
 Autonomy changes the operating model. Not by replacing your planning team, but by restructuring *what they spend their time on* — shifting the workforce from routine plan generation to exception governance, from reactive firefighting to proactive risk management, and from tribal knowledge to institutional learning that compounds over time.
 
 This document describes what is different — for the organization, for daily operations, and for the people doing the work — when Autonomy is fully adopted.
+
+### Agent Architecture
+
+```mermaid
+graph TD
+    SOP["<b>Strategic Consensus</b><br/><i>Weekly · Policy Parameters</i>"]
+    AAP["<b>Cross-Authority Protocol</b><br/><i>Ad Hoc · Trade-off Authorization</i>"]
+    NET["<b>Network Coordination</b><br/><i>Daily · Inter-Site Directives</i>"]
+    SITE["<b>Site Cross-Agent Coordination</b><br/><i>Hourly · Predictive Urgency Modulation</i>"]
+
+    subgraph EXEC["<b>11 Execution Agents</b> · &lt;10ms per Decision"]
+        direction LR
+        DEMAND["Demand Sensing<br/><small>Order Promising · Exception Tracking</small>"]
+        SUPPLY["Supply Securing<br/><small>Purchasing · Transfers · Subcontracting</small>"]
+        HEALTH["Health Monitoring<br/><small>Inventory Buffers · Forecast Adjustment</small>"]
+        INTEG["Integrity Protection<br/><small>Quality · Maintenance</small>"]
+        BUILD["Production & Logistics<br/><small>Manufacturing Orders · Transfer Orders</small>"]
+    end
+
+    SOP -->|"policy parameters"| NET
+    AAP <-->|"authorization"| NET
+    NET -->|"site directives"| SITE
+    SITE -->|"urgency adjustments"| EXEC
+    EXEC -->|"signals & outcomes"| SITE
+    SITE -->|"escalation"| NET
+```
 
 ---
 
@@ -884,12 +912,13 @@ LLM Supervisor reviews cascade impact, alerts planners if significant
 - **Reference**: See [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md) Part 8 for full architecture
 
 **6. Digital Twin Training Pipeline** (✅ Implemented February 2026)
-- **Five-Phase Cold-Start**: Takes AI agents from zero experience to production autonomy in 3-5 weeks:
+- **Six-Phase Cold-Start**: Takes AI agents from zero experience to production autonomy in 3-5 weeks:
   1. **Behavioral Cloning** (hours): Each TRM matches the deterministic engine baseline within ±5%
   2. **Coordinated Simulation** (2-3 days): All 11 TRMs train simultaneously with signal bus active, learning inter-agent coordination from 28.6M+ training records
-  3. **Stochastic Stress-Testing** (hours): Agents face adversarial scenarios — 3σ demand spikes, supplier failures, capacity shocks, compound disruptions
-  4. **Copilot Calibration** (2-4 weeks): Agents run in copilot mode with human overrides captured and weighted by Bayesian effectiveness tracking
-  5. **Autonomous CDC Relearning** (ongoing): Continuous improvement from production outcomes via the CDC → Relearning loop
+  3. **Site tGNN Training** (~1 day): Cross-TRM coordination model learns causal relationships from coordinated traces, then fine-tunes via RL with site-level balanced scorecard as reward
+  4. **Stochastic Stress-Testing** (3-5 days): TRMs + Site tGNN together face adversarial scenarios — 3σ demand spikes, supplier failures, capacity shocks, compound disruptions
+  5. **Copilot Calibration** (2-4 weeks): Agents run in copilot mode with human overrides captured and weighted by Bayesian effectiveness tracking; Site tGNN in shadow mode
+  6. **Autonomous CDC Relearning** (ongoing): Continuous improvement from production outcomes via the CDC → Relearning loop; Site tGNN retrained every 12h
 - **Warm-Start Advantage**: Production AI starts with pre-trained knowledge from simulation, not random initialization — eliminating the months-long "cold start" period that makes enterprise AI adoption impractical
 - **Reference**: See [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 15 for implementation details
 
@@ -909,6 +938,13 @@ LLM Supervisor reviews cascade impact, alerts planners if significant
 - **Automated Policy Re-Optimization**: Weekly CFA (Cost Function Approximation) job using Differential Evolution to re-optimize inventory policy parameters (θ), ensuring policies stay current as demand patterns evolve
 - **No Fallbacks**: All economic parameters are explicitly required for every tenant — the system raises errors rather than silently using defaults. Every cost assumption is visible and auditable
 - **Reference**: See [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md) Part 11 for architecture details
+
+**10. Learned Intra-Site Cross-TRM Coordination (Site tGNN)** (✅ Implemented March 2026)
+- **The Gap**: Between sub-millisecond reactive stigmergic signals (Layer 1) and daily network-wide inference (Layer 3), many cross-TRM interactions follow predictable causal chains that neither mechanism captures. A production spike today will generate quality inspection pressure in hours and maintenance load tomorrow -- but the signal bus only reacts after each link materializes.
+- **Layer 1.5**: A lightweight graph neural network (~25K parameters, GATv2+GRU) that learns causal relationships between the 11 execution agents within each site, modeling 22 directed causal edges (ATP-to-MO, MO-to-Quality, Quality-to-Buffer, etc.). Predicts cross-TRM cascade effects that reactive signals alone cannot capture.
+- **Urgency Modulation**: Outputs small adjustment deltas ([-0.3, +0.3]) that modulate the UrgencyVector before the 6-phase decision cycle runs. The Site tGNN shifts emphasis across the TRM hive -- "pay more attention to quality today because production volume is spiking" -- rather than overriding individual TRM decisions.
+- **Training**: 3-phase pipeline (behavioral cloning from MultiHeadTrace records, PPO fine-tuning with site-level Balanced Scorecard reward, production calibration in shadow mode). Feature-flagged OFF by default; zero adjustments when untrained.
+- **Reference**: See [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md) Part 13 and [POWELL_APPROACH.md](POWELL_APPROACH.md) Section 5.20
 
 **9. Decision Intelligence Platform Architecture** (✅ Implemented, Gartner-aligned March 2026)
 - **Decision-Centric Architecture**: Gartner designated Decision Intelligence as "transformational" (2025 AI Hype Cycle) and published its inaugural Magic Quadrant for Decision Intelligence Platforms in January 2026. The platform implements the full DI lifecycle: decision modeling (Powell SDAM), orchestration (TRM Hive + AAP), monitoring (CDC + conformal prediction + CRPS), and governance (override tracking + CDT risk bounds + escalation arbiter)

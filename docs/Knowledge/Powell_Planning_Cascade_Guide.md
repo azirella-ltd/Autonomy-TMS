@@ -200,7 +200,7 @@ Example: P=2 order consumes in sequence [2, 5, 4, 3] (skips tier 1)
 
 ## Digital Twin Training Pipeline
 
-Five-phase cold-start pipeline:
+Six-phase cold-start pipeline:
 
 ### Phase 1: Individual BC Warm-Start
 - Single TRM heads trained independently via behavioral cloning
@@ -212,23 +212,30 @@ Five-phase cold-start pipeline:
 - Data source: Beer Game / SimPy multi-agent simulations
 - Focus: intra-hive coordination patterns
 
-### Phase 3: Stochastic Stress-Testing
-- Monte Carlo scenarios with extreme conditions
-- Tests robustness of learned policies
+### Phase 3: Site tGNN Training
+- Cross-TRM coordination model (Layer 1.5) learns causal relationships from Phase 2 traces
+- Behavioral cloning from coordinated traces, then PPO fine-tuning with site BSC as reward
+- Output: ~25K parameter checkpoint capturing cross-TRM causal chains
+
+### Phase 4: Stochastic Stress-Testing
+- Monte Carlo scenarios with extreme conditions, TRMs + Site tGNN active
+- Tests robustness of learned policies under disruption
 - Data source: conformal prediction-bounded scenario generation
 
-### Phase 4: Copilot Calibration
+### Phase 5: Copilot Calibration
 - Human override patterns feed into agent retraining
 - RLHF-style: human corrections weighted as expert demonstrations
+- Site tGNN in shadow mode (adjustments logged but not applied)
 - Data source: production copilot mode override captures
 
-### Phase 5: Autonomous CDC Relearning
+### Phase 6: Autonomous CDC Relearning
 - Continuous retraining from production outcomes
 - CDC (Change Data Capture) monitors detect metric deviations
 - Automated offline RL when sufficient experience accumulated
+- Site tGNN retrained every 12h from accumulated MultiHeadTrace data
 - Cooldown periods prevent over-training
 
-**Total Synthetic Data**: ~46M records, ~7-10 days compute
+**Total Synthetic Data**: ~46M records, ~8-12 days compute
 **Stigmergic-only Variant**: ~10M records, ~5-8 days
 
 ## CDC → Relearning Feedback Loop

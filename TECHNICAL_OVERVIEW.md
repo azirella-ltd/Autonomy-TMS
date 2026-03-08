@@ -1,5 +1,7 @@
 # Autonomy: Technical Overview
 
+> **INTERNAL DOCUMENT** — Contains implementation details, file paths, and architecture specifications.
+
 ## How the Architecture Delivers the Operating Model
 
 *Companion to [EXECUTIVE_SUMMARY.md](EXECUTIVE_SUMMARY.md). That document describes what changes for the organization, operations, and workforce. This document describes how the technology layers make it possible.*
@@ -23,9 +25,9 @@ The architecture solves both problems through a layered agent hierarchy (vertica
 
 ## Part 1: The Vertical Stack — From Policy to Execution
 
-### Four Layers, Four Time Horizons
+### Five Layers, Four Time Horizons
 
-The decision architecture is a stack of four layers, each operating at a different time horizon and producing outputs that constrain the layer below. The key insight from the Powell framework is that multi-level planning is *nested optimization* — each layer optimizes within the bounds set by the layer above.
+The decision architecture is a stack of five layers, each operating at a different time horizon and producing outputs that constrain the layer below. The key insight from the Powell framework is that multi-level planning is *nested optimization* — each layer optimizes within the bounds set by the layer above.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -49,6 +51,16 @@ The decision architecture is a stack of four layers, each operating at a differe
                        │ tGNNSiteDirective + inter-hive signals
                        ▼
 ┌─────────────────────────────────────────────────────────┐
+│  LAYER 1.5: Site tGNN (Intra-Site Cross-TRM Coordinator) │
+│  Horizon: Hours             │   Cadence: Hourly            │
+│  Powell class: VFA (Value Function Approximation)       │
+│  Output: Urgency adjustment deltas per TRM [-0.3, +0.3] │
+│  Scope: Single site, all 11 TRMs                        │
+│  Architecture: GATv2+GRU, ~25K params, <5ms             │
+└──────────────────────┬──────────────────────────────────┘
+                       │ Urgency modulation before decision cycle
+                       ▼
+┌─────────────────────────────────────────────────────────┐
 │  LAYER 1: TRM Hive (11 Narrow Decision Agents)           │
 │  Horizon: Seconds           │   Cadence: Per-decision     │
 │  Powell class: VFA (Value Function Approximation)       │
@@ -65,6 +77,47 @@ The decision architecture is a stack of four layers, each operating at a differe
 │  Scope: Single site, single decision type               │
 │  Property: 100% auditable, zero learned parameters      │
 └─────────────────────────────────────────────────────────┘
+```
+
+#### Interactive Agent Hierarchy
+
+```mermaid
+graph TD
+    SOP["<b>Layer 4: S&OP GraphSAGE</b><br/>Policy parameters θ<br/><i>Weekly · CFA · ~500K params</i>"]
+    AAP["<b>Layer 3: AAP</b><br/>AuthorizationRequest/Response<br/><i>Ad Hoc</i>"]
+    NET["<b>Layer 2: Network tGNN</b><br/>tGNNSiteDirective<br/><i>Daily · CFA/VFA · ~473K params</i>"]
+    SITE["<b>Layer 1.5: Site tGNN</b><br/>GATv2+GRU · 22 causal edges<br/><i>Hourly · VFA · ~25K params</i>"]
+
+    subgraph HIVE["<b>Layer 1: TRM Hive</b> · HiveSignalBus + UrgencyVector · &lt;10ms · ~7M params/TRM"]
+        subgraph SC["Scout (Demand)"]
+            ATP["ATP Executor"]
+            OT["Order Tracking"]
+        end
+        subgraph FO["Forager (Supply)"]
+            PO["PO Creation"]
+            REB["Rebalancing"]
+            SUB["Subcontracting"]
+        end
+        subgraph NU["Nurse (Health)"]
+            BUF["Inventory Buffer"]
+            FA["Forecast Adj"]
+        end
+        subgraph GU["Guard (Integrity)"]
+            QD["Quality"]
+            MS["Maintenance"]
+        end
+        subgraph BU["Builder (Execution)"]
+            MO["MO Execution"]
+            TO["TO Execution"]
+        end
+    end
+
+    SOP -->|"θ params"| NET
+    AAP <-->|"AuthorizationRequest"| NET
+    NET -->|"tGNNSiteDirective"| SITE
+    SITE -->|"urgency Δ"| HIVE
+    HIVE -->|"HiveSignalBus signals"| SITE
+    SITE -->|"escalation"| NET
 ```
 
 ### What Each Layer Does
@@ -100,6 +153,10 @@ tGNNSiteDirective:
 
 **Update cadence**: Daily. Transactional state changes meaningfully day-to-day.
 
+**Layer 1.5 — Site tGNN** bridges the gap between daily network-level inference and sub-millisecond reactive signals. Within each site, the 11 TRM agents interact through causal pathways that the stigmergic signal bus can only observe *after the fact* -- an ATP shortage signal fires after the shortage occurs. The Site tGNN learns these causal relationships and predicts cascade effects *before* they materialize. For example, it learns that a spike in manufacturing order releases will generate quality inspection load 2-4 hours later, which may in turn create maintenance pressure. Using a lightweight GATv2+GRU architecture (~25K parameters), it reads the current urgency state of all 11 TRMs and produces adjustment deltas that modulate each TRM's urgency before the 6-phase decision cycle runs. The adjustments are small ([-0.3, +0.3]) and additive -- the Site tGNN shifts emphasis, not overrides decisions. See Part 13 for full architectural details.
+
+**Update cadence**: Hourly. Intra-site cross-TRM dynamics evolve faster than network-wide state but slower than individual decisions.
+
 **Layer 1 — TRM Hive** is where individual decisions happen. Each site in the supply chain runs a *hive* of 11 narrow decision agents, each a Tiny Recursive Model (TRM) — a 7-million-parameter neural network with a 2-layer transformer and 3-step recursive refinement architecture. Each TRM handles one specific type of execution decision:
 
 | TRM Agent | Decision | Example |
@@ -130,9 +187,11 @@ A customer places a rush order for 500 units of Product X at the East Coast DC.
 
 1. **Layer 0** (Engine): The ATP engine checks current inventory (200 units), scheduled receipts (150 arriving tomorrow), and allocation buckets. Deterministic result: can fulfill 350 of 500.
 
-2. **Layer 1** (TRM Hive): The ATP TRM receives the engine's baseline plus hive context — a `REBALANCE_INBOUND` signal indicating 100 units transferring from the West Coast DC, and an inter-hive `NETWORK_SHORTAGE` signal from the tGNN indicating the upstream supplier is constrained. The TRM decides: fulfill 350 now, promise remaining 150 for Thursday (when the rebalancing transfer arrives), flag the supplier constraint for the PO Creation TRM.
+2. **Layer 1.5** (Site tGNN): Before the decision cycle runs, the Site tGNN observes that MO Execution urgency is elevated (production behind schedule) and predicts that Quality Disposition and PO Creation will face increased pressure within hours. It raises PO Creation urgency by +0.15 and Quality urgency by +0.10, pre-positioning those TRMs to respond faster.
 
-3. **Layer 3** (tGNN): Tomorrow's daily cycle incorporates today's fulfillment data. The tGNN updates the East Coast DC's demand forecast upward (rush order suggests increased demand), raises the exception probability for the constrained supplier, and adjusts allocations to prioritize this customer segment.
+3. **Layer 1** (TRM Hive): The ATP TRM receives the engine's baseline plus hive context — a `REBALANCE_INBOUND` signal indicating 100 units transferring from the West Coast DC, and an inter-hive `NETWORK_SHORTAGE` signal from the tGNN indicating the upstream supplier is constrained. The PO Creation TRM, with urgency already elevated by the Site tGNN, responds immediately to the ATP shortage signal. The ATP TRM decides: fulfill 350 now, promise remaining 150 for Thursday (when the rebalancing transfer arrives).
+
+4. **Layer 3** (tGNN): Tomorrow's daily cycle incorporates today's fulfillment data. The tGNN updates the East Coast DC's demand forecast upward (rush order suggests increased demand), raises the exception probability for the constrained supplier, and adjusts allocations to prioritize this customer segment.
 
 4. **Layer 4** (S&OP GraphSAGE): At the next weekly cycle, the network analysis detects increased concentration risk — the East Coast DC now sources 78% from a single supplier that has shown constraint signals. The safety stock multiplier increases from 1.0 to 1.3, and a sourcing diversification signal is generated.
 
@@ -144,7 +203,7 @@ The information flows *down* (policy → allocation → execution → constraint
 
 ### The Problem: No Agent Sees Everything
 
-In a supply chain with 50 sites, no single agent can or should have a global view. The computational cost would be prohibitive, the latency unacceptable, and the coupling would make the system fragile. Instead, the architecture uses a four-layer coordination stack that gives each site agent *just enough* context to make good local decisions that are globally coherent.
+In a supply chain with 50 sites, no single agent can or should have a global view. The computational cost would be prohibitive, the latency unacceptable, and the coupling would make the system fragile. Instead, the architecture uses a five-layer coordination stack that gives each site agent *just enough* context to make good local decisions that are globally coherent.
 
 ### Layer 1: Intra-Hive Signals (Within a Single Site, <10ms)
 
@@ -165,6 +224,14 @@ Signals decay exponentially over time (pheromone model), with a default half-lif
 **Why this ordering matters**: The decision cycle runs in six phases — SENSE, ASSESS, ACQUIRE, PROTECT, BUILD, REFLECT — and the sequencing is deliberate. Scout TRMs (ATP, Order Tracking) observe incoming demand *before* Forager TRMs (PO Creation) place upstream orders. Quality and Maintenance signals reach the Builder TRMs (MO, TO Execution) *before* they release production orders. The Rebalancing TRM runs last (REFLECT phase) with full visibility into everything that happened in the cycle, allowing it to detect and correct conflicting decisions.
 
 The **UrgencyVector** provides a complementary coordination mechanism: a shared 11-slot array where each TRM writes its current urgency level (0.0 to 1.0) and direction (shortage, surplus, risk, relief). Any TRM can read any other TRM's urgency, creating an always-available snapshot of the site's overall state. When the ATP TRM reports urgency 0.9 (shortage direction), the PO Creation TRM sees this and increases its propensity to expedite orders — without any direct function call between them.
+
+### Layer 1.5: Learned Cross-TRM Coordination (Within a Single Site, Hourly)
+
+Between reactive stigmergic signals (<10ms, Layer 1) and daily network-level inference (Layer 2), the Site tGNN provides *learned* intra-site coordination on an hourly cadence. While the signal bus is reactive (signals fire after events), the Site tGNN is *predictive* -- it observes the current urgency and activity state of all 11 TRMs, applies graph attention over 22 causal edges, and outputs urgency adjustment deltas that modulate the UrgencyVector before the next decision cycle.
+
+The key insight is that many cross-TRM interactions follow predictable causal chains: ATP fulfillments drive MO requirements, MO completions generate quality inspection work, quality rejects create reorder pressure. The signal bus captures these interactions *after* they happen. The Site tGNN learns the statistical regularities and pre-adjusts urgency *before* the cascade unfolds, giving downstream TRMs a head start.
+
+The adjustments are deliberately small ([-0.3, +0.3]) and additive. The Site tGNN shifts emphasis across the TRM hive -- "pay more attention to quality today because production volume is spiking" -- rather than overriding any individual TRM's decisions.
 
 ### Layer 2: Inter-Hive Signals (Across Sites, Daily)
 
@@ -547,20 +614,22 @@ Distribution parameters are stored in decision metadata (JSON column on `powell_
 
 When Autonomy deploys at a new customer site, the TRM agents have no site-specific experience. They've never seen this customer's demand patterns, supplier reliability, or seasonal dynamics. Deploying untrained models would produce decisions worse than simple rules. But waiting months for production data to accumulate before enabling AI defeats the value proposition.
 
-The solution is a **five-phase training pipeline** that uses the platform's simulation capabilities as a digital twin — progressively building agent competence from synthetic data through to production autonomy.
+The solution is a **six-phase training pipeline** that uses the platform's simulation capabilities as a digital twin — progressively building agent competence from synthetic data through to production autonomy.
 
-### Five Phases: From Zero to Autonomous
+### Six Phases: From Zero to Autonomous
 
 ```
 Phase 1: Individual BC Warm-Start (Hours)
     ↓ Each TRM can match engine baseline within ±5%
 Phase 2: Multi-Head Coordinated Traces (Days)
     ↓ 11 TRMs learn to coordinate via signal bus
-Phase 3: Stochastic Stress-Testing (Hours)
-    ↓ Agents survive demand spikes, supplier failures, capacity shocks
-Phase 4: Copilot Calibration (Weeks)
+Phase 3: Site tGNN Training (~1 Day)
+    ↓ Cross-TRM coordination model learns causal relationships from traces
+Phase 4: Stochastic Stress-Testing (Days)
+    ↓ Agents + Site tGNN survive demand spikes, supplier failures, capacity shocks
+Phase 5: Copilot Calibration (Weeks)
     ↓ Human overrides refine agent behavior for this customer's context
-Phase 5: Autonomous CDC Relearning (Ongoing)
+Phase 6: Autonomous CDC Relearning (Ongoing)
     ↓ Continuous improvement from production outcomes
 ```
 
@@ -572,19 +641,23 @@ Each of the 11 TRM types trains independently on curriculum-generated data. The 
 
 All 11 TRMs run simultaneously in SimPy and Beer Game simulations, with the signal bus active. This is where they learn *coordination* — how an ATP shortage signal should influence PO timing, how a maintenance deferral affects MO sequencing, how rebalancing decisions propagate through the network. Phase 2 generates 28.6M+ training records across 2-3 days of compute. The key difference from Phase 1: the training signal comes from *system outcomes* (total cost, service level) rather than per-decision accuracy.
 
-**Phase 3 — Stochastic Stress-Testing** (uses Monte Carlo engine):
+**Phase 3 — Site tGNN Training** (implemented in `site_tgnn_trainer.py`):
 
-The trained agents face adversarial scenarios: demand spikes (3σ+), supplier failures (zero supply for 2+ weeks), capacity shocks (50% reduction), and compound disruptions. Agents that panic (massive over-ordering) or freeze (ignoring signals) are retrained with emphasis on the failure modes. This phase uses the platform's existing Monte Carlo simulation with variance reduction techniques (Latin hypercube sampling, antithetic variates).
+The Site tGNN (Layer 1.5) trains on the coordinated traces from Phase 2, learning the causal relationships between TRM agents. Phase 3a uses behavioral cloning — for each hourly window in the traces, computing ideal urgency adjustments that would have improved the site-level balanced scorecard. Phase 3b uses PPO fine-tuning in the coordinated simulation environment, with the site BSC as the reward signal. This phase must follow Phase 2 (it needs coordinated traces, not isolated decisions) and must precede Phase 4 (stress-testing should evaluate the complete TRM + Site tGNN system). Output: a trained ~25K parameter checkpoint that captures cross-TRM causal chains.
 
-**Phase 4 — Copilot Calibration** (production, human-in-the-loop):
+**Phase 4 — Stochastic Stress-Testing** (uses Monte Carlo engine):
 
-The agents run in copilot mode — suggesting every decision but requiring human approval. Every override is captured with context (the override effectiveness tracking system described in Part 4). Over 2-4 weeks, the agents absorb the customer's specific judgment patterns: which suppliers they trust more than the data suggests, which customers they prioritize beyond the formal priority scheme, which forecast adjustments they routinely make based on market intelligence. The Bayesian posterior on each `(user, TRM type)` pair determines how much influence these overrides have on training.
+The trained agents and Site tGNN face adversarial scenarios together: demand spikes (3σ+), supplier failures (zero supply for 2+ weeks), capacity shocks (50% reduction), and compound disruptions. Agents that panic (massive over-ordering) or freeze (ignoring signals) are retrained with emphasis on the failure modes. The Site tGNN provides predictive urgency modulation under stress, giving downstream TRMs advance warning of cascade effects. This phase uses the platform's existing Monte Carlo simulation with variance reduction techniques (Latin hypercube sampling, antithetic variates).
 
-**Phase 5 — Autonomous CDC Relearning** (continuous, no end date):
+**Phase 5 — Copilot Calibration** (production, human-in-the-loop):
 
-The CDC → Relearning loop takes over. Outcome collection (hourly), CDT calibration (hourly), and retraining evaluation (every 6 hours) run automatically. The agents improve continuously from their own production decisions. Skills decisions feed back into TRM training data, gradually shifting the 95/5 boundary as TRMs learn to handle situations that previously required escalation.
+The agents run in copilot mode — suggesting every decision but requiring human approval. Every override is captured with context (the override effectiveness tracking system described in Part 4). Over 2-4 weeks, the agents absorb the customer's specific judgment patterns: which suppliers they trust more than the data suggests, which customers they prioritize beyond the formal priority scheme, which forecast adjustments they routinely make based on market intelligence. The Bayesian posterior on each `(user, TRM type)` pair determines how much influence these overrides have on training. During copilot mode, the Site tGNN runs in shadow mode — adjustments are logged but not applied — until shadow-mode BSC improvement exceeds a configurable threshold.
 
-**Timeline**: Phase 1 completes in hours (compute-bound). Phase 2 takes 2-3 days (data generation + training). Phase 3 takes hours. Phase 4 takes 2-4 weeks (human-paced). Phase 5 begins immediately after Phase 4 and runs indefinitely. Total time from deployment to autonomous operation: 3-5 weeks.
+**Phase 6 — Autonomous CDC Relearning** (continuous, no end date):
+
+The CDC → Relearning loop takes over. Outcome collection (hourly), CDT calibration (hourly), and retraining evaluation (every 6 hours) run automatically. The agents improve continuously from their own production decisions. Skills decisions feed back into TRM training data, gradually shifting the 95/5 boundary as TRMs learn to handle situations that previously required escalation. The Site tGNN is retrained every 12 hours from accumulated MultiHeadTrace data.
+
+**Timeline**: Phase 1 completes in hours (compute-bound). Phase 2 takes 2-3 days (data generation + training). Phase 3 takes ~1 day. Phase 4 takes 3-5 days. Phase 5 takes 2-4 weeks (human-paced). Phase 6 begins immediately after Phase 5 and runs indefinitely. Total time from deployment to autonomous operation: 3-5 weeks.
 
 ---
 
@@ -720,6 +793,121 @@ Gartner's Critical Capabilities report evaluates platforms across Decision Stewa
 
 ---
 
+## Part 13: Site tGNN — Learned Cross-TRM Coordination (Layer 1.5)
+
+### The Gap Between Reactive and Planned
+
+The TRM Hive's stigmergic signal bus (Layer 1) is *reactive*: an ATP shortage signal fires after the shortage is observed, a quality rejection signal fires after the lot is inspected. The network-wide tGNN (Layer 3) is *planned*: it analyzes the full supply chain graph daily and pushes directives to each site. Between these two lies a temporal gap -- many cross-TRM interactions within a site are causal and predictable on an hourly timescale, but neither the reactive signal bus nor the daily batch inference captures them.
+
+Consider a concrete example: a manufacturer's production schedule spikes -- MO Execution releases 40% more orders than usual. This will, with high probability, generate increased quality inspection load 2-4 hours later (more product to inspect), which may create maintenance pressure if equipment runs harder, which in turn drives PO Creation activity if quality rejects increase. The signal bus captures each link in this chain *after* it happens. The Site tGNN learns the chain as a whole and pre-adjusts urgency for downstream TRMs *before* the cascade unfolds.
+
+### Architecture: GATv2 + GRU
+
+The Site tGNN treats the 11 TRM agents within a single site as nodes in a directed graph, connected by 22 causal edges representing known interaction pathways.
+
+```
+┌────────────────────────────────────────────────────────┐
+│                    Site tGNN                            │
+│                                                        │
+│   Nodes: 11 (one per TRM type)                         │
+│   Edges: 22 directed causal edges                      │
+│   Node features: 8 dims (urgency, activity, outcomes)  │
+│   Edge features: 4 dims (strength, lag, correlation)   │
+│                                                        │
+│   ┌──────────┐    ┌──────────┐    ┌──────────┐        │
+│   │ GATv2    │───▶│ GATv2    │───▶│ Output   │        │
+│   │ Layer 1  │    │ Layer 2  │    │ Linear   │        │
+│   │ (4 heads)│    │ (4 heads)│    │ 11 deltas│        │
+│   └──────────┘    └──────────┘    └──────────┘        │
+│        ↑                                               │
+│   ┌──────────┐                                         │
+│   │ GRU      │  (32-dim hidden state per node,         │
+│   │ Memory   │   carries temporal patterns across      │
+│   └──────────┘   inference cycles)                     │
+│                                                        │
+│   Parameters: ~25K total                               │
+│   Inference: <5ms                                      │
+│   Output: 11 urgency deltas ∈ [-0.3, +0.3]            │
+└────────────────────────────────────────────────────────┘
+```
+
+**Why GATv2?** Standard graph attention (GAT) computes a static attention function -- the same neighbor always gets the same attention weight regardless of query. GATv2 (Brody et al., 2022) makes attention *dynamic*: the relevance of each neighbor changes based on the current state. This matters for cross-TRM coordination because the importance of, say, the ATP-to-MO edge depends on whether ATP is currently in shortage or surplus mode.
+
+**Why GRU?** The causal relationships between TRMs have temporal dynamics that a single snapshot cannot capture. A GRU hidden state per node accumulates patterns across hourly inference cycles -- detecting trends like "MO urgency has been rising for 4 hours" that a memoryless model would miss.
+
+### Causal Edge Design
+
+The 22 directed edges encode known interaction pathways between TRM agent types:
+
+| Source | Target | Causal Mechanism |
+|--------|--------|-----------------|
+| ATP Executor | MO Execution | Fulfilled orders generate production requirements |
+| ATP Executor | PO Creation | ATP shortages trigger upstream ordering |
+| ATP Executor | Forecast Adjustment | Demand patterns signal forecast revision need |
+| MO Execution | Quality Disposition | Production output requires quality inspection |
+| MO Execution | Maintenance Scheduling | Production load drives maintenance timing |
+| MO Execution | Subcontracting | Capacity pressure triggers make-vs-buy |
+| Quality Disposition | MO Execution | Rejects and rework feed back to production queue |
+| Quality Disposition | Inventory Buffer | Quality yield variability affects buffer needs |
+| Quality Disposition | Subcontracting | Persistent quality issues shift to alternate vendors |
+| PO Creation | Order Tracking | New purchase orders require tracking |
+| PO Creation | Subcontracting | Supplier constraints trigger make-vs-buy re-eval |
+| Order Tracking | PO Creation | Late or failed POs trigger reorders |
+| Order Tracking | TO Execution | Delayed orders may need expedited transfers |
+| Forecast Adjustment | ATP Executor | Forecast changes affect ATP availability |
+| Forecast Adjustment | Inventory Buffer | Forecast changes affect buffer requirements |
+| Inventory Buffer | PO Creation | Buffer level changes drive ordering |
+| Inventory Buffer | Inventory Rebalancing | Buffer adjustments affect cross-site balance |
+| Maintenance Scheduling | MO Execution | Maintenance windows constrain production |
+| Maintenance Scheduling | Subcontracting | Extended downtime triggers external routing |
+| TO Execution | Inventory Rebalancing | Transfer execution affects rebalancing needs |
+| Inventory Rebalancing | TO Execution | Rebalancing decisions generate transfer orders |
+| Subcontracting | MO Execution | Make-vs-buy decisions affect internal production load |
+
+Edges are *not symmetric*: ATP-to-MO captures "fulfillment drives production," while MO-to-ATP would capture "production availability enables fulfillment" -- a different causal mechanism that may not exist in all supply chain configurations.
+
+### Training Pipeline
+
+**Phase 1 -- Behavioral Cloning**: The Site tGNN learns from historical MultiHeadTrace records. Each trace captures a complete 6-phase decision cycle with urgency levels, decisions, and outcomes for all 11 TRMs. The training target is urgency adjustment deltas that would have improved the site-level Balanced Scorecard. Data source: `powell_*_decisions` tables joined with UrgencyVector snapshots. Scheduled every 12h at :50.
+
+**Phase 2 -- PPO Fine-Tuning**: Proximal Policy Optimization with the site-level BSC as reward. The Site tGNN interacts with the TRM Hive in a simulated decision cycle via the coordinated simulation runner. PPO handles the continuous action space (11 deltas) and partial observability (no cross-site visibility).
+
+**Phase 3 -- Production Calibration**: Shadow mode during copilot operation. Adjustments are logged but not applied. Once shadow-mode BSC improvement exceeds a configurable threshold, adjustments go live.
+
+### Integration: How Layer 1.5 Connects
+
+```
+Network tGNN (Layer 3, daily)
+    ↓ tGNNSiteDirective
+Site tGNN (Layer 1.5, hourly)
+    ↓ urgency deltas
+UrgencyVector (modulated)
+    ↓
+6-phase Decision Cycle (Layer 1)
+    ├── SENSE: ATP, Order Tracking
+    ├── ASSESS: Inventory Buffer, Forecast Adjustment
+    ├── ACQUIRE: PO Creation, Subcontracting
+    ├── PROTECT: Quality, Maintenance
+    ├── BUILD: MO Execution, TO Execution
+    └── REFLECT: Inventory Rebalancing
+```
+
+The Site tGNN consumes the tGNNSiteDirective as exogenous context (network-level signals affect intra-site dynamics) and outputs urgency deltas that are applied additively: `new_urgency = clamp(current + delta, 0.0, 1.0)`. TRM autonomy is preserved -- the Site tGNN modulates emphasis, never overrides decisions.
+
+### Cold Start and Feature Flag
+
+When no trained model exists, the Site tGNN outputs zero adjustments -- an identity pass-through. TRMs operate exactly as before. The feature flag `ENABLE_SITE_TGNN=false` defaults to OFF and is enabled per-tenant when sufficient MultiHeadTrace data exists (minimum 1000 complete decision cycles). If inference fails or exceeds the 5ms timeout, the decision cycle proceeds with unmodified urgency vectors.
+
+### Implementation Files
+
+| File | Purpose |
+|------|---------|
+| `backend/app/services/powell/site_tgnn.py` | `SiteTGNN` model definition (GATv2+GRU, ~25K params) |
+| `backend/app/services/powell/site_tgnn_inference_service.py` | Hourly inference service, UrgencyVector modulation |
+| `backend/app/services/powell/site_tgnn_trainer.py` | 3-phase training pipeline (BC, PPO, calibration) |
+
+---
+
 ## Summary: The Architecture in One Paragraph
 
-Autonomy operates as a four-layer decision stack — strategic network analysis (GraphSAGE, weekly), tactical allocation (temporal GNN, daily), operational execution (TRM hive, milliseconds), and deterministic validation (engines, always) — where each layer constrains the layer below through policy parameters, directives, and hard constraints. Within each site, 11 narrow decision agents coordinate through a biologically-inspired signal bus with pheromone-like decay, organized into a six-phase decision cycle that ensures scouts observe before foragers act. Across sites, information flows along the supply chain DAG through inter-hive signals generated by the network-wide GNN, preserving local autonomy while maintaining global coherence. A conformal prediction router steers ~5% of low-confidence decisions to Claude Skills for deep reasoning, and every decision feeds a closed-loop learning pipeline — outcome collection, conformal calibration, Bayesian override tracking, and periodic retraining — that makes the system measurably smarter from every planning cycle it runs. Distribution-aware feature engineering replaces normal-distribution assumptions with MLE-fitted distributions for safety stock, demand classification, and TRM state vectors. A five-phase digital twin pipeline — behavioral cloning, coordinated simulation, stochastic stress-testing, copilot calibration, and autonomous relearning — takes agents from zero experience to production autonomy in 3-5 weeks. When execution-level anomalies signal that strategic policy parameters are wrong, the Escalation Arbiter detects persistent directional drift and routes the problem to the appropriate higher tier — operational (tGNN refresh) or strategic (S&OP policy review) — closing the vertical feedback loop that connects execution outcomes to policy correction. And throughout, every stocking decision, rebalancing transfer, and purchase order is evaluated in dollar-denominated economic terms — actual holding costs, stockout costs, and ordering costs from the product and policy configuration — with censored demand detection, CRPS-scored probabilistic forecasts, and automated weekly policy re-optimization ensuring the economic parameters stay calibrated to reality. The result is a purpose-built Decision Intelligence Platform for supply chain — where every recurring decision is modeled as a trackable asset with defined inputs, logic, confidence, and measured outcomes — delivering Gartner's full DI lifecycle (model, orchestrate, monitor, govern) natively within the supply chain domain.
+Autonomy operates as a five-layer decision stack — strategic network analysis (GraphSAGE, weekly), tactical allocation (temporal GNN, daily), learned intra-site cross-TRM coordination (Site tGNN, hourly), operational execution (TRM hive, milliseconds), and deterministic validation (engines, always) — where each layer constrains the layer below through policy parameters, directives, urgency modulation, and hard constraints. Within each site, 11 narrow decision agents coordinate through a biologically-inspired signal bus with pheromone-like decay, organized into a six-phase decision cycle that ensures scouts observe before foragers act. Across sites, information flows along the supply chain DAG through inter-hive signals generated by the network-wide GNN, preserving local autonomy while maintaining global coherence. A conformal prediction router steers ~5% of low-confidence decisions to Claude Skills for deep reasoning, and every decision feeds a closed-loop learning pipeline — outcome collection, conformal calibration, Bayesian override tracking, and periodic retraining — that makes the system measurably smarter from every planning cycle it runs. Distribution-aware feature engineering replaces normal-distribution assumptions with MLE-fitted distributions for safety stock, demand classification, and TRM state vectors. A six-phase digital twin pipeline — behavioral cloning, coordinated simulation, Site tGNN training, stochastic stress-testing, copilot calibration, and autonomous relearning — takes agents from zero experience to production autonomy in 3-5 weeks. When execution-level anomalies signal that strategic policy parameters are wrong, the Escalation Arbiter detects persistent directional drift and routes the problem to the appropriate higher tier — operational (tGNN refresh) or strategic (S&OP policy review) — closing the vertical feedback loop that connects execution outcomes to policy correction. And throughout, every stocking decision, rebalancing transfer, and purchase order is evaluated in dollar-denominated economic terms — actual holding costs, stockout costs, and ordering costs from the product and policy configuration — with censored demand detection, CRPS-scored probabilistic forecasts, and automated weekly policy re-optimization ensuring the economic parameters stay calibrated to reality. The result is a purpose-built Decision Intelligence Platform for supply chain — where every recurring decision is modeled as a trackable asset with defined inputs, logic, confidence, and measured outcomes — delivering Gartner's full DI lifecycle (model, orchestrate, monitor, govern) natively within the supply chain domain.

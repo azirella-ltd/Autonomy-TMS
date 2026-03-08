@@ -331,16 +331,17 @@ Total: ~7ms per decision, ~473K parameters. Still tiny, edge-deployable, within 
 
 The critical research insight for hive training: **stigmergic coordination cannot be learned from isolated decision logs**. Multi-head execution traces — where all 11 TRMs run simultaneously against the same site state — are required to generate the signal interaction data that enables emergent coordination.
 
-The platform's simulation stack (SimPy DAG simulator, Beer Game engine, synthetic data generator) functions as a digital twin that produces these coordinated traces without requiring production data. Five-phase pipeline:
+The platform's simulation stack (SimPy DAG simulator, Beer Game engine, synthetic data generator) functions as a digital twin that produces these coordinated traces without requiring production data. Six-phase pipeline:
 1. **Individual BC** (curriculum-generated, 165K records per phase)
 2. **Multi-head traces** (coordinated SimPy/Beer Game episodes, 28.6M records)
-3. **Stochastic stress-testing** (Monte Carlo disruptions, 17.6M records)
-4. **Copilot calibration** (human override patterns, 4-10K records)
-5. **CDC relearning** (production outcome feedback, continuous)
+3. **Site tGNN training** (BC + PPO from coordinated traces, learns cross-TRM causal relationships)
+4. **Stochastic stress-testing** (Monte Carlo disruptions, TRMs + Site tGNN active, 17.6M records)
+5. **Copilot calibration** (human override patterns, Site tGNN in shadow mode, 4-10K records)
+6. **CDC relearning** (production outcome feedback, continuous)
 
 See [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 15 for the complete pipeline specification.
 
-### 8.7 Multi-Site Coordination: Four-Layer Stack
+### 8.7 Multi-Site Coordination: Five-Layer Stack
 
 In production networks (10-200 sites), the coordination challenge extends beyond intra-hive signals to cross-site communication. The architecture uses four layers at increasing scope and latency:
 

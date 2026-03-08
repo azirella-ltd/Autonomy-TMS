@@ -397,7 +397,7 @@ For discrete distributions: `CRPS(F, x) = Σ F(yₖ)² + Σ (F(yₖ) − 1)²` s
 Lokad's optimization is batch-oriented (daily Envision scripts), not real-time decision-making. They have no equivalent to TRM agents (<10ms inference), GNN world model, or multi-tier Powell framework. Autonomy's real-time execution is a genuine differentiator.
 
 ### 6.2 No Simulation / Digital Twin
-Lokad has no Beer Game equivalent for training, validation, or confidence building. Their optimization is purely historical-data-driven. Autonomy's 5-phase digital twin training pipeline (BC warm-start → coordinated traces → stochastic stress-testing → copilot calibration → CDC relearning) is unmatched.
+Lokad has no Beer Game equivalent for training, validation, or confidence building. Their optimization is purely historical-data-driven. Autonomy's 6-phase digital twin training pipeline (BC warm-start → coordinated traces → Site tGNN training → stochastic stress-testing → copilot calibration → CDC relearning) is unmatched.
 
 ### 6.3 No Override Learning
 Lokad dismisses manual corrections entirely ("if humans need to override, the system is broken"). Autonomy captures override patterns via Bayesian Beta posteriors and uses them to improve AI. This is a genuine moat — the judgment layer from human expertise becomes a compounding advantage.

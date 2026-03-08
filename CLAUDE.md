@@ -169,7 +169,7 @@ Narrow TRMs (VFA - Value Function Approximation)
      - `integration/decision_integration.py`: Decision tracking and training data extraction
    - **Conformal Decision Theory (CDT)**: All 11 TRM agents carry `risk_bound` and `risk_assessment` on every decision response — P(loss > threshold) with distribution-free guarantee. Calibrated via `CDTCalibrationService` from historical decision-outcome pairs in `powell_*_decisions` tables. Batch calibration at startup, incremental hourly.
 
-2. **GNN Agent** (Graph Neural Network) - Two-Tier Architecture
+2. **GNN Agent** (Graph Neural Network) - Three-Tier Architecture
    - **S&OP GraphSAGE** (Medium-Term): Network structure analysis, risk scoring, bottleneck detection
      - Updates weekly/monthly, outputs criticality scores, concentration risk, resilience, safety stock multipliers
      - Scalable to 50+ nodes with O(edges) complexity
@@ -178,6 +178,7 @@ Narrow TRMs (VFA - Value Function Approximation)
      - Consumes S&OP embeddings + transactional data, updates daily
      - **Outputs: Priority × Product × Location allocations for AATP**
      - **Powell: CFA/VFA bridge**
+   - **Site tGNN** (Intra-Site): 11 TRM-type nodes with ~22 directed causal edges, GATv2+GRU, ~25K params, <5ms inference, hourly. Learns cross-TRM trade-offs (e.g., aggressive ATP fulfillment → MO capacity starvation).
    - **Shared Foundation**: S&OP embeddings cached and fed to Execution model
    - 85-92% demand prediction accuracy
    - Trained on SimPy-generated game data
@@ -514,16 +515,17 @@ See [DAG_Logic.md](DAG_Logic.md) for detailed master site type mappings and conf
 
 ### Agent System Architecture
 
-**TRM Hive Model** (✅ IMPLEMENTED): Each site's 11 TRM agents form a self-organizing "hive" with intra-hive signal propagation (HiveSignalBus, UrgencyVector) and the tGNN as inter-hive connective tissue. Integrates with the [Agentic Authorization Protocol](docs/AGENTIC_AUTHORIZATION_PROTOCOL.md) for cross-authority negotiation and includes a Kinaxis-inspired embedded scenario architecture where agents create branched what-if scenarios at machine speed. **Neural architecture**: Three-layer hybrid — stigmergic coordination (S-MADRL pheromones), heterogeneous graph attention (HetNet), and recursive per-head refinement (Samsung TRM) — totaling ~473K params at <10ms latency. See [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 14 for architecture specification, Section 15 for digital twin training pipeline, Section 16 for multi-site coordination stack, and [TRM_RESEARCH_SYNTHESIS.md](TRM_RESEARCH_SYNTHESIS.md) Section 8 for research foundations.
+**TRM Hive Model** (✅ IMPLEMENTED): Each site's 11 TRM agents form a self-organizing "hive" with intra-hive signal propagation (HiveSignalBus, UrgencyVector) and the tGNN as inter-hive connective tissue. Layer 1.5 (Site tGNN hourly) provides learned cross-TRM causal coordination within a single site, capturing trade-offs that reactive signals alone cannot model. Integrates with the [Agentic Authorization Protocol](docs/AGENTIC_AUTHORIZATION_PROTOCOL.md) for cross-authority negotiation and includes a Kinaxis-inspired embedded scenario architecture where agents create branched what-if scenarios at machine speed. **Neural architecture**: Three-layer hybrid — stigmergic coordination (S-MADRL pheromones), heterogeneous graph attention (HetNet), and recursive per-head refinement (Samsung TRM) — totaling ~473K params at <10ms latency. See [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 14 for architecture specification, Section 15 for digital twin training pipeline, Section 16 for multi-site coordination stack, and [TRM_RESEARCH_SYNTHESIS.md](TRM_RESEARCH_SYNTHESIS.md) Section 8 for research foundations.
 
-**Multi-Site Coordination Stack** (4 layers, see [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 16):
+**Multi-Site Coordination Stack** (5 layers, see [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 16):
 - **Layer 1 — Intra-Hive** (<10ms): UrgencyVector + HiveSignalBus within a single site
-- **Layer 2 — tGNN Inter-Hive** (daily): S&OP GraphSAGE + Execution tGNN process full network graph, produce per-site tGNNSiteDirective
-- **Layer 3 — AAP Cross-Authority** (seconds-minutes): AuthorizationRequest/Response for transfers, priority overrides, capacity sharing
+- **Layer 1.5 — Site tGNN** (hourly): Learned cross-TRM causal coordination within a single site (~25K params, GATv2+GRU, 11 TRM-type nodes with ~22 causal edges)
+- **Layer 2 — Network tGNN** (daily): S&OP embeddings + transactional data → inter-site directives
+- **Layer 3 — AAP Cross-Authority** (seconds-minutes): Authorization requests for cross-site actions
 - **Layer 4 — S&OP Consensus Board** (weekly): Policy parameters θ negotiated by functional agents
-- **Key principle**: TRMs never call across sites. All cross-site information flows through the tGNN directive or AAP authorization.
+- **Key principle**: TRMs never call across sites. All cross-site information flows through the tGNN directive or AAP authorization. Site tGNN (Layer 1.5) provides learned cross-TRM causal coordination within a single site, sitting between reactive signals and daily network inference.
 
-**Digital Twin Training Pipeline** (✅ IMPLEMENTED, see [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 15): Five-phase cold-start pipeline using platform simulation capabilities as digital twin — (1) Individual BC warm-start from curriculum, (2) Multi-head coordinated traces from SimPy/Beer Game, (3) Stochastic stress-testing via Monte Carlo, (4) Copilot calibration from human overrides, (5) Autonomous CDC relearning from production outcomes. Implementation files: `hive_curriculum.py` (1,126 lines), `hive_feedback.py` (6,957 lines), `inter_hive_signal.py` (7,613 lines), `coordinated_sim_runner.py` (12,314 lines), `decision_cycle.py` (7,583 lines).
+**Digital Twin Training Pipeline** (✅ IMPLEMENTED, see [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 15): Six-phase cold-start pipeline using platform simulation capabilities as digital twin — (1) Individual BC warm-start from curriculum, (2) Multi-head coordinated traces from SimPy/Beer Game, (3) Site tGNN training from coordinated traces (BC + PPO), (4) Stochastic stress-testing via Monte Carlo (TRMs + Site tGNN active), (5) Copilot calibration from human overrides (Site tGNN in shadow mode), (6) Autonomous CDC relearning from production outcomes. Implementation files: `hive_curriculum.py` (1,126 lines), `hive_feedback.py` (6,957 lines), `inter_hive_signal.py` (7,613 lines), `coordinated_sim_runner.py` (12,314 lines), `decision_cycle.py` (7,583 lines), `site_tgnn_trainer.py`.
 
 **Strategy Types** (see [AGENT_SYSTEM.md](AGENT_SYSTEM.md)):
 - `naive`: Mirrors incoming demand (baseline)
@@ -610,6 +612,8 @@ SiteAgent reloads model
 | `CDTCalibrationService.calibrate_incremental()` | Hourly (:35) | Feed new decision-outcome pairs into CDT wrappers |
 | `CDTCalibrationService.calibrate_all()` | Startup (batch) | Batch calibrate CDT wrappers from all historical data |
 | `CDCRetrainingService` | Every 6h (:45) | Evaluate & execute retraining when ≥100 experiences + CDC trigger + cooldown elapsed |
+| `SiteTGNNInferenceService` | Hourly (:25) | Intra-site cross-TRM urgency modulation (Layer 1.5) |
+| `SiteTGNNTrainer` | Every 12h (:50) | Evaluate & train Site tGNN from MultiHeadTrace data |
 | `_run_cfa_optimization()` | Weekly (Sun 04:00) | CFA policy parameter re-optimization via Differential Evolution across all active configs |
 | `ConditionMonitorService` | On-demand | 6 real-time DB condition checks (ATP shortfall, inventory, capacity, orders past due, forecast deviation) |
 

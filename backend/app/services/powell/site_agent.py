@@ -145,6 +145,12 @@ class SiteAgentConfig:
     escalation_persistence_window_hours: int = 48
     escalation_consistency_threshold: float = 0.70
 
+    # Site tGNN (Layer 1.5) — Intra-site cross-TRM coordination
+    # When True, Site tGNN runs hourly inference to modulate UrgencyVector
+    # before the 6-phase decision cycle, learning causal cross-TRM relationships.
+    # Feature-flagged OFF by default; zero overhead when disabled.
+    enable_site_tgnn: bool = False
+
 
 @dataclass
 class ATPResponse:
@@ -237,13 +243,33 @@ class SiteAgent:
         if config.enable_authorization:
             self.authorization_service = AuthorizationService(db=db_session)
 
+        # Site tGNN (Layer 1.5) — intra-site cross-TRM coordination
+        self._site_tgnn_service = None
+        if config.enable_site_tgnn:
+            try:
+                from app.services.powell.site_tgnn_inference_service import SiteTGNNInferenceService
+                self._site_tgnn_service = SiteTGNNInferenceService(
+                    site_key=config.site_key,
+                    config_id=getattr(config, "config_id", 0),
+                )
+            except Exception as e:
+                logger.warning(f"Site tGNN init failed (continuing without): {e}")
+
+        # Recent decisions cache for Site tGNN feature engineering
+        self._recent_decisions_cache: Dict[str, list] = {name: [] for name in [
+            "atp_executor", "order_tracking", "po_creation", "rebalancing",
+            "subcontracting", "inventory_buffer", "forecast_adj", "quality",
+            "maintenance", "mo_execution", "to_execution",
+        ]}
+
         # State cache
         self._state_cache: Optional[torch.Tensor] = None
         self._state_cache_time: Optional[datetime] = None
 
         logger.info(f"SiteAgent initialized for {config.site_key}"
                      f"{' [hive signals ON]' if self.signal_bus else ''}"
-                     f"{' [authorization ON]' if self.authorization_service else ''}")
+                     f"{' [authorization ON]' if self.authorization_service else ''}"
+                     f"{' [site tGNN ON]' if self._site_tgnn_service else ''}")
 
     def get_explainer(self, agent_type: str) -> Optional[AgentContextExplainer]:
         """Get the context-aware explainer for a specific agent type."""
@@ -1349,6 +1375,29 @@ class SiteAgent:
         executors = trm_executors or {}
         result = CycleResult()
         cycle_start = time.monotonic()
+
+        # Layer 1.5: Site tGNN modulates UrgencyVector before phases execute
+        if self._site_tgnn_service and self.signal_bus:
+            try:
+                from app.services.powell.hive_feedback import compute_feedback_features
+                feedback = compute_feedback_features(
+                    urgency_snapshot=self.signal_bus.urgency.snapshot() if hasattr(self.signal_bus, "urgency") else None,
+                    signal_bus=self.signal_bus,
+                )
+                site_tgnn_output = self._site_tgnn_service.infer(
+                    hive_signal_bus=self.signal_bus,
+                    urgency_vector=self.signal_bus.urgency if hasattr(self.signal_bus, "urgency") else None,
+                    recent_decisions=self._recent_decisions_cache,
+                    hive_feedback=feedback,
+                )
+                # Apply urgency adjustments
+                urgency_vec = self.signal_bus.urgency if hasattr(self.signal_bus, "urgency") else None
+                if urgency_vec:
+                    for trm_name, adj in site_tgnn_output.urgency_adjustments.items():
+                        if abs(adj) > 0.001:  # Skip negligible adjustments
+                            urgency_vec.adjust(trm_name, adj)
+            except Exception as e:
+                logger.debug(f"Site tGNN pre-cycle inference failed: {e}")
 
         for phase in DecisionCyclePhase:
             phase_start = time.monotonic()

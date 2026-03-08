@@ -35,11 +35,12 @@ class GNNOrchestrationService:
     """
     Orchestrates the full GNN inference → directive broadcast cycle.
 
-    Layer 2 of the 4-layer coordination stack:
-        Layer 1: Intra-Hive (HiveSignalBus) — <10ms, within site
-        Layer 2: tGNN Inter-Hive (this service) — daily, cross-site
-        Layer 3: AAP Cross-Authority — seconds-minutes, ad hoc
-        Layer 4: S&OP Consensus Board — weekly, policy parameters
+    Layer 2 (Network tGNN) of the 5-layer coordination stack:
+        Layer 1:   Intra-Hive (HiveSignalBus) — <10ms, within site
+        Layer 1.5: Site tGNN — hourly, intra-site cross-TRM coordination
+        Layer 2:   Network tGNN Inter-Hive (this service) — daily, cross-site
+        Layer 3:   AAP Cross-Authority — seconds-minutes, ad hoc
+        Layer 4:   S&OP Consensus Board — weekly, policy parameters
     """
 
     def __init__(self, db: AsyncSession, config_id: int):
@@ -347,3 +348,54 @@ class GNNOrchestrationService:
         # Agents that are already running pick up directives via
         # the next decision cycle's apply_directive() call.
         pass
+
+    async def run_site_tgnn_cycle(
+        self,
+        site_agent: Any,
+    ) -> Dict[str, Any]:
+        """Run Site tGNN (Layer 1.5) hourly inference for a single site.
+
+        This is called hourly by the scheduler for each active SiteAgent
+        that has enable_site_tgnn=True. The Site tGNN modulates the
+        UrgencyVector before the next decision cycle.
+
+        Args:
+            site_agent: SiteAgent instance with signal_bus and urgency_vector
+
+        Returns:
+            Dict with inference results
+        """
+        if not hasattr(site_agent, "_site_tgnn_service") or not site_agent._site_tgnn_service:
+            return {"status": "skipped", "reason": "site_tgnn not enabled"}
+
+        try:
+            from app.services.powell.hive_feedback import compute_feedback_features
+
+            feedback = compute_feedback_features(
+                urgency_snapshot=(
+                    site_agent.signal_bus.urgency.snapshot()
+                    if site_agent.signal_bus and hasattr(site_agent.signal_bus, "urgency")
+                    else None
+                ),
+                signal_bus=site_agent.signal_bus,
+            )
+
+            output = site_agent._site_tgnn_service.infer(
+                hive_signal_bus=site_agent.signal_bus,
+                urgency_vector=(
+                    site_agent.signal_bus.urgency
+                    if site_agent.signal_bus and hasattr(site_agent.signal_bus, "urgency")
+                    else None
+                ),
+                recent_decisions=getattr(site_agent, "_recent_decisions_cache", {}),
+                hive_feedback=feedback,
+            )
+
+            return {
+                "status": "completed",
+                "site_key": site_agent.site_key,
+                "output": output.to_dict(),
+            }
+        except Exception as e:
+            logger.warning(f"Site tGNN cycle failed for {site_agent.site_key}: {e}")
+            return {"status": "error", "error": str(e)}

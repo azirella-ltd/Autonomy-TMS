@@ -276,6 +276,23 @@ class UrgencyVector:
                     max_idx = i
             return (idx_to_name[max_idx], max_val, self._directions[max_idx])
 
+    def adjust(self, trm_name: str, delta: float) -> None:
+        """Apply a delta adjustment to a TRM's urgency, clamped to [0, 1].
+
+        Used by Site tGNN (Layer 1.5) to modulate urgency before the
+        decision cycle. Does not change the direction.
+
+        Args:
+            trm_name: TRM name (e.g. "atp_executor")
+            delta: Adjustment value (typically [-0.3, +0.3])
+        """
+        idx = self.TRM_INDICES.get(trm_name)
+        if idx is None:
+            return  # Silently ignore unknown TRM names for robustness
+        with self._lock:
+            self._values[idx] = max(0.0, min(1.0, self._values[idx] + delta))
+            self._last_updated[idx] = datetime.now(timezone.utc)
+
     def reset(self) -> None:
         """Reset all slots to neutral zero. Used at cycle boundaries."""
         with self._lock:

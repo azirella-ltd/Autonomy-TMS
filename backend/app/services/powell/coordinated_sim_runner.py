@@ -92,8 +92,11 @@ class MultiHeadTrace:
     cycle_duration_ms: float = 0.0
     total_signals: int = 0
 
+    # Site tGNN (Layer 1.5) training data
+    site_tgnn_features: Optional[Dict[str, Any]] = None  # Node features snapshot for BC training
+
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "trace_id": self.trace_id,
             "site_key": self.site_key,
             "period": self.period,
@@ -105,6 +108,9 @@ class MultiHeadTrace:
             "cycle_duration_ms": round(self.cycle_duration_ms, 2),
             "total_signals": self.total_signals,
         }
+        if self.site_tgnn_features:
+            d["site_tgnn_features"] = self.site_tgnn_features
+        return d
 
 
 @dataclass

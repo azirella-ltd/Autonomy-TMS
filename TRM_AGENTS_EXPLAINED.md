@@ -1,5 +1,7 @@
 # TRM Agents Explained
 
+> **INTERNAL DOCUMENT** — Contains implementation details, file paths, and architecture specifications.
+
 ## Overview
 
 The Autonomy platform uses Warren B. Powell's **Sequential Decision Analytics and Modeling (SDAM)** framework to structure its AI agents. At the execution layer, **Tiny Recursive Models (TRMs)** make narrow, fast decisions (< 10ms) that augment deterministic engine baselines.
@@ -50,6 +52,47 @@ The layered architecture ensures the system works at every level of capability:
 | **Full** | Engine + trained TRM | Engine baseline + learned adjustments |
 | **Heuristic** | Engine only (TRM untrained) | Engine baseline = TRM heuristic fallback |
 | **Minimal** | Neither | Hard-coded defaults (safe but suboptimal) |
+
+### Agent Architecture
+
+```mermaid
+graph TD
+    SOP["<b>Layer 4: S&OP GraphSAGE</b><br/>Policy parameters θ<br/><i>Weekly · CFA · ~500K params</i>"]
+    AAP["<b>Layer 3: AAP</b><br/>AuthorizationRequest/Response<br/><i>Ad Hoc</i>"]
+    NET["<b>Layer 2: Network tGNN</b><br/>tGNNSiteDirective<br/><i>Daily · CFA/VFA · ~473K params</i>"]
+    SITE["<b>Layer 1.5: Site tGNN</b><br/>GATv2+GRU · 22 causal edges<br/><i>Hourly · VFA · ~25K params</i>"]
+
+    subgraph HIVE["<b>Layer 1: TRM Hive</b> · HiveSignalBus + UrgencyVector · &lt;10ms · ~7M params/TRM"]
+        subgraph SC["Scout (Demand)"]
+            ATP["ATP Executor"]
+            OT["Order Tracking"]
+        end
+        subgraph FO["Forager (Supply)"]
+            PO["PO Creation"]
+            REB["Rebalancing"]
+            SUB["Subcontracting"]
+        end
+        subgraph NU["Nurse (Health)"]
+            BUF["Inventory Buffer"]
+            FA["Forecast Adj"]
+        end
+        subgraph GU["Guard (Integrity)"]
+            QD["Quality"]
+            MS["Maintenance"]
+        end
+        subgraph BU["Builder (Execution)"]
+            MO["MO Execution"]
+            TO["TO Execution"]
+        end
+    end
+
+    SOP -->|"θ params"| NET
+    AAP <-->|"AuthorizationRequest"| NET
+    NET -->|"tGNNSiteDirective"| SITE
+    SITE -->|"urgency Δ"| HIVE
+    HIVE -->|"HiveSignalBus signals"| SITE
+    SITE -->|"escalation"| NET
+```
 
 ---
 
@@ -594,6 +637,31 @@ Checkpoints follow the naming convention `trm_{type}_site{site_id}_v{N}.pt`. Whe
 - `powell_training_service.py` — `train_trm_per_site()` orchestrator
 - `powell_training_config.py` — `TRMSiteTrainingConfig` model (per-phase status tracking)
 
+### Warm Start Pipeline
+
+```mermaid
+graph LR
+    P1["<b>Phase 1: TRM BC</b><br/>SyntheticTRMDataGenerator<br/><i>1-2 days</i>"]
+    P2["<b>Phase 2: CoordinatedSim</b><br/>MultiHeadTrace generation<br/><i>2-3 days · 28.6M records</i>"]
+    P3["<b>Phase 3: Site tGNN</b><br/>BC + PPO from traces<br/><i>~1 day · ~25K params</i>"]
+    P4["<b>Phase 4: Stochastic</b><br/>Monte Carlo + CQL/PPO<br/><i>3-5 days · 17.6M records</i>"]
+    P5["<b>Phase 5: Copilot</b><br/>Shadow mode + overrides<br/><i>2-4 weeks</i>"]
+    P6["<b>Phase 6: CDC Loop</b><br/>Outcome→CDT→Retrain<br/><i>Continuous</i>"]
+
+    P1 -->|"11 TRM checkpoints"| P2
+    P2 -->|"MultiHeadTrace"| P3
+    P3 -->|"site_tgnn_latest.pt"| P4
+    P4 -->|"stress-tested checkpoints"| P5
+    P5 -->|"calibrated"| P6
+    P6 -->|":25/:32/:35/:45"| P6
+
+    SIM(["CoordinatedSimRunner<br/>(SimPy/BeerGame)"])
+    SIM -.->|"hive_curriculum.py"| P1
+    SIM -.->|"run_episode()"| P2
+    SIM -.->|"Monte Carlo inject"| P4
+    SIM -.->|"counterfactual"| P6
+```
+
 ---
 
 ## SiteAgent Orchestration
@@ -621,6 +689,138 @@ The SiteAgent:
 2. Encodes state through the shared encoder
 3. Dispatches to appropriate TRM based on decision type
 4. Records outcomes for continuous learning
+
+---
+
+## Cross-TRM Coordination (Site tGNN — Layer 1.5)
+
+The 11 TRM agents within each site coordinate through two mechanisms: the reactive **HiveSignalBus** (Layer 1, <10ms) and the learned **Site tGNN** (Layer 1.5, hourly). The signal bus handles immediate event propagation -- when an ATP shortage fires, the PO Creation TRM sees it on the next cycle. The Site tGNN handles *predictive* coordination -- learning that a production spike will cascade into quality pressure, then maintenance load, then reorder activity, hours before the signal bus would detect each link.
+
+### Architecture
+
+The Site tGNN models the 11 TRM agents as nodes in a directed graph with 22 causal edges:
+
+```
+                    ┌──────────────┐
+           ┌───────│ ATP Executor  │───────┐
+           │       └──────────────┘       │
+           ▼              │               ▼
+    ┌──────────────┐      │        ┌──────────────┐
+    │ PO Creation  │◀─────┘        │  Forecast    │
+    └──────────────┘               │  Adjustment  │
+           │                       └──────────────┘
+           ▼                              │
+    ┌──────────────┐                      ▼
+    │Order Tracking│              ┌──────────────┐
+    └──────────────┘              │  Inventory   │
+           │                      │  Buffer      │
+           ▼                      └──────────────┘
+    ┌──────────────┐                      │
+    │ TO Execution │◀─┐                   ▼
+    └──────────────┘  │           ┌──────────────┐
+           │          │           │  Inventory   │
+           ▼          │           │  Rebalancing │
+    ┌──────────────┐  │           └──────────────┘
+    │MO Execution  │──┤
+    └──────────────┘  │
+        │    │        │
+        ▼    ▼        │
+  ┌────────┐ ┌────────────┐  ┌──────────────┐
+  │Quality │ │Maintenance │  │Subcontracting│
+  └────────┘ └────────────┘  └──────────────┘
+```
+
+- **Model**: GATv2 (Graph Attention Network v2) with GRU temporal memory
+- **Parameters**: ~25K total (deliberately lightweight)
+- **Inference**: <5ms per site
+- **Node features**: 8 dimensions -- urgency_level, urgency_direction, decision_count_1h, decision_count_24h, avg_outcome_quality, signal_emission_rate, confidence_mean, active_flag
+- **Edge features**: 4 dimensions -- causal_strength, avg_lag_hours, interaction_count, correlation
+- **Output**: 11 urgency adjustment deltas, continuous in [-0.3, +0.3]
+- **Hidden dimension**: 32 with 4 attention heads
+
+### The 22 Causal Edges
+
+Each edge represents a known causal pathway where activity at the source TRM predictably affects the target TRM:
+
+| Source | Target | What It Captures |
+|--------|--------|-----------------|
+| ATP Executor | MO Execution | Fulfilled orders drive production requirements |
+| ATP Executor | PO Creation | Shortages trigger upstream purchase orders |
+| ATP Executor | Forecast Adjustment | Demand patterns signal forecast revision need |
+| MO Execution | Quality Disposition | Production output requires quality inspection |
+| MO Execution | Maintenance Scheduling | Production load affects maintenance timing |
+| MO Execution | Subcontracting | Capacity pressure triggers make-vs-buy |
+| Quality Disposition | MO Execution | Rejects and rework feed back to production |
+| Quality Disposition | Inventory Buffer | Quality yield variability affects buffer needs |
+| Quality Disposition | Subcontracting | Persistent quality issues shift to alternate vendors |
+| PO Creation | Order Tracking | New purchase orders require tracking |
+| PO Creation | Subcontracting | Supplier constraints trigger make-vs-buy re-eval |
+| Order Tracking | PO Creation | Late or failed POs trigger reorders |
+| Order Tracking | TO Execution | Delayed orders may need expedited transfers |
+| Forecast Adjustment | ATP Executor | Forecast changes affect ATP availability |
+| Forecast Adjustment | Inventory Buffer | Forecast changes affect buffer requirements |
+| Inventory Buffer | PO Creation | Buffer level changes drive ordering |
+| Inventory Buffer | Inventory Rebalancing | Buffer adjustments affect cross-site balance |
+| Maintenance Scheduling | MO Execution | Maintenance windows constrain production |
+| Maintenance Scheduling | Subcontracting | Extended downtime triggers external routing |
+| TO Execution | Inventory Rebalancing | Transfer execution affects rebalancing needs |
+| Inventory Rebalancing | TO Execution | Rebalancing decisions generate transfer orders |
+| Subcontracting | MO Execution | Make-vs-buy decisions affect internal production load |
+
+### How Site tGNN Modulates Urgency
+
+The Site tGNN runs at the start of each decision cycle, *before* the SENSE phase:
+
+```
+Hourly: Site tGNN inference (<5ms)
+    │
+    │  Reads: current UrgencyVector (11 slots) + GRU hidden state
+    │  Produces: 11 adjustment deltas ∈ [-0.3, +0.3]
+    │
+    ▼
+UrgencyVector modulation:
+    new_urgency[i] = clamp(current_urgency[i] + delta[i], 0.0, 1.0)
+    │
+    ▼
+6-phase Decision Cycle:
+    SENSE → ASSESS → ACQUIRE → PROTECT → BUILD → REFLECT
+```
+
+The adjustments are additive and clamped. The Site tGNN modulates *emphasis* -- "quality needs more attention this cycle" -- but never overrides a TRM's decision. Each TRM remains the sole authority over its domain.
+
+### Position in the 5-Layer Coordination Stack
+
+| Layer | Component | Scope | Cadence | Mechanism |
+|-------|-----------|-------|---------|-----------|
+| **4** | S&OP GraphSAGE | Entire network | Weekly | Policy parameters theta |
+| **3** | Execution tGNN | Network-wide | Daily | Per-site directives |
+| **2** | AAP Authorization | Cross-authority | Seconds-minutes | Authorization requests |
+| **1.5** | **Site tGNN** | **Single site, all TRMs** | **Hourly** | **Urgency modulation** |
+| **1** | TRM Hive + Signal Bus | Single site | Per-decision | Stigmergic signals |
+
+Layer 1.5 consumes the tGNNSiteDirective from Layer 3 as exogenous context (network conditions affect intra-site dynamics) and outputs urgency deltas consumed by Layer 1's decision cycle.
+
+### Cold Start
+
+When no trained model exists, the Site tGNN outputs zero adjustments -- TRMs operate exactly as they would without it. The feature is gated behind `ENABLE_SITE_TGNN=false` (default OFF) and requires a minimum of 1000 complete MultiHeadTrace decision cycles before training is viable. If inference fails or exceeds the 5ms timeout, the decision cycle proceeds with unmodified urgency vectors.
+
+### Training
+
+Three-phase training aligned with the existing TRM curriculum:
+
+1. **Behavioral Cloning**: Learn from historical MultiHeadTrace records (urgency + decisions + outcomes for all 11 TRMs per cycle)
+2. **PPO Fine-Tuning**: Proximal Policy Optimization with site-level Balanced Scorecard as reward
+3. **Production Calibration**: Shadow mode during copilot operation -- adjustments logged but not applied until accuracy threshold met
+
+Training runs every 12h at :50 via the relearning jobs scheduler.
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `backend/app/services/powell/site_tgnn.py` | `SiteTGNN` model (GATv2+GRU, ~25K params) |
+| `backend/app/services/powell/site_tgnn_inference_service.py` | Hourly inference, UrgencyVector modulation |
+| `backend/app/services/powell/site_tgnn_trainer.py` | 3-phase training (BC, PPO, calibration) |
 
 ---
 
@@ -675,6 +875,14 @@ The SiteAgent:
 | `models/trm_training_data.py` | Decision logs, outcomes, replay buffer (all 11 types) |
 | `models/powell_training_config.py` | `TRMType` enum, `DEFAULT_TRM_REWARD_WEIGHTS` |
 | `models/powell_decisions.py` | Production decision persistence tables |
+
+### Site tGNN (Layer 1.5 Cross-TRM Coordination)
+
+| File | Purpose |
+|------|---------|
+| `site_tgnn.py` | `SiteTGNN` model (GATv2+GRU, ~25K params, 11 nodes, 22 edges) |
+| `site_tgnn_inference_service.py` | Hourly inference, UrgencyVector modulation |
+| `site_tgnn_trainer.py` | 3-phase training pipeline (BC, PPO, calibration) |
 
 ### Orchestration
 
