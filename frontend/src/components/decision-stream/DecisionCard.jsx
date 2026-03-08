@@ -204,33 +204,13 @@ const DecisionCard = ({
           </p>
         )}
 
-        {/* Action buttons */}
+        {/* Action buttons — AIIO: Inspect (expand reasoning) and Override */}
         {!showOverride ? (
           <div className="flex items-center gap-2">
             <Button
               size="sm"
               variant="default"
-              className="h-7 text-xs bg-green-600 hover:bg-green-700"
-              onClick={handleAccept}
-              disabled={acting}
-            >
-              <CheckCircle className="h-3 w-3 mr-1" />
-              Accept
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs border-amber-500 text-amber-600 hover:bg-amber-50"
-              onClick={() => setShowOverride(true)}
-              disabled={acting}
-            >
-              <Edit3 className="h-3 w-3 mr-1" />
-              Override
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 text-xs text-blue-600 hover:text-blue-700"
+              className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
               onClick={async () => {
                 if (showReasoning) {
                   setShowReasoning(false);
@@ -241,7 +221,6 @@ const DecisionCard = ({
                   setReasoning(decision.decision_reasoning);
                   setShowReasoning(true);
                 } else if (reasoning) {
-                  // Already fetched before
                   setShowReasoning(true);
                 } else {
                   // Fetch from ask-why endpoint
@@ -261,12 +240,22 @@ const DecisionCard = ({
               disabled={acting}
             >
               <HelpCircle className="h-3 w-3 mr-1" />
-              Ask Why
+              Inspect
               {showReasoning ? (
                 <ChevronUp className="h-3 w-3 ml-0.5" />
               ) : (
                 <ChevronDown className="h-3 w-3 ml-0.5" />
               )}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs border-amber-500 text-amber-600 hover:bg-amber-50"
+              onClick={() => setShowOverride(true)}
+              disabled={acting}
+            >
+              <Edit3 className="h-3 w-3 mr-1" />
+              Override
             </Button>
             <div className="flex-1" />
             <Button

@@ -202,7 +202,7 @@ const DecisionStream = () => {
           <div>
             <h1 className="text-2xl font-bold">Decision Stream</h1>
             <p className="text-sm text-muted-foreground">
-              {digest?.total_pending ?? '...'} decisions awaiting review
+              {digest?.total_pending ?? '...'} decisions made by Autonomy agents
             </p>
           </div>
         </div>

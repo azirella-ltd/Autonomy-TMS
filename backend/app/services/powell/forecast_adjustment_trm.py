@@ -376,7 +376,12 @@ class ForecastAdjustmentTRM:
             return
         try:
             from app.models.powell_decisions import PowellForecastAdjustmentDecision
-            from app.services.powell.decision_reasoning import forecast_adjustment_reasoning
+            from app.services.powell.decision_reasoning import forecast_adjustment_reasoning, capture_hive_context
+            hive_ctx = capture_hive_context(
+                self.signal_bus, "forecast_adj",
+                cycle_id=getattr(self, "_cycle_id", None),
+                cycle_phase=getattr(self, "_cycle_phase", None),
+            )
             d = PowellForecastAdjustmentDecision(
                 config_id=0,
                 product_id=state.product_id,
@@ -407,6 +412,7 @@ class ForecastAdjustmentTRM:
                     current_value=state.current_forecast_value,
                     adjusted_value=rec.adjusted_forecast_value,
                 ),
+                **hive_ctx,
             )
             self.db.add(d)
             self.db.flush()

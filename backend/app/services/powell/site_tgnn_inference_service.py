@@ -66,6 +66,7 @@ class SiteTGNNOutput:
     urgency_adjustments: Dict[str, float] = field(default_factory=dict)
     confidence_modifiers: Dict[str, float] = field(default_factory=dict)
     coordination_signals: Dict[str, float] = field(default_factory=dict)
+    reasoning: Optional[str] = None  # Plain-English explanation
 
     @classmethod
     def neutral(cls) -> SiteTGNNOutput:
@@ -74,14 +75,18 @@ class SiteTGNNOutput:
             urgency_adjustments={t: 0.0 for t in TRM_NAMES},
             confidence_modifiers={t: 0.0 for t in TRM_NAMES},
             coordination_signals={t: 0.5 for t in TRM_NAMES},
+            reasoning="Site tGNN cold start — no trained model available. Returning neutral adjustments.",
         )
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "urgency_adjustments": {k: round(v, 4) for k, v in self.urgency_adjustments.items()},
             "confidence_modifiers": {k: round(v, 4) for k, v in self.confidence_modifiers.items()},
             "coordination_signals": {k: round(v, 4) for k, v in self.coordination_signals.items()},
         }
+        if self.reasoning:
+            d["reasoning"] = self.reasoning
+        return d
 
 
 # ============================================================================
@@ -224,19 +229,33 @@ class SiteTGNNInferenceService:
         output_np = raw_output[0].cpu().numpy()
 
         # Mask inactive TRMs: zero adjustments for nodes this site doesn't use
+        urgency_adj = {
+            TRM_NAMES[i]: float(output_np[i, 0]) if self._active_mask[i] else 0.0
+            for i in range(NUM_TRM_TYPES)
+        }
+        conf_mod = {
+            TRM_NAMES[i]: float(output_np[i, 1]) if self._active_mask[i] else 0.0
+            for i in range(NUM_TRM_TYPES)
+        }
+        coord_sig = {
+            TRM_NAMES[i]: float(output_np[i, 2]) if self._active_mask[i] else 0.5
+            for i in range(NUM_TRM_TYPES)
+        }
+
+        # Generate plain-English reasoning
+        from app.services.powell.decision_reasoning import site_tgnn_reasoning
+        reasoning = site_tgnn_reasoning(
+            site_key=self.site_key,
+            urgency_adjustments=urgency_adj,
+            confidence_modifiers=conf_mod,
+            coordination_signals=coord_sig,
+        )
+
         return SiteTGNNOutput(
-            urgency_adjustments={
-                TRM_NAMES[i]: float(output_np[i, 0]) if self._active_mask[i] else 0.0
-                for i in range(NUM_TRM_TYPES)
-            },
-            confidence_modifiers={
-                TRM_NAMES[i]: float(output_np[i, 1]) if self._active_mask[i] else 0.0
-                for i in range(NUM_TRM_TYPES)
-            },
-            coordination_signals={
-                TRM_NAMES[i]: float(output_np[i, 2]) if self._active_mask[i] else 0.5
-                for i in range(NUM_TRM_TYPES)
-            },
+            urgency_adjustments=urgency_adj,
+            confidence_modifiers=conf_mod,
+            coordination_signals=coord_sig,
+            reasoning=reasoning,
         )
 
     def reset_hidden_state(self) -> None:

@@ -593,9 +593,14 @@ class ATPExecutorTRM:
             return
         try:
             from app.models.powell_decisions import PowellATPDecision
-            from app.services.powell.decision_reasoning import atp_reasoning
+            from app.services.powell.decision_reasoning import atp_reasoning, capture_hive_context
             breakdown = {str(k): v for k, v in (response.consumption_breakdown or {}).items()}
             method = "trm" if self.trm_model else "heuristic"
+            hive_ctx = capture_hive_context(
+                self.signal_bus, "atp_executor",
+                cycle_id=getattr(self, "_cycle_id", None),
+                cycle_phase=getattr(self, "_cycle_phase", None),
+            )
             row = PowellATPDecision(
                 config_id=self.config_id,
                 order_id=request.order_id,
@@ -620,6 +625,7 @@ class ATPExecutorTRM:
                     decision_method=method,
                     consumption_breakdown=breakdown,
                 ),
+                **hive_ctx,
             )
             self.db.add(row)
         except Exception as e:

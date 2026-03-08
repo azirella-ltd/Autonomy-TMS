@@ -606,7 +606,12 @@ class InventoryBufferTRM:
             return
         try:
             from app.models.powell_decisions import PowellBufferDecision
-            from app.services.powell.decision_reasoning import inventory_buffer_reasoning
+            from app.services.powell.decision_reasoning import inventory_buffer_reasoning, capture_hive_context
+            hive_ctx = capture_hive_context(
+                self.signal_bus, "inventory_buffer",
+                cycle_id=getattr(self, "_cycle_id", None),
+                cycle_phase=getattr(self, "_cycle_phase", None),
+            )
             row = PowellBufferDecision(
                 config_id=self.config_id,
                 product_id=result.product_id,
@@ -630,6 +635,7 @@ class InventoryBufferTRM:
                     confidence=result.confidence,
                     reason=result.reason.value,
                 ),
+                **hive_ctx,
             )
             self.db.add(row)
         except Exception as e:

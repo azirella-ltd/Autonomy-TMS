@@ -53,6 +53,9 @@ class GNNDirectiveReview(Base):
     # For execution_directive: {demand_forecast, exception_probability, ...}
     # For allocation_refresh: {allocation_version, priority_allocations, ...}
 
+    # Plain-English reasoning for the proposed values (from GNN reasoning generators)
+    proposed_reasoning = Column(Text, nullable=True)
+
     # Model metadata
     model_type = Column(String(30))  # "sop_graphsage" | "execution_tgnn"
     model_confidence = Column(Float)
@@ -100,6 +103,7 @@ class GNNDirectiveReview(Base):
             "site_key": self.site_key,
             "directive_scope": self.directive_scope,
             "proposed_values": self.proposed_values,
+            "proposed_reasoning": self.proposed_reasoning,
             "model_type": self.model_type,
             "model_confidence": self.model_confidence,
             "status": self.status,

@@ -611,13 +611,18 @@ class POCreationTRM:
         try:
             from app.models.powell_decisions import PowellPODecision
             from datetime import date as date_type
+            from app.services.powell.decision_reasoning import po_reasoning, capture_hive_context
+            hive_ctx = capture_hive_context(
+                self.signal_bus, "po_creation",
+                cycle_id=getattr(self, "_cycle_id", None),
+                cycle_phase=getattr(self, "_cycle_phase", None),
+            )
             for rec in recommendations:
                 inv_pos_val = rec.expected_inventory_position_after - rec.recommended_qty
                 try:
                     receipt_date = datetime.strptime(rec.expected_receipt_date, "%Y-%m-%d").date()
                 except Exception:
                     receipt_date = None
-                from app.services.powell.decision_reasoning import po_reasoning
                 row = PowellPODecision(
                     config_id=self.config_id,
                     product_id=rec.product_id,
@@ -641,6 +646,7 @@ class POCreationTRM:
                         inventory_position=inv_pos_val,
                         expected_cost=rec.expected_cost,
                     ),
+                    **hive_ctx,
                 )
                 self.db.add(row)
         except Exception as e:

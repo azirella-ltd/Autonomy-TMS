@@ -2,10 +2,16 @@
 Decision Reasoning Generator — Pre-computed plain-English explanations.
 
 Generates concise reasoning strings at decision time from the data already
-available in each TRM's persist method. No DB queries, no LLM calls.
+available in each TRM's persist method and GNN inference outputs.
+No DB queries, no LLM calls.
 
 These strings populate the `decision_reasoning` column so that Ask Why
 can return instantly (<1ms) instead of routing through the LLM chat path.
+
+Coverage:
+- 11 TRM reasoning generators (one per TRM type)
+- 3 GNN reasoning generators (S&OP GraphSAGE, Network tGNN, Site tGNN)
+- capture_hive_context() helper for populating HiveSignalMixin fields
 """
 
 from typing import Any, Dict, List, Optional
@@ -252,4 +258,233 @@ def inventory_buffer_reasoning(
     if reason:
         parts.append(f"Reason: {reason}.")
     parts.append(f"Confidence: {confidence:.0%}.")
+    return " ".join(parts)
+
+
+# ============================================================================
+# Hive context capture helper — populates HiveSignalMixin fields at persist time
+# ============================================================================
+
+def capture_hive_context(
+    signal_bus: Any,
+    trm_name: str,
+    cycle_id: Optional[str] = None,
+    cycle_phase: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Capture current hive signal state for HiveSignalMixin fields.
+
+    Call this in each TRM's persist method to populate the 6 signal columns
+    (signal_context, urgency_at_time, triggered_by, signals_emitted,
+    cycle_phase, cycle_id).
+
+    Args:
+        signal_bus: HiveSignalBus instance (or None).
+        trm_name: Short TRM name (e.g. "atp_executor").
+        cycle_id: UUID of the current decision cycle (from CycleResult).
+        cycle_phase: Phase name (e.g. "SENSE", "BUILD").
+
+    Returns:
+        Dict with keys matching HiveSignalMixin column names. All values
+        are safe for direct unpacking into the SQLAlchemy model constructor.
+    """
+    ctx: Dict[str, Any] = {
+        "signal_context": None,
+        "urgency_at_time": None,
+        "triggered_by": None,
+        "signals_emitted": None,
+        "cycle_phase": cycle_phase,
+        "cycle_id": cycle_id,
+    }
+
+    if signal_bus is None:
+        return ctx
+
+    try:
+        # Signal context snapshot (JSON-serializable dict)
+        ctx["signal_context"] = signal_bus.to_context_dict()
+    except Exception:
+        pass
+
+    try:
+        # Urgency value for this TRM at decision time
+        if hasattr(signal_bus, "urgency"):
+            val, _direction, _ts = signal_bus.urgency.read(trm_name)
+            ctx["urgency_at_time"] = float(val)
+    except Exception:
+        pass
+
+    try:
+        # Triggered-by: signal types recently consumed by this TRM.
+        # HiveSignalBus.read() is called in _read_signals_before_decision();
+        # we capture which signal types were active at that time.
+        active = signal_bus.read(consumer_trm=trm_name) if hasattr(signal_bus, "read") else []
+        if active:
+            type_names = sorted({str(getattr(s, "signal_type", s)) for s in active})
+            ctx["triggered_by"] = ",".join(type_names[:20])
+    except Exception:
+        pass
+
+    return ctx
+
+
+# ============================================================================
+# GNN reasoning generators — plain-English explanations for GNN outputs
+# ============================================================================
+
+def sop_graphsage_reasoning(
+    *,
+    site_key: str,
+    criticality: float,
+    bottleneck_risk: float,
+    concentration_risk: float,
+    resilience: float,
+    safety_stock_multiplier: float,
+    network_risk: Optional[Dict[str, float]] = None,
+    score_intervals: Optional[Dict[str, Dict[str, float]]] = None,
+) -> str:
+    """Generate reasoning for an S&OP GraphSAGE network analysis output.
+
+    Produces one string per site describing the strategic risk assessment
+    and policy parameter recommendations from the weekly GraphSAGE run.
+    """
+    parts = [f"S&OP GraphSAGE analysis for site {site_key}:"]
+
+    # Criticality
+    if criticality >= 0.8:
+        parts.append(f"Critically important node (criticality {criticality:.2f}).")
+    elif criticality >= 0.5:
+        parts.append(f"Moderately important node (criticality {criticality:.2f}).")
+    else:
+        parts.append(f"Low-criticality node ({criticality:.2f}).")
+
+    # Bottleneck risk
+    if bottleneck_risk >= 0.7:
+        parts.append(f"High bottleneck risk ({bottleneck_risk:.0%}) — capacity constraint likely.")
+    elif bottleneck_risk >= 0.3:
+        parts.append(f"Moderate bottleneck risk ({bottleneck_risk:.0%}).")
+
+    # Concentration risk
+    if concentration_risk >= 0.7:
+        parts.append(f"High supply concentration risk ({concentration_risk:.0%}) — single-source vulnerability.")
+    elif concentration_risk >= 0.3:
+        parts.append(f"Moderate concentration risk ({concentration_risk:.0%}).")
+
+    # Resilience
+    parts.append(f"Network resilience score: {resilience:.2f}.")
+
+    # Safety stock multiplier recommendation
+    if abs(safety_stock_multiplier - 1.0) > 0.05:
+        direction = "increase" if safety_stock_multiplier > 1.0 else "decrease"
+        parts.append(
+            f"Recommending safety stock {direction} to {safety_stock_multiplier:.2f}x baseline "
+            f"based on network risk profile."
+        )
+
+    # Conformal intervals if available
+    if score_intervals:
+        crit_iv = score_intervals.get("criticality")
+        if crit_iv and "lower" in crit_iv and "upper" in crit_iv:
+            parts.append(
+                f"Criticality confidence interval: [{crit_iv['lower']:.2f}, {crit_iv['upper']:.2f}]."
+            )
+
+    return " ".join(parts)
+
+
+def execution_tgnn_reasoning(
+    *,
+    site_key: str,
+    demand_forecast_next: Optional[float] = None,
+    exception_probability: float,
+    order_recommendation: float,
+    confidence: float,
+    demand_interval: Optional[Dict[str, float]] = None,
+    allocation_interval: Optional[Dict[str, float]] = None,
+    propagation_sites: Optional[List[str]] = None,
+) -> str:
+    """Generate reasoning for a Network tGNN (Execution) inference output.
+
+    Produces one string per site describing the daily allocation directive,
+    demand forecast, and exception probability.
+    """
+    parts = [f"Network tGNN daily directive for site {site_key}:"]
+
+    # Demand forecast
+    if demand_forecast_next is not None:
+        parts.append(f"Next-period demand forecast: {demand_forecast_next:.0f} units.")
+        if demand_interval and "lower" in demand_interval and "upper" in demand_interval:
+            parts.append(
+                f"Conformal demand interval: [{demand_interval['lower']:.0f}, "
+                f"{demand_interval['upper']:.0f}]."
+            )
+
+    # Exception probability
+    if exception_probability >= 0.7:
+        parts.append(f"High exception risk ({exception_probability:.0%}) — stockout or overstock likely.")
+    elif exception_probability >= 0.3:
+        parts.append(f"Moderate exception risk ({exception_probability:.0%}).")
+    else:
+        parts.append(f"Low exception risk ({exception_probability:.0%}).")
+
+    # Order recommendation
+    parts.append(f"Recommended allocation: {order_recommendation:.0f} units.")
+    if allocation_interval and "lower" in allocation_interval and "upper" in allocation_interval:
+        parts.append(
+            f"Allocation interval: [{allocation_interval['lower']:.0f}, "
+            f"{allocation_interval['upper']:.0f}]."
+        )
+
+    # Propagation impact
+    if propagation_sites:
+        parts.append(f"Demand propagation affects: {', '.join(propagation_sites[:5])}.")
+
+    parts.append(f"Model confidence: {confidence:.0%}.")
+    return " ".join(parts)
+
+
+def site_tgnn_reasoning(
+    *,
+    site_key: str,
+    urgency_adjustments: Dict[str, float],
+    confidence_modifiers: Dict[str, float],
+    coordination_signals: Dict[str, float],
+) -> str:
+    """Generate reasoning for a Site tGNN (Layer 1.5) inference output.
+
+    Produces a single string per site summarizing the cross-TRM urgency
+    adjustments and the causal coordination patterns detected.
+    """
+    parts = [f"Site tGNN hourly coordination for {site_key}:"]
+
+    # Identify significant urgency adjustments (|adj| > 0.01)
+    boosted = []
+    dampened = []
+    for trm, adj in urgency_adjustments.items():
+        if adj > 0.01:
+            boosted.append(f"{trm} (+{adj:.3f})")
+        elif adj < -0.01:
+            dampened.append(f"{trm} ({adj:.3f})")
+
+    if boosted:
+        parts.append(f"Urgency boosted for: {', '.join(boosted)}.")
+    if dampened:
+        parts.append(f"Urgency dampened for: {', '.join(dampened)}.")
+    if not boosted and not dampened:
+        parts.append("No significant urgency adjustments this cycle (neutral output).")
+
+    # Identify TRMs with high coordination attention (> 0.7)
+    high_coord = [
+        trm for trm, sig in coordination_signals.items() if sig > 0.7
+    ]
+    if high_coord:
+        parts.append(f"High cross-TRM attention on: {', '.join(high_coord)}.")
+
+    # Identify confidence adjustments
+    conf_changes = [
+        f"{trm} ({mod:+.3f})" for trm, mod in confidence_modifiers.items()
+        if abs(mod) > 0.01
+    ]
+    if conf_changes:
+        parts.append(f"Confidence threshold adjustments: {', '.join(conf_changes)}.")
+
     return " ".join(parts)

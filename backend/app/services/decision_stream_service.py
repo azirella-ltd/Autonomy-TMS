@@ -746,8 +746,8 @@ class DecisionStreamService:
         """Use LLM to synthesize a natural-language digest paragraph."""
         if not decisions and not alerts:
             return (
-                f"Good news — your supply chain is running smoothly. "
-                f"No pending decisions or alerts require your attention right now."
+                f"Your supply chain is running smoothly. "
+                f"No new decisions from Autonomy agents right now."
             )
 
         # Build a compact summary for the LLM
@@ -762,9 +762,10 @@ class DecisionStreamService:
             f"You are an AI supply chain planning assistant for {self.tenant_name}. "
             f"{role_context}"
             f"Synthesize a brief, conversational digest (2-4 sentences) for the planner. "
-            f"Mention the count and highest-priority items. Be specific about products/sites when available. "
+            f"These are decisions that Autonomy agents have already made. "
+            f"Mention the count and highlight the most important ones. Be specific about products/sites when available. "
             f"Do NOT list all decisions — just highlight the most important ones.\n\n"
-            f"Pending decisions ({len(decisions)} total):\n"
+            f"Key decisions made by Autonomy agents ({len(decisions)} total):\n"
             + "\n".join(f"- {s}" for s in decision_summaries)
             + "\n\n"
             + (f"Active alerts ({len(alerts)}):\n" + "\n".join(f"- {s}" for s in alert_summaries) if alerts else "No active alerts.")
@@ -778,9 +779,9 @@ class DecisionStreamService:
             top = decisions[0] if decisions else None
             top_desc = top["summary"] if top else "no items"
             return (
-                f"You have {len(decisions)} pending decision{'s' if len(decisions) != 1 else ''} "
-                f"and {len(alerts)} alert{'s' if len(alerts) != 1 else ''}. "
-                f"The highest priority is: {top_desc}."
+                f"Autonomy agents made {len(decisions)} decision{'s' if len(decisions) != 1 else ''} "
+                f"with {len(alerts)} alert{'s' if len(alerts) != 1 else ''}. "
+                f"Highest priority: {top_desc}."
             )
 
     async def _load_tenant_vocabulary(
@@ -1282,9 +1283,9 @@ class DecisionStreamService:
         try:
             decisions = await self._collect_pending_decisions(config_id, powell_role)
             if not decisions:
-                return "No pending decisions."
+                return "No recent agent decisions."
             summaries = [d["summary"] for d in decisions[:_DIGEST_SUMMARY_MAX_DECISIONS]]
-            return f"Pending decisions ({len(decisions)} total): " + "; ".join(summaries)
+            return f"Decisions made by Autonomy agents ({len(decisions)} total): " + "; ".join(summaries)
         except Exception:
             return "Unable to load decision context."
 
@@ -1314,7 +1315,7 @@ class DecisionStreamService:
         # System prompt
         parts.append(
             f"You are an AI supply chain planning assistant for {self.tenant_name}. "
-            "You help planners understand and act on pending decisions in their supply chain. "
+            "You help planners inspect and understand decisions made by Autonomy agents. "
             "IMPORTANT: You have access to live supply chain data (inventory, forecasts, policies, "
             "decision details) injected below. Use this actual data to answer questions with "
             "specific numbers and facts. Do NOT tell the user to navigate to another page — "

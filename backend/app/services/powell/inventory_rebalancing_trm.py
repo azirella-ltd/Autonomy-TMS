@@ -569,8 +569,13 @@ class InventoryRebalancingTRM:
             return
         try:
             from app.models.powell_decisions import PowellRebalanceDecision
+            from app.services.powell.decision_reasoning import rebalancing_reasoning, capture_hive_context
+            hive_ctx = capture_hive_context(
+                self.signal_bus, "rebalancing",
+                cycle_id=getattr(self, "_cycle_id", None),
+                cycle_phase=getattr(self, "_cycle_phase", None),
+            )
             for rec in recommendations:
-                from app.services.powell.decision_reasoning import rebalancing_reasoning
                 row = PowellRebalanceDecision(
                     config_id=self.config_id,
                     product_id=rec.product_id,
@@ -593,6 +598,7 @@ class InventoryRebalancingTRM:
                         confidence=rec.confidence,
                         reason=rec.reason.value,
                     ),
+                    **hive_ctx,
                 )
                 self.db.add(row)
         except Exception as e:

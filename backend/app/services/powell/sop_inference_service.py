@@ -68,9 +68,27 @@ class NetworkAnalysis:
     # Metadata
     computed_at: Optional[datetime] = None
 
+    # Per-site plain-English reasoning (site_key -> reasoning string)
+    reasoning: Dict[str, str] = field(default_factory=dict)
+
+    def generate_reasoning(self) -> None:
+        """Populate per-site reasoning strings from analysis data."""
+        from app.services.powell.decision_reasoning import sop_graphsage_reasoning
+        for site_key in self.site_keys:
+            self.reasoning[site_key] = sop_graphsage_reasoning(
+                site_key=site_key,
+                criticality=self.criticality.get(site_key, 0.0),
+                bottleneck_risk=self.bottleneck_risk.get(site_key, 0.0),
+                concentration_risk=self.concentration_risk.get(site_key, 0.0),
+                resilience=self.resilience.get(site_key, 0.0),
+                safety_stock_multiplier=self.safety_stock_multiplier.get(site_key, 1.0),
+                network_risk=self.network_risk,
+                score_intervals=self.score_intervals.get(site_key),
+            )
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize for API response."""
-        return {
+        d = {
             "config_id": self.config_id,
             "num_sites": self.num_sites,
             "checkpoint_path": self.checkpoint_path,
@@ -84,6 +102,9 @@ class NetworkAnalysis:
             "site_keys": self.site_keys,
             "computed_at": self.computed_at.isoformat() if self.computed_at else None,
         }
+        if self.reasoning:
+            d["reasoning"] = self.reasoning
+        return d
 
 
 class SOPInferenceService:
@@ -149,6 +170,7 @@ class SOPInferenceService:
             f"S&OP analysis complete for config {self.config_id}: "
             f"{analysis.num_sites} sites analyzed"
         )
+        analysis.generate_reasoning()
         return analysis
 
     async def get_embeddings_tensor(self) -> Optional[np.ndarray]:
@@ -464,6 +486,7 @@ class SOPInferenceService:
             site_keys, analysis,
         )
 
+        analysis.generate_reasoning()
         return analysis
 
     def _compute_score_intervals(
@@ -656,4 +679,5 @@ class SOPInferenceService:
             if row.network_risk and not analysis.network_risk:
                 analysis.network_risk = row.network_risk
 
+        analysis.generate_reasoning()
         return analysis

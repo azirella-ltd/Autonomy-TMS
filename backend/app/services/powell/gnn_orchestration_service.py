@@ -297,11 +297,16 @@ class GNNOrchestrationService:
             }
             sop_values = {k: v for k, v in values.items() if k in sop_keys}
             if sop_values and sop_analysis:
+                # Get plain-English reasoning from S&OP GraphSAGE output
+                sop_reasoning = None
+                if hasattr(sop_analysis, "reasoning") and sop_analysis.reasoning:
+                    sop_reasoning = sop_analysis.reasoning.get(site_key)
                 review = GNNDirectiveReview(
                     config_id=self.config_id,
                     site_key=site_key,
                     directive_scope="sop_policy",
                     proposed_values=sop_values,
+                    proposed_reasoning=sop_reasoning,
                     model_type="sop_graphsage",
                     model_confidence=sop_values.get("resilience_score", 0.5),
                     status="PROPOSED",
@@ -317,11 +322,16 @@ class GNNOrchestrationService:
             }
             exec_values = {k: v for k, v in values.items() if k in exec_keys}
             if exec_values and exec_output:
+                # Get plain-English reasoning from Network tGNN output
+                exec_reasoning = None
+                if hasattr(exec_output, "reasoning") and exec_output.reasoning:
+                    exec_reasoning = exec_output.reasoning.get(site_key)
                 review = GNNDirectiveReview(
                     config_id=self.config_id,
                     site_key=site_key,
                     directive_scope="execution_directive",
                     proposed_values=exec_values,
+                    proposed_reasoning=exec_reasoning,
                     model_type="execution_tgnn",
                     model_confidence=exec_values.get("confidence", 0.5),
                     status="PROPOSED",

@@ -541,7 +541,12 @@ class OrderTrackingTRM:
             return
         try:
             from app.models.powell_decisions import PowellOrderException
-            from app.services.powell.decision_reasoning import order_tracking_reasoning
+            from app.services.powell.decision_reasoning import order_tracking_reasoning, capture_hive_context
+            hive_ctx = capture_hive_context(
+                self.signal_bus, "order_tracking",
+                cycle_id=getattr(self, "_cycle_id", None),
+                cycle_phase=getattr(self, "_cycle_phase", None),
+            )
             row = PowellOrderException(
                 config_id=self.config_id,
                 order_id=order_state.order_id,
@@ -563,6 +568,7 @@ class OrderTrackingTRM:
                     confidence=result.confidence,
                     reason=result.description,
                 ),
+                **hive_ctx,
             )
             self.db.add(row)
         except Exception as e:

@@ -1467,6 +1467,11 @@ class SiteAgent:
                 if executor is None:
                     continue
                 try:
+                    # Thread cycle context to TRM for HiveSignalMixin capture
+                    trm_instance = self._registered_trms.get(trm_name)
+                    if trm_instance is not None:
+                        trm_instance._cycle_id = result.cycle_id
+                        trm_instance._cycle_phase = phase.name
                     executor()
                     phase_result.trms_executed.append(trm_name)
                 except Exception as e:

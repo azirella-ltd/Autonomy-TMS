@@ -450,7 +450,12 @@ class MOExecutionTRM:
             return
         try:
             from app.models.powell_decisions import PowellMODecision
-            from app.services.powell.decision_reasoning import mo_execution_reasoning
+            from app.services.powell.decision_reasoning import mo_execution_reasoning, capture_hive_context
+            hive_ctx = capture_hive_context(
+                self.signal_bus, "mo_execution",
+                cycle_id=getattr(self, "_cycle_id", None),
+                cycle_phase=getattr(self, "_cycle_phase", None),
+            )
             decision = PowellMODecision(
                 config_id=0,  # Set by caller
                 production_order_id=state.order_id,
@@ -478,6 +483,7 @@ class MOExecutionTRM:
                     confidence=rec.confidence,
                     mo_id=state.order_id,
                 ),
+                **hive_ctx,
             )
             self.db.add(decision)
             self.db.flush()

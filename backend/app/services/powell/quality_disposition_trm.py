@@ -377,7 +377,12 @@ class QualityDispositionTRM:
             return
         try:
             from app.models.powell_decisions import PowellQualityDecision
-            from app.services.powell.decision_reasoning import quality_reasoning
+            from app.services.powell.decision_reasoning import quality_reasoning, capture_hive_context
+            hive_ctx = capture_hive_context(
+                self.signal_bus, "quality",
+                cycle_id=getattr(self, "_cycle_id", None),
+                cycle_phase=getattr(self, "_cycle_phase", None),
+            )
             decision = PowellQualityDecision(
                 config_id=0,
                 quality_order_id=state.quality_order_id,
@@ -408,6 +413,7 @@ class QualityDispositionTRM:
                     disposition_reason=rec.reason,
                     lot_id=state.lot_number,
                 ),
+                **hive_ctx,
             )
             self.db.add(decision)
             self.db.flush()

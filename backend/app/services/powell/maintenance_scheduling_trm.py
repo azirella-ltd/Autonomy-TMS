@@ -338,7 +338,12 @@ class MaintenanceSchedulingTRM:
             return
         try:
             from app.models.powell_decisions import PowellMaintenanceDecision
-            from app.services.powell.decision_reasoning import maintenance_reasoning
+            from app.services.powell.decision_reasoning import maintenance_reasoning, capture_hive_context
+            hive_ctx = capture_hive_context(
+                self.signal_bus, "maintenance",
+                cycle_id=getattr(self, "_cycle_id", None),
+                cycle_phase=getattr(self, "_cycle_phase", None),
+            )
             decision = PowellMaintenanceDecision(
                 config_id=0,
                 maintenance_order_id=state.order_id,
@@ -366,6 +371,7 @@ class MaintenanceSchedulingTRM:
                     decision_type=rec.decision_type,
                     confidence=rec.confidence,
                 ),
+                **hive_ctx,
             )
             self.db.add(decision)
             self.db.flush()

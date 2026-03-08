@@ -60,8 +60,37 @@ class ExecutionGNNOutput:
     # Metadata
     computed_at: Optional[datetime] = None
 
+    # Per-site plain-English reasoning (site_key -> reasoning string)
+    reasoning: Dict[str, str] = field(default_factory=dict)
+
+    def generate_reasoning(self) -> None:
+        """Populate per-site reasoning strings from output data."""
+        from app.services.powell.decision_reasoning import execution_tgnn_reasoning
+        for site_key in self.site_keys:
+            forecast = self.demand_forecast.get(site_key, [])
+            demand_next = forecast[0] if forecast else None
+            # Get first-period demand interval if available
+            demand_ivs = self.demand_interval.get(site_key, [])
+            demand_iv = demand_ivs[0] if demand_ivs else None
+            # Identify sites affected by propagation
+            prop_impact = self.propagation_impact.get(site_key, [])
+            prop_sites = [
+                sk for sk in self.site_keys
+                if sk != site_key and self.propagation_impact.get(sk)
+            ][:5]
+            self.reasoning[site_key] = execution_tgnn_reasoning(
+                site_key=site_key,
+                demand_forecast_next=demand_next,
+                exception_probability=self.exception_probability.get(site_key, 0.0),
+                order_recommendation=self.order_recommendation.get(site_key, 0.0),
+                confidence=self.confidence.get(site_key, 0.0),
+                demand_interval=demand_iv,
+                allocation_interval=self.allocation_interval.get(site_key),
+                propagation_sites=prop_sites if prop_sites else None,
+            )
+
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "config_id": self.config_id,
             "num_sites": self.num_sites,
             "checkpoint_path": self.checkpoint_path,
@@ -75,6 +104,9 @@ class ExecutionGNNOutput:
             "site_keys": self.site_keys,
             "computed_at": self.computed_at.isoformat() if self.computed_at else None,
         }
+        if self.reasoning:
+            d["reasoning"] = self.reasoning
+        return d
 
 
 class ExecutionGNNInferenceService:
@@ -341,13 +373,16 @@ class ExecutionGNNInferenceService:
                             out["propagation_impact"][0, i].tolist()
                         )
 
+                output.generate_reasoning()
                 return output
 
             except Exception as e:
                 logger.warning(f"Model inference failed, using synthetic: {e}")
 
         # Synthetic inference (when no checkpoint or model fails)
-        return self._synthetic_inference(site_keys, x_temporal, checkpoint_path, now)
+        synth = self._synthetic_inference(site_keys, x_temporal, checkpoint_path, now)
+        synth.generate_reasoning()
+        return synth
 
     def _enrich_with_conformal_intervals(self, output: ExecutionGNNOutput) -> None:
         """

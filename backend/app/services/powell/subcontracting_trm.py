@@ -319,7 +319,12 @@ class SubcontractingTRM:
             return
         try:
             from app.models.powell_decisions import PowellSubcontractingDecision
-            from app.services.powell.decision_reasoning import subcontracting_reasoning
+            from app.services.powell.decision_reasoning import subcontracting_reasoning, capture_hive_context
+            hive_ctx = capture_hive_context(
+                self.signal_bus, "subcontracting",
+                cycle_id=getattr(self, "_cycle_id", None),
+                cycle_phase=getattr(self, "_cycle_phase", None),
+            )
             d = PowellSubcontractingDecision(
                 config_id=0,
                 product_id=state.product_id,
@@ -343,6 +348,7 @@ class SubcontractingTRM:
                     reason=rec.reason,
                     external_supplier=state.subcontractor_id,
                 ),
+                **hive_ctx,
             )
             self.db.add(d)
             self.db.flush()
