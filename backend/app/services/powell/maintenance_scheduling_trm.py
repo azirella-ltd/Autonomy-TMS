@@ -338,6 +338,7 @@ class MaintenanceSchedulingTRM:
             return
         try:
             from app.models.powell_decisions import PowellMaintenanceDecision
+            from app.services.powell.decision_reasoning import maintenance_reasoning
             decision = PowellMaintenanceDecision(
                 config_id=0,
                 maintenance_order_id=state.order_id,
@@ -359,6 +360,12 @@ class MaintenanceSchedulingTRM:
                     'recent_failures': state.recent_failure_count,
                     'prod_load': state.production_schedule_load_pct,
                 },
+                decision_reasoning=maintenance_reasoning(
+                    asset_id=state.asset_id,
+                    location_id=state.site_id,
+                    decision_type=rec.decision_type,
+                    confidence=rec.confidence,
+                ),
             )
             self.db.add(decision)
             self.db.flush()

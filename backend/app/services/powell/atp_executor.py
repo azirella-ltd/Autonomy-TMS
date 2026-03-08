@@ -593,6 +593,9 @@ class ATPExecutorTRM:
             return
         try:
             from app.models.powell_decisions import PowellATPDecision
+            from app.services.powell.decision_reasoning import atp_reasoning
+            breakdown = {str(k): v for k, v in (response.consumption_breakdown or {}).items()}
+            method = "trm" if self.trm_model else "heuristic"
             row = PowellATPDecision(
                 config_id=self.config_id,
                 order_id=request.order_id,
@@ -602,10 +605,21 @@ class ATPExecutorTRM:
                 order_priority=request.priority,
                 can_fulfill=response.can_fulfill,
                 promised_qty=response.promised_qty,
-                consumption_breakdown={str(k): v for k, v in (response.consumption_breakdown or {}).items()},
+                consumption_breakdown=breakdown,
                 state_features=state.to_features().tolist(),
-                decision_method="trm" if self.trm_model else "heuristic",
+                decision_method=method,
                 confidence=response.confidence,
+                decision_reasoning=atp_reasoning(
+                    product_id=request.product_id,
+                    location_id=request.location_id,
+                    requested_qty=request.requested_qty,
+                    promised_qty=response.promised_qty,
+                    can_fulfill=response.can_fulfill,
+                    order_priority=request.priority,
+                    confidence=response.confidence,
+                    decision_method=method,
+                    consumption_breakdown=breakdown,
+                ),
             )
             self.db.add(row)
         except Exception as e:

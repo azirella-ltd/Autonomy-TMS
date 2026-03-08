@@ -30,6 +30,19 @@ export const decisionStreamApi = {
    */
   chat: (data) =>
     api.post('/decision-stream/chat', data).then((r) => r.data),
+
+  /**
+   * Get pre-computed reasoning for a specific decision.
+   * Returns the decision_reasoning captured at decision time (no LLM call).
+   * @param {number} decisionId - Decision ID
+   * @param {string} decisionType - Decision type (atp, po_creation, rebalancing, etc.)
+   */
+  askWhy: (decisionId, decisionType) =>
+    api
+      .get('/decision-stream/ask-why', {
+        params: { decision_id: decisionId, decision_type: decisionType },
+      })
+      .then((r) => r.data),
 };
 
 export default decisionStreamApi;

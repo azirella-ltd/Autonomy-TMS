@@ -80,14 +80,14 @@ export const isTenantAdmin = (user) => {
 };
 
 export const getDefaultLandingPath = (user) => {
-  if (isSystemAdmin(user)) {
-    return "/system/users";
-  }
-
-  // Check UI mode preference — Decision Stream is the default for non-admin users
+  // Check UI mode preference — Decision Stream is the default for all users
   const uiMode = typeof localStorage !== 'undefined'
     ? localStorage.getItem('ui:mode') || 'stream'
     : 'stream';
+
+  if (isSystemAdmin(user)) {
+    return uiMode === 'stream' ? '/decision-stream' : "/system/users";
+  }
 
   if (isTenantAdmin(user)) {
     return uiMode === 'stream' ? '/decision-stream' : "/admin?section=scenarios";

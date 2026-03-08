@@ -376,6 +376,7 @@ class ForecastAdjustmentTRM:
             return
         try:
             from app.models.powell_decisions import PowellForecastAdjustmentDecision
+            from app.services.powell.decision_reasoning import forecast_adjustment_reasoning
             d = PowellForecastAdjustmentDecision(
                 config_id=0,
                 product_id=state.product_id,
@@ -397,6 +398,15 @@ class ForecastAdjustmentTRM:
                     'product_volatility': state.product_volatility,
                     'trend': state.product_trend,
                 },
+                decision_reasoning=forecast_adjustment_reasoning(
+                    product_id=state.product_id,
+                    adjustment_direction=rec.direction,
+                    adjustment_pct=rec.adjustment_pct,
+                    confidence=rec.confidence,
+                    signal_type=state.signal_type,
+                    current_value=state.current_forecast_value,
+                    adjusted_value=rec.adjusted_forecast_value,
+                ),
             )
             self.db.add(d)
             self.db.flush()

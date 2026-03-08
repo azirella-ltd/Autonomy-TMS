@@ -450,6 +450,7 @@ class MOExecutionTRM:
             return
         try:
             from app.models.powell_decisions import PowellMODecision
+            from app.services.powell.decision_reasoning import mo_execution_reasoning
             decision = PowellMODecision(
                 config_id=0,  # Set by caller
                 production_order_id=state.order_id,
@@ -470,6 +471,13 @@ class MOExecutionTRM:
                     'queue_depth': state.queue_depth,
                     'yield_pct': state.avg_yield_pct,
                 },
+                decision_reasoning=mo_execution_reasoning(
+                    product_id=state.product_id,
+                    location_id=state.site_id,
+                    decision_type=rec.decision_type,
+                    confidence=rec.confidence,
+                    mo_id=state.order_id,
+                ),
             )
             self.db.add(decision)
             self.db.flush()

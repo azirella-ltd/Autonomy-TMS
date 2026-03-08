@@ -110,6 +110,21 @@ DECISION_TABLES = [
     (PowellBufferDecision, "inventory_buffer"),
 ]
 
+# Map type_key → DB table name for direct SQL lookups (e.g., ask-why endpoint)
+DECISION_TYPE_TABLE_MAP = {
+    "atp": "powell_atp_decisions",
+    "rebalancing": "powell_rebalance_decisions",
+    "po_creation": "powell_po_decisions",
+    "order_tracking": "powell_order_exceptions",
+    "mo_execution": "powell_mo_decisions",
+    "to_execution": "powell_to_decisions",
+    "quality": "powell_quality_decisions",
+    "maintenance": "powell_maintenance_decisions",
+    "subcontracting": "powell_subcontracting_decisions",
+    "forecast_adjustment": "powell_forecast_adjustment_decisions",
+    "inventory_buffer": "powell_buffer_decisions",
+}
+
 # Role relevance filter: which decision types each powell_role cares about
 ROLE_RELEVANCE = {
     "SC_VP": {"atp", "rebalancing", "po_creation", "order_tracking", "forecast_adjustment", "inventory_buffer"},

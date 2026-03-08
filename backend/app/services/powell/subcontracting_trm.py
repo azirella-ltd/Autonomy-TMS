@@ -319,6 +319,7 @@ class SubcontractingTRM:
             return
         try:
             from app.models.powell_decisions import PowellSubcontractingDecision
+            from app.services.powell.decision_reasoning import subcontracting_reasoning
             d = PowellSubcontractingDecision(
                 config_id=0,
                 product_id=state.product_id,
@@ -335,6 +336,13 @@ class SubcontractingTRM:
                 on_time_score=state.subcontractor_on_time_score,
                 confidence=rec.confidence,
                 state_features={'ip': state.ip_sensitivity, 'critical': state.is_critical_product},
+                decision_reasoning=subcontracting_reasoning(
+                    product_id=state.product_id,
+                    routing_decision=rec.decision_type,
+                    confidence=rec.confidence,
+                    reason=rec.reason,
+                    external_supplier=state.subcontractor_id,
+                ),
             )
             self.db.add(d)
             self.db.flush()

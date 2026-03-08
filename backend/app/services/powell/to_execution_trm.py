@@ -365,6 +365,7 @@ class TOExecutionTRM:
             return
         try:
             from app.models.powell_decisions import PowellTODecision
+            from app.services.powell.decision_reasoning import to_execution_reasoning
             decision = PowellTODecision(
                 config_id=0,
                 transfer_order_id=state.order_id,
@@ -384,6 +385,15 @@ class TOExecutionTRM:
                     'dest_backlog': state.dest_backlog,
                     'days_until_needed': state.days_until_needed,
                 },
+                decision_reasoning=to_execution_reasoning(
+                    product_id=state.product_id,
+                    source_site_id=state.source_site_id,
+                    dest_site_id=state.dest_site_id,
+                    decision_type=rec.decision_type,
+                    confidence=rec.confidence,
+                    trigger_reason=state.trigger_reason,
+                    to_id=state.order_id,
+                ),
             )
             self.db.add(decision)
             self.db.flush()

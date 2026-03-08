@@ -78,6 +78,34 @@ async def act_on_decision(
     return result
 
 
+@router.get("/ask-why")
+async def ask_why(
+    decision_id: int = Query(..., description="Decision ID"),
+    decision_type: str = Query(..., description="Decision type (atp, po_creation, etc.)"),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Return pre-computed reasoning for a decision. No LLM call — instant response."""
+    from app.services.decision_stream_service import DECISION_TYPE_TABLE_MAP
+    from sqlalchemy import text
+
+    table = DECISION_TYPE_TABLE_MAP.get(decision_type)
+    if not table:
+        raise HTTPException(status_code=400, detail=f"Unknown decision type: {decision_type}")
+
+    # Direct DB lookup for the pre-computed reasoning
+    result = await db.execute(
+        text(f"SELECT decision_reasoning FROM {table} WHERE id = :id"),
+        {"id": decision_id},
+    )
+    row = result.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Decision not found")
+
+    reasoning = row[0] if row[0] else "No reasoning was captured for this decision."
+    return {"decision_id": decision_id, "decision_type": decision_type, "reasoning": reasoning}
+
+
 @router.post("/chat", response_model=DecisionStreamChatResponse)
 async def chat(
     request: DecisionStreamChatRequest,

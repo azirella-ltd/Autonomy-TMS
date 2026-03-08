@@ -570,6 +570,7 @@ class InventoryRebalancingTRM:
         try:
             from app.models.powell_decisions import PowellRebalanceDecision
             for rec in recommendations:
+                from app.services.powell.decision_reasoning import rebalancing_reasoning
                 row = PowellRebalanceDecision(
                     config_id=self.config_id,
                     product_id=rec.product_id,
@@ -584,6 +585,14 @@ class InventoryRebalancingTRM:
                     dest_dos_before=rec.dest_dos_before,
                     dest_dos_after=rec.dest_dos_after,
                     expected_cost=rec.expected_cost,
+                    decision_reasoning=rebalancing_reasoning(
+                        product_id=rec.product_id,
+                        from_site=rec.from_site,
+                        to_site=rec.to_site,
+                        recommended_qty=rec.quantity,
+                        confidence=rec.confidence,
+                        reason=rec.reason.value,
+                    ),
                 )
                 self.db.add(row)
         except Exception as e:

@@ -617,6 +617,7 @@ class POCreationTRM:
                     receipt_date = datetime.strptime(rec.expected_receipt_date, "%Y-%m-%d").date()
                 except Exception:
                     receipt_date = None
+                from app.services.powell.decision_reasoning import po_reasoning
                 row = PowellPODecision(
                     config_id=self.config_id,
                     product_id=rec.product_id,
@@ -629,6 +630,17 @@ class POCreationTRM:
                     inventory_position=inv_pos_val,
                     expected_receipt_date=receipt_date,
                     expected_cost=rec.expected_cost,
+                    decision_reasoning=po_reasoning(
+                        product_id=rec.product_id,
+                        location_id=rec.location_id,
+                        supplier_id=rec.supplier_id,
+                        recommended_qty=rec.recommended_qty,
+                        trigger_reason=rec.trigger_reason.value,
+                        urgency=rec.urgency.value,
+                        confidence=rec.confidence,
+                        inventory_position=inv_pos_val,
+                        expected_cost=rec.expected_cost,
+                    ),
                 )
                 self.db.add(row)
         except Exception as e:

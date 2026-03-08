@@ -142,9 +142,46 @@ const DecisionStream = () => {
     }
   };
 
-  const handleAskWhy = (decision) => {
-    const prompt = `Why did you recommend "${decision.suggested_action}" for ${decision.summary}?`;
-    handleSendMessage(prompt);
+  const handleAskWhy = async (decision) => {
+    // Show the pre-computed reasoning instantly instead of routing through LLM
+    const reasoning = decision.decision_reasoning;
+    if (reasoning) {
+      // Instant display — reasoning was captured at decision time
+      const userMessage = {
+        role: 'user',
+        content: `Why did you recommend "${decision.suggested_action}" for ${decision.summary}?`,
+      };
+      const aiMessage = {
+        role: 'assistant',
+        content: reasoning,
+      };
+      setChatHistory((prev) => [...prev, userMessage, aiMessage]);
+    } else {
+      // Fallback: fetch explanation from the dedicated ask-why endpoint
+      const userMessage = {
+        role: 'user',
+        content: `Why did you recommend "${decision.suggested_action}" for ${decision.summary}?`,
+      };
+      setChatHistory((prev) => [...prev, userMessage]);
+      setChatLoading(true);
+      try {
+        const result = await decisionStreamApi.askWhy(decision.id, decision.decision_type);
+        const aiMessage = {
+          role: 'assistant',
+          content: result.reasoning || result.decision_reasoning || 'No reasoning available for this decision.',
+        };
+        setChatHistory((prev) => [...prev, aiMessage]);
+      } catch (err) {
+        console.error('Ask Why failed:', err);
+        const aiMessage = {
+          role: 'assistant',
+          content: 'Unable to retrieve reasoning for this decision.',
+        };
+        setChatHistory((prev) => [...prev, aiMessage]);
+      } finally {
+        setChatLoading(false);
+      }
+    }
   };
 
   const handleSendMessage = useCallback(

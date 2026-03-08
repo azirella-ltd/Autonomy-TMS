@@ -377,6 +377,7 @@ class QualityDispositionTRM:
             return
         try:
             from app.models.powell_decisions import PowellQualityDecision
+            from app.services.powell.decision_reasoning import quality_reasoning
             decision = PowellQualityDecision(
                 config_id=0,
                 quality_order_id=state.quality_order_id,
@@ -399,6 +400,14 @@ class QualityDispositionTRM:
                     'inventory_dos': state.days_of_supply,
                     'pending_orders': state.pending_customer_orders,
                 },
+                decision_reasoning=quality_reasoning(
+                    product_id=state.product_id,
+                    location_id=state.site_id,
+                    disposition=rec.disposition,
+                    confidence=rec.confidence,
+                    disposition_reason=rec.reason,
+                    lot_id=state.lot_number,
+                ),
             )
             self.db.add(decision)
             self.db.flush()

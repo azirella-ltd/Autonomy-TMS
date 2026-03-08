@@ -606,6 +606,7 @@ class InventoryBufferTRM:
             return
         try:
             from app.models.powell_decisions import PowellBufferDecision
+            from app.services.powell.decision_reasoning import inventory_buffer_reasoning
             row = PowellBufferDecision(
                 config_id=self.config_id,
                 product_id=result.product_id,
@@ -620,6 +621,15 @@ class InventoryBufferTRM:
                 seasonal_index=state.seasonal_index,
                 recent_stockout_count=state.recent_stockout_count,
                 state_features=state.to_features().tolist(),
+                decision_reasoning=inventory_buffer_reasoning(
+                    product_id=result.product_id,
+                    location_id=result.location_id,
+                    baseline_ss=result.baseline_ss,
+                    adjusted_ss=result.adjusted_ss,
+                    multiplier=result.multiplier,
+                    confidence=result.confidence,
+                    reason=result.reason.value,
+                ),
             )
             self.db.add(row)
         except Exception as e:

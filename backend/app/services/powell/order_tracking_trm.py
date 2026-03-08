@@ -541,6 +541,7 @@ class OrderTrackingTRM:
             return
         try:
             from app.models.powell_decisions import PowellOrderException
+            from app.services.powell.decision_reasoning import order_tracking_reasoning
             row = PowellOrderException(
                 config_id=self.config_id,
                 order_id=order_state.order_id,
@@ -554,6 +555,14 @@ class OrderTrackingTRM:
                 estimated_impact_cost=result.estimated_impact_cost,
                 confidence=result.confidence,
                 state_features=order_state.to_features().tolist(),
+                decision_reasoning=order_tracking_reasoning(
+                    order_id=order_state.order_id,
+                    exception_type=result.exception_type.value,
+                    severity=result.severity.value,
+                    recommended_action=result.recommended_action.value,
+                    confidence=result.confidence,
+                    reason=result.description,
+                ),
             )
             self.db.add(row)
         except Exception as e:

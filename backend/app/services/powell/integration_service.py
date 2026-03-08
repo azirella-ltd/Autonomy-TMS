@@ -1107,6 +1107,9 @@ class PowellIntegrationService:
         try:
             from app.models.powell_decisions import PowellATPDecision
 
+            from app.services.powell.decision_reasoning import atp_reasoning
+            method = response.source if hasattr(response, 'source') else "heuristic"
+            breakdown = response.consumption_breakdown if hasattr(response, 'consumption_breakdown') else None
             record = PowellATPDecision(
                 config_id=config_id,
                 order_id=request.order_id,
@@ -1116,9 +1119,20 @@ class PowellIntegrationService:
                 order_priority=request.priority,
                 can_fulfill=response.can_fulfill,
                 promised_qty=response.promised_qty,
-                consumption_breakdown=response.consumption_breakdown if hasattr(response, 'consumption_breakdown') else None,
-                decision_method=response.source if hasattr(response, 'source') else "heuristic",
+                consumption_breakdown=breakdown,
+                decision_method=method,
                 confidence=response.confidence,
+                decision_reasoning=atp_reasoning(
+                    product_id=request.product_id,
+                    location_id=request.location_id,
+                    requested_qty=request.requested_qty,
+                    promised_qty=response.promised_qty,
+                    can_fulfill=response.can_fulfill,
+                    order_priority=request.priority,
+                    confidence=response.confidence,
+                    decision_method=method,
+                    consumption_breakdown=breakdown,
+                ),
             )
             self.db.add(record)
             await self.db.flush()
@@ -1145,20 +1159,35 @@ class PowellIntegrationService:
             forecast = getattr(inv_pos, 'forecast_demand', 0.0) if inv_pos else 0.0
             dos = on_hand / (forecast / 30.0) if forecast and forecast > 0 else 0.0
 
+            from app.services.powell.decision_reasoning import po_reasoning
+            trigger = getattr(recommendation, 'trigger_reason', 'low_inventory')
+            urg = getattr(recommendation, 'urgency', 'normal')
+            exp_cost = recommendation.recommended_qty * recommendation.supplier.unit_cost
             record = PowellPODecision(
                 config_id=config_id,
                 product_id=recommendation.product_id,
                 location_id=recommendation.location_id,
                 supplier_id=recommendation.supplier.supplier_id,
                 recommended_qty=recommendation.recommended_qty,
-                trigger_reason=getattr(recommendation, 'trigger_reason', 'low_inventory'),
-                urgency=getattr(recommendation, 'urgency', 'normal'),
+                trigger_reason=trigger,
+                urgency=urg,
                 confidence=recommendation.confidence,
                 inventory_position=on_hand,
                 days_of_supply=dos,
                 forecast_30_day=forecast,
                 expected_receipt_date=date.today() + timedelta(days=int(recommendation.supplier.lead_time)),
-                expected_cost=recommendation.recommended_qty * recommendation.supplier.unit_cost,
+                expected_cost=exp_cost,
+                decision_reasoning=po_reasoning(
+                    product_id=recommendation.product_id,
+                    location_id=recommendation.location_id,
+                    supplier_id=recommendation.supplier.supplier_id,
+                    recommended_qty=recommendation.recommended_qty,
+                    trigger_reason=str(trigger),
+                    urgency=str(urg),
+                    confidence=recommendation.confidence,
+                    inventory_position=on_hand,
+                    expected_cost=exp_cost,
+                ),
             )
             self.db.add(record)
             await self.db.flush()
@@ -1193,6 +1222,8 @@ class PowellIntegrationService:
         try:
             from app.models.powell_decisions import PowellOrderException
 
+            from app.services.powell.decision_reasoning import order_tracking_reasoning
+            desc = detection.description if hasattr(detection, 'description') else str(detection.exception_type.value)
             record = PowellOrderException(
                 config_id=config_id,
                 order_id=order_state.order_id,
@@ -1201,7 +1232,7 @@ class PowellIntegrationService:
                 exception_type=detection.exception_type.value,
                 severity=detection.severity.value,
                 recommended_action=detection.recommended_action.value,
-                description=detection.description if hasattr(detection, 'description') else str(detection.exception_type.value),
+                description=desc,
                 confidence=detection.confidence,
                 state_features={
                     "source_site": order_state.source_site,
@@ -1211,6 +1242,14 @@ class PowellIntegrationService:
                     "received_qty": order_state.received_quantity,
                     "days_since_last_update": order_state.days_since_last_update,
                 },
+                decision_reasoning=order_tracking_reasoning(
+                    order_id=order_state.order_id,
+                    exception_type=detection.exception_type.value,
+                    severity=detection.severity.value,
+                    recommended_action=detection.recommended_action.value,
+                    confidence=detection.confidence,
+                    reason=desc,
+                ),
             )
             self.db.add(record)
             await self.db.flush()
@@ -1234,6 +1273,7 @@ class PowellIntegrationService:
 
             impact = recommendation.expected_impact if hasattr(recommendation, 'expected_impact') else {}
 
+            from app.services.powell.decision_reasoning import rebalancing_reasoning
             record = PowellRebalanceDecision(
                 config_id=config_id,
                 product_id=recommendation.product_id,
@@ -1248,6 +1288,14 @@ class PowellIntegrationService:
                 dest_dos_before=impact.get("dest_dos_before") if isinstance(impact, dict) else None,
                 dest_dos_after=impact.get("dest_dos_after") if isinstance(impact, dict) else None,
                 expected_cost=impact.get("expected_cost") if isinstance(impact, dict) else None,
+                decision_reasoning=rebalancing_reasoning(
+                    product_id=recommendation.product_id,
+                    from_site=recommendation.from_site,
+                    to_site=recommendation.to_site,
+                    recommended_qty=recommendation.recommended_qty,
+                    confidence=recommendation.confidence,
+                    reason=recommendation.reason.value,
+                ),
             )
             self.db.add(record)
             await self.db.flush()
