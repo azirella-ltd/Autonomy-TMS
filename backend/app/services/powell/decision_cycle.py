@@ -51,17 +51,15 @@ class DecisionCyclePhase(IntEnum):
     REFLECT = 6   # Rebalancing + conflict detection
 
 
-# Mapping from TRM name to decision cycle phase
-TRM_PHASE_MAP: Dict[str, DecisionCyclePhase] = {
+# Canonical TRM names → decision cycle phase (used for PHASE_TRM_MAP)
+_CANONICAL_PHASE_MAP: Dict[str, DecisionCyclePhase] = {
     # SENSE — demand-side scouts
     "atp_executor": DecisionCyclePhase.SENSE,
     "order_tracking": DecisionCyclePhase.SENSE,
 
     # ASSESS — health and risk
     "inventory_buffer": DecisionCyclePhase.ASSESS,
-    "forecast_adj": DecisionCyclePhase.ASSESS,
     "forecast_adjustment": DecisionCyclePhase.ASSESS,
-    "quality": DecisionCyclePhase.ASSESS,
     "quality_disposition": DecisionCyclePhase.ASSESS,
 
     # ACQUIRE — supply-side foragers
@@ -69,7 +67,6 @@ TRM_PHASE_MAP: Dict[str, DecisionCyclePhase] = {
     "subcontracting": DecisionCyclePhase.ACQUIRE,
 
     # PROTECT — guards
-    "maintenance": DecisionCyclePhase.PROTECT,
     "maintenance_scheduling": DecisionCyclePhase.PROTECT,
 
     # BUILD — builders
@@ -80,9 +77,18 @@ TRM_PHASE_MAP: Dict[str, DecisionCyclePhase] = {
     "rebalancing": DecisionCyclePhase.REFLECT,
 }
 
-# Reverse: phase → list of TRM names (sorted for determinism)
+# Full lookup map includes canonical + short aliases
+TRM_PHASE_MAP: Dict[str, DecisionCyclePhase] = {
+    **_CANONICAL_PHASE_MAP,
+    # Short aliases for backward compatibility
+    "forecast_adj": DecisionCyclePhase.ASSESS,
+    "quality": DecisionCyclePhase.ASSESS,
+    "maintenance": DecisionCyclePhase.PROTECT,
+}
+
+# Reverse: phase → list of CANONICAL TRM names (no duplicates)
 PHASE_TRM_MAP: Dict[DecisionCyclePhase, List[str]] = {}
-for _trm, _phase in sorted(TRM_PHASE_MAP.items()):
+for _trm, _phase in sorted(_CANONICAL_PHASE_MAP.items()):
     PHASE_TRM_MAP.setdefault(_phase, []).append(_trm)
 
 

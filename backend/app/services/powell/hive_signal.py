@@ -206,6 +206,10 @@ class UrgencyVector:
         "maintenance": 8,
         "mo_execution": 9,
         "to_execution": 10,
+        # Canonical name aliases (used by decision_cycle.py and training)
+        "forecast_adjustment": 6,
+        "quality_disposition": 7,
+        "maintenance_scheduling": 8,
     }
 
     # Valid direction values
