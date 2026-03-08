@@ -15,6 +15,8 @@ import {
   Edit3,
   HelpCircle,
   ArrowRight,
+  ChevronDown,
+  ChevronUp,
   Package,
   Truck,
   ShoppingCart,
@@ -26,6 +28,7 @@ import {
   RefreshCw,
   TrendingUp,
   Box,
+  Loader2,
 } from 'lucide-react';
 import { Badge, Button, Card, CardContent } from '../common';
 import { cn } from '../../lib/utils/cn';
@@ -131,6 +134,9 @@ const DecisionCard = ({
   const [reasonCode, setReasonCode] = useState('');
   const [reasonText, setReasonText] = useState('');
   const [acting, setActing] = useState(false);
+  const [showReasoning, setShowReasoning] = useState(false);
+  const [reasoning, setReasoning] = useState(null);
+  const [reasoningLoading, setReasoningLoading] = useState(false);
 
   const Icon = TYPE_ICONS[decision.decision_type] || Package;
   const typeLabel = TYPE_LABELS[decision.decision_type] || decision.decision_type;
@@ -225,11 +231,42 @@ const DecisionCard = ({
               size="sm"
               variant="ghost"
               className="h-7 text-xs text-blue-600 hover:text-blue-700"
-              onClick={() => onAskWhy?.(decision)}
+              onClick={async () => {
+                if (showReasoning) {
+                  setShowReasoning(false);
+                  return;
+                }
+                // Use pre-computed reasoning if available
+                if (decision.decision_reasoning) {
+                  setReasoning(decision.decision_reasoning);
+                  setShowReasoning(true);
+                } else if (reasoning) {
+                  // Already fetched before
+                  setShowReasoning(true);
+                } else {
+                  // Fetch from ask-why endpoint
+                  setReasoningLoading(true);
+                  setShowReasoning(true);
+                  try {
+                    const { decisionStreamApi } = await import('../../services/decisionStreamApi');
+                    const result = await decisionStreamApi.askWhy(decision.id, decision.decision_type);
+                    setReasoning(result.reasoning || 'No reasoning available.');
+                  } catch {
+                    setReasoning('Unable to retrieve reasoning for this decision.');
+                  } finally {
+                    setReasoningLoading(false);
+                  }
+                }
+              }}
               disabled={acting}
             >
               <HelpCircle className="h-3 w-3 mr-1" />
               Ask Why
+              {showReasoning ? (
+                <ChevronUp className="h-3 w-3 ml-0.5" />
+              ) : (
+                <ChevronDown className="h-3 w-3 ml-0.5" />
+              )}
             </Button>
             <div className="flex-1" />
             <Button
@@ -242,7 +279,28 @@ const DecisionCard = ({
               <ArrowRight className="h-3 w-3" />
             </Button>
           </div>
-        ) : (
+        ) : null}
+
+        {/* Ask Why reasoning panel (collapsible) */}
+        {showReasoning && (
+          <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md text-sm text-blue-900 animate-in slide-in-from-top-1 duration-200">
+            {reasoningLoading ? (
+              <div className="flex items-center gap-2 text-blue-600">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span>Loading reasoning...</span>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-start gap-2">
+                  <HelpCircle className="h-4 w-4 text-blue-500 flex-shrink-0 mt-0.5" />
+                  <p className="leading-relaxed">{reasoning || decision.decision_reasoning}</p>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {showOverride ? (
           /* Override form (inline) */
           <div className="space-y-2 p-3 bg-amber-50 border border-amber-200 rounded-md">
             <select
