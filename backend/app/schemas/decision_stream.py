@@ -47,6 +47,10 @@ class PendingDecisionItem(BaseModel):
     confidence: Optional[float] = Field(None, description="TRM confidence 0-1")
     economic_impact: Optional[float] = Field(None, description="Estimated $ impact")
     suggested_action: Optional[str] = Field(None, description="What the TRM recommends")
+    reason: Optional[str] = Field(None, description="Short reason code (e.g. capacity_constraint, expedite)")
+    decision_reasoning: Optional[str] = Field(
+        None, description="Full English explanation of why the TRM/tGNN/GraphSAGE made this decision"
+    )
     deep_link: str = Field(..., description="Frontend route for Console deep-link")
     created_at: Optional[datetime] = None
     context: Optional[Dict[str, Any]] = Field(

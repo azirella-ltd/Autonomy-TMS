@@ -34,6 +34,10 @@ class HiveSignalMixin:
     cycle_phase = Column(String(50), nullable=True)      # DecisionCyclePhase name (SENSE..REFLECT)
     cycle_id = Column(String(100), nullable=True)        # UUID of the decision cycle run
 
+    # Decision reasoning — full English explanation captured at decision time
+    # Eliminates need for LLM to infer reasoning at query time
+    decision_reasoning = Column(Text, nullable=True)
+
     def _signal_dict(self) -> dict:
         """Return signal fields for to_dict()."""
         return {
@@ -43,6 +47,7 @@ class HiveSignalMixin:
             "signals_emitted": self.signals_emitted,
             "cycle_phase": self.cycle_phase,
             "cycle_id": self.cycle_id,
+            "decision_reasoning": self.decision_reasoning,
         }
 
 
@@ -69,6 +74,7 @@ class PowellATPDecision(HiveSignalMixin, Base):
     state_features = Column(JSON, nullable=True)
     decision_method = Column(String(50), nullable=True)  # 'trm', 'heuristic'
     confidence = Column(Float, nullable=True)
+    reason = Column(String(100), nullable=True)  # Short reason code: full_fulfill/partial_fulfill/cannot_fulfill/stock_reserved
 
     # Outcome (for training)
     was_committed = Column(Boolean, nullable=True)
@@ -97,6 +103,7 @@ class PowellATPDecision(HiveSignalMixin, Base):
             "consumption_breakdown": self.consumption_breakdown,
             "decision_method": self.decision_method,
             "confidence": self.confidence,
+            "reason": self.reason,
             "was_committed": self.was_committed,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             **self._signal_dict(),
@@ -248,6 +255,7 @@ class PowellOrderException(HiveSignalMixin, Base):
     impact_assessment = Column(Text, nullable=True)
     estimated_impact_cost = Column(Float, nullable=True)
     confidence = Column(Float, nullable=True)
+    reason = Column(String(100), nullable=True)  # Short reason code: late_shipment/qty_mismatch/quality_hold/carrier_delay
 
     # State features for TRM
     state_features = Column(JSON, nullable=True)
@@ -280,6 +288,7 @@ class PowellOrderException(HiveSignalMixin, Base):
             "description": self.description,
             "estimated_impact_cost": self.estimated_impact_cost,
             "confidence": self.confidence,
+            "reason": self.reason,
             "action_taken": self.action_taken,
             "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
@@ -312,6 +321,7 @@ class PowellMODecision(HiveSignalMixin, Base):
 
     # Context
     confidence = Column(Float, nullable=True)
+    reason = Column(String(100), nullable=True)  # Short reason code: schedule_adherence/capacity_available/demand_pull/expedite_request
     state_features = Column(JSON, nullable=True)
 
     # Outcome
@@ -344,6 +354,7 @@ class PowellMODecision(HiveSignalMixin, Base):
             "setup_time_hours": self.setup_time_hours,
             "run_time_hours": self.run_time_hours,
             "confidence": self.confidence,
+            "reason": self.reason,
             "was_executed": self.was_executed,
             "actual_completion_date": self.actual_completion_date.isoformat() if self.actual_completion_date else None,
             "actual_qty": self.actual_qty,
@@ -521,6 +532,7 @@ class PowellMaintenanceDecision(HiveSignalMixin, Base):
 
     # Context
     confidence = Column(Float, nullable=True)
+    reason = Column(String(100), nullable=True)  # Short reason code: preventive_due/condition_based/breakdown_risk/production_window
     state_features = Column(JSON, nullable=True)
 
     # Outcome
@@ -557,6 +569,7 @@ class PowellMaintenanceDecision(HiveSignalMixin, Base):
             "priority": self.priority,
             "risk_score_if_deferred": self.risk_score_if_deferred,
             "confidence": self.confidence,
+            "reason": self.reason,
             "was_executed": self.was_executed,
             "actual_start_date": self.actual_start_date.isoformat() if self.actual_start_date else None,
             "actual_completion_date": self.actual_completion_date.isoformat() if self.actual_completion_date else None,

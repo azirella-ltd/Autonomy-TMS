@@ -291,6 +291,13 @@ class PowellPolicyParameters(Base):
     valid_to: Mapped[Optional[date]] = mapped_column(Date)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # GraphSAGE reasoning — English explanation of why these parameters were chosen
+    decision_reasoning: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="English explanation of why GraphSAGE/CFA chose these policy parameters"
+    )
+
     # Metadata
     created_at: Mapped[datetime] = mapped_column(
         DateTime,

@@ -10,7 +10,7 @@ Execution tGNN (or manually overridden by the allocmgr).
 
 from datetime import datetime
 from sqlalchemy import (
-    Column, Integer, String, Float, Boolean, DateTime,
+    Column, Integer, String, Float, Boolean, DateTime, Text,
     ForeignKey, Index, UniqueConstraint,
 )
 from sqlalchemy.sql import func
@@ -35,6 +35,9 @@ class PowellAllocation(Base):
     # Source
     allocation_source = Column(String(50), nullable=True)  # 'tgnn', 'manual', 'rule'
     allocation_cadence = Column(String(20), nullable=False, server_default="weekly")  # 'daily', 'weekly'
+
+    # tGNN reasoning — English explanation of why the tGNN generated this allocation
+    decision_reasoning = Column(Text, nullable=True)
 
     # Validity
     valid_from = Column(DateTime, nullable=False)

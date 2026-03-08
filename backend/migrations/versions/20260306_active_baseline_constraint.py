@@ -1,7 +1,7 @@
 """active_baseline_constraint
 
-Revision ID: b3f9c1e2d456
-Revises: None
+Revision ID: 20260306_active_baseline_constraint
+Revises: a1ded8e0aa88
 Create Date: 2026-03-06
 
 Enforce exactly one active BASELINE config per tenant:
@@ -17,8 +17,8 @@ from sqlalchemy import text
 
 
 # revision identifiers
-revision: str = "b3f9c1e2d456"
-down_revision: Union[str, None] = None
+revision: str = "20260306_active_baseline_constraint"
+down_revision: Union[str, None] = "a1ded8e0aa88"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

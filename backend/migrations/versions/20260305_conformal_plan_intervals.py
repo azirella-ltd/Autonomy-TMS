@@ -1,7 +1,7 @@
 """conformal_plan_intervals
 
 Revision ID: a1ded8e0aa88
-Revises: None
+Revises: 20260305_belief_cols
 Create Date: 2026-03-05
 
 Add conformal prediction interval metadata to supply plans and
@@ -22,7 +22,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'a1ded8e0aa88'
-down_revision: Union[str, None] = None
+down_revision: Union[str, None] = '20260305_belief_cols'
 branch_labels: Union[str, Sequence[str], None] = ('conformal_intervals',)
 depends_on = None
 

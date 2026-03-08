@@ -40,6 +40,10 @@ from app.models.powell_decisions import (
 )
 from app.models.supply_chain_config import SupplyChainConfig, Site
 from app.models.sc_entities import Product, Forecast, InvLevel, InvPolicy
+from app.models.planning_hierarchy import (
+    SiteHierarchyNode, SiteHierarchyLevel,
+    ProductHierarchyNode, ProductHierarchyLevel,
+)
 from app.services.knowledge_base_service import KnowledgeBaseService
 
 logger = logging.getLogger(__name__)
@@ -114,8 +118,30 @@ ROLE_RELEVANCE = {
     "MPS_MANAGER": {"atp", "po_creation", "rebalancing", "order_tracking", "mo_execution", "to_execution", "quality", "maintenance", "subcontracting"},
     "ALLOCATION_MANAGER": {"atp", "rebalancing", "order_tracking"},
     "ORDER_PROMISE_MANAGER": {"atp", "order_tracking"},
+    # TRM specialist roles — narrow scope
+    "ATP_ANALYST": {"atp"},
+    "REBALANCING_ANALYST": {"rebalancing"},
+    "PO_ANALYST": {"po_creation"},
+    "ORDER_TRACKING_ANALYST": {"order_tracking"},
     "DEMO_ALL": None,  # None = all types
 }
+
+# Per-table site column filter builder: type_key -> (model, allowed_site_names) -> filter clause or None
+def _site_filter(type_key, model_class, sites):
+    """Build a SQLAlchemy filter clause for site scope on the given decision table."""
+    if type_key in ("atp", "po_creation", "inventory_buffer"):
+        return model_class.location_id.in_(sites)
+    elif type_key == "rebalancing":
+        return or_(model_class.from_site.in_(sites), model_class.to_site.in_(sites))
+    elif type_key == "to_execution":
+        return or_(model_class.source_site_id.in_(sites), model_class.dest_site_id.in_(sites))
+    elif type_key in ("mo_execution", "quality", "maintenance", "subcontracting", "forecast_adjustment"):
+        return model_class.site_id.in_(sites)
+    # order_tracking has no site column — skip
+    return None
+
+# Tables that have NO product_id column
+_NO_PRODUCT_TABLES = {"order_tracking", "maintenance"}
 
 
 def _evict_stale():
@@ -229,14 +255,136 @@ def _get_suggested_action(decision, decision_type: str) -> str:
     return "Review decision"
 
 
+def _get_reason(decision, decision_type: str) -> Optional[str]:
+    """Extract the short reason code/text from a decision.
+
+    Column names vary per table — some use 'reason', others 'trigger_reason'
+    or 'disposition_reason'. Tables that already had a reason column before
+    the migration keep their original column name.
+    """
+    if decision_type in ("po_creation", "to_execution"):
+        return getattr(decision, "trigger_reason", None)
+    elif decision_type == "quality":
+        return getattr(decision, "disposition_reason", None)
+    # All others use 'reason' (existing or newly added):
+    # rebalancing, subcontracting, forecast_adjustment, inventory_buffer (existing)
+    # atp, order_tracking, mo_execution, maintenance (added by migration)
+    return getattr(decision, "reason", None)
+
+
 class DecisionStreamService:
     """LLM-First Decision Stream with Decision-Back Planning."""
 
-    def __init__(self, db: AsyncSession, tenant_id: int, tenant_name: str = ""):
+    def __init__(self, db: AsyncSession, tenant_id: int, tenant_name: str = "", user=None):
         self.db = db
         self.tenant_id = tenant_id
         self.tenant_name = tenant_name or f"Tenant {tenant_id}"
+        self.user = user
         self.kb = KnowledgeBaseService(db=db, tenant_id=tenant_id)
+
+    async def _resolve_user_scope(self) -> Tuple[Optional[set], Optional[set]]:
+        """Resolve user's hierarchy scope keys to raw site names and product IDs.
+
+        Uses site_hierarchy_node and product_hierarchy_node to traverse the
+        hierarchy and find all leaf-level site names and product IDs that
+        fall within the user's scope.
+
+        Returns:
+            (allowed_site_names, allowed_product_ids) — None means full access.
+        """
+        if not self.user:
+            return None, None
+
+        has_full_sites = getattr(self.user, "has_full_site_scope", True)
+        has_full_products = getattr(self.user, "has_full_product_scope", True)
+
+        if has_full_sites and has_full_products:
+            return None, None
+
+        allowed_sites = None
+        if not has_full_sites:
+            site_scope = getattr(self.user, "site_scope", None) or []
+            allowed_sites = set()
+            for scope_key in site_scope:
+                try:
+                    result = await self.db.execute(
+                        select(SiteHierarchyNode).where(SiteHierarchyNode.code == scope_key)
+                    )
+                    scope_node = result.scalar_one_or_none()
+                    if not scope_node:
+                        continue
+
+                    if scope_node.hierarchy_level == SiteHierarchyLevel.SITE:
+                        # Leaf node — get the site name directly via FK
+                        if scope_node.site_id:
+                            site_result = await self.db.execute(
+                                select(Site.name).where(Site.id == scope_node.site_id)
+                            )
+                            site_name = site_result.scalar_one_or_none()
+                            if site_name:
+                                allowed_sites.add(site_name)
+                    else:
+                        # Non-leaf — find ALL descendant SITE nodes via hierarchy_path prefix
+                        descendants = await self.db.execute(
+                            select(Site.name).join(
+                                SiteHierarchyNode, SiteHierarchyNode.site_id == Site.id
+                            ).where(
+                                SiteHierarchyNode.hierarchy_path.like(f"{scope_node.hierarchy_path}%"),
+                                SiteHierarchyNode.hierarchy_level == SiteHierarchyLevel.SITE,
+                                SiteHierarchyNode.site_id.isnot(None),
+                            )
+                        )
+                        for row in descendants.fetchall():
+                            allowed_sites.add(row[0])
+                except Exception as e:
+                    logger.warning(f"Failed to resolve site scope key {scope_key}: {e}")
+                    try:
+                        await self.db.rollback()
+                    except Exception:
+                        pass
+
+            if not allowed_sites:
+                allowed_sites = None  # No resolvable sites — don't filter (graceful degradation)
+
+        allowed_products = None
+        if not has_full_products:
+            product_scope = getattr(self.user, "product_scope", None) or []
+            allowed_products = set()
+            for scope_key in product_scope:
+                try:
+                    result = await self.db.execute(
+                        select(ProductHierarchyNode).where(ProductHierarchyNode.code == scope_key)
+                    )
+                    scope_node = result.scalar_one_or_none()
+                    if not scope_node:
+                        continue
+
+                    if scope_node.hierarchy_level == ProductHierarchyLevel.PRODUCT:
+                        if scope_node.product_id:
+                            allowed_products.add(scope_node.product_id)
+                    else:
+                        # Non-leaf — find ALL descendant PRODUCT nodes
+                        descendants = await self.db.execute(
+                            select(ProductHierarchyNode.product_id).where(
+                                ProductHierarchyNode.hierarchy_path.like(f"{scope_node.hierarchy_path}%"),
+                                ProductHierarchyNode.hierarchy_level == ProductHierarchyLevel.PRODUCT,
+                                ProductHierarchyNode.product_id.isnot(None),
+                            )
+                        )
+                        for row in descendants.fetchall():
+                            if row[0]:
+                                allowed_products.add(row[0])
+                except Exception as e:
+                    logger.warning(f"Failed to resolve product scope key {scope_key}: {e}")
+                    try:
+                        await self.db.rollback()
+                    except Exception:
+                        pass
+
+            if not allowed_products:
+                allowed_products = None  # Graceful degradation
+
+        return allowed_sites, allowed_products
 
     async def get_decision_digest(
         self,
@@ -414,7 +562,13 @@ class DecisionStreamService:
         config_id: Optional[int] = None,
         powell_role: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Query all 11 powell_*_decisions tables for recent decisions."""
+        """Query all 11 powell_*_decisions tables for recent decisions.
+
+        Applies three layers of filtering:
+        1. Tenant scope (via config_id)
+        2. Role relevance (which decision types this role sees)
+        3. User scope (site + product hierarchy-based filtering)
+        """
         # Filter decision types by role relevance
         relevant_types = ROLE_RELEVANCE.get(powell_role) if powell_role else None
 
@@ -445,6 +599,9 @@ class DecisionStreamService:
         if not config_filter:
             return []
 
+        # Resolve user's site/product scope to actual DB values
+        allowed_sites, allowed_products = await self._resolve_user_scope()
+
         for model_class, type_key in DECISION_TABLES:
             # Skip types not relevant to this role
             if relevant_types is not None and type_key not in relevant_types:
@@ -456,7 +613,19 @@ class DecisionStreamService:
                         model_class.config_id.in_(config_filter),
                         model_class.created_at >= cutoff,
                     )
-                ).order_by(desc(model_class.created_at)).limit(_DECISIONS_PER_TABLE)
+                )
+
+                # Apply site scope filter
+                if allowed_sites is not None:
+                    site_clause = _site_filter(type_key, model_class, allowed_sites)
+                    if site_clause is not None:
+                        query = query.where(site_clause)
+
+                # Apply product scope filter
+                if allowed_products is not None and type_key not in _NO_PRODUCT_TABLES:
+                    query = query.where(model_class.product_id.in_(allowed_products))
+
+                query = query.order_by(desc(model_class.created_at)).limit(_DECISIONS_PER_TABLE)
 
                 result = await self.db.execute(query)
                 rows = result.scalars().all()
@@ -467,6 +636,11 @@ class DecisionStreamService:
                         site_id = getattr(row, "from_site", None)
                     elif type_key == "order_tracking":
                         site_id = None  # order_exceptions has order_id, not location
+                    elif type_key in ("mo_execution", "quality", "maintenance",
+                                      "subcontracting", "forecast_adjustment"):
+                        site_id = getattr(row, "site_id", None)
+                    elif type_key == "to_execution":
+                        site_id = getattr(row, "source_site_id", None)
                     else:
                         site_id = getattr(row, "location_id", None)
 
@@ -481,6 +655,8 @@ class DecisionStreamService:
                         "urgency": getattr(row, "urgency_at_time", None),
                         "confidence": getattr(row, "confidence", None),
                         "economic_impact": None,
+                        "reason": _get_reason(row, type_key),
+                        "decision_reasoning": getattr(row, "decision_reasoning", None),
                         "suggested_action": _get_suggested_action(row, type_key),
                         "deep_link": DEEP_LINK_MAP.get(type_key, "/insights/actions"),
                         "created_at": row.created_at.isoformat() if row.created_at else None,

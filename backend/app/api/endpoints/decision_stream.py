@@ -29,12 +29,12 @@ router = APIRouter(prefix="/decision-stream", tags=["Decision Stream"])
 
 
 def _get_service(db: AsyncSession, user) -> DecisionStreamService:
-    """Create a tenant-scoped DecisionStreamService."""
+    """Create a tenant-scoped, user-scoped DecisionStreamService."""
     tenant_id = getattr(user, "tenant_id", None) or 0
     tenant_name = ""
     if hasattr(user, "tenant") and user.tenant:
         tenant_name = getattr(user.tenant, "name", "")
-    return DecisionStreamService(db=db, tenant_id=tenant_id, tenant_name=tenant_name)
+    return DecisionStreamService(db=db, tenant_id=tenant_id, tenant_name=tenant_name, user=user)
 
 
 @router.get("/digest", response_model=DecisionDigestResponse)
