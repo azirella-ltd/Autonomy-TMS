@@ -60,7 +60,9 @@ TRM_PHASE_MAP: Dict[str, DecisionCyclePhase] = {
     # ASSESS — health and risk
     "inventory_buffer": DecisionCyclePhase.ASSESS,
     "forecast_adj": DecisionCyclePhase.ASSESS,
+    "forecast_adjustment": DecisionCyclePhase.ASSESS,
     "quality": DecisionCyclePhase.ASSESS,
+    "quality_disposition": DecisionCyclePhase.ASSESS,
 
     # ACQUIRE — supply-side foragers
     "po_creation": DecisionCyclePhase.ACQUIRE,
@@ -68,6 +70,7 @@ TRM_PHASE_MAP: Dict[str, DecisionCyclePhase] = {
 
     # PROTECT — guards
     "maintenance": DecisionCyclePhase.PROTECT,
+    "maintenance_scheduling": DecisionCyclePhase.PROTECT,
 
     # BUILD — builders
     "mo_execution": DecisionCyclePhase.BUILD,

@@ -30,13 +30,14 @@ from .trm_curriculum import TRMCurriculumBase, CurriculumData, SCConfigData
 # State dimensions per TRM
 # ---------------------------------------------------------------------------
 
-MO_STATE_DIM = 14
-TO_STATE_DIM = 14
-QUALITY_STATE_DIM = 12
-MAINTENANCE_STATE_DIM = 13
-SUBCONTRACTING_STATE_DIM = 16
-FORECAST_ADJ_STATE_DIM = 15
-INVENTORY_BUFFER_STATE_DIM = 14
+# State dims MUST match the per-TRM model definitions in app.models.trm.*
+MO_STATE_DIM = 20           # Must match app.models.trm.MO_STATE_DIM
+TO_STATE_DIM = 16           # Must match app.models.trm.TO_STATE_DIM
+QUALITY_STATE_DIM = 14      # Must match app.models.trm.QD_STATE_DIM
+MAINTENANCE_STATE_DIM = 14  # Must match app.models.trm.MS_STATE_DIM
+SUBCONTRACTING_STATE_DIM = 16   # Must match app.models.trm.SUB_STATE_DIM
+FORECAST_ADJ_STATE_DIM = 18     # Must match app.models.trm.FA_STATE_DIM
+INVENTORY_BUFFER_STATE_DIM = 14  # Must match app.models.trm.IB_STATE_DIM
 
 
 # ---------------------------------------------------------------------------
@@ -46,12 +47,19 @@ INVENTORY_BUFFER_STATE_DIM = 14
 class MOExecutionCurriculum(TRMCurriculumBase):
     """Curriculum for Manufacturing Order execution decisions.
 
-    State: [planned_qty_norm, capacity_util, setup_hrs, run_hrs,
-            priority, due_days, material_available, quality_hold,
-            downstream_demand, wip_level, changeover_cost_norm,
-            maintenance_risk, batch_efficiency, urgency]
+    State (20 floats, matches MOExecutionTRMModel):
+        [0] work_in_progress       [1] capacity_available
+        [2] order_qty              [3] due_date_urgency (0-1)
+        [4] backlog                [5] material_available (0-1)
+        [6] operator_available (0-1) [7] quality_rate (0-1)
+        [8] tool_wear (0-1)        [9] maintenance_due (0-1)
+        [10] parallel_orders       [11] priority (0-1)
+        [12] yield_rate (0-1)      [13] energy_cost (normalised)
+        [14] overtime_available (0-1) [15] sequence_position (normalised)
+        [16] bom_coverage (0-1)    [17] defect_rate (0-1)
+        [18] setup_time (normalised) [19] cycle_time (normalised)
 
-    Actions: 0=release, 1=sequence, 2=split, 3=expedite, 4=defer
+    Actions: 0=release, 1=defer, 2=split, 3=expedite, 4=cancel
     """
 
     @property
@@ -70,16 +78,13 @@ class MOExecutionCurriculum(TRMCurriculumBase):
 
         for i in range(n):
             if phase == 1:
-                # Simple: high capacity, materials available, no holds
                 states[i] = self._phase1_state()
                 actions[i] = 0  # release
                 rewards[i] = 1.0
             elif phase == 2:
-                # Mixed: capacity constraints, sequencing decisions
                 states[i] = self._phase2_state()
                 actions[i], rewards[i] = self._phase2_decision(states[i])
             else:
-                # Stress: quality holds, maintenance risk, urgent orders
                 states[i] = self._phase3_state()
                 actions[i], rewards[i] = self._phase3_decision(states[i])
 
@@ -95,52 +100,58 @@ class MOExecutionCurriculum(TRMCurriculumBase):
 
     def _phase1_state(self):
         return np.array([
-            np.random.uniform(0.1, 0.5),   # planned_qty_norm
-            np.random.uniform(0.3, 0.6),   # capacity_util
-            np.random.uniform(0.5, 2.0),   # setup_hrs
-            np.random.uniform(1.0, 4.0),   # run_hrs
-            np.random.randint(1, 4) / 5.0, # priority
-            np.random.uniform(3.0, 10.0) / 14.0, # due_days (normalized)
-            1.0,                           # material_available
-            0.0,                           # quality_hold
-            np.random.uniform(0.3, 0.7),   # downstream_demand
-            np.random.uniform(0.1, 0.4),   # wip_level
-            np.random.uniform(0.05, 0.2),  # changeover_cost_norm
-            np.random.uniform(0.0, 0.1),   # maintenance_risk
-            np.random.uniform(0.7, 0.95),  # batch_efficiency
-            np.random.uniform(0.0, 0.3),   # urgency
+            np.random.uniform(0.1, 0.4),   # [0] work_in_progress
+            np.random.uniform(0.5, 0.8),   # [1] capacity_available
+            np.random.uniform(0.1, 0.5),   # [2] order_qty
+            np.random.uniform(0.0, 0.3),   # [3] due_date_urgency
+            np.random.uniform(0.0, 0.15),  # [4] backlog
+            1.0,                           # [5] material_available
+            np.random.uniform(0.8, 1.0),   # [6] operator_available
+            np.random.uniform(0.92, 0.99), # [7] quality_rate
+            np.random.uniform(0.0, 0.15),  # [8] tool_wear
+            np.random.uniform(0.0, 0.1),   # [9] maintenance_due
+            np.random.uniform(0.1, 0.4),   # [10] parallel_orders
+            np.random.randint(1, 4) / 5.0, # [11] priority
+            np.random.uniform(0.9, 0.98),  # [12] yield_rate
+            np.random.uniform(0.1, 0.3),   # [13] energy_cost
+            np.random.uniform(0.5, 1.0),   # [14] overtime_available
+            np.random.uniform(0.0, 0.5),   # [15] sequence_position
+            np.random.uniform(0.9, 1.0),   # [16] bom_coverage
+            np.random.uniform(0.0, 0.03),  # [17] defect_rate
+            np.random.uniform(0.1, 0.3),   # [18] setup_time
+            np.random.uniform(0.2, 0.5),   # [19] cycle_time
         ], dtype=np.float32)
 
     def _phase2_state(self):
         s = self._phase1_state()
-        s[1] = np.random.uniform(0.6, 0.9)   # higher capacity util
-        s[6] = np.random.choice([0.0, 1.0], p=[0.2, 0.8])  # sometimes no material
-        s[13] = np.random.uniform(0.2, 0.7)  # higher urgency
+        s[1] = np.random.uniform(0.2, 0.4)   # lower capacity available
+        s[3] = np.random.uniform(0.3, 0.7)   # higher urgency
+        s[5] = np.random.choice([0.0, 1.0], p=[0.2, 0.8])  # sometimes no material
         return s
 
     def _phase3_state(self):
         s = self._phase2_state()
-        s[1] = np.random.uniform(0.8, 1.0)   # near full capacity
-        s[7] = np.random.choice([0.0, 1.0], p=[0.7, 0.3])  # quality holds
-        s[11] = np.random.uniform(0.3, 0.8)  # maintenance risk
-        s[13] = np.random.uniform(0.5, 1.0)  # high urgency
+        s[1] = np.random.uniform(0.0, 0.2)   # near-zero capacity
+        s[3] = np.random.uniform(0.6, 1.0)   # high urgency
+        s[7] = np.random.uniform(0.7, 0.88)  # lower quality rate
+        s[9] = np.random.uniform(0.3, 0.8)   # maintenance due
         return s
 
     def _phase2_decision(self, s):
-        if s[6] < 0.5:  # no material
-            return 4, 0.5  # defer
-        if s[1] > 0.85:  # high capacity
-            return 1, 0.7  # sequence
+        if s[5] < 0.5:  # no material
+            return 1, 0.5  # defer
+        if s[1] < 0.25:  # very low capacity
+            return 2, 0.7  # split
         return 0, 0.9  # release
 
     def _phase3_decision(self, s):
-        if s[7] > 0.5:  # quality hold
-            return 4, 0.3  # defer
-        if s[11] > 0.5 and s[13] < 0.7:
-            return 4, 0.4  # defer for maintenance
-        if s[13] > 0.8:
+        if s[7] < 0.8:  # poor quality rate
+            return 1, 0.3  # defer
+        if s[9] > 0.5 and s[3] < 0.7:
+            return 1, 0.4  # defer for maintenance
+        if s[3] > 0.8:
             return 3, 0.6  # expedite
-        if s[1] > 0.9:
+        if s[1] < 0.1:
             return 2, 0.5  # split
         return 0, 0.7  # release
 
@@ -152,13 +163,17 @@ class MOExecutionCurriculum(TRMCurriculumBase):
 class TOExecutionCurriculum(TRMCurriculumBase):
     """Curriculum for Transfer Order execution decisions.
 
-    State: [planned_qty_norm, source_inv_norm, dest_inv_norm,
-            transit_days_norm, transportation_cost_norm, priority,
-            consolidation_opportunity, dest_urgency, source_excess,
-            lane_reliability, dest_dos, source_dos,
-            rebalance_signal, network_imbalance]
+    State (16 floats, matches TOExecutionTRMModel):
+        [0] origin_inventory       [1] dest_inventory
+        [2] origin_safety_stock    [3] dest_safety_stock
+        [4] in_transit_qty         [5] lead_time_days (normalised)
+        [6] urgency_score (0-1)    [7] carrier_available (0-1)
+        [8] consolidation_opportunity (0-1)  [9] priority (0-1)
+        [10] route_reliability (0-1)  [11] mode_cost (normalised)
+        [12] quantity              [13] dest_backlog
+        [14] origin_excess         [15] days_to_due (normalised)
 
-    Actions: 0=release, 1=expedite, 2=consolidate, 3=reroute, 4=defer
+    Actions: 0=release, 1=defer, 2=consolidate, 3=expedite
     """
 
     @property
@@ -199,51 +214,53 @@ class TOExecutionCurriculum(TRMCurriculumBase):
 
     def _simple_state(self):
         return np.array([
-            np.random.uniform(0.1, 0.4),   # planned_qty
-            np.random.uniform(0.5, 0.9),   # source_inv
-            np.random.uniform(0.2, 0.5),   # dest_inv
-            np.random.uniform(0.1, 0.3),   # transit_days
-            np.random.uniform(0.05, 0.15), # transportation_cost
-            np.random.randint(1, 4) / 5.0, # priority
-            0.0,                           # consolidation_opportunity
-            np.random.uniform(0.1, 0.4),   # dest_urgency
-            np.random.uniform(0.3, 0.6),   # source_excess
-            np.random.uniform(0.85, 0.98), # lane_reliability
-            np.random.uniform(10, 25) / 30.0, # dest_dos
-            np.random.uniform(15, 30) / 30.0, # source_dos
-            0.0,                           # rebalance_signal
-            np.random.uniform(0.0, 0.2),   # network_imbalance
+            np.random.uniform(0.5, 0.9),   # [0] origin_inventory
+            np.random.uniform(0.3, 0.6),   # [1] dest_inventory
+            np.random.uniform(0.2, 0.4),   # [2] origin_safety_stock
+            np.random.uniform(0.2, 0.4),   # [3] dest_safety_stock
+            np.random.uniform(0.0, 0.2),   # [4] in_transit_qty
+            np.random.uniform(0.1, 0.3),   # [5] lead_time_days
+            np.random.uniform(0.1, 0.4),   # [6] urgency_score
+            np.random.uniform(0.8, 1.0),   # [7] carrier_available
+            0.0,                           # [8] consolidation_opportunity
+            np.random.randint(1, 4) / 5.0, # [9] priority
+            np.random.uniform(0.85, 0.98), # [10] route_reliability
+            np.random.uniform(0.1, 0.3),   # [11] mode_cost
+            np.random.uniform(0.1, 0.4),   # [12] quantity
+            np.random.uniform(0.0, 0.1),   # [13] dest_backlog
+            np.random.uniform(0.2, 0.5),   # [14] origin_excess
+            np.random.uniform(0.3, 0.7),   # [15] days_to_due
         ], dtype=np.float32)
 
     def _mixed_state(self):
         s = self._simple_state()
-        s[6] = np.random.choice([0.0, 1.0], p=[0.6, 0.4])  # consolidation
-        s[7] = np.random.uniform(0.3, 0.8)
-        s[12] = np.random.uniform(0.0, 0.6)  # rebalance signal
+        s[6] = np.random.uniform(0.3, 0.7)   # higher urgency
+        s[8] = np.random.choice([0.0, 1.0], p=[0.6, 0.4])  # consolidation
+        s[13] = np.random.uniform(0.1, 0.4)  # some dest backlog
         return s
 
     def _stress_state(self):
         s = self._mixed_state()
-        s[2] = np.random.uniform(0.0, 0.2)  # low dest inv
-        s[7] = np.random.uniform(0.6, 1.0)  # high dest urgency
-        s[9] = np.random.uniform(0.5, 0.85)  # lower reliability
-        s[13] = np.random.uniform(0.4, 0.9)  # network imbalance
+        s[1] = np.random.uniform(0.05, 0.2)  # low dest inventory
+        s[6] = np.random.uniform(0.6, 1.0)   # high urgency
+        s[10] = np.random.uniform(0.5, 0.85) # lower reliability
+        s[13] = np.random.uniform(0.3, 0.8)  # high dest backlog
         return s
 
     def _mixed_decision(self, s):
-        if s[6] > 0.5:
+        if s[8] > 0.5:
             return 2, 0.8  # consolidate
-        if s[7] > 0.7:
-            return 1, 0.7  # expedite
+        if s[6] > 0.6:
+            return 3, 0.7  # expedite
         return 0, 0.9  # release
 
     def _stress_decision(self, s):
-        if s[2] < 0.1 and s[7] > 0.8:
-            return 1, 0.6  # expedite critically
-        if s[9] < 0.6:
-            return 3, 0.5  # reroute around unreliable lane
-        if s[13] > 0.7:
-            return 4, 0.4  # defer, network unstable
+        if s[1] < 0.1 and s[6] > 0.8:
+            return 3, 0.6  # expedite critically
+        if s[10] < 0.6:
+            return 1, 0.5  # defer (unreliable route)
+        if s[13] > 0.6:
+            return 3, 0.5  # expedite (high backlog)
         return 0, 0.7  # release
 
 
@@ -254,11 +271,14 @@ class TOExecutionCurriculum(TRMCurriculumBase):
 class QualityDispositionCurriculum(TRMCurriculumBase):
     """Curriculum for Quality disposition decisions.
 
-    State: [defect_rate, severity_norm, inspection_qty_norm,
-            rework_cost_norm, scrap_cost_norm, service_risk,
-            inventory_coverage, customer_criticality,
-            historical_pass_rate, atp_shortage_signal,
-            lot_age_norm, supplier_quality_score]
+    State (14 floats, matches QualityDispositionTRMModel):
+        [0] defect_rate (0-1)      [1] severity_score (0-1)
+        [2] units_affected (norm)  [3] rework_cost (norm)
+        [4] scrap_cost (norm)      [5] hold_duration (norm days)
+        [6] order_urgency (0-1)    [7] inspection_cost (norm)
+        [8] rework_capacity (0-1)  [9] supplier_reliability (0-1)
+        [10] warranty_risk (0-1)   [11] customer_impact (0-1)
+        [12] production_disruption (0-1)  [13] disposition_cost (norm)
 
     Actions: 0=accept, 1=reject, 2=rework, 3=scrap, 4=use_as_is
     """
@@ -269,7 +289,7 @@ class QualityDispositionCurriculum(TRMCurriculumBase):
 
     @property
     def trm_type(self) -> str:
-        return "quality"
+        return "quality_disposition"
 
     def generate(self, phase: int, num_samples: int) -> CurriculumData:
         n = num_samples
@@ -300,33 +320,35 @@ class QualityDispositionCurriculum(TRMCurriculumBase):
 
     def _simple_state(self):
         return np.array([
-            np.random.uniform(0.0, 0.03),  # defect_rate (low)
-            np.random.uniform(0.0, 0.3),   # severity
-            np.random.uniform(0.2, 0.6),   # inspection_qty
-            np.random.uniform(0.05, 0.15), # rework_cost
-            np.random.uniform(0.1, 0.3),   # scrap_cost
-            np.random.uniform(0.0, 0.1),   # service_risk
-            np.random.uniform(0.6, 1.0),   # inventory_coverage
-            np.random.uniform(0.3, 0.7),   # customer_criticality
-            np.random.uniform(0.9, 0.99),  # historical_pass_rate
-            0.0,                           # atp_shortage_signal
-            np.random.uniform(0.0, 0.3),   # lot_age
-            np.random.uniform(0.85, 0.98), # supplier_quality_score
+            np.random.uniform(0.0, 0.03),  # [0] defect_rate (low)
+            np.random.uniform(0.0, 0.3),   # [1] severity_score
+            np.random.uniform(0.2, 0.6),   # [2] units_affected
+            np.random.uniform(0.05, 0.15), # [3] rework_cost
+            np.random.uniform(0.1, 0.3),   # [4] scrap_cost
+            np.random.uniform(0.0, 0.2),   # [5] hold_duration
+            np.random.uniform(0.1, 0.4),   # [6] order_urgency
+            np.random.uniform(0.05, 0.15), # [7] inspection_cost
+            np.random.uniform(0.6, 0.9),   # [8] rework_capacity
+            np.random.uniform(0.85, 0.98), # [9] supplier_reliability
+            np.random.uniform(0.0, 0.2),   # [10] warranty_risk
+            np.random.uniform(0.1, 0.4),   # [11] customer_impact
+            np.random.uniform(0.0, 0.15),  # [12] production_disruption
+            np.random.uniform(0.05, 0.2),  # [13] disposition_cost
         ], dtype=np.float32)
 
     def _mixed_state(self):
         s = self._simple_state()
         s[0] = np.random.uniform(0.02, 0.10)  # higher defect rate
-        s[1] = np.random.uniform(0.2, 0.7)
-        s[9] = np.random.uniform(0.0, 0.5)  # some ATP shortage
+        s[1] = np.random.uniform(0.2, 0.7)    # higher severity
+        s[6] = np.random.uniform(0.3, 0.7)    # higher order urgency
         return s
 
     def _stress_state(self):
         s = self._mixed_state()
         s[0] = np.random.uniform(0.05, 0.25)  # high defect rate
         s[1] = np.random.uniform(0.5, 1.0)    # high severity
-        s[6] = np.random.uniform(0.1, 0.4)    # low inventory coverage
-        s[9] = np.random.uniform(0.4, 1.0)    # ATP shortage
+        s[6] = np.random.uniform(0.6, 1.0)    # high order urgency
+        s[8] = np.random.uniform(0.2, 0.5)    # low rework capacity
         return s
 
     def _simple_decision(self, s):
@@ -338,14 +360,14 @@ class QualityDispositionCurriculum(TRMCurriculumBase):
         if s[0] < 0.03 and s[1] < 0.3:
             return 0, 0.9  # accept minor
         if s[0] > 0.08:
-            if s[4] < s[2] * 0.5:
-                return 3, 0.6  # scrap (cheap)
+            if s[4] < s[3] * 0.5:
+                return 3, 0.6  # scrap (cheaper than rework)
             return 1, 0.7  # reject
         return 2, 0.7  # rework
 
     def _stress_decision(self, s):
-        if s[9] > 0.7 and s[0] < 0.08:
-            return 4, 0.4  # use_as_is (shortage override)
+        if s[6] > 0.8 and s[0] < 0.08:
+            return 4, 0.4  # use_as_is (urgent order override)
         if s[1] > 0.8:
             return 3, 0.5  # scrap critical defects
         if s[0] > 0.1:
@@ -360,15 +382,16 @@ class QualityDispositionCurriculum(TRMCurriculumBase):
 class MaintenanceSchedulingCurriculum(TRMCurriculumBase):
     """Curriculum for Maintenance scheduling decisions.
 
-    State: [asset_health_score, time_since_last_pm_norm,
-            failure_probability, production_load_norm,
-            spare_parts_available, downtime_cost_norm,
-            mo_pending_count_norm, maintenance_window_available,
-            asset_criticality, risk_if_deferred,
-            production_impact_norm, seasonal_factor,
-            maintenance_backlog_norm]
+    State (14 floats, matches MaintenanceSchedulingTRMModel):
+        [0] asset_health (0-1)     [1] failure_probability (0-1)
+        [2] days_to_planned (norm) [3] production_impact (0-1)
+        [4] maintenance_duration (norm)  [5] crew_available (0-1)
+        [6] parts_available (0-1)  [7] order_urgency (0-1)
+        [8] overtime_cost (norm)   [9] outsource_available (0-1)
+        [10] last_maintenance_days (norm)  [11] criticality (0-1)
+        [12] schedule_backlog (norm)  [13] maintenance_cost (norm)
 
-    Actions: 0=schedule, 1=defer, 2=expedite, 3=combine, 4=outsource
+    Actions: 0=schedule, 1=defer, 2=expedite, 3=outsource
     """
 
     @property
@@ -377,7 +400,7 @@ class MaintenanceSchedulingCurriculum(TRMCurriculumBase):
 
     @property
     def trm_type(self) -> str:
-        return "maintenance"
+        return "maintenance_scheduling"
 
     def generate(self, phase: int, num_samples: int) -> CurriculumData:
         n = num_samples
@@ -409,53 +432,54 @@ class MaintenanceSchedulingCurriculum(TRMCurriculumBase):
 
     def _simple_state(self):
         return np.array([
-            np.random.uniform(0.7, 0.95),  # asset_health
-            np.random.uniform(0.3, 0.6),   # time_since_last_pm
-            np.random.uniform(0.0, 0.1),   # failure_probability
-            np.random.uniform(0.3, 0.6),   # production_load
-            1.0,                           # spare_parts_available
-            np.random.uniform(0.1, 0.3),   # downtime_cost
-            np.random.uniform(0.1, 0.4),   # mo_pending
-            1.0,                           # maintenance_window
-            np.random.uniform(0.3, 0.7),   # asset_criticality
-            np.random.uniform(0.0, 0.2),   # risk_if_deferred
-            np.random.uniform(0.1, 0.3),   # production_impact
-            np.random.uniform(0.8, 1.2),   # seasonal_factor
-            np.random.uniform(0.0, 0.2),   # maintenance_backlog
+            np.random.uniform(0.7, 0.95),  # [0] asset_health
+            np.random.uniform(0.0, 0.1),   # [1] failure_probability
+            np.random.uniform(0.3, 0.7),   # [2] days_to_planned
+            np.random.uniform(0.1, 0.3),   # [3] production_impact
+            np.random.uniform(0.1, 0.3),   # [4] maintenance_duration
+            np.random.uniform(0.7, 1.0),   # [5] crew_available
+            1.0,                           # [6] parts_available
+            np.random.uniform(0.1, 0.4),   # [7] order_urgency
+            np.random.uniform(0.1, 0.3),   # [8] overtime_cost
+            np.random.uniform(0.5, 0.9),   # [9] outsource_available
+            np.random.uniform(0.3, 0.6),   # [10] last_maintenance_days
+            np.random.uniform(0.3, 0.7),   # [11] criticality
+            np.random.uniform(0.0, 0.2),   # [12] schedule_backlog
+            np.random.uniform(0.1, 0.3),   # [13] maintenance_cost
         ], dtype=np.float32)
 
     def _mixed_state(self):
         s = self._simple_state()
-        s[3] = np.random.uniform(0.6, 0.9)  # higher production load
-        s[4] = np.random.choice([0.0, 1.0], p=[0.3, 0.7])  # sometimes no parts
-        s[7] = np.random.choice([0.0, 1.0], p=[0.4, 0.6])  # window not always open
+        s[3] = np.random.uniform(0.3, 0.7)  # higher production impact
+        s[5] = np.random.choice([0.3, 0.8], p=[0.3, 0.7])  # sometimes low crew
+        s[6] = np.random.choice([0.0, 1.0], p=[0.3, 0.7])  # sometimes no parts
         return s
 
     def _stress_state(self):
         s = self._mixed_state()
         s[0] = np.random.uniform(0.3, 0.6)   # degraded health
-        s[2] = np.random.uniform(0.2, 0.5)   # higher failure prob
-        s[3] = np.random.uniform(0.8, 1.0)   # high production load
-        s[9] = np.random.uniform(0.4, 0.9)   # high deferral risk
+        s[1] = np.random.uniform(0.2, 0.5)   # higher failure prob
+        s[3] = np.random.uniform(0.6, 1.0)   # high production impact
+        s[7] = np.random.uniform(0.5, 0.9)   # higher order urgency
         return s
 
     def _mixed_decision(self, s):
-        if s[7] < 0.5:  # no window
+        if s[5] < 0.5:  # low crew
             return 1, 0.6  # defer
-        if s[4] < 0.5:  # no parts
-            return 4, 0.5  # outsource
-        if s[3] > 0.8:  # high production load
+        if s[6] < 0.5:  # no parts
+            return 3, 0.5  # outsource
+        if s[3] > 0.6:  # high production impact
             return 1, 0.5  # defer
         return 0, 0.8  # schedule
 
     def _stress_decision(self, s):
-        if s[2] > 0.4:  # high failure risk
-            if s[4] < 0.5:
-                return 4, 0.4  # outsource urgently
+        if s[1] > 0.4:  # high failure risk
+            if s[6] < 0.5:
+                return 3, 0.4  # outsource urgently
             return 2, 0.6  # expedite
-        if s[9] > 0.6:
+        if s[7] > 0.7:
             return 2, 0.5  # expedite
-        if s[3] > 0.9:
+        if s[3] > 0.8:
             return 1, 0.3  # defer (risky)
         return 0, 0.6  # schedule
 
@@ -573,16 +597,19 @@ class SubcontractingCurriculum(TRMCurriculumBase):
 class ForecastAdjustmentCurriculum(TRMCurriculumBase):
     """Curriculum for Forecast adjustment decisions.
 
-    State: [signal_confidence, direction_encoded, magnitude_hint,
-            current_forecast_norm, forecast_confidence,
-            historical_accuracy, source_reliability,
-            signal_type_accuracy, product_volatility,
-            product_trend, seasonality_factor,
-            inventory_dos_norm, pending_orders_norm,
-            time_horizon_norm, source_encoded]
+    State (18 floats, matches ForecastAdjustmentTRMModel):
+        [0] signal_strength (0-1)      [1] signal_direction (-1 to 1)
+        [2] signal_confidence (0-1)    [3] current_forecast (norm)
+        [4] forecast_error_recent (norm)  [5] demand_trend (-1 to 1)
+        [6] seasonality_index (norm)   [7] days_to_horizon (norm)
+        [8] inventory_position (norm)  [9] backlog_rate (0-1)
+        [10] customer_order_coverage (0-1)  [11] market_indicator (norm)
+        [12] news_sentiment (-1 to 1)  [13] price_signal (norm)
+        [14] competitor_signal (norm)  [15] historical_accuracy (0-1)
+        [16] adjustment_magnitude (norm)  [17] safety_factor (0-1)
 
-    Actions: 0=no_change, 1=adjust_up_small, 2=adjust_up_large,
-             3=adjust_down_small, 4=adjust_down_large
+    Actions: 0=increase_high, 1=increase_low, 2=hold,
+             3=decrease_low, 4=decrease_high
     """
 
     @property
@@ -591,7 +618,7 @@ class ForecastAdjustmentCurriculum(TRMCurriculumBase):
 
     @property
     def trm_type(self) -> str:
-        return "forecast_adj"
+        return "forecast_adjustment"
 
     def generate(self, phase: int, num_samples: int) -> CurriculumData:
         n = num_samples
@@ -623,68 +650,70 @@ class ForecastAdjustmentCurriculum(TRMCurriculumBase):
     def _simple_state(self):
         direction = np.random.choice([-1.0, 0.0, 1.0])
         return np.array([
-            np.random.uniform(0.7, 0.95),  # signal_confidence
-            direction,                     # direction_encoded
-            np.random.uniform(0.05, 0.15), # magnitude_hint
-            np.random.uniform(0.3, 0.7),   # current_forecast
-            np.random.uniform(0.7, 0.9),   # forecast_confidence
-            np.random.uniform(0.8, 0.95),  # historical_accuracy
-            np.random.uniform(0.7, 0.95),  # source_reliability
-            np.random.uniform(0.7, 0.9),   # signal_type_accuracy
-            np.random.uniform(0.1, 0.3),   # product_volatility
-            np.random.uniform(-0.05, 0.05),# product_trend
-            np.random.uniform(0.9, 1.1),   # seasonality
-            np.random.uniform(0.4, 0.7),   # inventory_dos
-            np.random.uniform(0.1, 0.3),   # pending_orders
-            np.random.uniform(0.2, 0.5),   # time_horizon
-            np.random.uniform(0.1, 0.6),   # source_encoded
+            np.random.uniform(0.7, 0.95),  # [0] signal_strength
+            direction,                     # [1] signal_direction
+            np.random.uniform(0.7, 0.95),  # [2] signal_confidence
+            np.random.uniform(0.3, 0.7),   # [3] current_forecast
+            np.random.uniform(0.05, 0.15), # [4] forecast_error_recent
+            np.random.uniform(-0.05, 0.05),# [5] demand_trend
+            np.random.uniform(0.9, 1.1),   # [6] seasonality_index
+            np.random.uniform(0.2, 0.5),   # [7] days_to_horizon
+            np.random.uniform(0.4, 0.7),   # [8] inventory_position
+            np.random.uniform(0.0, 0.1),   # [9] backlog_rate
+            np.random.uniform(0.6, 0.9),   # [10] customer_order_coverage
+            np.random.uniform(-0.1, 0.1),  # [11] market_indicator
+            np.random.uniform(-0.1, 0.1),  # [12] news_sentiment
+            np.random.uniform(-0.1, 0.1),  # [13] price_signal
+            np.random.uniform(-0.1, 0.1),  # [14] competitor_signal
+            np.random.uniform(0.8, 0.95),  # [15] historical_accuracy
+            np.random.uniform(0.05, 0.15), # [16] adjustment_magnitude
+            np.random.uniform(0.3, 0.6),   # [17] safety_factor
         ], dtype=np.float32)
 
     def _mixed_state(self):
         s = self._simple_state()
-        s[0] = np.random.uniform(0.4, 0.8)  # lower confidence
-        s[6] = np.random.uniform(0.4, 0.8)  # mixed source reliability
-        s[8] = np.random.uniform(0.2, 0.5)  # higher volatility
+        s[0] = np.random.uniform(0.4, 0.8)  # lower signal strength
+        s[2] = np.random.uniform(0.4, 0.8)  # lower confidence
+        s[4] = np.random.uniform(0.1, 0.3)  # higher forecast error
         return s
 
     def _stress_state(self):
         s = self._mixed_state()
-        s[0] = np.random.uniform(0.2, 0.6)  # low confidence
-        s[8] = np.random.uniform(0.4, 0.8)  # high volatility
-        s[9] = np.random.uniform(-0.2, 0.2) # strong trend
+        s[0] = np.random.uniform(0.2, 0.6)  # low signal strength
+        s[4] = np.random.uniform(0.2, 0.5)  # high forecast error
+        s[5] = np.random.uniform(-0.2, 0.2) # strong trend
         return s
 
     def _simple_decision(self, s):
-        if s[0] > 0.8 and s[6] > 0.8:
+        if s[0] > 0.8 and s[2] > 0.8:
             if s[1] > 0.5:
-                return 1, 0.9  # adjust up small
+                return 1, 0.9  # increase_low
             elif s[1] < -0.5:
-                return 3, 0.9  # adjust down small
-        return 0, 0.7  # no change
+                return 3, 0.9  # decrease_low
+        return 2, 0.7  # hold
 
     def _mixed_decision(self, s):
-        if s[0] > 0.6 and s[6] > 0.6:
+        if s[0] > 0.6 and s[2] > 0.6:
             if s[1] > 0.5:
-                if s[2] > 0.1:
-                    return 2, 0.7  # adjust up large
-                return 1, 0.7  # adjust up small
+                if s[16] > 0.1:
+                    return 0, 0.7  # increase_high
+                return 1, 0.7  # increase_low
             elif s[1] < -0.5:
-                if s[2] > 0.1:
-                    return 4, 0.7  # adjust down large
-                return 3, 0.7  # adjust down small
-        return 0, 0.6  # no change (uncertain)
+                if s[16] > 0.1:
+                    return 4, 0.7  # decrease_high
+                return 3, 0.7  # decrease_low
+        return 2, 0.6  # hold (uncertain)
 
     def _stress_decision(self, s):
-        # In stress, be conservative
         if s[0] < 0.4:
-            return 0, 0.5  # too uncertain
-        if s[6] < 0.5:
-            return 0, 0.4  # unreliable source
+            return 2, 0.5  # too uncertain, hold
+        if s[15] < 0.5:
+            return 2, 0.4  # low historical accuracy, hold
         if s[1] > 0.5:
-            return 1, 0.5  # small up only
+            return 1, 0.5  # increase_low only
         elif s[1] < -0.5:
-            return 3, 0.5  # small down only
-        return 0, 0.5
+            return 3, 0.5  # decrease_low only
+        return 2, 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -799,11 +828,16 @@ class InventoryBufferCurriculum(TRMCurriculumBase):
 # ---------------------------------------------------------------------------
 
 HIVE_CURRICULUM_REGISTRY = {
+    # Canonical names (match TRM service types)
     "mo_execution": MOExecutionCurriculum,
     "to_execution": TOExecutionCurriculum,
+    "quality_disposition": QualityDispositionCurriculum,
+    "maintenance_scheduling": MaintenanceSchedulingCurriculum,
+    "subcontracting": SubcontractingCurriculum,
+    "forecast_adjustment": ForecastAdjustmentCurriculum,
+    "inventory_buffer": InventoryBufferCurriculum,
+    # Short aliases for backward compatibility
     "quality": QualityDispositionCurriculum,
     "maintenance": MaintenanceSchedulingCurriculum,
-    "subcontracting": SubcontractingCurriculum,
     "forecast_adj": ForecastAdjustmentCurriculum,
-    "inventory_buffer": InventoryBufferCurriculum,
 }
