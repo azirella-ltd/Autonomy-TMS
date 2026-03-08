@@ -60,6 +60,7 @@ from .decision_cycle import (
     DecisionCyclePhase, CycleResult, PhaseResult, TRM_PHASE_MAP,
     PHASE_TRM_MAP, detect_conflicts,
 )
+from .site_capabilities import get_active_trms, ALL_TRM_NAMES
 from app.services.agent_context_explainer import AgentContextExplainer, AgentType
 from app.services.authorization_protocol import (
     AgentRole,
@@ -151,6 +152,14 @@ class SiteAgentConfig:
     # Feature-flagged OFF by default; zero overhead when disabled.
     enable_site_tgnn: bool = False
 
+    # Site capability filtering — determines which TRMs are active.
+    # Extracted from DAG topology (Site.master_type, Site.type).
+    # When set, only TRMs relevant to this site's physical capabilities
+    # are instantiated (e.g., a DC has no mo_execution or quality_disposition).
+    # When None, all 11 TRMs are active (backward compatible).
+    master_type: Optional[str] = None      # "manufacturer", "inventory", etc.
+    sc_site_type: Optional[str] = None     # "RETAILER", "DISTRIBUTOR", etc.
+
 
 @dataclass
 class ATPResponse:
@@ -200,6 +209,12 @@ class SiteAgent:
         self.config = config
         self.site_key = config.site_key
         self.db = db_session
+
+        # Determine active TRM set from site capabilities
+        if config.master_type:
+            self.active_trms = get_active_trms(config.master_type, config.sc_site_type)
+        else:
+            self.active_trms = ALL_TRM_NAMES  # backward compatible: all 11
 
         # Initialize deterministic engines (100% code)
         self.mrp_engine = MRPEngine(config.site_key, config.mrp_config)
@@ -251,9 +266,29 @@ class SiteAgent:
                 self._site_tgnn_service = SiteTGNNInferenceService(
                     site_key=config.site_key,
                     config_id=getattr(config, "config_id", 0),
+                    active_trms=self.active_trms,
                 )
             except Exception as e:
                 logger.warning(f"Site tGNN init failed (continuing without): {e}")
+
+        # Setup matrix and Glenday Sieve (for manufacturer sites)
+        self._setup_matrix = None
+        self._glenday_sieve = None
+        if "mo_execution" in self.active_trms:
+            try:
+                from app.services.powell.engines.setup_matrix import (
+                    SetupMatrix, GlendaySieve,
+                )
+                self._setup_matrix = SetupMatrix(
+                    site_id=config.site_key, db=db_session,
+                )
+                self._setup_matrix.load()
+                self._glenday_sieve = GlendaySieve(
+                    site_id=config.site_key, db=db_session,
+                )
+                self._glenday_sieve.classify()
+            except Exception as e:
+                logger.debug(f"Setup matrix / Glenday init: {e}")
 
         # Recent decisions cache for Site tGNN feature engineering
         self._recent_decisions_cache: Dict[str, list] = {name: [] for name in [
@@ -266,7 +301,9 @@ class SiteAgent:
         self._state_cache: Optional[torch.Tensor] = None
         self._state_cache_time: Optional[datetime] = None
 
+        trm_count = len(self.active_trms)
         logger.info(f"SiteAgent initialized for {config.site_key}"
+                     f" [{trm_count}/11 TRMs active]"
                      f"{' [hive signals ON]' if self.signal_bus else ''}"
                      f"{' [authorization ON]' if self.authorization_service else ''}"
                      f"{' [site tGNN ON]' if self._site_tgnn_service else ''}")
@@ -286,6 +323,12 @@ class SiteAgent:
             trm_name: Canonical TRM name (e.g. "atp_executor", "po_creation").
             trm_instance: The TRM object. Must have a ``signal_bus`` attribute.
         """
+        if trm_name not in self.active_trms:
+            logger.info(
+                f"Skipping TRM {trm_name} for {self.site_key} "
+                f"(not active for master_type={self.config.master_type})"
+            )
+            return
         self._registered_trms[trm_name] = trm_instance
         if self.signal_bus is not None and hasattr(trm_instance, "signal_bus"):
             trm_instance.signal_bus = self.signal_bus
@@ -1376,6 +1419,18 @@ class SiteAgent:
         result = CycleResult()
         cycle_start = time.monotonic()
 
+        # Glenday Sieve urgency pre-modulation: boost MO urgency for green runners
+        # This runs before Site tGNN so the sieve signal flows into tGNN features
+        if self._glenday_sieve and self.signal_bus and hasattr(self.signal_bus, "urgency"):
+            try:
+                from app.services.powell.engines.setup_matrix import RunnerCategory
+                green_count = len(self._glenday_sieve.green_runners())
+                if green_count > 0:
+                    # Boost MO urgency proportional to green runner pressure
+                    self.signal_bus.urgency.adjust("mo_execution", 0.1)
+            except Exception as e:
+                logger.debug(f"Glenday urgency modulation: {e}")
+
         # Layer 1.5: Site tGNN modulates UrgencyVector before phases execute
         if self._site_tgnn_service and self.signal_bus:
             try:
@@ -1406,6 +1461,8 @@ class SiteAgent:
             signals_before = len(self.signal_bus) if self.signal_bus else 0
 
             for trm_name in trm_names:
+                if trm_name not in self.active_trms:
+                    continue
                 executor = executors.get(trm_name)
                 if executor is None:
                     continue

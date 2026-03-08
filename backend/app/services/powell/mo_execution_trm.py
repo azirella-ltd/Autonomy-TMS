@@ -72,6 +72,11 @@ class MOExecutionState:
     customer_order_linked: bool = False
     customer_promise_date: Optional[date] = None
 
+    # Changeover context
+    changeover_hours_from_current: float = 0.0  # Setup time from current product on line
+    product_group_id: Optional[str] = None       # Product family (for changeover grouping)
+    runner_category: str = "blue"                 # Glenday sieve: green/yellow/red/blue
+
     # From tGNN embeddings
     site_criticality: float = 0.5
     supply_risk_score: float = 0.0
@@ -129,12 +134,18 @@ class MOExecutionTRM:
         config: Optional[MOExecutionTRMConfig] = None,
         model: Optional[Any] = None,
         db_session: Optional[Any] = None,
+        setup_matrix: Optional[Any] = None,
+        glenday_sieve: Optional[Any] = None,
     ):
         self.site_key = site_key
         self.config = config or MOExecutionTRMConfig()
-        self.engine = MOExecutionEngine(site_key, self.config.engine_config)
+        self.engine = MOExecutionEngine(
+            site_key, self.config.engine_config, setup_matrix=setup_matrix,
+        )
         self.model = model
         self.db = db_session
+        self.setup_matrix = setup_matrix
+        self.glenday_sieve = glenday_sieve
         self.ctx_explainer = None  # Set externally by SiteAgent or caller
         self.signal_bus: Optional[HiveSignalBus] = None
         self._cdt_wrapper = None
@@ -378,25 +389,59 @@ class MOExecutionTRM:
         )
 
     def _encode_state(self, state: MOExecutionState) -> List[float]:
-        """Encode state for TRM model input."""
+        """Encode state for TRM model input (20 floats, matches MO_STATE_DIM).
+
+        Feature mapping (matches mo_execution_trm_model.py):
+          [0] work_in_progress (queue_total_hours normalised)
+          [1] capacity_available (1 - utilization)
+          [2] order_qty (normalised)
+          [3] due_date_urgency (0-1)
+          [4] backlog (queue_depth normalised)
+          [5] material_available (0-1)
+          [6] operator_available (1 - resource_utilization)
+          [7] quality_rate (yield_pct)
+          [8] tool_wear (setup_overrun as proxy)
+          [9] maintenance_due (0-1, from signals)
+          [10] parallel_orders (queue_depth normalised)
+          [11] priority (normalised)
+          [12] yield_rate (0-1)
+          [13] energy_cost (normalised, placeholder)
+          [14] overtime_available (0-1)
+          [15] sequence_position (normalised)
+          [16] bom_coverage (material_availability)
+          [17] defect_rate (1 - yield)
+          [18] setup_time (normalised, includes changeover)
+          [19] cycle_time (run_time normalised)
+        """
+        # Changeover-aware setup time: use actual changeover if available
+        effective_setup = state.setup_time_hours
+        if state.changeover_hours_from_current > 0:
+            effective_setup = state.changeover_hours_from_current
+
+        # Runner category encoding: green=1.0, yellow=0.66, red=0.33, blue=0.0
+        _runner_map = {"green": 1.0, "yellow": 0.66, "red": 0.33, "blue": 0.0}
+
         return [
-            state.planned_quantity / 1000.0,
-            state.days_until_due / 30.0,
-            state.priority / 5.0,
-            state.material_availability_pct,
-            state.missing_component_count / 10.0,
-            state.capacity_utilization_pct,
-            state.resource_utilization_pct,
-            state.setup_time_hours / 8.0,
-            state.run_time_hours / 24.0,
-            state.queue_depth / 20.0,
-            state.queue_total_hours / 100.0,
-            state.avg_yield_pct,
-            state.avg_setup_overrun_pct,
-            state.late_completion_rate,
-            1.0 if state.customer_order_linked else 0.0,
-            state.site_criticality,
-            state.supply_risk_score,
+            min(state.queue_total_hours / 100.0, 1.0),           # [0] work_in_progress
+            max(0.0, 1.0 - state.capacity_utilization_pct),      # [1] capacity_available
+            state.planned_quantity / 1000.0,                      # [2] order_qty
+            max(0.0, 1.0 - state.days_until_due / 30.0),         # [3] due_date_urgency
+            min(state.queue_depth / 20.0, 1.0),                   # [4] backlog
+            state.material_availability_pct,                       # [5] material_available
+            max(0.0, 1.0 - state.resource_utilization_pct),       # [6] operator_available
+            state.avg_yield_pct,                                   # [7] quality_rate
+            min(state.avg_setup_overrun_pct, 1.0),                # [8] tool_wear
+            0.0,  # [9] maintenance_due — populated from hive signals
+            min(state.queue_depth / 20.0, 1.0),                   # [10] parallel_orders
+            state.priority / 5.0,                                  # [11] priority
+            state.avg_yield_pct,                                   # [12] yield_rate
+            _runner_map.get(state.runner_category, 0.0),          # [13] runner_category (repurposed from energy_cost)
+            1.0 if state.customer_order_linked else 0.5,          # [14] overtime_available
+            state.queue_depth / max(state.queue_depth + 1, 1),    # [15] sequence_position
+            state.material_availability_pct,                       # [16] bom_coverage
+            max(0.0, 1.0 - state.avg_yield_pct),                 # [17] defect_rate
+            min(effective_setup / 8.0, 1.0),                      # [18] setup_time (changeover-aware)
+            min(state.run_time_hours / 24.0, 1.0),               # [19] cycle_time
         ]
 
     def _persist_decision(self, state: MOExecutionState, rec: MORecommendation):

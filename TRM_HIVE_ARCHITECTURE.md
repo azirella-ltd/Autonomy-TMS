@@ -3515,6 +3515,18 @@ for trm_name, adj in site_tgnn_output.urgency_adjustments.items():
 
 **Cold Start**: Returns neutral output (zero adjustments) when no model is trained. Feature-flagged OFF by default (`enable_site_tgnn=False`).
 
+**Site-Specific Hive Composition**: Not every site needs all 11 TRMs. The active TRM set is determined by `master_type` (from DAG topology) via `site_capabilities.py`:
+
+| Master Type | Active TRMs | Count | Rationale |
+|------------|-------------|-------|-----------|
+| **manufacturer** | All 11 | 11 | Full production + distribution |
+| **inventory** (DC, Wholesaler, Distributor) | ATP, OrderTracking, Buffer, ForecastAdj, TO, Rebalancing, PO | 7 | No production line |
+| **inventory** (Retailer override) | ATP, OrderTracking, Buffer, ForecastAdj, TO, Rebalancing | 6 | No PO (supplied via transfers) |
+| **market_supply** | OrderTracking | 1 | Infinite source, outbound only |
+| **market_demand** | OrderTracking | 1 | Terminal sink, inbound only |
+
+The Site tGNN handles variable-size hives by **masking inactive nodes**: zero features on input, zero adjustments on output, while keeping the 11-node graph topology fixed. GATv2 attention naturally downweights zero-feature nodes. This means the same trained model works across all site types without per-type retraining.
+
 **Key Insight**: HiveSignalBus (Layer 1) is reactive — "X just happened." Site tGNN (Layer 1.5) is predictive — "if X continues, Y will happen in 3 cycles." This fills the gap between reactive stigmergy and daily network-level inference.
 
 ### 16.2 The tGNN as Inter-Hive Connective Tissue

@@ -8,6 +8,18 @@ This guide walks through a comprehensive demo of the Autonomy platform using the
 
 ## Quick Start
 
+**Option A — Full warm-start pipeline** (trains TRMs + Site tGNN + seeds demo data):
+
+```bash
+# Single command: trains all models, enables Site tGNN, seeds demo data
+make warm-start-food-dist-full
+
+# Or quick version (fewer epochs, skips trace generation + stress test):
+make warm-start-food-dist-quick
+```
+
+**Option B — Seed only** (uses existing checkpoints, no training):
+
 ```bash
 # 1. Ensure Food Dist infrastructure is seeded (if not already)
 docker compose exec backend python -m scripts.seed_food_dist_demo
@@ -16,13 +28,31 @@ docker compose exec backend python -m scripts.seed_food_dist_planning_data
 # 2. Seed the action layer (briefings, worklists, decisions, alerts)
 docker compose exec backend python -m scripts.seed_food_dist_deep_demo
 
-# 3. Login
-#    URL:      http://localhost:8088
-#    Email:    admin@distdemo.com   (or any role — see User Accounts below)
-#    Password: Autonomy@2026
+# 3. Enable Site tGNN (Layer 1.5 cross-TRM coordination)
+make warm-start-food-dist-enable
 ```
 
-The seed script is **idempotent** — re-run it anytime to reset the action layer data without touching the underlying network config, forecasts, or inventory policies.
+**Login**:
+- URL: http://localhost:8088
+- Email: `admin@distdemo.com` (or any role — see User Accounts below)
+- Password: `Autonomy@2026`
+
+The seed scripts are **idempotent** — re-run anytime to reset action layer data without touching infrastructure.
+
+### Warm-Start Pipeline (6 Phases)
+
+The unified warm-start script (`scripts/warm_start_food_dist.py`) orchestrates the complete cold-start → warm-start pipeline:
+
+| Phase | What | Duration | Output |
+|-------|------|----------|--------|
+| 1 | TRM curriculum BC (all 11 types, 2 signal phases) | ~5-10 min | `checkpoints/trm_food_dist/trm_*_site256_v*.pt` |
+| 2 | Coordinated multi-head traces (CoordinatedSimRunner) | ~2-3 min | `data/hive_traces_FOODDIST_DC.json` |
+| 3 | Site tGNN training from traces (Layer 1.5 BC) | ~1-2 min | `checkpoints/site_tgnn/FOODDIST_DC/site_tgnn_latest.pt` |
+| 4 | Stochastic stress-testing (5 perturbation scenarios) | ~1-2 min | Validation results |
+| 5 | Enable Site tGNN feature flag in `site_agent_configs` | instant | DB row `enable_site_tgnn=true` |
+| 6 | Seed all demo data (planning, storylines, deep demo) | ~1-2 min | Demo-ready database |
+
+Run specific phases: `python scripts/warm_start_food_dist.py --phases 3,5` (retrain Site tGNN + enable).
 
 ---
 
@@ -546,6 +576,26 @@ Tie back to the Autonomy value proposition:
 3. **Compounding effect**: Every override makes the AI better, gradually shifting the 82/18 boundary
 4. **End state**: Planners become *supervisors* of AI agents, not manual decision-makers
 
+### Site tGNN — Cross-TRM Coordination (Layer 1.5)
+
+When enabled (via `make warm-start-food-dist-enable` or the full pipeline), the Site tGNN adds **learned cross-TRM causal coordination** within FOODDIST_DC. This is Layer 1.5 in the 5-layer coordination stack:
+
+```
+Layer 1   — HiveSignalBus + UrgencyVector       <10ms   (reactive, within hive)
+Layer 1.5 — Site tGNN                           hourly  (learned cross-TRM trade-offs)
+Layer 2   — Network tGNN                        daily   (inter-site allocation)
+Layer 3   — AAP (Authorization Protocol)        ad hoc  (cross-authority negotiation)
+Layer 4   — S&OP GraphSAGE                      weekly  (strategic policy parameters)
+```
+
+**What it does**: Before each 6-phase decision cycle, the Site tGNN evaluates all 7 active TRMs' state and produces urgency adjustments ([-0.3, +0.3]) that modulate the UrgencyVector. For example, if the ATP TRM has been fulfilling aggressively for several cycles, the Site tGNN learns to reduce ATP urgency to prevent downstream inventory buffer starvation.
+
+**Architecture**: GATv2 + GRU, ~25K parameters, <5ms inference, 11 TRM-type nodes with 22 directed causal edges (inactive nodes masked to zero).
+
+**Where to show this**: Navigate to **AI & Agents > Hive Dashboard** (`/admin/hive-dashboard`) to see urgency vector evolution, signal bus activity, and the Site tGNN adjustment magnitudes per TRM.
+
+**Demo talking point**: "Layer 1 signals are reactive — one TRM tells another 'I just did X'. Layer 1.5 is predictive — the graph network learns that when ATP fulfills aggressively for 3 cycles, MO capacity gets starved on cycle 4. It adjusts urgency *before* the problem manifests."
+
 ---
 
 ## Recommended Demo Flow (20 minutes)
@@ -593,6 +643,7 @@ The script is idempotent — it deletes action layer data for the demo date rang
 
 | File | Purpose |
 |------|---------|
+| `backend/scripts/warm_start_food_dist.py` | **Unified 6-phase warm-start pipeline** (trains + seeds) |
 | `backend/scripts/seed_food_dist_deep_demo.py` | Action layer seed (this demo's data) |
 | `backend/scripts/seed_food_dist_demo.py` | Tenant, users, config (prerequisite) |
 | `backend/scripts/seed_food_dist_planning_data.py` | Forecasts, inv policies, supply plans |
@@ -601,6 +652,15 @@ The script is idempotent — it deletes action layer data for the demo date rang
 | `backend/scripts/seed_food_dist_execution_data.py` | Base Powell decisions, agent configs |
 | `backend/scripts/seed_food_dist_allocation_demo.py` | Allocation demo scenarios |
 | `docs/FOOD_DIST_DEMO_GUIDE.md` | This guide |
+
+### Makefile Targets
+
+| Target | What it does |
+|--------|-------------|
+| `make warm-start-food-dist-full` | Full 6-phase pipeline (train all + enable Site tGNN + seed) |
+| `make warm-start-food-dist-quick` | Quick warm-start (10 epochs, phases 1,3,5,6) |
+| `make warm-start-food-dist-train` | Training only (phases 1-4, no seeding) |
+| `make warm-start-food-dist-enable` | Enable Site tGNN + seed demo data (phases 5-6) |
 
 ---
 

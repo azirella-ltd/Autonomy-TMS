@@ -145,7 +145,7 @@ Narrow TRMs (VFA - Value Function Approximation)
      - **InventoryRebalancingTRM**: Cross-location transfer decisions
      - **POCreationTRM**: Purchase order timing and quantity
      - **OrderTrackingTRM**: Exception detection and recommended actions
-     - **MOExecutionTRM**: Manufacturing order release, sequencing, expedite
+     - **MOExecutionTRM**: Manufacturing order release, sequencing (Glenday Sieve + nearest-neighbor changeover minimization), expedite
      - **TOExecutionTRM**: Transfer order release, consolidation, expedite
      - **QualityDispositionTRM**: Quality hold/release/rework/scrap decisions
      - **MaintenanceSchedulingTRM**: Preventive maintenance scheduling and deferral
@@ -515,7 +515,7 @@ See [DAG_Logic.md](DAG_Logic.md) for detailed master site type mappings and conf
 
 ### Agent System Architecture
 
-**TRM Hive Model** (✅ IMPLEMENTED): Each site's 11 TRM agents form a self-organizing "hive" with intra-hive signal propagation (HiveSignalBus, UrgencyVector) and the tGNN as inter-hive connective tissue. Layer 1.5 (Site tGNN hourly) provides learned cross-TRM causal coordination within a single site, capturing trade-offs that reactive signals alone cannot model. Integrates with the [Agentic Authorization Protocol](docs/AGENTIC_AUTHORIZATION_PROTOCOL.md) for cross-authority negotiation and includes a Kinaxis-inspired embedded scenario architecture where agents create branched what-if scenarios at machine speed. **Neural architecture**: Three-layer hybrid — stigmergic coordination (S-MADRL pheromones), heterogeneous graph attention (HetNet), and recursive per-head refinement (Samsung TRM) — totaling ~473K params at <10ms latency. See [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 14 for architecture specification, Section 15 for digital twin training pipeline, Section 16 for multi-site coordination stack, and [TRM_RESEARCH_SYNTHESIS.md](TRM_RESEARCH_SYNTHESIS.md) Section 8 for research foundations.
+**TRM Hive Model** (✅ IMPLEMENTED): Each site's TRM agents form a self-organizing "hive" with intra-hive signal propagation (HiveSignalBus, UrgencyVector) and the tGNN as inter-hive connective tissue. **Site-specific hive composition**: The active TRM set is determined by the site's `master_type` from the DAG topology — manufacturers get all 11 TRMs, distribution centers get 7 (no MO, Quality, Maintenance, Subcontracting), retailers get 6, and market nodes get 1 (order_tracking only). See `site_capabilities.py` for the full mapping. Layer 1.5 (Site tGNN hourly) provides learned cross-TRM causal coordination within a single site, capturing trade-offs that reactive signals alone cannot model; inactive TRM nodes are masked (zero features, zero output). Integrates with the [Agentic Authorization Protocol](docs/AGENTIC_AUTHORIZATION_PROTOCOL.md) for cross-authority negotiation and includes a Kinaxis-inspired embedded scenario architecture where agents create branched what-if scenarios at machine speed. **Neural architecture**: Three-layer hybrid — stigmergic coordination (S-MADRL pheromones), heterogeneous graph attention (HetNet), and recursive per-head refinement (Samsung TRM) — totaling ~473K params at <10ms latency. See [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 14 for architecture specification, Section 15 for digital twin training pipeline, Section 16 for multi-site coordination stack, and [TRM_RESEARCH_SYNTHESIS.md](TRM_RESEARCH_SYNTHESIS.md) Section 8 for research foundations.
 
 **Multi-Site Coordination Stack** (5 layers, see [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 16):
 - **Layer 1 — Intra-Hive** (<10ms): UrgencyVector + HiveSignalBus within a single site
@@ -564,7 +564,7 @@ The Powell SDAM framework constrains TRMs to narrow execution decisions:
 | `InventoryRebalancingTRM` | Cross-location, daily | Transfer recommendations |
 | `POCreationTRM` | Per product-location | PO timing and quantity |
 | `OrderTrackingTRM` | Per order, continuous | Exception detection and actions |
-| `MOExecutionTRM` | Per production order | Release, sequence, split, expedite, defer |
+| `MOExecutionTRM` | Per production order | Release, sequence (Glenday + nearest-neighbor), split, expedite, defer |
 | `TOExecutionTRM` | Per transfer order | Release, consolidate, expedite, defer |
 | `QualityDispositionTRM` | Per quality order | Accept, reject, rework, scrap, use-as-is |
 | `MaintenanceSchedulingTRM` | Per asset/work order | Schedule, defer, expedite, outsource |

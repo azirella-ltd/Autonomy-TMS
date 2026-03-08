@@ -733,6 +733,41 @@ train-and-test-food-dist-gpu:
 		--device cuda; \
 	echo "\n[✓] GPU pipeline completed."
 
+# Unified warm-start pipeline for Food Distribution (6 phases)
+# Usage: make warm-start-food-dist-full [FOOD_DIST_EPOCHS=30] [FOOD_DIST_DEVICE=cpu]
+.PHONY: warm-start-food-dist-full warm-start-food-dist-train warm-start-food-dist-enable warm-start-food-dist-quick
+
+warm-start-food-dist-full:
+	@echo "\n[+] Running full 6-phase warm-start pipeline for Food Dist..."; \
+	$(DOCKER_COMPOSE_CMD) exec backend python scripts/warm_start_food_dist.py \
+		--epochs $(FOOD_DIST_EPOCHS) \
+		--samples $(FOOD_DIST_SAMPLES) \
+		--device $(FOOD_DIST_DEVICE) \
+		--results-json data/warm_start_results.json; \
+	echo "\n[✓] Full warm-start pipeline completed."
+
+warm-start-food-dist-train:
+	@echo "\n[+] Running training phases (1-4) for Food Dist..."; \
+	$(DOCKER_COMPOSE_CMD) exec backend python scripts/warm_start_food_dist.py \
+		--phases 1,2,3,4 \
+		--epochs $(FOOD_DIST_EPOCHS) \
+		--samples $(FOOD_DIST_SAMPLES) \
+		--device $(FOOD_DIST_DEVICE); \
+	echo "\n[✓] Training phases completed."
+
+warm-start-food-dist-enable:
+	@echo "\n[+] Enabling Site tGNN + seeding demo data (phases 5-6)..."; \
+	$(DOCKER_COMPOSE_CMD) exec backend python scripts/warm_start_food_dist.py \
+		--phases 5,6; \
+	echo "\n[✓] Site tGNN enabled and demo data seeded."
+
+warm-start-food-dist-quick:
+	@echo "\n[+] Quick warm-start (10 epochs, phases 1,3,5,6)..."; \
+	$(DOCKER_COMPOSE_CMD) exec backend python scripts/warm_start_food_dist.py \
+		--phases 1,3,5,6 \
+		--epochs 10 \
+		--samples 2000; \
+	echo "\n[✓] Quick warm-start completed."
 
 
 

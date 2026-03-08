@@ -208,10 +208,14 @@ class CoordinatedSimRunner:
         site_key: str,
         signal_bus: Optional[HiveSignalBus] = None,
         seed: Optional[int] = None,
+        active_trms: Optional[frozenset] = None,
     ):
         self.site_key = site_key
         self.signal_bus = signal_bus or HiveSignalBus()
         self.rng = np.random.RandomState(seed)
+        # When set, only these TRMs participate in decision cycles.
+        # None means all 11 TRMs are active (backward compatible).
+        self.active_trms: Optional[frozenset] = active_trms
 
     def run_episode(
         self,
@@ -275,6 +279,9 @@ class CoordinatedSimRunner:
             signals_before = len(self.signal_bus)
 
             for trm_name in trm_names:
+                # Skip TRMs not active for this site type
+                if self.active_trms is not None and trm_name not in self.active_trms:
+                    continue
                 executor = executors.get(trm_name)
                 if executor is None:
                     continue

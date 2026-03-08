@@ -10,9 +10,12 @@ Engine can run standalone without TRM for graceful degradation.
 
 from dataclasses import dataclass, field
 from datetime import datetime, date, timedelta
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, TYPE_CHECKING
 from enum import Enum
 import logging
+
+if TYPE_CHECKING:
+    from .setup_matrix import SetupMatrix
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +64,9 @@ class MOExecutionConfig:
     max_defer_days: int = 14  # Maximum days to defer
     defer_penalty_per_day: float = 0.02  # % penalty per day of deferral
 
+    # Changeover fallback (used when no SetupMatrix is loaded)
+    _default_changeover_hours: float = 1.0
+
 
 @dataclass
 class MOSnapshot:
@@ -104,6 +110,8 @@ class MOSnapshot:
     # Context
     current_sequence_position: int = 0
     changeover_from_product: Optional[str] = None  # For setup time calculation
+    product_group_id: Optional[str] = None  # Product family (for changeover grouping)
+    runner_category: Optional[str] = None   # Glenday category (green/yellow/red/blue)
 
 
 @dataclass
@@ -152,9 +160,17 @@ class MOExecutionEngine:
     capacity, and priority rules.
     """
 
-    def __init__(self, site_key: str, config: Optional[MOExecutionConfig] = None):
+    def __init__(
+        self,
+        site_key: str,
+        config: Optional[MOExecutionConfig] = None,
+        setup_matrix: Optional["SetupMatrix"] = None,
+    ):
         self.site_key = site_key
         self.config = config or MOExecutionConfig()
+        # Sequence-dependent changeover matrix (loaded from DB).
+        # When None, falls back to heuristic setup scoring.
+        self.setup_matrix: Optional["SetupMatrix"] = setup_matrix
 
     def evaluate_release_readiness(self, mo: MOSnapshot) -> MOExecutionResult:
         """Evaluate if an MO is ready for release to shop floor."""
@@ -195,56 +211,107 @@ class MOExecutionEngine:
     def evaluate_sequencing(
         self,
         orders: List[MOSnapshot],
-        current_product: Optional[str] = None
+        current_product: Optional[str] = None,
+        resource_id: Optional[str] = None,
     ) -> List[MOExecutionResult]:
         """
         Determine optimal sequence for a batch of MOs.
 
-        Uses weighted scoring: due date urgency + priority + setup time minimization.
+        When a setup_matrix is available, uses nearest-neighbor greedy
+        sequencing to minimize total changeover time while respecting
+        due-date urgency.  Urgent MOs (due within 3 days or priority 1-2)
+        are pinned to the front of the sequence regardless of changeover.
+
+        Without a setup_matrix, falls back to weighted scoring.
         """
         if not orders:
             return []
 
-        scored_orders = []
+        # Partition: urgent MOs first (pinned), then sequenceable
+        urgent = []
+        sequenceable = []
         for mo in orders:
-            # Due date score (higher = more urgent)
-            due_score = max(0, 1.0 - (mo.days_until_due / 30.0)) if mo.days_until_due > 0 else 1.0
+            if mo.days_until_due <= 3 or mo.priority <= 2:
+                urgent.append(mo)
+            else:
+                sequenceable.append(mo)
 
-            # Priority score
-            priority_score = 1.0 - ((mo.priority - 1) / 4.0)
+        # Sort urgent by combined urgency (most urgent first)
+        urgent.sort(key=lambda m: (m.priority, m.days_until_due))
 
-            # Setup time score (prefer same product family to minimize changeover)
-            setup_score = 0.5
-            if current_product and mo.changeover_from_product:
-                if mo.product_id == current_product:
-                    setup_score = 1.0  # No changeover
-                elif mo.setup_time_hours < 1.0:
-                    setup_score = 0.8  # Low setup
+        # Build final sequence
+        final_sequence: List[MOSnapshot] = list(urgent)
+        changeover_times: Dict[str, float] = {}
 
-            total_score = (
-                self.config.due_date_weight * due_score +
-                self.config.priority_weight * priority_score +
-                self.config.setup_time_weight * setup_score
+        # Track the last product for changeover calculation
+        last_product = current_product
+        for mo in urgent:
+            changeover_times[mo.order_id] = self._get_changeover(
+                last_product, mo.product_id, resource_id
             )
+            last_product = mo.product_id
 
-            scored_orders.append((mo, total_score, due_score))
+        # Nearest-neighbor for remaining orders
+        remaining = list(sequenceable)
+        while remaining:
+            best_idx = 0
+            best_cost = float("inf")
 
-        # Sort by total score descending
-        scored_orders.sort(key=lambda x: x[1], reverse=True)
+            for i, mo in enumerate(remaining):
+                changeover = self._get_changeover(
+                    last_product, mo.product_id, resource_id
+                )
+                # Combined cost: changeover time penalized, due-date urgency rewarded
+                due_penalty = max(0.0, (30.0 - mo.days_until_due) / 30.0)
+                cost = changeover - (due_penalty * 0.5)  # Lower = better
+                if cost < best_cost:
+                    best_cost = cost
+                    best_idx = i
 
+            next_mo = remaining.pop(best_idx)
+            changeover_times[next_mo.order_id] = self._get_changeover(
+                last_product, next_mo.product_id, resource_id
+            )
+            final_sequence.append(next_mo)
+            last_product = next_mo.product_id
+
+        # Build results
+        total_changeover = sum(changeover_times.values())
         results = []
-        for idx, (mo, score, due_score) in enumerate(scored_orders):
+        for idx, mo in enumerate(final_sequence):
+            due_score = max(0, 1.0 - (mo.days_until_due / 30.0)) if mo.days_until_due > 0 else 1.0
+            co_hours = changeover_times.get(mo.order_id, 0.0)
             results.append(MOExecutionResult(
                 order_id=mo.order_id,
                 decision_type=MODecisionType.SEQUENCE,
-                priority_score=score,
+                priority_score=self._calculate_priority_score(mo),
                 recommended_sequence=idx + 1,
+                setup_time_savings_hours=co_hours,
                 service_risk=1.0 - due_score,
-                explanation=f"Sequence #{idx + 1}: score={score:.2f} (due={due_score:.2f})"
+                explanation=(
+                    f"Seq #{idx + 1}: changeover={co_hours:.1f}h"
+                    f"{' [URGENT]' if mo in urgent else ''}"
+                    f" (total changeover={total_changeover:.1f}h)"
+                ),
             ))
-            current_product = mo.product_id
 
         return results
+
+    def _get_changeover(
+        self,
+        from_product: Optional[str],
+        to_product: str,
+        resource_id: Optional[str] = None,
+    ) -> float:
+        """Get changeover time, using setup_matrix if available."""
+        if not from_product or from_product == to_product:
+            return 0.0
+        if self.setup_matrix:
+            return self.setup_matrix.get_changeover_time(
+                from_product, to_product, resource_id
+            )
+        # Fallback heuristic
+        return self.config._default_changeover_hours
 
     def evaluate_expedite_need(self, mo: MOSnapshot) -> MOExecutionResult:
         """Evaluate if an MO should be expedited."""

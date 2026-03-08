@@ -318,19 +318,20 @@ The TRM adds:
 
 ### 6. MO Execution Engine → MO Execution TRM
 
-**Purpose**: Manufacturing order release timing, sequencing, split decisions, and expediting — balancing lead time adherence with production efficiency and setup cost minimization.
+**Purpose**: Manufacturing order release timing, sequencing, split decisions, and expediting — balancing lead time adherence with production efficiency and changeover cost minimization.
 
 **Engine**: `engines/mo_execution_engine.py` — `MOExecutionEngine`
 
-The engine evaluates material availability (BOM % complete), capacity availability, and sequences MOs using weighted scoring:
+The engine evaluates material availability (BOM % complete), capacity availability, and sequences MOs using a **two-phase Glenday Sieve + nearest-neighbor** algorithm:
 
-```
-Sequence score = setup_time × 0.3 + due_date_urgency × 0.5 + priority × 0.2
-```
+1. **Glenday Sieve** (`engines/setup_matrix.py`): Classifies products into Green (~6% of SKUs, ~50% volume), Yellow, Red, and Blue runners by cumulative production volume. Green runners are scheduled first with dedicated capacity.
+2. **Nearest-neighbor changeover minimization**: Remaining capacity is filled by selecting the next MO that minimizes changeover time from the current product on the line. Urgent MOs (due ≤3 days or priority 1-2) are pinned to the front regardless of changeover cost.
+
+**Setup Matrix** (`engines/setup_matrix.py`): Loads sequence-dependent changeover times from `resource_capacity_constraint` (constraint_type='setup') with `from_product_id → to_product_id → setup_time_hours`. Fallback chain: exact pair → any-resource → same product family (30% of default) → resource default from `production_process.setup_time` → global default.
 
 | Component | Detail |
 |-----------|--------|
-| Input | `MOState(mo_id, product_id, planned_qty, due_date, priority, bom_availability, capacity_pct, ...)` |
+| Input | `MOState(mo_id, product_id, planned_qty, due_date, priority, bom_availability, capacity_pct, changeover_hours, runner_category, ...)` |
 | Output | `MODecision(release_now, sequence_position, expedite, defer_days, split_quantities, priority_override)` |
 | Config | `MOExecutionConfig(material_threshold=0.95, capacity_threshold=0.85)` |
 | Deterministic? | 100% |
@@ -342,12 +343,15 @@ The TRM adds:
 - Priority overrides for customer-linked MOs near due date
 - Quantity adjustments when historical yield is poor (<90%)
 - Setup overrun buffers based on historical patterns
+- **Changeover-aware state**: `changeover_hours_from_current` and `runner_category` feed directly into the 20-dim state vector, enabling the TRM to learn changeover patterns the greedy heuristic misses
 
 | Component | Detail |
 |-----------|--------|
-| State vector | planned_qty, days_until_due, priority, material_availability, missing_components, capacity_util, resource_util, setup_time, run_time, queue_depth, queue_hours, avg_yield, avg_setup_overrun, late_completion_rate, customer_linked, site_criticality, supply_risk (17 dims) |
+| State vector | work_in_progress, capacity_available, order_qty, due_date_urgency, backlog, material_available, operator_available, quality_rate, tool_wear, maintenance_due, parallel_orders, priority, yield_rate, runner_category, overtime_available, sequence_position, bom_coverage, defect_rate, setup_time (changeover-aware), cycle_time (20 dims) |
 | Action space | release_now (bool) + sequence_position (int) + expedite (bool) + defer_days (0-14) + split_quantities (list) + priority_override (1-5) |
 | Reward | `on_time_delivery * 0.4 + setup_cost * 0.3 + queue_holding_cost * 0.2 + yield_success * 0.1` |
+
+**Glenday integration with Site tGNN**: The Glenday Sieve runs at SiteAgent initialization. Before each decision cycle, green runner pressure boosts `mo_execution` urgency in the UrgencyVector, which flows into Site tGNN features. This lets the tGNN learn cross-TRM effects of green-runner-heavy production windows (e.g., maintenance deferral during green campaigns).
 
 **Delegation**: Engine provides deterministic release/sequence decision. TRM refines if confidence > 0.7, else falls back to heuristic. Emits `MO_RELEASED` or `MO_DELAYED` signal. Persists to `powell_mo_decisions`.
 
@@ -795,7 +799,7 @@ The adjustments are additive and clamped. The Site tGNN modulates *emphasis* -- 
 | **4** | S&OP GraphSAGE | Entire network | Weekly | Policy parameters theta |
 | **3** | Execution tGNN | Network-wide | Daily | Per-site directives |
 | **2** | AAP Authorization | Cross-authority | Seconds-minutes | Authorization requests |
-| **1.5** | **Site tGNN** | **Single site, all TRMs** | **Hourly** | **Urgency modulation** |
+| **1.5** | **Site tGNN** | **Single site, active TRMs** | **Hourly** | **Urgency modulation** |
 | **1** | TRM Hive + Signal Bus | Single site | Per-decision | Stigmergic signals |
 
 Layer 1.5 consumes the tGNNSiteDirective from Layer 3 as exogenous context (network conditions affect intra-site dynamics) and outputs urgency deltas consumed by Layer 1's decision cycle.
@@ -803,6 +807,20 @@ Layer 1.5 consumes the tGNNSiteDirective from Layer 3 as exogenous context (netw
 ### Cold Start
 
 When no trained model exists, the Site tGNN outputs zero adjustments -- TRMs operate exactly as they would without it. The feature is gated behind `ENABLE_SITE_TGNN=false` (default OFF) and requires a minimum of 1000 complete MultiHeadTrace decision cycles before training is viable. If inference fails or exceeds the 5ms timeout, the decision cycle proceeds with unmodified urgency vectors.
+
+### Site-Specific Hive Composition
+
+Not every site needs all 11 TRMs. A distribution center has no production line; a retailer doesn't place purchase orders to external suppliers. The active TRM set is determined by the site's `master_type` from the DAG topology (`site_capabilities.py`):
+
+| Site Type | Example | Active TRMs | Count |
+|-----------|---------|-------------|-------|
+| Manufacturer | Factory, Plant | All 11 | 11 |
+| DC / Wholesaler / Distributor | Regional DC, Warehouse | ATP, OrderTracking, Buffer, ForecastAdj, TO, Rebalancing, PO | 7 |
+| Retailer | Store | ATP, OrderTracking, Buffer, ForecastAdj, TO, Rebalancing | 6 |
+| Market Supply | Supplier source | OrderTracking | 1 |
+| Market Demand | Customer sink | OrderTracking | 1 |
+
+The Site tGNN handles variable-size hives by **masking inactive nodes** — zero features in, zero adjustments out — while keeping the 11-node graph topology fixed. GATv2 attention naturally downweights zero-feature nodes, so the same trained model works across all site types. `SiteAgent.connect_trm()` silently skips TRMs not in the active set, and `execute_decision_cycle()` filters its executor dict.
 
 ### Training
 

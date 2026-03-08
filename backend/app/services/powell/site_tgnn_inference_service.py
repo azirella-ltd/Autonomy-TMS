@@ -47,6 +47,7 @@ from app.services.powell.hive_signal import (
     BUILDER_SIGNALS,
 )
 from app.services.powell.hive_feedback import HiveFeedbackFeatures
+from app.services.powell.site_capabilities import ALL_TRM_NAMES as _ALL_TRMS
 
 
 # ============================================================================
@@ -106,6 +107,18 @@ _TRM_CASTE_SIGNALS: Dict[str, frozenset] = {
 # SiteTGNNInferenceService
 # ============================================================================
 
+# Short name -> canonical name alias mapping (Site tGNN uses short names)
+_SHORT_TO_CANONICAL: Dict[str, str] = {
+    "forecast_adj": "forecast_adjustment",
+    "quality": "quality_disposition",
+    "maintenance": "maintenance_scheduling",
+}
+
+def _canonical_alias(short_name: str) -> str:
+    """Return canonical TRM name for a short alias, or the name itself."""
+    return _SHORT_TO_CANONICAL.get(short_name, short_name)
+
+
 class SiteTGNNInferenceService:
     """Hourly intra-site inference for cross-TRM coordination (Layer 1.5).
 
@@ -122,12 +135,26 @@ class SiteTGNNInferenceService:
 
     INPUT_DIM = 18  # Per-TRM feature vector dimension
 
-    def __init__(self, site_key: str, config_id: int):
+    def __init__(
+        self,
+        site_key: str,
+        config_id: int,
+        active_trms: Optional[frozenset] = None,
+    ):
         self.site_key = site_key
         self.config_id = config_id
         self.model: Optional[SiteTGNN] = None
         self.hidden_state: Optional[Any] = None  # torch.Tensor or None
         self._device = "cpu"  # Site tGNN always runs on CPU (<5ms)
+
+        # Active TRM mask — inactive nodes get zeroed features + output
+        self.active_trms = active_trms or _ALL_TRMS
+        # Build index mask: which TRM_NAMES indices are active
+        self._active_mask: List[bool] = [
+            name in self.active_trms
+            or _canonical_alias(name) in self.active_trms
+            for name in TRM_NAMES
+        ]
 
         self._load_checkpoint()
 
@@ -196,17 +223,18 @@ class SiteTGNNInferenceService:
         # raw_output: [1, 11, 3]
         output_np = raw_output[0].cpu().numpy()
 
+        # Mask inactive TRMs: zero adjustments for nodes this site doesn't use
         return SiteTGNNOutput(
             urgency_adjustments={
-                TRM_NAMES[i]: float(output_np[i, 0])
+                TRM_NAMES[i]: float(output_np[i, 0]) if self._active_mask[i] else 0.0
                 for i in range(NUM_TRM_TYPES)
             },
             confidence_modifiers={
-                TRM_NAMES[i]: float(output_np[i, 1])
+                TRM_NAMES[i]: float(output_np[i, 1]) if self._active_mask[i] else 0.0
                 for i in range(NUM_TRM_TYPES)
             },
             coordination_signals={
-                TRM_NAMES[i]: float(output_np[i, 2])
+                TRM_NAMES[i]: float(output_np[i, 2]) if self._active_mask[i] else 0.5
                 for i in range(NUM_TRM_TYPES)
             },
         )
@@ -261,6 +289,10 @@ class SiteTGNNInferenceService:
             feedback_arr = feedback.to_tensor()
 
         for i, trm_name in enumerate(TRM_NAMES):
+            # Skip inactive TRMs — leave features as zeros (masked node)
+            if not self._active_mask[i]:
+                continue
+
             # 0: urgency
             features[i, 0] = urgency_values[i] if i < len(urgency_values) else 0.0
 
