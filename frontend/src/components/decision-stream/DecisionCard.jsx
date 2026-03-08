@@ -81,7 +81,7 @@ const TYPE_LABELS = {
 
 const UrgencyBar = ({ value }) => {
   if (value == null) return null;
-  const pct = Math.round(value * 100);
+  const pct = (value * 100).toFixed(1);
   const color =
     value >= 0.8
       ? 'bg-red-500'
@@ -108,7 +108,7 @@ const ConfidenceChip = ({ value }) => {
         --
       </Badge>
     );
-  const pct = Math.round(value * 100);
+  const pct = (value * 100).toFixed(1);
   const variant =
     value >= 0.9
       ? 'default'
@@ -199,7 +199,7 @@ const DecisionCard = ({
         {/* Suggested action */}
         {decision.suggested_action && (
           <p className="text-sm mb-3">
-            <span className="text-muted-foreground">Suggested: </span>
+            <span className="text-muted-foreground">Decided: </span>
             <span className="font-medium">{decision.suggested_action}</span>
           </p>
         )}

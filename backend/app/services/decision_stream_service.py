@@ -233,13 +233,19 @@ def _get_suggested_action(decision, decision_type: str) -> str:
     Column names must match the actual DB schema in powell_*_decisions tables.
     """
     if decision_type == "atp":
+        promised = getattr(decision, "promised_qty", None)
+        requested = getattr(decision, "requested_qty", None)
         if getattr(decision, "can_fulfill", False):
-            return f"Fulfill {getattr(decision, 'promised_qty', '?')} units"
-        return f"Cannot fulfill — suggest partial ({getattr(decision, 'promised_qty', 0)} of {getattr(decision, 'requested_qty', '?')})"
+            return f"Fulfill {int(promised):,} units" if promised is not None else "Fulfill order"
+        if promised is not None and requested is not None:
+            return f"Cannot fulfill — suggest partial ({int(promised):,} of {int(requested):,})"
+        return "Cannot fulfill — review order"
     elif decision_type == "rebalancing":
-        return f"Transfer {getattr(decision, 'recommended_qty', '?')} units"
+        qty = getattr(decision, "recommended_qty", None)
+        return f"Transfer {int(qty):,} units" if qty is not None else "Transfer units"
     elif decision_type == "po_creation":
-        return f"Order {getattr(decision, 'recommended_qty', '?')} units"
+        qty = getattr(decision, "recommended_qty", None)
+        return f"Order {int(qty):,} units" if qty is not None else "Order units"
     elif decision_type == "order_tracking":
         return getattr(decision, "recommended_action", "Review exception")
     elif decision_type == "mo_execution":
