@@ -487,6 +487,25 @@ async def phase5_enable_site_tgnn() -> Dict[str, Any]:
 
         db = sync_session_factory()
         try:
+            # Ensure table exists (no-op if already present)
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS site_agent_configs (
+                    id SERIAL PRIMARY KEY,
+                    config_id INTEGER NOT NULL,
+                    site_key VARCHAR(100) NOT NULL,
+                    enable_site_tgnn BOOLEAN NOT NULL DEFAULT false,
+                    agent_mode VARCHAR(20) NOT NULL DEFAULT 'copilot',
+                    use_trm_adjustments BOOLEAN NOT NULL DEFAULT true,
+                    master_type VARCHAR(50),
+                    sc_site_type VARCHAR(50),
+                    tenant_id INTEGER,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    updated_at TIMESTAMP DEFAULT NOW(),
+                    UNIQUE (config_id, site_key)
+                )
+            """))
+            db.commit()
+
             # Check if site_agent_configs row exists
             row = db.execute(text(
                 "SELECT id, enable_site_tgnn FROM site_agent_configs "

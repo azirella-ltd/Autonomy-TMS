@@ -279,10 +279,25 @@ def create_or_get_user(
 
 
 def create_or_get_tenant(db: Session, admin_user: User) -> Tenant:
-    """Create Food Dist tenant or return existing one."""
-    existing = db.query(Tenant).filter(Tenant.name == FOOD_DIST_CUSTOMER_NAME).first()
+    """Create Food Dist tenant or return existing one.
+
+    Looks for tenant by exact name first, then by partial match
+    (handles 'Food Dist' vs 'Food Distributor' mismatch).
+    """
+    from sqlalchemy import or_
+    existing = db.query(Tenant).filter(
+        or_(
+            Tenant.name == FOOD_DIST_CUSTOMER_NAME,
+            Tenant.name.ilike("Food Dist%"),
+        )
+    ).first()
     if existing:
-        print(f"Tenant '{FOOD_DIST_CUSTOMER_NAME}' already exists (id={existing.id})")
+        print(f"Tenant '{existing.name}' already exists (id={existing.id})")
+        # Ensure admin_id is set
+        if existing.admin_id != admin_user.id:
+            existing.admin_id = admin_user.id
+            db.flush()
+            print(f"  Updated admin_id to {admin_user.id}")
         return existing
 
     tenant = Tenant(

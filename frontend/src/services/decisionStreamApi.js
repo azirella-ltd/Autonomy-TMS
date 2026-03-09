@@ -25,6 +25,16 @@ export const decisionStreamApi = {
     api.post('/decision-stream/action', data).then((r) => r.data),
 
   /**
+   * Force-refresh the digest (invalidates cache and re-synthesizes via LLM).
+   * Use this for the refresh button instead of getDigest to bypass the cache.
+   * @param {number} [configId] - Optional supply chain config ID
+   */
+  refreshDigest: (configId) =>
+    api
+      .post('/decision-stream/refresh', null, { params: { config_id: configId } })
+      .then((r) => r.data),
+
+  /**
    * Send a chat message with decision-context injection.
    * @param {Object} data - { message, conversation_id?, config_id? }
    */

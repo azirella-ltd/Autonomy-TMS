@@ -113,6 +113,21 @@ const DecisionStream = () => {
     }
   };
 
+  const handleRefresh = async () => {
+    try {
+      setDigestLoading(true);
+      const data = await decisionStreamApi.refreshDigest(selectedConfigId);
+      setDigest(data);
+      setAlerts(data.alerts || []);
+    } catch (err) {
+      console.error('Refresh failed:', err);
+      // Fall back to normal load
+      await loadDigest();
+    } finally {
+      setDigestLoading(false);
+    }
+  };
+
   const handleAccept = async (decision) => {
     try {
       await decisionStreamApi.actOnDecision({
@@ -228,7 +243,7 @@ const DecisionStream = () => {
           <Button
             variant="outline"
             size="sm"
-            onClick={loadDigest}
+            onClick={handleRefresh}
             disabled={digestLoading}
           >
             <RefreshCw

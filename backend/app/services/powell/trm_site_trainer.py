@@ -115,10 +115,13 @@ class TRMSiteTrainer:
         return max_R
 
     def _ensure_model(self):
-        """Lazily create the TRM model on first use."""
-        if self.model is not None:
-            return
+        """Lazily create (or rebuild) the TRM model for current stigmergic phase.
 
+        The model's input dimension must match base state_dim + any extra dims
+        added by the current stigmergic phase (urgency vector, signal summary).
+        If the phase changes after model creation, the model is rebuilt with
+        the new input dimension.
+        """
         try:
             import torch
             from app.models.trm import MODEL_REGISTRY
@@ -128,7 +131,14 @@ class TRMSiteTrainer:
         if self.trm_type not in MODEL_REGISTRY:
             raise ValueError(f"Unknown TRM type: {self.trm_type}")
 
-        self.model_cls, self.state_dim = MODEL_REGISTRY[self.trm_type]
+        self.model_cls, base_dim = MODEL_REGISTRY[self.trm_type]
+        self._base_state_dim = base_dim
+        needed_dim = base_dim + self.stigmergic_phase.extra_dims
+
+        if self.model is not None and self.state_dim == needed_dim:
+            return
+
+        self.state_dim = needed_dim
         self.model = self.model_cls(state_dim=self.state_dim)
         self.model = self.model.to(self.device)
 

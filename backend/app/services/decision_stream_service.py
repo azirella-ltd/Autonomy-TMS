@@ -80,6 +80,27 @@ _CURRENCY_SYMBOL = os.environ.get("DECISION_STREAM_CURRENCY", "$")
 # In-memory conversation cache (same pattern as AssistantService)
 _STREAM_CONVERSATION_CACHE: OrderedDict[str, Dict[str, Any]] = OrderedDict()
 
+# Digest-level cache: keyed by (tenant_id, config_id, powell_role) → full digest response
+_DIGEST_CACHE: Dict[str, Dict[str, Any]] = {}
+_DIGEST_CACHE_TTL = int(os.environ.get("DECISION_STREAM_DIGEST_CACHE_TTL", 300))  # 5 min
+
+
+def invalidate_digest_cache(tenant_id: Optional[int] = None, config_id: Optional[int] = None):
+    """Invalidate digest cache entries. Called when new decisions are persisted.
+
+    If tenant_id is provided, only entries for that tenant are cleared.
+    If neither is provided, the entire cache is cleared.
+    """
+    if tenant_id is None and config_id is None:
+        _DIGEST_CACHE.clear()
+        return
+    prefix = f"digest:{tenant_id}:" if tenant_id else "digest:"
+    keys_to_remove = [k for k in _DIGEST_CACHE if k.startswith(prefix)]
+    if config_id is not None:
+        keys_to_remove = [k for k in keys_to_remove if f":{config_id}:" in k]
+    for k in keys_to_remove:
+        _DIGEST_CACHE.pop(k, None)
+
 # Deep-link mapping for each decision type -> frontend Console route
 DEEP_LINK_MAP = {
     "atp": "/planning/execution/atp-worklist",
@@ -415,7 +436,22 @@ class DecisionStreamService:
         """Collect pending decisions, alerts, and synthesize an LLM digest.
 
         Returns dict matching DecisionDigestResponse schema.
+        Uses a TTL-based in-memory cache keyed by (tenant, config, role) to
+        avoid repeated LLM calls and DB queries.  Cache is invalidated when
+        new decisions are recorded (via invalidate_digest_cache) or after
+        DECISION_STREAM_DIGEST_CACHE_TTL seconds (default 5 min).
         """
+        # --- Check digest cache ---
+        cache_key = f"digest:{self.tenant_id}:{config_id}:{powell_role}"
+        cached = _DIGEST_CACHE.get(cache_key)
+        if cached:
+            age = time.time() - cached["_ts"]
+            if age < _DIGEST_CACHE_TTL:
+                logger.debug("Digest cache hit (%s, age=%.0fs)", cache_key, age)
+                return {k: v for k, v in cached.items() if not k.startswith("_")}
+            else:
+                _DIGEST_CACHE.pop(cache_key, None)
+
         # 1. Collect pending decisions from all 11 tables
         decisions = await self._collect_pending_decisions(config_id, powell_role)
 
@@ -428,13 +464,22 @@ class DecisionStreamService:
         # 4. Synthesize digest text via LLM
         digest_text = await self._synthesize_digest(decisions, alerts, powell_role)
 
-        return {
+        result = {
             "digest_text": digest_text,
             "decisions": decisions,
             "alerts": alerts,
             "total_pending": len(decisions),
             "config_id": config_id,
         }
+
+        # --- Store in digest cache ---
+        _DIGEST_CACHE[cache_key] = {**result, "_ts": time.time()}
+        # Evict stale entries (keep max 50)
+        if len(_DIGEST_CACHE) > 50:
+            oldest_key = min(_DIGEST_CACHE, key=lambda k: _DIGEST_CACHE[k]["_ts"])
+            _DIGEST_CACHE.pop(oldest_key, None)
+
+        return result
 
     async def act_on_decision(
         self,
@@ -623,8 +668,35 @@ class DecisionStreamService:
         # Resolve user's site/product scope to actual DB values
         allowed_sites, allowed_products = await self._resolve_user_scope()
 
+        # Build product/site name lookup dicts (single query each)
+        product_names: Dict[str, str] = {}
+        site_names: Dict[str, str] = {}
+        try:
+            result = await self.db.execute(
+                select(Product.id, Product.description).where(
+                    Product.config_id.in_(config_filter)
+                )
+            )
+            for pid, pdesc in result.fetchall():
+                if pid and pdesc:
+                    # Extract short name: "Orange Juice Premium [REFRIGERATED/BEV/BV001]" → "Orange Juice Premium"
+                    product_names[str(pid)] = pdesc.split("[")[0].strip() if "[" in pdesc else pdesc
+        except Exception:
+            pass
+        try:
+            result = await self.db.execute(
+                select(Site.name).where(
+                    Site.config_id.in_(config_filter)
+                )
+            )
+            for (sname,) in result.fetchall():
+                if sname:
+                    site_names[str(sname)] = sname
+        except Exception as e:
+            logger.warning(f"Failed to load site names: {e}")
+
+        # Query all 11 tables sequentially (async session cannot be shared across gather)
         for model_class, type_key in DECISION_TABLES:
-            # Skip types not relevant to this role
             if relevant_types is not None and type_key not in relevant_types:
                 continue
 
@@ -656,7 +728,7 @@ class DecisionStreamService:
                     if type_key == "rebalancing":
                         site_id = getattr(row, "from_site", None)
                     elif type_key == "order_tracking":
-                        site_id = None  # order_exceptions has order_id, not location
+                        site_id = None
                     elif type_key in ("mo_execution", "quality", "maintenance",
                                       "subcontracting", "forecast_adjustment"):
                         site_id = getattr(row, "site_id", None)
@@ -665,14 +737,15 @@ class DecisionStreamService:
                     else:
                         site_id = getattr(row, "location_id", None)
 
+                    pid = getattr(row, "product_id", None)
                     all_decisions.append({
                         "id": row.id,
                         "decision_type": type_key,
                         "summary": _build_decision_summary(row, type_key),
-                        "product_id": getattr(row, "product_id", None),
-                        "product_name": None,
+                        "product_id": pid,
+                        "product_name": product_names.get(str(pid)) if pid else None,
                         "site_id": site_id,
-                        "site_name": None,
+                        "site_name": site_names.get(str(site_id)) if site_id else None,
                         "urgency": getattr(row, "urgency_at_time", None),
                         "confidence": getattr(row, "confidence", None),
                         "economic_impact": None,
@@ -688,7 +761,8 @@ class DecisionStreamService:
                         },
                     })
             except Exception as e:
-                logger.warning(f"Failed to query {type_key} decisions: {e}")
+                import traceback
+                logger.warning(f"Failed to query {type_key} decisions: {e}\n{traceback.format_exc()}")
                 try:
                     await self.db.rollback()
                 except Exception:

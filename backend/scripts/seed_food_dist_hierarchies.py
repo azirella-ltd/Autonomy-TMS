@@ -190,10 +190,10 @@ PRODUCT_PRICING = {
 
 
 def find_food_dist_tenant(db: Session) -> Tenant:
-    """Find the Food Dist tenant."""
-    tenant = db.query(Tenant).filter(Tenant.name == "Food Dist").first()
+    """Find the Food Dist tenant (handles 'Food Dist' vs 'Food Distributor' naming)."""
+    tenant = db.query(Tenant).filter(Tenant.name.ilike("Food Dist%")).first()
     if not tenant:
-        raise ValueError("Food Dist tenant not found. Run seed_dot_foods_demo.py first.")
+        raise ValueError("Food Dist tenant not found. Run seed_food_dist_demo.py first.")
     return tenant
 
 

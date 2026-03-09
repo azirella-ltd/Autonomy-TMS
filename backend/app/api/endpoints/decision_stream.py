@@ -22,7 +22,7 @@ from app.schemas.decision_stream import (
     DecisionStreamChatRequest,
     DecisionStreamChatResponse,
 )
-from app.services.decision_stream_service import DecisionStreamService
+from app.services.decision_stream_service import DecisionStreamService, invalidate_digest_cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/decision-stream", tags=["Decision Stream"])
@@ -47,6 +47,27 @@ async def get_decision_digest(
     service = _get_service(db, current_user)
     powell_role = getattr(current_user, "powell_role", None)
 
+    result = await service.get_decision_digest(
+        powell_role=powell_role,
+        config_id=config_id,
+    )
+    return result
+
+
+@router.post("/refresh")
+async def refresh_digest(
+    config_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Invalidate the digest cache and return a fresh digest.
+
+    Use the refresh button in the UI to force a fresh LLM synthesis.
+    """
+    tenant_id = getattr(current_user, "tenant_id", None) or 0
+    invalidate_digest_cache(tenant_id=tenant_id, config_id=config_id)
+    service = _get_service(db, current_user)
+    powell_role = getattr(current_user, "powell_role", None)
     result = await service.get_decision_digest(
         powell_role=powell_role,
         config_id=config_id,

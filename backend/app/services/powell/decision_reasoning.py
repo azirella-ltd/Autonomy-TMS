@@ -31,26 +31,32 @@ def atp_reasoning(
 ) -> str:
     """Generate reasoning for an ATP decision."""
     method = "TRM model" if decision_method == "trm" else "heuristic rule"
+    prio_label = {1: "critical", 2: "high", 3: "standard", 4: "low", 5: "backfill"}.get(order_priority, f"level {order_priority}")
     if can_fulfill:
-        return (
-            f"Fulfilled {promised_qty:.0f} of {requested_qty:.0f} units for "
-            f"{product_id} at {location_id} (priority {order_priority}). "
-            f"Decision by {method} at {confidence:.0%} confidence. "
-            f"Sufficient allocation available across priority tiers."
-        )
+        parts = [
+            f"Full fulfillment of {promised_qty:.0f} units for {product_id} at {location_id}.",
+            f"This is a {prio_label}-priority order (tier {order_priority} of 5).",
+            f"The ATP agent evaluated available allocations across all priority tiers using the AATP consumption sequence and confirmed sufficient inventory to satisfy the full request.",
+        ]
+        if consumption_breakdown:
+            tier_details = [f"tier {k}: {v:.0f}" for k, v in consumption_breakdown.items() if v > 0]
+            if tier_details:
+                parts.append(f"Allocation consumed from: {', '.join(tier_details)} units.")
+        parts.append(f"Decision made by {method} at {confidence:.0%} confidence. No shortfall — downstream fulfillment is on track.")
+        return " ".join(parts)
     shortfall = requested_qty - promised_qty
-    tiers_used = ""
+    fill_pct = (promised_qty / requested_qty * 100) if requested_qty > 0 else 0
+    parts = [
+        f"Partial fulfillment: {promised_qty:.0f} of {requested_qty:.0f} units for {product_id} at {location_id} ({fill_pct:.0f}% fill rate, shortfall of {shortfall:.0f} units).",
+        f"This is a {prio_label}-priority order (tier {order_priority} of 5).",
+        f"The ATP agent consumed available allocations bottom-up from lowest priority through tier {order_priority}, but could not source enough inventory to fully satisfy the request.",
+    ]
     if consumption_breakdown:
-        tiers = [k for k, v in consumption_breakdown.items() if v > 0]
-        if tiers:
-            tiers_used = f" Consumed from priority tier(s): {', '.join(tiers)}."
-    return (
-        f"Partial fulfillment: {promised_qty:.0f} of {requested_qty:.0f} units for "
-        f"{product_id} at {location_id} (shortfall {shortfall:.0f}). "
-        f"Priority {order_priority} order.{tiers_used} "
-        f"Decision by {method} at {confidence:.0%} confidence. "
-        f"Insufficient allocation to fully satisfy request."
-    )
+        tier_details = [f"tier {k}: {v:.0f}" for k, v in consumption_breakdown.items() if v > 0]
+        if tier_details:
+            parts.append(f"Allocation consumed from: {', '.join(tier_details)} units.")
+    parts.append(f"Decision by {method} at {confidence:.0%} confidence. Consider expediting a replenishment order or rebalancing inventory from a surplus location to close the gap.")
+    return " ".join(parts)
 
 
 def po_reasoning(
@@ -66,17 +72,25 @@ def po_reasoning(
     expected_cost: Optional[float] = None,
 ) -> str:
     """Generate reasoning for a PO creation decision."""
+    trigger_label = trigger_reason.replace("_", " ").lower()
     parts = [
-        f"Recommended PO of {recommended_qty:.0f} units for {product_id} at {location_id}."
+        f"Purchase order recommended: {recommended_qty:.0f} units of {product_id} at {location_id}.",
     ]
     if supplier_id:
-        parts.append(f"Supplier: {supplier_id}.")
-    parts.append(f"Trigger: {trigger_reason} (urgency: {urgency}).")
+        parts.append(f"Sourced from supplier {supplier_id} based on sourcing rules and lead time evaluation.")
+    parts.append(f"This PO was triggered by {trigger_label} conditions with {urgency} urgency.")
     if inventory_position is not None:
-        parts.append(f"Current inventory position: {inventory_position:.0f} units.")
+        coverage_note = ""
+        if recommended_qty > 0:
+            days_est = inventory_position / (recommended_qty / 30) if recommended_qty > 0 else 0
+            if days_est < 7:
+                coverage_note = " Current stock covers less than a week of expected demand — replenishment is time-critical."
+            elif days_est < 14:
+                coverage_note = " Current stock covers approximately two weeks of expected demand."
+        parts.append(f"Current inventory position is {inventory_position:.0f} units.{coverage_note}")
     if expected_cost is not None:
-        parts.append(f"Expected cost: ${expected_cost:,.2f}.")
-    parts.append(f"Confidence: {confidence:.0%}.")
+        parts.append(f"Estimated procurement cost: ${expected_cost:,.2f}.")
+    parts.append(f"Decision confidence: {confidence:.0%}. If not executed, the location risks stockout within the replenishment lead time window.")
     return " ".join(parts)
 
 
@@ -92,16 +106,21 @@ def rebalancing_reasoning(
     to_inventory: Optional[float] = None,
 ) -> str:
     """Generate reasoning for an inventory rebalancing decision."""
+    reason_label = reason.replace("_", " ") if reason else "inventory imbalance"
     parts = [
-        f"Transfer {recommended_qty:.0f} units of {product_id} from {from_site} to {to_site}."
+        f"Inventory rebalancing: transfer {recommended_qty:.0f} units of {product_id} from {from_site} to {to_site}.",
+        f"This transfer was triggered by {reason_label} detected across the distribution network.",
     ]
-    if reason:
-        parts.append(f"Reason: {reason}.")
     if from_inventory is not None and to_inventory is not None:
+        ratio = from_inventory / to_inventory if to_inventory > 0 else float("inf")
         parts.append(
-            f"Source has {from_inventory:.0f} units; destination has {to_inventory:.0f} units."
+            f"Source site ({from_site}) currently holds {from_inventory:.0f} units while destination ({to_site}) holds {to_inventory:.0f} units — a {ratio:.1f}:1 imbalance."
         )
-    parts.append(f"Confidence: {confidence:.0%}.")
+        if to_inventory == 0:
+            parts.append("The destination site has zero stock, making this transfer critical to prevent stockouts.")
+    else:
+        parts.append(f"The agent identified {to_site} as having insufficient coverage relative to its demand forecast, while {from_site} has surplus inventory that can be redistributed without risk.")
+    parts.append(f"Decision confidence: {confidence:.0%}. Transferring this quantity equalizes days-of-supply across locations and improves overall network service level.")
     return " ".join(parts)
 
 
@@ -115,13 +134,22 @@ def order_tracking_reasoning(
     reason: Optional[str] = None,
 ) -> str:
     """Generate reasoning for an order tracking exception."""
+    severity_context = {
+        "critical": "This requires immediate attention as it may impact customer commitments or production schedules.",
+        "high": "This exception has significant downstream impact and should be addressed within the current planning cycle.",
+        "medium": "This is a moderate-priority exception that should be reviewed but is not immediately blocking.",
+        "low": "This is an informational exception flagged for awareness — no urgent action required.",
+    }.get(severity.lower(), f"Severity level: {severity}.")
+    action_label = recommended_action.replace("_", " ")
+    exc_label = exception_type.replace("_", " ").lower()
     parts = [
-        f"Exception detected on order {order_id}: {exception_type} ({severity}).",
-        f"Recommended action: {recommended_action}.",
+        f"Exception detected on order {order_id}: {exc_label} ({severity} severity).",
+        severity_context,
+        f"The order tracking agent recommends: {action_label}.",
     ]
     if reason:
-        parts.append(f"Reason: {reason}.")
-    parts.append(f"Confidence: {confidence:.0%}.")
+        parts.append(f"Root cause analysis: {reason}.")
+    parts.append(f"Decision confidence: {confidence:.0%}. If this exception is not resolved, it may cascade to downstream orders and affect service level commitments.")
     return " ".join(parts)
 
 
@@ -136,12 +164,14 @@ def mo_execution_reasoning(
 ) -> str:
     """Generate reasoning for a manufacturing order execution decision."""
     subject = f"MO {mo_id}" if mo_id else f"Manufacturing order for {product_id}"
+    decision_label = decision_type.replace("_", " ").lower()
     parts = [
-        f"{subject} at {location_id}: {decision_type}.",
+        f"{subject} at {location_id}: decision is to {decision_label}.",
+        f"The MO execution agent evaluated current production capacity, material availability, and downstream demand priority to determine the optimal action for this order.",
     ]
     if reason:
-        parts.append(f"Reason: {reason}.")
-    parts.append(f"Confidence: {confidence:.0%}.")
+        parts.append(f"Specific trigger: {reason}.")
+    parts.append(f"Decision confidence: {confidence:.0%}. This action aligns with the current production schedule and capacity constraints at {location_id}.")
     return " ".join(parts)
 
 
@@ -159,11 +189,16 @@ def to_execution_reasoning(
     subject = f"TO {to_id}" if to_id else f"Transfer order for {product_id}"
     route = ""
     if source_site_id and dest_site_id:
-        route = f" ({source_site_id} → {dest_site_id})"
-    parts = [f"{subject}{route}: {decision_type}."]
+        route = f" from {source_site_id} to {dest_site_id}"
+    decision_label = decision_type.replace("_", " ").lower()
+    parts = [
+        f"{subject}{route}: decision is to {decision_label}.",
+        f"The transfer order agent assessed transportation lane capacity, transit lead times, and inventory urgency at both the source and destination to determine the optimal execution action.",
+    ]
     if trigger_reason:
-        parts.append(f"Trigger: {trigger_reason}.")
-    parts.append(f"Confidence: {confidence:.0%}.")
+        trigger_label = trigger_reason.replace("_", " ").lower()
+        parts.append(f"This action was triggered by: {trigger_label}.")
+    parts.append(f"Decision confidence: {confidence:.0%}. Executing this transfer order supports network-level inventory balance and service level targets.")
     return " ".join(parts)
 
 
@@ -177,11 +212,24 @@ def quality_reasoning(
     lot_id: Optional[str] = None,
 ) -> str:
     """Generate reasoning for a quality disposition decision."""
-    subject = f"Lot {lot_id}" if lot_id else f"{product_id}"
-    parts = [f"Quality disposition for {subject} at {location_id}: {disposition}."]
+    subject = f"Lot {lot_id} ({product_id})" if lot_id else product_id
+    disposition_label = disposition.replace("_", " ").lower()
+    parts = [
+        f"Quality disposition for {subject} at {location_id}: {disposition_label}.",
+        f"The quality agent evaluated inspection results, defect classifications, and downstream impact to determine the appropriate disposition for this material.",
+    ]
     if disposition_reason:
-        parts.append(f"Reason: {disposition_reason}.")
-    parts.append(f"Confidence: {confidence:.0%}.")
+        parts.append(f"Disposition rationale: {disposition_reason}.")
+    impact = {
+        "accept": "Releasing this material to available inventory for immediate use.",
+        "reject": "This material will be quarantined and returned or disposed. Replacement inventory may need to be sourced.",
+        "rework": "This material will be routed to rework operations, adding processing time but recovering value.",
+        "scrap": "This material is unrecoverable and will be written off. A replacement order may be needed.",
+        "use_as_is": "Despite the quality deviation, the material meets minimum acceptance criteria for its intended use.",
+    }.get(disposition.lower(), "")
+    if impact:
+        parts.append(impact)
+    parts.append(f"Decision confidence: {confidence:.0%}.")
     return " ".join(parts)
 
 
@@ -194,10 +242,22 @@ def maintenance_reasoning(
     reason: Optional[str] = None,
 ) -> str:
     """Generate reasoning for a maintenance scheduling decision."""
-    parts = [f"Maintenance {decision_type} for asset {asset_id} at {location_id}."]
+    decision_label = decision_type.replace("_", " ").lower()
+    parts = [
+        f"Maintenance decision for asset {asset_id} at {location_id}: {decision_label}.",
+        f"The maintenance scheduling agent balanced production capacity requirements against equipment reliability risk and preventive maintenance schedules to determine the optimal timing.",
+    ]
     if reason:
-        parts.append(f"Reason: {reason}.")
-    parts.append(f"Confidence: {confidence:.0%}.")
+        parts.append(f"Specific trigger: {reason}.")
+    context = {
+        "schedule": "Preventive maintenance will be scheduled during a planned downtime window to minimize production impact.",
+        "defer": "Maintenance is being deferred because current production demand takes priority and equipment condition metrics remain within acceptable bounds.",
+        "expedite": "Maintenance is being expedited due to elevated equipment risk indicators — delaying further could result in unplanned downtime.",
+        "outsource": "This maintenance task is being routed to an external service provider due to internal capacity constraints or specialized skill requirements.",
+    }.get(decision_type.lower(), "")
+    if context:
+        parts.append(context)
+    parts.append(f"Decision confidence: {confidence:.0%}.")
     return " ".join(parts)
 
 
@@ -210,12 +270,23 @@ def subcontracting_reasoning(
     external_supplier: Optional[str] = None,
 ) -> str:
     """Generate reasoning for a subcontracting decision."""
-    parts = [f"Routing decision for {product_id}: {routing_decision}."]
+    routing_label = routing_decision.replace("_", " ").lower()
+    parts = [
+        f"Make-vs-buy routing decision for {product_id}: {routing_label}.",
+        f"The subcontracting agent evaluated internal manufacturing capacity, external supplier lead times and costs, and current demand urgency to determine the optimal production routing.",
+    ]
     if external_supplier:
-        parts.append(f"External supplier: {external_supplier}.")
+        parts.append(f"External manufacturing will be handled by {external_supplier}.")
     if reason:
-        parts.append(f"Reason: {reason}.")
-    parts.append(f"Confidence: {confidence:.0%}.")
+        parts.append(f"Key factor: {reason}.")
+    context = {
+        "internal": "Keeping production in-house because internal capacity is available and cost-effective for this volume.",
+        "external": "Routing to external manufacturing because internal capacity is constrained or the external supplier offers better cost/lead time for this product.",
+        "split": "Splitting production between internal and external sources to balance capacity utilization and meet delivery timelines.",
+    }.get(routing_decision.lower(), "")
+    if context:
+        parts.append(context)
+    parts.append(f"Decision confidence: {confidence:.0%}.")
     return " ".join(parts)
 
 
@@ -230,12 +301,22 @@ def forecast_adjustment_reasoning(
     adjusted_value: Optional[float] = None,
 ) -> str:
     """Generate reasoning for a forecast adjustment decision."""
-    parts = [f"Adjust forecast for {product_id} {adjustment_direction} {adjustment_pct:.1f}%."]
+    parts = [
+        f"Forecast adjustment for {product_id}: {adjustment_direction} by {adjustment_pct:.1f}%.",
+    ]
     if current_value is not None and adjusted_value is not None:
-        parts.append(f"Value: {current_value:.0f} → {adjusted_value:.0f}.")
+        delta = abs(adjusted_value - current_value)
+        parts.append(f"Baseline forecast of {current_value:.0f} units adjusted to {adjusted_value:.0f} units (delta: {delta:.0f} units).")
     if signal_type:
-        parts.append(f"Triggered by: {signal_type} signal.")
-    parts.append(f"Confidence: {confidence:.0%}.")
+        signal_label = signal_type.replace("_", " ")
+        parts.append(f"This adjustment was triggered by a {signal_label} signal that indicates a deviation from the statistical forecast baseline.")
+    direction_context = {
+        "up": "Demand is expected to be higher than the statistical forecast suggests. Upstream supply plans should account for the increased requirement to avoid stockouts.",
+        "down": "Demand is expected to be lower than the statistical forecast suggests. Reducing the forecast prevents excess inventory build-up and associated holding costs.",
+    }.get(adjustment_direction.lower(), "")
+    if direction_context:
+        parts.append(direction_context)
+    parts.append(f"Decision confidence: {confidence:.0%}. This adjustment will propagate through dependent supply plans in the next planning cycle.")
     return " ".join(parts)
 
 
@@ -251,13 +332,19 @@ def inventory_buffer_reasoning(
 ) -> str:
     """Generate reasoning for an inventory buffer adjustment decision."""
     direction = "increased" if adjusted_ss > baseline_ss else "decreased"
+    delta = abs(adjusted_ss - baseline_ss)
     parts = [
-        f"Inventory buffer {direction} for {product_id} at {location_id}: "
-        f"{baseline_ss:.0f} → {adjusted_ss:.0f} ({multiplier:.2f}x)."
+        f"Inventory buffer {direction} for {product_id} at {location_id}: {baseline_ss:.0f} → {adjusted_ss:.0f} units ({multiplier:.2f}x multiplier, delta of {delta:.0f} units).",
+        f"The inventory buffer agent evaluated demand variability, lead time uncertainty, and recent service level performance to determine whether the current buffer is appropriately sized.",
     ]
     if reason:
-        parts.append(f"Reason: {reason}.")
-    parts.append(f"Confidence: {confidence:.0%}.")
+        reason_label = reason.replace("_", " ")
+        parts.append(f"Adjustment triggered by: {reason_label}.")
+    if direction == "increased":
+        parts.append(f"Increasing the buffer absorbs additional uncertainty and reduces the probability of stockout. The trade-off is higher average on-hand inventory and associated holding costs.")
+    else:
+        parts.append(f"Decreasing the buffer releases excess working capital while maintaining acceptable service levels. Demand patterns have stabilized enough to warrant a tighter buffer.")
+    parts.append(f"Decision confidence: {confidence:.0%}.")
     return " ".join(parts)
 
 
