@@ -193,6 +193,21 @@ def _evict_stale():
         _STREAM_CONVERSATION_CACHE.popitem(last=False)
 
 
+def _humanize_ids(text: str, product_names: Dict[str, str]) -> str:
+    """Replace raw product IDs (e.g. CFG22_RD005) with human names in text.
+
+    Scans for every product ID key and replaces with the short name.
+    Longer IDs are replaced first to avoid partial-match issues.
+    """
+    if not text or not product_names:
+        return text
+    # Sort by key length descending to avoid partial replacements
+    for pid, name in sorted(product_names.items(), key=lambda x: -len(x[0])):
+        if pid in text:
+            text = text.replace(pid, name)
+    return text
+
+
 def _build_decision_summary(decision, decision_type: str) -> str:
     """Build a human-readable one-line summary for any decision type.
 
@@ -453,7 +468,7 @@ class DecisionStreamService:
                 _DIGEST_CACHE.pop(cache_key, None)
 
         # 1. Collect pending decisions from all 11 tables
-        decisions = await self._collect_pending_decisions(config_id, powell_role)
+        decisions, product_names = await self._collect_pending_decisions(config_id, powell_role)
 
         # 2. Prioritize
         decisions = self._prioritize_decisions(decisions)
@@ -461,8 +476,9 @@ class DecisionStreamService:
         # 3. Collect alerts (CDC triggers + condition monitor)
         alerts = await self._collect_alerts(config_id)
 
-        # 4. Synthesize digest text via LLM
+        # 4. Synthesize digest text via LLM (then humanize any residual IDs)
         digest_text = await self._synthesize_digest(decisions, alerts, powell_role)
+        digest_text = _humanize_ids(digest_text, product_names)
 
         result = {
             "digest_text": digest_text,
@@ -627,13 +643,16 @@ class DecisionStreamService:
         self,
         config_id: Optional[int] = None,
         powell_role: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
         """Query all 11 powell_*_decisions tables for recent decisions.
 
         Applies three layers of filtering:
         1. Tenant scope (via config_id)
         2. Role relevance (which decision types this role sees)
         3. User scope (site + product hierarchy-based filtering)
+
+        Returns:
+            (decisions, product_names) — product_names maps product_id → short name.
         """
         # Filter decision types by role relevance
         relevant_types = ROLE_RELEVANCE.get(powell_role) if powell_role else None
@@ -660,10 +679,10 @@ class DecisionStreamService:
                     await self.db.rollback()
                 except Exception:
                     pass
-                return []
+                return [], {}
 
         if not config_filter:
-            return []
+            return [], {}
 
         # Resolve user's site/product scope to actual DB values
         allowed_sites, allowed_products = await self._resolve_user_scope()
@@ -738,10 +757,11 @@ class DecisionStreamService:
                         site_id = getattr(row, "location_id", None)
 
                     pid = getattr(row, "product_id", None)
+                    raw_reasoning = getattr(row, "decision_reasoning", None)
                     all_decisions.append({
                         "id": row.id,
                         "decision_type": type_key,
-                        "summary": _build_decision_summary(row, type_key),
+                        "summary": _humanize_ids(_build_decision_summary(row, type_key), product_names),
                         "product_id": pid,
                         "product_name": product_names.get(str(pid)) if pid else None,
                         "site_id": site_id,
@@ -750,8 +770,8 @@ class DecisionStreamService:
                         "confidence": getattr(row, "confidence", None),
                         "economic_impact": None,
                         "reason": _get_reason(row, type_key),
-                        "decision_reasoning": getattr(row, "decision_reasoning", None),
-                        "suggested_action": _get_suggested_action(row, type_key),
+                        "decision_reasoning": _humanize_ids(raw_reasoning, product_names) if raw_reasoning else None,
+                        "suggested_action": _humanize_ids(_get_suggested_action(row, type_key), product_names),
                         "deep_link": DEEP_LINK_MAP.get(type_key, "/insights/actions"),
                         "created_at": row.created_at.isoformat() if row.created_at else None,
                         "context": {
@@ -768,7 +788,7 @@ class DecisionStreamService:
                 except Exception:
                     pass
 
-        return all_decisions
+        return all_decisions, product_names
 
     def _prioritize_decisions(self, decisions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Sort by urgency DESC, confidence ASC, then cap at 20."""
@@ -841,11 +861,13 @@ class DecisionStreamService:
         prompt = (
             f"You are an AI supply chain planning assistant for {self.tenant_name}. "
             f"{role_context}"
-            f"Synthesize a brief, conversational digest (2-4 sentences) for the planner. "
-            f"These are decisions that Autonomy agents have already made. "
-            f"Mention the count and highlight the most important ones. Be specific about products/sites when available. "
-            f"Do NOT list all decisions — just highlight the most important ones.\n\n"
-            f"Key decisions made by Autonomy agents ({len(decisions)} total):\n"
+            f"Summarize the key agent decisions as a short markdown bulleted list for the planner. "
+            f"Start with a one-line header like '**{len(decisions)} decisions** made by Autonomy agents:' "
+            f"then list the 3-5 most important decisions as bullet points (use '- **Category**: details' format). "
+            f"Be specific about product names, sites, and quantities. "
+            f"Group related decisions where possible (e.g. combine multiple POs into one bullet). "
+            f"Do NOT list all {len(decisions)} — just the highlights.\n\n"
+            f"Decisions:\n"
             + "\n".join(f"- {s}" for s in decision_summaries)
             + "\n\n"
             + (f"Active alerts ({len(alerts)}):\n" + "\n".join(f"- {s}" for s in alert_summaries) if alerts else "No active alerts.")
@@ -855,13 +877,14 @@ class DecisionStreamService:
             return await self._call_llm(prompt)
         except Exception as e:
             logger.error(f"LLM digest synthesis failed: {e}")
-            # Fallback to a template-based digest
-            top = decisions[0] if decisions else None
-            top_desc = top["summary"] if top else "no items"
+            # Fallback to a template-based bulleted digest
+            lines = [f"**{len(decisions)} decisions** made by Autonomy agents:"]
+            for d in decisions[:5]:
+                lines.append(f"- **{d.get('decision_type', 'Decision')}**: {d['summary']}")
+            if alerts:
+                lines.append(f"\n**{len(alerts)} alert{'s' if len(alerts) != 1 else ''}** active.")
             return (
-                f"Autonomy agents made {len(decisions)} decision{'s' if len(decisions) != 1 else ''} "
-                f"with {len(alerts)} alert{'s' if len(alerts) != 1 else ''}. "
-                f"Highest priority: {top_desc}."
+                "\n".join(lines)
             )
 
     async def _load_tenant_vocabulary(
@@ -1361,7 +1384,7 @@ class DecisionStreamService:
     ) -> str:
         """Get a brief text summary of pending decisions for chat context injection."""
         try:
-            decisions = await self._collect_pending_decisions(config_id, powell_role)
+            decisions, _pnames = await self._collect_pending_decisions(config_id, powell_role)
             if not decisions:
                 return "No recent agent decisions."
             summaries = [d["summary"] for d in decisions[:_DIGEST_SUMMARY_MAX_DECISIONS]]
