@@ -4,6 +4,7 @@ from enum import Enum
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import Enum as SAEnum
+from sqlalchemy.sql import func
 
 from .base import Base
 from .explainability import ExplainabilityLevel
@@ -34,10 +35,27 @@ class Tenant(Base):
     __tablename__ = "tenants"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    slug: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
+    subdomain: Mapped[str] = mapped_column(String(50), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    logo: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    logo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     admin_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+
+    # Multi-tenant provisioning defaults
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")
+    billing_plan: Mapped[str] = mapped_column(String(20), nullable=False, default="FREE")
+    max_users: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    max_games: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
+    max_supply_chain_configs: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
+    max_storage_mb: Mapped[int] = mapped_column(Integer, nullable=False, default=5000)
+    current_user_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    current_game_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    current_config_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    current_storage_mb: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     # Agent Explainability Configuration
     explainability_level: Mapped[ExplainabilityLevel] = mapped_column(

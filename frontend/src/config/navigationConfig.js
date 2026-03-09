@@ -842,90 +842,10 @@ export const SYSTEM_ADMIN_NAVIGATION = [
     section: 'System Administration',
     items: [
       {
-        label: 'Admin Dashboard',
-        path: '/admin',
-        icon: DashboardIcon,
-      },
-      {
         label: 'Organizations',
         path: '/admin/tenants',
         icon: AdminIcon,
-        description: 'Manage all organizations (System Admin only)',
-      },
-      {
-        label: 'System Users',
-        path: '/system/users',
-        icon: PeopleIcon,
-        description: 'Manage all users across groups',
-      },
-      {
-        label: 'Supply Chain Configs',
-        path: '/system/supply-chain-configs',
-        icon: NetworkIcon,
-        description: 'System-wide SC configurations',
-      },
-      {
-        label: 'Decision Cascade',
-        path: '/admin/powell',
-        icon: LayersIcon,
-        description: 'SDAM framework — State → Policy → Decision → Outcome',
-      },
-      {
-        label: 'S&OP Agent',
-        path: '/admin/graphsage',
-        icon: BrainIcon,
-      },
-      {
-        label: 'Operational Agent',
-        path: '/admin/gnn',
-        icon: BrainIcon,
-      },
-      {
-        label: 'Execution Agents',
-        path: '/admin/trm',
-        icon: BrainIcon,
-      },
-      {
-        label: 'Reinforcement Learning',
-        path: '/admin/rl',
-        icon: BrainIcon,
-      },
-      {
-        label: 'System Monitoring',
-        path: '/admin/monitoring',
-        icon: AssessmentIcon,
-      },
-      {
-        label: 'Synthetic Data Wizard',
-        path: '/admin/synthetic-data',
-        icon: WandIcon,
-        description: 'AI-guided setup for test environments',
-      },
-      {
-        label: 'Demo System Builder',
-        path: '/deployment/builder',
-        icon: WandIcon,
-        description: 'End-to-end deployment pipeline',
-      },
-      {
-        label: 'Pipeline Status',
-        path: '/deployment/pipelines',
-        icon: ActivityIcon,
-        description: 'Monitor pipeline runs',
-      },
-      {
-        label: 'SAP CSV Exports',
-        path: '/deployment/csvs',
-        icon: DatabaseIcon,
-        description: 'Download SAP-format CSV files',
-      },
-
-
-      {
-        label: 'Knowledge Base',
-        path: '/admin/knowledge-base',
-        icon: BookOpenIcon,
-        description: 'Upload documents for AI agent context (RAG)',
+        description: 'Create and manage tenants and their administrators',
       },
     ],
   },

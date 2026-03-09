@@ -63,25 +63,52 @@ router = APIRouter()
 # Connection Models
 class ConnectionCreateRequest(BaseModel):
     name: str = Field(..., description="Connection name")
+    description: Optional[str] = Field(None, description="Connection description")
     system_type: str = Field(..., description="SAP system type: s4hana, apo, ecc, bw")
     connection_method: str = Field(..., description="Connection method: rfc, csv, odata, idoc")
-    ashost: Optional[str] = None
-    sysnr: Optional[str] = None
-    client: Optional[str] = None
-    user: Optional[str] = None
-    csv_directory: Optional[str] = None
-    csv_pattern: Optional[str] = None
-    odata_url: Optional[str] = None
+    # Network
+    hostname: Optional[str] = Field(None, description="Hostname or IP address")
+    port: Optional[int] = Field(None, description="Port number")
+    use_ssl: bool = Field(True, description="Use SSL/HTTPS")
+    ssl_verify: bool = Field(False, description="Verify SSL certificate")
+    # SAP system
+    sid: Optional[str] = Field(None, description="SAP System ID (SID)")
+    ashost: Optional[str] = Field(None, description="RFC application server host")
+    sysnr: Optional[str] = Field(None, description="SAP system number")
+    client: Optional[str] = Field(None, description="SAP ABAP client")
+    user: Optional[str] = Field(None, description="SAP username")
+    password: Optional[str] = Field(None, description="SAP password (stored encrypted)")
+    language: Optional[str] = Field("EN", description="SAP logon language")
+    # OData
+    odata_base_path: Optional[str] = Field(None, description="OData service base path")
+    # CSV
+    csv_directory: Optional[str] = Field(None, description="CSV export directory")
+    csv_pattern: Optional[str] = Field(None, description="CSV file glob pattern")
+    # Advanced
+    sap_router_string: Optional[str] = Field(None, description="SAP Router string")
+    cloud_connector_location_id: Optional[str] = Field(None, description="Cloud Connector location ID")
 
 
 class ConnectionResponse(BaseModel):
     id: int
     name: str
+    description: Optional[str] = None
     system_type: str
     connection_method: str
+    hostname: Optional[str] = None
+    port: Optional[int] = None
+    use_ssl: bool = True
+    ssl_verify: bool = False
+    sid: Optional[str] = None
+    client: Optional[str] = None
+    user: Optional[str] = None
+    language: Optional[str] = None
+    odata_base_path: Optional[str] = None
+    csv_directory: Optional[str] = None
     is_active: bool
     is_validated: bool
-    last_validated_at: Optional[datetime]
+    last_validated_at: Optional[datetime] = None
+    validation_message: Optional[str] = None
 
 
 class ConnectionTestResponse(BaseModel):
@@ -258,6 +285,35 @@ class DashboardSummaryResponse(BaseModel):
 
 
 # -------------------------------------------------------------------------
+# Helpers
+# -------------------------------------------------------------------------
+
+def _config_to_response(c) -> ConnectionResponse:
+    """Map SAPConnectionConfig dataclass to ConnectionResponse."""
+    return ConnectionResponse(
+        id=c.id,
+        name=c.name,
+        description=c.description,
+        system_type=c.system_type.value if hasattr(c.system_type, "value") else c.system_type,
+        connection_method=c.connection_method.value if hasattr(c.connection_method, "value") else c.connection_method,
+        hostname=c.hostname,
+        port=c.port,
+        use_ssl=c.use_ssl,
+        ssl_verify=c.ssl_verify,
+        sid=c.sid,
+        client=c.client,
+        user=c.user,
+        language=c.language,
+        odata_base_path=c.odata_base_path,
+        csv_directory=c.csv_directory,
+        is_active=c.is_active,
+        is_validated=c.is_validated,
+        last_validated_at=c.last_validated_at,
+        validation_message=c.validation_message,
+    )
+
+
+# -------------------------------------------------------------------------
 # Connection Endpoints
 # -------------------------------------------------------------------------
 
@@ -280,24 +336,26 @@ async def create_connection(
         name=request.name,
         system_type=system_type,
         connection_method=connection_method,
+        password=request.password,
+        description=request.description,
+        hostname=request.hostname,
+        port=request.port,
+        use_ssl=request.use_ssl,
+        ssl_verify=request.ssl_verify,
+        sid=request.sid,
         ashost=request.ashost,
         sysnr=request.sysnr,
         client=request.client,
         user=request.user,
+        language=request.language,
+        odata_base_path=request.odata_base_path,
         csv_directory=request.csv_directory,
         csv_pattern=request.csv_pattern,
-        odata_url=request.odata_url,
+        sap_router_string=request.sap_router_string,
+        cloud_connector_location_id=request.cloud_connector_location_id,
     )
 
-    return ConnectionResponse(
-        id=config.id,
-        name=config.name,
-        system_type=config.system_type.value,
-        connection_method=config.connection_method.value,
-        is_active=config.is_active,
-        is_validated=config.is_validated,
-        last_validated_at=config.last_validated_at,
-    )
+    return _config_to_response(config)
 
 
 @router.get("/connections", response_model=List[ConnectionResponse], tags=["sap-connections"])
@@ -309,18 +367,7 @@ async def list_connections(
     service = create_deployment_service(db, current_user.tenant_id)
     connections = await service.get_connections()
 
-    return [
-        ConnectionResponse(
-            id=c.id,
-            name=c.name,
-            system_type=c.system_type.value,
-            connection_method=c.connection_method.value,
-            is_active=c.is_active,
-            is_validated=c.is_validated,
-            last_validated_at=c.last_validated_at,
-        )
-        for c in connections
-    ]
+    return [_config_to_response(c) for c in connections]
 
 
 @router.post("/connections/{connection_id}/test", response_model=ConnectionTestResponse, tags=["sap-connections"])

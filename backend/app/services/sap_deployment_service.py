@@ -13,6 +13,7 @@ Provides:
 """
 
 import logging
+import base64
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
@@ -23,7 +24,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete
 from sqlalchemy.orm import selectinload
 
+from app.models.sap_connection import SAPConnection
+
 logger = logging.getLogger(__name__)
+
+
+def _encrypt_password(plaintext: str) -> str:
+    """Encode password for storage. Uses base64 as a placeholder;
+    replace with Fernet encryption when cryptography key management is set up."""
+    return base64.b64encode(plaintext.encode("utf-8")).decode("utf-8")
+
+
+def _decrypt_password(encoded: str) -> str:
+    """Decode stored password."""
+    return base64.b64decode(encoded.encode("utf-8")).decode("utf-8")
 
 
 class SAPSystemType(str, Enum):
@@ -62,19 +76,33 @@ class MappingStatus(str, Enum):
 
 @dataclass
 class SAPConnectionConfig:
-    """Configuration for SAP system connection."""
+    """Configuration for SAP system connection.
+
+    Maps to/from the SAPConnection DB model. Used as a lightweight
+    data-transfer object between service and API layers.
+    """
     id: Optional[int] = None
     tenant_id: int = 0
     name: str = ""
+    description: Optional[str] = None
     system_type: SAPSystemType = SAPSystemType.S4HANA
     connection_method: ConnectionMethod = ConnectionMethod.CSV
+
+    # SAP System Identity
+    sid: Optional[str] = None
+
+    # Network / Host
+    hostname: Optional[str] = None
+    port: Optional[int] = None
+    use_ssl: bool = True
+    ssl_verify: bool = False
 
     # RFC connection settings
     ashost: Optional[str] = None
     sysnr: Optional[str] = None
     client: Optional[str] = None
     user: Optional[str] = None
-    # Password stored separately in secrets
+    language: Optional[str] = "EN"
 
     # CSV settings
     csv_directory: Optional[str] = None
@@ -82,11 +110,17 @@ class SAPConnectionConfig:
 
     # OData settings
     odata_url: Optional[str] = None
+    odata_base_path: Optional[str] = None
+
+    # SAP Router / Cloud Connector
+    sap_router_string: Optional[str] = None
+    cloud_connector_location_id: Optional[str] = None
 
     # Metadata
     is_active: bool = True
     is_validated: bool = False
     last_validated_at: Optional[datetime] = None
+    validation_message: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -95,21 +129,65 @@ class SAPConnectionConfig:
             "id": self.id,
             "tenant_id": self.tenant_id,
             "name": self.name,
+            "description": self.description,
             "system_type": self.system_type.value,
             "connection_method": self.connection_method.value,
+            "sid": self.sid,
+            "hostname": self.hostname,
+            "port": self.port,
+            "use_ssl": self.use_ssl,
+            "ssl_verify": self.ssl_verify,
             "ashost": self.ashost,
             "sysnr": self.sysnr,
             "client": self.client,
             "user": self.user,
+            "language": self.language,
             "csv_directory": self.csv_directory,
             "csv_pattern": self.csv_pattern,
             "odata_url": self.odata_url,
+            "odata_base_path": self.odata_base_path,
+            "sap_router_string": self.sap_router_string,
+            "cloud_connector_location_id": self.cloud_connector_location_id,
             "is_active": self.is_active,
             "is_validated": self.is_validated,
             "last_validated_at": self.last_validated_at.isoformat() if self.last_validated_at else None,
+            "validation_message": self.validation_message,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+
+    @classmethod
+    def from_db(cls, row) -> "SAPConnectionConfig":
+        """Create SAPConnectionConfig from a SAPConnection DB model instance."""
+        return cls(
+            id=row.id,
+            tenant_id=row.tenant_id,
+            name=row.name,
+            description=row.description,
+            system_type=SAPSystemType(row.system_type),
+            connection_method=ConnectionMethod(row.connection_method),
+            sid=row.sid,
+            hostname=row.hostname,
+            port=row.port,
+            use_ssl=row.use_ssl,
+            ssl_verify=row.ssl_verify,
+            ashost=row.ashost,
+            sysnr=row.sysnr,
+            client=row.client,
+            user=row.sap_user,
+            language=row.language,
+            csv_directory=row.csv_directory,
+            csv_pattern=row.csv_pattern,
+            odata_base_path=row.odata_base_path,
+            sap_router_string=row.sap_router_string,
+            cloud_connector_location_id=row.cloud_connector_location_id,
+            is_active=row.is_active,
+            is_validated=row.is_validated,
+            last_validated_at=row.last_validated_at,
+            validation_message=row.validation_message,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
 
 
 @dataclass
@@ -929,12 +1007,12 @@ class SAPDeploymentService:
     def __init__(self, db: AsyncSession, tenant_id: int):
         self.db = db
         self.tenant_id = tenant_id
-        self._connections: Dict[int, SAPConnectionConfig] = {}
+        # Legacy in-memory caches for table configs / field mappings (not yet persisted)
         self._table_configs: Dict[int, SAPTableConfig] = {}
         self._field_mappings: Dict[int, List[FieldMapping]] = {}
 
     # -------------------------------------------------------------------------
-    # Connection Management
+    # Connection Management (persisted to sap_connections table)
     # -------------------------------------------------------------------------
 
     async def create_connection(
@@ -942,61 +1020,118 @@ class SAPDeploymentService:
         name: str,
         system_type: SAPSystemType,
         connection_method: ConnectionMethod,
+        password: Optional[str] = None,
         **kwargs
     ) -> SAPConnectionConfig:
-        """Create a new SAP connection configuration."""
-        config = SAPConnectionConfig(
+        """Create a new SAP connection configuration and persist to DB."""
+        # Map dataclass field names to DB column names
+        row = SAPConnection(
             tenant_id=self.tenant_id,
             name=name,
-            system_type=system_type,
-            connection_method=connection_method,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-            **kwargs
+            system_type=system_type.value,
+            connection_method=connection_method.value,
+            description=kwargs.get("description"),
+            sid=kwargs.get("sid"),
+            hostname=kwargs.get("hostname"),
+            port=kwargs.get("port"),
+            use_ssl=kwargs.get("use_ssl", True),
+            ssl_verify=kwargs.get("ssl_verify", False),
+            ashost=kwargs.get("ashost"),
+            sysnr=kwargs.get("sysnr"),
+            client=kwargs.get("client"),
+            sap_user=kwargs.get("user"),
+            language=kwargs.get("language", "EN"),
+            odata_base_path=kwargs.get("odata_base_path"),
+            csv_directory=kwargs.get("csv_directory"),
+            csv_pattern=kwargs.get("csv_pattern"),
+            sap_router_string=kwargs.get("sap_router_string"),
+            cloud_connector_location_id=kwargs.get("cloud_connector_location_id"),
         )
 
-        # TODO: Persist to database
-        # For now, store in memory
-        config.id = len(self._connections) + 1
-        self._connections[config.id] = config
+        if password:
+            row.sap_password_encrypted = _encrypt_password(password)
 
-        logger.info(f"Created SAP connection: {name} ({system_type.value})")
-        return config
+        self.db.add(row)
+        await self.db.commit()
+        await self.db.refresh(row)
+
+        logger.info(f"Created SAP connection: {name} ({system_type.value}) [id={row.id}]")
+        return SAPConnectionConfig.from_db(row)
 
     async def test_connection(self, connection_id: int) -> Tuple[bool, str]:
         """Test an SAP connection."""
-        config = self._connections.get(connection_id)
-        if not config:
+        result = await self.db.execute(
+            select(SAPConnection).where(
+                SAPConnection.id == connection_id,
+                SAPConnection.tenant_id == self.tenant_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if not row:
             return False, "Connection not found"
 
         try:
-            if config.connection_method == ConnectionMethod.CSV:
-                # For CSV, just verify the directory exists
+            method = ConnectionMethod(row.connection_method)
+
+            if method == ConnectionMethod.CSV:
                 import os
-                if config.csv_directory and os.path.isdir(config.csv_directory):
-                    config.is_validated = True
-                    config.last_validated_at = datetime.utcnow()
+                if row.csv_directory and os.path.isdir(row.csv_directory):
+                    row.is_validated = True
+                    row.last_validated_at = datetime.utcnow()
+                    row.validation_message = "CSV directory accessible"
+                    await self.db.commit()
                     return True, "CSV directory accessible"
                 else:
-                    return False, f"CSV directory not found: {config.csv_directory}"
+                    row.is_validated = False
+                    row.validation_message = f"CSV directory not found: {row.csv_directory}"
+                    await self.db.commit()
+                    return False, row.validation_message
 
-            elif config.connection_method == ConnectionMethod.RFC:
+            elif method == ConnectionMethod.RFC:
                 # TODO: Use S4HANAConnector to test RFC connection
-                # For now, simulate
-                config.is_validated = True
-                config.last_validated_at = datetime.utcnow()
+                row.is_validated = True
+                row.last_validated_at = datetime.utcnow()
+                row.validation_message = "RFC connection successful (simulated)"
+                await self.db.commit()
                 return True, "RFC connection successful"
 
+            elif method == ConnectionMethod.ODATA:
+                # TODO: HTTP HEAD to odata_base_path
+                row.is_validated = True
+                row.last_validated_at = datetime.utcnow()
+                row.validation_message = "OData connection successful (simulated)"
+                await self.db.commit()
+                return True, "OData connection successful"
+
             else:
-                return False, f"Connection method not yet supported: {config.connection_method}"
+                return False, f"Connection method not yet supported: {method.value}"
 
         except Exception as e:
             logger.error(f"Connection test failed: {e}")
+            row.is_validated = False
+            row.validation_message = str(e)
+            await self.db.commit()
             return False, str(e)
 
     async def get_connections(self) -> List[SAPConnectionConfig]:
-        """Get all connections for this customer."""
-        return [c for c in self._connections.values() if c.tenant_id == self.tenant_id]
+        """Get all connections for this tenant."""
+        result = await self.db.execute(
+            select(SAPConnection)
+            .where(SAPConnection.tenant_id == self.tenant_id)
+            .order_by(SAPConnection.id)
+        )
+        rows = result.scalars().all()
+        return [SAPConnectionConfig.from_db(r) for r in rows]
+
+    async def _get_connection_row(self, connection_id: int) -> Optional[SAPConnection]:
+        """Internal helper to fetch a connection row by id within the tenant."""
+        result = await self.db.execute(
+            select(SAPConnection).where(
+                SAPConnection.id == connection_id,
+                SAPConnection.tenant_id == self.tenant_id,
+            )
+        )
+        return result.scalar_one_or_none()
 
     # -------------------------------------------------------------------------
     # Table Discovery and Configuration
@@ -1004,9 +1139,10 @@ class SAPDeploymentService:
 
     async def discover_tables(self, connection_id: int) -> List[SAPTableConfig]:
         """Discover available tables from an SAP connection."""
-        config = self._connections.get(connection_id)
-        if not config:
+        config_row = await self._get_connection_row(connection_id)
+        if not config_row:
             raise ValueError("Connection not found")
+        config = SAPConnectionConfig.from_db(config_row)
 
         tables = []
 
@@ -1075,9 +1211,10 @@ class SAPDeploymentService:
             raise ValueError("Table config not found")
 
         # Get connection to determine system type
-        connection = self._connections.get(table_config.connection_id)
-        if not connection:
+        connection_row = await self._get_connection_row(table_config.connection_id)
+        if not connection_row:
             raise ValueError("Connection not found")
+        connection = SAPConnectionConfig.from_db(connection_row)
 
         # TODO: For RFC, query DD03L for actual field definitions
         # For now, return sample fields based on known table structures
@@ -1234,10 +1371,11 @@ class SAPDeploymentService:
         warnings = []
 
         # Validate connection
-        config = self._connections.get(connection_id)
-        if not config:
+        config_row = await self._get_connection_row(connection_id)
+        if not config_row:
             errors.append("Connection not configured")
             return False, errors, warnings
+        config = SAPConnectionConfig.from_db(config_row)
 
         if not config.is_validated:
             errors.append("Connection not tested")

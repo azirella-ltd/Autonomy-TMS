@@ -56,6 +56,7 @@ export const getUserType = (user) => {
   const normalizedEmail = getNormalizedEmail(user);
   if (
     normalizedEmail === "systemadmin@autonomy.ai" ||
+    normalizedEmail === "systemadmin@autonomy.com" ||
     normalizedEmail === "superadmin@autonomy.ai"
   ) {
     return "systemadmin";
@@ -86,7 +87,8 @@ export const getDefaultLandingPath = (user) => {
     : 'stream';
 
   if (isSystemAdmin(user)) {
-    return uiMode === 'stream' ? '/decision-stream' : "/system/users";
+    // System admins only manage tenants and tenant admins — no operational pages
+    return "/admin/tenants";
   }
 
   if (isTenantAdmin(user)) {
@@ -156,12 +158,10 @@ export const resolvePostLoginDestination = (user, redirectTo) => {
   }
 
   if (isSystemAdmin(user)) {
-    const blockedPaths = [
-      '/',
-      '/dashboard',
-    ];
-
-    if (blockedPaths.includes(parsed.pathname) || parsed.pathname.startsWith('/admin')) {
+    // System admins can only access tenant/user management pages
+    const allowedPrefixes = ['/admin/tenants', '/admin/synthetic-data', '/system/users', '/profile', '/settings'];
+    const isAllowed = allowedPrefixes.some(p => parsed.pathname.startsWith(p));
+    if (!isAllowed) {
       return fallback;
     }
   }

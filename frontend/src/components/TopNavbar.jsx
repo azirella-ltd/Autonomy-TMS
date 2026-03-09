@@ -263,11 +263,7 @@ const TopNavbar = ({ sidebarOpen = true }) => {
   ];
 
   const adminMenuItems = isSysAdmin ? [
-    { label: 'Admin Dashboard', icon: Shield, path: '/admin' },
-    { label: 'TRM Model Training', icon: GraduationCap, path: '/admin/trm' },
-    { label: 'GNN Model Training', icon: Brain, path: '/admin/gnn' },
     { label: 'Organizations', icon: Users, path: '/admin/tenants' },
-    { label: 'Supply Chain Configs', icon: Network, path: '/system/supply-chain-configs' },
   ] : [];
 
   return (

@@ -268,30 +268,51 @@ const OverviewTab = ({ dashboardData, deploymentStatus, loading }) => {
 // Connections Tab Component
 const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loading }) => {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [formData, setFormData] = useState({
+  const defaultFormData = {
     name: '',
+    description: '',
     system_type: 's4hana',
-    connection_method: 'csv',
-    csv_directory: '',
+    connection_method: 'odata',
+    hostname: '',
+    port: '',
+    use_ssl: true,
+    ssl_verify: false,
+    sid: '',
     ashost: '',
-    sysnr: '',
-    client: '',
+    sysnr: '00',
+    client: '100',
     user: '',
-  });
+    password: '',
+    language: 'EN',
+    odata_base_path: '/sap/opu/odata/sap/',
+    csv_directory: '',
+    csv_pattern: '*.csv',
+    sap_router_string: '',
+    cloud_connector_location_id: '',
+  };
+  const [formData, setFormData] = useState(defaultFormData);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  const isNetworkMethod = formData.connection_method !== 'csv';
+  const isOData = formData.connection_method === 'odata';
+  const isRFC = formData.connection_method === 'rfc';
+  const isCSV = formData.connection_method === 'csv';
+
+  // Set sensible default port when method changes
+  const handleMethodChange = (method) => {
+    let port = formData.port;
+    if (method === 'odata') port = 44301;
+    else if (method === 'rfc') port = 3300;
+    else if (method === 'idoc') port = 3300;
+    else port = '';
+    setFormData({ ...formData, connection_method: method, port });
+  };
 
   const handleCreate = async () => {
     await onCreateConnection(formData);
     setShowCreateDialog(false);
-    setFormData({
-      name: '',
-      system_type: 's4hana',
-      connection_method: 'csv',
-      csv_directory: '',
-      ashost: '',
-      sysnr: '',
-      client: '',
-      user: '',
-    });
+    setFormData(defaultFormData);
+    setShowAdvanced(false);
   };
 
   return (
@@ -340,7 +361,12 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
                         {systemTypes.find(s => s.value === conn.system_type)?.label || conn.system_type}
                         {' • '}
                         {connectionMethods.find(m => m.value === conn.connection_method)?.label || conn.connection_method}
+                        {conn.hostname && ` • ${conn.hostname}${conn.port ? ':' + conn.port : ''}`}
+                        {conn.sid && ` (${conn.sid})`}
                       </p>
+                      {conn.description && (
+                        <p className="text-xs text-muted-foreground mt-0.5">{conn.description}</p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
@@ -360,20 +386,30 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
 
       {/* Create Connection Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add SAP Connection</DialogTitle>
             <DialogDescription>
               Configure a connection to your SAP system for data extraction.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="space-y-5 py-4">
+            {/* Always visible */}
             <div>
-              <label className="block text-sm font-medium mb-1">Connection Name</label>
+              <label className="block text-sm font-medium mb-1">Connection Name *</label>
               <Input
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="e.g., Production S/4HANA"
+                placeholder="e.g., S/4HANA FAA Production"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Description</label>
+              <textarea
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[60px]"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Optional description of this connection"
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -392,7 +428,7 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
                 <label className="block text-sm font-medium mb-1">Connection Method</label>
                 <NativeSelect
                   value={formData.connection_method}
-                  onChange={(e) => setFormData({ ...formData, connection_method: e.target.value })}
+                  onChange={(e) => handleMethodChange(e.target.value)}
                 >
                   {connectionMethods.map((method) => (
                     <option key={method.value} value={method.value}>{method.label}</option>
@@ -401,36 +437,81 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
               </div>
             </div>
 
-            {formData.connection_method === 'csv' && (
-              <div>
-                <label className="block text-sm font-medium mb-1">CSV Directory Path</label>
-                <Input
-                  value={formData.csv_directory}
-                  onChange={(e) => setFormData({ ...formData, csv_directory: e.target.value })}
-                  placeholder="/path/to/csv/exports"
-                />
+            {/* Network section (OData, RFC, IDoc — not CSV) */}
+            {isNetworkMethod && (
+              <div className="space-y-3 border rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Network</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Hostname / IP Address *</label>
+                    <Input
+                      value={formData.hostname}
+                      onChange={(e) => setFormData({ ...formData, hostname: e.target.value })}
+                      placeholder="e.g., 54.174.177.100 or vhcals4hcs.dummy.nodomain"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Port *</label>
+                    <Input
+                      type="number"
+                      value={formData.port}
+                      onChange={(e) => setFormData({ ...formData, port: e.target.value ? parseInt(e.target.value) : '' })}
+                      placeholder={isOData ? '44301' : '3300'}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="use_ssl"
+                      checked={formData.use_ssl}
+                      onChange={(e) => setFormData({ ...formData, use_ssl: e.target.checked })}
+                      className="rounded border-gray-300"
+                    />
+                    <label htmlFor="use_ssl" className="text-sm font-medium">Use SSL (HTTPS)</label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="ssl_verify"
+                      checked={formData.ssl_verify}
+                      onChange={(e) => setFormData({ ...formData, ssl_verify: e.target.checked })}
+                      className="rounded border-gray-300"
+                    />
+                    <div>
+                      <label htmlFor="ssl_verify" className="text-sm font-medium">Verify SSL Certificate</label>
+                      <p className="text-xs text-muted-foreground">Disable for self-signed certificates</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
-            {formData.connection_method === 'rfc' && (
-              <>
+            {/* SAP System section (OData, RFC, IDoc — not CSV) */}
+            {isNetworkMethod && (
+              <div className="space-y-3 border rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">SAP System</h4>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Application Server</label>
+                    <label className="block text-sm font-medium mb-1">SID</label>
                     <Input
-                      value={formData.ashost}
-                      onChange={(e) => setFormData({ ...formData, ashost: e.target.value })}
-                      placeholder="sap-server.example.com"
+                      value={formData.sid}
+                      onChange={(e) => setFormData({ ...formData, sid: e.target.value })}
+                      placeholder="S4H"
                     />
+                    <p className="text-xs text-muted-foreground mt-0.5">System ID</p>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">System Number</label>
-                    <Input
-                      value={formData.sysnr}
-                      onChange={(e) => setFormData({ ...formData, sysnr: e.target.value })}
-                      placeholder="00"
-                    />
-                  </div>
+                  {isRFC && (
+                    <div>
+                      <label className="block text-sm font-medium mb-1">System Number</label>
+                      <Input
+                        value={formData.sysnr}
+                        onChange={(e) => setFormData({ ...formData, sysnr: e.target.value })}
+                        placeholder="00"
+                      />
+                    </div>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -440,20 +521,135 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
                       onChange={(e) => setFormData({ ...formData, client: e.target.value })}
                       placeholder="100"
                     />
+                    <p className="text-xs text-muted-foreground mt-0.5">ABAP Client (100=demo, 200=BP activate, 400=BP reference)</p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">User</label>
+                    <label className="block text-sm font-medium mb-1">Language</label>
                     <Input
-                      value={formData.user}
-                      onChange={(e) => setFormData({ ...formData, user: e.target.value })}
-                      placeholder="RFC_USER"
+                      value={formData.language}
+                      onChange={(e) => setFormData({ ...formData, language: e.target.value })}
+                      placeholder="EN"
                     />
                   </div>
                 </div>
-              </>
+              </div>
+            )}
+
+            {/* Authentication section (OData, RFC, IDoc — not CSV) */}
+            {isNetworkMethod && (
+              <div className="space-y-3 border rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Authentication</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">SAP Username *</label>
+                    <Input
+                      value={formData.user}
+                      onChange={(e) => setFormData({ ...formData, user: e.target.value })}
+                      placeholder="DDIC or S4H_MM_DEM"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">SAP Password *</label>
+                    <Input
+                      type="password"
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      placeholder="Master Password from SAP CAL"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* OData section */}
+            {isOData && (
+              <div className="space-y-3 border rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">OData Settings</h4>
+                <div>
+                  <label className="block text-sm font-medium mb-1">OData Base Path</label>
+                  <Input
+                    value={formData.odata_base_path}
+                    onChange={(e) => setFormData({ ...formData, odata_base_path: e.target.value })}
+                    placeholder="/sap/opu/odata/sap/"
+                  />
+                  <p className="text-xs text-muted-foreground mt-0.5">OData service base path</p>
+                </div>
+              </div>
+            )}
+
+            {/* CSV section */}
+            {isCSV && (
+              <div className="space-y-3 border rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">CSV Import Settings</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">CSV Directory Path *</label>
+                    <Input
+                      value={formData.csv_directory}
+                      onChange={(e) => setFormData({ ...formData, csv_directory: e.target.value })}
+                      placeholder="/path/to/csv/exports"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">CSV File Pattern</label>
+                    <Input
+                      value={formData.csv_pattern}
+                      onChange={(e) => setFormData({ ...formData, csv_pattern: e.target.value })}
+                      placeholder="*.csv"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Advanced section (collapsible) */}
+            {isNetworkMethod && (
+              <div className="border rounded-lg">
+                <button
+                  type="button"
+                  className="w-full flex items-center justify-between p-4 text-sm font-semibold text-muted-foreground uppercase tracking-wide hover:bg-muted/50 transition-colors"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                >
+                  <span>Advanced</span>
+                  <ChevronRight className={cn("h-4 w-4 transition-transform", showAdvanced && "rotate-90")} />
+                </button>
+                {showAdvanced && (
+                  <div className="space-y-3 px-4 pb-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">SAP Router String</label>
+                      <Input
+                        value={formData.sap_router_string}
+                        onChange={(e) => setFormData({ ...formData, sap_router_string: e.target.value })}
+                        placeholder="/H/saprouter.example.com/H/"
+                      />
+                      <p className="text-xs text-muted-foreground mt-0.5">For connections via SAP Router</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Cloud Connector Location ID</label>
+                      <Input
+                        value={formData.cloud_connector_location_id}
+                        onChange={(e) => setFormData({ ...formData, cloud_connector_location_id: e.target.value })}
+                        placeholder="e.g., MyLocationID"
+                      />
+                      <p className="text-xs text-muted-foreground mt-0.5">SAP Cloud Connector virtual host</p>
+                    </div>
+                    {isRFC && (
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Application Server Host (ashost)</label>
+                        <Input
+                          value={formData.ashost}
+                          onChange={(e) => setFormData({ ...formData, ashost: e.target.value })}
+                          placeholder="sap-server.example.com"
+                        />
+                        <p className="text-xs text-muted-foreground mt-0.5">Override if different from Hostname</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
           </div>
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 pt-2 border-t">
             <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
               Cancel
             </Button>

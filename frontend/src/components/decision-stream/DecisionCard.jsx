@@ -9,6 +9,7 @@
  *   - TRMDecisionWorklist (confidence chips, override reason codes)
  */
 import React, { useState } from 'react';
+import Markdown from 'react-markdown';
 import { useNavigate } from 'react-router-dom';
 import {
   CheckCircle,
@@ -90,6 +91,7 @@ const UrgencyBar = ({ value }) => {
         : 'bg-green-500';
   return (
     <div className="flex items-center gap-1.5">
+      <span className="text-xs text-muted-foreground font-medium">Urgency</span>
       <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
         <div
           className={cn('h-full rounded-full', color)}
@@ -104,9 +106,12 @@ const UrgencyBar = ({ value }) => {
 const ConfidenceChip = ({ value }) => {
   if (value == null)
     return (
-      <Badge variant="outline" className="text-xs">
-        --
-      </Badge>
+      <div className="flex items-center gap-1">
+        <span className="text-xs text-muted-foreground font-medium">Likelihood</span>
+        <Badge variant="outline" className="text-xs">
+          --
+        </Badge>
+      </div>
     );
   const pct = (value * 100).toFixed(1);
   const variant =
@@ -116,9 +121,12 @@ const ConfidenceChip = ({ value }) => {
         ? 'secondary'
         : 'destructive';
   return (
-    <Badge variant={variant} className="text-xs">
-      {pct}%
-    </Badge>
+    <div className="flex items-center gap-1">
+      <span className="text-xs text-muted-foreground font-medium">Likelihood</span>
+      <Badge variant={variant} className="text-xs">
+        {pct}%
+      </Badge>
+    </div>
   );
 };
 
@@ -282,7 +290,9 @@ const DecisionCard = ({
               <>
                 <div className="flex items-start gap-2">
                   <HelpCircle className="h-4 w-4 text-blue-500 flex-shrink-0 mt-0.5" />
-                  <p className="leading-relaxed">{reasoning || decision.decision_reasoning}</p>
+                  <div className="leading-relaxed prose prose-sm max-w-none prose-p:my-1 prose-strong:text-blue-800">
+                    <Markdown>{reasoning || decision.decision_reasoning}</Markdown>
+                  </div>
                 </div>
               </>
             )}

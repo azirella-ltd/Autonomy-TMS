@@ -3,7 +3,7 @@
  *
  * Restricts access to SYSTEM_ADMIN users only.
  * Used for routes that should only be accessible to the most senior admin level:
- * - Customer creation and management
+ * - Tenant creation and management
  * - Synthetic data generation wizard
  * - System-wide configuration
  */

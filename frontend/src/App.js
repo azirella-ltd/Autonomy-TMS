@@ -5,6 +5,7 @@ import Navbar from "./components/Navbar";
 import LayoutWrapper from "./components/LayoutWrapper";
 import CapabilityProtectedRoute from "./components/CapabilityProtectedRoute";
 import SystemAdminRoute from "./components/SystemAdminRoute";
+import { isSystemAdmin } from "./utils/authUtils";
 import Dashboard from "./pages/Dashboard";
 import DashboardRouter from "./pages/DashboardRouter";
 import ScenariosList from "./pages/ScenariosList";
@@ -142,7 +143,7 @@ window.onunhandledrejection = function (event) {
 };
 
 function RequireAuth() {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -155,6 +156,15 @@ function RequireAuth() {
 
   if (!isAuthenticated) {
     return <Navigate to={buildLoginRedirectPath(location)} replace />;
+  }
+
+  // System admins can only access tenant/user management pages
+  if (isSystemAdmin(user)) {
+    const allowedPrefixes = ['/admin/tenants', '/admin/synthetic-data', '/system/users', '/profile', '/settings', '/unauthorized'];
+    const isAllowed = allowedPrefixes.some(p => location.pathname.startsWith(p));
+    if (!isAllowed) {
+      return <Navigate to="/admin/tenants" replace />;
+    }
   }
 
   return <Outlet />;
@@ -399,7 +409,11 @@ const AppContent = () => {
             />
             <Route
               path="/admin/tenants"
-              element={<TenantManagement />}
+              element={
+                <SystemAdminRoute>
+                  <TenantManagement />
+                </SystemAdminRoute>
+              }
             />
             <Route
               path="/admin/users"

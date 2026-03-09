@@ -1,12 +1,17 @@
-> **EXTERNAL DOCUMENT** — For customers, investors, and partners. No implementation details.
-> Internal version: [EXECUTIVE_SUMMARY.md](../../EXECUTIVE_SUMMARY.md)
+![Azirella](../Azirella_Logo.jpg)
+
+> **STRICTLY CONFIDENTIAL AND PROPRIETARY**
+> Copyright © 2026 Azirella Ltd. All rights reserved worldwide.
+> Unauthorized access, use, reproduction, or distribution of this document or any portion thereof is strictly prohibited and may result in severe civil and criminal penalties.
 
 # Autonomy: Executive Summary
 
+> **INTERNAL DOCUMENT** — Contains implementation details, file paths, and architecture specifications.
+
 ## What Your Supply Chain Organization Looks Like After Autonomy
 
-**Version**: 5.0 (External)
-**Date**: March 8, 2026
+**Version**: 4.1
+**Date**: March 9, 2026
 
 ---
 
@@ -18,9 +23,7 @@ Autonomy changes the operating model. Not by replacing your planning team, but b
 
 This document describes what is different — for the organization, for daily operations, and for the people doing the work — when Autonomy is fully adopted.
 
----
-
-### Agent Hierarchy
+### Agent Architecture
 
 ```mermaid
 graph TD
@@ -121,30 +124,6 @@ Over time, the override rate drops — not because the system forces compliance,
 - Week 1: ~45% of decisions auto-execute, ~35% overridden
 - Week 12: ~72% auto-execute, ~15% overridden
 - Steady state target: ~85% auto-execute, <10% overridden
-
-### How the System Builds Confidence
-
-```mermaid
-graph TD
-    EVENT["Event Occurs<br/><small>Supplier delay, demand spike,<br/>quality hold, capacity loss</small>"]
-    ENGINE["Deterministic Engine<br/><small>Constraint-validated baseline<br/>100% auditable</small>"]
-    AGENT["Execution Agent<br/><small>Learned adjustment to baseline<br/>&lt;10ms, bounded ±20%</small>"]
-    CONF{"Confidence<br/>Check"}
-    AUTO["Auto-Execute<br/><small>Within guardrails</small>"]
-    ESCALATE["Escalate to<br/>Human Planner<br/><small>Ranked options with<br/>trade-off analysis</small>"]
-    LEARN["Record Decision<br/>& Outcome<br/><small>Continuous learning</small>"]
-
-    EVENT --> ENGINE
-    ENGINE --> AGENT
-    AGENT --> CONF
-    CONF -->|"High confidence"| AUTO
-    CONF -->|"Low confidence"| ESCALATE
-    AUTO --> LEARN
-    ESCALATE -->|"Accept or Override"| LEARN
-    LEARN -->|"Improves future decisions"| AGENT
-```
-
-Every decision follows this path: a deterministic engine computes a constraint-validated baseline (fully auditable), then an execution agent applies a learned adjustment within bounded limits. A confidence check — using distribution-free statistical guarantees — determines whether the decision can auto-execute or must be escalated for human review. In both cases, the decision and its outcome are recorded and used to improve future decisions.
 
 ### Testing Changes Before They Go Live
 
@@ -329,7 +308,11 @@ This alone justifies the platform for organizations that make even one significa
 
 ---
 
-## Part 6: Continuous Autonomous Planning Architecture
+*The sections that follow provide detailed technical architecture, AI model specifications, training workflows, integration capabilities, and implementation details for technical evaluation.*
+
+---
+
+## Revolutionary Continuous Autonomous Planning Architecture
 
 ### Transforming Supply Chain Management from Cadence to Event-Driven
 
@@ -355,20 +338,20 @@ Benefits: Minutes from event to action, only affected products replanned, human-
 
 | Stage | Responsibility | Who | Tool/Interface |
 |-------|---------------|-----|----------------|
-| **Automate** | Generate recommendations, execute within guardrails | AI Agents | Event-driven orchestration, agent-to-agent collaboration |
-| **Inform** | Notify humans of decisions | AI Agents | Chat, email alerts, dashboard |
-| **Inspect** | Review agent decisions, drill into details | Humans | Chat-first UI, point-and-click deep dive |
+| **Automate** | Generate recommendations, execute within guardrails | AI Agents | Event-driven orchestration, A2A collaboration |
+| **Inform** | Notify humans of decisions | AI Agents | LLM chat, email alerts, dashboard |
+| **Inspect** | Review agent decisions, drill into details | Humans | LLM-first UI, point-and-click deep dive |
 | **Override** | Change plans + provide learning context | Humans | UI with reason capture, file upload |
 
 **Continuous Learning Loop**:
 ```
 1. Automate  → Agents generate recommendations based on current models
 2. Inform    → Notify humans of actions (auto-executed or pending approval)
-3. Inspect   → Humans review via chat or point-and-click UI
+3. Inspect   → Humans review via LLM chat or point-and-click UI
 4. Override  → Humans provide feedback with context (reason, files, outcome preference)
 5. Learn     → System captures context, identifies learning signals
 6. Update    → Adjust guardrails, update KPI weights, fine-tune models
-7. Improve   → Next iteration uses updated models/guardrails
+7. Improve   → Next iteration uses updated models/prompts/guardrails
 → Cycle repeats - agents get better over time
 ```
 
@@ -377,14 +360,24 @@ Benefits: Minutes from event to action, only affected products replanned, human-
 - Week 12: 72% auto-execute rate, 15% override rate
 - Target: 85% auto-execute rate, <10% override rate
 
+### Decision Stream — The Primary Interface
+
+The **Decision Stream** (`/decision-stream`) is the default landing page for all users. Every supply chain decision — whether made by an AI agent or a human planner — appears here in real time as a decision card showing what was decided, the confidence level, and the status (Decided, Suggested, Overridden).
+
+**Pre-Computed Decision Reasoning**: Every decision card includes an "Ask Why" button that expands inline to show the agent's reasoning instantly (<1ms). Reasoning is pre-computed at decision time from the actual signals the agent processed — not generated after the fact by an LLM. This covers all 11 TRM agents and all 3 GNN models (S&OP GraphSAGE strategic risk, Network tGNN daily directives, Site tGNN hourly cross-TRM coordination).
+
+**Hive Context Capture**: Each decision records the full signal bus state at the time of decision — urgency levels, triggering signals, cycle phase, and signals emitted — providing a complete audit trail of the multi-agent coordination context.
+
+The traditional point-and-click planning UI (96+ pages covering demand planning, supply planning, inventory optimization, MPS, ATP worklists, etc.) remains available as a complementary deep-dive interface — but the Decision Stream is where planners spend most of their time.
+
 ### AWS Supply Chain Integration
 
-**Insights to Event Triggers**:
+**Insights → Event Triggers**:
 - Stock-out risks, excess inventory alerts → Planning events
 - Vendor lead-time predictions → Supply disruption events
 - Forecast deviations → Demand change events
 
-**Recommendations to Agent Proposals**:
+**Recommendations → Agent Proposals**:
 - Agents generate ranked recommendations using AWS SC metrics:
   - Risk resolution % (0-40 points)
   - Distance impact (0-20 points)
@@ -392,31 +385,330 @@ Benefits: Minutes from event to action, only affected products replanned, human-
   - Service level impact (0-15 points)
   - Inventory cost (0-10 points)
 
-**Collaboration to Agent-to-Agent Communication**:
+**Collaboration → A2A Communication**:
 - Multi-agent negotiation (up to 3 rounds)
 - Conflict detection and resolution
-- Supervisor mediation
+- LLM Supervisor mediation
 - Shared KPI optimization (service level, cost, inventory turns, CO2)
 
 ### Complete AWS Supply Chain Feature Integration
 
+**Architectural Integration Strategy**:
+- ✅ **Data Lake**: Databricks integration for ERP data ingestion and transformation
+- ✅ **Demand Planning**: External system integration with view-only visibility and delta analysis
+- ✅ **Supply Planning & Execution**: Full AWS SC-compliant planning and order management
+- ✅ **Insights & Risk**: ML-powered risk detection, watchlists, predictive analytics
+- ✅ **Recommendations**: AI-driven rebalancing engine with action scoring
+- ✅ **Collaboration**: Team messaging, commenting, and approval workflows
+
+#### AWS SC Data Model Compliance (Backend - 100% Complete)
+
+| AWS SC Standard | Status | Implementation |
+|---|---|---|
+| **Hierarchical Overrides** | ✅ 100% | 6-level InvPolicy, 5-level VendorLeadTime, 3-level SourcingRules |
+| **Safety Stock Policies** | ✅ 100% | All 8 types: abs_level, doc_dem, doc_fcst, sl, sl_fitted, conformal, sl_conformal_fitted, econ_optimal |
+| **Vendor Management** | ✅ 100% | TradingPartner, VendorProduct, FK references |
+| **Sourcing Schedules** | ✅ 100% | Periodic ordering (weekly, monthly, custom) |
+| **Advanced Manufacturing** | ✅ 100% | Frozen horizon, setup/changeover, batch sizing, BOM alternates |
+
+*See [AWS_SC_100_PERCENT_COMPLETE.md](docs/progress/AWS_SC_100_PERCENT_COMPLETE.md) for full certification details.*
+
+#### AWS SC Product Feature Parity (UI/UX - 100% Complete)
+
 | AWS SC Feature | Status | UI Coverage | Key Capabilities |
 |---|---|---|---|
-| **Material Visibility** | Complete | 100% | Shipment tracking, ATP/CTP calculations, inventory projection, N-tier visibility with inventory flow, capacity analysis, risk assessment per tier |
-| **Order Planning & Tracking** | Complete | 100% | Unified all-order dashboard (PO/TO/CO/MO), order detail with timeline, vendor scorecard, KPI cards, search/filter, CSV export |
-| **Insights & Risk Analysis** | Complete | 100% | Risk detection, watchlists, alert rules configuration, notification channels, predictive analytics |
-| **Recommended Actions** | Complete | 100% | Risk-based recommendations, scoring breakdown, accept/reject workflow, batch operations, simulation, performance tracking |
-| **Collaboration** | Complete | 100% | Agent-to-agent, human-to-agent, and human-to-human framework, approval workflows, inline comments, activity feed, team messaging |
-| **Demand Planning** | Complete | 100% | Demand plan view/edit with import/export, forecast adjustment history, version comparison, consensus planning with voting, CPFR with exception detection, ML forecast pipeline |
+| **Material Visibility** | ✅ Complete | 100% | Shipment tracking, ATP/CTP calculations, inventory projection, N-tier visibility with inventory flow, capacity analysis, risk assessment per tier |
+| **Order Planning & Tracking** | ✅ Complete | 100% | Unified all-order dashboard (PO/TO/CO/MO), order detail with timeline, vendor scorecard, KPI cards, search/filter, CSV export |
+| **Insights & Risk Analysis** | ✅ Complete | 100% | Risk detection, watchlists, alert rules configuration (create/edit/delete rules with metrics, thresholds, escalation), notification channels (email/in-app/Slack with enable/disable), predictive analytics |
+| **Recommended Actions** | ✅ Complete | 100% | Risk-based recommendations, scoring breakdown (5 components /100), accept/reject workflow, batch operations, simulation, performance tracking (acceptance rates, predicted vs actual outcomes, savings realization, type-level analytics) |
+| **Collaboration** | ✅ Complete | 100% | A2A/H2A/H2H framework, approval workflows, inline comments, activity feed, team messaging, notification preferences (per-alert-type, quiet hours, digest frequency, delivery channels) |
+| **Demand Planning** | ✅ Complete | 100% | Demand plan view/edit with wired import/export (CSV upload/download), forecast adjustment history, version comparison, consensus planning with voting, CPFR with exception detection, ML forecast pipeline |
+| **Data Lake** | ⏸️ External | N/A | Using Databricks for ERP connectivity and data transformation |
 
-### Key Innovations
+#### 1. Insights & Risk Analysis
+
+**ML-Powered Risk Detection**:
+- Automatic identification of stock-out and overstock risks
+- Probabilistic risk scoring (0-100) based on historical patterns
+- Early warning alerts (7-30 days advance notice)
+- Root cause analysis using decision trees and SHAP values
+
+**Customizable Watchlists**:
+- Critical product monitoring with custom thresholds
+- Multi-dimensional filters (product, location, supplier, customer)
+- Alert escalation rules (email, SMS, dashboard notification)
+- Watchlist templates for common scenarios (seasonality, new product launches, supplier risk)
+
+**Predictive Analytics**:
+- Stock-out probability forecasts (7/14/30/90-day horizons)
+- Vendor lead-time prediction with confidence intervals
+- Demand surge detection (3-sigma anomaly detection)
+- Forecast vs. actual tracking with MAPE/RMSE metrics
+
+**Real-Time Alert System** (✅ Implemented):
+- Event-driven alerts triggered by threshold violations
+- Priority-based routing (P0: immediate, P1: 1-hour, P2: 4-hour, P3: daily)
+- Multi-channel delivery (dashboard, email, Slack, Teams)
+- Alert grouping and deduplication
+
+**Alert Rules Configuration** (✅ Implemented):
+- Create, edit, and delete custom alert rules with configurable metrics and thresholds
+- Per-rule severity assignment (CRITICAL/HIGH/MEDIUM/LOW) and alert type selection
+- Condition-based triggering (metric above/below threshold)
+- Escalation timer (auto-escalate unresolved alerts after configurable hours)
+- Per-rule notification channel selection (email, in-app, Slack)
+- Enable/disable individual rules without deletion
+
+**Notification Channels** (✅ Implemented):
+- Email, in-app, and Slack channel configuration with per-channel enable/disable
+- Webhook configuration for Slack integration
+- Channel status monitoring (active/disabled)
+- Per-alert-type notification preferences in Settings (stockout, overstock, lead time, recommendations, escalations, order exceptions)
+- Quiet hours with configurable start/end times (critical alerts bypass quiet hours)
+- Email digest frequency control (real-time, hourly, daily, weekly)
+
+**Uncertainty Quantification & Conformal Prediction** (✅ Implemented January 2026):
+
+Distribution-free uncertainty quantification for supply chain planning with guaranteed prediction intervals:
+
+*Conformal Prediction*:
+- Calibrate from historical Plan vs. Actual data (any variable: demand, lead time, yield)
+- Generate prediction intervals with formal coverage guarantees (no distribution assumptions)
+- Per-product, per-site calibration for precise uncertainty estimates
+- Adaptive conformal prediction with drift detection and automatic recalibration
+- Safety stock calculation with guaranteed service levels using conformal bounds
+
+*Key Benefits vs. Traditional Approaches*:
+- Traditional: Assume normal distribution → intervals often wrong
+- Conformal: Data-driven intervals → guaranteed coverage (e.g., "90% coverage" means actual ≥90%)
+
+*Planning Method Comparison*:
+- Side-by-side stochastic vs. deterministic analysis
+- Monte Carlo simulation with 1000+ scenarios
+- Sensitivity analysis for key parameters
+- Decision recommendations based on uncertainty level
+
+**Capabilities**: `view_risk_analysis`, `manage_watchlists`, `view_predictions`, `configure_alerts`, `view_uncertainty_quantification`
+
+#### 2. Recommended Actions Engine (AI Agent Suggested Actions)
+
+**AI-Powered Recommendations**: The platform's three AI agents (LLM, GNN, TRM) continuously analyze supply chain state and generate suggested actions for human planners. Through multi-agent consensus with adaptive weight learning, the system provides high-confidence recommendations that improve over time.
+
+**Agent-Generated Rebalancing Recommendations**:
+- Network-wide inventory rebalancing using linear programming (Optimizer Agent)
+- Multi-site transfer suggestions based on demand variance (GNN Agent with temporal pattern recognition)
+- Safety stock redistribution to minimize total network inventory (LLM Agent strategic planning)
+- Seasonal rebalancing for pre-positioning inventory (ML-Forecast Agent with time series analysis)
+
+**Multi-Agent Consensus Process**:
+1. **Individual Agent Analysis**: Each agent (LLM, GNN, TRM) independently analyzes the supply chain state
+2. **Weighted Voting**: Agent recommendations combined using learned weights (e.g., LLM: 45%, GNN: 38%, TRM: 17%)
+3. **Confidence Scoring**: Agreement between agents indicates recommendation reliability
+4. **Adaptive Learning**: Weights automatically adjust based on historical performance
+
+**Action Scoring Algorithm**:
+- **Risk Resolution** (0-40 points): % reduction in stock-out/overstock probability
+- **Distance Impact** (0-20 points): Transportation cost and lead time
+- **Sustainability** (0-15 points): CO2 reduction from optimized routing
+- **Service Level Impact** (0-15 points): Fill rate and OTIF improvement
+- **Inventory Cost** (0-10 points): Holding cost reduction
+
+**Impact Simulation & What-If Analysis**:
+- Simulate recommended actions before execution
+- Compare multiple scenarios side-by-side (including AI vs. human decisions)
+- Monte Carlo simulation for uncertainty quantification
+- **Scenario-Based Testing**: Run suggested actions through digital twin simulations before production deployment
+- Rollback capability for risk-free testing
+
+**Decision Tracking & ML Learning Loop**:
+- Track accepted/rejected recommendations
+- Capture human override reasons and context (RLHF - Reinforcement Learning from Human Feedback)
+- Fine-tune AI agents on human simulation and production data
+- Adaptive guardrails that learn from human decisions
+
+**Performance Tracking** (✅ Implemented):
+- Acceptance rate, override rate, and auto-execution rate KPIs
+- Performance breakdown by recommendation type (rebalance, expedite, inventory buffer)
+- Predicted vs actual savings comparison with realization rate percentage
+- Predicted vs actual service level impact comparison
+- Score effectiveness analysis (avg score of accepted vs overridden recommendations)
+- Recent outcomes table with effectiveness assessment per recommendation
+- Total savings realized vs predicted with realization rate
+
+**Capabilities**: `view_recommendations`, `manage_recommendations`, `approve_actions`, `simulate_impact`
+
+#### 3. Collaboration & Team Coordination
+
+**Team Messaging Interface** (✅ Implemented):
+- Channel-based messaging (group, direct, entity-linked to PO/TO/supply plans)
+- Threaded conversations with reply counts and thread view panel
+- @mentions with autocomplete and read tracking
+- Message pinning, editing, and deletion with audit trail
+- Read receipts per channel with unread count badges
+- Embedded in Collaboration Hub as dedicated tab
+
+**Inline Comments on Orders & Plans** (✅ Implemented January 2026):
+- Comment on purchase orders, transfer orders, supply plans, recommendations
+- Comment threading with nested replies
+- @mentions with user autocomplete and notifications
+- Comment types: general, question, issue, resolution, approval, rejection
+- Pin important comments for visibility
+- Edit/delete with audit trail
+- Real-time updates via WebSocket
+
+**Notification System**:
+- Configurable notification preferences per user
+- Digest emails (real-time, hourly, daily)
+- Mobile push notifications
+- In-app notification center with priority filtering
+
+**Activity Feed & Audit Trail**:
+- Chronological feed of all planning actions
+- User attribution and timestamp tracking
+- Filterable by action type, user, date range
+- Export to CSV for compliance reporting
+
+**Document Sharing**:
+- Attach files to orders, plans, comments
+- Supported formats: PDF, Excel, Word, images
+- Version control for document updates
+- Permission-based access control
+
+**Capabilities**: `view_collaboration`, `post_messages`, `manage_collaboration`, `view_activity_feed`
+
+#### 4. Order Planning & Tracking
+
+**Comprehensive Order Types**:
+- **Purchase Orders (PO)**: Vendor procurement with approval workflows
+- **Transfer Orders (TO)**: Inter-site transfers with transportation tracking
+- **Manufacturing Orders (MO)**: Production scheduling with BOM explosion
+- **Project Orders**: Custom project-based fulfillment
+- **Maintenance Orders**: Repair and maintenance scheduling
+- **Turnaround Orders**: Refurbishment and reverse logistics
+
+**Order Lifecycle Management**:
+- Draft → Submitted → Approved → Sent → Acknowledged → Confirmed → Shipped → Received → Closed
+- Automatic state transitions based on business rules
+- Manual override capability for exception handling
+- Configurable approval workflows (single-level, multi-level, matrix)
+
+**PO Acknowledgment & Goods Receipt** (✅ Implemented January 2026):
+- Send PO to supplier with tracking
+- Record supplier acknowledgment with expected delivery date
+- Record supplier confirmation (ready for shipment)
+- Goods receipt with partial receive support
+- Quality inspection: accept/reject with reason codes
+- Variance tracking: over/under delivery detection
+- Multiple receipts per PO (partial deliveries)
+- Automatic PO status updates (PARTIAL_RECEIVED, RECEIVED)
+
+**Multi-Site Order Coordination**:
+- Cross-site visibility of order status
+- Dependent order tracking (parent-child relationships)
+- Consolidated order views by product, supplier, customer
+- Network-wide order promising with ATP/CTP
+
+**Unified All-Order Dashboard** (✅ Implemented):
+- Single view combining all order types (PO, TO, CO, MO) with type tabs and filtering
+- 8 KPI summary cards (total, in-transit, processing, delayed, delivered, total value, avg priority, on-time %)
+- Full-text search by order ID or product, status filter dropdown
+- Order detail modal with timeline visualization (created → confirmed → in-transit → delivered)
+- CSV export of filtered order data
+- Vendor performance scorecard (on-time delivery %, quality rate, avg lead time, trend indicator)
+
+**Capabilities**: `view_order_planning`, `create_order`, `approve_order`, `manage_project_orders`
+
+#### 5. Material Visibility & Shipment Tracking
+
+**Real-Time Shipment Tracking**:
+- Integration with logistics providers (FedEx, UPS, DHL, 3PL)
+- GPS tracking for in-transit inventory
+- Estimated delivery time with delay alerts
+- Exception management for at-risk shipments
+
+**Inventory Projection & ATP/CTP**:
+- Available-to-Promise (ATP): On-hand + scheduled receipts
+- Capable-to-Promise (CTP): ATP + planned production
+- Multi-level ATP/CTP with BOM explosion
+- Time-phased projections (daily/weekly buckets)
+
+**Delivery Risk Analytics**:
+- Probabilistic on-time delivery prediction (0-100%)
+- Risk factors: weather, port congestion, carrier reliability
+- Mitigation recommendations: expedite, reroute, safety stock
+- Proactive customer notification for at-risk orders
+
+**N-Tier Network Visibility** (✅ Complete):
+- Multi-echelon supply chain visualization (supplier → DC → customer)
+- DAG-based network topology with Sankey diagrams
+- Pipeline inventory tracking (in-transit, in-production)
+- Bottleneck identification and capacity constraints
+- **Inventory Flow**: Tier-to-tier flow visualization with volume, in-transit counts, transit time, lane status (normal/constrained), inventory levels vs targets comparison table
+- **Capacity Analysis**: Per-tier utilization bars with color-coded thresholds (green <80%, amber 80-90%, red 90%+), bottleneck identification, detailed metrics table (throughput, quality, OTD), optimization recommendations
+- **Risk Assessment**: Per-tier risk scores (0-100) with donut visualization, 5-category risk breakdown (supply continuity, capacity, quality, lead time, financial), mitigation action table with priority and due dates, all-mitigations summary sorted by priority
+
+**Capabilities**: `view_shipment_tracking`, `manage_shipments`, `view_inventory_visibility`, `view_ntier_visibility`
+
+#### 6. Demand Planning (Full-Featured)
+
+**Demand Plan View & Edit**:
+- Display current demand plan by product/location/time with P10/P50/P90 confidence intervals
+- Inline cell editing with undo/redo support
+- Bulk adjustments (percentage, delta) across multiple forecasts
+- Filter by product family, location hierarchy, date range
+- Import/Export for bulk operations (✅ Wired: CSV upload via file picker, CSV download with template fallback, import validation with error feedback)
+
+**Forecast Adjustment History** (✅ Implemented March 2026):
+- Full audit trail of all forecast adjustments with filtering
+- Filter by reason code (promotion, seasonal, event, market intelligence, correction)
+- Filter by source (manual, bulk, agent, import) and status (applied, pending, reverted)
+- One-click revert capability for applied adjustments
+- Summary statistics: total, applied, reverted, pending approval
+
+**Version Comparison** (✅ Implemented March 2026):
+- Side-by-side comparison of any two forecast versions
+- Delta summary: products changed, average change %, increases vs decreases
+- Product-level, site-level, and period-level difference table
+- Create snapshots (snapshot, baseline, consensus, published types)
+- Locked version support for approved baselines
+
+**Consensus Planning** (✅ Implemented March 2026):
+- Multi-stakeholder forecast consensus cycles (DRAFT → COLLECTING → REVIEW → VOTING → APPROVED → PUBLISHED)
+- Source-based submissions: sales, marketing, finance, operations, statistical
+- Phase-based progress tracking with visual pipeline
+- Voting mechanism: approve, reject, abstain, request changes
+- Version comparison across stakeholder submissions
+- Threaded discussion per consensus cycle
+
+**ML Forecast Pipeline**:
+- Configurable ML pipeline with 30+ parameters
+- Clustering-based statistical forecasting
+- Pipeline run management with async execution
+- Publish results to production forecasts
+
+**CPFR (Demand Collaboration)** (✅ Implemented March 2026):
+- Trading partner collaboration with forecast sharing
+- Exception detection (>20% variance threshold)
+- Approval/rejection workflows with reason capture
+- Forecast accuracy tracking per partner (MAPE, bias, hit rate)
+- Collaboration types: forecast share, consensus, alert, exception
+
+**Forecast Exceptions**:
+- Exception detection and management with configurable rules
+- Variance threshold, trend detection, outlier detection, bias detection
+- Severity levels and resolution workflows
+- Comment threading per exception
+
+**Capabilities**: `view_demand_planning`, `manage_demand_planning`, `view_demand_collaboration`, `view_forecasting`, `view_forecast_exceptions`
+
+### Key Innovations of Continuous Autonomous Planning
 
 **1. Event-Driven Agent Orchestration**:
 - Agents react to real-time events (orders, disruptions, forecast changes)
 - Priority-based task queue (P0 < 1 min, P1 < 5 min, P2 < 1 hour, P3 < 24 hours)
 - Agent dependency management (Policy agents → Execution agents → Supervisor)
 
-**2. Git-Like Plan Versioning**:
+**2. Git-Like Plan Versioning** (Kinaxis-Inspired):
 ```
 main (production plan)
 ├── daily/2026-01-23  (today's baseline)
@@ -428,24 +720,24 @@ main (production plan)
 - Full plan history with commit/diff/revert
 - Scenario-based "what-if" analysis
 
-**3. Incremental Change Data Capture**:
+**3. Incremental CDC Snapshotting**:
 - Nightly full snapshot: 260 MB (50 MB compressed)
 - Hourly incremental: 10-50 KB (100x reduction)
-- Agent-triggered incremental: Real-time capture
-- 28-day retention: ~83 GB total
+- Agent-triggered incremental: Real-time CDC
+- 28-day retention: ~83 GB total vs. 26 GB if full snapshots hourly
 
-**4. Natural Language-First UI**:
+**4. LLM-First UI**:
 ```
 Planner: "Show me all agent actions from today"
-System:  "I found 12 agent actions today:
-          - 5 by MPS Agent (all auto-executed, avg cost impact: +$1,200)
-          - 3 by MRP Agent (2 auto-executed, 1 awaiting your review)
-          [View All] [Filter by Impact] [Show Pending Only]"
+LLM: "I found 12 agent actions today:
+     - 5 by MPS Agent (all auto-executed, avg cost impact: +$1,200)
+     - 3 by MRP Agent (2 auto-executed, 1 awaiting your review)
+     [View All] [Filter by Impact] [Show Pending Only]"
 
 Planner: "Show me the MRP action that needs my review"
-System:  "The MRP Agent recommends creating a PO for 500 units of BOTTLE...
-          This requires review because order value ($62,000) exceeds threshold ($50,000)
-          [Approve] [Modify] [Request Alternatives]"
+LLM: "The MRP Agent recommends creating a PO for 500 units of BOTTLE...
+     This requires review because order value ($62,000) exceeds threshold ($50,000)
+     [Approve] [Modify] [Request Alternatives]"
 ```
 
 **5. Guardrails for Agent Autonomy**:
@@ -459,7 +751,7 @@ When humans override agents, they provide:
 - **Reason category** (10 options): Domain knowledge, external constraint, strategic decision, data quality, policy exception, customer priority, supply chain insight, cost sensitivity, risk aversion, other
 - **Free-text explanation** (min 10 characters)
 - **Supporting files**: PDFs, emails, spreadsheets
-- System learns: Adjust guardrails, update KPI weights, fine-tune models
+→ System learns: Adjust guardrails, update KPI weights, fine-tune models, update LLM prompts
 
 **7. Continuous Order Promising**:
 - **Batch Promising**: Priority-aware allocation (VIP customers first)
@@ -468,47 +760,66 @@ When humans override agents, they provide:
   - High-priority orders can pre-empt lower-priority promises before notification
   - Priority override window: 30 minutes configurable
 
-### Sequential Decision Framework
+### Powell Sequential Decision Analytics Framework
 
-The platform's planning architecture is grounded in a rigorous **sequential decision framework** that provides a unified theoretical foundation for decision-making under uncertainty.
+The platform's planning architecture is grounded in Warren B. Powell's **Sequential Decision Analytics and Modeling (SDAM)** framework, which provides a unified theoretical foundation for decision-making under uncertainty.
 
-**Five Core Elements**:
+**Powell's Five Core Elements**:
 
-| Element | Description | Platform Implementation |
-|---------|-------------|------------------------|
-| **State** | What we know now | Inventory levels, backlog, pipeline, demand history, network topology |
-| **Decision** | What we can control | Order quantities, production schedules, sourcing allocations |
-| **Exogenous Information** | What arrives from outside | Customer demand, lead time realizations, yield variations |
-| **Transition Function** | How the world evolves | Supply chain simulation engine |
-| **Objective Function** | What we optimize | Minimize expected total cost subject to service level constraints |
+| Element | Symbol | Platform Implementation |
+|---------|--------|------------------------|
+| **State** | Sₜ | Inventory levels, backlog, pipeline, demand history, network topology |
+| **Decision** | xₜ | Order quantities, production schedules, sourcing allocations |
+| **Exogenous Information** | Wₜ₊₁ | Customer demand, lead time realizations, yield variations |
+| **Transition Function** | Sᴹ | Supply chain simulation engine (BeerLine, SimPy) |
+| **Objective Function** | F | Minimize E[total cost] subject to service level constraints |
 
-**Four Policy Classes**:
+**Powell's Four Policy Classes**:
 
-| Class | Description | Platform Use |
-|-------|-------------|--------------|
-| **Rules-Based** | Direct state-to-decision mapping | Base-stock rules, historical proportions |
-| **Parameterized Optimization** | Tunable policy parameters | S&OP/MPS with optimized parameters |
-| **Learned Value Functions** | AI agents that learn from experience | Execution agents, network coordination model |
-| **Lookahead Planning** | Model predictive control | Strategic planning with scenarios |
+| Class | Acronym | Description | Platform Use |
+|-------|---------|-------------|--------------|
+| **Policy Function Approximation** | PFA | Direct S→x mapping | Base-stock rules, historical proportions |
+| **Cost Function Approximation** | CFA | Parameterized optimization | S&OP/MPS with policy parameters θ |
+| **Value Function Approximation** | VFA | Q-learning, TD learning | TRM agent, Execution tGNN |
+| **Direct Lookahead** | DLA | Model predictive control | Strategic planning with scenarios |
 
-**Hierarchical Integration**:
+**Hierarchical Policy Integration**:
 
-The platform implements the insight that **multi-level planning is nested optimization**:
+The platform implements Powell's insight that **multi-level planning is nested optimization**:
 
 ```
-Strategic:     Optimize long-term parameters using scenario analysis
-                    ↓ bounds
-S&OP:          Optimize policy parameters within strategic bounds
-                    ↓ parameters
-MPS:           Optimize production schedule within S&OP parameters
-                    ↓ constraints
-Execution:     Execute optimal decisions respecting MPS constraints
+Strategic (DLA): θ_strategic = argmax E[V(S) | scenarios]
+                      ↓ bounds
+S&OP (CFA):     θ_sop = argmin Cost(θ) s.t. θ ∈ θ_strategic
+                      ↓ parameters
+MPS (CFA):      θ_mps = optimize(production) s.t. θ ∈ θ_sop
+                      ↓ constraints
+Execution (VFA): x* = argmax Q(s,a|θ_mps)
 ```
+
+**Key Powell Insights Implemented**:
+
+1. **Aggregation as State Abstraction**: Higher planning levels (S&OP) work with aggregated state representations to reduce dimensionality. The `AggregationService` rolls up Site→Country, SKU→Family, Day→Month.
+
+2. **Disaggregation as Policy**: Powell treats disaggregation proportions as **policy decisions**, not fixed transformations:
+   - **PFA**: Fixed historical proportions (simple, stable)
+   - **CFA**: Learned proportions optimized from data (adaptive)
+   - **VFA**: Value-based allocation maximizing downstream value
+
+3. **Hierarchical Consistency**: Lower-level value functions must approximate upper-level expectations:
+   ```
+   V_execution ≈ E[V_tactical | disaggregate(S_tactical)]
+   ```
+   Platform enforces <10% deviation tolerance between planning levels.
+
+4. **Monte Carlo for Evaluation, Optimization over Scenarios**: Current stochastic planning generates scenarios and evaluates outcomes. Powell recommends **extracting optimal policy parameters** from scenario results, which the platform implements through adaptive weight learning.
+
+**Reference**: See [POWELL_APPROACH.md](POWELL_APPROACH.md) for complete implementation details.
 
 ### Agent Hierarchy and Tasks
 
 **Policy Agents** (Set the rules):
-- Inventory Policy Agent: Safety stock, reorder points, days-of-coverage targets
+- Inventory Policy Agent: Safety stock, reorder points, DOC targets
 - Sourcing Policy Agent: Make-vs-buy, vendor selection, priorities
 - Capacity Policy Agent: Shift patterns, overtime rules, bottlenecks
 - Demand Policy Agent: Forecast models, seasonality, demand sensing
@@ -520,8 +831,23 @@ Execution:     Execute optimal decisions respecting MPS constraints
 - Order Promising Agent: ATP/CTP calculation, order confirmation
 
 **Supervisor Agents** (Coordinate and escalate):
-- Supervisor: Exception handling, root cause analysis, human escalation
+- LLM Supervisor: Exception handling, root cause analysis, human escalation
 - Global Planner Agent: Network-wide optimization, trade-off analysis
+
+**Agent Collaboration Example**:
+```
+Policy Change Event: "Increase CASE safety stock from 50 to 75"
+    ↓
+Inventory Policy Agent recalculates targets for all CASE-related products
+    ↓
+MPS Agent replans affected weeks to meet new targets
+    ↓
+MRP Agent adjusts component requirements based on new MPS
+    ↓
+Capacity Agent verifies resource availability for new MRP plan
+    ↓
+LLM Supervisor reviews cascade impact, alerts planners if significant
+```
 
 ### Performance & Scalability
 
@@ -544,115 +870,107 @@ Execution:     Execute optimal decisions respecting MPS constraints
 - Agent decisions: 18 GB
 - **Total: ~83 GB/year**
 
+**Cost Analysis** (AWS):
+- Infrastructure: ~$632/month
+- Cost per agent decision: $0.0094 (or $0.082 with LLM review)
+
 ### Continuous Autonomous Planning vs. Legacy Systems
 
-| Aspect | Legacy (Kinaxis/SAP IBP) | Autonomy |
-|--------|--------------------------|----------|
+| Aspect | Legacy (Kinaxis/SAP IBP) | Continuous Autonomous Planning Platform |
+|--------|--------------------------|------------------------------|
 | **Planning Frequency** | Weekly/monthly batch | Event-driven (minutes) |
 | **Latency** | 5-7 days event → action | <5 minutes (P0/P1 events) |
 | **Human Involvement** | Manual batch review of 1000s SKUs | Inspect exceptions only (~10-20/day) |
 | **Plan Changes** | Full replan (slow) | Incremental (only affected SKUs) |
 | **Versioning** | Single "current" plan | Git-like branches, full history |
-| **AI Integration** | Limited, bolt-on | Native agents with agent-to-agent collaboration |
+| **AI Integration** | Limited, bolt-on | Native agents with A2A collaboration |
 | **Learning** | Consultant retraining | Continuous from human overrides |
-| **Explainability** | Black box optimization | Natural language + observable decisions |
-| **UI Paradigm** | Complex ERP screens | Chat + point-and-click deep dive |
+| **Explainability** | Black box optimization | Pre-computed reasoning on every decision (<1ms Ask Why) |
+| **UI Paradigm** | Complex ERP screens | Decision Stream (primary) + point-and-click deep dive |
 | **Cost** | $100K-$500K/user/year | $10K/user/year (90% reduction) |
 | **Deployment** | 12-18 months | 2-4 weeks |
 
-### Value Proposition: Integrated Capabilities
+### Value Proposition: Three Systems in One
 
 **1. Enterprise Planning Platform** (90% cost reduction vs. Kinaxis/SAP IBP)
 - Continuous event-driven planning with AI agents
 - Git-like versioning and scenario management
-- Natural language-first UI
-- Incremental change data capture for efficiency
+- LLM-first UI with natural language queries
+- Incremental CDC snapshotting for efficiency
 - Plan vs. actual automated comparison
 
 **2. AI Agent Training Ground** (Risk-free validation before production)
 - Test agent strategies in simulation environments
 - Build stakeholder confidence through competitive simulation
 - Generate diverse training data from human decisions
-- Continuous learning from human feedback
+- RLHF (Reinforcement Learning from Human Feedback)
 
 **3. Stochastic Simulation Engine** (Model real-world uncertainty)
-- 20+ distribution types for operational variability
+- 20 distribution types for operational variability
 - Monte Carlo simulation (1000+ scenarios)
 - Probabilistic balanced scorecard (P10/P50/P90 KPIs)
-- Multi-echelon network topology support
+- Multi-echelon DAG topology support
 
-**4. Conformal Prediction Engine**
-- **Distribution-Free Intervals**: Guaranteed prediction coverage without assuming any specific distribution shape
+**4. Conformal Prediction Engine** (✅ Implemented January 2026)
+- **Distribution-Free Intervals**: Guaranteed prediction coverage without assuming normal/lognormal distributions
 - **Calibration from History**: Use Plan vs. Actual data to calibrate per-product, per-site uncertainty bounds
-- **Formal Guarantees**: If we promise "90% coverage", actual coverage will be >=90% (mathematically proven)
+- **Formal Guarantees**: If we promise "90% coverage", actual coverage will be ≥90% (mathematically proven)
 - **Safety Stock with Guarantees**: Calculate safety stock with formal service level guarantees
 - **Adaptive Recalibration**: Automatic drift detection and recalibration when forecast accuracy degrades
+- **Planning Method Comparison**: Side-by-side stochastic vs. deterministic with decision recommendations
 
-**5. Distribution Fitting & Likelihood Estimation Engine**
-- **Automatic Distribution Fitting**: Automatically fit 20+ distribution types to historical demand, lead time, yield, and price data using maximum likelihood estimation
-- **Statistical Model Selection**: Goodness-of-fit testing and information criteria ranking to select the best-fitting distribution per product-site combination
-- **Distribution-Aware Safety Stock**: When demand or lead time is non-Normal (e.g., lognormal, Weibull), uses Monte Carlo simulation of Demand-During-Lead-Time instead of standard formulas — correcting 15-30% safety stock miscalculation common with skewed distributions
-- **Distribution-Aware Feature Engineering**: AI agent inputs include fitted distribution parameters and robust statistics instead of simple mean/standard deviation, providing better signal for non-Normal data
+**5. Distribution Fitting & Likelihood Estimation Engine** (✅ Implemented February 2026)
+- **MLE Distribution Fitting**: Automatically fit 20 distribution types (Normal, Lognormal, Gamma, Weibull, Beta, Exponential, Triangular, Mixture, etc.) to historical demand, lead time, yield, and price data using maximum likelihood estimation
+- **Statistical Model Selection**: Kolmogorov-Smirnov goodness-of-fit testing, AIC/BIC ranking to select the best-fitting distribution per product-site combination
+- **Distribution-Aware Safety Stock** (`sl_fitted` policy): When demand or lead time is non-Normal (e.g., lognormal, Weibull), uses Monte Carlo simulation of Demand-During-Lead-Time (DDLT) instead of the standard z-score formula — correcting 15-30% safety stock miscalculation common with skewed distributions
+- **Distribution-Aware Feature Engineering**: TRM state vectors include fitted distribution parameters (shape, scale, skewness, kurtosis) and MAD/median ratios instead of mean/std, following Kravanja (2026) on robust feature design for non-Normal data
+- **API**: `POST /api/v1/stochastic/fit` for on-demand distribution fitting with ranked results
+- **Reference**: See [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md) Part 8 for full architecture
 
-**6. Digital Twin Training Pipeline**
-- **Five-Phase Cold-Start**: Takes AI agents from zero experience to production autonomy in 3-5 weeks:
-  1. **Behavioral Cloning** (hours): Each agent matches the deterministic engine baseline within +/-5%
-  2. **Coordinated Simulation** (2-3 days): All 11 agents train simultaneously with signal coordination active, learning inter-agent coordination from 28.6M+ training records
-  3. **Stochastic Stress-Testing** (hours): Agents face adversarial scenarios — extreme demand spikes, supplier failures, capacity shocks, compound disruptions
-  4. **Copilot Calibration** (2-4 weeks): Agents run in copilot mode with human overrides captured and weighted by effectiveness tracking
-  5. **Autonomous Continuous Learning** (ongoing): Continuous improvement from production outcomes via the relearning loop
+**6. Digital Twin Training Pipeline** (✅ Implemented February 2026)
+- **Six-Phase Cold-Start**: Takes AI agents from zero experience to production autonomy in 3-5 weeks:
+  1. **Behavioral Cloning** (hours): Each TRM matches the deterministic engine baseline within ±5%
+  2. **Coordinated Simulation** (2-3 days): All 11 TRMs train simultaneously with signal bus active, learning inter-agent coordination from 28.6M+ training records
+  3. **Site tGNN Training** (~1 day): Cross-TRM coordination model learns causal relationships from coordinated traces, then fine-tunes via RL with site-level balanced scorecard as reward
+  4. **Stochastic Stress-Testing** (3-5 days): TRMs + Site tGNN together face adversarial scenarios — 3σ demand spikes, supplier failures, capacity shocks, compound disruptions
+  5. **Copilot Calibration** (2-4 weeks): Agents run in copilot mode with human overrides captured and weighted by Bayesian effectiveness tracking; Site tGNN in shadow mode
+  6. **Autonomous CDC Relearning** (ongoing): Continuous improvement from production outcomes via the CDC → Relearning loop; Site tGNN retrained every 12h
 - **Warm-Start Advantage**: Production AI starts with pre-trained knowledge from simulation, not random initialization — eliminating the months-long "cold start" period that makes enterprise AI adoption impractical
+- **Reference**: See [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) Section 15 for implementation details
 
-```mermaid
-graph LR
-    P1["<b>1. Individual<br/>Agent Learning</b><br/><i>1-2 days</i>"]
-    P2["<b>2. Coordinated<br/>Simulation</b><br/><i>2-3 days</i>"]
-    P3["<b>3. Cross-Agent<br/>Model Training</b><br/><i>~1 day</i>"]
-    P4["<b>4. Stress<br/>Testing</b><br/><i>3-5 days</i>"]
-    P5["<b>5. Copilot<br/>Calibration</b><br/><i>2-4 weeks</i>"]
-    P6["<b>6. Autonomous<br/>Operation</b><br/><i>Continuous</i>"]
+**7. Vertical Escalation (Escalation Arbiter)** (✅ Implemented March 2026)
+- **Problem**: Some execution-level anomalies signal that *strategic policy parameters* are wrong, not that execution decisions need fine-tuning. Retraining TRMs doesn't fix a safety stock multiplier that's too low.
+- **Persistence Detection**: Monitors TRM decision patterns across all sites for persistent directional drift — when agents consistently correct in the same direction (e.g., always ordering 20% more), the policy is wrong
+- **Intelligent Routing**: Routes escalations to the right level — horizontal (CDC retrain), operational (off-cadence tGNN refresh), or strategic (S&OP policy review) — based on pattern scope (single TRM vs. multi-site vs. network-wide)
+- **Theoretical Foundation**: Maps to Kahneman's dual-process theory (TRMs = System 1 fast thinking, tGNN/GraphSAGE = System 2 slow thinking) and Boyd's nested OODA loops (execution/operational/strategic time horizons)
+- **Reference**: See [ESCALATION_ARCHITECTURE.md](docs/ESCALATION_ARCHITECTURE.md) for full theoretical framework
 
-    P1 -->|"competent agents"| P2
-    P2 -->|"coordination traces"| P3
-    P3 -->|"trained model"| P4
-    P4 -->|"robust agents"| P5
-    P5 -->|"calibrated"| P6
-    P6 -->|"continuous learning"| P6
-
-    SIM(["Simulation<br/>(Digital Twin)"])
-    SIM -.->|"curriculum"| P1
-    SIM -.->|"episodes"| P2
-    SIM -.->|"disruptions"| P4
-    SIM -.->|"counterfactual eval"| P6
-```
-
-**7. Vertical Escalation (Escalation Arbiter)**
-- **Problem**: Some execution-level anomalies signal that *strategic policy parameters* are wrong, not that execution decisions need fine-tuning. Retraining agents doesn't fix a safety stock multiplier that's too low.
-- **Persistence Detection**: Monitors agent decision patterns across all sites for persistent directional drift — when agents consistently correct in the same direction (e.g., always ordering 20% more), the policy is wrong
-- **Intelligent Routing**: Routes escalations to the right level — horizontal (agent retrain), operational (network model refresh), or strategic (S&OP policy review) — based on pattern scope (single agent vs. multi-site vs. network-wide)
-- **Theoretical Foundation**: Maps to dual-process theory (execution agents = fast thinking, network models = slow thinking) and nested decision loops (execution/operational/strategic time horizons)
-
-**8. Quantitative Supply Chain Economics**
-- **Dollar-Denominated Decisions**: AI agent reward functions use actual economic costs (holding cost per unit per day, stockout cost per unit, ordering cost per order) computed from product unit cost and inventory policy parameters — replacing heuristic scaling factors
-- **Economically Optimal Safety Stock**: Marginal economic return analysis — stock one more unit only when the expected stockout cost exceeds the holding cost. Monte Carlo simulation over fitted demand and lead time distributions with no fallbacks or defaults
-- **CRPS Forecast Scoring**: Continuous Ranked Probability Score — the gold standard for probabilistic forecast evaluation — integrated into the prediction pipeline. Tracks forecast distribution quality, not just coverage
+**8. Quantitative Supply Chain Economics** (✅ Implemented March 2026)
+- **Dollar-Denominated Decisions**: AI agent reward functions now use actual economic costs (holding cost per unit per day, stockout cost per unit, ordering cost per order) computed from product unit cost and inventory policy parameters — replacing heuristic scaling factors
+- **Economically Optimal Safety Stock** (`econ_optimal` policy): Marginal economic return analysis — stock one more unit only when the expected stockout cost exceeds the holding cost. Monte Carlo simulation over fitted demand and lead time distributions with no fallbacks or defaults
+- **CRPS Forecast Scoring**: Continuous Ranked Probability Score — the gold standard for probabilistic forecast evaluation — integrated into the conformal prediction pipeline. Tracks forecast distribution quality, not just coverage
 - **Censored Demand Detection**: Automatic detection of stockout periods where observed demand understates true demand. Censored observations excluded from distribution fitting to prevent systematic underestimation
-- **Fat-Tailed Lead Times**: Fat-tailed distribution fitting for lead times, capturing the "most shipments arrive on time, but some arrive very late" pattern better than standard distributions
-- **Automated Policy Re-Optimization**: Weekly automated re-optimization of inventory policy parameters, ensuring policies stay current as demand patterns evolve
+- **Log-Logistic Lead Times**: Fat-tailed log-logistic distribution added for lead time fitting, capturing the "most shipments arrive on time, but some arrive very late" pattern better than Weibull or lognormal
+- **Automated Policy Re-Optimization**: Weekly CFA (Cost Function Approximation) job using Differential Evolution to re-optimize inventory policy parameters (θ), ensuring policies stay current as demand patterns evolve
 - **No Fallbacks**: All economic parameters are explicitly required for every tenant — the system raises errors rather than silently using defaults. Every cost assumption is visible and auditable
+- **Reference**: See [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md) Part 11 for architecture details
 
-**9. Decision Intelligence Platform Architecture** (Gartner-aligned)
-- **Decision-Centric Architecture**: Gartner designated Decision Intelligence as "transformational" (2025 AI Hype Cycle) and published its inaugural Magic Quadrant for Decision Intelligence Platforms in January 2026. The platform implements the full DI lifecycle: decision modeling, orchestration, monitoring, and governance
+**10. Learned Intra-Site Cross-TRM Coordination (Site tGNN)** (✅ Implemented March 2026)
+- **The Gap**: Between sub-millisecond reactive stigmergic signals (Layer 1) and daily network-wide inference (Layer 3), many cross-TRM interactions follow predictable causal chains that neither mechanism captures. A production spike today will generate quality inspection pressure in hours and maintenance load tomorrow -- but the signal bus only reacts after each link materializes.
+- **Layer 1.5**: A lightweight graph neural network (~25K parameters, GATv2+GRU) that learns causal relationships between the 11 execution agents within each site, modeling 22 directed causal edges (ATP-to-MO, MO-to-Quality, Quality-to-Buffer, etc.). Predicts cross-TRM cascade effects that reactive signals alone cannot capture.
+- **Urgency Modulation**: Outputs small adjustment deltas ([-0.3, +0.3]) that modulate the UrgencyVector before the 6-phase decision cycle runs. The Site tGNN shifts emphasis across the TRM hive -- "pay more attention to quality today because production volume is spiking" -- rather than overriding individual TRM decisions.
+- **Training**: 3-phase pipeline (behavioral cloning from MultiHeadTrace records, PPO fine-tuning with site-level Balanced Scorecard reward, production calibration in shadow mode). Feature-flagged OFF by default; zero adjustments when untrained.
+- **Reference**: See [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md) Part 13 and [POWELL_APPROACH.md](POWELL_APPROACH.md) Section 5.20
+
+**9. Decision Intelligence Platform Architecture** (✅ Implemented, Gartner-aligned March 2026)
+- **Decision-Centric Architecture**: Gartner designated Decision Intelligence as "transformational" (2025 AI Hype Cycle) and published its inaugural Magic Quadrant for Decision Intelligence Platforms in January 2026. The platform implements the full DI lifecycle: decision modeling (Powell SDAM), orchestration (TRM Hive + AAP), monitoring (CDC + conformal prediction + CRPS), and governance (override tracking + CDT risk bounds + escalation arbiter)
 - **Decisions as Assets**: Every recurring supply chain decision — stocking, ordering, rebalancing, allocation — is modeled with defined inputs, logic, constraints, ownership, and measured outcomes across 11 specialized agent types
 - **Three-Level Maturity Progression**: Decision Support (human in the loop) → Decision Augmentation (human on the loop, copilot mode) → Decision Automation (human out of the loop, autonomous mode) — with progression governed by measured decision quality, not arbitrary trust thresholds
+- **Gartner Four Use Cases**: Decision Stewardship (override governance + audit), Decision Analysis (8 policy types + probabilistic BSC), Decision Engineering (11 TRM agents + AAP orchestration), Decision Science (hybrid TRM + Claude Skills + conformal routing)
 - **Agentic AI Alignment**: Gartner predicts 50% of SCM solutions will use intelligent agents by 2030. Autonomy already deploys 11 specialized agents per site with multi-site coordination — positioning years ahead of the market curve
+- **Reference**: See [TECHNICAL_OVERVIEW.md](TECHNICAL_OVERVIEW.md) Part 12 and [Decision Intelligence Framework Guide](docs/Knowledge/Decision_Intelligence_Framework_Guide.md)
 
-**10. Learned Intra-Site Cross-Agent Coordination**
-- **The Gap**: Between sub-millisecond reactive signals and daily network-wide inference, many cross-agent interactions follow predictable causal chains that neither mechanism captures. A production spike today will generate quality inspection pressure in hours and maintenance load tomorrow — but reactive signals only respond after each link materializes.
-- **Predictive Coordination Layer**: A lightweight model that learns causal relationships between the 11 execution agents within each site, predicting cascade effects that reactive signals alone cannot capture.
-- **Urgency Modulation**: Shifts emphasis across the agent group — "pay more attention to quality today because production volume is spiking" — rather than overriding individual agent decisions.
-
-### Business Impact
+### Business Impact: Continuous Autonomous Planning ROI
 
 **Operational Benefits**:
 - **80-90% automation rate** for routine planning tasks (agents handle without human review)
@@ -674,21 +992,19 @@ graph LR
 - **Fast deployment**: Weeks instead of 12-18 months
 - **Transparent AI**: Build trust before production deployment
 - **Continuous improvement**: Agents learn from human feedback
-- **Flexibility**: Network topology-based, any network structure
-
----
+- **Flexibility**: DAG-based topology, any network structure
 
 ## Platform Capabilities
 
 ### 1. Continuous Autonomous Planning: Event-Driven Supply Chain Optimization
 
 **Event-Driven Planning Flow**:
-1. **Event Detection**: AWS SC insights, SAP change data capture, manual triggers
+1. **Event Detection**: AWS SC insights, SAP CDC, manual triggers
 2. **Agent Orchestration**: Priority queue routes events to agents
-3. **Agent-to-Agent Collaboration**: Multi-agent negotiation for shared KPIs
+3. **A2A Collaboration**: Multi-agent negotiation for shared KPIs
 4. **Scenario Generation**: Agents create plan branches with recommendations
 5. **Guardrail Check**: Auto-execute if within bounds, else human approval
-6. **Human Notification**: Chat + email + dashboard alerts
+6. **Human Notification**: LLM chat + email + dashboard alerts
 7. **Plan Commit**: Git-like commit to scenario branch
 8. **Human Inspection**: Natural language queries + point-and-click deep dive
 9. **Human Override** (if needed): Provide context (reason, files, outcome preference)
@@ -706,62 +1022,53 @@ graph LR
 **Human Override Context Capture**:
 ```
 Override Reason (Required)
-Category: [External Constraint]
+Category: [External Constraint ✓]
 Details: Vendor-B is undergoing facility audit, cannot accept orders for 2 weeks
-Supporting Files: vendor_b_audit_notice.pdf (125 KB)
+Supporting Files: 📎 vendor_b_audit_notice.pdf (125 KB)
 Alternative Action: Use Vendor-C instead (14-day lead time vs. 10-day)
 Impact: Service level 96.8% → 95.5% (-1.3%), Cost +$1,520
 
 → System learns: Add constraint "Vendor-B unavailable 2026-01-23 to 2026-02-06"
                  Adjust scoring to prefer Vendor-C during this period
-                 Fine-tune models with new external factor
+                 Fine-tune LLM prompt with new external factor
 ```
 
 ### 2. Simulate: Interactive Supply Chain Simulation
 
 **Multi-Participant Scenarios**:
 - 2-8 participants in roles (Retailer, Wholesaler, Distributor, Factory, Suppliers)
-- Real-time updates
+- Real-time WebSocket updates
 - Period-by-period decision making
 - Instant cost and service level feedback
 
 **Mixed Human-AI Scenarios**:
 - Humans compete alongside or against AI agents
-- Multiple AI strategies: Naive, Conservative, Bullwhip, ML-Forecast, Optimizer, Reactive, AI-powered
+- Multiple AI strategies: Naive, Conservative, Bullwhip, ML-Forecast, Optimizer, Reactive, LLM-powered
 - AI opponents provide consistent benchmarks for human performance
 - Learn from AI decisions in real-time
 
 **Scenario Variants**:
-- **Default**: Classic 4-echelon supply chain
-- **Multi-Product**: Multi-product supply chain with shared components
-- **High Variability**: Dynamic demand patterns with high variability
-- **Complex Networks**: Real-world network topologies with manufacturing BOMs
-- **Custom Configurations**: Create any supply chain structure via network editor
+- **Default TBG**: Classic 4-echelon beer supply chain
+- **Three FG TBG**: Multi-product supply chain with shared components
+- **Variable TBG**: Dynamic demand patterns with high variability
+- **Complex SC**: Real-world DAG topologies with manufacturing BOMs
+- **Custom Configurations**: Create any supply chain structure via DAG editor
 
-### 3. Plan: AI-Powered Supply Chain Optimization
+### 2. Plan: AI-Powered Supply Chain Optimization
 
-**Network Coordination Model** (Two Tiers):
-- **Strategic Model** (Medium-Term): Network structure analysis, risk scoring, bottleneck detection — updates weekly/monthly, outputs criticality scores and safety stock positioning multipliers
-- **Operational Model** (Short-Term): Real-time order decisions, demand sensing, exception detection — updates daily, generates priority allocations for order promising
-- **Shared Foundation**: Strategic structural insights are cached and fed to the operational model, combining slow-changing network context with fast-changing transactional dynamics
+**Temporal Graph Neural Network (GNN)**:
+- Learns supply chain dynamics from historical data
+- Predicts demand propagation and bullwhip effects
+- Optimizes order quantities across entire network
+- Captures temporal dependencies (lead times, delays, seasonality)
+- Generalizes across different supply chain topologies
 
-**AI Multi-Agent System**:
-- AI-powered agents for each supply chain role
+**LLM-Based Multi-Agent System**:
+- OpenAI GPT-powered agents for each supply chain role
 - Supervisor agent validates and improves recommendations
 - Global planner agent coordinates network-wide strategy
-- Natural language explanations for every recommendation
+- Natural language explanations of AI decisions
 - Adapts to changing conditions with zero retraining
-
-**Execution Agents** (11 Specialized Decision-Makers):
-- Ultra-fast inference (<10ms per decision), low computational cost
-- 90-95% accuracy vs. optimal policies, 100+ decisions/second
-- Covering: order promising, inventory rebalancing, purchasing, order tracking, manufacturing execution, transfer execution, quality disposition, maintenance scheduling, subcontracting, forecast adjustment, and inventory buffer optimization
-
-**Multi-Agent Consensus**:
-- **Weighted Ensemble**: Combine agent recommendations using learned weights
-- **Confidence Scoring**: Agreement between agents indicates recommendation reliability
-- **Adaptive Learning**: Weights automatically adjust based on observed performance
-- **Transfer Learning**: Weights learned in simulation transfer to production deployment
 
 **Optimization Strategies**:
 - Cost minimization (inventory holding + backlog penalties)
@@ -769,10 +1076,16 @@ Impact: Service level 96.8% → 95.5% (-1.3%), Cost +$1,520
 - Bullwhip effect reduction (demand variability dampening)
 - Multi-objective optimization (Pareto frontier exploration)
 
-### 4. Analyze: Performance Intelligence & Benchmarking
+**Planning Scenarios**:
+- **What-If Analysis**: Simulate demand shocks, supplier disruptions, lead time changes
+- **Capacity Planning**: Test network under growth scenarios
+- **Risk Assessment**: Identify vulnerable sites and failure modes
+- **Strategic Design**: Optimize network topology (where to hold inventory, safety stock levels)
+
+### 3. Analyze: Performance Intelligence & Benchmarking
 
 **Current Performance Analysis**:
-- Upload historical data or operational metrics
+- Upload historical scenario data or operational metrics
 - Compare actual decisions against AI-optimal strategies
 - Identify cost reduction opportunities
 - Quantify bullwhip effect in real operations
@@ -785,10 +1098,11 @@ Impact: Service level 96.8% → 95.5% (-1.3%), Cost +$1,520
 - **Efficiency Scores**: Order variability, inventory turnover, cash-to-cash cycle
 - **Pattern Detection**: Seasonality, trends, anomalies in demand/supply
 
-**Uncertainty Quantification**:
+**Uncertainty Quantification** (✅ Implemented January 2026):
 - **Conformal Prediction**: Distribution-free prediction intervals with formal coverage guarantees
   - Calibrate on historical Plan vs. Actual data
   - Generate valid prediction intervals without distributional assumptions
+  - P(actual ∈ interval) ≥ 1-α guaranteed (typically 90-95% coverage)
   - Adaptive conformal prediction for time series with distribution shift
   - Safety stock calculation with formal service level guarantees
 - **Planning Method Comparison**: Side-by-side Stochastic vs. Deterministic analysis
@@ -796,14 +1110,21 @@ Impact: Service level 96.8% → 95.5% (-1.3%), Cost +$1,520
   - Deterministic + Sensitivity Analysis: Single-point optimization with parameter variation
   - Automated recommendation for which approach suits your use case
   - Cost distribution comparison (P10/P50/P90/P95)
+  - Service level probability analysis
 
 **Reporting & Insights**:
-- Automated reports with AI-generated recommendations
+- Automated scenario reports with AI-generated recommendations
 - Export to CSV, JSON, Excel for external analysis
 - Integration-ready APIs for BI tools (Tableau, Power BI)
 - Executive summaries with KPIs and action items
 
-### 5. Simulation: Confidence Building & Agent Improvement
+**Comparative Benchmarking**:
+- Human vs. AI performance head-to-head
+- Team vs. team competition
+- Historical trend analysis (improving or degrading?)
+- Industry peer comparisons (anonymized leaderboards)
+
+### 4. Simulation: Confidence Building & Agent Improvement
 
 #### Building Confidence in AI Agents
 
@@ -814,7 +1135,7 @@ Impact: Service level 96.8% → 95.5% (-1.3%), Cost +$1,520
 
 **The Digital Twin Solution: Scenarios as Fast-Forward Supply Chain Simulations**:
 
-A "scenario" is not entertainment — it's a **digital twin of the real supply chain** that executes in fast-forward time with synthetic demand. The only differences between a scenario and production execution are:
+**Critical Insight**: A "scenario" is not entertainment—it's a **digital twin of the real supply chain** that executes in fast-forward time with synthetic demand. The only differences between a scenario and production execution are:
 - **Time Scale**: Scenarios advance in seconds/minutes; production advances in days/weeks
 - **Demand Source**: Scenarios use synthetic demand patterns; production uses actual customer orders
 - **Everything Else is Identical**: Same planning logic, same AI agents, same decision-making, same cost calculations
@@ -831,8 +1152,8 @@ A "scenario" is not entertainment — it's a **digital twin of the real supply c
 
 2. **Policy Testing** (Risk-Free What-If Analysis):
    - **Inventory Policy Changes**: Test new safety stock levels, reorder points, service level targets
-   - **Ordering Policy Changes**: Test different replenishment strategies
-   - **Agent Weight Tuning**: Test different agent consensus weights
+   - **Ordering Policy Changes**: Test different replenishment strategies (base-stock, (s,S), periodic review)
+   - **Multi-Agent Weight Tuning**: Test different agent consensus weights (e.g., LLM: 50% vs. GNN: 40%)
    - **Guardrail Calibration**: Test min/max order constraints, rush order thresholds
    - **Lead Time Strategies**: Test impact of expedited shipping, supplier changes
    - **Cost Trade-offs**: Test holding cost vs. shortage cost sensitivity
@@ -844,6 +1165,12 @@ A "scenario" is not entertainment — it's a **digital twin of the real supply c
    - **Network Topology**: Test hub-and-spoke vs. direct-ship models
    - **BOM Changes**: Test make-vs-buy decisions, component substitutions
    - **Lead Time Changes**: Test nearshoring, offshore alternatives
+
+**Transfer Learning: Train in Scenarios, Deploy to Production**:
+- Run 50-100 scenarios with different demand patterns → Learn optimal agent weights
+- Validate statistical significance (p < 0.05) → Build confidence in approach
+- Deploy learned weights to production → Continue adapting to real data
+- Result: Production AI starts with pre-trained knowledge, not random initialization
 
 **Confidence Metrics**:
 - Win rate: AI vs. Human in fair competition (Target: >70% AI win rate)
@@ -862,6 +1189,24 @@ A "scenario" is not entertainment — it's a **digital twin of the real supply c
 4. **Humans Learn from AI** → Adopt successful AI patterns
 5. **Cycle Repeats** → Continuous improvement for both
 
+**Reinforcement Learning from Human Feedback (RLHF)**:
+- Capture expert human decisions as training labels
+- Fine-tune AI agents on human decision data
+- Reward agents for outperforming human benchmarks
+- Penalize agents for suboptimal or unstable behavior
+
+**Achievement-Driven Training**:
+- 17 achievements across 5 categories (Cost Control, Service Excellence, Collaboration, Innovation, Mastery)
+- Each achievement represents a desirable supply chain behavior
+- Train AI agents to unlock achievements (simulation reward functions)
+- Achievement completion rate becomes agent performance metric
+
+**Example Achievement → Agent Objective Mapping**:
+- **"Steady Hand"** (keep inventory variance low) → Train agent to minimize order variability
+- **"Bullwhip Tamer"** (reduce amplification) → Reward stable ordering policies
+- **"Zero Backlog"** (no stockouts) → Optimize service level targets
+- **"Negotiation Master"** (collaboration) → Multi-agent coordination rewards
+
 **Simulation ROI**:
 - **Engagement**: 3-5x higher participation in training vs. traditional methods
 - **Retention**: 70% knowledge retention after 6 months (vs. 20% for lectures)
@@ -870,9 +1215,11 @@ A "scenario" is not entertainment — it's a **digital twin of the real supply c
 
 ---
 
-## Multi-Echelon Network Framework
+## Technical Architecture
 
-**Network-Based Supply Chain Topology**:
+### Multi-Echelon DAG Framework
+
+**DAG-Based Supply Chain Topology**:
 - Directed Acyclic Graph (DAG) represents material flow
 - 4 master site types: Market Supply, Market Demand, Inventory, Manufacturer
 - Flexible configuration: serial chains, convergent networks, divergent distribution
@@ -885,9 +1232,16 @@ A "scenario" is not entertainment — it's a **digital twin of the real supply c
 - **Capacity Constraints**: Production limits, storage limits, transportation capacity
 - **Market Dynamics**: Price elasticity, competitive pressures, seasonal trends
 
+**Example Configurations**:
+- **Default TBG**: Retailer → Wholesaler → Distributor → Factory (4 sites, 3 transportation lanes)
+- **Three FG TBG**: 3 finished goods, 3 components, 2 packaging, 1 raw material (9 sites, 12 transportation lanes)
+- **Complex SC**: 20+ sites with convergent manufacturing and multi-channel distribution
+
 ### Planning Hierarchies (AWS Supply Chain Aligned)
 
 **Three-Dimensional Hierarchy System**:
+
+The platform supports AWS Supply Chain-aligned planning hierarchies across three dimensions, enabling planning at different levels of aggregation:
 
 **1. Site/Geographic Hierarchy**:
 ```
@@ -918,18 +1272,30 @@ Year (Strategic)
 
 **Planning Type Configuration by Hierarchy Level**:
 
-| Planning Type | Site Level | Product Level | Time Bucket | Horizon |
-|---------------|------------|---------------|-------------|---------|
-| **Execution** | Site | SKU | Hour | 1 week |
-| **MRP** | Site | SKU | Day | 13 weeks |
-| **MPS** | Site | Group | Week | 6 months |
-| **S&OP** | Country | Family | Month | 24 months |
-| **Capacity** | Site | Group | Month | 18 months |
-| **Strategic** | Region | Category | Quarter | 5 years |
+| Planning Type | Site Level | Product Level | Time Bucket | Horizon | Powell Class | GNN Model |
+|---------------|------------|---------------|-------------|---------|--------------|-----------|
+| **Execution** | Site | SKU | Hour | 1 week | VFA | Execution tGNN |
+| **MRP** | Site | SKU | Day | 13 weeks | VFA | Execution tGNN |
+| **MPS** | Site | Group | Week | 6 months | CFA | Hybrid |
+| **S&OP** | Country | Family | Month | 24 months | CFA | S&OP GraphSAGE |
+| **Capacity** | Site | Group | Month | 18 months | CFA | S&OP GraphSAGE |
+| **Strategic** | Region | Category | Quarter | 5 years | DLA | S&OP GraphSAGE |
+
+**Hierarchical Consistency (Powell Framework)**:
+- Higher levels (S&OP) compute policy parameters θ via CFA
+- Lower levels (Execution) make decisions Q(s,a) via VFA respecting θ
+- Consistency constraint: V_execution ≈ E[V_tactical | policy(θ)]
+- Tolerance: Typically <10% deviation from parent plan
+
+**Group Administrator Configuration**:
+- Each hierarchy configuration is customizable per group (organization)
+- Administrators select hierarchy levels for each planning type
+- Configure planning horizons, frozen periods, and update frequencies
+- Set Powell policy class and GNN model type per planning activity
 
 ### Synthetic Data Generation (AI-Guided Setup Wizard)
 
-**Purpose**: Enable rapid deployment and testing by generating realistic synthetic supply chain data for new organizations. An AI-powered wizard guides system administrators through creating complete, archetype-based configurations.
+**Purpose**: Enable rapid deployment and testing by generating realistic synthetic supply chain data for new organizations. A Claude-powered wizard guides system administrators through creating complete, archetype-based configurations.
 
 **Three Company Archetypes**:
 
@@ -939,42 +1305,651 @@ Year (Strategic)
 | **Distributor** | Wholesale distribution | NDCs → RDCs → LDCs + Kitting | OTIF, Order Fill Rate, Cycle Time | Copilot |
 | **Manufacturer** | Production-focused operations | Plants → Sub-Assembly → Component → FG DCs | Gross Margin, Production Efficiency | Autonomous |
 
+**AI-Guided Wizard Flow**:
+```
+1. Welcome & Archetype Selection → Choose company type (Retailer/Distributor/Manufacturer)
+2. Company Details → Name, group, admin credentials
+3. Network Configuration → Sites, suppliers, customers (archetype defaults provided)
+4. Product Configuration → SKUs, categories, families
+5. Demand Configuration → Pattern (seasonal/trending/promotional), seasonality amplitude
+6. Agent Configuration → Mode (none/copilot/autonomous), enable GNN/LLM/TRM
+7. Review & Generate → Final confirmation, create all entities
+```
+
 **What Gets Generated**:
-- **Organization**: Tenant and administrator user with default credentials
-- **Supply Chain Network**: Sites (DCs, plants, stores), transportation lanes, products (SKUs)
-- **Hierarchies**: Site hierarchy (Company → Region → Country → Site), Product hierarchy (Category → Family → Group → Product)
+- **Organization**: Group (company) and administrator user with default credentials
+- **Supply Chain Network**: Sites (DCs, plants, stores), transportation lanes (transportation links), products (SKUs)
+- **Hierarchies**: Site hierarchy (Company→Region→Country→Site), Product hierarchy (Category→Family→Group→Product)
 - **Planning Data**: Forecasts with P10/P50/P90 percentiles, inventory policies (DOC-based safety stock)
-- **Planning Configs**: MPS, MRP, S&OP configurations
+- **Planning Configs**: MPS, MRP, S&OP configurations with Powell policy class assignments
 - **AI Agents**: Agent configurations per archetype with recommended strategies
+
+**Archetype-Specific Defaults**:
+
+| Parameter | Retailer | Distributor | Manufacturer |
+|-----------|----------|-------------|--------------|
+| Sites | 61 (2 CDC, 6 RDC, 50 stores, 3 online) | 34 (2 NDC, 8 RDC, 20 LDC, 4 kitting) | 31 (3 plants, 6 sub-assy, 8 comp, 14 DCs) |
+| Suppliers | 10 | 15 | 40 (25 raw + 15 tier-1) |
+| Products | 200 (5 cat × 4 fam × 10 SKU) | 720 (8 cat × 6 fam × 15 SKU) | 160 (4 cat × 5 fam × 8 SKU) |
+| Safety Stock | 14 days | 10 days | 7 days |
+| Service Level | 95% | 97% | 93% |
+| Demand Pattern | Seasonal (30% amplitude) | Trending (2%/month) | Promotional (spikes) |
+
+**Aggregation/Disaggregation Services (Powell Framework)**:
+
+The platform implements Powell's framework insight that hierarchical planning requires both **state abstraction** (aggregation) and **policy-based allocation** (disaggregation):
+
+**Aggregation Service** - State Abstraction:
+- **Powell Principle**: Reduce dimensionality for tractable optimization at higher levels
+- **Methods**: SUM, AVERAGE, WEIGHTED_AVERAGE, MIN, MAX, COUNT, VARIANCE, PERCENTILE
+- **Use Case**: Roll up site-level inventory to country level for S&OP planning
+- **Implementation**: `backend/app/services/aggregation_service.py`
+
+**Disaggregation Service** - Policy-Based Allocation:
+- **Powell Principle**: Disaggregation proportions are a **policy decision**, not a fixed transformation
+- **Three Powell Policy Classes Supported**:
+
+| Method | Powell Class | Description |
+|--------|--------------|-------------|
+| PROPORTIONAL | PFA | Use historical proportions (simple, stable) |
+| LEARNED | CFA | Optimize proportions from Plan vs. Actual data |
+| VALUE_BASED | VFA | Allocate to maximize downstream value function |
+| CAPACITY_WEIGHTED | CFA | Weight by available capacity at each site |
+| FORECAST_DRIVEN | CFA | Weight by forecasted demand at each site |
+
+- **Key Insight**: The `LEARNED` method trains on historical data to find optimal splits:
+  ```
+  θ_split = argmin Σ |actual_proportion - predicted_proportion|²
+  ```
+- **Use Case**: Distribute monthly S&OP family plan to weekly site-SKU MPS
+- **Implementation**: `backend/app/services/disaggregation_service.py`
+
+**Hierarchical Consistency Enforcement**:
+```
+V_aggregated(S_country,family,month) ≈ E[V_detailed(S_site,sku,week) | disaggregate]
+```
+- Default tolerance: 10% deviation between parent and child plans
+- Configurable per planning type via `consistency_tolerance` parameter
+
+**API Endpoints**:
+- `POST /api/v1/synthetic-data/wizard/sessions` - Start wizard session
+- `POST /api/v1/synthetic-data/wizard/sessions/{id}/messages` - Send message to wizard
+- `POST /api/v1/synthetic-data/wizard/sessions/{id}/generate` - Generate data
+- `POST /api/v1/synthetic-data/generate` - Direct generation (no wizard)
+- `GET /api/v1/synthetic-data/archetypes` - List archetype information
+
+**Access**: System Administrator only (`/admin/synthetic-data`)
 
 ---
 
-## AI Engine: Suggested Actions Generation
+### AI/ML Engine Stack (Suggested Actions Generation)
 
-The platform's AI agents continuously analyze supply chain state and generate **suggested actions** for both simulation and production environments. Each agent type brings unique strengths:
+The platform's three primary AI agents continuously analyze supply chain state and generate **suggested actions** for both scenario and production environments. Each agent brings unique strengths:
 
-**1. Network Coordination Model** (Two Tiers):
-- **Strategic Model** (Medium-Term): Network structure analysis, risk scoring, bottleneck detection — scalable to 50+ node networks
-- **Operational Model** (Short-Term): Real-time order decisions, demand sensing, exception detection — consumes strategic insights plus transactional data
+**1. Two-Tier Graph Neural Network (GNN)** - Pattern Recognition Expert:
+- **Strength**: Captures complex dependencies and information flow across supply chain network over time
+- **Powell Framework Alignment**: S&OP=CFA (policy parameters θ), Execution=VFA (decisions Q(s,a))
+- **Two-Tier Architecture** (S&OP + Execution):
+
+  **S&OP GraphSAGE (Medium-Term / Strategic Planning)**:
+  - **Purpose**: Network structure analysis, risk scoring, bottleneck detection
+  - **Update Frequency**: Weekly/Monthly or on topology changes
+  - **Architecture**: GraphSAGE with neighbor sampling, optimized for 50+ node networks
+  - **Outputs**: Criticality scores, concentration risk, resilience scores, safety stock positioning multipliers
+  - **Scalability**: O(edges) complexity vs O(n²) for attention, handles large supply chains efficiently
+
+  **Execution tGNN (Short-Term / Operational)**:
+  - **Purpose**: Real-time order decisions, demand sensing, exception detection
+  - **Update Frequency**: Daily/Real-time
+  - **Architecture**: Temporal GNN (GAT + GRU) consuming S&OP structural embeddings
+  - **Inputs**: S&OP embeddings + transactional data (orders, shipments, inventory)
+  - **Outputs**: Order recommendations, demand forecasts, exception probability, propagation impact
+
+  **Shared Foundation**:
+  - S&OP structural embeddings are cached and fed to Execution model
+  - Structural context (slow-changing) + temporal dynamics (fast-changing)
+  - `HybridPlanningModel` provides unified interface for both tiers
+
 - **Performance**: 85-92% accuracy on demand prediction, 15-30% cost reduction vs. naive policies
+- **Best For**: Complex multi-echelon networks with long-term temporal patterns
 
-**2. AI Multi-Agent System**:
-- AI-powered agents for each supply chain role
-- Supervisor agent reviews and improves site agent decisions
-- Global planner agent coordinates network-wide strategy
-- Natural language explanations of AI decisions
-- Fallback to heuristic policies when AI is unavailable
+**2. LLM Multi-Agent System (GPT-4)** - Strategic Reasoning Expert:
+- **Strength**: Natural language reasoning, strategic planning, contextual decision-making
+- **Site Agents**: GPT-4-based agents for each supply chain role (retailer, wholesaler, distributor, factory)
+- **Supervisor Agent**: Reviews and improves site agent decisions with global context
+- **Global Planner**: Coordinates network-wide strategy and optimization
+- **Tool Registry**: JSON schemas for structured decision-making
+- **Explainability**: Natural language explanations for every recommendation
+- **Fallback**: Heuristic policies when LLM unavailable
+- **Best For**: Complex scenarios requiring strategic reasoning, trade-off analysis
 
-**3. Execution Agents** (11 Specialized):
-- Ultra-fast inference (<10ms per decision)
-- 90-95% accuracy vs. optimal policies, 100+ decisions/second
-- Recursive refinement architecture for improved decision quality
+**3. Tiny Recursive Model (TRM)** - Speed and Efficiency Expert:
+- **Strength**: Ultra-fast inference (<10ms per decision), low computational cost
+- **Powell Classification**: VFA (Value Function Approximation) - fast policy execution
+- **Architecture**: 7M parameter transformer with recursive refinement (3 iterations)
+- **Performance**: 90-95% accuracy vs. optimal policies, 100+ decisions/second
+- **Best For**: Real-time decision-making, high-volume planning, edge deployment
 
 **Multi-Agent Consensus for Suggested Actions**:
-- **Weighted Ensemble**: Combine agent recommendations using learned weights
+- **Weighted Ensemble**: Combine agent recommendations using learned weights (e.g., LLM: 45%, GNN: 38%, TRM: 17%)
 - **Confidence Scoring**: Agreement between agents indicates recommendation reliability
-- **Adaptive Learning**: Weights automatically adjust based on observed performance (5 learning algorithms)
-- **Transfer Learning**: Weights learned in simulation transfer to production deployment
+- **Adaptive Learning**: Weights automatically adjust based on observed performance (5 learning algorithms: EMA, UCB, Thompson Sampling, Performance-based, Gradient Descent)
+- **Context-Agnostic**: Same agents and consensus logic work for scenarios and production
+- **Transfer Learning**: Weights learned in scenarios transfer to production deployment
+
+**3. Reinforcement Learning (RL)**:
+- Algorithms: Proximal Policy Optimization (PPO), Soft Actor-Critic (SAC)
+- Reward Function: Minimize total supply chain cost + service level penalties
+- Training Environment: SimPy-based discrete event simulation
+- Exploration: Curriculum learning from simple to complex supply chains
+
+**4. Classical Optimization**:
+- Mixed-Integer Linear Programming (MILP) for base-stock policies
+- Dynamic programming for multi-stage inventory optimization
+- Simulation-optimization for complex scenarios
+
+**5. Tiny Recursive Model (TRM)**:
+- Architecture: 7M parameter transformer with recursive refinement (3 iterations)
+- Input: Per-node state (inventory, backlog, pipeline, demand history, role, position)
+- Output: Optimal order quantity with <10ms inference time
+- Training: 5-phase curriculum learning from simple to complex supply chains
+- Performance: 90-95% accuracy vs optimal policies, 20-35% cost reduction vs naive agents
+
+---
+
+## AI Model Training Workflows
+
+### TRM (Tiny Recursive Model) Training Pipeline
+
+**Philosophy**: Progressive curriculum learning from simple to complex scenarios with optimal policy imitation.
+
+#### Training Architecture
+
+**Model Specifications**:
+- **Parameters**: 7 million (compact, fast)
+- **Architecture**: 2-layer transformer + recursive refinement
+- **Embedding Dimension**: 512 (d_model)
+- **Attention Heads**: 8 (multi-head attention)
+- **Refinement Steps**: 3 (iterative reasoning)
+- **Decision Head**: Order quantity prediction
+- **Value Head**: State value estimation (for RL-style training)
+
+#### 5-Phase Curriculum Learning
+
+**Phase 1: Single-Site Base Stock** (Simplest)
+- **Scenario**: Solo inventory management
+- **Topology**: 1 site (no upstream/downstream)
+- **Policy**: Optimal base stock (provably optimal)
+- **Dataset**: 10,000 samples
+- **Training Time**: ~30 minutes (GPU)
+- **Learning**: Basic inventory control
+
+**Phase 2: 2-Site Supply Chain**
+- **Scenario**: Simple retailer-wholesaler chain
+- **Topology**: 2 sites (linear chain)
+- **Policy**: Coordinated base stock
+- **Dataset**: 10,000 samples
+- **Training Time**: ~30 minutes (GPU)
+- **Learning**: Order propagation, basic bullwhip
+
+**Phase 3: 4-Site Beer Game**
+- **Scenario**: Classic Beer Game
+- **Topology**: 4 sites (Retailer → Wholesaler → Distributor → Factory)
+- **Policy**: Tuned PID controller
+- **Dataset**: 10,000 samples
+- **Training Time**: ~30 minutes (GPU)
+- **Learning**: Full supply chain dynamics, amplification effects
+
+**Phase 4: Multi-Echelon Variations**
+- **Scenario**: Complex topologies
+- **Topology**: 3-6 sites (varied structures)
+- **Policy**: Adaptive PID with forecast
+- **Dataset**: 10,000 samples
+- **Training Time**: ~45 minutes (GPU)
+- **Learning**: Generalization to different structures
+
+**Phase 5: Production Scenarios**
+- **Scenario**: Real-world constraints
+- **Topology**: Manufacturing with BOMs, capacity limits
+- **Policy**: Advanced optimization
+- **Dataset**: 10,000 samples
+- **Training Time**: ~45 minutes (GPU)
+- **Learning**: Manufacturing constraints, multi-product coordination
+
+**Total Training Time**: ~2.5 hours on NVIDIA GPU, ~8-12 hours on CPU
+
+#### Data Generation Process
+
+**Generator**: [trm_curriculum_generator.py](backend/app/simulation/trm_curriculum_generator.py)
+
+**Per-Sample Structure**:
+```python
+{
+    'inventory': float,              # Current inventory level
+    'backlog': float,                # Current backlog
+    'pipeline': List[float],         # Incoming shipments (lead time window)
+    'demand_history': List[float],   # Recent demand (7-14 periods)
+    'node_type': str,                # Role (retailer, wholesaler, etc.)
+    'node_position': int,            # Position in chain (0=downstream)
+    'target_order': float,           # LABEL: Optimal order quantity
+    'target_value': float            # LABEL: State value (expected cost)
+}
+```
+
+**Demand Patterns**:
+- Random: Normal distribution with volatility
+- Seasonal: Cyclic patterns (weekly/monthly)
+- Step: Sudden demand shifts
+- Trend: Linear growth/decline
+
+**Label Generation**:
+- Phases 1-2: Optimal base stock policy (provably optimal)
+- Phases 3-5: Tuned PID controller (near-optimal heuristic)
+
+#### Training Workflow
+
+**Step 1: Data Generation**
+```bash
+# Generate Phase 1 dataset
+python -m app.simulation.trm_curriculum_generator \
+    --phase 1 \
+    --num-samples 10000 \
+    --output data/trm/phase1_dataset.pt
+```
+
+**Step 2: Model Training**
+```bash
+# Train Phase 1
+python scripts/training/train_trm.py \
+    --phase 1 \
+    --epochs 10 \
+    --device cuda \
+    --batch-size 32 \
+    --learning-rate 1e-4
+```
+
+**Step 3: Validation & Checkpointing**
+- Validates on 20% held-out test set
+- Saves checkpoint: `checkpoints/trm/trm_phase1_epoch10.pt`
+- Logs metrics: train_loss, val_loss, learning_rate
+
+**Step 4: Progressive Loading**
+- Load Phase N-1 checkpoint
+- Continue training on Phase N data
+- Fine-tune existing knowledge
+
+**Step 5: Inference Deployment**
+- Load final checkpoint
+- Model automatically used by TRM agents
+- Fallback to base stock heuristic if model unavailable
+
+#### Training via UI
+
+**TRM Dashboard** (http://localhost:8088/admin/trm):
+
+1. **Training Tab**:
+   - Select curriculum phase (1-5)
+   - Configure epochs, batch size, learning rate
+   - Advanced settings: d_model, attention heads, layers
+   - Click "Start Training"
+
+2. **Real-Time Monitoring**:
+   - Live loss charts (train/validation)
+   - Epoch progress bar
+   - Training status updates (every 2 seconds)
+   - Automatic checkpoint saving
+
+3. **Model Manager Tab**:
+   - View available checkpoints
+   - Load trained model
+   - Select device (CPU/CUDA)
+   - Unload model
+
+4. **Testing Tab**:
+   - Test model with custom inputs
+   - Predefined scenarios (stable, spike, drop, high backlog)
+   - View predicted order quantities
+   - Validate model performance
+
+#### Training via CLI
+
+```bash
+# Quick Phase 1 training (30 min)
+make train-trm TRM_PHASE=1 TRAIN_EPOCHS=10
+
+# Full curriculum training (2.5 hours)
+cd backend
+python scripts/training/train_trm.py \
+    --phase 5 \
+    --epochs 10 \
+    --device cuda \
+    --batch-size 32 \
+    --learning-rate 1e-4 \
+    --num-samples 10000
+
+# Custom training with resume
+python scripts/training/train_trm.py \
+    --phase 3 \
+    --epochs 20 \
+    --device cuda \
+    --resume checkpoints/trm/trm_phase2_epoch10.pt \
+    --batch-size 64 \
+    --learning-rate 5e-5
+```
+
+#### Loss Function
+
+**Multi-Objective Loss**:
+```python
+action_loss = MSE(predicted_orders, target_orders)
+value_loss = MSE(predicted_values, target_values)
+total_loss = action_loss + 0.5 * value_loss
+```
+
+**Optimization**:
+- Optimizer: AdamW (weight decay = 1e-5)
+- Gradient clipping: max_norm = 1.0
+- LR scheduler: ReduceLROnPlateau (patience=5)
+- Validation split: 80/20 train/test
+
+#### Output & Checkpoints
+
+**Checkpoint Directory**: `backend/checkpoints/trm/`
+
+**Files**:
+```
+trm_phase1_epoch10_20260117.pt  (~28MB)
+trm_phase2_epoch10_20260117.pt  (~28MB)
+trm_phase3_epoch10_20260117.pt  (~28MB)
+trm_phase4_epoch10_20260117.pt  (~28MB)
+trm_phase5_epoch10_20260117.pt  (~28MB)
+```
+
+**Each checkpoint contains**:
+- Model state dict
+- Optimizer state
+- Training configuration (hyperparameters)
+- Training history (loss curves)
+- Metadata (timestamp, phase, epochs)
+
+#### Performance Metrics
+
+**Inference Speed**: <10ms per decision (100+ decisions/second)
+**Model Size**: ~28MB on disk, ~100MB in RAM
+**Accuracy**: 90-95% vs optimal policies
+**Cost Reduction**: 20-35% vs naive agents
+**Generalization**: Works on unseen topologies (within training distribution)
+
+---
+
+### GNN (Graph Neural Network) Training Pipeline
+
+**Philosophy**: Learn supply chain dynamics from simulated scenario trajectories using graph message passing.
+
+#### Training Architecture
+
+**Model Specifications**:
+- **Parameters**: 128 million+ (heavy, expressive)
+- **Architecture**: Graph Attention Network (GAT) + Temporal Convolutional Network (TCN)
+- **Node Embedding**: 256 dimensions
+- **Attention Heads**: 8 (multi-head GAT)
+- **Temporal Layers**: 4 (TCN for time series)
+- **Message Passing**: 3 rounds (neighborhood aggregation)
+- **Output**: Per-node demand predictions + order recommendations
+
+#### Data Generation Process
+
+**Generator**: [generate_simpy_dataset.py](backend/scripts/training/generate_simpy_dataset.py) using [data_generator.py](backend/app/rl/data_generator.py)
+
+**SimPy-Based Beer Game Simulation**:
+```python
+def simulate_beer_game(T=64, agent_strategy='naive'):
+    """
+    Run full Beer Game simulation with 4 nodes.
+
+    Returns per-role time series:
+        - inventory: [50, 48, 52, ...]
+        - backlog: [0, 2, 0, ...]
+        - placed_order: [52, 50, 55, ...]
+    """
+```
+
+**Graph-Structured Data**:
+```python
+{
+    'X': node_features,        # (num_samples, 4, 12)
+    'Y': action_labels,        # (num_samples, 4, 1)
+    'A_ship': adjacency_ship,  # (4, 4) - shipment edges
+    'A_order': adjacency_order # (4, 4) - order edges
+}
+```
+
+**Node Features** (12 dimensions per node):
+1. Inventory level
+2. Backlog level
+3. Incoming orders (from downstream)
+4. Incoming shipments (from upstream)
+5. On-order quantity (pipeline)
+6-9. One-hot role encoding (retailer, wholesaler, distributor, factory)
+10. Order lead time
+11. Supply lead time
+12. (Reserved)
+
+**Edge Features** (Adjacency Matrices):
+- **Shipment Adjacency**: Who ships to whom (material flow)
+- **Order Adjacency**: Who orders from whom (information flow)
+
+#### Training Workflow
+
+**Step 1: Dataset Generation**
+```bash
+# Generate SimPy training dataset
+cd backend
+python scripts/training/generate_simpy_dataset.py \
+    --config-name "Default TBG" \
+    --num-runs 128 \
+    --timesteps 64 \
+    --agent-strategy naive \
+    --output data/gnn/default_tbg_dataset.pt
+```
+
+**Parameters**:
+- `num_runs`: Number of scenario simulations (default: 128)
+- `timesteps`: Steps per simulation (default: 64)
+- `window`: History window for sequences (default: 52)
+- `horizon`: Forecast horizon (default: 1)
+- `agent_strategy`: naive, pid_heuristic, or llm
+
+**Step 2: Sliding Window Extraction**
+- Extract temporal windows from full scenario trajectories
+- Each window: past 52 timesteps → predict next 1 timestep
+- Creates ~8,000-16,000 training samples from 128 runs
+
+**Step 3: Model Training**
+```bash
+# Train GNN on GPU
+python scripts/training/train_gnn.py \
+    --dataset data/gnn/default_tbg_dataset.pt \
+    --epochs 50 \
+    --device cuda \
+    --batch-size 16 \
+    --learning-rate 1e-4
+```
+
+**Step 4: Validation & Checkpointing**
+- Validates on 20% held-out test set
+- Saves checkpoint: `checkpoints/gnn/gnn_epoch50_20260117.pt`
+- Logs metrics: train_loss, val_loss, MAE, RMSE
+
+**Step 5: Deployment**
+- Load checkpoint into GNN agent
+- Use for inference in ml_forecast agent strategy
+- Real-time demand prediction during scenarios
+
+#### Training via CLI
+
+```bash
+# Quick training (generate data + train)
+make train-gnn
+
+# Train on GPU with custom parameters
+make train-default-gpu \
+    TRAIN_EPOCHS=50 \
+    TRAIN_DEVICE=cuda \
+    SIMPY_NUM_RUNS=256 \
+    SIMPY_TIMESTEPS=64
+
+# Generate data only (no training)
+make generate-simpy-data \
+    CONFIG_NAME="Default TBG" \
+    SIMPY_NUM_RUNS=128
+
+# Remote training (on remote GPU server)
+make remote-train \
+    REMOTE=user@gpu-server \
+    EPOCHS=50 \
+    DEVICE=cuda
+```
+
+#### Training Parameters
+
+**Exposed in Makefile**:
+- `CONFIG_NAME`: Supply chain config (default: "Default TBG")
+- `SIMPY_NUM_RUNS`: Simulation runs (default: 128)
+- `SIMPY_TIMESTEPS`: Steps per run (default: 64)
+- `SIMPY_WINDOW`: History window (default: 52)
+- `SIMPY_HORIZON`: Forecast horizon (default: 1)
+- `TRAIN_EPOCHS`: Training epochs (default: 10)
+- `TRAIN_DEVICE`: cuda or cpu (default: cuda)
+
+**Code-Only** (in train_gnn.py):
+- Hidden dimensions: [256, 128, 64]
+- GAT attention heads: 8
+- TCN kernel size: 3
+- Dropout: 0.3
+- Weight decay: 1e-5
+- Learning rate decay: 0.95 per epoch
+
+#### Graph Message Passing
+
+**Forward Pass**:
+1. **Node Embedding**: Encode 12 features → 256-dim embedding
+2. **GAT Layer 1**: Aggregate neighbor features with attention
+3. **GAT Layer 2**: Refine embeddings with multi-head attention
+4. **GAT Layer 3**: Final neighborhood aggregation
+5. **Temporal Processing**: TCN across time dimension
+6. **Output Layer**: Predict demand + optimal orders per node
+
+**Attention Mechanism**:
+```python
+# Compute attention weights between nodes
+attention_weights = softmax(
+    LeakyReLU(
+        W * [node_i_features || node_j_features]
+    )
+)
+
+# Aggregate neighbor features
+aggregated = sum(attention_weights * neighbor_features)
+```
+
+#### Loss Function
+
+**Multi-Task Loss**:
+```python
+demand_loss = MSE(predicted_demand, actual_demand)
+action_loss = MSE(predicted_orders, agent_orders)
+total_loss = 0.7 * demand_loss + 0.3 * action_loss
+```
+
+**Optimization**:
+- Optimizer: Adam (no weight decay initially)
+- Learning rate: 1e-4 → 1e-6 (exponential decay)
+- Batch size: 16 (graph batching)
+- Validation frequency: Every epoch
+
+#### Output & Checkpoints
+
+**Checkpoint Directory**: `backend/checkpoints/gnn/`
+
+**Files**:
+```
+gnn_default_tbg_epoch50_20260117.pt     (~500MB)
+gnn_three_fg_epoch50_20260117.pt        (~500MB)
+gnn_complex_sc_epoch100_20260117.pt     (~500MB)
+```
+
+**Each checkpoint contains**:
+- Model state dict
+- Optimizer state
+- Graph structure (adjacency matrices)
+- Training configuration
+- Performance metrics (MAE, RMSE, R²)
+
+#### Performance Metrics
+
+**Inference Speed**: ~50-100ms per graph forward pass
+**Model Size**: ~500MB on disk, ~2GB in RAM (GPU)
+**Demand Prediction Accuracy**: 85-92% (within 15% of actual)
+**Cost Reduction**: 15-30% vs naive agents
+**Bullwhip Reduction**: 20-40% variance reduction upstream
+
+#### Training Time Comparison
+
+| Dataset Size | CPU Time | GPU Time |
+|--------------|----------|----------|
+| 128 runs     | ~6 hours | ~1.5 hours |
+| 256 runs     | ~12 hours | ~3 hours |
+| 512 runs     | ~24 hours | ~6 hours |
+
+**Recommendation**: Use GPU for training (5-8x speedup)
+
+---
+
+### Training Data Comparison: TRM vs GNN
+
+**See detailed comparison**: [TRM_VS_GNN_TRAINING_DATA.md](TRM_VS_GNN_TRAINING_DATA.md)
+
+**Quick Summary**:
+
+| Aspect | TRM | GNN |
+|--------|-----|-----|
+| **Data Format** | Per-node flat tensors | Graph-structured tensors |
+| **Topology** | Variable (1-N nodes) | Fixed (4 nodes) |
+| **Labels** | Optimal policies | Agent trajectories |
+| **Curriculum** | 5 progressive phases | Single-pass |
+| **Dataset Size** | 50K samples | 8K-16K windows |
+| **Generation Time** | ~30 min | ~1-2 hours |
+| **Training Time** | ~2.5 hours (GPU) | ~4-6 hours (GPU) |
+| **Inference** | <10ms | ~50-100ms |
+| **Flexibility** | Generalizes to varied topologies | Beer Game specific |
+
+**Key Insight**: TRM and GNN use **completely different data** and cannot share datasets without conversion.
+
+---
+
+### Technology Stack
+
+**Backend**:
+- Python 3.10+, FastAPI (async REST API)
+- SQLAlchemy 2.0 (async ORM)
+- PyTorch 2.2 + PyTorch Geometric (GNN)
+- Stable-Baselines3 (RL)
+- OpenAI API (LLM agents)
+- SimPy (discrete event simulation)
+
+**Frontend**:
+- React 18 (functional components, hooks)
+- Material-UI 5 (enterprise UI)
+- Recharts + D3-Sankey (visualizations)
+- WebSocket (real-time updates)
+
+**Infrastructure**:
+- Docker + Docker Compose (containerization)
+- PostgreSQL 16 (relational database)
+- Redis (caching, session management)
+- Nginx (reverse proxy, load balancing)
+- GPU support (NVIDIA CUDA for ML training)
 
 ---
 
@@ -982,10 +1957,11 @@ The platform's AI agents continuously analyze supply chain state and generate **
 
 ### Overview
 
-The platform provides enterprise-grade integration with SAP S/4HANA and SAP Integrated Business Planning (IBP) for seamless data exchange, AI-powered planning enhancement, and real-world validation of supply chain strategies.
+The Continuous Autonomous Planning Platform provides enterprise-grade integration with SAP S/4HANA and SAP Integrated Business Planning (IBP) for seamless data exchange, AI-powered planning enhancement, and real-world validation of supply chain strategies.
 
 ### Integration Architecture
 
+**External System Integration Strategy**:
 ```
 ┌──────────────────┐      ┌─────────────────────────┐      ┌──────────────────┐
 │   Databricks     │──────│  Autonomy Platform      │──────│  External        │
@@ -998,60 +1974,168 @@ The platform provides enterprise-grade integration with SAP S/4HANA and SAP Inte
    Analytics                Agent-Based Planning            Promotional Planning
 ```
 
+**Architectural Decisions**:
+1. **Data Lake**: Databricks (external platform)
+   - ERP connector setup via Databricks
+   - Data mapping and transformation in Databricks
+   - Data quality validation pipeline
+   - Future: Databricks connector for Autonomy analytics
+
+2. **Demand Planning**: External system (API integration)
+   - Forecast generation in external system
+   - Autonomy consumes via REST API (read-only)
+   - Display current demand plan + delta analysis
+   - No forecast modification in Autonomy
+
+3. **Supply Planning & Execution**: Autonomy (core platform)
+   - AWS SC-compliant data model
+   - MPS/MRP planning with AI agents
+   - Order management (PO/TO/MO)
+   - ATP/CTP and inventory optimization
+   - Real-time execution and collaboration
+
+**Bidirectional Data Flow**:
+```
+SAP S/4HANA ↔ Databricks ↔ Autonomy Platform ↔ External Demand Planning
+     ↓            ↓              ↓                        ↓
+   Master Data  Data Lake   Simulations/Execution    Forecasts
+   Actuals      Analytics   Simulation/Training      Consensus
+   Orders       Transform   AI Agents                Planning
+```
+
 ### Data Ingestion Methods
 
-**1. Direct SAP Integration (Real-Time)**:
+#### 1. Direct SAP Integration (Real-Time)
+
+**SAP OData API Integration**:
 - RESTful API connectivity to SAP S/4HANA OData services
 - Authentication via OAuth 2.0 or SAP Cloud Platform
-- Real-time data pull from SAP tables
+- Real-time data pull from SAP tables (MARA, MARC, EBAN, EKKO, LIKP, etc.)
 - Support for SAP BAPIs for transactional operations
 
 **Supported Data Entities**:
-- **Master Data**: Materials, Plants, Vendors, Customers
-- **Inventory**: Stock levels, reservations, goods movements
-- **Purchasing**: Purchase orders, requisitions
-- **Sales**: Sales orders, deliveries
-- **Production**: Planned orders, production orders
-- **Demand**: Consumption data, forecast, demand planning
+- **Master Data**: Materials (MARA), Plants (T001W), Vendors (LFA1), Customers (KNA1)
+- **Inventory**: Stock levels (MARD), reservations (RESB), goods movements (MKPF)
+- **Purchasing**: Purchase orders (EKKO/EKPO), requisitions (EBAN)
+- **Sales**: Sales orders (VBAK/VBAP), deliveries (LIKP/LIPS)
+- **Production**: Planned orders (PLAF), production orders (AFKO)
+- **Demand**: Consumption data, forecast (FCST), demand planning (IBP)
 
-**2. Flat File Integration (Batch)**:
-- CSV, Excel, JSON, XML (SAP IDoc format), Parquet
-- SFTP/FTP upload, cloud storage integration, direct upload via UI, scheduled batch imports
+**SAP HANA Direct Query** (for S/4HANA on HANA):
+- Direct SQL queries to SAP HANA database views
+- CDS (Core Data Services) view consumption
+- Real-time analytics on SAP data without extraction
 
-### AI-Powered Data Curation
+**SAP IBP API Integration**:
+- Connect to IBP Planning Area APIs
+- Import demand forecasts, supply plans, inventory targets
+- Export AI-generated recommendations back to IBP
+- Support for IBP Key Figures and Time Series data
+
+#### 2. Flat File Integration (Batch)
+
+**Supported Formats**:
+- **CSV**: Comma-separated values with configurable delimiters
+- **Excel**: .xlsx files with multi-sheet support
+- **JSON**: Structured hierarchical data
+- **XML**: SAP IDoc format, custom schemas
+- **Parquet**: Columnar format for large datasets
+
+**File Transfer Methods**:
+- SFTP/FTP upload to designated folders
+- AWS S3 / Azure Blob Storage integration
+- Direct file upload via UI
+- Scheduled batch imports (cron jobs)
+
+**Standard File Templates**:
+```csv
+# inventory.csv
+material_id,plant,storage_location,quantity,unit,timestamp
+MAT001,1000,0001,1500,EA,2026-01-17T08:00:00Z
+
+# demand.csv
+material_id,location,date,quantity,source
+MAT001,DC-EAST,2026-01-17,250,actual
+
+# supply_plan.csv
+material_id,vendor,plant,planned_date,quantity,lead_time_days
+MAT002,V001,1000,2026-01-24,1000,7
+```
+
+**Data Mapping Configuration**:
+- Field mapping UI to align SAP field names to Autonomy schema
+- Transformation rules (unit conversions, date formats, aggregations)
+- Data validation and cleansing rules
+- Error handling and logging
+
+### Claude AI Data Curation
 
 **Automated Data Cleansing**:
-- **Missing Data Imputation**: AI analyzes patterns and fills gaps intelligently
+- **Missing Data Imputation**: Claude analyzes patterns and fills gaps intelligently
 - **Anomaly Detection**: Identifies outliers, data quality issues, inconsistencies
 - **Data Standardization**: Harmonizes units, date formats, naming conventions
 - **Duplicate Detection**: Finds and merges duplicate records across systems
 
 **Semantic Data Enrichment**:
-- AI infers relationships between entities (e.g., which materials are substitutes)
-- Auto-categorize materials by ABC class, demand patterns, criticality
-- Match SAP material codes to Autonomy products with fuzzy matching
+- **Natural Language Processing**: Extract insights from free-text fields (e.g., vendor notes, order comments)
+- **Contextual Understanding**: Claude infers relationships between entities (e.g., which materials are substitutes)
+- **Classification**: Auto-categorize materials by ABC class, demand patterns, criticality
+- **Entity Resolution**: Match SAP material codes to Autonomy products with fuzzy matching
+
+**Data Transformation Workflows**:
+```
+SAP Raw Data → Claude Curation → Validated Data → Autonomy Schema
+     ↓              ↓                  ↓                ↓
+   Tables      Cleansing          Mapping         Supply Chain
+   Views       Enrichment         Validation      Configuration
+   Files       Inference          Approval        Scenarios
+```
+
+**Claude Curation Features**:
+1. **Intelligent Field Mapping**:
+   - Claude suggests optimal field mappings based on field names and data patterns
+   - Learns from user corrections to improve future mappings
+   - Handles SAP custom fields (ZFIELD*) and custom tables
+
+2. **Data Quality Scoring**:
+   - Assigns quality scores to incoming data (0-100%)
+   - Flags low-quality records for review
+   - Provides explanations for quality issues
+
+3. **Automated Documentation**:
+   - Claude generates data lineage documentation
+   - Creates data dictionary entries automatically
+   - Explains transformation logic in natural language
+
+4. **Conversational Curation**:
+   - Users can ask Claude: "Why is inventory for MAT001 flagged?"
+   - Claude explains data issues and suggests fixes
+   - Interactive approval/rejection of curation suggestions
 
 ### SAP Data Management UI
+
+The platform includes a comprehensive SAP Data Management interface accessible from Administration > SAP Data Management:
 
 **Connection Management**:
 - Configure connections to SAP S/4HANA, APO, ECC, or BW systems
 - Support for multiple connection methods: RFC, CSV file import, OData API, IDoc
 - Connection testing and validation with status tracking
+- Manage multiple connections per group (dev/test/prod)
 
 **Z-Table/Z-Field Handling**:
 - Automatic discovery of Z-tables (custom SAP tables)
 - AI-powered fuzzy matching for Z-field to AWS SC entity mapping
+- Pattern-based recognition of common SAP naming conventions
 - Confidence scoring (High/Medium/Low) for each suggested mapping
 - User confirmation workflow to learn from corrections
 
-**Field Mapping**:
-
+**Field Mapping Features**:
 | Mapping Method | Description | Confidence |
 |---------------|-------------|------------|
 | Exact Match | Direct field name match | 95%+ |
-| Pattern Match | SAP naming convention patterns | 90%+ |
-| Fuzzy Match | String similarity | 70-90% |
-| AI Suggested | AI analysis for ambiguous fields | 50-75% |
+| Pattern Match | SAP naming convention patterns (MATNR→product_id) | 90%+ |
+| Fuzzy Match | Levenshtein + token similarity | 70-90% |
+| AI Suggested | Claude analysis for ambiguous fields | 50-75% |
 | Learned | From previous user confirmations | 98% |
 
 **Data Ingestion Monitoring**:
@@ -1060,70 +2144,241 @@ The platform provides enterprise-grade integration with SAP S/4HANA and SAP Inte
 - Anomaly detection for unexpected data patterns
 - Trend analysis showing quality changes over time
 
+**Insights & Actions Dashboard**:
+- AI-generated insights categorized by severity (Critical, Error, Warning, Info)
+- Suggested remediation actions with one-click execution
+- Action workflow (Suggested → In Progress → Completed)
+- Integration with existing exception workflows
+
 ### Write-Back to SAP
 
+#### 1. Recommendations Export
+
 **AI-Generated Plans to SAP IBP**:
-- Export optimized order quantities to IBP Planning Areas
+- Export TRM/GNN-optimized order quantities to IBP Planning Areas
 - Push demand forecasts back to IBP Demand module
 - Update safety stock recommendations in IBP Supply Planning
 - Write inventory targets to IBP Key Figures
 
-**Transactional Write-Back**:
-- AI agents generate recommended orders → Human approval workflow → Automatic PR creation
-- Write optimized reorder points to material master
-- Update safety stock levels by material/plant
-- Export multiple "what-if" scenarios for IBP Scenario Comparison
+**Export Format**:
+```json
+{
+  "planning_area": "DEMAND_FORECAST",
+  "key_figures": [
+    {
+      "material": "MAT001",
+      "location": "DC-EAST",
+      "date": "2026-01-24",
+      "forecast_quantity": 275.5,
+      "confidence": 0.92,
+      "model": "TRM",
+      "rationale": "15% seasonal uplift, 5% trend"
+    }
+  ]
+}
+```
 
-**Audit Trail & Governance**:
+#### 2. Transactional Write-Back
+
+**Create Purchase Requisitions in S/4HANA**:
+- AI agents generate recommended orders
+- Human approval workflow
+- Automatic PR creation via SAP BAPI (BAPI_PR_CREATE)
+- Track PR status in Autonomy platform
+
+**Update Inventory Targets**:
+- Write optimized reorder points to material master (MARC-MINBE)
+- Update safety stock levels (MARC-EISBE)
+- Modify service levels by material/plant
+
+**Scenario Planning Export**:
+- Export multiple "what-if" scenarios from Autonomy simulations
+- Load scenarios into SAP IBP Scenario Comparison
+- Enable side-by-side analysis of AI vs. manual plans
+
+#### 3. Audit Trail & Governance
+
+**Complete Traceability**:
 - Every write-back operation logged with timestamp, user, rationale
-- AI generates audit summaries in natural language
+- Claude generates audit summaries in natural language
 - Compliance with SOX, GDPR, data residency requirements
 - Rollback capability for all SAP updates
 
+**Approval Workflows**:
+- Multi-level approvals before SAP write-back
+- Role-based access control (planner, manager, director)
+- Email/Slack notifications for pending approvals
+- Automated approval for low-risk changes (configurable thresholds)
+
+### Integration Capabilities
+
+#### Real-Time Synchronization
+
+**Incremental Data Sync**:
+- CDC (Change Data Capture) from SAP tables
+- WebSocket push notifications on SAP data changes
+- Beer Game platform reacts to real-world supply chain events
+- Sub-second latency for critical updates
+
+**Event-Driven Architecture**:
+- SAP Business Events trigger supply chain simulations
+- Examples: PO delayed → run risk simulation, Demand spike → AI re-plan
+- Event bus integration (Kafka, RabbitMQ, AWS EventBridge)
+
+#### Hybrid Planning Workflows
+
+**SAP IBP + AI Hybrid**:
+1. SAP IBP generates statistical forecast (baseline)
+2. Autonomy TRM/GNN models generate AI forecast (enhanced)
+3. Claude compares forecasts, explains differences
+4. Planner chooses: SAP forecast, AI forecast, or weighted blend
+5. Final forecast written back to IBP
+
+**Consensus Planning**:
+- Autonomy simulations validate SAP plans under stress scenarios
+- Multi-agent LLM provides "second opinion" on SAP recommendations
+- Identify risks in SAP plans before execution (bullwhip, shortages, excess inventory)
+
+#### Data Reconciliation
+
+**SAP vs. Autonomy Comparison**:
+- Side-by-side view of SAP actuals vs. Autonomy predictions
+- Highlight discrepancies and investigate root causes
+- Claude explains variances (e.g., "SAP shows 10% lower demand due to canceled orders")
+
+**Feedback Loop**:
+- Platform learns from SAP actuals to improve models
+- Model retraining triggered by drift detection
+- Continuous improvement of AI accuracy
+
 ### Enterprise Features
 
-**Security Integration**:
-- SAML 2.0 / OAuth 2.0 Single Sign-On
+#### SAP Security Integration
+
+**Single Sign-On (SSO)**:
+- SAML 2.0 integration with SAP Identity Management
+- OAuth 2.0 with SAP Cloud Platform
+- Support for SAP Principal Propagation
 - Active Directory / LDAP integration
-- SAP role-to-Autonomy permission mapping
+
+**SAP Authorization Model**:
+- Map SAP roles to Autonomy permissions
+- Respect SAP authorization objects (S_TABU_DIS, M_MATE_WRK, etc.)
 - Row-level security based on SAP org hierarchy
 
-**Data Residency & Compliance**:
-- On-premise deployment option (no data leaves corporate network)
-- Cloud deployment with private VPN to SAP
+#### Data Residency & Compliance
+
+**On-Premise Deployment**:
+- Deploy Autonomy Platform within SAP landscape
+- No data leaves corporate network
+- Complies with data sovereignty requirements
+
+**Cloud Deployment Options**:
+- SAP Cloud Platform Integration (CPI) connectivity
+- AWS / Azure / GCP with private VPN to SAP
 - Data encryption in transit (TLS 1.3) and at rest (AES-256)
-- GDPR, SOX, FDA 21 CFR Part 11, GxP compliance
+
+**Regulatory Compliance**:
+- GDPR: Data retention policies, right to deletion
+- SOX: Audit trails, segregation of duties
+- FDA 21 CFR Part 11: Electronic signatures for pharma/medical device
+- GxP: Validated systems for regulated industries
+
+### Performance & Scalability
+
+**High-Volume Data Handling**:
+- Process 1M+ SAP material master records
+- Ingest 10M+ daily transactions (orders, shipments, receipts)
+- Real-time analytics on 100M+ historical data points
+- Parallel processing with distributed compute
+
+**Caching & Optimization**:
+- Redis caching for frequently accessed SAP data
+- Materialized views for aggregated metrics
+- Incremental refresh (only changed data)
+- Query optimization for SAP HANA
 
 ### Integration Use Cases
 
-**Use Case 1: AI-Enhanced Demand Planning**:
-1. Ingest 2 years of historical sales data from SAP
-2. AI cleanses, identifies seasonality, fills gaps
-3. AI model trains on SAP historical actuals
-4. Generate 12-month forecast with confidence intervals
-5. Side-by-side comparison with SAP IBP statistical forecast
-6. Validate through digital twin simulations before production deployment
-7. Planner reviews AI explanations and simulation results
-8. Export validated forecast to IBP Planning Area
-- **Result**: 15-25% forecast accuracy improvement, 40% reduction in planner workload
+#### Use Case 1: AI-Enhanced Demand Planning
 
-**Use Case 2: Safety Stock Optimization**:
-1. Ingest current safety stock levels and service level targets
-2. Run 1,000+ Monte Carlo simulations per SKU in digital twin
-3. AI agents find optimal safety stock for 98% service level
-4. AI generates rationale for each recommendation with simulation evidence
-5. Planner reviews with digital twin test results
-6. Update safety stock in SAP material master
-- **Result**: 20-30% inventory reduction while maintaining service levels
+**Workflow**:
+1. **Ingest**: Pull 2 years of historical sales data from SAP (VBAK/VBAP)
+2. **Curate**: Claude cleanses, identifies seasonality, fills gaps
+3. **Train**: TRM model trains on SAP historical actuals
+4. **Forecast**: Generate 12-month forecast with confidence intervals
+5. **Compare**: Side-by-side with SAP IBP statistical forecast
+6. **Validate (Digital Twin Testing)**: Run forecast through digital twin scenario simulations with stochastic demand variability—test forecast accuracy under different scenarios before production deployment
+7. **Approve**: Planner reviews Claude's explanations, simulation results, and approves
+8. **Write-Back**: Export validated forecast to IBP Planning Area
 
-**Use Case 3: Supplier Risk Assessment**:
-1. Ingest supplier master, PO history, quality data
-2. AI analyzes supplier performance, identifies patterns
-3. Model supply disruption scenarios in digital twin
-4. AI assigns risk scores based on simulation results
-5. Suggest backup suppliers, safety stock increases, multi-sourcing strategies
-6. Proactive warnings when high-risk suppliers have large POs
-- **Result**: 50% reduction in stockouts from supplier issues
+**Result**: 15-25% forecast accuracy improvement, 40% reduction in planner workload, 90%+ confidence from digital twin validation
+
+#### Use Case 2: Safety Stock Optimization
+
+**Workflow**:
+1. **Ingest**: Pull current safety stock levels (MARC-EISBE) and service level targets
+2. **Digital Twin Simulation**: Run 1,000+ Monte Carlo simulations per SKU in digital twin scenarios—test different safety stock levels under demand/lead time variability
+3. **Optimize**: TRM/GNN agents analyze simulation results and find optimal safety stock for 98% service level
+4. **Explain**: Claude generates rationale for each recommendation with simulation evidence
+5. **Review**: Planner reviews AI suggestions with digital twin test results (service level achieved, cost impact, risk profile)
+6. **Write-Back**: Update safety stock in SAP material master with validated recommendations
+
+**Result**: 20-30% inventory reduction while maintaining service levels, 95%+ confidence from 1,000+ digital twin tests
+
+#### Use Case 3: Supplier Risk Assessment
+
+**Workflow**:
+1. **Ingest**: Pull supplier master (LFA1), PO history (EKKO), quality data
+2. **Enrich**: Claude analyzes supplier performance, identifies patterns
+3. **Digital Twin Testing**: Model supply disruption scenarios in digital twin scenarios—test impact of supplier failures, lead time extensions, partial fulfillment
+4. **Score**: AI assigns risk scores to each supplier based on simulation results
+5. **Recommend**: Suggest backup suppliers, safety stock increases, multi-sourcing strategies (all validated through digital twin testing)
+6. **Alert**: Proactive warnings when high-risk suppliers have large POs, with mitigation strategies pre-tested
+
+**Result**: 50% reduction in stockouts from supplier issues, validated mitigation strategies ready for immediate deployment
+
+### API Documentation
+
+**RESTful API Endpoints**:
+```
+POST /api/v1/sap/ingest          # Trigger SAP data import
+GET  /api/v1/sap/status           # Check integration status
+POST /api/v1/sap/curate           # Run Claude curation pipeline
+POST /api/v1/sap/export           # Export to SAP (IBP/S4HANA)
+GET  /api/v1/sap/audit-log        # Retrieve audit trail
+POST /api/v1/sap/validate-mapping # Validate field mappings
+GET  /api/v1/sap/data-quality     # Get data quality report
+```
+
+**Webhook Support**:
+- Register webhooks for SAP events
+- Receive notifications on data changes, curation completion, export success/failure
+
+### Configuration UI
+
+**SAP Connection Manager**:
+- Configure SAP system details (host, client, credentials)
+- Test connectivity
+- Manage multiple SAP systems (dev, QA, prod)
+
+**Data Mapping Studio**:
+- Drag-and-drop field mapping
+- Preview data transformations
+- Save mapping templates for reuse
+- Version control for mappings
+
+**Curation Dashboard**:
+- View Claude curation pipeline status
+- Approve/reject curation suggestions
+- Override AI decisions with manual edits
+- Monitor data quality scores
+
+**Export Configuration**:
+- Select target SAP system (IBP, S/4HANA)
+- Choose data entities to export
+- Set export frequency (real-time, hourly, daily)
+- Configure approval workflows
 
 ---
 
@@ -1134,7 +2389,7 @@ The platform provides enterprise-grade integration with SAP S/4HANA and SAP Inte
 **Challenge**: New supply chain analysts take 6-12 months to become proficient. Traditional training is expensive and slow.
 
 **Solution**:
-- New hires run simulation scenarios against AI agents
+- New hires run Beer Game scenarios against AI agents
 - Progress through difficulty levels (Easy → Hard AI opponents)
 - Unlock achievements as they master concepts
 - Compete on leaderboards for recognition
@@ -1163,7 +2418,7 @@ The platform provides enterprise-grade integration with SAP S/4HANA and SAP Inte
 
 ### Use Case 3: Supply Chain Network Redesign
 
-**Challenge**: Company considering adding a regional distribution center. Will it reduce costs or add complexity?
+**Challenge**: Company considering adding a regional distribution center (DC). Will it reduce costs or add complexity?
 
 **Solution**:
 - Create two supply chain configurations (with/without DC)
@@ -1197,16 +2452,16 @@ The platform provides enterprise-grade integration with SAP S/4HANA and SAP Inte
 **Challenge**: Retailer and supplier struggle with bullwhip effect. Lack of trust and coordination.
 
 **Solution**:
-- Retailer and supplier run collaborative simulation together
+- Retailer and supplier run collaborative scenario together
 - See real-time impact of information sharing and joint planning
-- Negotiate visibility agreements in-simulation
+- Negotiate visibility agreements in-scenario
 - Test different collaboration strategies (VMI, CPFR, etc.)
 
 **Results**:
 - 31% reduction in demand variability at supplier
 - 18% reduction in inventory holding costs across both parties
 - Improved relationship, increased willingness to share data
-- Real-world collaboration agreement signed after 3 sessions
+- Real-world collaboration agreement signed after 3 gaming sessions
 
 ---
 
@@ -1214,60 +2469,239 @@ The platform provides enterprise-grade integration with SAP S/4HANA and SAP Inte
 
 ### vs. Enterprise Planning Systems (Kinaxis RapidResponse, SAP IBP, OMP Plus)
 
-| Feature | Kinaxis/SAP IBP/OMP | Autonomy |
-|---------|---------------------|----------|
+| Feature | Kinaxis/SAP IBP/OMP | The Continuous Autonomous Planning Platform |
+|---------|---------------------|------------------------|
 | **Deployment Time** | 6-18 months implementation | Deploy in days with pre-built configurations |
 | **License Cost** | $100K-$500K per user/year | $10K/year per seat (90% cost reduction) |
 | **Implementation Cost** | $500K-$5M consulting fees | $50K-$200K one-time setup |
-| **User Training** | 3-6 months specialized training | 2-3 weeks via simulation-based learning |
-| **AI/ML Capabilities** | Limited, add-on modules | Native AI agents with continuous learning |
+| **User Training** | 3-6 months specialized training | 2-3 weeks via gamified learning |
+| **AI/ML Capabilities** | Limited, add-on modules | Native temporal GNN, LLM agents, RL optimization |
 | **Variability Modeling** | Deterministic with safety stock buffers | Full stochastic simulation (demand, lead time, supplier reliability) |
-| **Human-AI Interaction** | Passive acceptance of recommendations | Active simulation validates AI before production deployment |
+| **Human-AI Interaction** | Passive acceptance of recommendations | Active gaming validates AI before production deployment |
 | **Validation** | Post-implementation performance reviews | Pre-deployment testing in risk-free simulations |
-| **Learning Curve** | Steep, requires consultants | Intuitive interface, no coding required |
-| **Explainability** | Complex optimization black boxes | Observable decisions, natural language explanations |
-| **Adoption Risk** | High — requires organizational change management | Low — simulation builds trust before deployment |
-| **Flexibility** | Rigid configuration, custom dev expensive | Network topology-based, configure any network in minutes |
+| **Learning Curve** | Steep, requires consultants | Intuitive gaming interface, no coding required |
+| **Explainability** | Complex optimization black boxes | Observable decisions, natural language explanations (LLM) |
+| **Adoption Risk** | High—requires organizational change management | Low—simulation builds trust before deployment |
+| **Flexibility** | Rigid configuration, custom dev expensive | DAG-based topology, configure any network in minutes |
+| **Integration** | Requires SAP/Oracle/ERP integration | REST API, export formats, cloud or self-hosted |
 | **Vendor Lock-In** | High (proprietary platforms) | Open architecture, data portability |
 
 ### vs. Traditional Supply Chain Simulation (AnyLogic, Simul8)
 
-| Feature | Traditional Simulation | Autonomy |
-|---------|------------------------|----------|
-| **Ease of Use** | Requires simulation expertise | Intuitive interface, no coding required |
-| **AI Integration** | Limited, custom development | 7+ agent strategies built-in, AI-ready |
-| **Real-Time Multiplayer** | Rare, clunky | Native real-time support, seamless |
+| Feature | Traditional Simulation | The Continuous Autonomous Planning Platform |
+|---------|------------------------|------------------------|
+| **Ease of Use** | Requires simulation expertise | Gaming interface, no coding required |
+| **AI Integration** | Limited, custom development | 7 agent strategies built-in, LLM/GNN ready |
+| **Real-Time Multiplayer** | Rare, clunky | Native WebSocket support, seamless |
+| **Simulation** | None | 17 achievements, leaderboards, progression |
 | **Analytics** | Export data, analyze elsewhere | Built-in dashboards, automated reports |
 | **Cost** | $5K-$50K per license | Open source core, enterprise add-ons |
 
-### The Only Platform That Combines:
+### vs. Supply Chain Simulation (e.g., The Fresh Connection, Beer Game Mobile Apps)
 
-1. **Simulation + Analytics + Planning** in one unified environment (Kinaxis/SAP require separate tools)
-2. **Human + AI collaboration** with trust-building through competition (legacy systems demand blind trust)
-3. **Multi-echelon variability modeling** beyond deterministic MRP/DRP calculations
-4. **7+ AI strategies** including AI agent approaches (not rigid optimization solvers)
-5. **Simulation for confidence building** and continuous agent improvement (legacy training is workshop-based)
-6. **Real-time multiplayer** with observable AI decisions (legacy systems are single-user)
-7. **Network topology-based flexibility** supporting any supply chain topology without custom development
-8. **Production-ready** with enterprise features (SSO, RBAC, audit logs) at a fraction of legacy cost
+| Feature | Traditional Simulations | The Continuous Autonomous Planning Platform |
+|---------|-------------------|------------------------|
+| **AI Opponents** | None or scripted | 7 adaptive strategies + LLM/GNN |
+| **Custom Supply Chains** | Fixed scenarios | DAG editor, unlimited configurations |
+| **Real Data Integration** | None | Upload historical data for analysis |
+| **Agent Training** | Not possible | RL, GNN, LLM training pipelines |
+| **Enterprise Features** | Consumer-focused | SSO, RBAC, audit logs, multi-tenancy |
+| **API Integration** | None | REST API, WebSocket, export formats |
 
 ---
 
-## Target Markets
+## Simulation Deep Dive: The Engine of Improvement
 
-**Primary (Direct Replacement Opportunities)**:
-- **Manufacturing Companies**: Current Kinaxis/SAP IBP users seeking cost reduction and AI capabilities
-- **Retail Chains**: Inventory planning teams frustrated with legacy system complexity
-- **CPG/FMCG Companies**: Multi-tier distribution networks requiring stochastic modeling
-- **3PL/4PL Providers**: Logistics optimization for multiple clients without per-client licensing
-- **Mid-Market Enterprises**: Too small for Kinaxis ($5M+ deals) but need enterprise planning
+### Achievement System Design
 
-**Ideal Customer Profile (ICP)**:
-- Annual revenue: $100M-$5B
-- Current planning system: Excel, Kinaxis, SAP IBP, OMP, or homegrown
-- Pain points: High TCO, slow deployment, poor AI/ML, lack of transparency
-- Tech maturity: Open to AI but skeptical of "black box" solutions
-- Decision criteria: ROI, time-to-value, ease of use, vendor independence
+**17 Achievements Across 5 Categories**:
+
+1. **Cost Control** (4 achievements)
+   - "Penny Pincher": Total cost < $5,000
+   - "Efficient Operator": Cost per round < $500
+   - "Inventory Optimizer": Never hold > 30 units
+   - "Zero Waste": Total holding cost < $1,000
+
+2. **Service Excellence** (3 achievements)
+   - "Perfect Service": 100% fill rate for 10 consecutive rounds
+   - "Quick Responder": Reduce backlog by 50% in 3 rounds
+   - "Zero Backlog": Complete scenario with zero stockouts
+
+3. **Collaboration** (4 achievements)
+   - "Negotiation Master": 5 successful negotiations
+   - "Visibility Pioneer": Share data for 10 rounds
+   - "Win-Win Participant": Both parties reduce costs after negotiation
+   - "Supply Chain Diplomat": Maintain 3+ active agreements
+
+4. **Innovation** (3 achievements)
+   - "Bullwhip Tamer": Reduce demand amplification by 40%
+   - "AI Adopter": Use AI suggestions for 10 rounds
+   - "Steady Hand": Keep order variance < 5 units for 15 rounds
+
+5. **Mastery** (3 achievements)
+   - "Supply Chain Expert": Win 10 scenarios
+   - "Leaderboard Climber": Top 10 in any leaderboard
+   - "Perfect Run": Total cost < $3,000 AND 100% service level
+
+**Achievement → AI Training Mapping**:
+
+Each achievement translates to a measurable objective for AI agents:
+
+```python
+# Example: "Steady Hand" Achievement
+# Human Goal: Keep inventory variance low
+# AI Reward Function:
+reward = -total_cost - 50 * variance(orders)
+
+# Example: "Bullwhip Tamer" Achievement
+# Human Goal: Reduce demand amplification
+# AI Reward Function:
+bullwhip_ratio = std(orders_placed) / std(orders_received)
+reward = -total_cost - 100 * max(0, bullwhip_ratio - 1.2)
+
+# Example: "Negotiation Master" Achievement
+# Human Goal: Successful collaboration
+# AI Reward Function (multi-agent):
+reward_retailer = -cost_retailer + 20 * successful_negotiations
+reward_wholesaler = -cost_wholesaler + 20 * successful_negotiations
+```
+
+### Leaderboard System
+
+**6 Leaderboard Types**:
+
+1. **Lowest Total Cost**: Raw performance metric
+2. **Best Service Level**: Fill rate + backlog penalties
+3. **Most Improved**: Week-over-week cost reduction
+4. **Achievement Hunter**: Total achievements unlocked
+5. **Highest Level**: Participant progression (level = floor(sqrt(points/10)) + 1)
+6. **AI Challenger**: Best performance against hardest AI
+
+**Competitive Dynamics**:
+- Weekly leaderboard resets for fresh competition
+- All-time leaderboards for legacy recognition
+- Team leaderboards for cross-functional competitions
+- Anonymous peer benchmarking (see percentile rank without exposing individual data)
+
+**Social Learning**:
+- See leaderboard leaders' replays
+- Learn from top performers' decision patterns
+- AI analyzes leader strategies, incorporates into recommendations
+
+### Progression System
+
+**Participant Levels**:
+- Formula: `level = floor(sqrt(total_points / 10)) + 1`
+- Earn points for: achievements unlocked, scenarios won, cost savings, service level targets
+- Level 1 (Novice) → Level 10 (Expert) → Level 20 (Master) → Level 50 (Legend)
+
+**Unlockable Content**:
+- Level 5: Access to AI suggestions
+- Level 10: Unlock advanced analytics dashboard
+- Level 15: Create custom supply chain configurations
+- Level 20: Train personal AI agent on own gameplay
+- Level 25: Access to LLM-powered agents
+
+**Badging & Recognition**:
+- Visual badges displayed on participant profiles
+- In-scenario titles (e.g., "Master of the Bullwhip", "Collaboration Champion")
+- Certificates for completing achievement categories
+- Share achievements on LinkedIn, company intranet
+
+### The Virtuous Cycle
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                                                         │
+│  1. Humans Run Scenarios                                │
+│     ↓                                                   │
+│  2. Generate Diverse Decision Data                      │
+│     ↓                                                   │
+│  3. AI Learns from Human Strategies (Imitation)         │
+│     ↓                                                   │
+│  4. AI Competes Against Humans (Validation)             │
+│     ↓                                                   │
+│  5. Humans Observe AI, Learn New Patterns               │
+│     ↓                                                   │
+│  6. Humans Improve Performance (Adopt AI Insights)      │
+│     ↓                                                   │
+│  7. AI Learns from Improved Humans (Imitation++)        │
+│     ↓                                                   │
+│  8. Cycle Repeats → Continuous Improvement              │
+│     ↓                                                   │
+│  [Back to Step 1]                                       │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Measurable Outcomes**:
+- Average participant cost reduces by 35% after 20 scenarios
+- AI agent performance improves by 12% per training cycle
+- 78% of participants report "increased confidence in AI recommendations"
+- 65% of participants adopt AI-suggested ordering patterns in real work
+
+---
+
+## Implementation Roadmap
+
+### Platform Capabilities: Full AWS SC Integration
+
+**Core Supply Chain Planning** (AWS SC Compliant):
+- ✅ Complete AWS Supply Chain feature coverage (Insights, Recommendations, Collaboration, Material Visibility, Order Planning)
+- ✅ ML-powered risk detection and predictive analytics
+- ✅ Rebalancing recommendations engine with action scoring
+- ✅ Real-time shipment tracking and delivery risk analytics
+- ✅ Team collaboration with messaging and approval workflows
+- ✅ View-only demand planning integration with delta analysis
+- ✅ Comprehensive order management (PO/TO/MO/Project/Maintenance)
+
+**AI & Gaming** (Production Ready):
+- ✅ Core Beer Game engine with multi-echelon support
+- ✅ 7 AI agent strategies (Naive, Conservative, Bullwhip, ML-Forecast, Optimizer, Reactive, LLM)
+- ✅ Temporal GNN for supply chain prediction
+- ✅ LLM multi-agent system (OpenAI GPT integration)
+- ✅ DAG-based supply chain configuration
+- ✅ Real-time WebSocket multiplayer gaming
+- ✅ Advanced analytics and bullwhip effect tracking
+- ✅ Simulation system (17 achievements, 6 leaderboards, progression)
+
+**Infrastructure & Integration**:
+- ✅ Databricks data lake integration for ERP connectivity
+- ✅ External demand planning system integration (API-based)
+- ✅ Reporting and export (CSV, JSON, Excel)
+- ✅ Interactive tutorial and help system
+- ✅ Performance optimizations (database indexes, caching)
+- ✅ Role-based access control (RBAC) with capability-based permissions
+
+### Future Enhancements
+
+**Priority 1: Advanced AI/ML** (10-15 days)
+- Reinforcement learning agents (PPO, SAC, A3C)
+- Enhanced GNN architectures (GraphSAGE, Heterogeneous GNN)
+- Predictive analytics dashboard for AWS SC Insights
+- AutoML for hyperparameter tuning
+- Explainable AI (SHAP values, attention visualization)
+
+**Priority 2: 3D Visualization** (8-12 days)
+- Three.js 3D supply chain network
+- Geospatial mapping with real locations
+- Timeline animation of inventory flow
+- VR/AR readiness for immersive training
+- Performance optimization for large networks
+
+**Priority 3: Mobile Application** (10-15 days)
+- React Native + Expo cross-platform app
+- Mobile-optimized scenario interface
+- Push notifications for scenario events
+- Offline mode with data sync
+- Mobile analytics dashboard
+
+**Priority 4: Enterprise Features** (7-10 days)
+- SSO/LDAP integration (SAML2, OAuth2, Active Directory)
+- Multi-tenancy (subdomain routing, data isolation)
+- Advanced RBAC (granular permissions, custom roles)
+- Audit logging (compliance, security)
+- Enterprise reporting and governance
 
 ---
 
@@ -1276,14 +2710,14 @@ The platform provides enterprise-grade integration with SAP S/4HANA and SAP Inte
 ### Open Core Model
 
 **Free Tier (Community Edition)**:
-- Core simulation engine
+- Core Beer Game engine
 - Default supply chain configurations
-- 7 AI agent strategies (excluding advanced AI)
+- 7 AI agent strategies (excluding LLM)
 - Single-tenant deployment
 - Community support
 
 **Professional Tier** ($2,500/month):
-- Advanced AI agents
+- LLM-based AI agents (GPT-4, Claude, etc.)
 - Custom supply chain configurations (unlimited)
 - Advanced analytics and reporting
 - Export to CSV, JSON, Excel
@@ -1297,14 +2731,19 @@ The platform provides enterprise-grade integration with SAP S/4HANA and SAP Inte
 - 24/7 support with SLA
 - On-premise deployment option
 
-### ROI Calculator
+**Add-Ons**:
+- GNN Training Service: $5,000 one-time + $500/month compute
+- Custom Agent Development: $15,000 per agent
+- Professional Services: $200/hour for consulting, custom integrations
+
+### ROI Calculator: The Continuous Autonomous Planning Platform vs. Legacy Planning Software
 
 **Example: Mid-Size Manufacturer ($500M revenue, $50M inventory)**
 
 **Scenario A: Traditional Enterprise Planning (Kinaxis/SAP IBP)**
 
 **Implementation Costs (Year 1)**:
-- Software licenses: 10 users x $250K = $2.5M
+- Software licenses: 10 users × $250K = $2.5M
 - Implementation consulting: $2M
 - User training: $500K
 - System integration: $1M
@@ -1320,12 +2759,12 @@ The platform provides enterprise-grade integration with SAP S/4HANA and SAP Inte
 
 ---
 
-**Scenario B: Autonomy**
+**Scenario B: The Continuous Autonomous Planning Platform**
 
 **Implementation Costs (Year 1)**:
-- Platform licenses: 10 users x $10K = $100K
+- Platform licenses: 10 users × $10K = $100K
 - Setup/configuration: $75K
-- Training (simulation-based): $25K
+- Training (gamified): $25K
 - **Total First-Year Cost: $200K**
 
 **Ongoing Costs (Annual)**:
@@ -1345,10 +2784,10 @@ The platform provides enterprise-grade integration with SAP S/4HANA and SAP Inte
 - 5-Year TCO: $11.4M vs. $1.08M = **$10.32M total savings (91% reduction)**
 
 **Operational Benefits** (Conservative Estimates):
-- 10% inventory reduction: $50M x 10% = $5M freed capital
-- 15% inventory holding cost savings: $12.5M x 15% = $1.875M/year
-- 20% stockout reduction: $25M x 20% = $5M revenue protection
-- 60% faster training: 50 analysts x $30K = $1.5M saved
+- 10% inventory reduction: $50M × 10% = $5M freed capital
+- 15% inventory holding cost savings: $12.5M × 15% = $1.875M/year
+- 20% stockout reduction: $25M × 20% = $5M revenue protection
+- 60% faster training: 50 analysts × $30K = $1.5M saved
 - **Total Annual Operational Value: $8.375M**
 
 **Total Platform ROI (First Year)**:
@@ -1365,7 +2804,7 @@ The platform provides enterprise-grade integration with SAP S/4HANA and SAP Inte
 **Key Insights**:
 1. **91% lower TCO** than legacy enterprise planning systems
 2. **10-20x faster deployment** (weeks vs. 12-18 months)
-3. **Simulation reduces training costs by 60%** vs. consultant-led workshops
+3. **Gaming reduces training costs by 60%** vs. consultant-led workshops
 4. **Risk-free AI validation** eliminates costly deployment failures
 5. **No vendor lock-in**: migrate data freely, self-hosted or cloud deployment
 
@@ -1375,103 +2814,266 @@ The platform provides enterprise-grade integration with SAP S/4HANA and SAP Inte
 
 ### A Modern Alternative to Legacy Planning Software
 
-**Why Replace Kinaxis/SAP IBP/OMP with Autonomy?**
+**Why Replace Kinaxis/SAP IBP/OMP with The Continuous Autonomous Planning Platform?**
 
 1. **90% Cost Reduction**: $100K-$500K/user/year → $10K/user/year
 2. **10-20x Faster Deployment**: Weeks instead of 12-18 months
-3. **AI-First Architecture**: Native AI agents with continuous learning (not bolt-on add-ons)
-4. **Risk-Free Validation**: Test AI in simulation environments before production deployment
-5. **Simulation-Based Training**: 60% training cost reduction vs. consultant-led workshops
+3. **AI-First Architecture**: Native temporal GNN, LLM agents, RL optimization (not bolt-on add-ons)
+4. **Risk-Free Validation**: Test AI in gaming environments before production deployment
+5. **Gamified Training**: 60% training cost reduction vs. consultant-led workshops
 6. **Stochastic Variability**: Model real-world uncertainty (demand, lead times, supplier reliability)
 7. **Transparent AI**: Observable decisions, natural language explanations, builds trust
 8. **No Vendor Lock-In**: Open architecture, data portability, self-hosted or cloud
-9. **Intuitive UX**: Modern interface vs. complex ERP-style screens
-10. **Continuous Learning**: AI improves from human feedback, not just periodic retraining
+9. **Intuitive UX**: Gaming interface vs. complex ERP-style screens
+10. **Continuous Learning**: AI improves from human gameplay, not just periodic retraining
+
+### The Only Platform That Combines:
+
+1. **Gaming + Analytics + Planning** in one unified environment (Kinaxis/SAP require separate tools)
+2. **Human + AI collaboration** with trust-building through competition (legacy systems demand blind trust)
+3. **Multi-echelon variability modeling** beyond deterministic MRP/DRP calculations
+4. **7+ AI strategies** including cutting-edge LLM and GNN approaches (not rigid optimization solvers)
+5. **Simulation for confidence building** and continuous agent improvement (legacy training is workshop-based)
+6. **Real-time multiplayer** with WebSocket and observable AI decisions (legacy systems are single-user)
+7. **DAG-based flexibility** supporting any supply chain topology without custom development
+8. **Production-ready** with enterprise features (SSO, RBAC, audit logs) at a fraction of legacy cost
+
+### Target Markets
+
+**Primary (Direct Replacement Opportunities)**:
+- **Manufacturing Companies**: Current Kinaxis/SAP IBP users seeking cost reduction and AI capabilities
+- **Retail Chains**: Inventory planning teams frustrated with legacy system complexity
+- **CPG/FMCG Companies**: Multi-tier distribution networks requiring stochastic modeling
+- **3PL/4PL Providers**: Logistics optimization for multiple clients without per-client licensing
+- **Mid-Market Enterprises**: Too small for Kinaxis ($5M+ deals) but need enterprise planning
+
+**Secondary**:
+- Supply chain consulting firms (replace legacy tools, enable AI consulting)
+- Business schools (replace expensive academic licenses)
+- Technology companies (embed AI supply chain planning in existing platforms)
+- Government/military (replace expensive defense contractor solutions)
+
+**Ideal Customer Profile (ICP)**:
+- Annual revenue: $100M-$5B
+- Current planning system: Excel, Kinaxis, SAP IBP, OMP, or homegrown
+- Pain points: High TCO, slow deployment, poor AI/ML, lack of transparency
+- Tech maturity: Open to AI but skeptical of "black box" solutions
+- Decision criteria: ROI, time-to-value, ease of use, vendor independence
+
+---
+
+## Success Metrics
+
+### Platform Adoption KPIs
+
+- **Active Users**: Monthly active participants, session duration
+- **Scenario Volume**: Scenarios run per week, periods per scenario
+- **Engagement**: Achievement completion rate, leaderboard participation
+- **AI Usage**: % of scenarios with AI opponents, AI suggestion adoption rate
+- **Training Impact**: Time to proficiency for new hires, knowledge retention scores
+
+### Business Impact KPIs
+
+- **Cost Reduction**: Inventory holding costs, backlog penalties
+- **Service Level**: Fill rates, stockout frequency, customer satisfaction
+- **Efficiency**: Order variability, inventory turnover, cash-to-cash cycle
+- **Decision Quality**: Human vs. AI cost differential, improvement over time
+- **ROI**: Customer-reported savings vs. platform cost
+
+### AI Improvement KPIs
+
+- **Prediction Accuracy**: GNN forecast RMSE, bullwhip prediction error
+- **Decision Quality**: AI cost vs. human cost in simulated scenarios
+- **Generalization**: Performance on unseen supply chain topologies
+- **Explainability**: Human comprehension scores, trust ratings
+- **Efficiency**: Training time, inference latency, compute cost
 
 ---
 
 ## Conclusion: Replace Legacy Planning Software with Modern AI
 
-Autonomy represents a paradigm shift in how organizations approach supply chain planning:
+The Continuous Autonomous Planning Platform represents a paradigm shift in how organizations approach supply chain planning:
 
 **From Expensive to Affordable**:
 - Legacy systems (Kinaxis/SAP IBP): $6M first-year cost, 18-month deployment
-- Autonomy: $200K first-year cost, 2-4 week deployment (91% TCO reduction)
+- Our platform: $200K first-year cost, 2-4 week deployment (91% TCO reduction)
 
 **From Deterministic to Stochastic**:
 - Legacy MRP/DRP: Static calculations with safety stock buffers
-- Autonomy: Full variability modeling (demand, lead time, supplier uncertainty)
+- Our platform: Full variability modeling (demand, lead time, supplier uncertainty)
 
 **From Black Box to Transparent**:
 - Legacy systems: Complex optimization algorithms with poor explainability
-- Autonomy: Humans compete against AI, understand its logic, build trust before deployment
+- Our platform: Humans compete against AI, understand its logic, build trust before deployment
 
 **From Rigid to Flexible**:
 - Legacy systems: Months of configuration, expensive custom development
-- Autonomy: Network topology-based, configure any network in minutes without coding
+- Our platform: DAG-based topology, configure any network in minutes without coding
 
 **From Siloed to Collaborative**:
 - Legacy systems: Individual planners optimize in isolation
-- Autonomy: Multi-participant coordination, visibility sharing, joint planning via simulation
+- Our platform: Multi-participant coordination, visibility sharing, joint planning via simulation
 
 **From Static to Adaptive**:
 - Legacy systems: Periodic model updates by consultants
-- Autonomy: Continuous AI learning from human decisions and real-world feedback
+- Our platform: Continuous AI learning from human gameplay and real-world feedback
 
 **From Training Burden to Competitive Advantage**:
 - Legacy systems: 3-6 months consultant-led workshops
-- Autonomy: 2-3 weeks simulation-based learning (60% cost reduction, 3-5x faster adoption)
+- Our platform: 2-3 weeks gamified learning (60% cost reduction, 3-5x faster adoption)
 
-### The Strategic Imperative
+### The Strategic Imperative: Break Free from Legacy Planning Software
 
 In an era of:
 - **Supply chain volatility** (pandemics, trade wars, climate events requiring stochastic modeling)
-- **AI adoption pressure** (competitors deploying AI, legacy systems falling behind)
+- **AI adoption pressure** (competitors deploying ML/AI, legacy systems falling behind)
 - **Cost scrutiny** (CFOs questioning $5M+ planning software investments)
 - **Skills gaps** (experienced planners retiring, new hires struggling with complex legacy UIs)
 - **Vendor lock-in fatigue** (proprietary data formats, expensive upgrades, forced migrations)
 
 Organizations need a modern alternative to Kinaxis/SAP IBP/OMP that:
-1. **Reduces TCO by 90%** while delivering superior AI capabilities
+1. **Reduces TCO by 90%** while delivering superior AI/ML capabilities
 2. **Deploys in weeks, not years** with pre-built configurations and intuitive UX
-3. **Proves AI value** before deployment through risk-free simulation validation
+3. **Proves AI value** before deployment through risk-free gaming validation
 4. **Trains people 60% faster** via simulation vs. consultant-led workshops
 5. **Eliminates vendor lock-in** with open architecture and data portability
 6. **Models real-world uncertainty** with stochastic variability (demand, lead time, supplier reliability)
 
-**Autonomy delivers all six — at a fraction of the cost.**
+**The Continuous Autonomous Planning Platform delivers all six—at a fraction of the cost.**
 
-### Market Opportunity
+### Why Now?
 
+**Legacy Planning Software Pain Points Reaching Breaking Point**:
+- **Rising Costs**: Kinaxis/SAP license renewals increasing 10-15% annually
+- **Implementation Failures**: 40-60% of ERP/planning projects fail or exceed budget
+- **AI Gap**: Legacy vendors offering limited, expensive AI add-ons instead of native capabilities
+- **Talent Shortage**: Experienced Kinaxis/SAP consultants retiring, new generation prefers modern tools
+- **Cloud Migration Complexity**: Legacy on-prem to cloud migrations costing millions
+
+**Market Opportunity**:
 - Enterprise planning software market: $15B annually
 - 60% of mid-market companies use Excel (underserved by Kinaxis/SAP pricing)
 - 30% of Kinaxis/SAP customers exploring alternatives due to cost
-- AI supply chain optimization market growing 25% CAGR
+- AI/ML supply chain optimization market growing 25% CAGR
+
+**Competitive Window**:
+- Legacy vendors slow to innovate (18-24 month release cycles)
+- Startups focused on narrow point solutions (forecasting only, inventory only)
+- Our platform uniquely combines gaming + AI + planning in one modern architecture
 
 ### Next Steps
 
 1. **Deploy Free Tier**: Test with 10-20 users, gather feedback (1 week)
-2. **Pilot Program**: Run 3-month pilot with target enterprise customer
-3. **Case Study**: Document measurable impact, create sales collateral
-4. **Launch Professional Tier**: Public release with pricing
-5. **Scale**: 10 enterprise customers, $1M ARR
-6. **Expand**: Mobile app, 3D visualization, advanced AI capabilities
+2. **Pilot Program**: Run 3-month pilot with target enterprise customer (Q1 2026)
+3. **Case Study**: Document measurable impact, create sales collateral (Q1 2026)
+4. **Launch Professional Tier**: Public release with pricing (Q2 2026)
+5. **Scale**: 10 enterprise customers, $1M ARR (Q4 2026)
+6. **Expand**: Mobile app, 3D visualization, advanced AI (2027)
 
 ---
 
-## Appendix: Security & Compliance
+## Appendix: Technical Specifications
+
+### System Requirements
+
+**Server** (Backend + Database):
+- CPU: 8+ cores (16+ recommended for ML training)
+- RAM: 16GB minimum (32GB for large scenarios, 64GB for GNN training)
+- GPU: NVIDIA GPU with 8GB+ VRAM (optional, for GNN training)
+- Storage: 100GB SSD (database, model checkpoints)
+- OS: Linux (Ubuntu 22.04 LTS recommended)
+
+**Client** (Browser):
+- Modern browser (Chrome 90+, Firefox 88+, Safari 14+, Edge 90+)
+- 4GB+ RAM
+- Internet: 5 Mbps+ (for WebSocket real-time updates)
+
+### API Endpoints
+
+**Scenario Management**:
+- `POST /api/v1/mixed-scenarios/` - Create new scenario
+- `POST /api/v1/mixed-scenarios/{id}/start` - Start scenario
+- `POST /api/v1/mixed-scenarios/{id}/execute-period` - Submit decisions, advance period
+- `GET /api/v1/mixed-scenarios/{id}/state` - Get current scenario state
+- `GET /api/v1/mixed-scenarios/{id}/history` - Get complete scenario history
+
+**AI Agents**:
+- `POST /api/v1/agents/suggest` - Get AI order recommendation
+- `POST /api/v1/agents/evaluate` - Compare decision against AI
+- `GET /api/v1/agents/strategies` - List available strategies
+
+**Analytics**:
+- `GET /api/v1/analytics/bullwhip` - Calculate bullwhip metrics
+- `GET /api/v1/analytics/performance` - Get performance report
+- `POST /api/v1/reports/generate` - Generate comprehensive report
+
+**Simulation**:
+- `GET /api/v1/achievements` - List all achievements
+- `GET /api/v1/participants/{id}/achievements` - Participant achievements
+- `GET /api/v1/leaderboards` - List leaderboards
+- `GET /api/v1/leaderboards/{type}/entries` - Leaderboard rankings
+
+### Data Schemas
+
+**Scenario State**:
+```json
+{
+  "game_id": 123,
+  "round_number": 15,
+  "status": "active",
+  "participants": [
+    {
+      "player_id": 456,
+      "role": "Retailer",
+      "inventory": 12,
+      "backlog": 3,
+      "total_cost": 4520,
+      "last_order": 8
+    }
+  ]
+}
+```
+
+**AI Suggestion**:
+```json
+{
+  "recommended_order": 12,
+  "confidence": 0.85,
+  "reasoning": "Current inventory (8) + pipeline (10) = 18. Expected demand (14) suggests order 12 to reach target stock (32).",
+  "alternative_scenarios": [
+    {"order": 10, "expected_cost": 520, "risk": "moderate"},
+    {"order": 15, "expected_cost": 580, "risk": "low"}
+  ]
+}
+```
+
+**Achievement**:
+```json
+{
+  "achievement_id": "steady_hand",
+  "name": "Steady Hand",
+  "description": "Maintain order variance below 5 for 15 consecutive rounds",
+  "category": "Innovation",
+  "rarity": "rare",
+  "points": 150,
+  "progress": 0.73,
+  "unlocked": false
+}
+```
+
+### Security & Compliance
 
 **Authentication**:
 - JWT tokens with HTTP-only cookies
 - CSRF protection (double-submit cookie pattern)
-- Multi-factor authentication support
+- MFA support (TOTP via PyOTP)
 
 **Authorization**:
-- Role-based access control (System Admin, Manager, Participant)
-- Resource-level permissions (own scenarios, organization scenarios, all scenarios)
+- Role-based access control (SYSTEM_ADMIN, MANAGER, PARTICIPANT)
+- Resource-level permissions (own scenarios, group scenarios, all scenarios)
 
 **Data Protection**:
-- Passwords hashed with industry-standard algorithms
+- Passwords hashed with bcrypt
 - Sensitive data encrypted at rest (AES-256)
 - TLS 1.3 for data in transit
 - GDPR-compliant data exports and deletion
@@ -1483,16 +3085,537 @@ Organizations need a modern alternative to Kinaxis/SAP IBP/OMP that:
 
 ---
 
-## Appendix: System Requirements
+### 5. Mobile Application: Supply Chain Management On-The-Go
 
-**Server**:
-- CPU: 8+ cores (16+ recommended for AI training)
-- RAM: 16GB minimum (32GB for large scenarios, 64GB for AI training)
-- GPU: Optional, for AI model training (8GB+ VRAM)
-- Storage: 100GB SSD
-- OS: Linux
+**Purpose**: Extend platform capabilities to iOS and Android devices for anywhere access to gaming, monitoring, and analytics.
 
-**Client** (Browser):
-- Modern browser (Chrome 90+, Firefox 88+, Safari 14+, Edge 90+)
-- 4GB+ RAM
-- Internet: 5 Mbps+ (for real-time updates)
+**Mobile Capabilities**:
+- **Native iOS & Android**: Single React Native 0.73.2 codebase for both platforms
+- **Full Feature Parity**: All web features available on mobile (scenarios, templates, analytics, agent monitoring)
+- **Offline Mode**: Queue decisions and sync when connectivity resumes
+- **Push Notifications**: Real-time alerts via Firebase Cloud Messaging (scenario events, agent decisions, system updates)
+- **WebSocket Sync**: Live scenario state updates with Socket.IO integration
+- **Biometric Auth**: Face ID/Touch ID for secure, fast login
+- **Mobile-Optimized Charts**: Victory Native charts for real-time analytics
+- **Agent-to-Agent Monitoring**: View and intervene in AI agent conversations on mobile devices
+
+**Technical Architecture**:
+- **Framework**: React Native 0.73.2, React 18.2.0, TypeScript 5.3.3
+- **State Management**: Redux Toolkit 2.0.1 with 6 slices (auth, scenarios, templates, analytics, chat, UI)
+- **Navigation**: React Navigation 6.x (stack + bottom tabs)
+- **UI Library**: React Native Paper 5.11.6 (Material Design)
+- **API Client**: Axios 1.6.5 with JWT interceptors
+- **WebSocket**: Socket.IO Client 4.6.1 for real-time updates
+- **Offline Storage**: AsyncStorage 1.21.0 with queue-based sync
+- **Push Notifications**: Firebase Cloud Messaging 19.0.1
+- **Charts**: Victory Native 36.9.2 for mobile-optimized visualizations
+- **Animations**: React Native Reanimated 3.6.1
+
+**Key Screens**:
+1. **Authentication**: Login/register with biometric support
+2. **Dashboard**: Overview metrics, active scenarios, quick actions
+3. **Scenarios List**: Browse, filter, search scenarios with pull-to-refresh
+4. **Scenario Detail**: Real-time scenario state, place orders, period progression
+5. **Scenario Detail with A2A Chat**: Monitor agent conversations with human intervention controls
+6. **Create Scenario**: Quick Start Wizard or manual configuration
+7. **Template Library**: Browse supply chain configurations with previews
+8. **Analytics**: Mobile-optimized charts (line, bar, pie), bullwhip metrics, cost breakdown
+9. **Profile**: User settings, theme selection, notification preferences
+
+**Offline Mode Features**:
+- Queue actions when offline (place orders, create scenarios)
+- Automatic sync when connectivity resumes
+- Offline banner indicator
+- Retry logic with exponential backoff (max 3 retries)
+- Persistent queue storage via AsyncStorage
+
+**Push Notification Types**:
+- **Scenario Events**: "Scenario started", "Period completed", "Your turn", "Scenario finished"
+- **Agent Events**: "AI agent suggestion", "Agent decision", "A2A message"
+- **System Events**: "Maintenance scheduled", "Achievement unlocked"
+
+**Performance Optimizations**:
+- React.memo for expensive components
+- FlatList virtualization (initialNumToRender=10, windowSize=5)
+- Hermes JavaScript engine (Android)
+- Fast image loading with react-native-fast-image
+- Lazy loading for large datasets
+- Native driver animations
+
+**Deployment**:
+- **iOS**: App Store deployment via Xcode Archive or Fastlane
+- **Android**: Google Play Store via AAB bundle
+- **CI/CD**: Automated builds with GitHub Actions or Fastlane
+- **OTA Updates**: CodePush for hot updates without app store review
+
+**Testing**:
+- Jest 29.7.0 for unit testing
+- React Native Testing Library 12.4.3 for component testing
+- 50+ unit tests across slices, screens, and services
+- Redux Mock Store for isolated state testing
+
+**Documentation**: Comprehensive 12-file documentation suite (~4,500+ lines):
+- README.md - Project overview
+- INSTALL.md - Installation instructions
+- QUICKSTART.md - 5-minute quick start
+- QUICK_REFERENCE.md - Command reference
+- firebase-setup.md - Push notification setup
+- DEPLOYMENT.md - App Store/Play Store deployment
+- INTEGRATION_CHECKLIST.md - Pre-launch checklist
+- TESTING_GUIDE.md - Testing procedures
+- ACCESSIBILITY.md - Accessibility compliance
+- A2A_COLLABORATION_GUIDE.md - Agent monitoring features
+- INDEX.md - Documentation index
+
+**Mobile Value Proposition**:
+- **Anywhere Access**: Participate in scenarios and monitor AI agents from mobile devices
+- **Real-Time Alerts**: Push notifications keep users informed of critical events
+- **Offline Resilience**: Queue actions offline, sync automatically when connectivity resumes
+- **Native Performance**: React Native provides 60 FPS native-like experience
+- **Fast Adoption**: Mobile-first UI reduces training time for field teams
+- **Lower Barrier to Entry**: No desktop required for supply chain gaming participation
+
+**Use Cases**:
+1. **Field Teams**: Supply chain planners on factory floors can participate in scenarios during downtime
+2. **Executive Monitoring**: C-level executives monitor agent decisions on commute
+3. **Remote Training**: Employees learn supply chain concepts via mobile gaming
+4. **On-Call Intervention**: Emergency response to agent anomalies via push notifications
+5. **Mobile Analytics**: Review performance metrics during client meetings
+
+**ROI Impact**:
+- **50% faster training adoption**: Mobile simulation increases participation vs. desktop-only
+- **30% higher engagement**: Push notifications drive 30% more active users
+- **24/7 monitoring**: Mobile enables round-the-clock agent oversight
+- **Lower infrastructure costs**: Reduce need for dedicated workstations
+
+---
+
+## Deployment & Access
+
+### System Access Points
+
+**Primary Application URL** (Recommended):
+```
+http://172.29.20.187:8088  (Remote/Network)
+http://localhost:8088      (Local)
+```
+- Main entry point via Nginx proxy
+- Handles authentication and routing
+- Routes to both frontend and backend API
+
+**Mobile Application**:
+```
+iOS App Store: (Pending deployment)
+Google Play Store: (Pending deployment)
+```
+- React Native 0.73.2 iOS and Android apps
+- Push notifications via Firebase Cloud Messaging
+- Offline mode with automatic sync
+- Full feature parity with web platform
+
+**API Documentation**:
+```
+http://172.29.20.187:8000/docs  (Swagger UI)
+http://172.29.20.187:8000/redoc (ReDoc)
+http://localhost:8000/docs      (Local)
+```
+- Interactive API documentation
+- Test endpoints directly from browser
+- View request/response schemas
+
+**Database Administration** (pgAdmin):
+```
+http://172.29.20.187:5050  (Remote/Network)
+http://localhost:5050      (Local)
+```
+- PostgreSQL database management
+- Query interface and schema browser
+- Performance monitoring
+
+### Default Credentials
+
+**System Administrator**:
+```
+Email:    systemadmin@autonomy.ai
+Password: Autonomy@2026
+```
+- Full system access (SYSTEM_ADMIN role)
+- Create/manage groups, users, scenarios
+- Access to all admin features
+- Model training and configuration
+
+**Group Administrators**:
+```
+TBG Admin:
+  Email:    tbg_admin@autonomy.ai
+  Password: Autonomy@2026
+  Access:   Default TBG group scenarios
+
+Complex SC Admin:
+  Email:    complex_sc_admin@autonomy.ai
+  Password: Autonomy@2026
+  Access:   Complex SC multi-region scenarios
+
+Three FG Admin:
+  Email:    ThreeTBG_admin@autonomy.ai
+  Password: Autonomy@2026
+  Access:   Three finished goods scenarios
+
+Variable TBG Admin:
+  Email:    VarTBG_admin@autonomy.ai
+  Password: Autonomy@2026
+  Access:   Variable demand scenarios
+```
+
+**Database Admin** (pgAdmin):
+```
+Email:    admin@admin.com
+Password: admin
+```
+
+**Database Connection** (PostgreSQL):
+```
+Host:     172.29.20.187 (or 'db' from container)
+Port:     5432
+Database: beer_game
+Username: beer_user
+Password: change-me-user
+```
+
+### Quick Start Guide
+
+**1. Access the Application**:
+```bash
+# Open in browser
+http://172.29.20.187:8088
+
+# Or locally
+http://localhost:8088
+```
+
+**2. Login**:
+- Use `systemadmin@autonomy.ai` / `Autonomy@2026`
+- Navigate to dashboard after login
+
+**3. Key Pages**:
+```
+Main Dashboard:     /dashboard
+Scenarios List:     /scenarios
+Admin Panel:        /admin
+User Management:    /admin/users
+Scenario Management: /admin/scenarios
+TRM Dashboard:      /admin/trm
+Supply Chain Config: /admin/supply-chain-configs
+```
+
+**4. Run a Scenario**:
+- Navigate to "Scenarios" menu
+- Select scenario (e.g., "TRM Agent Showcase")
+- Click "Start Scenario" or "Join Scenario"
+- Make decisions each round
+
+**5. Train TRM Model**:
+```bash
+# Via UI
+Navigate to: http://172.29.20.187:8088/admin/trm
+Click "Training" tab
+Configure and start training
+
+# Via CLI
+cd /path/to/backend
+python scripts/training/train_trm.py --phase 1 --epochs 10 --device cuda
+```
+
+### Service Status & Management
+
+**Check Running Services**:
+```bash
+cd /home/trevor/Projects/The_Beer_Game
+docker compose ps
+```
+
+**Service Endpoints**:
+| Service | Port | Status Endpoint | Health |
+|---------|------|-----------------|--------|
+| Proxy (Nginx) | 8088 | http://localhost:8088 | ✅ Healthy |
+| Frontend (React) | 3000 | http://localhost:3000 | ✅ Healthy |
+| Backend (FastAPI) | 8000 | http://localhost:8000/health | ✅ Healthy |
+| Database (PostgreSQL) | 5432 | N/A | ✅ Healthy |
+| pgAdmin | 5050 | http://localhost:5050 | ✅ Healthy |
+
+**Restart Services**:
+```bash
+# Restart all
+make down && make up
+
+# Restart specific service
+make restart-backend
+make restart-frontend
+make proxy-restart
+
+# View logs
+make logs
+docker compose logs -f backend
+docker compose logs -f frontend
+```
+
+### Network Access
+
+**Local Machine** (Same Host):
+```
+http://localhost:8088
+```
+
+**LAN/Network Access** (Other machines on same network):
+```
+http://172.29.20.187:8088
+```
+- Accessible from any device on local network
+- No additional configuration required
+- Check firewall if access fails
+
+**Internet Access** (Public):
+Requires additional setup:
+1. **Port Forwarding**: Forward router port 8088 → 172.29.20.187:8088
+2. **Dynamic DNS**: Use No-IP, DuckDNS, or similar
+3. **SSL/TLS**: Configure HTTPS with Let's Encrypt
+4. **Security**: Enable additional authentication, rate limiting
+
+Or use built-in TLS:
+```bash
+make up-tls
+# Access via https://172.29.20.187:8443
+```
+
+### Container Management
+
+**Start System**:
+```bash
+cd /home/trevor/Projects/The_Beer_Game
+
+# Standard startup
+make up
+
+# With GPU support
+make up FORCE_GPU=1
+
+# With TLS (HTTPS)
+make up-tls
+
+# Development mode (hot reload)
+make up-dev
+```
+
+**Stop System**:
+```bash
+# Stop containers (preserve data)
+make down
+
+# Stop and remove volumes (DESTROYS DATA)
+docker compose down -v
+```
+
+**Database Operations**:
+```bash
+# Bootstrap database (first time or after reset)
+make db-bootstrap
+
+# Reset scenarios only
+make db-reset
+
+# Rebuild database completely
+make rebuild-db
+
+# Reseed after rebuild
+make reseed-db
+
+# Reset admin password
+make reset-admin
+```
+
+### Troubleshooting Access
+
+**Can't Access Application**:
+1. Check Docker status: `docker compose ps`
+2. Check all services are "healthy"
+3. Check logs: `make logs`
+4. Restart services: `make down && make up`
+
+**Port Already in Use**:
+```bash
+# Check what's using port 8088
+sudo lsof -i :8088
+
+# Kill process if needed
+sudo kill -9 <PID>
+
+# Or use different port in docker-compose.yml
+```
+
+**Firewall Issues** (Remote Access):
+```bash
+# Check firewall status
+sudo ufw status
+
+# Allow port 8088
+sudo ufw allow 8088/tcp
+
+# Or disable firewall (testing only!)
+sudo ufw disable
+```
+
+**Database Connection Failed**:
+```bash
+# Check database is running
+docker compose ps db
+
+# Check database logs
+docker compose logs db
+
+# Restart database
+docker compose restart db
+```
+
+**502 Bad Gateway (Nginx)**:
+- Backend service not responding
+- Check backend logs: `docker compose logs backend`
+- Restart backend: `make restart-backend`
+
+### Performance Optimization
+
+**For Training** (GPU):
+```bash
+# Enable GPU mode
+make up FORCE_GPU=1
+
+# Verify GPU access
+docker compose exec backend nvidia-smi
+```
+
+**For Production**:
+```bash
+# Use production compose file
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+# Enable Gunicorn workers (in prod config)
+# Scale frontend replicas
+docker compose up --scale frontend=3 -d
+```
+
+### Backup & Restore
+
+**Backup Database**:
+```bash
+# Export database
+docker compose exec db pg_dump -U beer_user beer_game > backup_$(date +%Y%m%d).sql
+
+# Or use pgAdmin backup tool
+# Connect to http://localhost:5050
+# Right-click database → Backup
+```
+
+**Restore Database**:
+```bash
+# Import backup
+cat backup_20260117.sql | docker compose exec -T db psql -U beer_user beer_game
+
+# Or use pgAdmin restore tool
+```
+
+### Monitoring
+
+**View Real-Time Logs**:
+```bash
+# All services
+docker compose logs -f
+
+# Specific service
+docker compose logs -f backend
+docker compose logs -f frontend
+docker compose logs -f proxy
+
+# Last 100 lines
+docker compose logs --tail=100 backend
+```
+
+**Resource Usage**:
+```bash
+# Container stats
+docker stats
+
+# Disk usage
+docker system df
+
+# Clean up unused resources
+docker system prune -a
+```
+
+### Security Best Practices
+
+**Production Checklist**:
+- [ ] Change default passwords (`.env` file)
+- [ ] Enable HTTPS/TLS (`make up-tls`)
+- [ ] Configure firewall rules
+- [ ] Set up rate limiting (Nginx)
+- [ ] Enable MFA for admin accounts
+- [ ] Regular database backups
+- [ ] Update SECRET_KEY in `.env`
+- [ ] Disable DEBUG mode in production
+- [ ] Configure CORS properly
+- [ ] Use strong JWT secrets
+
+**Update Passwords**:
+```bash
+# Edit .env file
+nano /home/trevor/Projects/The_Beer_Game/.env
+
+# Change:
+POSTGRESQL_PASSWORD=change-me-user      → your-strong-password
+POSTGRES_PASSWORD=change-me-user        → your-strong-password
+SECRET_KEY=change-me-secret-key         → your-random-secret-key
+
+# Restart services
+make down && make up
+```
+
+---
+
+## Contact & Resources
+
+**Product Team**:
+- Project Lead: [Name]
+- AI/ML Lead: [Name]
+- Frontend Lead: [Name]
+
+**Documentation**:
+- User Guide: `/docs/user-guide.md`
+- API Reference: `/docs/api-reference.md`
+- Admin Guide: `/docs/admin-guide.md`
+- Developer Guide: `/docs/developer-guide.md`
+
+**Support**:
+- Community Forum: [URL]
+- Email: support@beergame.ai
+- Slack Channel: [URL]
+
+**Demo**:
+- Live Demo: https://demo.beergame.ai
+- Login: demo@example.com / Demo@2026
+- Video Walkthrough: [YouTube URL]
+
+---
+
+**Document Version**: 2.2
+**Last Updated**: January 17, 2026
+**Status**: Production Ready
+**Next Review**: April 15, 2026
+
+---
+
+
+---
+
+![Azirella](../Azirella_Logo.jpg)
+
+> **Copyright © 2026 Azirella Ltd. All rights reserved worldwide.**
+> This document and all information contained herein are the exclusive confidential and proprietary property of Azirella Ltd, 27, 25 Martiou St., #105, 2408 Engomi, Nicosia, Cyprus. No part of this document may be reproduced, stored in a retrieval system, transmitted, distributed, or disclosed in any form or by any means — electronic, mechanical, photocopying, recording, or otherwise — without the prior express written consent of Azirella Ltd. Any unauthorized use constitutes a violation of applicable intellectual property laws and may be subject to legal action.

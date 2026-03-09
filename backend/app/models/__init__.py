@@ -315,6 +315,9 @@ from .collaboration_scenario import CollaborationScenario
 # 26. SAP User Import (SC-filtered user provisioning)
 from .sap_user_import import SAPUserImportLog, SAPRoleMapping
 
+# 26b. SAP Connection Persistence
+from .sap_connection import SAPConnection
+
 # 27. Executive Briefing — LLM-Synthesized Strategy Briefings
 from .executive_briefing import (
     ExecutiveBriefing, BriefingFollowup, BriefingSchedule,
@@ -574,6 +577,8 @@ __all__ = [
     # SAP User Import
     'SAPUserImportLog',
     'SAPRoleMapping',
+    # SAP Connection Persistence
+    'SAPConnection',
     # Override Effectiveness — Bayesian Posteriors
     'OverrideEffectivenessPosterior',
     'CausalMatchPair',

@@ -318,10 +318,10 @@ const Navbar = () => {
   // Build admin menu items based on role and group mode
   const getAdminMenuItems = () => {
     if (isSysAdmin) {
-      // SYSTEM_ADMIN: Organization management and system-wide configuration
+      // SYSTEM_ADMIN: Only tenant and tenant admin management
       return [
         {
-          label: "Organization Management",
+          label: "Organizations",
           icon: GroupsIcon,
           onClick: () => {
             navigate("/admin/tenants");
@@ -329,26 +329,10 @@ const Navbar = () => {
           },
         },
         {
-          label: "Synthetic Data Wizard",
-          icon: DataIcon,
+          label: "Tenant Admins",
+          icon: PersonIcon,
           onClick: () => {
-            navigate("/admin/synthetic-data");
-            handleMenuClose();
-          },
-        },
-        {
-          label: "Supply Chain Configs",
-          icon: NetworkIcon,
-          onClick: () => {
-            navigate("/system/supply-chain-configs");
-            handleMenuClose();
-          },
-        },
-        {
-          label: "System Settings",
-          icon: AdminIcon,
-          onClick: () => {
-            navigate("/system/settings");
+            navigate("/system/users");
             handleMenuClose();
           },
         },
@@ -489,22 +473,6 @@ const Navbar = () => {
           icon: NetworkIcon,
           onClick: () => {
             navigate("/admin/tenant/supply-chain-configs");
-            handleMenuClose();
-          },
-        },
-        {
-          label: "SAP Data Management",
-          icon: DataIcon,
-          onClick: () => {
-            navigate("/admin/sap-data");
-            handleMenuClose();
-          },
-        },
-        {
-          label: "SAP Config Builder",
-          icon: NetworkIcon,
-          onClick: () => {
-            navigate("/deployment/sap-config-builder");
             handleMenuClose();
           },
         },
