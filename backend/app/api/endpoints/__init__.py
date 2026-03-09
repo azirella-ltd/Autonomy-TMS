@@ -41,6 +41,7 @@ from .synthetic_data import router as synthetic_data_router
 
 # SAP Data Management
 from .sap_data_management import router as sap_data_management_router
+from .sap_change_simulator import router as sap_change_simulator_router
 
 # Powell Framework (SDAM)
 from .powell import router as powell_router
@@ -104,6 +105,7 @@ __all__ = [
     'synthetic_data_router',
     # SAP Data Management
     'sap_data_management_router',
+    'sap_change_simulator_router',
     # Powell Framework (SDAM)
     'powell_router',
     'site_agent_router',

@@ -295,7 +295,7 @@ def scenario_2_exec_metro_grocery_rush(customer_id, config_id, users):
             "customer_name": "Metro Grocery Chain",
             "customer_segment": "Retail Grocery",
             "customer_priority": 1,
-            "site": "FOODDIST_DC",
+            "site": "CDC_WEST",
             "order_date": (BASE_DATE + timedelta(hours=9, minutes=15)).isoformat() + "Z",
             "required_delivery_date": "2026-03-05",
             "line_items": [
@@ -812,7 +812,7 @@ def scenario_5_exec_frozen_zone_rebalancing(customer_id, config_id, users):
             "type": "capacity_threshold_breach",
             "detected_at": (BASE_DATE + timedelta(hours=6)).isoformat() + "Z",
             "zone": "frozen",
-            "site": "FOODDIST_DC",
+            "site": "CDC_WEST",
             "current_utilization": 0.93,
             "current_cases": 139500,
             "max_capacity_cases": 150000,

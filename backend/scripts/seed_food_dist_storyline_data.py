@@ -3,7 +3,7 @@
 Seed Food Dist Storyline Data
 
 Generates the underlying transactional data that supports all six storylines
-in the Food Dist Demo Guide ("Late February 2026 — A Week in the Life of FOODDIST_DC").
+in the Food Dist Demo Guide ("Late February 2026 — A Week in the Life of CDC_WEST").
 
 Six interconnected storylines:
   Story 1: March Madness demand surge (+35% Chicken Breast, +20% Turkey Breast)
@@ -56,7 +56,7 @@ BATCH_ID = "STORY_DATA_2026"
 COMPANY_ID = "DF_CORP_13"  # existing company_id in forecast table
 
 # Site IDs (from seed_food_dist_demo.py)
-DC = 256          # FOODDIST_DC (West Valley City, UT)
+DC = 256          # CDC_WEST (West Valley City, UT)
 TYSON_SITE = 257
 KRAFT_SITE = 258
 GENMILLS_SITE = 259

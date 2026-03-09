@@ -3,7 +3,7 @@
 Unified Warm-Start Orchestration — Food Distribution 6-Phase Pipeline.
 
 Executes the complete cold-start → warm-start pipeline for the Food Distribution
-demo (config_id=22, FOODDIST_DC site). Each phase builds on the previous:
+demo (config_id=22, CDC_WEST site). Each phase builds on the previous:
 
   Phase 1 — Individual BC warm-start (TRM curriculum)
   Phase 2 — Multi-head coordinated traces (CoordinatedSimRunner)
@@ -58,7 +58,7 @@ logger = logging.getLogger("warm_start")
 
 FOOD_DIST_CONFIG_ID = 22
 FOOD_DIST_TENANT_ID = 3
-FOOD_DIST_SITE_KEY = "FOODDIST_DC"
+FOOD_DIST_SITE_KEY = "CDC_WEST"
 FOOD_DIST_SITE_ID = 256
 
 # TRMs active at an INVENTORY-type DC (7 of 11)
@@ -122,7 +122,7 @@ async def phase1_trm_warmstart(
 ) -> Dict[str, Any]:
     """Phase 1: Train all 11 TRMs via behavioral cloning from curriculum.
 
-    Even though FOODDIST_DC only uses 7 TRMs, we train all 11 so checkpoints
+    Even though CDC_WEST only uses 7 TRMs, we train all 11 so checkpoints
     are available if the config is extended (e.g., adding a manufacturer site).
     """
     print_phase(1, "Individual BC Warm-Start (TRM Curriculum)")
@@ -473,7 +473,7 @@ async def phase4_stress_test(
 # ---------------------------------------------------------------------------
 
 async def phase5_enable_site_tgnn() -> Dict[str, Any]:
-    """Phase 5: Enable the Site tGNN feature flag for FOODDIST_DC.
+    """Phase 5: Enable the Site tGNN feature flag for CDC_WEST.
 
     Updates the site_agent_configs table to set enable_site_tgnn=True
     for the Food Dist config so the demo shows Layer 1.5 in action.

@@ -41,7 +41,7 @@ The UI is shown as a safety net — "you can also click around if you want" — 
 >
 > "This is the Decision Stream. Every supply chain decision — whether made by an AI agent or a human planner — shows up here in real time."
 >
-> "Right now you're looking at FOODDIST_DC, a food distribution center managing 25 products across 10 suppliers and 10 customers."
+> "Right now you're looking at CDC_WEST, a food distribution center managing 25 products across 10 suppliers and 10 customers."
 >
 > *(pause 1 second)*
 >

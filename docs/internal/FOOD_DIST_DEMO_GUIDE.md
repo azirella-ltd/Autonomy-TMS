@@ -1,6 +1,6 @@
 # Food Distribution Demo Guide
 
-**"Late February 2026 — A Week in the Life of FOODDIST_DC"**
+**"Late February 2026 — A Week in the Life of CDC_WEST"**
 
 This guide walks through a comprehensive demo of the Autonomy platform using the Food Distribution network. The demo showcases all four Adaptive Decision Hierarchy (ADH) levels — from executive strategy briefings down to individual TRM execution decisions — connected by six realistic supply chain storylines.
 
@@ -46,8 +46,8 @@ The unified warm-start script (`scripts/warm_start_food_dist.py`) orchestrates t
 | Phase | What | Duration | Output |
 |-------|------|----------|--------|
 | 1 | TRM curriculum BC (all 11 types, 2 signal phases) | ~5-10 min | `checkpoints/trm_food_dist/trm_*_site256_v*.pt` |
-| 2 | Coordinated multi-head traces (CoordinatedSimRunner) | ~2-3 min | `data/hive_traces_FOODDIST_DC.json` |
-| 3 | Site tGNN training from traces (Layer 1.5 BC) | ~1-2 min | `checkpoints/site_tgnn/FOODDIST_DC/site_tgnn_latest.pt` |
+| 2 | Coordinated multi-head traces (CoordinatedSimRunner) | ~2-3 min | `data/hive_traces_CDC_WEST.json` |
+| 3 | Site tGNN training from traces (Layer 1.5 BC) | ~1-2 min | `checkpoints/site_tgnn/CDC_WEST/site_tgnn_latest.pt` |
 | 4 | Stochastic stress-testing (5 perturbation scenarios) | ~1-2 min | Validation results |
 | 5 | Enable Site tGNN feature flag in `site_agent_configs` | instant | DB row `enable_site_tgnn=true` |
 | 6 | Seed all demo data (planning, storylines, deep demo) | ~1-2 min | Demo-ready database |
@@ -80,7 +80,7 @@ Password for all accounts: **Autonomy@2026**
 Food Dist operates a hub-and-spoke distribution network:
 
 ```
-10 Suppliers                    FOODDIST_DC                    10 Customers
+10 Suppliers                    CDC_WEST                    10 Customers
  (Tyson, Kraft,     ────────►  West Valley City, UT  ────────►  (QUICKSERV, Metro
   Rich Products,                    │                             Grocery, Restaurant
   Nestle, etc.)               25 products                        Supply, etc.)
@@ -93,7 +93,7 @@ Food Dist operates a hub-and-spoke distribution network:
 
 > **Screenshot 1 — Network Topology**
 > *Navigation: Administration > Supply Chain Configs > "Food Dist Distribution Network" > Network tab*
-> Capture the Sankey diagram showing 10 suppliers → FOODDIST_DC → 10 customers with material flows.
+> Capture the Sankey diagram showing 10 suppliers → CDC_WEST → 10 customers with material flows.
 
 ---
 
@@ -578,7 +578,7 @@ Tie back to the Autonomy value proposition:
 
 ### Site tGNN — Cross-TRM Coordination (Layer 1.5)
 
-When enabled (via `make warm-start-food-dist-enable` or the full pipeline), the Site tGNN adds **learned cross-TRM causal coordination** within FOODDIST_DC. This is Layer 1.5 in the 5-layer coordination stack:
+When enabled (via `make warm-start-food-dist-enable` or the full pipeline), the Site tGNN adds **learned cross-TRM causal coordination** within CDC_WEST. This is Layer 1.5 in the 5-layer coordination stack:
 
 ```
 Layer 1   — HiveSignalBus + UrgencyVector       <10ms   (reactive, within hive)

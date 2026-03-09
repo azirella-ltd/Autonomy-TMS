@@ -103,7 +103,7 @@ def get_dc_site_id(db: Session, config_id: int) -> str:
     """Get the DC site's string identifier."""
     dc_node = db.query(Site).filter(
         Site.config_id == config_id,
-        Site.name == "FOODDIST_DC",
+        Site.name == "CDC_WEST",
     ).first()
     if not dc_node:
         dc_node = db.query(Site).filter(

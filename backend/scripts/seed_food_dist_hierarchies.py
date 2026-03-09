@@ -41,7 +41,7 @@ from app.models.tenant import Tenant
 # =============================================================================
 
 DC_CONFIG = {
-    "code": "FOODDIST_DC",
+    "code": "CDC_WEST",
     "name": "Food Dist Utah Distribution Center",
     "city": "Salt Lake City",
     "state": "UT",
@@ -395,7 +395,7 @@ def create_sites(db: Session, config: SupplyChainConfig, company: Company, geo_m
     slc_geo_id = f"GEO_{company.id}_SLC"
     dc = Site(
         config_id=config.id,
-        name="FOODDIST_DC",
+        name="CDC_WEST",
         type="Distribution Center",
         dag_type="DISTRIBUTOR",
         master_type="INVENTORY",
@@ -408,7 +408,7 @@ def create_sites(db: Session, config: SupplyChainConfig, company: Company, geo_m
         }
     )
     db.add(dc)
-    site_map["FOODDIST_DC"] = dc
+    site_map["CDC_WEST"] = dc
     print(f"   Created DC: {dc.name} (geo: {slc_geo_id})")
 
     # Suppliers (no geo linking for now - external to company)
@@ -466,7 +466,7 @@ def create_transportation_lanes(db: Session, config: SupplyChainConfig, site_map
         print("   Lanes already exist")
         return
 
-    dc = site_map.get("FOODDIST_DC")
+    dc = site_map.get("CDC_WEST")
     if not dc:
         print("   ERROR: DC not found")
         return

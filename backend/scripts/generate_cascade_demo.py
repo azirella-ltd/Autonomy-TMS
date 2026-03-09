@@ -106,15 +106,15 @@ SUPPLIER_LEAD_TIMES = {
 # ---------------------------------------------------------------------------
 
 def get_dc_site_id(db: Session, config_id: int) -> str:
-    """Get the DC site's string identifier for allocation location."""
+    """Get the central DC site's string identifier for allocation location."""
     dc_node = db.query(Site).filter(
         Site.config_id == config_id,
-        Site.name == "FOODDIST_DC",
+        Site.name == "CDC_WEST",
     ).first()
     if not dc_node:
         dc_node = db.query(Site).filter(
             Site.config_id == config_id,
-            Site.name.like("%FOODDIST%"),
+            Site.name.like("%CDC%"),
         ).first()
     if not dc_node:
         dc_node = db.query(Site).filter(
@@ -291,8 +291,8 @@ def step4_inventory_rebalancing(db: Session, config_id: int, dc_location_id: str
 
     trm = InventoryRebalancingTRM(db=db, config_id=config_id)
 
-    # Simulate DC (excess) and 3 satellite sites (varying deficit)
-    satellite_sites = ["FOODDIST_RDC_EAST", "FOODDIST_RDC_WEST", "FOODDIST_RDC_CENTRAL"]
+    # Simulate CDC (excess) and 2 regional DCs (varying deficit)
+    satellite_sites = ["RDC_NW", "RDC_SW"]
     total_recs = 0
 
     for sku in random.sample(ALL_SKUS, min(10, len(ALL_SKUS))):

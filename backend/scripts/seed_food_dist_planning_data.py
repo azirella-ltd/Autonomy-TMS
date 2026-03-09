@@ -2225,7 +2225,7 @@ def main():
         # --- Find DC site ---
         dc_site = db.query(Site).filter(
             Site.config_id == config.id,
-            Site.name == "FOODDIST_DC",
+            Site.name == "CDC_WEST",
         ).first()
         if not dc_site:
             dc_site = db.query(Site).filter(

@@ -1,6 +1,6 @@
 # SAP S/4HANA FAA — Demo Scenarios & Autonomy Integration Guide
 
-**Version**: 1.0 | **Date**: 2026-03-08 | **SAP Release**: S/4HANA 2025 (SP00)
+**Version**: 1.1 | **Date**: 2026-03-09 | **SAP Release**: S/4HANA 2025 (SP00)
 
 This document maps the pre-configured logistics demo scenarios in the SAP S/4HANA Fully-Activated Appliance (FAA) to Autonomy platform capabilities. It serves as the playbook for building side-by-side demonstrations that highlight Autonomy's AI-driven differentiators.
 
@@ -20,6 +20,115 @@ This document maps the pre-configured logistics demo scenarios in the SAP S/4HAN
 | HANA DB Name | HDB, Schema: SAPHANADB |
 | SAP Kernel | 916 PL 75 |
 | HANA Version | 2.00.087.00 |
+
+### SAP CAL Appliance Setup
+
+The FAA is provisioned via SAP Cloud Appliance Library (CAL) at [cal.sap.com](https://cal.sap.com). Our appliance is named **"Autonomy"**.
+
+**Appliance Template**: SAP S/4HANA 2025, Fully-Activated Appliance (SP00, Update 25)
+
+#### Virtual Machines
+
+| VM | Size | Purpose |
+|----|------|---------|
+| SAP S/4HANA 2025 & SAP HANA DB 2.0 | r6i.8xlarge (32 cores, 256GB) | ABAP + HANA database |
+| SAP NetWeaver 7.50 SP32 AS JAVA | r6i.xlarge (4 cores, 32GB) | Java stack, Adobe Document Services |
+| Windows Remote Desktop | m6i.xlarge (4 cores, 16GB) | SAP GUI access, admin tasks |
+
+**Running cost**: ~$3.12/hr (~$75/day) when all 3 VMs are active. Suspend when not in use.
+
+#### CAL Configuration Checklist
+
+After creating the appliance, configure these settings before first use:
+
+| Setting | Location | Required Value | Why |
+|---------|----------|---------------|-----|
+| **Public Static IP** | Info tab | Enabled (checkbox) | Prevents external IPs from changing on every restart |
+| **Termination Protection** | Info tab | Enabled (checkbox) | Prevents accidental deletion |
+| **Schedule** | Schedule tab | "Manually activate and suspend" | Prevents unexpected suspension; control costs manually |
+| **IP Range (Access Points)** | Virtual Machines tab | Your public IP with `/32` mask | Restricts access to your machine only |
+| **Backups** | Backups tab | Create initial backup | Protects against configuration loss |
+
+#### Access Points (Ports)
+
+All ports are on the **SAP S/4HANA 2025 & SAP HANA DB 2.0** VM unless noted:
+
+| Port | Service | Purpose |
+|------|---------|---------|
+| 3389 | RDP | Windows Remote Desktop VM access |
+| 3200 | SAP GUI | ABAP client access (SAPGUI protocol) |
+| 3300 | RFC | Remote Function Call (used by Autonomy connection) |
+| 8443 | SAP Cloud Connector | Cloud integration |
+| 44300 | Fiori HTTP | Fiori Launchpad (HTTP) |
+| 44301 | Fiori HTTPS | Fiori Launchpad (HTTPS) |
+| 50000 | HTTP Admin | NetWeaver HTTP administration |
+| 30213 | HANA Studio | HANA database administration |
+| 30215 | HANA indexserver | HANA SQL access |
+| 22 | SSH | Shell access to S/4HANA VM |
+
+**Security**: Set the IP Range for all access points to `<YOUR_PUBLIC_IP>/32`. Determine your public IP with `curl ifconfig.me`. If your ISP uses dual-stack (IPv4 + IPv6), you may need to add both your IPv4 (`x.x.x.x/32`) and IPv6 (`xxxx:xxxx:.../128`) addresses — AWS security groups must allow whichever protocol your traffic arrives on. If connectivity fails after restricting, temporarily use "Clear Restrictions" to reset to `0.0.0.0/0` and troubleshoot.
+
+#### Connection Details
+
+External IPs are assigned by AWS. With **Public Static IP** enabled, these persist across restarts:
+
+| VM | Internal IP | External IP | Primary Access |
+|----|-------------|-------------|----------------|
+| SAP S/4HANA 2025 & SAP HANA DB 2.0 | 10.0.8.104 | *(from CAL Info tab)* | RFC 3300, Fiori 44301, SAP GUI 3200 |
+| SAP NetWeaver 7.50 AS JAVA | 10.0.3.227 | *(from CAL Info tab)* | HTTP 50000 |
+| Windows Remote Desktop | 10.0.15.197 | *(from CAL Info tab)* | RDP 3389 |
+
+**Note**: Internal IPs are stable within the VPC. From the Windows RDP VM, connect to SAP GUI using the internal IP (10.0.8.104) rather than the external IP.
+
+#### Licensing
+
+| Period | Status | Action Required |
+|--------|--------|-----------------|
+| Days 0–30 | Free trial | Hosting fees only |
+| Days 30–90 | Temporary license | Unlock appliance template in SAP CAL |
+| Day 90+ | License key required | Install keys via `/nSLICENSE` (ABAP) and NWA (Java) |
+
+License expiry is shown on the License Status tab in CAL. Plan demo timelines accordingly.
+
+#### Suspend / Activate
+
+- **Suspend**: Appliances list → three-dot menu (**...**) → Suspend. Stops all VMs, preserves data. Storage fees only (~$5-10/day).
+- **Activate**: Appliances list → click "Activate". Takes 10-15 minutes for all VMs to start and SAP services to initialize.
+- **Schedule**: Use "Suspend on an exact date" as a safety net to avoid runaway costs if you forget to suspend manually. Set to a date before license expiry.
+
+#### RDP Access to Windows VM
+
+RDP is required for SAP GUI access (pre-connection steps, demo execution, user management).
+
+**Prerequisites**:
+- RDP client installed (Linux: Remmina or xfreerdp; macOS: Microsoft Remote Desktop; Windows: built-in)
+- Access Points IP Range allows your public IP
+
+**Connection**:
+
+| Field | Value |
+|-------|-------|
+| Protocol | RDP |
+| Server | *(Windows VM external IP from CAL Info tab)* |
+| Port | 3389 |
+| Username | `Administrator` |
+| Password | *(from CAL "Connect" button or Getting Started Guide — uses the Master Password set during appliance creation)* |
+
+**Linux (Remmina)**:
+1. Open Remmina → click "+" or use quick connect
+2. Protocol: RDP, Server: `<WINDOWS_EXTERNAL_IP>`, Username: `Administrator`
+3. If Remmina fails with "Could not resolve hostname to IPv6", install and use xfreerdp instead:
+   ```bash
+   sudo apt install -y freerdp3-x11
+   xfreerdp3 /v:<WINDOWS_EXTERNAL_IP> /u:Administrator /port:3389
+   ```
+
+**Troubleshooting RDP**:
+- **"Could not resolve hostname to IPv6"**: Your network may route via IPv6 but the SAP security group only allows IPv4. Add your IPv6 address to the Access Points IP Range, or use xfreerdp with explicit IPv4.
+- **Connection timeout**: Check that the appliance is Active in CAL (not Suspended). Verify Access Points IP Range includes your current public IP.
+- **After reactivation**: If Public Static IP was not enabled, external IPs will have changed. Check the Info tab for new IPs.
+
+**Once connected**: SAP GUI is pre-installed on the Windows desktop with a connection pre-configured to the S/4HANA system (internal IP 10.0.8.104, instance 00).
 
 ### Pre-Connection Checklist
 
@@ -41,14 +150,6 @@ Before connecting Autonomy to the FAA, the following steps must be completed via
 | Client | 100 |
 | User | ZRFC_AUTONOMY (or unlocked BPINST) |
 | Company Code Filter | 1710 |
-
-### Licensing Timeline
-
-| Period | Status | Action Required |
-|--------|--------|-----------------|
-| Days 0–30 | Free trial | Hosting fees only (~$3.12/hr on AWS) |
-| Days 30–90 | Temporary license | Unlock appliance template in SAP CAL + obtain SAP CAL subscription |
-| Day 90+ | License key required | Install S/4HANA, HANA DB, and NetWeaver J2EE license keys via tCodes `/nSLICENSE` and NWA |
 
 ---
 
@@ -435,7 +536,115 @@ This is not the default extraction behavior — enable via the SAP Data Manageme
 
 ---
 
-## 7. References
+## 8. SAP Change Simulator — Extract Once, Simulate Ongoing
+
+**Purpose**: Extract all data from SAP in a single session (~1-2 hours, ~$3-6), then shut down the FAA to save ~$75/day. A lightweight simulator generates realistic change events that trigger Autonomy's existing CDC pipeline — no SAP needed.
+
+### 8.1 Phase 1: Full SAP Extraction (SAP Running)
+
+1. Connect Autonomy → SAP via RFC (see §1)
+2. Extract all 3 phases from §5 (master data → transactions → history)
+3. Save CSVs to `imports/SAP/{tenant_name}/` as backup (see §6)
+4. Load everything into Autonomy's DB via SAP Data Management ingestion
+5. **Stop SAP instances** via SAP CAL console
+
+### 8.2 Phase 2: SAP Change Simulator (SAP Offline)
+
+Three layers generate realistic delta events from the extracted baseline:
+
+**Layer 1 — Demand Generator** (simulates customer order flow)
+- Uses extracted VBAP demand history to learn demand patterns (seasonality, intermittency, distribution shape)
+- Generates new `outbound_order` / `outbound_order_line` records at realistic rates
+- Applies stochastic perturbation (the 21 distribution types already supported)
+- Optionally injects demand signals (spikes, shifts, bursts — Powell's "styles of uncertainty")
+
+**Layer 2 — Supply Event Generator** (simulates supplier/production activity)
+- New PO receipts with stochastic lead times (fitted from EKBE history)
+- Production completions with stochastic yields (fitted from AFRU history)
+- Inventory movements (goods issues, adjustments, transfers)
+- Supplier disruptions (delayed shipments, partial deliveries, quality holds)
+
+**Layer 3 — CDC Event Emitter** (triggers Autonomy's existing pipeline)
+- Each generated event writes to the AWS SC tables (forecast, inv_level, inbound_order, etc.)
+- Fires the same CDC signals that a real SAP integration would:
+  - `CDCMonitor` detects metric deviations → triggers in `powell_cdc_trigger_log`
+  - `OutcomeCollector` computes actual outcomes for TRM decisions
+  - `CDTCalibrationService` recalibrates from decision-outcome pairs
+  - `ConditionMonitorService` checks 6 real-time conditions
+
+### 8.3 Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│  SAP Change Simulator Service               │
+│                                             │
+│  ┌──────────┐  ┌──────────┐  ┌───────────┐ │
+│  │ Demand   │  │ Supply   │  │ Disruption│ │
+│  │Generator │  │Generator │  │ Generator │ │
+│  └────┬─────┘  └────┬─────┘  └─────┬─────┘ │
+│       │              │              │       │
+│       ▼              ▼              ▼       │
+│  ┌─────────────────────────────────────┐    │
+│  │  CDC Event Emitter                  │    │
+│  │  (writes to AWS SC tables +         │    │
+│  │   fires CDC signals)               │    │
+│  └────────────────┬────────────────────┘    │
+└───────────────────┼─────────────────────────┘
+                    │
+                    ▼
+    ┌───────────────────────────────────┐
+    │  Existing Autonomy CDC Pipeline   │
+    │                                   │
+    │  CDCMonitor → OutcomeCollector    │
+    │  → CDTCalibration → Retraining   │
+    │  → TRM Hive → Site tGNN          │
+    └───────────────────────────────────┘
+```
+
+### 8.4 Disruption Scenarios
+
+Predefined profiles for targeted testing:
+
+| Scenario | Description | TRMs Tested |
+|----------|-------------|-------------|
+| **Steady State** | Normal demand/supply variation (baseline) | All |
+| **Demand Spike** | 2-3x demand surge on select SKUs | ATP, Inventory Buffer |
+| **Supplier Disruption** | Lead time doubles for a key vendor | PO Creation, Rebalancing |
+| **Quality Event** | Yield drops 20% at a plant | Quality Disposition, MO Execution |
+| **Bullwhip Amplification** | Demand signal amplifies through tiers | All (classic Beer Game effect) |
+
+### 8.5 Clock Speed
+
+| Mode | Ratio | 1 Simulated Day = | Use Case |
+|------|-------|--------------------|----------|
+| `1x` | Real-time | 1 real day | Long-running demos |
+| `10x` | Accelerated | 2.4 hours | Training sessions |
+| `100x` | Fast-forward | ~15 minutes | Quick validation |
+| `1000x` | Turbo | ~1.5 minutes | AI training data generation |
+
+### 8.6 Capability Comparison
+
+| Capability | With SAP Running | With Simulator |
+|-----------|-----------------|----------------|
+| Master data extraction | Yes | No (already extracted) |
+| Ongoing demand flow | Yes (real orders) | Yes (simulated from fitted distributions) |
+| TRM decision-making | Yes | Yes (identical CDC triggers) |
+| CDC relearning loop | Yes | Yes (same pipeline) |
+| Disruption scenarios | Wait for real events | On-demand, repeatable |
+| AI training data | Slow (real-time only) | Fast (1000x speed) |
+| Cost | ~$3.12/hr | $0 |
+
+### 8.7 Implementation
+
+- **Service**: `backend/app/services/sap_change_simulator.py`
+- **API**: `backend/app/api/endpoints/sap_change_simulator.py`
+- **Schedule**: Configurable via API — on-demand or periodic tick
+
+The simulator writes to the same DB tables and triggers the same events as a real SAP CDC feed. Autonomy's TRM Hive, GNN, and relearning pipeline cannot distinguish simulated events from real ones.
+
+---
+
+## 9. References
 
 - [SAP S/4HANA FAA Demo Guides — SAP Community](https://community.sap.com/t5/technology-blog-posts-by-sap/sap-s-4hana-fully-activated-appliance-demo-guides/ba-p/13389412)
 - [SAP S/4HANA FAA Getting Started Guide v21](SAP/Documentation/SAP_Getting_Started_Guide_v21.pdf) (local)

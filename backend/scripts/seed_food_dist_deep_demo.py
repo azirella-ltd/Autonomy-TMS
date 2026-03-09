@@ -6,7 +6,7 @@ Populates all 4 Powell levels with interconnected, narrative-driven data
 so every dashboard page has meaningful content when demoing the Food
 Distribution network.
 
-Narrative: "Late February 2026 — A Week in the Life of FOODDIST_DC"
+Narrative: "Late February 2026 — A Week in the Life of CDC_WEST"
 Timeline: Monday Feb 24 – Friday Feb 28, 2026
 
 Six interconnected storylines:
@@ -92,7 +92,7 @@ FD004 = "CFG22_FD004"  # Pie Apple 10 inch
 FD005 = "CFG22_FD005"  # Cake Chocolate Layer
 
 # Site codes
-DC_SITE = "FOODDIST_DC"
+DC_SITE = "CDC_WEST"
 
 # Supplier codes
 TYSON = "TYSON"
@@ -1334,10 +1334,10 @@ def seed_powell_rebalance_decisions(db: Session, config_id: int):
     print("\n9. Seeding Powell rebalance decisions...")
 
     decisions = [
-        # Story 3: Yogurt from overflow to DC
+        # Story 3: Yogurt replenishment CDC_WEST → RDC_NW
         PowellRebalanceDecision(
             config_id=config_id,
-            product_id=RD004, from_site="OVERFLOW_COLD", to_site=DC_SITE,
+            product_id=RD004, from_site=DC_SITE, to_site="RDC_NW",
             recommended_qty=600.0,
             reason="stockout_prevention", urgency=0.85, confidence=0.81,
             source_dos_before=12.5, source_dos_after=8.2,
@@ -1346,10 +1346,10 @@ def seed_powell_rebalance_decisions(db: Session, config_id: int):
             was_executed=True, actual_qty=600.0, actual_cost=2350.0, service_impact=4.2,
             created_at=TUE + timedelta(hours=5),
         ),
-        # Story 4: Ice cream from overflow freezer
+        # Story 4: Ice cream replenishment CDC_WEST → RDC_SW
         PowellRebalanceDecision(
             config_id=config_id,
-            product_id=FD001, from_site="OVERFLOW_FREEZER", to_site=DC_SITE,
+            product_id=FD001, from_site=DC_SITE, to_site="RDC_SW",
             recommended_qty=200.0,
             reason="seasonal_ramp", urgency=0.6, confidence=0.85,
             source_dos_before=15.0, source_dos_after=9.8,
@@ -1358,10 +1358,10 @@ def seed_powell_rebalance_decisions(db: Session, config_id: int):
             was_executed=True, actual_qty=200.0, actual_cost=1750.0, service_impact=2.3,
             created_at=WED + timedelta(hours=7),
         ),
-        # Story 1: Wings pre-positioning
+        # Story 1: Wings pre-positioning CDC_WEST → RDC_SW (Phoenix region)
         PowellRebalanceDecision(
             config_id=config_id,
-            product_id=FP001, from_site=DC_SITE, to_site="STAGING_PHX",
+            product_id=FP001, from_site=DC_SITE, to_site="RDC_SW",
             recommended_qty=300.0,
             reason="demand_surge", urgency=0.75, confidence=0.79,
             source_dos_before=5.3, source_dos_after=4.4,
@@ -1369,12 +1369,12 @@ def seed_powell_rebalance_decisions(db: Session, config_id: int):
             expected_cost=3200.0,
             created_at=WED + timedelta(hours=14),
         ),
-        # Story 2: Cream cheese from alternate
+        # Story 2: Cross-RDC rebalancing RDC_NW → RDC_SW
         PowellRebalanceDecision(
             config_id=config_id,
-            product_id=RD003, from_site="ALT_DC_DENVER", to_site=DC_SITE,
+            product_id=RD003, from_site="RDC_NW", to_site="RDC_SW",
             recommended_qty=400.0,
-            reason="supply_disruption", urgency=0.9, confidence=0.74,
+            reason="inventory_imbalance", urgency=0.9, confidence=0.74,
             source_dos_before=9.1, source_dos_after=5.8,
             dest_dos_before=2.8, dest_dos_after=4.5,
             expected_cost=3800.0,
@@ -1727,7 +1727,7 @@ def seed_override_posteriors(db: Session, users: dict):
 def main():
     print("=" * 70)
     print("Seeding Food Dist Deep Demo — Action Layer Data")
-    print("Narrative: Late February 2026 — A Week in the Life of FOODDIST_DC")
+    print("Narrative: Late February 2026 — A Week in the Life of CDC_WEST")
     print("=" * 70)
 
     SyncSessionLocal = sessionmaker(

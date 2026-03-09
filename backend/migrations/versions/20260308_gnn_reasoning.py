@@ -19,11 +19,21 @@ import sqlalchemy as sa
 
 
 def upgrade() -> None:
-    op.add_column(
-        "gnn_directive_reviews",
-        sa.Column("proposed_reasoning", sa.Text(), nullable=True),
+    conn = op.get_bind()
+    result = conn.execute(
+        sa.text("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'gnn_directive_reviews')")
     )
+    if result.scalar():
+        op.add_column(
+            "gnn_directive_reviews",
+            sa.Column("proposed_reasoning", sa.Text(), nullable=True),
+        )
 
 
 def downgrade() -> None:
-    op.drop_column("gnn_directive_reviews", "proposed_reasoning")
+    conn = op.get_bind()
+    result = conn.execute(
+        sa.text("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'gnn_directive_reviews')")
+    )
+    if result.scalar():
+        op.drop_column("gnn_directive_reviews", "proposed_reasoning")

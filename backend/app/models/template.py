@@ -84,7 +84,7 @@ class Template(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relations
-    creator = relationship("User", foreign_keys=[created_by], backref="templates")
+    creator = relationship("User", foreign_keys=[created_by])
 
     def __repr__(self):
         return f"<Template {self.name} ({self.category})>"
@@ -114,7 +114,7 @@ class TutorialProgress(Base):
     last_accessed = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relations
-    user = relationship("User", backref="tutorial_progress")
+    user = relationship("User")
 
     def __repr__(self):
         return f"<TutorialProgress user={self.user_id} tutorial={self.tutorial_id}>"
@@ -146,7 +146,7 @@ class UserPreferences(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relations
-    user = relationship("User", backref="preferences")
+    user = relationship("User")
 
     def __repr__(self):
         return f"<UserPreferences user={self.user_id}>"

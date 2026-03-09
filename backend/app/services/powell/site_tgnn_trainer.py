@@ -102,7 +102,7 @@ class SiteTGNNTrainer:
     """3-phase training pipeline for Site tGNN (Layer 1.5).
 
     Usage:
-        trainer = SiteTGNNTrainer(site_key="FOODDIST_DC", config_id=22)
+        trainer = SiteTGNNTrainer(site_key="CDC_WEST", config_id=22)
 
         # Phase 1: BC from simulation traces
         samples = trainer.prepare_bc_data(traces)

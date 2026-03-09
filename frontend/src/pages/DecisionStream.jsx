@@ -75,7 +75,7 @@ const DecisionStream = () => {
 
   // Load digest when config changes
   useEffect(() => {
-    loadDigest();
+    if (selectedConfigId) loadDigest();
   }, [selectedConfigId]);
 
   // Scroll to bottom on new messages

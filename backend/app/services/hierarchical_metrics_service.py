@@ -191,7 +191,7 @@ class HierarchicalMetricsService:
     def _build_site_hierarchy(self, tenant_id: int) -> Dict[str, Any]:
         """
         Build site hierarchy from DB:
-        ALL → Region (NW/SW/Central…) → Site (FOODDIST_DC, CUST_*)
+        ALL → Region (NW/SW/Central…) → Site (CDC_WEST, CUST_*)
         """
         if self.db is None:
             return {}

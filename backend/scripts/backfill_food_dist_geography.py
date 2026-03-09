@@ -4,7 +4,7 @@ Backfill hierarchical Geography records for existing Food Dist sites.
 
 Creates a proper Country → Region → State → City hierarchy using parent_geo_id,
 updates site coordinates to new locations (DC in Utah, customers in AZ/CA/OR/WA),
-and renames DOTFOODS_DC site to FOODDIST_DC.
+and renames DOTFOODS_DC site to CDC_WEST.
 
 Safe to re-run - updates existing records and creates missing ones.
 
@@ -54,7 +54,7 @@ STATE_NAMES = {
 # Site coordinates: code -> (city, state, lat, lon)
 SITE_COORDINATES = {
     # DC - West Valley City, UT
-    "FOODDIST_DC": ("West Valley City", "UT", 40.6916, -112.0011),
+    "CDC_WEST": ("West Valley City", "UT", 40.6916, -112.0011),
     # Also match old name for migration
     "DOTFOODS_DC": ("West Valley City", "UT", 40.6916, -112.0011),
     # Suppliers (real HQ locations)
@@ -83,7 +83,7 @@ SITE_COORDINATES = {
 
 # Rename map for sites: old_name -> new_name
 SITE_RENAMES = {
-    "DOTFOODS_DC": "FOODDIST_DC",
+    "DOTFOODS_DC": "CDC_WEST",
 }
 
 

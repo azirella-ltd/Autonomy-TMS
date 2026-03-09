@@ -188,7 +188,7 @@ def seed_site_hierarchy(db: Session, customer_id: int) -> dict:
 
     # Site level - DC + all 10 customers
     site_defs = [
-        ("FOODDIST_DC", "Food Dist Central DC"),
+        ("CDC_WEST", "Food Dist Central DC"),
         ("RESTSUPPLY", "Restaurant Supply Co"),
         ("METROGRO", "Metro Grocery Chain"),
         ("CAMPUSDINE", "Campus Dining Services"),
@@ -1444,7 +1444,7 @@ def main():
         from app.models.supply_chain_config import Site
         dc_node = db.query(Site).filter(
             Site.config_id == config.id,
-            Site.name == "FOODDIST_DC",
+            Site.name == "CDC_WEST",
         ).first()
         if not dc_node:
             dc_node = db.query(Site).filter(

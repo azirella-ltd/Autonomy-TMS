@@ -463,7 +463,7 @@ CUSTOMERS = [
 @dataclass
 class DCConfiguration:
     """Configuration for the Distribution Center."""
-    code: str = "FOODDIST_DC"
+    code: str = "CDC_WEST"
     name: str = "Food Dist Western Distribution Center"
     location: str = "West Valley City, UT"
     latitude: float = 40.6916
@@ -693,9 +693,10 @@ class FoodDistConfigGenerator:
             tenant_id=self.tenant.id,
             is_active=True,
             site_type_definitions=[
-                {"type": "SUPPLIER", "label": "Supplier", "order": 0, "is_required": False, "master_type": "market_supply"},
-                {"type": "DISTRIBUTOR", "label": "Distributor", "order": 1, "is_required": False, "master_type": "inventory"},
-                {"type": "RETAILER", "label": "Retailer", "order": 2, "is_required": False, "master_type": "market_demand"},
+                {"type": "market_supply", "label": "Supplier", "order": 3, "is_required": True, "master_type": "market_supply"},
+                {"type": "CDC", "label": "Central DC", "order": 2, "is_required": False, "master_type": "inventory"},
+                {"type": "RDC", "label": "Regional DC", "order": 1, "is_required": False, "master_type": "inventory"},
+                {"type": "market_demand", "label": "Customer", "order": 0, "is_required": True, "master_type": "market_demand"},
             ],
         )
         self.db.add(config)
@@ -708,8 +709,8 @@ class FoodDistConfigGenerator:
         dc = Node(
             config_id=self.sc_config.id,
             name=DC_CONFIG.code,
-            type="Distribution Center",  # Human-readable type
-            dag_type="DISTRIBUTOR",  # DAG identity
+            type="Central Distribution Center",  # Human-readable type
+            dag_type="CDC",  # DAG identity
             master_type="INVENTORY",  # Master processing type
             attributes={
                 "initial_inventory": 50000,
@@ -737,7 +738,7 @@ class FoodDistConfigGenerator:
                 config_id=self.sc_config.id,
                 name=supplier_def.code,
                 type=f"Supplier - {supplier_def.name}",  # Human-readable type
-                dag_type="SUPPLIER",  # DAG identity
+                dag_type="market_supply",  # DAG identity
                 master_type="MARKET_SUPPLY",  # Master processing type
                 attributes={
                     "description": supplier_def.description,
@@ -764,7 +765,7 @@ class FoodDistConfigGenerator:
                 config_id=self.sc_config.id,
                 name=customer_def.code,
                 type=f"Customer - {customer_def.name}",  # Human-readable type
-                dag_type="RETAILER",  # DAG identity (customers are demand sinks)
+                dag_type="market_demand",  # DAG identity (customers are demand sinks)
                 master_type="MARKET_DEMAND",  # Master processing type
                 attributes={
                     "segment": customer_def.segment,

@@ -132,7 +132,7 @@ class SiteTGNNInferenceService:
     continuity (GRU memory).
 
     Usage:
-        service = SiteTGNNInferenceService(site_key="FOODDIST_DC", config_id=22)
+        service = SiteTGNNInferenceService(site_key="CDC_WEST", config_id=22)
         output = service.infer(signal_bus, urgency_vector, recent_decisions, feedback)
         for trm_name, adj in output.urgency_adjustments.items():
             urgency_vector.adjust(TRM_INDICES[trm_name], adj)

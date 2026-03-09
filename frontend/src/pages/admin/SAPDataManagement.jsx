@@ -298,6 +298,48 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
   const isRFC = formData.connection_method === 'rfc';
   const isCSV = formData.connection_method === 'csv';
 
+  // Valid connection methods per SAP system type
+  const methodsBySystemType = {
+    s4hana: ['odata', 'rfc', 'csv', 'idoc'],  // Full modern stack
+    ecc:    ['rfc', 'idoc', 'csv'],            // No native OData (requires Gateway add-on)
+    apo:    ['rfc', 'idoc', 'csv'],            // Legacy planning — RFC/IDoc for CIF
+    bw:     ['rfc', 'csv'],                    // Data warehouse — RFC extraction only
+  };
+
+  // Default methods per system type (first valid option)
+  const defaultMethodBySystemType = {
+    s4hana: 'odata',
+    ecc: 'rfc',
+    apo: 'rfc',
+    bw: 'rfc',
+  };
+
+  // SAP client presets (from SAP S/4HANA FAA Getting Started Guide §1.4)
+  const clientPresets = [
+    { value: '100', label: '100 — Trial & Exploration (demo data, US locale, company 1710)' },
+    { value: '200', label: '200 — Ready-to-Activate (empty, custom BP setup)' },
+    { value: '400', label: '400 — Best Practices Reference (43 localizations, master data only)' },
+    { value: '000', label: '000 — Standard Delivery (admin only)' },
+  ];
+
+  const availableMethods = connectionMethods.filter(
+    (m) => (methodsBySystemType[formData.system_type] || methodsBySystemType.s4hana).includes(m.value)
+  );
+
+  // When system type changes, reset connection method if current is invalid
+  const handleSystemTypeChange = (systemType) => {
+    const validMethods = methodsBySystemType[systemType] || methodsBySystemType.s4hana;
+    const currentMethodValid = validMethods.includes(formData.connection_method);
+    const newMethod = currentMethodValid ? formData.connection_method : (defaultMethodBySystemType[systemType] || validMethods[0]);
+    let port = formData.port;
+    if (!currentMethodValid) {
+      if (newMethod === 'odata') port = 44301;
+      else if (newMethod === 'rfc' || newMethod === 'idoc') port = 3300;
+      else port = '';
+    }
+    setFormData({ ...formData, system_type: systemType, connection_method: newMethod, port });
+  };
+
   // Set sensible default port when method changes
   const handleMethodChange = (method) => {
     let port = formData.port;
@@ -417,7 +459,7 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
                 <label className="block text-sm font-medium mb-1">System Type</label>
                 <NativeSelect
                   value={formData.system_type}
-                  onChange={(e) => setFormData({ ...formData, system_type: e.target.value })}
+                  onChange={(e) => handleSystemTypeChange(e.target.value)}
                 >
                   {systemTypes.map((type) => (
                     <option key={type.value} value={type.value}>{type.label}</option>
@@ -430,7 +472,7 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
                   value={formData.connection_method}
                   onChange={(e) => handleMethodChange(e.target.value)}
                 >
-                  {connectionMethods.map((method) => (
+                  {availableMethods.map((method) => (
                     <option key={method.value} value={method.value}>{method.label}</option>
                   ))}
                 </NativeSelect>
@@ -516,12 +558,14 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium mb-1">Client</label>
-                    <Input
+                    <NativeSelect
                       value={formData.client}
                       onChange={(e) => setFormData({ ...formData, client: e.target.value })}
-                      placeholder="100"
-                    />
-                    <p className="text-xs text-muted-foreground mt-0.5">ABAP Client (100=demo, 200=BP activate, 400=BP reference)</p>
+                    >
+                      {clientPresets.map((c) => (
+                        <option key={c.value} value={c.value}>{c.label}</option>
+                      ))}
+                    </NativeSelect>
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Language</label>

@@ -171,11 +171,94 @@ class TenantService:
         return tenant
 
     def delete_tenant(self, tenant_id: int):
-        """Delete a tenant by ID."""
+        """Delete a tenant and all associated data.
+
+        Uses explicit SQL with savepoints to avoid ORM cascade issues with
+        models whose tables may not exist (e.g. templates, tutorial_progress).
+        """
+        from sqlalchemy import text
+
         tenant = self.db.query(Tenant).filter(Tenant.id == tenant_id).first()
         if not tenant:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
-        self.db.delete(tenant)
+
+        # Get user IDs belonging to this tenant
+        user_ids = [u.id for u in self.db.query(User.id).filter(User.tenant_id == tenant_id).all()]
+
+        def _safe_execute(sql_str, params=None):
+            """Execute SQL inside a savepoint so failures don't abort the transaction."""
+            savepoint = self.db.begin_nested()
+            try:
+                self.db.execute(text(sql_str), params or {})
+                savepoint.commit()
+            except Exception:
+                savepoint.rollback()
+
+        # Delete user-FK dependent rows
+        user_fk_tables = [
+            "scenario_user_periods", "scenario_user_actions", "scenario_user_achievements",
+            "scenario_user_badges", "scenario_user_stats", "scenario_user_inventory",
+            "scenario_users", "user_sessions", "refresh_tokens", "token_blacklist",
+            "password_reset_tokens", "password_history", "push_tokens",
+            "notification_preferences", "notification_logs",
+            "user_role_assignments", "user_roles", "user_sso_mappings",
+            "audit_logs", "chat_messages", "comments", "comment_mentions",
+            "decision_comments", "decision_history", "planning_decisions",
+            "agent_suggestions", "supervisor_actions",
+            "leaderboard_entries", "achievement_notifications",
+            "team_channel_members", "team_messages",
+            "override_effectiveness_posteriors", "override_causal_match_pairs",
+            "approval_actions", "approval_requests",
+            "forecast_adjustments", "consensus_plan_votes", "consensus_plan_comments",
+            "briefing_followups", "executive_briefings", "briefing_schedules",
+            "watchlists", "sop_worklist_items",
+        ]
+        if user_ids:
+            id_list = ",".join(str(uid) for uid in user_ids)
+            for tbl in user_fk_tables:
+                _safe_execute(f"DELETE FROM {tbl} WHERE user_id IN ({id_list})")
+            # Nullify created_by FKs that reference these users
+            created_by_tables = [
+                "forecast_versions", "supply_plan", "mps_plans",
+                "supply_chain_configs", "scenarios", "agent_configs",
+                "approval_templates", "consensus_plans",
+            ]
+            for tbl in created_by_tables:
+                _safe_execute(f"UPDATE {tbl} SET created_by = NULL WHERE created_by IN ({id_list})")
+
+        # Break the circular tenant.admin_id → users FK before deleting users
+        _safe_execute(
+            "UPDATE tenants SET admin_id = NULL WHERE id = :tid",
+            {"tid": tenant_id}
+        )
+
+        # Delete tenant-scoped data (order matters: children before parents)
+        tenant_fk_tables = [
+            # Planning & workflow
+            "planning_cycles", "workflow_step_executions", "workflow_executions",
+            "workflow_templates", "sync_table_results", "sync_job_executions",
+            "sync_job_configs", "sap_connections",
+            "planning_feedback_signal", "planning_policy_envelope",
+            "condition_alerts", "guardrail_directives",
+            "decision_governance_policies", "authority_definitions",
+            # Supply chain config children (sites, lanes, products, markets)
+            "markets", "market_demands", "transportation_lane", "product_bom",
+            "product", "site", "supply_chain_configs",
+        ]
+        for tbl in tenant_fk_tables:
+            _safe_execute(f"DELETE FROM {tbl} WHERE tenant_id = :tid", {"tid": tenant_id})
+
+        # Delete scenarios and their children
+        _safe_execute(
+            "DELETE FROM scenarios WHERE tenant_id = :tid",
+            {"tid": tenant_id}
+        )
+
+        # Delete users (backrefs to non-existent tables removed in template.py)
+        self.db.query(User).filter(User.tenant_id == tenant_id).delete(synchronize_session=False)
+
+        # Delete the tenant
+        self.db.query(Tenant).filter(Tenant.id == tenant_id).delete(synchronize_session=False)
         self.db.commit()
         return {"message": "Tenant deleted"}
 

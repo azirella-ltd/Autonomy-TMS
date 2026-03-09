@@ -208,6 +208,16 @@ def _humanize_ids(text: str, product_names: Dict[str, str]) -> str:
     return text
 
 
+def _fmt_qty(val) -> str:
+    """Format a quantity as a rounded integer string, or '?' if missing."""
+    if val is None:
+        return "?"
+    try:
+        return f"{int(round(float(val))):,}"
+    except (ValueError, TypeError):
+        return str(val)
+
+
 def _build_decision_summary(decision, decision_type: str) -> str:
     """Build a human-readable one-line summary for any decision type.
 
@@ -217,15 +227,15 @@ def _build_decision_summary(decision, decision_type: str) -> str:
     location = getattr(decision, "location_id", None) or getattr(decision, "from_site", None) or ""
 
     if decision_type == "atp":
-        qty = getattr(decision, "requested_qty", "?")
+        qty = _fmt_qty(getattr(decision, "requested_qty", None))
         return f"ATP: Fulfill {qty} units of {product} at {location}"
     elif decision_type == "rebalancing":
-        qty = getattr(decision, "recommended_qty", "?")
+        qty = _fmt_qty(getattr(decision, "recommended_qty", None))
         src = getattr(decision, "from_site", "?")
         dest = getattr(decision, "to_site", "?")
         return f"Rebalance: Transfer {qty} of {product} from {src} to {dest}"
     elif decision_type == "po_creation":
-        qty = getattr(decision, "recommended_qty", "?")
+        qty = _fmt_qty(getattr(decision, "recommended_qty", None))
         return f"PO: Order {qty} units of {product} at {location}"
     elif decision_type == "order_tracking":
         severity = getattr(decision, "severity", "INFO")
@@ -272,16 +282,16 @@ def _get_suggested_action(decision, decision_type: str) -> str:
         promised = getattr(decision, "promised_qty", None)
         requested = getattr(decision, "requested_qty", None)
         if getattr(decision, "can_fulfill", False):
-            return f"Fulfill {int(promised):,} units" if promised is not None else "Fulfill order"
+            return f"Fulfill {_fmt_qty(promised)} units" if promised is not None else "Fulfill order"
         if promised is not None and requested is not None:
-            return f"Cannot fulfill — suggest partial ({int(promised):,} of {int(requested):,})"
+            return f"Cannot fulfill — suggest partial ({_fmt_qty(promised)} of {_fmt_qty(requested)})"
         return "Cannot fulfill — review order"
     elif decision_type == "rebalancing":
         qty = getattr(decision, "recommended_qty", None)
-        return f"Transfer {int(qty):,} units" if qty is not None else "Transfer units"
+        return f"Transfer {_fmt_qty(qty)} units" if qty is not None else "Transfer units"
     elif decision_type == "po_creation":
         qty = getattr(decision, "recommended_qty", None)
-        return f"Order {int(qty):,} units" if qty is not None else "Order units"
+        return f"Order {_fmt_qty(qty)} units" if qty is not None else "Order units"
     elif decision_type == "order_tracking":
         return getattr(decision, "recommended_action", "Review exception")
     elif decision_type == "mo_execution":
@@ -699,18 +709,29 @@ class DecisionStreamService:
             for pid, pdesc in result.fetchall():
                 if pid and pdesc:
                     # Extract short name: "Orange Juice Premium [REFRIGERATED/BEV/BV001]" → "Orange Juice Premium"
-                    product_names[str(pid)] = pdesc.split("[")[0].strip() if "[" in pdesc else pdesc
+                    short_name = pdesc.split("[")[0].strip() if "[" in pdesc else pdesc
+                    product_names[str(pid)] = short_name
+                    # Also map the short suffix (e.g., "BV002" from "CFG22_BV002")
+                    # so older decisions that stored truncated IDs still resolve
+                    spid = str(pid)
+                    if "_" in spid:
+                        suffix = spid.split("_", 1)[1]
+                        if suffix not in product_names:
+                            product_names[suffix] = short_name
         except Exception:
             pass
         try:
             result = await self.db.execute(
-                select(Site.name).where(
+                select(Site.id, Site.name).where(
                     Site.config_id.in_(config_filter)
                 )
             )
-            for (sname,) in result.fetchall():
+            for sid, sname in result.fetchall():
                 if sname:
                     site_names[str(sname)] = sname
+                    # Also map numeric ID → name for decisions that stored IDs
+                    if sid is not None:
+                        site_names[str(sid)] = sname
         except Exception as e:
             logger.warning(f"Failed to load site names: {e}")
 
@@ -766,7 +787,7 @@ class DecisionStreamService:
                         "product_name": product_names.get(str(pid)) if pid else None,
                         "site_id": site_id,
                         "site_name": site_names.get(str(site_id)) if site_id else None,
-                        "urgency": getattr(row, "urgency_at_time", None),
+                        "urgency": getattr(row, "urgency", None) or getattr(row, "urgency_at_time", None),
                         "confidence": getattr(row, "confidence", None),
                         "economic_impact": None,
                         "reason": _get_reason(row, type_key),

@@ -6051,6 +6051,7 @@ from app.api.endpoints import (
     planning_hierarchy_router,
     synthetic_data_router,
     sap_data_management_router,
+    sap_change_simulator_router,
     powell_router,
     site_agent_router,
     powell_training_router,
@@ -6083,6 +6084,7 @@ api.include_router(planning_decisions_router, prefix="/planning-decisions", tags
 api.include_router(planning_hierarchy_router, prefix="/planning-hierarchy", tags=["planning-hierarchy"])
 api.include_router(synthetic_data_router, prefix="/synthetic-data", tags=["synthetic-data"])
 api.include_router(sap_data_management_router, prefix="/sap-data", tags=["sap-data-management"])
+api.include_router(sap_change_simulator_router, tags=["sap-change-simulator"])
 api.include_router(powell_router, prefix="/powell", tags=["powell"])
 api.include_router(site_agent_router, tags=["site-agent"])
 api.include_router(powell_training_router, prefix="/powell-training", tags=["powell-training"])
