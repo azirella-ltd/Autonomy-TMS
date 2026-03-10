@@ -188,6 +188,20 @@ class Capability(str, Enum):
     MANAGE_PO_WORKLIST = "manage_po_worklist"  # Override PO decisions (qty, supplier, timing)
     VIEW_ORDER_TRACKING_WORKLIST = "view_order_tracking_worklist"  # View order exceptions
     MANAGE_ORDER_TRACKING_WORKLIST = "manage_order_tracking_worklist"  # Override exception actions
+    VIEW_MO_WORKLIST = "view_mo_worklist"  # View MO execution decisions
+    MANAGE_MO_WORKLIST = "manage_mo_worklist"  # Override MO decisions
+    VIEW_TO_WORKLIST = "view_to_worklist"  # View TO execution decisions
+    MANAGE_TO_WORKLIST = "manage_to_worklist"  # Override TO decisions
+    VIEW_QUALITY_WORKLIST = "view_quality_worklist"  # View quality disposition decisions
+    MANAGE_QUALITY_WORKLIST = "manage_quality_worklist"  # Override quality decisions
+    VIEW_MAINTENANCE_WORKLIST = "view_maintenance_worklist"  # View maintenance scheduling decisions
+    MANAGE_MAINTENANCE_WORKLIST = "manage_maintenance_worklist"  # Override maintenance decisions
+    VIEW_SUBCONTRACTING_WORKLIST = "view_subcontracting_worklist"  # View subcontracting routing decisions
+    MANAGE_SUBCONTRACTING_WORKLIST = "manage_subcontracting_worklist"  # Override subcontracting decisions
+    VIEW_FORECAST_ADJ_WORKLIST = "view_forecast_adj_worklist"  # View forecast adjustment decisions
+    MANAGE_FORECAST_ADJ_WORKLIST = "manage_forecast_adj_worklist"  # Override forecast adjustments
+    VIEW_BUFFER_WORKLIST = "view_buffer_worklist"  # View inventory buffer adjustment decisions
+    MANAGE_BUFFER_WORKLIST = "manage_buffer_worklist"  # Override buffer decisions
 
     # Collaboration
     VIEW_TENANTS = "view_tenants"

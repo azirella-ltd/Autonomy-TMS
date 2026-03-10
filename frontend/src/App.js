@@ -122,6 +122,13 @@ import ATPWorklistPage from "./pages/planning/ATPWorklistPage.jsx";
 import RebalancingWorklistPage from "./pages/planning/RebalancingWorklistPage.jsx";
 import POWorklistPage from "./pages/planning/POWorklistPage.jsx";
 import OrderTrackingWorklistPage from "./pages/planning/OrderTrackingWorklistPage.jsx";
+import MOWorklistPage from "./pages/planning/MOWorklistPage.jsx";
+import TOWorklistPage from "./pages/planning/TOWorklistPage.jsx";
+import QualityWorklistPage from "./pages/planning/QualityWorklistPage.jsx";
+import MaintenanceWorklistPage from "./pages/planning/MaintenanceWorklistPage.jsx";
+import SubcontractingWorklistPage from "./pages/planning/SubcontractingWorklistPage.jsx";
+import ForecastAdjWorklistPage from "./pages/planning/ForecastAdjWorklistPage.jsx";
+import BufferWorklistPage from "./pages/planning/BufferWorklistPage.jsx";
 import { TrainingLeaderboards, TrainingReports, TrainingCompare } from "./pages/training";
 import ExecutiveDashboard from "./pages/ExecutiveDashboard";
 import ExecutiveBriefingPage from "./pages/ExecutiveBriefingPage";
@@ -723,6 +730,62 @@ const AppContent = () => {
               element={
                 <CapabilityProtectedRoute requiredCapability="view_order_tracking_worklist">
                   <OrderTrackingWorklistPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/execution/mo-worklist"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_mo_worklist">
+                  <MOWorklistPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/execution/to-worklist"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_to_worklist">
+                  <TOWorklistPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/execution/quality-worklist"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_quality_worklist">
+                  <QualityWorklistPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/execution/maintenance-worklist"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_maintenance_worklist">
+                  <MaintenanceWorklistPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/execution/subcontracting-worklist"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_subcontracting_worklist">
+                  <SubcontractingWorklistPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/execution/forecast-adj-worklist"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_forecast_adj_worklist">
+                  <ForecastAdjWorklistPage />
+                </CapabilityProtectedRoute>
+              }
+            />
+            <Route
+              path="/planning/execution/buffer-worklist"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_buffer_worklist">
+                  <BufferWorklistPage />
                 </CapabilityProtectedRoute>
               }
             />
