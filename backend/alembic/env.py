@@ -42,16 +42,11 @@ def run_migrations_offline():
     """
     url = get_url()
 
-    # Detect database dialect for render_as_batch setting
-    # PostgreSQL doesn't need batch mode (that's for SQLite)
-    render_batch = "sqlite" in url
-
     context.configure(
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        render_as_batch=render_batch,
     )
 
     with context.begin_transaction():
@@ -70,9 +65,6 @@ def run_migrations_online():
 
     print(f"Running migrations with database: {url.split('@')[-1] if '@' in url else url}")
 
-    # Detect database dialect for render_as_batch setting
-    render_batch = "sqlite" in url
-
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
@@ -83,7 +75,6 @@ def run_migrations_online():
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
-            render_as_batch=render_batch,
         )
 
         with context.begin_transaction():

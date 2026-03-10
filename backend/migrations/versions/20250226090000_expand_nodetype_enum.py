@@ -16,17 +16,6 @@ depends_on = None
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    if bind and bind.dialect.name == "sqlite":
-        # Recreate table with a plain string column to allow new node types.
-        with op.batch_alter_table("nodes", recreate="always") as batch_op:
-            batch_op.alter_column(
-                "type",
-                existing_type=sa.String(length=100),
-                type_=sa.String(length=32),
-                nullable=False,
-            )
-        return
     op.execute(
         """
         ALTER TABLE nodes
@@ -43,9 +32,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    bind = op.get_bind()
-    if bind and bind.dialect.name == "sqlite":
-        return
     op.execute(
         """
         ALTER TABLE nodes

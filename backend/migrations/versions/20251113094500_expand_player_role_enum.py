@@ -56,7 +56,7 @@ def upgrade() -> None:
             )
         )
     else:
-        # SQLite and other dialects store enums as text; no action required
+        # Other dialects store enums as text; no action required
         pass
 
 

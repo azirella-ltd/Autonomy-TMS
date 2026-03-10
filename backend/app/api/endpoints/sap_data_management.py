@@ -65,7 +65,7 @@ class ConnectionCreateRequest(BaseModel):
     name: str = Field(..., description="Connection name")
     description: Optional[str] = Field(None, description="Connection description")
     system_type: str = Field(..., description="SAP system type: s4hana, apo, ecc, bw")
-    connection_method: str = Field(..., description="Connection method: rfc, csv, odata, idoc")
+    connection_method: str = Field(..., description="Connection method: rfc, csv, odata, idoc, hana_db")
     # Network
     hostname: Optional[str] = Field(None, description="Hostname or IP address")
     port: Optional[int] = Field(None, description="Port number")
@@ -84,6 +84,9 @@ class ConnectionCreateRequest(BaseModel):
     # CSV
     csv_directory: Optional[str] = Field(None, description="CSV export directory")
     csv_pattern: Optional[str] = Field(None, description="CSV file glob pattern")
+    # HANA DB
+    hana_schema: Optional[str] = Field("SAPHANADB", description="HANA database schema")
+    hana_port: Optional[int] = Field(None, description="HANA SQL port (typically 30215)")
     # Advanced
     sap_router_string: Optional[str] = Field(None, description="SAP Router string")
     cloud_connector_location_id: Optional[str] = Field(None, description="Cloud Connector location ID")
@@ -105,6 +108,8 @@ class ConnectionResponse(BaseModel):
     language: Optional[str] = None
     odata_base_path: Optional[str] = None
     csv_directory: Optional[str] = None
+    hana_schema: Optional[str] = None
+    hana_port: Optional[int] = None
     is_active: bool
     is_validated: bool
     last_validated_at: Optional[datetime] = None
@@ -1164,7 +1169,7 @@ class StepResultResponse(BaseModel):
     warnings: List[str]
     table_inventory: List[Dict[str, Any]] = []
     completed_steps: List[int]
-    total_steps: int = 8
+    total_steps: int = 9
 
 
 class BuildStatusResponse(BaseModel):
@@ -1226,7 +1231,7 @@ async def execute_build_step(
     Steps 2-8 create entities incrementally. Each step commits
     and returns results with anomaly detection.
     """
-    if step_number < 2 or step_number > 8:
+    if step_number < 2 or step_number > 9:
         raise HTTPException(status_code=400, detail="Step must be between 2 and 8")
 
     sap_data = await _load_sap_data(db, current_user.tenant_id, request.connection_id)
@@ -1351,6 +1356,27 @@ async def analyze_z_table_deep(
     return result
 
 
+# Standard SAP tables extracted for supply chain config building
+STANDARD_SAP_TABLES = [
+    # Master data
+    "T001", "T001W", "T001L", "MARA", "MAKT", "MARC", "MBEW", "MARD", "MARM",
+    "STKO", "STPO", "LFA1", "KNA1", "EORD", "EINA", "EINE",
+    "CRHD", "PLKO", "PLPO", "ADRC",
+    # Transactional data (orders)
+    "VBAK", "VBAP", "VBEP", "EKKO", "EKPO", "EKET",
+    "LIKP", "LIPS", "AFKO", "AFPO", "RESB",
+    # Status & quality
+    "JEST", "TJ02T", "QMEL", "QALS",
+    # Forecasts (PIR)
+    "PBIM", "PBED",
+    # Equipment / maintenance
+    "EQUI", "AUFK",
+    # APO tables (if available)
+    "/SAPAPO/LOC", "/SAPAPO/SNPFC", "/SAPAPO/MATLOC",
+    "/SAPAPO/TRLANE", "/SAPAPO/PDS", "/SAPAPO/SNPBV",
+]
+
+
 async def _load_sap_data(
     db: AsyncSession,
     tenant_id: int,
@@ -1359,21 +1385,31 @@ async def _load_sap_data(
     """
     Load SAP data from a connection.
 
-    Supports CSV mode (reads from configured directory) and RFC mode.
+    Supports all connection methods: CSV, RFC, HANA_DB, OData.
     Returns a dict of table_name → DataFrame.
     """
+    import asyncio
     import pandas as pd
+    from app.services.sap_deployment_service import (
+        _decrypt_password,
+        SAPConnectionConfig,
+    )
 
     service = create_deployment_service(db, tenant_id)
-    connection = service._connections.get(connection_id)
+    row = await service._get_connection_row(connection_id)
 
-    if not connection:
+    if not row:
         raise HTTPException(status_code=404, detail=f"Connection {connection_id} not found")
 
+    connection = SAPConnectionConfig.from_db(row)
     sap_data: Dict[str, pd.DataFrame] = {}
 
+    method = connection.connection_method
+
+    # -----------------------------------------------------------------
     # CSV mode: read all available CSV files from the configured directory
-    if connection.connection_method.value == "csv" and connection.csv_directory:
+    # -----------------------------------------------------------------
+    if method == ConnectionMethod.CSV and connection.csv_directory:
         from pathlib import Path
         csv_dir = Path(connection.csv_directory)
         if csv_dir.exists():
@@ -1391,10 +1427,126 @@ async def _load_sap_data(
                 except Exception as e:
                     logger.warning(f"Failed to read {csv_file}: {e}")
 
+    # -----------------------------------------------------------------
+    # HANA DB mode: direct SQL queries to HANA database
+    # -----------------------------------------------------------------
+    elif method == ConnectionMethod.HANA_DB:
+        password = _decrypt_password(row.sap_password_encrypted) if row.sap_password_encrypted else ""
+        hana_port = connection.hana_port or 30215
+        hana_schema = connection.hana_schema or "SAPHANADB"
+
+        def _extract_hana():
+            from hdbcli import dbapi
+            conn = dbapi.connect(
+                address=connection.hostname,
+                port=hana_port,
+                user=connection.user,
+                password=password,
+            )
+            result = {}
+            for table in STANDARD_SAP_TABLES:
+                # APO tables use / prefix which needs quoting
+                qualified = f'"{hana_schema}"."{table}"'
+                try:
+                    df = pd.read_sql(f"SELECT * FROM {qualified}", conn)
+                    df.columns = [c.upper().strip() for c in df.columns]
+                    if not df.empty:
+                        result[table] = df
+                except Exception:
+                    pass  # Table may not exist in this system
+            conn.close()
+            return result
+
+        try:
+            sap_data = await asyncio.to_thread(_extract_hana)
+        except ImportError:
+            raise HTTPException(
+                status_code=500,
+                detail="hdbcli package not installed. Run: pip install hdbcli",
+            )
+
+    # -----------------------------------------------------------------
+    # RFC mode: extract via SAP RFC function modules
+    # -----------------------------------------------------------------
+    elif method == ConnectionMethod.RFC:
+        password = _decrypt_password(row.sap_password_encrypted) if row.sap_password_encrypted else ""
+
+        def _extract_rfc():
+            from app.integrations.sap.s4hana_connector import S4HANAConnector
+            connector = S4HANAConnector({
+                "ashost": connection.ashost or connection.hostname,
+                "sysnr": connection.sysnr or "00",
+                "client": connection.client or "100",
+                "user": connection.user,
+                "passwd": password,
+                "lang": connection.language or "EN",
+            })
+            result = {}
+            for table in STANDARD_SAP_TABLES:
+                if table.startswith("/"):
+                    continue  # APO tables need APOConnector
+                try:
+                    df = connector.read_table(table)
+                    if df is not None and not df.empty:
+                        df.columns = [c.upper().strip() for c in df.columns]
+                        result[table] = df
+                except Exception:
+                    pass
+            return result
+
+        try:
+            sap_data = await asyncio.to_thread(_extract_rfc)
+        except ImportError:
+            raise HTTPException(
+                status_code=500,
+                detail="pyrfc package not installed. Required for RFC connections.",
+            )
+
+    # -----------------------------------------------------------------
+    # OData mode: extract via OData service endpoints
+    # -----------------------------------------------------------------
+    elif method == ConnectionMethod.ODATA:
+        # OData extraction reads entity sets from the configured base path
+        import httpx
+
+        base_url = f"{'https' if connection.use_ssl else 'http'}://{connection.hostname}"
+        if connection.port:
+            base_url += f":{connection.port}"
+        base_path = connection.odata_base_path or "/sap/opu/odata/sap"
+        password = _decrypt_password(row.sap_password_encrypted) if row.sap_password_encrypted else ""
+
+        # OData entity set names map to SAP table names
+        odata_entity_map = {
+            "A_Plant": "T001W", "A_Product": "MARA",
+            "A_ProductPlant": "MARC", "A_ProductValuation": "MBEW",
+            "A_Supplier": "LFA1", "A_Customer": "KNA1",
+            "A_PurchaseOrder": "EKKO", "A_PurchaseOrderItem": "EKPO",
+            "A_SalesOrder": "VBAK", "A_SalesOrderItem": "VBAP",
+            "A_ProductionOrder": "AFKO",
+        }
+
+        async with httpx.AsyncClient(verify=connection.ssl_verify) as client:
+            for entity_set, table_name in odata_entity_map.items():
+                try:
+                    url = f"{base_url}{base_path}/{entity_set}?$format=json&$top=50000"
+                    resp = await client.get(
+                        url,
+                        auth=(connection.user, password) if connection.user else None,
+                    )
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        records = data.get("d", {}).get("results", data.get("value", []))
+                        if records:
+                            df = pd.DataFrame(records)
+                            df.columns = [c.upper().strip() for c in df.columns]
+                            sap_data[table_name] = df
+                except Exception as e:
+                    logger.warning(f"OData extract failed for {entity_set}: {e}")
+
     if not sap_data:
         raise HTTPException(
             status_code=400,
-            detail="No SAP data could be loaded from the connection. Ensure CSV files are present.",
+            detail=f"No SAP data could be loaded via {method.value}. Check connection settings and data availability.",
         )
 
     return sap_data

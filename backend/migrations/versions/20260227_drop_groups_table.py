@@ -37,39 +37,25 @@ CONSOLIDATION_MAP = {
 # Groups 1 and 2 keep their IDs (1 → tenant 1, 2 → tenant 2)
 
 
-def _is_postgresql():
-    return op.get_bind().dialect.name == 'postgresql'
-
-
 def _table_exists(table_name):
     conn = op.get_bind()
-    if _is_postgresql():
-        result = conn.execute(sa.text(
-            "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
-            "WHERE table_schema = 'public' AND table_name = :tbl)"
-        ), {"tbl": table_name})
-        return result.scalar()
     result = conn.execute(sa.text(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = :tbl"
+        "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+        "WHERE table_schema = 'public' AND table_name = :tbl)"
     ), {"tbl": table_name})
-    return result.scalar() > 0
+    return result.scalar()
 
 
 def _column_exists(table_name, column_name):
     conn = op.get_bind()
-    if _is_postgresql():
-        result = conn.execute(sa.text(
-            "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
-            "WHERE table_schema = 'public' AND table_name = :tbl AND column_name = :col)"
-        ), {"tbl": table_name, "col": column_name})
-        return result.scalar()
-    result = conn.execute(sa.text(f"PRAGMA table_info({table_name})"))
-    return any(row[1] == column_name for row in result)
+    result = conn.execute(sa.text(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND table_name = :tbl AND column_name = :col)"
+    ), {"tbl": table_name, "col": column_name})
+    return result.scalar()
 
 
 def _enum_exists(enum_name):
-    if not _is_postgresql():
-        return False
     conn = op.get_bind()
     result = conn.execute(sa.text(
         "SELECT EXISTS (SELECT 1 FROM pg_type WHERE typname = :name)"
@@ -170,28 +156,27 @@ def upgrade():
     # STEP 3: Reassign tenant_id in ALL tables (consolidate group IDs)
     # ================================================================== #
     # Find all tables with tenant_id column that have data pointing to old group IDs
-    if _is_postgresql():
-        tenant_id_tables = conn.execute(sa.text(
-            "SELECT table_name FROM information_schema.columns "
-            "WHERE table_schema = 'public' AND column_name = 'tenant_id' "
-            "AND table_name != 'users' AND table_name != 'tenants'"
-        )).fetchall()
+    tenant_id_tables = conn.execute(sa.text(
+        "SELECT table_name FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND column_name = 'tenant_id' "
+        "AND table_name != 'users' AND table_name != 'tenants'"
+    )).fetchall()
 
-        for (table_name,) in tenant_id_tables:
-            # Groups 3, 4 → Tenant 1 (The Beer Game)
-            try:
-                conn.execute(sa.text(
-                    f'UPDATE "{table_name}" SET tenant_id = 1 WHERE tenant_id IN (3, 4)'
-                ))
-            except Exception:
-                pass
-            # Groups 12, 13, 14 → Tenant 3 (Food Distributor)
-            try:
-                conn.execute(sa.text(
-                    f'UPDATE "{table_name}" SET tenant_id = 3 WHERE tenant_id IN (12, 13, 14)'
-                ))
-            except Exception:
-                pass
+    for (table_name,) in tenant_id_tables:
+        # Groups 3, 4 → Tenant 1 (The Beer Game)
+        try:
+            conn.execute(sa.text(
+                f'UPDATE "{table_name}" SET tenant_id = 1 WHERE tenant_id IN (3, 4)'
+            ))
+        except Exception:
+            pass
+        # Groups 12, 13, 14 → Tenant 3 (Food Distributor)
+        try:
+            conn.execute(sa.text(
+                f'UPDATE "{table_name}" SET tenant_id = 3 WHERE tenant_id IN (12, 13, 14)'
+            ))
+        except Exception:
+            pass
 
     # Also handle company_id columns that reference groups
     for table_name in ['atp_projection', 'ctp_projection', 'inv_projection', 'order_promise']:
@@ -209,7 +194,7 @@ def upgrade():
     # ================================================================== #
     # STEP 4: Drop ALL FK constraints referencing groups table
     # ================================================================== #
-    if _is_postgresql() and _table_exists('groups'):
+    if _table_exists('groups'):
         fk_rows = conn.execute(sa.text(
             "SELECT tc.constraint_name, tc.table_name "
             "FROM information_schema.table_constraints tc "
@@ -273,58 +258,57 @@ def upgrade():
     # ================================================================== #
     # STEP 6: Create new FK constraints referencing tenants
     # ================================================================== #
-    if _is_postgresql():
-        # Get all tables with tenant_id that need FK to tenants
-        tenant_id_tables = conn.execute(sa.text(
-            "SELECT table_name FROM information_schema.columns "
-            "WHERE table_schema = 'public' AND column_name = 'tenant_id' "
-            "AND table_name != 'tenants'"
-        )).fetchall()
+    # Get all tables with tenant_id that need FK to tenants
+    tenant_id_tables = conn.execute(sa.text(
+        "SELECT table_name FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND column_name = 'tenant_id' "
+        "AND table_name != 'tenants'"
+    )).fetchall()
 
-        for (table_name,) in tenant_id_tables:
-            # Check if FK already exists pointing to tenants
-            existing_fk = conn.execute(sa.text(
-                "SELECT COUNT(*) FROM information_schema.table_constraints tc "
-                "JOIN information_schema.constraint_column_usage ccu "
-                "  ON tc.constraint_name = ccu.constraint_name "
-                "WHERE tc.table_name = :tbl AND tc.constraint_type = 'FOREIGN KEY' "
-                "  AND ccu.table_name = 'tenants'"
-            ), {"tbl": table_name}).scalar()
+    for (table_name,) in tenant_id_tables:
+        # Check if FK already exists pointing to tenants
+        existing_fk = conn.execute(sa.text(
+            "SELECT COUNT(*) FROM information_schema.table_constraints tc "
+            "JOIN information_schema.constraint_column_usage ccu "
+            "  ON tc.constraint_name = ccu.constraint_name "
+            "WHERE tc.table_name = :tbl AND tc.constraint_type = 'FOREIGN KEY' "
+            "  AND ccu.table_name = 'tenants'"
+        ), {"tbl": table_name}).scalar()
 
-            if existing_fk == 0:
-                fk_name = f"fk_{table_name}_tenant_id"
-                try:
-                    op.create_foreign_key(
-                        fk_name, table_name, 'tenants',
-                        ['tenant_id'], ['id'],
-                        ondelete='CASCADE'
-                    )
-                except Exception:
-                    pass  # Table might have orphan rows
-
-        # FK for company_id columns → tenants
-        for table_name in ['atp_projection', 'ctp_projection', 'inv_projection', 'order_promise']:
-            if _table_exists(table_name) and _column_exists(table_name, 'company_id'):
-                fk_name = f"fk_{table_name}_company_tenant"
-                try:
-                    op.create_foreign_key(
-                        fk_name, table_name, 'tenants',
-                        ['company_id'], ['id'],
-                        ondelete='CASCADE'
-                    )
-                except Exception:
-                    pass
-
-        # FK for sso_providers.default_tenant_id → tenants
-        if _table_exists('sso_providers') and _column_exists('sso_providers', 'default_tenant_id'):
+        if existing_fk == 0:
+            fk_name = f"fk_{table_name}_tenant_id"
             try:
                 op.create_foreign_key(
-                    'fk_sso_providers_default_tenant', 'sso_providers', 'tenants',
-                    ['default_tenant_id'], ['id'],
-                    ondelete='SET NULL'
+                    fk_name, table_name, 'tenants',
+                    ['tenant_id'], ['id'],
+                    ondelete='CASCADE'
+                )
+            except Exception:
+                pass  # Table might have orphan rows
+
+    # FK for company_id columns → tenants
+    for table_name in ['atp_projection', 'ctp_projection', 'inv_projection', 'order_promise']:
+        if _table_exists(table_name) and _column_exists(table_name, 'company_id'):
+            fk_name = f"fk_{table_name}_company_tenant"
+            try:
+                op.create_foreign_key(
+                    fk_name, table_name, 'tenants',
+                    ['company_id'], ['id'],
+                    ondelete='CASCADE'
                 )
             except Exception:
                 pass
+
+    # FK for sso_providers.default_tenant_id → tenants
+    if _table_exists('sso_providers') and _column_exists('sso_providers', 'default_tenant_id'):
+        try:
+            op.create_foreign_key(
+                'fk_sso_providers_default_tenant', 'sso_providers', 'tenants',
+                ['default_tenant_id'], ['id'],
+                ondelete='SET NULL'
+            )
+        except Exception:
+            pass
 
     # ================================================================== #
     # STEP 7: Drop the groups table
@@ -342,27 +326,25 @@ def upgrade():
         pass  # FK violations mean data still references them
 
     # Reset sequence
-    if _is_postgresql():
-        try:
-            conn.execute(sa.text(
-                "SELECT setval('tenants_id_seq', (SELECT COALESCE(MAX(id), 1) FROM tenants))"
-            ))
-        except Exception:
-            pass
+    try:
+        conn.execute(sa.text(
+            "SELECT setval('tenants_id_seq', (SELECT COALESCE(MAX(id), 1) FROM tenants))"
+        ))
+    except Exception:
+        pass
 
     # ================================================================== #
     # STEP 9: Rename group_mode_enum → tenant_mode_enum
     # ================================================================== #
-    if _is_postgresql():
-        if _enum_exists('group_mode_enum') and not _enum_exists('tenant_mode_enum'):
-            op.execute("ALTER TYPE group_mode_enum RENAME TO tenant_mode_enum")
-        elif _enum_exists('group_mode_enum') and _enum_exists('tenant_mode_enum'):
-            usage = conn.execute(sa.text(
-                "SELECT COUNT(*) FROM information_schema.columns "
-                "WHERE udt_name = 'group_mode_enum'"
-            )).scalar()
-            if usage == 0:
-                op.execute("DROP TYPE group_mode_enum")
+    if _enum_exists('group_mode_enum') and not _enum_exists('tenant_mode_enum'):
+        op.execute("ALTER TYPE group_mode_enum RENAME TO tenant_mode_enum")
+    elif _enum_exists('group_mode_enum') and _enum_exists('tenant_mode_enum'):
+        usage = conn.execute(sa.text(
+            "SELECT COUNT(*) FROM information_schema.columns "
+            "WHERE udt_name = 'group_mode_enum'"
+        )).scalar()
+        if usage == 0:
+            op.execute("DROP TYPE group_mode_enum")
 
 
 def downgrade():

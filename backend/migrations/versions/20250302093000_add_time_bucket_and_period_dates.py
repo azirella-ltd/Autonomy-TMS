@@ -16,14 +16,10 @@ TIME_BUCKET_ENUM_NAME = "timebucketenum"
 
 def upgrade() -> None:
     bind = op.get_bind()
-    is_sqlite = bind and bind.dialect.name == "sqlite"
 
-    if is_sqlite:
-        time_bucket_col = sa.Column("time_bucket", sa.String(length=16), nullable=False, server_default="WEEK")
-    else:
-        time_bucket_enum = sa.Enum("DAY", "WEEK", "MONTH", name=TIME_BUCKET_ENUM_NAME)
-        time_bucket_enum.create(bind, checkfirst=True)
-        time_bucket_col = sa.Column("time_bucket", time_bucket_enum, nullable=False, server_default="WEEK")
+    time_bucket_enum = sa.Enum("DAY", "WEEK", "MONTH", name=TIME_BUCKET_ENUM_NAME)
+    time_bucket_enum.create(bind, checkfirst=True)
+    time_bucket_col = sa.Column("time_bucket", time_bucket_enum, nullable=False, server_default="WEEK")
 
     op.add_column(
         "supply_chain_configs",
@@ -57,11 +53,10 @@ def upgrade() -> None:
     op.execute("UPDATE games SET time_bucket = 'week' WHERE time_bucket IS NULL")
     op.execute("UPDATE games SET current_period_start = start_date WHERE current_round > 0")
 
-    # Remove server defaults now that existing rows are populated (not supported on SQLite)
-    if not is_sqlite:
-        op.alter_column("supply_chain_configs", "time_bucket", server_default=None)
-        op.alter_column("games", "time_bucket", server_default=None)
-        op.alter_column("games", "start_date", server_default=None)
+    # Remove server defaults now that existing rows are populated
+    op.alter_column("supply_chain_configs", "time_bucket", server_default=None)
+    op.alter_column("games", "time_bucket", server_default=None)
+    op.alter_column("games", "start_date", server_default=None)
 
 
 def downgrade() -> None:
@@ -75,8 +70,5 @@ def downgrade() -> None:
     op.drop_column("supply_chain_configs", "time_bucket")
 
     bind = op.get_bind()
-    is_sqlite = bind and bind.dialect.name == "sqlite"
-
-    if not is_sqlite:
-        time_bucket_enum = sa.Enum(name=TIME_BUCKET_ENUM_NAME)
-        time_bucket_enum.drop(bind, checkfirst=True)
+    time_bucket_enum = sa.Enum(name=TIME_BUCKET_ENUM_NAME)
+    time_bucket_enum.drop(bind, checkfirst=True)

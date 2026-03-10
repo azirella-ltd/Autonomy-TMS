@@ -37,8 +37,6 @@ def _slugify(value: str) -> str:
 from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.ext.compiler import compiles
 
 from app.core.config import settings
 from app.db.base_class import SessionLocal
@@ -902,35 +900,6 @@ class SeedOptions:
     assign_ai_agents: bool = True
     preferred_agent_strategy: Optional[str] = None
     preferred_llm_model: Optional[str] = None
-
-FALLBACK_DB_FILENAME = "seed_default_tenant.sqlite"
-FALLBACK_DB_PATH = BACKEND_ROOT / FALLBACK_DB_FILENAME
-
-
-@compiles(JSONB, "sqlite")
-def _compile_jsonb_for_sqlite(type_, compiler, **kw):
-    """Render PostgreSQL JSONB columns as JSON when using SQLite fallback."""
-
-    return "JSON"
-
-
-def create_sqlite_session_factory() -> Tuple[sessionmaker, Path]:
-    """Create a SQLite session factory for fallback seeding."""
-    FALLBACK_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    fallback_uri = f"sqlite:///{FALLBACK_DB_PATH}"
-    engine = create_engine(
-        fallback_uri,
-        connect_args={"check_same_thread": False},
-    )
-    # Use the SQLAlchemy Base from the models package so all tables are registered
-    ModelBase.metadata.create_all(bind=engine)
-    factory = sessionmaker(
-        autocommit=False,
-        autoflush=False,
-        bind=engine,
-        expire_on_commit=False,
-    )
-    return factory, FALLBACK_DB_PATH
 
 
 def mask_db_uri(uri: str) -> str:

@@ -10,8 +10,6 @@ def test_connection():
     """Test database connection with provided credentials."""
     try:
         url = make_url(resolve_sync_database_url())
-        if url.drivername.startswith("sqlite"):
-            raise RuntimeError("MySQL database required for this connectivity script")
         db_config = {
             'host': url.host or "localhost",
             'port': int(url.port or 3306),

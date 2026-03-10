@@ -52,7 +52,7 @@ build_default_customer_payload = build_default_tenant_payload
 
 
 def ensure_default_tenant_and_scenario(db: Session) -> Optional[Game]:
-    """Ensure at least one scenario exists for developer-focused SQLite fallback."""
+    """Ensure at least one scenario exists for developer bootstrap."""
     existing_game = db.query(Game).first()
     if existing_game:
         return existing_game

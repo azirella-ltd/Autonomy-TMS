@@ -4,16 +4,10 @@ from __future__ import annotations
 
 import os
 import socket
-from pathlib import Path
 from urllib.parse import quote_plus
-from typing import Optional
 import logging
 
 logger = logging.getLogger(__name__)
-
-BACKEND_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = BACKEND_ROOT / "data"
-DEFAULT_SQLITE_PATH = DATA_DIR / "autonomy_dev.db"
 
 
 def _can_connect(host: str, port: int, timeout: float = 1.0) -> bool:
@@ -43,7 +37,7 @@ def resolve_sync_database_url() -> str:
     1. Explicit DATABASE_URL or SQLALCHEMY_DATABASE_URI
     2. DATABASE_TYPE environment variable (postgresql, mysql, mariadb)
     3. Auto-detect based on available environment variables
-    4. Fallback to SQLite for development
+    4. Raise error if no database configured
     """
 
     # 1. Check for explicit URL
@@ -128,10 +122,11 @@ def resolve_sync_database_url() -> str:
                 db=database,
             )
 
-    # 5. Fallback to SQLite for development
-    logger.warning("No database connection available, falling back to SQLite")
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    return f"sqlite:///{DEFAULT_SQLITE_PATH}"
+    # No database connection available — raise instead of falling back
+    raise RuntimeError(
+        "No database connection available. Set DATABASE_URL or configure "
+        "POSTGRESQL_HOST / MYSQL_HOST environment variables."
+    )
 
 
 def resolve_async_database_url() -> str:
@@ -141,7 +136,6 @@ def resolve_async_database_url() -> str:
     Converts synchronous drivers to their async equivalents:
     - psycopg2 → asyncpg
     - pymysql → aiomysql
-    - sqlite → aiosqlite
     """
     explicit = os.getenv("ASYNC_DATABASE_URL")
     if explicit and explicit.strip():
@@ -159,11 +153,6 @@ def resolve_async_database_url() -> str:
     if sync_url.startswith("mysql+pymysql://"):
         async_url = sync_url.replace("mysql+pymysql://", "mysql+aiomysql://", 1)
         logger.info("Converted pymysql to aiomysql for async operations")
-        return async_url
-
-    if sync_url.startswith("sqlite:///"):
-        async_url = sync_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
-        logger.info("Converted sqlite to aiosqlite for async operations")
         return async_url
 
     return sync_url

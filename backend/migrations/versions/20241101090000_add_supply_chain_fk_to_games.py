@@ -61,7 +61,6 @@ def upgrade() -> None:
         return
 
     bind = op.get_bind()
-    is_sqlite = bind and bind.dialect.name == "sqlite"
 
     if not _column_exists("games", "supply_chain_config_id"):
         op.add_column(
@@ -76,7 +75,7 @@ def upgrade() -> None:
             ["supply_chain_config_id"],
         )
 
-    if (not is_sqlite) and not _fk_exists("games", "fk_games_supply_chain_config_id"):
+    if not _fk_exists("games", "fk_games_supply_chain_config_id"):
         op.create_foreign_key(
             "fk_games_supply_chain_config_id",
             "games",
@@ -126,7 +125,7 @@ def upgrade() -> None:
         text("SELECT COUNT(*) FROM games WHERE supply_chain_config_id IS NULL")
     ).scalar_one()
 
-    if (not is_sqlite) and remaining == 0:
+    if remaining == 0:
         op.alter_column(
             "games",
             "supply_chain_config_id",

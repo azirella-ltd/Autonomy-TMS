@@ -72,6 +72,7 @@ const connectionMethods = [
   { value: 'rfc', label: 'RFC Connection' },
   { value: 'odata', label: 'OData API' },
   { value: 'idoc', label: 'IDoc Interface' },
+  { value: 'hana_db', label: 'HANA DB (Direct SQL)' },
 ];
 
 // Overview Tab Component
@@ -287,6 +288,8 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
     odata_base_path: '/sap/opu/odata/sap/',
     csv_directory: '',
     csv_pattern: '*.csv',
+    hana_schema: 'SAPHANADB',
+    hana_port: '',
     sap_router_string: '',
     cloud_connector_location_id: '',
   };
@@ -297,10 +300,11 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
   const isOData = formData.connection_method === 'odata';
   const isRFC = formData.connection_method === 'rfc';
   const isCSV = formData.connection_method === 'csv';
+  const isHANA = formData.connection_method === 'hana_db';
 
   // Valid connection methods per SAP system type
   const methodsBySystemType = {
-    s4hana: ['odata', 'rfc', 'csv', 'idoc'],  // Full modern stack
+    s4hana: ['odata', 'rfc', 'hana_db', 'csv', 'idoc'],  // Full modern stack + HANA direct
     ecc:    ['rfc', 'idoc', 'csv'],            // No native OData (requires Gateway add-on)
     apo:    ['rfc', 'idoc', 'csv'],            // Legacy planning — RFC/IDoc for CIF
     bw:     ['rfc', 'csv'],                    // Data warehouse — RFC extraction only
@@ -346,6 +350,7 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
     if (method === 'odata') port = 44301;
     else if (method === 'rfc') port = 3300;
     else if (method === 'idoc') port = 3300;
+    else if (method === 'hana_db') port = 30215;
     else port = '';
     setFormData({ ...formData, connection_method: method, port });
   };
@@ -641,6 +646,35 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
                       onChange={(e) => setFormData({ ...formData, csv_pattern: e.target.value })}
                       placeholder="*.csv"
                     />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* HANA DB Direct section */}
+            {isHANA && (
+              <div className="space-y-3 border rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">HANA Database Settings</h4>
+                <p className="text-xs text-muted-foreground">Direct SQL connection to the underlying HANA database. Use when OData/RFC are unavailable (e.g., FAA instances).</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">HANA SQL Port</label>
+                    <Input
+                      type="number"
+                      value={formData.hana_port}
+                      onChange={(e) => setFormData({ ...formData, hana_port: e.target.value })}
+                      placeholder="30215"
+                    />
+                    <p className="text-xs text-muted-foreground mt-0.5">HANA indexserver SQL port (typically 3NN15 where NN=instance)</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">HANA Schema</label>
+                    <Input
+                      value={formData.hana_schema}
+                      onChange={(e) => setFormData({ ...formData, hana_schema: e.target.value })}
+                      placeholder="SAPHANADB"
+                    />
+                    <p className="text-xs text-muted-foreground mt-0.5">Database schema containing SAP tables</p>
                   </div>
                 </div>
               </div>

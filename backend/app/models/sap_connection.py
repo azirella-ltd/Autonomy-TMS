@@ -59,6 +59,10 @@ class SAPConnection(Base):
     csv_directory = Column(String(500), nullable=True)
     csv_pattern = Column(String(100), nullable=True)
 
+    # HANA DB direct
+    hana_schema = Column(String(100), nullable=True, default="SAPHANADB")
+    hana_port = Column(Integer, nullable=True)
+
     # SAP Router
     sap_router_string = Column(String(500), nullable=True)
 

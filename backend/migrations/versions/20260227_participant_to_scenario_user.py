@@ -44,34 +44,22 @@ PARTICIPANT_TABLES = [
 ]
 
 
-def _is_postgresql():
-    return op.get_bind().dialect.name == 'postgresql'
-
-
 def _column_exists(table_name, column_name):
     conn = op.get_bind()
-    if _is_postgresql():
-        result = conn.execute(sa.text(
-            "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
-            "WHERE table_schema = 'public' AND table_name = :tbl AND column_name = :col)"
-        ), {"tbl": table_name, "col": column_name})
-        return result.scalar()
-    result = conn.execute(sa.text(f"PRAGMA table_info({table_name})"))
-    return any(row[1] == column_name for row in result)
+    result = conn.execute(sa.text(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND table_name = :tbl AND column_name = :col)"
+    ), {"tbl": table_name, "col": column_name})
+    return result.scalar()
 
 
 def _table_exists(table_name):
     conn = op.get_bind()
-    if _is_postgresql():
-        result = conn.execute(sa.text(
-            "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
-            "WHERE table_schema = 'public' AND table_name = :tbl)"
-        ), {"tbl": table_name})
-        return result.scalar()
     result = conn.execute(sa.text(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = :tbl"
+        "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+        "WHERE table_schema = 'public' AND table_name = :tbl)"
     ), {"tbl": table_name})
-    return result.scalar() > 0
+    return result.scalar()
 
 
 def upgrade():
@@ -99,54 +87,53 @@ def upgrade():
     # STEP 2: Update user_type_enum — add TENANT_ADMIN, migrate data,
     #         remove GROUP_ADMIN
     # ================================================================== #
-    if _is_postgresql():
-        # Check if TENANT_ADMIN already exists in enum
-        has_tenant_admin = conn.execute(sa.text(
-            "SELECT EXISTS (SELECT 1 FROM pg_enum "
-            "WHERE enumlabel = 'TENANT_ADMIN' AND enumtypid = "
-            "(SELECT oid FROM pg_type WHERE typname = 'user_type_enum'))"
-        )).scalar()
+    # Check if TENANT_ADMIN already exists in enum
+    has_tenant_admin = conn.execute(sa.text(
+        "SELECT EXISTS (SELECT 1 FROM pg_enum "
+        "WHERE enumlabel = 'TENANT_ADMIN' AND enumtypid = "
+        "(SELECT oid FROM pg_type WHERE typname = 'user_type_enum'))"
+    )).scalar()
 
-        if not has_tenant_admin:
-            conn.execute(sa.text(
-                "ALTER TYPE user_type_enum ADD VALUE IF NOT EXISTS 'TENANT_ADMIN'"
-            ))
+    if not has_tenant_admin:
+        conn.execute(sa.text(
+            "ALTER TYPE user_type_enum ADD VALUE IF NOT EXISTS 'TENANT_ADMIN'"
+        ))
 
-        # Migrate any GROUP_ADMIN users to TENANT_ADMIN
-        has_group_admin = conn.execute(sa.text(
-            "SELECT EXISTS (SELECT 1 FROM pg_enum "
-            "WHERE enumlabel = 'GROUP_ADMIN' AND enumtypid = "
-            "(SELECT oid FROM pg_type WHERE typname = 'user_type_enum'))"
-        )).scalar()
+    # Migrate any GROUP_ADMIN users to TENANT_ADMIN
+    has_group_admin = conn.execute(sa.text(
+        "SELECT EXISTS (SELECT 1 FROM pg_enum "
+        "WHERE enumlabel = 'GROUP_ADMIN' AND enumtypid = "
+        "(SELECT oid FROM pg_type WHERE typname = 'user_type_enum'))"
+    )).scalar()
 
-        if has_group_admin:
-            # Update users with GROUP_ADMIN to TENANT_ADMIN
-            conn.execute(sa.text(
-                "UPDATE users SET user_type = 'TENANT_ADMIN' WHERE user_type = 'GROUP_ADMIN'"
-            ))
+    if has_group_admin:
+        # Update users with GROUP_ADMIN to TENANT_ADMIN
+        conn.execute(sa.text(
+            "UPDATE users SET user_type = 'TENANT_ADMIN' WHERE user_type = 'GROUP_ADMIN'"
+        ))
 
-            # Cannot remove enum values in PostgreSQL directly.
-            # Recreate the enum without GROUP_ADMIN.
-            # Must drop column default first (it references the old enum type),
-            # then recreate enum, alter column, and restore default.
-            conn.execute(sa.text(
-                "ALTER TABLE users ALTER COLUMN user_type DROP DEFAULT"
-            ))
-            conn.execute(sa.text(
-                "ALTER TYPE user_type_enum RENAME TO user_type_enum_old"
-            ))
-            conn.execute(sa.text(
-                "CREATE TYPE user_type_enum AS ENUM "
-                "('SYSTEM_ADMIN', 'TENANT_ADMIN', 'USER', 'PLAYER')"
-            ))
-            conn.execute(sa.text(
-                "ALTER TABLE users ALTER COLUMN user_type TYPE user_type_enum "
-                "USING user_type::text::user_type_enum"
-            ))
-            conn.execute(sa.text(
-                "ALTER TABLE users ALTER COLUMN user_type SET DEFAULT 'USER'::user_type_enum"
-            ))
-            conn.execute(sa.text("DROP TYPE user_type_enum_old"))
+        # Cannot remove enum values in PostgreSQL directly.
+        # Recreate the enum without GROUP_ADMIN.
+        # Must drop column default first (it references the old enum type),
+        # then recreate enum, alter column, and restore default.
+        conn.execute(sa.text(
+            "ALTER TABLE users ALTER COLUMN user_type DROP DEFAULT"
+        ))
+        conn.execute(sa.text(
+            "ALTER TYPE user_type_enum RENAME TO user_type_enum_old"
+        ))
+        conn.execute(sa.text(
+            "CREATE TYPE user_type_enum AS ENUM "
+            "('SYSTEM_ADMIN', 'TENANT_ADMIN', 'USER', 'PLAYER')"
+        ))
+        conn.execute(sa.text(
+            "ALTER TABLE users ALTER COLUMN user_type TYPE user_type_enum "
+            "USING user_type::text::user_type_enum"
+        ))
+        conn.execute(sa.text(
+            "ALTER TABLE users ALTER COLUMN user_type SET DEFAULT 'USER'::user_type_enum"
+        ))
+        conn.execute(sa.text("DROP TYPE user_type_enum_old"))
 
 
 def downgrade():

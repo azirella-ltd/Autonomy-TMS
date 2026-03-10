@@ -22,22 +22,10 @@ from app.models.scenario import Scenario, Round, ParticipantAction
 from app.models.participant import Participant
 
 def init_db(drop_tables=False):
-    """Initialize the SQLite database and create all tables."""
-    # Get the database path from the URI
+    """Initialize the database and create all tables."""
     db_uri = settings.SQLALCHEMY_DATABASE_URI
-    
-    # For SQLite, ensure the directory exists
-    if db_uri.startswith('sqlite'):
-        db_path = db_uri.replace("sqlite:///", "")
-        db_dir = os.path.dirname(db_path)
-        if db_dir and not os.path.exists(db_dir):
-            os.makedirs(db_dir, exist_ok=True)
-        
-        print(f"Initializing SQLite database at: {os.path.abspath(db_path)}")
-        connect_args = {"check_same_thread": False}
-    else:
-        print(f"Initializing database with URI: {db_uri}")
-        connect_args = {}
+    print(f"Initializing database with URI: {db_uri}")
+    connect_args = {}
     
     # Create the database engine
     engine = create_engine(db_uri, connect_args=connect_args, echo=True)

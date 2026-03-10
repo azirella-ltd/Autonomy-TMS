@@ -33,17 +33,9 @@ def upgrade():
         rename_from = "order_leadtime"
 
     if rename_from:
-        if bind.dialect.name == "sqlite":
-            with op.batch_alter_table("lanes") as batch_op:
-                batch_op.alter_column(
-                    rename_from,
-                    new_column_name="demand_lead_time",
-                    existing_type=sa.JSON(),
-                )
-        else:
-            op.execute(
-                f"ALTER TABLE lanes CHANGE COLUMN {rename_from} demand_lead_time JSON NULL"
-            )
+        op.execute(
+            f"ALTER TABLE lanes CHANGE COLUMN {rename_from} demand_lead_time JSON NULL"
+        )
     elif "demand_lead_time" not in columns:
         op.add_column("lanes", sa.Column("demand_lead_time", sa.JSON(), nullable=True))
 
@@ -60,16 +52,8 @@ def downgrade():
 
     if "demand_lead_time" in columns:
         if "order_lead_time" not in columns:
-            if bind.dialect.name == "sqlite":
-                with op.batch_alter_table("lanes") as batch_op:
-                    batch_op.alter_column(
-                        "demand_lead_time",
-                        new_column_name="order_lead_time",
-                        existing_type=sa.JSON(),
-                    )
-            else:
-                op.execute(
-                    "ALTER TABLE lanes CHANGE COLUMN demand_lead_time order_lead_time JSON NULL"
-                )
+            op.execute(
+                "ALTER TABLE lanes CHANGE COLUMN demand_lead_time order_lead_time JSON NULL"
+            )
         else:
             op.drop_column("lanes", "demand_lead_time")

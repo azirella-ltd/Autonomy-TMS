@@ -77,7 +77,6 @@ def _enum_player_strategy() -> sa.Enum:
 
 def ensure_users_table() -> None:
     if _table_exists("users"):
-        # Already present; don't recreate (SQLite dev cycles).
         return
 
     op.create_table(
@@ -125,13 +124,7 @@ def ensure_groups_table() -> None:
 def ensure_refresh_tokens_table() -> None:
     ensure_users_table()
 
-    bind = op.get_bind()
-    is_sqlite = bind and bind.dialect.name == "sqlite"
-
     if _table_exists("refresh_tokens"):
-        # Table already present; SQLite cannot add FK constraints post-hoc.
-        if is_sqlite:
-            return
         if not _fk_exists("refresh_tokens", "fk_refresh_tokens_user"):
             op.create_foreign_key(
                 "fk_refresh_tokens_user",

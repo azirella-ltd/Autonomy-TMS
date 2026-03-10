@@ -54,6 +54,7 @@ class ConnectionMethod(str, Enum):
     CSV = "csv"  # CSV file-based extraction
     ODATA = "odata"  # OData API
     IDOC = "idoc"  # IDoc interface
+    HANA_DB = "hana_db"  # Direct SQL to HANA database
 
 
 class DeploymentPhase(str, Enum):
@@ -112,6 +113,10 @@ class SAPConnectionConfig:
     odata_url: Optional[str] = None
     odata_base_path: Optional[str] = None
 
+    # HANA DB direct settings
+    hana_schema: Optional[str] = "SAPHANADB"
+    hana_port: Optional[int] = None
+
     # SAP Router / Cloud Connector
     sap_router_string: Optional[str] = None
     cloud_connector_location_id: Optional[str] = None
@@ -146,6 +151,8 @@ class SAPConnectionConfig:
             "csv_pattern": self.csv_pattern,
             "odata_url": self.odata_url,
             "odata_base_path": self.odata_base_path,
+            "hana_schema": self.hana_schema,
+            "hana_port": self.hana_port,
             "sap_router_string": self.sap_router_string,
             "cloud_connector_location_id": self.cloud_connector_location_id,
             "is_active": self.is_active,
@@ -179,6 +186,8 @@ class SAPConnectionConfig:
             csv_directory=row.csv_directory,
             csv_pattern=row.csv_pattern,
             odata_base_path=row.odata_base_path,
+            hana_schema=getattr(row, "hana_schema", "SAPHANADB"),
+            hana_port=getattr(row, "hana_port", None),
             sap_router_string=row.sap_router_string,
             cloud_connector_location_id=row.cloud_connector_location_id,
             is_active=row.is_active,
@@ -1044,6 +1053,8 @@ class SAPDeploymentService:
             odata_base_path=kwargs.get("odata_base_path"),
             csv_directory=kwargs.get("csv_directory"),
             csv_pattern=kwargs.get("csv_pattern"),
+            hana_schema=kwargs.get("hana_schema", "SAPHANADB"),
+            hana_port=kwargs.get("hana_port"),
             sap_router_string=kwargs.get("sap_router_string"),
             cloud_connector_location_id=kwargs.get("cloud_connector_location_id"),
         )
@@ -1102,6 +1113,40 @@ class SAPDeploymentService:
                 row.validation_message = "OData connection successful (simulated)"
                 await self.db.commit()
                 return True, "OData connection successful"
+
+            elif method == ConnectionMethod.HANA_DB:
+                import asyncio
+                password = _decrypt_password(row.sap_password_encrypted) if row.sap_password_encrypted else ""
+                hana_port = getattr(row, "hana_port", None) or 30215
+                hana_schema = getattr(row, "hana_schema", None) or "SAPHANADB"
+
+                def _test_hana():
+                    from hdbcli import dbapi
+                    conn = dbapi.connect(
+                        address=row.hostname,
+                        port=hana_port,
+                        user=row.sap_user,
+                        password=password,
+                    )
+                    cur = conn.cursor()
+                    cur.execute(f"SELECT COUNT(*) FROM {hana_schema}.T001W")
+                    count = cur.fetchone()[0]
+                    conn.close()
+                    return count
+
+                try:
+                    plant_count = await asyncio.to_thread(_test_hana)
+                    msg = f"HANA DB connection successful ({plant_count} plants in {hana_schema}.T001W)"
+                    row.is_validated = True
+                    row.last_validated_at = datetime.utcnow()
+                    row.validation_message = msg
+                    await self.db.commit()
+                    return True, msg
+                except ImportError:
+                    row.is_validated = False
+                    row.validation_message = "hdbcli package not installed (pip install hdbcli)"
+                    await self.db.commit()
+                    return False, row.validation_message
 
             else:
                 return False, f"Connection method not yet supported: {method.value}"

@@ -42,13 +42,11 @@ def upgrade() -> None:
     )
     op.execute(update_stmt.bindparams(payload=default_payload))
 
-    bind = op.get_bind()
-    if bind.dialect.name.lower() != "sqlite":
-        op.alter_column(
-            "supply_chain_configs",
-            "node_type_definitions",
-            server_default=None,
-        )
+    op.alter_column(
+        "supply_chain_configs",
+        "node_type_definitions",
+        server_default=None,
+    )
 
 
 def downgrade() -> None:

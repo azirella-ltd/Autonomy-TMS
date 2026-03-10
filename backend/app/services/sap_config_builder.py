@@ -36,7 +36,10 @@ from app.models.sc_entities import (
     Product, Forecast, InvLevel, InvPolicy,
     TradingPartner, Geography,
     SourcingRules, ProductBom, ProductionProcess,
+    OutboundOrderLine, InboundOrder, InboundOrderLine,
 )
+from app.models.production_order import ProductionOrder, ProductionOrderComponent
+from app.models.quality_order import QualityOrder
 from app.models.supplier import VendorProduct, VendorLeadTime
 from app.models.tenant import Tenant
 
@@ -130,6 +133,7 @@ STEP_NAMES = {
     6: "Partners & Sourcing",
     7: "BOM & Manufacturing",
     8: "Planning Data",
+    9: "Transactional Data",
 }
 
 STEP_ENTITY_TYPES = {
@@ -141,6 +145,7 @@ STEP_ENTITY_TYPES = {
     6: "trading_partner",
     7: "product_bom",
     8: "forecast",
+    9: "orders",
 }
 
 # Known standard SAP table names (for Z-table detection)
@@ -192,7 +197,7 @@ class StepResult:
             "table_inventory": self.table_inventory,
             "config_id": self.config_id,
             "completed_steps": self.completed_steps,
-            "total_steps": 8,
+            "total_steps": 9,
         }
 
 
@@ -408,6 +413,9 @@ class SAPConfigBuilder:
                 safety_days=opts.get("default_safety_days", 14),
             )
 
+        # Step 9: Transactional Data (orders, production orders, quality orders)
+        order_counts = await self._create_transactional_data(opts)
+
         await self.db.commit()
 
         return {
@@ -423,6 +431,7 @@ class SAPConfigBuilder:
                 "sourcing_rules": sourcing_count,
                 "forecasts": forecast_count,
                 "inventory_records": inv_count,
+                **order_counts,
             },
         }
 
@@ -544,6 +553,8 @@ class SAPConfigBuilder:
             count = await self._step_bom(result)
         elif step == 8:
             count = await self._step_planning(result, opts)
+        elif step == 9:
+            count = await self._step_transactional(result, opts)
         else:
             result.warnings.append(f"Unknown step {step}")
             count = 0
@@ -591,7 +602,7 @@ class SAPConfigBuilder:
         completed = set(build_state.get("completed_steps", [1]))
 
         summary = {}
-        for step_num in range(2, 9):
+        for step_num in range(2, 10):
             if step_num in completed:
                 continue
             result = StepResult(
@@ -613,6 +624,8 @@ class SAPConfigBuilder:
                 summary["bom"] = await self._step_bom(result)
             elif step_num == 8:
                 summary["planning"] = await self._step_planning(result, opts)
+            elif step_num == 9:
+                summary["transactional"] = await self._step_transactional(result, opts)
             completed.add(step_num)
 
         # Finalize
@@ -1958,6 +1971,507 @@ class SAPConfigBuilder:
         await self.db.flush()
         logger.info(f"Created {count} inventory + policy records")
         return count
+
+    # ------------------------------------------------------------------
+    # Step 9: Transactional Data
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _jest_to_production_status(statuses: set) -> str:
+        """Map JEST system statuses to ProductionOrder status.
+        Priority order (highest lifecycle state wins):
+          I0046 CLSD → CLOSED,  I0045 TECO → COMPLETED,
+          I0009 CNF  → IN_PROGRESS,  I0002 REL  → RELEASED,
+          I0001 CRTD → PLANNED
+        """
+        if "I0046" in statuses:
+            return "CLOSED"
+        if "I0045" in statuses:
+            return "COMPLETED"
+        if "I0009" in statuses:
+            return "IN_PROGRESS"
+        if "I0002" in statuses:
+            return "RELEASED"
+        return "PLANNED"
+
+    @staticmethod
+    def _gbstk_to_outbound_status(gbstk: str) -> str:
+        """Map VBAK.GBSTK (overall status) to OutboundOrderLine status."""
+        return {"A": "CONFIRMED", "B": "PARTIALLY_FULFILLED", "C": "FULFILLED"}.get(
+            str(gbstk).strip(), "CONFIRMED"
+        )
+
+    @staticmethod
+    def _elikz_to_inbound_status(elikz: str) -> str:
+        """Map EKPO.ELIKZ (delivery completed indicator) to InboundOrder status."""
+        return "RECEIVED" if str(elikz).strip() == "X" else "CONFIRMED"
+
+    def _build_jest_status_map(self) -> Dict[str, set]:
+        """Build OBJNR → set of active system statuses from JEST table."""
+        jest = self._data.get("JEST", pd.DataFrame())
+        if jest.empty:
+            return {}
+        result: Dict[str, set] = {}
+        for _, row in jest.iterrows():
+            objnr = str(row.get("OBJNR", "")).strip()
+            stat = str(row.get("STAT", "")).strip()
+            inact = str(row.get("INACT", "")).strip()
+            if objnr and stat and not inact:
+                result.setdefault(objnr, set()).add(stat)
+        return result
+
+    def _get_product_id(self, matnr: str) -> Optional[str]:
+        """Resolve SAP MATNR to our Product.id (with config prefix)."""
+        mat_key = str(matnr).strip().lstrip("0") or "0"
+        if mat_key in self._products:
+            return self._products[mat_key].id
+        # Try with leading-zero stripped key
+        return None
+
+    def _get_site_id(self, plant_code: str) -> Optional[int]:
+        """Resolve SAP plant code to our Site.id."""
+        code = str(plant_code).strip()
+        for key, site in self._sites.items():
+            sap_code = (site.attributes or {}).get("sap_plant_code", "")
+            if sap_code == code or key == code:
+                return site.id
+        return None
+
+    def _get_first_plant_site_id(self) -> Optional[int]:
+        """Get the first plant site ID as fallback."""
+        for site in self._sites.values():
+            if site.master_type in ("MANUFACTURER", "INVENTORY"):
+                return site.id
+        return None
+
+    async def _step_transactional(self, result: "StepResult", opts: Dict[str, Any]) -> int:
+        """Execute step 9: Transactional Data (orders, production orders, quality orders)."""
+        counts = await self._create_transactional_data(opts)
+        total = sum(counts.values())
+
+        result.sample_data.append(counts)
+        result.anomalies = self._detect_transactional_anomalies()
+        return total
+
+    async def _create_transactional_data(self, opts: Dict[str, Any] = None) -> Dict[str, int]:
+        """Create all transactional data entities from SAP extracts."""
+        opts = opts or {}
+        counts: Dict[str, int] = {}
+
+        if opts.get("include_outbound_orders", True):
+            counts["outbound_orders"] = await self._create_outbound_orders(
+                max_records=opts.get("max_outbound_orders", 5000)
+            )
+        if opts.get("include_inbound_orders", True):
+            counts["inbound_orders"] = await self._create_inbound_orders(
+                max_records=opts.get("max_inbound_orders", 2000)
+            )
+        if opts.get("include_production_orders", True):
+            counts["production_orders"] = await self._create_production_orders()
+        if opts.get("include_quality_orders", True):
+            counts["quality_orders"] = await self._create_quality_orders()
+
+        # Also try PIR forecasts if step 8 didn't find APO data
+        if opts.get("include_pir_forecasts", True):
+            pir_count = await self._create_pir_forecasts()
+            if pir_count > 0:
+                counts["pir_forecasts"] = pir_count
+
+        return counts
+
+    async def _create_outbound_orders(self, max_records: int = 5000) -> int:
+        """Create OutboundOrderLine records from SAP sales orders (VBAK/VBAP)."""
+        vbak = self._data.get("VBAK", pd.DataFrame())
+        vbap = self._data.get("VBAP", pd.DataFrame())
+        if vbap.empty:
+            return 0
+
+        # Build SO header map
+        so_map: Dict[str, pd.Series] = {}
+        if not vbak.empty and "VBELN" in vbak.columns:
+            for _, row in vbak.iterrows():
+                so_map[str(row.get("VBELN", "")).strip()] = row
+
+        first_plant_id = self._get_first_plant_site_id()
+        count = 0
+
+        for _, item in vbap.iterrows():
+            if count >= max_records:
+                break
+            vbeln = str(item.get("VBELN", "")).strip()
+            matnr = str(item.get("MATNR", "")).strip()
+            werks = str(item.get("WERKS", "")).strip()
+
+            product_id = self._get_product_id(matnr)
+            if not product_id:
+                continue
+
+            site_id = self._get_site_id(werks) or first_plant_id
+            if not site_id:
+                continue
+
+            so = so_map.get(vbeln, pd.Series())
+            gbstk = str(so.get("GBSTK", "A")).strip() if not so.empty else "A"
+            status = self._gbstk_to_outbound_status(gbstk)
+
+            order_date_str = str(so.get("ERDAT", "")).strip() if not so.empty else ""
+            delivery_date_str = str(so.get("VDATU", "")).strip() if not so.empty else ""
+            order_date = self._parse_sap_date(order_date_str)
+            delivery_date = self._parse_sap_date(delivery_date_str) or order_date
+
+            qty = float(pd.to_numeric(item.get("KWMENG", 0), errors="coerce") or 0)
+
+            ob = OutboundOrderLine(
+                order_id=f"SAP-SO-{vbeln}",
+                line_number=int(pd.to_numeric(item.get("POSNR", 1), errors="coerce") or 1),
+                product_id=product_id,
+                site_id=site_id,
+                ordered_quantity=qty,
+                requested_delivery_date=delivery_date,
+                order_date=order_date or datetime.utcnow().date(),
+                config_id=self._config.id,
+                status=status,
+                priority_code="STANDARD",
+            )
+            self.db.add(ob)
+            count += 1
+
+        await self.db.flush()
+        logger.info(f"Created {count} outbound order lines (status from VBAK.GBSTK)")
+        return count
+
+    async def _create_inbound_orders(self, max_records: int = 2000) -> int:
+        """Create InboundOrder + InboundOrderLine records from SAP POs (EKKO/EKPO)."""
+        ekko = self._data.get("EKKO", pd.DataFrame())
+        ekpo = self._data.get("EKPO", pd.DataFrame())
+        if ekko.empty:
+            return 0
+
+        first_plant_id = self._get_first_plant_site_id()
+        count = 0
+
+        for _, po in ekko.iterrows():
+            if count >= max_records:
+                break
+            ebeln = str(po.get("EBELN", "")).strip()
+
+            order_date = self._parse_sap_date(str(po.get("BEDAT", "")).strip())
+
+            # Get line items
+            items = ekpo[ekpo["EBELN"].astype(str).str.strip() == ebeln] if not ekpo.empty and "EBELN" in ekpo.columns else pd.DataFrame()
+            if items.empty:
+                continue
+
+            first_item = items.iloc[0]
+            werks = str(first_item.get("WERKS", "")).strip()
+            dest_site_id = self._get_site_id(werks) or first_plant_id
+            if not dest_site_id:
+                continue
+
+            # Determine header status from line items' ELIKZ
+            if "ELIKZ" in items.columns:
+                elikz_vals = items["ELIKZ"].astype(str).str.strip()
+                all_received = (elikz_vals == "X").all()
+                any_received = (elikz_vals == "X").any()
+            else:
+                all_received = False
+                any_received = False
+
+            if all_received:
+                ib_status = "RECEIVED"
+            elif any_received:
+                ib_status = "PARTIALLY_RECEIVED"
+            else:
+                ib_status = "CONFIRMED"
+
+            total_qty = float(pd.to_numeric(items["MENGE"], errors="coerce").fillna(0).sum()) if "MENGE" in items.columns else 0
+
+            ib_order = InboundOrder(
+                id=f"SAP-PO-{ebeln}",
+                order_type="PURCHASE",
+                ship_to_site_id=dest_site_id,
+                status=ib_status,
+                order_date=order_date or datetime.utcnow().date(),
+                total_ordered_qty=total_qty,
+                source="SAP_IMPORT",
+                source_event_id=f"PO-{ebeln}",
+                source_update_dttm=datetime.utcnow(),
+            )
+            self.db.add(ib_order)
+
+            for _, pi in items.iterrows():
+                matnr = str(pi.get("MATNR", "")).strip()
+                product_id = self._get_product_id(matnr)
+                if not product_id:
+                    continue
+
+                line_status = self._elikz_to_inbound_status(str(pi.get("ELIKZ", "")))
+                ib_line = InboundOrderLine(
+                    order_id=f"SAP-PO-{ebeln}",
+                    line_number=int(pd.to_numeric(pi.get("EBELP", 1), errors="coerce") or 1),
+                    product_id=product_id,
+                    site_id=dest_site_id,
+                    ordered_quantity=float(pd.to_numeric(pi.get("MENGE", 0), errors="coerce") or 0),
+                    status=line_status,
+                    source="SAP_IMPORT",
+                )
+                self.db.add(ib_line)
+
+            count += 1
+
+        await self.db.flush()
+        logger.info(f"Created {count} inbound orders (status from EKPO.ELIKZ)")
+        return count
+
+    async def _create_production_orders(self) -> int:
+        """Create ProductionOrder + ProductionOrderComponent from AFKO/AFPO/JEST."""
+        afko = self._data.get("AFKO", pd.DataFrame())
+        if afko.empty:
+            return 0
+
+        afpo = self._data.get("AFPO", pd.DataFrame())
+        resb = self._data.get("RESB", pd.DataFrame())
+        jest_map = self._build_jest_status_map()
+
+        count = 0
+        for _, po in afko.iterrows():
+            aufnr = str(po.get("AUFNR", "")).strip()
+            plnbez = str(po.get("PLNBEZ", "")).strip()
+
+            product_id = self._get_product_id(plnbez)
+            if not product_id:
+                continue
+
+            # Find plant from AFPO or data
+            site_id = None
+            if not afpo.empty and "AUFNR" in afpo.columns:
+                afpo_rows = afpo[afpo["AUFNR"].astype(str).str.strip() == aufnr]
+                if not afpo_rows.empty:
+                    werks = str(afpo_rows.iloc[0].get("DESSION", afpo_rows.iloc[0].get("WERKS", ""))).strip()
+                    if werks:
+                        site_id = self._get_site_id(werks)
+            if not site_id:
+                site_id = self._get_first_plant_site_id()
+            if not site_id:
+                continue
+
+            # Map JEST status
+            objnr = f"OR{aufnr.zfill(12)}"
+            statuses = jest_map.get(objnr, set())
+            mo_status = self._jest_to_production_status(statuses)
+
+            # Quantities
+            planned_qty = float(pd.to_numeric(po.get("GAMNG", 1), errors="coerce") or 1)
+            actual_qty = None
+            if not afpo.empty and "AUFNR" in afpo.columns:
+                afpo_match = afpo[afpo["AUFNR"].astype(str).str.strip() == aufnr]
+                if not afpo_match.empty:
+                    wemng = float(pd.to_numeric(afpo_match.iloc[0].get("WEMNG", 0), errors="coerce") or 0)
+                    if wemng > 0:
+                        actual_qty = int(wemng)
+                    pq = float(pd.to_numeric(afpo_match.iloc[0].get("PSMNG", 0), errors="coerce") or 0)
+                    if pq > 0:
+                        planned_qty = pq
+
+            # Dates
+            start_date = self._parse_sap_date(str(po.get("GSTRS", "")).strip()) or \
+                         self._parse_sap_date(str(po.get("GSTRP", "")).strip())
+            end_date = self._parse_sap_date(str(po.get("GLTRP", "")).strip()) or \
+                       self._parse_sap_date(str(po.get("GLTRS", "")).strip())
+            today = datetime.utcnow().date()
+            if not start_date:
+                start_date = today
+            if not end_date:
+                end_date = start_date + timedelta(days=7)
+
+            aufnr_clean = aufnr.lstrip("0") or "0"
+            mo = ProductionOrder(
+                order_number=f"SAP-MO-{aufnr_clean}",
+                item_id=product_id,
+                site_id=site_id,
+                config_id=self._config.id,
+                planned_quantity=int(planned_qty),
+                actual_quantity=actual_qty,
+                status=mo_status,
+                planned_start_date=datetime.combine(start_date, datetime.min.time()),
+                planned_completion_date=datetime.combine(end_date, datetime.min.time()),
+                lead_time_planned=max(1, (end_date - start_date).days),
+                priority=5,
+                notes=f"JEST statuses: {','.join(sorted(statuses))}" if statuses else None,
+                extra_data={"sap_aufnr": aufnr, "sap_objnr": objnr},
+            )
+            self.db.add(mo)
+            await self.db.flush()
+            count += 1
+
+            # Add components from RESB reservations
+            if not resb.empty and "AUFNR" in resb.columns:
+                res_rows = resb[resb["AUFNR"].astype(str).str.strip() == aufnr]
+                for _, res in res_rows.iterrows():
+                    comp_matnr = str(res.get("MATNR", "")).strip()
+                    comp_product_id = self._get_product_id(comp_matnr)
+                    if not comp_product_id or comp_product_id == product_id:
+                        continue
+                    comp = ProductionOrderComponent(
+                        production_order_id=mo.id,
+                        component_item_id=comp_product_id,
+                        planned_quantity=float(pd.to_numeric(res.get("BDMNG", 1), errors="coerce") or 1),
+                        unit_of_measure=str(res.get("MEINS", "EA")).strip(),
+                    )
+                    self.db.add(comp)
+
+        await self.db.flush()
+        logger.info(f"Created {count} production orders (status from JEST)")
+        return count
+
+    async def _create_quality_orders(self) -> int:
+        """Create QualityOrder records from QALS inspection lots."""
+        qals = self._data.get("QALS", pd.DataFrame())
+        if qals.empty:
+            return 0
+
+        origin_map = {
+            "01": ("INCOMING", "GOODS_RECEIPT"),
+            "02": ("IN_PROCESS", "PRODUCTION_ORDER"),
+            "03": ("FINAL", "PRODUCTION_ORDER"),
+            "04": ("RETURNS", "CUSTOMER_COMPLAINT"),
+            "05": ("SAMPLING", "PREVENTIVE_SAMPLE"),
+        }
+
+        count = 0
+        for _, ql in qals.iterrows():
+            matnr = str(ql.get("MATNR", "")).strip()
+            werks = str(ql.get("WERK", "")).strip()
+            product_id = self._get_product_id(matnr)
+            site_id = self._get_site_id(werks)
+            if not product_id or not site_id:
+                continue
+
+            prueflos = str(ql.get("PRUEFLOS", "")).strip()
+            art = str(ql.get("ART", "01")).strip()
+            insp_type, origin_type = origin_map.get(art, ("INCOMING", "GOODS_RECEIPT"))
+
+            bearbstatu = str(ql.get("BEARBSTATU", "")).strip()
+            if bearbstatu:
+                qo_status = "IN_INSPECTION"
+            else:
+                qo_status = "CREATED"
+            if str(ql.get("INSMK", "")).strip():
+                qo_status = "DISPOSITION_DECIDED"
+
+            lot_clean = prueflos.lstrip("0") or "0"
+            qo = QualityOrder(
+                quality_order_number=f"SAP-QI-{lot_clean}",
+                site_id=site_id,
+                config_id=self._config.id,
+                tenant_id=self.tenant_id,
+                inspection_type=insp_type,
+                status=qo_status,
+                origin_type=origin_type,
+                origin_order_id=str(ql.get("AUFNR", "")).strip(),
+                product_id=product_id,
+                lot_number=str(ql.get("CHARG", "")).strip(),
+                inspection_quantity=float(pd.to_numeric(ql.get("LOSMENGE", 0), errors="coerce") or 0),
+                source="SAP_IMPORT",
+                source_event_id=f"QALS-{prueflos}",
+                source_update_dttm=datetime.utcnow(),
+            )
+            self.db.add(qo)
+            count += 1
+
+        await self.db.flush()
+        logger.info(f"Created {count} quality orders")
+        return count
+
+    async def _create_pir_forecasts(self) -> int:
+        """Create Forecast records from SAP Planned Independent Requirements (PBIM/PBED).
+
+        Falls back to this when APO SNP data is not available.
+        """
+        pbim = self._data.get("PBIM", pd.DataFrame())
+        pbed = self._data.get("PBED", pd.DataFrame())
+        if pbed.empty:
+            return 0
+
+        # Build PIR header map: BDZEI → {MATNR, WERKS}
+        header_map: Dict[str, pd.Series] = {}
+        if not pbim.empty and "BDZEI" in pbim.columns:
+            for _, row in pbim.iterrows():
+                bdzei = str(row.get("BDZEI", "")).strip()
+                if bdzei:
+                    header_map[bdzei] = row
+
+        count = 0
+        for _, sched in pbed.iterrows():
+            bdzei = str(sched.get("BDZEI", "")).strip()
+            header = header_map.get(bdzei)
+            if header is None:
+                continue
+
+            matnr = str(header.get("MATNR", "")).strip()
+            werks = str(header.get("WERKS", "")).strip()
+            product_id = self._get_product_id(matnr)
+            site_id = self._get_site_id(werks)
+            if not product_id or not site_id:
+                continue
+
+            fc_date = self._parse_sap_date(str(sched.get("PDATU", "")).strip())
+            qty = float(pd.to_numeric(sched.get("PLNMG", 0), errors="coerce") or 0)
+            if not fc_date or qty <= 0:
+                continue
+
+            # PIR provides planned quantity; estimate P10/P90 at ±20% CV
+            std = max(qty * 0.2, 1.0)
+            fc = Forecast(
+                product_id=product_id,
+                site_id=site_id,
+                config_id=self._config.id,
+                forecast_date=fc_date,
+                forecast_quantity=round(qty, 2),
+                p10_quantity=round(max(0, qty - 1.28 * std), 2),
+                p50_quantity=round(qty, 2),
+                p90_quantity=round(qty + 1.28 * std, 2),
+                source="SAP_PIR",
+            )
+            self.db.add(fc)
+            count += 1
+
+        await self.db.flush()
+        if count > 0:
+            logger.info(f"Created {count} forecast records from SAP PIR (PBIM/PBED)")
+        return count
+
+    @staticmethod
+    def _parse_sap_date(val: str) -> Optional[date]:
+        """Parse SAP date formats: YYYYMMDD or YYYY-MM-DD."""
+        if not val or val == "00000000" or val == "nan" or len(val) < 8:
+            return None
+        try:
+            if "-" in val:
+                return datetime.strptime(val[:10], "%Y-%m-%d").date()
+            return datetime.strptime(val[:8], "%Y%m%d").date()
+        except (ValueError, TypeError):
+            return None
+
+    def _detect_transactional_anomalies(self) -> List[Dict[str, Any]]:
+        """Detect anomalies in transactional data."""
+        anomalies = []
+        vbap = self._data.get("VBAP", pd.DataFrame())
+        ekko = self._data.get("EKKO", pd.DataFrame())
+        afko = self._data.get("AFKO", pd.DataFrame())
+
+        if vbap.empty:
+            anomalies.append({"type": "missing_data", "message": "No sales order items (VBAP) — outbound orders skipped"})
+        if ekko.empty:
+            anomalies.append({"type": "missing_data", "message": "No purchase order headers (EKKO) — inbound orders skipped"})
+        if afko.empty:
+            anomalies.append({"type": "missing_data", "message": "No production orders (AFKO) — production orders skipped"})
+
+        jest = self._data.get("JEST", pd.DataFrame())
+        if afko is not None and not afko.empty and jest.empty:
+            anomalies.append({"type": "warning", "message": "Production orders found but no JEST status data — all orders will default to PLANNED status"})
+
+        return anomalies
 
     # ------------------------------------------------------------------
     # Helpers

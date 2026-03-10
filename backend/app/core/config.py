@@ -67,7 +67,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30  # 30 days
     
     # CORS settings
-    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000"]
+    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000", "http://localhost:8088", "http://msi-stealth.local:8088"]
     CORS_ALLOW_CREDENTIALS: bool = True
     CORS_ALLOW_METHODS: List[str] = ["*"]
     CORS_ALLOW_HEADERS: List[str] = ["*"]
@@ -75,7 +75,7 @@ class Settings(BaseSettings):
     # Cookie settings
     COOKIE_SECURE: bool = False  # False for local development
     COOKIE_HTTP_ONLY: bool = True
-    COOKIE_SAME_SITE: str = "none"  # 'none' to allow localhost:3000 -> 8000
+    COOKIE_SAME_SITE: str = "lax"  # 'lax' is correct when behind nginx proxy (same origin)
     COOKIE_DOMAIN: Optional[str] = None
     COOKIE_ACCESS_TOKEN_NAME: str = "access_token"
     COOKIE_TOKEN_TYPE_NAME: str = "token_type"
@@ -128,7 +128,10 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://localhost:8000",
         "http://127.0.0.1:3000",
-        "http://127.0.0.1:8000"
+        "http://127.0.0.1:8000",
+        "http://localhost:8088",
+        "http://127.0.0.1:8088",
+        "http://msi-stealth.local:8088",
     ]
     
     # Frontend URL for CORS and redirects
@@ -139,7 +142,7 @@ class Settings(BaseSettings):
     REFRESH_COOKIE_NAME: str = "refresh_token"
     REFRESH_COOKIE_PATH: str = "/api/v1/auth"
     REFRESH_COOKIE_DOMAIN: Optional[str] = None  # Set to your domain in production
-    REFRESH_COOKIE_SAMESITE: str = "none"  # 'none' for cross-origin (localhost:3000 -> 8000)
+    REFRESH_COOKIE_SAMESITE: str = "lax"  # 'lax' is correct when behind nginx proxy (same origin)
     REFRESH_COOKIE_SECURE: bool = False  # True only in production over HTTPS
     REFRESH_COOKIE_HTTPONLY: bool = True
     
@@ -316,8 +319,6 @@ def get_settings() -> Settings:
     elif uri.startswith("postgresql"):
         port = parsed.port or 5432
         print(f"Using PostgreSQL database at: {server}:{port}/{db}")
-    elif uri.startswith("sqlite"):
-        print(f"Using SQLite database at: {uri}")
     else:
         print(f"Using database at: {uri}")
     return settings

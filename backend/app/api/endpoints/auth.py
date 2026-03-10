@@ -53,6 +53,16 @@ from app.services.tenant_service import DEFAULT_SITE_TYPE_DEFINITIONS
 
 router = APIRouter()
 
+# Reserved emails that cannot be registered by end users.
+# The system admin account is seeded at DB init and must not be claimable
+# via the public /register endpoint.
+RESERVED_EMAILS = frozenset({
+    "systemadmin@autonomy.ai",
+    "systemadmin@autonomy.com",
+    "admin@autonomy.ai",
+    "admin@autonomy.com",
+})
+
 
 class TokenResponse(BaseModel):
     """Response model for authentication tokens."""
@@ -405,6 +415,13 @@ async def register(
     - **password**: Must be at least 8 characters, with at least one uppercase, one lowercase, and one number
     - **full_name**: User's full name
     """
+    # Block reserved system emails from public registration
+    if user_in.email.lower() in RESERVED_EMAILS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This email address is reserved and cannot be registered",
+        )
+
     # Check if user with this email already exists
     db_user = await get_user_by_email(db, user_in.email)
     if db_user:

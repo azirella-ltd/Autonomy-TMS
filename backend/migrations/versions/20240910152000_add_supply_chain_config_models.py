@@ -16,37 +16,7 @@ branch_labels = None
 depends_on = None
 
 
-def _timestamp_columns(dialect_name: str):
-    created_col = sa.Column(
-        'created_at',
-        sa.DateTime(),
-        nullable=False,
-        server_default=sa.text('CURRENT_TIMESTAMP'),
-    )
-
-    if dialect_name == 'sqlite':
-        updated_col = sa.Column(
-            'updated_at',
-            sa.DateTime(),
-            nullable=False,
-            server_default=sa.text('CURRENT_TIMESTAMP'),
-        )
-    else:
-        updated_col = sa.Column(
-            'updated_at',
-            sa.DateTime(),
-            nullable=False,
-            server_default=sa.text('CURRENT_TIMESTAMP'),
-            server_onupdate=sa.text('CURRENT_TIMESTAMP'),
-        )
-
-    return created_col, updated_col
-
-
 def upgrade():
-    bind = op.get_bind()
-    dialect_name = bind.dialect.name if bind is not None else 'mysql'
-    created_col, updated_col = _timestamp_columns(dialect_name)
     # Create supply_chain_configs table
     op.create_table(
         'supply_chain_configs',
@@ -54,8 +24,8 @@ def upgrade():
         sa.Column('name', sa.String(length=100), nullable=False),
         sa.Column('description', sa.String(length=500), nullable=True),
         sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.text("FALSE")),
-        created_col,
-        updated_col,
+        sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP')),
+        sa.Column('updated_at', sa.DateTime(), nullable=False, server_default=sa.text('CURRENT_TIMESTAMP'), server_onupdate=sa.text('CURRENT_TIMESTAMP')),
         sa.Column('created_by', sa.Integer(), nullable=True),
         sa.ForeignKeyConstraint(['created_by'], ['users.id'], ondelete='SET NULL'),
         sa.PrimaryKeyConstraint('id')

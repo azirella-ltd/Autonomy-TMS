@@ -36,8 +36,7 @@ def upgrade() -> None:
         type_=sa.String(length=100),
         existing_nullable=False,
     )
-    if bind.dialect.name != "sqlite":
-        NODE_TYPE_ENUM.drop(bind, checkfirst=True)
+    NODE_TYPE_ENUM.drop(bind, checkfirst=True)
     op.execute(
         sa.text("UPDATE nodes SET type = COALESCE(dag_type, LOWER(type))")
     )

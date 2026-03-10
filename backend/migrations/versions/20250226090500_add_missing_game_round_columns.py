@@ -23,7 +23,6 @@ def _column_exists(table: str, column: str) -> bool:
 
 
 def upgrade() -> None:
-    # SQLite does not support multi-column ALTER ... ADD IF NOT EXISTS.
     if not _column_exists("game_rounds", "started_at"):
         op.add_column("game_rounds", Column("started_at", DateTime(), nullable=True))
 
@@ -32,10 +31,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    bind = op.get_bind()
-    is_sqlite = bind and bind.dialect.name == "sqlite"
-
-    if not is_sqlite and _column_exists("game_rounds", "ended_at"):
+    if _column_exists("game_rounds", "ended_at"):
         op.drop_column("game_rounds", "ended_at")
-    if not is_sqlite and _column_exists("game_rounds", "started_at"):
+    if _column_exists("game_rounds", "started_at"):
         op.drop_column("game_rounds", "started_at")

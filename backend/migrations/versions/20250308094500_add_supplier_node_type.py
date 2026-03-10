@@ -17,8 +17,6 @@ depends_on = None
 
 def upgrade() -> None:
     bind = op.get_bind()
-    if bind and bind.dialect.name == "sqlite":
-        return
 
     # Ensure alembic_version can store longer revision identifiers on MySQL.
     if bind.dialect.name == "mysql":
@@ -70,10 +68,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    bind = op.get_bind()
-    if bind and bind.dialect.name == "sqlite":
-        return
-
     op.execute(
         """
         UPDATE nodes

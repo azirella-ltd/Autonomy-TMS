@@ -64,10 +64,6 @@ LEGACY_TBG_NODE_TYPE_DEFINITIONS = (
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    if bind and bind.dialect.name == "sqlite":
-        return
-
     op.execute(
         sa.text(
             "UPDATE supply_chain_configs "
@@ -99,10 +95,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    bind = op.get_bind()
-    if bind and bind.dialect.name == "sqlite":
-        return
-
     for name in ("Case TBG", "Six-Pack TBG", "Bottle TBG"):
         op.execute(
             sa.text(

@@ -13,9 +13,6 @@ depends_on = None
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    is_sqlite = bind and bind.dialect.name == "sqlite"
-
     op.add_column(
         "nodes",
         sa.Column(
@@ -28,8 +25,7 @@ def upgrade() -> None:
     op.execute(
         "UPDATE nodes SET attributes = '{}' WHERE attributes IS NULL"
     )
-    if not is_sqlite:
-        op.alter_column("nodes", "attributes", server_default=None)
+    op.alter_column("nodes", "attributes", server_default=None)
 
     op.add_column("lanes", sa.Column("order_lead_time", sa.JSON(), nullable=True))
     op.add_column("lanes", sa.Column("supply_lead_time", sa.JSON(), nullable=True))

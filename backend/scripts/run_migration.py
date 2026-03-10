@@ -4,8 +4,6 @@ from app.core.db_urls import resolve_sync_database_url
 
 def run_migration():
     url = make_url(resolve_sync_database_url())
-    if url.drivername.startswith("sqlite"):
-        raise RuntimeError("MySQL database required for run_migration script")
     db_config = {
         'host': url.host or 'localhost',
         'user': url.username or 'autonomy_user',
