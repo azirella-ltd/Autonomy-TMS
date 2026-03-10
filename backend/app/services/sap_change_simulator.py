@@ -35,10 +35,8 @@ from app.models.sc_entities import (
     InvLevel,
     OutboundOrderLine,
     Product,
-    Site,
-    TransportationLane,
 )
-from app.models.supply_chain_config import SupplyChainConfig
+from app.models.supply_chain_config import SupplyChainConfig, Site, TransportationLane
 
 logger = logging.getLogger(__name__)
 

@@ -28,6 +28,8 @@ def atp_reasoning(
     confidence: float,
     decision_method: str,
     consumption_breakdown: Optional[Dict] = None,
+    unit_cost: Optional[float] = None,
+    unit_price: Optional[float] = None,
 ) -> str:
     """Generate reasoning for an ATP decision."""
     method = "TRM model" if decision_method == "trm" else "heuristic rule"
@@ -42,6 +44,9 @@ def atp_reasoning(
             tier_details = [f"tier {k}: {v:.0f}" for k, v in consumption_breakdown.items() if v > 0]
             if tier_details:
                 parts.append(f"Allocation consumed from: {', '.join(tier_details)} units.")
+        if unit_price is not None:
+            revenue = promised_qty * unit_price
+            parts.append(f"Revenue secured: ${revenue:,.2f} ({promised_qty:.0f} × ${unit_price:.2f}/unit).")
         parts.append(f"Decision made by {method} at {confidence:.0%} confidence. No shortfall — downstream fulfillment is on track.")
         return " ".join(parts)
     shortfall = requested_qty - promised_qty
@@ -55,6 +60,25 @@ def atp_reasoning(
         tier_details = [f"tier {k}: {v:.0f}" for k, v in consumption_breakdown.items() if v > 0]
         if tier_details:
             parts.append(f"Allocation consumed from: {', '.join(tier_details)} units.")
+    if unit_price is not None:
+        lost_revenue = shortfall * unit_price
+        fulfilled_revenue = promised_qty * unit_price
+        total_revenue = requested_qty * unit_price
+        lost_pct = (lost_revenue / total_revenue * 100) if total_revenue > 0 else 0
+        parts.append(
+            f"Revenue at risk: ${lost_revenue:,.2f} from {shortfall:.0f} unfulfilled units "
+            f"({lost_pct:.0f}% of ${total_revenue:,.2f} order value). "
+            f"Fulfilled portion secures ${fulfilled_revenue:,.2f}."
+        )
+    if unit_cost is not None and shortfall > 0:
+        expedite_premium = 0.35  # typical expedite premium
+        expedite_cost = shortfall * unit_cost * (1 + expedite_premium)
+        normal_cost = shortfall * unit_cost
+        premium_delta = expedite_cost - normal_cost
+        parts.append(
+            f"Expediting {shortfall:.0f} units would cost ~${expedite_cost:,.2f} "
+            f"(${premium_delta:,.2f} / {expedite_premium:.0%} premium over standard procurement at ${normal_cost:,.2f})."
+        )
     parts.append(f"Decision by {method} at {confidence:.0%} confidence. Consider expediting a replenishment order or rebalancing inventory from a surplus location to close the gap.")
     return " ".join(parts)
 
@@ -70,6 +94,9 @@ def po_reasoning(
     confidence: float,
     inventory_position: Optional[float] = None,
     expected_cost: Optional[float] = None,
+    unit_cost: Optional[float] = None,
+    unit_price: Optional[float] = None,
+    daily_demand: Optional[float] = None,
 ) -> str:
     """Generate reasoning for a PO creation decision."""
     trigger_label = trigger_reason.replace("_", " ").lower()
@@ -90,6 +117,28 @@ def po_reasoning(
         parts.append(f"Current inventory position is {inventory_position:.0f} units.{coverage_note}")
     if expected_cost is not None:
         parts.append(f"Estimated procurement cost: ${expected_cost:,.2f}.")
+        # Compute cost of inaction (stockout cost)
+        if unit_price is not None and daily_demand is not None and daily_demand > 0:
+            # Stockout cost = lost margin × days until next replenishment opportunity (est. 7 days)
+            margin = unit_price - (unit_cost or 0)
+            stockout_days = 7
+            stockout_cost = margin * daily_demand * stockout_days
+            if stockout_cost > 0:
+                saving = stockout_cost - expected_cost
+                saving_pct = (saving / stockout_cost * 100) if stockout_cost > 0 else 0
+                parts.append(
+                    f"Cost of inaction: ~${stockout_cost:,.2f} in lost margin over {stockout_days} days "
+                    f"of potential stockout ({daily_demand:.0f} units/day × ${margin:.2f} margin). "
+                    f"Ordering now saves ${saving:,.2f} ({saving_pct:.0f}%) net vs. stockout risk."
+                )
+        elif unit_cost is not None:
+            # Expedite alternative
+            expedite_cost = expected_cost * 1.40
+            premium = expedite_cost - expected_cost
+            parts.append(
+                f"Delaying this PO could require expedited procurement at ~${expedite_cost:,.2f} "
+                f"(${premium:,.2f} / 40% premium over standard cost of ${expected_cost:,.2f})."
+            )
     parts.append(f"Decision confidence: {confidence:.0%}. If not executed, the location risks stockout within the replenishment lead time window.")
     return " ".join(parts)
 
@@ -104,6 +153,12 @@ def rebalancing_reasoning(
     reason: Optional[str] = None,
     from_inventory: Optional[float] = None,
     to_inventory: Optional[float] = None,
+    expected_cost: Optional[float] = None,
+    unit_cost: Optional[float] = None,
+    unit_price: Optional[float] = None,
+    source_dos_before: Optional[float] = None,
+    dest_dos_before: Optional[float] = None,
+    dest_dos_after: Optional[float] = None,
 ) -> str:
     """Generate reasoning for an inventory rebalancing decision."""
     reason_label = reason.replace("_", " ") if reason else "inventory imbalance"
@@ -120,6 +175,36 @@ def rebalancing_reasoning(
             parts.append("The destination site has zero stock, making this transfer critical to prevent stockouts.")
     else:
         parts.append(f"The agent identified {to_site} as having insufficient coverage relative to its demand forecast, while {from_site} has surplus inventory that can be redistributed without risk.")
+    # Cost quantification
+    if expected_cost is not None:
+        parts.append(f"Transfer cost: ${expected_cost:,.2f}.")
+        if unit_cost is not None:
+            # Alternative: new PO from supplier (typically 2-3x transfer cost)
+            new_po_cost = recommended_qty * unit_cost
+            if new_po_cost > expected_cost:
+                saving = new_po_cost - expected_cost
+                saving_pct = (saving / new_po_cost * 100) if new_po_cost > 0 else 0
+                parts.append(
+                    f"Alternative (new PO from supplier): ${new_po_cost:,.2f}. "
+                    f"Rebalancing saves ${saving:,.2f} ({saving_pct:.0f}%) vs. new procurement."
+                )
+            # Alternative: expedited shipment
+            expedite_cost = expected_cost * 2.5
+            expedite_saving = expedite_cost - expected_cost
+            parts.append(
+                f"Alternative (expedited shipment): ~${expedite_cost:,.2f}. "
+                f"Standard transfer saves ${expedite_saving:,.2f} ({150:.0f}%) vs. expedite."
+            )
+        if unit_price is not None and dest_dos_before is not None and dest_dos_before < 3:
+            # Quantify stockout risk at destination
+            daily_revenue = unit_price * (recommended_qty / max(dest_dos_after - dest_dos_before, 1) if dest_dos_after and dest_dos_before else recommended_qty / 5)
+            stockout_days = max(3 - dest_dos_before, 0)
+            lost_revenue = daily_revenue * stockout_days
+            if lost_revenue > 0:
+                parts.append(
+                    f"Without this transfer, {to_site} risks ~${lost_revenue:,.2f} in lost sales "
+                    f"over {stockout_days:.0f} days of potential stockout."
+                )
     parts.append(f"Decision confidence: {confidence:.0%}. Transferring this quantity equalizes days-of-supply across locations and improves overall network service level.")
     return " ".join(parts)
 
@@ -132,6 +217,7 @@ def order_tracking_reasoning(
     recommended_action: str,
     confidence: float,
     reason: Optional[str] = None,
+    estimated_impact_cost: Optional[float] = None,
 ) -> str:
     """Generate reasoning for an order tracking exception."""
     severity_context = {
@@ -149,6 +235,18 @@ def order_tracking_reasoning(
     ]
     if reason:
         parts.append(f"Root cause analysis: {reason}.")
+    if estimated_impact_cost is not None and estimated_impact_cost > 0:
+        # Quantify cost of inaction vs resolution
+        resolution_cost = estimated_impact_cost * 0.25  # typical resolution cost is 25% of full impact
+        saving = estimated_impact_cost - resolution_cost
+        saving_pct = (saving / estimated_impact_cost * 100) if estimated_impact_cost > 0 else 0
+        parts.append(
+            f"Estimated impact if unresolved: ${estimated_impact_cost:,.2f}. "
+            f"Estimated resolution cost: ~${resolution_cost:,.2f}. "
+            f"Acting now saves ~${saving:,.2f} ({saving_pct:.0f}%) vs. allowing the exception to cascade."
+        )
+    elif estimated_impact_cost == 0:
+        parts.append("No direct financial impact estimated — this is a process compliance exception.")
     parts.append(f"Decision confidence: {confidence:.0%}. If this exception is not resolved, it may cascade to downstream orders and affect service level commitments.")
     return " ".join(parts)
 
@@ -161,6 +259,8 @@ def mo_execution_reasoning(
     confidence: float,
     reason: Optional[str] = None,
     mo_id: Optional[str] = None,
+    unit_cost: Optional[float] = None,
+    quantity: Optional[float] = None,
 ) -> str:
     """Generate reasoning for a manufacturing order execution decision."""
     subject = f"MO {mo_id}" if mo_id else f"Manufacturing order for {product_id}"
@@ -171,6 +271,23 @@ def mo_execution_reasoning(
     ]
     if reason:
         parts.append(f"Specific trigger: {reason}.")
+    if unit_cost is not None and quantity is not None and quantity > 0:
+        production_value = quantity * unit_cost
+        if decision_type.lower() == "expedite":
+            overtime_premium = production_value * 0.50
+            parts.append(
+                f"Production value: ${production_value:,.2f} ({quantity:.0f} units × ${unit_cost:.2f}). "
+                f"Expediting adds ~${overtime_premium:,.2f} in overtime/setup costs (50% premium), "
+                f"but avoids downstream stockout worth ${production_value * 1.3:,.2f} in lost margin."
+            )
+        elif decision_type.lower() == "defer":
+            holding_saving = production_value * 0.25 / 52  # one week holding cost
+            parts.append(
+                f"Deferring saves ~${holding_saving:,.2f}/week in holding costs on ${production_value:,.2f} of inventory. "
+                f"Risk: downstream demand may not be met if deferred too long."
+            )
+        elif decision_type.lower() in ("release", "release_standard"):
+            parts.append(f"Production value: ${production_value:,.2f} ({quantity:.0f} units × ${unit_cost:.2f}).")
     parts.append(f"Decision confidence: {confidence:.0%}. This action aligns with the current production schedule and capacity constraints at {location_id}.")
     return " ".join(parts)
 
@@ -184,6 +301,9 @@ def to_execution_reasoning(
     confidence: float,
     trigger_reason: Optional[str] = None,
     to_id: Optional[str] = None,
+    unit_cost: Optional[float] = None,
+    quantity: Optional[float] = None,
+    transfer_cost: Optional[float] = None,
 ) -> str:
     """Generate reasoning for a transfer order execution decision."""
     subject = f"TO {to_id}" if to_id else f"Transfer order for {product_id}"
@@ -198,6 +318,24 @@ def to_execution_reasoning(
     if trigger_reason:
         trigger_label = trigger_reason.replace("_", " ").lower()
         parts.append(f"This action was triggered by: {trigger_label}.")
+    if unit_cost is not None and quantity is not None and quantity > 0:
+        shipment_value = quantity * unit_cost
+        if transfer_cost is not None:
+            cost_pct = (transfer_cost / shipment_value * 100) if shipment_value > 0 else 0
+            parts.append(f"Shipment value: ${shipment_value:,.2f}. Transfer cost: ${transfer_cost:,.2f} ({cost_pct:.1f}% of goods value).")
+        else:
+            parts.append(f"Shipment value: ${shipment_value:,.2f} ({quantity:.0f} units × ${unit_cost:.2f}).")
+        if decision_type.lower() == "expedite":
+            standard_cost = (transfer_cost or shipment_value * 0.05)
+            expedite_cost = standard_cost * 2.5
+            premium = expedite_cost - standard_cost
+            parts.append(
+                f"Expediting costs ~${expedite_cost:,.2f} vs. standard ${standard_cost:,.2f} "
+                f"(${premium:,.2f} / {150:.0f}% premium). Justified if destination stockout risk is imminent."
+            )
+        elif decision_type.lower() == "consolidate":
+            estimated_saving = (transfer_cost or shipment_value * 0.05) * 0.30
+            parts.append(f"Consolidation saves ~${estimated_saving:,.2f} (est. 30% freight reduction) by combining shipments.")
     parts.append(f"Decision confidence: {confidence:.0%}. Executing this transfer order supports network-level inventory balance and service level targets.")
     return " ".join(parts)
 
@@ -210,6 +348,8 @@ def quality_reasoning(
     confidence: float,
     disposition_reason: Optional[str] = None,
     lot_id: Optional[str] = None,
+    unit_cost: Optional[float] = None,
+    quantity: Optional[float] = None,
 ) -> str:
     """Generate reasoning for a quality disposition decision."""
     subject = f"Lot {lot_id} ({product_id})" if lot_id else product_id
@@ -229,6 +369,31 @@ def quality_reasoning(
     }.get(disposition.lower(), "")
     if impact:
         parts.append(impact)
+    # Cost quantification by disposition type
+    if unit_cost is not None and quantity is not None and quantity > 0:
+        lot_value = quantity * unit_cost
+        if disposition.lower() == "scrap":
+            parts.append(
+                f"Write-off value: ${lot_value:,.2f} ({quantity:.0f} units × ${unit_cost:.2f}). "
+                f"Replacement PO cost: ~${lot_value:,.2f} + ${lot_value * 0.10:,.2f} expedite premium if urgent."
+            )
+        elif disposition.lower() == "rework":
+            rework_cost = lot_value * 0.20
+            recovered_value = lot_value - rework_cost
+            vs_scrap_saving = lot_value - rework_cost
+            vs_scrap_pct = (vs_scrap_saving / lot_value * 100) if lot_value > 0 else 0
+            parts.append(
+                f"Rework cost: ~${rework_cost:,.2f} (est. 20% of ${lot_value:,.2f} lot value). "
+                f"Recovered value: ${recovered_value:,.2f}. "
+                f"Rework saves ${vs_scrap_saving:,.2f} ({vs_scrap_pct:.0f}%) vs. scrapping and reordering."
+            )
+        elif disposition.lower() == "reject":
+            parts.append(
+                f"Lot value at risk: ${lot_value:,.2f}. Supplier recovery/credit may offset "
+                f"${lot_value * 0.80:,.2f} (80%) of the loss pending return terms."
+            )
+        elif disposition.lower() in ("accept", "use_as_is"):
+            parts.append(f"Lot value preserved: ${lot_value:,.2f} — no reorder or rework cost incurred.")
     parts.append(f"Decision confidence: {confidence:.0%}.")
     return " ".join(parts)
 
@@ -240,6 +405,9 @@ def maintenance_reasoning(
     decision_type: str,
     confidence: float,
     reason: Optional[str] = None,
+    estimated_maintenance_cost: Optional[float] = None,
+    estimated_downtime_hours: Optional[float] = None,
+    hourly_production_value: Optional[float] = None,
 ) -> str:
     """Generate reasoning for a maintenance scheduling decision."""
     decision_label = decision_type.replace("_", " ").lower()
@@ -257,6 +425,30 @@ def maintenance_reasoning(
     }.get(decision_type.lower(), "")
     if context:
         parts.append(context)
+    # Cost quantification
+    if estimated_maintenance_cost is not None:
+        parts.append(f"Planned maintenance cost: ${estimated_maintenance_cost:,.2f}.")
+        if estimated_downtime_hours is not None and hourly_production_value is not None:
+            planned_lost_production = estimated_downtime_hours * hourly_production_value
+            # Unplanned breakdown costs 3-5x more
+            unplanned_downtime = estimated_downtime_hours * 3
+            unplanned_cost = estimated_maintenance_cost * 3 + unplanned_downtime * hourly_production_value
+            saving = unplanned_cost - (estimated_maintenance_cost + planned_lost_production)
+            saving_pct = (saving / unplanned_cost * 100) if unplanned_cost > 0 else 0
+            parts.append(
+                f"Planned downtime: {estimated_downtime_hours:.1f}h (${planned_lost_production:,.2f} lost production). "
+                f"Unplanned breakdown estimate: ${unplanned_cost:,.2f} "
+                f"({unplanned_downtime:.0f}h downtime + 3× repair cost). "
+                f"Planned maintenance saves ${saving:,.2f} ({saving_pct:.0f}%) vs. unplanned failure."
+            )
+        elif estimated_downtime_hours is not None:
+            unplanned_cost = estimated_maintenance_cost * 3
+            saving = unplanned_cost - estimated_maintenance_cost
+            parts.append(
+                f"Planned downtime: {estimated_downtime_hours:.1f}h. "
+                f"Unplanned breakdown estimate: ~${unplanned_cost:,.2f} (3× planned cost). "
+                f"Preventive approach saves ~${saving:,.2f}."
+            )
     parts.append(f"Decision confidence: {confidence:.0%}.")
     return " ".join(parts)
 
@@ -268,6 +460,10 @@ def subcontracting_reasoning(
     confidence: float,
     reason: Optional[str] = None,
     external_supplier: Optional[str] = None,
+    unit_cost: Optional[float] = None,
+    quantity: Optional[float] = None,
+    internal_cost_per_unit: Optional[float] = None,
+    external_cost_per_unit: Optional[float] = None,
 ) -> str:
     """Generate reasoning for a subcontracting decision."""
     routing_label = routing_decision.replace("_", " ").lower()
@@ -286,6 +482,40 @@ def subcontracting_reasoning(
     }.get(routing_decision.lower(), "")
     if context:
         parts.append(context)
+    # Cost quantification
+    if quantity is not None and quantity > 0:
+        int_cpu = internal_cost_per_unit or unit_cost
+        ext_cpu = external_cost_per_unit or (unit_cost * 1.25 if unit_cost else None)
+        if int_cpu is not None and ext_cpu is not None:
+            internal_total = quantity * int_cpu
+            external_total = quantity * ext_cpu
+            delta = abs(external_total - internal_total)
+            delta_pct = (delta / max(internal_total, external_total) * 100) if max(internal_total, external_total) > 0 else 0
+            if routing_decision.lower() == "internal":
+                parts.append(
+                    f"Internal production: ${internal_total:,.2f} ({quantity:.0f} × ${int_cpu:.2f}). "
+                    f"External alternative: ${external_total:,.2f} ({quantity:.0f} × ${ext_cpu:.2f}). "
+                    f"Internal routing saves ${delta:,.2f} ({delta_pct:.0f}%)."
+                )
+            elif routing_decision.lower() == "external":
+                parts.append(
+                    f"External production: ${external_total:,.2f} ({quantity:.0f} × ${ext_cpu:.2f}). "
+                    f"Internal alternative: ${internal_total:,.2f} ({quantity:.0f} × ${int_cpu:.2f}). "
+                    f"External routing costs ${delta:,.2f} ({delta_pct:.0f}%) more, "
+                    f"justified by capacity constraints or lead time advantage."
+                )
+            elif routing_decision.lower() == "split":
+                # Assume 60/40 split
+                int_qty = quantity * 0.6
+                ext_qty = quantity * 0.4
+                split_cost = int_qty * int_cpu + ext_qty * ext_cpu
+                vs_all_ext = external_total - split_cost
+                vs_all_ext_pct = (vs_all_ext / external_total * 100) if external_total > 0 else 0
+                parts.append(
+                    f"Split cost (est. 60/40): ${split_cost:,.2f} "
+                    f"(internal ${int_qty * int_cpu:,.2f} + external ${ext_qty * ext_cpu:,.2f}). "
+                    f"Saves ${vs_all_ext:,.2f} ({vs_all_ext_pct:.0f}%) vs. fully external at ${external_total:,.2f}."
+                )
     parts.append(f"Decision confidence: {confidence:.0%}.")
     return " ".join(parts)
 
@@ -299,6 +529,8 @@ def forecast_adjustment_reasoning(
     signal_type: Optional[str] = None,
     current_value: Optional[float] = None,
     adjusted_value: Optional[float] = None,
+    unit_cost: Optional[float] = None,
+    unit_price: Optional[float] = None,
 ) -> str:
     """Generate reasoning for a forecast adjustment decision."""
     parts = [
@@ -307,6 +539,37 @@ def forecast_adjustment_reasoning(
     if current_value is not None and adjusted_value is not None:
         delta = abs(adjusted_value - current_value)
         parts.append(f"Baseline forecast of {current_value:.0f} units adjusted to {adjusted_value:.0f} units (delta: {delta:.0f} units).")
+        # Cost quantification of the adjustment
+        if unit_cost is not None:
+            holding_cost_annual_pct = 0.25
+            weekly_holding_per_unit = unit_cost * holding_cost_annual_pct / 52
+            if adjustment_direction.lower() == "up":
+                # Upward: cost of not adjusting = potential stockout on the delta
+                if unit_price is not None:
+                    margin = unit_price - unit_cost
+                    stockout_cost = delta * margin
+                    parts.append(
+                        f"Cost of not adjusting: ~${stockout_cost:,.2f} in lost margin if demand materializes "
+                        f"at the higher level ({delta:.0f} units × ${margin:.2f}/unit margin). "
+                        f"Additional holding cost from adjustment: ${delta * weekly_holding_per_unit:,.2f}/week "
+                        f"({delta:.0f} units × ${weekly_holding_per_unit:.2f}/unit/week)."
+                    )
+                else:
+                    extra_holding = delta * weekly_holding_per_unit
+                    parts.append(
+                        f"Additional holding cost from higher forecast: ${extra_holding:,.2f}/week "
+                        f"({delta:.0f} units × ${weekly_holding_per_unit:.2f}/unit/week)."
+                    )
+            else:
+                # Downward: savings from reduced inventory
+                weekly_saving = delta * weekly_holding_per_unit
+                monthly_saving = weekly_saving * 4.33
+                parts.append(
+                    f"Holding cost savings from lower forecast: ${weekly_saving:,.2f}/week "
+                    f"(${monthly_saving:,.2f}/month). "
+                    f"Reduces excess inventory by {delta:.0f} units × ${unit_cost:.2f}/unit = "
+                    f"${delta * unit_cost:,.2f} working capital freed."
+                )
     if signal_type:
         signal_label = signal_type.replace("_", " ")
         parts.append(f"This adjustment was triggered by a {signal_label} signal that indicates a deviation from the statistical forecast baseline.")
@@ -329,6 +592,10 @@ def inventory_buffer_reasoning(
     multiplier: float,
     confidence: float,
     reason: Optional[str] = None,
+    unit_cost: Optional[float] = None,
+    unit_price: Optional[float] = None,
+    current_dos: Optional[float] = None,
+    excess_holding_cost: Optional[float] = None,
 ) -> str:
     """Generate reasoning for an inventory buffer adjustment decision."""
     direction = "increased" if adjusted_ss > baseline_ss else "decreased"
@@ -340,10 +607,48 @@ def inventory_buffer_reasoning(
     if reason:
         reason_label = reason.replace("_", " ")
         parts.append(f"Adjustment triggered by: {reason_label}.")
-    if direction == "increased":
-        parts.append(f"Increasing the buffer absorbs additional uncertainty and reduces the probability of stockout. The trade-off is higher average on-hand inventory and associated holding costs.")
+    # Cost quantification
+    if unit_cost is not None:
+        holding_cost_annual_pct = 0.25
+        weekly_holding_per_unit = unit_cost * holding_cost_annual_pct / 52
+        annual_holding_delta = delta * unit_cost * holding_cost_annual_pct
+        weekly_holding_delta = delta * weekly_holding_per_unit
+        working_capital_delta = delta * unit_cost
+        if direction == "increased":
+            parts.append(
+                f"Additional holding cost: ${weekly_holding_delta:,.2f}/week (${annual_holding_delta:,.2f}/year) "
+                f"for {delta:.0f} extra buffer units at ${unit_cost:.2f}/unit. "
+                f"Working capital increase: ${working_capital_delta:,.2f}."
+            )
+            if unit_price is not None:
+                # Quantify stockout prevention value
+                margin = unit_price - unit_cost
+                stockout_prevention = delta * margin  # one stockout cycle worth of margin protected
+                roi_pct = (stockout_prevention / annual_holding_delta * 100) if annual_holding_delta > 0 else 0
+                parts.append(
+                    f"Stockout prevention value: ${stockout_prevention:,.2f} per stockout event avoided "
+                    f"({delta:.0f} units × ${margin:.2f} margin). "
+                    f"ROI vs. holding cost: {roi_pct:.0f}% if one stockout event is prevented per year."
+                )
+        else:
+            parts.append(
+                f"Holding cost savings: ${weekly_holding_delta:,.2f}/week (${annual_holding_delta:,.2f}/year). "
+                f"Working capital freed: ${working_capital_delta:,.2f}."
+            )
+            if unit_price is not None:
+                margin = unit_price - unit_cost
+                risk_exposure = delta * margin
+                parts.append(
+                    f"Trade-off: ${risk_exposure:,.2f} additional margin exposure per stockout event "
+                    f"({delta:.0f} fewer buffer units × ${margin:.2f} margin)."
+                )
+    elif excess_holding_cost is not None:
+        parts.append(f"Excess holding cost impact: ${excess_holding_cost:,.2f}.")
     else:
-        parts.append(f"Decreasing the buffer releases excess working capital while maintaining acceptable service levels. Demand patterns have stabilized enough to warrant a tighter buffer.")
+        if direction == "increased":
+            parts.append(f"Increasing the buffer absorbs additional uncertainty and reduces the probability of stockout. The trade-off is higher average on-hand inventory and associated holding costs.")
+        else:
+            parts.append(f"Decreasing the buffer releases excess working capital while maintaining acceptable service levels. Demand patterns have stabilized enough to warrant a tighter buffer.")
     parts.append(f"Decision confidence: {confidence:.0%}.")
     return " ".join(parts)
 

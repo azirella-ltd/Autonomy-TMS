@@ -498,8 +498,9 @@ class DecisionStreamService:
             "config_id": config_id,
         }
 
-        # --- Store in digest cache ---
-        _DIGEST_CACHE[cache_key] = {**result, "_ts": time.time()}
+        # --- Store in digest cache (skip caching empty digests) ---
+        if digest_text:
+            _DIGEST_CACHE[cache_key] = {**result, "_ts": time.time()}
         # Evict stale entries (keep max 50)
         if len(_DIGEST_CACHE) > 50:
             oldest_key = min(_DIGEST_CACHE, key=lambda k: _DIGEST_CACHE[k]["_ts"])
@@ -813,10 +814,18 @@ class DecisionStreamService:
 
     def _prioritize_decisions(self, decisions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Sort by urgency DESC, confidence ASC, then cap at 20."""
+        def _to_float(v, default=0.0):
+            if v is None:
+                return default
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return default
+
         def sort_key(d):
-            urgency = d.get("urgency") or 0.0
+            urgency = _to_float(d.get("urgency"), 0.0)
             # Low confidence = needs human more = should appear higher
-            confidence_inv = 1.0 - (d.get("confidence") or _DEFAULT_CONFIDENCE)
+            confidence_inv = 1.0 - _to_float(d.get("confidence"), _DEFAULT_CONFIDENCE)
             return (urgency, confidence_inv)
 
         decisions.sort(key=sort_key, reverse=True)
