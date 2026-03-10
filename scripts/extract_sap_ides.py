@@ -1034,7 +1034,7 @@ def save_csv(records: List[Dict[str, Any]], fields: List[str], filepath: Path):
         writer.writerows(records)
 
 
-def generate_manifest(results: Dict[str, Dict[str, Any]]):
+def generate_manifest(results: Dict[str, Dict[str, Any]], output_dir: Path = OUTPUT_DIR):
     """Write manifest file with extraction metadata."""
     manifest = {
         "extraction_timestamp": datetime.now().isoformat(),
@@ -1064,7 +1064,7 @@ def generate_manifest(results: Dict[str, Dict[str, Any]]):
             manifest["total_records"] += info["records"]
             manifest["total_files"] += 1
 
-    manifest_path = OUTPUT_DIR / "MANIFEST.json"
+    manifest_path = output_dir / "MANIFEST.json"
     with open(manifest_path, "w") as f:
         json.dump(manifest, f, indent=2)
     logger.info(f"\nManifest: {manifest_path}")
@@ -1123,10 +1123,8 @@ Examples:
         print("\nERROR: SAP password required. Use --password <PW> or set SAP_PASS env var.")
         sys.exit(1)
 
-    global OUTPUT_DIR
-    if args.output:
-        OUTPUT_DIR = args.output
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output_dir = args.output if args.output else OUTPUT_DIR
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     categories = args.categories or ALL_CATEGORIES
 
@@ -1137,7 +1135,7 @@ Examples:
     logger.info(f"User:       {args.user}, Client: {args.client}")
     logger.info(f"Company:    {COMPANY_CODE}, Plant: {PLANT}")
     logger.info(f"Categories: {', '.join(categories)}")
-    logger.info(f"Output:     {OUTPUT_DIR}")
+    logger.info(f"Output:     {output_dir}")
     logger.info("")
 
     client = SAPODataClient(
@@ -1175,7 +1173,7 @@ Examples:
             logger.info(f"\n  [{name}] {config['description']}")
 
             records = client.extract(config)
-            filepath = OUTPUT_DIR / config["filename"]
+            filepath = output_dir / config["filename"]
 
             if records:
                 save_csv(records, config.get("select", []), filepath)
@@ -1197,7 +1195,7 @@ Examples:
     logger.info("EXTRACTION COMPLETE")
     logger.info("=" * 70)
 
-    manifest = generate_manifest(all_results)
+    manifest = generate_manifest(all_results, output_dir)
 
     grand_total = 0
     for category, extractions in all_results.items():
@@ -1210,14 +1208,14 @@ Examples:
             logger.info(f"      [{icon}] {info['filename']:40s} {info['records']:>8,}")
 
     logger.info(f"\n  TOTAL: {grand_total:,} records across {manifest['total_files']} files")
-    logger.info(f"  Output: {OUTPUT_DIR}/")
+    logger.info(f"  Output: {output_dir}/")
 
     logger.info("\nNext steps:")
     logger.info("  1. Review CSVs in imports/SAP/IDES_1710/")
     logger.info("  2. SUSPEND SAP instance in CAL to save ~$75/day")
     logger.info("  3. Create SAP connection in Autonomy (CSV method):")
     logger.info(f"     Admin > SAP Data Management > New Connection > CSV")
-    logger.info(f"     csv_directory: {OUTPUT_DIR}")
+    logger.info(f"     csv_directory: {output_dir}")
     logger.info("  4. Run field mapping + ingestion to create tenant config")
     logger.info("  5. Start SAP Change Simulator for ongoing CDC events")
 
