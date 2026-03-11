@@ -103,7 +103,7 @@ const SankeyDiagram = ({
   nodes,
   links,
   height = 360,
-  margin = { top: 24, right: 64, bottom: 24, left: 64 },
+  margin = { top: 16, right: 120, bottom: 16, left: 120 },
   nodeWidth = 18,
   nodePadding = 48,
   align = 'justify',
