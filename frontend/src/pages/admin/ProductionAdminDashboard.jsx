@@ -127,9 +127,13 @@ const ProductionAdminDashboard = () => {
       const data = Array.isArray(configs) ? configs : [];
       setSupplyChainConfigs(data);
 
-      // Select first config if none selected
+      // Select first config if none selected.
+      // Prefer production (non-TBG/non-Learning) configs over simulation configs.
       if (data.length > 0 && (selectedSupplyChainId === 'all' || !selectedSupplyChainId)) {
-        const activeConfig = data.find((c) => c.is_active) || data[0];
+        const isTbgOrLearning = (c) => /tbg|learning/i.test(c.name || '');
+        const productionConfigs = data.filter((c) => !isTbgOrLearning(c));
+        const pool = productionConfigs.length > 0 ? productionConfigs : data;
+        const activeConfig = pool.find((c) => c.is_active) || pool[0];
         setSelectedConfig(activeConfig);
       } else if (selectedSupplyChainId && selectedSupplyChainId !== 'all') {
         const found = data.find((c) => String(c.id) === String(selectedSupplyChainId));

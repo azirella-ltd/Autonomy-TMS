@@ -332,12 +332,15 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
     if (!site) return '';
     const dagType = normalizeTypeToken(site.dag_type || site.dagType);
     if (dagType) return dagType;
+    // Prefer master_type when it maps to a known definition (e.g. "MANUFACTURER" → "manufacturer").
+    // site.type may be a human-readable name ("Plant 1 US") whose token won't match any definition,
+    // which breaks column ordering. Only fall back to site.type when master_type is absent.
+    const masterType = normalizeTypeToken(site.master_type || site.masterType);
+    if (masterType && dagDefinitionOrderMap.has(masterType)) return masterType;
     const explicitType = normalizeTypeToken(site.type || site.site_type || site.node_type);
     if (explicitType) return explicitType;
-    const masterType = normalizeTypeToken(site.master_type || site.masterType);
-    if (masterType) return masterType;
-    return '';
-  }, []);
+    return masterType || '';
+  }, [dagDefinitionOrderMap]);
 
   const typeOrder = useMemo(() => {
     const siteLookup = new Map();
