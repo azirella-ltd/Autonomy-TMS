@@ -338,6 +338,7 @@ class SupplyChainConfigBase(BaseModel):
     name: str = Field(..., max_length=100, description="Name of the configuration")
     description: Optional[str] = Field(None, max_length=500, description="Description of the configuration")
     is_active: bool = Field(False, description="Whether this is the active configuration")
+    mode: str = Field('production', description="Config-level operating mode: 'production' or 'learning'")
     tenant_id: Optional[int] = Field(
         None,
         description="ID of the tenant that owns this configuration"
@@ -560,6 +561,7 @@ class SupplyChainConfigUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=100, description="Name of the configuration")
     description: Optional[str] = Field(None, max_length=500, description="Description of the configuration")
     is_active: Optional[bool] = Field(None, description="Whether this is the active configuration")
+    mode: Optional[str] = Field(None, description="Config-level operating mode: 'production' or 'learning'")
     tenant_id: Optional[int] = Field(None, description="ID of the tenant that owns this configuration")
     time_bucket: Optional[TimeBucket] = Field(None, description="Time aggregation unit for the simulation")
     site_type_definitions: Optional[List[NodeTypeDefinition]] = Field(

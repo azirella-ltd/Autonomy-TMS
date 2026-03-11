@@ -33,18 +33,20 @@ import {
 } from "lucide-react";
 import { cn } from "../lib/utils/cn";
 import { useAuth } from "../contexts/AuthContext";
+import { useActiveConfig } from "../contexts/ActiveConfigContext";
 import { isSystemAdmin, isTenantAdmin } from "../utils/authUtils";
 import simulationApi, { api } from "../services/api";
 import { getSupplyChainConfigById } from "../services/supplyChainConfigService";
+import ConfigModeSwitcher from "./ConfigModeSwitcher";
 
 const Navbar = () => {
   const { user, isAuthenticated, logout } = useAuth();
+  const { configMode } = useActiveConfig();
   const [currentPath, setCurrentPath] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [scenarioInfo, setGameInfo] = useState(null);
   const [systemConfigName, setSystemConfigName] = useState(null);
   const [supplyChainConfigName, setSupplyChainConfigName] = useState(null);
-  const [tenantMode, setTenantMode] = useState(null); // 'learning' or 'production'
   const menuRef = useRef(null);
   const buttonRef = useRef(null);
   const navigate = useNavigate();
@@ -57,27 +59,6 @@ const Navbar = () => {
   useEffect(() => {
     setCurrentPath(location.pathname);
   }, [location]);
-
-  // Fetch tenant mode for TENANT_ADMIN users
-  useEffect(() => {
-    const fetchTenantMode = async () => {
-      if (user?.user_type === 'TENANT_ADMIN' && user?.tenant_id) {
-        try {
-          const response = await api.get(`/tenants/${user.tenant_id}`);
-          setTenantMode(response.data.mode || 'learning');
-        } catch (error) {
-          console.error('Failed to fetch tenant mode:', error);
-          setTenantMode('learning'); // Default to learning on error
-        }
-      } else if (user?.user_type === 'SYSTEM_ADMIN') {
-        setTenantMode(null); // System admin doesn't have a tenant mode
-      }
-    };
-
-    if (user) {
-      fetchTenantMode();
-    }
-  }, [user]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -203,8 +184,9 @@ const Navbar = () => {
   const isSysAdmin = isSystemAdmin(user);
   // Check for TENANT_ADMIN specifically (not SYSTEM_ADMIN)
   const isGrpAdmin = !isSysAdmin && isTenantAdmin(user);
-  const isProductionMode = tenantMode === 'production';
-  const isLearningMode = tenantMode === 'learning';
+  // Use configMode from ActiveConfigContext (derived from activeConfig.mode)
+  const isProductionMode = configMode === 'production';
+  const isLearningMode = configMode === 'learning';
 
   // Build navigation based on role and group mode
   const getNavigation = () => {
@@ -559,6 +541,9 @@ const Navbar = () => {
 
         {/* Right side - User menu */}
         <div className="flex items-center gap-1">
+          {/* Config Mode Switcher (tenant admins only) */}
+          <ConfigModeSwitcher />
+
           {!isSysAdmin && (
             <>
               <IconButton

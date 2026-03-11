@@ -309,6 +309,7 @@ class MeResponse(BaseModel):
     tenant_id: Optional[int] = None
     user_type: Optional[str] = None
     is_superuser: bool = False
+    default_config_id: Optional[int] = None
 
 
 class OrderSubmission(BaseModel):
@@ -729,6 +730,7 @@ async def me(user: Dict[str, Any] = Depends(get_current_user)):
         tenant_id=user.get("tenant_id"),
         user_type=user.get("user_type"),
         is_superuser=bool(user.get("is_superuser", False)),
+        default_config_id=user.get("default_config_id"),
     )
 
 @api.post("/auth/refresh", response_model=TokenResponse, tags=["auth"])
@@ -855,6 +857,105 @@ async def list_supply_chain_configs(
 
         configs = query.all()
         return [_serialize_supply_chain_config(cfg) for cfg in configs]
+    finally:
+        db.close()
+
+
+@api.get("/supply-chain-config/active")
+async def get_active_supply_chain_config(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Return the active SC config for the current user.
+
+    Resolution order:
+    1. User's default_config_id (set by tenant admin).
+    2. Tenant's is_active=True BASELINE config.
+    """
+    db = SyncSessionLocal()
+    try:
+        from app.models.user import User as UserModel
+        user_obj = db.query(UserModel).filter(UserModel.id == current_user.get("id")).first()
+        if user_obj and user_obj.default_config_id:
+            cfg = db.query(SupplyChainConfig).filter(
+                SupplyChainConfig.id == user_obj.default_config_id
+            ).first()
+            if cfg:
+                return _serialize_supply_chain_config(cfg)
+
+        # Fallback: tenant's active baseline
+        tenant_id = _extract_tenant_id(current_user)
+        if not tenant_id:
+            return {}
+        cfg = db.query(SupplyChainConfig).filter(
+            SupplyChainConfig.tenant_id == tenant_id,
+            SupplyChainConfig.is_active == True,
+            SupplyChainConfig.scenario_type == "BASELINE",
+        ).first()
+        if not cfg:
+            return {}
+        return _serialize_supply_chain_config(cfg)
+    finally:
+        db.close()
+
+
+@api.put("/users/me/active-config")
+async def set_user_active_config(
+    payload: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Allow tenant admin to switch their active SC config (production ↔ learning)."""
+    config_id = payload.get("config_id")
+    if not config_id:
+        raise HTTPException(status_code=400, detail="config_id is required")
+    db = SyncSessionLocal()
+    try:
+        from app.models.user import User as UserModel
+        cfg = db.query(SupplyChainConfig).filter(SupplyChainConfig.id == config_id).first()
+        if not cfg:
+            raise HTTPException(status_code=404, detail="Config not found")
+        # Validate config belongs to user's tenant
+        tenant_id = _extract_tenant_id(current_user)
+        is_admin = _is_system_admin_user(current_user)
+        if not is_admin and cfg.tenant_id != tenant_id:
+            raise HTTPException(status_code=403, detail="Config does not belong to your tenant")
+        user_obj = db.query(UserModel).filter(UserModel.id == current_user.get("id")).first()
+        if not user_obj:
+            raise HTTPException(status_code=404, detail="User not found")
+        user_obj.default_config_id = config_id
+        db.commit()
+        return {"default_config_id": config_id, "mode": cfg.mode}
+    finally:
+        db.close()
+
+
+@api.put("/admin/users/{user_id}/default-config")
+async def admin_set_user_default_config(
+    user_id: int,
+    payload: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Tenant admin sets a user's default config (learning vs production assignment)."""
+    config_id = payload.get("config_id")
+    if not config_id:
+        raise HTTPException(status_code=400, detail="config_id is required")
+    db = SyncSessionLocal()
+    try:
+        from app.models.user import User as UserModel
+        cfg = db.query(SupplyChainConfig).filter(SupplyChainConfig.id == config_id).first()
+        if not cfg:
+            raise HTTPException(status_code=404, detail="Config not found")
+        tenant_id = _extract_tenant_id(current_user)
+        is_admin = _is_system_admin_user(current_user)
+        if not is_admin and cfg.tenant_id != tenant_id:
+            raise HTTPException(status_code=403, detail="Config does not belong to your tenant")
+        target_user = db.query(UserModel).filter(UserModel.id == user_id).first()
+        if not target_user:
+            raise HTTPException(status_code=404, detail="User not found")
+        if not is_admin and target_user.tenant_id != tenant_id:
+            raise HTTPException(status_code=403, detail="User does not belong to your tenant")
+        target_user.default_config_id = config_id
+        db.commit()
+        return {"user_id": user_id, "default_config_id": config_id, "mode": cfg.mode}
     finally:
         db.close()
 
@@ -1363,6 +1464,7 @@ def _build_user_payload_from_model(user: User) -> Dict[str, Any]:
         "tenant_id": data.get("tenant_id"),
         "is_superuser": bool(data.get("is_superuser")),
         "user_type": user_type,
+        "default_config_id": getattr(user, "default_config_id", None),
     }
     return payload
 
@@ -1401,6 +1503,7 @@ def _serialize_supply_chain_config(cfg: SupplyChainConfig) -> Dict[str, Any]:
         "name": cfg.name,
         "description": cfg.description,
         "is_active": bool(cfg.is_active),
+        "mode": getattr(cfg, "mode", "production") or "production",
         "tenant_id": cfg.tenant_id,
         "parent_config_id": cfg.parent_config_id,
         "base_config_id": getattr(cfg, "base_config_id", None),

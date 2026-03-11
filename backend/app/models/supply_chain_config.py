@@ -144,6 +144,11 @@ class SupplyChainConfig(Base):
     #     cascade="all, delete-orphan"
     # )
 
+    # Config-level operating mode: 'production' or 'learning'
+    # Mirrors the tenant mode for configs that belong to the tenant, or 'learning'
+    # for learning configs that have been migrated to a production tenant.
+    mode = Column(String(20), nullable=False, default='production')
+
     # Validation metadata
     validation_status = Column(String(20), nullable=False, default="unchecked")  # unchecked, valid, invalid
     validation_errors = Column(JSON, nullable=True)  # List of validation error messages

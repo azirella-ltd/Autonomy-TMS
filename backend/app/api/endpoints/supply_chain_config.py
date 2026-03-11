@@ -810,7 +810,27 @@ def read_active_config(
     db: Session = Depends(deps.get_db),
     current_user: models.User = Depends(deps.get_current_active_user),
 ):
-    """Get the active BASELINE supply chain configuration for the user's tenant."""
+    """Get the active supply chain configuration for the current user.
+
+    Resolution order:
+    1. User's default_config_id (if set) — returns that specific config.
+    2. Tenant's is_active=True BASELINE config (existing behaviour).
+    """
+    # Priority 1: user has a personal default config selected
+    user_default_config_id = getattr(current_user, "default_config_id", None)
+    if user_default_config_id:
+        config = db.query(SupplyChainConfig).filter(
+            SupplyChainConfig.id == user_default_config_id
+        ).first()
+        if config:
+            # Validate the config still belongs to the user's tenant
+            user_tenant_id = getattr(current_user, "tenant_id", None)
+            user_type = getattr(current_user, "user_type", None)
+            if user_type == UserTypeEnum.SYSTEM_ADMIN or config.tenant_id == user_tenant_id:
+                return config
+            # Config no longer belongs to this tenant — fall through to default
+
+    # Priority 2: tenant's active baseline (existing behaviour)
     user_type = getattr(current_user, "user_type", None)
     if user_type == UserTypeEnum.SYSTEM_ADMIN:
         # System admin: try their tenant first, fall back to any active baseline

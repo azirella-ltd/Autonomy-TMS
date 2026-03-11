@@ -18,6 +18,7 @@ import { useAuth } from './AuthContext';
 const ActiveConfigContext = createContext({
   activeConfig: null,
   activeConfigId: null,
+  configMode: 'production',
   workingBranch: null,
   workingBranchId: null,
   effectiveConfigId: null,
@@ -39,6 +40,7 @@ export function ActiveConfigProvider({ children }) {
   const [error, setError] = useState(null);
 
   const activeConfigId = activeConfig?.id ?? null;
+  const configMode = activeConfig?.mode ?? 'production';
   const workingBranchId = workingBranch?.id ?? null;
   const effectiveConfigId = workingBranchId ?? activeConfigId;
 
@@ -47,7 +49,7 @@ export function ActiveConfigProvider({ children }) {
     setLoading(true);
     setError(null);
     try {
-      const response = await simulationApi.get('/supply-chain-configs/active');
+      const response = await simulationApi.get('/supply-chain-config/active');
       setActiveConfig(response.data);
 
       // Fetch WORKING branches for this tenant
@@ -108,6 +110,7 @@ export function ActiveConfigProvider({ children }) {
       value={{
         activeConfig,
         activeConfigId,
+        configMode,
         workingBranch,
         workingBranchId,
         effectiveConfigId,

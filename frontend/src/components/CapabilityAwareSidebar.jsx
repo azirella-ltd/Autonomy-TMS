@@ -14,7 +14,7 @@ import { IconButton, Badge } from './common';
 import { cn } from '../lib/utils/cn';
 import { useAuth } from '../contexts/AuthContext';
 import { useCapabilities } from '../hooks/useCapabilities';
-import { useTenantMode } from '../hooks/useTenantMode';
+import { useActiveConfig } from '../contexts/ActiveConfigContext';
 import { getFilteredNavigation } from '../config/navigationConfig';
 import { isSystemAdmin, isTenantAdmin as checkIsTenantAdmin } from '../utils/authUtils';
 
@@ -54,7 +54,8 @@ const Tooltip = ({ children, title, placement = 'right' }) => {
 const CapabilityAwareSidebar = ({ open, onToggle }) => {
   const { user } = useAuth();
   const { hasCapability, loading: capabilitiesLoading } = useCapabilities();
-  const { tenantMode, loading: tenantModeLoading } = useTenantMode();
+  // Use configMode from ActiveConfigContext so navigation reacts to config switches
+  const { configMode, loading: configLoading } = useActiveConfig();
   const [expandedSections, setExpandedSections] = useState({});
   const navigate = useNavigate();
   const location = useLocation();
@@ -62,11 +63,11 @@ const CapabilityAwareSidebar = ({ open, onToggle }) => {
   const isSysAdmin = isSystemAdmin(user);
   const isGrpAdmin = checkIsTenantAdmin(user);
 
-  // Get filtered navigation based on user capabilities and tenant mode
+  // Get filtered navigation based on user capabilities and config mode
   const navigation = useMemo(() => {
-    if (capabilitiesLoading || tenantModeLoading) return [];
-    return getFilteredNavigation(hasCapability, isSysAdmin, isGrpAdmin, tenantMode);
-  }, [hasCapability, isSysAdmin, isGrpAdmin, capabilitiesLoading, tenantModeLoading, tenantMode]);
+    if (capabilitiesLoading || configLoading) return [];
+    return getFilteredNavigation(hasCapability, isSysAdmin, isGrpAdmin, configMode);
+  }, [hasCapability, isSysAdmin, isGrpAdmin, capabilitiesLoading, configLoading, configMode]);
 
   const handleSectionToggle = (sectionId) => {
     setExpandedSections((prev) => ({
