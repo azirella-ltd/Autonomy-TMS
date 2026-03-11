@@ -45,6 +45,7 @@ import { ScenarioComparison } from "./components/stochastic";
 import SyntheticDataWizard from "./pages/admin/SyntheticDataWizard.jsx";
 import PlanningHierarchyConfig from "./pages/admin/PlanningHierarchyConfig.jsx";
 import SAPDataManagement from "./pages/admin/SAPDataManagement.jsx";
+import EmailSignalsDashboard from "./pages/admin/EmailSignalsDashboard.jsx";
 
 import HiveDashboard from "./pages/admin/HiveDashboard.jsx";
 import SkillsDashboard from "./pages/admin/SkillsDashboard.jsx";
@@ -466,8 +467,10 @@ const AppContent = () => {
               path="/admin/sap-data"
               element={<SAPDataManagement />}
             />
-
-
+            <Route
+              path="/admin/email-signals"
+              element={<EmailSignalsDashboard />}
+            />
 
             <Route
               path="/admin/hive"

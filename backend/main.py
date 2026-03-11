@@ -6078,6 +6078,10 @@ api.include_router(directives_router, tags=["directives"])
 from app.api.endpoints.provisioning import router as provisioning_router
 api.include_router(provisioning_router, tags=["provisioning"])
 
+# Email Signal Intelligence — GDPR-safe email ingestion for SC signals
+from app.api.endpoints.email_signals import router as email_signals_router
+api.include_router(email_signals_router, tags=["email-signals"])
+
 # Consensus Planning API
 from app.api.endpoints.consensus_planning import router as consensus_planning_router
 api.include_router(consensus_planning_router, prefix="/consensus-planning", tags=["consensus-planning", "demand-planning"])

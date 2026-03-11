@@ -70,6 +70,7 @@ import {
   Award as AwardIcon,
   ThumbsUp as ThumbsUpIcon,
   Trophy as TrophyIcon,
+  Mail as MailIcon,
 } from 'lucide-react';
 
 /**
@@ -868,6 +869,13 @@ export const NAVIGATION_CONFIG = [
         icon: DatabaseIcon,
         requiredCapability: 'manage_tenant_users',
         description: 'SAP connections, field mapping, and data ingestion',
+      },
+      {
+        label: 'Email Signals',
+        path: '/admin/email-signals',
+        icon: MailIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'GDPR-safe email ingestion for supply chain intelligence',
       },
       {
         label: 'Knowledge Base',

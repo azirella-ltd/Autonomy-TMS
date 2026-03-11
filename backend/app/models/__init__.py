@@ -330,6 +330,9 @@ from .executive_briefing import (
 # 28. User Directives — "Talk to Me" context capture & Powell routing
 from .user_directive import UserDirective, ConfigProvisioningStatus
 
+# 29. Email Signals — GDPR-safe email ingestion for SC intelligence
+from .email_signal import EmailSignal, EmailConnection
+
 # Verify all models are properly registered
 registered_tables = set(Base.metadata.tables.keys())
 # Updated terminology: scenarios, scenario_users, scenario_user_actions
@@ -602,6 +605,9 @@ __all__ = [
     'BriefingSchedule',
     'BriefingType',
     'BriefingStatus',
+    # Email Signals — GDPR-safe email ingestion
+    'EmailSignal',
+    'EmailConnection',
 ]
 
 # Note: SQLAlchemy will configure mappers lazily when first used.

@@ -427,6 +427,9 @@ make proxy-logs
 - `model.py`: Training and dataset generation endpoints
 - `auth.py`: Authentication (login, register, MFA)
 - `websocket.py`: Real-time scenario updates
+- `user_directives.py`: "Talk to Me" directive capture (analyze/submit/list)
+- `provisioning.py`: Powell Cascade 10-step provisioning stepper
+- `email_signals.py`: GDPR-safe email signal ingestion and management
 
 **Database Models** (`models/`):
 - `aws_sc_planning.py`: AWS SC planning entities (forecast, supply_plan, sourcing_rules, inv_policy, etc.)
@@ -473,6 +476,7 @@ make proxy-logs
 - `KnowledgeBase.jsx`: RAG document management, vector search, embedding config
 - `SkillsDashboard.jsx`: Claude Skills monitoring (stats, RAG memory, escalation metrics)
 - `SAPDataManagement.jsx`: SAP integration (connections, field mapping, ingestion, insights)
+- `EmailSignalsDashboard.jsx`: GDPR-safe email signal ingestion (connections, signals, analytics, test)
 - `SyntheticDataWizard.jsx`: AI-guided company/data generation wizard
 - `ModelSetup.jsx`: Model architecture configuration
 - `UserManagement.jsx` / `UserRoleManagement.jsx`: User and role administration
@@ -716,6 +720,12 @@ See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
 - `roles`: RBAC roles
 - `permissions`: Granular permissions
 - `user_roles`: Role assignments
+
+**Directive & Signal Tables**:
+- `user_directives`: Natural language directive capture, LLM parsing, Powell routing, effectiveness tracking
+- `config_provisioning_status`: 10-step provisioning pipeline with dependency tracking
+- `email_connections`: IMAP/Gmail inbox configurations per tenant
+- `email_signals`: GDPR-safe supply chain signals extracted from emails (no PII stored)
 
 **Powell Framework Tables** (see [POWELL_APPROACH.md](POWELL_APPROACH.md)):
 - `powell_belief_state`: Uncertainty quantification via conformal prediction (auto-populated by orchestrator)
@@ -998,6 +1008,112 @@ GET  /api/v1/sap-data/actions             # Get remediation actions
 - `frontend/src/pages/admin/SAPDataManagement.jsx` - Admin UI
 
 **Access**: Navigation > Administration > SAP Data Management (Group Admin required)
+
+### Talk to Me — Natural Language Directive Capture
+
+A persistent "Talk to me" input in the TopNavbar accepts natural language directives from any user. The system uses a two-phase flow to ensure completeness before routing.
+
+**Two-Phase Flow**:
+1. `POST /directives/analyze` — LLM parse + gap detection (no persist). Returns structured fields + `missing_fields` list.
+2. If `missing_fields` is non-empty, the UI shows a clarification panel with appropriate inputs (text/select/number). User answers are collected.
+3. `POST /directives/submit` — Merges original text + clarifications, re-parses, persists, and routes to the appropriate Powell layer.
+
+**Required Fields** (gaps trigger clarification questions):
+- **Reason/justification** (ALWAYS required — a directive without "why" cannot be tracked)
+- **Direction** (increase/decrease/maintain/reallocate)
+- **Metric** (revenue/cost/service_level/inventory/capacity/quality/lead_time)
+- **Magnitude** (by what percentage)
+- **Duration** (for how long)
+- **Geography** (which sites/regions — lenient for strategic layer)
+- **Products** (which product families — lenient for strategic layer)
+
+**Powell Routing** (based on user's `powell_role`):
+- VP/Executive → Layer 4: S&OP GraphSAGE (network-wide policy parameters)
+- S&OP Director → Layer 2: Execution tGNN (multi-site daily directives)
+- MPS/Allocation Manager → Layer 1.5: Site tGNN (single-site coordination)
+- Analysts → Layer 1: Individual TRM (specific execution decision)
+
+**Provisioning Stepper** (replaces warm-start button):
+10-step Powell Cascade warm-start pipeline with dependency tracking:
+warm_start → sop_graphsage → cfa_optimization → execution_tgnn → trm_training → supply_plan → decision_seed → site_tgnn → conformal → briefing
+
+**Implementation Files**:
+- `backend/app/services/directive_service.py` — LLM parsing, gap detection, routing
+- `backend/app/api/endpoints/user_directives.py` — Analyze/submit/list API
+- `backend/app/models/user_directive.py` — UserDirective + ConfigProvisioningStatus models
+- `backend/app/services/provisioning_service.py` — 10-step pipeline orchestrator
+- `backend/app/api/endpoints/provisioning.py` — Provisioning stepper API
+- `frontend/src/components/TopNavbar.jsx` — Talk to me input + clarification panel
+- `frontend/src/components/supply-chain-config/ProvisioningStepper.jsx` — Stepper modal
+
+**API Endpoints**:
+```bash
+# Directive capture
+POST /api/v1/directives/analyze           # Parse + gap detect (no persist)
+POST /api/v1/directives/submit            # Persist + route (with clarifications)
+GET  /api/v1/directives/                   # List recent directives
+GET  /api/v1/directives/{id}              # Get single directive
+
+# Provisioning stepper
+GET  /api/v1/provisioning/status/{config_id}          # Get stepper state
+POST /api/v1/provisioning/run/{config_id}/{step_key}  # Run single step
+POST /api/v1/provisioning/run-all/{config_id}         # Run all steps
+POST /api/v1/provisioning/reset/{config_id}/{step_key} # Reset failed step
+```
+
+### Email Signal Intelligence
+
+GDPR-safe email ingestion that extracts supply chain signals from customer/supplier emails. Personal identifiers are stripped; only the sending company (resolved via domain→TradingPartner) is stored. Signals are classified by LLM and routed to existing TRMs.
+
+**GDPR Compliance**:
+- NO sender name, email address, or personal identifiers stored
+- Only sender domain and resolved TradingPartner (company) persisted
+- PII scrubber removes names, emails, phones, addresses, signatures before any text is stored
+- Original email is NEVER persisted — only scrubbed text
+
+**Pipeline**: Email → PII scrub → domain→TradingPartner resolution → LLM classification (Haiku) → scope resolution → TRM routing → Decision Stream alert
+
+**Signal Types**: demand_increase, demand_decrease, supply_disruption, lead_time_change, price_change, quality_issue, new_product, discontinuation, order_exception, capacity_change, regulatory, general_inquiry
+
+**Signal→TRM Routing**:
+| Signal | Primary TRM | Secondary TRM |
+|--------|-------------|---------------|
+| demand_increase/decrease | forecast_adjustment | inventory_buffer |
+| supply_disruption | po_creation | to_execution |
+| lead_time_change | po_creation | inventory_buffer |
+| price_change | po_creation | — |
+| quality_issue | quality_disposition | mo_execution |
+| order_exception | order_tracking | atp_executor |
+| capacity_change | mo_execution | maintenance_scheduling |
+
+**Implementation Files**:
+- `backend/app/services/email_pii_scrubber.py` — PII removal (regex-based, no external NLP)
+- `backend/app/services/email_signal_service.py` — Classification, routing, query methods
+- `backend/app/services/email_connector.py` — IMAP connector for enterprise email
+- `backend/app/api/endpoints/email_signals.py` — REST API endpoints
+- `backend/app/models/email_signal.py` — EmailSignal + EmailConnection models
+- `frontend/src/pages/admin/EmailSignalsDashboard.jsx` — Admin UI (signals, connections, analytics, test)
+
+**API Endpoints**:
+```bash
+# Connections
+POST /api/v1/email-signals/connections           # Create connection
+GET  /api/v1/email-signals/connections           # List connections
+POST /api/v1/email-signals/connections/{id}/test # Test connection
+POST /api/v1/email-signals/connections/{id}/poll # Manual poll
+
+# Signals
+GET  /api/v1/email-signals/signals               # List signals (filterable)
+GET  /api/v1/email-signals/signals/{id}          # Signal detail
+POST /api/v1/email-signals/signals/{id}/dismiss  # Dismiss signal
+POST /api/v1/email-signals/signals/{id}/reclassify # Re-classify
+
+# Dashboard & testing
+GET  /api/v1/email-signals/dashboard             # Summary stats
+POST /api/v1/email-signals/ingest-manual         # Manual email paste
+```
+
+**Access**: Navigation > Administration > Email Signals (Tenant Admin required)
 
 **SAP System Access**: Free S/4HANA FAA (Fully-Activated Appliance) with IDES sample data available via [cal.sap.com](https://cal.sap.com). Requires SAP ID ([register here](https://account.sap.com/core/create/register)) and a cloud provider account (AWS/Azure/GCP, ~$1-3/hr compute). See [SAP_INTEGRATION_GUIDE.md](docs/progress/SAP_INTEGRATION_GUIDE.md#getting-access-to-sap-s4hana-free) for full setup instructions.
 
@@ -1323,6 +1439,9 @@ The platform has been refactored from Beer Game-centric to AWS SC-first. See [AR
 - ✅ PicoClaw/OpenClaw removed (replaced by Claude Skills ecosystem)
 - ✅ Executive Strategy Briefing (LLM-synthesized briefings with follow-up Q&A). See [docs/EXECUTIVE_BRIEFING.md](docs/EXECUTIVE_BRIEFING.md)
 - ✅ Beer Game repositioned as simulation/training module (not primary focus)
+- ✅ "Talk to Me" directive capture with smart clarification flow (two-phase: analyze→clarify→submit)
+- ✅ Provisioning Stepper (10-step Powell Cascade warm-start pipeline with dependency tracking)
+- ✅ Email Signal Intelligence (GDPR-safe email ingestion, PII scrubbing, LLM classification, TRM routing)
 
 ---
 

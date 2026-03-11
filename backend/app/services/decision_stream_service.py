@@ -114,6 +114,7 @@ DEEP_LINK_MAP = {
     "subcontracting": "/planning/execution/subcontracting-worklist",
     "forecast_adjustment": "/planning/demand",
     "inventory_buffer": "/planning/inventory-optimization",
+    "email_signal": "/admin/email-signals",
 }
 
 # Decision table registry: (model_class, type_key, summary_builder)
@@ -148,10 +149,10 @@ DECISION_TYPE_TABLE_MAP = {
 
 # Role relevance filter: which decision types each powell_role cares about
 ROLE_RELEVANCE = {
-    "SC_VP": {"atp", "rebalancing", "po_creation", "order_tracking", "forecast_adjustment", "inventory_buffer"},
-    "EXECUTIVE": {"atp", "rebalancing", "po_creation", "order_tracking", "forecast_adjustment", "inventory_buffer"},
-    "SOP_DIRECTOR": {"po_creation", "rebalancing", "forecast_adjustment", "inventory_buffer", "mo_execution", "to_execution"},
-    "MPS_MANAGER": {"atp", "po_creation", "rebalancing", "order_tracking", "mo_execution", "to_execution", "quality", "maintenance", "subcontracting"},
+    "SC_VP": {"atp", "rebalancing", "po_creation", "order_tracking", "forecast_adjustment", "inventory_buffer", "email_signal"},
+    "EXECUTIVE": {"atp", "rebalancing", "po_creation", "order_tracking", "forecast_adjustment", "inventory_buffer", "email_signal"},
+    "SOP_DIRECTOR": {"po_creation", "rebalancing", "forecast_adjustment", "inventory_buffer", "mo_execution", "to_execution", "email_signal"},
+    "MPS_MANAGER": {"atp", "po_creation", "rebalancing", "order_tracking", "mo_execution", "to_execution", "quality", "maintenance", "subcontracting", "email_signal"},
     "ALLOCATION_MANAGER": {"atp", "rebalancing", "order_tracking"},
     "ORDER_PROMISE_MANAGER": {"atp", "order_tracking"},
     # TRM specialist roles — narrow scope
