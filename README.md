@@ -177,6 +177,18 @@ The Beer Game uses the same AWS SC services underneath:
 
 ---
 
+### 5. Human-to-AI Input Channels
+
+Two mechanisms allow humans to inject signals into the AI decision pipeline:
+
+#### Talk to Me — Natural Language Directive Capture
+A persistent AI prompt bar in the top navigation accepts natural language directives (e.g., *"Increase revenue by 10% in SW region next quarter due to customer feedback"*). The system parses with LLM, detects missing fields via clarification flow, and routes to the appropriate Powell layer based on the user's role. Effectiveness tracked via Bayesian posteriors.
+
+#### Email Signal Intelligence — GDPR-Safe Email Ingestion
+Monitors customer/supplier inboxes (IMAP/Gmail), strips personal identifiers before persistence (GDPR-safe by design), classifies emails into 12 supply chain signal types using LLM, and auto-routes to appropriate TRM agents. Only the sending company is identified — never the individual. Cost: ~$5.40/month at 100 emails/day.
+
+---
+
 ## Technical Architecture
 
 ### Backend Stack

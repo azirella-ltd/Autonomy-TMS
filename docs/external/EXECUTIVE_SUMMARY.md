@@ -159,6 +159,35 @@ In most organizations, this coordination happens through meetings, emails, and p
 - **Activity feeds** show everyone involved what changed, who changed it, and why
 - **Plain-language explanations** make AI recommendations accessible to non-technical stakeholders — a VP of Supply Chain can understand *why* the system recommends a particular action without needing a data science background
 
+### Talk to Me — Natural Language Directive Capture
+
+Instead of navigating complex screens to change a planning parameter, any authenticated user can type a directive in plain language from the persistent "Talk to Me" bar in the top navigation:
+
+> *"I want to increase revenue by 10% in the Southwest region over the next quarter because customer feedback indicates growing demand."*
+
+The system:
+1. **Parses the directive** using an LLM to extract structured fields (direction, metric, magnitude, duration, scope, justification)
+2. **Detects missing information** and shows a smart clarification panel with targeted questions (e.g., "Which product families?" or "What magnitude?")
+3. **Routes to the correct Powell layer** based on the user's role — VP directives go to the strategic S&OP layer, analyst directives go to individual TRMs
+4. **Auto-applies with confidence gating** — only directives parsed with ≥70% confidence are auto-routed; lower-confidence directives are held for human review
+5. **Tracks effectiveness** using Bayesian posteriors to learn which users and directive types actually improve outcomes over time
+
+This is the primary human-to-AI input channel — where human judgment meets the agentic operating model.
+
+### Email Signal Intelligence — Automated External Signal Ingestion
+
+One of the most time-consuming tasks in supply chain management is evaluating customer and supplier communications. A planner receives dozens of emails daily — demand changes, lead time extensions, quality alerts, price increases — and must manually read, triage, and act on each one.
+
+Autonomy's Email Signal Intelligence automates this entirely:
+
+- **IMAP/Gmail inbox monitoring** polls configured mailboxes at regular intervals
+- **GDPR-safe by design**: Personal identifiers (names, email addresses, phone numbers, physical addresses, signature blocks) are stripped *before* any text is stored. Only the sending company is identified via domain-to-trading-partner resolution. The original email is never stored.
+- **AI classification** at the Haiku tier (~$0.0018/call) extracts structured supply chain signals: signal type (demand increase, supply disruption, lead time change, etc.), direction, magnitude, urgency, and confidence
+- **Automatic routing** to the appropriate TRM agents — demand signals feed the Forecast Adjustment TRM, supply disruptions feed PO Creation, quality issues feed Quality Disposition
+- **Decision Stream alerts** surface actionable signals to humans based on role relevance
+
+The result: instead of a planner manually reading 50 supplier emails and deciding which ones matter, the system classifies all 50, auto-routes the high-confidence ones to the appropriate agents, and surfaces only the ambiguous ones for human review — typically 5-10 instead of 50.
+
 ---
 
 ## Part 3: What Changes for the Workforce

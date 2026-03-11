@@ -613,7 +613,45 @@ The parameterized optimization policy optimizer — which performs global search
 
 ---
 
-## Part 12: Decision Intelligence — From Planning Tool to Decision Platform
+## Part 12: Human-to-AI Signal Channels — Talk to Me & Email Signal Intelligence
+
+Two input channels allow humans and external communications to inject signals directly into the AI decision pipeline, complementing the autonomous agent-driven workflows with human intent and external intelligence.
+
+### Talk to Me — Natural Language Directive Capture
+
+A persistent AI prompt bar in the TopNavbar accepts natural language directives from any authenticated user. The two-phase flow (analyze → clarify → submit) uses LLM parsing to extract structured fields (direction, metric, magnitude, duration, scope, justification), detects missing information via smart gap detection, and routes the completed directive to the appropriate Powell Cascade layer based on the user's `powell_role`.
+
+**Key design decisions**:
+- **Reason always required**: A directive without justification ("increase revenue") cannot be tracked for effectiveness. The system insists on the "why."
+- **Strategic leniency**: VP/Executive directives legitimately target the entire network — geography and product scope are not marked missing for strategic-layer directives.
+- **Confidence-gated auto-apply**: Only directives parsed with ≥0.7 confidence are auto-routed to TRMs. Below that, the directive is persisted but held for human review.
+- **Effectiveness tracking**: Bayesian posteriors per `(user_id, directive_type)` learn which users and directive types actually improve outcomes over time.
+
+Implementation: `backend/app/services/directive_service.py`, `backend/app/api/endpoints/user_directives.py`, `frontend/src/components/TopNavbar.jsx`
+
+See [TALK_TO_ME.md](TALK_TO_ME.md) for full architecture documentation.
+
+### Email Signal Intelligence — GDPR-Safe External Signal Ingestion
+
+Email Signal Intelligence monitors customer and supplier inboxes, extracts supply chain signals from incoming emails, and routes them to the appropriate TRM agents. Personal identifiers are stripped before any text is stored — only the sending company (resolved via domain→TradingPartner) is persisted. The original email is never stored.
+
+**Pipeline**: IMAP/Gmail Inbox → PII Scrubber (regex-based, no external deps) → TradingPartner Resolution (domain→company) → LLM Classification (Haiku tier, ~$0.0018/call) → Scope Resolution (fuzzy-match product/site refs) → EmailSignal persisted (GDPR-safe) → Auto-route to TRM(s) if confidence ≥ threshold + Decision Stream alert.
+
+**12 signal types** map to primary/secondary TRMs: demand_increase/decrease → Forecast Adjustment, supply_disruption/lead_time_change → PO Creation, quality_issue → Quality Disposition, capacity_change → MO Execution, etc.
+
+**Key design decisions**:
+- **GDPR by design**: PII scrubbed *before* persistence, not after. No "right to erasure" complexity.
+- **Emails are signal sources, not decision types**: No 12th TRM — emails feed existing TRMs via the ForecastAdjustmentTRM's `source="email"` path.
+- **Company, not person**: Domain→TradingPartner resolution captures the valuable SC intelligence without personal identity.
+- **Heuristic fallback**: Keyword-based classification when LLM unavailable (air-gapped), lower confidence (0.2-0.4) but maintains availability.
+
+Implementation: `backend/app/services/email_signal_service.py`, `backend/app/services/email_pii_scrubber.py`, `backend/app/services/email_connector.py`, `frontend/src/pages/admin/EmailSignalsDashboard.jsx`
+
+See [EMAIL_SIGNAL_INTELLIGENCE.md](EMAIL_SIGNAL_INTELLIGENCE.md) for full architecture documentation.
+
+---
+
+## Part 13: Decision Intelligence — From Planning Tool to Decision Platform
 
 Gartner designated Decision Intelligence as a "transformational" technology in the 2025 AI Hype Cycle and published its inaugural Magic Quadrant for Decision Intelligence Platforms in January 2026. The framework defines four lifecycle capabilities that every Decision Intelligence Platform must deliver: decision modeling, decision orchestration, decision monitoring, and decision governance. Separately, Gartner's 2025 Hype Cycle for Supply Chain Planning Technologies identifies decision-centric planning and agentic AI as two of four interdependent technologies reshaping supply chain management — predicting that 50% of cross-functional SCM solutions will use intelligent agents by 2030.
 

@@ -5672,6 +5672,24 @@ The urgency adjustments are additive and clamped: `new_urgency = clamp(current_u
 
 ---
 
+#### 5.21 Human-to-AI Signal Channels (Talk to Me & Email Signal Intelligence)
+
+Two external signal channels inject information into the Powell framework's exogenous information process (Wₜ₊₁):
+
+**Talk to Me — Natural Language Directives**: Users type directives in the TopNavbar (e.g., "Increase SW region revenue by 10% next quarter"). The directive service parses via LLM, detects missing fields via gap detection, and routes to the appropriate Powell layer based on the user's `powell_role`:
+- VP/Executive → Layer 4: S&OP GraphSAGE (policy parameter θ adjustment)
+- S&OP Director → Layer 2: Execution tGNN (multi-site daily directives)
+- MPS Manager → Layer 1.5: Site tGNN (single-site cross-TRM modulation)
+- Analyst → Layer 1: Individual TRM (specific execution decision)
+
+Directives with parser confidence ≥0.7 auto-apply. Effectiveness tracked via Bayesian posteriors per `(user_id, directive_type)`, following the same override effectiveness methodology (§5.9.10). Files: `directive_service.py`, `user_directives.py`. See [TALK_TO_ME.md](TALK_TO_ME.md).
+
+**Email Signal Intelligence — GDPR-Safe Email Ingestion**: IMAP/Gmail inbox monitoring extracts supply chain signals from customer/supplier emails. PII stripped before persistence. LLM classification (Haiku tier) extracts signal type, direction, magnitude, urgency. High-confidence signals (≥0.6) auto-route to primary TRM — feeding the ForecastAdjustmentTRM's `source="email"` path for demand signals, POCreationTRM for supply disruptions, QualityDispositionTRM for quality issues. Heuristic fallback for air-gapped deployments. Files: `email_signal_service.py`, `email_pii_scrubber.py`, `email_connector.py`. See [EMAIL_SIGNAL_INTELLIGENCE.md](EMAIL_SIGNAL_INTELLIGENCE.md).
+
+Both channels map to Powell's exogenous information framework: they represent state-dependent information arrivals that modify the belief state Bₜ and trigger transition function evaluations.
+
+---
+
 ## Part 3: Summary and Recommendations
 
 ### 3.1 Key Findings

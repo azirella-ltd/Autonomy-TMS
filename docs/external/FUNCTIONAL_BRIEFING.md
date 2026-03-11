@@ -259,7 +259,37 @@ When an AI agent identifies an action that crosses functional boundaries (e.g., 
 - **Net benefit threshold**: Configurable threshold controls agent autonomy — above threshold = auto-resolve, near threshold = human reviews, below = reject
 - **25+ negotiation scenarios**: Manufacturing, distribution, channel allocation, procurement, logistics, finance, S&OP
 
-### 6.2 Collaboration and Approval Workflows
+### 6.2 Talk to Me — Natural Language Directive Capture
+
+A persistent AI prompt bar in the top navigation accepts natural language directives from any authenticated user. The system parses directives with an LLM, detects missing information via a smart clarification flow, and routes the completed directive to the appropriate Powell Cascade layer based on the user's role.
+
+- **Two-phase flow**: Analyze (LLM parse + gap detection) → Clarify (missing field questions) → Submit (with clarifications merged)
+- **Required fields**: Reason/justification (always required), direction, metric, magnitude, duration, geography, products
+- **Role-based routing**: VP/Executive → S&OP GraphSAGE (Layer 4), S&OP Director → Execution tGNN (Layer 2), MPS Manager → Site tGNN (Layer 1.5), Analysts → Individual TRM (Layer 1)
+- **Confidence-gated auto-apply**: ≥0.7 confidence auto-routed; below that, held for human review
+- **Effectiveness tracking**: Bayesian posteriors per (user, directive type) measure whether directives actually improve outcomes
+
+> **Screenshot 15a — Talk to Me Directive Bar**
+> *Navigation: Always visible in top navigation bar*
+> Shows the persistent "Talk to me..." input bar. When a directive is analyzed, a clarification panel appears with targeted questions for any missing fields.
+
+### 6.3 Email Signal Intelligence — Automated External Signal Ingestion
+
+GDPR-safe email ingestion that monitors customer and supplier inboxes, extracts supply chain signals, and routes them to appropriate TRM agents for action.
+
+- **IMAP/Gmail inbox monitoring**: Configurable connections with domain allowlist/blocklist filtering
+- **GDPR by design**: Personal identifiers stripped before persistence (names, emails, phones, addresses, signatures). Only the sending company is identified via domain→TradingPartner resolution. Original email never stored.
+- **12 signal types**: demand_increase, demand_decrease, supply_disruption, lead_time_change, price_change, quality_issue, new_product, discontinuation, order_exception, capacity_change, regulatory, general_inquiry
+- **LLM classification**: Haiku tier (~$0.0018/call) extracts signal type, direction, magnitude, urgency, confidence, product/site references
+- **Automatic TRM routing**: High-confidence signals (≥0.6) auto-routed to primary TRM (e.g., demand signals → Forecast Adjustment, supply disruptions → PO Creation)
+- **Heuristic fallback**: Keyword-based classification when LLM unavailable (air-gapped deployments)
+- **4-tab admin dashboard**: Signals (table with expand/dismiss), Connections (IMAP config), Analytics (breakdowns), Test Ingestion (paste email to test pipeline)
+
+> **Screenshot 15b — Email Signals Dashboard**
+> *Navigation: Administration > Email Signals*
+> Shows the 4-tab dashboard with classified signals, connection management, analytics breakdowns, and test ingestion interface.
+
+### 6.4 Collaboration and Approval Workflows
 
 - **Team messaging**: Channel-based messaging with threading, @mentions, read tracking
 - **Inline comments**: Comment on purchase orders, transfer orders, supply plans, recommendations
@@ -267,11 +297,11 @@ When an AI agent identifies an action that crosses functional boundaries (e.g., 
 - **Activity feed**: Chronological feed of all planning actions with user attribution
 - **Notification system**: Configurable per-user preferences, digest emails, quiet hours, multi-channel delivery
 
-> **Screenshot 15 — Collaboration Hub**
+> **Screenshot 16 — Collaboration Hub**
 > *Navigation: Planning > Collaboration Hub*
 > Shows team messaging with threaded conversations, @mentions, inline comments on orders/plans, and activity feed.
 
-### 6.3 Override Effectiveness Tracking
+### 6.5 Override Effectiveness Tracking
 
 Human overrides are tracked and scored using Bayesian Beta posteriors:
 

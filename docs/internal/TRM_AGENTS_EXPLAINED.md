@@ -521,6 +521,12 @@ The TRM adds:
 
 **Delegation**: Engine provides deterministic signal classification and base adjustment. TRM refines with learned source reliability weights. Emits `FORECAST_ADJUSTED`, `DEMAND_SURGE`, or `DEMAND_DROP` signal. Persists to `powell_forecast_adjustment_decisions`.
 
+**Signal Sources**: The ForecastAdjustmentTRM accepts signals from multiple sources:
+- **Email Signal Intelligence**: GDPR-safe email ingestion monitors customer/supplier inboxes, strips PII, classifies emails into supply chain signals (demand_increase, supply_disruption, lead_time_change, etc.), and auto-routes to the ForecastAdjustmentTRM with `source="email"`. See [EMAIL_SIGNAL_INTELLIGENCE.md](EMAIL_SIGNAL_INTELLIGENCE.md).
+- **Talk to Me Directives**: Natural language directives from users (e.g., "Increase SW region forecast by 10% due to customer feedback") are parsed, validated, and routed to the ForecastAdjustmentTRM when the directive targets demand metrics. See [TALK_TO_ME.md](TALK_TO_ME.md).
+- **Market Intelligence**: External market data feeds (competitor actions, economic indicators)
+- **Customer Feedback**: Direct signals from trading partners via CPFR or manual entry
+
 ---
 
 ## Training Pipeline
