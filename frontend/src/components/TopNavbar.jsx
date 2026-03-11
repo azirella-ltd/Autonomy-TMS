@@ -112,7 +112,7 @@ const TopNavbar = ({ sidebarOpen = true }) => {
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [analysisResult, dismissClarification]);
+  }, [analysisResult]); // dismissClarification is stable (empty deps) — omit to avoid TDZ in production
 
   // Update current path when location changes
   useEffect(() => {
