@@ -1009,7 +1009,7 @@ GET  /api/v1/sap-data/actions             # Get remediation actions
 - Frontend: http://localhost:8088
 - Backend API: http://localhost:8088/api
 - API Docs: http://localhost:8000/docs
-- Database Admin (pgAdmin): http://localhost:5050 (admin@autonomy.ai / admin)
+- Database Admin (pgAdmin): http://localhost:5050 (admin@autonomy.com / admin)
 - Direct Backend: http://localhost:8000
 
 **Remote Server**:
@@ -1017,7 +1017,7 @@ GET  /api/v1/sap-data/actions             # Get remediation actions
 - HTTPS: https://172.29.20.187:8443 (with `make up-tls`)
 
 **Default Login**:
-- Email: systemadmin@autonomy.ai
+- Email: systemadmin@autonomy.com
 - Password: Autonomy@2026
 
 ---

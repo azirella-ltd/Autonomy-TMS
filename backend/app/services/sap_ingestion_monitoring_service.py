@@ -24,6 +24,7 @@ from datetime import datetime, timedelta
 import json
 from collections import defaultdict
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -115,6 +116,9 @@ class IngestionJob:
     errors: List[Dict[str, Any]] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
 
+    # DB-stored progress (overrides computed property when set)
+    _progress_override: Optional[float] = field(default=None, repr=False)
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
@@ -140,6 +144,8 @@ class IngestionJob:
 
     @property
     def progress_percent(self) -> float:
+        if self._progress_override is not None:
+            return self._progress_override
         if self.total_rows_expected == 0:
             return 0.0
         return min(100.0, (self.total_rows_processed / self.total_rows_expected) * 100)
@@ -340,17 +346,91 @@ class SAPIngestionMonitoringService:
     def __init__(self, db: AsyncSession, tenant_id: int):
         self.db = db
         self.tenant_id = tenant_id
-        self._jobs: Dict[int, IngestionJob] = {}
         self._quality_history: Dict[str, List[DataQualityReport]] = defaultdict(list)
         self._insights: List[DataInsight] = []
         self._actions: List[RemediationAction] = []
-        self._next_job_id = 1
         self._next_insight_id = 1
         self._next_action_id = 1
 
     # -------------------------------------------------------------------------
-    # Job Management
+    # Job Management (DB-backed via sap_ingestion_jobs table)
     # -------------------------------------------------------------------------
+
+    def _row_to_job(self, row) -> IngestionJob:
+        """Convert a DB row to an IngestionJob dataclass."""
+        tables = row.tables if isinstance(row.tables, list) else json.loads(row.tables or "[]")
+        job = IngestionJob(
+            id=row.id,
+            tenant_id=row.tenant_id,
+            connection_id=row.connection_id,
+            job_type=JobType(row.job_type),
+            tables=tables,
+            status=JobStatus(row.status),
+            current_table=row.current_table,
+            total_rows_processed=row.total_rows_processed or 0,
+            total_rows_failed=row.total_rows_failed or 0,
+            started_at=row.started_at,
+            completed_at=row.completed_at,
+        )
+        job._progress_override = getattr(row, "progress_percent", None) or 0.0
+        return job
+
+    # AWS SC entity dependency order — tables feeding FKs must be ingested first.
+    # Lower number = process first.  Tables not in this map get priority 50.
+    _TABLE_PRIORITY = {
+        # Tier 0: Org / reference tables (no FKs)
+        "T001": 0, "TJ02T": 1, "T001W": 2, "T001L": 3, "ADRC": 3,
+        # Tier 1: Master data (site, product, trading partner)
+        "MARA": 10, "MAKT": 11, "MARC": 12, "MARM": 12, "MVKE": 12,
+        "LFA1": 13, "KNA1": 13,
+        "CRHD": 14, "EQUI": 14,
+        # Tier 2: Extended master (depends on product + site)
+        "MBEW": 20, "MARD": 20,
+        "EORD": 21, "EINA": 21, "EINE": 22,
+        "EBAN": 22,  # Purchase requisitions (product + site FK)
+        "STKO": 23, "STPO": 24,  # BOM
+        "PLKO": 25, "PLPO": 26,  # Routing
+        # Tier 3: Planning (depends on product + site)
+        "PBIM": 30, "PBED": 31,  # Forecasts / PIR
+        "PLAF": 32,  # Planned orders
+        # Tier 4: Transactional (depends on master data)
+        "EKKO": 40, "EKPO": 41, "EKET": 42,
+        "VBAK": 40, "VBAP": 41, "VBEP": 42, "VBUK": 42, "VBUP": 42,
+        "AUFK": 43, "AFKO": 43, "AFPO": 44, "AFVC": 44, "RESB": 45,
+        "LIKP": 44, "LIPS": 45,
+        "LTAK": 44, "LTAP": 45,  # Transfer orders
+        "MKPF": 44, "MSEG": 45,  # Goods movements
+        # Tier 5: Status / quality (depends on orders)
+        "JEST": 50, "QMEL": 51, "QALS": 52, "QASE": 53,
+        # APO tables
+        "/SAPAPO/LOC": 10, "/SAPAPO/MATLOC": 12,
+        "/SAPAPO/SNPFC": 30, "/SAPAPO/TRLANE": 15,
+        "/SAPAPO/PDS": 25, "/SAPAPO/SNPBV": 31,
+    }
+
+    @staticmethod
+    def _extract_table_name(name: str) -> str:
+        """Extract SAP table name from CSV filename (e.g. 'MARC_material_plant' → 'MARC')."""
+        # Known multi-part table names
+        if name.upper().startswith("T001W"):
+            return "T001W"
+        if name.upper().startswith("T001L"):
+            return "T001L"
+        if name.upper().startswith("T001"):
+            return "T001"
+        if name.upper().startswith("TJ02T"):
+            return "TJ02T"
+        # General: split on first underscore where prefix is all uppercase/digits
+        parts = name.split("_", 1)
+        if len(parts) > 1 and parts[0].replace("/", "").isalnum():
+            return parts[0].upper()
+        return name.upper()
+
+    def _sort_tables_by_dependency(self, tables: List[str]) -> List[str]:
+        """Sort tables by FK dependency order (parents first)."""
+        return sorted(tables, key=lambda t: self._TABLE_PRIORITY.get(
+            self._extract_table_name(t), 50
+        ))
 
     async def create_job(
         self,
@@ -358,33 +438,105 @@ class SAPIngestionMonitoringService:
         job_type: JobType,
         tables: List[str]
     ) -> IngestionJob:
-        """Create a new ingestion job."""
-        job = IngestionJob(
-            id=self._next_job_id,
+        """Create a new ingestion job (persisted to DB).
+
+        Tables are automatically sorted by AWS SC FK dependency order
+        so that parent entities (Site, Product) are ingested before
+        child entities (Inventory, Orders, BOM).
+        """
+        sorted_tables = self._sort_tables_by_dependency(tables)
+
+        result = await self.db.execute(
+            text("""
+                INSERT INTO sap_ingestion_jobs (tenant_id, connection_id, job_type, status, tables)
+                VALUES (:tenant_id, :connection_id, :job_type, :status, :tables)
+                RETURNING id
+            """),
+            {
+                "tenant_id": self.tenant_id,
+                "connection_id": connection_id,
+                "job_type": job_type.value,
+                "status": JobStatus.PENDING.value,
+                "tables": json.dumps(sorted_tables),
+            }
+        )
+        job_id = result.scalar_one()
+        await self.db.commit()
+
+        logger.info(f"Created ingestion job {job_id} for {len(sorted_tables)} tables (dependency-sorted)")
+
+        return IngestionJob(
+            id=job_id,
             tenant_id=self.tenant_id,
             connection_id=connection_id,
             job_type=job_type,
-            tables=tables,
+            tables=sorted_tables,
             status=JobStatus.PENDING,
         )
-        self._jobs[job.id] = job
-        self._next_job_id += 1
 
-        logger.info(f"Created ingestion job {job.id} for {len(tables)} tables")
-        return job
+    async def cancel_job(self, job_id: int) -> bool:
+        """Cancel a running or pending job."""
+        result = await self.db.execute(
+            text("""
+                UPDATE sap_ingestion_jobs
+                SET status = :status, completed_at = NOW(), updated_at = NOW()
+                WHERE id = :jid AND tenant_id = :tid AND status IN ('pending', 'running')
+                RETURNING id
+            """),
+            {"status": JobStatus.CANCELLED.value, "jid": job_id, "tid": self.tenant_id}
+        )
+        await self.db.commit()
+        return result.rowcount > 0
+
+    async def update_job_tables(self, job_id: int, tables: List[str], job_type: Optional[str] = None) -> Optional[IngestionJob]:
+        """Update tables and optionally job_type for a pending job."""
+        sorted_tables = self._sort_tables_by_dependency(tables)
+        params = {
+            "tables": json.dumps(sorted_tables),
+            "jid": job_id,
+            "tid": self.tenant_id,
+        }
+        set_clause = "tables = :tables, updated_at = NOW()"
+        if job_type:
+            set_clause += ", job_type = :job_type"
+            params["job_type"] = job_type
+
+        result = await self.db.execute(
+            text(f"""
+                UPDATE sap_ingestion_jobs
+                SET {set_clause}
+                WHERE id = :jid AND tenant_id = :tid AND status = 'pending'
+                RETURNING id
+            """),
+            params
+        )
+        await self.db.commit()
+        if result.rowcount == 0:
+            return None
+        return await self.get_job(job_id)
 
     async def start_job(self, job_id: int) -> IngestionJob:
         """Start an ingestion job."""
-        job = self._jobs.get(job_id)
+        job = await self.get_job(job_id)
         if not job:
             raise ValueError("Job not found")
 
+        now = datetime.utcnow()
+        current_table = job.tables[0] if job.tables else None
+        await self.db.execute(
+            text("""
+                UPDATE sap_ingestion_jobs
+                SET status = :status, started_at = :started_at, current_table = :current_table, updated_at = NOW()
+                WHERE id = :id AND tenant_id = :tenant_id
+            """),
+            {"status": JobStatus.RUNNING.value, "started_at": now, "current_table": current_table,
+             "id": job_id, "tenant_id": self.tenant_id}
+        )
+        await self.db.commit()
+
         job.status = JobStatus.RUNNING
-        job.started_at = datetime.utcnow()
-
-        if job.tables:
-            job.current_table = job.tables[0]
-
+        job.started_at = now
+        job.current_table = current_table
         logger.info(f"Started ingestion job {job_id}")
         return job
 
@@ -397,26 +549,31 @@ class SAPIngestionMonitoringService:
         errors: Optional[List[Dict[str, Any]]] = None
     ) -> IngestionJob:
         """Update job progress for a table."""
-        job = self._jobs.get(job_id)
+        job = await self.get_job(job_id)
         if not job:
             raise ValueError("Job not found")
 
-        job.table_progress[table] = rows_processed
-        job.total_rows_processed = sum(job.table_progress.values())
-        job.total_rows_failed += rows_failed
+        new_processed = job.total_rows_processed + rows_processed
+        new_failed = job.total_rows_failed + rows_failed
+        # Estimate progress as fraction of tables done
+        table_idx = job.tables.index(table) if table in job.tables else 0
+        progress = ((table_idx + 1) / len(job.tables) * 100) if job.tables else 0
 
-        if errors:
-            job.errors.extend(errors)
+        await self.db.execute(
+            text("""
+                UPDATE sap_ingestion_jobs
+                SET total_rows_processed = :processed, total_rows_failed = :failed,
+                    current_table = :current_table, progress_percent = :progress, updated_at = NOW()
+                WHERE id = :id AND tenant_id = :tenant_id
+            """),
+            {"processed": new_processed, "failed": new_failed, "current_table": table,
+             "progress": progress, "id": job_id, "tenant_id": self.tenant_id}
+        )
+        await self.db.commit()
 
-        # Estimate completion
-        if job.total_rows_expected > 0 and job.started_at:
-            elapsed = (datetime.utcnow() - job.started_at).total_seconds()
-            if job.total_rows_processed > 0:
-                rate = job.total_rows_processed / elapsed
-                remaining = job.total_rows_expected - job.total_rows_processed
-                seconds_remaining = remaining / rate if rate > 0 else 0
-                job.estimated_completion = datetime.utcnow() + timedelta(seconds=seconds_remaining)
-
+        job.total_rows_processed = new_processed
+        job.total_rows_failed = new_failed
+        job.current_table = table
         return job
 
     async def complete_job(
@@ -425,12 +582,27 @@ class SAPIngestionMonitoringService:
         status: JobStatus = JobStatus.COMPLETED
     ) -> IngestionJob:
         """Mark a job as completed."""
-        job = self._jobs.get(job_id)
+        job = await self.get_job(job_id)
         if not job:
             raise ValueError("Job not found")
 
+        now = datetime.utcnow()
+        duration = (now - job.started_at).total_seconds() if job.started_at else None
+
+        await self.db.execute(
+            text("""
+                UPDATE sap_ingestion_jobs
+                SET status = :status, completed_at = :completed_at, current_table = NULL,
+                    progress_percent = 100, duration_seconds = :duration, updated_at = NOW()
+                WHERE id = :id AND tenant_id = :tenant_id
+            """),
+            {"status": status.value, "completed_at": now, "duration": duration,
+             "id": job_id, "tenant_id": self.tenant_id}
+        )
+        await self.db.commit()
+
         job.status = status
-        job.completed_at = datetime.utcnow()
+        job.completed_at = now
         job.current_table = None
 
         # Generate insights based on job results
@@ -440,22 +612,53 @@ class SAPIngestionMonitoringService:
         return job
 
     async def get_job(self, job_id: int) -> Optional[IngestionJob]:
-        """Get a specific job."""
-        return self._jobs.get(job_id)
+        """Get a specific job from DB."""
+        result = await self.db.execute(
+            text("SELECT * FROM sap_ingestion_jobs WHERE id = :id AND tenant_id = :tid"),
+            {"id": job_id, "tid": self.tenant_id}
+        )
+        row = result.mappings().first()
+        if not row:
+            return None
+        return self._row_to_job(type("Row", (), dict(row))())
 
     async def get_active_jobs(self) -> List[IngestionJob]:
-        """Get all active (running/pending) jobs."""
-        return [j for j in self._jobs.values()
-                if j.status in (JobStatus.PENDING, JobStatus.RUNNING)]
+        """Get all active (running/pending) jobs from DB."""
+        result = await self.db.execute(
+            text("""
+                SELECT * FROM sap_ingestion_jobs
+                WHERE tenant_id = :tid AND status IN ('pending', 'running')
+                ORDER BY created_at DESC
+            """),
+            {"tid": self.tenant_id}
+        )
+        return [self._row_to_job(type("Row", (), dict(r))()) for r in result.mappings().all()]
+
+    async def delete_job(self, job_id: int) -> bool:
+        """Delete a job by ID (only if pending or completed/failed)."""
+        result = await self.db.execute(
+            text("""
+                DELETE FROM sap_ingestion_jobs
+                WHERE id = :jid AND tenant_id = :tid AND status NOT IN ('running')
+                RETURNING id
+            """),
+            {"jid": job_id, "tid": self.tenant_id}
+        )
+        await self.db.commit()
+        return result.rowcount > 0
 
     async def get_recent_jobs(self, limit: int = 10) -> List[IngestionJob]:
-        """Get recent jobs ordered by start time."""
-        jobs = sorted(
-            self._jobs.values(),
-            key=lambda j: j.started_at or datetime.min,
-            reverse=True
+        """Get recent jobs from DB ordered by creation time."""
+        result = await self.db.execute(
+            text("""
+                SELECT * FROM sap_ingestion_jobs
+                WHERE tenant_id = :tid
+                ORDER BY created_at DESC
+                LIMIT :limit
+            """),
+            {"tid": self.tenant_id, "limit": limit}
         )
-        return jobs[:limit]
+        return [self._row_to_job(type("Row", (), dict(r))()) for r in result.mappings().all()]
 
     # -------------------------------------------------------------------------
     # Data Quality Assessment

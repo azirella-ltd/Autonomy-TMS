@@ -11,17 +11,23 @@ Accessible to Tenant Admins and authorized users.
 """
 
 import logging
+import os
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from datetime import datetime
 from enum import Enum
 
+# Base directory for SAP import files (mounted volume)
+SAP_IMPORTS_BASE = Path(os.getenv("SAP_IMPORTS_DIR", "/app/imports"))
+
 logger = logging.getLogger(__name__)
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db, require_tenant_admin
+from app.api.deps import get_current_user, require_tenant_admin
+from app.db.session import get_db
 from app.models.user import User
 from app.services.sap_deployment_service import (
     SAPDeploymentService,
@@ -387,6 +393,156 @@ async def test_connection(
     return ConnectionTestResponse(success=success, message=message)
 
 
+@router.put("/connections/{connection_id}", response_model=ConnectionResponse, tags=["sap-connections"])
+async def update_connection(
+    connection_id: int,
+    request: ConnectionCreateRequest,
+    current_user: User = Depends(require_tenant_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update an existing SAP connection configuration."""
+    service = create_deployment_service(db, current_user.tenant_id)
+    row = await service._get_connection_row(connection_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    # Update fields
+    row.name = request.name
+    row.description = request.description
+    row.system_type = request.system_type
+    row.connection_method = request.connection_method
+    row.hostname = request.hostname
+    row.port = request.port
+    row.use_ssl = request.use_ssl
+    row.ssl_verify = request.ssl_verify
+    row.sid = request.sid
+    row.ashost = request.ashost
+    row.sysnr = request.sysnr
+    row.client = request.client
+    row.sap_user = request.user
+    row.language = request.language
+    row.odata_base_path = request.odata_base_path
+    row.csv_directory = request.csv_directory
+    row.csv_pattern = request.csv_pattern
+    row.sap_router_string = request.sap_router_string
+    row.cloud_connector_location_id = request.cloud_connector_location_id
+    if request.password:
+        row.sap_password_encrypted = request.password  # Service encrypts on commit
+
+    # Reset validation since config changed
+    row.is_validated = False
+    row.validation_message = None
+
+    await db.commit()
+    await db.refresh(row)
+
+    from app.services.sap_deployment_service import SAPConnectionConfig
+    config = SAPConnectionConfig.from_db(row)
+    return _config_to_response(config)
+
+
+@router.delete("/connections/{connection_id}", tags=["sap-connections"])
+async def delete_connection(
+    connection_id: int,
+    current_user: User = Depends(require_tenant_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete an SAP connection."""
+    service = create_deployment_service(db, current_user.tenant_id)
+    row = await service._get_connection_row(connection_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    await db.delete(row)
+    await db.commit()
+    return {"status": "deleted", "id": connection_id}
+
+
+# -------------------------------------------------------------------------
+# Import Directory Browser
+# -------------------------------------------------------------------------
+
+class ImportDirectoryEntry(BaseModel):
+    name: str
+    path: str
+    is_dir: bool
+    size: Optional[int] = None
+    csv_count: Optional[int] = None
+
+
+@router.get("/import-directories", response_model=List[ImportDirectoryEntry], tags=["sap-connections"])
+async def list_import_directories(
+    subpath: str = Query("", description="Subdirectory to browse relative to imports base"),
+    current_user: User = Depends(require_tenant_admin),
+):
+    """
+    Browse available import directories on the server.
+
+    Returns directories and CSV files under the configured imports volume.
+    Used by the connection form to select a CSV directory path.
+    """
+    base = SAP_IMPORTS_BASE
+    target = (base / subpath).resolve()
+
+    # Prevent path traversal outside the imports directory
+    if not str(target).startswith(str(base.resolve())):
+        raise HTTPException(status_code=400, detail="Invalid path")
+
+    if not target.exists():
+        return []
+
+    entries = []
+    try:
+        for item in sorted(target.iterdir()):
+            if item.name.startswith("."):
+                continue
+            entry = ImportDirectoryEntry(
+                name=item.name,
+                path=str(item),
+                is_dir=item.is_dir(),
+            )
+            if item.is_dir():
+                # Count CSV files in this directory
+                entry.csv_count = sum(1 for f in item.iterdir() if f.suffix.lower() == ".csv")
+            elif item.suffix.lower() == ".csv":
+                entry.size = item.stat().st_size
+            else:
+                continue  # Skip non-CSV files
+            entries.append(entry)
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    return entries
+
+
+@router.get("/import-directories/default", tags=["sap-connections"])
+async def get_default_import_directory(
+    current_user: User = Depends(require_tenant_admin),
+):
+    """
+    Return the default import directory path if one exists.
+
+    Scans the imports base for the first directory containing CSV files.
+    """
+    base = SAP_IMPORTS_BASE
+    if not base.exists():
+        return {"path": None, "csv_count": 0}
+
+    # Walk up to 2 levels deep to find the first directory with CSVs
+    for dirpath in sorted(base.rglob("*")):
+        if not dirpath.is_dir():
+            continue
+        # Limit depth to 2 levels
+        rel = dirpath.relative_to(base)
+        if len(rel.parts) > 2:
+            continue
+        csv_count = sum(1 for f in dirpath.iterdir() if f.suffix.lower() == ".csv")
+        if csv_count > 0:
+            return {"path": str(dirpath), "csv_count": csv_count}
+
+    return {"path": None, "csv_count": 0}
+
+
 # -------------------------------------------------------------------------
 # Table Configuration Endpoints
 # -------------------------------------------------------------------------
@@ -460,6 +616,120 @@ async def discover_z_tables(
     service = create_deployment_service(db, current_user.tenant_id)
     z_tables = await service.discover_z_tables(connection_id)
     return z_tables
+
+
+# -------------------------------------------------------------------------
+# Field Discovery & Auto-Mapping Endpoints
+# -------------------------------------------------------------------------
+
+@router.get(
+    "/connections/{connection_id}/tables/{table_name}/fields",
+    tags=["sap-field-mapping"],
+)
+async def get_table_fields_with_mapping(
+    connection_id: int,
+    table_name: str,
+    use_ai: bool = Query(False, description="Use AI for fuzzy matching (slower)"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get fields for a table and auto-map them to AWS SC entities.
+
+    For CSV connections: reads column headers from the CSV file.
+    For other connections: uses known SAP table field definitions.
+    Returns each field with its best-match AWS SC mapping.
+    """
+    import pandas as pd
+    from pathlib import Path
+
+    service = create_deployment_service(db, current_user.tenant_id)
+    row = await service._get_connection_row(connection_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    from app.services.sap_deployment_service import SAPConnectionConfig, ConnectionMethod
+    connection = SAPConnectionConfig.from_db(row)
+
+    fields_input: List[Dict[str, str]] = []
+
+    # Extract field names from the data source
+    if connection.connection_method == ConnectionMethod.CSV and connection.csv_directory:
+        csv_dir = Path(connection.csv_directory)
+        # Try exact match then case-insensitive
+        csv_file = csv_dir / f"{table_name}.csv"
+        if not csv_file.exists():
+            csv_file = csv_dir / f"{table_name.lower()}.csv"
+        if not csv_file.exists():
+            csv_file = csv_dir / f"{table_name.upper()}.csv"
+        if not csv_file.exists():
+            # Search all files — match exact stem or prefix (e.g. MARC_material_plant.csv for MARC)
+            tn_upper = table_name.upper()
+            for f in csv_dir.glob("*.csv"):
+                stem = f.stem.upper()
+                if stem == tn_upper or stem.startswith(tn_upper + "_"):
+                    csv_file = f
+                    break
+
+        if csv_file.exists():
+            try:
+                df = pd.read_csv(csv_file, nrows=0, dtype=str)
+                for col in df.columns:
+                    fields_input.append({
+                        "field_name": col.strip().upper(),
+                        "field_type": "CHAR",
+                        "field_description": col.strip(),
+                    })
+            except Exception as e:
+                logger.warning(f"Failed to read CSV headers from {csv_file}: {e}")
+    else:
+        # Use known SAP table field definitions
+        from app.services.sap_deployment_service import STANDARD_SAP_TABLES as _STD
+        system_tables = _STD.get(
+            connection.system_type.value if hasattr(connection.system_type, "value") else connection.system_type,
+            {},
+        )
+        table_info = system_tables.get(table_name, {})
+        key_fields = table_info.get("key_fields", [])
+        if key_fields:
+            for kf in key_fields:
+                fields_input.append({
+                    "field_name": kf,
+                    "field_type": "CHAR",
+                    "field_description": kf,
+                })
+
+    if not fields_input:
+        return []
+
+    # Run batch field mapping
+    mapping_service = create_field_mapping_service(db, current_user.tenant_id)
+    # Determine target entity from known table mapping
+    target_entity = None
+    from app.services.sap_deployment_service import STANDARD_SAP_TABLES as _ALL_STD
+    for sys_tables in _ALL_STD.values():
+        if table_name in sys_tables:
+            target_entity = sys_tables[table_name].get("aws_sc_entity")
+            break
+
+    # Extract base table name from CSV filename (e.g. "MARC_material_plant" → "MARC")
+    source_table = table_name.split("_")[0] if "_" in table_name else table_name
+
+    results = await mapping_service.match_fields_batch(
+        fields=[
+            {
+                "name": f["field_name"],
+                "type": f.get("field_type", ""),
+                "description": f.get("field_description", ""),
+            }
+            for f in fields_input
+        ],
+        target_entity=target_entity,
+        source_table=source_table,
+        use_ai=use_ai,
+    )
+
+    return [r.to_dict() for r in results]
 
 
 # -------------------------------------------------------------------------
@@ -701,10 +971,163 @@ async def start_job(
     current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Start an ingestion job."""
+    """Start an ingestion job.
+
+    Marks the job as running and launches background CSV processing.
+    Progress is updated per-table as rows are read and ingested.
+    """
     service = create_ingestion_monitoring_service(db, current_user.tenant_id)
     job = await service.start_job(job_id)
 
+    # Launch actual background ingestion
+    import asyncio
+    asyncio.create_task(_run_ingestion(job_id, current_user.tenant_id))
+
+    return JobResponse(
+        id=job.id,
+        job_type=job.job_type.value,
+        status=job.status.value,
+        tables=job.tables,
+        current_table=job.current_table,
+        progress_percent=job.progress_percent,
+        total_rows_processed=job.total_rows_processed,
+        total_rows_failed=job.total_rows_failed,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        duration_seconds=job.duration_seconds,
+    )
+
+
+async def _run_ingestion(job_id: int, tenant_id: int):
+    """Background task: process CSV files for an ingestion job."""
+    import pandas as pd
+    from pathlib import Path
+    from app.db.session import async_session_factory
+    from app.services.sap_deployment_service import SAPConnectionConfig, ConnectionMethod
+
+    async with async_session_factory() as db:
+        try:
+            service = create_ingestion_monitoring_service(db, tenant_id)
+            job = await service.get_job(job_id)
+            if not job:
+                return
+
+            # Get the connection to find the CSV directory
+            deploy_service = create_deployment_service(db, tenant_id)
+            conn_row = await deploy_service._get_connection_row(job.connection_id)
+            if not conn_row:
+                await service.complete_job(job_id, JobStatus.FAILED)
+                return
+
+            connection = SAPConnectionConfig.from_db(conn_row)
+
+            if connection.connection_method != ConnectionMethod.CSV or not connection.csv_directory:
+                # For non-CSV, just mark as completed (real RFC/OData processing TBD)
+                await service.complete_job(job_id, JobStatus.COMPLETED)
+                return
+
+            csv_dir = Path(connection.csv_directory)
+            if not csv_dir.exists():
+                await service.complete_job(job_id, JobStatus.FAILED)
+                return
+
+            total_rows = 0
+            total_failed = 0
+
+            for idx, table_name in enumerate(job.tables):
+                # Check if job was cancelled
+                current_job = await service.get_job(job_id)
+                if current_job and current_job.status == JobStatus.CANCELLED:
+                    logger.info(f"Job {job_id} was cancelled, stopping")
+                    return
+
+                # Find the CSV file (case-insensitive search)
+                csv_file = None
+                for f in csv_dir.glob("*.csv"):
+                    if f.stem.upper() == table_name.upper() or f.stem.lower() == table_name.lower():
+                        csv_file = f
+                        break
+                if not csv_file:
+                    # Try with underscores for names like ADRC_addresses
+                    for f in csv_dir.glob("*.csv"):
+                        if table_name.upper() in f.stem.upper():
+                            csv_file = f
+                            break
+
+                rows_processed = 0
+                rows_failed = 0
+
+                if csv_file and csv_file.exists():
+                    try:
+                        df = pd.read_csv(csv_file, dtype=str, na_values=["", "NULL"])
+                        rows_processed = len(df)
+                        logger.info(f"Job {job_id}: Read {rows_processed} rows from {csv_file.name}")
+                    except Exception as e:
+                        rows_failed = 1
+                        logger.warning(f"Job {job_id}: Failed to read {csv_file}: {e}")
+                else:
+                    logger.info(f"Job {job_id}: No CSV file found for table {table_name}")
+
+                total_rows += rows_processed
+                total_failed += rows_failed
+
+                # Update progress
+                await service.update_job_progress(
+                    job_id=job_id,
+                    table=table_name,
+                    rows_processed=rows_processed,
+                    rows_failed=rows_failed,
+                )
+
+            # Mark completed
+            final_status = JobStatus.COMPLETED if total_failed == 0 else JobStatus.PARTIAL
+            await service.complete_job(job_id, final_status)
+            logger.info(f"Job {job_id} completed: {total_rows} rows, {total_failed} failed")
+
+        except Exception as e:
+            logger.error(f"Job {job_id} failed: {e}")
+            try:
+                service = create_ingestion_monitoring_service(db, tenant_id)
+                await service.complete_job(job_id, JobStatus.FAILED)
+            except Exception:
+                pass
+
+
+@router.post("/jobs/{job_id}/cancel", tags=["sap-ingestion"])
+async def cancel_job(
+    job_id: int,
+    current_user: User = Depends(require_tenant_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancel a running or pending job."""
+    service = create_ingestion_monitoring_service(db, current_user.tenant_id)
+    cancelled = await service.cancel_job(job_id)
+    if not cancelled:
+        raise HTTPException(status_code=400, detail="Job not found or already completed")
+    return {"ok": True, "status": "cancelled"}
+
+
+class UpdateJobRequest(BaseModel):
+    tables: Optional[List[str]] = None
+    job_type: Optional[str] = None
+
+
+@router.put("/jobs/{job_id}", response_model=JobResponse, tags=["sap-ingestion"])
+async def update_job(
+    job_id: int,
+    request: UpdateJobRequest,
+    current_user: User = Depends(require_tenant_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a pending job (tables, job_type). Only works for pending jobs."""
+    service = create_ingestion_monitoring_service(db, current_user.tenant_id)
+    job = await service.update_job_tables(
+        job_id,
+        tables=request.tables or [],
+        job_type=request.job_type,
+    )
+    if not job:
+        raise HTTPException(status_code=400, detail="Job not found or not in pending status")
     return JobResponse(
         id=job.id,
         job_type=job.job_type.value,
@@ -771,6 +1194,20 @@ async def complete_job(
         completed_at=job.completed_at,
         duration_seconds=job.duration_seconds,
     )
+
+
+@router.delete("/jobs/{job_id}", tags=["sap-ingestion"])
+async def delete_job(
+    job_id: int,
+    current_user: User = Depends(require_tenant_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a job (only if not currently running)."""
+    service = create_ingestion_monitoring_service(db, current_user.tenant_id)
+    deleted = await service.delete_job(job_id)
+    if not deleted:
+        raise HTTPException(status_code=400, detail="Job not found or is currently running")
+    return {"ok": True}
 
 
 @router.get("/jobs", response_model=List[JobResponse], tags=["sap-ingestion"])

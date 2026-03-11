@@ -1,0 +1,123 @@
+# docker-compose.worker.yml
+# GPU worker node stack (runs on Acer Nitro 16 or similar)
+#
+# Provides: vLLM inference, HuggingFace TEI embeddings, pgvector RAG database
+#
+# Usage on worker node:
+#   docker compose -f docker-compose.worker.yml up -d
+#
+# Requirements:
+#   - NVIDIA GPU with >= 8GB VRAM (RTX 4060 or better)
+#   - NVIDIA Container Toolkit installed
+#   - Ubuntu 24.04 recommended
+#
+# MSI .env changes (point to worker):
+#   LLM_API_BASE=http://<worker-ip>:8001/v1
+#   EMBEDDING_API_BASE=http://<worker-ip>:8080
+#   EMBEDDING_PROVIDER=tei
+#   KB_DATABASE_URL=postgresql+psycopg2://autonomy_user:<password>@<worker-ip>:5433/autonomy_rag
+#   KB_ASYNC_DATABASE_URL=postgresql+asyncpg://autonomy_user:<password>@<worker-ip>:5433/autonomy_rag
+
+services:
+  # =========================================================================
+  # pgvector — RAG database (kb_documents, kb_chunks, decision_embeddings)
+  # =========================================================================
+  rag-db:
+    image: pgvector/pgvector:pg16
+    container_name: autonomy-rag-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${RAG_DB_NAME:-autonomy_rag}
+      POSTGRES_USER: ${RAG_DB_USER:-autonomy_user}
+      POSTGRES_PASSWORD: ${RAG_DB_PASSWORD:?Set RAG_DB_PASSWORD in .env}
+    ports:
+      - "0.0.0.0:5433:5432"
+    volumes:
+      - rag_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${RAG_DB_USER:-autonomy_user} -d ${RAG_DB_NAME:-autonomy_rag}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =========================================================================
+  # HuggingFace Text Embeddings Inference (TEI)
+  # =========================================================================
+  # Serves embedding model on GPU
+  # Endpoint: http://<worker-ip>:8080
+  # Uses ~500MB VRAM — leaves ~7.5GB for vLLM
+  embeddings:
+    image: ghcr.io/huggingface/text-embeddings-inference:1.5
+    container_name: autonomy-embeddings
+    restart: unless-stopped
+    command: >
+      --model-id ${EMBEDDING_MODEL_ID:-sentence-transformers/all-mpnet-base-v2}
+      --port 8080
+      --max-batch-tokens 16384
+    ports:
+      - "0.0.0.0:8080:8080"
+    volumes:
+      - tei_cache:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    runtime: nvidia
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # =========================================================================
+  # vLLM — Self-hosted LLM inference (Qwen 3 8B)
+  # =========================================================================
+  # OpenAI-compatible API at http://<worker-ip>:8001/v1
+  # Uses ~5.5GB VRAM (AWQ 4-bit quantized) with 0.70 utilization cap
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: autonomy-vllm
+    restart: unless-stopped
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - HF_HOME=/root/.cache/huggingface
+    command: >
+      --model ${LLM_MODEL:-Qwen/Qwen3-8B-AWQ}
+      --quantization awq
+      --max-model-len 4096
+      --gpu-memory-utilization 0.70
+      --host 0.0.0.0
+      --port 8000
+      --served-model-name qwen3-8b
+      --trust-remote-code
+    ports:
+      - "0.0.0.0:8001:8000"
+    volumes:
+      - vllm_cache:/root/.cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    runtime: nvidia
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
+volumes:
+  rag_pgdata:
+    driver: local
+  tei_cache:
+    driver: local
+  vllm_cache:
+    driver: local

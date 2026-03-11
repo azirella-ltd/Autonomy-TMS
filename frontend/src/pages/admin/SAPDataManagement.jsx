@@ -267,7 +267,7 @@ const OverviewTab = ({ dashboardData, deploymentStatus, loading }) => {
 };
 
 // Connections Tab Component
-const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loading }) => {
+const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, onUpdateConnection, onDeleteConnection, loading }) => {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const defaultFormData = {
     name: '',
@@ -295,6 +295,9 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
   };
   const [formData, setFormData] = useState(defaultFormData);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [importDirs, setImportDirs] = useState(null); // null = not loaded, [] = empty
+  const [browsingPath, setBrowsingPath] = useState('');
+  const [editingConnection, setEditingConnection] = useState(null);
 
   const isNetworkMethod = formData.connection_method !== 'csv';
   const isOData = formData.connection_method === 'odata';
@@ -345,21 +348,38 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
   };
 
   // Set sensible default port when method changes
-  const handleMethodChange = (method) => {
+  const handleMethodChange = async (method) => {
     let port = formData.port;
     if (method === 'odata') port = 44301;
     else if (method === 'rfc') port = 3300;
     else if (method === 'idoc') port = 3300;
     else if (method === 'hana_db') port = 30215;
     else port = '';
-    setFormData({ ...formData, connection_method: method, port });
+    const updates = { connection_method: method, port };
+    // Auto-populate CSV directory with default when switching to CSV method
+    if (method === 'csv' && !formData.csv_directory) {
+      try {
+        const resp = await api.get('/sap-data/import-directories/default');
+        if (resp.data.path) {
+          updates.csv_directory = resp.data.path;
+        }
+      } catch { /* ignore */ }
+    }
+    setFormData({ ...formData, ...updates });
   };
 
   const handleCreate = async () => {
-    await onCreateConnection(formData);
+    if (editingConnection) {
+      await onUpdateConnection(editingConnection, formData);
+    } else {
+      await onCreateConnection(formData);
+    }
     setShowCreateDialog(false);
+    setEditingConnection(null);
     setFormData(defaultFormData);
     setShowAdvanced(false);
+    setImportDirs(null);
+    setBrowsingPath('');
   };
 
   return (
@@ -390,8 +410,8 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
         <div className="grid gap-4">
           {connections.map((conn) => (
             <Card key={conn.id}>
-              <CardContent className="py-4">
-                <div className="flex items-center justify-between">
+              <CardContent className="py-4 space-y-3">
+                <div className="flex items-start justify-between">
                   <div className="flex items-center gap-4">
                     <div className={cn(
                       "p-2 rounded-lg",
@@ -409,6 +429,7 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
                         {' • '}
                         {connectionMethods.find(m => m.value === conn.connection_method)?.label || conn.connection_method}
                         {conn.hostname && ` • ${conn.hostname}${conn.port ? ':' + conn.port : ''}`}
+                        {conn.csv_directory && ` • ${conn.csv_directory}`}
                         {conn.sid && ` (${conn.sid})`}
                       </p>
                       {conn.description && (
@@ -416,14 +437,57 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <Badge variant={conn.is_validated ? 'success' : 'secondary'}>
-                      {conn.is_validated ? 'Validated' : 'Not Tested'}
-                    </Badge>
-                    <Button variant="outline" size="sm" onClick={() => onTestConnection(conn.id)}>
-                      Test Connection
-                    </Button>
-                  </div>
+                  <Badge variant={conn.is_validated ? 'success' : 'secondary'}>
+                    {conn.is_validated ? 'Validated' : 'Not Tested'}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-2 border-t pt-3">
+                  <Button variant="outline" size="sm" onClick={() => onTestConnection(conn.id)}>
+                    Test Connection
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => {
+                    setFormData({
+                      name: conn.name || '',
+                      description: conn.description || '',
+                      system_type: conn.system_type || 's4hana',
+                      connection_method: conn.connection_method || 'odata',
+                      hostname: conn.hostname || '',
+                      port: conn.port || '',
+                      use_ssl: conn.use_ssl ?? true,
+                      ssl_verify: conn.ssl_verify ?? false,
+                      sid: conn.sid || '',
+                      ashost: '',
+                      sysnr: '00',
+                      client: conn.client || '100',
+                      user: conn.user || '',
+                      password: '',
+                      language: conn.language || 'EN',
+                      odata_base_path: conn.odata_base_path || '/sap/opu/odata/sap/',
+                      csv_directory: conn.csv_directory || '',
+                      csv_pattern: conn.csv_pattern || '*.csv',
+                      hana_schema: conn.hana_schema || 'SAPHANADB',
+                      hana_port: conn.hana_port || '',
+                      sap_router_string: '',
+                      cloud_connector_location_id: '',
+                    });
+                    setEditingConnection(conn.id);
+                    setShowCreateDialog(true);
+                  }}>
+                    Edit
+                  </Button>
+                  <div className="flex-1" />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-red-600 hover:bg-red-50 border-red-200"
+                    onClick={() => {
+                      if (window.confirm(`Delete connection "${conn.name}"? This will also delete all associated jobs.`)) {
+                        onDeleteConnection(conn.id);
+                      }
+                    }}
+                  >
+                    Delete
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -435,7 +499,7 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Add SAP Connection</DialogTitle>
+            <DialogTitle>{editingConnection ? 'Edit SAP Connection' : 'Add SAP Connection'}</DialogTitle>
             <DialogDescription>
               Configure a connection to your SAP system for data extraction.
             </DialogDescription>
@@ -630,14 +694,81 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
             {isCSV && (
               <div className="space-y-3 border rounded-lg p-4">
                 <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">CSV Import Settings</h4>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-3">
                   <div>
                     <label className="block text-sm font-medium mb-1">CSV Directory Path *</label>
-                    <Input
-                      value={formData.csv_directory}
-                      onChange={(e) => setFormData({ ...formData, csv_directory: e.target.value })}
-                      placeholder="/path/to/csv/exports"
-                    />
+                    <div className="flex gap-2">
+                      <Input
+                        value={formData.csv_directory}
+                        onChange={(e) => setFormData({ ...formData, csv_directory: e.target.value })}
+                        placeholder="/app/imports/SAP/IDES_1710"
+                        className="flex-1"
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            const resp = await api.get('/sap-data/import-directories', { params: { subpath: browsingPath } });
+                            setImportDirs(resp.data);
+                          } catch (err) {
+                            console.error('Failed to browse directories:', err);
+                            setImportDirs([]);
+                          }
+                        }}
+                      >
+                        Browse
+                      </Button>
+                    </div>
+                    {importDirs !== null && (
+                      <div className="mt-2 border rounded-lg max-h-48 overflow-y-auto">
+                        {browsingPath && (
+                          <button
+                            className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted flex items-center gap-2 border-b"
+                            onClick={async () => {
+                              const parent = browsingPath.split('/').slice(0, -1).join('/');
+                              setBrowsingPath(parent);
+                              try {
+                                const resp = await api.get('/sap-data/import-directories', { params: { subpath: parent } });
+                                setImportDirs(resp.data);
+                              } catch { setImportDirs([]); }
+                            }}
+                          >
+                            ⬆ ..
+                          </button>
+                        )}
+                        {importDirs.length === 0 ? (
+                          <p className="px-3 py-2 text-sm text-muted-foreground">No import directories found. Mount CSV files to <code>/app/imports/</code></p>
+                        ) : importDirs.map((entry) => (
+                          <button
+                            key={entry.path}
+                            className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted flex items-center justify-between"
+                            onClick={async () => {
+                              if (entry.is_dir) {
+                                const rel = entry.path.replace(/^\/app\/imports\/?/, '');
+                                setBrowsingPath(rel);
+                                try {
+                                  const resp = await api.get('/sap-data/import-directories', { params: { subpath: rel } });
+                                  setImportDirs(resp.data);
+                                } catch { setImportDirs([]); }
+                              }
+                              // Always set the path when clicked
+                              setFormData({ ...formData, csv_directory: entry.path });
+                            }}
+                          >
+                            <span className="flex items-center gap-2">
+                              {entry.is_dir ? '📁' : '📄'} {entry.name}
+                            </span>
+                            {entry.is_dir && entry.csv_count > 0 && (
+                              <span className="text-xs text-muted-foreground">{entry.csv_count} CSVs</span>
+                            )}
+                            {!entry.is_dir && entry.size && (
+                              <span className="text-xs text-muted-foreground">{(entry.size / 1024).toFixed(0)} KB</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">CSV File Pattern</label>
@@ -728,11 +859,11 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
             )}
           </div>
           <div className="flex justify-end gap-2 pt-2 border-t">
-            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+            <Button variant="outline" onClick={() => { setShowCreateDialog(false); setEditingConnection(null); setFormData(defaultFormData); }}>
               Cancel
             </Button>
             <Button onClick={handleCreate} disabled={!formData.name}>
-              Create Connection
+              {editingConnection ? 'Save Changes' : 'Create Connection'}
             </Button>
           </div>
         </DialogContent>
@@ -742,6 +873,15 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, loa
 };
 
 // Tables & Mapping Tab Component
+const confidenceColor = (conf) => {
+  if (!conf) return 'secondary';
+  const c = conf.toLowerCase();
+  if (c === 'high') return 'success';
+  if (c === 'medium') return 'warning';
+  if (c === 'low') return 'destructive';
+  return 'secondary';
+};
+
 const TablesTab = ({ connections, selectedConnectionId, onSelectConnection }) => {
   const [tables, setTables] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -766,13 +906,43 @@ const TablesTab = ({ connections, selectedConnectionId, onSelectConnection }) =>
     setLoading(false);
   };
 
+  const handleSelectTable = async (table) => {
+    setSelectedTable(table);
+    setFieldMappings([]);
+    setMappingLoading(true);
+    try {
+      const resp = await api.get(
+        `/sap-data/connections/${selectedConnectionId}/tables/${encodeURIComponent(table.table_name)}/fields`
+      );
+      setFieldMappings(resp.data);
+    } catch (err) {
+      console.error('Failed to load field mappings:', err);
+    }
+    setMappingLoading(false);
+  };
+
+  const handleRunAIMapping = async () => {
+    if (!selectedTable) return;
+    setMappingLoading(true);
+    try {
+      const resp = await api.get(
+        `/sap-data/connections/${selectedConnectionId}/tables/${encodeURIComponent(selectedTable.table_name)}/fields`,
+        { params: { use_ai: true } }
+      );
+      setFieldMappings(resp.data);
+    } catch (err) {
+      console.error('Failed to run AI mapping:', err);
+    }
+    setMappingLoading(false);
+  };
+
   const handleAnalyzeZTable = async (table) => {
     setMappingLoading(true);
     try {
       const response = await api.post('/sap-data/z-table-analysis', {
         table_name: table.table_name,
         table_description: table.description,
-        fields: [],  // Would come from table metadata
+        fields: [],
         use_ai: true,
       });
       setSelectedTable({ ...table, analysis: response.data });
@@ -781,6 +951,8 @@ const TablesTab = ({ connections, selectedConnectionId, onSelectConnection }) =>
     }
     setMappingLoading(false);
   };
+
+  const mappedCount = fieldMappings.filter(f => f.aws_sc_field).length;
 
   return (
     <div className="space-y-6">
@@ -823,10 +995,10 @@ const TablesTab = ({ connections, selectedConnectionId, onSelectConnection }) =>
           <div className="col-span-1">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Available Tables</CardTitle>
+                <CardTitle className="text-lg">Available Tables ({tables.length})</CardTitle>
               </CardHeader>
               <CardContent className="p-0">
-                <div className="max-h-96 overflow-y-auto">
+                <div className="max-h-[600px] overflow-y-auto">
                   {tables.map((table) => (
                     <div
                       key={table.id}
@@ -834,7 +1006,7 @@ const TablesTab = ({ connections, selectedConnectionId, onSelectConnection }) =>
                         "p-3 border-b cursor-pointer hover:bg-muted transition-colors",
                         selectedTable?.table_name === table.table_name && "bg-muted"
                       )}
-                      onClick={() => setSelectedTable(table)}
+                      onClick={() => handleSelectTable(table)}
                     >
                       <div className="flex items-center justify-between">
                         <div>
@@ -855,6 +1027,11 @@ const TablesTab = ({ connections, selectedConnectionId, onSelectConnection }) =>
                       <p className="text-xs text-muted-foreground mt-1 truncate">
                         {table.description}
                       </p>
+                      {table.aws_sc_entity && (
+                        <p className="text-xs text-blue-500 mt-0.5">
+                          → {table.aws_sc_entity}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -865,33 +1042,43 @@ const TablesTab = ({ connections, selectedConnectionId, onSelectConnection }) =>
           {/* Table Details & Mapping */}
           <div className="col-span-2">
             {selectedTable ? (
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle>{selectedTable.table_name}</CardTitle>
-                      <p className="text-sm text-muted-foreground">{selectedTable.description}</p>
-                    </div>
-                    {!selectedTable.is_standard && (
-                      <Button
-                        onClick={() => handleAnalyzeZTable(selectedTable)}
-                        disabled={mappingLoading}
-                      >
-                        {mappingLoading ? (
-                          <Spinner size="sm" className="mr-2" />
-                        ) : (
-                          <Zap className="h-4 w-4 mr-2" />
+              <div className="space-y-4">
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle>{selectedTable.table_name}</CardTitle>
+                        <p className="text-sm text-muted-foreground">{selectedTable.description}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        {!selectedTable.is_standard && (
+                          <Button
+                            variant="outline"
+                            onClick={() => handleAnalyzeZTable(selectedTable)}
+                            disabled={mappingLoading}
+                          >
+                            <Zap className="h-4 w-4 mr-1" />
+                            AI Analyze Z-Table
+                          </Button>
                         )}
-                        AI Analyze Z-Table
-                      </Button>
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
+                        <Button
+                          onClick={handleRunAIMapping}
+                          disabled={mappingLoading}
+                        >
+                          {mappingLoading ? (
+                            <Spinner size="sm" className="mr-2" />
+                          ) : (
+                            <Search className="h-4 w-4 mr-2" />
+                          )}
+                          AI Match Fields
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="text-sm font-medium">Target AWS SC Entity</label>
+                        <label className="text-sm font-medium">Target Autonomy SC Entity</label>
                         <NativeSelect
                           value={selectedTable.aws_sc_entity || ''}
                           onChange={() => {}}
@@ -916,45 +1103,124 @@ const TablesTab = ({ connections, selectedConnectionId, onSelectConnection }) =>
                         </NativeSelect>
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
 
-                    {/* AI Analysis Results */}
-                    {selectedTable.analysis && (
-                      <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                        <div className="flex items-center gap-2 mb-3">
-                          <Zap className="h-5 w-5 text-blue-500" />
-                          <span className="font-medium">AI Analysis Results</span>
-                        </div>
-                        <div className="space-y-2">
+                {/* AI Analysis Results (Z-tables) */}
+                {selectedTable.analysis && (
+                  <Card>
+                    <CardContent className="py-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Zap className="h-5 w-5 text-blue-500" />
+                        <span className="font-medium">AI Analysis Results</span>
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-sm">
+                          <strong>Suggested Entity:</strong> {selectedTable.analysis.suggested_entity}
+                          <span className="text-muted-foreground ml-2">
+                            ({(selectedTable.analysis.entity_confidence * 100).toFixed(0)}% confidence)
+                          </span>
+                        </p>
+                        {selectedTable.analysis.ai_purpose_analysis && (
                           <p className="text-sm">
-                            <strong>Suggested Entity:</strong> {selectedTable.analysis.suggested_entity}
-                            <span className="text-muted-foreground ml-2">
-                              ({(selectedTable.analysis.entity_confidence * 100).toFixed(0)}% confidence)
-                            </span>
+                            <strong>Purpose:</strong> {selectedTable.analysis.ai_purpose_analysis}
                           </p>
-                          {selectedTable.analysis.ai_purpose_analysis && (
-                            <p className="text-sm">
-                              <strong>Purpose:</strong> {selectedTable.analysis.ai_purpose_analysis}
-                            </p>
-                          )}
-                          {selectedTable.analysis.ai_integration_guidance && (
-                            <p className="text-sm">
-                              <strong>Guidance:</strong> {selectedTable.analysis.ai_integration_guidance}
-                            </p>
-                          )}
-                        </div>
+                        )}
+                        {selectedTable.analysis.ai_integration_guidance && (
+                          <p className="text-sm">
+                            <strong>Guidance:</strong> {selectedTable.analysis.ai_integration_guidance}
+                          </p>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Field Mappings */}
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg">
+                        Field Mappings
+                        {fieldMappings.length > 0 && (
+                          <span className="text-sm font-normal text-muted-foreground ml-2">
+                            ({mappedCount}/{fieldMappings.length} mapped)
+                          </span>
+                        )}
+                      </CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    {mappingLoading ? (
+                      <div className="flex justify-center py-8">
+                        <Spinner size="sm" />
+                        <span className="ml-2 text-sm text-muted-foreground">Analyzing fields...</span>
+                      </div>
+                    ) : fieldMappings.length === 0 ? (
+                      <div className="py-8 text-center text-sm text-muted-foreground">
+                        Click a table on the left to auto-detect fields and match them to Autonomy Supply Chain entities.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b bg-muted/50">
+                              <th className="text-left py-2 px-3 font-medium">SAP Field</th>
+                              <th className="text-left py-2 px-3 font-medium">Autonomy Entity</th>
+                              <th className="text-left py-2 px-3 font-medium">Autonomy Field</th>
+                              <th className="text-center py-2 px-3 font-medium">Confidence</th>
+                              <th className="text-left py-2 px-3 font-medium">Source</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {fieldMappings.map((fm, idx) => (
+                              <tr key={idx} className="border-b hover:bg-muted/30">
+                                <td className="py-2 px-3">
+                                  <span className="font-mono text-xs">{fm.sap_field}</span>
+                                  {fm.is_z_field && (
+                                    <Badge variant="outline" className="ml-1 text-[10px] py-0">Z</Badge>
+                                  )}
+                                  {fm.sap_field_description && fm.sap_field_description !== fm.sap_field && (
+                                    <p className="text-[11px] text-muted-foreground truncate max-w-[180px]">
+                                      {fm.sap_field_description}
+                                    </p>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3">
+                                  {fm.aws_sc_entity ? (
+                                    <span className="text-xs">{fm.aws_sc_entity}</span>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground italic">unmapped</span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3">
+                                  {fm.aws_sc_field ? (
+                                    <span className="font-mono text-xs">{fm.aws_sc_field}</span>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">—</span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3 text-center">
+                                  {fm.confidence ? (
+                                    <Badge variant={confidenceColor(fm.confidence)} className="text-[10px]">
+                                      {fm.confidence} ({(fm.confidence_score * 100).toFixed(0)}%)
+                                    </Badge>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">—</span>
+                                  )}
+                                </td>
+                                <td className="py-2 px-3">
+                                  <span className="text-[11px] text-muted-foreground">{fm.match_source || '—'}</span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     )}
-
-                    {/* Field Mappings would go here */}
-                    <div className="mt-6">
-                      <h4 className="font-medium mb-3">Field Mappings</h4>
-                      <div className="text-sm text-muted-foreground">
-                        Field mappings will be displayed here after table analysis.
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              </div>
             ) : (
               <Card>
                 <CardContent className="py-12 text-center">
@@ -971,8 +1237,61 @@ const TablesTab = ({ connections, selectedConnectionId, onSelectConnection }) =>
 };
 
 // Ingestion Jobs Tab Component
-const JobsTab = ({ jobs, onCreateJob, onRefresh, loading }) => {
+const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob, onDeleteJob, onScheduleJob, onRefresh, loading }) => {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [selectedConnectionId, setSelectedConnectionId] = useState('');
+  const [jobType, setJobType] = useState('full_extract');
+  const [availableTables, setAvailableTables] = useState([]);
+  const [selectedTables, setSelectedTables] = useState([]);
+  const [loadingTables, setLoadingTables] = useState(false);
+
+  // Load available CSV files / tables when connection changes
+  const handleConnectionChange = async (connId) => {
+    setSelectedConnectionId(connId);
+    setSelectedTables([]);
+    setAvailableTables([]);
+    if (!connId) return;
+
+    const conn = connections.find(c => c.id === parseInt(connId));
+    if (!conn) return;
+
+    setLoadingTables(true);
+    try {
+      if (conn.connection_method === 'csv' && conn.csv_directory) {
+        // Browse the CSV directory to find available files
+        const basePath = '/app/imports';
+        const subpath = conn.csv_directory.replace(basePath + '/', '').replace(basePath, '');
+        const resp = await api.get('/sap-data/import-directories', { params: { subpath } });
+        const csvFiles = resp.data.filter(e => !e.is_dir).map(e => e.name.replace('.csv', ''));
+        setAvailableTables(csvFiles);
+        setSelectedTables(csvFiles); // Select all by default
+      } else {
+        // Try loading configured tables from the connection
+        try {
+          const resp = await api.get(`/sap-data/connections/${connId}/tables`);
+          const tableNames = resp.data.map(t => t.sap_table_name || t.name);
+          setAvailableTables(tableNames);
+          setSelectedTables(tableNames);
+        } catch { setAvailableTables([]); }
+      }
+    } catch (err) {
+      console.error('Failed to load tables:', err);
+    }
+    setLoadingTables(false);
+  };
+
+  const handleSubmitJob = async () => {
+    if (!selectedConnectionId || selectedTables.length === 0) return;
+    await onCreateJob({
+      connection_id: parseInt(selectedConnectionId),
+      job_type: jobType,
+      tables: selectedTables,
+    });
+    setShowCreateDialog(false);
+    setSelectedConnectionId('');
+    setSelectedTables([]);
+    setAvailableTables([]);
+  };
 
   return (
     <div className="space-y-6">
@@ -983,8 +1302,12 @@ const JobsTab = ({ jobs, onCreateJob, onRefresh, loading }) => {
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
           </Button>
-          <Button onClick={() => setShowCreateDialog(true)}>
-            <Play className="h-4 w-4 mr-2" />
+          <Button variant="outline" onClick={onScheduleJob}>
+            <Clock className="h-4 w-4 mr-2" />
+            Schedule
+          </Button>
+          <Button onClick={() => setShowCreateDialog(true)} disabled={connections.length === 0}>
+            <Plus className="h-4 w-4 mr-2" />
             New Job
           </Button>
         </div>
@@ -1013,16 +1336,19 @@ const JobsTab = ({ jobs, onCreateJob, onRefresh, loading }) => {
                   <div className="flex items-center gap-4">
                     <div className={cn(
                       "p-2 rounded-lg",
-                      job.status === 'completed' ? "bg-green-100" :
+                      job.status === 'completed' || job.status === 'partial' ? "bg-green-100" :
                       job.status === 'running' ? "bg-blue-100" :
-                      job.status === 'failed' ? "bg-red-100" : "bg-gray-100"
+                      job.status === 'failed' ? "bg-red-100" :
+                      job.status === 'cancelled' ? "bg-orange-100" : "bg-gray-100"
                     )}>
                       {job.status === 'running' ? (
                         <Spinner size="sm" />
-                      ) : job.status === 'completed' ? (
+                      ) : job.status === 'completed' || job.status === 'partial' ? (
                         <CheckCircle className="h-5 w-5 text-green-600" />
                       ) : job.status === 'failed' ? (
                         <AlertTriangle className="h-5 w-5 text-red-600" />
+                      ) : job.status === 'cancelled' ? (
+                        <AlertTriangle className="h-5 w-5 text-orange-500" />
                       ) : (
                         <Clock className="h-5 w-5 text-gray-400" />
                       )}
@@ -1066,11 +1392,150 @@ const JobsTab = ({ jobs, onCreateJob, onRefresh, loading }) => {
                     )}
                   </div>
                 )}
+                <div className="flex items-center gap-2 border-t pt-3 mt-3">
+                  {job.status === 'pending' && (
+                    <Button variant="outline" size="sm" onClick={() => onStartJob(job.id)}>
+                      <Play className="h-4 w-4 mr-1" />
+                      Run
+                    </Button>
+                  )}
+                  {job.status === 'running' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-orange-600 hover:bg-orange-50 border-orange-200"
+                      onClick={() => {
+                        if (window.confirm(`Cancel running Job #${job.id}?`)) {
+                          onCancelJob(job.id);
+                        }
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                  {(job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') && (
+                    <Button variant="outline" size="sm" onClick={() => onStartJob(job.id)}>
+                      <RefreshCw className="h-4 w-4 mr-1" />
+                      Re-run
+                    </Button>
+                  )}
+                  {job.duration_seconds != null && job.duration_seconds > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      {job.duration_seconds < 60
+                        ? `${job.duration_seconds.toFixed(1)}s`
+                        : `${(job.duration_seconds / 60).toFixed(1)}m`}
+                    </span>
+                  )}
+                  <div className="flex-1" />
+                  {job.status !== 'running' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-red-600 hover:bg-red-50 border-red-200"
+                      onClick={() => {
+                        if (window.confirm(`Delete Job #${job.id}?`)) {
+                          onDeleteJob(job.id);
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Delete
+                    </Button>
+                  )}
+                </div>
               </CardContent>
             </Card>
           ))}
         </div>
       )}
+
+      {/* Create Job Dialog */}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Create Ingestion Job</DialogTitle>
+            <DialogDescription>
+              Import data from an SAP connection into the platform.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Connection *</label>
+              <NativeSelect
+                value={selectedConnectionId}
+                onChange={(e) => handleConnectionChange(e.target.value)}
+              >
+                <option value="">Select a connection...</option>
+                {connections.map((conn) => (
+                  <option key={conn.id} value={conn.id}>
+                    {conn.name} ({conn.connection_method})
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Job Type</label>
+              <NativeSelect value={jobType} onChange={(e) => setJobType(e.target.value)}>
+                <option value="full_extract">Full Extract</option>
+                <option value="delta_extract">Delta Extract</option>
+                <option value="incremental">Incremental</option>
+              </NativeSelect>
+            </div>
+
+            {selectedConnectionId && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium">
+                    Tables {loadingTables ? '(loading...)' : `(${selectedTables.length}/${availableTables.length} selected)`}
+                  </label>
+                  {availableTables.length > 0 && (
+                    <div className="flex gap-2">
+                      <button className="text-xs text-blue-600 hover:underline" onClick={() => setSelectedTables([...availableTables])}>
+                        Select All
+                      </button>
+                      <button className="text-xs text-blue-600 hover:underline" onClick={() => setSelectedTables([])}>
+                        Clear
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="border rounded-lg max-h-56 overflow-y-auto">
+                  {availableTables.length === 0 && !loadingTables ? (
+                    <p className="px-3 py-4 text-sm text-muted-foreground text-center">
+                      No tables found. Check connection configuration.
+                    </p>
+                  ) : availableTables.map((table) => (
+                    <label key={table} className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted cursor-pointer text-sm">
+                      <input
+                        type="checkbox"
+                        checked={selectedTables.includes(table)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedTables([...selectedTables, table]);
+                          } else {
+                            setSelectedTables(selectedTables.filter(t => t !== table));
+                          }
+                        }}
+                      />
+                      {table}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowCreateDialog(false)}>Cancel</Button>
+            <Button
+              onClick={handleSubmitJob}
+              disabled={!selectedConnectionId || selectedTables.length === 0}
+            >
+              Start Ingestion
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
@@ -1787,13 +2252,48 @@ const SAPDataManagement = () => {
     loadData();
   }, []);
 
+  // Auto-refresh every 3s when any job is running
+  useEffect(() => {
+    const hasRunning = jobs.some(j => j.status === 'running');
+    if (!hasRunning) return;
+    const interval = setInterval(() => { loadData(); }, 3000);
+    return () => clearInterval(interval);
+  }, [jobs, loadData]);
+
   // Handlers
   const handleCreateConnection = async (data) => {
     try {
-      await api.post('/sap-data/connections', data);
+      // Convert empty strings to null for optional fields so Pydantic accepts them
+      const required = new Set(['name', 'system_type', 'connection_method']);
+      const cleaned = Object.fromEntries(
+        Object.entries(data).map(([k, v]) => [k, !required.has(k) && v === '' ? null : v])
+      );
+      await api.post('/sap-data/connections', cleaned);
       loadData();
     } catch (error) {
       console.error('Failed to create connection:', error);
+    }
+  };
+
+  const handleUpdateConnection = async (connectionId, data) => {
+    try {
+      const required = new Set(['name', 'system_type', 'connection_method']);
+      const cleaned = Object.fromEntries(
+        Object.entries(data).map(([k, v]) => [k, !required.has(k) && v === '' ? null : v])
+      );
+      await api.put(`/sap-data/connections/${connectionId}`, cleaned);
+      loadData();
+    } catch (error) {
+      console.error('Failed to update connection:', error);
+    }
+  };
+
+  const handleDeleteConnection = async (connectionId) => {
+    try {
+      await api.delete(`/sap-data/connections/${connectionId}`);
+      loadData();
+    } catch (error) {
+      console.error('Failed to delete connection:', error);
     }
   };
 
@@ -1806,6 +2306,50 @@ const SAPDataManagement = () => {
       console.error('Failed to test connection:', error);
       alert('Connection test failed');
     }
+  };
+
+  const handleCreateJob = async (jobData) => {
+    try {
+      await api.post('/sap-data/jobs', jobData);
+      loadData();
+    } catch (error) {
+      console.error('Failed to create job:', error);
+      alert('Failed to create ingestion job: ' + (error.response?.data?.detail || error.message));
+    }
+  };
+
+  const handleStartJob = async (jobId) => {
+    try {
+      await api.post(`/sap-data/jobs/${jobId}/start`);
+      loadData();
+    } catch (error) {
+      console.error('Failed to start job:', error);
+      alert('Failed to start job: ' + (error.response?.data?.detail || error.message));
+    }
+  };
+
+  const handleDeleteJob = async (jobId) => {
+    try {
+      await api.delete(`/sap-data/jobs/${jobId}`);
+      loadData();
+    } catch (error) {
+      console.error('Failed to delete job:', error);
+      alert('Failed to delete job: ' + (error.response?.data?.detail || error.message));
+    }
+  };
+
+  const handleCancelJob = async (jobId) => {
+    try {
+      await api.post(`/sap-data/jobs/${jobId}/cancel`);
+      loadData();
+    } catch (error) {
+      console.error('Failed to cancel job:', error);
+      alert('Failed to cancel job: ' + (error.response?.data?.detail || error.message));
+    }
+  };
+
+  const handleScheduleJob = () => {
+    alert('Job scheduling — coming soon. Use "New Job" + "Run" for manual ingestion.');
   };
 
   const handleAcknowledgeInsight = async (insightId) => {
@@ -1864,6 +2408,8 @@ const SAPDataManagement = () => {
             <ConnectionsTab
               connections={connections}
               onCreateConnection={handleCreateConnection}
+              onUpdateConnection={handleUpdateConnection}
+              onDeleteConnection={handleDeleteConnection}
               onTestConnection={handleTestConnection}
               loading={loading}
             />
@@ -1880,7 +2426,12 @@ const SAPDataManagement = () => {
           {activeTab === 'jobs' && (
             <JobsTab
               jobs={jobs}
-              onCreateJob={() => {}}
+              connections={connections}
+              onCreateJob={handleCreateJob}
+              onStartJob={handleStartJob}
+              onDeleteJob={handleDeleteJob}
+              onCancelJob={handleCancelJob}
+              onScheduleJob={handleScheduleJob}
               onRefresh={loadData}
               loading={loading}
             />

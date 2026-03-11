@@ -28,7 +28,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
 
-from sqlalchemy import or_, text
+from sqlalchemy import or_, text, func
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -362,16 +362,16 @@ def authenticate_user(username: str, password: str) -> Optional[Dict[str, Any]]:
 
     # Map common aliases (e.g. "systemadmin") onto their canonical emails
     if "@" not in lookup:
-        canonical = _USERNAME_ALIASES.get(lookup.lower(), lookup)
+        canonical = _USERNAME_ALIASES.get(lookup.lower(), lookup.lower())
     else:
-        canonical = lookup
+        canonical = lookup.lower()
 
-    # Authenticate against persisted users
+    # Authenticate against persisted users (case-insensitive)
     session: Optional[Session] = None
     try:
         session = SessionLocal()
         db_user = session.query(User).filter(
-            or_(User.email == canonical, User.username == canonical)
+            or_(func.lower(User.email) == canonical, func.lower(User.username) == canonical)
         ).first()
         if db_user and getattr(db_user, "hashed_password", None):
             try:

@@ -11,7 +11,7 @@ from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, F
 from sqlalchemy.orm import relationship
 import enum
 
-from app.db.session import Base
+from app.models.base import Base
 
 
 class TemplateCategory(str, enum.Enum):

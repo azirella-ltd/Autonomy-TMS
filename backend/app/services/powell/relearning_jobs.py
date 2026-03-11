@@ -243,26 +243,28 @@ def _run_trm_outcome_collection() -> None:
 
 
 def _run_skill_outcome_collection() -> None:
-    """Collect outcomes for Claude Skills decisions in decision_embeddings."""
-    from app.db.session import sync_session_factory
+    """Collect outcomes for Claude Skills decisions in decision_embeddings.
+
+    Uses the sync KB session since decision_embeddings lives in the KB database
+    (which may be on a separate host, e.g. the Acer worker node).
+    """
+    from app.db.kb_session import get_sync_kb_session
 
     logger.info("Starting scheduled skill outcome collection")
 
-    db = sync_session_factory()
     try:
-        from app.services.powell.outcome_collector import OutcomeCollectorService
+        with get_sync_kb_session() as db:
+            from app.services.powell.outcome_collector import OutcomeCollectorService
 
-        service = OutcomeCollectorService(db)
-        stats = service.collect_skill_outcomes()
-        logger.info(
-            f"Skill outcome collection completed: "
-            f"{stats['succeeded']} computed, {stats['failed']} failed "
-            f"out of {stats['processed']} processed"
-        )
+            service = OutcomeCollectorService(db)
+            stats = service.collect_skill_outcomes()
+            logger.info(
+                f"Skill outcome collection completed: "
+                f"{stats['succeeded']} computed, {stats['failed']} failed "
+                f"out of {stats['processed']} processed"
+            )
     except Exception as e:
         logger.error(f"Skill outcome collection job failed: {e}")
-    finally:
-        db.close()
 
 
 def _run_cdt_calibration() -> None:

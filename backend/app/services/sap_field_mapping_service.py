@@ -134,6 +134,640 @@ class ZTableAnalysis:
         }
 
 
+# ---------------------------------------------------------------------------
+# Comprehensive TABLE-SPECIFIC SAP → Autonomy field mappings.
+# Keyed by SAP table name → { SAP_FIELD: (autonomy_entity, autonomy_field) }
+# This takes absolute priority over pattern/fuzzy matching because the same
+# SAP field (e.g. MATNR) maps to different Autonomy fields depending on which
+# SAP table it appears in.
+# ---------------------------------------------------------------------------
+
+SAP_TABLE_FIELD_MAPPINGS: Dict[str, Dict[str, Tuple[str, str]]] = {
+    # ── Company & Org Structure ──────────────────────────────────────────
+    "T001": {
+        "BUKRS": ("company", "company_id"),
+        "BUTXT": ("company", "company_name"),
+        "LAND1": ("company", "country"),
+        "WAERS": ("company", "currency"),
+        "SPRAS": ("company", "language"),
+    },
+    "T001W": {
+        "WERKS": ("site", "site_id"),
+        "NAME1": ("site", "site_name"),
+        "BWKEY": ("site", "valuation_area"),
+        "VKORG": ("site", "sales_org"),
+        "EKORG": ("site", "purchasing_org"),
+        "FABKL": ("site", "factory_calendar"),
+        "STRAS": ("site", "address"),
+        "ORT01": ("site", "city"),
+        "PSTLZ": ("site", "postal_code"),
+        "REGIO": ("site", "region"),
+        "LAND1": ("site", "country"),
+        "ADRNR": ("site", "address_number"),
+    },
+    "T001L": {
+        "WERKS": ("site", "site_id"),
+        "LGORT": ("site", "storage_location"),
+        "LGOBE": ("site", "storage_location_name"),
+    },
+    "ADRC": {
+        "ADDRNUMBER": ("site", "address_number"),
+        "NAME1": ("site", "site_name"),
+        "CITY1": ("site", "city"),
+        "POST_CODE1": ("site", "postal_code"),
+        "REGION": ("site", "region"),
+        "COUNTRY": ("site", "country"),
+        "STREET": ("site", "address"),
+        "HOUSE_NUM1": ("site", "house_number"),
+        "TEL_NUMBER": ("site", "phone"),
+        "FAX_NUMBER": ("site", "fax"),
+    },
+    # ── Material / Product Master ────────────────────────────────────────
+    "MARA": {
+        "MATNR": ("product", "product_id"),
+        "MTART": ("product", "product_type"),
+        "MEINS": ("product", "base_uom"),
+        "MATKL": ("product", "product_group"),
+        "BRGEW": ("product", "weight"),
+        "NTGEW": ("product", "net_weight"),
+        "GEWEI": ("product", "weight_uom"),
+        "VOLUM": ("product", "volume"),
+        "VOLEH": ("product", "volume_uom"),
+        "MBRSH": ("product", "industry_sector"),
+        "ERSDA": ("product", "created_date"),
+        "LAEDA": ("product", "last_changed_date"),
+        "EAN11": ("product", "ean_upc"),
+        "NUMTP": ("product", "ean_type"),
+        "PRDHA": ("product", "product_hierarchy"),
+    },
+    "MAKT": {
+        "MATNR": ("product", "product_id"),
+        "SPRAS": ("product", "language"),
+        "MAKTX": ("product", "product_name"),
+    },
+    "MARC": {
+        "MATNR": ("inv_policy", "product_id"),
+        "WERKS": ("inv_policy", "site_id"),
+        "EKGRP": ("inv_policy", "purchasing_group"),
+        "DISMM": ("inv_policy", "mrp_type"),
+        "DISPO": ("inv_policy", "mrp_controller"),
+        "DISLS": ("inv_policy", "lot_size_procedure"),
+        "MINBE": ("inv_policy", "reorder_point"),
+        "EISBE": ("inv_policy", "ss_quantity"),
+        "BSTRF": ("inv_policy", "fixed_order_quantity"),
+        "BSTMI": ("inv_policy", "min_order_quantity"),
+        "BSTMA": ("inv_policy", "max_order_quantity"),
+        "BESKZ": ("inv_policy", "procurement_type"),
+        "SOBSL": ("inv_policy", "special_procurement"),
+        "PLIFZ": ("inv_policy", "planned_delivery_time"),
+        "WEBAZ": ("inv_policy", "gr_processing_time"),
+        "FHORI": ("inv_policy", "scheduling_margin_key"),
+        "MABST": ("inv_policy", "order_up_to_level"),
+        "LOSGR": ("inv_policy", "lot_size"),
+        "FXHOR": ("inv_policy", "planning_time_fence"),
+        "VRMOD": ("inv_policy", "consumption_mode"),
+        "VINT1": ("inv_policy", "consumption_fwd_periods"),
+        "VINT2": ("inv_policy", "consumption_bwd_periods"),
+        "STRGR": ("inv_policy", "planning_strategy_group"),
+        "LGPRO": ("inv_policy", "production_storage_location"),
+        "LGFSB": ("inv_policy", "external_procurement_sloc"),
+        "PRCTR": ("inv_policy", "profit_center"),
+    },
+    "MARD": {
+        "MATNR": ("inv_level", "product_id"),
+        "WERKS": ("inv_level", "site_id"),
+        "LGORT": ("inv_level", "storage_location"),
+        "LABST": ("inv_level", "quantity"),
+        "UMLME": ("inv_level", "transfer_stock"),
+        "INSME": ("inv_level", "quality_inspection_stock"),
+        "EINME": ("inv_level", "restricted_stock"),
+        "SPEME": ("inv_level", "blocked_stock"),
+        "RETME": ("inv_level", "returns_stock"),
+    },
+    "MARM": {
+        "MATNR": ("product", "product_id"),
+        "MEINH": ("product", "alt_uom"),
+        "UMREZ": ("product", "uom_numerator"),
+        "UMREN": ("product", "uom_denominator"),
+        "BRGEW": ("product", "weight"),
+        "VOLUM": ("product", "volume"),
+    },
+    "MBEW": {
+        "MATNR": ("product", "product_id"),
+        "BWKEY": ("product", "valuation_area"),
+        "BKLAS": ("product", "valuation_class"),
+        "VPRSV": ("product", "price_control"),
+        "VERPR": ("product", "moving_avg_price"),
+        "STPRS": ("product", "standard_price"),
+        "PEINH": ("product", "price_unit"),
+        "SALK3": ("product", "total_stock_value"),
+        "LBKUM": ("product", "total_valuated_stock"),
+    },
+    "MVKE": {
+        "MATNR": ("product", "product_id"),
+        "VKORG": ("product", "sales_org"),
+        "VTWEG": ("product", "distribution_channel"),
+        "PRODH": ("product", "product_hierarchy"),
+        "KONDM": ("product", "material_pricing_group"),
+        "KTGRM": ("product", "account_assignment_group"),
+        "MTPOS": ("product", "item_category_group"),
+    },
+    # ── Trading Partners (Vendors & Customers) ───────────────────────────
+    "LFA1": {
+        "LIFNR": ("trading_partner", "partner_id"),
+        "NAME1": ("trading_partner", "partner_name"),
+        "NAME2": ("trading_partner", "partner_name_2"),
+        "LAND1": ("trading_partner", "country"),
+        "REGIO": ("trading_partner", "region"),
+        "ORT01": ("trading_partner", "city"),
+        "PSTLZ": ("trading_partner", "postal_code"),
+        "STRAS": ("trading_partner", "address"),
+        "TELF1": ("trading_partner", "phone"),
+        "ADRNR": ("trading_partner", "address_number"),
+    },
+    "KNA1": {
+        "KUNNR": ("trading_partner", "partner_id"),
+        "NAME1": ("trading_partner", "partner_name"),
+        "NAME2": ("trading_partner", "partner_name_2"),
+        "LAND1": ("trading_partner", "country"),
+        "REGIO": ("trading_partner", "region"),
+        "ORT01": ("trading_partner", "city"),
+        "PSTLZ": ("trading_partner", "postal_code"),
+        "STRAS": ("trading_partner", "address"),
+        "TELF1": ("trading_partner", "phone"),
+        "ADRNR": ("trading_partner", "address_number"),
+        "KTOKD": ("trading_partner", "account_group"),
+    },
+    # ── Purchasing Info Records ───────────────────────────────────────────
+    "EINA": {
+        "INFNR": ("trading_partner", "info_record_id"),
+        "MATNR": ("trading_partner", "product_id"),
+        "LIFNR": ("trading_partner", "partner_id"),
+        "LOEKZ": ("trading_partner", "deletion_indicator"),
+        "ERDAT": ("trading_partner", "created_date"),
+        "TXZ01": ("trading_partner", "short_text"),
+        "MEINS": ("trading_partner", "order_uom"),
+    },
+    "EINE": {
+        "INFNR": ("trading_partner", "info_record_id"),
+        "EKORG": ("trading_partner", "purchasing_org"),
+        "WERKS": ("trading_partner", "site_id"),
+        "ESOKZ": ("trading_partner", "info_category"),
+        "NETPR": ("trading_partner", "net_price"),
+        "PEINH": ("trading_partner", "price_unit"),
+        "WAERS": ("trading_partner", "currency"),
+        "APLFZ": ("trading_partner", "planned_delivery_time"),
+        "NORBM": ("trading_partner", "standard_quantity"),
+        "MINBM": ("trading_partner", "minimum_quantity"),
+        "UEBTO": ("trading_partner", "over_delivery_tolerance"),
+        "UNTTO": ("trading_partner", "under_delivery_tolerance"),
+    },
+    "EORD": {
+        "MATNR": ("trading_partner", "product_id"),
+        "WERKS": ("trading_partner", "site_id"),
+        "ZEORD": ("trading_partner", "source_list_number"),
+        "VDATU": ("trading_partner", "valid_from"),
+        "BDATU": ("trading_partner", "valid_to"),
+        "LIFNR": ("trading_partner", "partner_id"),
+        "FLIFN": ("trading_partner", "fixed_vendor"),
+        "NOTKZ": ("trading_partner", "order_assignment"),
+        "EKORG": ("trading_partner", "purchasing_org"),
+        "EORTP": ("trading_partner", "source_type"),
+    },
+    # ── Purchase Requisitions ─────────────────────────────────────────────
+    "EBAN": {
+        "BANFN": ("purchase_requisition", "requisition_id"),
+        "BNFPO": ("purchase_requisition", "line_number"),
+        "BSART": ("purchase_requisition", "requisition_type"),
+        "MATNR": ("purchase_requisition", "product_id"),
+        "WERKS": ("purchase_requisition", "site_id"),
+        "LGORT": ("purchase_requisition", "storage_location"),
+        "MENGE": ("purchase_requisition", "quantity"),
+        "MEINS": ("purchase_requisition", "uom"),
+        "PREIS": ("purchase_requisition", "price"),
+        "PEINH": ("purchase_requisition", "price_unit"),
+        "EKGRP": ("purchase_requisition", "purchasing_group"),
+        "FRGKZ": ("purchase_requisition", "release_indicator"),
+        "FRGZU": ("purchase_requisition", "release_status"),
+        "LOEKZ": ("purchase_requisition", "deletion_indicator"),
+        "BADAT": ("purchase_requisition", "requisition_date"),
+        "LFDAT": ("purchase_requisition", "delivery_date"),
+    },
+    # ── Purchase Orders ───────────────────────────────────────────────────
+    "EKKO": {
+        "EBELN": ("inbound_order", "order_id"),
+        "BSART": ("inbound_order", "order_type"),
+        "BSTYP": ("inbound_order", "order_category"),
+        "LIFNR": ("inbound_order", "supplier_id"),
+        "EKORG": ("inbound_order", "purchasing_org"),
+        "EKGRP": ("inbound_order", "purchasing_group"),
+        "BUKRS": ("inbound_order", "company_id"),
+        "ERNAM": ("inbound_order", "created_by"),
+        "AEDAT": ("inbound_order", "changed_date"),
+        "BEDAT": ("inbound_order", "order_date"),
+        "WAERS": ("inbound_order", "currency"),
+    },
+    "EKPO": {
+        "EBELN": ("inbound_order", "order_id"),
+        "EBELP": ("inbound_order", "line_number"),
+        "MATNR": ("inbound_order", "product_id"),
+        "WERKS": ("inbound_order", "site_id"),
+        "LGORT": ("inbound_order", "storage_location"),
+        "MENGE": ("inbound_order", "quantity"),
+        "MEINS": ("inbound_order", "uom"),
+        "NETPR": ("inbound_order", "net_price"),
+        "PEINH": ("inbound_order", "price_unit"),
+        "NETWR": ("inbound_order", "net_value"),
+        "BPRME": ("inbound_order", "order_price_uom"),
+        "BSTYP": ("inbound_order", "order_category"),
+        "KNTTP": ("inbound_order", "account_assignment"),
+        "PSTYP": ("inbound_order", "item_category"),
+        "ELIKZ": ("inbound_order", "delivery_complete"),
+    },
+    "EKET": {
+        "EBELN": ("inbound_order", "order_id"),
+        "EBELP": ("inbound_order", "line_number"),
+        "ETENR": ("inbound_order", "schedule_line"),
+        "EINDT": ("inbound_order", "delivery_date"),
+        "MENGE": ("inbound_order", "scheduled_quantity"),
+        "WEMNG": ("inbound_order", "goods_received_quantity"),
+        "WAMNG": ("inbound_order", "goods_issued_quantity"),
+        "SLFDT": ("inbound_order", "stat_delivery_date"),
+    },
+    # ── Sales Orders ──────────────────────────────────────────────────────
+    "VBAK": {
+        "VBELN": ("outbound_order", "order_id"),
+        "AUART": ("outbound_order", "order_type"),
+        "VKORG": ("outbound_order", "sales_org"),
+        "VTWEG": ("outbound_order", "distribution_channel"),
+        "SPART": ("outbound_order", "division"),
+        "KUNNR": ("outbound_order", "customer_id"),
+        "ERDAT": ("outbound_order", "order_date"),
+        "VDATU": ("outbound_order", "requested_date"),
+        "BSTNK": ("outbound_order", "customer_po"),
+        "WAERK": ("outbound_order", "currency"),
+        "NETWR": ("outbound_order", "net_value"),
+        "KNUMV": ("outbound_order", "pricing_doc"),
+        "GBSTK": ("outbound_order", "overall_status"),
+    },
+    "VBAP": {
+        "VBELN": ("outbound_order", "order_id"),
+        "POSNR": ("outbound_order", "line_number"),
+        "MATNR": ("outbound_order", "product_id"),
+        "WERKS": ("outbound_order", "ship_from_site_id"),
+        "KWMENG": ("outbound_order", "quantity"),
+        "MEINS": ("outbound_order", "uom"),
+        "NETPR": ("outbound_order", "net_price"),
+        "NETWR": ("outbound_order", "net_value"),
+        "WAERK": ("outbound_order", "currency"),
+        "LFREL": ("outbound_order", "delivery_relevant"),
+        "ABGRU": ("outbound_order", "rejection_reason"),
+        "PSTYV": ("outbound_order", "item_category"),
+    },
+    "VBEP": {
+        "VBELN": ("outbound_order", "order_id"),
+        "POSNR": ("outbound_order", "line_number"),
+        "ETENR": ("outbound_order", "schedule_line"),
+        "EDATU": ("outbound_order", "delivery_date"),
+        "WMENG": ("outbound_order", "ordered_quantity"),
+        "BMENG": ("outbound_order", "confirmed_quantity"),
+        "LMENG": ("outbound_order", "delivered_quantity"),
+        "MEINS": ("outbound_order", "uom"),
+    },
+    "VBUK": {
+        "VBELN": ("outbound_order", "order_id"),
+        "LFSTK": ("outbound_order", "delivery_status"),
+        "WBSTK": ("outbound_order", "goods_movement_status"),
+        "FKSTK": ("outbound_order", "billing_status"),
+        "GBSTK": ("outbound_order", "overall_status"),
+        "ABSTK": ("outbound_order", "rejection_status"),
+        "KOSTK": ("outbound_order", "overall_picking_status"),
+    },
+    "VBUP": {
+        "VBELN": ("outbound_order", "order_id"),
+        "POSNR": ("outbound_order", "line_number"),
+        "LFSTA": ("outbound_order", "delivery_status"),
+        "WBSTA": ("outbound_order", "goods_movement_status"),
+        "FKSTA": ("outbound_order", "billing_status"),
+        "GBSTA": ("outbound_order", "overall_status"),
+        "ABSTA": ("outbound_order", "rejection_status"),
+        "KOSTA": ("outbound_order", "overall_picking_status"),
+    },
+    # ── Deliveries ────────────────────────────────────────────────────────
+    "LIKP": {
+        "VBELN": ("outbound_order", "delivery_id"),
+        "LFART": ("outbound_order", "delivery_type"),
+        "WADAT": ("outbound_order", "planned_goods_issue_date"),
+        "WADAT_IST": ("outbound_order", "actual_goods_issue_date"),
+        "LDDAT": ("outbound_order", "loading_date"),
+        "LFDAT": ("outbound_order", "delivery_date"),
+        "ROUTE": ("outbound_order", "route"),
+        "BTGEW": ("outbound_order", "gross_weight"),
+        "NTGEW": ("outbound_order", "net_weight"),
+        "VOLUM": ("outbound_order", "volume"),
+        "GEWEI": ("outbound_order", "weight_uom"),
+        "VOLEH": ("outbound_order", "volume_uom"),
+        "KUNNR": ("outbound_order", "customer_id"),
+        "LIFNR": ("outbound_order", "vendor_id"),
+        "VSTEL": ("outbound_order", "shipping_point"),
+        "VKORG": ("outbound_order", "sales_org"),
+    },
+    "LIPS": {
+        "VBELN": ("outbound_order", "delivery_id"),
+        "POSNR": ("outbound_order", "delivery_line"),
+        "MATNR": ("outbound_order", "product_id"),
+        "WERKS": ("outbound_order", "ship_from_site_id"),
+        "LGORT": ("outbound_order", "storage_location"),
+        "LFIMG": ("outbound_order", "delivered_quantity"),
+        "MEINS": ("outbound_order", "uom"),
+        "VGBEL": ("outbound_order", "reference_order_id"),
+        "VGPOS": ("outbound_order", "reference_line"),
+        "PSTYV": ("outbound_order", "item_category"),
+    },
+    # ── Production Orders ─────────────────────────────────────────────────
+    "AFKO": {
+        "AUFNR": ("production_order", "order_id"),
+        "RSNUM": ("production_order", "reservation_number"),
+        "PLNBEZ": ("production_order", "product_id"),
+        "GAMNG": ("production_order", "order_quantity"),
+        "GMEIN": ("production_order", "uom"),
+        "GSTRS": ("production_order", "scheduled_start"),
+        "GSTRP": ("production_order", "scheduled_start_date"),
+        "FTRMS": ("production_order", "scheduled_release"),
+        "GLTRP": ("production_order", "end_date"),
+        "GLTRS": ("production_order", "scheduled_finish"),
+        "PLNTY": ("production_order", "task_list_type"),
+        "PLNNR": ("production_order", "routing_number"),
+    },
+    "AFPO": {
+        "AUFNR": ("production_order", "order_id"),
+        "POSNR": ("production_order", "line_number"),
+        "MATNR": ("production_order", "product_id"),
+        "MEINS": ("production_order", "uom"),
+        "PSMNG": ("production_order", "order_quantity"),
+        "WEMNG": ("production_order", "goods_received_quantity"),
+        "LTRMI": ("production_order", "end_date"),
+        "LTRMP": ("production_order", "start_date"),
+    },
+    "AFVC": {
+        "AUFPL": ("production_order", "routing_number"),
+        "APLZL": ("production_order", "operation_counter"),
+        "VORNR": ("production_order", "operation_number"),
+        "ARBID": ("production_order", "work_center_id"),
+        "WERKS": ("production_order", "site_id"),
+        "STEUS": ("production_order", "control_key"),
+        "LTXA1": ("production_order", "operation_description"),
+        "LIFNR": ("production_order", "subcontractor_id"),
+        "PREIS": ("production_order", "external_processing_price"),
+        "WAERS": ("production_order", "currency"),
+    },
+    "AUFK": {
+        "AUFNR": ("production_order", "order_id"),
+        "AUART": ("production_order", "order_type"),
+        "AUTYP": ("production_order", "order_category"),
+        "WERKS": ("production_order", "site_id"),
+        "ERDAT": ("production_order", "created_date"),
+        "BUKRS": ("production_order", "company_id"),
+        "KTEXT": ("production_order", "description"),
+        "OBJNR": ("production_order", "object_number"),
+        "WAERS": ("production_order", "currency"),
+    },
+    "RESB": {
+        "RSNUM": ("production_order", "reservation_number"),
+        "RSPOS": ("production_order", "reservation_item"),
+        "MATNR": ("production_order", "component_id"),
+        "WERKS": ("production_order", "site_id"),
+        "LGORT": ("production_order", "storage_location"),
+        "BDMNG": ("production_order", "required_quantity"),
+        "MEINS": ("production_order", "uom"),
+        "BDTER": ("production_order", "requirement_date"),
+        "AUFNR": ("production_order", "order_id"),
+        "XWAOK": ("production_order", "goods_movement_complete"),
+        "ENMNG": ("production_order", "withdrawn_quantity"),
+    },
+    # ── BOM ────────────────────────────────────────────────────────────────
+    "STKO": {
+        "STLNR": ("product", "bom_id"),
+        "STLAL": ("product", "bom_alternative"),
+        "STLTY": ("product", "bom_type"),
+        "STLST": ("product", "bom_status"),
+        "BMENG": ("product", "base_quantity"),
+        "BMEIN": ("product", "base_uom"),
+        "STKTX": ("product", "bom_description"),
+        "DATUV": ("product", "valid_from"),
+        "LOEKZ": ("product", "deletion_indicator"),
+    },
+    "STPO": {
+        "STLNR": ("product", "bom_id"),
+        "STLKN": ("product", "bom_node"),
+        "STPOZ": ("product", "bom_item_counter"),
+        "IDNRK": ("product", "component_id"),
+        "MENGE": ("product", "component_quantity"),
+        "MEINS": ("product", "component_uom"),
+        "POSTP": ("product", "item_category"),
+        "POSNR": ("product", "bom_item_number"),
+        "SORTF": ("product", "sort_string"),
+        "AUSCH": ("product", "scrap_rate"),
+    },
+    # ── Routings / Production Process ─────────────────────────────────────
+    "PLKO": {
+        "PLNTY": ("production_order", "task_list_type"),
+        "PLNNR": ("production_order", "routing_number"),
+        "PLNAL": ("production_order", "routing_group_counter"),
+        "WERKS": ("production_order", "site_id"),
+        "STATU": ("production_order", "routing_status"),
+        "LOEKZ": ("production_order", "deletion_indicator"),
+        "PLNME": ("production_order", "routing_uom"),
+        "VERWE": ("production_order", "routing_usage"),
+        "KTEXT": ("production_order", "routing_description"),
+    },
+    "PLPO": {
+        "PLNTY": ("production_order", "task_list_type"),
+        "PLNNR": ("production_order", "routing_number"),
+        "PLNKN": ("production_order", "routing_node"),
+        "VORNR": ("production_order", "operation_number"),
+        "ARBID": ("production_order", "work_center_id"),
+        "STEUS": ("production_order", "control_key"),
+        "VGW01": ("production_order", "setup_time"),
+        "VGW02": ("production_order", "machine_time"),
+        "VGW03": ("production_order", "labor_time"),
+        "VGE01": ("production_order", "setup_time_uom"),
+        "VGE02": ("production_order", "machine_time_uom"),
+        "VGE03": ("production_order", "labor_time_uom"),
+        "BMSCH": ("production_order", "base_quantity"),
+    },
+    "CRHD": {
+        "OBJID": ("production_order", "work_center_id"),
+        "ARBPL": ("production_order", "work_center_name"),
+        "WERKS": ("production_order", "site_id"),
+        "VERWE": ("production_order", "work_center_usage"),
+        "OBJTY": ("production_order", "object_type"),
+    },
+    # ── Forecasts / PIR ───────────────────────────────────────────────────
+    "PBIM": {
+        "BDZEI": ("forecast", "forecast_id"),
+        "BEDAE": ("forecast", "requirements_type"),
+        "VERSB": ("forecast", "forecast_version"),
+        "MATNR": ("forecast", "product_id"),
+        "WERKS": ("forecast", "site_id"),
+        "PBDNR": ("forecast", "requirement_plan_number"),
+    },
+    "PBED": {
+        "BDZEI": ("forecast", "forecast_id"),
+        "PDATU": ("forecast", "forecast_date"),
+        "PLNMG": ("forecast", "forecast_quantity"),
+        "MEINS": ("forecast", "uom"),
+        "ENTMG": ("forecast", "consumed_quantity"),
+    },
+    # ── MRP / Planned Orders ──────────────────────────────────────────────
+    "PLAF": {
+        "PLNUM": ("supply_plan", "plan_id"),
+        "MATNR": ("supply_plan", "product_id"),
+        "PLWRK": ("supply_plan", "site_id"),
+        "GSMNG": ("supply_plan", "planned_order_quantity"),
+        "MEINS": ("supply_plan", "uom"),
+        "PEDTR": ("supply_plan", "planned_order_date"),
+        "PSTTR": ("supply_plan", "planned_receipt_date"),
+        "STLFX": ("supply_plan", "is_firmed"),
+        "PAART": ("supply_plan", "plan_type"),
+        "BESKZ": ("supply_plan", "procurement_type"),
+        "PLNTY": ("supply_plan", "task_list_type"),
+        "DISPO": ("supply_plan", "mrp_controller"),
+    },
+    # ── Transfer Orders ───────────────────────────────────────────────────
+    "LTAK": {
+        "TANUM": ("transfer_order", "order_id"),
+        "LGNUM": ("transfer_order", "warehouse_number"),
+        "TBNUM": ("transfer_order", "transfer_requirement"),
+        "BWART": ("transfer_order", "movement_type"),
+        "BWLVS": ("transfer_order", "wm_movement_type"),
+        "BDATU": ("transfer_order", "requirement_date"),
+        "BZEIT": ("transfer_order", "requirement_time"),
+        "LZNUM": ("transfer_order", "group_number"),
+        "BETYP": ("transfer_order", "reference_type"),
+        "BENUM": ("transfer_order", "reference_number"),
+        "TRART": ("transfer_order", "transfer_type"),
+        "STDAT": ("transfer_order", "start_date"),
+        "ENDAT": ("transfer_order", "end_date"),
+    },
+    "LTAP": {
+        "LGNUM": ("transfer_order", "warehouse_number"),
+        "TANUM": ("transfer_order", "order_id"),
+        "TAPOS": ("transfer_order", "line_number"),
+        "MATNR": ("transfer_order", "product_id"),
+        "WERKS": ("transfer_order", "site_id"),
+        "LGORT": ("transfer_order", "storage_location"),
+        "VLTYP": ("transfer_order", "source_bin_type"),
+        "VLPLA": ("transfer_order", "source_bin"),
+        "NLTYP": ("transfer_order", "destination_bin_type"),
+        "NLPLA": ("transfer_order", "destination_bin"),
+        "VSOLM": ("transfer_order", "source_target_quantity"),
+        "NSOLM": ("transfer_order", "destination_target_quantity"),
+        "VISTM": ("transfer_order", "source_actual_quantity"),
+        "NISTM": ("transfer_order", "destination_actual_quantity"),
+        "MEINS": ("transfer_order", "uom"),
+    },
+    # ── Quality Management ────────────────────────────────────────────────
+    "QMEL": {
+        "QMNUM": ("quality_order", "order_id"),
+        "QMART": ("quality_order", "inspection_type"),
+        "MATNR": ("quality_order", "product_id"),
+        "ERDAT": ("quality_order", "created_date"),
+        "PRIOK": ("quality_order", "priority"),
+        "STRMN": ("quality_order", "planned_start"),
+        "LTRMN": ("quality_order", "planned_end"),
+        "QMTXT": ("quality_order", "description"),
+        "AUFNR": ("quality_order", "production_order_ref"),
+    },
+    "QALS": {
+        "PRUEFLOS": ("quality_order", "lot_number"),
+        "MATNR": ("quality_order", "product_id"),
+        "WERK": ("quality_order", "site_id"),
+        "ART": ("quality_order", "inspection_type"),
+        "HERKUNFT": ("quality_order", "origin"),
+        "BEARBSTATU": ("quality_order", "status"),
+        "ENSTEHDAT": ("quality_order", "inspection_date"),
+        "ENTSTEZEIT": ("quality_order", "inspection_time"),
+        "PASTRTERM": ("quality_order", "planned_start"),
+        "PAENDTERM": ("quality_order", "planned_end"),
+        "LOSMENGE": ("quality_order", "lot_size"),
+        "MENGENEINH": ("quality_order", "uom"),
+        "AUFNR": ("quality_order", "production_order_ref"),
+        "CHARG": ("quality_order", "batch"),
+        "INSMK": ("quality_order", "stock_posting"),
+    },
+    "QASE": {
+        "PRUEFLOS": ("quality_order", "lot_number"),
+        "VORGLFNR": ("quality_order", "operation_number"),
+        "MERKNR": ("quality_order", "characteristic_number"),
+        "MESSWERT": ("quality_order", "measured_value"),
+        "MBEWERTG": ("quality_order", "valuation"),
+        "ANZFEHLER": ("quality_order", "defect_count"),
+        "CODE1": ("quality_order", "code"),
+        "VERSION1": ("quality_order", "catalog_version"),
+        "ERSTELLDAT": ("quality_order", "created_date"),
+        "PRUEFER": ("quality_order", "inspector"),
+    },
+    # ── Maintenance / Equipment ───────────────────────────────────────────
+    "EQUI": {
+        "EQUNR": ("maintenance_order", "asset_id"),
+        "EQART": ("maintenance_order", "equipment_type"),
+        "ERDAT": ("maintenance_order", "created_date"),
+        "ANSDT": ("maintenance_order", "startup_date"),
+        "ANSWT": ("maintenance_order", "acquisition_value"),
+        "WAERS": ("maintenance_order", "currency"),
+        "HERST": ("maintenance_order", "manufacturer"),
+        "SERGE": ("maintenance_order", "serial_number"),
+        "TYPBZ": ("maintenance_order", "model_number"),
+        "BRGEW": ("maintenance_order", "weight"),
+        "GEWEI": ("maintenance_order", "weight_uom"),
+    },
+    # ── Goods Movements ───────────────────────────────────────────────────
+    "MKPF": {
+        "MBLNR": ("inv_level", "document_number"),
+        "MJAHR": ("inv_level", "document_year"),
+        "BLDAT": ("inv_level", "document_date"),
+        "BUDAT": ("inv_level", "posting_date"),
+        "BKTXT": ("inv_level", "header_text"),
+        "USNAM": ("inv_level", "user_name"),
+        "XBLNR": ("inv_level", "reference_document"),
+    },
+    "MSEG": {
+        "MBLNR": ("inv_level", "document_number"),
+        "MJAHR": ("inv_level", "document_year"),
+        "ZEILE": ("inv_level", "line_number"),
+        "BWART": ("inv_level", "movement_type"),
+        "MATNR": ("inv_level", "product_id"),
+        "WERKS": ("inv_level", "site_id"),
+        "LGORT": ("inv_level", "storage_location"),
+        "MENGE": ("inv_level", "quantity"),
+        "MEINS": ("inv_level", "uom"),
+        "SHKZG": ("inv_level", "debit_credit"),
+        "AUFNR": ("inv_level", "order_reference"),
+        "EBELN": ("inv_level", "po_number"),
+        "EBELP": ("inv_level", "po_line"),
+        "LIFNR": ("inv_level", "vendor_id"),
+        "KUNNR": ("inv_level", "customer_id"),
+        "KDAUF": ("inv_level", "sales_order"),
+        "SOBKZ": ("inv_level", "special_stock"),
+        "DMBTR": ("inv_level", "amount_local_currency"),
+        "BUDAT_MKPF": ("inv_level", "posting_date"),
+    },
+    # ── Status / Support ──────────────────────────────────────────────────
+    "JEST": {
+        "OBJNR": ("production_order", "object_number"),
+        "STAT": ("production_order", "status_code"),
+        "INACT": ("production_order", "status_inactive"),
+    },
+    "TJ02T": {
+        "ISTAT": ("production_order", "status_code"),
+        "SPRAS": ("production_order", "language"),
+        "TXT04": ("production_order", "status_short_text"),
+        "TXT30": ("production_order", "status_long_text"),
+    },
+}
+
+
 # Common SAP field name patterns and their AWS SC equivalents
 SAP_FIELD_PATTERNS = {
     # Material/Product patterns
@@ -697,16 +1331,18 @@ class SAPFieldMappingService:
         sap_field_type: str = "",
         sap_field_description: str = "",
         target_entity: Optional[str] = None,
+        source_table: Optional[str] = None,
         use_ai: bool = True
     ) -> FieldMatchResult:
         """
-        Match a single SAP field to the best AWS SC field.
+        Match a single SAP field to the best Autonomy SC field.
 
         Args:
             sap_field: SAP field name
             sap_field_type: SAP data type
             sap_field_description: Field description from SAP
             target_entity: If specified, only match to fields in this entity
+            source_table: SAP source table name (enables table-specific mapping)
             use_ai: Whether to use AI for difficult mappings
 
         Returns:
@@ -719,7 +1355,21 @@ class SAPFieldMappingService:
             is_z_field=self._is_z_field(sap_field),
         )
 
-        # Check learned mappings first
+        # 1. Check table-specific explicit mappings first (highest priority)
+        if source_table:
+            table_key = source_table.upper()
+            table_mappings = SAP_TABLE_FIELD_MAPPINGS.get(table_key, {})
+            field_upper = sap_field.strip().upper()
+            if field_upper in table_mappings:
+                entity, field = table_mappings[field_upper]
+                result.aws_sc_entity = entity
+                result.aws_sc_field = field
+                result.confidence = MatchConfidence.HIGH
+                result.confidence_score = 0.95
+                result.match_source = MappingSource.AUTO_PATTERN
+                return result
+
+        # 2. Check learned mappings
         if sap_field in self._learned_mappings:
             entity, field = self._learned_mappings[sap_field]
             result.aws_sc_entity = entity
@@ -729,20 +1379,27 @@ class SAPFieldMappingService:
             result.match_source = MappingSource.LEARNED
             return result
 
-        # Try pattern matching
+        # 3. Try pattern matching (cross-entity patterns)
         pattern_match = self._match_by_pattern(sap_field)
         if pattern_match:
             entity, field, score = pattern_match
-            if entity != "*" and (target_entity is None or target_entity == entity):
-                result.aws_sc_entity = entity
-                result.aws_sc_field = field
-                result.confidence = MatchConfidence.HIGH
-                result.confidence_score = score
-                result.match_source = MappingSource.AUTO_PATTERN
-                return result
+            # Accept if no target_entity constraint, or entity matches, or wildcard
+            if entity == "*" or target_entity is None or target_entity == entity:
+                if entity != "*":
+                    result.aws_sc_entity = entity
+                    result.aws_sc_field = field
+                    result.confidence = MatchConfidence.HIGH
+                    result.confidence_score = score
+                    result.match_source = MappingSource.AUTO_PATTERN
+                    return result
 
-        # Fuzzy match against all entities or target entity
-        entities_to_check = AWS_SC_FIELDS.keys() if target_entity is None else [target_entity]
+        # 4. Fuzzy match — only for fields NOT covered by table-specific mapping.
+        # When source_table is set, search ALL entities (not just target_entity)
+        # since the table-specific mapping already handled entity routing.
+        if source_table:
+            entities_to_check = AWS_SC_FIELDS.keys()
+        else:
+            entities_to_check = AWS_SC_FIELDS.keys() if target_entity is None else [target_entity]
 
         all_matches = []
         for entity in entities_to_check:
@@ -756,7 +1413,7 @@ class SAPFieldMappingService:
                     sap_field_description, field_info.get("description", "")
                 )
 
-                if score > 0.3:  # Minimum threshold
+                if score > 0.5:  # Threshold raised — only meaningful matches
                     all_matches.append({
                         "entity": entity,
                         "field": aws_field,
@@ -812,6 +1469,7 @@ class SAPFieldMappingService:
         self,
         fields: List[Dict[str, str]],
         target_entity: Optional[str] = None,
+        source_table: Optional[str] = None,
         use_ai: bool = True
     ) -> List[FieldMatchResult]:
         """
@@ -820,6 +1478,7 @@ class SAPFieldMappingService:
         Args:
             fields: List of dicts with 'name', 'type', 'description'
             target_entity: Optional entity to constrain matches
+            source_table: SAP source table name (enables table-specific mapping)
             use_ai: Whether to use AI for difficult mappings
 
         Returns:
@@ -833,6 +1492,7 @@ class SAPFieldMappingService:
                 sap_field_type=field_info.get("type", ""),
                 sap_field_description=field_info.get("description", ""),
                 target_entity=target_entity,
+                source_table=source_table,
                 use_ai=use_ai
             )
             results.append(result)

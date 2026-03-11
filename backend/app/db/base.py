@@ -1,8 +1,7 @@
-# Import from session.py to maintain a single source of truth for database configuration
-from .session import Base, engine, async_session_factory, get_db
-
-# This file is kept for backward compatibility
-# All database configuration should be in session.py
+# Central re-exports for backward compatibility.
+# Database configuration lives in session.py; Base lives in models.base.
+from app.models.base import Base
+from .session import engine, async_session_factory, get_db
 
 # Export the async session factory as the default session factory
 SessionLocal = async_session_factory

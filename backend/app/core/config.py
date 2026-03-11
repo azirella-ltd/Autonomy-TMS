@@ -190,9 +190,10 @@ class Settings(BaseSettings):
     LLM_MODEL_NAME: Optional[str] = None  # Served model name (overrides LLM_MODEL)
 
     # Embedding configuration
-    EMBEDDING_API_BASE: Optional[str] = None  # e.g. http://ollama:11434/v1
+    EMBEDDING_API_BASE: Optional[str] = None  # e.g. http://acer:8080 (TEI) or http://ollama:11434/v1
     EMBEDDING_MODEL: str = "nomic-embed-text"
     EMBEDDING_DIMENSIONS: int = 768
+    EMBEDDING_PROVIDER: str = "openai"  # "openai" (Ollama/vLLM/OpenAI) or "tei" (HuggingFace TEI)
 
     # RAG Configuration
     RAG_ENABLED: bool = False

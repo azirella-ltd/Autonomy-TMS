@@ -1009,6 +1009,20 @@ export const LEARNING_NAVIGATION = [
         requiredCapability: 'view_sc_configs',
         description: 'Configure learning scenarios',
       },
+      {
+        label: 'SAP Data Management',
+        path: '/admin/sap-data',
+        icon: DatabaseIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'SAP connections, field mapping, and data ingestion',
+      },
+      {
+        label: 'Knowledge Base',
+        path: '/admin/knowledge-base',
+        icon: BookOpenIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'Upload documents for AI agent context (RAG)',
+      },
     ],
   },
 ];

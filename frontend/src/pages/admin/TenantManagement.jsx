@@ -359,6 +359,12 @@ const TenantManagement = () => {
                       scope="col"
                       className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                     >
+                      Mode
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    >
                       Organization Admin
                     </th>
                   </tr>
@@ -369,6 +375,8 @@ const TenantManagement = () => {
                     const adminName =
                       tenant.admin?.full_name || tenant.admin?.username || '\u2014';
                     const adminEmail = tenant.admin?.email;
+                    const mode = tenant.mode || 'production';
+                    const isLearning = mode === 'learning';
 
                     return (
                       <tr
@@ -389,6 +397,15 @@ const TenantManagement = () => {
                               {tenant.description}
                             </div>
                           ) : null}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            isLearning
+                              ? 'bg-purple-100 text-purple-800'
+                              : 'bg-green-100 text-green-800'
+                          }`}>
+                            {isLearning ? 'Learning' : 'Production'}
+                          </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm font-medium text-gray-900">
@@ -516,10 +533,21 @@ const TenantManagement = () => {
                 </p>
               </div>
 
+              {!editingTenantId && (
+                <div className="bg-blue-50 border border-blue-200 rounded-md px-4 py-3">
+                  <p className="text-sm text-blue-800 font-medium">Two tenants will be created:</p>
+                  <ul className="mt-1 text-sm text-blue-700 list-disc list-inside">
+                    <li><strong>Production</strong> &mdash; {form.name || 'Organization'} &mdash; admin: {form.admin.email || 'admin@domain.com'}</li>
+                    <li><strong>Learning</strong> &mdash; {form.name || 'Organization'} (Learning) &mdash; admin: {form.admin.email ? `${form.admin.email.split('@')[0]}_learn@${form.admin.email.split('@')[1] || 'domain.com'}` : 'admin_learn@domain.com'}</li>
+                  </ul>
+                  <p className="mt-1 text-xs text-blue-600">Both admins share the same password. The learning admin uses the same credentials with &ldquo;_learn&rdquo; appended to username and email local part.</p>
+                </div>
+              )}
+
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="md:col-span-1">
                   <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="admin-username">
-                    Admin Username
+                    Production Admin Username
                   </label>
                   <input
                     id="admin-username"
@@ -535,7 +563,7 @@ const TenantManagement = () => {
                 </div>
                 <div className="md:col-span-1">
                   <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="admin-email">
-                    Admin Email
+                    Production Admin Email
                   </label>
                   <input
                     id="admin-email"
@@ -551,7 +579,7 @@ const TenantManagement = () => {
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="admin-full-name">
-                    Admin Full Name
+                    Production Admin Full Name
                   </label>
                   <input
                     id="admin-full-name"

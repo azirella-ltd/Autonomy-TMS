@@ -4,11 +4,10 @@ import pyotp
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 from fastapi import Depends, HTTPException, status, Request
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
 
 from app.core.config import settings
 from app.models.user import User, RefreshToken, UserTypeEnum
@@ -103,9 +102,13 @@ class AuthService:
             or "systemadmin@autonomy.ai"
         )
 
-        # First, try to find the user by username or email
+        # First, try to find the user by username or email (case-insensitive)
+        username_lower = username.strip().lower()
         stmt = select(User).where(
-            or_(User.username == username, User.email == username)
+            or_(
+                func.lower(User.username) == username_lower,
+                func.lower(User.email) == username_lower,
+            )
         )
         result = await self.db.execute(stmt)
         user = result.scalars().first()

@@ -16,6 +16,7 @@ from ..models import (
     ScenarioUserStrategy as ScenarioUserStrategy,
 )
 from ..models.user import UserTypeEnum
+from ..models.tenant import TenantMode
 from ..models.supply_chain_config import (
     Node,
     TransportationLane,
@@ -99,12 +100,45 @@ class TenantService:
             )
         return tenant
 
+    def _generate_unique_slug(self, name: str) -> str:
+        """Generate a URL-safe unique slug from a tenant name."""
+        slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+        base_slug = slug
+        counter = 1
+        while self.db.query(Tenant).filter(Tenant.slug == slug).first():
+            slug = f"{base_slug}-{counter}"
+            counter += 1
+        return slug
+
+    @staticmethod
+    def _derive_learning_email(email: str) -> str:
+        """Derive learning tenant admin email from production admin email.
+
+        Example: admin@company.com -> admin_learn@company.com
+        """
+        local, domain = email.rsplit("@", 1)
+        return f"{local}_learn@{domain}"
+
+    @staticmethod
+    def _derive_learning_username(username: str) -> str:
+        """Derive learning tenant admin username from production admin username."""
+        return f"{username}_learn"
+
     def create_tenant(self, tenant_in: TenantCreate) -> Tenant:
-        """Create a new tenant with admin user, default SC config, and default scenario."""
+        """Create a paired Production + Learning organization.
+
+        Every organization gets two tenants:
+        - Production tenant (mode=production): Real supply chain data and planning
+        - Learning tenant (mode=learning): Training, simulation, agent validation
+
+        Each tenant gets its own admin user. The learning admin email is derived
+        from the production admin email: user@domain.com -> user_learn@domain.com
+        """
         admin_data = tenant_in.admin
         hashed_password = get_password_hash(admin_data.password)
         try:
-            admin_user = User(
+            # ── Production tenant + admin ──────────────────────────────
+            prod_admin = User(
                 username=admin_data.username,
                 email=admin_data.email,
                 full_name=admin_data.full_name,
@@ -113,47 +147,85 @@ class TenantService:
                 is_active=True,
                 is_superuser=False,
             )
-            self.db.add(admin_user)
+            self.db.add(prod_admin)
             self.db.flush()
 
-            # Generate URL-safe slug from tenant name
-            slug = re.sub(r'[^a-z0-9]+', '-', tenant_in.name.lower()).strip('-')
-            # Ensure uniqueness by appending suffix if needed
-            base_slug = slug
-            counter = 1
-            while self.db.query(Tenant).filter(Tenant.slug == slug).first():
-                slug = f"{base_slug}-{counter}"
-                counter += 1
-
-            tenant = Tenant(
+            prod_slug = self._generate_unique_slug(tenant_in.name)
+            prod_tenant = Tenant(
                 name=tenant_in.name,
-                slug=slug,
-                subdomain=slug[:50],
+                slug=prod_slug,
+                subdomain=prod_slug[:50],
                 description=tenant_in.description,
                 logo=tenant_in.logo,
-                admin_id=admin_user.id,
+                admin_id=prod_admin.id,
+                mode=TenantMode.PRODUCTION,
             )
-            self.db.add(tenant)
+            self.db.add(prod_tenant)
             self.db.flush()
 
-            admin_user.tenant_id = tenant.id
-            self.db.add(admin_user)
+            prod_admin.tenant_id = prod_tenant.id
+            self.db.add(prod_admin)
 
-            sc_config = SupplyChainConfig(
+            prod_sc_config = SupplyChainConfig(
                 name="Default Supply Chain",
                 description="Default supply chain configuration",
-                created_by=admin_user.id,
-                tenant_id=tenant.id,
+                created_by=prod_admin.id,
+                tenant_id=prod_tenant.id,
                 is_active=True,
                 time_bucket=TimeBucket.WEEK,
                 site_type_definitions=DEFAULT_SITE_TYPE_DEFINITIONS,
             )
-            self.db.add(sc_config)
+            self.db.add(prod_sc_config)
+            self.db.flush()
+
+            # ── Learning tenant + admin ────────────────────────────────
+            learn_email = self._derive_learning_email(admin_data.email)
+            learn_username = self._derive_learning_username(admin_data.username)
+
+            learn_admin = User(
+                username=learn_username,
+                email=learn_email,
+                full_name=f"{admin_data.full_name} (Learning)",
+                hashed_password=hashed_password,  # same password
+                user_type=UserTypeEnum.TENANT_ADMIN,
+                is_active=True,
+                is_superuser=False,
+            )
+            self.db.add(learn_admin)
+            self.db.flush()
+
+            learn_name = f"{tenant_in.name} (Learning)"
+            learn_slug = self._generate_unique_slug(learn_name)
+            learn_tenant = Tenant(
+                name=learn_name,
+                slug=learn_slug,
+                subdomain=learn_slug[:50],
+                description=f"Learning tenant for {tenant_in.name}",
+                logo=tenant_in.logo,
+                admin_id=learn_admin.id,
+                mode=TenantMode.LEARNING,
+            )
+            self.db.add(learn_tenant)
+            self.db.flush()
+
+            learn_admin.tenant_id = learn_tenant.id
+            self.db.add(learn_admin)
+
+            learn_sc_config = SupplyChainConfig(
+                name="Default Learning Config",
+                description="Default learning supply chain configuration",
+                created_by=learn_admin.id,
+                tenant_id=learn_tenant.id,
+                is_active=True,
+                time_bucket=TimeBucket.WEEK,
+                site_type_definitions=DEFAULT_SITE_TYPE_DEFINITIONS,
+            )
+            self.db.add(learn_sc_config)
             self.db.flush()
 
             self.db.commit()
-            self.db.refresh(tenant)
-            return tenant
+            self.db.refresh(prod_tenant)
+            return prod_tenant
         except Exception:
             self.db.rollback()
             logger.exception("Failed to create tenant %s", tenant_in.name)
