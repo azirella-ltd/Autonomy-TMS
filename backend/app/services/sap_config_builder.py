@@ -95,6 +95,7 @@ class SitePreview:
     has_bom: bool = False
     is_vendor_location: bool = False
     is_customer_destination: bool = False
+    address_number: str = ""  # SAP ADRNR — links to ADRC geography
 
 
 @dataclass
@@ -1505,6 +1506,85 @@ class SAPConfigBuilder:
 
         logger.info(f"Upserted {len(rows)} geography records")
 
+    # Representative coordinates for regions/countries (ISO alpha-2 → lat, lon)
+    _REGION_COORDS: Dict[str, Tuple[float, float]] = {
+        # Countries
+        "US": (39.8283, -98.5795), "CA": (56.1304, -106.3468),
+        "MX": (23.6345, -102.5528), "BR": (-14.2350, -51.9253),
+        "AR": (-38.4161, -63.6167), "CL": (-35.6751, -71.5430),
+        "GB": (55.3781, -3.4360), "DE": (51.1657, 10.4515),
+        "FR": (46.6034, 1.8883), "IT": (41.8719, 12.5674),
+        "ES": (40.4637, -3.7492), "NL": (52.1326, 5.2913),
+        "CH": (46.8182, 8.2275), "AT": (47.5162, 14.5501),
+        "SE": (60.1282, 18.6435), "NO": (60.4720, 8.4689),
+        "DK": (56.2639, 9.5018), "FI": (61.9241, 25.7482),
+        "PL": (51.9194, 19.1451), "CZ": (49.8175, 15.4730),
+        "BE": (50.5039, 4.4699), "PT": (39.3999, -8.2245),
+        "IE": (53.1424, -7.6921), "RU": (61.5240, 105.3188),
+        "CN": (35.8617, 104.1954), "JP": (36.2048, 138.2529),
+        "KR": (35.9078, 127.7669), "IN": (20.5937, 78.9629),
+        "TW": (23.6978, 120.9605), "SG": (1.3521, 103.8198),
+        "TH": (15.8700, 100.9925), "VN": (14.0583, 108.2772),
+        "MY": (4.2105, 101.9758), "ID": (-0.7893, 113.9213),
+        "PH": (12.8797, 121.7740), "AU": (-25.2744, 133.7751),
+        "NZ": (-40.9006, 174.8860), "ZA": (-30.5595, 22.9375),
+        "NG": (9.0820, 8.6753), "EG": (26.8206, 30.8025),
+        "KE": (-0.0236, 37.9062), "AE": (23.4241, 53.8478),
+        "SA": (23.8859, 45.0792), "IL": (31.0461, 34.8516),
+        "TR": (38.9637, 35.2433), "CO": (4.5709, -74.2973),
+        "PE": (-9.1900, -75.0152),
+        # Continents / aggregated regions
+        "AMERICAS": (19.4326, -99.1332), "EUROPE": (50.1109, 8.6821),
+        "ASIA": (34.0479, 100.6197), "AFRICA": (1.6508, 10.2679),
+        "OCEANIA": (-25.2744, 133.7751), "OTHER": (0.0, 0.0),
+        "NORTH_AMERICA": (39.8283, -98.5795),
+        "SOUTH_AMERICA": (-14.2350, -51.9253),
+    }
+
+    async def _create_region_geographies(
+        self, regions: Dict[str, dict],
+    ) -> Dict[str, str]:
+        """Create Geography records for regional market sites and return region_key → geo_id."""
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        result_map: Dict[str, str] = {}
+        rows = []
+        for region_key, info in regions.items():
+            geo_id = f"{self._config.id}_REGION_{region_key}"
+            coords = self._REGION_COORDS.get(region_key)
+            # For single-country regions, try the country code
+            if not coords and len(info.get("countries", [])) == 1:
+                coords = self._REGION_COORDS.get(info["countries"][0])
+            # For continent regions, try the continent name
+            if not coords:
+                continent = info.get("continent", "").upper().replace(" ", "_")
+                coords = self._REGION_COORDS.get(continent, (0.0, 0.0))
+
+            rows.append({
+                "id": geo_id,
+                "description": info.get("label", region_key),
+                "country": info["countries"][0] if len(info.get("countries", [])) == 1 else "",
+                "latitude": coords[0] if coords else None,
+                "longitude": coords[1] if coords else None,
+            })
+            result_map[region_key] = geo_id
+
+        if rows:
+            stmt = pg_insert(Geography).values(rows)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["id"],
+                set_={
+                    "description": stmt.excluded.description,
+                    "latitude": stmt.excluded.latitude,
+                    "longitude": stmt.excluded.longitude,
+                },
+            )
+            await self.db.execute(stmt)
+            await self.db.flush()
+            logger.info(f"Created {len(rows)} region geography records")
+
+        return result_map
+
     # ------------------------------------------------------------------
     # Step 3: Sites with Master Type Inference
     # ------------------------------------------------------------------
@@ -1517,11 +1597,15 @@ class SAPConfigBuilder:
         # Collect all site keys
         site_keys: Dict[str, str] = {}  # key → name
 
+        site_adrnr: Dict[str, str] = {}  # plant key → ADRNR (address number)
         if not t001w.empty and "WERKS" in t001w.columns:
             for _, row in t001w.iterrows():
                 key = str(row["WERKS"]).strip()
                 name = str(row.get("NAME1", key)).strip()
                 site_keys[key] = name
+                adrnr = str(row.get("ADRNR", "")).strip()
+                if adrnr and adrnr != "nan":
+                    site_adrnr[key] = adrnr
 
         if not apo_loc.empty and "LOCNO" in apo_loc.columns:
             for _, row in apo_loc.iterrows():
@@ -1556,6 +1640,7 @@ class SAPConfigBuilder:
                 has_bom=key in plants_with_bom,
                 is_vendor_location=key in vendor_plants,
                 is_customer_destination=key in customer_sites,
+                address_number=site_adrnr.get(key, ""),
             ))
 
         return site_previews
@@ -1647,12 +1732,18 @@ class SAPConfigBuilder:
             master_type = overrides.get(sp.key, sp.inferred_master_type)
             dag_type = master_to_dag.get(master_type, "DC")
 
+            # Link to geography via SAP ADRNR → config_id + address_number
+            geo_id = None
+            if sp.address_number:
+                geo_id = f"{self._config.id}_{sp.address_number}"
+
             site = Site(
                 config_id=self._config.id,
                 name=sp.key,
                 type=sp.name,
                 dag_type=dag_type,
                 master_type=master_type,
+                geo_id=geo_id,
                 attributes={
                     "sap_plant_code": sp.key,
                     "has_bom": sp.has_bom,
@@ -1672,6 +1763,11 @@ class SAPConfigBuilder:
             promotion_threshold=build_opts.get("region_promotion_threshold", 0.25),
         )
 
+        # Create geography records for regional market sites
+        region_geos = await self._create_region_geographies(
+            {**supply_regions, **demand_regions}
+        )
+
         for region_key, region_info in supply_regions.items():
             site_key = f"SUPPLY_{region_key}"
             supply_site = Site(
@@ -1682,6 +1778,7 @@ class SAPConfigBuilder:
                 master_type=MASTER_VENDOR,
                 is_external=True,
                 tpartner_type="vendor",
+                geo_id=region_geos.get(region_key),
                 attributes={
                     "region": region_key,
                     "countries": region_info["countries"],
@@ -1703,6 +1800,7 @@ class SAPConfigBuilder:
                 master_type=MASTER_CUSTOMER,
                 is_external=True,
                 tpartner_type="customer",
+                geo_id=region_geos.get(region_key),
                 attributes={
                     "region": region_key,
                     "countries": region_info["countries"],
