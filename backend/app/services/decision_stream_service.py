@@ -904,19 +904,26 @@ class DecisionStreamService:
             + (f"Active alerts ({len(alerts)}):\n" + "\n".join(f"- {s}" for s in alert_summaries) if alerts else "No active alerts.")
         )
 
-        try:
-            return await self._call_llm(prompt)
-        except Exception as e:
-            logger.error(f"LLM digest synthesis failed: {e}")
-            # Fallback to a template-based bulleted digest
+        def _template_fallback() -> str:
             lines = [f"**{len(decisions)} decisions** made by Autonomy agents:"]
             for d in decisions[:5]:
                 lines.append(f"- **{d.get('decision_type', 'Decision')}**: {d['summary']}")
             if alerts:
                 lines.append(f"\n**{len(alerts)} alert{'s' if len(alerts) != 1 else ''}** active.")
-            return (
-                "\n".join(lines)
-            )
+            return "\n".join(lines)
+
+        try:
+            llm_result = await self._call_llm(prompt)
+            # Quality check: if the LLM returned a very short response (< 80 chars)
+            # or didn't include any bullet/bold formatting, it's likely a poor response —
+            # use the template fallback instead so the user sees a useful summary.
+            if len(llm_result.strip()) < 80 or ("**" not in llm_result and "-" not in llm_result):
+                logger.warning("LLM digest response too short or unformatted (%d chars), using template fallback", len(llm_result))
+                return _template_fallback()
+            return llm_result
+        except Exception as e:
+            logger.error(f"LLM digest synthesis failed: {e}")
+            return _template_fallback()
 
     async def _load_tenant_vocabulary(
         self, config_id: Optional[int] = None,
