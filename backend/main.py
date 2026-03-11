@@ -6070,6 +6070,14 @@ api.include_router(forecast_pipeline_router, prefix="/forecast-pipeline", tags=[
 from app.api.endpoints.warm_start import router as warm_start_router
 api.include_router(warm_start_router, tags=["warm-start"])
 
+# User Directives API — "Talk to Me" natural language context capture
+from app.api.endpoints.user_directives import router as directives_router
+api.include_router(directives_router, tags=["directives"])
+
+# Provisioning API — Powell Cascade warm-start stepper
+from app.api.endpoints.provisioning import router as provisioning_router
+api.include_router(provisioning_router, tags=["provisioning"])
+
 # Consensus Planning API
 from app.api.endpoints.consensus_planning import router as consensus_planning_router
 api.include_router(consensus_planning_router, prefix="/consensus-planning", tags=["consensus-planning", "demand-planning"])

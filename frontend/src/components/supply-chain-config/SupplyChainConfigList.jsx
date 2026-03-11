@@ -44,6 +44,7 @@ import { useSnackbar } from 'notistack';
 import { format } from 'date-fns';
 import { api } from '../../services/api';
 import { getSupplyChainConfigs, trainSupplyChainConfig } from '../../services/supplyChainConfigService';
+import ProvisioningStepper from './ProvisioningStepper';
 
 const SupplyChainConfigList = ({
   title = 'Supply Chain Configurations',
@@ -263,32 +264,10 @@ const SupplyChainConfigList = ({
     }
   };
 
-  const [warmStarting, setWarmStarting] = useState({});
+  const [provisioningConfig, setProvisioningConfig] = useState(null);
 
-  const handleWarmStart = async (config) => {
-    if (!config) return;
-    const configId = config.id;
-    setWarmStarting((prev) => ({ ...prev, [configId]: true }));
-
-    try {
-      // Step 1: Warm start — historical demand, belief states, calibration
-      await api.post(`/warm-start/provision/${configId}`, null, { params: { weeks: 52 } });
-      enqueueSnackbar('Warm start queued — generating historical data, TRM decisions, and belief states...', { variant: 'info', autoHideDuration: 6000 });
-
-      // Step 2: Generate synthetic TRM decisions for decision stream
-      try {
-        await api.post('/model/trm/generate-synthetic-data', { config_id: configId, num_decisions: 200 });
-      } catch {
-        // Endpoint may not exist yet — warm start still provides value
-      }
-
-      enqueueSnackbar('Warm start initiated. Decision stream will populate within a few minutes.', { variant: 'success' });
-    } catch (err) {
-      const detail = err?.response?.data?.detail || 'Warm start failed';
-      enqueueSnackbar(detail, { variant: 'error' });
-    } finally {
-      setWarmStarting((prev) => ({ ...prev, [configId]: false }));
-    }
+  const handleProvision = (config) => {
+    setProvisioningConfig(config);
   };
 
   const handleValidateConfig = async (configId) => {
@@ -432,17 +411,12 @@ const SupplyChainConfigList = ({
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleWarmStart(config)}
-                        disabled={warmStarting[config.id]}
+                        onClick={() => handleProvision(config)}
                       >
-                        {warmStarting[config.id] ? (
-                          <Spinner size="sm" />
-                        ) : (
-                          <Zap className="h-4 w-4" />
-                        )}
+                        <Zap className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Warm Start — generate historical data and seed decision stream</TooltipContent>
+                    <TooltipContent>Provision — warm start, train agents, and seed decision stream</TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
               )}
@@ -600,6 +574,13 @@ const SupplyChainConfigList = ({
           Are you sure you want to delete the configuration &quot;{configToDelete?.name}&quot;? This action cannot be undone.
         </p>
       </Modal>
+
+      <ProvisioningStepper
+        configId={provisioningConfig?.id}
+        configName={provisioningConfig?.name}
+        isOpen={!!provisioningConfig}
+        onClose={() => setProvisioningConfig(null)}
+      />
     </>
   );
 };

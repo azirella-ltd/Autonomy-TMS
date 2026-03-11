@@ -327,6 +327,9 @@ from .executive_briefing import (
     BriefingType, BriefingStatus,
 )
 
+# 28. User Directives — "Talk to Me" context capture & Powell routing
+from .user_directive import UserDirective, ConfigProvisioningStatus
+
 # Verify all models are properly registered
 registered_tables = set(Base.metadata.tables.keys())
 # Updated terminology: scenarios, scenario_users, scenario_user_actions

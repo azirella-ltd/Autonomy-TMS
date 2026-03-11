@@ -6,7 +6,7 @@
  * a central "Talk to me" AI prompt input with avatar.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useNavigate, useLocation, useParams } from 'react-router-dom';
 import {
   Menu,
@@ -24,10 +24,14 @@ import {
   SendHorizontal,
   Sparkles,
   LayoutGrid,
+  CheckCircle2,
+  ChevronRight,
+  Loader2,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useActiveConfig } from '../contexts/ActiveConfigContext';
 import { isSystemAdmin } from '../utils/authUtils';
-import simulationApi from '../services/api';
+import simulationApi, { api } from '../services/api';
 import { getSupplyChainConfigById } from '../services/supplyChainConfigService';
 import { cn } from '../lib/utils/cn';
 
@@ -54,16 +58,24 @@ const AIAvatar = ({ size = 'sm' }) => {
 
 const TopNavbar = ({ sidebarOpen = true }) => {
   const { user, isAuthenticated, logout } = useAuth();
+  const { effectiveConfigId } = useActiveConfig();
   const [currentPath, setCurrentPath] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [gameInfo, setGameInfo] = useState(null);
   const [systemConfigName, setSystemConfigName] = useState(null);
   const [supplyChainConfigName, setSupplyChainConfigName] = useState(null);
 
-  // Talk-to-me state
+  // Talk-to-me state — two-phase: analyze → clarify → submit
   const [talkInput, setTalkInput] = useState('');
   const [talkFocused, setTalkFocused] = useState(false);
+  const [talkSubmitting, setTalkSubmitting] = useState(false);
+  const [directiveResult, setDirectiveResult] = useState(null);
+  // Clarification flow
+  const [analysisResult, setAnalysisResult] = useState(null); // from /analyze
+  const [originalText, setOriginalText] = useState('');
+  const [clarifications, setClarifications] = useState({}); // field → value
   const talkInputRef = useRef(null);
+  const clarificationRef = useRef(null);
 
   // UI mode state (stream = Decision Stream, console = Planning Console)
   const [uiMode, setUiMode] = useState(() => localStorage.getItem('ui:mode') || 'stream');
@@ -85,6 +97,22 @@ const TopNavbar = ({ sidebarOpen = true }) => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Dismiss clarification panel when clicking outside
+  useEffect(() => {
+    if (!analysisResult) return;
+    const handleClickOutside = (event) => {
+      if (
+        clarificationRef.current &&
+        !clarificationRef.current.contains(event.target) &&
+        !talkInputRef.current?.contains(event.target)
+      ) {
+        dismissClarification();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [analysisResult, dismissClarification]);
 
   // Update current path when location changes
   useEffect(() => {
@@ -217,17 +245,99 @@ const TopNavbar = ({ sidebarOpen = true }) => {
     }
   };
 
-  // ── Talk to me ─────────────────────────────────────────────────────────────
-  const handleTalkSubmit = () => {
+  // ── Talk to me — Two-Phase Directive Capture ────────────────────────────────
+
+  const dismissClarification = useCallback(() => {
+    setAnalysisResult(null);
+    setOriginalText('');
+    setClarifications({});
+  }, []);
+
+  // Phase 1: Analyze the directive, check for missing fields
+  const handleTalkSubmit = async () => {
     const prompt = talkInput.trim();
-    if (!prompt) return;
-    setTalkInput('');
-    setTalkFocused(false);
-    talkInputRef.current?.blur();
-    // Route to Decision Stream in stream mode, AI Assistant in console mode
-    const target = uiMode === 'stream' ? '/decision-stream' : '/ai-assistant';
-    navigate(target, { state: { initialPrompt: prompt } });
+    if (!prompt || talkSubmitting) return;
+
+    // If no active config, fall back to navigation behavior
+    if (!effectiveConfigId) {
+      setTalkInput('');
+      setTalkFocused(false);
+      talkInputRef.current?.blur();
+      const target = uiMode === 'stream' ? '/decision-stream' : '/ai-assistant';
+      navigate(target, { state: { initialPrompt: prompt } });
+      return;
+    }
+
+    setTalkSubmitting(true);
+    try {
+      const response = await api.post('/directives/analyze', {
+        config_id: effectiveConfigId,
+        text: prompt,
+      });
+      const analysis = response.data;
+
+      if (analysis.is_complete || (analysis.missing_fields?.length || 0) === 0) {
+        // No gaps — submit immediately
+        await submitFinalDirective(prompt, {});
+      } else {
+        // Gaps found — show clarification panel
+        setOriginalText(prompt);
+        setAnalysisResult(analysis);
+        setClarifications({});
+        setTalkInput('');
+      }
+    } catch (err) {
+      console.error('Directive analysis failed:', err);
+      // Fall back to navigation
+      setTalkInput('');
+      setTalkFocused(false);
+      talkInputRef.current?.blur();
+      const target = uiMode === 'stream' ? '/decision-stream' : '/ai-assistant';
+      navigate(target, { state: { initialPrompt: prompt } });
+    } finally {
+      setTalkSubmitting(false);
+    }
   };
+
+  // Phase 2: Submit with clarifications
+  const submitFinalDirective = async (text, clarifs) => {
+    setTalkSubmitting(true);
+    try {
+      const response = await api.post('/directives/submit', {
+        config_id: effectiveConfigId,
+        text,
+        clarifications: Object.keys(clarifs).length > 0 ? clarifs : undefined,
+      });
+      const result = response.data;
+      setDirectiveResult(result);
+      setTalkInput('');
+      dismissClarification();
+      setTimeout(() => setDirectiveResult(null), 6000);
+    } catch (err) {
+      console.error('Directive submission failed:', err);
+    } finally {
+      setTalkSubmitting(false);
+    }
+  };
+
+  const handleClarificationAnswer = (field, value) => {
+    setClarifications((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleClarificationSubmit = () => {
+    // Check all required fields are answered
+    const missing = (analysisResult?.missing_fields || []);
+    const unanswered = missing.filter((m) => !clarifications[m.field]?.trim());
+    if (unanswered.length > 0) return; // Still have unanswered questions
+    submitFinalDirective(originalText, clarifications);
+  };
+
+  // Count how many clarifications are answered
+  const answeredCount = analysisResult
+    ? (analysisResult.missing_fields || []).filter((m) => clarifications[m.field]?.trim()).length
+    : 0;
+  const totalMissing = analysisResult?.missing_fields?.length || 0;
+  const allAnswered = answeredCount === totalMissing && totalMissing > 0;
 
   const handleTalkKeyDown = (e) => {
     if (e.key === 'Enter') {
@@ -235,9 +345,13 @@ const TopNavbar = ({ sidebarOpen = true }) => {
       handleTalkSubmit();
     }
     if (e.key === 'Escape') {
-      setTalkInput('');
-      setTalkFocused(false);
-      talkInputRef.current?.blur();
+      if (analysisResult) {
+        dismissClarification();
+      } else {
+        setTalkInput('');
+        setTalkFocused(false);
+        talkInputRef.current?.blur();
+      }
     }
   };
 
@@ -296,7 +410,7 @@ const TopNavbar = ({ sidebarOpen = true }) => {
         </div>
 
         {/* ── CENTER: Talk to me ────────────────────────────────────────────── */}
-        <div className="flex-1 flex justify-center px-2">
+        <div className="flex-1 flex justify-center px-2 relative">
           <div
             className={cn(
               'hidden md:flex items-center w-full max-w-lg gap-2.5',
@@ -330,17 +444,181 @@ const TopNavbar = ({ sidebarOpen = true }) => {
             {/* Send button — visible when there's content */}
             <button
               onClick={handleTalkSubmit}
+              disabled={talkSubmitting}
               aria-label="Send prompt"
               className={cn(
                 'flex items-center justify-center h-6 w-6 rounded-full flex-shrink-0 transition-all duration-150',
-                talkInput.trim()
-                  ? 'bg-violet-500 text-white hover:bg-violet-600 opacity-100 scale-100'
-                  : 'opacity-0 scale-75 pointer-events-none',
+                talkSubmitting
+                  ? 'bg-violet-400 text-white opacity-100 scale-100 animate-pulse'
+                  : talkInput.trim()
+                    ? 'bg-violet-500 text-white hover:bg-violet-600 opacity-100 scale-100'
+                    : 'opacity-0 scale-75 pointer-events-none',
               )}
             >
               <SendHorizontal className="h-3.5 w-3.5" />
             </button>
           </div>
+
+          {/* Clarification panel — shown when analysis found missing fields */}
+          {analysisResult && totalMissing > 0 && (
+            <div
+              ref={clarificationRef}
+              className={cn(
+                'absolute top-full mt-1 left-1/2 -translate-x-1/2 z-50',
+                'bg-popover border border-border rounded-lg shadow-lg px-4 py-3',
+                'text-sm max-w-lg w-full animate-in fade-in slide-in-from-top-2 duration-200',
+              )}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between mb-2.5">
+                <div className="flex items-center gap-2">
+                  <AIAvatar size="sm" />
+                  <span className="font-medium text-foreground">
+                    A few clarifying questions
+                  </span>
+                </div>
+                <button
+                  onClick={dismissClarification}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              {/* Parsed context */}
+              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
+                <span className="truncate italic">"{originalText}"</span>
+                <ChevronRight className="h-3 w-3 flex-shrink-0" />
+                <span className="capitalize">{analysisResult.target_layer} layer</span>
+                {analysisResult.confidence > 0 && (
+                  <span className="ml-1">({Math.round(analysisResult.confidence * 100)}%)</span>
+                )}
+              </div>
+
+              {/* Missing fields */}
+              <div className="space-y-2.5">
+                {(analysisResult.missing_fields || []).map((mf) => (
+                  <div key={mf.field}>
+                    <label className="block text-xs font-medium text-foreground mb-1">
+                      {mf.question}
+                    </label>
+                    {mf.type === 'select' && mf.options?.length > 0 ? (
+                      <select
+                        value={clarifications[mf.field] || ''}
+                        onChange={(e) => handleClarificationAnswer(mf.field, e.target.value)}
+                        className={cn(
+                          'w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm',
+                          'focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60',
+                        )}
+                      >
+                        <option value="">Select…</option>
+                        {mf.options.map((opt) => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    ) : mf.type === 'number' ? (
+                      <input
+                        type="number"
+                        value={clarifications[mf.field] || ''}
+                        onChange={(e) => handleClarificationAnswer(mf.field, e.target.value)}
+                        placeholder="e.g. 10"
+                        className={cn(
+                          'w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm',
+                          'focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60',
+                        )}
+                      />
+                    ) : (
+                      <input
+                        type="text"
+                        value={clarifications[mf.field] || ''}
+                        onChange={(e) => handleClarificationAnswer(mf.field, e.target.value)}
+                        placeholder="Type your answer…"
+                        className={cn(
+                          'w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm',
+                          'focus:outline-none focus:ring-2 focus:ring-violet-400/30 focus:border-violet-400/60',
+                        )}
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Progress + Submit */}
+              <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-border">
+                <span className="text-xs text-muted-foreground">
+                  {answeredCount} of {totalMissing} answered
+                </span>
+                <button
+                  onClick={handleClarificationSubmit}
+                  disabled={!allAnswered || talkSubmitting}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all',
+                    allAnswered && !talkSubmitting
+                      ? 'bg-violet-500 text-white hover:bg-violet-600'
+                      : 'bg-muted text-muted-foreground cursor-not-allowed',
+                  )}
+                >
+                  {talkSubmitting ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-3 w-3" />
+                  )}
+                  Submit directive
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Directive result feedback */}
+          {directiveResult && (
+            <div
+              className={cn(
+                'absolute top-full mt-1 left-1/2 -translate-x-1/2 z-50',
+                'bg-popover border border-border rounded-lg shadow-lg px-4 py-2.5',
+                'text-sm max-w-lg w-full animate-in fade-in slide-in-from-top-2 duration-200',
+              )}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div
+                    className={cn(
+                      'h-2 w-2 rounded-full flex-shrink-0',
+                      directiveResult.parser_confidence >= 0.7 ? 'bg-emerald-500' :
+                      directiveResult.parser_confidence >= 0.4 ? 'bg-amber-500' : 'bg-red-500',
+                    )}
+                  />
+                  <span className="font-medium truncate">
+                    {directiveResult.directive_type?.replace(/_/g, ' ')}
+                  </span>
+                  <span className="text-muted-foreground">
+                    → {directiveResult.target_layer}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0 text-xs text-muted-foreground">
+                  <span>{Math.round(directiveResult.parser_confidence * 100)}% confidence</span>
+                  <span className={cn(
+                    'px-1.5 py-0.5 rounded-full text-[10px] font-medium',
+                    directiveResult.status === 'APPLIED' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-blue-500/10 text-blue-600',
+                  )}>
+                    {directiveResult.status}
+                  </span>
+                  <button
+                    onClick={() => setDirectiveResult(null)}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+              {directiveResult.routed_actions?.length > 0 && (
+                <div className="mt-1.5 text-xs text-muted-foreground">
+                  Routed to {directiveResult.routed_actions.length} action{directiveResult.routed_actions.length > 1 ? 's' : ''}: {
+                    directiveResult.routed_actions.map(a => a.layer || a.trm_type).join(', ')
+                  }
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ── RIGHT: Actions & User Menu ───────────────────────────────────── */}
