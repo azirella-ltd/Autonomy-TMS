@@ -543,7 +543,7 @@ class HierarchicalMetricsService:
                 .filter(
                     Forecast.config_id == config.id,
                     Forecast.is_active == "true",
-                    Site.master_type == "MARKET_DEMAND",
+                    (Site.tpartner_type == "customer") | (Site.master_type == "MARKET_DEMAND"),
                     Forecast.forecast_date >= today,
                     Forecast.forecast_date < year_end,
                     Product.unit_price.isnot(None),
@@ -605,7 +605,7 @@ class HierarchicalMetricsService:
                 .filter(
                     Forecast.config_id == config.id,
                     Forecast.is_active == "true",
-                    Site.master_type == "MARKET_DEMAND",
+                    (Site.tpartner_type == "customer") | (Site.master_type == "MARKET_DEMAND"),
                     Forecast.forecast_date >= today,
                     Forecast.forecast_date < year_end,
                     Product.unit_cost.isnot(None),

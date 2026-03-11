@@ -819,6 +819,9 @@ class InboundOrder(Base):
     reference_number = Column(String(100))  # Vendor PO number
     contract_id = Column(String(100))
 
+    # Config
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+
     # Metadata
     source = Column(String(100))
     source_event_id = Column(String(100))

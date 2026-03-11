@@ -24,6 +24,18 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
+def _safe_col(df: pd.DataFrame, name: str, default="") -> pd.Series:
+    """Get column from DataFrame, returning a Series filled with default if missing.
+
+    Avoids the broken pattern ``df.get("COL", scalar).astype(...)`` which fails
+    when the column is absent because ``df.get`` returns the scalar default,
+    not a Series.
+    """
+    if name in df.columns:
+        return df[name]
+    return pd.Series(default, index=df.index)
+
+
 class SupplyChainMapper:
     """
     Maps SAP data to Supply Chain Data Model format.
@@ -165,12 +177,12 @@ class SupplyChainMapper:
         sites["site_id"] = plants_df["WERKS"]
         sites["site_name"] = plants_df.get("NAME1", "")
         sites["site_type"] = "PLANT"  # S/4HANA plants are typically production sites
-        sites["address"] = ""  # Would come from additional address table
-        sites["city"] = ""
-        sites["state"] = ""
-        sites["country"] = ""
-        sites["postal_code"] = ""
-        sites["latitude"] = np.nan
+        sites["address"] = _safe_col(plants_df, "STRAS", "").astype(str).str.strip()
+        sites["city"] = _safe_col(plants_df, "ORT01", "").astype(str).str.strip()
+        sites["state"] = _safe_col(plants_df, "REGIO", "").astype(str).str.strip()
+        sites["country"] = _safe_col(plants_df, "LAND1", "").astype(str).str.strip()
+        sites["postal_code"] = _safe_col(plants_df, "PSTLZ", "").astype(str).str.strip()
+        sites["latitude"] = np.nan  # Populated by geocoding service
         sites["longitude"] = np.nan
         sites["time_zone"] = "UTC"
         sites["is_active"] = True
@@ -195,7 +207,7 @@ class SupplyChainMapper:
         # Map fields
         sites["site_id"] = locations_df["LOCNO"]
         sites["site_name"] = locations_df.get("LOCDESC", "")
-        sites["site_type"] = locations_df.get("LOCTYPE", "WAREHOUSE").str.upper()
+        sites["site_type"] = _safe_col(locations_df, "LOCTYPE", "WAREHOUSE").str.upper()
         sites["address"] = ""
         sites["city"] = locations_df.get("CITY", "")
         sites["state"] = locations_df.get("REGION", "")
@@ -233,7 +245,7 @@ class SupplyChainMapper:
         products["weight_unit"] = materials_df.get("GEWEI", "KG")
         products["volume"] = pd.to_numeric(materials_df.get("VOLUM", 0), errors="coerce")
         products["volume_unit"] = materials_df.get("VOLEH", "M3")
-        products["is_active"] = ~materials_df.get("LVORM", "").astype(bool)
+        products["is_active"] = ~_safe_col(materials_df, "LVORM", "").astype(bool)
 
         logger.info(f"Mapped {len(products)} materials to Products")
         return products
@@ -408,7 +420,7 @@ class SupplyChainMapper:
         supply_plan["unit_of_measure"] = "EA"
 
         # Map order type to source type
-        supply_plan["source_type"] = supply_orders.get("ORDERTYPE", "").map({
+        supply_plan["source_type"] = _safe_col(supply_orders, "ORDERTYPE", "").map({
             "PO": "PURCHASE",
             "TO": "TRANSFER",
             "PR": "PRODUCTION"
@@ -935,18 +947,31 @@ class SupplyChainMapper:
         if eina_df.empty:
             return pd.DataFrame()
 
-        merged = eina_df.merge(eine_df, on="INFNR", how="left") if not eine_df.empty else eina_df
+        merged = eina_df.merge(eine_df, on="INFNR", how="left", suffixes=("", "_eine")) if not eine_df.empty else eina_df.copy()
+        # Resolve column collisions — prefer EINA (left side, no suffix)
+        for col in ["MATNR", "LIFNR"]:
+            if col not in merged.columns and f"{col}_eine" in merged.columns:
+                merged[col] = merged[f"{col}_eine"]
+
+        def _col(name: str, default=""):
+            """Find column, checking _eine suffix from merge."""
+            if name in merged.columns:
+                return merged[name]
+            alt = f"{name}_eine"
+            if alt in merged.columns:
+                return merged[alt]
+            return pd.Series(default, index=merged.index)
 
         result = pd.DataFrame()
         result["vendor_id"] = merged["LIFNR"].astype(str).str.strip()
         result["product_id"] = merged["MATNR"].astype(str).str.strip()
         result["info_record"] = merged["INFNR"].astype(str).str.strip()
-        result["net_price"] = pd.to_numeric(merged.get("NETPR", 0), errors="coerce").fillna(0)
-        result["currency"] = merged.get("WAERS", "USD").astype(str).str.strip()
-        result["price_unit"] = pd.to_numeric(merged.get("PEINH", 1), errors="coerce").fillna(1)
-        result["min_order_qty"] = pd.to_numeric(merged.get("MINBM", 0), errors="coerce").fillna(0)
-        result["standard_order_qty"] = pd.to_numeric(merged.get("NORBM", 0), errors="coerce").fillna(0)
-        result["planned_delivery_time"] = pd.to_numeric(merged.get("APLFZ", 0), errors="coerce").fillna(0)
+        result["net_price"] = pd.to_numeric(_col("NETPR", 0), errors="coerce").fillna(0)
+        result["currency"] = _col("WAERS", "USD").astype(str).str.strip()
+        result["price_unit"] = pd.to_numeric(_col("PEINH", 1), errors="coerce").fillna(1)
+        result["min_order_qty"] = pd.to_numeric(_col("MINBM", 0), errors="coerce").fillna(0)
+        result["standard_order_qty"] = pd.to_numeric(_col("NORBM", 0), errors="coerce").fillna(0)
+        result["planned_delivery_time"] = pd.to_numeric(_col("APLFZ", 0), errors="coerce").fillna(0)
 
         # Remove records flagged for deletion
         if "LOEKZ" in merged.columns:
@@ -971,27 +996,38 @@ class SupplyChainMapper:
         if eina_df.empty:
             return pd.DataFrame()
 
-        # Merge info records
-        merged = eina_df.merge(eine_df, on="INFNR", how="left") if not eine_df.empty else eina_df
+        # Merge info records (suffixes handle column collisions between EINA and EINE)
+        merged = eina_df.merge(eine_df, on="INFNR", how="left", suffixes=("", "_eine")) if not eine_df.empty else eina_df.copy()
+
+        # Resolve MATNR/LIFNR — prefer EINA (left side, no suffix)
+        for col in ["MATNR", "LIFNR"]:
+            if col not in merged.columns and f"{col}_eine" in merged.columns:
+                merged[col] = merged[f"{col}_eine"]
 
         # Get plant assignments from EORD
-        if not eord_df.empty:
+        if not eord_df.empty and "WERKS" in eord_df.columns:
             # Each EORD row links (MATNR, WERKS, LIFNR) — join on vendor+material
-            plant_map = eord_df[["MATNR", "WERKS", "LIFNR"]].drop_duplicates()
-            merged = merged.merge(
-                plant_map,
-                on=["MATNR", "LIFNR"],
-                how="left",
-            )
-        else:
+            eord_cols = [c for c in ["MATNR", "WERKS", "LIFNR"] if c in eord_df.columns]
+            plant_map = eord_df[eord_cols].drop_duplicates()
+            # Drop any existing WERKS from merged before joining to avoid _x/_y
+            if "WERKS" in merged.columns:
+                merged = merged.drop(columns=["WERKS"])
+            join_cols = [c for c in ["MATNR", "LIFNR"] if c in plant_map.columns and c in merged.columns]
+            if join_cols:
+                merged = merged.merge(plant_map, on=join_cols, how="left")
+
+        if "WERKS" not in merged.columns:
             merged["WERKS"] = ""
 
         result = pd.DataFrame()
         result["vendor_id"] = merged["LIFNR"].astype(str).str.strip()
         result["product_id"] = merged["MATNR"].astype(str).str.strip()
         result["site_id"] = merged["WERKS"].astype(str).str.strip()
-        result["lead_time_days"] = pd.to_numeric(merged.get("APLFZ", 0), errors="coerce").fillna(0).astype(int)
-        result["purchasing_org"] = merged.get("EKORG", "").astype(str).str.strip()
+        # Resolve APLFZ which may have been suffixed from EINE merge
+        aplfz_col = "APLFZ" if "APLFZ" in merged.columns else ("APLFZ_eine" if "APLFZ_eine" in merged.columns else None)
+        result["lead_time_days"] = pd.to_numeric(merged[aplfz_col], errors="coerce").fillna(0).astype(int) if aplfz_col else 0
+        ekorg_col = "EKORG" if "EKORG" in merged.columns else ("EKORG_eine" if "EKORG_eine" in merged.columns else None)
+        result["purchasing_org"] = merged[ekorg_col].astype(str).str.strip() if ekorg_col else ""
 
         result = result[result["lead_time_days"] > 0].drop_duplicates()
 
@@ -1015,20 +1051,20 @@ class SupplyChainMapper:
         result["source_id"] = eord_df["LIFNR"].astype(str).str.strip()
 
         # Map procurement type
-        beskz = eord_df.get("BESKZ", "F").astype(str).str.strip()
+        beskz = _safe_col(eord_df, "BESKZ", "F").astype(str).str.strip()
         source_type_map = {"F": "buy", "E": "manufacture", "U": "subcontract"}
         result["source_type"] = beskz.map(source_type_map).fillna("buy")
 
         # NOTKZ: 1=normal (usable), 2=blocked
-        notkz = eord_df.get("NOTKZ", "1").astype(str).str.strip()
+        notkz = _safe_col(eord_df, "NOTKZ", "1").astype(str).str.strip()
         result["is_active"] = notkz != "2"
 
-        result["fixed_vendor"] = eord_df.get("FLIFN", "").astype(str).str.strip() == "X"
-        result["valid_from"] = pd.to_datetime(eord_df.get("VDATU"), format="%Y%m%d", errors="coerce")
-        result["valid_to"] = pd.to_datetime(eord_df.get("BDATU"), format="%Y%m%d", errors="coerce")
+        result["fixed_vendor"] = _safe_col(eord_df, "FLIFN", "").astype(str).str.strip() == "X"
+        result["valid_from"] = pd.to_datetime(_safe_col(eord_df, "VDATU", None), format="%Y%m%d", errors="coerce")
+        result["valid_to"] = pd.to_datetime(_safe_col(eord_df, "BDATU", None), format="%Y%m%d", errors="coerce")
 
         # Priority from sequence number (lower = higher priority)
-        result["priority"] = pd.to_numeric(eord_df.get("ZEESSION", 1), errors="coerce").fillna(1).astype(int)
+        result["priority"] = pd.to_numeric(_safe_col(eord_df, "ZEESSION", 1), errors="coerce").fillna(1).astype(int)
 
         result = result[result["is_active"]].drop(columns=["is_active"])
 
@@ -1044,9 +1080,9 @@ class SupplyChainMapper:
 
         result = pd.DataFrame()
         result["company_id"] = t001_df["BUKRS"].astype(str).str.strip()
-        result["company_name"] = t001_df.get("BUTXT", "").astype(str).str.strip()
-        result["country"] = t001_df.get("LAND1", "").astype(str).str.strip()
-        result["currency"] = t001_df.get("WAERS", "").astype(str).str.strip()
+        result["company_name"] = _safe_col(t001_df, "BUTXT", "").astype(str).str.strip()
+        result["country"] = _safe_col(t001_df, "LAND1", "").astype(str).str.strip()
+        result["currency"] = _safe_col(t001_df, "WAERS", "").astype(str).str.strip()
 
         logger.info(f"Mapped {len(result)} companies")
         return result
@@ -1060,11 +1096,12 @@ class SupplyChainMapper:
 
         result = pd.DataFrame()
         result["address_id"] = adrc_df["ADDRNUMBER"].astype(str).str.strip()
-        result["name"] = adrc_df.get("NAME1", "").astype(str).str.strip()
-        result["city"] = adrc_df.get("CITY1", "").astype(str).str.strip()
-        result["region"] = adrc_df.get("REGION", "").astype(str).str.strip()
-        result["country"] = adrc_df.get("COUNTRY", "").astype(str).str.strip()
-        result["postal_code"] = adrc_df.get("POST_CODE1", "").astype(str).str.strip()
+        result["name"] = _safe_col(adrc_df, "NAME1", "").astype(str).str.strip()
+        result["street"] = _safe_col(adrc_df, "STREET", "").astype(str).str.strip()
+        result["city"] = _safe_col(adrc_df, "CITY1", "").astype(str).str.strip()
+        result["region"] = _safe_col(adrc_df, "REGION", "").astype(str).str.strip()
+        result["country"] = _safe_col(adrc_df, "COUNTRY", "").astype(str).str.strip()
+        result["postal_code"] = _safe_col(adrc_df, "POST_CODE1", "").astype(str).str.strip()
 
         logger.info(f"Mapped {len(result)} geography records")
         return result
@@ -1096,13 +1133,13 @@ class SupplyChainMapper:
 
         result = pd.DataFrame()
         result["process_id"] = merged["PLNNR"].astype(str).str.strip()
-        result["operation_number"] = merged.get("VORNR", merged.get("PLNKN", "")).astype(str).str.strip()
-        result["site_id"] = merged.get("WERKS", "").astype(str).str.strip()
-        result["work_center_id"] = merged.get("ARBPL", merged.get("ARBID", "")).astype(str).str.strip()
-        result["setup_time"] = pd.to_numeric(merged.get("VGW01", 0), errors="coerce").fillna(0)
-        result["machine_time"] = pd.to_numeric(merged.get("VGW02", 0), errors="coerce").fillna(0)
-        result["labor_time"] = pd.to_numeric(merged.get("VGW03", 0), errors="coerce").fillna(0)
-        result["base_quantity"] = pd.to_numeric(merged.get("BMSCH", 1), errors="coerce").fillna(1)
+        result["operation_number"] = _safe_col(merged, "VORNR", _safe_col(merged, "PLNKN", "")).astype(str).str.strip()
+        result["site_id"] = _safe_col(merged, "WERKS", "").astype(str).str.strip()
+        result["work_center_id"] = _safe_col(merged, "ARBPL", _safe_col(merged, "ARBID", "")).astype(str).str.strip()
+        result["setup_time"] = pd.to_numeric(_safe_col(merged, "VGW01", 0), errors="coerce").fillna(0)
+        result["machine_time"] = pd.to_numeric(_safe_col(merged, "VGW02", 0), errors="coerce").fillna(0)
+        result["labor_time"] = pd.to_numeric(_safe_col(merged, "VGW03", 0), errors="coerce").fillna(0)
+        result["base_quantity"] = pd.to_numeric(_safe_col(merged, "BMSCH", 1), errors="coerce").fillna(1)
 
         logger.info(f"Mapped {len(result)} production process operations")
         return result
@@ -1124,11 +1161,11 @@ class SupplyChainMapper:
         result = pd.DataFrame()
         result["source_site_id"] = trlane_df["LOCFR"].astype(str).str.strip()
         result["destination_site_id"] = trlane_df["LOCTO"].astype(str).str.strip()
-        result["product_id"] = trlane_df.get("MATID", "").astype(str).str.strip()
-        result["lead_time_days"] = pd.to_numeric(trlane_df.get("TRANSTIME", 0), errors="coerce").fillna(0).astype(int)
-        result["capacity"] = pd.to_numeric(trlane_df.get("CAPACITY", 0), errors="coerce").fillna(0)
-        result["transport_mode"] = trlane_df.get("TRANSMODE", "").astype(str).str.strip()
-        result["cost_per_unit"] = pd.to_numeric(trlane_df.get("TRANSCOST", 0), errors="coerce").fillna(0)
+        result["product_id"] = _safe_col(trlane_df, "MATID", "").astype(str).str.strip()
+        result["lead_time_days"] = pd.to_numeric(_safe_col(trlane_df, "TRANSTIME", 0), errors="coerce").fillna(0).astype(int)
+        result["capacity"] = pd.to_numeric(_safe_col(trlane_df, "CAPACITY", 0), errors="coerce").fillna(0)
+        result["transport_mode"] = _safe_col(trlane_df, "TRANSMODE", "").astype(str).str.strip()
+        result["cost_per_unit"] = pd.to_numeric(_safe_col(trlane_df, "TRANSCOST", 0), errors="coerce").fillna(0)
 
         logger.info(f"Mapped {len(result)} transportation lanes from APO")
         return result
@@ -1161,12 +1198,12 @@ class SupplyChainMapper:
 
         result = pd.DataFrame()
         result["customer_id"] = merged["KUNNR"].astype(str).str.strip()
-        result["customer_name"] = merged.get("NAME1", "").astype(str).str.strip()
-        result["sales_org"] = merged.get("VKORG", "").astype(str).str.strip()
-        result["distribution_channel"] = merged.get("VTWEG", "").astype(str).str.strip()
-        result["division"] = merged.get("SPART", "").astype(str).str.strip()
-        result["customer_group"] = merged.get("KDGRP", "").astype(str).str.strip()
-        result["sales_district"] = merged.get("BZIRK", "").astype(str).str.strip()
+        result["customer_name"] = _safe_col(merged, "NAME1", "").astype(str).str.strip()
+        result["sales_org"] = _safe_col(merged, "VKORG", "").astype(str).str.strip()
+        result["distribution_channel"] = _safe_col(merged, "VTWEG", "").astype(str).str.strip()
+        result["division"] = _safe_col(merged, "SPART", "").astype(str).str.strip()
+        result["customer_group"] = _safe_col(merged, "KDGRP", "").astype(str).str.strip()
+        result["sales_district"] = _safe_col(merged, "BZIRK", "").astype(str).str.strip()
 
         logger.info(f"Mapped {len(result)} market records from customer data")
         return result
@@ -1180,10 +1217,10 @@ class SupplyChainMapper:
 
         result = pd.DataFrame()
         result["bom_number"] = stko_df["STLNR"].astype(str).str.strip()
-        result["alternative"] = stko_df.get("STLAL", "1").astype(str).str.strip()
-        result["base_quantity"] = pd.to_numeric(stko_df.get("BMENG", 1), errors="coerce").fillna(1)
-        result["base_uom"] = stko_df.get("BMEIN", "EA").astype(str).str.strip()
-        result["bom_status"] = stko_df.get("STLST", "").astype(str).str.strip()
+        result["alternative"] = _safe_col(stko_df, "STLAL", "1").astype(str).str.strip()
+        result["base_quantity"] = pd.to_numeric(_safe_col(stko_df, "BMENG", 1), errors="coerce").fillna(1)
+        result["base_uom"] = _safe_col(stko_df, "BMEIN", "EA").astype(str).str.strip()
+        result["bom_status"] = _safe_col(stko_df, "STLST", "").astype(str).str.strip()
 
         logger.info(f"Mapped {len(result)} BOM headers")
         return result

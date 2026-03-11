@@ -159,7 +159,7 @@ class AgentPerformanceService:
                     .join(Site, Forecast.site_id == Site.id)
                     .filter(Forecast.config_id == config.id)
                     .filter(Forecast.is_active == "true")
-                    .filter(Site.master_type == "MARKET_DEMAND")
+                    .filter((Site.tpartner_type == "customer") | (Site.master_type == "MARKET_DEMAND"))
                     .filter(Forecast.forecast_date >= horizon_start)
                     .filter(Forecast.forecast_date < horizon_end)
                     .filter(Product.unit_price.isnot(None))
@@ -301,7 +301,7 @@ class AgentPerformanceService:
                 .join(Site, Forecast.site_id == Site.id)
                 .filter(Forecast.config_id == config.id)
                 .filter(Forecast.is_active == "true")
-                .filter(Site.master_type == "MARKET_DEMAND")
+                .filter((Site.tpartner_type == "customer") | (Site.master_type == "MARKET_DEMAND"))
                 .filter(Forecast.forecast_date >= horizon_start)
                 .filter(Forecast.forecast_date < horizon_end)
                 .filter(Product.category.isnot(None))
@@ -392,7 +392,7 @@ class AgentPerformanceService:
                     .join(Site, Forecast.site_id == Site.id)
                     .filter(Forecast.config_id == config.id)
                     .filter(Forecast.is_active == "true")
-                    .filter(Site.master_type == "MARKET_DEMAND")
+                    .filter((Site.tpartner_type == "customer") | (Site.master_type == "MARKET_DEMAND"))
                     .filter(Forecast.forecast_date >= horizon_start)
                     .filter(Forecast.forecast_date < horizon_end)
                     .filter(Product.unit_price.isnot(None))
@@ -496,7 +496,7 @@ class AgentPerformanceService:
                 .join(Site, Forecast.site_id == Site.id)
                 .filter(Forecast.config_id == config.id)
                 .filter(Forecast.is_active == "true")
-                .filter(Site.master_type == "MARKET_DEMAND")
+                .filter((Site.tpartner_type == "customer") | (Site.master_type == "MARKET_DEMAND"))
                 .filter(Forecast.forecast_date >= horizon_start)
                 .filter(Forecast.forecast_date < horizon_end)
                 .filter(Product.unit_price.isnot(None))
@@ -600,7 +600,7 @@ class AgentPerformanceService:
                     .join(Site, Forecast.site_id == Site.id)
                     .filter(Forecast.config_id == config.id)
                     .filter(Forecast.is_active == "true")
-                    .filter(Site.master_type == "MARKET_DEMAND")
+                    .filter((Site.tpartner_type == "customer") | (Site.master_type == "MARKET_DEMAND"))
                     .filter(Forecast.forecast_date >= horizon_start)
                     .filter(Forecast.forecast_date < horizon_end)
                     .first()
@@ -710,7 +710,7 @@ class AgentPerformanceService:
                     .filter(
                         Forecast.config_id == config.id,
                         Forecast.is_active == "true",
-                        Site.master_type == "MARKET_DEMAND",
+                        (Site.tpartner_type == "customer") | (Site.master_type == "MARKET_DEMAND"),
                         Forecast.forecast_date >= horizon_start,
                         Forecast.forecast_date < horizon_end,
                         Product.unit_price.isnot(None),
