@@ -1361,7 +1361,7 @@ def _enrich_sites_with_region(sites, region_map: Dict[str, str]) -> List[dict]:
             "name": site.name,
             "type": site.type,
             "dag_type": site.dag_type,
-            "master_type": site.master_type,
+            "master_type": _master_type_to_node_type(site.master_type).value,
             "priority": site.priority,
             "order_aging": site.order_aging,
             "lost_sale_cost": site.lost_sale_cost,
