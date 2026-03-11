@@ -22,16 +22,19 @@ export default function ConfigModeSwitcher() {
   const [open, setOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
 
-  // Only visible to tenant admins
-  if (!isTenantAdmin(user)) return null;
+  const isAdmin = isTenantAdmin(user);
 
-  // Load all configs for this tenant on mount
+  // Load all configs for this tenant on mount (hook must come before any conditional return)
   useEffect(() => {
+    if (!isAdmin) return;
     simulationApi
       .get('/supply-chain-config/')
       .then((r) => setConfigs(r.data || []))
       .catch(() => {});
-  }, []);
+  }, [isAdmin]);
+
+  // Only visible to tenant admins
+  if (!isAdmin) return null;
 
   const handleSelect = async (configId) => {
     if (switching) return;
