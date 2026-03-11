@@ -47,13 +47,10 @@ services:
   # Endpoint: http://<worker-ip>:8080
   # Uses ~500MB VRAM — leaves ~7.5GB for vLLM
   embeddings:
-    image: ghcr.io/huggingface/text-embeddings-inference:1.5
+    image: ghcr.io/huggingface/text-embeddings-inference:1.7
     container_name: autonomy-embeddings
     restart: unless-stopped
-    command: >
-      --model-id ${EMBEDDING_MODEL_ID:-sentence-transformers/all-mpnet-base-v2}
-      --port 8080
-      --max-batch-tokens 16384
+    command: ["--model-id", "sentence-transformers/all-mpnet-base-v2", "--port", "8080", "--max-batch-tokens", "16384"]
     ports:
       - "0.0.0.0:8080:8080"
     volumes:
@@ -77,7 +74,8 @@ services:
   # vLLM — Self-hosted LLM inference (Qwen 3 8B)
   # =========================================================================
   # OpenAI-compatible API at http://<worker-ip>:8001/v1
-  # Uses ~5.5GB VRAM (AWQ 4-bit quantized) with 0.70 utilization cap
+  # Uses ~5.7GB VRAM (AWQ 4-bit quantized) with 0.85 utilization cap
+  # max-model-len 2048 to fit alongside TEI (~500MB) on 8GB GPU
   vllm:
     image: vllm/vllm-openai:latest
     container_name: autonomy-vllm
@@ -89,8 +87,9 @@ services:
     command: >
       --model ${LLM_MODEL:-Qwen/Qwen3-8B-AWQ}
       --quantization awq
-      --max-model-len 4096
-      --gpu-memory-utilization 0.70
+      --max-model-len 1024
+      --gpu-memory-utilization 0.90
+      --enforce-eager
       --host 0.0.0.0
       --port 8000
       --served-model-name qwen3-8b

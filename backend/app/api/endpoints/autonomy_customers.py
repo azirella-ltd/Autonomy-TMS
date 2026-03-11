@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
-from app.api.deps import get_current_user, get_current_active_user, require_tenant_admin
+from app.api.deps import get_current_active_user
 from app.db.session import get_db
 from app.models.user import User
 
@@ -37,6 +37,14 @@ class CustomerResponse(BaseModel):
     id: int
     name: str
     description: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    industry: Optional[str] = None
+    website: Optional[str] = None
+    contract_start_date: Optional[str] = None
+    contract_end_date: Optional[str] = None
+    contract_notes: Optional[str] = None
     production_tenant_id: Optional[int] = None
     production_tenant_name: Optional[str] = None
     production_admin_id: Optional[int] = None
@@ -49,9 +57,36 @@ class CustomerResponse(BaseModel):
     is_active: bool = True
 
 
-class CustomerCreateRequest(BaseModel):
-    name: str = Field(..., description="Customer name")
+class CustomerUpdateRequest(BaseModel):
+    name: Optional[str] = None
     description: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    industry: Optional[str] = None
+    website: Optional[str] = None
+    contract_start_date: Optional[str] = None
+    contract_end_date: Optional[str] = None
+    contract_notes: Optional[str] = None
+
+
+_CUSTOMER_SELECT = """
+    SELECT c.id, c.name, c.description,
+           c.contact_name, c.contact_email, c.contact_phone,
+           c.industry, c.website,
+           c.contract_start_date::text, c.contract_end_date::text,
+           c.contract_notes,
+           c.production_tenant_id, pt.name as production_tenant_name,
+           c.production_admin_id, pu.email as production_admin_email,
+           c.learning_tenant_id, lt.name as learning_tenant_name,
+           c.learning_admin_id, lu.email as learning_admin_email,
+           c.has_learning_tenant, c.is_active
+    FROM autonomy_customers c
+    LEFT JOIN tenants pt ON pt.id = c.production_tenant_id
+    LEFT JOIN tenants lt ON lt.id = c.learning_tenant_id
+    LEFT JOIN users pu ON pu.id = c.production_admin_id
+    LEFT JOIN users lu ON lu.id = c.learning_admin_id
+"""
 
 
 @router.get("", response_model=List[CustomerResponse], tags=["customers"])
@@ -60,20 +95,7 @@ async def list_customers(
     db: AsyncSession = Depends(get_db),
 ):
     """List all Autonomy platform customers with their tenants and admins."""
-    result = await db.execute(text("""
-        SELECT c.id, c.name, c.description,
-               c.production_tenant_id, pt.name as production_tenant_name,
-               c.production_admin_id, pu.email as production_admin_email,
-               c.learning_tenant_id, lt.name as learning_tenant_name,
-               c.learning_admin_id, lu.email as learning_admin_email,
-               c.has_learning_tenant, c.is_active
-        FROM autonomy_customers c
-        LEFT JOIN tenants pt ON pt.id = c.production_tenant_id
-        LEFT JOIN tenants lt ON lt.id = c.learning_tenant_id
-        LEFT JOIN users pu ON pu.id = c.production_admin_id
-        LEFT JOIN users lu ON lu.id = c.learning_admin_id
-        ORDER BY c.id
-    """))
+    result = await db.execute(text(f"{_CUSTOMER_SELECT} ORDER BY c.name"))
     rows = result.mappings().all()
     return [CustomerResponse(**dict(r)) for r in rows]
 
@@ -85,20 +107,44 @@ async def get_customer(
     db: AsyncSession = Depends(get_db),
 ):
     """Get a specific customer."""
-    result = await db.execute(text("""
-        SELECT c.id, c.name, c.description,
-               c.production_tenant_id, pt.name as production_tenant_name,
-               c.production_admin_id, pu.email as production_admin_email,
-               c.learning_tenant_id, lt.name as learning_tenant_name,
-               c.learning_admin_id, lu.email as learning_admin_email,
-               c.has_learning_tenant, c.is_active
-        FROM autonomy_customers c
-        LEFT JOIN tenants pt ON pt.id = c.production_tenant_id
-        LEFT JOIN tenants lt ON lt.id = c.learning_tenant_id
-        LEFT JOIN users pu ON pu.id = c.production_admin_id
-        LEFT JOIN users lu ON lu.id = c.learning_admin_id
-        WHERE c.id = :cid
-    """), {"cid": customer_id})
+    result = await db.execute(
+        text(f"{_CUSTOMER_SELECT} WHERE c.id = :cid"),
+        {"cid": customer_id},
+    )
+    row = result.mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    return CustomerResponse(**dict(row))
+
+
+@router.put("/{customer_id}", response_model=CustomerResponse, tags=["customers"])
+async def update_customer(
+    customer_id: int,
+    body: CustomerUpdateRequest,
+    current_user: User = Depends(require_system_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update customer contact and contract details."""
+    updates = body.dict(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    set_clauses = []
+    params = {"cid": customer_id}
+    for field, value in updates.items():
+        set_clauses.append(f"{field} = :{field}")
+        params[field] = value
+
+    set_clauses.append("updated_at = now()")
+    sql = f"UPDATE autonomy_customers SET {', '.join(set_clauses)} WHERE id = :cid"
+    await db.execute(text(sql), params)
+    await db.commit()
+
+    # Return updated record
+    result = await db.execute(
+        text(f"{_CUSTOMER_SELECT} WHERE c.id = :cid"),
+        {"cid": customer_id},
+    )
     row = result.mappings().first()
     if not row:
         raise HTTPException(status_code=404, detail="Customer not found")

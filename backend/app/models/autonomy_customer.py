@@ -9,7 +9,7 @@ This is a platform-level management table — NOT the AWS SC 'customer' concept
 """
 
 from sqlalchemy import (
-    Column, Integer, String, Boolean, DateTime, Text,
+    Column, Integer, String, Boolean, DateTime, Text, Date,
     ForeignKey,
 )
 from sqlalchemy.orm import relationship
@@ -31,6 +31,18 @@ class AutonomyCustomer(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(200), nullable=False, unique=True)
     description = Column(Text, nullable=True)
+
+    # Contact information
+    contact_name = Column(String(200), nullable=True)
+    contact_email = Column(String(200), nullable=True)
+    contact_phone = Column(String(50), nullable=True)
+    industry = Column(String(100), nullable=True)
+    website = Column(String(300), nullable=True)
+
+    # Contract details
+    contract_start_date = Column(Date, nullable=True)
+    contract_end_date = Column(Date, nullable=True)
+    contract_notes = Column(Text, nullable=True)
 
     # Production tenant (required for every customer)
     production_tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="SET NULL"),
@@ -63,6 +75,14 @@ class AutonomyCustomer(Base):
             "id": self.id,
             "name": self.name,
             "description": self.description,
+            "contact_name": self.contact_name,
+            "contact_email": self.contact_email,
+            "contact_phone": self.contact_phone,
+            "industry": self.industry,
+            "website": self.website,
+            "contract_start_date": self.contract_start_date.isoformat() if self.contract_start_date else None,
+            "contract_end_date": self.contract_end_date.isoformat() if self.contract_end_date else None,
+            "contract_notes": self.contract_notes,
             "production_tenant_id": self.production_tenant_id,
             "production_admin_id": self.production_admin_id,
             "production_tenant_name": self.production_tenant.name if self.production_tenant else None,

@@ -176,6 +176,7 @@ class IngestionJob:
     build_summary: Optional[Dict[str, Any]] = None
 
     # Error tracking
+    error_message: Optional[str] = None
     errors: List[Dict[str, Any]] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
 
@@ -455,6 +456,7 @@ class SAPIngestionMonitoringService:
             completed_at=row.completed_at,
             config_id=getattr(row, "config_id", None),
             build_summary=build_summary,
+            error_message=getattr(row, "error_message", None),
         )
         job._progress_override = getattr(row, "progress_percent", None) or 0.0
         return job
@@ -692,9 +694,10 @@ class SAPIngestionMonitoringService:
     async def complete_job(
         self,
         job_id: int,
-        status: JobStatus = JobStatus.COMPLETED
+        status: JobStatus = JobStatus.COMPLETED,
+        error_message: str = None,
     ) -> IngestionJob:
-        """Mark a job as completed."""
+        """Mark a job as completed (or failed with an error message)."""
         job = await self.get_job(job_id)
         if not job:
             raise ValueError("Job not found")
@@ -706,10 +709,13 @@ class SAPIngestionMonitoringService:
             text("""
                 UPDATE sap_ingestion_jobs
                 SET status = :status, completed_at = :completed_at, current_table = NULL,
-                    progress_percent = 100, duration_seconds = :duration, updated_at = NOW()
+                    progress_percent = 100, duration_seconds = :duration,
+                    error_message = COALESCE(:error_message, error_message),
+                    updated_at = NOW()
                 WHERE id = :id AND tenant_id = :tenant_id
             """),
             {"status": status.value, "completed_at": now, "duration": duration,
+             "error_message": error_message,
              "id": job_id, "tenant_id": self.tenant_id}
         )
         await self.db.commit()

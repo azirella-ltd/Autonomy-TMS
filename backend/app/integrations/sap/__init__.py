@@ -85,6 +85,15 @@ from .sap_atp_bridge import (
     SyncResult,
 )
 
+# Unified extractors (OData, HANA DB, RFC)
+from .extractors import (
+    SAPTableExtractor,
+    ODataExtractor,
+    HANADBExtractor,
+    RFCExtractor,
+    create_extractor,
+)
+
 __all__ = [
     # Core connectors
     "S4HANAConnector",
@@ -125,6 +134,13 @@ __all__ = [
     "SAPATPResult",
     "SAPCTPResult",
     "SyncResult",
+
+    # Unified extractors
+    "SAPTableExtractor",
+    "ODataExtractor",
+    "HANADBExtractor",
+    "RFCExtractor",
+    "create_extractor",
 ]
 
 __version__ = "2.0.0"  # Updated for ATP/CTP integration

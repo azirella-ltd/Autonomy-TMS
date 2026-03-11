@@ -1098,55 +1098,25 @@ class SAPDeploymentService:
                     await self.db.commit()
                     return False, row.validation_message
 
-            elif method == ConnectionMethod.RFC:
-                # TODO: Use S4HANAConnector to test RFC connection
-                row.is_validated = True
-                row.last_validated_at = datetime.utcnow()
-                row.validation_message = "RFC connection successful (simulated)"
-                await self.db.commit()
-                return True, "RFC connection successful"
-
-            elif method == ConnectionMethod.ODATA:
-                # TODO: HTTP HEAD to odata_base_path
-                row.is_validated = True
-                row.last_validated_at = datetime.utcnow()
-                row.validation_message = "OData connection successful (simulated)"
-                await self.db.commit()
-                return True, "OData connection successful"
-
-            elif method == ConnectionMethod.HANA_DB:
-                import asyncio
+            elif method in (ConnectionMethod.RFC, ConnectionMethod.ODATA, ConnectionMethod.HANA_DB):
+                # Use unified extractors for real connection testing
+                from app.integrations.sap.extractors import create_extractor
                 password = _decrypt_password(row.sap_password_encrypted) if row.sap_password_encrypted else ""
-                hana_port = getattr(row, "hana_port", None) or 30215
-                hana_schema = getattr(row, "hana_schema", None) or "SAPHANADB"
-
-                def _test_hana():
-                    from hdbcli import dbapi
-                    conn = dbapi.connect(
-                        address=row.hostname,
-                        port=hana_port,
-                        user=row.sap_user,
-                        password=password,
-                    )
-                    cur = conn.cursor()
-                    cur.execute(f"SELECT COUNT(*) FROM {hana_schema}.T001W")
-                    count = cur.fetchone()[0]
-                    conn.close()
-                    return count
+                connection = SAPConnectionConfig.from_db(row)
 
                 try:
-                    plant_count = await asyncio.to_thread(_test_hana)
-                    msg = f"HANA DB connection successful ({plant_count} plants in {hana_schema}.T001W)"
-                    row.is_validated = True
+                    extractor = create_extractor(connection, password)
+                    success, msg = await extractor.test_connection()
+                    row.is_validated = success
                     row.last_validated_at = datetime.utcnow()
                     row.validation_message = msg
                     await self.db.commit()
-                    return True, msg
-                except ImportError:
+                    return success, msg
+                except ImportError as e:
                     row.is_validated = False
-                    row.validation_message = "hdbcli package not installed (pip install hdbcli)"
+                    row.validation_message = str(e)
                     await self.db.commit()
-                    return False, row.validation_message
+                    return False, str(e)
 
             else:
                 return False, f"Connection method not yet supported: {method.value}"

@@ -25,6 +25,7 @@ from ..models.supply_chain_config import (
     NodeType,
 )
 from ..models.sc_entities import Product, ProductBom
+from ..models.autonomy_customer import AutonomyCustomer
 from ..schemas.tenant import TenantCreate, TenantUpdate
 from ..core.security import get_password_hash
 from app.core.time_buckets import TimeBucket
@@ -223,6 +224,19 @@ class TenantService:
             self.db.add(learn_sc_config)
             self.db.flush()
 
+            # Register in autonomy_customers registry
+            customer = AutonomyCustomer(
+                name=tenant_in.name,
+                description=tenant_in.description,
+                production_tenant_id=prod_tenant.id,
+                production_admin_id=prod_admin.id,
+                learning_tenant_id=learn_tenant.id,
+                learning_admin_id=learn_admin.id,
+                has_learning_tenant=True,
+            )
+            self.db.add(customer)
+            self.db.flush()
+
             self.db.commit()
             self.db.refresh(prod_tenant)
             return prod_tenant
@@ -236,8 +250,25 @@ class TenantService:
         tenant = self.db.query(Tenant).filter(Tenant.id == tenant_id).first()
         if not tenant:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
-        for field, value in tenant_update.dict(exclude_unset=True).items():
+        update_data = tenant_update.dict(exclude_unset=True)
+        for field, value in update_data.items():
             setattr(tenant, field, value)
+
+        # Sync name changes to autonomy_customers registry
+        if "name" in update_data:
+            customer = (
+                self.db.query(AutonomyCustomer)
+                .filter(
+                    (AutonomyCustomer.production_tenant_id == tenant_id)
+                    | (AutonomyCustomer.learning_tenant_id == tenant_id)
+                )
+                .first()
+            )
+            if customer and customer.production_tenant_id == tenant_id:
+                customer.name = update_data["name"]
+                if "description" in update_data:
+                    customer.description = update_data["description"]
+
         self.db.commit()
         self.db.refresh(tenant)
         return tenant
@@ -323,6 +354,18 @@ class TenantService:
         # Delete scenarios and their children
         _safe_execute(
             "DELETE FROM scenarios WHERE tenant_id = :tid",
+            {"tid": tenant_id}
+        )
+
+        # Deactivate autonomy_customers records that reference this tenant
+        # (before user/tenant deletion to avoid dangling FK references)
+        _safe_execute(
+            "UPDATE autonomy_customers SET is_active = false, "
+            "production_tenant_id = CASE WHEN production_tenant_id = :tid THEN NULL ELSE production_tenant_id END, "
+            "production_admin_id = CASE WHEN production_tenant_id = :tid THEN NULL ELSE production_admin_id END, "
+            "learning_tenant_id = CASE WHEN learning_tenant_id = :tid THEN NULL ELSE learning_tenant_id END, "
+            "learning_admin_id = CASE WHEN learning_tenant_id = :tid THEN NULL ELSE learning_admin_id END "
+            "WHERE production_tenant_id = :tid OR learning_tenant_id = :tid",
             {"tid": tenant_id}
         )
 

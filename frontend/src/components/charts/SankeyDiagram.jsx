@@ -115,7 +115,7 @@ const SankeyDiagram = ({
   nodeTooltip,
   renderNodeTopLabel,
   renderNodeBottomLabel,
-  nodeCornerRadius = 6,
+  nodeCornerRadius = 0,
   showNodes = true,
   showLinks = true,
   emptyState = null,
@@ -366,9 +366,16 @@ const SankeyDiagram = ({
         return normalizeId(ref, ref);
       };
 
-      const inferNodeSide = () => {
-        // Always center labels on the site bar for all columns
-        return 'center';
+      // Determine min/max depth (column) for side-label positioning
+      const depths = sankeyData.nodes.map((n) => n.depth ?? 0);
+      const minDepth = Math.min(...depths);
+      const maxDepth = Math.max(...depths);
+
+      const inferNodeSide = (node) => {
+        const depth = node.depth ?? 0;
+        if (depth <= minDepth) return 'left';
+        if (depth >= maxDepth) return 'right';
+        return 'right'; // middle columns: label to the right (standard Sankey convention)
       };
 
       const nodesWithMeta = sankeyData.nodes.map((node, idx) => ({
@@ -510,7 +517,7 @@ const SankeyDiagram = ({
                       strokeOpacity={strokeOpacity}
                       strokeDasharray={dashArray}
                       pointerEvents={linkTooltip ? 'auto' : 'none'}
-                      strokeLinecap="round"
+                      strokeLinecap="butt"
                       onMouseMove={(e) => linkTooltip && handleMouseMove(e, linkTooltip(link))}
                       onMouseLeave={handleMouseLeave}
                       className={linkTooltip ? 'cursor-pointer' : ''}
@@ -526,11 +533,18 @@ const SankeyDiagram = ({
                   }
                   const widthValue = Math.max(node.x1 - node.x0, 1);
                   const heightValue = Math.max(node.y1 - node.y0, 1);
-                  const centerX = node.side === 'right'
-                    ? node.x1 + 1
-                    : node.side === 'left'
-                      ? node.x0 - 1
+                  const nodeCenterY = node.y0 + heightValue / 2;
+                  const labelGap = 6; // px gap between node edge and label
+                  const isLeft = node.side === 'left';
+                  const isRight = node.side === 'right';
+                  // Side labels: positioned beside the node, vertically centered
+                  // Center labels: positioned above the node (legacy behavior)
+                  const labelX = isRight
+                    ? node.x1 + labelGap
+                    : isLeft
+                      ? node.x0 - labelGap
                       : node.x0 + widthValue / 2;
+                  const labelAnchor = isRight ? 'start' : isLeft ? 'end' : 'middle';
                   const topLabel = nodeTopLabelRenderer(node);
                   const rawBottomLabel = nodeBottomLabelRenderer(node);
                   const bottomLabelLines = normalizeBottomLabelLines(rawBottomLabel);
@@ -558,37 +572,39 @@ const SankeyDiagram = ({
                       />
                       {topLabel && (
                         <text
-                          x={centerX}
-                          y={node.side === 'right' ? node.y0 : node.y0 - 1}
-                          textAnchor={node.side === 'right' ? 'start' : node.side === 'left' ? 'end' : 'middle'}
+                          x={labelX}
+                          y={isLeft || isRight ? nodeCenterY : node.y0 - 1}
+                          textAnchor={labelAnchor}
+                          dominantBaseline={isLeft || isRight ? 'central' : 'auto'}
                           fill={node.topLabelColor ?? DEFAULT_TEXT_PRIMARY}
-                          fontSize={12}
-                          fontWeight={600}
+                          fontSize={11}
+                          fontWeight={500}
                         >
                           {topLabel}
                         </text>
                       )}
                       {hasBottomLabel && (
                         <text
-                          x={centerX}
-                          y={node.side === 'right' ? node.y1 + 12 : node.y1 + 14}
-                          textAnchor={node.side === 'right' ? 'start' : node.side === 'left' ? 'end' : 'middle'}
+                          x={labelX}
+                          y={isLeft || isRight ? nodeCenterY + 14 : node.y1 + 14}
+                          textAnchor={labelAnchor}
+                          dominantBaseline={isLeft || isRight ? 'central' : 'auto'}
                           fill={node.bottomLabelColor ?? DEFAULT_TEXT_SECONDARY}
-                          fontSize={11}
+                          fontSize={10}
                         >
                           {bottomLabelLines.map((line, idx) => {
                             if (React.isValidElement(line)) {
                               return React.cloneElement(line, {
                                 key: line.key ?? `node-${node.index ?? node.id}-lbl-${idx}`,
-                                x: line.props?.x ?? centerX,
-                                dy: line.props?.dy ?? (idx === 0 ? 0 : 14),
+                                x: line.props?.x ?? labelX,
+                                dy: line.props?.dy ?? (idx === 0 ? 0 : 13),
                               });
                             }
                             return (
                               <tspan
                                 key={`node-${node.index ?? node.id}-lbl-${idx}`}
-                                x={centerX}
-                                dy={idx === 0 ? 0 : 14}
+                                x={labelX}
+                                dy={idx === 0 ? 0 : 13}
                               >
                                 {line}
                               </tspan>

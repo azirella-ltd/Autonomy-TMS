@@ -1437,6 +1437,11 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
                           {job.build_summary?.transaction_import && ` — Transactions imported`}
                         </p>
                       )}
+                      {job.status === 'failed' && job.error_message && (
+                        <p className="text-sm text-red-600 mt-1">
+                          <span className="font-medium">Error:</span> {job.error_message}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="text-right">

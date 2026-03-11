@@ -242,6 +242,7 @@ class JobResponse(BaseModel):
     total_rows_failed: int
     config_id: Optional[int] = None
     build_summary: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     duration_seconds: Optional[float] = None
@@ -947,6 +948,7 @@ def _job_to_response(job) -> JobResponse:
         total_rows_failed=job.total_rows_failed,
         config_id=job.config_id,
         build_summary=job.build_summary,
+        error_message=job.error_message,
         started_at=job.started_at,
         completed_at=job.completed_at,
         duration_seconds=job.duration_seconds,
@@ -1077,6 +1079,48 @@ async def _read_csv_tables(
     return sap_data, total_rows, total_failed
 
 
+async def _extract_via_extractor(
+    conn_row, connection, tables: list, job_id: int, tenant_id: int, service
+) -> "Tuple[Dict[str, Any], int, int]":
+    """Extract tables via OData/HANA_DB/RFC using unified extractor interface."""
+    from app.integrations.sap.extractors import create_extractor
+    from app.services.sap_deployment_service import _decrypt_password
+
+    password = _decrypt_password(conn_row.sap_password_encrypted) if conn_row.sap_password_encrypted else ""
+
+    try:
+        extractor = create_extractor(connection, password)
+    except ImportError as e:
+        logger.error(f"Job {job_id}: extractor import error: {e}")
+        return {}, 0, 1
+    except ValueError as e:
+        logger.error(f"Job {job_id}: extractor error: {e}")
+        return {}, 0, 1
+
+    async def progress_cb(table: str, rows_ok: int, rows_fail: int):
+        await service.update_job_progress(
+            job_id=job_id,
+            table=table,
+            rows_processed=rows_ok,
+            rows_failed=rows_fail,
+        )
+
+    sap_data, total_rows, total_failed = await extractor.extract_tables(
+        tables=tables,
+        progress_callback=progress_cb,
+    )
+
+    # Normalize table names for consistency with CSV path
+    from app.services.sap_ingestion_monitoring_service import SAPIngestionMonitoringService
+    normalized = {}
+    for tbl, df in sap_data.items():
+        norm = SAPIngestionMonitoringService._extract_table_name(tbl)
+        normalized[norm] = df
+    sap_data = normalized
+
+    return sap_data, total_rows, total_failed
+
+
 async def _run_ingestion(job_id: int, tenant_id: int):
     """
     Background task: 3-phase SAP ingestion pipeline.
@@ -1100,27 +1144,43 @@ async def _run_ingestion(job_id: int, tenant_id: int):
             deploy_service = create_deployment_service(db, tenant_id)
             conn_row = await deploy_service._get_connection_row(job.connection_id)
             if not conn_row:
-                await service.complete_job(job_id, JobStatus.FAILED)
+                await service.complete_job(job_id, JobStatus.FAILED,
+                    error_message=f"Connection {job.connection_id} not found")
                 return
 
             connection = SAPConnectionConfig.from_db(conn_row)
 
-            if connection.connection_method != ConnectionMethod.CSV or not connection.csv_directory:
-                await service.complete_job(job_id, JobStatus.COMPLETED)
-                return
+            if connection.connection_method == ConnectionMethod.CSV:
+                # CSV extraction path
+                if not connection.csv_directory:
+                    await service.complete_job(job_id, JobStatus.FAILED,
+                        error_message="No CSV directory configured")
+                    return
+                csv_dir = Path(connection.csv_directory)
+                if not csv_dir.exists():
+                    await service.complete_job(job_id, JobStatus.FAILED,
+                        error_message=f"CSV directory not found: {connection.csv_directory}")
+                    return
+                sap_data, total_rows, total_failed = await _read_csv_tables(
+                    csv_dir, job.tables, job_id, tenant_id, service
+                )
 
-            csv_dir = Path(connection.csv_directory)
-            if not csv_dir.exists():
-                await service.complete_job(job_id, JobStatus.FAILED)
-                return
+            elif connection.connection_method in (
+                ConnectionMethod.ODATA, ConnectionMethod.HANA_DB, ConnectionMethod.RFC,
+            ):
+                # OData / HANA DB / RFC extraction via unified extractors
+                sap_data, total_rows, total_failed = await _extract_via_extractor(
+                    conn_row, connection, job.tables, job_id, tenant_id, service
+                )
 
-            # Read all CSV files
-            sap_data, total_rows, total_failed = await _read_csv_tables(
-                csv_dir, job.tables, job_id, tenant_id, service
-            )
+            else:
+                await service.complete_job(job_id, JobStatus.FAILED,
+                    error_message=f"Connection method not yet supported: {connection.connection_method.value}")
+                return
 
             if not sap_data:
-                await service.complete_job(job_id, JobStatus.FAILED)
+                await service.complete_job(job_id, JobStatus.FAILED,
+                    error_message=f"No data extracted for the requested tables (method={connection.connection_method.value})")
                 return
 
             # Phase-specific processing
@@ -1141,7 +1201,8 @@ async def _run_ingestion(job_id: int, tenant_id: int):
             logger.error(f"Job {job_id} failed: {e}", exc_info=True)
             try:
                 service = create_ingestion_monitoring_service(db, tenant_id)
-                await service.complete_job(job_id, JobStatus.FAILED)
+                await service.complete_job(job_id, JobStatus.FAILED,
+                    error_message=str(e)[:2000])
             except Exception:
                 pass
 
@@ -1182,7 +1243,8 @@ async def _run_phase1_master_data(db, service, job_id: int, tenant_id: int, sap_
 
     except Exception as e:
         logger.error(f"Phase 1 config build failed: {e}", exc_info=True)
-        await service.complete_job(job_id, JobStatus.FAILED)
+        await service.complete_job(job_id, JobStatus.FAILED,
+            error_message=f"Config build failed: {e}")
 
 
 async def _run_phase2_cdc(db, service, job_id: int, tenant_id: int, sap_data: dict):
@@ -1207,7 +1269,8 @@ async def _run_phase2_cdc(db, service, job_id: int, tenant_id: int, sap_data: di
     active_row = result.mappings().first()
     if not active_row:
         logger.warning(f"CDC: No active config for tenant {tenant_id}. Run Phase 1 first.")
-        await service.complete_job(job_id, JobStatus.FAILED)
+        await service.complete_job(job_id, JobStatus.FAILED,
+            error_message="No active supply chain config found. Run Phase 1 (Master Data) first.")
         return
 
     active_config_id = active_row["id"]
@@ -1303,7 +1366,8 @@ async def _run_phase2_cdc(db, service, job_id: int, tenant_id: int, sap_data: di
 
     except Exception as e:
         logger.error(f"CDC config build failed: {e}", exc_info=True)
-        await service.complete_job(job_id, JobStatus.FAILED)
+        await service.complete_job(job_id, JobStatus.FAILED,
+            error_message=f"CDC config build failed: {e}")
 
 
 async def _run_phase3_transaction(db, service, job_id: int, tenant_id: int, sap_data: dict):
@@ -1327,7 +1391,8 @@ async def _run_phase3_transaction(db, service, job_id: int, tenant_id: int, sap_
     active_row = result.mappings().first()
     if not active_row:
         logger.warning(f"Phase 3: No active config for tenant {tenant_id}. Run Phase 1 first.")
-        await service.complete_job(job_id, JobStatus.FAILED)
+        await service.complete_job(job_id, JobStatus.FAILED,
+            error_message="No active supply chain config found. Run Phase 1 (Master Data) first.")
         return
 
     active_config_id = active_row["id"]
@@ -1347,7 +1412,8 @@ async def _run_phase3_transaction(db, service, job_id: int, tenant_id: int, sap_
         )
         builder._config = config_result.scalar_one_or_none()
         if not builder._config:
-            await service.complete_job(job_id, JobStatus.FAILED)
+            await service.complete_job(job_id, JobStatus.FAILED,
+                error_message=f"Active config {active_config_id} not found in database")
             return
 
         # Load existing sites and products for FK resolution
@@ -1373,7 +1439,8 @@ async def _run_phase3_transaction(db, service, job_id: int, tenant_id: int, sap_
 
     except Exception as e:
         logger.error(f"Phase 3 transaction import failed: {e}", exc_info=True)
-        await service.complete_job(job_id, JobStatus.FAILED)
+        await service.complete_job(job_id, JobStatus.FAILED,
+            error_message=f"Transaction import failed: {e}")
 
 
 @router.post("/jobs/{job_id}/cancel", tags=["sap-ingestion"])

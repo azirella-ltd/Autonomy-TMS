@@ -1746,51 +1746,54 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
     // --- Flow conservation: balance link values at intermediate nodes ---
     // d3-sankey sizes each node to max(sum_in, sum_out). If the two differ,
     // the smaller side's links don't fill the node, leaving visual gaps.
-    // Fix: for every non-terminal node, scale the smaller side's links up
-    // so sum_in === sum_out, preserving relative proportions within each side.
+    // Fix: iteratively scale the smaller side's links up at each intermediate
+    // node so sum_in === sum_out. Iterate because scaling links at one node
+    // changes the sums at adjacent nodes.
     const terminalTypes = new Set([
       normalizeTypeToken(MARKET_SUPPLY_TYPE),
       normalizeTypeToken(MARKET_DEMAND_TYPE),
     ]);
-    const nodeInSum = new Map();
-    const nodeOutSum = new Map();
-    const nodeInLinks = new Map();
-    const nodeOutLinks = new Map();
-    sankeyLinks.forEach((link, idx) => {
-      const src = String(link.source);
-      const tgt = String(link.target);
-      nodeOutSum.set(src, (nodeOutSum.get(src) ?? 0) + link.value);
-      nodeInSum.set(tgt, (nodeInSum.get(tgt) ?? 0) + link.value);
-      if (!nodeOutLinks.has(src)) nodeOutLinks.set(src, []);
-      nodeOutLinks.get(src).push(idx);
-      if (!nodeInLinks.has(tgt)) nodeInLinks.set(tgt, []);
-      nodeInLinks.get(tgt).push(idx);
-    });
     const nodeLookupById = new Map(
       sankeyNodes.map((n) => [String(n.id), n])
     );
-    nodeLookupById.forEach((node, nodeId) => {
-      const typeKey = normalizeTypeToken(node.type);
-      if (terminalTypes.has(typeKey)) return;
-      const sumIn = nodeInSum.get(nodeId) ?? 0;
-      const sumOut = nodeOutSum.get(nodeId) ?? 0;
-      if (sumIn <= 0 || sumOut <= 0) return;
-      if (Math.abs(sumIn - sumOut) < MIN_LINK_VALUE) return;
-      const target = Math.max(sumIn, sumOut);
-      if (sumIn < sumOut) {
-        // Scale up incoming links
-        const scale = target / sumIn;
-        (nodeInLinks.get(nodeId) ?? []).forEach((idx) => {
-          sankeyLinks[idx] = { ...sankeyLinks[idx], value: sankeyLinks[idx].value * scale };
-        });
-      } else {
-        // Scale up outgoing links
-        const scale = target / sumOut;
-        (nodeOutLinks.get(nodeId) ?? []).forEach((idx) => {
-          sankeyLinks[idx] = { ...sankeyLinks[idx], value: sankeyLinks[idx].value * scale };
-        });
-      }
-    });
+    for (let pass = 0; pass < 5; pass++) {
+      let changed = false;
+      const inSum = new Map();
+      const outSum = new Map();
+      const inIdx = new Map();
+      const outIdx = new Map();
+      sankeyLinks.forEach((link, idx) => {
+        const src = String(link.source);
+        const tgt = String(link.target);
+        outSum.set(src, (outSum.get(src) ?? 0) + link.value);
+        inSum.set(tgt, (inSum.get(tgt) ?? 0) + link.value);
+        if (!outIdx.has(src)) outIdx.set(src, []);
+        outIdx.get(src).push(idx);
+        if (!inIdx.has(tgt)) inIdx.set(tgt, []);
+        inIdx.get(tgt).push(idx);
+      });
+      nodeLookupById.forEach((node, nodeId) => {
+        if (terminalTypes.has(normalizeTypeToken(node.type))) return;
+        const si = inSum.get(nodeId) ?? 0;
+        const so = outSum.get(nodeId) ?? 0;
+        if (si <= 0 || so <= 0) return;
+        if (Math.abs(si - so) / Math.max(si, so) < 0.01) return;
+        const target = Math.max(si, so);
+        if (si < so) {
+          const scale = target / si;
+          (inIdx.get(nodeId) ?? []).forEach((i) => {
+            sankeyLinks[i] = { ...sankeyLinks[i], value: sankeyLinks[i].value * scale };
+          });
+        } else {
+          const scale = target / so;
+          (outIdx.get(nodeId) ?? []).forEach((i) => {
+            sankeyLinks[i] = { ...sankeyLinks[i], value: sankeyLinks[i].value * scale };
+          });
+        }
+        changed = true;
+      });
+      if (!changed) break;
+    }
 
     // Recompute node flow totals after balancing
     const balancedFlowTotals = new Map();

@@ -379,61 +379,76 @@ class SAPConfigBuilder:
         opts = options or {}
         overrides = master_type_overrides or {}
 
-        # Step 1: Create config
-        self._config = await self._create_config(config_name)
+        try:
+            # Step 1: Create config (also deactivates previous active configs)
+            self._config = await self._create_config(config_name)
 
-        # Step 2: Company & Geography
-        await self._create_geography()
+            # Step 2: Company & Geography
+            await self._create_geography()
 
-        # Step 3: Sites
-        site_count = await self._create_sites(overrides)
+            # Step 3: Sites
+            site_count = await self._create_sites(overrides)
 
-        # Step 4: Products
-        product_count = await self._create_products()
+            # Step 4: Products
+            product_count = await self._create_products()
 
-        # Step 5: Transportation Lanes
-        lane_count = await self._create_lanes()
+            # Step 5: Transportation Lanes
+            lane_count = await self._create_lanes()
 
-        # Step 6: Trading Partners & Sourcing
-        vendor_count, customer_count, sourcing_count = await self._create_partners_and_sourcing()
+            # Step 6: Trading Partners & Sourcing
+            vendor_count, customer_count, sourcing_count = await self._create_partners_and_sourcing()
 
-        # Step 7: BOM & Manufacturing
-        bom_count = await self._create_bom_and_manufacturing()
+            # Step 7: BOM & Manufacturing
+            bom_count = await self._create_bom_and_manufacturing()
 
-        # Step 8: Planning Data
-        forecast_count = 0
-        inv_count = 0
-        if opts.get("include_forecasts", True):
-            forecast_count = await self._create_forecasts(
-                horizon_weeks=opts.get("forecast_horizon_weeks", 52)
-            )
-        if opts.get("include_inventory", True):
-            inv_count = await self._create_inventory(
-                default_policy=opts.get("default_inv_policy", "doc_dem"),
-                safety_days=opts.get("default_safety_days", 14),
-            )
+            # Step 8: Planning Data
+            forecast_count = 0
+            inv_count = 0
+            if opts.get("include_forecasts", True):
+                forecast_count = await self._create_forecasts(
+                    horizon_weeks=opts.get("forecast_horizon_weeks", 52)
+                )
+            if opts.get("include_inventory", True):
+                inv_count = await self._create_inventory(
+                    default_policy=opts.get("default_inv_policy", "doc_dem"),
+                    safety_days=opts.get("default_safety_days", 14),
+                )
 
-        # Step 9: Transactional Data (orders, production orders, quality orders)
-        order_counts = await self._create_transactional_data(opts)
+            # Step 9: Transactional Data (orders, production orders, quality orders)
+            order_counts = await self._create_transactional_data(opts)
 
-        await self.db.commit()
+            await self.db.commit()
 
-        return {
-            "config_id": self._config.id,
-            "config_name": config_name,
-            "summary": {
-                "sites": site_count,
-                "products": product_count,
-                "lanes": lane_count,
-                "vendors": vendor_count,
-                "customers": customer_count,
-                "bom_entries": bom_count,
-                "sourcing_rules": sourcing_count,
-                "forecasts": forecast_count,
-                "inventory_records": inv_count,
-                **order_counts,
-            },
-        }
+            return {
+                "config_id": self._config.id,
+                "config_name": config_name,
+                "summary": {
+                    "sites": site_count,
+                    "products": product_count,
+                    "lanes": lane_count,
+                    "vendors": vendor_count,
+                    "customers": customer_count,
+                    "bom_entries": bom_count,
+                    "sourcing_rules": sourcing_count,
+                    "forecasts": forecast_count,
+                    "inventory_records": inv_count,
+                    **order_counts,
+                },
+            }
+
+        except Exception:
+            # Roll back the entire transaction so no partial config is left
+            await self.db.rollback()
+            # Clean up the partially-created config and its children if flushed
+            if self._config and self._config.id:
+                try:
+                    await self.delete_build(self._config.id)
+                except Exception:
+                    logger.warning(
+                        f"Failed to clean up partial config {self._config.id} "
+                        f"after build failure"
+                    )
+            raise
 
     # ------------------------------------------------------------------
     # Step-by-Step Public API
@@ -2478,7 +2493,21 @@ class SAPConfigBuilder:
     # ------------------------------------------------------------------
 
     async def _create_config(self, config_name: str) -> SupplyChainConfig:
-        """Create the SupplyChainConfig record."""
+        """Create the SupplyChainConfig record.
+
+        Deactivates any existing active configs for this tenant first,
+        ensuring only one active SAP-imported config exists at a time.
+        """
+        # Deactivate previous active configs for this tenant
+        from sqlalchemy import text as sql_text
+        await self.db.execute(
+            sql_text(
+                "UPDATE supply_chain_configs SET is_active = false "
+                "WHERE tenant_id = :tid AND is_active = true"
+            ),
+            {"tid": self.tenant_id},
+        )
+
         config = SupplyChainConfig(
             name=config_name,
             description=f"Imported from SAP data on {datetime.utcnow().strftime('%Y-%m-%d')}",
