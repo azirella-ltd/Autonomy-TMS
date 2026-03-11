@@ -38,6 +38,14 @@ class SearchRequest(BaseModel):
     category: Optional[str] = Field(None, description="Filter by document category")
 
 
+class IngestURLRequest(BaseModel):
+    """URL ingestion request."""
+    url: str = Field(..., description="HTTP/HTTPS URL to fetch and index")
+    title: Optional[str] = Field(None, max_length=500, description="Document title")
+    category: Optional[str] = Field(None, max_length=100, description="Document category")
+    tags: Optional[List[str]] = Field(None, description="Tags for filtering")
+
+
 class SearchResult(BaseModel):
     """A single search result."""
     chunk_id: int
@@ -118,6 +126,47 @@ async def upload_document(
     except Exception as e:
         logger.error(f"Document upload failed: {e}")
         raise HTTPException(status_code=500, detail="Document processing failed")
+
+
+# ============================================================================
+# URL Ingestion
+# ============================================================================
+
+@router.post("/ingest-url", tags=["knowledge-base"])
+async def ingest_from_url(
+    request: IngestURLRequest,
+    current_user: User = Depends(require_tenant_admin),
+    db: AsyncSession = Depends(get_kb_db),
+) -> Dict[str, Any]:
+    """Fetch a URL and ingest its content into the knowledge base.
+
+    Handles HTML pages and direct PDF/DOCX links. The page content is
+    extracted, chunked, embedded, and stored for RAG retrieval.
+
+    Requires: Group Admin
+    """
+    if not request.url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="URL must start with http:// or https://")
+
+    service = KnowledgeBaseService(db, current_user.tenant_id)
+
+    try:
+        result = await service.ingest_from_url(
+            url=request.url,
+            title=request.title,
+            category=request.category,
+            tags=request.tags,
+            uploaded_by=current_user.id,
+        )
+        return {"status": "success", "document": result}
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.error(f"URL ingestion failed for '{request.url}': {e}")
+        raise HTTPException(status_code=500, detail="URL ingestion failed")
 
 
 # ============================================================================

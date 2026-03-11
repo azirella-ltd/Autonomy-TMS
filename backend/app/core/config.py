@@ -67,7 +67,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30  # 30 days
     
     # CORS settings
-    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000", "http://localhost:8088", "http://msi-stealth.local:8088"]
+    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000", "http://localhost:8088", "http://acer-nitro.local:8088"]
     CORS_ALLOW_CREDENTIALS: bool = True
     CORS_ALLOW_METHODS: List[str] = ["*"]
     CORS_ALLOW_HEADERS: List[str] = ["*"]
@@ -131,9 +131,9 @@ class Settings(BaseSettings):
         "http://127.0.0.1:8000",
         "http://localhost:8088",
         "http://127.0.0.1:8088",
-        "http://msi-stealth.local:8088",
+        "http://acer-nitro.local:8088",
     ]
-    
+
     # Frontend URL for CORS and redirects
     FRONTEND_URL: str = "http://localhost:3000"
     FRONTEND_ORIGIN: str = "http://localhost:3000"

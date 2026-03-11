@@ -8,14 +8,44 @@ import {
   Settings,
   Trash2,
   FileText,
-  FileType,
   AlertTriangle,
   CheckCircle,
   Loader2,
   Database,
   Cpu,
   Hash,
+  Link,
+  Plus,
 } from 'lucide-react';
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+const CATEGORIES = [
+  { value: 'sop_ibp', label: 'S&OP / Integrated Business Planning' },
+  { value: 'demand_planning', label: 'Demand Planning & Forecasting' },
+  { value: 'supply_planning', label: 'Supply Planning' },
+  { value: 'mps_mrp', label: 'MPS / Material Requirements Planning' },
+  { value: 'inventory_optimization', label: 'Inventory Optimization' },
+  { value: 'atp_ctp', label: 'ATP / CTP / Available-to-Promise' },
+  { value: 'capacity_planning', label: 'Capacity Planning' },
+  { value: 'network_design', label: 'Network Design' },
+  { value: 'order_execution', label: 'Order Execution' },
+  { value: 'drp_distribution', label: 'DRP / Distribution' },
+  { value: 'scor_framework', label: 'SCOR Framework' },
+  { value: 'decision_framework', label: 'Decision Framework (Powell SDAM)' },
+  { value: 'ai_planning', label: 'AI / Agentic Planning' },
+  { value: 'ai_ml', label: 'AI / ML (GNN, TRM, RL)' },
+  { value: 'stochastic_planning', label: 'Stochastic / Probabilistic Planning' },
+  { value: 'analyst_reports', label: 'Analyst Reports (Gartner, McKinsey, etc.)' },
+  { value: 'academic_planning', label: 'Academic / Research' },
+  { value: 'planning_strategy', label: 'Planning Methodology & Strategy' },
+  { value: 'existing_research', label: 'Internal / Private Research' },
+  { value: 'strategy', label: 'Business Strategy' },
+  { value: 'internal_docs', label: 'Internal Documents' },
+  { value: 'general', label: 'General' },
+];
 
 // ============================================================================
 // Sub-components
@@ -103,13 +133,9 @@ const DocumentsTab = ({ documents, loading, onUpload, onDelete, onRefresh }) => 
             className="border rounded px-3 py-2 text-sm"
           >
             <option value="">Category (optional)</option>
-            <option value="annual_report">Annual Report</option>
-            <option value="quarterly_report">Quarterly Report</option>
-            <option value="operating_plan">Operating Plan</option>
-            <option value="financial">Financial</option>
-            <option value="supply_chain">Supply Chain</option>
-            <option value="policy">Policy</option>
-            <option value="other">Other</option>
+            {CATEGORIES.map((c) => (
+              <option key={c.value} value={c.value}>{c.label}</option>
+            ))}
           </select>
           <input
             type="text"
@@ -308,6 +334,132 @@ const SearchTab = () => {
 };
 
 // ============================================================================
+// Sources Tab — URL-based ingestion
+// ============================================================================
+
+const SourcesTab = ({ onRefresh }) => {
+  const [form, setForm] = useState({ url: '', title: '', category: '', tags: '' });
+  const [ingesting, setIngesting] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+
+  const handleIngest = async () => {
+    if (!form.url.trim()) return;
+    setIngesting(true);
+    setResult(null);
+    setError(null);
+    try {
+      const payload = {
+        url: form.url.trim(),
+        title: form.title.trim() || null,
+        category: form.category || null,
+        tags: form.tags ? form.tags.split(',').map((t) => t.trim()).filter(Boolean) : null,
+      };
+      const response = await api.post('/knowledge-base/ingest-url', payload);
+      setResult(response.data.document);
+      setForm({ url: '', title: '', category: '', tags: '' });
+      onRefresh();
+    } catch (err) {
+      setError(err.response?.data?.detail || err.message);
+    } finally {
+      setIngesting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white rounded-lg border p-6">
+        <h3 className="text-lg font-semibold mb-1 flex items-center gap-2">
+          <Link className="w-5 h-5" />
+          Ingest from URL
+        </h3>
+        <p className="text-sm text-gray-500 mb-4">
+          Fetch a web page or PDF by URL and add it to the knowledge base. Supports HTML pages
+          and direct PDF/DOCX links. The content is chunked and embedded automatically.
+        </p>
+
+        <div className="space-y-3">
+          <input
+            type="url"
+            placeholder="https://example.com/document.pdf"
+            value={form.url}
+            onChange={(e) => setForm({ ...form, url: e.target.value })}
+            onKeyDown={(e) => e.key === 'Enter' && handleIngest()}
+            className="w-full border rounded px-3 py-2 text-sm font-mono"
+          />
+          <div className="grid grid-cols-3 gap-3">
+            <input
+              type="text"
+              placeholder="Title (optional — defaults to page title)"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              className="border rounded px-3 py-2 text-sm"
+            />
+            <select
+              value={form.category}
+              onChange={(e) => setForm({ ...form, category: e.target.value })}
+              className="border rounded px-3 py-2 text-sm"
+            >
+              <option value="">Category (optional)</option>
+              {CATEGORIES.map((c) => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </select>
+            <input
+              type="text"
+              placeholder="Tags (comma-separated)"
+              value={form.tags}
+              onChange={(e) => setForm({ ...form, tags: e.target.value })}
+              className="border rounded px-3 py-2 text-sm"
+            />
+          </div>
+
+          <button
+            onClick={handleIngest}
+            disabled={ingesting || !form.url.trim()}
+            className="flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+          >
+            {ingesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            {ingesting ? 'Fetching & Indexing...' : 'Fetch & Index'}
+          </button>
+        </div>
+
+        {error && (
+          <div className="mt-4 bg-red-50 border border-red-200 text-red-700 rounded p-3 text-sm flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            {error}
+          </div>
+        )}
+
+        {result && (
+          <div className="mt-4 bg-green-50 border border-green-200 rounded p-4 text-sm">
+            <div className="flex items-center gap-2 text-green-700 font-medium mb-2">
+              <CheckCircle className="w-4 h-4" />
+              Indexed successfully
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-gray-700">
+              <div><span className="text-gray-500">Title:</span> {result.title}</div>
+              <div><span className="text-gray-500">Chunks:</span> {result.chunk_count}</div>
+              <div><span className="text-gray-500">Status:</span> {result.status}</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+        <p className="font-medium mb-1">Notes</p>
+        <ul className="list-disc pl-4 space-y-1 text-blue-700">
+          <li>Some sites (e.g., ASCM, Gartner) block automated access. Download manually and upload as a file instead.</li>
+          <li>HTML pages are stripped of navigation/ads before indexing — only the main article text is kept.</li>
+          <li>Large PDFs may take 30–60 seconds. The page will show the result when complete.</li>
+          <li>To re-index a URL, delete the existing document first, then re-add the URL.</li>
+        </ul>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
 // Settings Tab
 // ============================================================================
 
@@ -427,6 +579,7 @@ const SettingsTab = ({ status, loading }) => {
 
 const TABS = [
   { id: 'documents', label: 'Documents', icon: FileText },
+  { id: 'sources', label: 'URL Sources', icon: Link },
   { id: 'search', label: 'Search', icon: Search },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
@@ -522,6 +675,9 @@ export default function KnowledgeBase() {
           onDelete={handleDelete}
           onRefresh={() => { loadDocuments(); loadStatus(); }}
         />
+      )}
+      {currentTab === 'sources' && (
+        <SourcesTab onRefresh={() => { loadDocuments(); loadStatus(); }} />
       )}
       {currentTab === 'search' && <SearchTab />}
       {currentTab === 'settings' && <SettingsTab status={status} loading={statusLoading} />}

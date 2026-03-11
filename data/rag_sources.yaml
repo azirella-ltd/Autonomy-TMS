@@ -1,0 +1,64 @@
+# RAG URL Sources — fetched and indexed on each ingest run
+#
+# Supported source types:
+#   url          — direct HTTP/HTTPS link to a PDF or HTML page
+#   gdrive       — Google Drive folder (public share link or service account)
+#   sharepoint   — SharePoint document library (MS Graph API)
+#
+# Each source is identified by its URL/ID. Already-indexed sources are skipped
+# unless `force_refresh: true` is set.
+#
+# ── Direct URLs ───────────────────────────────────────────────────────────────
+sources:
+
+  # Example: public PDF from the web
+  # - type: url
+  #   url: https://example.com/whitepaper.pdf
+  #   category: analyst_reports
+  #   title: "Gartner Supply Chain Planning MQ 2025"
+  #   tags: [gartner, magic_quadrant, 2025]
+
+  # ── Google Drive ─────────────────────────────────────────────────────────────
+  # Public folder share (no credentials needed — anyone with link can view)
+  # - type: gdrive
+  #   folder_id: "1abc123XYZ..."          # from share URL: /folders/<folder_id>
+  #   category: existing_research
+  #   title_prefix: "OneDrive Research"
+  #   # For private folders, add service account credentials:
+  #   # credentials: data/gdrive_service_account.json
+
+  # ── SharePoint ────────────────────────────────────────────────────────────────
+  # Requires Azure app registration with Files.Read permission
+  # - type: sharepoint
+  #   site_url: https://yourorg.sharepoint.com/sites/SupplyChain
+  #   library: Documents/RAG
+  #   category: internal_docs
+  #   # Credentials from Azure app registration:
+  #   # tenant_id: "..."
+  #   # client_id: "..."
+  #   # client_secret: "..."    # or use env var SHAREPOINT_CLIENT_SECRET
+
+  # ── Active sources (uncomment to enable) ─────────────────────────────────────
+
+  # SCOR Digital Standard intro — ASCM blocks automated download (403).
+  # Download manually from https://www.ascm.org and place in:
+  #   data/rag_intake/scor_framework/SCOR_Digital_Standard_Intro.pdf
+  # - type: url
+  #   url: https://www.ascm.org/globalassets/ascm_website_assets/docs/intro-and-front-matter-scor-digital-standard2.pdf
+  #   category: scor_framework
+  #   title: "SCOR Digital Standard Introduction"
+  #   tags: [scor, ascm, framework]
+
+  # McKinsey: Autonomous SC Planning
+  - type: url
+    url: https://www.mckinsey.com/capabilities/operations/our-insights/autonomous-supply-chain-planning-for-consumer-goods-companies
+    category: analyst_reports
+    title: "McKinsey - Autonomous Supply Chain Planning"
+    tags: [mckinsey, autonomous, ai]
+
+  # CMU MEIO Overview
+  - type: url
+    url: https://egon.cheme.cmu.edu/ewo/docs/SnyderEWO_081113.pdf
+    category: inventory_optimization
+    title: "CMU MEIO Overview (Snyder)"
+    tags: [meio, inventory, academic]

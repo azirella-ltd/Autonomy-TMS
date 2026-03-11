@@ -8,7 +8,7 @@ endif
 
 # Default to localhost for local development
 HOST = localhost
-REMOTE_HOST = 172.29.20.187
+REMOTE_HOST = acer-nitro.local
 
 # Default to GPU build unless explicitly disabled
 FORCE_GPU ?= 1

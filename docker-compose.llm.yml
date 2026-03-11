@@ -34,8 +34,9 @@ services:
     command: >
       --model ${LLM_MODEL:-Qwen/Qwen3-8B-AWQ}
       --quantization awq
-      --max-model-len 8192
-      --gpu-memory-utilization 0.85
+      --max-model-len 4096
+      --gpu-memory-utilization 0.90
+      --enforce-eager
       --host 0.0.0.0
       --port 8000
       --served-model-name qwen3-8b

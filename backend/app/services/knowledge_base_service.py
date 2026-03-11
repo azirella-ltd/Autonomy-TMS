@@ -239,6 +239,39 @@ PARSERS = {
 
 
 # ============================================================================
+# HTML Helpers (for URL ingestion)
+# ============================================================================
+
+def _extract_html_text(html: str) -> str:
+    """Extract readable text from HTML. Uses BeautifulSoup if available."""
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+        for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
+            tag.decompose()
+        return soup.get_text(separator="\n", strip=True)
+    except ImportError:
+        pass
+    # Fallback: strip HTML tags with regex
+    import re
+    text = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _extract_html_title(html: str) -> Optional[str]:
+    """Extract <title> tag content from HTML."""
+    import re
+    match = re.search(r"<title[^>]*>(.*?)</title>", html, re.DOTALL | re.IGNORECASE)
+    if match:
+        return re.sub(r"\s+", " ", match.group(1)).strip()[:200]
+    return None
+
+
+# ============================================================================
 # Knowledge Base Service
 # ============================================================================
 
@@ -658,6 +691,84 @@ class KnowledgeBaseService:
             "=== KNOWLEDGE BASE CONTEXT ===\n"
             + "\n\n---\n\n".join(context_parts)
             + "\n=== END CONTEXT ===\n"
+        )
+
+    # ------------------------------------------------------------------
+    # URL Ingestion
+    # ------------------------------------------------------------------
+
+    async def ingest_from_url(
+        self,
+        url: str,
+        title: Optional[str] = None,
+        category: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        uploaded_by: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Fetch a URL and ingest its content into the knowledge base.
+
+        Handles HTML pages (extracts readable text) and direct PDF/DOCX links.
+
+        Args:
+            url: HTTP/HTTPS URL to fetch.
+            title: Human-readable title (defaults to page title or URL).
+            category: Document category for filtering.
+            tags: Optional list of tags.
+            uploaded_by: User ID of requester.
+
+        Returns:
+            Dict with document info and chunk count.
+        """
+        import httpx
+        from urllib.parse import urlparse
+
+        try:
+            async with httpx.AsyncClient(
+                follow_redirects=True,
+                timeout=30.0,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; Autonomy-RAG/1.0)"},
+            ) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise ValueError(f"HTTP {e.response.status_code} fetching URL: {url}")
+        except httpx.RequestError as e:
+            raise ValueError(f"Failed to fetch URL: {e}")
+
+        content_type = response.headers.get("content-type", "").lower()
+        raw_bytes = response.content
+        parsed = urlparse(url)
+        url_filename = parsed.path.split("/")[-1] or "page.html"
+
+        if "pdf" in content_type or url_filename.lower().endswith(".pdf"):
+            filename = url_filename if url_filename.lower().endswith(".pdf") else "document.pdf"
+        elif "docx" in content_type or url_filename.lower().endswith(".docx"):
+            filename = url_filename
+        elif "text/plain" in content_type or url_filename.lower().endswith(".txt"):
+            filename = url_filename
+        else:
+            # Treat as HTML — extract readable text
+            html_text = _extract_html_text(response.text)
+            if not html_text.strip():
+                raise ValueError("Page returned no readable text content")
+            if not title:
+                title = _extract_html_title(response.text) or url
+            raw_bytes = html_text.encode("utf-8")
+            filename = "page.txt"
+
+        effective_title = title or url_filename or url
+        if not tags:
+            tags = []
+        if "url_source" not in tags:
+            tags = ["url_source"] + tags
+
+        return await self.ingest_document(
+            file_bytes=raw_bytes,
+            filename=filename,
+            title=effective_title,
+            category=category,
+            tags=tags,
+            uploaded_by=uploaded_by,
         )
 
     # ------------------------------------------------------------------
