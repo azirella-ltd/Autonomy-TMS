@@ -48,6 +48,7 @@ import {
   Plus,
   Eye,
   Shield,
+  MapPin,
 } from 'lucide-react';
 import { cn } from '../../lib/utils/cn';
 
@@ -1637,12 +1638,98 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
   );
 };
 
+// Geography Geocoding Card
+const GeographyGeocoding = () => {
+  const [status, setStatus] = useState(null);
+  const [geocoding, setGeocoding] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const res = await api.get('/sap-data/geography/status');
+      setStatus(res.data);
+    } catch (err) {
+      console.error('Failed to load geography status:', err);
+    }
+  }, []);
+
+  useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  const handleGeocode = async () => {
+    setGeocoding(true);
+    setResult(null);
+    try {
+      const res = await api.post('/sap-data/geography/geocode');
+      setResult(res.data);
+      loadStatus();
+    } catch (err) {
+      console.error('Geocoding failed:', err);
+      setResult({ error: err.response?.data?.detail || 'Geocoding failed' });
+    } finally {
+      setGeocoding(false);
+    }
+  };
+
+  if (!status) return null;
+  if (status.total === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <MapPin className="h-4 w-4" />
+          Geography Coordinates
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center gap-4 text-sm">
+          <span>{status.with_coordinates} / {status.total} sites have coordinates</span>
+          {status.missing_coordinates > 0 && (
+            <Badge variant="warning">{status.missing_coordinates} missing</Badge>
+          )}
+          {status.missing_coordinates === 0 && (
+            <Badge variant="outline" className="text-green-600 border-green-300">All geocoded</Badge>
+          )}
+        </div>
+        {status.missing_coordinates > 0 && (
+          <div className="flex items-center gap-3">
+            <button
+              className="px-4 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
+              onClick={handleGeocode}
+              disabled={geocoding}
+            >
+              {geocoding ? 'Geocoding...' : `Geocode ${status.missing_coordinates} addresses`}
+            </button>
+            <span className="text-xs text-muted-foreground">
+              Uses OpenStreetMap (~1 sec/address)
+            </span>
+          </div>
+        )}
+        {result && !result.error && (
+          <div className="text-sm text-green-600">
+            {result.message}
+            {result.failed?.length > 0 && (
+              <div className="mt-1 text-yellow-600">
+                Failed: {result.failed.map(f => f.city || f.id).join(', ')}
+              </div>
+            )}
+          </div>
+        )}
+        {result?.error && (
+          <div className="text-sm text-red-600">{result.error}</div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
 // Insights & Actions Tab Component
 const InsightsTab = ({ insights, actions, onAcknowledge, onUpdateAction, loading }) => {
   const [activeSubTab, setActiveSubTab] = useState('insights');
 
   return (
     <div className="space-y-6">
+      <GeographyGeocoding />
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-4">
           <h2 className="text-xl font-semibold">Insights & Actions</h2>

@@ -20,6 +20,8 @@ export const Modal = ({
   isOpen,
   onClose,
   children,
+  title,
+  footer,
   size = 'md',
   closeOnOverlayClick = true,
   closeOnEsc = true,
@@ -55,7 +57,15 @@ export const Modal = ({
           if (!closeOnOverlayClick) e.preventDefault();
         }}
       >
+        {title && (
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+          </DialogHeader>
+        )}
         {children}
+        {footer && (
+          <DialogFooter>{footer}</DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

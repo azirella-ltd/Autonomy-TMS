@@ -348,6 +348,92 @@ const SankeyDiagram = ({
         });
       }
 
+      // --- Crossing minimization (barycenter heuristic) ---
+      // Group nodes by column, then reorder each column so that nodes
+      // appear in the same vertical order as the average y-center of
+      // their connected neighbors. This dramatically reduces crossings.
+      const columnGroups = new Map();
+      sankeyData.nodes.forEach((node) => {
+        const col = node.depth ?? 0;
+        if (!columnGroups.has(col)) columnGroups.set(col, []);
+        columnGroups.get(col).push(node);
+      });
+
+      const getNeighborBarycenter = (node) => {
+        const neighbors = [];
+        if (node.sourceLinks) {
+          node.sourceLinks.forEach((link) => {
+            const target = link.target;
+            if (target && typeof target === 'object') {
+              neighbors.push((target.y0 + target.y1) / 2);
+            }
+          });
+        }
+        if (node.targetLinks) {
+          node.targetLinks.forEach((link) => {
+            const source = link.source;
+            if (source && typeof source === 'object') {
+              neighbors.push((source.y0 + source.y1) / 2);
+            }
+          });
+        }
+        if (neighbors.length === 0) return (node.y0 + node.y1) / 2;
+        return neighbors.reduce((sum, v) => sum + v, 0) / neighbors.length;
+      };
+
+      // Run 4 sweeps (forward and backward) for convergence
+      const sortedColumns = Array.from(columnGroups.keys()).sort((a, b) => a - b);
+      for (let sweep = 0; sweep < 4; sweep++) {
+        const cols = sweep % 2 === 0 ? sortedColumns : [...sortedColumns].reverse();
+        for (const col of cols) {
+          const nodesInCol = columnGroups.get(col);
+          if (!nodesInCol || nodesInCol.length <= 1) continue;
+
+          // Compute barycenter for each node
+          const scored = nodesInCol.map((node) => ({
+            node,
+            barycenter: getNeighborBarycenter(node),
+          }));
+          scored.sort((a, b) => a.barycenter - b.barycenter);
+
+          // Reassign y positions preserving node heights and padding
+          let currentY = Math.min(...nodesInCol.map((n) => n.y0));
+          scored.forEach(({ node }) => {
+            const nodeHeight = node.y1 - node.y0;
+            node.y0 = currentY;
+            node.y1 = currentY + nodeHeight;
+            currentY += nodeHeight + nodePadding;
+          });
+        }
+      }
+
+      // Recompute link y positions after reordering
+      sankeyData.nodes.forEach((node) => {
+        if (!node.sourceLinks || !node.targetLinks) return;
+        // Sort source links (outgoing) by target y position
+        node.sourceLinks.sort((a, b) => {
+          const ay = typeof a.target === 'object' ? a.target.y0 : 0;
+          const by = typeof b.target === 'object' ? b.target.y0 : 0;
+          return ay - by;
+        });
+        let y0 = node.y0;
+        node.sourceLinks.forEach((link) => {
+          link.y0 = y0 + (link.width || 0) / 2;
+          y0 += link.width || 0;
+        });
+        // Sort target links (incoming) by source y position
+        node.targetLinks.sort((a, b) => {
+          const ay = typeof a.source === 'object' ? a.source.y0 : 0;
+          const by = typeof b.source === 'object' ? b.source.y0 : 0;
+          return ay - by;
+        });
+        let y1 = node.y0;
+        node.targetLinks.forEach((link) => {
+          link.y1 = y1 + (link.width || 0) / 2;
+          y1 += link.width || 0;
+        });
+      });
+
       const resolveNodeId = (ref) => {
         if (ref && typeof ref === 'object' && ref !== null) {
           if (typeof ref.index === 'number' && nodeInputs[ref.index]) {

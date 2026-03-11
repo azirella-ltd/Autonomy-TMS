@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, Circle, useMap, Tooltip as LeafletTooltip } from 'react-leaflet'
+import React, { useEffect, useMemo, useState, useCallback } from 'react'
+import { MapContainer, TileLayer, Marker, Popup, Polyline, CircleMarker, Circle, useMap, useMapEvents, Tooltip as LeafletTooltip } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
@@ -12,22 +12,22 @@ L.Icon.Default.mergeOptions({
 })
 
 // Small dot icon for site location
-const createDotIcon = (color) => {
+const createDotIcon = (color, size = 10) => {
   return L.divIcon({
     className: 'custom-dot-marker',
     html: `
       <div style="
         background-color: ${color};
-        width: 10px;
-        height: 10px;
+        width: ${size}px;
+        height: ${size}px;
         border-radius: 50%;
         border: 2px solid white;
         box-shadow: 0 1px 4px rgba(0,0,0,0.4);
       "></div>
     `,
-    iconSize: [10, 10],
-    iconAnchor: [5, 5],
-    popupAnchor: [0, -8],
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -(size / 2 + 3)],
   })
 }
 
@@ -109,19 +109,171 @@ const MapController = ({ sites }) => {
   return null
 }
 
+// Zoom level tracker
+const ZoomTracker = ({ onZoomChange }) => {
+  const map = useMapEvents({
+    zoomend: () => {
+      onZoomChange(map.getZoom())
+    },
+  })
+
+  useEffect(() => {
+    onZoomChange(map.getZoom())
+  }, [map, onZoomChange])
+
+  return null
+}
+
 const formatRoleLabel = (role) =>
   String(role || '')
     .replace(/_/g, ' ')
     .replace(/\b([a-z])/gi, (m) => m.toUpperCase())
 
+// ---------------------------------------------------------------------------
+// Semantic zoom: aggregate/disaggregate market sites by zoom level
+// ---------------------------------------------------------------------------
+
+// Continent centroid approximations for aggregated markers
+const CONTINENT_CENTROIDS = {
+  'Africa': { lat: 2.0, lng: 22.0 },
+  'Americas': { lat: 15.0, lng: -80.0 },
+  'Asia': { lat: 35.0, lng: 85.0 },
+  'Europe': { lat: 50.0, lng: 15.0 },
+  'Oceania': { lat: -25.0, lng: 140.0 },
+  'Other': { lat: 0, lng: 0 },
+}
+
+/**
+ * Build zoom-aware site and edge lists.
+ *
+ * - zoom <= AGGREGATE_ZOOM: Market sites are clustered by continent.
+ *   Multiple SUPPLY_{region} or DEMAND_{region} sites that share the same
+ *   continent attribute merge into a single aggregated marker.
+ * - zoom > AGGREGATE_ZOOM: All sites shown individually (current behavior).
+ *
+ * Plants / manufacturers / inventory sites are always shown at every zoom.
+ */
+const AGGREGATE_ZOOM = 4
+
+function buildSemanticView(allSites, allEdges, currentZoom) {
+  // If zoomed in enough, show everything as-is
+  if (currentZoom > AGGREGATE_ZOOM) {
+    return { sites: allSites, edges: allEdges }
+  }
+
+  // Separate market sites from non-market sites
+  const nonMarket = []
+  const supplyByContinent = {}
+  const demandByContinent = {}
+
+  allSites.forEach((site) => {
+    const mt = (site.master_type || '').toLowerCase()
+    if (mt === 'market_supply' || mt === 'market_demand') {
+      const continent = site.attributes?.continent
+        || site.attributes?.region  // fallback: region key may be continent name
+        || 'Other'
+      const bucket = mt === 'market_supply' ? supplyByContinent : demandByContinent
+      if (!bucket[continent]) {
+        bucket[continent] = { sites: [], totalCount: 0, countries: new Set() }
+      }
+      bucket[continent].sites.push(site)
+      bucket[continent].totalCount += (site.attributes?.vendor_count || site.attributes?.customer_count || 1)
+      ;(site.attributes?.countries || []).forEach((c) => bucket[continent].countries.add(c))
+    } else {
+      nonMarket.push(site)
+    }
+  })
+
+  // Build aggregated market sites
+  const aggregatedSites = [...nonMarket]
+  const siteIdMap = {} // old site id → aggregated site id
+
+  const buildAgg = (bucket, prefix, role) => {
+    Object.entries(bucket).forEach(([continent, info]) => {
+      if (info.sites.length === 0) return
+
+      // If only one site in the continent, keep it as-is
+      if (info.sites.length === 1) {
+        aggregatedSites.push(info.sites[0])
+        return
+      }
+
+      // Compute centroid from child sites that have coords, else use continent default
+      const withCoords = info.sites.filter((s) => s.latitude && s.longitude)
+      let lat, lng
+      if (withCoords.length > 0) {
+        lat = withCoords.reduce((sum, s) => sum + s.latitude, 0) / withCoords.length
+        lng = withCoords.reduce((sum, s) => sum + s.longitude, 0) / withCoords.length
+      } else {
+        const c = CONTINENT_CENTROIDS[continent] || CONTINENT_CENTROIDS.Other
+        lat = c.lat
+        lng = c.lng
+      }
+
+      const aggId = `${prefix}_${continent.toUpperCase().replace(/\s+/g, '_')}_AGG`
+      const aggSite = {
+        id: aggId,
+        name: `${continent}`,
+        role,
+        master_type: role === 'Suppliers' ? 'market_supply' : 'market_demand',
+        latitude: lat,
+        longitude: lng,
+        capacity: 0,
+        location: `${info.sites.length} regions, ${info.totalCount} partners`,
+        attributes: {
+          aggregated: true,
+          child_count: info.sites.length,
+          total_partners: info.totalCount,
+          countries: Array.from(info.countries).sort(),
+          continent,
+        },
+      }
+      aggregatedSites.push(aggSite)
+
+      // Map child site IDs to aggregated ID for edge remapping
+      info.sites.forEach((s) => {
+        siteIdMap[s.id] = aggId
+      })
+    })
+  }
+
+  buildAgg(supplyByContinent, 'SUPPLY', 'Suppliers')
+  buildAgg(demandByContinent, 'DEMAND', 'Customers')
+
+  // Remap edges: replace child site IDs with aggregated IDs, dedup
+  const seenEdges = new Set()
+  const aggregatedEdges = []
+  allEdges.forEach((edge) => {
+    const from = siteIdMap[edge.from] || edge.from
+    const to = siteIdMap[edge.to] || edge.to
+    const key = `${from}->${to}`
+    if (seenEdges.has(key)) return
+    seenEdges.add(key)
+    aggregatedEdges.push({ ...edge, from, to })
+  })
+
+  return { sites: aggregatedSites, edges: aggregatedEdges }
+}
+
+// ---------------------------------------------------------------------------
+
 const GeospatialSupplyChain = ({ sites, edges, inventoryData, activeFlows, onSiteSelect, siteTypeColors, leadTimeStats }) => {
   const [selectedSite, setSelectedSite] = useState(null)
   const [mapCenter, setMapCenter] = useState([39.8283, -98.5795])
   const [mapZoom, setMapZoom] = useState(4)
+  const [currentZoom, setCurrentZoom] = useState(4)
   const [showSizeCircles, setShowSizeCircles] = useState(true)
   const [showLaneVolume, setShowLaneVolume] = useState(true)
 
-  const sitesWithCoords = sites.filter((site) => site.latitude && site.longitude)
+  const handleZoomChange = useCallback((z) => setCurrentZoom(z), [])
+
+  // Build zoom-aware view
+  const { sites: visibleSites, edges: visibleEdges } = useMemo(
+    () => buildSemanticView(sites, edges, currentZoom),
+    [sites, edges, currentZoom]
+  )
+
+  const sitesWithCoords = visibleSites.filter((site) => site.latitude && site.longitude)
 
   // Compute capacity stats for scaling circles
   const capacityStats = useMemo(() => {
@@ -132,28 +284,28 @@ const GeospatialSupplyChain = ({ sites, edges, inventoryData, activeFlows, onSit
 
   // Compute lane capacity stats for scaling widths
   const laneCapStats = useMemo(() => {
-    const caps = (edges || []).map((e) => e.capacity ?? 0).filter((c) => c > 0)
+    const caps = (visibleEdges || []).map((e) => e.capacity ?? 0).filter((c) => c > 0)
     if (caps.length === 0) return { max: 1 }
     return { max: Math.max(...caps) }
-  }, [edges])
+  }, [visibleEdges])
 
   // Compute lead time stats from edges if not passed in
   const effectiveLeadTimeStats = useMemo(() => {
     if (leadTimeStats) return leadTimeStats
-    const lts = (edges || []).map((e) => e.leadTime).filter((v) => Number.isFinite(v))
+    const lts = (visibleEdges || []).map((e) => e.leadTime).filter((v) => Number.isFinite(v))
     if (lts.length === 0) return null
     const sorted = [...lts].sort((a, b) => a - b)
     const mid = Math.floor(sorted.length / 2)
     const median = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
     return { min: sorted[0], median, max: sorted[sorted.length - 1] }
-  }, [edges, leadTimeStats])
+  }, [visibleEdges, leadTimeStats])
 
   // Prepare edges with coordinates
   const edgesWithCoords = useMemo(() => {
-    return edges
+    return visibleEdges
       .map((edge) => {
-        const fromSite = sites.find((n) => n.id === edge.from)
-        const toSite = sites.find((n) => n.id === edge.to)
+        const fromSite = visibleSites.find((n) => n.id === edge.from)
+        const toSite = visibleSites.find((n) => n.id === edge.to)
 
         if (
           fromSite?.latitude &&
@@ -172,30 +324,38 @@ const GeospatialSupplyChain = ({ sites, edges, inventoryData, activeFlows, onSit
         return null
       })
       .filter(Boolean)
-  }, [edges, sites])
+  }, [visibleEdges, visibleSites])
 
   const handleSiteClick = (site) => {
     setSelectedSite(site)
     setMapCenter([site.latitude, site.longitude])
-    setMapZoom(8)
+    // If clicking an aggregated site, zoom to detail level
+    if (site.attributes?.aggregated) {
+      setMapZoom(AGGREGATE_ZOOM + 2)
+    } else {
+      setMapZoom(8)
+    }
     if (onSiteSelect) {
       onSiteSelect(site)
     }
   }
 
-  // Scale site capacity to a pixel radius (8–40px range)
+  // Scale site capacity to a pixel radius (8-40px range)
   const getSizeRadius = (capacity) => {
     if (!capacity || capacity <= 0 || capacityStats.max <= 0) return 8
     const ratio = capacity / capacityStats.max
     return 8 + Math.sqrt(ratio) * 32
   }
 
-  // Scale lane capacity to pixel weight (2–14px range)
+  // Scale lane capacity to pixel weight (2-14px range)
   const getLaneWeight = (capacity) => {
     if (!capacity || capacity <= 0 || laneCapStats.max <= 0) return 2
     const ratio = capacity / laneCapStats.max
     return 2 + ratio * 12
   }
+
+  // Determine zoom level label
+  const zoomLabel = currentZoom <= AGGREGATE_ZOOM ? 'Continent' : currentZoom <= 7 ? 'Region' : 'Site'
 
   return (
     <div className="w-full h-full relative">
@@ -229,6 +389,15 @@ const GeospatialSupplyChain = ({ sites, edges, inventoryData, activeFlows, onSit
         >
           Reset View
         </button>
+        {/* Zoom level indicator */}
+        <div className="border-t border-gray-200 pt-2 mt-2">
+          <div className="text-xs text-gray-500">
+            Detail: <span className="font-medium text-gray-700">{zoomLabel}</span>
+          </div>
+          <div className="text-[10px] text-gray-400 mt-0.5">
+            Zoom {currentZoom <= AGGREGATE_ZOOM ? 'in' : 'out'} to {currentZoom <= AGGREGATE_ZOOM ? 'expand regions' : 'aggregate'}
+          </div>
+        </div>
       </div>
 
       {/* Legend */}
@@ -302,22 +471,63 @@ const GeospatialSupplyChain = ({ sites, edges, inventoryData, activeFlows, onSit
               <span className="text-gray-600">Type:</span>
               <span className="font-medium">{formatRoleLabel(selectedSite.role)}</span>
             </div>
-            {selectedSite.capacity > 0 && (
-              <div className="flex justify-between">
-                <span className="text-gray-600">Capacity:</span>
-                <span className="font-medium">{selectedSite.capacity.toLocaleString()}</span>
-              </div>
-            )}
-            {inventoryData?.[selectedSite.id] && (
+            {selectedSite.attributes?.aggregated && (
               <>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Inventory:</span>
-                  <span className="font-medium">{inventoryData[selectedSite.id].inventory}</span>
+                  <span className="text-gray-600">Regions:</span>
+                  <span className="font-medium">{selectedSite.attributes.child_count}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Backlog:</span>
-                  <span className="font-medium text-red-600">{inventoryData[selectedSite.id].backlog}</span>
+                  <span className="text-gray-600">Partners:</span>
+                  <span className="font-medium">{selectedSite.attributes.total_partners?.toLocaleString()}</span>
                 </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Countries:</span>
+                  <span className="font-medium">{selectedSite.attributes.countries?.length}</span>
+                </div>
+                <div className="text-[10px] text-blue-600 mt-1 cursor-pointer">
+                  Click to zoom in and see individual regions
+                </div>
+              </>
+            )}
+            {!selectedSite.attributes?.aggregated && (
+              <>
+                {selectedSite.capacity > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Capacity:</span>
+                    <span className="font-medium">{selectedSite.capacity.toLocaleString()}</span>
+                  </div>
+                )}
+                {selectedSite.attributes?.vendor_count > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Vendors:</span>
+                    <span className="font-medium">{selectedSite.attributes.vendor_count.toLocaleString()}</span>
+                  </div>
+                )}
+                {selectedSite.attributes?.customer_count > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Customers:</span>
+                    <span className="font-medium">{selectedSite.attributes.customer_count.toLocaleString()}</span>
+                  </div>
+                )}
+                {selectedSite.attributes?.countries?.length > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Countries:</span>
+                    <span className="font-medium text-xs">{selectedSite.attributes.countries.join(', ')}</span>
+                  </div>
+                )}
+                {inventoryData?.[selectedSite.id] && (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Inventory:</span>
+                      <span className="font-medium">{inventoryData[selectedSite.id].inventory}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Backlog:</span>
+                      <span className="font-medium text-red-600">{inventoryData[selectedSite.id].backlog}</span>
+                    </div>
+                  </>
+                )}
               </>
             )}
             <div className="flex justify-between">
@@ -343,6 +553,7 @@ const GeospatialSupplyChain = ({ sites, edges, inventoryData, activeFlows, onSit
         />
 
         <MapController sites={sitesWithCoords} />
+        <ZoomTracker onZoomChange={handleZoomChange} />
 
         {/* Lane lines — transparent volume width + lead time color */}
         {edgesWithCoords.map((edge, index) => {
@@ -381,9 +592,11 @@ const GeospatialSupplyChain = ({ sites, edges, inventoryData, activeFlows, onSit
         {showSizeCircles &&
           sitesWithCoords.map((site) => {
             const cap = site.capacity ?? 0
-            if (cap <= 0) return null
+            if (cap <= 0 && !site.attributes?.aggregated) return null
             const color = getRoleColor(site.role, siteTypeColors)
-            const radius = getSizeRadius(cap)
+            const radius = site.attributes?.aggregated
+              ? 20 + Math.min(site.attributes.child_count * 5, 30)
+              : getSizeRadius(cap)
 
             return (
               <CircleMarker
@@ -393,9 +606,10 @@ const GeospatialSupplyChain = ({ sites, edges, inventoryData, activeFlows, onSit
                 pathOptions={{
                   color: color,
                   fillColor: color,
-                  fillOpacity: 0.12,
-                  weight: 1,
-                  opacity: 0.3,
+                  fillOpacity: site.attributes?.aggregated ? 0.2 : 0.12,
+                  weight: site.attributes?.aggregated ? 2 : 1,
+                  opacity: site.attributes?.aggregated ? 0.5 : 0.3,
+                  dashArray: site.attributes?.aggregated ? '4 4' : undefined,
                 }}
                 interactive={false}
               />
@@ -405,7 +619,13 @@ const GeospatialSupplyChain = ({ sites, edges, inventoryData, activeFlows, onSit
         {/* Site dot markers */}
         {sitesWithCoords.map((site) => {
           const color = getRoleColor(site.role, siteTypeColors)
-          const icon = createDotIcon(color)
+          const isAgg = site.attributes?.aggregated
+          const dotSize = isAgg ? 16 : 10
+          const icon = createDotIcon(color, dotSize)
+
+          const tooltipLabel = isAgg
+            ? `${site.name} (${site.attributes.total_partners} partners)`
+            : site.name
 
           return (
             <Marker
@@ -416,16 +636,32 @@ const GeospatialSupplyChain = ({ sites, edges, inventoryData, activeFlows, onSit
                 click: () => handleSiteClick(site),
               }}
             >
-              <LeafletTooltip direction="top" offset={[0, -8]} opacity={0.9}>
-                <span className="text-xs font-medium">{site.name}</span>
+              <LeafletTooltip direction="top" offset={[0, -(dotSize / 2 + 3)]} opacity={0.9}>
+                <span className="text-xs font-medium">{tooltipLabel}</span>
               </LeafletTooltip>
               <Popup>
                 <div className="text-sm">
                   <div className="font-bold mb-1">{site.name}</div>
                   <div className="text-xs text-gray-500 mb-1">{formatRoleLabel(site.role)}</div>
-                  {site.location && <div className="text-xs text-gray-600 mb-2">{site.location}</div>}
-                  {site.capacity > 0 && (
-                    <div className="text-xs">Capacity: {site.capacity.toLocaleString()}</div>
+                  {isAgg && (
+                    <div className="text-xs space-y-0.5">
+                      <div>{site.attributes.child_count} regions, {site.attributes.total_partners} partners</div>
+                      <div className="text-blue-600 mt-1">Click to zoom in</div>
+                    </div>
+                  )}
+                  {!isAgg && (
+                    <>
+                      {site.location && <div className="text-xs text-gray-600 mb-2">{site.location}</div>}
+                      {site.capacity > 0 && (
+                        <div className="text-xs">Capacity: {site.capacity.toLocaleString()}</div>
+                      )}
+                      {site.attributes?.vendor_count > 0 && (
+                        <div className="text-xs">Vendors: {site.attributes.vendor_count.toLocaleString()}</div>
+                      )}
+                      {site.attributes?.customer_count > 0 && (
+                        <div className="text-xs">Customers: {site.attributes.customer_count.toLocaleString()}</div>
+                      )}
+                    </>
                   )}
                 </div>
               </Popup>

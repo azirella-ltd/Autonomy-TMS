@@ -189,7 +189,7 @@ const SupplyChainConfigList = ({
     if (!configToDelete) return;
 
     try {
-      await api.delete(`/supply-chain-config/${configToDelete.id}/`);
+      await api.delete(`/supply-chain-config/${configToDelete.id}`);
       enqueueSnackbar('Configuration deleted successfully', { variant: 'success' });
       await fetchConfigs();
     } catch (err) {

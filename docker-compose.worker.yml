@@ -84,11 +84,12 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - HF_HOME=/root/.cache/huggingface
+      - PYTORCH_ALLOC_CONF=expandable_segments:True
     command: >
       --model ${LLM_MODEL:-Qwen/Qwen3-8B-AWQ}
-      --quantization awq
+      --quantization awq_marlin
       --max-model-len 1024
-      --gpu-memory-utilization 0.90
+      --gpu-memory-utilization 0.85
       --enforce-eager
       --host 0.0.0.0
       --port 8000

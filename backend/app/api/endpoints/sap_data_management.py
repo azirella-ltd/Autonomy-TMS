@@ -1033,10 +1033,16 @@ async def _read_csv_tables(
 ) -> "Tuple[Dict[str, Any], int, int]":
     """Read CSV files for all tables, updating progress. Returns (sap_data, total_rows, total_failed)."""
     import pandas as pd
+    from pathlib import Path
 
     sap_data = {}
     total_rows = 0
     total_failed = 0
+
+    # Expand "all" to every CSV file in the directory
+    if tables == ["all"] or "all" in tables:
+        tables = sorted(f.stem for f in Path(csv_dir).glob("*.csv"))
+        logger.info(f"Expanded 'all' tables to {len(tables)} CSV files")
 
     for idx, table_name in enumerate(tables):
         # Check cancellation
@@ -2482,4 +2488,120 @@ async def get_sc_filter_config(
     return {
         "auth_objects": sorted(SC_AUTH_OBJECTS),
         "transaction_codes": sorted(SC_TRANSACTION_CODES),
+    }
+
+
+# -------------------------------------------------------------------------
+# Geography Geocoding
+# -------------------------------------------------------------------------
+
+@router.post("/geography/geocode")
+async def geocode_geography(
+    config_id: Optional[int] = Query(None, description="Limit to specific config"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_tenant_admin),
+):
+    """
+    Geocode geography records that are missing lat/lon coordinates.
+
+    Uses OpenStreetMap Nominatim to convert addresses (city, state, country,
+    postal_code) into latitude/longitude. Rate-limited to 1 request/second.
+    """
+    from sqlalchemy import select as sa_select, and_, or_
+    from app.models.sc_entities import Geography
+    from app.models.supply_chain_config import Site
+    from app.services.geocoding_service import geocode_batch
+
+    # Find geography records missing coordinates
+    conditions = [
+        or_(Geography.latitude.is_(None), Geography.longitude.is_(None)),
+    ]
+    if config_id is not None:
+        # Filter to geographies linked to sites in this config
+        site_geo_ids = sa_select(Site.geo_id).where(
+            Site.config_id == config_id
+        ).distinct()
+        conditions.append(Geography.id.in_(site_geo_ids))
+
+    stmt = sa_select(Geography).where(and_(*conditions))
+    result = await db.execute(stmt)
+    geos = result.scalars().all()
+
+    if not geos:
+        return {"geocoded": 0, "total": 0, "message": "All geography records already have coordinates"}
+
+    # Build address inputs
+    address_inputs = [
+        {
+            "street": g.address_1 or "",
+            "city": g.city or "",
+            "state": g.state_prov or "",
+            "country": g.country or "",
+            "postal_code": g.postal_code or "",
+        }
+        for g in geos
+    ]
+
+    coords = await geocode_batch(address_inputs)
+
+    geocoded = 0
+    failed = []
+    for geo, coord in zip(geos, coords):
+        if coord:
+            geo.latitude = coord[0]
+            geo.longitude = coord[1]
+            geocoded += 1
+        else:
+            failed.append({
+                "id": geo.id,
+                "city": geo.city,
+                "country": geo.country,
+            })
+
+    await db.commit()
+
+    return {
+        "geocoded": geocoded,
+        "total": len(geos),
+        "failed": failed[:20],  # Show first 20 failures
+        "message": f"Geocoded {geocoded}/{len(geos)} geography records",
+    }
+
+
+@router.get("/geography/status")
+async def geography_status(
+    config_id: Optional[int] = Query(None, description="Limit to specific config"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Check how many geography records have/lack coordinates."""
+    from sqlalchemy import select as sa_select, func, and_, or_, case
+    from app.models.sc_entities import Geography
+    from app.models.supply_chain_config import Site
+
+    conditions = []
+    if config_id is not None:
+        site_geo_ids = sa_select(Site.geo_id).where(
+            Site.config_id == config_id
+        ).distinct()
+        conditions.append(Geography.id.in_(site_geo_ids))
+
+    base = sa_select(
+        func.count().label("total"),
+        func.count(
+            case(
+                (and_(Geography.latitude.isnot(None), Geography.longitude.isnot(None)), 1),
+            )
+        ).label("with_coords"),
+    )
+    if conditions:
+        base = base.where(and_(*conditions))
+
+    result = await db.execute(base)
+    row = result.one()
+
+    return {
+        "total": row.total,
+        "with_coordinates": row.with_coords,
+        "missing_coordinates": row.total - row.with_coords,
     }
