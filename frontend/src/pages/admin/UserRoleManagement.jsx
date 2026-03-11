@@ -39,6 +39,7 @@ import {
   User,
   ShieldCheck,
   Info,
+  BookOpen,
 } from 'lucide-react';
 import { api } from '../../services/api';
 
@@ -50,6 +51,13 @@ const UserRoleManagement = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+
+  // Config assignment state
+  const [tenantConfigs, setTenantConfigs] = useState([]);
+  const [configDialogOpen, setConfigDialogOpen] = useState(false);
+  const [configAssignUser, setConfigAssignUser] = useState(null);
+  const [selectedConfigId, setSelectedConfigId] = useState(null);
+  const [savingConfig, setSavingConfig] = useState(false);
 
   const capabilityCategories = {
     overview: {
@@ -189,7 +197,18 @@ const UserRoleManagement = () => {
 
   useEffect(() => {
     fetchUsers();
+    fetchTenantConfigs();
   }, []);
+
+  const fetchTenantConfigs = async () => {
+    try {
+      const response = await api.get('/supply-chain-config/');
+      const configs = Array.isArray(response.data) ? response.data : (response.data.configs || []);
+      setTenantConfigs(configs);
+    } catch (err) {
+      console.error('Failed to fetch tenant configs:', err);
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -257,6 +276,33 @@ const UserRoleManagement = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleOpenConfigDialog = (user) => {
+    setConfigAssignUser(user);
+    setSelectedConfigId(user.default_config_id || null);
+    setConfigDialogOpen(true);
+  };
+
+  const handleSaveConfig = async () => {
+    if (!configAssignUser || !selectedConfigId) return;
+    try {
+      setSavingConfig(true);
+      await api.put(`/admin/users/${configAssignUser.id}/default-config`, { config_id: selectedConfigId });
+      setSuccess(`Config updated for ${configAssignUser.full_name || configAssignUser.email}`);
+      setConfigDialogOpen(false);
+      fetchUsers();
+    } catch (err) {
+      console.error('Failed to assign config:', err);
+      setError(err?.response?.data?.detail || 'Failed to assign config');
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  const getConfigForUser = (user) => {
+    if (!user.default_config_id) return null;
+    return tenantConfigs.find((c) => c.id === user.default_config_id) || null;
   };
 
   const getUserRoleLabel = (userType) => {
@@ -364,6 +410,7 @@ const UserRoleManagement = () => {
                     <TableHead>Email</TableHead>
                     <TableHead>Role</TableHead>
                     <TableHead className="text-center">Capabilities</TableHead>
+                    <TableHead>Active Config</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -387,26 +434,62 @@ const UserRoleManagement = () => {
                         <Badge variant="outline">{getCapabilityCount(user)}</Badge>
                       </TableCell>
                       <TableCell>
+                        {(() => {
+                          const cfg = getConfigForUser(user);
+                          if (!cfg) return <span className="text-xs text-muted-foreground">Default</span>;
+                          return (
+                            <div className="flex items-center gap-1.5">
+                              <Badge
+                                variant={cfg.mode === 'learning' ? 'warning' : 'default'}
+                                className="text-xs"
+                              >
+                                {cfg.mode === 'learning' ? 'Learning' : 'Production'}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={cfg.name}>
+                                {cfg.name}
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </TableCell>
+                      <TableCell>
                         <Badge variant={user.is_active ? 'success' : 'secondary'}>
                           {user.is_active ? 'Active' : 'Inactive'}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleEditUser(user)}
-                                disabled={user.user_type === 'SYSTEM_ADMIN'}
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Edit Roles & Capabilities</TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                        <div className="flex items-center justify-end gap-1">
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleOpenConfigDialog(user)}
+                                  disabled={user.user_type === 'SYSTEM_ADMIN'}
+                                >
+                                  <BookOpen className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Assign Config</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleEditUser(user)}
+                                  disabled={user.user_type === 'SYSTEM_ADMIN'}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Edit Roles & Capabilities</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -474,6 +557,104 @@ const UserRoleManagement = () => {
           </CardContent>
         </Card>
       )}
+
+      {/* Config Assignment Dialog */}
+      <Modal
+        isOpen={configDialogOpen}
+        onClose={() => setConfigDialogOpen(false)}
+        title={
+          <div className="flex items-center gap-2">
+            <BookOpen className="h-5 w-5 text-primary" />
+            <div>
+              <p>Assign Active Config</p>
+              <p className="text-sm text-muted-foreground font-normal">{configAssignUser?.email}</p>
+            </div>
+          </div>
+        }
+        size="md"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setConfigDialogOpen(false)} leftIcon={<X className="h-4 w-4" />}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveConfig} disabled={savingConfig || !selectedConfigId} leftIcon={<Save className="h-4 w-4" />}>
+              {savingConfig ? 'Saving…' : 'Save'}
+            </Button>
+          </div>
+        }
+      >
+        {configAssignUser && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Select the supply chain configuration this user will see when they log in.
+            </p>
+
+            {/* Production configs */}
+            {tenantConfigs.filter((c) => c.mode !== 'learning').length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Production</p>
+                <div className="space-y-1">
+                  {tenantConfigs.filter((c) => c.mode !== 'learning').map((cfg) => (
+                    <label
+                      key={cfg.id}
+                      className={`flex items-center gap-3 p-3 rounded border cursor-pointer transition-colors ${
+                        selectedConfigId === cfg.id ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="config"
+                        value={cfg.id}
+                        checked={selectedConfigId === cfg.id}
+                        onChange={() => setSelectedConfigId(cfg.id)}
+                        className="accent-primary"
+                      />
+                      <div>
+                        <p className="text-sm font-medium">{cfg.name}</p>
+                        {cfg.description && <p className="text-xs text-muted-foreground">{cfg.description}</p>}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Learning configs */}
+            {tenantConfigs.filter((c) => c.mode === 'learning').length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-2">Learning</p>
+                <div className="space-y-1">
+                  {tenantConfigs.filter((c) => c.mode === 'learning').map((cfg) => (
+                    <label
+                      key={cfg.id}
+                      className={`flex items-center gap-3 p-3 rounded border cursor-pointer transition-colors ${
+                        selectedConfigId === cfg.id ? 'border-amber-500 bg-amber-50' : 'hover:bg-muted/50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="config"
+                        value={cfg.id}
+                        checked={selectedConfigId === cfg.id}
+                        onChange={() => setSelectedConfigId(cfg.id)}
+                        className="accent-amber-500"
+                      />
+                      <div>
+                        <p className="text-sm font-medium">{cfg.name}</p>
+                        {cfg.description && <p className="text-xs text-muted-foreground">{cfg.description}</p>}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {tenantConfigs.length === 0 && (
+              <p className="text-sm text-muted-foreground italic">No supply chain configs available for this tenant.</p>
+            )}
+          </div>
+        )}
+      </Modal>
 
       {/* Edit User Dialog */}
       <Modal
