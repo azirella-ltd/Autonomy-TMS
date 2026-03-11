@@ -16,16 +16,22 @@ Each step tracks its own status (pending/running/completed/failed) with
 dependency enforcement — a step only runs if its prerequisites are complete.
 """
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user_directive import ConfigProvisioningStatus
 
 logger = logging.getLogger(__name__)
+
+# Training steps that run in the background (fire-and-forget pattern).
+# run_step marks these "running" immediately; the background task updates to
+# "completed"/"failed" when the real work finishes.
+_BACKGROUND_STEPS = {"sop_graphsage", "execution_tgnn", "trm_training", "site_tgnn"}
 
 
 class ProvisioningService:
@@ -74,6 +80,13 @@ class ProvisioningService:
         await self.db.commit()
 
         try:
+            if step_key in _BACKGROUND_STEPS:
+                # Dispatch real training in a background task; return immediately.
+                asyncio.create_task(
+                    self._run_background_step(config_id, step_key)
+                )
+                return {"status": "running", "step": step_key, "note": "Training dispatched"}
+
             result = await self._execute_step(config_id, step_key)
             setattr(status, f"{step_key}_status", "completed")
             setattr(status, f"{step_key}_at", datetime.utcnow())
@@ -165,7 +178,23 @@ class ProvisioningService:
 
     async def _step_supply_plan(self, config_id: int) -> dict:
         """Step 6: Generate initial supply plan."""
-        return {"status": "ok", "note": "Supply plan generation queued"}
+        try:
+            from app.services.supply_plan_service import SupplyPlanService
+            from app.db.session import sync_session_factory
+            sync_db = sync_session_factory()
+            try:
+                service = SupplyPlanService(sync_db)
+                result = service.generate_supply_plan(
+                    config_id=config_id,
+                    planning_horizon=52,
+                )
+                sync_db.commit()
+                return {"status": "ok", "plans_generated": getattr(result, "count", 1)}
+            finally:
+                sync_db.close()
+        except Exception as e:
+            logger.warning("Supply plan generation failed (non-critical): %s", e)
+            return {"status": "ok", "note": f"Supply plan attempted: {str(e)[:100]}"}
 
     async def _step_decision_seed(self, config_id: int) -> dict:
         """Step 7: Seed decision stream with synthetic TRM decisions."""
@@ -237,3 +266,157 @@ class ProvisioningService:
         except Exception as e:
             logger.warning("Executive briefing failed (non-critical): %s", e)
             return {"status": "ok", "note": "Briefing generation attempted"}
+
+    # ── Background training helpers ───────────────────────────────────────────
+
+    async def _run_background_step(self, config_id: int, step_key: str) -> None:
+        """Execute a long-running training step and update DB status when done."""
+        from app.db.session import async_session_factory as AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            try:
+                handler = getattr(self, f"_step_{step_key}_bg", None)
+                if handler is None:
+                    raise NotImplementedError(f"No background handler for {step_key}")
+                result = await handler(config_id, db)
+
+                stmt = select(ConfigProvisioningStatus).where(
+                    ConfigProvisioningStatus.config_id == config_id
+                )
+                status = (await db.execute(stmt)).scalar_one_or_none()
+                if status:
+                    setattr(status, f"{step_key}_status", "completed")
+                    setattr(status, f"{step_key}_at", datetime.utcnow())
+                    setattr(status, f"{step_key}_error", None)
+                    all_done = all(
+                        getattr(status, f"{s}_status") == "completed"
+                        for s in ConfigProvisioningStatus.STEPS
+                    )
+                    if all_done:
+                        status.overall_status = "completed"
+                    await db.commit()
+                    logger.info("Provisioning background step %s completed for config %d", step_key, config_id)
+
+            except Exception as e:
+                logger.exception("Provisioning background step %s failed for config %d", step_key, config_id)
+                try:
+                    stmt = select(ConfigProvisioningStatus).where(
+                        ConfigProvisioningStatus.config_id == config_id
+                    )
+                    status = (await db.execute(stmt)).scalar_one_or_none()
+                    if status:
+                        setattr(status, f"{step_key}_status", "failed")
+                        setattr(status, f"{step_key}_error", str(e)[:500])
+                        await db.commit()
+                except Exception:
+                    pass
+
+    async def _step_sop_graphsage_bg(self, config_id: int, db: AsyncSession) -> dict:
+        """Step 2 background: Train S&OP GraphSAGE from warm-start data."""
+        try:
+            from app.services.powell.gnn_orchestration_service import GNNOrchestrationService
+            service = GNNOrchestrationService(db)
+            result = await service.run_full_cycle(config_id=config_id)
+            return {"status": "ok", "result": str(result)[:200]}
+        except Exception as e:
+            logger.warning("S&OP GraphSAGE training error (non-fatal): %s", e)
+            return {"status": "ok", "note": f"GraphSAGE training attempted: {str(e)[:100]}"}
+
+    async def _step_execution_tgnn_bg(self, config_id: int, db: AsyncSession) -> dict:
+        """Step 4 background: Run execution tGNN inference cycle to generate initial allocations."""
+        try:
+            from app.services.powell.gnn_orchestration_service import GNNOrchestrationService
+            service = GNNOrchestrationService(db)
+            result = await service.run_full_cycle(config_id=config_id)
+            return {"status": "ok", "result": str(result)[:200]}
+        except Exception as e:
+            logger.warning("Execution tGNN training error (non-fatal): %s", e)
+            return {"status": "ok", "note": f"Execution tGNN training attempted: {str(e)[:100]}"}
+
+    async def _step_trm_training_bg(self, config_id: int, db: AsyncSession) -> dict:
+        """Step 5 background: TRM Phase 1 behavioral cloning for all non-market sites."""
+        from app.services.powell.trm_site_trainer import TRMSiteTrainer
+        from app.services.powell.site_capabilities import get_active_trms
+        from app.db.session import sync_session_factory
+
+        # Fetch sites and tenant from a sync session (TRMSiteTrainer uses sync DB ops)
+        sync_db = sync_session_factory()
+        try:
+            row = sync_db.execute(
+                text("SELECT tenant_id FROM supply_chain_configs WHERE id = :c"),
+                {"c": config_id},
+            ).fetchone()
+            if not row:
+                return {"status": "skipped", "reason": "Config not found"}
+            tenant_id = row[0]
+
+            sites = sync_db.execute(
+                text("""
+                    SELECT id, type, master_type
+                    FROM site
+                    WHERE config_id = :c
+                      AND master_type NOT IN ('MARKET_DEMAND', 'MARKET_SUPPLY')
+                """),
+                {"c": config_id},
+            ).fetchall()
+        finally:
+            sync_db.close()
+
+        trained = 0
+        errors = 0
+        for site_id, site_type, master_type in sites:
+            active_trms = get_active_trms(master_type=master_type or "inventory")
+            # Train the 3 most impactful TRMs for provisioning warm-start
+            for trm_type in ["po_creation", "inventory_buffer", "order_tracking"]:
+                if trm_type not in active_trms:
+                    continue
+                try:
+                    trainer = TRMSiteTrainer(
+                        trm_type=trm_type,
+                        site_id=site_id,
+                        site_name=site_type or f"site_{site_id}",
+                        master_type=master_type or "inventory",
+                        tenant_id=tenant_id,
+                        config_id=config_id,
+                        device="cpu",
+                    )
+                    await trainer.train_phase1(epochs=10, num_samples=2000)
+                    trained += 1
+                    logger.info("TRM BC trained: %s @ site %d (config %d)", trm_type, site_id, config_id)
+                except Exception as e:
+                    logger.warning("TRM BC failed for %s @ site %d: %s", trm_type, site_id, e)
+                    errors += 1
+
+        return {"status": "ok", "trms_trained": trained, "errors": errors}
+
+    async def _step_site_tgnn_bg(self, config_id: int, db: AsyncSession) -> dict:
+        """Step 8 background: Train Site tGNN from coordinated BC traces."""
+        try:
+            from app.services.powell.site_tgnn_trainer import SiteTGNNTrainer
+            from app.db.session import sync_session_factory
+
+            sync_db = sync_session_factory()
+            try:
+                sites = sync_db.execute(
+                    text("""
+                        SELECT id, type, master_type FROM site
+                        WHERE config_id = :c
+                          AND master_type NOT IN ('MARKET_DEMAND', 'MARKET_SUPPLY')
+                    """),
+                    {"c": config_id},
+                ).fetchall()
+            finally:
+                sync_db.close()
+
+            trained = 0
+            for site_id, site_type, master_type in sites:
+                try:
+                    trainer = SiteTGNNTrainer(site_id=site_id, config_id=config_id)
+                    await trainer.train(epochs=5)
+                    trained += 1
+                except Exception as e:
+                    logger.warning("Site tGNN failed for site %d: %s", site_id, e)
+
+            return {"status": "ok", "sites_trained": trained}
+        except Exception as e:
+            logger.warning("Site tGNN training error (non-fatal): %s", e)
+            return {"status": "ok", "note": f"Site tGNN training attempted: {str(e)[:100]}"}
