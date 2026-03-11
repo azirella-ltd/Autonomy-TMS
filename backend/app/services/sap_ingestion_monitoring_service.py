@@ -40,6 +40,64 @@ class JobStatus(str, Enum):
     PARTIAL = "partial"  # Completed with some failures
 
 
+class IngestionPhase(str, Enum):
+    """
+    3-phase SAP ingestion pipeline.
+
+    Phase 1 (MASTER_DATA): Initial master data import → generates base SC config
+        Tables: T001, T001W, T001L, ADRC, MARA, MAKT, MARC, MARM, MVKE,
+                LFA1, KNA1, EORD, EINA, EINE, STKO, STPO, PLKO, PLPO,
+                CRHD, EQUI, MBEW, MARD, PBIM, PBED
+    Phase 2 (CDC): Change Data Capture on master data → detects changes →
+        creates child SC config if topology changed
+    Phase 3 (TRANSACTION): Transaction data import against the active SC config
+        Tables: EKKO, EKPO, EKET, VBAK, VBAP, LIKP, LIPS, AFKO, AFPO,
+                RESB, MKPF, MSEG, LTAK, LTAP, JEST, QMEL, QALS, QASE, AFVC
+    """
+    MASTER_DATA = "master_data"
+    CDC = "cdc"
+    TRANSACTION = "transaction"
+
+
+# Tables classified by phase
+MASTER_DATA_TABLES = {
+    # Tier 0: Org / reference
+    "T001", "TJ02T", "T001W", "T001L", "ADRC",
+    # Tier 1: Master data (site, product, trading partner)
+    "MARA", "MAKT", "MARC", "MARM", "MVKE",
+    "LFA1", "KNA1",
+    "CRHD", "EQUI",
+    # Tier 2: Extended master (depends on product + site)
+    "MBEW", "MARD",
+    "EORD", "EINA", "EINE", "EBAN",
+    # Tier 3: BOM & routing
+    "STKO", "STPO", "PLKO", "PLPO",
+    # Tier 4: Planning (forecasts, safety stock)
+    "PBIM", "PBED", "PLAF",
+    # APO tables
+    "/SAPAPO/LOC", "/SAPAPO/MATLOC",
+    "/SAPAPO/SNPFC", "/SAPAPO/TRLANE",
+    "/SAPAPO/PDS", "/SAPAPO/SNPBV",
+}
+
+TRANSACTION_TABLES = {
+    # Purchase orders
+    "EKKO", "EKPO", "EKET",
+    # Sales orders
+    "VBAK", "VBAP", "VBUK", "VBUP",
+    # Deliveries / shipments
+    "LIKP", "LIPS",
+    # Production orders
+    "AFKO", "AFPO", "AFVC", "RESB",
+    # Inventory movements
+    "MKPF", "MSEG",
+    # Warehouse / transfer orders
+    "LTAK", "LTAP",
+    # Quality
+    "JEST", "QMEL", "QALS", "QASE",
+}
+
+
 class JobType(str, Enum):
     """Type of ingestion job."""
     FULL_EXTRACT = "full_extract"
@@ -94,6 +152,7 @@ class IngestionJob:
     connection_id: int = 0
 
     job_type: JobType = JobType.FULL_EXTRACT
+    phase: IngestionPhase = IngestionPhase.MASTER_DATA
     status: JobStatus = JobStatus.PENDING
 
     # Tables being extracted
@@ -112,6 +171,10 @@ class IngestionJob:
     total_rows_failed: int = 0
     total_rows_skipped: int = 0
 
+    # SC config generation (Phase 1 result)
+    config_id: Optional[int] = None
+    build_summary: Optional[Dict[str, Any]] = None
+
     # Error tracking
     errors: List[Dict[str, Any]] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
@@ -125,6 +188,7 @@ class IngestionJob:
             "tenant_id": self.tenant_id,
             "connection_id": self.connection_id,
             "job_type": self.job_type.value,
+            "phase": self.phase.value,
             "status": self.status.value,
             "tables": self.tables,
             "current_table": self.current_table,
@@ -136,6 +200,8 @@ class IngestionJob:
             "total_rows_processed": self.total_rows_processed,
             "total_rows_failed": self.total_rows_failed,
             "total_rows_skipped": self.total_rows_skipped,
+            "config_id": self.config_id,
+            "build_summary": self.build_summary,
             "errors": self.errors,
             "warnings": self.warnings,
             "progress_percent": self.progress_percent,
@@ -359,11 +425,27 @@ class SAPIngestionMonitoringService:
     def _row_to_job(self, row) -> IngestionJob:
         """Convert a DB row to an IngestionJob dataclass."""
         tables = row.tables if isinstance(row.tables, list) else json.loads(row.tables or "[]")
+        # Parse phase (default master_data for old rows)
+        phase_val = getattr(row, "phase", "master_data") or "master_data"
+        try:
+            phase = IngestionPhase(phase_val)
+        except ValueError:
+            phase = IngestionPhase.MASTER_DATA
+        # Parse build_summary JSON
+        build_summary_raw = getattr(row, "build_summary", None)
+        build_summary = None
+        if build_summary_raw:
+            if isinstance(build_summary_raw, dict):
+                build_summary = build_summary_raw
+            elif isinstance(build_summary_raw, str):
+                build_summary = json.loads(build_summary_raw)
+
         job = IngestionJob(
             id=row.id,
             tenant_id=row.tenant_id,
             connection_id=row.connection_id,
             job_type=JobType(row.job_type),
+            phase=phase,
             tables=tables,
             status=JobStatus(row.status),
             current_table=row.current_table,
@@ -371,6 +453,8 @@ class SAPIngestionMonitoringService:
             total_rows_failed=row.total_rows_failed or 0,
             started_at=row.started_at,
             completed_at=row.completed_at,
+            config_id=getattr(row, "config_id", None),
+            build_summary=build_summary,
         )
         job._progress_override = getattr(row, "progress_percent", None) or 0.0
         return job
@@ -436,20 +520,26 @@ class SAPIngestionMonitoringService:
         self,
         connection_id: int,
         job_type: JobType,
-        tables: List[str]
+        tables: List[str],
+        phase: IngestionPhase = IngestionPhase.MASTER_DATA,
     ) -> IngestionJob:
         """Create a new ingestion job (persisted to DB).
 
         Tables are automatically sorted by AWS SC FK dependency order
         so that parent entities (Site, Product) are ingested before
         child entities (Inventory, Orders, BOM).
+
+        Phase determines what happens after CSV reading:
+        - MASTER_DATA: Build a new SC config from the imported data
+        - CDC: Compare against existing config, create child if changed
+        - TRANSACTION: Import transactions against active SC config
         """
         sorted_tables = self._sort_tables_by_dependency(tables)
 
         result = await self.db.execute(
             text("""
-                INSERT INTO sap_ingestion_jobs (tenant_id, connection_id, job_type, status, tables)
-                VALUES (:tenant_id, :connection_id, :job_type, :status, :tables)
+                INSERT INTO sap_ingestion_jobs (tenant_id, connection_id, job_type, status, tables, phase)
+                VALUES (:tenant_id, :connection_id, :job_type, :status, :tables, :phase)
                 RETURNING id
             """),
             {
@@ -458,6 +548,7 @@ class SAPIngestionMonitoringService:
                 "job_type": job_type.value,
                 "status": JobStatus.PENDING.value,
                 "tables": json.dumps(sorted_tables),
+                "phase": phase.value,
             }
         )
         job_id = result.scalar_one()
@@ -539,6 +630,28 @@ class SAPIngestionMonitoringService:
         job.current_table = current_table
         logger.info(f"Started ingestion job {job_id}")
         return job
+
+    async def set_job_build_result(
+        self,
+        job_id: int,
+        config_id: int,
+        build_summary: Dict[str, Any],
+    ) -> None:
+        """Store the SC config build result on a completed job."""
+        await self.db.execute(
+            text("""
+                UPDATE sap_ingestion_jobs
+                SET config_id = :config_id, build_summary = :build_summary, updated_at = NOW()
+                WHERE id = :id AND tenant_id = :tenant_id
+            """),
+            {
+                "config_id": config_id,
+                "build_summary": json.dumps(build_summary),
+                "id": job_id,
+                "tenant_id": self.tenant_id,
+            }
+        )
+        await self.db.commit()
 
     async def update_job_progress(
         self,
@@ -1250,15 +1363,13 @@ class SAPIngestionMonitoringService:
         unacked_insights = await self.get_insights(unacknowledged_only=True, limit=100)
         pending_actions = await self.get_actions(status=ActionStatus.SUGGESTED, limit=100)
 
-        # Calculate averages
-        completed_jobs = [j for j in self._jobs.values() if j.status == JobStatus.COMPLETED]
-        avg_duration = sum(j.duration_seconds or 0 for j in completed_jobs) / len(completed_jobs) if completed_jobs else 0
-
-        # Quality trends
-        latest_quality = {}
-        for key, reports in self._quality_history.items():
-            if reports:
-                latest_quality[key] = reports[-1].overall_score
+        # Calculate averages from DB
+        all_jobs = await self.get_recent_jobs(limit=1000)
+        completed_jobs = [j for j in all_jobs if j.status == JobStatus.COMPLETED]
+        avg_duration = (
+            sum(j.duration_seconds or 0 for j in completed_jobs) / len(completed_jobs)
+            if completed_jobs else 0
+        )
 
         return {
             "active_jobs": len(active_jobs),
@@ -1274,7 +1385,7 @@ class SAPIngestionMonitoringService:
                 "info": len([i for i in unacked_insights if i.severity == InsightSeverity.INFO]),
             },
             "pending_actions": len(pending_actions),
-            "latest_quality_scores": latest_quality,
+            "latest_quality_scores": {},
         }
 
 

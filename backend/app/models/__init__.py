@@ -318,6 +318,9 @@ from .sap_user_import import SAPUserImportLog, SAPRoleMapping
 # 26b. SAP Connection Persistence
 from .sap_connection import SAPConnection
 
+# 27. Autonomy Customer Registry
+from .autonomy_customer import AutonomyCustomer
+
 # 27. Executive Briefing — LLM-Synthesized Strategy Briefings
 from .executive_briefing import (
     ExecutiveBriefing, BriefingFollowup, BriefingSchedule,

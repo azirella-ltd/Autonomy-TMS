@@ -249,6 +249,7 @@ const OverviewTab = ({ dashboardData, deploymentStatus, loading }) => {
                       {job.status}
                     </Badge>
                     <span className="font-medium">{job.job_type}</span>
+                    {job.phase && <Badge variant="outline" className="text-xs">{job.phase}</Badge>}
                     <span className="text-muted-foreground">
                       {job.tables?.join(', ')}
                     </span>
@@ -1237,19 +1238,71 @@ const TablesTab = ({ connections, selectedConnectionId, onSelectConnection }) =>
 };
 
 // Ingestion Jobs Tab Component
+// Table classifications for phase-based filtering
+const MASTER_DATA_PREFIXES = new Set([
+  'T001', 'TJ02T', 'T001W', 'T001L', 'ADRC',
+  'MARA', 'MAKT', 'MARC', 'MARM', 'MVKE',
+  'LFA1', 'KNA1', 'CRHD', 'EQUI',
+  'MBEW', 'MARD', 'EORD', 'EINA', 'EINE', 'EBAN',
+  'STKO', 'STPO', 'PLKO', 'PLPO',
+  'PBIM', 'PBED', 'PLAF',
+]);
+const TRANSACTION_PREFIXES = new Set([
+  'EKKO', 'EKPO', 'EKET', 'VBAK', 'VBAP', 'VBUK', 'VBUP',
+  'LIKP', 'LIPS', 'AFKO', 'AFPO', 'AFVC', 'RESB',
+  'MKPF', 'MSEG', 'LTAK', 'LTAP',
+  'JEST', 'QMEL', 'QALS', 'QASE',
+]);
+
+const getTablePrefix = (name) => {
+  const upper = name.toUpperCase();
+  // Handle multi-part prefixes like T001W_plant_data
+  for (const prefix of ['T001W', 'T001L', 'TJ02T', 'T001']) {
+    if (upper.startsWith(prefix + '_') || upper === prefix) return prefix;
+  }
+  const parts = upper.split('_');
+  return parts[0];
+};
+
+const PHASE_LABELS = {
+  master_data: 'Phase 1: Master Data → SC Config',
+  cdc: 'Phase 2: CDC (Change Detection)',
+  transaction: 'Phase 3: Transaction Import',
+};
+
+const PHASE_COLORS = {
+  master_data: 'bg-blue-100 text-blue-800',
+  cdc: 'bg-purple-100 text-purple-800',
+  transaction: 'bg-amber-100 text-amber-800',
+};
+
 const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob, onDeleteJob, onScheduleJob, onRefresh, loading }) => {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedConnectionId, setSelectedConnectionId] = useState('');
   const [jobType, setJobType] = useState('full_extract');
+  const [jobPhase, setJobPhase] = useState('master_data');
   const [availableTables, setAvailableTables] = useState([]);
+  const [allTables, setAllTables] = useState([]);
   const [selectedTables, setSelectedTables] = useState([]);
   const [loadingTables, setLoadingTables] = useState(false);
+
+  // Filter tables by phase
+  const filterTablesByPhase = (tables, phase) => {
+    if (phase === 'master_data') {
+      return tables.filter(t => MASTER_DATA_PREFIXES.has(getTablePrefix(t)));
+    } else if (phase === 'transaction') {
+      return tables.filter(t => TRANSACTION_PREFIXES.has(getTablePrefix(t)));
+    }
+    // CDC uses master data tables
+    return tables.filter(t => MASTER_DATA_PREFIXES.has(getTablePrefix(t)));
+  };
 
   // Load available CSV files / tables when connection changes
   const handleConnectionChange = async (connId) => {
     setSelectedConnectionId(connId);
     setSelectedTables([]);
     setAvailableTables([]);
+    setAllTables([]);
     if (!connId) return;
 
     const conn = connections.find(c => c.id === parseInt(connId));
@@ -1257,27 +1310,36 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
 
     setLoadingTables(true);
     try {
+      let allFiles = [];
       if (conn.connection_method === 'csv' && conn.csv_directory) {
-        // Browse the CSV directory to find available files
         const basePath = '/app/imports';
         const subpath = conn.csv_directory.replace(basePath + '/', '').replace(basePath, '');
         const resp = await api.get('/sap-data/import-directories', { params: { subpath } });
-        const csvFiles = resp.data.filter(e => !e.is_dir).map(e => e.name.replace('.csv', ''));
-        setAvailableTables(csvFiles);
-        setSelectedTables(csvFiles); // Select all by default
+        allFiles = resp.data.filter(e => !e.is_dir).map(e => e.name.replace('.csv', ''));
       } else {
-        // Try loading configured tables from the connection
         try {
           const resp = await api.get(`/sap-data/connections/${connId}/tables`);
-          const tableNames = resp.data.map(t => t.sap_table_name || t.name);
-          setAvailableTables(tableNames);
-          setSelectedTables(tableNames);
-        } catch { setAvailableTables([]); }
+          allFiles = resp.data.map(t => t.sap_table_name || t.name);
+        } catch { allFiles = []; }
       }
+      setAllTables(allFiles);
+      const filtered = filterTablesByPhase(allFiles, jobPhase);
+      setAvailableTables(filtered);
+      setSelectedTables(filtered);
     } catch (err) {
       console.error('Failed to load tables:', err);
     }
     setLoadingTables(false);
+  };
+
+  // Re-filter tables when phase changes
+  const handlePhaseChange = (phase) => {
+    setJobPhase(phase);
+    if (allTables.length > 0) {
+      const filtered = filterTablesByPhase(allTables, phase);
+      setAvailableTables(filtered);
+      setSelectedTables(filtered);
+    }
   };
 
   const handleSubmitJob = async () => {
@@ -1285,12 +1347,14 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
     await onCreateJob({
       connection_id: parseInt(selectedConnectionId),
       job_type: jobType,
+      phase: jobPhase,
       tables: selectedTables,
     });
     setShowCreateDialog(false);
     setSelectedConnectionId('');
     setSelectedTables([]);
     setAvailableTables([]);
+    setAllTables([]);
   };
 
   return (
@@ -1357,10 +1421,22 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
                       <div className="flex items-center gap-2">
                         <span className="font-medium">Job #{job.id}</span>
                         <Badge variant="outline">{job.job_type}</Badge>
+                        <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", PHASE_COLORS[job.phase] || 'bg-gray-100 text-gray-800')}>
+                          {PHASE_LABELS[job.phase] || job.phase}
+                        </span>
                       </div>
                       <p className="text-sm text-muted-foreground">
                         Tables: {job.tables?.join(', ')}
                       </p>
+                      {job.config_id && (
+                        <p className="text-sm text-green-600 font-medium mt-1">
+                          SC Config #{job.config_id} generated
+                          {job.build_summary?.sites && ` — ${job.build_summary.sites} sites, ${job.build_summary.products} products, ${job.build_summary.lanes} lanes`}
+                          {job.build_summary?.cdc_result === 'no_changes' && ' — No topology changes detected'}
+                          {job.build_summary?.cdc_result === 'changes_detected' && ` — Changes: +${job.build_summary.sites_added || 0} sites, +${job.build_summary.products_added || 0} products`}
+                          {job.build_summary?.transaction_import && ` — Transactions imported`}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="text-right">
@@ -1475,6 +1551,20 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
             </div>
 
             <div>
+              <label className="block text-sm font-medium mb-1">Ingestion Phase *</label>
+              <NativeSelect value={jobPhase} onChange={(e) => handlePhaseChange(e.target.value)}>
+                <option value="master_data">Phase 1: Master Data → Generate SC Config</option>
+                <option value="cdc">Phase 2: CDC — Detect Master Data Changes</option>
+                <option value="transaction">Phase 3: Transaction Data Import</option>
+              </NativeSelect>
+              <p className="text-xs text-muted-foreground mt-1">
+                {jobPhase === 'master_data' && 'Imports master data (sites, products, BOMs, etc.) and generates a new Supply Chain Config.'}
+                {jobPhase === 'cdc' && 'Compares master data against the active SC Config. Creates a child config if topology changed.'}
+                {jobPhase === 'transaction' && 'Imports transaction data (orders, production, inventory movements) against the active SC Config.'}
+              </p>
+            </div>
+
+            <div>
               <label className="block text-sm font-medium mb-1">Job Type</label>
               <NativeSelect value={jobType} onChange={(e) => setJobType(e.target.value)}>
                 <option value="full_extract">Full Extract</option>
@@ -1531,7 +1621,9 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
               onClick={handleSubmitJob}
               disabled={!selectedConnectionId || selectedTables.length === 0}
             >
-              Start Ingestion
+              {jobPhase === 'master_data' ? 'Create & Build SC Config' :
+               jobPhase === 'cdc' ? 'Run Change Detection' :
+               'Import Transactions'}
             </Button>
           </div>
         </DialogContent>
@@ -1753,9 +1845,9 @@ const UserImportTab = () => {
     setLoading(true);
     try {
       const [mappingsRes, logsRes, filterRes] = await Promise.all([
-        api.get('/api/v1/sap-data/user-import/role-mappings'),
-        api.get('/api/v1/sap-data/user-import/logs?limit=10'),
-        api.get('/api/v1/sap-data/user-import/sc-filter-config'),
+        api.get('/sap-data/user-import/role-mappings'),
+        api.get('/sap-data/user-import/logs?limit=10'),
+        api.get('/sap-data/user-import/sc-filter-config'),
       ]);
       setRoleMappings(mappingsRes.data || []);
       setImportLogs(logsRes.data?.items || []);
@@ -1771,7 +1863,7 @@ const UserImportTab = () => {
 
   const handleAddMapping = async () => {
     try {
-      await api.post('/api/v1/sap-data/user-import/role-mappings', newMapping);
+      await api.post('/sap-data/user-import/role-mappings', newMapping);
       setShowAddMapping(false);
       setNewMapping({ agr_name_pattern: '', pattern_type: 'glob', powell_role: 'MPS_MANAGER', priority: 100, description: '' });
       loadData();
@@ -1782,7 +1874,7 @@ const UserImportTab = () => {
 
   const handleDeleteMapping = async (id) => {
     try {
-      await api.delete(`/api/v1/sap-data/user-import/role-mappings/${id}`);
+      await api.delete(`/sap-data/user-import/role-mappings/${id}`);
       loadData();
     } catch (err) {
       console.error('Failed to delete mapping:', err);
@@ -1823,7 +1915,7 @@ const UserImportTab = () => {
     setUploading(true);
     try {
       const rawData = await buildRawData();
-      const res = await api.post('/api/v1/sap-data/user-import/preview', rawData);
+      const res = await api.post('/sap-data/user-import/preview', rawData);
       setPreviewData(res.data);
     } catch (err) {
       console.error('Preview failed:', err);
@@ -1837,7 +1929,7 @@ const UserImportTab = () => {
     setUploading(true);
     try {
       const rawData = await buildRawData();
-      await api.post('/api/v1/sap-data/user-import/execute', rawData);
+      await api.post('/sap-data/user-import/execute', rawData);
       setPreviewData(null);
       setCsvFiles({});
       loadData();

@@ -43,6 +43,9 @@ from .synthetic_data import router as synthetic_data_router
 from .sap_data_management import router as sap_data_management_router
 from .sap_change_simulator import router as sap_change_simulator_router
 
+# Autonomy Customer Registry
+from .autonomy_customers import router as autonomy_customers_router
+
 # Powell Framework (SDAM)
 from .powell import router as powell_router
 from .site_agent import router as site_agent_router
@@ -106,6 +109,8 @@ __all__ = [
     # SAP Data Management
     'sap_data_management_router',
     'sap_change_simulator_router',
+    # Autonomy Customer Registry
+    'autonomy_customers_router',
     # Powell Framework (SDAM)
     'powell_router',
     'site_agent_router',

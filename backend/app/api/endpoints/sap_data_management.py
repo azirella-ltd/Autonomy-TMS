@@ -46,6 +46,9 @@ from app.services.sap_ingestion_monitoring_service import (
     SAPIngestionMonitoringService,
     JobStatus,
     JobType,
+    IngestionPhase,
+    MASTER_DATA_TABLES,
+    TRANSACTION_TABLES,
     InsightSeverity,
     ActionStatus,
     ActionType,
@@ -223,21 +226,25 @@ class DeploymentStatusResponse(BaseModel):
 class CreateJobRequest(BaseModel):
     connection_id: int
     job_type: str = Field(..., description="Job type: full_extract, delta_extract, incremental")
+    phase: str = Field("master_data", description="Ingestion phase: master_data, cdc, transaction")
     tables: List[str]
 
 
 class JobResponse(BaseModel):
     id: int
     job_type: str
+    phase: str = "master_data"
     status: str
     tables: List[str]
-    current_table: Optional[str]
+    current_table: Optional[str] = None
     progress_percent: float
     total_rows_processed: int
     total_rows_failed: int
-    started_at: Optional[datetime]
-    completed_at: Optional[datetime]
-    duration_seconds: Optional[float]
+    config_id: Optional[int] = None
+    build_summary: Optional[Dict[str, Any]] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    duration_seconds: Optional[float] = None
 
 
 class JobProgressUpdate(BaseModel):
@@ -926,6 +933,26 @@ async def validate_configuration(
     }
 
 
+def _job_to_response(job) -> JobResponse:
+    """Convert an IngestionJob to a JobResponse."""
+    return JobResponse(
+        id=job.id,
+        job_type=job.job_type.value,
+        phase=job.phase.value if hasattr(job.phase, 'value') else str(job.phase),
+        status=job.status.value,
+        tables=job.tables,
+        current_table=job.current_table,
+        progress_percent=job.progress_percent,
+        total_rows_processed=job.total_rows_processed,
+        total_rows_failed=job.total_rows_failed,
+        config_id=job.config_id,
+        build_summary=job.build_summary,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        duration_seconds=job.duration_seconds,
+    )
+
+
 # -------------------------------------------------------------------------
 # Ingestion Job Endpoints
 # -------------------------------------------------------------------------
@@ -944,25 +971,19 @@ async def create_job(
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Invalid job type: {request.job_type}")
 
+    try:
+        phase = IngestionPhase(request.phase)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid phase: {request.phase}. Must be: master_data, cdc, transaction")
+
     job = await service.create_job(
         connection_id=request.connection_id,
         job_type=job_type,
         tables=request.tables,
+        phase=phase,
     )
 
-    return JobResponse(
-        id=job.id,
-        job_type=job.job_type.value,
-        status=job.status.value,
-        tables=job.tables,
-        current_table=job.current_table,
-        progress_percent=job.progress_percent,
-        total_rows_processed=job.total_rows_processed,
-        total_rows_failed=job.total_rows_failed,
-        started_at=job.started_at,
-        completed_at=job.completed_at,
-        duration_seconds=job.duration_seconds,
-    )
+    return _job_to_response(job)
 
 
 @router.post("/jobs/{job_id}/start", response_model=JobResponse, tags=["sap-ingestion"])
@@ -983,24 +1004,87 @@ async def start_job(
     import asyncio
     asyncio.create_task(_run_ingestion(job_id, current_user.tenant_id))
 
-    return JobResponse(
-        id=job.id,
-        job_type=job.job_type.value,
-        status=job.status.value,
-        tables=job.tables,
-        current_table=job.current_table,
-        progress_percent=job.progress_percent,
-        total_rows_processed=job.total_rows_processed,
-        total_rows_failed=job.total_rows_failed,
-        started_at=job.started_at,
-        completed_at=job.completed_at,
-        duration_seconds=job.duration_seconds,
-    )
+    return _job_to_response(job)
+
+
+def _find_csv_file(csv_dir: "Path", table_name: str) -> "Optional[Path]":
+    """Find a CSV file for a table name (handles descriptive suffixes like MARC_material_plant.csv)."""
+    from pathlib import Path
+    tn_upper = table_name.upper()
+    # Exact match first
+    for f in csv_dir.glob("*.csv"):
+        if f.stem.upper() == tn_upper:
+            return f
+    # Prefix match (e.g. MARC_material_plant.csv matches MARC)
+    for f in csv_dir.glob("*.csv"):
+        if f.stem.upper().startswith(tn_upper + "_") or f.stem.upper().startswith(tn_upper + "-"):
+            return f
+    # Substring match
+    for f in csv_dir.glob("*.csv"):
+        if tn_upper in f.stem.upper():
+            return f
+    return None
+
+
+async def _read_csv_tables(
+    csv_dir: "Path", tables: list, job_id: int, tenant_id: int, service
+) -> "Tuple[Dict[str, Any], int, int]":
+    """Read CSV files for all tables, updating progress. Returns (sap_data, total_rows, total_failed)."""
+    import pandas as pd
+
+    sap_data = {}
+    total_rows = 0
+    total_failed = 0
+
+    for idx, table_name in enumerate(tables):
+        # Check cancellation
+        current_job = await service.get_job(job_id)
+        if current_job and current_job.status == JobStatus.CANCELLED:
+            logger.info(f"Job {job_id} was cancelled, stopping")
+            return sap_data, total_rows, total_failed
+
+        csv_file = _find_csv_file(csv_dir, table_name)
+        rows_processed = 0
+        rows_failed = 0
+
+        if csv_file and csv_file.exists():
+            try:
+                df = pd.read_csv(csv_file, dtype=str, na_values=["", "NULL"])
+                rows_processed = len(df)
+                # Normalize column names to uppercase for SAPConfigBuilder
+                df.columns = [c.upper() for c in df.columns]
+                # Store under normalized table name
+                from app.services.sap_ingestion_monitoring_service import SAPIngestionMonitoringService
+                norm_name = SAPIngestionMonitoringService._extract_table_name(table_name)
+                sap_data[norm_name] = df
+                logger.info(f"Job {job_id}: Read {rows_processed} rows from {csv_file.name} → {norm_name}")
+            except Exception as e:
+                rows_failed = 1
+                logger.warning(f"Job {job_id}: Failed to read {csv_file}: {e}")
+        else:
+            logger.info(f"Job {job_id}: No CSV file found for table {table_name}")
+
+        total_rows += rows_processed
+        total_failed += rows_failed
+
+        await service.update_job_progress(
+            job_id=job_id,
+            table=table_name,
+            rows_processed=rows_processed,
+            rows_failed=rows_failed,
+        )
+
+    return sap_data, total_rows, total_failed
 
 
 async def _run_ingestion(job_id: int, tenant_id: int):
-    """Background task: process CSV files for an ingestion job."""
-    import pandas as pd
+    """
+    Background task: 3-phase SAP ingestion pipeline.
+
+    Phase 1 (MASTER_DATA): Read master data CSVs → build SC config via SAPConfigBuilder
+    Phase 2 (CDC): Read master data CSVs → compare against existing config → child config if changed
+    Phase 3 (TRANSACTION): Read transaction CSVs → import against active SC config
+    """
     from pathlib import Path
     from app.db.session import async_session_factory
     from app.services.sap_deployment_service import SAPConnectionConfig, ConnectionMethod
@@ -1022,7 +1106,6 @@ async def _run_ingestion(job_id: int, tenant_id: int):
             connection = SAPConnectionConfig.from_db(conn_row)
 
             if connection.connection_method != ConnectionMethod.CSV or not connection.csv_directory:
-                # For non-CSV, just mark as completed (real RFC/OData processing TBD)
                 await service.complete_job(job_id, JobStatus.COMPLETED)
                 return
 
@@ -1031,66 +1114,266 @@ async def _run_ingestion(job_id: int, tenant_id: int):
                 await service.complete_job(job_id, JobStatus.FAILED)
                 return
 
-            total_rows = 0
-            total_failed = 0
+            # Read all CSV files
+            sap_data, total_rows, total_failed = await _read_csv_tables(
+                csv_dir, job.tables, job_id, tenant_id, service
+            )
 
-            for idx, table_name in enumerate(job.tables):
-                # Check if job was cancelled
-                current_job = await service.get_job(job_id)
-                if current_job and current_job.status == JobStatus.CANCELLED:
-                    logger.info(f"Job {job_id} was cancelled, stopping")
-                    return
+            if not sap_data:
+                await service.complete_job(job_id, JobStatus.FAILED)
+                return
 
-                # Find the CSV file (case-insensitive search)
-                csv_file = None
-                for f in csv_dir.glob("*.csv"):
-                    if f.stem.upper() == table_name.upper() or f.stem.lower() == table_name.lower():
-                        csv_file = f
-                        break
-                if not csv_file:
-                    # Try with underscores for names like ADRC_addresses
-                    for f in csv_dir.glob("*.csv"):
-                        if table_name.upper() in f.stem.upper():
-                            csv_file = f
-                            break
+            # Phase-specific processing
+            if job.phase == IngestionPhase.MASTER_DATA:
+                await _run_phase1_master_data(db, service, job_id, tenant_id, sap_data)
+            elif job.phase == IngestionPhase.CDC:
+                await _run_phase2_cdc(db, service, job_id, tenant_id, sap_data)
+            elif job.phase == IngestionPhase.TRANSACTION:
+                await _run_phase3_transaction(db, service, job_id, tenant_id, sap_data)
+            else:
+                # Legacy: just mark completed
+                final_status = JobStatus.COMPLETED if total_failed == 0 else JobStatus.PARTIAL
+                await service.complete_job(job_id, final_status)
 
-                rows_processed = 0
-                rows_failed = 0
-
-                if csv_file and csv_file.exists():
-                    try:
-                        df = pd.read_csv(csv_file, dtype=str, na_values=["", "NULL"])
-                        rows_processed = len(df)
-                        logger.info(f"Job {job_id}: Read {rows_processed} rows from {csv_file.name}")
-                    except Exception as e:
-                        rows_failed = 1
-                        logger.warning(f"Job {job_id}: Failed to read {csv_file}: {e}")
-                else:
-                    logger.info(f"Job {job_id}: No CSV file found for table {table_name}")
-
-                total_rows += rows_processed
-                total_failed += rows_failed
-
-                # Update progress
-                await service.update_job_progress(
-                    job_id=job_id,
-                    table=table_name,
-                    rows_processed=rows_processed,
-                    rows_failed=rows_failed,
-                )
-
-            # Mark completed
-            final_status = JobStatus.COMPLETED if total_failed == 0 else JobStatus.PARTIAL
-            await service.complete_job(job_id, final_status)
-            logger.info(f"Job {job_id} completed: {total_rows} rows, {total_failed} failed")
+            logger.info(f"Job {job_id} phase={job.phase.value} completed: {total_rows} rows")
 
         except Exception as e:
-            logger.error(f"Job {job_id} failed: {e}")
+            logger.error(f"Job {job_id} failed: {e}", exc_info=True)
             try:
                 service = create_ingestion_monitoring_service(db, tenant_id)
                 await service.complete_job(job_id, JobStatus.FAILED)
             except Exception:
                 pass
+
+
+async def _run_phase1_master_data(db, service, job_id: int, tenant_id: int, sap_data: dict):
+    """
+    Phase 1: Build a new SC config from master data.
+
+    Uses SAPConfigBuilder to create sites, products, lanes, BOMs, inventory policies,
+    and forecasts from the extracted SAP tables.
+    """
+    builder = SAPConfigBuilder(db, tenant_id)
+    config_name = builder.suggest_config_name(sap_data)
+
+    try:
+        result = await builder.build(
+            sap_data=sap_data,
+            config_name=config_name,
+            options={
+                "include_forecasts": True,
+                "include_inventory": True,
+                "default_inv_policy": "doc_dem",
+                "default_safety_days": 14,
+            },
+        )
+
+        # Store the build result on the job
+        await service.set_job_build_result(
+            job_id=job_id,
+            config_id=result["config_id"],
+            build_summary=result["summary"],
+        )
+        await service.complete_job(job_id, JobStatus.COMPLETED)
+        logger.info(
+            f"Phase 1 complete: config_id={result['config_id']}, "
+            f"name='{config_name}', summary={result['summary']}"
+        )
+
+    except Exception as e:
+        logger.error(f"Phase 1 config build failed: {e}", exc_info=True)
+        await service.complete_job(job_id, JobStatus.FAILED)
+
+
+async def _run_phase2_cdc(db, service, job_id: int, tenant_id: int, sap_data: dict):
+    """
+    Phase 2: Change Data Capture — compare new master data against active config.
+
+    If topology changes detected (new/removed sites, lanes, products), creates a
+    child config branched from the active config and makes it the new active.
+    If no changes detected, marks job as completed with no new config.
+    """
+    from sqlalchemy import text as sql_text
+
+    # Find the active config for this tenant
+    result = await db.execute(
+        sql_text("""
+            SELECT id, name FROM supply_chain_configs
+            WHERE tenant_id = :tid AND is_active = true
+            ORDER BY id DESC LIMIT 1
+        """),
+        {"tid": tenant_id}
+    )
+    active_row = result.mappings().first()
+    if not active_row:
+        logger.warning(f"CDC: No active config for tenant {tenant_id}. Run Phase 1 first.")
+        await service.complete_job(job_id, JobStatus.FAILED)
+        return
+
+    active_config_id = active_row["id"]
+    active_config_name = active_row["name"]
+
+    # Compare key entities: sites (from T001W), products (from MARA/MARC)
+    changes_detected = False
+    change_summary = {"sites_added": 0, "sites_removed": 0, "products_added": 0, "products_removed": 0}
+
+    # Check site changes
+    t001w = sap_data.get("T001W")
+    if t001w is not None and "WERKS" in t001w.columns:
+        sap_site_keys = set(t001w["WERKS"].dropna().unique())
+        existing_result = await db.execute(
+            sql_text("SELECT name FROM site WHERE config_id = :cid"),
+            {"cid": active_config_id}
+        )
+        existing_sites = {r["name"] for r in existing_result.mappings().all()}
+        new_sites = sap_site_keys - existing_sites
+        removed_sites = existing_sites - sap_site_keys - {"Market Supply", "Market Demand"}
+        if new_sites or removed_sites:
+            changes_detected = True
+            change_summary["sites_added"] = len(new_sites)
+            change_summary["sites_removed"] = len(removed_sites)
+
+    # Check product changes
+    mara = sap_data.get("MARA")
+    if mara is not None and "MATNR" in mara.columns:
+        sap_product_ids = set(mara["MATNR"].dropna().unique())
+        existing_result = await db.execute(
+            sql_text("SELECT id FROM product WHERE config_id = :cid"),
+            {"cid": active_config_id}
+        )
+        existing_products = {r["id"] for r in existing_result.mappings().all()}
+        new_products = sap_product_ids - existing_products
+        removed_products = existing_products - sap_product_ids
+        if new_products or removed_products:
+            changes_detected = True
+            change_summary["products_added"] = len(new_products)
+            change_summary["products_removed"] = len(removed_products)
+
+    if not changes_detected:
+        logger.info(f"CDC: No topology changes detected against config {active_config_id}")
+        await service.set_job_build_result(
+            job_id=job_id,
+            config_id=active_config_id,
+            build_summary={"cdc_result": "no_changes", **change_summary},
+        )
+        await service.complete_job(job_id, JobStatus.COMPLETED)
+        return
+
+    # Changes detected — build new child config
+    logger.info(f"CDC: Changes detected: {change_summary}. Building child config.")
+    builder = SAPConfigBuilder(db, tenant_id)
+    config_name = f"{active_config_name} (CDC {datetime.now().strftime('%Y-%m-%d %H:%M')})"
+
+    try:
+        result = await builder.build(sap_data=sap_data, config_name=config_name)
+
+        # Set parent lineage
+        new_config_id = result["config_id"]
+        await db.execute(
+            sql_text("""
+                UPDATE supply_chain_configs
+                SET parent_config_id = :parent_id, base_config_id = :base_id
+                WHERE id = :new_id
+            """),
+            {"parent_id": active_config_id, "base_id": active_config_id, "new_id": new_config_id}
+        )
+        # Deactivate old, activate new
+        await db.execute(
+            sql_text("UPDATE supply_chain_configs SET is_active = false WHERE id = :old_id"),
+            {"old_id": active_config_id}
+        )
+        await db.execute(
+            sql_text("UPDATE supply_chain_configs SET is_active = true WHERE id = :new_id"),
+            {"new_id": new_config_id}
+        )
+        await db.commit()
+
+        await service.set_job_build_result(
+            job_id=job_id,
+            config_id=new_config_id,
+            build_summary={
+                "cdc_result": "changes_detected",
+                "parent_config_id": active_config_id,
+                **change_summary,
+                **result["summary"],
+            },
+        )
+        await service.complete_job(job_id, JobStatus.COMPLETED)
+        logger.info(f"CDC complete: new config {new_config_id} (child of {active_config_id})")
+
+    except Exception as e:
+        logger.error(f"CDC config build failed: {e}", exc_info=True)
+        await service.complete_job(job_id, JobStatus.FAILED)
+
+
+async def _run_phase3_transaction(db, service, job_id: int, tenant_id: int, sap_data: dict):
+    """
+    Phase 3: Import transaction data against the active SC config.
+
+    Requires an active SC config (from Phase 1 or Phase 2).
+    Creates orders, production orders, inventory movements, etc.
+    """
+    from sqlalchemy import text as sql_text
+
+    # Find active config
+    result = await db.execute(
+        sql_text("""
+            SELECT id FROM supply_chain_configs
+            WHERE tenant_id = :tid AND is_active = true
+            ORDER BY id DESC LIMIT 1
+        """),
+        {"tid": tenant_id}
+    )
+    active_row = result.mappings().first()
+    if not active_row:
+        logger.warning(f"Phase 3: No active config for tenant {tenant_id}. Run Phase 1 first.")
+        await service.complete_job(job_id, JobStatus.FAILED)
+        return
+
+    active_config_id = active_row["id"]
+
+    # Use SAPConfigBuilder to import transactional data only
+    builder = SAPConfigBuilder(db, tenant_id)
+    builder._data = sap_data
+
+    try:
+        # Load existing config context
+        from sqlalchemy import select
+        from app.models.supply_chain_config import SupplyChainConfig, Site
+        from app.models.sc_entities import Product
+
+        config_result = await db.execute(
+            select(SupplyChainConfig).where(SupplyChainConfig.id == active_config_id)
+        )
+        builder._config = config_result.scalar_one_or_none()
+        if not builder._config:
+            await service.complete_job(job_id, JobStatus.FAILED)
+            return
+
+        # Load existing sites and products for FK resolution
+        site_result = await db.execute(select(Site).where(Site.config_id == active_config_id))
+        for s in site_result.scalars().all():
+            builder._sites[s.name] = s
+
+        product_result = await db.execute(select(Product).where(Product.config_id == active_config_id))
+        for p in product_result.scalars().all():
+            builder._products[p.id] = p
+
+        # Execute step 9 (transactional data)
+        order_counts = await builder._create_transactional_data({})
+        await db.commit()
+
+        await service.set_job_build_result(
+            job_id=job_id,
+            config_id=active_config_id,
+            build_summary={"transaction_import": True, **order_counts},
+        )
+        await service.complete_job(job_id, JobStatus.COMPLETED)
+        logger.info(f"Phase 3 complete: transactions imported against config {active_config_id}")
+
+    except Exception as e:
+        logger.error(f"Phase 3 transaction import failed: {e}", exc_info=True)
+        await service.complete_job(job_id, JobStatus.FAILED)
 
 
 @router.post("/jobs/{job_id}/cancel", tags=["sap-ingestion"])
@@ -1128,19 +1411,7 @@ async def update_job(
     )
     if not job:
         raise HTTPException(status_code=400, detail="Job not found or not in pending status")
-    return JobResponse(
-        id=job.id,
-        job_type=job.job_type.value,
-        status=job.status.value,
-        tables=job.tables,
-        current_table=job.current_table,
-        progress_percent=job.progress_percent,
-        total_rows_processed=job.total_rows_processed,
-        total_rows_failed=job.total_rows_failed,
-        started_at=job.started_at,
-        completed_at=job.completed_at,
-        duration_seconds=job.duration_seconds,
-    )
+    return _job_to_response(job)
 
 
 @router.post("/jobs/{job_id}/progress", tags=["sap-ingestion"])
@@ -1181,19 +1452,7 @@ async def complete_job(
 
     job = await service.complete_job(job_id, job_status)
 
-    return JobResponse(
-        id=job.id,
-        job_type=job.job_type.value,
-        status=job.status.value,
-        tables=job.tables,
-        current_table=job.current_table,
-        progress_percent=job.progress_percent,
-        total_rows_processed=job.total_rows_processed,
-        total_rows_failed=job.total_rows_failed,
-        started_at=job.started_at,
-        completed_at=job.completed_at,
-        duration_seconds=job.duration_seconds,
-    )
+    return _job_to_response(job)
 
 
 @router.delete("/jobs/{job_id}", tags=["sap-ingestion"])
@@ -1225,22 +1484,7 @@ async def list_jobs(
     else:
         jobs = await service.get_recent_jobs(limit)
 
-    return [
-        JobResponse(
-            id=job.id,
-            job_type=job.job_type.value,
-            status=job.status.value,
-            tables=job.tables,
-            current_table=job.current_table,
-            progress_percent=job.progress_percent,
-            total_rows_processed=job.total_rows_processed,
-            total_rows_failed=job.total_rows_failed,
-            started_at=job.started_at,
-            completed_at=job.completed_at,
-            duration_seconds=job.duration_seconds,
-        )
-        for job in jobs
-    ]
+    return [_job_to_response(job) for job in jobs]
 
 
 @router.get("/jobs/{job_id}", response_model=JobResponse, tags=["sap-ingestion"])
@@ -1256,19 +1500,7 @@ async def get_job(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    return JobResponse(
-        id=job.id,
-        job_type=job.job_type.value,
-        status=job.status.value,
-        tables=job.tables,
-        current_table=job.current_table,
-        progress_percent=job.progress_percent,
-        total_rows_processed=job.total_rows_processed,
-        total_rows_failed=job.total_rows_failed,
-        started_at=job.started_at,
-        completed_at=job.completed_at,
-        duration_seconds=job.duration_seconds,
-    )
+    return _job_to_response(job)
 
 
 # -------------------------------------------------------------------------
