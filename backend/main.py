@@ -5944,6 +5944,24 @@ def list_tenants_endpoint(
     return service.get_tenants()
 
 
+@api.get("/tenants/{tenant_id}", response_model=TenantSchema, tags=["tenants"])
+def get_tenant_endpoint(
+    tenant_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_sync_session),
+):
+    """Get a single tenant by ID. Accessible to system admins and users of that tenant."""
+    user_tenant_id = current_user.get("tenant_id")
+    is_admin = current_user.get("user_type") in ("SYSTEM_ADMIN", "TENANT_ADMIN")
+    if not is_admin and user_tenant_id != tenant_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    service = TenantService(db)
+    tenant = service.get_tenant(tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    return tenant
+
+
 @api.post("/tenants/default", response_model=TenantSchema, tags=["tenants"])
 def ensure_default_tenant_endpoint(
     current_user: Dict[str, Any] = Depends(get_current_user),
