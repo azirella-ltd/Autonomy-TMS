@@ -37,7 +37,7 @@ from sqlalchemy.dialects import postgresql
 # Revision identifiers
 # ---------------------------------------------------------------------------
 revision = "20260311_site_tp_refactor"
-down_revision = "ddfb5f63890a"   # rename_index_use_sc_planning — last known migration
+down_revision = "ddfb5f63890a"   # rename_index_use_sc_planning — last known migration before merge
 branch_labels = None
 depends_on = None
 
