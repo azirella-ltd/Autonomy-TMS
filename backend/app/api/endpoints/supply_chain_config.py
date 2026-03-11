@@ -192,10 +192,14 @@ get_lane_or_404 = get_transportation_lane_or_404
 def _master_type_to_node_type(master_type: str) -> models.NodeType:
     canonical = str(master_type or "").strip().lower()
     mapping: Dict[str, models.NodeType] = {
-        "market_supply": models.NodeType.MARKET_SUPPLY,
-        "market_demand": models.NodeType.MARKET_DEMAND,
+        # Current names
+        "vendor": models.NodeType.VENDOR,
+        "customer": models.NodeType.CUSTOMER,
         "manufacturer": models.NodeType.MANUFACTURER,
         "inventory": models.NodeType.INVENTORY,
+        # Legacy names (backward compatibility)
+        "market_supply": models.NodeType.VENDOR,
+        "market_demand": models.NodeType.CUSTOMER,
     }
     return mapping.get(canonical, models.NodeType.MANUFACTURER)
 
@@ -525,7 +529,8 @@ def _compute_config_hash(db: Session, config_id: int) -> Optional[str]:
         "market_demands": [
             {
                 "product_id": md.product_id,
-                "market_id": md.market_id,
+                "trading_partner_id": md.trading_partner_id,
+                "market_id": md.market_id,  # deprecated — use trading_partner_id
                 "demand_pattern": md.demand_pattern,
             }
             for md in sorted(market_demands, key=lambda obj: obj.id)

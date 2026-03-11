@@ -44,8 +44,9 @@ import SankeyDiagram from '../charts/SankeyDiagram';
 import SankeyMetricLegend from '../charts/SankeyMetricLegend';
 import GeospatialSupplyChain from '../visualization/GeospatialSupplyChain';
 
-const MARKET_DEMAND_TYPE = 'MARKET_DEMAND';
-const MARKET_SUPPLY_TYPE = 'MARKET_SUPPLY';
+// External TradingPartner node types (AWS SC DM)
+const VENDOR_TYPE = 'VENDOR';     // external supplier (tpartner_type='vendor')
+const CUSTOMER_TYPE = 'CUSTOMER'; // external demand  (tpartner_type='customer')
 
 const canonicalizeTypeKey = (value) => {
   if (value === undefined || value === null) {
@@ -258,6 +259,8 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
         definition?.label,
         definition?.group_type,
         definition?.groupType,
+        definition?.master_type,
+        definition?.tpartner_type,
       ]);
       candidateTokens.forEach((token) => {
         const normalized = normalizeTypeToken(token);
@@ -583,14 +586,10 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
 
   const typeStyles = useMemo(
     () => ({
+      // ── Internal company-controlled sites ─────────────────────────────────
       SUPPLIER: {
         fill: SANKEY_COLORS.primary.light,
         stroke: SANKEY_COLORS.primary.main,
-        renderer: 'roundedRect',
-      },
-      MARKET_SUPPLY: {
-        fill: SANKEY_COLORS.primary.main,
-        stroke: SANKEY_COLORS.primary.dark,
         renderer: 'roundedRect',
       },
       MANUFACTURER: {
@@ -613,10 +612,22 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
         stroke: SANKEY_COLORS.secondary.dark,
         renderer: 'pill',
       },
-      MARKET_DEMAND: {
-        fill: SANKEY_COLORS.error.main,
-        stroke: SANKEY_COLORS.error.dark,
+      // ── External TradingPartner nodes (dashed border = outside authority) ─
+      // Vendors (upstream sources) — blue-tinted diamond
+      [VENDOR_TYPE]: {
+        fill: '#dbeafe',
+        stroke: '#1d4ed8',
+        strokeDasharray: '4 2',
         renderer: 'diamond',
+        badge: 'Vendor',
+      },
+      // Customers (downstream sinks) — rose-tinted diamond
+      [CUSTOMER_TYPE]: {
+        fill: '#ffe4e6',
+        stroke: '#be123c',
+        strokeDasharray: '4 2',
+        renderer: 'diamond',
+        badge: 'Customer',
       },
       DEFAULT: {
         fill: SANKEY_COLORS.grey[500],
@@ -1355,16 +1366,17 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
       registerEdge(link.sourceType, link.targetType);
     });
 
-    // Only register MARKET_DEMAND / MARKET_SUPPLY if sites with those types actually exist
-    const demandKey = normalizeTypeToken(MARKET_DEMAND_TYPE);
-    const supplyKey = normalizeTypeToken(MARKET_SUPPLY_TYPE);
-    if (normalizedTypeSet.has(demandKey)) registerType(MARKET_DEMAND_TYPE);
-    if (normalizedTypeSet.has(supplyKey)) registerType(MARKET_SUPPLY_TYPE);
+    // Register external TradingPartner endpoint types if nodes of those types exist.
+    const customerKey = normalizeTypeToken(CUSTOMER_TYPE);
+    const vendorKey = normalizeTypeToken(VENDOR_TYPE);
+    if (normalizedTypeSet.has(customerKey)) registerType(CUSTOMER_TYPE);
+    if (normalizedTypeSet.has(vendorKey)) registerType(VENDOR_TYPE);
 
+    // BFS from customer (downstream sink) to assign column positions
     const distanceByType = new Map();
     const queue = [];
-    if (normalizedTypeSet.has(demandKey)) {
-      queue.push([demandKey, 0]);
+    if (normalizedTypeSet.has(customerKey)) {
+      queue.push([customerKey, 0]);
     }
 
     while (queue.length > 0) {
@@ -1413,8 +1425,9 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
 
     const assignedDistances = Array.from(distanceByType.values());
     const maxDistance = assignedDistances.length ? Math.max(...assignedDistances) : 0;
-    if (normalizedTypeSet.has(supplyKey) && !distanceByType.has(supplyKey)) {
-      distanceByType.set(supplyKey, maxDistance + 1);
+    // Place vendor (upstream source) type at the far right (highest column index)
+    if (normalizedTypeSet.has(vendorKey) && !distanceByType.has(vendorKey)) {
+      distanceByType.set(vendorKey, maxDistance + 1);
     }
 
     const unresolvedTypes = typeList.filter((typeKey) => !distanceByType.has(typeKey));
@@ -1432,7 +1445,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
         const noun = unresolvedLabels.length === 1 ? 'site type' : 'site types';
         return {
           data: null,
-          error: `Unable to derive a lane-based order for ${noun} ${unresolvedList}. Ensure every type participates in a forward lane path that eventually reaches Market Demand.`,
+          error: `Unable to derive a lane-based order for ${noun} ${unresolvedList}. Ensure every type participates in a forward lane path that eventually reaches a Customer endpoint.`,
         };
       }
     }
@@ -1654,14 +1667,21 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
         }
       : null;
 
-    const supplyNode = normalizedEffectiveNodes.find(
-      (node) => String(node.type || '').toUpperCase() === 'MARKET_SUPPLY'
+    // Return links: customer sinks back to vendor sources (for circular/feedback display)
+    const vendorNode = normalizedEffectiveNodes.find(
+      (node) => {
+        const t = String(node.type || '').toUpperCase();
+        return t === 'VENDOR';
+      }
     );
 
     const returnLinks = [];
-    if (supplyNode) {
+    if (vendorNode) {
       normalizedEffectiveNodes
-        .filter((node) => String(node.type || '').toUpperCase() === 'MARKET_DEMAND')
+        .filter((node) => {
+          const t = String(node.type || '').toUpperCase();
+          return t === 'CUSTOMER';
+        })
         .forEach((marketNode) => {
           const inboundTotal = effectiveLinks
             .filter((link) => String(link.target) === String(marketNode.id))
@@ -1674,9 +1694,9 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
           const feedbackMagnitude = Math.max(inboundTotal, outboundTotal);
           const value = feedbackMagnitude > 0 ? feedbackMagnitude : MIN_LINK_VALUE;
           returnLinks.push({
-            id: `return-${marketNode.id}-${supplyNode.id}`,
+            id: `return-${marketNode.id}-${vendorNode.id}`,
             sourceId: String(marketNode.id),
-            targetId: String(supplyNode.id),
+            targetId: String(vendorNode.id),
             value,
           });
         });
@@ -1749,9 +1769,11 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
     // Fix: iteratively scale the smaller side's links up at each intermediate
     // node so sum_in === sum_out. Iterate because scaling links at one node
     // changes the sums at adjacent nodes.
+    // Terminal nodes = external TradingPartner endpoints (vendor sources + customer sinks).
+    // Flow conservation balancing skips these since they are unbounded sources/sinks.
     const terminalTypes = new Set([
-      normalizeTypeToken(MARKET_SUPPLY_TYPE),
-      normalizeTypeToken(MARKET_DEMAND_TYPE),
+      normalizeTypeToken(VENDOR_TYPE),
+      normalizeTypeToken(CUSTOMER_TYPE),
     ]);
     const nodeLookupById = new Map(
       sankeyNodes.map((n) => [String(n.id), n])
@@ -2546,6 +2568,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
                             id: site.id,
                             name: site.name,
                             role: site.type || site.dag_type,
+                            master_type: site.master_type || site.dag_type,
                             latitude: site.geography?.latitude,
                             longitude: site.geography?.longitude,
                             capacity: Number.isFinite(cap) ? cap : 0,
@@ -2554,6 +2577,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
                                   .filter(Boolean)
                                   .join(', ')
                               : null,
+                            attributes: attrs,
                           };
                         });
                         // Transform lanes to edges for map component

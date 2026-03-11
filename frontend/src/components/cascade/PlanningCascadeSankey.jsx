@@ -42,26 +42,27 @@ import {
   getProducts,
 } from '../../services/supplyChainConfigService';
 
-// Column order: upstream (supply) → downstream (demand)
+// Column order: upstream (vendor source) → downstream (customer sink)
+// AWS SC DM: VENDOR = external supplier (TradingPartner), CUSTOMER = external demand
 const COLUMN_ORDER = [
-  'MARKET_SUPPLY',
+  'VENDOR',
   'INVENTORY',
   'MANUFACTURER',
   'DISTRIBUTOR',
   'WHOLESALER',
   'RETAILER',
-  'MARKET_DEMAND',
+  'CUSTOMER',
 ];
 
 // Site type colors (consistent with SupplyChainConfigSankey)
 const TYPE_COLORS = {
-  MARKET_SUPPLY: '#8b5cf6',   // violet
+  VENDOR: '#1d4ed8',          // blue (external supplier diamond)
   INVENTORY: '#0ea5e9',       // sky blue
   MANUFACTURER: '#0891b2',    // cyan
   DISTRIBUTOR: '#f59e0b',     // amber
   WHOLESALER: '#f97316',      // orange
   RETAILER: '#3b82f6',        // blue
-  MARKET_DEMAND: '#ef4444',   // red
+  CUSTOMER: '#be123c',        // rose (external customer diamond)
 };
 
 // Geography hierarchy levels
@@ -341,18 +342,23 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className
     );
     if (sitesWithCoords.length === 0) return null;
 
-    const mapSites = rawSites.map((site) => ({
-      id: site.id,
-      name: site.name,
-      role: site.type || site.dag_type || site.master_type,
-      latitude: site.geography?.latitude,
-      longitude: site.geography?.longitude,
-      location: site.geography
-        ? [site.geography.city, site.geography.state_prov, site.geography.country]
-            .filter(Boolean)
-            .join(', ')
-        : null,
-    }));
+    const mapSites = rawSites.map((site) => {
+      const attrs = typeof site.attributes === 'object' && site.attributes ? site.attributes : {};
+      return {
+        id: site.id,
+        name: site.name,
+        role: site.type || site.dag_type || site.master_type,
+        master_type: site.master_type || site.dag_type,
+        latitude: site.geography?.latitude,
+        longitude: site.geography?.longitude,
+        location: site.geography
+          ? [site.geography.city, site.geography.state_prov, site.geography.country]
+              .filter(Boolean)
+              .join(', ')
+          : null,
+        attributes: attrs,
+      };
+    });
 
     const mapEdges = rawLanes.map((lane) => ({
       from: lane.from_site_id,

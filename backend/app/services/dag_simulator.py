@@ -210,9 +210,9 @@ class LoadedTopology:
     vendor_reliability: Dict[str, float]             # supplier_name -> reliability (0-1)
 
     # Topology analysis
-    supply_sites: List[Node]      # MARKET_SUPPLY
+    supply_sites: List[Node]      # vendor TradingPartner endpoints (VENDOR / MARKET_SUPPLY legacy)
     inventory_sites: List[Node]   # INVENTORY / MANUFACTURER
-    demand_sites: List[Node]      # MARKET_DEMAND
+    demand_sites: List[Node]      # customer TradingPartner endpoints (CUSTOMER / MARKET_DEMAND legacy)
 
     # DAG structure: site_name -> list of (upstream_site_name, lane)
     upstream_map: Dict[str, List[Tuple[str, TransportationLane]]]
@@ -268,7 +268,7 @@ async def load_topology(config_id: int, db: AsyncSession) -> LoadedTopology:
             downstream_map[source.name].append((target.name, lane))
             upstream_map[target.name].append((source.name, lane))
 
-    # Topological sort (upstream first: MARKET_SUPPLY → INVENTORY → MARKET_DEMAND)
+    # Topological sort (upstream first: VENDOR → INVENTORY → CUSTOMER)
     topo_order = _topological_sort(sites, lanes, site_by_id)
 
     # Load forecasts
@@ -391,7 +391,7 @@ class DAGSimulator:
             # Step 1: Receive arriving shipments
             self._receive_shipments(period)
 
-            # Step 2: Generate demand at MARKET_DEMAND sites
+            # Step 2: Generate demand at CUSTOMER sites
             demand_by_site = self._generate_demand(period, rng, demand_noise_cv)
 
             # Step 3: Process demand upstream through DAG
@@ -529,7 +529,7 @@ class DAGSimulator:
     def _generate_demand(
         self, period: int, rng: np.random.Generator, noise_cv: float
     ) -> Dict[str, Dict[str, float]]:
-        """Generate demand at MARKET_DEMAND sites from forecasts + noise."""
+        """Generate demand at CUSTOMER sites from forecasts + noise."""
         demand_by_site: Dict[str, Dict[str, float]] = {}
         topo = self.topology
 
@@ -686,7 +686,7 @@ class DAGSimulator:
             # Will be recorded in _record_period_state
 
     def _process_supply_site(self, site: Node, period: int, sim_date: date):
-        """Process a MARKET_SUPPLY site: fulfill upstream orders."""
+        """Process a VENDOR site: fulfill upstream orders."""
         topo = self.topology
 
         # Check for pending orders to this supplier
@@ -1441,23 +1441,27 @@ class DAGSimulator:
 
 
 def _is_supply(site: Node) -> bool:
-    """Check if site is a supply source."""
+    """Check if site is a supply source (VENDOR or legacy MARKET_SUPPLY)."""
     master = getattr(site, 'master_type', '') or ''
     node_type = getattr(site, 'node_type', '') or ''
+    tpartner_type = getattr(site, 'tpartner_type', '') or ''
     return (
-        master.upper() == 'MARKET_SUPPLY'
-        or node_type.upper() == 'MARKET_SUPPLY'
+        master.upper() in ('VENDOR', 'MARKET_SUPPLY')
+        or node_type.upper() in ('VENDOR', 'MARKET_SUPPLY')
+        or tpartner_type.lower() == 'vendor'
         or 'SUPPLY' in master.upper()
     )
 
 
 def _is_demand(site: Node) -> bool:
-    """Check if site is a demand sink."""
+    """Check if site is a demand sink (CUSTOMER or legacy MARKET_DEMAND)."""
     master = getattr(site, 'master_type', '') or ''
     node_type = getattr(site, 'node_type', '') or ''
+    tpartner_type = getattr(site, 'tpartner_type', '') or ''
     return (
-        master.upper() == 'MARKET_DEMAND'
-        or node_type.upper() == 'MARKET_DEMAND'
+        master.upper() in ('CUSTOMER', 'MARKET_DEMAND')
+        or node_type.upper() in ('CUSTOMER', 'MARKET_DEMAND')
+        or tpartner_type.lower() == 'customer'
         or 'DEMAND' in master.upper()
     )
 

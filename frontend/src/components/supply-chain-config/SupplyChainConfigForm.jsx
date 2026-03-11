@@ -71,26 +71,24 @@ import TransportationLaneForm from './TransportationLaneForm';  // AWS SC DM sta
 import ProductForm from './ProductForm';
 import SourcingTreeForm from './SourcingTreeForm';
 import BOMForm from './BOMForm';
-import MarketManager from './MarketManager';
-import MarketDemandForm from './MarketDemandForm';
+import VendorManager from './VendorManager';
+import CustomerManager from './CustomerManager';
 import SiteTypeManager from './SiteTypeManager';
 
+// AWS SC DM: Only internal site master types.
+// External parties (vendor/customer) are TradingPartner records, not Sites.
 const canonicalizeMasterType = (rawMaster, typeKey) => {
   const canonicalMaster = canonicalizeSiteTypeKey(rawMaster);
   const canonicalType = canonicalizeSiteTypeKey(typeKey);
 
-  if (['market_demand', 'market', 'demand'].includes(canonicalMaster)) return 'market_demand';
-  if (['market_supply', 'supply'].includes(canonicalMaster)) return 'market_supply';
   if (['manufacturer', 'mfg'].includes(canonicalMaster)) return 'manufacturer';
-  if (['inventory', 'retailer', 'wholesaler', 'distributor', 'supplier'].includes(canonicalMaster)) {
+  if (['inventory', 'retailer', 'wholesaler', 'distributor'].includes(canonicalMaster)) {
     return 'inventory';
   }
 
-  if (['market_demand', 'market', 'demand'].includes(canonicalType)) return 'market_demand';
-  if (['market_supply', 'supply'].includes(canonicalType)) return 'market_supply';
   if (/mfg|manufactur/.test(canonicalType)) return 'manufacturer';
   if (
-    ['retailer', 'wholesaler', 'distributor', 'inventory', 'supplier'].includes(canonicalType) ||
+    ['retailer', 'wholesaler', 'distributor', 'inventory'].includes(canonicalType) ||
     !canonicalType
   ) {
     return 'inventory';
@@ -153,16 +151,19 @@ const normalizeNodeTypeDefinitions = (definitions = [], masterTypeHints = {}) =>
   return sortSiteTypeDefinitions(Array.from(deduped.values()));
 };
 
+// AWS SC DM wizard steps:
+// External parties (Vendors, Customers) are managed in dedicated steps,
+// separate from internal Sites which the company controls.
 const STEPS = [
-  'Basic Information',
-  'Products',
-  'Sites',
-  'Lanes',
-  'Product Sourcing',
-  'Bill of Materials',
-  'Markets',
-  'Market Demands',
-  'Review & Save'
+  'Basic Information',  // 0
+  'Products',           // 1
+  'Sites',              // 2  — internal (company-controlled) only
+  'Lanes',              // 3  — internal-to-internal flow
+  'Vendors',            // 4  — external suppliers (TradingPartner, tpartner_type=vendor)
+  'Customers',          // 5  — external demand (TradingPartner, tpartner_type=customer)
+  'Product Sourcing',   // 6
+  'Bill of Materials',  // 7
+  'Review & Save',      // 8
 ];
 
 const SupplyChainConfigForm = ({
@@ -214,6 +215,16 @@ const SupplyChainConfigForm = ({
       DEFAULT_SITE_TYPE_DEFINITIONS.map((definition) => ({ ...definition }))
     )
   );
+  // AWS SC DM: separate internal sites from external trading-partner proxy sites
+  const internalSites = useMemo(
+    () => sites.filter((s) => !s.is_external),
+    [sites]
+  );
+  const vendorSites = useMemo(
+    () => sites.filter((s) => s.is_external && (s.tpartner_type === 'vendor' || s.type === 'vendor')),
+    [sites]
+  );
+
   const handleNodeTypeDefinitionsChange = (definitions) => {
     setNodeTypeDefinitions(
       normalizeNodeTypeDefinitions(definitions, extractMasterTypesFromSites(sites))
@@ -281,7 +292,7 @@ const SupplyChainConfigForm = ({
     if (!isEditMode) {
       removeSitesForTypeFromState(normalizedType, confirmDeleteType.sites);
       removeNodeTypeDefinition(normalizedType);
-      enqueueSnackbar('DAG/Group type and associated sites deleted', { variant: 'success' });
+      enqueueSnackbar('Site type and associated sites deleted', { variant: 'success' });
       handleDeleteTypeCancel();
       return;
     }
@@ -296,7 +307,7 @@ const SupplyChainConfigForm = ({
           await deleteSite(id, site.id);
         } catch (err) {
           console.error('Error deleting site while removing DAG type:', err);
-          enqueueSnackbar('Failed to delete site linked to DAG type', { variant: 'error' });
+          enqueueSnackbar('Failed to delete site linked to this site type', { variant: 'error' });
           setLoading(false);
           return;
         }
@@ -304,7 +315,7 @@ const SupplyChainConfigForm = ({
 
       await Promise.all([fetchSites(), fetchLanes(), fetchProductSiteConfigs()]);
       removeNodeTypeDefinition(normalizedType);
-      enqueueSnackbar('DAG/Group type and associated sites deleted', { variant: 'success' });
+      enqueueSnackbar('Site type and associated sites deleted', { variant: 'success' });
     } finally {
       setLoading(false);
       handleDeleteTypeCancel();
@@ -863,11 +874,11 @@ const SupplyChainConfigForm = ({
           />
         );
         
-      case 2: // Sites
+      case 2: // Sites — internal (company-controlled) locations only
         return (
           <SiteForm
-            sites={sites}
-            siteTypeDefinitions={nodeTypeDefinitions}
+            sites={internalSites}
+            siteTypeDefinitions={nodeTypeDefinitions.filter((d) => !d.is_external)}
             onAdd={handleAddSite}
             onUpdate={handleUpdateSite}
             onDelete={handleDeleteSite}
@@ -876,12 +887,14 @@ const SupplyChainConfigForm = ({
           />
         );
 
-      case 3: // Transportation Lanes (AWS SC DM)
+      case 3: // Transportation Lanes — internal-to-internal flow only
         return (
           <TransportationLaneForm
-            lanes={lanes}
-            sites={sites}
-            siteTypeDefinitions={nodeTypeDefinitions}
+            lanes={lanes.filter(
+              (l) => l.from_site_id != null && l.to_site_id != null
+            )}
+            sites={internalSites}
+            siteTypeDefinitions={nodeTypeDefinitions.filter((d) => !d.is_external)}
             onAdd={handleAddLane}
             onUpdate={handleUpdateLane}
             onDelete={handleDeleteLane}
@@ -890,11 +903,44 @@ const SupplyChainConfigForm = ({
           />
         );
 
-      case 4: // Product Sourcing
+      case 4: // Vendors — external suppliers (TradingPartner, tpartner_type=vendor)
+        return (
+          <VendorManager
+            vendors={sites.filter(
+              (s) =>
+                s.is_external === true &&
+                (s.tpartner_type === 'vendor' || s.type === 'vendor')
+            )}
+            loading={loading}
+            onAdd={handleAddSite}
+            onUpdate={handleUpdateSite}
+            onDelete={handleDeleteSite}
+            navigationButtons={getNavigationButtons()}
+          />
+        );
+
+      case 5: // Customers — external demand (TradingPartner, tpartner_type=customer)
+        return (
+          <CustomerManager
+            customers={markets}
+            demands={marketDemands}
+            products={products}
+            loading={loading}
+            onAddCustomer={handleAddMarket}
+            onUpdateCustomer={handleUpdateMarket}
+            onDeleteCustomer={handleDeleteMarket}
+            onAddDemand={handleAddMarketDemand}
+            onUpdateDemand={handleUpdateMarketDemand}
+            onDeleteDemand={handleDeleteMarketDemand}
+            navigationButtons={getNavigationButtons()}
+          />
+        );
+
+      case 6: // Product Sourcing
         return (
           <SourcingTreeForm
             products={products}
-            sites={sites}
+            sites={internalSites}
             lanes={lanes}
             markets={markets}
             productSiteConfigs={productSiteConfigs}
@@ -906,38 +952,12 @@ const SupplyChainConfigForm = ({
           />
         );
 
-      case 5: // Bill of Materials
+      case 7: // Bill of Materials
         return (
           <BOMForm
             products={products}
-            sites={sites}
+            sites={internalSites}
             onUpdateSite={handleUpdateSite}
-            loading={loading}
-            navigationButtons={getNavigationButtons()}
-          />
-        );
-
-      case 6: // Markets
-        return (
-          <MarketManager
-            markets={markets}
-            loading={loading}
-            onAdd={handleAddMarket}
-            onUpdate={handleUpdateMarket}
-            onDelete={handleDeleteMarket}
-            navigationButtons={getNavigationButtons()}
-          />
-        );
-
-      case 7: // Market Demands
-        return (
-          <MarketDemandForm
-            demands={marketDemands}
-            products={products}
-            markets={markets}
-            onAdd={handleAddMarketDemand}
-            onUpdate={handleUpdateMarketDemand}
-            onDelete={handleDeleteMarketDemand}
             loading={loading}
             navigationButtons={getNavigationButtons()}
           />
@@ -972,23 +992,10 @@ const SupplyChainConfigForm = ({
             </Card>
 
             <Card variant="outline" className="p-6 mb-6">
-              <h4 className="font-medium mb-2">Markets ({markets.length})</h4>
-              {markets.length > 0 ? (
+              <h4 className="font-medium mb-2">Internal Sites ({internalSites.length})</h4>
+              {internalSites.length > 0 ? (
                 <ul className="list-disc list-inside">
-                  {markets.map(market => (
-                    <li key={market.id}>{market.name}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-muted-foreground">No markets defined</p>
-              )}
-            </Card>
-
-            <Card variant="outline" className="p-6 mb-6">
-              <h4 className="font-medium mb-2">Sites ({sites.length})</h4>
-              {sites.length > 0 ? (
-                <ul className="list-disc list-inside">
-                  {sites.map(site => (
+                  {internalSites.map(site => (
                     <li key={site.id} className="flex items-center gap-2">
                       {site.name}{' '}
                       <Badge variant="secondary">
@@ -998,8 +1005,33 @@ const SupplyChainConfigForm = ({
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-muted-foreground">No sites configured</p>
+                <p className="text-sm text-muted-foreground">No internal sites configured</p>
               )}
+            </Card>
+
+            <Card variant="outline" className="p-6 mb-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <h4 className="font-medium mb-2">Vendors ({vendorSites.length})</h4>
+                  {vendorSites.length > 0 ? (
+                    <ul className="list-disc list-inside">
+                      {vendorSites.map(v => <li key={v.id}>{v.name}</li>)}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No vendors defined</p>
+                  )}
+                </div>
+                <div>
+                  <h4 className="font-medium mb-2">Customers ({markets.length})</h4>
+                  {markets.length > 0 ? (
+                    <ul className="list-disc list-inside">
+                      {markets.map(c => <li key={c.id}>{c.name}</li>)}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No customers defined</p>
+                  )}
+                </div>
+              </div>
             </Card>
 
             <Button
@@ -1174,7 +1206,7 @@ const SupplyChainConfigForm = ({
 
   const ensureEditableConfig = () => {
     if (!isEditMode) {
-      enqueueSnackbar('Please save the configuration before editing markets or demands.', {
+      enqueueSnackbar('Please save the configuration before editing vendors or customers.', {
         variant: 'warning',
       });
       return false;
@@ -1182,61 +1214,63 @@ const SupplyChainConfigForm = ({
     return true;
   };
 
-  const handleAddMarket = async (marketData) => {
+  // Customer CRUD (persisted via Market table during Phase 1–4 migration)
+  const handleAddMarket = async (customerData) => {
     if (!ensureEditableConfig()) return;
     try {
       setLoading(true);
-      await createMarket(id, marketData);
+      await createMarket(id, customerData);
       await Promise.all([fetchMarkets(), fetchMarketDemands()]);
-      enqueueSnackbar('Market added successfully', { variant: 'success' });
+      enqueueSnackbar('Customer added successfully', { variant: 'success' });
     } catch (err) {
-      console.error('Error adding market:', err);
-      enqueueSnackbar(err.response?.data?.detail || 'Failed to add market', { variant: 'error' });
+      console.error('Error adding customer:', err);
+      enqueueSnackbar(err.response?.data?.detail || 'Failed to add customer', { variant: 'error' });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleUpdateMarket = async (marketId, marketData) => {
+  const handleUpdateMarket = async (customerId, customerData) => {
     if (!ensureEditableConfig()) return;
     try {
       setLoading(true);
-      await updateMarket(id, marketId, marketData);
+      await updateMarket(id, customerId, customerData);
       await fetchMarkets();
-      enqueueSnackbar('Market updated successfully', { variant: 'success' });
+      enqueueSnackbar('Customer updated successfully', { variant: 'success' });
     } catch (err) {
-      console.error('Error updating market:', err);
-      enqueueSnackbar(err.response?.data?.detail || 'Failed to update market', { variant: 'error' });
+      console.error('Error updating customer:', err);
+      enqueueSnackbar(err.response?.data?.detail || 'Failed to update customer', { variant: 'error' });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDeleteMarket = async (marketId) => {
+  const handleDeleteMarket = async (customerId) => {
     if (!ensureEditableConfig()) return;
     try {
       setLoading(true);
-      await deleteMarket(id, marketId);
+      await deleteMarket(id, customerId);
       await Promise.all([fetchMarkets(), fetchMarketDemands()]);
-      enqueueSnackbar('Market deleted successfully', { variant: 'success' });
+      enqueueSnackbar('Customer deleted successfully', { variant: 'success' });
     } catch (err) {
-      console.error('Error deleting market:', err);
-      enqueueSnackbar(err.response?.data?.detail || 'Failed to delete market', { variant: 'error' });
+      console.error('Error deleting customer:', err);
+      enqueueSnackbar(err.response?.data?.detail || 'Failed to delete customer', { variant: 'error' });
     } finally {
       setLoading(false);
     }
   };
 
+  // Demand pattern CRUD (linked to customer via market_id)
   const handleAddMarketDemand = async (demandData) => {
     if (!ensureEditableConfig()) return;
     try {
       setLoading(true);
       await createMarketDemand(id, demandData);
       await fetchMarketDemands();
-      enqueueSnackbar('Market demand added successfully', { variant: 'success' });
+      enqueueSnackbar('Demand pattern added successfully', { variant: 'success' });
     } catch (err) {
-      console.error('Error adding market demand:', err);
-      enqueueSnackbar('Failed to add market demand', { variant: 'error' });
+      console.error('Error adding demand pattern:', err);
+      enqueueSnackbar('Failed to add demand pattern', { variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -1248,10 +1282,10 @@ const SupplyChainConfigForm = ({
       setLoading(true);
       await updateMarketDemand(id, demandId, demandData);
       await fetchMarketDemands();
-      enqueueSnackbar('Market demand updated successfully', { variant: 'success' });
+      enqueueSnackbar('Demand pattern updated successfully', { variant: 'success' });
     } catch (err) {
-      console.error('Error updating market demand:', err);
-      enqueueSnackbar('Failed to update market demand', { variant: 'error' });
+      console.error('Error updating demand pattern:', err);
+      enqueueSnackbar('Failed to update demand pattern', { variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -1263,10 +1297,10 @@ const SupplyChainConfigForm = ({
       setLoading(true);
       await deleteMarketDemand(id, demandId);
       await fetchMarketDemands();
-      enqueueSnackbar('Market demand deleted successfully', { variant: 'success' });
+      enqueueSnackbar('Demand pattern deleted successfully', { variant: 'success' });
     } catch (err) {
-      console.error('Error deleting market demand:', err);
-      enqueueSnackbar('Failed to delete market demand', { variant: 'error' });
+      console.error('Error deleting demand pattern:', err);
+      enqueueSnackbar('Failed to delete demand pattern', { variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -1375,7 +1409,7 @@ const SupplyChainConfigForm = ({
       <Modal
         isOpen={confirmDeleteType.open}
         onClose={handleDeleteTypeCancel}
-        title="Delete DAG/Group Type?"
+        title="Delete Internal Site Type?"
         size="sm"
         footer={
           <div className="flex justify-end gap-2">
@@ -1391,7 +1425,7 @@ const SupplyChainConfigForm = ({
         }
       >
         <p className="text-sm text-muted-foreground">
-          {`Sites with type "${confirmDeleteType.definition?.label || confirmDeleteType.definition?.type}" exist (${confirmDeleteType.sites.length}). Delete the sites and this DAG/Group type?`}
+          {`Sites with type "${confirmDeleteType.definition?.label || confirmDeleteType.definition?.type}" exist (${confirmDeleteType.sites.length}). Delete these sites and remove this site type?`}
         </p>
       </Modal>
 

@@ -12,13 +12,17 @@ export const canonicalizeSiteTypeKey = (value = '') => {
   return cleaned;
 };
 
+// AWS SC DM compliant site type definitions.
+// External parties (vendors/customers) are TradingPartner records, not Sites.
+// is_external=true entries appear in the Sankey but are managed via the
+// Vendors / Customers wizard steps, not the Sites step.
 export const DEFAULT_SITE_TYPE_DEFINITIONS = [
-  { type: 'market_demand', master_type: 'market_demand', label: 'Market Demand', order: 0, is_required: true },
-  { type: 'retailer', master_type: 'inventory', label: 'Retailer', order: 1, is_required: false },
-  { type: 'wholesaler', master_type: 'inventory', label: 'Wholesaler', order: 2, is_required: false },
-  { type: 'distributor', master_type: 'inventory', label: 'Distributor', order: 3, is_required: false },
-  { type: 'manufacturer', master_type: 'inventory', label: 'Manufacturer', order: 4, is_required: false },
-  { type: 'market_supply', master_type: 'market_supply', label: 'Market Supply', order: 5, is_required: true },
+  { type: 'customer',     tpartner_type: 'customer', label: 'Customer',     order: 0, is_required: true,  is_external: true },
+  { type: 'retailer',     master_type: 'inventory',  label: 'Retailer',     order: 1, is_required: false, is_external: false },
+  { type: 'wholesaler',   master_type: 'inventory',  label: 'Wholesaler',   order: 2, is_required: false, is_external: false },
+  { type: 'distributor',  master_type: 'inventory',  label: 'Distributor',  order: 3, is_required: false, is_external: false },
+  { type: 'manufacturer', master_type: 'manufacturer', label: 'Manufacturer', order: 4, is_required: false, is_external: false },
+  { type: 'vendor',       tpartner_type: 'vendor',   label: 'Vendor',       order: 5, is_required: true,  is_external: true },
 ];
 
 export const buildSiteTypeLabelMap = (definitions = DEFAULT_SITE_TYPE_DEFINITIONS) => {

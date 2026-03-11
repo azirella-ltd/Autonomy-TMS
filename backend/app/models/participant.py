@@ -106,14 +106,19 @@ class ScenarioUserFunction(str, Enum):
 
 
 class ScenarioUserRole(str, Enum):
-    """Role of a scenario user in the supply chain simulation."""
+    """Role of a scenario user in the supply chain simulation.
+
+    External parties (VENDOR/CUSTOMER) map to TradingPartner records and do not
+    participate in a simulation scenario — they are modelled as demand sources or
+    supply sources, not as active ScenarioUsers.
+    """
     RETAILER = NodeType.RETAILER.value
     WHOLESALER = NodeType.WHOLESALER.value
     DISTRIBUTOR = NodeType.DISTRIBUTOR.value
     MANUFACTURER = NodeType.MANUFACTURER.value
     SUPPLIER = NodeType.SUPPLIER.value
-    MARKET_DEMAND = NodeType.MARKET_DEMAND.value
-    MARKET_SUPPLY = NodeType.MARKET_SUPPLY.value
+    VENDOR = NodeType.VENDOR.value      # replaces MARKET_SUPPLY
+    CUSTOMER = NodeType.CUSTOMER.value  # replaces MARKET_DEMAND
 
 
 class ScenarioUserType(str, Enum):

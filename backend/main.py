@@ -1048,6 +1048,82 @@ def update_supply_chain_config_basic(
         db.close()
 
 
+@api.delete("/supply-chain-config/{config_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_supply_chain_config(
+    config_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Delete a supply chain configuration and all its child entities."""
+    from sqlalchemy import text
+
+    db = SyncSessionLocal()
+    try:
+        config = _get_supply_chain_config_or_404(db, config_id)
+        _ensure_can_manage_supply_chain_config(current_user, config)
+
+        # Temporarily disable FK checks for cascade deletion.
+        # This is safe because we delete ALL children of this config.
+        db.execute(text("SET session_replication_role = replica"))
+
+        # Collect IDs for child entities
+        site_ids = [r[0] for r in db.execute(
+            text("SELECT id FROM site WHERE config_id = :cid"), {"cid": config_id}
+        ).fetchall()]
+        product_ids = [r[0] for r in db.execute(
+            text("SELECT id FROM product WHERE config_id = :cid"), {"cid": config_id}
+        ).fetchall()]
+
+        # Delete referencing data for sites
+        if site_ids:
+            site_ref_tables = [
+                ("outbound_order_line", "site_id"), ("outbound_order_line", "market_demand_site_id"),
+                ("inbound_order_line", "from_site_id"), ("inbound_order_line", "to_site_id"),
+                ("forecast", "site_id"), ("inv_level", "site_id"), ("inv_policy", "site_id"),
+                ("supply_plan", "site_id"), ("inv_projection", "site_id"),
+                ("atp_projection", "site_id"), ("ctp_projection", "site_id"),
+                ("sourcing_rules", "from_site_id"), ("sourcing_rules", "to_site_id"),
+                ("vendor_lead_times", "site_id"),
+            ]
+            for table, col in site_ref_tables:
+                try:
+                    db.execute(text(f"DELETE FROM {table} WHERE {col} = ANY(:ids)"), {"ids": site_ids})
+                except Exception:
+                    pass  # Table may not exist in all deployments
+
+        # Delete referencing data for products
+        if product_ids:
+            prod_ref_tables = [
+                ("product_bom", "product_id"), ("product_bom", "component_product_id"),
+                ("vendor_product", "product_id"),
+            ]
+            for table, col in prod_ref_tables:
+                try:
+                    db.execute(text(f"DELETE FROM {table} WHERE {col} = ANY(:ids)"), {"ids": product_ids})
+                except Exception:
+                    pass
+
+        # Delete config children
+        db.execute(text("DELETE FROM transportation_lane WHERE config_id = :cid"), {"cid": config_id})
+        db.execute(text("DELETE FROM market_demands WHERE config_id = :cid"), {"cid": config_id})
+        db.execute(text("DELETE FROM markets WHERE config_id = :cid"), {"cid": config_id})
+        if product_ids:
+            db.execute(text("DELETE FROM product WHERE config_id = :cid"), {"cid": config_id})
+        db.execute(text("DELETE FROM site WHERE config_id = :cid"), {"cid": config_id})
+        db.execute(text("DELETE FROM supply_chain_configs WHERE id = :cid"), {"cid": config_id})
+
+        db.execute(text("SET session_replication_role = DEFAULT"))
+        db.commit()
+        return None
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting config {config_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete configuration: {e}")
+    finally:
+        db.close()
+
+
 @api.get("/supply-chain-config/{config_id}/transportation-lanes")
 @api.get("/supply-chain-config/{config_id}/lanes")  # DEPRECATED: Use /transportation-lanes
 def read_supply_chain_transportation_lanes(
@@ -2025,9 +2101,11 @@ def _actor_nodes_from_order(
     ordered_nodes: Sequence[str],
     node_types: Mapping[str, Any],
 ) -> List[str]:
-    """Filter nodes that represent playable positions (exclude markets)."""
+    """Filter nodes that represent playable positions (exclude external trading partners)."""
 
-    skip_types = {"market_demand", "market_supply"}
+    # External TradingPartner node types — not managed by internal planners.
+    # "vendor"/"customer" are the current names; legacy aliases kept for backward compat.
+    skip_types = {"vendor", "customer", "market_demand", "market_supply"}
     actors: List[str] = []
     for node in ordered_nodes:
         node_type = str(node_types.get(node, "") or "").lower()
@@ -2036,13 +2114,15 @@ def _actor_nodes_from_order(
         actors.append(node)
     return actors or list(ordered_nodes)
 
+# Canonical site type definitions aligned with AWS SC Data Model.
+# External parties (Vendor / Customer) are TradingPartner records — not internal sites.
 DEFAULT_SITE_TYPE_DEFINITIONS: List[Dict[str, Any]] = [
-    {"type": "MARKET_DEMAND", "label": "Market Demand", "order": 0, "is_required": True, "master_type": "market_demand"},
-    {"type": "RETAILER", "label": "Retailer", "order": 1, "is_required": False, "master_type": "inventory"},
-    {"type": "WHOLESALER", "label": "Wholesaler", "order": 2, "is_required": False, "master_type": "inventory"},
-    {"type": "DISTRIBUTOR", "label": "Distributor", "order": 3, "is_required": False, "master_type": "inventory"},
-    {"type": "MANUFACTURER", "label": "Manufacturer", "order": 4, "is_required": False, "master_type": "manufacturer"},
-    {"type": "MARKET_SUPPLY", "label": "Market Supply", "order": 5, "is_required": True, "master_type": "market_supply"},
+    {"type": "CUSTOMER", "label": "Customer", "order": 0, "is_required": True, "is_external": True, "tpartner_type": "customer"},
+    {"type": "RETAILER", "label": "Retailer", "order": 1, "is_required": False, "is_external": False, "master_type": "inventory"},
+    {"type": "WHOLESALER", "label": "Wholesaler", "order": 2, "is_required": False, "is_external": False, "master_type": "inventory"},
+    {"type": "DISTRIBUTOR", "label": "Distributor", "order": 3, "is_required": False, "is_external": False, "master_type": "inventory"},
+    {"type": "MANUFACTURER", "label": "Manufacturer", "order": 4, "is_required": False, "is_external": False, "master_type": "manufacturer"},
+    {"type": "VENDOR", "label": "Vendor", "order": 5, "is_required": True, "is_external": True, "tpartner_type": "vendor"},
 ]
 
 
@@ -2062,10 +2142,16 @@ def _ensure_site_type_definitions(config: Dict[str, Any]) -> Tuple[List[Dict[str
 
     def _master_type(value: Any) -> str:
         canonical = MixedScenarioService._canonical_role(value)
+        # Current names
+        if canonical in {"customer"}:
+            return "customer"
+        if canonical in {"vendor"}:
+            return "vendor"
+        # Legacy backward-compat aliases
         if canonical in {"market_demand", "market"}:
-            return "market_demand"
+            return "customer"
         if canonical == "market_supply":
-            return "market_supply"
+            return "vendor"
         if canonical == "manufacturer":
             return "manufacturer"
         return canonical
@@ -2126,23 +2212,23 @@ def _ensure_site_type_definitions(config: Dict[str, Any]) -> Tuple[List[Dict[str
     if not observed_types:
         observed_types.update(default_label_map.keys())
 
-    observed_types.add("market_demand")
-    observed_types.add("market_supply")
-    label_map.setdefault("market_demand", default_label_map.get("market_demand", "Market Demand"))
-    label_map.setdefault("market_supply", default_label_map.get("market_supply", "Market Supply"))
+    observed_types.add("customer")
+    observed_types.add("vendor")
+    label_map.setdefault("customer", default_label_map.get("customer", "Customer"))
+    label_map.setdefault("vendor", default_label_map.get("vendor", "Vendor"))
 
     fallback_start = max(order_hints.values(), default=0) + 1
     for slug in sorted(observed_types):
         if slug not in label_map:
             label_map[slug] = default_label_map.get(slug, slug.replace("_", " ").title())
-        if slug not in order_hints and slug not in {"market_demand", "market_supply"}:
+        if slug not in order_hints and slug not in {"customer", "vendor", "market_demand", "market_supply"}:
             order_hints[slug] = fallback_start
             fallback_start += 1
 
     interior_types = [
         node_type
         for node_type in observed_types
-        if node_type not in {"market_demand", "market_supply"} and node_type
+        if node_type not in {"customer", "vendor", "market_demand", "market_supply"} and node_type
     ]
     interior_types.sort(key=lambda slug: (order_hints.get(slug, default_order_map.get(slug, 0)), slug))
 
@@ -2154,11 +2240,12 @@ def _ensure_site_type_definitions(config: Dict[str, Any]) -> Tuple[List[Dict[str
 
     definitions.append(
         {
-            "type": "market_demand",
-            "label": label_map.get("market_demand", "Market Demand"),
+            "type": "customer",
+            "label": label_map.get("customer", label_map.get("market_demand", "Customer")),
             "sequence": 0,
             "is_required": True,
-            "master_type": _definition_master("market_demand", "market_demand"),
+            "is_external": True,
+            "tpartner_type": "customer",
         }
     )
     sequence_counter = 1
@@ -2169,17 +2256,19 @@ def _ensure_site_type_definitions(config: Dict[str, Any]) -> Tuple[List[Dict[str
                 "label": label_map.get(slug, slug.replace("_", " ").title()),
                 "sequence": sequence_counter,
                 "is_required": False,
+                "is_external": False,
                 "master_type": _definition_master(slug),
             }
         )
         sequence_counter += 1
     definitions.append(
         {
-            "type": "market_supply",
-            "label": label_map.get("market_supply", "Market Supply"),
+            "type": "vendor",
+            "label": label_map.get("vendor", label_map.get("market_supply", "Vendor")),
             "sequence": sequence_counter,
             "is_required": True,
-            "master_type": _definition_master("market_supply", "market_supply"),
+            "is_external": True,
+            "tpartner_type": "vendor",
         }
     )
 

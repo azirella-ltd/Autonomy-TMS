@@ -241,7 +241,7 @@ class MonteCarloEngine:
             }
 
             for node in config.nodes:
-                if node.master_node_type == "MARKET_DEMAND":
+                if node.master_node_type in ("CUSTOMER", "MARKET_DEMAND"):
                     for item in config.items:
                         # Try to find forecast mean from market demand config
                         md = market_demands.get((item.id, node.id)) or market_demands.get((str(item.id), node.id))

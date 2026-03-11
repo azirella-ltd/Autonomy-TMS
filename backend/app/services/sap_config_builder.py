@@ -20,14 +20,17 @@ Three modes:
 8. Planning Data (Inventory, Forecasts)
 """
 
+import json
 import logging
+import pathlib
 from typing import Dict, List, Optional, Any, Set, Tuple
 from datetime import datetime, date, timedelta
 from dataclasses import dataclass, field
+from collections import Counter
 
 import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text as sql_text
 
 import app.models  # noqa: F401 - ensures all models are loaded
 
@@ -51,12 +54,35 @@ from app.services.sap_field_mapping_service import (
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# UN M49 region reference — loaded once from bundled JSON
+# ---------------------------------------------------------------------------
+_UN_M49_PATH = pathlib.Path(__file__).resolve().parent.parent / "data" / "un_m49_regions.json"
+
+
+def _load_country_to_continent() -> Dict[str, str]:
+    """Build ISO alpha-2 → continent name lookup from UN M49 JSON."""
+    with open(_UN_M49_PATH, "r") as f:
+        data = json.load(f)
+    lookup: Dict[str, str] = {}
+    for continent_name, info in data["continents"].items():
+        for code in info["countries"]:
+            lookup[code] = continent_name
+    return lookup
+
+
+# Singleton lookup — {ISO alpha-2 → continent name}
+_COUNTRY_TO_CONTINENT: Dict[str, str] = _load_country_to_continent()
+
 
 # Master type constants
 MASTER_MANUFACTURER = "MANUFACTURER"
+MASTER_VENDOR = "VENDOR"
+MASTER_CUSTOMER = "CUSTOMER"
+MASTER_INVENTORY = "INVENTORY"
+# Legacy aliases kept for backward compatibility with existing DB rows
 MASTER_MARKET_SUPPLY = "MARKET_SUPPLY"
 MASTER_MARKET_DEMAND = "MARKET_DEMAND"
-MASTER_INVENTORY = "INVENTORY"
 
 
 @dataclass
@@ -220,6 +246,7 @@ class SAPConfigBuilder:
         self._config: Optional[SupplyChainConfig] = None
         self._sites: Dict[str, Site] = {}
         self._products: Dict[str, Product] = {}
+        self._trading_partners: Dict[str, Any] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -387,7 +414,7 @@ class SAPConfigBuilder:
             await self._create_geography()
 
             # Step 3: Sites
-            site_count = await self._create_sites(overrides)
+            site_count = await self._create_sites(overrides, opts)
 
             # Step 4: Products
             product_count = await self._create_products()
@@ -437,17 +464,10 @@ class SAPConfigBuilder:
             }
 
         except Exception:
-            # Roll back the entire transaction so no partial config is left
+            # Roll back the entire transaction — this undoes ALL flushes
+            # (new config, deactivation of old configs, all child entities).
+            # The old active config is restored to is_active=true automatically.
             await self.db.rollback()
-            # Clean up the partially-created config and its children if flushed
-            if self._config and self._config.id:
-                try:
-                    await self.delete_build(self._config.id)
-                except Exception:
-                    logger.warning(
-                        f"Failed to clean up partial config {self._config.id} "
-                        f"after build failure"
-                    )
             raise
 
     # ------------------------------------------------------------------
@@ -742,15 +762,32 @@ class SAPConfigBuilder:
             return False
 
         # Delete child entities in reverse dependency order
+        # Only delete models that have a config_id column (TradingPartner,
+        # VendorProduct, VendorLeadTime don't — they reference shared entities)
+        from sqlalchemy import delete as sql_delete
+
+        # Transactional entities first (depend on products/sites)
+        await self.db.execute(sql_text(
+            "DELETE FROM inbound_order_line WHERE config_id = :cid"), {"cid": config_id})
+        await self.db.execute(sql_delete(InboundOrder).where(InboundOrder.config_id == config_id))
+        await self.db.execute(sql_text(
+            "DELETE FROM production_order_components WHERE production_order_id IN "
+            "(SELECT id FROM production_orders WHERE config_id = :cid)"), {"cid": config_id})
+        await self.db.execute(sql_delete(ProductionOrder).where(ProductionOrder.config_id == config_id))
+        await self.db.execute(sql_delete(OutboundOrderLine).where(OutboundOrderLine.config_id == config_id))
+
         for model in [
-            Forecast, InvLevel, InvPolicy, SourcingRules, VendorLeadTime,
-            VendorProduct, ProductBom, ProductionProcess, TradingPartner,
-            TransportationLane, Product, Market, Site, Geography,
+            Forecast, InvLevel, InvPolicy, SourcingRules,
+            ProductBom, ProductionProcess,
+            TransportationLane, Product, Market, Site,
         ]:
-            from sqlalchemy import delete as sql_delete
             await self.db.execute(
                 sql_delete(model).where(model.config_id == config_id)
             )
+        # Geography uses string PK prefixed with config_id
+        await self.db.execute(
+            sql_delete(Geography).where(Geography.id.like(f"{config_id}_%"))
+        )
 
         await self.db.delete(config)
         await self.db.commit()
@@ -1147,7 +1184,7 @@ class SAPConfigBuilder:
             attrs = site.attributes or {}
             product_count = attrs.get("product_count", 0)
 
-            if product_count == 0 and site.master_type not in (MASTER_MARKET_SUPPLY, MASTER_MARKET_DEMAND):
+            if product_count == 0 and not site.is_external:
                 anomalies.append({
                     "severity": "warning",
                     "message": f"Site {key} ({site.type}) has 0 products assigned",
@@ -1394,26 +1431,79 @@ class SAPConfigBuilder:
     # ------------------------------------------------------------------
 
     async def _create_geography(self):
-        """Create Geography entities from ADRC addresses."""
+        """Create Geography entities from ADRC addresses (upsert, deduplicated).
+
+        Geocodes addresses to lat/lon using Nominatim when coordinates are not
+        already available from SAP.
+        """
         adrc = self._data.get("ADRC", pd.DataFrame())
         if adrc.empty:
             return
 
-        geo_df = self.mapper.map_geography(adrc)
-        for _, row in geo_df.iterrows():
-            geo = Geography(
-                config_id=self._config.id,
-                geo_id=str(row.get("address_id", "")),
-                geo_name=str(row.get("name", "")),
-                city=str(row.get("city", "")),
-                state=str(row.get("region", "")),
-                country=str(row.get("country", "")),
-                postal_code=str(row.get("postal_code", "")),
-            )
-            self.db.add(geo)
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+        from app.services.geocoding_service import geocode_batch
 
-        await self.db.flush()
-        logger.info(f"Created {len(geo_df)} geography records")
+        geo_df = self.mapper.map_geography(adrc)
+        # Deduplicate by id — last occurrence wins
+        seen: Dict[str, dict] = {}
+        for _, row in geo_df.iterrows():
+            geo_id = str(row.get("address_id", ""))
+            key = f"{self._config.id}_{geo_id}"
+            seen[key] = {
+                "id": key,
+                "description": str(row.get("name", "")),
+                "address_1": str(row.get("street", "")),
+                "city": str(row.get("city", "")),
+                "state_prov": str(row.get("region", "")),
+                "country": str(row.get("country", "")),
+                "postal_code": str(row.get("postal_code", "")),
+            }
+
+        rows = list(seen.values())
+
+        # Geocode addresses to populate lat/lon
+        if rows:
+            address_inputs = [
+                {
+                    "street": r.get("address_1", ""),
+                    "city": r.get("city", ""),
+                    "state": r.get("state_prov", ""),
+                    "country": r.get("country", ""),
+                    "postal_code": r.get("postal_code", ""),
+                }
+                for r in rows
+            ]
+            try:
+                coords = await geocode_batch(address_inputs)
+                geocoded = 0
+                for row, coord in zip(rows, coords):
+                    if coord:
+                        row["latitude"] = coord[0]
+                        row["longitude"] = coord[1]
+                        geocoded += 1
+                logger.info(f"Geocoded {geocoded}/{len(rows)} geography records")
+            except Exception as e:
+                logger.warning(f"Geocoding batch failed, continuing without coordinates: {e}")
+
+        if rows:
+            stmt = pg_insert(Geography).values(rows)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["id"],
+                set_={
+                    "description": stmt.excluded.description,
+                    "address_1": stmt.excluded.address_1,
+                    "city": stmt.excluded.city,
+                    "state_prov": stmt.excluded.state_prov,
+                    "country": stmt.excluded.country,
+                    "postal_code": stmt.excluded.postal_code,
+                    "latitude": stmt.excluded.latitude,
+                    "longitude": stmt.excluded.longitude,
+                },
+            )
+            await self.db.execute(stmt)
+            await self.db.flush()
+
+        logger.info(f"Upserted {len(rows)} geography records")
 
     # ------------------------------------------------------------------
     # Step 3: Sites with Master Type Inference
@@ -1482,28 +1572,34 @@ class SAPConfigBuilder:
             return MASTER_MANUFACTURER
 
         if site_key in vendor_plants:
-            return MASTER_MARKET_SUPPLY
+            return MASTER_VENDOR
 
         if site_key in customer_sites:
-            return MASTER_MARKET_DEMAND
+            return MASTER_CUSTOMER
 
         return MASTER_INVENTORY
 
     def _get_plants_with_bom(self) -> Set[str]:
-        """Get plant codes that have BOM production (STPO entries)."""
-        stpo = self._data.get("STPO", pd.DataFrame())
+        """Get plant codes that have in-house production.
+
+        Uses MARC.BESKZ='E' (in-house production) as the primary signal,
+        with PLPO routing operations as a fallback.
+        """
         marc = self._data.get("MARC", pd.DataFrame())
+        result: Set[str] = set()
 
-        if stpo.empty or marc.empty:
-            return set()
+        # Primary: MARC procurement type E = in-house production
+        if not marc.empty and "BESKZ" in marc.columns and "WERKS" in marc.columns:
+            prod_plants = marc[marc["BESKZ"].astype(str).str.strip() == "E"]["WERKS"].unique()
+            result.update(str(p).strip() for p in prod_plants)
 
-        # STPO has MATNR for parent material; MARC links MATNR→WERKS
-        if "MATNR" not in stpo.columns or "MATNR" not in marc.columns:
-            return set()
+        # Fallback: plants referenced in routing operations (PLPO)
+        if not result:
+            plpo = self._data.get("PLPO", pd.DataFrame())
+            if not plpo.empty and "WERKS" in plpo.columns:
+                result.update(str(w).strip() for w in plpo["WERKS"].unique())
 
-        bom_materials = set(stpo["MATNR"].unique())
-        bom_plants = marc[marc["MATNR"].isin(bom_materials)]["WERKS"].unique()
-        return set(str(p).strip() for p in bom_plants)
+        return result
 
     def _get_vendor_plant_codes(self) -> Set[str]:
         """Get site keys that appear as vendor locations in LFA1."""
@@ -1520,7 +1616,7 @@ class SAPConfigBuilder:
             return set()
         return set(str(c).strip() for c in kna1.get("KUNNR", pd.Series()).unique())
 
-    async def _create_sites(self, overrides: Dict[str, str]) -> int:
+    async def _create_sites(self, overrides: Dict[str, str], opts: Optional[Dict[str, Any]] = None) -> int:
         """Create Site entities from inferred data."""
         preview = ConfigPreview()
         site_previews = self._infer_sites(preview)
@@ -1529,8 +1625,8 @@ class SAPConfigBuilder:
         site_type_defs = [
             {"type": "PLANT", "label": "Plant", "order": 0, "master_type": "MANUFACTURER"},
             {"type": "DC", "label": "Distribution Center", "order": 1, "master_type": "INVENTORY"},
-            {"type": "SUPPLIER", "label": "Supplier", "order": 2, "master_type": "MARKET_SUPPLY"},
-            {"type": "CUSTOMER", "label": "Customer", "order": 3, "master_type": "MARKET_DEMAND"},
+            {"type": "SUPPLIER", "label": "Vendor", "order": 2, "master_type": "VENDOR"},
+            {"type": "CUSTOMER", "label": "Customer", "order": 3, "master_type": "CUSTOMER", "tpartner_type": "customer", "is_external": True},
         ]
         self._config.site_type_definitions = site_type_defs
         await self.db.flush()
@@ -1538,6 +1634,9 @@ class SAPConfigBuilder:
         master_to_dag = {
             MASTER_MANUFACTURER: "PLANT",
             MASTER_INVENTORY: "DC",
+            MASTER_VENDOR: "SUPPLIER",
+            MASTER_CUSTOMER: "CUSTOMER",
+            # Legacy aliases
             MASTER_MARKET_SUPPLY: "SUPPLIER",
             MASTER_MARKET_DEMAND: "CUSTOMER",
         }
@@ -1565,8 +1664,178 @@ class SAPConfigBuilder:
             self._sites[sp.key] = site
             count += 1
 
-        logger.info(f"Created {count} sites")
+        # Create regional VENDOR and CUSTOMER sites from vendor/customer geography
+        build_opts = opts or {}
+        supply_regions, demand_regions = self._compute_market_regions(
+            max_supply_regions=build_opts.get("max_supply_regions", 8),
+            max_demand_regions=build_opts.get("max_demand_regions", 8),
+            promotion_threshold=build_opts.get("region_promotion_threshold", 0.25),
+        )
+
+        for region_key, region_info in supply_regions.items():
+            site_key = f"SUPPLY_{region_key}"
+            supply_site = Site(
+                config_id=self._config.id,
+                name=site_key,
+                type=region_info["label"],
+                dag_type="SUPPLIER",
+                master_type=MASTER_VENDOR,
+                is_external=True,
+                tpartner_type="vendor",
+                attributes={
+                    "region": region_key,
+                    "countries": region_info["countries"],
+                    "vendor_count": region_info["count"],
+                },
+            )
+            self.db.add(supply_site)
+            await self.db.flush()
+            self._sites[site_key] = supply_site
+            count += 1
+
+        for region_key, region_info in demand_regions.items():
+            site_key = f"DEMAND_{region_key}"
+            demand_site = Site(
+                config_id=self._config.id,
+                name=site_key,
+                type=region_info["label"],
+                dag_type="CUSTOMER",
+                master_type=MASTER_CUSTOMER,
+                is_external=True,
+                tpartner_type="customer",
+                attributes={
+                    "region": region_key,
+                    "countries": region_info["countries"],
+                    "customer_count": region_info["count"],
+                },
+            )
+            self.db.add(demand_site)
+            await self.db.flush()
+            self._sites[site_key] = demand_site
+            count += 1
+
+        # Cache country → region_key lookups for use by _create_lanes
+        self._supply_country_region: Dict[str, str] = {}
+        for rk, info in supply_regions.items():
+            for c in info["countries"]:
+                self._supply_country_region[c] = rk
+        self._demand_country_region: Dict[str, str] = {}
+        for rk, info in demand_regions.items():
+            for c in info["countries"]:
+                self._demand_country_region[c] = rk
+
+        logger.info(f"Created {count} sites ({len(supply_regions)} supply regions, {len(demand_regions)} demand regions)")
         return count
+
+    def _compute_market_regions(
+        self,
+        max_supply_regions: int = 8,
+        max_demand_regions: int = 8,
+        promotion_threshold: float = 0.25,
+    ) -> Tuple[Dict[str, dict], Dict[str, dict]]:
+        """Compute supply and demand regions from vendor/customer country data.
+
+        Uses UN M49 continent mapping from bundled JSON.  High-volume countries
+        that exceed *promotion_threshold* of their continent's partner count
+        are promoted to their own region site (e.g. "Americas" splits into
+        "United States" + "Americas" when US has >25 % of the continent's vendors).
+
+        Args:
+            max_supply_regions: Cap on the number of supply region sites created.
+            max_demand_regions: Cap on the number of demand region sites created.
+            promotion_threshold: Fraction (0-1) of a continent's partners a
+                single country must exceed to be promoted to its own region.
+
+        Returns:
+            (supply_regions, demand_regions) — each is a dict of
+            region_key → {label, countries, count}.
+        """
+        lfa1 = self._data.get("LFA1", pd.DataFrame())
+        kna1 = self._data.get("KNA1", pd.DataFrame())
+
+        def _build_regions(
+            df: pd.DataFrame, country_col: str, role: str, max_regions: int,
+        ) -> Dict[str, dict]:
+            if df.empty or country_col not in df.columns:
+                return {}
+
+            # Count partners per country
+            country_counts: Counter = Counter()
+            for _, row in df.iterrows():
+                country = str(row.get(country_col, "")).strip().upper()
+                if country:
+                    country_counts[country] += 1
+
+            # Group countries by continent
+            continent_countries: Dict[str, Counter] = {}
+            for country, cnt in country_counts.items():
+                continent = _COUNTRY_TO_CONTINENT.get(country, "Other")
+                continent_countries.setdefault(continent, Counter())[country] = cnt
+
+            # Build regions — promote high-volume countries within their continent
+            regions: Dict[str, Dict[str, Any]] = {}
+            for continent, c_counts in continent_countries.items():
+                total = sum(c_counts.values())
+                promoted: Set[str] = set()
+                for country, cnt in c_counts.most_common():
+                    if cnt / total >= promotion_threshold and cnt >= 5:
+                        promoted.add(country)
+
+                # Create promoted country regions
+                for country in promoted:
+                    rk = country  # region key = ISO code
+                    regions[rk] = {
+                        "label": f"{country} {role}",
+                        "countries": [country],
+                        "count": c_counts[country],
+                        "continent": continent,
+                    }
+
+                # Remaining countries stay in the continent region
+                remaining = {c: n for c, n in c_counts.items() if c not in promoted}
+                if remaining:
+                    rk = continent.upper().replace(" ", "_")
+                    if rk in regions:
+                        # Merge into existing continent region
+                        regions[rk]["countries"].extend(sorted(remaining.keys()))
+                        regions[rk]["count"] += sum(remaining.values())
+                    else:
+                        regions[rk] = {
+                            "label": f"{continent} {role}",
+                            "countries": sorted(remaining.keys()),
+                            "count": sum(remaining.values()),
+                            "continent": continent,
+                        }
+
+            # If we exceed max_regions, merge smallest regions into their
+            # continent peers until under the limit.
+            while len(regions) > max_regions:
+                # Find the smallest region
+                smallest_key = min(regions, key=lambda k: regions[k]["count"])
+                smallest = regions.pop(smallest_key)
+                continent = smallest.get("continent", "Other")
+                continent_key = continent.upper().replace(" ", "_")
+
+                # Try merging into continent peer; if none, merge into largest
+                if continent_key in regions:
+                    target_key = continent_key
+                else:
+                    target_key = max(regions, key=lambda k: regions[k]["count"])
+
+                regions[target_key]["countries"] = sorted(
+                    set(regions[target_key]["countries"]) | set(smallest["countries"])
+                )
+                regions[target_key]["count"] += smallest["count"]
+
+            # Sort countries lists
+            for info in regions.values():
+                info["countries"] = sorted(info["countries"])
+
+            return regions
+
+        supply_regions = _build_regions(lfa1, "LAND1", "Suppliers", max_supply_regions)
+        demand_regions = _build_regions(kna1, "LAND1", "Customers", max_demand_regions)
+        return supply_regions, demand_regions
 
     # ------------------------------------------------------------------
     # Step 4: Products
@@ -1611,7 +1880,9 @@ class SAPConfigBuilder:
                 config_id=self._config.id,
                 is_active="true",
                 category=info.get("group", ""),
-                product_group_name=info.get("group", ""),
+                product_group_name=info.get("group", ""),  # maps to DB column "product_group"
+                base_uom=info.get("uom", "EA"),
+                product_type=info.get("type", ""),
             )
             self.db.add(product)
             self._products[mat_key] = product
@@ -1702,35 +1973,180 @@ class SAPConfigBuilder:
         return list(lanes.values())
 
     async def _create_lanes(self) -> int:
-        """Create TransportationLane entities from inferred lanes."""
-        preview = ConfigPreview()
-        lane_previews = self._infer_lanes(preview)
+        """Create TransportationLane entities connecting regional market sites to plants.
 
-        # Get lead times from EINE/MARC
+        Lane topology:
+        - SUPPLY_{region} → {plant}  (inbound: regional vendors supply to plant)
+        - {plant} → DEMAND_{region}  (outbound: plant ships to regional customers)
+        - {plant_A} → {plant_B}      (inter-plant transfers, if detected)
+
+        Lanes are only created where actual sourcing/shipping relationships exist
+        in the SAP data (EORD/EKPO for inbound, LIKP/LIPS/VBAP for outbound).
+        """
+        lfa1 = self._data.get("LFA1", pd.DataFrame())
+        kna1 = self._data.get("KNA1", pd.DataFrame())
+
+        # Build vendor → region lookup using cached country→region mapping
+        supply_cr = getattr(self, "_supply_country_region", {})
+        demand_cr = getattr(self, "_demand_country_region", {})
+
+        vendor_region: Dict[str, str] = {}
+        if not lfa1.empty and "LIFNR" in lfa1.columns and "LAND1" in lfa1.columns:
+            for _, row in lfa1.iterrows():
+                vid = str(row["LIFNR"]).strip()
+                country = str(row.get("LAND1", "")).strip().upper()
+                vendor_region[vid] = supply_cr.get(country, _COUNTRY_TO_CONTINENT.get(country, "OTHER").upper().replace(" ", "_"))
+
+        # Build customer → region lookup
+        customer_region: Dict[str, str] = {}
+        if not kna1.empty and "KUNNR" in kna1.columns and "LAND1" in kna1.columns:
+            for _, row in kna1.iterrows():
+                cid = str(row["KUNNR"]).strip()
+                country = str(row.get("LAND1", "")).strip().upper()
+                customer_region[cid] = demand_cr.get(country, _COUNTRY_TO_CONTINENT.get(country, "OTHER").upper().replace(" ", "_"))
+
+        # Compute average vendor lead time per region from EINE
         eine = self._data.get("EINE", pd.DataFrame())
-        marc = self._data.get("MARC", pd.DataFrame())
+        region_lead_times: Dict[str, List[float]] = {}
+        if not eine.empty and "PLIFZ" in eine.columns and "LIFNR" in eine.columns:
+            for _, row in eine.iterrows():
+                vid = str(row.get("LIFNR", "")).strip()
+                lt_raw = pd.to_numeric(row.get("PLIFZ", 0), errors="coerce")
+                region = vendor_region.get(vid, "OTHER")
+                if lt_raw and lt_raw > 0:
+                    region_lead_times.setdefault(region, []).append(float(lt_raw))
+        avg_region_lt: Dict[str, int] = {}
+        for rk, lts in region_lead_times.items():
+            avg_region_lt[rk] = max(1, int(sum(lts) / len(lts)))
 
         count = 0
-        for lp in lane_previews:
-            from_site = self._sites.get(lp.from_key)
-            to_site = self._sites.get(lp.to_key)
+        created: Set[Tuple[int, int]] = set()
 
-            if not from_site or not to_site:
-                continue
+        # Determine which supply regions actually source to which plants
+        eord = self._data.get("EORD", pd.DataFrame())
+        ekpo = self._data.get("EKPO", pd.DataFrame())
+        ekko = self._data.get("EKKO", pd.DataFrame())
 
-            lt = lp.lead_time_days or 7  # default 7 days
-
-            lane = TransportationLane(
-                config_id=self._config.id,
-                from_site_id=from_site.id,
-                to_site_id=to_site.id,
-                capacity=10000,
-                lead_time_days={"min": max(1, lt - 2), "max": lt + 2},
-                supply_lead_time={"type": "deterministic", "value": lt},
-                demand_lead_time={"type": "deterministic", "value": 1},
+        # plant → set of supply regions
+        plant_supply_regions: Dict[str, Set[str]] = {}
+        if not eord.empty and "LIFNR" in eord.columns and "WERKS" in eord.columns:
+            for _, row in eord.iterrows():
+                vid = str(row["LIFNR"]).strip()
+                plant = str(row["WERKS"]).strip()
+                region = vendor_region.get(vid)
+                if region and plant in self._sites:
+                    plant_supply_regions.setdefault(plant, set()).add(region)
+        if not ekpo.empty and not ekko.empty:
+            merged = ekpo.merge(
+                ekko[["EBELN", "LIFNR"]].drop_duplicates(), on="EBELN", how="left",
             )
-            self.db.add(lane)
-            count += 1
+            if "LIFNR" in merged.columns and "WERKS" in merged.columns:
+                for _, row in merged.iterrows():
+                    vid = str(row["LIFNR"]).strip()
+                    plant = str(row["WERKS"]).strip()
+                    region = vendor_region.get(vid)
+                    if region and plant in self._sites:
+                        plant_supply_regions.setdefault(plant, set()).add(region)
+
+        # Create inbound lanes: SUPPLY_{region} → plant
+        for plant_key, regions in plant_supply_regions.items():
+            plant_site = self._sites.get(plant_key)
+            if not plant_site:
+                continue
+            for region in regions:
+                supply_site = self._sites.get(f"SUPPLY_{region}")
+                if supply_site and (supply_site.id, plant_site.id) not in created:
+                    lt = avg_region_lt.get(region, 7)
+                    lane = TransportationLane(
+                        config_id=self._config.id,
+                        from_site_id=supply_site.id,
+                        to_site_id=plant_site.id,
+                        capacity=10000,
+                        lead_time_days={"min": max(1, lt - 2), "max": lt + 2},
+                        supply_lead_time={"type": "deterministic", "value": lt},
+                        demand_lead_time={"type": "deterministic", "value": 1},
+                    )
+                    self.db.add(lane)
+                    created.add((supply_site.id, plant_site.id))
+                    count += 1
+
+        # Determine which demand regions each plant ships to
+        likp = self._data.get("LIKP", pd.DataFrame())
+        lips = self._data.get("LIPS", pd.DataFrame())
+        vbap = self._data.get("VBAP", pd.DataFrame())
+
+        plant_demand_regions: Dict[str, Set[str]] = {}
+        if not lips.empty and not likp.empty:
+            if "KUNNR" in likp.columns and "WERKS" in lips.columns:
+                merged_del = lips.merge(
+                    likp[["VBELN", "KUNNR"]].drop_duplicates(), on="VBELN", how="left",
+                )
+                if "KUNNR" in merged_del.columns:
+                    for _, row in merged_del.iterrows():
+                        cid = str(row["KUNNR"]).strip()
+                        plant = str(row["WERKS"]).strip()
+                        region = customer_region.get(cid)
+                        if region and plant in self._sites:
+                            plant_demand_regions.setdefault(plant, set()).add(region)
+        if not vbap.empty and "WERKS" in vbap.columns:
+            vbak = self._data.get("VBAK", pd.DataFrame())
+            if not vbak.empty and "KUNNR" in vbak.columns:
+                merged_so = vbap.merge(
+                    vbak[["VBELN", "KUNNR"]].drop_duplicates(), on="VBELN", how="left",
+                )
+                if "KUNNR" in merged_so.columns:
+                    for _, row in merged_so.iterrows():
+                        cid = str(row["KUNNR"]).strip()
+                        plant = str(row["WERKS"]).strip()
+                        region = customer_region.get(cid)
+                        if region and plant in self._sites:
+                            plant_demand_regions.setdefault(plant, set()).add(region)
+
+        # Create outbound lanes: plant → DEMAND_{region}
+        for plant_key, regions in plant_demand_regions.items():
+            plant_site = self._sites.get(plant_key)
+            if not plant_site:
+                continue
+            for region in regions:
+                demand_site = self._sites.get(f"DEMAND_{region}")
+                if demand_site and (plant_site.id, demand_site.id) not in created:
+                    lane = TransportationLane(
+                        config_id=self._config.id,
+                        from_site_id=plant_site.id,
+                        to_site_id=demand_site.id,
+                        capacity=10000,
+                        lead_time_days={"min": 1, "max": 5},
+                        supply_lead_time={"type": "deterministic", "value": 2},
+                        demand_lead_time={"type": "deterministic", "value": 1},
+                    )
+                    self.db.add(lane)
+                    created.add((plant_site.id, demand_site.id))
+                    count += 1
+
+        # Inter-plant transfers
+        eord = self._data.get("EORD", pd.DataFrame())
+        if not eord.empty and "FLIFN" in eord.columns:
+            inter_plant = eord[eord["FLIFN"].astype(str).str.strip() == "X"]
+            if not inter_plant.empty and "LIFNR" in inter_plant.columns and "WERKS" in inter_plant.columns:
+                for _, row in inter_plant.iterrows():
+                    src = str(row["LIFNR"]).strip()
+                    dst = str(row["WERKS"]).strip()
+                    if src in self._sites and dst in self._sites:
+                        src_site = self._sites[src]
+                        dst_site = self._sites[dst]
+                        if (src_site.id, dst_site.id) not in created:
+                            lane = TransportationLane(
+                                config_id=self._config.id,
+                                from_site_id=src_site.id,
+                                to_site_id=dst_site.id,
+                                capacity=10000,
+                                lead_time_days={"min": 1, "max": 3},
+                                supply_lead_time={"type": "deterministic", "value": 2},
+                                demand_lead_time={"type": "deterministic", "value": 1},
+                            )
+                            self.db.add(lane)
+                            created.add((src_site.id, dst_site.id))
+                            count += 1
 
         await self.db.flush()
         logger.info(f"Created {count} transportation lanes")
@@ -1746,51 +2162,77 @@ class SAPConfigBuilder:
         customer_count = 0
         sourcing_count = 0
 
-        # Vendors from LFA1
+        # Vendors from LFA1 (deduplicate by LIFNR)
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
         lfa1 = self._data.get("LFA1", pd.DataFrame())
         if not lfa1.empty and "LIFNR" in lfa1.columns:
+            seen_vendors: Dict[str, dict] = {}
             for _, row in lfa1.iterrows():
                 vendor_id = str(row["LIFNR"]).strip()
-                tp = TradingPartner(
-                    config_id=self._config.id,
-                    partner_id=vendor_id,
-                    partner_type="vendor",
-                    name=str(row.get("NAME1", vendor_id)).strip(),
+                if vendor_id and vendor_id not in seen_vendors:
+                    seen_vendors[vendor_id] = {
+                        "id": vendor_id,
+                        "tpartner_type": "vendor",
+                        "description": str(row.get("NAME1", vendor_id)).strip(),
+                        "source": "SAP_LFA1",
+                    }
+            if seen_vendors:
+                stmt = pg_insert(TradingPartner).values(list(seen_vendors.values()))
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["id"],
+                    set_={"description": stmt.excluded.description, "source": stmt.excluded.source},
                 )
-                self.db.add(tp)
-                vendor_count += 1
+                await self.db.execute(stmt)
+                for vid in seen_vendors:
+                    self._trading_partners[vid] = vid  # store key for reference
+                vendor_count = len(seen_vendors)
 
-        # Customers from KNA1
+        # Customers from KNA1 (deduplicate by KUNNR)
         kna1 = self._data.get("KNA1", pd.DataFrame())
         if not kna1.empty and "KUNNR" in kna1.columns:
+            seen_customers: Dict[str, dict] = {}
             for _, row in kna1.iterrows():
                 customer_id = str(row["KUNNR"]).strip()
-                tp = TradingPartner(
-                    config_id=self._config.id,
-                    partner_id=customer_id,
-                    partner_type="customer",
-                    name=str(row.get("NAME1", customer_id)).strip(),
+                if customer_id and customer_id not in seen_customers:
+                    seen_customers[customer_id] = {
+                        "id": customer_id,
+                        "tpartner_type": "customer",
+                        "description": str(row.get("NAME1", customer_id)).strip(),
+                        "source": "SAP_KNA1",
+                    }
+            if seen_customers:
+                stmt = pg_insert(TradingPartner).values(list(seen_customers.values()))
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["id"],
+                    set_={"description": stmt.excluded.description, "source": stmt.excluded.source},
                 )
-                self.db.add(tp)
-                customer_count += 1
+                await self.db.execute(stmt)
+                for cid in seen_customers:
+                    self._trading_partners[cid] = cid
+                customer_count = len(seen_customers)
 
         await self.db.flush()
 
-        # VendorProduct from EINA/EINE
+        # VendorProduct from EINA/EINE (deduplicate by vendor+product)
         eina = self._data.get("EINA", pd.DataFrame())
         eine = self._data.get("EINE", pd.DataFrame())
         if not eina.empty:
             vp_df = self.mapper.map_vendor_products(eina, eine)
             prefix = f"CFG{self._config.id}_"
+            seen_vp: set = set()
             for _, row in vp_df.iterrows():
                 product_id = f"{prefix}{row['product_id']}"
-                if row["product_id"] in self._products:
+                vendor_key = str(row["vendor_id"]).strip()
+                dedup_key = (vendor_key, product_id)
+                if row["product_id"] in self._products and dedup_key not in seen_vp:
+                    seen_vp.add(dedup_key)
                     vp = VendorProduct(
-                        config_id=self._config.id,
-                        vendor_id=row["vendor_id"],
+                        tpartner_id=vendor_key,
                         product_id=product_id,
-                        unit_price=float(row.get("net_price", 0)),
-                        min_order_qty=int(row.get("min_order_qty", 0)),
+                        vendor_unit_cost=float(row.get("net_price", 0) or 0),
+                        minimum_order_quantity=float(row.get("min_order_qty", 0) or 0),
+                        source="SAP_EINA",
                     )
                     self.db.add(vp)
 
@@ -1798,31 +2240,42 @@ class SAPConfigBuilder:
         eord = self._data.get("EORD", pd.DataFrame())
         if not eina.empty:
             vlt_df = self.mapper.map_vendor_lead_times(eina, eine, eord)
+            seen_vlt: set = set()
             for _, row in vlt_df.iterrows():
                 if row["product_id"] in self._products and row.get("site_id") in self._sites:
                     prefix = f"CFG{self._config.id}_"
-                    vlt = VendorLeadTime(
-                        config_id=self._config.id,
-                        vendor_id=row["vendor_id"],
-                        product_id=f"{prefix}{row['product_id']}",
-                        site_id=self._sites[row["site_id"]].id,
-                        lead_time_days=int(row.get("lead_time_days", 0)),
-                    )
-                    self.db.add(vlt)
+                    vendor_key = str(row["vendor_id"]).strip()
+                    site_id = self._sites[row["site_id"]].id
+                    dedup_key = (vendor_key, row["product_id"], site_id)
+                    if dedup_key not in seen_vlt:
+                        seen_vlt.add(dedup_key)
+                        vlt = VendorLeadTime(
+                            tpartner_id=vendor_key,
+                            product_id=f"{prefix}{row['product_id']}",
+                            site_id=site_id,
+                            lead_time_days=float(row.get("lead_time_days", 0) or 0),
+                            source="SAP_EINE",
+                        )
+                        self.db.add(vlt)
 
         # SourcingRules from EORD
         if not eord.empty:
             sr_df = self.mapper.map_sourcing_rules(eord)
-            for _, row in sr_df.iterrows():
+            for idx, row in sr_df.iterrows():
                 if row["product_id"] in self._products and row["site_id"] in self._sites:
                     prefix = f"CFG{self._config.id}_"
+                    product_id = f"{prefix}{row['product_id']}"
+                    to_site_id = self._sites[row["site_id"]].id
                     sr = SourcingRules(
+                        id=f"{prefix}SR_{sourcing_count}",
                         config_id=self._config.id,
-                        product_id=f"{prefix}{row['product_id']}",
-                        site_id=self._sites[row["site_id"]].id,
-                        source_type=row.get("source_type", "buy"),
-                        source_id=row.get("source_id", ""),
-                        priority=int(row.get("priority", 1)),
+                        product_id=product_id,
+                        to_site_id=to_site_id,
+                        sourcing_rule_type=row.get("source_type", "buy"),
+                        tpartner_id=str(row.get("source_id", "")).strip(),
+                        sourcing_priority=int(row.get("priority", 1)),
+                        is_active="true",
+                        source="SAP_EORD",
                     )
                     self.db.add(sr)
                     sourcing_count += 1
@@ -1857,12 +2310,14 @@ class SAPConfigBuilder:
                 bom_nr = str(row["STLNR"]).strip()
 
                 if parent_mat and parent_mat in self._products:
+                    base_qty = base_qty_map.get(bom_nr, 1.0)
+                    comp_qty = float(pd.to_numeric(row.get("MENGE", 1), errors="coerce") or 1)
                     bom = ProductBom(
                         config_id=self._config.id,
                         product_id=f"{prefix}{parent_mat}",
                         component_product_id=f"{prefix}{str(row.get('IDNRK', '')).strip()}",
-                        quantity=float(pd.to_numeric(row.get("MENGE", 1), errors="coerce") or 1),
-                        base_quantity=base_qty_map.get(bom_nr, 1.0),
+                        component_quantity=comp_qty / base_qty if base_qty else comp_qty,
+                        source="SAP_STPO",
                     )
                     self.db.add(bom)
                     bom_count += 1
@@ -1872,14 +2327,22 @@ class SAPConfigBuilder:
         plpo = self._data.get("PLPO", pd.DataFrame())
         if not plpo.empty:
             proc_df = self.mapper.map_production_process(plko, plpo)
+            seen_pp: set = set()
             for _, row in proc_df.iterrows():
                 if row.get("site_id") in self._sites:
+                    proc_id = str(row.get("process_id", f"PROC_{bom_count}"))
+                    op_num = str(row.get("operation_number", "0"))
+                    pp_key = f"CFG{self._config.id}_{proc_id}_{op_num}"
+                    if pp_key in seen_pp:
+                        continue
+                    seen_pp.add(pp_key)
                     pp = ProductionProcess(
+                        id=pp_key,
                         config_id=self._config.id,
                         site_id=self._sites[row["site_id"]].id,
-                        process_id=row.get("process_id", ""),
-                        setup_time=float(row.get("setup_time", 0)),
-                        run_time=float(row.get("machine_time", 0)),
+                        setup_time=float(row.get("setup_time", 0) or 0),
+                        operation_time=float(row.get("machine_time", 0) or 0),
+                        source="SAP_PLPO",
                     )
                     self.db.add(pp)
 
@@ -1928,9 +2391,11 @@ class SAPConfigBuilder:
                     product_id=f"{prefix}{mat_key}",
                     site_id=self._sites[loc_key].id,
                     forecast_date=datetime.utcnow().date(),
-                    p50=qty,
-                    p10=qty * 0.7,
-                    p90=qty * 1.3,
+                    forecast_quantity=qty,
+                    forecast_p50=qty,
+                    forecast_p10=round(qty * 0.7, 2),
+                    forecast_p90=round(qty * 1.3, 2),
+                    source="SAP_SNP",
                 )
                 self.db.add(forecast)
                 count += 1
@@ -1967,8 +2432,8 @@ class SAPConfigBuilder:
                 config_id=self._config.id,
                 product_id=product_id,
                 site_id=site_id,
-                quantity=qty,
-                snapshot_date=datetime.utcnow().date(),
+                on_hand_qty=qty,
+                inventory_date=datetime.utcnow().date(),
             )
             self.db.add(inv)
 
@@ -1978,7 +2443,8 @@ class SAPConfigBuilder:
                 product_id=product_id,
                 site_id=site_id,
                 ss_policy=default_policy,
-                ss_days_of_coverage=safety_days,
+                ss_days=safety_days,
+                is_active="true",
             )
             self.db.add(policy)
             count += 1
@@ -2072,6 +2538,23 @@ class SAPConfigBuilder:
         """Create all transactional data entities from SAP extracts."""
         opts = opts or {}
         counts: Dict[str, int] = {}
+
+        # Clean up prior SAP-imported transactional data to avoid PK/unique collisions on re-runs
+        await self.db.execute(sql_text(
+            "DELETE FROM inbound_order_line WHERE order_id IN "
+            "(SELECT id FROM inbound_order WHERE source = 'SAP_IMPORT' AND config_id != :cid)"
+        ), {"cid": self._config.id})
+        await self.db.execute(sql_text(
+            "DELETE FROM inbound_order WHERE source = 'SAP_IMPORT' AND config_id != :cid"
+        ), {"cid": self._config.id})
+        await self.db.execute(sql_text(
+            "DELETE FROM production_order_components WHERE production_order_id IN "
+            "(SELECT id FROM production_orders WHERE config_id != :cid AND order_number LIKE 'SAP-MO-%%')"
+        ), {"cid": self._config.id})
+        await self.db.execute(sql_text(
+            "DELETE FROM production_orders WHERE config_id != :cid AND order_number LIKE 'SAP-MO-%%'"
+        ), {"cid": self._config.id})
+        await self.db.flush()
 
         if opts.get("include_outbound_orders", True):
             counts["outbound_orders"] = await self._create_outbound_orders(
@@ -2208,6 +2691,7 @@ class SAPConfigBuilder:
                 status=ib_status,
                 order_date=order_date or datetime.utcnow().date(),
                 total_ordered_qty=total_qty,
+                config_id=self._config.id,
                 source="SAP_IMPORT",
                 source_event_id=f"PO-{ebeln}",
                 source_update_dttm=datetime.utcnow(),
@@ -2221,16 +2705,28 @@ class SAPConfigBuilder:
                     continue
 
                 line_status = self._elikz_to_inbound_status(str(pi.get("ELIKZ", "")))
-                ib_line = InboundOrderLine(
-                    order_id=f"SAP-PO-{ebeln}",
-                    line_number=int(pd.to_numeric(pi.get("EBELP", 1), errors="coerce") or 1),
-                    product_id=product_id,
-                    site_id=dest_site_id,
-                    ordered_quantity=float(pd.to_numeric(pi.get("MENGE", 0), errors="coerce") or 0),
-                    status=line_status,
-                    source="SAP_IMPORT",
+                qty = float(pd.to_numeric(pi.get("MENGE", 0), errors="coerce") or 0)
+                # Use raw SQL because the SQLAlchemy model is out of sync with the DB schema
+                await self.db.execute(
+                    sql_text("""
+                        INSERT INTO inbound_order_line
+                            (order_id, line_number, product_id, to_site_id, order_type,
+                             quantity_submitted, status, config_id, tenant_id)
+                        VALUES (:order_id, :line_number, :product_id, :to_site_id, :order_type,
+                                :quantity_submitted, :status, :config_id, :tenant_id)
+                    """),
+                    {
+                        "order_id": f"SAP-PO-{ebeln}",
+                        "line_number": int(pd.to_numeric(pi.get("EBELP", 1), errors="coerce") or 1),
+                        "product_id": product_id,
+                        "to_site_id": dest_site_id,
+                        "order_type": "PURCHASE",
+                        "quantity_submitted": qty,
+                        "status": line_status,
+                        "config_id": self._config.id,
+                        "tenant_id": self.tenant_id,
+                    },
                 )
-                self.db.add(ib_line)
 
             count += 1
 
@@ -2341,6 +2837,14 @@ class SAPConfigBuilder:
 
     async def _create_quality_orders(self) -> int:
         """Create QualityOrder records from QALS inspection lots."""
+        # Check if the quality_order table exists (it may not have been migrated yet)
+        result = await self.db.execute(sql_text(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'quality_order' LIMIT 1"
+        ))
+        if not result.scalar():
+            logger.info("quality_order table does not exist, skipping quality order creation")
+            return 0
+
         qals = self._data.get("QALS", pd.DataFrame())
         if qals.empty:
             return 0
@@ -2443,9 +2947,9 @@ class SAPConfigBuilder:
                 config_id=self._config.id,
                 forecast_date=fc_date,
                 forecast_quantity=round(qty, 2),
-                p10_quantity=round(max(0, qty - 1.28 * std), 2),
-                p50_quantity=round(qty, 2),
-                p90_quantity=round(qty + 1.28 * std, 2),
+                forecast_p10=round(max(0, qty - 1.28 * std), 2),
+                forecast_p50=round(qty, 2),
+                forecast_p90=round(qty + 1.28 * std, 2),
                 source="SAP_PIR",
             )
             self.db.add(fc)
@@ -2498,12 +3002,12 @@ class SAPConfigBuilder:
         Deactivates any existing active configs for this tenant first,
         ensuring only one active SAP-imported config exists at a time.
         """
-        # Deactivate previous active configs for this tenant
-        from sqlalchemy import text as sql_text
+        # Deactivate only previous SAP-imported configs (preserve learning/Beer Game configs)
         await self.db.execute(
             sql_text(
                 "UPDATE supply_chain_configs SET is_active = false "
-                "WHERE tenant_id = :tid AND is_active = true"
+                "WHERE tenant_id = :tid AND is_active = true "
+                "AND description LIKE 'Imported from SAP%%'"
             ),
             {"tid": self.tenant_id},
         )
