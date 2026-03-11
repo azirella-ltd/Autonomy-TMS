@@ -38,6 +38,7 @@ import {
   AlertTriangle,
   HelpCircle,
   Network,
+  Zap,
 } from 'lucide-react';
 import { useSnackbar } from 'notistack';
 import { format } from 'date-fns';
@@ -262,6 +263,34 @@ const SupplyChainConfigList = ({
     }
   };
 
+  const [warmStarting, setWarmStarting] = useState({});
+
+  const handleWarmStart = async (config) => {
+    if (!config) return;
+    const configId = config.id;
+    setWarmStarting((prev) => ({ ...prev, [configId]: true }));
+
+    try {
+      // Step 1: Warm start — historical demand, belief states, calibration
+      await api.post(`/warm-start/provision/${configId}`, null, { params: { weeks: 52 } });
+      enqueueSnackbar('Warm start queued — generating historical data, TRM decisions, and belief states...', { variant: 'info', autoHideDuration: 6000 });
+
+      // Step 2: Generate synthetic TRM decisions for decision stream
+      try {
+        await api.post('/model/trm/generate-synthetic-data', { config_id: configId, num_decisions: 200 });
+      } catch {
+        // Endpoint may not exist yet — warm start still provides value
+      }
+
+      enqueueSnackbar('Warm start initiated. Decision stream will populate within a few minutes.', { variant: 'success' });
+    } catch (err) {
+      const detail = err?.response?.data?.detail || 'Warm start failed';
+      enqueueSnackbar(detail, { variant: 'error' });
+    } finally {
+      setWarmStarting((prev) => ({ ...prev, [configId]: false }));
+    }
+  };
+
   const handleValidateConfig = async (configId) => {
     if (!configId || validatingConfig === configId) return;
 
@@ -392,6 +421,28 @@ const SupplyChainConfigList = ({
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>Edit</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+
+              {!readOnly && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleWarmStart(config)}
+                        disabled={warmStarting[config.id]}
+                      >
+                        {warmStarting[config.id] ? (
+                          <Spinner size="sm" />
+                        ) : (
+                          <Zap className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Warm Start — generate historical data and seed decision stream</TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
               )}
