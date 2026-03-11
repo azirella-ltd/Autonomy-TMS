@@ -1,23 +1,97 @@
 # RAG Ingestion Checklist
 
 Actionable checklist for populating the Knowledge Base with SCP resources.
-Use with the Knowledge Base UI at `/admin/knowledge-base` or batch via API.
+
+---
+
+## Infrastructure
+
+The RAG stack runs on **Acer-Nitro.local**. Three Docker containers must be running:
+
+| Container | Port | Purpose |
+|-----------|------|---------|
+| `autonomy-vllm` | 8001 | Chat inference (Qwen3-8B-AWQ, GPU) |
+| `autonomy-embeddings` | 11434 | Embedding service (nomic-embed-text via Ollama, CPU) |
+| `autonomy-kb-db` | 5432 | pgvector database (`autonomy_kb`) |
+
+```bash
+# Check containers are running (on Acer-Nitro.local)
+docker ps --filter name=autonomy
+
+# Health checks
+curl http://localhost:11434/api/tags      # Ollama models list
+curl http://localhost:8001/v1/models      # vLLM models list
+```
+
+---
+
+## How to Add Documents
+
+### Option A — Browser UI (Tenant Admins)
+
+Navigate to `/admin/knowledge-base` while logged in as a tenant admin.
+
+- **Documents tab**: Upload files one at a time (PDF, DOCX, TXT, MD, CSV)
+- **URL Sources tab**: Paste any public URL — HTML pages and direct PDF/DOCX links are both supported
+
+Note: Some sites (ASCM, Gartner) block automated access and will return an HTTP error. Download manually and upload as a file instead.
+
+### Option B — Drop Folder (Platform Admin, batch)
+
+Place files in `data/rag_intake/<category>/` on Acer-Nitro.local and run:
+
+```bash
+# From the Autonomy project root on Acer-Nitro.local
+python scripts/ingest_rag.py --intake-only
+```
+
+Available category subdirectories:
+`mps_mrp`, `inventory_optimization`, `demand_planning`, `supply_planning`, `sop_ibp`, `capacity_planning`, `atp_ctp`, `network_design`, `order_execution`, `stochastic_planning`, `decision_framework`, `ai_planning`, `ai_ml`, `analyst_reports`, `strategy`, `internal_docs`, `general`
+
+### Option C — URL Sources YAML (Platform Admin, batch)
+
+Add entries to `data/rag_sources.yaml` and run:
+
+```bash
+python scripts/ingest_rag.py --sources-only
+```
+
+YAML format:
+```yaml
+sources:
+  - type: url
+    url: https://example.com/whitepaper.pdf
+    category: analyst_reports
+    title: "Example Whitepaper"
+    tags: [example, tag]
+  # Also supports: type: gdrive (needs GDRIVE_API_KEY env var)
+  #                type: sharepoint (needs SHAREPOINT_TENANT_ID/CLIENT_ID/CLIENT_SECRET)
+```
+
+### Full batch run
+
+```bash
+# Processes docs/ + data/rag_intake/ + data/rag_sources.yaml
+python scripts/ingest_rag.py
+
+# Dry run — show what would be ingested without writing to DB
+python scripts/ingest_rag.py --dry-run
+```
+
+Already-indexed documents are skipped. Failed/pending records are deleted and retried on each run.
 
 ---
 
 ## Step 1: Ingest Existing Local Documents (38 PDFs)
 
-All files in `docs/Knowledge/` — upload each via the Knowledge Base:
+All files in `docs/Knowledge/` — use the batch ingest script (preferred) or upload individually via the UI.
 
 ```bash
-# Batch upload script (run from backend container or locally)
-for f in docs/Knowledge/*.pdf; do
-  curl -X POST http://localhost:8000/api/v1/knowledge-base/documents \
-    -H "Cookie: access_token=<your-jwt>" \
-    -F "file=@$f" \
-    -F "category=existing_research" \
-    -F "tags=local,existing"
-done
+# Batch ingest from docs/ (run on Acer-Nitro.local)
+python scripts/ingest_rag.py
+
+# Or upload individually via browser:
+# Admin → Knowledge Base → Documents tab → Choose File
 ```
 
 | Status | File | Category |
@@ -158,4 +232,4 @@ Use these categories when uploading to maintain consistent organization:
 
 ---
 
-*Last updated: 2026-02-23*
+*Last updated: 2026-03-11*

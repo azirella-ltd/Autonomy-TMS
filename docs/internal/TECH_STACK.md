@@ -566,17 +566,126 @@ Sources: Email, Slack, voice transcripts, market data feeds → signals consumed
 
 ## 11. Knowledge Base (RAG)
 
-**Vector Store**: pgvector extension on PostgreSQL (`pgvector/pgvector:pg16` Docker image)
+### 11.1 Infrastructure (Split Architecture)
 
-| Component | File |
-|-----------|------|
-| Models | `backend/app/models/knowledge_base.py` — `kb_documents`, `kb_chunks` |
-| Embedding Service | `backend/app/services/embedding_service.py` — OpenAI-compatible API |
-| Knowledge Base Service | `backend/app/services/knowledge_base_service.py` — ingest/search/manage |
-| API | `/api/v1/knowledge-base/documents`, `/search`, `/status` |
-| Frontend | `frontend/src/pages/admin/KnowledgeBase.jsx` |
+The RAG stack runs on **Acer-Nitro.local** — separate from the main application stack on MSI-Stealth.local.
 
-Embeddings via Ollama (nomic-embed-text) or OpenAI API. Chunking with overlap for context preservation.
+| Service | Host | Port | Container | Purpose |
+|---------|------|------|-----------|---------|
+| vLLM (chat) | acer-nitro.local | 8001 | `autonomy-vllm` | Qwen3-8B-AWQ inference, OpenAI-compatible |
+| Ollama (embeddings) | acer-nitro.local | 11434 | `autonomy-embeddings` | nomic-embed-text, 768-dim, CPU |
+| KB pgvector DB | acer-nitro.local | 5432 | `autonomy-kb-db` | `autonomy_kb` database, vector search |
+| Main PostgreSQL | msi-stealth.local | 5432 | `db` (in main stack) | All non-RAG application data |
+
+**vLLM flags** (fits qwen3-8b-awq on 8GB RTX 4060):
+```
+--model Qwen/Qwen3-8B-AWQ --quantization awq
+--max-model-len 4096 --gpu-memory-utilization 0.90 --enforce-eager
+```
+`--enforce-eager` disables torch dynamo compilation, freeing enough memory for the KV cache.
+
+**Environment variables** (in `.env`):
+```env
+LLM_API_BASE=http://acer-nitro.local:8001/v1
+EMBEDDING_API_BASE=http://acer-nitro.local:11434/v1
+EMBEDDING_MODEL=nomic-embed-text
+EMBEDDING_DIMENSIONS=768
+KB_DATABASE_URL=postgresql+psycopg2://kb_user:kb_password@acer-nitro.local:5432/autonomy_kb
+KB_ASYNC_DATABASE_URL=postgresql+asyncpg://kb_user:kb_password@acer-nitro.local:5432/autonomy_kb
+```
+
+### 11.2 Code Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| Models | `backend/app/models/knowledge_base.py` | `kb_documents`, `kb_chunks` (pgvector 768-dim) |
+| Embedding Service | `backend/app/services/embedding_service.py` | OpenAI-compatible embed API |
+| Knowledge Base Service | `backend/app/services/knowledge_base_service.py` | Ingest (file + URL), search, delete |
+| API | `backend/app/api/endpoints/knowledge_base.py` | REST endpoints |
+| Frontend | `frontend/src/pages/admin/KnowledgeBase.jsx` | Tenant admin UI |
+
+**API endpoints** (all under `/api/v1/knowledge-base/`):
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `POST` | `/documents` | Tenant Admin | Upload file (PDF/DOCX/TXT/MD) |
+| `POST` | `/ingest-url` | Tenant Admin | Fetch a URL and index it |
+| `GET` | `/documents` | Any user | List documents |
+| `DELETE` | `/documents/{id}` | Tenant Admin | Delete document + chunks |
+| `POST` | `/search` | Any user | Semantic similarity search |
+| `GET` | `/status` | Any user | Health stats |
+
+### 11.3 Ingestion Sources
+
+Three paths for populating the knowledge base:
+
+#### A. Tenant Admin — Browser UI (`/admin/knowledge-base`)
+- **Documents tab**: Upload files one at a time. Supports PDF, DOCX, TXT, MD, CSV.
+- **URL Sources tab**: Paste any public URL (HTML page or direct PDF/DOCX link). Backend fetches, extracts text, chunks, embeds, and stores. HTML pages are stripped of nav/scripts; PDF links are passed directly to the PDF parser.
+- 22 SCP-specific categories available in both upload forms.
+
+#### B. Platform Admin — Drop Folder (`data/rag_intake/`)
+Server-side drop folder with 17 category subdirectories. Place files here and run the batch script.
+```
+data/rag_intake/
+├── mps_mrp/           ├── inventory_optimization/   ├── demand_planning/
+├── supply_planning/   ├── sop_ibp/                  ├── capacity_planning/
+├── atp_ctp/           ├── network_design/           ├── order_execution/
+├── stochastic_planning/ ├── decision_framework/     ├── ai_planning/
+├── ai_ml/             ├── analyst_reports/          ├── strategy/
+├── internal_docs/     └── general/
+```
+
+#### C. Platform Admin — URL Sources (`data/rag_sources.yaml`)
+YAML-driven URL source list processed by the batch script. Supports `url`, `gdrive`, and `sharepoint` source types.
+```yaml
+sources:
+  - type: url
+    url: https://example.com/whitepaper.pdf
+    category: analyst_reports
+    title: "Example Whitepaper"
+    tags: [example, tag]
+```
+
+### 11.4 Batch Ingest Script
+
+**File**: `scripts/ingest_rag.py`
+
+Processes all three sources in one run. Connects directly to the local KB DB and Ollama embedding service (designed to run on Acer-Nitro.local).
+
+```bash
+# Full ingest (docs/ + data/rag_intake/ + data/rag_sources.yaml)
+python scripts/ingest_rag.py
+
+# Dry run — show what would be processed
+python scripts/ingest_rag.py --dry-run
+
+# URL sources only
+python scripts/ingest_rag.py --sources-only
+
+# Drop folder only
+python scripts/ingest_rag.py --intake-only
+```
+
+Already-indexed documents are skipped. Failed/pending records are deleted and retried.
+
+### 11.5 Document Processing Pipeline
+
+```
+File/URL/Text input
+    ↓
+Parse (PyPDF2 → OCR fallback for scanned PDFs, python-docx, plain text)
+    ↓ Strip NUL bytes (PostgreSQL rejects 0x00 in text columns)
+Chunk (1024 chars, 200 overlap, split on paragraph/sentence/word boundaries)
+    ↓
+Embed batch (Ollama nomic-embed-text → 768-dim float vectors)
+    ↓
+Insert kb_chunks with pgvector embeddings
+    ↓
+Update kb_documents.status = 'indexed'
+```
+
+**Search**: Cosine distance via pgvector `<=>` operator. Query is embedded with same model, then `1 - distance` = similarity score (0–1).
 
 ---
 
