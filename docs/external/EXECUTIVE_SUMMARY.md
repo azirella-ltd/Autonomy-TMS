@@ -341,6 +341,81 @@ This alone justifies the platform for organizations that make even one significa
 
 ---
 
+## Part 6: Causal AI — How the System Knows What Actually Works
+
+### The Attribution Problem
+
+When an AI agent makes 1,000 decisions per day and supply chain performance improves, the natural assumption is that the AI caused the improvement. But that assumption is often wrong. Demand may have been favorable. Suppliers may have been unusually reliable. Seasonal patterns may have shifted in the agent's favor. Measuring correlation between decisions and outcomes is not the same as establishing causation — and an AI system that learns from correlation rather than causation will learn the wrong lessons.
+
+This is the fundamental challenge of any learning system: **determining whether a decision actually caused a positive outcome requires answering a question about a world that didn't happen** — "What would have occurred if we had made a different decision?" This counterfactual question cannot be answered by observation alone. It requires causal inference.
+
+### Why This Matters for Supply Chain
+
+In supply chain planning, the attribution problem is especially severe because:
+
+- **Multiple agents act simultaneously**: An ATP fulfillment improvement might be caused by the ATP agent's decision, the PO agent's earlier restocking, or the inventory buffer agent's preemptive safety stock increase. Attributing the outcome to any single agent without controlling for the others is misleading.
+- **Feedback delays vary dramatically**: ATP outcomes are observable in 4 hours. Inventory buffer adjustments take 14 days to evaluate. Purchase order quality takes 7 days. An agent trained on immediate feedback will overweight short-term outcomes.
+- **Human overrides create selection bias**: Planners override AI recommendations precisely when they disagree — which means overridden decisions are systematically different from non-overridden ones. Comparing override outcomes to agent outcomes without matching on context produces biased estimates of human vs. AI performance.
+
+A system that ignores these challenges will either: (a) train agents on spurious correlations, producing models that fail in novel conditions; or (b) misjudge which human overrides are beneficial, learning from the wrong planners.
+
+### How Autonomy Solves It: Three Tiers of Causal Inference
+
+Autonomy implements a tiered causal inference strategy, matched to the observability characteristics of each decision type:
+
+**Tier 1 — Analytical Counterfactuals** (ATP, Forecast Adjustment, Quality Disposition)
+
+For decisions where the outcome is directly observable and the counterfactual can be computed analytically. When a planner overrides an ATP decision (changing promised quantity from 80 to 100), and the actual demand turns out to be 90, the system computes both outcomes:
+- Agent's counterfactual: fill rate = min(1.0, 80/90) = 88.9%
+- Human's actual: fill rate = min(1.0, 100/90) = 100%
+- Delta: +11.1% — the override was beneficial
+
+This is the gold standard: a direct comparison of the decision that was made against the decision that would have been made, using the same actual environment outcome.
+
+**Tier 2 — Statistical Matching** (MO, TO, PO, Order Tracking)
+
+For decisions where analytical counterfactuals are not feasible (too many confounding variables), the system uses propensity-score matching. For each overridden decision, it finds a non-overridden decision made under similar conditions (same site, same decision type, similar inventory levels, demand patterns, and backlog) and compares their outcomes.
+
+The match quality determines the signal strength: high-quality matches (similar state vectors) produce strong causal signals; poor matches produce weak signals. This prevents the system from drawing strong conclusions from dissimilar comparisons.
+
+**Tier 3 — Bayesian Priors** (Inventory Buffer, Maintenance, Subcontracting)
+
+For decisions with long feedback delays (14-30 days) and high confounding, the system maintains uninformative Bayesian priors and updates them slowly as evidence accumulates. This prevents premature conclusions from limited data while still capturing long-term patterns.
+
+### The Override Effectiveness Engine
+
+Every planner who overrides an AI decision is tracked with a Bayesian probability distribution — not to evaluate the planner, but to calibrate how much influence their judgment should have on future AI training.
+
+A planner who consistently improves outcomes when overriding ATP decisions earns higher training weight for ATP — their judgment patterns are more heavily weighted when the agent learns from historical data. A planner whose overrides consistently produce worse outcomes earns lower weight — not as punishment, but as calibration. The system learns *whose judgment to trust for which decision types*.
+
+Critically, override effectiveness is measured at two scopes:
+- **Decision-local**: Did this specific override produce a better outcome?
+- **Site-wide**: Did the override improve the site's aggregate balanced scorecard?
+
+The site-wide scope prevents a subtle failure mode: an override that looks good for one decision but harms the broader system (e.g., expediting one order at the expense of ten others). The composite score weights systemic impact 60% and local impact 40%.
+
+### Conformal Decision Theory: Risk Bounds on Every Decision
+
+Every decision the AI makes carries a calibrated risk bound: **P(loss > threshold)**. This is not a point estimate — it's a distribution-free guarantee derived from historical decision-outcome pairs using conformal prediction.
+
+When a decision's risk bound exceeds 20%, it is automatically escalated to a human planner. When it's below 10%, the decision executes autonomously. The thresholds are configurable per organization, allowing gradual expansion of AI autonomy as the system accumulates calibration data.
+
+### The Causal Learning Flywheel
+
+```
+Decision made → Outcome observed (4h to 30d later) →
+Counterfactual computed → Treatment effect estimated →
+Override effectiveness updated → Training weights adjusted →
+Agent retrained with causally-grounded sample weights →
+Better decisions → Better outcomes → ...
+```
+
+This is what makes Autonomy's learning trustworthy. The system doesn't just learn from outcomes — it learns from *causally attributed* outcomes. An agent that happened to increase orders during a demand surge doesn't get credit for the surge. An agent whose specific decision pattern actually caused better fill rates does.
+
+Over 12 months, this produces agents that generalize to novel situations — because they learned *what works and why*, not *what happened to correlate with good outcomes*.
+
+---
+
 ## Revolutionary Continuous Autonomous Planning Architecture
 
 ### Transforming Supply Chain Management from Cadence to Event-Driven

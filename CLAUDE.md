@@ -88,7 +88,7 @@ When implementing any entity:
 
 ## Project Overview
 
-**Autonomy Platform with AI & Simulation** - An enterprise-grade supply chain planning and execution system compatible with AWS Supply Chain standards, enhanced with three unique differentiators:
+**Autonomy Platform with AI & Simulation** - An enterprise-grade supply chain planning and execution system compatible with AWS Supply Chain standards, enhanced with four unique differentiators:
 
 ### Core: AWS Supply Chain Compliance
 
@@ -230,6 +230,38 @@ Narrow TRMs (VFA - Value Function Approximation)
 4. **Continuous Improvement**: Human decisions generate training data for AI agents (RLHF)
 
 **Integration**: Beer Game scenarios use core AWS SC services underneath (demand planning, supply planning, inventory management).
+
+### Differentiator #4: Causal AI (Decision Outcome Attribution)
+
+**Purpose**: Rigorously determine whether decisions actually caused positive outcomes — not just correlate "we did X and Y happened" but answer "what would have happened if we hadn't done X?" (the counterfactual).
+
+**The core problem**: When an AI agent makes 1,000 decisions per day, and outcomes improve, you cannot simply attribute the improvement to the agent. Demand may have been favorable. Suppliers may have been on time. Competing decisions from other agents may have helped. Without causal inference, you're measuring correlation, not causation — and training on correlation produces agents that learn the wrong lessons.
+
+**Three-Tier Causal Inference Strategy**:
+
+| Tier | Decision Types | Method | Signal Strength |
+|------|---------------|--------|-----------------|
+| **1 — Analytical Counterfactual** | ATP, Forecast Adjustment, Quality | Direct computation: "What reward would the agent's recommendation have earned given the actual environment outcome?" | 1.0 (full) |
+| **2 — Statistical Matching** | MO, TO, PO, Order Tracking | Propensity-score matching: find similar non-overridden decisions as controls, compute treatment effect | 0.3–0.9 (scales with match availability) |
+| **3 — Bayesian Prior** | Inventory Buffer, Maintenance, Subcontracting | Beta posterior only (high confounding, long feedback horizons). Future: causal forests (Athey & Imbens 2018) | 0.15 (minimal) |
+
+**Five Causal AI Systems (all deployed and scheduled)**:
+
+1. **Counterfactual Computation** (`outcome_collector.py`): For every overridden decision, computes what the agent's original recommendation would have earned. Four specialized counterfactual methods (ATP, inventory, PO, general) + site-window BSC for systemic impact.
+
+2. **Propensity-Score Matching** (`causal_matching_service.py`): Daily job finds matched pairs of overridden vs. non-overridden decisions with similar state vectors (L2 distance on normalized features). Enables causal treatment effect estimation for Tier 2 decisions.
+
+3. **Bayesian Override Effectiveness** (`override_effectiveness_service.py`): Each (user, TRM type) pair carries a Beta(α, β) posterior tracking whether that user's overrides improve outcomes. Feeds directly into TRM training weights — users with historically beneficial overrides get higher training influence.
+
+4. **Conformal Decision Theory** (`conformal_prediction/conformal_decision.py`, `cdt_calibration_service.py`): Every TRM decision carries a distribution-free risk bound P(loss > threshold). Calibrated hourly from historical decision-outcome pairs. Governs autonomous vs. escalated execution.
+
+5. **Outcome Collection Pipeline** (`outcome_collector.py`, `relearning_jobs.py`): Three parallel collection paths — SiteAgentDecision (:30), all 11 TRM types (:32), Claude Skills decisions (:33). Feedback horizons matched to decision type (ATP: 4h, PO: 7d, inventory buffer: 14d).
+
+**Why this matters**: Causal AI is what makes the learning flywheel trustworthy. Without it, the system would learn from spurious correlations — an agent that happened to increase orders during a demand surge would appear successful, even though any action would have succeeded. With causal inference, the system learns *which specific decision patterns actually cause better outcomes*, producing agents that generalize to novel situations rather than overfitting to historical accidents.
+
+**Implementation files**: `outcome_collector.py`, `override_effectiveness_service.py`, `causal_matching_service.py`, `conformal_prediction/conformal_decision.py`, `cdt_calibration_service.py`, `relearning_jobs.py`
+**Database tables**: `override_effectiveness_posteriors`, `override_causal_match_pairs`, `powell_*_decisions` (11 tables with outcome columns)
+**Documentation**: [OVERRIDE_EFFECTIVENESS_METHODOLOGY.md](docs/OVERRIDE_EFFECTIVENESS_METHODOLOGY.md), [POWELL_APPROACH.md](POWELL_APPROACH.md) §5.9.10
 
 ---
 

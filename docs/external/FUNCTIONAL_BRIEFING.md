@@ -13,7 +13,7 @@
 
 ## 1. Platform Overview
 
-Autonomy is an enterprise supply chain planning and execution platform that combines continuous event-driven planning, three-tier AI decision-making, stochastic uncertainty modeling, and digital twin simulation into a single operating environment.
+Autonomy is an enterprise supply chain planning and execution platform built on four pillars: **AI agents** (three-tier decision-making at millisecond to weekly cadences), **stochastic planning** (probabilistic outcomes with 21 distribution types), **simulation** (digital twin for risk-free testing and agent training), and **causal AI** (counterfactual reasoning that determines which decisions actually caused positive outcomes — making the learning loop trustworthy).
 
 The platform is built on the AWS Supply Chain data model (100% compliant, 35/35 entities) and uses what we call the **Adaptive Decision Hierarchy (ADH)** — a layered architecture where strategic, operational, and execution decisions are made at appropriate time scales by appropriate models, with intelligent escalation between layers.
 
@@ -302,14 +302,18 @@ GDPR-safe email ingestion that monitors customer and supplier inboxes, extracts 
 > *Navigation: Planning > Collaboration Hub*
 > Shows team messaging with threaded conversations, @mentions, inline comments on orders/plans, and activity feed.
 
-### 6.5 Override Effectiveness Tracking
+### 6.5 Causal AI — Decision Outcome Attribution
 
-Human overrides are tracked and scored using Bayesian Beta posteriors:
+Determining whether an AI decision actually caused a positive outcome — not just correlated with one — is the foundational challenge of any learning system. The platform implements a full causal inference pipeline:
 
-- **Per-user, per-decision-type tracking**: Each override builds a statistical record of whether that person's overrides improve or worsen outcomes
-- **Systemic impact measurement**: Overrides measured at both decision-local and site-window scope to prevent locally-good but systemically-harmful overrides
-- **Training weight adjustment**: Override quality directly influences how much weight that user's decisions carry in future agent training
-- **Causal learning pipeline**: Progresses from Bayesian priors through propensity-score matching to causal forests
+- **Counterfactual computation**: For every overridden decision, computes what the agent's original recommendation would have earned given the actual environment. Example: agent recommended 80 units, human chose 100, actual demand was 90 → agent fill rate 88.9%, human 100%, treatment effect +11.1%.
+- **Three-tier causal inference**: Analytical counterfactuals (ATP, Forecast, Quality — full signal), propensity-score matching (MO, TO, PO — statistical controls), Bayesian priors (Inventory Buffer, Maintenance — slow accumulation from long feedback delays)
+- **Systemic impact measurement**: Overrides measured at both decision-local scope (did this specific override help?) and site-window balanced scorecard scope (did it improve the broader site?). Composite: 40% local + 60% systemic — prevents locally-good but systemically-harmful overrides.
+- **Bayesian training weight adjustment**: Each (user, decision type) pair carries a Beta(α, β) posterior. Override quality directly influences how much weight that user's decision patterns carry in future agent training.
+- **Conformal Decision Theory**: Every TRM decision carries a calibrated risk bound P(loss > threshold) — a distribution-free guarantee derived from historical decision-outcome pairs. Governs autonomous execution vs. human escalation.
+- **Causal learning progression**: Bayesian priors → propensity-score matching → doubly robust estimation → causal forests (Athey & Imbens 2018) that identify *when* overrides help vs. hurt
+
+**Why this is a pillar, not a feature**: Without causal inference, the learning loop trains on correlation — agents learn what happened to coincide with good outcomes. With causal inference, agents learn what actually *caused* good outcomes. This is the difference between a system that degrades when conditions change and one that generalizes.
 
 ---
 

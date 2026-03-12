@@ -781,6 +781,71 @@ When no trained model exists, the site coordinator outputs zero adjustments — 
 
 ---
 
+## Part 14: Causal AI — The Fourth Pillar
+
+### The Outcome Attribution Problem
+
+The learning loop described in Part 4 depends on a critical assumption: that we can correctly attribute outcomes to the decisions that caused them. In practice, this is the hardest problem in the entire architecture.
+
+When an ATP agent promises 80 units and the order ships on time, was that because of the ATP decision, the PO agent's earlier restocking, the inventory buffer agent's preemptive increase, or favorable demand that would have produced a good outcome regardless? Attributing the outcome to the ATP agent without controlling for these confounders produces biased training data — and biased training data produces agents that learn the wrong lessons.
+
+This is not an academic concern. It is the difference between an AI system that gets genuinely smarter over time and one that overfits to historical accidents.
+
+### Counterfactual Reasoning: The Foundation
+
+The only rigorous way to determine whether a decision caused a positive outcome is to compare the actual outcome against what *would have happened* under a different decision — the counterfactual. For decisions where a human planner overrides the agent, both paths can be estimated:
+
+- **Agent's counterfactual**: Given the actual environment outcome (real demand, real lead times), what reward would the agent's original recommendation have earned?
+- **Human's actual**: Given the same environment, what reward did the override produce?
+- **Treatment effect**: The difference is the causal effect of the override.
+
+For ATP decisions, this computation is direct: if the agent recommended 80 units, the human overrode to 100, and actual demand was 90, the agent's counterfactual fill rate is 88.9% vs. the human's actual 100%. The override was demonstrably beneficial.
+
+For more complex decisions (production scheduling, maintenance timing), analytical counterfactuals are not feasible — too many confounding variables interact. The system uses **propensity-score matching** instead: finding non-overridden decisions made under similar conditions (same site, similar inventory, demand, and backlog) and comparing their outcomes as statistical controls.
+
+### Three Tiers of Causal Inference
+
+The tiered strategy matches causal inference methods to each decision type's observability characteristics:
+
+| Tier | Decision Types | Method | Signal Strength | Feedback Delay |
+|------|---------------|--------|-----------------|----------------|
+| **1** | ATP, Forecast Adjustment, Quality | Analytical counterfactual | 1.0 | 4h–7d |
+| **2** | MO, TO, PO, Order Tracking | Propensity-score matching (L2 nearest-neighbor on state vectors) | 0.3–0.9 (scales with match count) | 1d–14d |
+| **3** | Inventory Buffer, Maintenance, Subcontracting | Bayesian Beta prior (high confounding, long delays) | 0.15 | 14d–30d |
+
+Tier 2 signal strength increases as the matching service accumulates more comparison pairs — 0 matches yields 0.30, 50+ matches yields 0.90. This prevents the system from drawing strong causal conclusions from insufficient evidence.
+
+### From Causation to Training Weights
+
+The causal inference pipeline feeds directly into the TRM training loop through **Bayesian override effectiveness posteriors**. Each (user, TRM type) pair maintains a Beta(α, β) distribution:
+
+- When an override outcome exceeds the agent's counterfactual → α increases (beneficial signal)
+- When an override outcome is worse → β increases (detrimental signal)
+- Neutral outcomes → no update
+
+The posterior's expected value E[p] = α/(α+β) translates to a **training weight**: users with historically beneficial overrides get higher sample weights when their decision patterns are used to train agents. This is not evaluation of planners — it is calibration of how much each planner's judgment should influence the AI's learning.
+
+### Systemic Impact: Beyond Decision-Local Attribution
+
+A subtle failure mode: an override that looks beneficial for one decision but harms the broader system. A planner who expedites one order may improve that order's on-time delivery while consuming capacity that delays ten other orders. The decision-local counterfactual shows a win; the systemic impact is a loss.
+
+The system measures both scopes:
+- **Local**: Counterfactual comparison for the specific decision
+- **Site-window**: Balanced scorecard comparison across the entire site for a window surrounding the override
+
+The composite score weights systemic impact 60% and local impact 40%, preventing locally-good but systemically-harmful overrides from inflating training weights.
+
+### Why This Is a Pillar, Not a Feature
+
+Causal AI is not a monitoring dashboard or an analytics add-on. It is the mechanism that makes the entire learning loop trustworthy:
+
+- Without causal inference, the learning loop trains on **correlation** — agents learn what happened to co-occur with good outcomes, including favorable demand, lucky timing, and other agents' contributions
+- With causal inference, the learning loop trains on **causation** — agents learn which specific decision patterns actually produce better outcomes, controlling for confounders
+
+This is the difference between an AI system that degrades when conditions change (because its correlations break) and one that generalizes (because it learned actual causal relationships). For supply chain planning — where conditions change constantly — this distinction is not optional.
+
+---
+
 ## Summary: The Architecture in One Paragraph
 
 Autonomy operates as a five-layer decision stack — strategic network analysis (weekly), tactical allocation (network coordination model, daily), learned intra-site cross-agent coordination (hourly), operational execution (agent cluster, milliseconds), and deterministic validation (engines, always) — where each layer constrains the layer below through policy parameters, directives, urgency modulation, and hard constraints. Within each site, 11 narrow decision agents coordinate through a biologically-inspired signal system with pheromone-like decay, organized into a six-phase decision cycle that ensures scouts observe before foragers act. Across sites, information flows along the supply chain DAG through inter-site signals generated by the network coordination model, preserving local autonomy while maintaining global coherence. A confidence-based router steers ~5% of low-confidence decisions to an exception handler for deep reasoning, and every decision feeds a closed-loop learning pipeline — outcome collection, uncertainty calibration, Bayesian override tracking, and periodic retraining — that makes the system measurably smarter from every planning cycle it runs. Distribution-aware feature engineering replaces normal-distribution assumptions with MLE-fitted distributions for safety stock, demand classification, and agent state vectors. A six-phase digital twin pipeline — supervised learning, coordinated simulation, cross-agent model training, stress testing, copilot calibration, and autonomous operation — takes agents from zero experience to production autonomy in 3-5 weeks. When execution-level anomalies signal that strategic policy parameters are wrong, the Escalation Arbiter detects persistent directional drift and routes the problem to the appropriate higher tier — operational (coordination refresh) or strategic (S&OP policy review) — closing the vertical feedback loop that connects execution outcomes to policy correction. And throughout, every stocking decision, rebalancing transfer, and purchase order is evaluated in dollar-denominated economic terms — actual holding costs, stockout costs, and ordering costs from the product and policy configuration — with censored demand detection, probabilistic forecast scoring, and automated weekly policy re-optimization ensuring the economic parameters stay calibrated to reality. The result is a purpose-built Decision Intelligence Platform for supply chain — where every recurring decision is modeled as a trackable asset with defined inputs, logic, confidence, and measured outcomes — delivering the full Decision Intelligence lifecycle (model, orchestrate, monitor, govern) natively within the supply chain domain.

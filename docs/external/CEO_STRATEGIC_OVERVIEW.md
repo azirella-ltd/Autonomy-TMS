@@ -17,7 +17,7 @@
 
 **What We Are**: An autonomous supply chain planning and execution platform that replaces manual planning workflows with AI agents operating at machine speed, governed by a comprehensive supply chain data model.
 
-**What Makes Us Different**: Four architectural innovations that no incumbent offers as an integrated system:
+**What Makes Us Different**: Five architectural innovations that no incumbent offers as an integrated system:
 
 | Innovation | What It Does | Why It Matters |
 |-----------|-------------|----------------|
@@ -25,8 +25,9 @@
 | **Powell Framework** | Three-tier AI architecture (Strategic → Tactical → Execution) with formal policy optimization | Vertically integrated AI from S&OP down to individual order promising |
 | **Capable-to-Promise (CTP)** | Multi-stage network traversal with full-level pegging | Every unit traceable from customer order through factory to vendor; promise dates reflect reality |
 | **Agentic Authorization Protocol** | Agents negotiate cross-functional trade-offs at machine speed | Resolves conflicts (cost vs. service, allocation vs. expedite) in seconds, not days |
+| **Causal AI** | Counterfactual reasoning determines which decisions actually caused positive outcomes | Learning loop trains on causation, not correlation — agents generalize instead of overfitting |
 
-**Strategic Position**: We are not building a better spreadsheet or a cheaper Kinaxis. We are building the first platform where AI agents autonomously run supply chain operations, using CTP as their decision basis and the balanced scorecard as their shared language, with humans overseeing outcomes rather than making individual decisions.
+**Strategic Position**: We are not building a better spreadsheet or a cheaper Kinaxis. We are building the first platform where AI agents autonomously run supply chain operations, using CTP as their decision basis, the balanced scorecard as their shared language, and causal AI as their learning foundation — with humans overseeing outcomes rather than making individual decisions.
 
 ---
 
@@ -61,7 +62,7 @@ The fundamental problem is not that planners lack tools -- it's that **humans ar
 
 ---
 
-## Part 2: The Four Architectural Innovations
+## Part 2: The Five Architectural Innovations
 
 ### Innovation 1: LLM-First UI
 
@@ -300,11 +301,34 @@ Select best option          →  Include justification      →  AUTHORIZE or
 
 **Reference**: [Agentic Authorization Protocol](AGENTIC_AUTHORIZATION_PROTOCOL.md)
 
+### Innovation 5: Causal AI — Outcome Attribution Through Counterfactual Reasoning
+
+**Core Idea**: Determine whether decisions actually caused positive outcomes — not through correlation ("we did X and Y improved") but through counterfactual reasoning ("what would have happened if we hadn't done X?").
+
+**Why It's Essential**: When 11 AI agents each make hundreds of decisions per day, attributing outcomes to the correct agent and decision is the hardest problem in the learning loop. Without causal inference:
+- An agent that increases orders during a lucky demand surge looks brilliant — but would have looked brilliant doing anything
+- A planner whose override coincides with a supplier improvement gets undeserved credit
+- Training on these false attributions produces agents that learn the wrong lessons and fail when conditions change
+
+**Three-Tier Strategy**:
+
+| Tier | Decision Types | Causal Method |
+|------|---------------|---------------|
+| **Analytical Counterfactual** | ATP, Forecast, Quality | Direct computation: "Agent recommended 80, human chose 100, actual demand was 90 → agent fill rate 89%, human 100%, delta +11%" |
+| **Statistical Matching** | MO, TO, PO, Order Tracking | Propensity-score matching: find non-overridden decisions under similar conditions, compare outcomes as causal controls |
+| **Bayesian Prior** | Inventory Buffer, Maintenance | Slow posterior accumulation from long-delayed outcomes (14-30 days); prevents premature conclusions |
+
+**Systemic Impact Measurement**: Decision-local counterfactuals can miss an override that helps one order but harms ten others (by consuming shared capacity). The system measures both local impact (40% weight) and site-wide balanced scorecard delta (60% weight), preventing locally-good but systemically-harmful overrides from corrupting training.
+
+**The Flywheel**: Causal attribution → Bayesian training weights → Agents that learn *what actually works* → Better decisions → Better attributable outcomes → Better training → ...
+
+This is the mechanism that makes the learning flywheel trustworthy. Without it, the platform would be an expensive pattern-matching system that degrades when conditions shift. With it, agents genuinely improve because they learn causal relationships, not correlations.
+
 ---
 
-## Part 3: How the Four Innovations Work Together
+## Part 3: How the Five Innovations Work Together
 
-The four innovations are not independent features. They form an integrated system:
+The five innovations are not independent features. They form an integrated system:
 
 ```
                     ┌─────────────────────────────┐
