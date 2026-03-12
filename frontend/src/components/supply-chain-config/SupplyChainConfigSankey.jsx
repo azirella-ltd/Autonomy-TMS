@@ -514,7 +514,10 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
       setConfigOptions(filtered);
       setConfigsError(null);
       if (filtered.length > 0) {
-        setSelectedConfigId((current) => current ?? filtered[0]?.id ?? null);
+        const isTbgOrLearning = (c) => /tbg|learning/i.test(c.name || '');
+        const productionConfigs = filtered.filter((c) => !isTbgOrLearning(c));
+        const defaultConfig = (productionConfigs.length > 0 ? productionConfigs : filtered)[0];
+        setSelectedConfigId((current) => current ?? defaultConfig?.id ?? null);
       } else {
         setSelectedConfigId(null);
       }
