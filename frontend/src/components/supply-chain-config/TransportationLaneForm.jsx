@@ -59,21 +59,35 @@ const getDeterministicValue = (distribution, fallback) => {
 };
 
 const SITE_TYPE_LABELS = {
+  // AWS SC DM types
+  customer: 'Customer',
+  distribution_center: 'Distribution Center',
+  warehouse: 'Warehouse',
+  manufacturing_plant: 'Manufacturing Plant',
+  vendor: 'Vendor',
+  market_supply: 'Market Supply',
+  market_demand: 'Market Demand',
+  // Legacy TBG types
   retailer: 'Retailer',
   wholesaler: 'Wholesaler',
   distributor: 'Distributor',
   manufacturer: 'Manufacturer',
-  market_supply: 'Market Supply',
-  market_demand: 'Market Demand',
 };
 
 const SITE_TYPE_VARIANTS = {
+  // AWS SC DM types
+  customer: 'success',
+  distribution_center: 'info',
+  warehouse: 'info',
+  manufacturing_plant: 'warning',
+  vendor: 'default',
+  market_supply: 'default',
+  market_demand: 'secondary',
+  // Legacy TBG types
   retailer: 'success',
   wholesaler: 'destructive',
   distributor: 'info',
   manufacturer: 'warning',
-  market_supply: 'default',
-  market_demand: 'secondary',
 };
 
 /**

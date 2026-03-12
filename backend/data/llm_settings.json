@@ -1,0 +1,4 @@
+{
+  "briefing_provider": "claude",
+  "skills_provider": "vllm"
+}

@@ -24,17 +24,23 @@ if TYPE_CHECKING:
     from .sc_entities import Product, TradingPartner
 
 class NodeType(str, PyEnum):
-    RETAILER = "RETAILER"
-    WHOLESALER = "WHOLESALER"
-    DISTRIBUTOR = "DISTRIBUTOR"
-    INVENTORY = "INVENTORY"
-    MANUFACTURER = "MANUFACTURER"
+    # AWS SC DM internal site types
+    DISTRIBUTION_CENTER = "DISTRIBUTION_CENTER"
+    WAREHOUSE = "WAREHOUSE"
+    MANUFACTURING_PLANT = "MANUFACTURING_PLANT"
+    INVENTORY = "INVENTORY"           # generic inventory site
+    MANUFACTURER = "MANUFACTURER"     # generic manufacturer site
     SUPPLIER = "SUPPLIER"
     # External trading partners — represented by TradingPartner records, not internal sites.
     # These values are retained for backward compatibility with existing DB rows during migration.
     # New code must use Site.is_external=True + Site.trading_partner_id instead.
     VENDOR = "VENDOR"       # replaces MARKET_SUPPLY
     CUSTOMER = "CUSTOMER"   # replaces MARKET_DEMAND
+    # Legacy TBG types — retained for backward compatibility with existing DB rows.
+    # New configs should use DISTRIBUTION_CENTER, WAREHOUSE, MANUFACTURING_PLANT.
+    RETAILER = "RETAILER"
+    WHOLESALER = "WHOLESALER"
+    DISTRIBUTOR = "DISTRIBUTOR"
 
 def _default_site_type_definitions() -> list:
     """Return the default ordered list of site type definitions.
@@ -52,33 +58,25 @@ def _default_site_type_definitions() -> list:
             "tpartner_type": "customer",
         },
         {
-            "type": "RETAILER",
-            "label": "Retailer",
+            "type": "DISTRIBUTION_CENTER",
+            "label": "Distribution Center",
             "order": 1,
             "is_required": False,
             "is_external": False,
             "master_type": "inventory",
         },
         {
-            "type": "WHOLESALER",
-            "label": "Wholesaler",
+            "type": "WAREHOUSE",
+            "label": "Warehouse",
             "order": 2,
             "is_required": False,
             "is_external": False,
             "master_type": "inventory",
         },
         {
-            "type": "DISTRIBUTOR",
-            "label": "Distributor",
+            "type": "MANUFACTURING_PLANT",
+            "label": "Manufacturing Plant",
             "order": 3,
-            "is_required": False,
-            "is_external": False,
-            "master_type": "inventory",
-        },
-        {
-            "type": NodeType.MANUFACTURER.value,
-            "label": "Manufacturer",
-            "order": 4,
             "is_required": False,
             "is_external": False,
             "master_type": "manufacturer",
@@ -86,7 +84,7 @@ def _default_site_type_definitions() -> list:
         {
             "type": NodeType.VENDOR.value,
             "label": "Vendor",
-            "order": 5,
+            "order": 4,
             "is_required": True,
             "is_external": True,
             "tpartner_type": "vendor",
