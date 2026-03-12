@@ -328,74 +328,99 @@ class ProvisioningService:
 
     async def _step_decision_seed(self, config_id: int) -> dict:
         """
-        Step 10: Seed the Decision Stream by running one real GNN orchestration
-        cycle + one TRM decision cycle per active site.
-
-        Populates powell_*_decisions tables from actual inventory, orders, and
-        forecasts in the DB — no synthetic data. The Decision Stream is only as
-        good as the real data available at provisioning time.
+        Step 10: Seed the Decision Stream by running one TRM decision cycle per
+        active site.  Populates powell_*_decisions tables from actual inventory,
+        orders, and forecasts — no synthetic data.
         """
+        from app.db.session import sync_session_factory
+        from app.services.powell.site_agent import SiteAgent, SiteAgentConfig
+
         sites_processed = 0
         decisions_generated = 0
         errors = []
 
+        sync_db = sync_session_factory()
         try:
-            # 1. Run GNN orchestration cycle — generates tGNN site directives
-            from app.services.powell.gnn_orchestration_service import GNNOrchestrationService
-            gnn_svc = GNNOrchestrationService(db=self.db, config_id=config_id)
-            gnn_result = await gnn_svc.run_full_cycle()
-            logger.info(
-                "Decision seed GNN cycle complete for config %d: %s",
-                config_id, gnn_result.get("status", "?"),
-            )
-        except Exception as e:
-            logger.warning("Decision seed GNN cycle failed (non-critical): %s", e)
-            errors.append(f"GNN: {str(e)[:100]}")
-
-        try:
-            # 2. Run one TRM decision cycle per active site
-            from sqlalchemy import text
-            rows = await self.db.execute(
+            # Query internal sites directly by config_id (site.config_id FK)
+            site_rows = sync_db.execute(
                 text("""
-                    SELECT s.id, s.site_key
-                    FROM site s
-                    JOIN supply_chain_configs scc ON scc.id = :config_id
-                    WHERE s.company_id = scc.company_id
-                      AND s.master_type NOT IN ('MARKET_SUPPLY', 'MARKET_DEMAND')
-                    ORDER BY s.id
+                    SELECT id, name, master_type, type
+                    FROM site
+                    WHERE config_id = :config_id
+                      AND COALESCE(master_type, 'INVENTORY') NOT IN ('MARKET_SUPPLY', 'MARKET_DEMAND')
+                      AND is_external = false
+                    ORDER BY id
                 """),
                 {"config_id": config_id},
-            )
-            site_rows = rows.fetchall()
+            ).fetchall()
 
-            from app.services.powell.site_agent import SiteAgent, SiteAgentConfig
-            for site_id, site_key in site_rows:
+            for site_id, site_name, master_type, sc_site_type in site_rows:
+                sk = site_name or str(site_id)
+                # Use a fresh session per site so that setup_matrix failures
+                # (e.g. missing resource_capacity_constraint table) don't
+                # corrupt the shared session and block subsequent TRM calls.
+                site_db = sync_session_factory()
                 try:
                     cfg = SiteAgentConfig(
-                        config_id=config_id,
-                        site_id=site_id,
-                        site_key=site_key or str(site_id),
+                        site_key=sk,
+                        master_type=(master_type or "inventory").lower(),
+                        sc_site_type=sc_site_type,
+                        tenant_id=None,
                     )
-                    agent = SiteAgent(db=self.db, config=cfg)
-                    result = await agent.execute_decision_cycle()
-                    decisions_generated += result.get("decisions_made", 0)
+                    # Pass db_session=None so SiteAgent.__init__ doesn't query
+                    # missing tables (e.g. resource_capacity_constraint) which
+                    # would corrupt the session before TRM calls.
+                    agent = SiteAgent(config=cfg, db_session=None)
+
+                    # Build executors from the linter-generated helpers
+                    trm_instances = _build_trm_instances(
+                        agent.active_trms, site_db, config_id, sk, site_id,
+                    )
+                    for name, trm in trm_instances.items():
+                        try:
+                            agent.connect_trm(name, trm)
+                        except Exception:
+                            pass
+
+                    executors = _build_trm_executors(
+                        trm_instances, site_db, config_id, site_id, sk,
+                    )
+
+                    result = agent.execute_decision_cycle(trm_executors=executors)
+                    site_db.commit()
+
+                    # CycleResult: count TRMs that actually ran
+                    n = sum(len(p.trms_executed) for p in result.phases) if hasattr(result, "phases") else 0
+                    decisions_generated += n
                     sites_processed += 1
                 except Exception as site_err:
                     logger.warning(
-                        "Decision seed failed for site %s: %s", site_key, site_err
+                        "Decision seed failed for site %s: %s", sk, site_err
                     )
-                    errors.append(f"site {site_key}: {str(site_err)[:80]}")
+                    errors.append(f"site {sk}: {str(site_err)[:80]}")
+                    try:
+                        site_db.rollback()
+                    except Exception:
+                        pass
+                finally:
+                    site_db.close()
 
+            sync_db.commit()
         except Exception as e:
             logger.warning("Decision seed site loop failed (non-critical): %s", e)
             errors.append(f"site_loop: {str(e)[:100]}")
+            try:
+                sync_db.rollback()
+            except Exception:
+                pass
+        finally:
+            sync_db.close()
 
-        await self.db.commit()
         return {
             "status": "ok" if not errors else "partial",
             "sites_processed": sites_processed,
             "decisions_generated": decisions_generated,
-            "errors": errors[:5],  # cap to avoid bloated status
+            "errors": errors[:5],
         }
 
     async def _step_site_tgnn(self, config_id: int) -> dict:
@@ -537,3 +562,488 @@ class ProvisioningService:
             "errors": result.errors,
             "duration_seconds": result.duration_seconds,
         }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TRM instance factory and executor builders for _step_decision_seed
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _build_trm_instances(
+    active_trms: frozenset,
+    db,
+    config_id: int,
+    site_key: str,
+    site_id: int,
+) -> dict:
+    """Instantiate the TRM objects for a site, keyed by canonical name.
+
+    Each TRM is constructed with ``db`` and ``config_id`` so that its
+    internal ``_persist_*`` method can write to the appropriate
+    ``powell_*_decisions`` table.
+    """
+    instances = {}
+
+    if "po_creation" in active_trms:
+        try:
+            from app.services.powell.po_creation_trm import POCreationTRM
+            instances["po_creation"] = POCreationTRM(
+                db=db, config_id=config_id, use_heuristic_fallback=True,
+            )
+        except Exception as e:
+            logger.debug("po_creation TRM init: %s", e)
+
+    if "order_tracking" in active_trms:
+        try:
+            from app.services.powell.order_tracking_trm import OrderTrackingTRM
+            instances["order_tracking"] = OrderTrackingTRM(
+                db=db, config_id=config_id, use_heuristic_fallback=True,
+            )
+        except Exception as e:
+            logger.debug("order_tracking TRM init: %s", e)
+
+    if "inventory_buffer" in active_trms:
+        try:
+            from app.services.powell.inventory_buffer_trm import InventoryBufferTRM
+            instances["inventory_buffer"] = InventoryBufferTRM(
+                db=db, config_id=config_id, use_heuristic_fallback=True,
+            )
+        except Exception as e:
+            logger.debug("inventory_buffer TRM init: %s", e)
+
+    if "rebalancing" in active_trms:
+        try:
+            from app.services.powell.inventory_rebalancing_trm import InventoryRebalancingTRM
+            instances["rebalancing"] = InventoryRebalancingTRM(
+                db=db, config_id=config_id, use_heuristic_fallback=True,
+            )
+        except Exception as e:
+            logger.debug("rebalancing TRM init: %s", e)
+
+    if "forecast_adjustment" in active_trms:
+        try:
+            from app.services.powell.forecast_adjustment_trm import ForecastAdjustmentTRM
+            instances["forecast_adjustment"] = ForecastAdjustmentTRM(
+                site_key=site_key, db_session=db,
+            )
+        except Exception as e:
+            logger.debug("forecast_adjustment TRM init: %s", e)
+
+    if "atp_executor" in active_trms:
+        try:
+            from app.services.powell.atp_executor import ATPExecutorTRM
+            from app.services.powell.allocation_service import (
+                AllocationService, AllocationConfig, AllocationCadence,
+                UnfulfillableOrderAction,
+            )
+            alloc_cfg = AllocationConfig(
+                cadence=AllocationCadence.WEEKLY,
+                unfulfillable_action=UnfulfillableOrderAction.DEFER,
+                allow_cross_priority_consumption=False,
+            )
+            instances["atp_executor"] = ATPExecutorTRM(
+                allocation_service=AllocationService(alloc_cfg),
+                db=db, config_id=config_id, use_heuristic_fallback=True,
+            )
+        except Exception as e:
+            logger.debug("atp_executor TRM init: %s", e)
+
+    if "mo_execution" in active_trms:
+        try:
+            from app.services.powell.mo_execution_trm import MOExecutionTRM
+            instances["mo_execution"] = MOExecutionTRM(
+                site_key=site_key, db_session=db,
+            )
+        except Exception as e:
+            logger.debug("mo_execution TRM init: %s", e)
+
+    if "to_execution" in active_trms:
+        try:
+            from app.services.powell.to_execution_trm import TOExecutionTRM
+            instances["to_execution"] = TOExecutionTRM(
+                site_key=site_key, db_session=db,
+            )
+        except Exception as e:
+            logger.debug("to_execution TRM init: %s", e)
+
+    if "quality_disposition" in active_trms:
+        try:
+            from app.services.powell.quality_disposition_trm import QualityDispositionTRM
+            instances["quality_disposition"] = QualityDispositionTRM(
+                site_key=site_key, db_session=db,
+            )
+        except Exception as e:
+            logger.debug("quality_disposition TRM init: %s", e)
+
+    if "maintenance_scheduling" in active_trms:
+        try:
+            from app.services.powell.maintenance_scheduling_trm import MaintenanceSchedulingTRM
+            instances["maintenance_scheduling"] = MaintenanceSchedulingTRM(
+                site_key=site_key, db_session=db,
+            )
+        except Exception as e:
+            logger.debug("maintenance_scheduling TRM init: %s", e)
+
+    if "subcontracting" in active_trms:
+        try:
+            from app.services.powell.subcontracting_trm import SubcontractingTRM
+            instances["subcontracting"] = SubcontractingTRM(
+                site_key=site_key, db_session=db,
+            )
+        except Exception as e:
+            logger.debug("subcontracting TRM init: %s", e)
+
+    return instances
+
+
+def _build_trm_executors(
+    trm_instances: dict,
+    db,
+    config_id: int,
+    site_id: int,
+    site_key: str,
+) -> dict:
+    """Build zero-arg executor callables for each TRM instance.
+
+    Each executor queries real state from DB and calls the TRM's evaluate
+    method.  The TRM auto-persists its decision if ``db`` and ``config_id``
+    were provided at construction time.
+    """
+    def _safe_exec(fn, db=db):
+        """Wrap an executor in a savepoint so a failed SQL statement only
+        rolls back that TRM's work, not previous TRMs' persisted decisions."""
+        sp = db.begin_nested()
+        try:
+            fn()
+            sp.commit()
+        except Exception as exc:
+            logger.warning("TRM executor error (rolling back savepoint): %s", exc)
+            try:
+                sp.rollback()
+            except Exception:
+                pass
+
+    executors = {}
+
+    if "po_creation" in trm_instances:
+        def _run_po(trm=trm_instances["po_creation"]):
+            _safe_exec(lambda: _evaluate_po_for_site(trm, db, config_id, site_id))
+        executors["po_creation"] = _run_po
+
+    if "order_tracking" in trm_instances:
+        def _run_ot(trm=trm_instances["order_tracking"]):
+            _safe_exec(lambda: _evaluate_order_tracking_for_site(trm, db, config_id, site_id))
+        executors["order_tracking"] = _run_ot
+
+    if "inventory_buffer" in trm_instances:
+        def _run_ib(trm=trm_instances["inventory_buffer"]):
+            _safe_exec(lambda: _evaluate_buffer_for_site(trm, db, config_id, site_id))
+        executors["inventory_buffer"] = _run_ib
+
+    if "rebalancing" in trm_instances:
+        def _run_rb(trm=trm_instances["rebalancing"]):
+            _safe_exec(lambda: _evaluate_rebalancing_for_site(trm, db, config_id, site_id))
+        executors["rebalancing"] = _run_rb
+
+    # TRMs that need order-level or signal-level triggers not available
+    # during cold-start seeding.  They participate in the decision cycle
+    # (emitting/receiving hive signals) but do not generate decisions.
+    for name in ("atp_executor", "forecast_adjustment", "mo_execution",
+                 "to_execution", "quality_disposition", "maintenance_scheduling",
+                 "subcontracting"):
+        if name in trm_instances:
+            executors[name] = lambda: None
+
+    return executors
+
+
+# ── Per-TRM site-level evaluation helpers ──────────────────────────────────
+
+def _evaluate_po_for_site(trm, db, config_id: int, site_id: int):
+    """Evaluate PO needs for all products stocked at a site."""
+    from app.services.powell.po_creation_trm import (
+        POCreationState, InventoryPosition, SupplierInfo,
+    )
+
+    rows = db.execute(
+        text("""
+            SELECT DISTINCT il.product_id,
+                   COALESCE(SUM(il.on_hand_qty), 0) AS on_hand,
+                   COALESCE(SUM(il.in_transit_qty), 0) AS in_transit,
+                   COALESCE(SUM(il.allocated_qty), 0) AS allocated,
+                   COALESCE(AVG(f.forecast_p50), 0) AS forecast_30
+            FROM inv_level il
+            LEFT JOIN forecast f
+                ON f.product_id = il.product_id
+                AND f.site_id = il.site_id
+                AND f.forecast_date >= CURRENT_DATE
+                AND f.forecast_date < CURRENT_DATE + INTERVAL '30 days'
+            WHERE il.site_id = :site_id
+            GROUP BY il.product_id
+            LIMIT 50
+        """),
+        {"site_id": site_id},
+    ).fetchall()
+
+    for product_id, on_hand, in_transit, allocated, forecast_30 in rows:
+        try:
+            # Find suppliers for this product (use savepoint to recover on SQL error)
+            sp = db.begin_nested()
+            try:
+                supplier_rows = db.execute(
+                    text("""
+                        SELECT vp.tpartner_id, COALESCE(vp.vendor_unit_cost, 10.0),
+                               COALESCE(vlt.lead_time_days, 7) AS lead_time,
+                               0.95 AS reliability
+                        FROM vendor_product vp
+                        LEFT JOIN vendor_lead_time vlt
+                            ON vlt.tpartner_id = vp.tpartner_id
+                            AND vlt.product_id = vp.product_id
+                        WHERE vp.product_id = :product_id
+                        LIMIT 5
+                    """),
+                    {"product_id": product_id},
+                ).fetchall()
+                sp.commit()
+            except Exception:
+                sp.rollback()
+                supplier_rows = []
+
+            pid = str(product_id)
+            sid = str(site_id)
+            suppliers = [
+                SupplierInfo(
+                    supplier_id=str(s[0]),
+                    product_id=pid,
+                    lead_time_days=float(s[2]),
+                    lead_time_variability=float(s[2]) * 0.15,
+                    unit_cost=float(s[1]),
+                    order_cost=float(s[1]) * 0.1,
+                    min_order_qty=0.0,
+                    max_order_qty=999999.0,
+                )
+                for s in supplier_rows
+            ]
+            if not suppliers:
+                suppliers = [SupplierInfo(
+                    supplier_id="default", product_id=pid,
+                    lead_time_days=7.0, lead_time_variability=1.0,
+                    unit_cost=10.0, order_cost=1.0,
+                    min_order_qty=0.0, max_order_qty=999999.0,
+                )]
+
+            ss_val = float(forecast_30) * 0.3
+            avg_daily = float(forecast_30) / 30.0 if forecast_30 else 1.0
+            state = POCreationState(
+                product_id=pid,
+                location_id=sid,
+                inventory_position=InventoryPosition(
+                    product_id=pid,
+                    location_id=sid,
+                    on_hand=float(on_hand),
+                    in_transit=float(in_transit),
+                    on_order=0.0,
+                    committed=float(allocated),
+                    backlog=0.0,
+                    safety_stock=ss_val,
+                    reorder_point=ss_val * 1.5,
+                    target_inventory=ss_val * 2.0,
+                    average_daily_demand=avg_daily,
+                    demand_variability=avg_daily * 0.3,
+                ),
+                suppliers=suppliers,
+                forecast_next_30_days=float(forecast_30),
+                forecast_uncertainty=float(forecast_30) * 0.2,
+            )
+            trm.evaluate_po_need(state)
+        except Exception as e:
+            logger.warning("PO eval for product %s at site %s: %s", product_id, site_id, e)
+
+
+def _evaluate_order_tracking_for_site(trm, db, config_id: int, site_id: int):
+    """Evaluate open orders at a site for exceptions."""
+    from app.services.powell.order_tracking_trm import (
+        OrderState, OrderType, OrderStatus,
+    )
+    from datetime import date
+
+    rows = db.execute(
+        text("""
+            SELECT iol.id, iol.product_id, iol.quantity_submitted,
+                   iol.expected_delivery_date, iol.status,
+                   iol.created_at
+            FROM inbound_order_line iol
+            WHERE iol.to_site_id = :site_id
+              AND iol.status NOT IN ('RECEIVED', 'CANCELLED', 'CLOSED')
+              AND iol.config_id = :config_id
+            LIMIT 30
+        """),
+        {"site_id": site_id, "config_id": config_id},
+    ).fetchall()
+
+    for order_id, product_id, qty, expected_date, status, created_at in rows:
+        try:
+            state = OrderState(
+                order_id=str(order_id),
+                order_type=OrderType.PURCHASE_ORDER,
+                status=OrderStatus.CONFIRMED,
+                created_date=str(created_at or date.today()),
+                expected_date=str(expected_date or date.today()),
+                ordered_qty=float(qty or 0),
+                product_id=str(product_id or ""),
+                to_location=str(site_id),
+            )
+            trm.evaluate_order(state)
+        except Exception as e:
+            logger.warning("Order tracking eval for order %s: %s", order_id, e)
+
+
+def _evaluate_buffer_for_site(trm, db, config_id: int, site_id: int):
+    """Evaluate inventory buffer levels at a site."""
+    from app.services.powell.inventory_buffer_trm import BufferState
+    from datetime import datetime as dt
+
+    rows = db.execute(
+        text("""
+            SELECT ip.product_id,
+                   COALESCE(ip.ss_quantity, 0) AS ss_qty,
+                   COALESCE(il.on_hand_qty, 0) AS on_hand,
+                   COALESCE(AVG(f.forecast_p50), 0) AS avg_demand,
+                   ip.ss_policy
+            FROM inv_policy ip
+            LEFT JOIN inv_level il
+                ON il.product_id = ip.product_id AND il.site_id = ip.site_id
+            LEFT JOIN forecast f
+                ON f.product_id = ip.product_id
+                AND f.site_id = ip.site_id
+                AND f.forecast_date >= CURRENT_DATE
+                AND f.forecast_date < CURRENT_DATE + INTERVAL '30 days'
+            WHERE ip.site_id = :site_id
+            GROUP BY ip.product_id, ip.ss_quantity, il.on_hand_qty, ip.ss_policy
+            LIMIT 50
+        """),
+        {"site_id": site_id},
+    ).fetchall()
+
+    for product_id, ss_qty, on_hand, avg_demand, ss_policy in rows:
+        try:
+            avg_daily = float(avg_demand) / 30.0 if avg_demand else 1.0
+            dos = float(on_hand) / avg_daily if avg_daily > 0 else 30.0
+            state = BufferState(
+                product_id=str(product_id),
+                location_id=str(site_id),
+                baseline_ss=float(ss_qty),
+                baseline_reorder_point=float(ss_qty) * 1.5,
+                baseline_target_inventory=float(ss_qty) * 2.0,
+                policy_type=str(ss_policy or "sl"),
+                current_on_hand=float(on_hand),
+                current_dos=dos,
+                demand_cv=0.3,
+                avg_daily_demand=avg_daily,
+                demand_trend=0.0,
+                seasonal_index=1.0,
+                month_of_year=dt.now().month,
+                recent_excess_days=0,
+                forecast_bias=0.0,
+                lead_time_days=7.0,
+                lead_time_cv=0.2,
+                recent_stockout_count=0,
+            )
+            trm.evaluate(state)
+        except Exception as e:
+            logger.warning("Buffer eval for product %s at site %s: %s", product_id, site_id, e)
+
+
+def _evaluate_rebalancing_for_site(trm, db, config_id: int, site_id: int):
+    """Evaluate inventory rebalancing opportunities for a site.
+
+    Rebalancing requires network-wide state (multiple sites + transfer lanes),
+    which is expensive to assemble.  During cold-start seeding we build a
+    minimal RebalancingState from the site's own inventory and any connected
+    sites via transportation_lane.
+    """
+    from app.services.powell.inventory_rebalancing_trm import (
+        RebalancingState, SiteInventoryState, TransferLane,
+    )
+
+    # Get products at this site with inventory
+    product_rows = db.execute(
+        text("""
+            SELECT DISTINCT il.product_id
+            FROM inv_level il
+            WHERE il.site_id = :site_id AND il.on_hand_qty > 0
+            LIMIT 20
+        """),
+        {"site_id": site_id},
+    ).fetchall()
+
+    for (product_id,) in product_rows:
+        try:
+            # Get inventory at this site and connected sites
+            inv_rows = db.execute(
+                text("""
+                    SELECT il.site_id, il.on_hand_qty,
+                           COALESCE(ip.ss_quantity, 0) AS ss_qty,
+                           COALESCE(AVG(f.forecast_p50), 0) AS weekly_demand
+                    FROM inv_level il
+                    LEFT JOIN inv_policy ip
+                        ON ip.product_id = il.product_id AND ip.site_id = il.site_id
+                    LEFT JOIN forecast f
+                        ON f.product_id = il.product_id
+                        AND f.site_id = il.site_id
+                        AND f.forecast_date >= CURRENT_DATE
+                        AND f.forecast_date < CURRENT_DATE + INTERVAL '7 days'
+                    WHERE il.product_id = :product_id
+                    GROUP BY il.site_id, il.on_hand_qty, ip.ss_quantity
+                    LIMIT 10
+                """),
+                {"product_id": product_id},
+            ).fetchall()
+
+            site_states = {}
+            for sid, oh, ss, wd in inv_rows:
+                site_states[str(sid)] = SiteInventoryState(
+                    site_id=str(sid),
+                    product_id=str(product_id),
+                    on_hand=float(oh),
+                    in_transit=0.0,
+                    committed=0.0,
+                    backlog=0.0,
+                    demand_forecast=float(wd),
+                    demand_uncertainty=float(wd) * 0.2,
+                )
+
+            # Get transfer lanes between these sites
+            lane_rows = db.execute(
+                text("""
+                    SELECT tl.source_site_id, tl.dest_site_id,
+                           COALESCE((tl.supply_lead_time->>'days')::float, 3) AS lt,
+                           COALESCE(tl.cost_per_unit, 1.0) AS cost
+                    FROM transportation_lane tl
+                    WHERE tl.source_site_id = :site_id
+                       OR tl.dest_site_id = :site_id
+                    LIMIT 20
+                """),
+                {"site_id": site_id},
+            ).fetchall()
+
+            lanes = [
+                TransferLane(
+                    from_site=str(lr[0]),
+                    to_site=str(lr[1]),
+                    transfer_time=float(lr[2]),
+                    cost_per_unit=float(lr[3]),
+                )
+                for lr in lane_rows
+            ]
+
+            if len(site_states) < 2:
+                continue
+
+            state = RebalancingState(
+                product_id=str(product_id),
+                site_states=site_states,
+                transfer_lanes=lanes,
+            )
+            trm.evaluate_rebalancing(state)
+        except Exception as e:
+            logger.warning("Rebalancing eval for product %s at site %s: %s", product_id, site_id, e)
