@@ -160,21 +160,82 @@ class ProvisioningService:
             db.close()
 
     async def _step_sop_graphsage(self, config_id: int) -> dict:
-        """Step 2: Train S&OP GraphSAGE model."""
-        # GraphSAGE training requires network topology + historical data
-        return {"status": "ok", "note": "S&OP GraphSAGE training queued"}
+        """Step 2: Train S&OP GraphSAGE model (foreground fallback, normally runs via _bg)."""
+        from app.services.powell.generic_training_orchestrator import GenericTrainingOrchestrator
+        orchestrator = GenericTrainingOrchestrator(config_id=config_id)
+        result = await orchestrator.train_sop_graphsage()
+        return {"status": "ok", "models_trained": result.models_trained}
 
     async def _step_cfa_optimization(self, config_id: int) -> dict:
-        """Step 3: CFA policy parameter optimization."""
-        return {"status": "ok", "note": "CFA optimization queued for next cycle"}
+        """Step 3: CFA policy parameter optimization via Differential Evolution."""
+        from app.db.session import sync_session_factory
+        sync_db = sync_session_factory()
+        try:
+            from app.services.powell.policy_optimizer import InventoryPolicyOptimizer
+            from app.models.powell import PowellPolicyParameters
+            from app.models.supply_chain_config import SupplyChainConfig
+
+            config = sync_db.query(SupplyChainConfig).get(config_id)
+            if not config:
+                return {"status": "skipped", "reason": "Config not found"}
+
+            optimizer = InventoryPolicyOptimizer(
+                db=sync_db,
+                config_id=config_id,
+                tenant_id=config.tenant_id,
+            )
+            result = optimizer.optimize(method="differential_evolution")
+
+            if result and result.converged:
+                from datetime import datetime as dt
+                for param_name, param_value in result.optimal_params.items():
+                    existing = (
+                        sync_db.query(PowellPolicyParameters)
+                        .filter(
+                            PowellPolicyParameters.config_id == config_id,
+                            PowellPolicyParameters.parameter_name == param_name,
+                        )
+                        .first()
+                    )
+                    if existing:
+                        existing.parameter_value = param_value
+                        existing.updated_at = dt.utcnow()
+                    else:
+                        sync_db.add(PowellPolicyParameters(
+                            config_id=config_id,
+                            tenant_id=config.tenant_id,
+                            parameter_name=param_name,
+                            parameter_value=param_value,
+                            optimization_method="differential_evolution",
+                        ))
+                sync_db.commit()
+                return {
+                    "status": "ok",
+                    "cost": result.optimal_cost,
+                    "iterations": result.iterations,
+                    "params_optimized": len(result.optimal_params),
+                }
+            else:
+                return {"status": "ok", "note": "CFA optimization did not converge"}
+        except Exception as e:
+            logger.warning("CFA optimization failed (non-critical): %s", e)
+            return {"status": "ok", "note": f"CFA optimization attempted: {str(e)[:100]}"}
+        finally:
+            sync_db.close()
 
     async def _step_execution_tgnn(self, config_id: int) -> dict:
-        """Step 4: Train Execution tGNN."""
-        return {"status": "ok", "note": "Execution tGNN training queued"}
+        """Step 4: Train Execution tGNN (foreground fallback, normally runs via _bg)."""
+        from app.services.powell.generic_training_orchestrator import GenericTrainingOrchestrator
+        orchestrator = GenericTrainingOrchestrator(config_id=config_id)
+        result = await orchestrator.train_execution_tgnn()
+        return {"status": "ok", "models_trained": result.models_trained}
 
     async def _step_trm_training(self, config_id: int) -> dict:
-        """Step 5: TRM Phase 1 Behavioral Cloning."""
-        return {"status": "ok", "note": "TRM BC training queued"}
+        """Step 5: TRM Phase 1 BC (foreground fallback, normally runs via _bg)."""
+        from app.services.powell.generic_training_orchestrator import GenericTrainingOrchestrator
+        orchestrator = GenericTrainingOrchestrator(config_id=config_id)
+        result = await orchestrator.train_trms(epochs=10, num_samples=2000)
+        return {"status": "ok", "trms_trained": result.models_trained}
 
     async def _step_supply_plan(self, config_id: int) -> dict:
         """Step 6: Generate initial supply plan."""
@@ -224,8 +285,11 @@ class ProvisioningService:
             return {"status": "ok", "note": "Decision seeding attempted"}
 
     async def _step_site_tgnn(self, config_id: int) -> dict:
-        """Step 8: Train Site tGNN (Layer 1.5)."""
-        return {"status": "ok", "note": "Site tGNN training queued"}
+        """Step 8: Train Site tGNN (foreground fallback, normally runs via _bg)."""
+        from app.services.powell.generic_training_orchestrator import GenericTrainingOrchestrator
+        orchestrator = GenericTrainingOrchestrator(config_id=config_id)
+        result = await orchestrator.train_site_tgnns(epochs=5)
+        return {"status": "ok", "sites_trained": result.sites_trained}
 
     async def _step_conformal(self, config_id: int) -> dict:
         """Step 9: Conformal calibration."""
