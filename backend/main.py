@@ -6203,6 +6203,10 @@ api.include_router(provisioning_router, tags=["provisioning"])
 from app.api.endpoints.email_signals import router as email_signals_router
 api.include_router(email_signals_router, tags=["email-signals"])
 
+# Slack Signal Intelligence — SC signals from Slack channels
+from app.api.endpoints.slack_signals import router as slack_signals_router
+api.include_router(slack_signals_router, tags=["slack-signals"])
+
 # Consensus Planning API
 from app.api.endpoints.consensus_planning import router as consensus_planning_router
 api.include_router(consensus_planning_router, prefix="/consensus-planning", tags=["consensus-planning", "demand-planning"])

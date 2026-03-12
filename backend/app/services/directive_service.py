@@ -958,6 +958,70 @@ class DirectiveService:
         except Exception as e:
             logger.debug("Exception context query failed: %s", e)
 
+        # Knowledge Base — semantic search across uploaded documents
+        try:
+            from app.services.knowledge_base_service import KnowledgeBaseService
+            kb = KnowledgeBaseService(self.db, tenant_id=user.tenant_id)
+            kb_context = await kb.search_for_context(raw_text, top_k=5, max_tokens=2000)
+            if kb_context:
+                data_context_parts.append(kb_context)
+        except Exception as e:
+            logger.debug("Knowledge Base context query failed: %s", e)
+
+        # Recent email signals (last 7 days, classified)
+        try:
+            email_q = text("""
+                SELECT signal_type, signal_direction, signal_magnitude_pct,
+                       partner_name, subject_scrubbed, signal_urgency,
+                       received_at
+                FROM email_signals
+                WHERE tenant_id = :tid
+                  AND status IN ('CLASSIFIED', 'ROUTED', 'ACTED')
+                  AND received_at >= CURRENT_TIMESTAMP - INTERVAL '7 days'
+                ORDER BY received_at DESC
+                LIMIT 10
+            """)
+            rows = await self.db.execute(email_q, {"tid": user.tenant_id})
+            email_data = rows.fetchall()
+            if email_data:
+                lines = ["Recent email signals (last 7 days):"]
+                for r in email_data:
+                    lines.append(
+                        f"  {r[6]} {r[0]} from {r[3] or 'unknown'}: "
+                        f"{r[1] or ''} {r[2] or ''}% "
+                        f"(urgency={r[5]}, subject={r[4]})"
+                    )
+                data_context_parts.append("\n".join(lines))
+        except Exception as e:
+            logger.debug("Email signal context query failed: %s", e)
+
+        # Recent Slack signals (last 7 days)
+        try:
+            slack_q = text("""
+                SELECT signal_type, signal_direction, signal_magnitude_pct,
+                       channel_name, sender_name, signal_urgency,
+                       received_at
+                FROM slack_signals
+                WHERE tenant_id = :tid
+                  AND status IN ('CLASSIFIED', 'ROUTED', 'ACTED')
+                  AND received_at >= CURRENT_TIMESTAMP - INTERVAL '7 days'
+                ORDER BY received_at DESC
+                LIMIT 10
+            """)
+            rows = await self.db.execute(slack_q, {"tid": user.tenant_id})
+            slack_data = rows.fetchall()
+            if slack_data:
+                lines = ["Recent Slack signals (last 7 days):"]
+                for r in slack_data:
+                    lines.append(
+                        f"  {r[6]} {r[0]} in #{r[3] or 'unknown'}: "
+                        f"{r[1] or ''} {r[2] or ''}% "
+                        f"(urgency={r[5]}, from={r[4]})"
+                    )
+                data_context_parts.append("\n".join(lines))
+        except Exception as e:
+            logger.debug("Slack signal context query failed: %s", e)
+
         data_context = "\n\n".join(data_context_parts) if data_context_parts else "No detailed data available for this scope."
 
         # Build answer prompt

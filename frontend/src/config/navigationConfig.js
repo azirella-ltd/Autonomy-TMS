@@ -864,6 +864,13 @@ export const NAVIGATION_CONFIG = [
         requiredCapability: 'manage_approval_templates',
       },
       {
+        label: 'Context Engine',
+        path: '/admin/context-engine',
+        icon: LayersIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'Unified hub for all external context sources',
+      },
+      {
         label: 'SAP Data Management',
         path: '/admin/sap-data',
         icon: DatabaseIcon,

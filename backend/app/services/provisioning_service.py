@@ -456,61 +456,16 @@ class ProvisioningService:
         }
 
     async def _step_demand_tgnn_bg(self, config_id: int, db: AsyncSession) -> dict:
-        """Step 5 background: Train Demand Planning tGNN."""
-        try:
-            from app.services.powell.generic_training_orchestrator import GenericTrainingOrchestrator
-            orchestrator = GenericTrainingOrchestrator(config_id=config_id)
-            result = await orchestrator.train_demand_tgnn()
-            return {
-                "status": "ok" if result.errors == 0 else "partial",
-                "models_trained": result.models_trained,
-                "errors": result.errors,
-                "duration_seconds": result.duration_seconds,
-            }
-        except ImportError:
-            logger.info(
-                "train_demand_tgnn not yet available in GenericTrainingOrchestrator — stubbing for config %d",
-                config_id,
-            )
-            return {"status": "stubbed", "message": "DemandPlanningTGNN training not yet implemented"}
+        """Step 5 background: Cold-start Demand Planning tGNN (delegates to foreground handler)."""
+        return await self._step_demand_tgnn(config_id)
 
     async def _step_supply_tgnn_bg(self, config_id: int, db: AsyncSession) -> dict:
-        """Step 6 background: Train Supply Planning tGNN."""
-        try:
-            from app.services.powell.generic_training_orchestrator import GenericTrainingOrchestrator
-            orchestrator = GenericTrainingOrchestrator(config_id=config_id)
-            result = await orchestrator.train_supply_tgnn()
-            return {
-                "status": "ok" if result.errors == 0 else "partial",
-                "models_trained": result.models_trained,
-                "errors": result.errors,
-                "duration_seconds": result.duration_seconds,
-            }
-        except ImportError:
-            logger.info(
-                "train_supply_tgnn not yet available in GenericTrainingOrchestrator — stubbing for config %d",
-                config_id,
-            )
-            return {"status": "stubbed", "message": "SupplyPlanningTGNN training not yet implemented"}
+        """Step 6 background: Cold-start Supply Planning tGNN (delegates to foreground handler)."""
+        return await self._step_supply_tgnn(config_id)
 
     async def _step_inventory_tgnn_bg(self, config_id: int, db: AsyncSession) -> dict:
-        """Step 7 background: Train Inventory Optimization tGNN."""
-        try:
-            from app.services.powell.generic_training_orchestrator import GenericTrainingOrchestrator
-            orchestrator = GenericTrainingOrchestrator(config_id=config_id)
-            result = await orchestrator.train_inventory_tgnn()
-            return {
-                "status": "ok" if result.errors == 0 else "partial",
-                "models_trained": result.models_trained,
-                "errors": result.errors,
-                "duration_seconds": result.duration_seconds,
-            }
-        except ImportError:
-            logger.info(
-                "train_inventory_tgnn not yet available in GenericTrainingOrchestrator — stubbing for config %d",
-                config_id,
-            )
-            return {"status": "stubbed", "message": "InventoryOptimizationTGNN training not yet implemented"}
+        """Step 7 background: Cold-start Inventory Optimization tGNN (delegates to foreground handler)."""
+        return await self._step_inventory_tgnn(config_id)
 
     async def _step_trm_training_bg(self, config_id: int, db: AsyncSession) -> dict:
         """Step 5 background: TRM Phase 1 BC for ALL active TRMs at all non-market sites."""
