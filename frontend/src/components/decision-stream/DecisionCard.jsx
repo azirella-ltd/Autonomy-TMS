@@ -148,6 +148,7 @@ const DecisionCard = ({
 
   const Icon = TYPE_ICONS[decision.decision_type] || Package;
   const typeLabel = TYPE_LABELS[decision.decision_type] || decision.decision_type;
+  const isAbandoned = !!decision.abandoned;
 
   const handleAccept = async () => {
     setActing(true);
@@ -178,7 +179,10 @@ const DecisionCard = ({
   };
 
   return (
-    <Card className="border-l-4 border-l-primary/60 hover:shadow-md transition-shadow">
+    <Card className={cn(
+      'border-l-4 hover:shadow-md transition-shadow',
+      isAbandoned ? 'border-l-muted opacity-60' : 'border-l-primary/60'
+    )}>
       <CardContent className={cn('pt-4', compact ? 'pb-3' : 'pb-4')}>
         {/* Header row: type + product/site + urgency + confidence */}
         <div className="flex items-start justify-between gap-2 mb-2">
@@ -204,9 +208,19 @@ const DecisionCard = ({
           </div>
         </div>
 
+        {/* Abandoned banner */}
+        {isAbandoned && (
+          <div className="flex items-center gap-2 mb-2 px-2 py-1.5 bg-muted/50 border border-muted rounded-md">
+            <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+            <span className="text-xs text-muted-foreground">
+              Abandoned — {decision.abandon_reason || 'likelihood below guardrail threshold'}
+            </span>
+          </div>
+        )}
+
         {/* Suggested action */}
         {decision.suggested_action && (
-          <p className="text-sm mb-3">
+          <p className={cn('text-sm mb-3', isAbandoned && 'line-through text-muted-foreground')}>
             <span className="text-muted-foreground">Decided: </span>
             <span className="font-medium">{decision.suggested_action}</span>
           </p>
@@ -255,16 +269,18 @@ const DecisionCard = ({
                 <ChevronDown className="h-3 w-3 ml-0.5" />
               )}
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs border-amber-500 text-amber-600 hover:bg-amber-50"
-              onClick={() => setShowOverride(true)}
-              disabled={acting}
-            >
-              <Edit3 className="h-3 w-3 mr-1" />
-              Override
-            </Button>
+            {!isAbandoned && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs border-amber-500 text-amber-600 hover:bg-amber-50"
+                onClick={() => setShowOverride(true)}
+                disabled={acting}
+              >
+                <Edit3 className="h-3 w-3 mr-1" />
+                Override
+              </Button>
+            )}
             <div className="flex-1" />
             <Button
               size="sm"

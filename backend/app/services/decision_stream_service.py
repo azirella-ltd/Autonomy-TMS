@@ -77,6 +77,20 @@ _SUGGESTED_FOLLOWUP_MAX = 3
 _DIGEST_SUMMARY_MAX_DECISIONS = 5
 _CURRENCY_SYMBOL = os.environ.get("DECISION_STREAM_CURRENCY", "$")
 
+# ---------------------------------------------------------------------------
+# Decision quality guardrails
+# ---------------------------------------------------------------------------
+# Decisions below this likelihood (confidence) are auto-abandoned.
+# Agents should not surface decisions they cannot justify.
+_ABANDON_LIKELIHOOD_THRESHOLD = float(
+    os.environ.get("DECISION_STREAM_ABANDON_LIKELIHOOD", 0.3)
+)
+# Decisions with BOTH urgency below this AND likelihood below the abandon
+# threshold are silently dropped (not even shown as abandoned).
+_DROP_LOW_URGENCY_THRESHOLD = float(
+    os.environ.get("DECISION_STREAM_DROP_URGENCY", 0.2)
+)
+
 # In-memory conversation cache (same pattern as AssistantService)
 _STREAM_CONVERSATION_CACHE: OrderedDict[str, Dict[str, Any]] = OrderedDict()
 
@@ -814,7 +828,18 @@ class DecisionStreamService:
         return all_decisions, product_names
 
     def _prioritize_decisions(self, decisions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Sort by urgency DESC, confidence ASC, then cap at 20."""
+        """Rank, filter, and guardrail decisions.
+
+        Ranking: urgency DESC, then likelihood ASC (low likelihood = high
+        uncertainty = needs human attention more).
+
+        Guardrails:
+        1. Drop: low urgency AND low likelihood → agent should never have
+           surfaced this; silently discard.
+        2. Abandon: any surviving decision below the likelihood threshold
+           is marked as abandoned with a reason — the agent's own confidence
+           is too low to justify action.
+        """
         def _to_float(v, default=0.0):
             if v is None:
                 return default
@@ -823,14 +848,46 @@ class DecisionStreamService:
             except (TypeError, ValueError):
                 return default
 
+        kept: List[Dict[str, Any]] = []
+        dropped = 0
+
+        for d in decisions:
+            urgency = _to_float(d.get("urgency"), 0.0)
+            likelihood = _to_float(d.get("confidence"), _DEFAULT_CONFIDENCE)
+
+            # Guardrail 1: silently drop low-urgency + low-likelihood decisions.
+            # These represent noise the agent should not have generated.
+            if urgency < _DROP_LOW_URGENCY_THRESHOLD and likelihood < _ABANDON_LIKELIHOOD_THRESHOLD:
+                dropped += 1
+                continue
+
+            # Guardrail 2: mark surviving low-likelihood decisions as abandoned.
+            # The decision stays visible (for audit) but is flagged so the UI
+            # can show it as "abandoned — confidence too low to act".
+            if likelihood < _ABANDON_LIKELIHOOD_THRESHOLD:
+                d["abandoned"] = True
+                d["abandon_reason"] = (
+                    f"Likelihood {likelihood:.0%} is below the "
+                    f"{_ABANDON_LIKELIHOOD_THRESHOLD:.0%} guardrail threshold"
+                )
+
+            kept.append(d)
+
+        if dropped:
+            logger.debug(
+                "Decision stream: dropped %d low-urgency/low-likelihood decisions", dropped
+            )
+
+        # Sort: highest urgency first, then lowest likelihood (needs attention)
         def sort_key(d):
             urgency = _to_float(d.get("urgency"), 0.0)
-            # Low confidence = needs human more = should appear higher
             confidence_inv = 1.0 - _to_float(d.get("confidence"), _DEFAULT_CONFIDENCE)
-            return (urgency, confidence_inv)
+            # Abandoned decisions sort after non-abandoned at any urgency level
+            abandoned_penalty = 0.0 if not d.get("abandoned") else -1.0
+            return (abandoned_penalty, urgency, confidence_inv)
 
-        decisions.sort(key=sort_key, reverse=True)
-        return decisions[:_DIGEST_MAX_DECISIONS]
+        kept.sort(key=sort_key, reverse=True)
+        return kept[:_DIGEST_MAX_DECISIONS]
 
     async def _collect_alerts(self, config_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """Collect CDC triggers and condition alerts from the last 48 hours."""
