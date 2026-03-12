@@ -1,8 +1,9 @@
 """
 Standalone RAG context retrieval for LLM prompt augmentation.
 
-Call `get_rag_context(query)` from any async service to retrieve
-relevant knowledge base chunks formatted for LLM injection.
+Call `get_rag_context(query, tenant_id=...)` from any async service to
+retrieve relevant knowledge base chunks formatted for LLM injection.
+``tenant_id`` is REQUIRED to enforce multi-tenant data isolation.
 
 Call `get_decision_context(trm_type, state_description)` to retrieve
 similar past decisions as few-shot examples for skill prompts.
@@ -19,12 +20,11 @@ logger = logging.getLogger(__name__)
 RAG_ENABLED = os.getenv("RAG_ENABLED", "true").lower() == "true"
 RAG_DEFAULT_TOP_K = int(os.getenv("RAG_DEFAULT_TOP_K", "5"))
 RAG_DEFAULT_MAX_TOKENS = int(os.getenv("RAG_DEFAULT_MAX_TOKENS", "3000"))
-RAG_DEFAULT_TENANT_ID = int(os.getenv("RAG_DEFAULT_TENANT_ID", os.getenv("RAG_DEFAULT_TENANT_ID", "1")))
 
 
 async def get_rag_context(
     query: str,
-    tenant_id: Optional[int] = None,
+    tenant_id: int,
     top_k: Optional[int] = None,
     max_tokens: Optional[int] = None,
     category: Optional[str] = None,
@@ -34,9 +34,13 @@ async def get_rag_context(
     Safe to call from anywhere — manages its own DB session.
     Returns empty string if KB is unavailable (never raises).
 
+    **Tenant isolation**: ``tenant_id`` is required.  Callers MUST pass
+    the current user's / service's tenant to prevent cross-tenant
+    knowledge leakage.
+
     Args:
         query: Natural language search query.
-        tenant_id: KB tenant to search (default: RAG_DEFAULT_TENANT_ID env or 1).
+        tenant_id: KB tenant to search (REQUIRED for tenant isolation).
         top_k: Number of chunks to retrieve (default: RAG_DEFAULT_TOP_K env or 5).
         max_tokens: Approximate word limit for context (default: RAG_DEFAULT_MAX_TOKENS env or 3000).
         category: Optional document category filter.
@@ -49,8 +53,6 @@ async def get_rag_context(
 
     if not query or not query.strip():
         return ""
-
-    tenant_id = tenant_id or RAG_DEFAULT_TENANT_ID
     top_k = top_k or RAG_DEFAULT_TOP_K
     max_tokens = max_tokens or RAG_DEFAULT_MAX_TOKENS
 

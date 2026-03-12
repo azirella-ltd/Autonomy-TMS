@@ -109,6 +109,7 @@ services:
       start_period: 30s
     extra_hosts:
       - "host.docker.internal:host-gateway"
+      - "Acer-Nitro.local:192.168.1.180"
     security_opt:
       - seccomp:unconfined
     ulimits:

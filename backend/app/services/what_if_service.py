@@ -7,7 +7,7 @@ Provides asynchronous what-if scenario analysis using LLM interpretation.
 
 import asyncio
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import select, desc
@@ -26,8 +26,9 @@ logger = logging.getLogger(__name__)
 class WhatIfAnalysisService:
     """Service for running what-if scenario analysis."""
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_id: Optional[int] = None):
         self.db = db
+        self.tenant_id = tenant_id
 
     async def process_analysis(self, analysis_id: int):
         """
@@ -341,8 +342,10 @@ class WhatIfAnalysisService:
 
             llm_service = get_llm_service()
 
-            # Retrieve RAG context relevant to the what-if question
-            kb_context = await get_rag_context(question, top_k=3, max_tokens=2000)
+            # Retrieve RAG context relevant to the what-if question (tenant-scoped)
+            kb_context = ""
+            if self.tenant_id is not None:
+                kb_context = await get_rag_context(question, tenant_id=self.tenant_id, top_k=3, max_tokens=2000)
             kb_section = ""
             if kb_context:
                 kb_section = f"\nRelevant Supply Chain Knowledge:\n{kb_context}\nUse the above knowledge to inform your analysis.\n"
@@ -407,14 +410,15 @@ Be direct, actionable, and clear. Use specific numbers from the results.
             return fallback
 
 
-def get_what_if_service(db: Session) -> WhatIfAnalysisService:
+def get_what_if_service(db: Session, tenant_id: Optional[int] = None) -> WhatIfAnalysisService:
     """
     Get what-if analysis service.
 
     Args:
         db: Database session
+        tenant_id: Tenant ID for RAG context scoping
 
     Returns:
         WhatIfAnalysisService instance
     """
-    return WhatIfAnalysisService(db)
+    return WhatIfAnalysisService(db, tenant_id=tenant_id)

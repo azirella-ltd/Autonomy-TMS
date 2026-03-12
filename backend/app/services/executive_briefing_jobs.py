@@ -93,19 +93,25 @@ def _run_briefing_check() -> None:
 
 
 def _schedule_matches_now(schedule: 'BriefingSchedule', now: datetime) -> bool:
-    """Check if the schedule's cron fields match the current time."""
-    # Hour and minute must match
-    if now.hour != schedule.cron_hour or now.minute != schedule.cron_minute:
+    """Check if the schedule's cron fields match the current time.
+
+    The scheduler fires hourly at :05, so we match on hour + day-of-week/month
+    only — exact cron_minute is not checked (scheduler fires once per hour).
+    """
+    # Hour must match
+    if now.hour != schedule.cron_hour:
         return False
 
     briefing_type = schedule.briefing_type
     if hasattr(briefing_type, 'value'):
         briefing_type = briefing_type.value
+    # Normalise to lowercase for comparison
+    briefing_type = (briefing_type or "").lower()
 
     if briefing_type == "daily":
         return True
     elif briefing_type == "weekly":
-        target_dow = DOW_MAP.get(schedule.cron_day_of_week.lower(), 0)
+        target_dow = DOW_MAP.get((schedule.cron_day_of_week or "mon").lower(), 0)
         return now.weekday() == target_dow
     elif briefing_type == "monthly":
         return now.day == 1

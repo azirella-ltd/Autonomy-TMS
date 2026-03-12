@@ -457,10 +457,11 @@ class SyntheticDataWizard:
             "primary_kpis": config.primary_kpis
         }
 
-    async def start_session(self) -> Tuple[WizardState, Dict[str, Any]]:
+    async def start_session(self, tenant_id: Optional[int] = None) -> Tuple[WizardState, Dict[str, Any]]:
         """Start a new wizard session."""
         session_id = self._generate_session_id()
         state = WizardState(session_id=session_id)
+        self._tenant_id = tenant_id
 
         # Generate welcome message
         response = await self._call_llm(state, None)
@@ -515,19 +516,20 @@ class SyntheticDataWizard:
         """Call the LLM with the current context."""
         system_prompt = self._build_system_prompt(state)
 
-        # Inject RAG knowledge base context relevant to the current wizard step
-        try:
-            from app.services.rag_context import get_rag_context
-            rag_query = f"supply chain {state.current_step.value} configuration"
-            if state.archetype:
-                rag_query += f" {state.archetype.value}"
-            if user_message:
-                rag_query += f" {user_message[:100]}"
-            kb_context = await get_rag_context(rag_query, top_k=3, max_tokens=1500)
-            if kb_context:
-                system_prompt += f"\n\n## Reference Knowledge\n{kb_context}"
-        except Exception as e:
-            logger.debug(f"RAG context not available for wizard: {e}")
+        # Inject RAG knowledge base context relevant to the current wizard step (tenant-scoped)
+        if getattr(self, '_tenant_id', None) is not None:
+            try:
+                from app.services.rag_context import get_rag_context
+                rag_query = f"supply chain {state.current_step.value} configuration"
+                if state.archetype:
+                    rag_query += f" {state.archetype.value}"
+                if user_message:
+                    rag_query += f" {user_message[:100]}"
+                kb_context = await get_rag_context(rag_query, tenant_id=self._tenant_id, top_k=3, max_tokens=1500)
+                if kb_context:
+                    system_prompt += f"\n\n## Reference Knowledge\n{kb_context}"
+            except Exception as e:
+                logger.debug(f"RAG context not available for wizard: {e}")
 
         messages = [{"role": "system", "content": system_prompt}]
 

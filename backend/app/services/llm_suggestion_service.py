@@ -70,6 +70,7 @@ class LLMSuggestionService:
         agent_name: str,
         context: Dict[str, Any],
         request_data: Optional[Dict[str, Any]] = None,
+        tenant_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Generate order recommendation using LLM.
@@ -95,10 +96,12 @@ class LLMSuggestionService:
             return self._fallback_suggestion(agent_name, context)
 
         try:
-            # Retrieve RAG context from knowledge base
-            from app.services.rag_context import get_rag_context
-            rag_query = f"{agent_name} supply chain order quantity inventory management demand planning"
-            kb_context = await get_rag_context(rag_query, top_k=3, max_tokens=2000)
+            # Retrieve RAG context from knowledge base (tenant-scoped)
+            kb_context = ""
+            if tenant_id is not None:
+                from app.services.rag_context import get_rag_context
+                rag_query = f"{agent_name} supply chain order quantity inventory management demand planning"
+                kb_context = await get_rag_context(rag_query, tenant_id=tenant_id, top_k=3, max_tokens=2000)
 
             # Build prompt
             prompt = self._build_suggestion_prompt(agent_name, context, request_data, kb_context=kb_context)
@@ -625,7 +628,8 @@ def get_llm_service(
 
 async def generate_global_optimization(
     game_state: Dict[str, Any],
-    focus_nodes: Optional[List[str]] = None
+    focus_nodes: Optional[List[str]] = None,
+    tenant_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Generate global optimization recommendations considering multiple nodes.
@@ -664,12 +668,14 @@ async def generate_global_optimization(
             # Fallback to heuristic
             return _fallback_global_optimization(game_state, focus_nodes)
 
-        # Retrieve RAG context for multi-echelon optimization
-        from app.services.rag_context import get_rag_context
-        kb_context = await get_rag_context(
-            "multi-echelon supply chain coordination bullwhip effect optimization inventory",
-            top_k=3, max_tokens=2000,
-        )
+        # Retrieve RAG context for multi-echelon optimization (tenant-scoped)
+        kb_context = ""
+        if tenant_id is not None:
+            from app.services.rag_context import get_rag_context
+            kb_context = await get_rag_context(
+                "multi-echelon supply chain coordination bullwhip effect optimization inventory",
+                tenant_id=tenant_id, top_k=3, max_tokens=2000,
+            )
 
         # Build multi-node context
         context = _build_multi_node_context(game_state, focus_nodes)

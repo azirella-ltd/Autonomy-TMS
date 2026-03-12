@@ -48,7 +48,11 @@ def _load_prompt() -> str:
 import re
 
 def _parse_llm_json(text: str) -> dict:
-    """Extract JSON from LLM response, handling markdown code blocks and preamble."""
+    """Extract JSON from LLM response, handling markdown code blocks, <think> tags, and preamble."""
+    import re as _re
+    # Strip Qwen3 <think>...</think> reasoning blocks (possibly multi-line)
+    text = _re.sub(r'<think>.*?</think>', '', text, flags=_re.DOTALL).strip()
+
     # Try direct parse first
     try:
         return json.loads(text)
@@ -397,6 +401,32 @@ class ExecutiveBriefingService:
             logger.error("Briefing %d disappeared from DB", briefing_id)
             return {"error": "Briefing not found"}
 
+        # Fetch previous completed briefing for "What's Changed" comparison
+        try:
+            prev = (
+                self.db.query(ExecutiveBriefing)
+                .filter(
+                    ExecutiveBriefing.tenant_id == tenant_id,
+                    ExecutiveBriefing.status == "completed",
+                    ExecutiveBriefing.id != briefing_id,
+                )
+                .order_by(ExecutiveBriefing.created_at.desc())
+                .first()
+            )
+            if prev:
+                data_pack["previous_briefing"] = {
+                    "briefing_id": prev.id,
+                    "created_at": prev.created_at.isoformat() if prev.created_at else None,
+                    "executive_summary": prev.executive_summary or "",
+                    "narrative": json.loads(prev.narrative) if isinstance(prev.narrative, str) and prev.narrative else prev.narrative or {},
+                    "data_pack_snapshot": prev.data_pack or {},
+                }
+            else:
+                data_pack["previous_briefing"] = None
+        except Exception as e:
+            logger.debug("Could not fetch previous briefing (non-fatal): %s", e)
+            data_pack["previous_briefing"] = None
+
         # Update with data pack
         briefing.data_pack = data_pack
         briefing.status = "generating"
@@ -419,8 +449,20 @@ class ExecutiveBriefingService:
         if kb_context:
             system_prompt = system_prompt + "\n\n" + kb_context
 
-        # 4. Build user message
-        user_message = json.dumps(data_pack, default=str)
+        # For vLLM/Qwen3: disable chain-of-thought thinking to save tokens.
+        # Qwen3 supports /no_think directive in system or user message.
+        if self._client._force_vllm or not self._client.uses_claude:
+            system_prompt = "/no_think\n\n" + system_prompt
+
+        # 4. Build user message — JSON reminder at START so it survives context truncation
+        _json_reminder = (
+            'OUTPUT: JSON only. Start with { end with }. '
+            'Keys: title, executive_summary, narrative(whats_changed,situation_overview,'
+            'scorecard_narrative,agent_performance_digest,risk_report,external_signals,'
+            'trend_analysis), recommendations[], data_quality_notes.\n\n'
+            'DATA:\n'
+        )
+        user_message = _json_reminder + json.dumps(data_pack, default=str)
 
         # 5. Call LLM (pure network call, no DB)
         updates = {}

@@ -210,7 +210,7 @@ async def start_wizard_session(
 
     try:
         wizard = get_wizard()
-        state, response = await wizard.start_session()
+        state, response = await wizard.start_session(tenant_id=current_user.tenant_id)
 
         # Store session
         _wizard_sessions[state.session_id] = state

@@ -53,6 +53,7 @@ class ClaudeClient:
         self._sonnet_model = os.getenv(ENV_CLAUDE_MODEL_SONNET, CLAUDE_SONNET)
         self._http_client: Optional[httpx.AsyncClient] = None
         self._force_vllm = force_vllm  # bypass Anthropic API even if CLAUDE_API_KEY is set
+        self._vllm_max_model_len: Optional[int] = None  # cached from /v1/models
 
     @property
     def uses_claude(self) -> bool:
@@ -157,6 +158,33 @@ class ClaudeClient:
         tokens = usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
         return {"content": content, "model": model, "tokens_used": tokens}
 
+    async def _get_vllm_max_model_len(self) -> int:
+        """Query vLLM /v1/models to get the served model's max_model_len. Cached."""
+        if self._vllm_max_model_len is not None:
+            return self._vllm_max_model_len
+        try:
+            client = await self._get_client()
+            base = self._llm_api_base.rstrip("/")
+            resp = await client.get(
+                f"{base}/models",
+                headers={"Authorization": f"Bearer {self._llm_api_key}"},
+                timeout=5.0,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                models = data.get("data", [])
+                if models:
+                    mml = models[0].get("max_model_len")
+                    if mml:
+                        self._vllm_max_model_len = int(mml)
+                        logger.info("vLLM max_model_len=%d", self._vllm_max_model_len)
+                        return self._vllm_max_model_len
+        except Exception as e:
+            logger.debug("Could not query vLLM model info: %s", e)
+        # Conservative default if query fails
+        self._vllm_max_model_len = 2048
+        return self._vllm_max_model_len
+
     async def _call_vllm(
         self,
         system_prompt: str,
@@ -168,6 +196,30 @@ class ClaudeClient:
         """Call vLLM/Ollama via OpenAI-compatible API."""
         client = await self._get_client()
         base = self._llm_api_base.rstrip("/")
+
+        # Respect the model's max_model_len: cap max_tokens and truncate inputs.
+        # Conservative estimate: JSON/structured text ≈ 2.5 chars/token (not 4).
+        max_model_len = await self._get_vllm_max_model_len()
+        chars_per_token = 2.5
+        # Reserve input_reserve tokens for input (40%), rest for output (60%)
+        input_reserve = int(max_model_len * 0.40)
+        output_budget = max_model_len - input_reserve - 10  # 10 token safety margin
+        capped_max_tokens = min(max_tokens, output_budget)
+
+        max_input_chars = int(input_reserve * chars_per_token)
+        combined_input = system_prompt + "\n" + user_message
+        if len(combined_input) > max_input_chars:
+            # Give system prompt up to 50% of budget, remainder to user message
+            sys_chars = min(len(system_prompt), max_input_chars // 2)
+            usr_chars = max(0, max_input_chars - sys_chars - 1)
+            system_prompt = system_prompt[:sys_chars]
+            user_message = user_message[:usr_chars]
+            logger.warning(
+                "vLLM context capped to %d tokens (sys=%d, usr=%d chars, max_out=%d). "
+                "Consider restarting vLLM with --max-model-len 8192 for full briefings.",
+                max_model_len, sys_chars, usr_chars, capped_max_tokens,
+            )
+
         response = await client.post(
             f"{base}/chat/completions",
             headers={
@@ -177,7 +229,7 @@ class ClaudeClient:
             json={
                 "model": model,
                 "temperature": temperature,
-                "max_tokens": max_tokens,
+                "max_tokens": capped_max_tokens,
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message},

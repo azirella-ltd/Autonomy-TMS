@@ -236,7 +236,8 @@ async def get_global_optimization(
         # Generate global optimization
         result = await generate_global_optimization(
             game_state=scenario_state,
-            focus_nodes=request.focus_nodes
+            focus_nodes=request.focus_nodes,
+            tenant_id=current_user.tenant_id,
         )
 
         return GlobalOptimizationResponse(**result)
