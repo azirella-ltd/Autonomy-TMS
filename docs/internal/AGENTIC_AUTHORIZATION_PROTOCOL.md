@@ -823,6 +823,8 @@ RECOMMENDATION: Option C (approve both, request budget exception)
 
 The human makes a judgment call with full context. They're not doing analysis -- the agents already did that. They're applying business judgment to a situation the agents couldn't resolve autonomously.
 
+**Escalated threads appear in the Decision Stream** ranked by the same urgency + likelihood prioritization used for TRM decisions. The urgency of an AAP escalation reflects the time pressure on the underlying order or constraint; the likelihood reflects the agents' assessed probability that any of the proposed options will achieve the desired scorecard outcome. High-urgency/low-likelihood escalations (e.g., a rush order budget conflict where no option looks great) surface at the top of the stream. Low-urgency escalations with clear preferred options may be auto-approved if the net benefit exceeds the governance threshold.
+
 ### 7.3 Human Decisions Feed Back
 
 Every human resolution of an escalation is captured as training data:

@@ -5688,6 +5688,27 @@ Directives with parser confidence ≥0.7 auto-apply. Effectiveness tracked via B
 
 Both channels map to Powell's exogenous information framework: they represent state-dependent information arrivals that modify the belief state Bₜ and trigger transition function evaluations.
 
+#### 5.21 Urgency + Likelihood: Decision Stream Prioritization
+
+The Decision Stream is the primary human interface for the Powell framework. It surfaces the decisions where human judgment adds the most value by scoring every TRM decision on two dimensions:
+
+- **Urgency** (0.0–1.0): Time-sensitivity of the decision. Powell mapping: urgency reflects the *cost of delay* — the gradient of the objective function with respect to decision timing. High urgency means delaying the decision degrades the objective rapidly. Derived from UrgencyVector, HiveSignalBus state, and exception severity.
+
+- **Likelihood** (0.0–1.0): Agent confidence that its recommended action resolves the issue. Powell mapping: likelihood approximates the *value function accuracy* at the current state — how well the VFA/CFA policy maps this state to a good action. Derived from TRM output confidence, conformal prediction interval width, and CDT risk bound P(loss > τ).
+
+**Four operating quadrants**:
+
+| | Low Likelihood | High Likelihood |
+|---|---|---|
+| **High Urgency** | **Human needed** — top of Decision Stream. The cost of delay is high and the policy's value function estimate is unreliable. This maps to Powell's "exploration vs. exploitation" trade-off: the agent should exploit its best estimate, but the estimate is poor, so human judgment provides the exploration signal. | **Autonomous** — agent acts within guardrails. Cost of delay is high but the policy is well-calibrated for this state. |
+| **Low Urgency** | **Abandoned** — not worth anyone's time. Cost of delay is low AND the policy is unreliable. The expected value of both autonomous and human decisions is near zero. Excluded from Decision Stream. | **Autonomous** — agent acts within guardrails. Low urgency, high confidence — routine execution. |
+
+**Abandonment guardrail**: `urgency + likelihood` must exceed a configurable threshold (default: 0.5). This implements a sliding scale: the lower the urgency, the higher the likelihood must be to justify attention. High-urgency decisions are never abandoned regardless of likelihood — when the cost of delay is high, even a weakly-calibrated VFA estimate warrants human review.
+
+**Powell connection**: This mechanism implements what Powell (SDAM 2nd Ed, Ch. 7) calls the "value of information" — the expected improvement from obtaining better information before deciding. When urgency is high, the value of information is bounded by the cost of delay (you must act soon regardless). When urgency is low, the value of information must exceed the cost of attention (human cognitive bandwidth). The combined threshold operationalizes this trade-off.
+
+**Implementation**: `backend/app/services/decision_stream_service.py` — `_prioritize_decisions()` method. Configurable via `DECISION_STREAM_ABANDON_THRESHOLD` environment variable.
+
 ---
 
 ## Part 3: Summary and Recommendations

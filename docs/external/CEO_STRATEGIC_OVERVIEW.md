@@ -558,6 +558,7 @@ Most mid-market manufacturers run SAP. Autonomy includes a built-in SAP integrat
 - **Decision transparency**: Multi-stage CTP with full-level pegging -- every unit traceable end-to-end
 - **Cross-functional autonomy**: Agentic Authorization Protocol resolving trade-offs at machine speed
 - **Natural interface**: LLM-first UI where planners oversee outcomes rather than make individual decisions
+- **Precision escalation**: Urgency + likelihood scoring surfaces only the decisions where human judgment creates real value — high urgency situations where the agent is least confident — while routine decisions execute autonomously
 - **Learning flywheel**: Override capture trains agents continuously; human judgment compounds
 - **Comprehensive data model**: 100% compliance with industry-standard supply chain entity model
 - **Cost advantage**: 90% lower than legacy systems

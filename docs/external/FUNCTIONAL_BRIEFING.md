@@ -33,6 +33,7 @@ The system replans only affected products and locations when events occur, rathe
 - **Response latency**: P0 critical events addressed in under 1 minute; P1 in under 5 minutes
 - **Incremental replanning**: Only affected SKU-location combinations are recalculated
 - **Guardrailed autonomy**: Routine decisions auto-execute within configurable bounds (max PO value, max safety stock change, min service level floor); exceptions escalate to planners
+- **Urgency + likelihood prioritization**: Every decision is scored on urgency (how time-sensitive?) and likelihood (how confident is the agent?). The Decision Stream surfaces high-urgency/low-likelihood decisions at the top — exactly where human expertise adds the most value. Low-urgency/low-likelihood decisions are abandoned automatically. High-likelihood decisions (regardless of urgency) execute autonomously.
 
 > **Screenshot 2 — MPS Worklist (Exception-Driven Planning)**
 > *Navigation: Insights & Analytics > MPS Worklist*

@@ -241,6 +241,39 @@ When escalation triggers, the exception handler receives the full state context 
 
 **The meta-learning effect**: Over time, the execution agent learns to handle situations that previously required escalation. The 95/5 boundary is not static — it shifts as the agent absorbs more training examples. This is the cost-reduction flywheel described in the executive summary: early in deployment, the exception handler handles more decisions (higher cost); as the agent learns, the exception handler handles fewer (lower cost).
 
+### Urgency + Likelihood: Directing Human Attention Where It Matters
+
+Confidence routing governs *which model* makes the decision (fast agent vs. deep exception handler). A second mechanism governs *whether a human needs to see it at all* — the **urgency + likelihood matrix**.
+
+Every decision carries two scores:
+
+- **Urgency** (0.0–1.0): How time-sensitive is this? Derived from the agent's urgency vector, signal bus state, and exception severity. A rush order with no inventory scores 0.95. A routine restock with 3 weeks of supply scores 0.1.
+- **Likelihood** (0.0–1.0): How confident is the agent that its recommended action will resolve the issue? Derived from the TRM's output confidence, conformal prediction intervals, and CDT risk bounds.
+
+These two dimensions create four operating quadrants:
+
+```
+                        Likelihood (agent confidence)
+                    LOW                         HIGH
+            ┌───────────────────┬───────────────────┐
+    HIGH    │  HUMAN NEEDED     │  AUTONOMOUS        │
+  Urgency   │  Top of stream    │  Agent acts,       │
+            │  Clock ticking,   │  logged for        │
+            │  agent uncertain  │  awareness          │
+            ├───────────────────┼───────────────────┤
+    LOW     │  ABANDONED        │  AUTONOMOUS        │
+            │  Not worth        │  Agent acts,       │
+            │  anyone's time    │  logged for        │
+            │                   │  awareness          │
+            └───────────────────┴───────────────────┘
+```
+
+The Decision Stream — the primary interface for planners — surfaces decisions sorted by urgency descending, then likelihood ascending. This means the decision at the top of the stream is always the most urgent one where the agent is least confident — precisely the situation where human expertise adds the most value.
+
+Decisions with both low urgency and low likelihood are abandoned automatically using a sliding-scale guardrail: `urgency + likelihood` must exceed a configurable threshold (default: 0.5). This means the lower the urgency, the higher the likelihood must be to survive. High-urgency decisions are never abandoned regardless of likelihood — if the clock is ticking, the planner needs to see it even if the agent's best guess is weak.
+
+Abandoned decisions are not deleted. They are recorded with their abandon reason and available on audit and training pages — useful for evaluating agent calibration and identifying patterns where the agent consistently generates low-value decisions.
+
 ---
 
 ## Part 4: The Learning Loop — How the System Gets Smarter

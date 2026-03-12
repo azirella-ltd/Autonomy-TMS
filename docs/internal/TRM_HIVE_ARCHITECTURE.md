@@ -226,6 +226,8 @@ class UrgencyVector:
         self.last_updated = [None] * 11
 ```
 
+**Decision Stream Connection**: The UrgencyVector feeds directly into the Decision Stream's **urgency + likelihood prioritization**. Each TRM's urgency value (0.0–1.0) becomes the decision's *urgency* score. Combined with the TRM's output *likelihood* (confidence), these two dimensions determine whether the decision surfaces to a human planner: high urgency + low likelihood = top of stream (human needed); low urgency + low likelihood = abandoned; high likelihood at any urgency = autonomous. See `decision_stream_service.py:_prioritize_decisions()`.
+
 #### Mechanism 2: Signal Queue (Event-Driven) — <10ms
 
 A bounded ring buffer of `HiveSignal` objects. Producers append; consumers filter by signal type. Signals decay over time (pheromone behavior).

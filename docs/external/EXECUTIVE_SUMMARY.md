@@ -393,6 +393,17 @@ Benefits: Minutes from event to action, only affected products replanned, human-
 
 The **Decision Stream** (`/decision-stream`) is the default landing page for all users. Every supply chain decision — whether made by an AI agent or a human planner — appears here in real time as a decision card showing what was decided, the confidence level, and the status (Decided, Suggested, Overridden).
 
+**Urgency + Likelihood Prioritization**: Every decision carries two scores — **urgency** (how time-sensitive is this?) and **likelihood** (how confident is the agent that its recommended action will resolve the issue?). These two dimensions determine what the human sees and what the system handles autonomously:
+
+| Urgency | Likelihood | What Happens |
+|---------|-----------|--------------|
+| **High** | **Low** | **Top of stream** — the clock is ticking and the agent's best guess isn't good enough. This is where human judgment creates the most value. |
+| **High** | **High** | Agent acts autonomously within guardrails, logged for awareness. |
+| **Low** | **High** | Agent acts autonomously, logged for awareness. |
+| **Low** | **Low** | Abandoned — not worth anyone's time. Available on audit/training pages but excluded from the active stream. |
+
+The result is a decision stream that directs human attention precisely where it matters most. Instead of reviewing 847 exceptions, the planner reviews the 14 where the situation is urgent and the AI needs help — the quadrant where human expertise compounds the most value.
+
 **Pre-Computed Decision Reasoning**: Every decision card includes an "Ask Why" button that expands inline to show the agent's reasoning instantly (<1ms). Reasoning is pre-computed at decision time from the actual signals the agent processed — not generated after the fact by an LLM. This covers all 11 TRM agents and all 3 GNN models (S&OP GraphSAGE strategic risk, Network tGNN daily directives, Site tGNN hourly cross-TRM coordination).
 
 **Hive Context Capture**: Each decision records the full signal bus state at the time of decision — urgency levels, triggering signals, cycle phase, and signals emitted — providing a complete audit trail of the multi-agent coordination context.

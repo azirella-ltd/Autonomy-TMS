@@ -53,6 +53,22 @@ The layered architecture ensures the system works at every level of capability:
 | **Heuristic** | Engine only (TRM untrained) | Engine baseline = TRM heuristic fallback |
 | **Minimal** | Neither | Hard-coded defaults (safe but suboptimal) |
 
+### Urgency + Likelihood: Decision Prioritization
+
+Every TRM decision carries two scores that determine whether a human needs to see it:
+
+- **Urgency** (0.0–1.0): Time-sensitivity derived from the TRM's UrgencyVector, HiveSignalBus state, and exception severity. A rush order with depleted inventory scores high; a routine restock with weeks of supply scores low.
+- **Likelihood** (0.0–1.0): Agent confidence that the recommended action resolves the issue. Derived from the TRM's output confidence head, conformal prediction interval width, and CDT risk bound.
+
+| Urgency | Likelihood | Action |
+|---------|-----------|--------|
+| High | Low | **Decision Stream — top priority.** Human judgment needed; the clock is ticking and the agent is uncertain. |
+| High | High | Agent acts autonomously within guardrails, logged. |
+| Low | High | Agent acts autonomously within guardrails, logged. |
+| Low | Low | Abandoned. Not worth human attention. Available on audit/training pages. |
+
+The Decision Stream sorts by urgency descending, then likelihood ascending — so the decision at the top is always the most time-sensitive one where the agent is least confident. Abandonment uses a sliding scale: `urgency + likelihood` must exceed a threshold (default 0.5). High-urgency decisions are never abandoned.
+
 ### Agent Architecture
 
 ```mermaid
