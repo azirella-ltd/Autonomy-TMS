@@ -104,28 +104,24 @@ const UrgencyBar = ({ value }) => {
 };
 
 const ConfidenceChip = ({ value }) => {
-  if (value == null)
-    return (
-      <div className="flex items-center gap-1">
-        <span className="text-xs text-muted-foreground font-medium">Likelihood</span>
-        <Badge variant="outline" className="text-xs">
-          --
-        </Badge>
-      </div>
-    );
+  if (value == null) return null;
   const pct = (value * 100).toFixed(1);
-  const variant =
+  const color =
     value >= 0.9
-      ? 'default'
+      ? 'bg-green-500'
       : value >= 0.7
-        ? 'secondary'
-        : 'destructive';
+        ? 'bg-amber-500'
+        : 'bg-red-500';
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1.5">
       <span className="text-xs text-muted-foreground font-medium">Likelihood</span>
-      <Badge variant={variant} className="text-xs">
-        {pct}%
-      </Badge>
+      <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+        <div
+          className={cn('h-full rounded-full', color)}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className="text-xs text-muted-foreground">{pct}%</span>
     </div>
   );
 };
