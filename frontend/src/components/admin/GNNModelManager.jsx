@@ -171,9 +171,9 @@ const GNNModelManager = ({ selectedConfig }) => {
   return (
     <TooltipProvider>
       <div className="p-6">
-        <H4 className="mb-1">GNN Model Manager</H4>
+        <H4 className="mb-1">Network Agent Manager</H4>
         <Text className="text-muted-foreground mb-4">
-          Load, manage, and configure Graph Neural Network checkpoints
+          Load, manage, and configure network model checkpoints
         </Text>
 
         {error && (
@@ -407,7 +407,7 @@ const GNNModelManager = ({ selectedConfig }) => {
         {/* Load Model Dialog */}
         <Modal isOpen={loadDialogOpen} onClose={() => setLoadDialogOpen(false)} size="md">
           <ModalHeader>
-            <ModalTitle>Load GNN Model</ModalTitle>
+            <ModalTitle>Load Network Agent</ModalTitle>
           </ModalHeader>
           <ModalBody>
             {selectedCheckpoint && (

@@ -56,8 +56,8 @@ const COLORS = {
 
 const AGENT_NAMES = {
   llm: 'LLM (GPT-4)',
-  gnn: 'GNN (Graph Neural Network)',
-  trm: 'TRM (Tiny Recursive Model)',
+  gnn: 'Network Agent',
+  trm: 'AI Agent',
 };
 
 const WeightHistoryChart = ({ scenarioId, refreshInterval = null }) => {
@@ -169,7 +169,7 @@ const WeightHistoryChart = ({ scenarioId, refreshInterval = null }) => {
             </div>
             <div className="flex justify-between gap-2">
               <span className="text-xs" style={{ color: COLORS.gnn }}>
-                GNN:
+                Network Agent:
               </span>
               <span className="text-xs font-bold">
                 {(data.gnn * 100).toFixed(1)}%
@@ -177,7 +177,7 @@ const WeightHistoryChart = ({ scenarioId, refreshInterval = null }) => {
             </div>
             <div className="flex justify-between gap-2">
               <span className="text-xs" style={{ color: COLORS.trm }}>
-                TRM:
+                AI Agent:
               </span>
               <span className="text-xs font-bold">
                 {(data.trm * 100).toFixed(1)}%
@@ -360,7 +360,7 @@ const WeightHistoryChart = ({ scenarioId, refreshInterval = null }) => {
                   strokeWidth={2}
                   dot={{ fill: COLORS.gnn, r: 3 }}
                   activeDot={{ r: 5 }}
-                  name="GNN Weight"
+                  name="Network Agent Weight"
                 />
                 <Line
                   type="monotone"
@@ -369,7 +369,7 @@ const WeightHistoryChart = ({ scenarioId, refreshInterval = null }) => {
                   strokeWidth={2}
                   dot={{ fill: COLORS.trm, r: 3 }}
                   activeDot={{ r: 5 }}
-                  name="TRM Weight"
+                  name="AI Agent Weight"
                 />
 
                 {/* Confidence area (background) */}
@@ -420,7 +420,7 @@ const WeightHistoryChart = ({ scenarioId, refreshInterval = null }) => {
                 </div>
                 <div className="space-y-1">
                   <span className="text-xs" style={{ color: COLORS.gnn }}>
-                    GNN
+                    Network Agent
                   </span>
                   <p className="text-xl font-semibold" style={{ color: COLORS.gnn }}>
                     {(history[history.length - 1].gnn * 100).toFixed(1)}%

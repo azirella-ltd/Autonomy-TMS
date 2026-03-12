@@ -171,8 +171,8 @@ const GNNDirectiveReview = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <H4>GNN Directive Review</H4>
-          <Text className="text-muted-foreground">Review and act on GNN-generated site directives</Text>
+          <H4>Network Agent Directive Review</H4>
+          <Text className="text-muted-foreground">Review and act on AI-generated site directives</Text>
         </div>
         <Button variant="outline" onClick={fetchData} disabled={loading} leftIcon={<RefreshCw className="h-4 w-4" />}>
           Refresh

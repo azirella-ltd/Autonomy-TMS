@@ -44,7 +44,7 @@ class PendingDecisionItem(BaseModel):
     site_id: Optional[str] = None
     site_name: Optional[str] = None
     urgency: Optional[float] = Field(None, description="Urgency score 0-1 from HiveSignalMixin")
-    confidence: Optional[float] = Field(None, description="TRM confidence 0-1")
+    likelihood: Optional[float] = Field(None, description="TRM likelihood (confidence) 0-1")
     economic_impact: Optional[float] = Field(None, description="Estimated $ impact")
     suggested_action: Optional[str] = Field(None, description="What the TRM recommends")
     reason: Optional[str] = Field(None, description="Short reason code (e.g. capacity_constraint, expedite)")

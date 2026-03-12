@@ -352,7 +352,7 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
           {/* Model Configuration Summary */}
           <Grid container spacing={1}>
             <Grid item xs={6}>
-              <Typography variant="caption" color="text.secondary">S&OP GraphSAGE</Typography>
+              <Typography variant="caption" color="text.secondary">S&OP Agent</Typography>
               <Typography variant="body2">
                 {config.train_sop_graphsage ? (
                   <Chip label="Enabled" size="small" color="success" />
@@ -362,7 +362,7 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
               </Typography>
             </Grid>
             <Grid item xs={6}>
-              <Typography variant="caption" color="text.secondary">Execution tGNN</Typography>
+              <Typography variant="caption" color="text.secondary">Network Agent</Typography>
               <Typography variant="body2">
                 {config.train_execution_tgnn ? (
                   <Chip label="Enabled" size="small" color="success" />
@@ -384,7 +384,7 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
               </Typography>
             </Grid>
             <Grid item xs={6}>
-              <Typography variant="caption" color="text.secondary">TRM Method</Typography>
+              <Typography variant="caption" color="text.secondary">Agent Method</Typography>
               <Typography variant="body2">{config.trm_training_method}</Typography>
             </Grid>
             <Grid item xs={6}>
@@ -396,7 +396,7 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
           {/* TRM Configs */}
           {config.trm_configs && config.trm_configs.length > 0 && (
             <Box sx={{ mt: 2 }}>
-              <Typography variant="caption" color="text.secondary">TRM Models</Typography>
+              <Typography variant="caption" color="text.secondary">AI Agents</Typography>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                 {config.trm_configs.map(trm => (
                   <Chip
@@ -505,7 +505,7 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
         </Typography>
 
         <Alert severity="info" sx={{ mt: 2 }}>
-          <strong>Training Pipeline:</strong> Data Generation → S&OP GraphSAGE (aggregated) → Execution tGNN (detailed) → TRM Models (per-type)
+          <strong>Training Pipeline:</strong> Data Generation → S&OP Agent (aggregated) → Network Agent (detailed) → AI Agents (per-type)
         </Alert>
       </Paper>
 
@@ -532,9 +532,9 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
         <DialogContent>
           <Tabs value={activeTab} onChange={(e, v) => setActiveTab(v)} sx={{ mb: 2 }}>
             <Tab label="Basic Settings" />
-            <Tab label="S&OP GraphSAGE" />
-            <Tab label="Execution tGNN" />
-            <Tab label="TRM Settings" />
+            <Tab label="S&OP Agent" />
+            <Tab label="Network Agent" />
+            <Tab label="Agent Settings" />
           </Tabs>
 
           {activeTab === 0 && (
@@ -597,7 +597,7 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
                   </Select>
                 </FormControl>
                 <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                  Determines aggregation level for S&OP GraphSAGE training
+                  Determines aggregation level for S&OP model training
                 </Typography>
               </Grid>
               <Grid item xs={12} sm={6}>
@@ -619,7 +619,7 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
                   </Select>
                 </FormControl>
                 <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                  Determines granularity for Execution tGNN training
+                  Determines granularity for Execution model training
                 </Typography>
               </Grid>
 
@@ -680,7 +680,7 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
                       onChange={(e) => handleFormChange('train_sop_graphsage', e.target.checked)}
                     />
                   }
-                  label="Train S&OP GraphSAGE Model"
+                  label="Train S&OP Agent"
                 />
                 <Typography variant="body2" color="text.secondary">
                   Strategic model that learns network structure, risk scoring, and bottleneck detection
@@ -723,7 +723,7 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
 
               <Grid item xs={12}>
                 <Alert severity="info">
-                  S&OP GraphSAGE is trained on aggregated data based on the hierarchy level you select.
+                  The S&OP model is trained on aggregated data based on the hierarchy level you select.
                   It outputs criticality scores, bottleneck risk, concentration risk, and resilience scores.
                 </Alert>
               </Grid>
@@ -740,10 +740,10 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
                       onChange={(e) => handleFormChange('train_execution_tgnn', e.target.checked)}
                     />
                   }
-                  label="Train Execution tGNN Model"
+                  label="Train Network Agent"
                 />
                 <Typography variant="body2" color="text.secondary">
-                  Operational model that generates priority allocations and provides context for TRM decisions
+                  Operational model that generates priority allocations and provides context for AI agent decisions
                 </Typography>
               </Grid>
 
@@ -783,7 +783,7 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
 
               <Grid item xs={12}>
                 <Alert severity="info">
-                  Execution tGNN consumes S&OP embeddings and transactional data.
+                  The execution model consumes S&OP embeddings and transactional data.
                   It outputs Priority x Product x Location allocations for AATP consumption.
                 </Alert>
               </Grid>
@@ -832,7 +832,7 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
               </Grid>
 
               <Grid item xs={12}>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>TRM Types (4 specialized models)</Typography>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>Agent Types (4 specialized models)</Typography>
                 <TableContainer>
                   <Table size="small">
                     <TableHead>
@@ -995,7 +995,7 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
                 value={syntheticDataForm.num_decisions_per_day}
                 onChange={(e) => setSyntheticDataForm(prev => ({ ...prev, num_decisions_per_day: parseInt(e.target.value) }))}
                 inputProps={{ min: 5, max: 200 }}
-                helperText="TRM decisions per day"
+                helperText="AI agent decisions per day"
               />
             </Grid>
             <Grid item xs={12} sm={6}>

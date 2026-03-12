@@ -104,34 +104,39 @@ class GNNOrchestrationService:
             logger.warning(f"S&OP inference failed (continuing with defaults): {e}")
             result["errors"].append(f"sop_inference: {e}")
 
-        # --- Step 2: Execution Temporal GNN ---
-        exec_output = None
+        # --- Step 2: Tactical Hive Coordinator (3-parallel tGNNs) ---
+        # DEPRECATED import kept for backward compatibility — use TacticalHiveCoordinator below.
+        # from app.services.powell.execution_gnn_inference_service import ExecutionGNNInferenceService
+        tactical_output = None
+        exec_output = None  # kept for _persist_directive_reviews compatibility
         try:
-            from app.services.powell.execution_gnn_inference_service import (
-                ExecutionGNNInferenceService,
-            )
+            from app.services.powell.tactical_hive_coordinator import TacticalHiveCoordinator
 
-            exec_svc = ExecutionGNNInferenceService(self.db, self.config_id)
-            exec_output = await exec_svc.infer(
+            coordinator = TacticalHiveCoordinator(self.db, self.config_id)
+            tactical_output = await coordinator.run_lateral_cycle(
                 sop_embeddings=sop_embeddings,
                 force_recompute=force_recompute,
             )
             result["execution_output"] = {
-                "num_sites": exec_output.num_sites,
-                "computed_at": (
-                    exec_output.computed_at.isoformat()
-                    if exec_output.computed_at else None
-                ),
+                "num_sites": len(tactical_output.site_keys),
+                "lateral_iterations": tactical_output.lateral_iterations,
+                "computed_at": tactical_output.computed_at.isoformat(),
+                "demand_checkpoint": tactical_output.demand.checkpoint_path,
+                "supply_checkpoint": tactical_output.supply.checkpoint_path,
+                "inventory_checkpoint": tactical_output.inventory.checkpoint_path,
             }
+            # Expose sub-outputs for _persist_directive_reviews
+            exec_output = tactical_output.supply  # supply tGNN carries exception_probability
             logger.info(
-                f"Execution tGNN inference: {exec_output.num_sites} sites"
+                f"Tactical Hive Coordinator: {len(tactical_output.site_keys)} sites, "
+                f"{tactical_output.lateral_iterations} lateral iteration(s)"
             )
         except Exception as e:
-            logger.warning(f"Execution tGNN inference failed: {e}")
-            result["errors"].append(f"execution_inference: {e}")
+            logger.warning(f"Tactical Hive Coordinator failed: {e}")
+            result["errors"].append(f"tactical_hive: {e}")
 
         # --- Step 3: Merge outputs ---
-        gnn_outputs = self._merge_outputs(sop_analysis, exec_output)
+        gnn_outputs = self._merge_outputs(sop_analysis, tactical_output)
         if not gnn_outputs:
             result["errors"].append("No GNN outputs available for broadcast")
             return result
@@ -139,7 +144,7 @@ class GNNOrchestrationService:
         # --- Step 3.5: Persist directives for human review ---
         try:
             reviews_created = await self._persist_directive_reviews(
-                gnn_outputs, sop_analysis, exec_output,
+                gnn_outputs, sop_analysis, tactical_output,
             )
             result["reviews_created"] = reviews_created
             logger.info(f"Persisted {reviews_created} GNN directive reviews for human review")
@@ -198,13 +203,18 @@ class GNNOrchestrationService:
     def _merge_outputs(
         self,
         sop_analysis,
-        exec_output,
+        tactical_output,
     ) -> Dict[str, Dict[str, Any]]:
         """
-        Merge S&OP and Execution GNN outputs into unified per-site dict.
+        Merge S&OP and TacticalHiveOutput into unified per-site dict.
 
         Format: {site_key: {criticality_score, bottleneck_risk, demand_forecast, ...}}
         This is what DirectiveBroadcastService.generate_directives_from_gnn() expects.
+
+        When tactical_output is a TacticalHiveOutput, the merged_per_site dict
+        produced by TacticalHiveCoordinator.merge_outputs() is used directly and
+        overlaid on top of the S&OP values. This preserves 100% backward
+        compatibility with DirectiveBroadcastService consumers.
         """
         merged: Dict[str, Dict[str, Any]] = {}
 
@@ -219,25 +229,40 @@ class GNNOrchestrationService:
                     "safety_stock_multiplier": sop_analysis.safety_stock_multiplier.get(site_key, 1.0),
                 }
 
-        # Overlay Execution tGNN outputs
-        if exec_output:
-            for site_key in exec_output.site_keys:
-                if site_key not in merged:
-                    merged[site_key] = {
-                        "criticality_score": 0.5,
-                        "bottleneck_risk": 0.3,
-                        "concentration_risk": 0.2,
-                        "resilience_score": 0.7,
-                        "safety_stock_multiplier": 1.0,
-                    }
-
-                merged[site_key].update({
-                    "demand_forecast": exec_output.demand_forecast.get(site_key, []),
-                    "exception_probability": exec_output.exception_probability.get(site_key, 0.1),
-                    "order_recommendation": exec_output.order_recommendation.get(site_key, 0),
-                    "confidence": exec_output.confidence.get(site_key, 0.5),
-                    "propagation_impact": exec_output.propagation_impact.get(site_key, []),
-                })
+        # Overlay TacticalHiveOutput (3-parallel tGNNs)
+        if tactical_output is not None:
+            from app.services.powell.tactical_hive_coordinator import TacticalHiveOutput
+            if isinstance(tactical_output, TacticalHiveOutput):
+                for site_key, values in tactical_output.merged_per_site.items():
+                    if site_key not in merged:
+                        merged[site_key] = {
+                            "criticality_score": 0.5,
+                            "bottleneck_risk": 0.3,
+                            "concentration_risk": 0.2,
+                            "resilience_score": 0.7,
+                            "safety_stock_multiplier": 1.0,
+                        }
+                    # merged_per_site already has backward-compatible keys
+                    merged[site_key].update(values)
+            else:
+                # Legacy ExecutionGNNOutput path (should not be reached after migration)
+                exec_output = tactical_output
+                for site_key in exec_output.site_keys:
+                    if site_key not in merged:
+                        merged[site_key] = {
+                            "criticality_score": 0.5,
+                            "bottleneck_risk": 0.3,
+                            "concentration_risk": 0.2,
+                            "resilience_score": 0.7,
+                            "safety_stock_multiplier": 1.0,
+                        }
+                    merged[site_key].update({
+                        "demand_forecast": exec_output.demand_forecast.get(site_key, []),
+                        "exception_probability": exec_output.exception_probability.get(site_key, 0.1),
+                        "order_recommendation": exec_output.order_recommendation.get(site_key, 0),
+                        "confidence": exec_output.confidence.get(site_key, 0.5),
+                        "propagation_impact": exec_output.propagation_impact.get(site_key, []),
+                    })
 
         return merged
 
@@ -273,18 +298,55 @@ class GNNOrchestrationService:
         self,
         gnn_outputs: Dict[str, Dict[str, Any]],
         sop_analysis,
-        exec_output,
+        tactical_output,
     ) -> int:
         """
         Persist GNN outputs as GNNDirectiveReview rows with status=PROPOSED.
 
         Creates one row per site per directive scope (sop_policy and/or
-        execution_directive), allowing humans to review before application.
+        tactical_directive), allowing humans to review before application.
+
+        Accepts TacticalHiveOutput (new) or legacy ExecutionGNNOutput.
 
         Returns count of review rows created.
         """
         from app.models.gnn_directive_review import GNNDirectiveReview
         from datetime import timedelta
+
+        # Resolve per-site reasoning from tactical output
+        # For TacticalHiveOutput, compose a merged reasoning string per site.
+        tactical_reasoning_map: Dict[str, Optional[str]] = {}
+        tactical_confidence_map: Dict[str, float] = {}
+
+        if tactical_output is not None:
+            from app.services.powell.tactical_hive_coordinator import TacticalHiveOutput
+            if isinstance(tactical_output, TacticalHiveOutput):
+                for sk in tactical_output.site_keys:
+                    parts = []
+                    dr = tactical_output.demand.reasoning.get(sk)
+                    sr = tactical_output.supply.reasoning.get(sk)
+                    ir = tactical_output.inventory.reasoning.get(sk)
+                    if dr:
+                        parts.append(f"[Demand] {dr}")
+                    if sr:
+                        parts.append(f"[Supply] {sr}")
+                    if ir:
+                        parts.append(f"[Inventory] {ir}")
+                    tactical_reasoning_map[sk] = " | ".join(parts) if parts else None
+                    # Average confidence across three domains
+                    confs = [
+                        tactical_output.demand.confidence.get(sk, 0.5),
+                        tactical_output.supply.confidence.get(sk, 0.5),
+                        tactical_output.inventory.confidence.get(sk, 0.5),
+                    ]
+                    tactical_confidence_map[sk] = sum(confs) / len(confs)
+            else:
+                # Legacy ExecutionGNNOutput
+                exec_output = tactical_output
+                if hasattr(exec_output, "reasoning") and exec_output.reasoning:
+                    for sk in getattr(exec_output, "site_keys", []):
+                        tactical_reasoning_map[sk] = exec_output.reasoning.get(sk)
+                        tactical_confidence_map[sk] = exec_output.confidence.get(sk, 0.5)
 
         count = 0
         now = datetime.utcnow()
@@ -315,25 +377,30 @@ class GNNOrchestrationService:
                 self.db.add(review)
                 count += 1
 
-            # Execution directives (if Execution tGNN was available)
+            # Tactical directives (from TacticalHiveCoordinator or legacy ExecutionGNN)
             exec_keys = {
                 "demand_forecast", "exception_probability",
-                "order_recommendation", "confidence", "propagation_impact",
+                "order_recommendation", "confidence",
             }
             exec_values = {k: v for k, v in values.items() if k in exec_keys}
-            if exec_values and exec_output:
-                # Get plain-English reasoning from Network tGNN output
-                exec_reasoning = None
-                if hasattr(exec_output, "reasoning") and exec_output.reasoning:
-                    exec_reasoning = exec_output.reasoning.get(site_key)
+            if exec_values and tactical_output is not None:
+                exec_reasoning = tactical_reasoning_map.get(site_key)
+                confidence = tactical_confidence_map.get(site_key, exec_values.get("confidence", 0.5))
+                # Determine model_type based on output type
+                from app.services.powell.tactical_hive_coordinator import TacticalHiveOutput
+                model_type = (
+                    "tactical_hive"
+                    if isinstance(tactical_output, TacticalHiveOutput)
+                    else "execution_tgnn"
+                )
                 review = GNNDirectiveReview(
                     config_id=self.config_id,
                     site_key=site_key,
                     directive_scope="execution_directive",
                     proposed_values=exec_values,
                     proposed_reasoning=exec_reasoning,
-                    model_type="execution_tgnn",
-                    model_confidence=exec_values.get("confidence", 0.5),
+                    model_type=model_type,
+                    model_confidence=confidence,
                     status="PROPOSED",
                     expires_at=now + timedelta(hours=12),
                 )

@@ -59,8 +59,8 @@ const COLORS = {
 
 const AGENT_NAMES = {
   llm: 'LLM (GPT-4)',
-  gnn: 'GNN (Graph Neural Network)',
-  trm: 'TRM (Tiny Recursive Model)',
+  gnn: 'Network Agent',
+  trm: 'AI Agent',
 };
 
 const LEARNING_METHODS = [

@@ -418,11 +418,11 @@ export const NAVIGATION_CONFIG = [
         path: '/planning/execution',
         icon: ExecutionIcon,
         requiredCapability: 'view_execution_dashboard',
-        description: 'Layer 5: MRP, Inventory Buffer, AATP, TRM agents, feed-back signals',
+        description: 'Layer 5: MRP, Inventory Buffer, AATP, AI agents, feed-back signals',
       },
       // --- TRM SPECIALIST WORKLISTS ---
       {
-        label: '— TRM WORKLISTS —',
+        label: '— AI AGENT WORKLISTS —',
         path: null,
         icon: null,
         requiredCapability: null,
@@ -731,14 +731,14 @@ export const NAVIGATION_CONFIG = [
         path: '/admin/graphsage',
         icon: BrainIcon,
         requiredCapability: 'view_gnn_training',
-        description: 'S&OP GraphSAGE — network structure and risk scoring',
+        description: 'S&OP Agent — network structure and risk scoring',
       },
       {
         label: 'Operational Agent',
         path: '/admin/gnn',
         icon: BrainIcon,
         requiredCapability: 'view_gnn_training',
-        description: 'Execution tGNN — priority allocations and context',
+        description: 'Network Agent — priority allocations and context',
       },
       {
         label: 'Execution Agents',
@@ -759,7 +759,7 @@ export const NAVIGATION_CONFIG = [
         path: '/admin/rl',
         icon: BrainIcon,
         requiredCapability: 'view_rl_training',
-        description: 'Reinforcement Learning — VFA fine-tuning for TRMs',
+        description: 'Reinforcement Learning — VFA fine-tuning for AI agents',
       },
       {
         label: 'Agent Benchmark',

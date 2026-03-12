@@ -109,7 +109,7 @@ const TO_COLUMNS = [
       const pct = (d.confidence * 100).toFixed(1);
       const color = d.confidence >= 0.8 ? 'success' : d.confidence >= 0.5 ? 'warning' : 'error';
       return (
-        <MuiTooltip title={`TRM confidence: ${pct}%`} arrow>
+        <MuiTooltip title={`Likelihood: ${pct}%`} arrow>
           <Chip label={`${pct}%`} size="small" color={color} variant="outlined" />
         </MuiTooltip>
       );
@@ -138,7 +138,7 @@ const TO_OVERRIDE_FIELDS = [
     key: 'planned_qty',
     label: 'Override Qty',
     type: 'number',
-    helperText: 'Enter a new transfer quantity to replace the TRM recommendation',
+    helperText: 'Enter a new transfer quantity to replace the AI recommendation',
   },
 ];
 
@@ -235,7 +235,7 @@ const TOWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
             TO Execution Worklist
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Review transfer order recommendations from the TO Execution TRM.
+            Review transfer order recommendations from the AI agent.
             Accept, override with reason, or reject each decision before
             execution.
           </Typography>

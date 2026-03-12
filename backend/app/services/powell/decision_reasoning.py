@@ -834,6 +834,183 @@ def execution_tgnn_reasoning(
     return " ".join(parts)
 
 
+def demand_planning_tgnn_reasoning(
+    *,
+    site_key: str,
+    demand_forecast_next: Optional[float] = None,
+    demand_volatility: float,
+    bullwhip_coefficient: float,
+    confidence: float,
+    demand_interval: Optional[Dict[str, float]] = None,
+) -> str:
+    """Generate reasoning for a Demand Planning tGNN (tactical layer) inference output.
+
+    Produces one string per site describing the demand forecast, volatility
+    estimate, and bullwhip amplification detected by the Demand Planning tGNN.
+    """
+    parts = [f"Demand Planning tGNN (tactical) for site {site_key}:"]
+
+    # Demand forecast
+    if demand_forecast_next is not None:
+        parts.append(f"Next-period demand forecast: {demand_forecast_next:.0f} units.")
+        if demand_interval and "lower" in demand_interval and "upper" in demand_interval:
+            parts.append(
+                f"Conformal demand interval: [{demand_interval['lower']:.0f}, "
+                f"{demand_interval['upper']:.0f}]."
+            )
+
+    # Demand volatility
+    if demand_volatility >= 0.7:
+        parts.append(f"High demand volatility ({demand_volatility:.2f}) — wide forecast uncertainty.")
+    elif demand_volatility >= 0.3:
+        parts.append(f"Moderate demand volatility ({demand_volatility:.2f}).")
+    else:
+        parts.append(f"Low demand volatility ({demand_volatility:.2f}) — stable demand signal.")
+
+    # Bullwhip coefficient
+    if bullwhip_coefficient >= 2.0:
+        parts.append(
+            f"Strong bullwhip effect detected (coefficient {bullwhip_coefficient:.2f}x) — "
+            f"demand amplification across upstream tiers is significant."
+        )
+    elif bullwhip_coefficient >= 1.3:
+        parts.append(
+            f"Moderate bullwhip amplification ({bullwhip_coefficient:.2f}x) — "
+            f"upstream orders are outpacing downstream demand."
+        )
+    else:
+        parts.append(f"Bullwhip coefficient near neutral ({bullwhip_coefficient:.2f}x).")
+
+    parts.append(f"Model confidence: {confidence:.0%}.")
+    return " ".join(parts)
+
+
+def supply_planning_tgnn_reasoning(
+    *,
+    site_key: str,
+    supply_exception_probability: float,
+    order_recommendation: float,
+    lead_time_risk: float,
+    pipeline_coverage_days: float,
+    confidence: float,
+    allocation_interval: Optional[Dict[str, float]] = None,
+) -> str:
+    """Generate reasoning for a Supply Planning tGNN (tactical layer) inference output.
+
+    Produces one string per site describing supply exception risk, order
+    recommendations, and lead time risk from the Supply Planning tGNN.
+    """
+    parts = [f"Supply Planning tGNN (tactical) for site {site_key}:"]
+
+    # Exception probability
+    if supply_exception_probability >= 0.7:
+        parts.append(
+            f"High supply exception risk ({supply_exception_probability:.0%}) — "
+            f"stockout, late PO, or capacity shortfall is likely."
+        )
+    elif supply_exception_probability >= 0.3:
+        parts.append(f"Moderate supply exception risk ({supply_exception_probability:.0%}).")
+    else:
+        parts.append(f"Low supply exception risk ({supply_exception_probability:.0%}).")
+
+    # Order recommendation
+    parts.append(f"Recommended order quantity: {order_recommendation:.0f} units.")
+    if allocation_interval and "lower" in allocation_interval and "upper" in allocation_interval:
+        parts.append(
+            f"Order interval: [{allocation_interval['lower']:.0f}, "
+            f"{allocation_interval['upper']:.0f}]."
+        )
+
+    # Lead time risk
+    if lead_time_risk >= 0.6:
+        parts.append(
+            f"High lead time risk ({lead_time_risk:.0%}) — "
+            f"supplier or logistics delay is probable; consider safety lead time."
+        )
+    elif lead_time_risk >= 0.3:
+        parts.append(f"Moderate lead time risk ({lead_time_risk:.0%}).")
+
+    # Pipeline coverage
+    if pipeline_coverage_days > 0:
+        if pipeline_coverage_days < 7:
+            parts.append(
+                f"Pipeline covers only {pipeline_coverage_days:.1f} days — "
+                f"replenishment is time-critical."
+            )
+        elif pipeline_coverage_days < 14:
+            parts.append(f"Pipeline coverage: {pipeline_coverage_days:.1f} days (tight).")
+        else:
+            parts.append(f"Pipeline coverage: {pipeline_coverage_days:.1f} days (adequate).")
+
+    parts.append(f"Model confidence: {confidence:.0%}.")
+    return " ".join(parts)
+
+
+def inventory_optimization_tgnn_reasoning(
+    *,
+    site_key: str,
+    buffer_adjustment_signal: float,
+    rebalancing_urgency: float,
+    stockout_probability: float,
+    days_of_stock: float,
+    inventory_health: float,
+    confidence: float,
+) -> str:
+    """Generate reasoning for an Inventory Optimization tGNN (tactical layer) inference output.
+
+    Produces one string per site describing buffer adjustment direction,
+    rebalancing urgency, stockout risk, and inventory health from the
+    Inventory Optimization tGNN.
+    """
+    parts = [f"Inventory Optimization tGNN (tactical) for site {site_key}:"]
+
+    # Buffer adjustment signal
+    if buffer_adjustment_signal > 0.3:
+        parts.append(
+            f"Buffer increase recommended (signal {buffer_adjustment_signal:+.2f}) — "
+            f"inventory position is below target given current demand and risk."
+        )
+    elif buffer_adjustment_signal < -0.3:
+        parts.append(
+            f"Buffer decrease recommended (signal {buffer_adjustment_signal:+.2f}) — "
+            f"excess inventory is inflating holding costs."
+        )
+    else:
+        parts.append(f"Buffer at neutral (signal {buffer_adjustment_signal:+.2f}).")
+
+    # Stockout probability
+    if stockout_probability >= 0.6:
+        parts.append(f"High stockout risk ({stockout_probability:.0%}) — immediate replenishment needed.")
+    elif stockout_probability >= 0.25:
+        parts.append(f"Moderate stockout risk ({stockout_probability:.0%}).")
+    else:
+        parts.append(f"Low stockout risk ({stockout_probability:.0%}).")
+
+    # Days of stock
+    if days_of_stock > 0:
+        if days_of_stock < 5:
+            parts.append(f"Days of stock: {days_of_stock:.1f} days — critical level.")
+        elif days_of_stock < 14:
+            parts.append(f"Days of stock: {days_of_stock:.1f} days.")
+        else:
+            parts.append(f"Days of stock: {days_of_stock:.1f} days (healthy).")
+
+    # Rebalancing urgency
+    if rebalancing_urgency >= 0.6:
+        parts.append(
+            f"High rebalancing urgency ({rebalancing_urgency:.0%}) — "
+            f"cross-site transfer recommended to address imbalance."
+        )
+    elif rebalancing_urgency >= 0.3:
+        parts.append(f"Moderate rebalancing urgency ({rebalancing_urgency:.0%}).")
+
+    # Inventory health
+    parts.append(f"Inventory health score: {inventory_health:.2f}.")
+
+    parts.append(f"Model confidence: {confidence:.0%}.")
+    return " ".join(parts)
+
+
 def site_tgnn_reasoning(
     *,
     site_key: str,

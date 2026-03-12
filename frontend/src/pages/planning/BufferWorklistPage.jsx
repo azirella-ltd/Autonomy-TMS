@@ -126,7 +126,7 @@ const BUFFER_COLUMNS = [
       const pct = (d.confidence * 100).toFixed(1);
       const color = d.confidence >= 0.8 ? 'success' : d.confidence >= 0.5 ? 'warning' : 'error';
       return (
-        <MuiTooltip title={`TRM confidence: ${pct}%`} arrow>
+        <MuiTooltip title={`Likelihood: ${pct}%`} arrow>
           <Chip label={`${pct}%`} size="small" color={color} variant="outlined" />
         </MuiTooltip>
       );
@@ -143,7 +143,7 @@ const BUFFER_OVERRIDE_FIELDS = [
     key: 'adjusted_ss',
     label: 'Override Buffer Level',
     type: 'number',
-    helperText: 'Enter a new buffer level to replace the TRM recommendation',
+    helperText: 'Enter a new buffer level to replace the AI recommendation',
   },
   {
     key: 'multiplier',
@@ -249,7 +249,7 @@ const BufferWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Review inventory buffer adjustment recommendations from the
-            Inventory Buffer TRM. Accept, override with reason, or reject
+            AI agent. Accept, override with reason, or reject
             each decision before execution.
           </Typography>
         </Box>

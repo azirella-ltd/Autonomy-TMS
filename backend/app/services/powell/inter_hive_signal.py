@@ -55,6 +55,12 @@ class InterHiveSignalType(str, Enum):
     CROSS_TRM_SYNERGY = "cross_trm_synergy"        # Positive feedback loop detected
     URGENCY_REBALANCE = "urgency_rebalance"        # Urgency redistribution recommended
 
+    # Tactical lateral hive signals (Layer 2, TacticalHiveCoordinator)
+    DEMAND_SIGNAL_TO_SUPPLY = "demand_signal_to_supply"       # Demand tGNN → Supply tGNN
+    SUPPLY_SIGNAL_TO_INVENTORY = "supply_signal_to_inventory"  # Supply tGNN → Inventory tGNN
+    INVENTORY_SIGNAL_TO_DEMAND = "inventory_signal_to_demand"  # Inventory tGNN → Demand tGNN
+    TACTICAL_CONVERGENCE = "tactical_convergence"              # Lateral cycle converged
+
 
 # ---------------------------------------------------------------------------
 # InterHiveSignal
@@ -135,6 +141,12 @@ class tGNNSiteDirective:
     # Execution tGNN outputs
     demand_forecast: Optional[float] = None  # Network-adjusted demand forecast
     exception_probability: float = 0.0       # Expected exception rate (0–1)
+
+    # Tactical Hive Coordinator extended outputs (Feb 2026)
+    # These fields carry per-domain signals from TacticalHiveCoordinator.
+    demand_volatility: Optional[float] = None           # Demand volatility estimate from Demand tGNN
+    buffer_adjustment_signal: Optional[float] = None    # Buffer adj direction [-1,+1] from Inventory tGNN
+    supply_exception_probability: Optional[float] = None  # Supply-domain exception prob from Supply tGNN
 
     # Priority allocations (from tGNN allocation layer)
     allocation_refresh: bool = False         # Whether allocations were updated

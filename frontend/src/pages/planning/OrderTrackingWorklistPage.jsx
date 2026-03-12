@@ -206,7 +206,7 @@ const OVERRIDE_FIELDS = [
     label: 'Override Severity',
     type: 'text',
     options: SEVERITY_OPTIONS,
-    helperText: 'Adjust the severity level if the TRM assessment is incorrect',
+    helperText: 'Adjust the severity level if the AI assessment is incorrect',
   },
 ];
 
@@ -312,9 +312,9 @@ const OrderTrackingWorklistPage = ({ configId = 1 }) => {
             Order Tracking Worklist
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Review order exceptions detected by the Order Tracking TRM.
+            Review order exceptions detected by the AI agent.
             Accept recommended actions, override with reasoning, or reject
-            for re-evaluation. Overrides train the TRM via reinforcement learning.
+            for re-evaluation. Overrides train the agent via reinforcement learning.
           </Typography>
         </Box>
         <LayerModeIndicator layer="order_tracking_trm" mode="active" />

@@ -283,7 +283,7 @@ export default function DemoSystemBuilder() {
     <Box sx={{ maxWidth: 600, mx: 'auto' }}>
       <Typography variant="h6" gutterBottom>Training Configuration</Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Configure model training for S&OP GraphSAGE, Execution tGNN, and 11 narrow TRMs.
+        Configure model training for the S&OP planning model, execution model, and 11 AI agents.
       </Typography>
       <Grid container spacing={3}>
         <Grid item xs={6}>
@@ -294,7 +294,7 @@ export default function DemoSystemBuilder() {
             value={config.epochs}
             onChange={(e) => setConfig({ ...config, epochs: parseInt(e.target.value) || 50 })}
             inputProps={{ min: 1, max: 500 }}
-            helperText="Epochs for GNN training"
+            helperText="Epochs for model training"
           />
         </Grid>
         <Grid item xs={6}>
@@ -315,9 +315,9 @@ export default function DemoSystemBuilder() {
         <CardContent>
           <Typography variant="subtitle2" gutterBottom>Training Pipeline</Typography>
           <Typography variant="body2" color="text.secondary">
-            1. S&OP GraphSAGE: Network structure analysis and criticality scoring<br />
-            2. Execution tGNN: Priority allocation generation with S&OP embeddings<br />
-            3. Narrow TRMs: Behavioral cloning from heuristic decisions (11 agent types)
+            1. S&OP Agent: Network structure analysis and criticality scoring<br />
+            2. Network Agent: Priority allocation generation with S&OP embeddings<br />
+            3. AI Agents: Behavioral cloning from heuristic decisions (11 agent types)
           </Typography>
         </CardContent>
       </Card>

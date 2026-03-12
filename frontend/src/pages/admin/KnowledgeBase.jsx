@@ -36,7 +36,7 @@ const CATEGORIES = [
   { value: 'scor_framework', label: 'SCOR Framework' },
   { value: 'decision_framework', label: 'Decision Framework (Powell SDAM)' },
   { value: 'ai_planning', label: 'AI / Agentic Planning' },
-  { value: 'ai_ml', label: 'AI / ML (GNN, TRM, RL)' },
+  { value: 'ai_ml', label: 'AI / ML Models' },
   { value: 'stochastic_planning', label: 'Stochastic / Probabilistic Planning' },
   { value: 'analyst_reports', label: 'Analyst Reports (Gartner, McKinsey, etc.)' },
   { value: 'academic_planning', label: 'Academic / Research' },

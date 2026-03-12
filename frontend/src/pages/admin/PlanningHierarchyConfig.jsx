@@ -91,8 +91,8 @@ const POWELL_POLICY_CLASSES = [
 ];
 
 const GNN_MODEL_TYPES = [
-  { value: 'sop_graphsage', label: 'S&OP GraphSAGE', description: 'Strategic structural analysis' },
-  { value: 'execution_tgnn', label: 'Execution tGNN', description: 'Operational decisions' },
+  { value: 'sop_graphsage', label: 'S&OP Agent', description: 'Strategic structural analysis' },
+  { value: 'execution_tgnn', label: 'Network Agent', description: 'Operational decisions' },
   { value: 'hybrid', label: 'Hybrid', description: 'Combined S&OP + Execution' }
 ];
 
@@ -342,7 +342,7 @@ export default function PlanningHierarchyConfig() {
               <Chip label={config.powell_policy_class.toUpperCase()} size="small" color="primary" />
             </Grid>
             <Grid item xs={6}>
-              <Typography variant="caption" color="text.secondary">GNN Model</Typography>
+              <Typography variant="caption" color="text.secondary">Network Agent</Typography>
               <Typography variant="body2">{config.gnn_model_type || 'None'}</Typography>
             </Grid>
           </Grid>
@@ -625,10 +625,10 @@ export default function PlanningHierarchyConfig() {
             </Grid>
             <Grid item xs={12} sm={6}>
               <FormControl fullWidth>
-                <InputLabel>GNN Model Type</InputLabel>
+                <InputLabel>Network Agent Type</InputLabel>
                 <Select
                   value={formData.gnn_model_type}
-                  label="GNN Model Type"
+                  label="Network Agent Type"
                   onChange={(e) => handleFormChange('gnn_model_type', e.target.value)}
                 >
                   <MenuItem value="">None</MenuItem>

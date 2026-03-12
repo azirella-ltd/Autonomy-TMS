@@ -119,14 +119,14 @@ const TRMDashboard = () => {
         <ChevronRight className="h-4 w-4" />
         <Link to="/admin?section=training" className="hover:text-foreground">AI & Agents</Link>
         <ChevronRight className="h-4 w-4" />
-        <span className="text-foreground">TRM Training</span>
+        <span className="text-foreground">AI Agent Training</span>
       </nav>
 
       <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">TRM (Tiny Recursive Model)</h1>
+        <h1 className="text-3xl font-bold mb-2">AI Agents</h1>
         <p className="text-muted-foreground">
-          Train, manage, and test compact 7M parameter models for supply chain optimization.
-          TRM uses recursive refinement for fast (under 10ms) decision making with chain-of-thought reasoning.
+          Train, manage, and test compact 7M parameter agents for supply chain optimization.
+          Uses recursive refinement for fast (under 10ms) decision making with chain-of-thought reasoning.
         </p>
       </div>
 

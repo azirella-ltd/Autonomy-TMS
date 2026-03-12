@@ -36,13 +36,13 @@ const STEP_ICONS = {
 
 const STEP_DESCRIPTIONS = {
   warm_start: 'Generate 52 weeks of historical demand data from forecast distributions',
-  sop_graphsage: 'Train network-wide S&OP GraphSAGE for policy parameters',
+  sop_graphsage: 'Train network-wide S&OP planning model for policy parameters',
   cfa_optimization: 'Optimize CFA policy parameters via Differential Evolution',
-  execution_tgnn: 'Train daily Execution tGNN for priority allocations',
-  trm_training: 'Phase 1 Behavioral Cloning for all 11 TRM agents',
+  execution_tgnn: 'Train daily execution model for priority allocations',
+  trm_training: 'Phase 1 Behavioral Cloning for all 11 AI agents',
   supply_plan: 'Generate initial supply plan (PO/TO/MO requests)',
-  decision_seed: 'Seed decision stream with synthetic TRM decisions',
-  site_tgnn: 'Train Site tGNN (Layer 1.5) for cross-TRM coordination',
+  decision_seed: 'Seed decision stream with synthetic AI decisions',
+  site_tgnn: 'Train Site Agent (Layer 1.5) for cross-site coordination',
   conformal: 'Calibrate conformal prediction intervals from historical data',
   briefing: 'Generate executive strategy briefing from provisioned data',
 };

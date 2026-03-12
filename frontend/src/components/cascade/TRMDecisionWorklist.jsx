@@ -124,13 +124,13 @@ const OverrideDialog = ({ open, onClose, onSubmit, decision, overrideFields }) =
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Override TRM Decision</DialogTitle>
+      <DialogTitle>Override AI Decision</DialogTitle>
       <DialogContent>
         {decision && (
           <Box sx={{ mb: 2 }}>
             <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
               <Typography variant="body2">
-                Your override will be recorded and used to train the TRM agent
+                Your override will be recorded and used to train the AI agent
                 via reinforcement learning. Please provide a clear reason.
               </Typography>
             </Alert>
@@ -286,7 +286,7 @@ const TRMDecisionWorklist = ({
       await submitAction({
         decision_id: decision.id,
         action: 'reject',
-        reason_text: 'Rejected — TRM will re-evaluate with updated context',
+        reason_text: 'Rejected — Agent will re-evaluate with updated context',
       });
       loadDecisions();
     } catch (err) {
@@ -417,7 +417,7 @@ const TRMDecisionWorklist = ({
                     <TableCell align="right">
                       {decision.status === 'PROPOSED' && (
                         <Box display="flex" gap={0.5} justifyContent="flex-end">
-                          <Tooltip title="Accept TRM decision">
+                          <Tooltip title="Accept AI decision">
                             <IconButton
                               size="small"
                               color="success"
@@ -437,7 +437,7 @@ const TRMDecisionWorklist = ({
                               <OverrideIcon size={16} />
                             </IconButton>
                           </Tooltip>
-                          <Tooltip title="Reject — TRM will re-evaluate">
+                          <Tooltip title="Reject — Agent will re-evaluate">
                             <IconButton
                               size="small"
                               color="error"

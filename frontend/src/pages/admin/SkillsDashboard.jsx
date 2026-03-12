@@ -104,7 +104,7 @@ const OverviewTab = ({ stats }) => {
           color="amber"
         />
         <StatCard
-          title="Total TRM Decisions"
+          title="Total AI Decisions"
           value={stats.total_trm_decisions.toLocaleString()}
           subtitle={`Last ${stats.period_days} days`}
           icon={Zap}
@@ -224,7 +224,7 @@ const TypeBreakdownTab = ({ stats }) => {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium">Decisions by TRM Type and Source</CardTitle>
+          <CardTitle className="text-sm font-medium">Decisions by Agent Type and Source</CardTitle>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={350}>

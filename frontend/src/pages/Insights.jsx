@@ -169,14 +169,14 @@ const Insights = () => {
                     <li className="flex items-start gap-3">
                       <TrendingUp className="h-5 w-5 text-primary mt-0.5" />
                       <div>
-                        <p className="font-medium">TRM (7M params)</p>
+                        <p className="font-medium">AI Agent (7M params)</p>
                         <p className="text-sm text-muted-foreground">Fast forecasting</p>
                       </div>
                     </li>
                     <li className="flex items-start gap-3">
                       <BarChart3 className="h-5 w-5 text-primary mt-0.5" />
                       <div>
-                        <p className="font-medium">GNN (128M+ params)</p>
+                        <p className="font-medium">Network Agent (128M+ params)</p>
                         <p className="text-sm text-muted-foreground">Graph analysis</p>
                       </div>
                     </li>

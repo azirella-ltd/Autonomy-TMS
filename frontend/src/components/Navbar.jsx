@@ -333,7 +333,7 @@ const Navbar = () => {
           },
         },
         {
-          label: "TRM Model Training",
+          label: "AI Agent Training",
           icon: TrainingIcon,
           onClick: () => {
             navigate("/admin/trm");
@@ -341,7 +341,7 @@ const Navbar = () => {
           },
         },
         {
-          label: "GNN Model Training",
+          label: "Network Agent Training",
           icon: ModelIcon,
           onClick: () => {
             navigate("/admin/gnn");
@@ -411,7 +411,7 @@ const Navbar = () => {
           },
         },
         {
-          label: "TRM Model Training",
+          label: "AI Agent Training",
           icon: TrainingIcon,
           onClick: () => {
             navigate("/admin/trm");
@@ -419,7 +419,7 @@ const Navbar = () => {
           },
         },
         {
-          label: "GNN Model Training",
+          label: "Network Agent Training",
           icon: ModelIcon,
           onClick: () => {
             navigate("/admin/gnn");

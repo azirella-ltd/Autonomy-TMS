@@ -172,7 +172,7 @@ const TRMModelManager = () => {
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <Typography variant="h4">
-          TRM Model Manager
+          AI Agent Manager
         </Typography>
         <Button
           variant="outline"
@@ -401,7 +401,7 @@ const TRMModelManager = () => {
       {/* Load Model Dialog */}
       <Modal isOpen={loadDialogOpen} onClose={() => setLoadDialogOpen(false)} size="md">
         <ModalHeader>
-          <ModalTitle>Load TRM Model</ModalTitle>
+          <ModalTitle>Load AI Agent</ModalTitle>
         </ModalHeader>
         <ModalBody>
           {selectedCheckpoint && (

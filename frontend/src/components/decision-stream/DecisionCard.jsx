@@ -160,7 +160,7 @@ const DecisionCard = ({
   return (
     <Card className="border-l-4 border-l-primary/60 hover:shadow-md transition-shadow">
       <CardContent className={cn('pt-4', compact ? 'pb-3' : 'pb-4')}>
-        {/* Header row: type + product/site + urgency + confidence */}
+        {/* Header row: type + product/site + urgency + likelihood */}
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="flex items-center gap-2 min-w-0">
             <Icon className="h-4 w-4 text-primary flex-shrink-0" />
@@ -180,7 +180,7 @@ const DecisionCard = ({
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
             <UrgencyBar value={decision.urgency} />
-            <ConfidenceChip value={decision.confidence} />
+            <ConfidenceChip value={decision.likelihood} />
           </div>
         </div>
 

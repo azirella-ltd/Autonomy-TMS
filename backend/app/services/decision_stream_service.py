@@ -808,7 +808,7 @@ class DecisionStreamService:
                         "site_id": site_id,
                         "site_name": site_names.get(str(site_id)) if site_id else None,
                         "urgency": getattr(row, "urgency", None) or getattr(row, "urgency_at_time", None),
-                        "confidence": getattr(row, "confidence", None),
+                        "likelihood": getattr(row, "confidence", None),
                         "economic_impact": None,
                         "reason": _get_reason(row, type_key),
                         "decision_reasoning": _humanize_ids(raw_reasoning, product_names) if raw_reasoning else None,
@@ -861,7 +861,7 @@ class DecisionStreamService:
 
         for d in decisions:
             urgency = _to_float(d.get("urgency"), 0.0)
-            likelihood = _to_float(d.get("confidence"), _DEFAULT_CONFIDENCE)
+            likelihood = _to_float(d.get("likelihood"), _DEFAULT_CONFIDENCE)
             combined = urgency + likelihood
 
             # Abandon: both urgency and likelihood are low — not worth
@@ -884,14 +884,15 @@ class DecisionStreamService:
                 abandoned_count,
             )
 
-        # Sort: highest urgency first, then lowest likelihood first
-        # (low likelihood at high urgency = human judgment needed most)
+        # Sort: urgency DESC, likelihood ASC
+        # (high urgency + low likelihood = human judgment needed most —
+        #  the agent proposes a solution but isn't confident; act now)
         def sort_key(d):
             urgency = _to_float(d.get("urgency"), 0.0)
-            confidence_inv = 1.0 - _to_float(d.get("confidence"), _DEFAULT_CONFIDENCE)
-            return (urgency, confidence_inv)
+            likelihood = _to_float(d.get("likelihood"), _DEFAULT_CONFIDENCE)
+            return (-urgency, likelihood)
 
-        kept.sort(key=sort_key, reverse=True)
+        kept.sort(key=sort_key)
         return kept[:_DIGEST_MAX_DECISIONS]
 
     async def _collect_alerts(self, config_id: Optional[int] = None) -> List[Dict[str, Any]]:

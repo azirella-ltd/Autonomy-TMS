@@ -157,7 +157,7 @@ const PO_OVERRIDE_FIELDS = [
     key: 'recommended_qty',
     label: 'Override Order Qty',
     type: 'number',
-    helperText: 'Enter a new order quantity to replace the TRM recommendation',
+    helperText: 'Enter a new order quantity to replace the AI recommendation',
   },
   {
     key: 'supplier_id',
@@ -272,7 +272,7 @@ const POWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
             PO Creation Worklist
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Review purchase order recommendations from the PO Creation TRM.
+            Review purchase order recommendations from the AI agent.
             Accept, override with reason, or reject each decision before
             execution.
           </Typography>

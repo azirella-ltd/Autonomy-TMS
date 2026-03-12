@@ -435,7 +435,7 @@ const PerTRMTable = ({ perTrm }) => {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-left text-xs text-muted-foreground">
-                <th className="pb-2 pr-4 font-medium">TRM Agent</th>
+                <th className="pb-2 pr-4 font-medium">AI Agent</th>
                 <th className="pb-2 pr-4 font-medium text-right">Score</th>
                 <th className="pb-2 pr-4 font-medium text-right">Touchless %</th>
                 <th className="pb-2 pr-4 font-medium text-right">Override %</th>

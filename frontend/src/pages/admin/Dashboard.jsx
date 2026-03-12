@@ -452,7 +452,7 @@ const AdminDashboard = () => {
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center">
                         <Brain className="h-12 w-12 text-primary mr-3" />
-                        <h3 className="text-xl font-semibold">TRM Training</h3>
+                        <h3 className="text-xl font-semibold">AI Agent Training</h3>
                       </div>
                       {trainingCounts.trm > 0 && (
                         <div className="flex items-center gap-1 text-green-600 text-sm">
@@ -483,7 +483,7 @@ const AdminDashboard = () => {
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center">
                         <Sparkles className="h-12 w-12 text-purple-500 mr-3" />
-                        <h3 className="text-xl font-semibold">GNN Training</h3>
+                        <h3 className="text-xl font-semibold">Network Agent Training</h3>
                       </div>
                       {trainingCounts.gnn > 0 && (
                         <div className="flex items-center gap-1 text-green-600 text-sm">
@@ -494,7 +494,7 @@ const AdminDashboard = () => {
                     </div>
 
                     <p className="text-muted-foreground mb-4">
-                      Graph Neural Networks for network-wide supply chain optimization.
+                      Network model for network-wide supply chain optimization.
                     </p>
 
                     <Button
@@ -502,7 +502,7 @@ const AdminDashboard = () => {
                       size="lg"
                       onClick={() => navigate('/admin/gnn')}
                     >
-                      Go to GNN Training
+                      Go to Network Agent Training
                       <ArrowRight className="h-4 w-4 ml-2" />
                     </Button>
                   </CardContent>
