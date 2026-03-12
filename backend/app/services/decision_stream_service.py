@@ -80,15 +80,19 @@ _CURRENCY_SYMBOL = os.environ.get("DECISION_STREAM_CURRENCY", "$")
 # ---------------------------------------------------------------------------
 # Decision quality guardrails
 # ---------------------------------------------------------------------------
-# Decisions below this likelihood (confidence) are auto-abandoned.
-# Agents should not surface decisions they cannot justify.
-_ABANDON_LIKELIHOOD_THRESHOLD = float(
-    os.environ.get("DECISION_STREAM_ABANDON_LIKELIHOOD", 0.3)
-)
-# Decisions with BOTH urgency below this AND likelihood below the abandon
-# threshold are silently dropped (not even shown as abandoned).
-_DROP_LOW_URGENCY_THRESHOLD = float(
-    os.environ.get("DECISION_STREAM_DROP_URGENCY", 0.2)
+# Abandon decisions where BOTH urgency AND likelihood are low — not worth
+# anyone's time.  The combined score (urgency + likelihood) must exceed this
+# threshold to survive.  A sliding scale: the lower the urgency, the higher
+# the likelihood must be.  High-urgency decisions are NEVER abandoned because
+# that is exactly where human judgment creates real value.
+#
+# Examples at default 0.5:
+#   urgency=0.8, likelihood=0.1 → 0.9 → keep  (human needed — clock ticking)
+#   urgency=0.3, likelihood=0.3 → 0.6 → keep
+#   urgency=0.1, likelihood=0.2 → 0.3 → abandon
+#   urgency=0.2, likelihood=0.1 → 0.3 → abandon
+_ABANDON_COMBINED_THRESHOLD = float(
+    os.environ.get("DECISION_STREAM_ABANDON_THRESHOLD", 0.5)
 )
 
 # In-memory conversation cache (same pattern as AssistantService)
@@ -828,17 +832,21 @@ class DecisionStreamService:
         return all_decisions, product_names
 
     def _prioritize_decisions(self, decisions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Rank, filter, and guardrail decisions.
+        """Rank and filter decisions for the Decision Stream.
 
-        Ranking: urgency DESC, then likelihood ASC (low likelihood = high
-        uncertainty = needs human attention more).
+        The stream focuses humans on decisions that need attention NOW:
+        - High urgency + low likelihood → TOP (human judgment creates value)
+        - High urgency + high likelihood → autonomous, shown for awareness
+        - Low urgency + high likelihood → autonomous, shown for awareness
+        - Low urgency + low likelihood → abandoned, excluded from stream
 
-        Guardrails:
-        1. Drop: low urgency AND low likelihood → agent should never have
-           surfaced this; silently discard.
-        2. Abandon: any surviving decision below the likelihood threshold
-           is marked as abandoned with a reason — the agent's own confidence
-           is too low to justify action.
+        Abandonment uses a sliding scale: urgency + likelihood must exceed
+        _ABANDON_COMBINED_THRESHOLD.  The lower the urgency, the higher
+        the likelihood must be to survive.  High-urgency decisions are
+        never abandoned — that's exactly where humans are needed most.
+
+        Abandoned decisions are excluded from the stream entirely.  They
+        are available via a separate audit/training endpoint.
         """
         def _to_float(v, default=0.0):
             if v is None:
@@ -849,42 +857,39 @@ class DecisionStreamService:
                 return default
 
         kept: List[Dict[str, Any]] = []
-        dropped = 0
+        abandoned_count = 0
 
         for d in decisions:
             urgency = _to_float(d.get("urgency"), 0.0)
             likelihood = _to_float(d.get("confidence"), _DEFAULT_CONFIDENCE)
+            combined = urgency + likelihood
 
-            # Guardrail 1: silently drop low-urgency + low-likelihood decisions.
-            # These represent noise the agent should not have generated.
-            if urgency < _DROP_LOW_URGENCY_THRESHOLD and likelihood < _ABANDON_LIKELIHOOD_THRESHOLD:
-                dropped += 1
-                continue
-
-            # Guardrail 2: mark surviving low-likelihood decisions as abandoned.
-            # The decision stays visible (for audit) but is flagged so the UI
-            # can show it as "abandoned — confidence too low to act".
-            if likelihood < _ABANDON_LIKELIHOOD_THRESHOLD:
+            # Abandon: both urgency and likelihood are low — not worth
+            # anyone's time.  Excluded from the stream entirely.
+            if combined < _ABANDON_COMBINED_THRESHOLD:
                 d["abandoned"] = True
                 d["abandon_reason"] = (
-                    f"Likelihood {likelihood:.0%} is below the "
-                    f"{_ABANDON_LIKELIHOOD_THRESHOLD:.0%} guardrail threshold"
+                    f"Combined score {combined:.2f} (urgency {urgency:.0%} + "
+                    f"likelihood {likelihood:.0%}) below "
+                    f"{_ABANDON_COMBINED_THRESHOLD:.2f} threshold"
                 )
+                abandoned_count += 1
+                continue
 
             kept.append(d)
 
-        if dropped:
+        if abandoned_count:
             logger.debug(
-                "Decision stream: dropped %d low-urgency/low-likelihood decisions", dropped
+                "Decision stream: abandoned %d low-urgency/low-likelihood decisions",
+                abandoned_count,
             )
 
-        # Sort: highest urgency first, then lowest likelihood (needs attention)
+        # Sort: highest urgency first, then lowest likelihood first
+        # (low likelihood at high urgency = human judgment needed most)
         def sort_key(d):
             urgency = _to_float(d.get("urgency"), 0.0)
             confidence_inv = 1.0 - _to_float(d.get("confidence"), _DEFAULT_CONFIDENCE)
-            # Abandoned decisions sort after non-abandoned at any urgency level
-            abandoned_penalty = 0.0 if not d.get("abandoned") else -1.0
-            return (abandoned_penalty, urgency, confidence_inv)
+            return (urgency, confidence_inv)
 
         kept.sort(key=sort_key, reverse=True)
         return kept[:_DIGEST_MAX_DECISIONS]
