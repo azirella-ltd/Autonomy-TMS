@@ -44,8 +44,13 @@ class ClaudeClient:
         )
     """
 
-    def __init__(self, force_vllm: bool = False):
-        self._claude_api_key = os.getenv(ENV_CLAUDE_API_KEY)
+    def __init__(self, force_vllm: bool = False, purpose: str = "briefing"):
+        """
+        Args:
+            force_vllm: Always route to vLLM regardless of other settings.
+            purpose: "briefing" or "skills" — determines which provider setting
+                     to read from llm_settings.json when in "auto" mode.
+        """
         self._llm_api_base = os.getenv(ENV_LLM_API_BASE)
         self._llm_api_key = os.getenv(ENV_LLM_API_KEY, "not-needed")
         self._llm_model_name = os.getenv(ENV_LLM_MODEL_NAME, "qwen3-8b")
@@ -53,12 +58,55 @@ class ClaudeClient:
         self._sonnet_model = os.getenv(ENV_CLAUDE_MODEL_SONNET, CLAUDE_SONNET)
         self._http_client: Optional[httpx.AsyncClient] = None
         self._force_vllm = force_vllm  # bypass Anthropic API even if CLAUDE_API_KEY is set
+        self._purpose = purpose  # "briefing" or "skills"
         self._vllm_max_model_len: Optional[int] = None  # cached from /v1/models
 
     @property
     def uses_claude(self) -> bool:
-        """Whether we're using Claude API (vs vLLM fallback)."""
-        return bool(self._claude_api_key) and not self._force_vllm
+        """Whether we're using Claude API (vs vLLM fallback).
+
+        Reads CLAUDE_API_KEY and the runtime LLM settings file at call time so
+        the provider can be switched from the admin UI without a restart.
+
+        Priority:
+          1. force_vllm=True on this instance → always vLLM
+          2. Runtime settings file (briefing_provider / skills_provider)
+          3. CLAUDE_API_KEY present → Claude; absent → vLLM
+        """
+        if self._force_vllm:
+            return False
+
+        api_key = os.getenv(ENV_CLAUDE_API_KEY)
+
+        # Read runtime settings (file written by PUT /api/v1/config/llm)
+        provider = self._read_runtime_provider()
+        if provider == "claude":
+            return bool(api_key)
+        if provider == "vllm":
+            return False
+        # "auto" — use Claude if key is available
+        return bool(api_key)
+
+    def _read_runtime_provider(self) -> str:
+        """Read the provider setting from the runtime settings file.
+
+        Returns "auto", "claude", or "vllm".
+        Reads the field matching self._purpose ("briefing_provider" or "skills_provider").
+        """
+        import json as _json
+        settings_path = os.path.join(
+            os.path.dirname(__file__), "../../../data/llm_settings.json"
+        )
+        settings_path = os.path.abspath(settings_path)
+        field = f"{self._purpose}_provider"
+        try:
+            if os.path.exists(settings_path):
+                with open(settings_path) as f:
+                    data = _json.load(f)
+                return data.get(field, "auto")
+        except Exception:
+            pass
+        return "auto"
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._http_client is None or self._http_client.is_closed:
@@ -132,7 +180,7 @@ class ClaudeClient:
         response = await client.post(
             "https://api.anthropic.com/v1/messages",
             headers={
-                "x-api-key": self._claude_api_key,
+                "x-api-key": os.getenv(ENV_CLAUDE_API_KEY, ""),
                 "anthropic-version": "2023-06-01",
                 "anthropic-beta": "prompt-caching-2024-07-31",
                 "content-type": "application/json",

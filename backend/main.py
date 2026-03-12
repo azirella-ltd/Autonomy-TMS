@@ -1935,6 +1935,50 @@ def put_system_config(cfg: SystemConfigModel):
             pass
 
 
+# ---------------------- LLM Settings (runtime, no restart required) ----------------------
+
+import os as _os
+from typing import Literal as _Literal
+
+_LLM_SETTINGS_PATH = _os.path.abspath(
+    _os.path.join(_os.path.dirname(__file__), "data", "llm_settings.json")
+)
+
+
+class LLMSettings(BaseModel):
+    """Runtime LLM routing. Changes take effect immediately — no restart needed."""
+    briefing_provider: _Literal["auto", "claude", "vllm"] = "auto"
+    skills_provider: _Literal["auto", "claude", "vllm"] = "auto"
+
+
+def _read_llm_settings() -> LLMSettings:
+    try:
+        if _os.path.exists(_LLM_SETTINGS_PATH):
+            with open(_LLM_SETTINGS_PATH) as f:
+                return LLMSettings(**json.load(f))
+    except Exception:
+        pass
+    return LLMSettings()
+
+
+@api.get("/config/llm", response_model=LLMSettings, tags=["config"])
+def get_llm_settings(current_user=Depends(get_current_user)):
+    """Get current LLM provider routing settings."""
+    return _read_llm_settings()
+
+
+@api.put("/config/llm", response_model=LLMSettings, tags=["config"])
+def put_llm_settings(settings: LLMSettings, current_user=Depends(get_current_user)):
+    """Update LLM provider routing. Takes effect immediately — no restart required."""
+    try:
+        _os.makedirs(_os.path.dirname(_LLM_SETTINGS_PATH), exist_ok=True)
+        with open(_LLM_SETTINGS_PATH, "w") as f:
+            json.dump(settings.dict(), f, indent=2)
+        return settings
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save LLM settings: {e}")
+
+
 # ---------------------- Model Config ----------------------
 class Item(BaseModel):
     id: str

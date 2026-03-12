@@ -342,9 +342,10 @@ class ExecutiveBriefingService:
 
     def __init__(self, db: Session):
         self.db = db
-        # Executive briefings use the house LLM (vLLM on Acer-Nitro) — not the
-        # Anthropic API. CLAUDE_API_KEY is reserved for Skills exception handling.
-        self._client = ClaudeClient(force_vllm=True)
+        # Executive briefings prefer Claude API (quality-critical, low-frequency).
+        # Provider is controlled by PUT /api/v1/config/llm {"briefing_provider": "claude"|"vllm"|"auto"}
+        # No restart required — settings file is read at call time.
+        self._client = ClaudeClient(force_vllm=False, purpose="briefing")
 
     async def generate_briefing(
         self,
@@ -450,8 +451,8 @@ class ExecutiveBriefingService:
             system_prompt = system_prompt + "\n\n" + kb_context
 
         # For vLLM/Qwen3: disable chain-of-thought thinking to save tokens.
-        # Qwen3 supports /no_think directive in system or user message.
-        if self._client._force_vllm or not self._client.uses_claude:
+        # Qwen3 supports /no_think directive; Claude ignores it harmlessly.
+        if not self._client.uses_claude:
             system_prompt = "/no_think\n\n" + system_prompt
 
         # 4. Build user message — JSON reminder at START so it survives context truncation

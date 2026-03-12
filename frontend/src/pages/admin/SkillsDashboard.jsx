@@ -42,6 +42,10 @@ import {
   Zap,
   BarChart3,
   Search,
+  Settings,
+  Server,
+  Cloud,
+  Cpu,
 } from 'lucide-react';
 import { api } from '../../services/api';
 
@@ -461,6 +465,161 @@ const RecentDecisionsTab = ({ stats }) => {
 };
 
 // ============================================================================
+// LLM Settings Tab
+// ============================================================================
+
+const PROVIDER_OPTIONS = [
+  {
+    value: 'auto',
+    label: 'Auto',
+    description: 'Use Claude API if CLAUDE_API_KEY is set, otherwise fall back to vLLM.',
+    icon: Cpu,
+    color: 'text-gray-600',
+  },
+  {
+    value: 'claude',
+    label: 'Claude API',
+    description: 'Always use Anthropic Claude (claude-sonnet-4-6). Best quality. Requires CLAUDE_API_KEY.',
+    icon: Cloud,
+    color: 'text-purple-600',
+  },
+  {
+    value: 'vllm',
+    label: 'vLLM (Local)',
+    description: 'Always use local vLLM on LLM_API_BASE. Free but limited by GPU context window.',
+    icon: Server,
+    color: 'text-blue-600',
+  },
+];
+
+const ProviderCard = ({ value, selected, onSelect }) => {
+  const opt = PROVIDER_OPTIONS.find(o => o.value === value) || PROVIDER_OPTIONS[0];
+  const Icon = opt.icon;
+  return (
+    <div
+      onClick={() => onSelect(value)}
+      className={`cursor-pointer rounded-lg border-2 p-4 transition-all ${
+        selected === value
+          ? 'border-primary bg-primary/5'
+          : 'border-border hover:border-primary/50'
+      }`}
+    >
+      <div className="flex items-center gap-3 mb-2">
+        <Icon className={`h-5 w-5 ${opt.color}`} />
+        <span className="font-semibold text-sm">{opt.label}</span>
+        {selected === value && (
+          <Badge variant="default" className="ml-auto text-xs">Active</Badge>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">{opt.description}</p>
+    </div>
+  );
+};
+
+const LLMSettingsTab = () => {
+  const [settings, setSettings] = useState({ briefing_provider: 'auto', skills_provider: 'auto' });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    api.get('/config/llm')
+      .then(r => setSettings(r.data))
+      .catch(() => {/* use defaults */})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const r = await api.put('/config/llm', settings);
+      setSettings(r.data);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e) {
+      setError(e.response?.data?.detail || 'Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <div className="p-8 text-center text-muted-foreground">Loading settings…</div>;
+
+  return (
+    <div className="space-y-6 pt-4">
+      <Alert>
+        <Settings className="h-4 w-4" />
+        <div>
+          <strong>Changes take effect immediately</strong> — no restart required.
+          Settings are written to <code>data/llm_settings.json</code> and read on each request.
+        </div>
+      </Alert>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-purple-500" />
+            Executive Briefing Provider
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Weekly/monthly briefings. Low-frequency, quality-critical.
+            Recommended: Claude API (~$0.05/briefing).
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {PROVIDER_OPTIONS.map(opt => (
+              <ProviderCard
+                key={opt.value}
+                value={opt.value}
+                selected={settings.briefing_provider}
+                onSelect={v => setSettings(s => ({ ...s, briefing_provider: v }))}
+              />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Brain className="h-4 w-4 text-blue-500" />
+            Skills Exception Handler Provider
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            TRM exception handling (~5% of decisions). Higher volume, latency-tolerant.
+            Recommended: vLLM for air-gapped or cost-sensitive deployments.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {PROVIDER_OPTIONS.map(opt => (
+              <ProviderCard
+                key={opt.value}
+                value={opt.value}
+                selected={settings.skills_provider}
+                onSelect={v => setSettings(s => ({ ...s, skills_provider: v }))}
+              />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="flex items-center gap-3">
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? <Spinner className="h-4 w-4 mr-2" /> : <Settings className="h-4 w-4 mr-2" />}
+          {saving ? 'Saving…' : 'Save Settings'}
+        </Button>
+        {saved && <span className="text-sm text-green-600 flex items-center gap-1"><CheckCircle className="h-4 w-4" /> Saved — active immediately</span>}
+        {error && <span className="text-sm text-red-600">{error}</span>}
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
 // Main Dashboard
 // ============================================================================
 
@@ -557,6 +716,9 @@ const SkillsDashboard = () => {
           <TabsTrigger value="recent">
             <Clock className="h-4 w-4 mr-1" /> Recent Decisions
           </TabsTrigger>
+          <TabsTrigger value="llm-settings">
+            <Settings className="h-4 w-4 mr-1" /> LLM Settings
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -570,6 +732,9 @@ const SkillsDashboard = () => {
         </TabsContent>
         <TabsContent value="recent">
           <RecentDecisionsTab stats={stats} />
+        </TabsContent>
+        <TabsContent value="llm-settings">
+          <LLMSettingsTab />
         </TabsContent>
       </Tabs>
     </div>
