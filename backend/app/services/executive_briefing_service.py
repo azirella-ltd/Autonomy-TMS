@@ -338,7 +338,9 @@ class ExecutiveBriefingService:
 
     def __init__(self, db: Session):
         self.db = db
-        self._client = ClaudeClient()
+        # Executive briefings use the house LLM (vLLM on Acer-Nitro) — not the
+        # Anthropic API. CLAUDE_API_KEY is reserved for Skills exception handling.
+        self._client = ClaudeClient(force_vllm=True)
 
     async def generate_briefing(
         self,

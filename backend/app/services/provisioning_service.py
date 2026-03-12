@@ -327,31 +327,76 @@ class ProvisioningService:
             return {"status": "ok", "note": f"Supply plan attempted: {str(e)[:100]}"}
 
     async def _step_decision_seed(self, config_id: int) -> dict:
-        """Step 7: Seed decision stream with synthetic TRM decisions."""
+        """
+        Step 10: Seed the Decision Stream by running one real GNN orchestration
+        cycle + one TRM decision cycle per active site.
+
+        Populates powell_*_decisions tables from actual inventory, orders, and
+        forecasts in the DB — no synthetic data. The Decision Stream is only as
+        good as the real data available at provisioning time.
+        """
+        sites_processed = 0
+        decisions_generated = 0
+        errors = []
+
         try:
-            from app.services.powell.synthetic_trm_data_generator import SyntheticTRMDataGenerator
-
-            # Get tenant_id for this config
-            from sqlalchemy import text
-            row = await self.db.execute(
-                text("SELECT tenant_id FROM supply_chain_configs WHERE id = :c"),
-                {"c": config_id},
+            # 1. Run GNN orchestration cycle — generates tGNN site directives
+            from app.services.powell.gnn_orchestration_service import GNNOrchestrationService
+            gnn_svc = GNNOrchestrationService(db=self.db, config_id=config_id)
+            gnn_result = await gnn_svc.run_full_cycle()
+            logger.info(
+                "Decision seed GNN cycle complete for config %d: %s",
+                config_id, gnn_result.get("status", "?"),
             )
-            tenant_row = row.fetchone()
-            if not tenant_row:
-                return {"status": "skipped", "reason": "Config not found"}
-
-            generator = SyntheticTRMDataGenerator(
-                db=self.db,
-                config_id=config_id,
-                tenant_id=tenant_row[0],
-            )
-            result = await generator.generate(num_days=90, num_orders_per_day=30)
-            await self.db.commit()
-            return result
         except Exception as e:
-            logger.warning("Decision seed failed (non-critical): %s", e)
-            return {"status": "ok", "note": "Decision seeding attempted"}
+            logger.warning("Decision seed GNN cycle failed (non-critical): %s", e)
+            errors.append(f"GNN: {str(e)[:100]}")
+
+        try:
+            # 2. Run one TRM decision cycle per active site
+            from sqlalchemy import text
+            rows = await self.db.execute(
+                text("""
+                    SELECT s.id, s.site_key
+                    FROM site s
+                    JOIN supply_chain_configs scc ON scc.id = :config_id
+                    WHERE s.company_id = scc.company_id
+                      AND s.master_type NOT IN ('MARKET_SUPPLY', 'MARKET_DEMAND')
+                    ORDER BY s.id
+                """),
+                {"config_id": config_id},
+            )
+            site_rows = rows.fetchall()
+
+            from app.services.powell.site_agent import SiteAgent, SiteAgentConfig
+            for site_id, site_key in site_rows:
+                try:
+                    cfg = SiteAgentConfig(
+                        config_id=config_id,
+                        site_id=site_id,
+                        site_key=site_key or str(site_id),
+                    )
+                    agent = SiteAgent(db=self.db, config=cfg)
+                    result = await agent.execute_decision_cycle()
+                    decisions_generated += result.get("decisions_made", 0)
+                    sites_processed += 1
+                except Exception as site_err:
+                    logger.warning(
+                        "Decision seed failed for site %s: %s", site_key, site_err
+                    )
+                    errors.append(f"site {site_key}: {str(site_err)[:80]}")
+
+        except Exception as e:
+            logger.warning("Decision seed site loop failed (non-critical): %s", e)
+            errors.append(f"site_loop: {str(e)[:100]}")
+
+        await self.db.commit()
+        return {
+            "status": "ok" if not errors else "partial",
+            "sites_processed": sites_processed,
+            "decisions_generated": decisions_generated,
+            "errors": errors[:5],  # cap to avoid bloated status
+        }
 
     async def _step_site_tgnn(self, config_id: int) -> dict:
         """Step 8: Train Site tGNN (foreground fallback, normally runs via _bg)."""

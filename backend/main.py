@@ -6207,6 +6207,14 @@ api.include_router(email_signals_router, tags=["email-signals"])
 from app.api.endpoints.slack_signals import router as slack_signals_router
 api.include_router(slack_signals_router, tags=["slack-signals"])
 
+# Promotional Planning — Extension to AWS SC supplementary_time_series (PROMOTION)
+from app.api.endpoints.promotional_planning import router as promotional_planning_router
+api.include_router(promotional_planning_router, tags=["promotional-planning"])
+
+# Product Lifecycle — NPI, EOL, Markdown/Clearance management
+from app.api.endpoints.product_lifecycle import router as product_lifecycle_router
+api.include_router(product_lifecycle_router, tags=["product-lifecycle"])
+
 # Consensus Planning API
 from app.api.endpoints.consensus_planning import router as consensus_planning_router
 api.include_router(consensus_planning_router, prefix="/consensus-planning", tags=["consensus-planning", "demand-planning"])

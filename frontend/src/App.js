@@ -113,6 +113,9 @@ import OrderManagement from "./pages/planning/OrderManagement.jsx";
 import RecommendedActionsDashboard from "./pages/RecommendedActionsDashboard.jsx";
 import SalesOperationsPlanning from "./pages/planning/SalesOperationsPlanning.jsx";
 import InventoryOptimization from "./pages/planning/InventoryOptimization.jsx";
+import PromotionalPlanning from "./pages/planning/PromotionalPlanning.jsx";
+import ProductLifecycle from "./pages/planning/ProductLifecycle.jsx";
+import MarkdownClearance from "./pages/planning/MarkdownClearance.jsx";
 import InventoryVisibility from "./pages/visibility/InventoryVisibility.jsx";
 import SOPPolicyPage from "./pages/planning/SOPPolicyPage.jsx";
 import MPSCandidatesPage from "./pages/planning/MPSCandidatesPage.jsx";
@@ -804,6 +807,33 @@ const AppContent = () => {
               element={
                 <CapabilityProtectedRoute requiredCapability="view_inventory_optimization">
                   <InventoryOptimization />
+                </CapabilityProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/planning/promotions"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_demand_planning">
+                  <PromotionalPlanning />
+                </CapabilityProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/planning/product-lifecycle"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_demand_planning">
+                  <ProductLifecycle />
+                </CapabilityProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/planning/markdown-clearance"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_inventory_optimization">
+                  <MarkdownClearance />
                 </CapabilityProtectedRoute>
               }
             />

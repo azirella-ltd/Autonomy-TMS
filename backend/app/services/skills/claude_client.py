@@ -44,7 +44,7 @@ class ClaudeClient:
         )
     """
 
-    def __init__(self):
+    def __init__(self, force_vllm: bool = False):
         self._claude_api_key = os.getenv(ENV_CLAUDE_API_KEY)
         self._llm_api_base = os.getenv(ENV_LLM_API_BASE)
         self._llm_api_key = os.getenv(ENV_LLM_API_KEY, "not-needed")
@@ -52,11 +52,12 @@ class ClaudeClient:
         self._haiku_model = os.getenv(ENV_CLAUDE_MODEL_HAIKU, CLAUDE_HAIKU)
         self._sonnet_model = os.getenv(ENV_CLAUDE_MODEL_SONNET, CLAUDE_SONNET)
         self._http_client: Optional[httpx.AsyncClient] = None
+        self._force_vllm = force_vllm  # bypass Anthropic API even if CLAUDE_API_KEY is set
 
     @property
     def uses_claude(self) -> bool:
         """Whether we're using Claude API (vs vLLM fallback)."""
-        return bool(self._claude_api_key)
+        return bool(self._claude_api_key) and not self._force_vllm
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._http_client is None or self._http_client.is_closed:

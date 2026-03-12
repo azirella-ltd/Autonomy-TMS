@@ -255,6 +255,27 @@ export const NAVIGATION_CONFIG = [
         requiredCapability: 'view_inventory_optimization',
         description: 'Safety stock and reorder point optimization',
       },
+      {
+        label: 'Promotional Planning',
+        path: '/planning/promotions',
+        icon: CalendarIcon,
+        requiredCapability: 'view_demand_planning',
+        description: 'Promotion calendar, demand uplift tracking, ROI analysis',
+      },
+      {
+        label: 'Product Lifecycle',
+        path: '/planning/product-lifecycle',
+        icon: ForecastIcon,
+        requiredCapability: 'view_demand_planning',
+        description: 'NPI pipeline, EOL management, lifecycle stage tracking',
+      },
+      {
+        label: 'Markdown & Clearance',
+        path: '/planning/markdown-clearance',
+        icon: InventoryIcon,
+        requiredCapability: 'view_inventory_optimization',
+        description: 'Clearance pricing, sell-through tracking, inventory liquidation',
+      },
 
       // --- OPERATIONAL PLANNING (0-3 month horizon) ---
       {
