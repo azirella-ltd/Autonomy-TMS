@@ -312,111 +312,50 @@ class ProvisioningService:
 
     async def _step_sop_graphsage_bg(self, config_id: int, db: AsyncSession) -> dict:
         """Step 2 background: Train S&OP GraphSAGE from warm-start data."""
-        try:
-            from app.services.powell.gnn_orchestration_service import GNNOrchestrationService
-            service = GNNOrchestrationService(db)
-            result = await service.run_full_cycle(config_id=config_id)
-            return {"status": "ok", "result": str(result)[:200]}
-        except Exception as e:
-            logger.warning("S&OP GraphSAGE training error (non-fatal): %s", e)
-            return {"status": "ok", "note": f"GraphSAGE training attempted: {str(e)[:100]}"}
+        from app.services.powell.generic_training_orchestrator import GenericTrainingOrchestrator
+        orchestrator = GenericTrainingOrchestrator(config_id=config_id)
+        result = await orchestrator.train_sop_graphsage()
+        return {
+            "status": "ok" if result.errors == 0 else "partial",
+            "models_trained": result.models_trained,
+            "errors": result.errors,
+            "duration_seconds": result.duration_seconds,
+        }
 
     async def _step_execution_tgnn_bg(self, config_id: int, db: AsyncSession) -> dict:
-        """Step 4 background: Run execution tGNN inference cycle to generate initial allocations."""
-        try:
-            from app.services.powell.gnn_orchestration_service import GNNOrchestrationService
-            service = GNNOrchestrationService(db)
-            result = await service.run_full_cycle(config_id=config_id)
-            return {"status": "ok", "result": str(result)[:200]}
-        except Exception as e:
-            logger.warning("Execution tGNN training error (non-fatal): %s", e)
-            return {"status": "ok", "note": f"Execution tGNN training attempted: {str(e)[:100]}"}
+        """Step 4 background: Train Execution tGNN."""
+        from app.services.powell.generic_training_orchestrator import GenericTrainingOrchestrator
+        orchestrator = GenericTrainingOrchestrator(config_id=config_id)
+        result = await orchestrator.train_execution_tgnn()
+        return {
+            "status": "ok" if result.errors == 0 else "partial",
+            "models_trained": result.models_trained,
+            "errors": result.errors,
+            "duration_seconds": result.duration_seconds,
+        }
 
     async def _step_trm_training_bg(self, config_id: int, db: AsyncSession) -> dict:
-        """Step 5 background: TRM Phase 1 behavioral cloning for all non-market sites."""
-        from app.services.powell.trm_site_trainer import TRMSiteTrainer
-        from app.services.powell.site_capabilities import get_active_trms
-        from app.db.session import sync_session_factory
-
-        # Fetch sites and tenant from a sync session (TRMSiteTrainer uses sync DB ops)
-        sync_db = sync_session_factory()
-        try:
-            row = sync_db.execute(
-                text("SELECT tenant_id FROM supply_chain_configs WHERE id = :c"),
-                {"c": config_id},
-            ).fetchone()
-            if not row:
-                return {"status": "skipped", "reason": "Config not found"}
-            tenant_id = row[0]
-
-            sites = sync_db.execute(
-                text("""
-                    SELECT id, type, master_type
-                    FROM site
-                    WHERE config_id = :c
-                      AND master_type NOT IN ('MARKET_DEMAND', 'MARKET_SUPPLY')
-                """),
-                {"c": config_id},
-            ).fetchall()
-        finally:
-            sync_db.close()
-
-        trained = 0
-        errors = 0
-        for site_id, site_type, master_type in sites:
-            active_trms = get_active_trms(master_type=master_type or "inventory")
-            # Train the 3 most impactful TRMs for provisioning warm-start
-            for trm_type in ["po_creation", "inventory_buffer", "order_tracking"]:
-                if trm_type not in active_trms:
-                    continue
-                try:
-                    trainer = TRMSiteTrainer(
-                        trm_type=trm_type,
-                        site_id=site_id,
-                        site_name=site_type or f"site_{site_id}",
-                        master_type=master_type or "inventory",
-                        tenant_id=tenant_id,
-                        config_id=config_id,
-                        device="cpu",
-                    )
-                    await trainer.train_phase1(epochs=10, num_samples=2000)
-                    trained += 1
-                    logger.info("TRM BC trained: %s @ site %d (config %d)", trm_type, site_id, config_id)
-                except Exception as e:
-                    logger.warning("TRM BC failed for %s @ site %d: %s", trm_type, site_id, e)
-                    errors += 1
-
-        return {"status": "ok", "trms_trained": trained, "errors": errors}
+        """Step 5 background: TRM Phase 1 BC for ALL active TRMs at all non-market sites."""
+        from app.services.powell.generic_training_orchestrator import GenericTrainingOrchestrator
+        orchestrator = GenericTrainingOrchestrator(config_id=config_id)
+        result = await orchestrator.train_trms(epochs=10, num_samples=2000)
+        return {
+            "status": "ok" if result.errors == 0 else "partial",
+            "trms_trained": result.models_trained,
+            "sites_trained": result.sites_trained,
+            "errors": result.errors,
+            "duration_seconds": result.duration_seconds,
+        }
 
     async def _step_site_tgnn_bg(self, config_id: int, db: AsyncSession) -> dict:
-        """Step 8 background: Train Site tGNN from coordinated BC traces."""
-        try:
-            from app.services.powell.site_tgnn_trainer import SiteTGNNTrainer
-            from app.db.session import sync_session_factory
-
-            sync_db = sync_session_factory()
-            try:
-                sites = sync_db.execute(
-                    text("""
-                        SELECT id, type, master_type FROM site
-                        WHERE config_id = :c
-                          AND master_type NOT IN ('MARKET_DEMAND', 'MARKET_SUPPLY')
-                    """),
-                    {"c": config_id},
-                ).fetchall()
-            finally:
-                sync_db.close()
-
-            trained = 0
-            for site_id, site_type, master_type in sites:
-                try:
-                    trainer = SiteTGNNTrainer(site_id=site_id, config_id=config_id)
-                    await trainer.train(epochs=5)
-                    trained += 1
-                except Exception as e:
-                    logger.warning("Site tGNN failed for site %d: %s", site_id, e)
-
-            return {"status": "ok", "sites_trained": trained}
-        except Exception as e:
-            logger.warning("Site tGNN training error (non-fatal): %s", e)
-            return {"status": "ok", "note": f"Site tGNN training attempted: {str(e)[:100]}"}
+        """Step 8 background: Train Site tGNN (Layer 1.5) for all non-market sites."""
+        from app.services.powell.generic_training_orchestrator import GenericTrainingOrchestrator
+        orchestrator = GenericTrainingOrchestrator(config_id=config_id)
+        result = await orchestrator.train_site_tgnns(epochs=5)
+        return {
+            "status": "ok" if result.errors == 0 else "partial",
+            "sites_trained": result.sites_trained,
+            "models_trained": result.models_trained,
+            "errors": result.errors,
+            "duration_seconds": result.duration_seconds,
+        }

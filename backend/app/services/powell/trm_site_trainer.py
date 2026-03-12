@@ -948,14 +948,27 @@ def find_best_checkpoint(
     checkpoint_dir: Optional[Path] = None,
 ) -> Optional[str]:
     """
-    Checkpoint fallback resolution:
-    1. Site-specific: trm_{type}_site{site_id}_v*.pt (latest version)
-    2. Base model: trm_{type}_base_{master_type}.pt
-    3. Legacy: trm_{type}_{config_id}.pt (backward compat)
+    Checkpoint fallback resolution (searches config-namespaced first):
+    1. Config-namespaced site-specific: config_{id}/trm/trm_{type}_site{site_id}_v*.pt
+    2. Flat site-specific: trm_{type}_site{site_id}_v*.pt (legacy)
+    3. Base model: trm_{type}_base_{master_type}.pt
+    4. Legacy: trm_{type}_{config_id}.pt (backward compat)
+    5. Legacy subdir: trm_*/trm_{type}.pt (e.g. trm_food_dist/)
     """
     cdir = checkpoint_dir or CHECKPOINT_DIR
 
-    # 1. Site-specific (latest version)
+    # 1. Config-namespaced site-specific (latest version)
+    if config_id:
+        config_trm_dir = cdir / f"config_{config_id}" / "trm"
+        if config_trm_dir.exists():
+            site_checkpoints = sorted(
+                config_trm_dir.glob(f"trm_{trm_type}_site{site_id}_v*.pt"),
+                reverse=True,
+            )
+            if site_checkpoints:
+                return str(site_checkpoints[0])
+
+    # 2. Flat site-specific (legacy)
     site_checkpoints = sorted(
         cdir.glob(f"trm_{trm_type}_site{site_id}_v*.pt"),
         reverse=True,
@@ -963,15 +976,21 @@ def find_best_checkpoint(
     if site_checkpoints:
         return str(site_checkpoints[0])
 
-    # 2. Base model for master type
+    # 3. Base model for master type
     base_path = cdir / f"trm_{trm_type}_base_{master_type.lower()}.pt"
     if base_path.exists():
         return str(base_path)
 
-    # 3. Legacy config-level checkpoint
+    # 4. Legacy config-level checkpoint
     if config_id:
         legacy_path = cdir / f"trm_{trm_type}_{config_id}.pt"
         if legacy_path.exists():
             return str(legacy_path)
+
+    # 5. Legacy subdir (e.g. trm_food_dist/trm_atp_executor.pt)
+    for subdir in sorted(cdir.glob("trm_*/")):
+        legacy = subdir / f"trm_{trm_type}.pt"
+        if legacy.exists():
+            return str(legacy)
 
     return None
