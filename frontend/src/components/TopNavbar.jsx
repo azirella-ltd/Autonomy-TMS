@@ -275,7 +275,26 @@ const TopNavbar = ({ sidebarOpen = true }) => {
         text: prompt,
       });
       const analysis = response.data;
+      const intent = analysis.intent;
 
+      // Question flow — show the LLM answer directly
+      if (intent === 'question') {
+        setOriginalText(prompt);
+        setAnalysisResult(analysis);
+        setTalkInput('');
+        // Auto-dismiss after reading time (or user can dismiss manually)
+        return;
+      }
+
+      // Ambiguous — show clarification asking if directive or question
+      if (intent === 'unknown' || analysis.clarification_needed) {
+        setOriginalText(prompt);
+        setAnalysisResult(analysis);
+        setTalkInput('');
+        return;
+      }
+
+      // Directive flow — check for missing fields
       if (analysis.is_complete || (analysis.missing_fields?.length || 0) === 0) {
         // No gaps — submit immediately
         await submitFinalDirective(prompt, {});
@@ -459,8 +478,92 @@ const TopNavbar = ({ sidebarOpen = true }) => {
             </button>
           </div>
 
+          {/* Question answer panel — shown when intent is "question" */}
+          {analysisResult && analysisResult.intent === 'question' && (
+            <div
+              ref={clarificationRef}
+              className={cn(
+                'absolute top-full mt-1 left-1/2 -translate-x-1/2 z-50',
+                'bg-popover border border-border rounded-lg shadow-lg px-4 py-3',
+                'text-sm max-w-lg w-full animate-in fade-in slide-in-from-top-2 duration-200',
+              )}
+            >
+              <div className="flex items-center justify-between mb-2.5">
+                <div className="flex items-center gap-2">
+                  <AIAvatar size="sm" />
+                  <span className="font-medium text-foreground">Answer</span>
+                </div>
+                <button
+                  onClick={dismissClarification}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+                <span className="truncate italic">"{originalText}"</span>
+              </div>
+              <div className="text-sm text-foreground whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+                {analysisResult.answer || 'No answer available.'}
+              </div>
+            </div>
+          )}
+
+          {/* Ambiguous intent panel — ask user to clarify */}
+          {analysisResult && (analysisResult.intent === 'unknown' || analysisResult.clarification_needed) && (
+            <div
+              ref={clarificationRef}
+              className={cn(
+                'absolute top-full mt-1 left-1/2 -translate-x-1/2 z-50',
+                'bg-popover border border-border rounded-lg shadow-lg px-4 py-3',
+                'text-sm max-w-lg w-full animate-in fade-in slide-in-from-top-2 duration-200',
+              )}
+            >
+              <div className="flex items-center justify-between mb-2.5">
+                <div className="flex items-center gap-2">
+                  <AIAvatar size="sm" />
+                  <span className="font-medium text-foreground">Clarification needed</span>
+                </div>
+                <button
+                  onClick={dismissClarification}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+                <span className="truncate italic">"{originalText}"</span>
+              </div>
+              <p className="text-sm text-foreground mb-3">
+                {analysisResult.question || "I'm not sure if this is a directive or a question. Could you clarify?"}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    // Re-submit as explicit directive
+                    dismissClarification();
+                    setTalkInput(`[Directive] ${originalText}`);
+                  }}
+                  className="flex-1 px-3 py-1.5 rounded-full text-xs font-medium bg-violet-500 text-white hover:bg-violet-600 transition-colors"
+                >
+                  It's a directive
+                </button>
+                <button
+                  onClick={() => {
+                    // Re-submit as explicit question
+                    dismissClarification();
+                    setTalkInput(`[Question] ${originalText}`);
+                  }}
+                  className="flex-1 px-3 py-1.5 rounded-full text-xs font-medium bg-blue-500 text-white hover:bg-blue-600 transition-colors"
+                >
+                  It's a question
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Clarification panel — shown when analysis found missing fields */}
-          {analysisResult && totalMissing > 0 && (
+          {analysisResult && analysisResult.intent !== 'question' && !analysisResult.clarification_needed && analysisResult.intent !== 'unknown' && totalMissing > 0 && (
             <div
               ref={clarificationRef}
               className={cn(

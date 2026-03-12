@@ -28,6 +28,10 @@ from app.services.powell.site_agent import SiteAgent
 
 logger = logging.getLogger(__name__)
 
+# Module-level registry so other services (e.g. DirectiveService) can
+# access the active broadcast service and its registered SiteAgents.
+_active_broadcast_service: Optional["DirectiveBroadcastService"] = None
+
 
 class DirectiveBroadcastService:
     """Orchestrates inter-hive directive generation and broadcasting.
@@ -40,9 +44,12 @@ class DirectiveBroadcastService:
     """
 
     def __init__(self, site_agents: Optional[Dict[str, SiteAgent]] = None):
+        global _active_broadcast_service
         self._site_agents: Dict[str, SiteAgent] = site_agents or {}
         self._directive_history: List[Dict[str, Any]] = []
         self._last_broadcast: Optional[datetime] = None
+        # Register as active singleton so DirectiveService can find us
+        _active_broadcast_service = self
 
     def register_site(self, site_key: str, agent: SiteAgent) -> None:
         """Register a SiteAgent for directive delivery."""

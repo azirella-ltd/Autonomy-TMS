@@ -40,18 +40,28 @@ class MissingField(BaseModel):
 
 
 class DirectiveAnalyzeResponse(BaseModel):
+    # Common fields
+    intent: Optional[str] = None  # "directive" | "question" | "observation" | "unknown"
+    confidence: float = 0.0
+    target_layer: str = "operational"
+    layer_description: str = ""
+
+    # Directive-specific fields
     directive_type: Optional[str] = None
     reason_code: Optional[str] = None
-    intent: Optional[str] = None
     scope: Optional[dict] = None
     direction: Optional[str] = None
     metric: Optional[str] = None
     magnitude_pct: Optional[float] = None
-    confidence: float
-    target_layer: str
-    layer_description: str
     missing_fields: List[MissingField] = []
     is_complete: bool = False
+
+    # Question-specific fields
+    answer: Optional[str] = None  # LLM-generated answer for questions
+
+    # Ambiguous intent fields
+    clarification_needed: bool = False
+    question: Optional[str] = None  # Clarification question for the user
 
 
 class DirectiveSubmitRequest(BaseModel):
@@ -101,11 +111,35 @@ async def analyze_directive(
         raw_text=request.text,
     )
 
+    intent = parsed.get("intent", "directive")
+
+    # Question flow — return the LLM-generated answer
+    if intent == "question":
+        return DirectiveAnalyzeResponse(
+            intent="question",
+            confidence=parsed.get("confidence", 0.5),
+            target_layer=parsed.get("target_layer", "operational"),
+            layer_description=parsed.get("layer_description", ""),
+            answer=parsed.get("answer"),
+        )
+
+    # Ambiguous — ask the user to clarify
+    if intent == "unknown" or parsed.get("clarification_needed"):
+        return DirectiveAnalyzeResponse(
+            intent="unknown",
+            confidence=0.0,
+            target_layer=parsed.get("target_layer", "operational"),
+            layer_description=parsed.get("layer_description", ""),
+            clarification_needed=True,
+            question=parsed.get("question"),
+        )
+
+    # Directive flow — structured parse with gap detection
     missing = parsed.get("missing_fields", [])
     return DirectiveAnalyzeResponse(
+        intent=intent,
         directive_type=parsed.get("directive_type"),
         reason_code=parsed.get("reason_code"),
-        intent=parsed.get("intent"),
         scope=parsed.get("scope"),
         direction=parsed.get("direction"),
         metric=parsed.get("metric"),
