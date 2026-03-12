@@ -1,6 +1,6 @@
 # Autonomy Platform — Technical Architecture
 
-Enterprise supply chain planning and execution platform built on the AWS Supply Chain data model, enhanced with three differentiators: **AI Agents** (automated planners via Powell Framework), **Stochastic Planning** (probabilistic outcomes), and **Simulation** (Beer Game training module).
+Enterprise supply chain planning and execution platform built on the AWS Supply Chain data model, built on four pillars: **AI Agents** (automated planners via Powell Framework), **Causal AI** (counterfactual outcome attribution), **Conformal Prediction** (distribution-free uncertainty guarantees), and **Digital Twin** (stochastic simulation for training, calibration, and testing).
 
 ---
 

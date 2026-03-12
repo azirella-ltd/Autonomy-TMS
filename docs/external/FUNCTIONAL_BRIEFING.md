@@ -13,7 +13,7 @@
 
 ## 1. Platform Overview
 
-Autonomy is an enterprise supply chain planning and execution platform built on four pillars: **AI agents** (three-tier decision-making at millisecond to weekly cadences), **stochastic planning** (probabilistic outcomes with 21 distribution types), **simulation** (digital twin for risk-free testing and agent training), and **causal AI** (counterfactual reasoning that determines which decisions actually caused positive outcomes — making the learning loop trustworthy).
+Autonomy is an enterprise supply chain planning and execution platform built on four pillars: **AI agents** (three-tier decision-making at millisecond to weekly cadences), **causal AI** (counterfactual reasoning that determines which decisions actually caused positive outcomes — making the learning loop trustworthy), **conformal prediction** (distribution-free uncertainty guarantees on every agent decision, powered by stochastic simulation data), and **digital twin** (complete stochastic simulation that generates training data, calibration sets, and risk-free testing for everything else).
 
 The platform is built on the AWS Supply Chain data model (100% compliant, 35/35 entities) and uses what we call the **Adaptive Decision Hierarchy (ADH)** — a layered architecture where strategic, operational, and execution decisions are made at appropriate time scales by appropriate models, with intelligent escalation between layers.
 

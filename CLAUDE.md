@@ -88,7 +88,7 @@ When implementing any entity:
 
 ## Project Overview
 
-**Autonomy Platform with AI & Simulation** - An enterprise-grade supply chain planning and execution system compatible with AWS Supply Chain standards, enhanced with four unique differentiators:
+**Autonomy Platform — Decision Intelligence for Supply Chain** - An enterprise-grade supply chain planning and execution system compatible with AWS Supply Chain standards, built on four pillars:
 
 ### Core: AWS Supply Chain Compliance
 
@@ -110,7 +110,7 @@ When implementing any entity:
 - **Features**: Target feature parity (excluding Data Lakes) with AWS Supply Chain capabilities: https://aws.amazon.com/aws-supply-chain/features/
 - **Resources**: UI/UX guidance and implementation examples: https://aws.amazon.com/aws-supply-chain/resources/
 
-### Differentiator #1: AI Agents (Automated Planners)
+### Pillar #1: AI Agents (Automated Planners)
 
 **Purpose**: Replace or assist human planners with AI agents that achieve 20-35% cost reduction vs naive policies.
 
@@ -194,16 +194,22 @@ Narrow TRMs (VFA - Value Function Approximation)
 - Simulation (as opponents or teammates)
 - Validation (compare AI vs human decisions)
 
-### Differentiator #2: Stochastic Planning (Probabilistic Outcomes)
+### Pillar #2: Conformal Prediction (Distribution-Free Uncertainty Guarantees)
 
-**Purpose**: Plan with uncertainty quantification instead of point estimates, enabling risk-aware decision-making.
+**Purpose**: Every agent decision carries a calibrated likelihood guarantee — if the system says "90% confident," actual coverage will be ≥90%.
 
-**Stochastic Framework**:
+**What it provides**:
+- **Distribution-free guarantees**: No assumptions about underlying data distribution. Coverage guarantees hold regardless of whether demand is Normal, Lognormal, or any other shape.
+- **Conformal Decision Theory (CDT)**: Every TRM decision carries `risk_bound` = P(loss > threshold). Calibrated hourly from historical decision-outcome pairs.
+- **Principled escalation**: Wide conformal intervals trigger escalation to Claude Skills or human review. Tight intervals allow autonomous execution. This replaces arbitrary fixed thresholds with statistically rigorous routing.
+- **8 inventory policy types**: Including `conformal` (pure distribution-free), `sl_conformal_fitted` (hybrid), and `econ_optimal` (marginal economic return via Monte Carlo DDLT)
+
+**Powered by the Stochastic Simulation Engine**:
 - **21 Distribution Types**: Normal, lognormal, beta, gamma, Weibull, exponential, triangular, log-logistic, mixture, empirical, etc.
-- **Operational Variables** (stochastic): Lead times, yields, capacities, demand, forecast error
-- **Control Variables** (deterministic): Inventory targets, costs, policy parameters
 - **Monte Carlo Simulation**: 1000+ scenarios for full uncertainty propagation
 - **Variance Reduction**: Common random numbers, antithetic variates, Latin hypercube sampling
+- **Operational Variables** (stochastic): Lead times, yields, capacities, demand, forecast error
+- **Control Variables** (deterministic): Inventory targets, costs, policy parameters
 
 **Probabilistic Balanced Scorecard**:
 - **Financial**: E[Total Cost], P(Cost < Budget), P10/P50/P90 cost distribution
@@ -213,25 +219,26 @@ Narrow TRMs (VFA - Value Function Approximation)
 
 **Output**: Likelihood distributions for KPIs instead of single-point estimates (e.g., "85% chance service level > 95%")
 
-### Differentiator #3: Simulation (The Beer Game Module)
+### Pillar #3: Digital Twin (Stochastic Simulation Engine)
 
-**Purpose**: Learn, validate, and build confidence through scenario-based simulation.
+**Purpose**: A complete simulation of the supply chain that generates the training data, calibration sets, and risk-free testing environment that everything else depends on.
 
-**The Beer Game**:
-- **Classic Simulation**: Multi-echelon supply chain (Retailer → Wholesaler → Distributor → Factory)
-- **Bullwhip Effect**: Demonstrates demand amplification through supply chain
-- **Multi-user**: 2-8 users in real-time WebSocket scenarios
-- **Mixed Human-AI**: Humans compete alongside/against AI agents
+**What it provides**:
+- **Monte Carlo scenario generation**: 1000+ stochastic scenarios sampling from 21 distribution types across demand, lead times, yields, and capacities
+- **Training data pipeline**: Six-phase digital twin pipeline generates 28.6M+ training records for TRM agents, from individual behavioral cloning through coordinated multi-agent simulation
+- **Conformal calibration sets**: Simulation outputs feed conformal prediction calibration — the digital twin powers the uncertainty guarantees
+- **Risk-free agent validation**: Test AI agents in simulation before production deployment
+- **What-if analysis**: Scenario branching at machine speed for planning decisions
 
-**Use Cases**:
-1. **Employee Training**: Scenario-based learning (3-5x higher engagement vs traditional training)
-2. **Agent Validation**: Test AI agents in risk-free environment before production deployment
-3. **Confidence Building**: Human vs AI competitions demonstrate AI effectiveness
-4. **Continuous Improvement**: Human decisions generate training data for AI agents (RLHF)
+**The Beer Game** (Learning Tenant):
+- Classic multi-echelon supply chain simulation (Retailer → Wholesaler → Distributor → Factory)
+- Demonstrates bullwhip effect and demand amplification
+- 2-8 users in real-time WebSocket scenarios with mixed human-AI play
+- Used for employee training (3-5x higher engagement), confidence building, and continuous improvement
 
-**Integration**: Beer Game scenarios use core AWS SC services underneath (demand planning, supply planning, inventory management).
+**Integration**: Beer Game scenarios use core AWS SC services underneath (demand planning, supply planning, inventory management). The Beer Game is ONLY used within the Learning Tenant.
 
-### Differentiator #4: Causal AI (Decision Outcome Attribution)
+### Pillar #4: Causal AI (Decision Outcome Attribution)
 
 **Purpose**: Rigorously determine whether decisions actually caused positive outcomes — not just correlate "we did X and Y happened" but answer "what would have happened if we hadn't done X?" (the counterfactual).
 
@@ -1471,7 +1478,7 @@ The platform has been refactored from Beer Game-centric to AWS SC-first. See [AR
 - ✅ RAG Decision Memory (pgvector-based decision embeddings for cost reduction)
 - ✅ PicoClaw/OpenClaw removed (replaced by Claude Skills ecosystem)
 - ✅ Executive Strategy Briefing (LLM-synthesized briefings with follow-up Q&A). See [docs/EXECUTIVE_BRIEFING.md](docs/EXECUTIVE_BRIEFING.md)
-- ✅ Beer Game repositioned as simulation/training module (not primary focus)
+- ✅ Beer Game repositioned as Digital Twin / Learning Tenant module (not primary focus)
 - ✅ "Talk to Me" directive capture with smart clarification flow (two-phase: analyze→clarify→submit)
 - ✅ Provisioning Stepper (10-step Powell Cascade warm-start pipeline with dependency tracking)
 - ✅ Email Signal Intelligence (GDPR-safe email ingestion, PII scrubbing, LLM classification, TRM routing)

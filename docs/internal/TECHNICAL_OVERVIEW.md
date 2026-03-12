@@ -783,6 +783,8 @@ When no trained model exists, the site coordinator outputs zero adjustments — 
 
 ## Part 14: Causal AI — The Fourth Pillar
 
+> The platform's four pillars are **AI Agents** (Parts 1-5), **Conformal Prediction** (Part 6), **Digital Twin** (Parts 8-9), and **Causal AI** (this section). Each pillar reinforces the others: the digital twin generates training data and calibration sets, conformal prediction provides uncertainty guarantees that govern agent autonomy, agents make the decisions, and causal AI determines which decisions actually worked — closing the learning loop.
+
 ### The Outcome Attribution Problem
 
 The learning loop described in Part 4 depends on a critical assumption: that we can correctly attribute outcomes to the decisions that caused them. In practice, this is the hardest problem in the entire architecture.

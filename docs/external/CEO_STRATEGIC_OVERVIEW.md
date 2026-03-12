@@ -372,11 +372,11 @@ The five innovations are not independent features. They form an integrated syste
 
 Total time: 47 seconds. Legacy equivalent: 2-3 days.
 
-### Underlying Capability: Stochastic Planning with Conformal Prediction
+### Underlying Capabilities: Conformal Prediction and Digital Twin
 
-The four innovations above operate on **probabilistic** data, not point estimates. Two capabilities make this possible:
+The five innovations above operate on **probabilistic** data, not point estimates. These map to two of the platform's four pillars (alongside AI Agents and Causal AI):
 
-**Monte Carlo Simulation** generates thousands of scenarios by sampling from 20 distribution types across operational variables (lead times, yields, capacities, demand). The output is not "we need 100 units" but "we need 80-120 units (P10/P90), most likely 95 (P50)." The S&OP GraphSAGE (Powell Tier 1) uses these scenarios for **optimization** -- finding the policy parameters θ that perform best *across the distribution of possible futures*, not just the expected case.
+**Digital Twin** (the stochastic simulation engine) generates thousands of scenarios by sampling from 21 distribution types across operational variables (lead times, yields, capacities, demand). The output is not "we need 100 units" but "we need 80-120 units (P10/P90), most likely 95 (P50)." The S&OP GraphSAGE (Powell Tier 1) uses these scenarios for **optimization** -- finding the policy parameters θ that perform best *across the distribution of possible futures*, not just the expected case. The digital twin also generates the 28.6M+ training records that power the six-phase agent training pipeline.
 
 **Conformal Prediction** provides formal, distribution-free uncertainty guarantees on agent outputs. When the ATPExecutorTRM promises a delivery date, conformal prediction wraps it in a calibrated interval: "99% confident this arrives by March 25; 90% confident by March 22." This eliminates the false certainty of point-estimate planning and gives agents (and the AAP negotiation protocol) a shared language for risk: an agent requesting an expedite can cite "P90 stockout probability of 85%" rather than a heuristic guess. Conformal prediction also powers adaptive guardrails -- reducing false escalations by 40% compared to fixed-threshold rules.
 
@@ -595,7 +595,9 @@ Most mid-market manufacturers run SAP. Autonomy includes a built-in SAP integrat
 
 ### The Strategic Choice
 
-We are not building planning software. We are building the operating system for autonomous supply chain management. The four innovations -- LLM-first UI, Powell vertical integration, CTP decision basis, and Agentic Authorization -- are not features to be compared against competitor feature lists. They are a fundamentally different architecture for how supply chain decisions get made.
+We are not building planning software. We are building the operating system for autonomous supply chain management. The five innovations -- LLM-first UI, Powell vertical integration, CTP decision basis, Agentic Authorization, and Causal AI -- are not features to be compared against competitor feature lists. They are a fundamentally different architecture for how supply chain decisions get made.
+
+> **Note on framing**: This document describes five *architectural innovations* (how the system is built). The platform website describes four *capability pillars* (what the system delivers): AI Agents, Causal AI, Conformal Prediction, and Digital Twin. These are complementary perspectives — the innovations are the engineering; the pillars are the value proposition.
 
 **The path to success is not building more features -- it's proving the features we have work for real customers.**
 
@@ -615,7 +617,7 @@ We are not building planning software. We are building the operating system for 
 | Agentic Authorization Protocol | Design complete; implementation Phase 1 | Medium |
 | LLM-First UI (AIIO) | Architecture complete | Medium |
 | Powell 3-Tier AI (TRM/GNN/GraphSAGE) | Functional | Medium |
-| Stochastic Planning (20 distribution types, Monte Carlo) | Complete | High |
+| Conformal Prediction + Digital Twin (21 distribution types, Monte Carlo) | Complete | High |
 | Conformal Prediction (distribution-free uncertainty guarantees) | Complete | Medium |
 | Event-Driven Replanning (CDC) | Complete | High |
 | SAP Integration (S/4HANA, APO, ECC; fuzzy Z-table matching) | Complete | High |

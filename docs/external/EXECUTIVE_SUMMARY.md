@@ -96,7 +96,14 @@ A planner arrives, opens the planning system, and begins reviewing the weekly MP
 
 **Monday morning, with Autonomy:**
 
-The same planner arrives to a prioritized worklist of 14 items. Overnight, the system processed the same 847 potential exceptions. It auto-resolved 780 within pre-approved guardrails (reorder quantities adjusted, safety stock recalculated, minor schedule shifts executed). It flagged 53 for informational review — actions it took that the planner should be aware of but doesn't need to approve. And it escalated 14 that require human judgment: a supplier bankruptcy risk, a demand spike for a promotional item that exceeds capacity, a quality hold on a key component.
+The same planner arrives to a prioritized worklist of 14 items. Overnight, the system processed the same 847 potential exceptions:
+
+- **612 auto-resolved**: High-likelihood decisions executed within pre-approved guardrails (reorder quantities adjusted, safety stock recalculated, minor schedule shifts)
+- **168 abandoned**: Low urgency + low likelihood — not worth agent or human attention (combined urgency + likelihood score below threshold)
+- **53 informational**: Actions the agent took that the planner should be aware of but doesn't need to approve
+- **14 inspect & override**: High urgency but low agent confidence — exactly where human judgment creates the most value
+
+The 14 items are ranked by urgency descending, then likelihood ascending — the most time-critical decisions where the agent is least confident appear first.
 
 For each of those 14 items, she sees:
 - What happened (the triggering event)
@@ -1020,13 +1027,14 @@ LLM Supervisor reviews cascade impact, alerts planners if significant
 - Generate diverse training data from human decisions
 - RLHF (Reinforcement Learning from Human Feedback)
 
-**3. Stochastic Simulation Engine** (Model real-world uncertainty)
-- 20 distribution types for operational variability
+**3. Digital Twin — Stochastic Simulation Engine** (Model real-world uncertainty)
+- 21 distribution types for operational variability
 - Monte Carlo simulation (1000+ scenarios)
 - Probabilistic balanced scorecard (P10/P50/P90 KPIs)
 - Multi-echelon DAG topology support
+- Training data generation for TRM agents (28.6M+ records via six-phase pipeline)
 
-**4. Conformal Prediction Engine** (✅ Implemented January 2026)
+**4. Conformal Prediction — Distribution-Free Uncertainty Guarantees** (✅ Implemented January 2026)
 - **Distribution-Free Intervals**: Guaranteed prediction coverage without assuming normal/lognormal distributions
 - **Calibration from History**: Use Plan vs. Actual data to calibrate per-product, per-site uncertainty bounds
 - **Formal Guarantees**: If we promise "90% coverage", actual coverage will be ≥90% (mathematically proven)

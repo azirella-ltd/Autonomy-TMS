@@ -1,25 +1,27 @@
-# Autonomy Platform - Executive Summary
+# Autonomy — Decision Intelligence Platform for Supply Chain
 
-**Version**: 2.0
-**Last Updated**: 2026-01-22
-**Status**: Production Ready with AI & Gamification
+**Version**: 3.0
+**Last Updated**: 2026-03-12
+**Status**: Production Ready
 
 ---
 
 ## Overview
 
-Autonomy is an enterprise-grade supply chain planning and execution platform that combines AWS Supply Chain standards with three powerful differentiators: **AI-powered planning agents**, **stochastic planning with uncertainty quantification**, and **gamification for training and validation**.
+Autonomy is an enterprise-grade supply chain planning and execution platform built on the AWS Supply Chain data model (100% compliant, 35/35 entities) with four pillars:
 
-### Platform Positioning
+### The Four Pillars of Autonomous Planning
 
 ```
-Core Foundation: AWS SC Planning & Execution (60% complete, 21/35 entities)
+Core Foundation: AWS SC Planning & Execution (35/35 entities)
         ↓
-Differentiator #1: AI Agents (TRM, GNN, LLM) - 20-35% cost reduction
+Pillar #1: AI Agents — 11 specialized agents, <10ms, 20-35% cost reduction
         ↓
-Differentiator #2: Stochastic Planning - Risk-aware decisions with probabilistic outcomes
+Pillar #2: Conformal Prediction — Distribution-free uncertainty guarantees
         ↓
-Differentiator #3: The Beer Game - Training, validation, and confidence building
+Pillar #3: Digital Twin — Stochastic simulation for training, calibration, and testing
+        ↓
+Pillar #4: Causal AI — Counterfactual outcome attribution for trustworthy learning
 ```
 
 ---
@@ -87,9 +89,9 @@ Three complementary AI approaches that achieve 20-35% cost reduction vs. naive p
 
 ---
 
-### 3. Stochastic Planning (Probabilistic Outcomes)
+### 3. Conformal Prediction & Digital Twin
 
-Risk-aware planning with full uncertainty quantification:
+Distribution-free uncertainty guarantees powered by stochastic simulation:
 
 #### Distribution Framework
 - **20 Distribution Types**: Normal, lognormal, beta, gamma, Weibull, exponential, triangular, mixture, empirical, custom
