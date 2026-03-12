@@ -82,46 +82,30 @@ const TYPE_LABELS = {
 
 const UrgencyBar = ({ value }) => {
   if (value == null) return null;
-  const pct = (value * 100).toFixed(1);
-  const color =
-    value >= 0.8
-      ? 'bg-red-500'
-      : value >= 0.5
-        ? 'bg-amber-500'
-        : 'bg-green-500';
+  const pct = Math.round(value * 100);
+  const bg =
+    value >= 0.8 ? 'bg-red-100 text-red-700'
+    : value >= 0.5 ? 'bg-amber-100 text-amber-700'
+    : 'bg-green-100 text-green-700';
   return (
     <div className="flex items-center gap-1.5">
       <span className="text-xs text-muted-foreground font-medium">Urgency</span>
-      <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
-        <div
-          className={cn('h-full rounded-full', color)}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span className="text-xs text-muted-foreground">{pct}%</span>
+      <span className={cn('text-xs font-semibold px-1.5 py-0.5 rounded', bg)}>{pct}%</span>
     </div>
   );
 };
 
 const ConfidenceChip = ({ value }) => {
   if (value == null) return null;
-  const pct = (value * 100).toFixed(1);
-  const color =
-    value >= 0.9
-      ? 'bg-green-500'
-      : value >= 0.7
-        ? 'bg-amber-500'
-        : 'bg-red-500';
+  const pct = Math.round(value * 100);
+  const bg =
+    value >= 0.9 ? 'bg-green-100 text-green-700'
+    : value >= 0.7 ? 'bg-amber-100 text-amber-700'
+    : 'bg-red-100 text-red-700';
   return (
     <div className="flex items-center gap-1.5">
       <span className="text-xs text-muted-foreground font-medium">Likelihood</span>
-      <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
-        <div
-          className={cn('h-full rounded-full', color)}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span className="text-xs text-muted-foreground">{pct}%</span>
+      <span className={cn('text-xs font-semibold px-1.5 py-0.5 rounded', bg)}>{pct}%</span>
     </div>
   );
 };
