@@ -1,7 +1,7 @@
 /**
  * ProvisioningStepper — Powell Cascade provisioning dialog.
  *
- * Shows a 10-step provisioning checklist with dependency tracking,
+ * Shows a 13-step provisioning checklist with dependency tracking,
  * real-time status updates, and the ability to run individual steps
  * or the full pipeline.
  */
@@ -25,20 +25,26 @@ const STEP_ICONS = {
   warm_start: '1',
   sop_graphsage: '2',
   cfa_optimization: '3',
-  execution_tgnn: '4',
-  trm_training: '5',
-  supply_plan: '6',
-  decision_seed: '7',
-  site_tgnn: '8',
-  conformal: '9',
-  briefing: '10',
+  lgbm_forecast: '4',
+  demand_tgnn: '5',
+  supply_tgnn: '6',
+  inventory_tgnn: '7',
+  trm_training: '8',
+  supply_plan: '9',
+  decision_seed: '10',
+  site_tgnn: '11',
+  conformal: '12',
+  briefing: '13',
 };
 
 const STEP_DESCRIPTIONS = {
   warm_start: 'Generate 52 weeks of historical demand data from forecast distributions',
   sop_graphsage: 'Train network-wide S&OP planning model for policy parameters',
   cfa_optimization: 'Optimize CFA policy parameters via Differential Evolution',
-  execution_tgnn: 'Train daily execution model for priority allocations',
+  lgbm_forecast: 'Train LightGBM quantile models and generate P10/P50/P90 baseline demand forecasts',
+  demand_tgnn: 'Initialize Demand Planning Agent with network-aware demand sensing',
+  supply_tgnn: 'Initialize Supply Planning Agent for MPS/MRP/sourcing decisions',
+  inventory_tgnn: 'Initialize Inventory Optimization Agent for buffer and rebalancing decisions',
   trm_training: 'Phase 1 Behavioral Cloning for all 11 AI agents',
   supply_plan: 'Generate initial supply plan (PO/TO/MO requests)',
   decision_seed: 'Seed decision stream with synthetic AI decisions',

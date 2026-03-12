@@ -25,6 +25,21 @@ from app.models.sc_entities import Forecast, OutboundOrderLine
 
 logger = logging.getLogger(__name__)
 
+# LightGBM integration — imported lazily to avoid hard dependency at module load
+_LGBM_PIPELINE_CLASS = None
+
+
+def _get_lgbm_pipeline_class():
+    """Lazily import LGBMForecastPipeline so the module loads even without lightgbm installed."""
+    global _LGBM_PIPELINE_CLASS
+    if _LGBM_PIPELINE_CLASS is None:
+        try:
+            from app.services.demand_forecasting.lgbm_pipeline import LGBMForecastPipeline
+            _LGBM_PIPELINE_CLASS = LGBMForecastPipeline
+        except ImportError as exc:
+            logger.warning("LightGBM not available (%s); LightGBM Stage 4 will be skipped", exc)
+    return _LGBM_PIPELINE_CLASS
+
 
 @dataclass
 class SeriesForecast:
@@ -223,9 +238,84 @@ class ForecastPipelineService:
                     logger.info("Run %d: incremental pipeline (stages 1+4), reusing %d clusters", run_id, len(clusters))
 
             # ── Stage 4: Prediction generation (ALWAYS) ───────────────────────
+            # Stage 4a: Holt-Winters baseline (all series)
             forecasts = self._predict_future(history, clusters, cfg)
             metrics = self._compute_metrics(history, clusters)
             feature_scores = self._feature_scores(history, cfg) if run_full else []
+
+            # Stage 4b: LightGBM augmentation (series with >= 26 observations)
+            lgbm_meta: Dict = {}
+            LGBMPipeline = _get_lgbm_pipeline_class()
+            if LGBMPipeline is not None:
+                try:
+                    lgbm_pipeline = LGBMPipeline(config_id=run.config_id)
+                    lgbm_results = lgbm_pipeline.run_stage4_lgbm(
+                        run_id=run.id,
+                        config_id=run.config_id,
+                        history=history,
+                        cluster_results=clusters,
+                        censored_flags={},  # DemandProcessor censored_flags not wired here yet
+                        n_periods=int(cfg.forecast_horizon or 13),
+                        time_bucket=cfg.time_bucket or "W",
+                        retrain=run_full,
+                    )
+                    lgbm_meta = {
+                        "lgbm_series_count": lgbm_results.get("lgbm_series_count", 0),
+                        "lgbm_fallback_count": lgbm_results.get("lgbm_fallback_count", 0),
+                        "lgbm_wape_p50": lgbm_results.get("lgbm_wape_p50", 0.0),
+                        "lgbm_checkpoint_path": lgbm_results.get("lgbm_checkpoint_path", ""),
+                    }
+
+                    # Build a lookup of LightGBM predictions keyed by (product_id, site_id, date)
+                    lgbm_lookup: Dict[tuple, dict] = {}
+                    for uid, preds in lgbm_results.get("predictions", {}).items():
+                        for pred in preds:
+                            key = (
+                                str(pred["product_id"]),
+                                str(pred["site_id"]),
+                                pred["forecast_date"],
+                            )
+                            lgbm_lookup[key] = pred
+
+                    # Override Holt-Winters rows where LightGBM has a result
+                    if lgbm_lookup:
+                        merged: List[SeriesForecast] = []
+                        for sf in forecasts:
+                            key = (
+                                str(sf.product_id),
+                                str(sf.site_id),
+                                sf.forecast_date,
+                            )
+                            if key in lgbm_lookup:
+                                lgbm_pred = lgbm_lookup[key]
+                                merged.append(
+                                    SeriesForecast(
+                                        product_id=sf.product_id,
+                                        site_id=sf.site_id,
+                                        cluster_id=sf.cluster_id,
+                                        forecast_date=sf.forecast_date,
+                                        p10=lgbm_pred["p10"],
+                                        p50=lgbm_pred["p50"],
+                                        median=lgbm_pred["median"],
+                                        p90=lgbm_pred["p90"],
+                                    )
+                                )
+                            else:
+                                merged.append(sf)
+                        forecasts = merged
+                        logger.info(
+                            "Run %d: LightGBM overrode %d/%d forecast rows",
+                            run.id,
+                            len(lgbm_lookup),
+                            len(forecasts),
+                        )
+                except Exception as lgbm_exc:
+                    # LightGBM failure must never break the pipeline — Holt-Winters results stand
+                    logger.warning(
+                        "Run %d: LightGBM Stage 4b failed (%s); using Holt-Winters only",
+                        run.id,
+                        lgbm_exc,
+                    )
 
             # Persist predictions
             self.db.query(ForecastPipelinePrediction).filter(ForecastPipelinePrediction.run_id == run.id).delete()
@@ -250,7 +340,7 @@ class ForecastPipelineService:
             run.status = "completed"
             run.completed_at = datetime.utcnow()
             run.records_processed = len(forecasts)
-            run.run_log = {
+            run_log_entry: Dict = {
                 "series_count": len(clusters),
                 "forecast_rows": len(forecasts),
                 "stages_executed": run.stages_executed,
@@ -263,6 +353,10 @@ class ForecastPipelineService:
                     for name, score in feature_scores
                 ],
             }
+            # Merge in LightGBM metadata if available
+            if lgbm_meta:
+                run_log_entry.update(lgbm_meta)
+            run.run_log = run_log_entry
             self.db.flush()
             return run
 

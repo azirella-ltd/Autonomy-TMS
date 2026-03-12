@@ -135,37 +135,52 @@ class ConfigProvisioningStatus(Base):
     cfa_optimization_at = Column(DateTime, nullable=True)
     cfa_optimization_error = Column(Text, nullable=True)
 
-    # Step 4: Execution tGNN training
-    execution_tgnn_status = Column(String(20), default="pending")
-    execution_tgnn_at = Column(DateTime, nullable=True)
-    execution_tgnn_error = Column(Text, nullable=True)
+    # Step 4: LightGBM baseline demand forecasting
+    lgbm_forecast_status = Column(String(20), default="pending")
+    lgbm_forecast_at = Column(DateTime, nullable=True)
+    lgbm_forecast_error = Column(Text, nullable=True)
 
-    # Step 5: TRM Phase 1 (Behavioral Cloning)
+    # Step 5: Demand Planning tGNN
+    demand_tgnn_status = Column(String(20), default="pending")
+    demand_tgnn_at = Column(DateTime, nullable=True)
+    demand_tgnn_error = Column(Text, nullable=True)
+
+    # Step 6: Supply Planning tGNN
+    supply_tgnn_status = Column(String(20), default="pending")
+    supply_tgnn_at = Column(DateTime, nullable=True)
+    supply_tgnn_error = Column(Text, nullable=True)
+
+    # Step 7: Inventory Optimization tGNN
+    inventory_tgnn_status = Column(String(20), default="pending")
+    inventory_tgnn_at = Column(DateTime, nullable=True)
+    inventory_tgnn_error = Column(Text, nullable=True)
+
+    # Step 8: TRM Phase 1 (Behavioral Cloning)
     trm_training_status = Column(String(20), default="pending")
     trm_training_at = Column(DateTime, nullable=True)
     trm_training_error = Column(Text, nullable=True)
 
-    # Step 6: Supply plan generation
+    # Step 9: Supply plan generation
     supply_plan_status = Column(String(20), default="pending")
     supply_plan_at = Column(DateTime, nullable=True)
     supply_plan_error = Column(Text, nullable=True)
 
-    # Step 7: Decision stream seeding
+    # Step 10: Decision stream seeding
     decision_seed_status = Column(String(20), default="pending")
     decision_seed_at = Column(DateTime, nullable=True)
     decision_seed_error = Column(Text, nullable=True)
 
-    # Step 8: Site tGNN training
+    # Step 11: Site tGNN training
     site_tgnn_status = Column(String(20), default="pending")
     site_tgnn_at = Column(DateTime, nullable=True)
     site_tgnn_error = Column(Text, nullable=True)
 
-    # Step 9: Conformal calibration
+    # Step 12: Conformal calibration
     conformal_status = Column(String(20), default="pending")
     conformal_at = Column(DateTime, nullable=True)
     conformal_error = Column(Text, nullable=True)
 
-    # Step 10: Executive briefing
+    # Step 13: Executive briefing
     briefing_status = Column(String(20), default="pending")
     briefing_at = Column(DateTime, nullable=True)
     briefing_error = Column(Text, nullable=True)
@@ -176,7 +191,8 @@ class ConfigProvisioningStatus(Base):
     last_updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     STEPS = [
-        "warm_start", "sop_graphsage", "cfa_optimization", "execution_tgnn",
+        "warm_start", "sop_graphsage", "cfa_optimization",
+        "lgbm_forecast", "demand_tgnn", "supply_tgnn", "inventory_tgnn",
         "trm_training", "supply_plan", "decision_seed", "site_tgnn",
         "conformal", "briefing",
     ]
@@ -185,7 +201,10 @@ class ConfigProvisioningStatus(Base):
         "warm_start": "Historical Demand & Belief States",
         "sop_graphsage": "S&OP GraphSAGE Training",
         "cfa_optimization": "CFA Policy Optimization",
-        "execution_tgnn": "Execution tGNN Training",
+        "lgbm_forecast": "Demand Forecasting (LightGBM)",
+        "demand_tgnn": "Demand Planning Agent",
+        "supply_tgnn": "Supply Planning Agent",
+        "inventory_tgnn": "Inventory Optimization Agent",
         "trm_training": "TRM Phase 1 (Behavioral Cloning)",
         "supply_plan": "Supply Plan Generation",
         "decision_seed": "Decision Stream Seeding",
@@ -198,8 +217,11 @@ class ConfigProvisioningStatus(Base):
         "warm_start": [],
         "sop_graphsage": ["warm_start"],
         "cfa_optimization": ["sop_graphsage"],
-        "execution_tgnn": ["sop_graphsage", "cfa_optimization"],
-        "trm_training": ["execution_tgnn"],
+        "lgbm_forecast": ["cfa_optimization"],
+        "demand_tgnn": ["lgbm_forecast", "sop_graphsage"],
+        "supply_tgnn": ["lgbm_forecast", "sop_graphsage"],
+        "inventory_tgnn": ["supply_tgnn"],
+        "trm_training": ["demand_tgnn", "supply_tgnn", "inventory_tgnn"],
         "supply_plan": ["cfa_optimization", "trm_training"],
         "decision_seed": ["trm_training"],
         "site_tgnn": ["decision_seed"],

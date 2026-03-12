@@ -145,7 +145,12 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
     sop_epochs: 50,
     sop_hidden_dim: 128,
     sop_embedding_dim: 64,
-    train_execution_tgnn: true,
+    train_lgbm_forecast: true,
+    lgbm_n_estimators: 500,
+    lgbm_learning_rate: 0.05,
+    train_demand_tgnn: true,
+    train_supply_tgnn: true,
+    train_inventory_tgnn: true,
     tgnn_epochs: 100,
     tgnn_hidden_dim: 128,
     tgnn_window_size: 10,
@@ -198,7 +203,12 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
         sop_epochs: config.sop_epochs,
         sop_hidden_dim: config.sop_hidden_dim,
         sop_embedding_dim: config.sop_embedding_dim,
-        train_execution_tgnn: config.train_execution_tgnn,
+        train_lgbm_forecast: config.train_lgbm_forecast ?? true,
+        lgbm_n_estimators: config.lgbm_n_estimators ?? 500,
+        lgbm_learning_rate: config.lgbm_learning_rate ?? 0.05,
+        train_demand_tgnn: config.train_demand_tgnn ?? true,
+        train_supply_tgnn: config.train_supply_tgnn ?? true,
+        train_inventory_tgnn: config.train_inventory_tgnn ?? true,
         tgnn_epochs: config.tgnn_epochs,
         tgnn_hidden_dim: config.tgnn_hidden_dim,
         tgnn_window_size: config.tgnn_window_size,
@@ -222,7 +232,12 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
         sop_epochs: 50,
         sop_hidden_dim: 128,
         sop_embedding_dim: 64,
-        train_execution_tgnn: true,
+        train_lgbm_forecast: true,
+        lgbm_n_estimators: 500,
+        lgbm_learning_rate: 0.05,
+        train_demand_tgnn: true,
+        train_supply_tgnn: true,
+        train_inventory_tgnn: true,
         tgnn_epochs: 100,
         tgnn_hidden_dim: 128,
         tgnn_window_size: 10,
@@ -362,9 +377,9 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
               </Typography>
             </Grid>
             <Grid item xs={6}>
-              <Typography variant="caption" color="text.secondary">Network Agent</Typography>
+              <Typography variant="caption" color="text.secondary">Domain Agents</Typography>
               <Typography variant="body2">
-                {config.train_execution_tgnn ? (
+                {(config.train_demand_tgnn || config.train_supply_tgnn || config.train_inventory_tgnn) ? (
                   <Chip label="Enabled" size="small" color="success" />
                 ) : (
                   <Chip label="Disabled" size="small" />
@@ -505,7 +520,7 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
         </Typography>
 
         <Alert severity="info" sx={{ mt: 2 }}>
-          <strong>Training Pipeline:</strong> Data Generation → S&OP Agent (aggregated) → Network Agent (detailed) → AI Agents (per-type)
+          <strong>Training Pipeline:</strong> Data Generation → S&OP Agent → LightGBM Forecasts → Demand/Supply/Inventory Agents → AI Agents (per-site)
         </Alert>
       </Paper>
 
@@ -533,7 +548,10 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
           <Tabs value={activeTab} onChange={(e, v) => setActiveTab(v)} sx={{ mb: 2 }}>
             <Tab label="Basic Settings" />
             <Tab label="S&OP Agent" />
-            <Tab label="Network Agent" />
+            <Tab label="Demand Forecasting" />
+            <Tab label="Demand Agent" />
+            <Tab label="Supply Agent" />
+            <Tab label="Inventory Agent" />
             <Tab label="Agent Settings" />
           </Tabs>
 
@@ -736,14 +754,65 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
                 <FormControlLabel
                   control={
                     <Switch
-                      checked={formData.train_execution_tgnn}
-                      onChange={(e) => handleFormChange('train_execution_tgnn', e.target.checked)}
+                      checked={formData.train_lgbm_forecast}
+                      onChange={(e) => handleFormChange('train_lgbm_forecast', e.target.checked)}
                     />
                   }
-                  label="Train Network Agent"
+                  label="Train Demand Forecasting Model"
                 />
                 <Typography variant="body2" color="text.secondary">
-                  Operational model that generates priority allocations and provides context for AI agent decisions
+                  Trains LightGBM quantile regression models per demand cluster. Generates P10/P50/P90 baseline forecasts into the Forecast table.
+                </Typography>
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  type="number"
+                  label="Number of Estimators"
+                  value={formData.lgbm_n_estimators}
+                  onChange={(e) => handleFormChange('lgbm_n_estimators', parseInt(e.target.value))}
+                  inputProps={{ min: 50, max: 5000 }}
+                  disabled={!formData.train_lgbm_forecast}
+                  helperText="Number of boosting rounds"
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  type="number"
+                  label="Learning Rate"
+                  value={formData.lgbm_learning_rate}
+                  onChange={(e) => handleFormChange('lgbm_learning_rate', parseFloat(e.target.value))}
+                  inputProps={{ min: 0.001, max: 0.5, step: 0.005 }}
+                  disabled={!formData.train_lgbm_forecast}
+                  helperText="Shrinkage rate"
+                />
+              </Grid>
+
+              <Grid item xs={12}>
+                <Alert severity="info">
+                  LightGBM forecasts serve as the statistical baseline for all downstream domain tGNN agents.
+                  Must run before Demand, Supply, and Inventory agents.
+                </Alert>
+              </Grid>
+            </Grid>
+          )}
+
+          {activeTab === 3 && (
+            <Grid container spacing={3} sx={{ mt: 1 }}>
+              <Grid item xs={12}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={formData.train_demand_tgnn}
+                      onChange={(e) => handleFormChange('train_demand_tgnn', e.target.checked)}
+                    />
+                  }
+                  label="Train Demand Planning Agent"
+                />
+                <Typography variant="body2" color="text.secondary">
+                  Network-aware demand signal propagation. Reads from LightGBM baseline forecasts and S&OP embeddings.
                 </Typography>
               </Grid>
 
@@ -755,7 +824,7 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
                   value={formData.tgnn_hidden_dim}
                   onChange={(e) => handleFormChange('tgnn_hidden_dim', parseInt(e.target.value))}
                   inputProps={{ min: 32, max: 512 }}
-                  disabled={!formData.train_execution_tgnn}
+                  disabled={!formData.train_demand_tgnn}
                 />
               </Grid>
               <Grid item xs={12} sm={4}>
@@ -766,7 +835,7 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
                   value={formData.tgnn_window_size}
                   onChange={(e) => handleFormChange('tgnn_window_size', parseInt(e.target.value))}
                   inputProps={{ min: 5, max: 50 }}
-                  disabled={!formData.train_execution_tgnn}
+                  disabled={!formData.train_demand_tgnn}
                 />
               </Grid>
               <Grid item xs={12} sm={4}>
@@ -777,20 +846,140 @@ export default function AITrainingConfig({ tenantId, hierarchyConfigs = [], supp
                   value={formData.tgnn_epochs}
                   onChange={(e) => handleFormChange('tgnn_epochs', parseInt(e.target.value))}
                   inputProps={{ min: 1, max: 500 }}
-                  disabled={!formData.train_execution_tgnn}
+                  disabled={!formData.train_demand_tgnn}
                 />
               </Grid>
 
               <Grid item xs={12}>
                 <Alert severity="info">
-                  The execution model consumes S&OP embeddings and transactional data.
-                  It outputs Priority x Product x Location allocations for AATP consumption.
+                  The Demand Planning Agent consumes S&OP embeddings and LightGBM forecasts.
+                  Outputs network-propagated demand signals for MPS/MRP planning.
                 </Alert>
               </Grid>
             </Grid>
           )}
 
-          {activeTab === 3 && (
+          {activeTab === 4 && (
+            <Grid container spacing={3} sx={{ mt: 1 }}>
+              <Grid item xs={12}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={formData.train_supply_tgnn}
+                      onChange={(e) => handleFormChange('train_supply_tgnn', e.target.checked)}
+                    />
+                  }
+                  label="Train Supply Planning Agent"
+                />
+                <Typography variant="body2" color="text.secondary">
+                  MPS/MRP/sourcing signal generation. Coordinates with Demand Planning Agent outputs to generate supply directives.
+                </Typography>
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  fullWidth
+                  type="number"
+                  label="Hidden Dimensions"
+                  value={formData.tgnn_hidden_dim}
+                  onChange={(e) => handleFormChange('tgnn_hidden_dim', parseInt(e.target.value))}
+                  inputProps={{ min: 32, max: 512 }}
+                  disabled={!formData.train_supply_tgnn}
+                />
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  fullWidth
+                  type="number"
+                  label="Window Size"
+                  value={formData.tgnn_window_size}
+                  onChange={(e) => handleFormChange('tgnn_window_size', parseInt(e.target.value))}
+                  inputProps={{ min: 5, max: 50 }}
+                  disabled={!formData.train_supply_tgnn}
+                />
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  fullWidth
+                  type="number"
+                  label="Training Epochs"
+                  value={formData.tgnn_epochs}
+                  onChange={(e) => handleFormChange('tgnn_epochs', parseInt(e.target.value))}
+                  inputProps={{ min: 1, max: 500 }}
+                  disabled={!formData.train_supply_tgnn}
+                />
+              </Grid>
+
+              <Grid item xs={12}>
+                <Alert severity="info">
+                  The Supply Planning Agent consumes Demand Planning signals and sourcing rules.
+                  Outputs Priority x Product x Location allocations for AATP consumption.
+                </Alert>
+              </Grid>
+            </Grid>
+          )}
+
+          {activeTab === 5 && (
+            <Grid container spacing={3} sx={{ mt: 1 }}>
+              <Grid item xs={12}>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={formData.train_inventory_tgnn}
+                      onChange={(e) => handleFormChange('train_inventory_tgnn', e.target.checked)}
+                    />
+                  }
+                  label="Train Inventory Optimization Agent"
+                />
+                <Typography variant="body2" color="text.secondary">
+                  Buffer parameter and rebalancing signal generation. Reads from Supply Planning Agent to set inventory targets.
+                </Typography>
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  fullWidth
+                  type="number"
+                  label="Hidden Dimensions"
+                  value={formData.tgnn_hidden_dim}
+                  onChange={(e) => handleFormChange('tgnn_hidden_dim', parseInt(e.target.value))}
+                  inputProps={{ min: 32, max: 512 }}
+                  disabled={!formData.train_inventory_tgnn}
+                />
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  fullWidth
+                  type="number"
+                  label="Window Size"
+                  value={formData.tgnn_window_size}
+                  onChange={(e) => handleFormChange('tgnn_window_size', parseInt(e.target.value))}
+                  inputProps={{ min: 5, max: 50 }}
+                  disabled={!formData.train_inventory_tgnn}
+                />
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  fullWidth
+                  type="number"
+                  label="Training Epochs"
+                  value={formData.tgnn_epochs}
+                  onChange={(e) => handleFormChange('tgnn_epochs', parseInt(e.target.value))}
+                  inputProps={{ min: 1, max: 500 }}
+                  disabled={!formData.train_inventory_tgnn}
+                />
+              </Grid>
+
+              <Grid item xs={12}>
+                <Alert severity="info">
+                  The Inventory Optimization Agent coordinates with Supply Planning outputs.
+                  Outputs inventory buffer parameters and cross-location rebalancing directives.
+                </Alert>
+              </Grid>
+            </Grid>
+          )}
+
+          {activeTab === 6 && (
             <Grid container spacing={3} sx={{ mt: 1 }}>
               <Grid item xs={12} sm={6}>
                 <FormControl fullWidth>
