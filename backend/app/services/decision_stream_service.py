@@ -929,18 +929,12 @@ class DecisionStreamService:
                 abandoned_count,
             )
 
-        # Sort: urgency bucket DESC, then likelihood ASC within bucket.
-        # Urgency buckets ensure all "Critical" items group together,
-        # then within Critical the lowest-likelihood items surface first
-        # (high urgency + low likelihood = human judgment needed most).
-        _URGENCY_BUCKET = {
-            "Critical": 5, "High": 4, "Medium": 3, "Low": 2, "Routine": 1,
-        }
-
+        # Sort: urgency DESC (raw score), then likelihood ASC (raw score).
+        # High urgency + low likelihood = human judgment needed most.
         def sort_key(d):
-            bucket = _URGENCY_BUCKET.get(d.get("urgency"), 0)
+            urgency = _to_float(d.get("urgency_score"), 0.0)
             likelihood = _to_float(d.get("likelihood_score"), _DEFAULT_CONFIDENCE)
-            return (-bucket, likelihood)
+            return (-urgency, likelihood)
 
         kept.sort(key=sort_key)
         return kept[:_DIGEST_MAX_DECISIONS]
