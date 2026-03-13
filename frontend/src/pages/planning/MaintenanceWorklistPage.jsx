@@ -106,7 +106,7 @@ const MAINTENANCE_COLUMNS = [
       const pct = (d.confidence * 100).toFixed(1);
       const color = d.confidence >= 0.8 ? 'success' : d.confidence >= 0.5 ? 'warning' : 'error';
       return (
-        <MuiTooltip title={`TRM confidence: ${pct}%`} arrow>
+        <MuiTooltip title={`Agent confidence: ${pct}%`} arrow>
           <Chip label={`${pct}%`} size="small" color={color} variant="outlined" />
         </MuiTooltip>
       );
@@ -232,7 +232,7 @@ const MaintenanceWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
             Maintenance Scheduling Worklist
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Review maintenance scheduling recommendations from the Maintenance Scheduling TRM.
+            Review maintenance scheduling recommendations from the maintenance scheduling agent.
             Accept, override with reason, or reject each decision before
             execution.
           </Typography>

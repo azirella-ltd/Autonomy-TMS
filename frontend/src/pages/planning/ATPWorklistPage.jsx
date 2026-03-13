@@ -162,7 +162,7 @@ const ATP_OVERRIDE_FIELDS = [
       { value: 'DEFER', label: 'DEFER \u2014 Reschedule to later date' },
       { value: 'REJECT', label: 'REJECT \u2014 Cannot fulfill this order' },
     ],
-    helperText: 'Select the fulfillment action to apply instead of the TRM recommendation.',
+    helperText: 'Select the fulfillment action to apply instead of the agent recommendation.',
   },
 ];
 

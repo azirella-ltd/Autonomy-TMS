@@ -58,8 +58,8 @@ const RLDashboard = () => {
         <CardContent className="pt-6">
           <h1 className="text-2xl font-bold mb-2">Reinforcement Learning Agent Training</h1>
           <p className="text-muted-foreground">
-            Train RL agents (PPO, SAC, A2C) for automated supply chain planning using Stable-Baselines3.
-            RL agents learn optimal ordering policies through trial-and-error interaction with the environment.
+            Train reinforcement learning agents for automated supply chain planning using PPO, SAC, and A2C algorithms.
+            Agents learn optimal ordering policies through interaction with the digital twin simulation environment.
           </p>
         </CardContent>
       </Card>
@@ -93,7 +93,7 @@ const RLDashboard = () => {
             </FormField>
           </div>
           <p className="text-xs text-muted-foreground mt-2 ml-9">
-            RL models are trained for a specific supply chain configuration. Training and checkpoints are filtered by the selected config.
+            Agent models are trained for a specific supply chain configuration. Training and checkpoints are filtered by the selected config.
           </p>
         </CardContent>
       </Card>

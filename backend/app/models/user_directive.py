@@ -198,18 +198,18 @@ class ConfigProvisioningStatus(Base):
     ]
 
     STEP_LABELS = {
-        "warm_start": "Historical Demand & Belief States",
-        "sop_graphsage": "S&OP GraphSAGE Training",
-        "cfa_optimization": "CFA Policy Optimization",
-        "lgbm_forecast": "Demand Forecasting (LightGBM)",
+        "warm_start": "Historical Demand Simulation",
+        "sop_graphsage": "Strategic Network Planning Agent",
+        "cfa_optimization": "Policy Parameter Optimization",
+        "lgbm_forecast": "Statistical Demand Forecasting",
         "demand_tgnn": "Demand Planning Agent",
-        "supply_tgnn": "Supply Planning Agent",
+        "supply_tgnn": "Supply & RCCP Agent",
         "inventory_tgnn": "Inventory Optimization Agent",
-        "trm_training": "TRM Phase 1 (Behavioral Cloning)",
+        "trm_training": "Execution Role Agent Training",
         "supply_plan": "Supply Plan Generation",
         "decision_seed": "Decision Stream Seeding",
-        "site_tgnn": "Site tGNN Training",
-        "conformal": "Conformal Calibration",
+        "site_tgnn": "Operational Site Agent Training",
+        "conformal": "Uncertainty Calibration",
         "briefing": "Executive Briefing",
     }
 

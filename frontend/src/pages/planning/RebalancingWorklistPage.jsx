@@ -305,7 +305,7 @@ const RebalancingWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Review cross-location transfer recommendations from the Inventory
-            Rebalancing TRM. Accept, override, or reject each decision before
+            rebalancing agent. Accept, override, or reject each decision before
             execution. Override reasons are captured for RL training.
           </Typography>
         </Box>

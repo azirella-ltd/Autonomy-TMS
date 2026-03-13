@@ -121,7 +121,7 @@ const FORECAST_ADJ_COLUMNS = [
       const pct = (d.confidence * 100).toFixed(1);
       const color = d.confidence >= 0.8 ? 'success' : d.confidence >= 0.5 ? 'warning' : 'error';
       return (
-        <MuiTooltip title={`TRM confidence: ${pct}%`} arrow>
+        <MuiTooltip title={`Agent confidence: ${pct}%`} arrow>
           <Chip label={`${pct}%`} size="small" color={color} variant="outlined" />
         </MuiTooltip>
       );
@@ -138,7 +138,7 @@ const FORECAST_ADJ_OVERRIDE_FIELDS = [
     key: 'adjustment_pct',
     label: 'Override Adjustment %',
     type: 'number',
-    helperText: 'Enter a new adjustment percentage to replace the TRM recommendation',
+    helperText: 'Enter a new adjustment percentage to replace the agent recommendation',
   },
   {
     key: 'adjustment_direction',
@@ -254,7 +254,7 @@ const ForecastAdjWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Review signal-driven forecast adjustment recommendations from the
-            Forecast Adjustment TRM. Accept, override with reason, or reject
+            Forecast Adjustment agent. Accept, override with reason, or reject
             each decision before execution.
           </Typography>
         </Box>

@@ -85,7 +85,7 @@ const OverviewTab = ({ stats }) => {
   if (!stats) return null;
 
   const escalationData = [
-    { name: 'TRM Decisions', value: stats.total_trm_decisions, fill: '#3b82f6' },
+    { name: 'Agent Decisions', value: stats.total_trm_decisions, fill: '#3b82f6' },
     { name: 'Skills Escalations', value: stats.total_skill_decisions, fill: '#f59e0b' },
   ];
 
@@ -209,7 +209,7 @@ const OverviewTab = ({ stats }) => {
 };
 
 // ============================================================================
-// Per-TRM Type Tab
+// Per-Agent Role Tab
 // ============================================================================
 
 const TypeBreakdownTab = ({ stats }) => {
@@ -238,7 +238,7 @@ const TypeBreakdownTab = ({ stats }) => {
               <YAxis dataKey="trm_type" type="category" width={120} tick={{ fontSize: 11 }} />
               <RechartsTooltip />
               <Legend />
-              <Bar dataKey="trm" name="TRM" fill="#3b82f6" stackId="a" />
+              <Bar dataKey="trm" name="Agent" fill="#3b82f6" stackId="a" />
               <Bar dataKey="skill_exception" name="Skills" fill="#f59e0b" stackId="a" />
               <Bar dataKey="engine" name="Engine" fill="#94a3b8" stackId="a" />
               <Bar dataKey="backfill" name="Backfill" fill="#e5e7eb" stackId="a" />
@@ -257,7 +257,7 @@ const TypeBreakdownTab = ({ stats }) => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b">
-                  <th className="text-left p-2">TRM Type</th>
+                  <th className="text-left p-2">Agent Role</th>
                   <th className="text-left p-2">Source</th>
                   <th className="text-right p-2">Count</th>
                   <th className="text-right p-2">Avg Confidence</th>
@@ -339,7 +339,7 @@ const RAGMemoryTab = ({ ragStats }) => {
       {/* Per-Type Breakdown */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium">RAG Memory by TRM Type</CardTitle>
+          <CardTitle className="text-sm font-medium">RAG Memory by Agent Role</CardTitle>
         </CardHeader>
         <CardContent>
           {ragStats.by_type?.length > 0 ? (
@@ -400,7 +400,7 @@ const RecentDecisionsTab = ({ stats }) => {
     return (
       <Alert>
         <Clock className="h-4 w-4" />
-        <span>No recent decisions found. Skills decisions will appear here once the hybrid TRM + Skills pipeline processes exceptions.</span>
+        <span>No recent decisions found. Skills decisions will appear here once the AI agent pipeline processes exceptions.</span>
       </Alert>
     );
   }
@@ -416,7 +416,7 @@ const RecentDecisionsTab = ({ stats }) => {
             <thead>
               <tr className="border-b">
                 <th className="text-left p-2">Time</th>
-                <th className="text-left p-2">TRM Type</th>
+                <th className="text-left p-2">Agent Role</th>
                 <th className="text-left p-2">Source</th>
                 <th className="text-left p-2">Site</th>
                 <th className="text-right p-2">Confidence</th>
@@ -589,7 +589,7 @@ const LLMSettingsTab = () => {
             Skills Exception Handler Provider
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            TRM exception handling (~5% of decisions). Higher volume, latency-tolerant.
+            Exception handling (~5% of decisions). Higher volume, latency-tolerant.
             Recommended: vLLM for air-gapped or cost-sensitive deployments.
           </p>
         </CardHeader>
@@ -670,7 +670,7 @@ const SkillsDashboard = () => {
             Claude Skills Monitor
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Hybrid TRM + Claude Skills architecture — TRMs handle ~95%, Skills handle ~5% exceptions
+            Hybrid AI agent + Skills architecture — execution agents handle ~95%, Skills handle ~5% exceptions
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={fetchData}>
@@ -694,7 +694,7 @@ const SkillsDashboard = () => {
             <div className="text-sm">
               <p className="font-medium">LeCun JEPA Hybrid Architecture</p>
               <p className="text-muted-foreground">
-                TRMs (Actor, &lt;10ms) &rarr; Conformal Prediction routing &rarr; Claude Skills (Configurator, ~5% exceptions) &rarr; Decision recorded for TRM retraining
+                Execution agents (TRMs (Actor, &lt;10ms) &rarr; Conformal Prediction routing &rarr; Claude Skills (Configurator, ~5% exceptions) &rarr; Decision recorded for TRM retraininglt;10ms) TRMs (Actor, &lt;10ms) &rarr; Conformal Prediction routing &rarr; Claude Skills (Configurator, ~5% exceptions) &rarr; Decision recorded for TRM retrainingrarr; Confidence routing TRMs (Actor, &lt;10ms) &rarr; Conformal Prediction routing &rarr; Claude Skills (Configurator, ~5% exceptions) &rarr; Decision recorded for TRM retrainingrarr; Claude Skills (~5% exceptions) TRMs (Actor, &lt;10ms) &rarr; Conformal Prediction routing &rarr; Claude Skills (Configurator, ~5% exceptions) &rarr; Decision recorded for TRM retrainingrarr; Decision recorded for agent retraining
               </p>
             </div>
           </div>
@@ -708,7 +708,7 @@ const SkillsDashboard = () => {
             <Activity className="h-4 w-4 mr-1" /> Overview
           </TabsTrigger>
           <TabsTrigger value="types">
-            <BarChart3 className="h-4 w-4 mr-1" /> By TRM Type
+            <BarChart3 className="h-4 w-4 mr-1" /> By Agent Role
           </TabsTrigger>
           <TabsTrigger value="rag">
             <Database className="h-4 w-4 mr-1" /> RAG Memory

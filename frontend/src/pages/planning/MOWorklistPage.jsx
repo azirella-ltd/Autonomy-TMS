@@ -117,7 +117,7 @@ const MO_COLUMNS = [
       const pct = (d.confidence * 100).toFixed(1);
       const color = d.confidence >= 0.8 ? 'success' : d.confidence >= 0.5 ? 'warning' : 'error';
       return (
-        <MuiTooltip title={`TRM confidence: ${pct}%`} arrow>
+        <MuiTooltip title={`Agent confidence: ${pct}%`} arrow>
           <Chip label={`${pct}%`} size="small" color={color} variant="outlined" />
         </MuiTooltip>
       );
@@ -146,7 +146,7 @@ const MO_OVERRIDE_FIELDS = [
     key: 'planned_qty',
     label: 'Override Qty',
     type: 'number',
-    helperText: 'Enter a new production quantity to replace the TRM recommendation',
+    helperText: 'Enter a new production quantity to replace the agent recommendation',
   },
   {
     key: 'resource_id',
@@ -249,7 +249,7 @@ const MOWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
             MO Execution Worklist
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Review manufacturing order recommendations from the MO Execution TRM.
+            Review manufacturing order recommendations from the manufacturing execution agent.
             Accept, override with reason, or reject each decision before
             execution.
           </Typography>

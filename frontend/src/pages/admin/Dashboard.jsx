@@ -533,7 +533,7 @@ const AdminDashboard = () => {
                       size="lg"
                       onClick={() => navigate('/admin/rl')}
                     >
-                      Go to RL Training
+                      Go to Agent Training
                       <ArrowRight className="h-4 w-4 ml-2" />
                     </Button>
                   </CardContent>
