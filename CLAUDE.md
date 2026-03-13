@@ -57,6 +57,14 @@ When implementing any entity:
 | PowellSSDecision | PowellBufferDecision | SQLAlchemy model |
 | SS_INCREASED / SS_DECREASED | BUFFER_INCREASED / BUFFER_DECREASED | HiveSignalType |
 | "safety_stock" (TRM type) | "inventory_buffer" | TRM type identifier |
+| PENDING (DecisionStatus) | INFORMED | AIIO: user notified, awaiting action |
+| ACCEPTED (DecisionStatus) | ACTIONED | AIIO: decision executed |
+| AUTO_EXECUTED (DecisionStatus) | ACTIONED | AIIO: agent auto-executed |
+| EXPIRED (DecisionStatus) | ACTIONED | AIIO: time expired, auto-resolved |
+| REJECTED (DecisionStatus) | OVERRIDDEN | AIIO: user rejected with alternative |
+| — | INSPECTED | AIIO: user reviewed, no action needed (new) |
+
+> **Terminology Note — AIIO Decision Status (Mar 2026)**: The `DecisionStatus` enum in `decision_tracking.py` (used by `agent_decisions` and `sop_worklist_items` tables) has been renamed to the **AIIO model**: **A**ctioned, **I**nformed, **I**nspected, **O**verridden. This applies only to the agent decision workflow — the planning decision workflow (`planning_decision.py`: PENDING/APPLIED/PENDING_APPROVAL/APPROVED/REJECTED/REVERTED/SUPERSEDED) and AAP ThreadStatus are unchanged. The `commit_status` enum (PROPOSED/REVIEWED/ACCEPTED/OVERRIDDEN/SUBMITTED) used in planning commit workflows also remains unchanged.
 
 > **Terminology Note — Inventory Buffer (Feb 2026)**: At the TRM/Powell execution layer, "SafetyStockTRM" has been renamed to **InventoryBufferTRM**. This addresses the DDMRP critique that "safety stock" as a concept causes MRP to treat it as a hard demand target, generating planned orders that compete with real customer demand for upstream capacity. At the TRM level, the inventory buffer is an **uncertainty absorber**, NOT a hard demand target for MRP. Buffer-replenishment planned orders get lower priority than demand-driven orders (soft-buffer netting). **Important**: The AWS SC data model fields (`safety_stock` column, `ss_quantity`, `inv_policy` policy types) remain unchanged for compliance — the rename applies only to TRM agent names, Powell decision tables, and hive signal types.
 
