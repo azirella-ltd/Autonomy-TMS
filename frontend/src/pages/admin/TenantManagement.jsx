@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FaBuilding, FaCheck, FaEdit, FaPlus, FaSave, FaSpinner, FaTimes, FaTrash } from 'react-icons/fa';
 import { api } from '../../services/api';
 import { toast } from 'react-toastify';
+import { useAuth } from '../../contexts/AuthContext';
 
 const DEFAULT_FORM = {
   name: 'Autonomy',
@@ -21,6 +22,9 @@ const createDefaultForm = () => ({
 });
 
 const TenantManagement = () => {
+  const { user } = useAuth();
+  const isSystemAdmin = user?.user_type === 'SYSTEM_ADMIN';
+
   const [tenants, setTenants] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
@@ -337,13 +341,15 @@ const TenantManagement = () => {
       {/* Header */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8">
         <h1 className="text-3xl font-bold text-gray-800">Tenant Management</h1>
-        <button
-          type="button"
-          onClick={() => openModal(null)}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
-        >
-          <FaPlus /> Add Customer
-        </button>
+        {isSystemAdmin && (
+          <button
+            type="button"
+            onClick={() => openModal(null)}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+          >
+            <FaPlus /> Add Customer
+          </button>
+        )}
       </div>
 
       {customers.length === 0 ? (
@@ -417,7 +423,7 @@ const TenantManagement = () => {
                             <FaSave /> {savingCustomer ? 'Saving\u2026' : 'Save'}
                           </button>
                         </>
-                      ) : (
+                      ) : isSystemAdmin ? (
                         <>
                           <button type="button" onClick={startEditingCustomer} className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50">
                             <FaEdit /> Edit
@@ -426,7 +432,7 @@ const TenantManagement = () => {
                             <FaTrash /> Delete
                           </button>
                         </>
-                      )}
+                      ) : null}
                     </div>
                   </div>
                   <div className="px-6 py-4">
@@ -555,18 +561,20 @@ const TenantManagement = () => {
                                 <div className="text-sm font-medium text-gray-900">{adminName}</div>
                                 {adminEmail ? <div className="text-sm text-gray-500">{adminEmail}</div> : null}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-right">
-                                <div className="flex justify-end gap-2">
-                                  <button type="button" onClick={() => openModal(tenant)}
-                                    className="text-gray-500 hover:text-blue-600 p-1" title="Edit tenant">
-                                    <FaEdit />
-                                  </button>
-                                  <button type="button" onClick={() => { setDeleteTarget(tenant); setDeleting(false); }}
-                                    className="text-gray-500 hover:text-red-600 p-1" title="Delete tenant">
-                                    <FaTrash />
-                                  </button>
-                                </div>
-                              </td>
+                              {isSystemAdmin && (
+                                <td className="px-6 py-4 whitespace-nowrap text-right">
+                                  <div className="flex justify-end gap-2">
+                                    <button type="button" onClick={() => openModal(tenant)}
+                                      className="text-gray-500 hover:text-blue-600 p-1" title="Edit tenant">
+                                      <FaEdit />
+                                    </button>
+                                    <button type="button" onClick={() => { setDeleteTarget(tenant); setDeleting(false); }}
+                                      className="text-gray-500 hover:text-red-600 p-1" title="Delete tenant">
+                                      <FaTrash />
+                                    </button>
+                                  </div>
+                                </td>
+                              )}
                             </tr>
                           );
                         })}
