@@ -201,7 +201,7 @@ class ConfigProvisioningStatus(Base):
         "warm_start": "Historical Demand Simulation",
         "sop_graphsage": "Strategic Network Planning Agent",
         "cfa_optimization": "Policy Parameter Optimization",
-        "lgbm_forecast": "Statistical Demand Forecasting",
+        "lgbm_forecast": "Demand Forecasting",
         "demand_tgnn": "Demand Planning Agent",
         "supply_tgnn": "Supply & RCCP Agent",
         "inventory_tgnn": "Inventory Optimization Agent",
