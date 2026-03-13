@@ -1191,8 +1191,8 @@ async def get_gnn_status(
 # ============================================================================
 
 class GNNDirectiveReviewRequest(BaseModel):
-    """Review (accept/override/reject) a GNN-generated directive."""
-    action: str = Field(..., description="ACCEPTED | OVERRIDDEN | REJECTED")
+    """Review (accept/inspect/override) a GNN-generated directive (AIIO model)."""
+    action: str = Field(..., description="ACTIONED | INSPECTED | OVERRIDDEN")
     override_values: Optional[Dict[str, Any]] = Field(None, description="Override values (required if OVERRIDDEN)")
     reason_code: Optional[str] = Field(None, description="Override reason code")
     reason_text: Optional[str] = Field(None, description="Override reason text")
@@ -1208,7 +1208,7 @@ class PolicyEnvelopeOverrideRequest(BaseModel):
 
 @router.get("/gnn/directives")
 async def list_gnn_directives(
-    status: Optional[str] = Query(None, description="Filter by status (PROPOSED, ACCEPTED, etc.)"),
+    status: Optional[str] = Query(None, description="Filter by status (INFORMED, ACTIONED, INSPECTED, OVERRIDDEN, etc.)"),
     site_key: Optional[str] = Query(None),
     directive_scope: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=200),
@@ -1225,7 +1225,15 @@ async def list_gnn_directives(
     query = db.query(GNNDirectiveReview).order_by(GNNDirectiveReview.created_at.desc())
 
     if status:
-        query = query.filter(GNNDirectiveReview.status == status)
+        # Map AIIO frontend names to DB values (backward compat)
+        _aiio_to_db = {
+            "INFORMED": "PROPOSED",
+            "ACTIONED": "ACCEPTED",
+            "INSPECTED": "INSPECTED",
+            "OVERRIDDEN": "OVERRIDDEN",
+        }
+        db_status = _aiio_to_db.get(status.upper(), status)
+        query = query.filter(GNNDirectiveReview.status == db_status)
     if site_key:
         query = query.filter(GNNDirectiveReview.site_key == site_key)
     if directive_scope:
@@ -1263,29 +1271,39 @@ async def review_gnn_directive(
     if not directive:
         raise HTTPException(status_code=404, detail=f"Directive {directive_id} not found")
 
-    if directive.status not in ("PROPOSED", "AUTO_APPLIED"):
+    if directive.status not in ("PROPOSED", "AUTO_APPLIED", "INFORMED"):
         raise HTTPException(
             status_code=400,
             detail=f"Directive already reviewed (status={directive.status})",
         )
 
     action = request.action.upper()
-    if action not in ("ACCEPTED", "OVERRIDDEN", "REJECTED"):
-        raise HTTPException(status_code=400, detail="action must be ACCEPTED, OVERRIDDEN, or REJECTED")
+    # Map AIIO action names to DB status values (backward compat)
+    _action_to_db = {
+        "ACTIONED": "ACCEPTED",
+        "INSPECTED": "INSPECTED",
+        "OVERRIDDEN": "OVERRIDDEN",
+        # Backward compat: old names still accepted
+        "ACCEPTED": "ACCEPTED",
+        "REJECTED": "OVERRIDDEN",
+    }
+    db_action = _action_to_db.get(action)
+    if db_action is None:
+        raise HTTPException(status_code=400, detail="action must be ACTIONED, INSPECTED, or OVERRIDDEN")
 
-    if action == "OVERRIDDEN" and not request.override_values:
+    if db_action == "OVERRIDDEN" and not request.override_values:
         raise HTTPException(status_code=400, detail="override_values required when action is OVERRIDDEN")
 
-    directive.status = action
+    directive.status = db_action
     directive.reviewed_by = current_user.id
     directive.reviewed_at = datetime.utcnow()
 
-    if action == "OVERRIDDEN":
+    if db_action == "OVERRIDDEN":
         directive.override_values = request.override_values
         directive.override_reason_code = request.reason_code
         directive.override_reason_text = request.reason_text
 
-    if action in ("ACCEPTED", "OVERRIDDEN"):
+    if db_action in ("ACCEPTED", "OVERRIDDEN"):
         directive.applied_at = datetime.utcnow()
 
     db.commit()

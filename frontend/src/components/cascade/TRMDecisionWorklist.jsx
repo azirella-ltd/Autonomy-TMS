@@ -57,16 +57,12 @@ const ConfidenceChip = ({ confidence }) => {
  * Status chip with appropriate color
  */
 const StatusChip = ({ status }) => {
+  // AIIO model: INFORMED / ACTIONED / INSPECTED / OVERRIDDEN
   const colorMap = {
-    PROPOSED: 'info',
-    REVIEWED: 'default',
-    ACCEPTED: 'success',
+    INFORMED: 'info',
+    ACTIONED: 'success',
+    INSPECTED: 'default',
     OVERRIDDEN: 'warning',
-    REJECTED: 'error',
-    AUTHORIZED: 'success',
-    EXECUTED: 'success',
-    IN_EXECUTION: 'info',
-    COMPLETED: 'success',
     OUTCOME_RECORDED: 'default',
   };
   return (
@@ -74,7 +70,7 @@ const StatusChip = ({ status }) => {
       label={status?.replace(/_/g, ' ') || 'UNKNOWN'}
       size="small"
       color={colorMap[status] || 'default'}
-      variant={status === 'PROPOSED' ? 'filled' : 'outlined'}
+      variant={status === 'INFORMED' ? 'filled' : 'outlined'}
     />
   );
 };
@@ -237,7 +233,7 @@ const TRMDecisionWorklist = ({
   const [selectedDecision, setSelectedDecision] = useState(null);
   const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(null); // decision id being actioned
-  const [statusFilter, setStatusFilter] = useState('PROPOSED');
+  const [statusFilter, setStatusFilter] = useState('INFORMED');
 
   const loadDecisions = useCallback(async () => {
     try {
@@ -280,17 +276,16 @@ const TRMDecisionWorklist = ({
     }
   };
 
-  const handleReject = async (decision) => {
+  const handleInspect = async (decision) => {
     setActionLoading(decision.id);
     try {
       await submitAction({
         decision_id: decision.id,
-        action: 'reject',
-        reason_text: 'Rejected — Agent will re-evaluate with updated context',
+        action: 'inspect',
       });
       loadDecisions();
     } catch (err) {
-      console.error('Reject failed', err);
+      console.error('Inspect failed', err);
     } finally {
       setActionLoading(null);
     }
@@ -308,7 +303,7 @@ const TRMDecisionWorklist = ({
 
   // Summary cards
   const cards = summaryCards ? summaryCards(decisions) : [];
-  const pendingCount = decisions.filter(d => d.status === 'PROPOSED').length;
+  const pendingCount = decisions.filter(d => d.status === 'INFORMED').length;
 
   if (loading) {
     return (
@@ -344,10 +339,10 @@ const TRMDecisionWorklist = ({
       {/* Filter bar */}
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
         <Box display="flex" gap={1}>
-          {['PROPOSED', 'ACCEPTED', 'OVERRIDDEN', 'ALL'].map(status => (
+          {['INFORMED', 'ACTIONED', 'INSPECTED', 'OVERRIDDEN', 'ALL'].map(status => (
             <Chip
               key={status}
-              label={status === 'PROPOSED' ? `Pending (${pendingCount})` : status}
+              label={status === 'INFORMED' ? `Informed (${pendingCount})` : status}
               onClick={() => setStatusFilter(status)}
               color={statusFilter === status ? 'primary' : 'default'}
               variant={statusFilter === status ? 'filled' : 'outlined'}
@@ -389,7 +384,7 @@ const TRMDecisionWorklist = ({
                   key={decision.id}
                   hover
                   sx={{
-                    bgcolor: decision.status === 'PROPOSED' ? 'action.hover' : undefined,
+                    bgcolor: decision.status === 'INFORMED' ? 'action.hover' : undefined,
                     opacity: decision.status === 'OUTCOME_RECORDED' ? 0.7 : 1,
                   }}
                 >
@@ -415,7 +410,7 @@ const TRMDecisionWorklist = ({
                   </TableCell>
                   {canManage && (
                     <TableCell align="right">
-                      {decision.status === 'PROPOSED' && (
+                      {decision.status === 'INFORMED' && (
                         <Box display="flex" gap={0.5} justifyContent="flex-end">
                           <Tooltip title="Accept AI decision">
                             <IconButton
@@ -427,6 +422,16 @@ const TRMDecisionWorklist = ({
                               <AcceptIcon size={16} />
                             </IconButton>
                           </Tooltip>
+                          <Tooltip title="Mark as reviewed — no action needed">
+                            <IconButton
+                              size="small"
+                              color="info"
+                              onClick={() => handleInspect(decision)}
+                              disabled={actionLoading === decision.id}
+                            >
+                              <WhyIcon size={16} />
+                            </IconButton>
+                          </Tooltip>
                           <Tooltip title="Override with reason">
                             <IconButton
                               size="small"
@@ -435,16 +440,6 @@ const TRMDecisionWorklist = ({
                               disabled={actionLoading === decision.id}
                             >
                               <OverrideIcon size={16} />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Reject — Agent will re-evaluate">
-                            <IconButton
-                              size="small"
-                              color="error"
-                              onClick={() => handleReject(decision)}
-                              disabled={actionLoading === decision.id}
-                            >
-                              <RejectIcon size={16} />
                             </IconButton>
                           </Tooltip>
                         </Box>

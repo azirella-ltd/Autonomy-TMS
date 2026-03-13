@@ -150,7 +150,7 @@ const QUALITY_OVERRIDE_FIELDS = [
  * Returns an array of { title, value, color?, subtitle? } objects.
  */
 const buildSummaryCards = (decisions) => {
-  const proposed = decisions.filter((d) => d.status === 'PROPOSED');
+  const proposed = decisions.filter((d) => d.status === 'INFORMED');
   const pendingCount = proposed.length;
 
   // Average defect rate across all decisions

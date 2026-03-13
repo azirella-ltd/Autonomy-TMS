@@ -536,7 +536,7 @@ class DecisionStreamService:
         override_reason_text: Optional[str] = None,
         override_values: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Accept, override, or reject a pending decision.
+        """Accept, inspect, override, or reject a pending decision (AIIO model).
 
         Updates the status column in the appropriate powell_*_decisions table.
         """
@@ -550,13 +550,14 @@ class DecisionStreamService:
         if not model_class:
             return {"success": False, "message": f"Unknown decision type: {decision_type}", "decision_id": decision_id, "new_status": "error"}
 
-        # Determine new status
+        # Determine new status (AIIO model)
         status_map = {
-            "accept": "ACCEPTED",
+            "accept": "ACTIONED",
+            "inspect": "INSPECTED",
             "override": "OVERRIDDEN",
-            "reject": "REJECTED",
+            "reject": "OVERRIDDEN",  # Backward compat: reject maps to OVERRIDDEN
         }
-        new_status = status_map.get(action, "ACCEPTED")
+        new_status = status_map.get(action, "ACTIONED")
 
         # Check if model has a status-like column
         # Most decision tables don't have explicit status, but we'll check common patterns
@@ -569,12 +570,14 @@ class DecisionStreamService:
             if not decision:
                 return {"success": False, "message": f"Decision {decision_id} not found", "decision_id": decision_id, "new_status": "error"}
 
-            # Update fields based on action
+            # Update fields based on action (AIIO model)
             if hasattr(decision, "was_committed"):
-                decision.was_committed = (action == "accept")
+                decision.was_committed = action in ("accept", "inspect")
             if hasattr(decision, "decision_method"):
                 if action == "override":
                     decision.decision_method = "human_override"
+                elif action == "inspect":
+                    decision.decision_method = "human_inspected"
 
             await self.db.commit()
 

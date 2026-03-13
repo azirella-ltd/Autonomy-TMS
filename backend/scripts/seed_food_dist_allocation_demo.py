@@ -1256,7 +1256,7 @@ def seed_atp_decisions(db: Session, customer_id: int, order_promise_user_id: int
     """Seed AgentDecision rows for the ATP Fulfillment worklist.
 
     Creates ~30 decisions across SKUs and customers with a mix of statuses
-    (PENDING for worklist, ACCEPTED, REJECTED) and ATP-specific context_data.
+    (INFORMED for worklist, ACTIONED, OVERRIDDEN) and ATP-specific context_data.
     """
     print("\n  Seeding ATP agent decisions...")
 
@@ -1273,38 +1273,38 @@ def seed_atp_decisions(db: Session, customer_id: int, order_promise_user_id: int
 
     # Decision templates: (customer, sku, action, status, confidence, urgency_enum)
     decisions = [
-        # --- PENDING decisions (show in worklist) ---
-        ("METROGRO", "RD001", "FULFILL", DecisionStatus.PENDING, 0.96, DecisionUrgency.URGENT),
-        ("METROGRO", "FP001", "FULFILL", DecisionStatus.PENDING, 0.94, DecisionUrgency.URGENT),
-        ("QUICKSERV", "BV003", "FULFILL", DecisionStatus.PENDING, 0.93, DecisionUrgency.URGENT),
-        ("QUICKSERV", "DP003", "FULFILL", DecisionStatus.PENDING, 0.91, DecisionUrgency.STANDARD),
-        ("RESTSUPPLY", "FP002", "PARTIAL", DecisionStatus.PENDING, 0.87, DecisionUrgency.STANDARD),
-        ("RESTSUPPLY", "RD004", "FULFILL", DecisionStatus.PENDING, 0.90, DecisionUrgency.STANDARD),
-        ("COASTHLTH", "RD003", "FULFILL", DecisionStatus.PENDING, 0.88, DecisionUrgency.STANDARD),
-        ("SCHLDFOOD", "DP001", "PARTIAL", DecisionStatus.PENDING, 0.82, DecisionUrgency.STANDARD),
-        ("CAMPUSDINE", "BV001", "DEFER", DecisionStatus.PENDING, 0.79, DecisionUrgency.LOW),
-        ("FAMREST", "FD001", "PARTIAL", DecisionStatus.PENDING, 0.76, DecisionUrgency.LOW),
-        ("DWNTWNDELI", "FP003", "DEFER", DecisionStatus.PENDING, 0.72, DecisionUrgency.LOW),
-        ("GREENVAL", "DP005", "REJECT", DecisionStatus.PENDING, 0.68, DecisionUrgency.LOW),
-        # --- ACCEPTED decisions (already actioned) ---
-        ("METROGRO", "BV001", "FULFILL", DecisionStatus.ACCEPTED, 0.97, DecisionUrgency.URGENT),
-        ("QUICKSERV", "FP001", "FULFILL", DecisionStatus.ACCEPTED, 0.95, DecisionUrgency.URGENT),
-        ("RESTSUPPLY", "DP002", "FULFILL", DecisionStatus.ACCEPTED, 0.92, DecisionUrgency.STANDARD),
-        ("COASTHLTH", "FD002", "FULFILL", DecisionStatus.ACCEPTED, 0.89, DecisionUrgency.STANDARD),
-        ("SCHLDFOOD", "BV002", "PARTIAL", DecisionStatus.ACCEPTED, 0.84, DecisionUrgency.STANDARD),
-        ("CAMPUSDINE", "RD002", "FULFILL", DecisionStatus.ACCEPTED, 0.88, DecisionUrgency.STANDARD),
-        ("FAMREST", "DP004", "FULFILL", DecisionStatus.ACCEPTED, 0.85, DecisionUrgency.STANDARD),
-        ("PREMCATER", "FP004", "PARTIAL", DecisionStatus.ACCEPTED, 0.80, DecisionUrgency.LOW),
-        # --- REJECTED / overridden decisions ---
-        ("DWNTWNDELI", "RD005", "REJECT", DecisionStatus.REJECTED, 0.71, DecisionUrgency.LOW),
-        ("GREENVAL", "FD003", "REJECT", DecisionStatus.REJECTED, 0.65, DecisionUrgency.LOW),
-        ("PREMCATER", "BV004", "DEFER", DecisionStatus.REJECTED, 0.74, DecisionUrgency.LOW),
-        # --- Additional PENDING for volume ---
-        ("METROGRO", "DP001", "FULFILL", DecisionStatus.PENDING, 0.95, DecisionUrgency.URGENT),
-        ("QUICKSERV", "RD001", "FULFILL", DecisionStatus.PENDING, 0.92, DecisionUrgency.STANDARD),
-        ("RESTSUPPLY", "BV005", "PARTIAL", DecisionStatus.PENDING, 0.83, DecisionUrgency.STANDARD),
-        ("COASTHLTH", "FP005", "DEFER", DecisionStatus.PENDING, 0.77, DecisionUrgency.LOW),
-        ("SCHLDFOOD", "FD004", "PARTIAL", DecisionStatus.PENDING, 0.80, DecisionUrgency.STANDARD),
+        # --- INFORMED decisions (show in worklist) ---
+        ("METROGRO", "RD001", "FULFILL", DecisionStatus.INFORMED, 0.96, DecisionUrgency.URGENT),
+        ("METROGRO", "FP001", "FULFILL", DecisionStatus.INFORMED, 0.94, DecisionUrgency.URGENT),
+        ("QUICKSERV", "BV003", "FULFILL", DecisionStatus.INFORMED, 0.93, DecisionUrgency.URGENT),
+        ("QUICKSERV", "DP003", "FULFILL", DecisionStatus.INFORMED, 0.91, DecisionUrgency.STANDARD),
+        ("RESTSUPPLY", "FP002", "PARTIAL", DecisionStatus.INFORMED, 0.87, DecisionUrgency.STANDARD),
+        ("RESTSUPPLY", "RD004", "FULFILL", DecisionStatus.INFORMED, 0.90, DecisionUrgency.STANDARD),
+        ("COASTHLTH", "RD003", "FULFILL", DecisionStatus.INFORMED, 0.88, DecisionUrgency.STANDARD),
+        ("SCHLDFOOD", "DP001", "PARTIAL", DecisionStatus.INFORMED, 0.82, DecisionUrgency.STANDARD),
+        ("CAMPUSDINE", "BV001", "DEFER", DecisionStatus.INFORMED, 0.79, DecisionUrgency.LOW),
+        ("FAMREST", "FD001", "PARTIAL", DecisionStatus.INFORMED, 0.76, DecisionUrgency.LOW),
+        ("DWNTWNDELI", "FP003", "DEFER", DecisionStatus.INFORMED, 0.72, DecisionUrgency.LOW),
+        ("GREENVAL", "DP005", "REJECT", DecisionStatus.INFORMED, 0.68, DecisionUrgency.LOW),
+        # --- ACTIONED decisions (already actioned) ---
+        ("METROGRO", "BV001", "FULFILL", DecisionStatus.ACTIONED, 0.97, DecisionUrgency.URGENT),
+        ("QUICKSERV", "FP001", "FULFILL", DecisionStatus.ACTIONED, 0.95, DecisionUrgency.URGENT),
+        ("RESTSUPPLY", "DP002", "FULFILL", DecisionStatus.ACTIONED, 0.92, DecisionUrgency.STANDARD),
+        ("COASTHLTH", "FD002", "FULFILL", DecisionStatus.ACTIONED, 0.89, DecisionUrgency.STANDARD),
+        ("SCHLDFOOD", "BV002", "PARTIAL", DecisionStatus.ACTIONED, 0.84, DecisionUrgency.STANDARD),
+        ("CAMPUSDINE", "RD002", "FULFILL", DecisionStatus.ACTIONED, 0.88, DecisionUrgency.STANDARD),
+        ("FAMREST", "DP004", "FULFILL", DecisionStatus.ACTIONED, 0.85, DecisionUrgency.STANDARD),
+        ("PREMCATER", "FP004", "PARTIAL", DecisionStatus.ACTIONED, 0.80, DecisionUrgency.LOW),
+        # --- OVERRIDDEN decisions ---
+        ("DWNTWNDELI", "RD005", "REJECT", DecisionStatus.OVERRIDDEN, 0.71, DecisionUrgency.LOW),
+        ("GREENVAL", "FD003", "REJECT", DecisionStatus.OVERRIDDEN, 0.65, DecisionUrgency.LOW),
+        ("PREMCATER", "BV004", "DEFER", DecisionStatus.OVERRIDDEN, 0.74, DecisionUrgency.LOW),
+        # --- Additional INFORMED for volume ---
+        ("METROGRO", "DP001", "FULFILL", DecisionStatus.INFORMED, 0.95, DecisionUrgency.URGENT),
+        ("QUICKSERV", "RD001", "FULFILL", DecisionStatus.INFORMED, 0.92, DecisionUrgency.STANDARD),
+        ("RESTSUPPLY", "BV005", "PARTIAL", DecisionStatus.INFORMED, 0.83, DecisionUrgency.STANDARD),
+        ("COASTHLTH", "FP005", "DEFER", DecisionStatus.INFORMED, 0.77, DecisionUrgency.LOW),
+        ("SCHLDFOOD", "FD004", "PARTIAL", DecisionStatus.INFORMED, 0.80, DecisionUrgency.STANDARD),
     ]
 
     action_reasoning = {
@@ -1372,7 +1372,7 @@ def seed_atp_decisions(db: Session, customer_id: int, order_promise_user_id: int
 
         decision = AgentDecision(
             customer_id=customer_id,
-            user_id=order_promise_user_id if status != DecisionStatus.PENDING else None,
+            user_id=order_promise_user_id if status != DecisionStatus.INFORMED else None,
             decision_type=DecisionType.ATP_ALLOCATION,
             item_code=sku,
             item_name=SKU_NAMES.get(sku, sku),
@@ -1388,9 +1388,9 @@ def seed_atp_decisions(db: Session, customer_id: int, order_promise_user_id: int
             status=status,
             urgency=urgency,
             due_date=created_at + timedelta(hours=24),
-            user_action="override" if status == DecisionStatus.REJECTED else ("accept" if status == DecisionStatus.ACCEPTED else None),
-            override_reason="Manual override: customer requested expedited fulfillment" if status == DecisionStatus.REJECTED else None,
-            action_timestamp=created_at + timedelta(hours=random.uniform(1, 6)) if status != DecisionStatus.PENDING else None,
+            user_action="override" if status == DecisionStatus.OVERRIDDEN else ("accept" if status == DecisionStatus.ACTIONED else None),
+            override_reason="Manual override: customer requested expedited fulfillment" if status == DecisionStatus.OVERRIDDEN else None,
+            action_timestamp=created_at + timedelta(hours=random.uniform(1, 6)) if status != DecisionStatus.INFORMED else None,
             agent_type="atp_executor",
             agent_version="1.0.0",
             planning_cycle="2026-W06",
@@ -1401,7 +1401,7 @@ def seed_atp_decisions(db: Session, customer_id: int, order_promise_user_id: int
         count += 1
 
     db.flush()
-    print(f"    Created {count} ATP AgentDecision rows ({sum(1 for d in decisions if d[3] == DecisionStatus.PENDING)} pending)")
+    print(f"    Created {count} ATP AgentDecision rows ({sum(1 for d in decisions if d[3] == DecisionStatus.INFORMED)} pending)")
 
 
 def main():
@@ -1549,7 +1549,7 @@ def main():
         print(f"  Feedback signals:         8")
         print(f"  Agent metrics:            4 (2 weeks x 2 agents)")
         print(f"  Powell allocations:       1,875 (25 SKUs x 5 priorities x 15 days)")
-        print(f"  ATP agent decisions:      28 (mix of PENDING/ACCEPTED/REJECTED)")
+        print(f"  ATP agent decisions:      28 (mix of INFORMED/ACTIONED/OVERRIDDEN)")
 
         print(f"\nNew demo users (password: {DEFAULT_PASSWORD}):")
         print(f"  {'allocmgr@distdemo.com':<30} Rachel Martinez (Allocation Manager)")
@@ -1560,7 +1560,7 @@ def main():
             print(f"  P{info['priority']} ({info['segment']:<12}): {cust}")
 
         print(f"\nAllocation Commit Status (for worklist demo):")
-        print(f"  Week 1 (Feb 3):  ACCEPTED  - agent decision accepted by Rachel")
+        print(f"  Week 1 (Feb 3):  ACTIONED   - agent decision accepted by Rachel")
         print(f"  Week 2 (Feb 10): OVERRIDDEN - Rachel increased P3/P4 allocations")
         print(f"  Week 3 (Feb 17): PROPOSED   - pending review (worklist item!)")
         print(f"  Week 4 (Feb 24): PROPOSED   - future week")

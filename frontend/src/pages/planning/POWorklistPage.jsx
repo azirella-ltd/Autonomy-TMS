@@ -188,7 +188,7 @@ const PO_OVERRIDE_FIELDS = [
  * Returns an array of { title, value, color?, subtitle? } objects.
  */
 const buildSummaryCards = (decisions) => {
-  const proposed = decisions.filter((d) => d.status === 'PROPOSED');
+  const proposed = decisions.filter((d) => d.status === 'INFORMED');
   const pendingCount = proposed.length;
 
   // Total spend of proposed POs

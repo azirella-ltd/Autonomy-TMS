@@ -215,7 +215,7 @@ const OVERRIDE_FIELDS = [
 // ---------------------------------------------------------------------------
 
 const buildSummaryCards = (decisions) => {
-  const proposed = decisions.filter((d) => d.status === 'PROPOSED');
+  const proposed = decisions.filter((d) => d.status === 'INFORMED');
   const critical = decisions.filter((d) => d.severity === 'CRITICAL');
 
   // Average resolution time from completed decisions

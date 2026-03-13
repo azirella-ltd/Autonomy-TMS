@@ -17,8 +17,9 @@ from pydantic import BaseModel, Field
 
 class DecisionAction(str, Enum):
     ACCEPT = "accept"
+    INSPECT = "inspect"
     OVERRIDE = "override"
-    REJECT = "reject"
+    REJECT = "reject"  # Backward compat: maps to OVERRIDDEN in AIIO model
 
 
 class AlertSeverity(str, Enum):

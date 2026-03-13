@@ -933,7 +933,7 @@ def seed_sop_worklist(db):
                 "highest priority). Racing Bike R100 is also Green. Cruise Bike C900 is Yellow — "
                 "deferral has lowest customer impact. Plant 1720 transfer incurs $3,200 logistics cost."
             ),
-            "status": "PENDING",
+            "status": "INFORMED",
         },
         {
             "item_code": "SOP-PORT-001",
@@ -961,7 +961,7 @@ def seed_sop_worklist(db):
                 "(specific SKU, verified distributor). Downside risk of overstock: $5,700 in frame inventory "
                 "if demand doesn't materialize — acceptable vs. $53,760 upside."
             ),
-            "status": "PENDING",
+            "status": "INFORMED",
         },
         {
             "item_code": "SOP-RISK-001",
@@ -988,7 +988,7 @@ def seed_sop_worklist(db):
                 "Conformal prediction interval for supplier lead time is wide: [10, 21] days at 90% coverage. "
                 "Each day of delay costs $1,250 in opportunity cost (forfeited margin on 1 unit/week demand)."
             ),
-            "status": "PENDING",
+            "status": "INFORMED",
         },
         {
             "item_code": "SOP-INV-001",
@@ -1016,7 +1016,7 @@ def seed_sop_worklist(db):
                 "served the majority of US West Coast customers. Since Q1, US Customers demand at Plant 1710 "
                 "has increased 40% for trading goods."
             ),
-            "status": "PENDING",
+            "status": "INFORMED",
         },
     ]
 

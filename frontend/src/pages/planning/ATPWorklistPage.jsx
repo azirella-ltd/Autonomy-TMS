@@ -186,7 +186,7 @@ const computeSummaryCards = (decisions) => {
   }
 
   // Pending: count of PROPOSED status
-  const pendingCount = decisions.filter((d) => d.status === 'PROPOSED').length;
+  const pendingCount = decisions.filter((d) => d.status === 'INFORMED').length;
 
   // Fill Rate: percentage of FULFILL decisions among those with a recommendation
   const withAction = decisions.filter((d) => d.recommended_action);
@@ -203,9 +203,9 @@ const computeSummaryCards = (decisions) => {
     ? ((confidences.reduce((sum, c) => sum + c, 0) / confidences.length) * 100).toFixed(1)
     : null;
 
-  // Override Rate: percentage of OVERRIDDEN among total actioned (non-PROPOSED)
+  // Override Rate: percentage of OVERRIDDEN among total actioned (non-INFORMED)
   const actioned = decisions.filter(
-    (d) => d.status !== 'PROPOSED' && d.status !== 'REVIEWED'
+    (d) => d.status !== 'INFORMED'
   );
   const overriddenCount = actioned.filter((d) => d.status === 'OVERRIDDEN').length;
   const overrideRate = actioned.length > 0

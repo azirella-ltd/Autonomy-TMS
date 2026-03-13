@@ -414,7 +414,7 @@ class AgentPerformanceService:
                 self.db.query(SOPWorklistItem)
                 .filter(
                     SOPWorklistItem.tenant_id == tenant_id,
-                    SOPWorklistItem.status == DecisionStatus.PENDING,
+                    SOPWorklistItem.status == DecisionStatus.INFORMED,
                     SOPWorklistItem.urgency.in_([DecisionUrgency.URGENT, DecisionUrgency.STANDARD]),
                 )
                 .all()
@@ -540,7 +540,7 @@ class AgentPerformanceService:
                 self.db.query(SOPWorklistItem)
                 .filter(
                     SOPWorklistItem.tenant_id == tenant_id,
-                    SOPWorklistItem.status == DecisionStatus.PENDING,
+                    SOPWorklistItem.status == DecisionStatus.INFORMED,
                 )
                 .all()
             )
@@ -735,7 +735,7 @@ class AgentPerformanceService:
                 self.db.query(SOPWorklistItem)
                 .filter(
                     SOPWorklistItem.tenant_id == tenant_id,
-                    SOPWorklistItem.status == DecisionStatus.PENDING,
+                    SOPWorklistItem.status == DecisionStatus.INFORMED,
                 )
                 .all()
             )
@@ -841,7 +841,7 @@ class AgentPerformanceService:
         if not item:
             raise ValueError(f"Worklist item {item_id} not found")
 
-        item.status = DecisionStatus.ACCEPTED if action == "accept" else DecisionStatus.REJECTED
+        item.status = DecisionStatus.ACTIONED if action == "accept" else DecisionStatus.OVERRIDDEN
         item.resolved_by = user_id
         item.resolution_action = action
         item.resolution_notes = notes
