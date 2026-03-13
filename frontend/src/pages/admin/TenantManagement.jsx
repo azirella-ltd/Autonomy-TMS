@@ -724,31 +724,51 @@ const TenantManagement = () => {
       )}
 
       {/* ── Delete customer confirmation ─────────────────────────────── */}
-      {deleteCustomerTarget && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
-            <div className="px-6 py-5 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-800">Delete Customer</h2>
-            </div>
-            <div className="px-6 py-6">
-              <p className="text-sm text-gray-700">
-                Are you sure you want to delete <span className="font-semibold">{deleteCustomerTarget.name}</span>?
-                This removes the customer record. All linked tenants must be deleted first.
-              </p>
-            </div>
-            <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200">
-              <button type="button" onClick={() => setDeleteCustomerTarget(null)} disabled={deletingCustomer}
-                className={`px-4 py-2 rounded-md text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 ${deletingCustomer ? 'opacity-75 cursor-not-allowed' : ''}`}>
-                Cancel
-              </button>
-              <button type="button" onClick={handleConfirmDeleteCustomer} disabled={deletingCustomer}
-                className={`px-4 py-2 rounded-md text-sm font-medium text-white bg-red-600 hover:bg-red-700 ${deletingCustomer ? 'opacity-75 cursor-not-allowed' : ''}`}>
-                {deletingCustomer ? 'Deleting\u2026' : 'Delete Customer'}
-              </button>
+      {deleteCustomerTarget && (() => {
+        const linkedTenants = [
+          deleteCustomerTarget.production_tenant_id && { id: deleteCustomerTarget.production_tenant_id, name: deleteCustomerTarget.production_tenant_name, mode: 'Production' },
+          deleteCustomerTarget.learning_tenant_id && { id: deleteCustomerTarget.learning_tenant_id, name: deleteCustomerTarget.learning_tenant_name, mode: 'Learning' },
+        ].filter(Boolean);
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
+              <div className="px-6 py-5 border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-800">Delete Customer</h2>
+              </div>
+              <div className="px-6 py-6 space-y-4">
+                <p className="text-sm text-gray-700">
+                  Permanently delete <span className="font-semibold">{deleteCustomerTarget.name}</span>?
+                  This cannot be undone.
+                </p>
+                {linkedTenants.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-2">The following tenants will also be deleted:</p>
+                    <ul className="border border-red-200 rounded-md divide-y divide-red-100 bg-red-50">
+                      {linkedTenants.map((t) => (
+                        <li key={t.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                          <span className="font-medium text-gray-800">{t.name}</span>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">{t.mode}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="text-xs text-red-600 mt-2">All supply chain configs, decisions, scenarios, and users in these tenants will be permanently removed.</p>
+                  </div>
+                )}
+              </div>
+              <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200">
+                <button type="button" onClick={() => setDeleteCustomerTarget(null)} disabled={deletingCustomer}
+                  className={`px-4 py-2 rounded-md text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 ${deletingCustomer ? 'opacity-75 cursor-not-allowed' : ''}`}>
+                  Cancel
+                </button>
+                <button type="button" onClick={handleConfirmDeleteCustomer} disabled={deletingCustomer}
+                  className={`px-4 py-2 rounded-md text-sm font-medium text-white bg-red-600 hover:bg-red-700 ${deletingCustomer ? 'opacity-75 cursor-not-allowed' : ''}`}>
+                  {deletingCustomer ? 'Deleting\u2026' : linkedTenants.length > 0 ? `Delete Customer & ${linkedTenants.length} Tenant${linkedTenants.length > 1 ? 's' : ''}` : 'Delete Customer'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Auto-creation overlay ────────────────────────────────────── */}
       {autoCreation.open && (

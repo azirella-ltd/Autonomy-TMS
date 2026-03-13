@@ -123,10 +123,10 @@ async def delete_customer(
     current_user: User = Depends(require_system_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Delete a customer record.
+    """Delete a customer and all its linked tenants.
 
-    Blocked if the customer still has linked tenants (production or learning).
-    Delete or reassign all tenants first.
+    Deletes linked production and learning tenants first (via TenantService),
+    then removes the autonomy_customers record.
     """
     result = await db.execute(
         text("SELECT id, name, production_tenant_id, learning_tenant_id FROM autonomy_customers WHERE id = :cid"),
@@ -136,15 +136,30 @@ async def delete_customer(
     if not row:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    if row["production_tenant_id"] or row["learning_tenant_id"]:
-        raise HTTPException(
-            status_code=409,
-            detail="Cannot delete customer with linked tenants. Delete all tenants first.",
-        )
+    from app.db.session import sync_session_factory
+    from app.services.tenant_service import TenantService
+
+    tenant_ids = [
+        tid for tid in (row["production_tenant_id"], row["learning_tenant_id"])
+        if tid is not None
+    ]
+
+    deleted_tenants = []
+    for tid in tenant_ids:
+        try:
+            sync_db = sync_session_factory()
+            try:
+                svc = TenantService(sync_db)
+                svc.delete_tenant(tid)
+                deleted_tenants.append(tid)
+            finally:
+                sync_db.close()
+        except Exception as e:
+            logger.warning("Failed to delete tenant %d for customer %d: %s", tid, customer_id, e)
 
     await db.execute(text("DELETE FROM autonomy_customers WHERE id = :cid"), {"cid": customer_id})
     await db.commit()
-    return {"success": True, "deleted_id": customer_id}
+    return {"success": True, "deleted_id": customer_id, "deleted_tenants": deleted_tenants}
 
 
 @router.put("/{customer_id}", response_model=CustomerResponse, tags=["customers"])
