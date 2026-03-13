@@ -249,7 +249,7 @@ def _likelihood_label(score: Optional[float]) -> Optional[str]:
         return "Possible"
     if score >= 0.20:
         return "Unlikely"
-    return "Rare"
+    return "Never"
 
 
 def _humanize_ids(text: str, product_names: Dict[str, str]) -> str:

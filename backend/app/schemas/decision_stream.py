@@ -46,7 +46,7 @@ class PendingDecisionItem(BaseModel):
     site_name: Optional[str] = None
     urgency: Optional[str] = Field(None, description="Urgency label: Critical, High, Medium, Low, Routine")
     urgency_score: Optional[float] = Field(None, description="Raw urgency score 0-1 (for sorting)")
-    likelihood: Optional[str] = Field(None, description="Likelihood label: Almost Certain, Likely, Possible, Unlikely, Rare")
+    likelihood: Optional[str] = Field(None, description="Likelihood label: Almost Certain, Likely, Possible, Unlikely, Never")
     likelihood_score: Optional[float] = Field(None, description="Raw likelihood score 0-1 (for sorting)")
     economic_impact: Optional[float] = Field(None, description="Estimated $ impact")
     suggested_action: Optional[str] = Field(None, description="What the TRM recommends")
