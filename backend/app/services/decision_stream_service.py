@@ -222,6 +222,36 @@ def _safe_float(v) -> Optional[float]:
         return None
 
 
+def _urgency_label(score: Optional[float]) -> Optional[str]:
+    """Convert urgency score (0-1) to 5-stage English label."""
+    if score is None:
+        return None
+    if score >= 0.85:
+        return "Critical"
+    if score >= 0.65:
+        return "High"
+    if score >= 0.40:
+        return "Medium"
+    if score >= 0.20:
+        return "Low"
+    return "Routine"
+
+
+def _likelihood_label(score: Optional[float]) -> Optional[str]:
+    """Convert likelihood score (0-1) to 5-stage English label."""
+    if score is None:
+        return None
+    if score >= 0.85:
+        return "Almost Certain"
+    if score >= 0.65:
+        return "Likely"
+    if score >= 0.40:
+        return "Possible"
+    if score >= 0.20:
+        return "Unlikely"
+    return "Rare"
+
+
 def _humanize_ids(text: str, product_names: Dict[str, str]) -> str:
     """Replace raw product IDs (e.g. CFG22_RD005) with human names in text.
 
@@ -820,8 +850,10 @@ class DecisionStreamService:
                         "product_name": product_names.get(str(pid)) if pid else None,
                         "site_id": site_id,
                         "site_name": site_names.get(str(site_id)) if site_id else None,
-                        "urgency": _safe_float(getattr(row, "urgency_at_time", None) or getattr(row, "urgency", None)),
-                        "likelihood": _safe_float(getattr(row, "confidence", None)),
+                        "urgency": _urgency_label(_safe_float(getattr(row, "urgency_at_time", None) or getattr(row, "urgency", None))),
+                        "urgency_score": _safe_float(getattr(row, "urgency_at_time", None) or getattr(row, "urgency", None)),
+                        "likelihood": _likelihood_label(_safe_float(getattr(row, "confidence", None))),
+                        "likelihood_score": _safe_float(getattr(row, "confidence", None)),
                         "economic_impact": None,
                         "reason": _get_reason(row, type_key),
                         "decision_reasoning": _humanize_ids(raw_reasoning, product_names) if raw_reasoning else None,
@@ -873,8 +905,8 @@ class DecisionStreamService:
         abandoned_count = 0
 
         for d in decisions:
-            urgency = _to_float(d.get("urgency"), 0.0)
-            likelihood = _to_float(d.get("likelihood"), _DEFAULT_CONFIDENCE)
+            urgency = _to_float(d.get("urgency_score"), 0.0)
+            likelihood = _to_float(d.get("likelihood_score"), _DEFAULT_CONFIDENCE)
             combined = urgency + likelihood
 
             # Abandon: both urgency and likelihood are low — not worth
@@ -901,8 +933,8 @@ class DecisionStreamService:
         # (high urgency + low likelihood = human judgment needed most —
         #  the agent proposes a solution but isn't confident; act now)
         def sort_key(d):
-            urgency = _to_float(d.get("urgency"), 0.0)
-            likelihood = _to_float(d.get("likelihood"), _DEFAULT_CONFIDENCE)
+            urgency = _to_float(d.get("urgency_score"), 0.0)
+            likelihood = _to_float(d.get("likelihood_score"), _DEFAULT_CONFIDENCE)
             return (-urgency, likelihood)
 
         kept.sort(key=sort_key)

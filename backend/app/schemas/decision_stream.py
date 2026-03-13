@@ -44,8 +44,10 @@ class PendingDecisionItem(BaseModel):
     product_name: Optional[str] = None
     site_id: Optional[str] = None
     site_name: Optional[str] = None
-    urgency: Optional[float] = Field(None, description="Urgency score 0-1 from HiveSignalMixin")
-    likelihood: Optional[float] = Field(None, description="TRM likelihood (confidence) 0-1")
+    urgency: Optional[str] = Field(None, description="Urgency label: Critical, High, Medium, Low, Routine")
+    urgency_score: Optional[float] = Field(None, description="Raw urgency score 0-1 (for sorting)")
+    likelihood: Optional[str] = Field(None, description="Likelihood label: Almost Certain, Likely, Possible, Unlikely, Rare")
+    likelihood_score: Optional[float] = Field(None, description="Raw likelihood score 0-1 (for sorting)")
     economic_impact: Optional[float] = Field(None, description="Estimated $ impact")
     suggested_action: Optional[str] = Field(None, description="What the TRM recommends")
     reason: Optional[str] = Field(None, description="Short reason code (e.g. capacity_constraint, expedite)")

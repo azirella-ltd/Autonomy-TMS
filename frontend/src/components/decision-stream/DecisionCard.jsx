@@ -80,32 +80,40 @@ const TYPE_LABELS = {
   inventory_buffer: 'Inv. Buffer',
 };
 
+const URGENCY_COLORS = {
+  Critical: 'bg-red-100 text-red-700',
+  High: 'bg-orange-100 text-orange-700',
+  Medium: 'bg-amber-100 text-amber-700',
+  Low: 'bg-blue-100 text-blue-700',
+  Routine: 'bg-green-100 text-green-700',
+};
+
+const LIKELIHOOD_COLORS = {
+  'Almost Certain': 'bg-red-100 text-red-700',
+  Likely: 'bg-orange-100 text-orange-700',
+  Possible: 'bg-amber-100 text-amber-700',
+  Unlikely: 'bg-blue-100 text-blue-700',
+  Rare: 'bg-green-100 text-green-700',
+};
+
 const UrgencyBar = ({ value }) => {
   if (value == null) return null;
-  const pct = Math.round(value * 100);
-  const bg =
-    value >= 0.8 ? 'bg-red-100 text-red-700'
-    : value >= 0.5 ? 'bg-amber-100 text-amber-700'
-    : 'bg-green-100 text-green-700';
+  const bg = URGENCY_COLORS[value] || 'bg-gray-100 text-gray-700';
   return (
     <div className="flex items-center gap-1.5">
       <span className="text-xs text-muted-foreground font-medium">Urgency</span>
-      <span className={cn('text-xs font-semibold px-1.5 py-0.5 rounded', bg)}>{pct}%</span>
+      <span className={cn('text-xs font-semibold px-1.5 py-0.5 rounded', bg)}>{value}</span>
     </div>
   );
 };
 
 const ConfidenceChip = ({ value }) => {
   if (value == null) return null;
-  const pct = Math.round(value * 100);
-  const bg =
-    value >= 0.9 ? 'bg-green-100 text-green-700'
-    : value >= 0.7 ? 'bg-amber-100 text-amber-700'
-    : 'bg-red-100 text-red-700';
+  const bg = LIKELIHOOD_COLORS[value] || 'bg-gray-100 text-gray-700';
   return (
     <div className="flex items-center gap-1.5">
       <span className="text-xs text-muted-foreground font-medium">Likelihood</span>
-      <span className={cn('text-xs font-semibold px-1.5 py-0.5 rounded', bg)}>{pct}%</span>
+      <span className={cn('text-xs font-semibold px-1.5 py-0.5 rounded', bg)}>{value}</span>
     </div>
   );
 };
