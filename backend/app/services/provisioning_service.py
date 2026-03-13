@@ -119,7 +119,13 @@ class ProvisioningService:
             return {"status": "failed", "step": step_key, "error": str(e)[:500]}
 
     async def run_all(self, config_id: int) -> dict:
-        """Run all provisioning steps in dependency order."""
+        """Run all provisioning steps in dependency order.
+
+        Background steps are dispatched as fire-and-forget tasks.  Before
+        attempting a step whose dependency is still "running" (i.e. a
+        background task that hasn't finished yet), we poll until the
+        dependency completes or fails, with a timeout.
+        """
         status = await self.get_or_create_status(config_id)
         results = {}
 
@@ -129,20 +135,53 @@ class ProvisioningService:
                 results[step_key] = {"status": "skipped", "reason": "already completed"}
                 continue
 
+            # Before running, wait for any "running" dependencies to finish.
+            deps = ConfigProvisioningStatus.STEP_DEPENDS.get(step_key, [])
+            for dep in deps:
+                dep_status = getattr(status, f"{dep}_status", "pending")
+                if dep_status == "running":
+                    dep_status = await self._wait_for_step(config_id, dep, timeout=300)
+                    # Refresh the in-memory status object after poll
+                    await self.db.refresh(status)
+
             result = await self.run_step(config_id, step_key)
             results[step_key] = result
 
+            # Refresh status so subsequent dependency checks see latest DB state
+            await self.db.refresh(status)
+
             if result.get("status") == "failed":
-                # Continue with independent steps, skip dependents
                 logger.warning("Step %s failed, continuing with independent steps", step_key)
 
-        # Refresh status
+        # Final refresh
         await self.db.refresh(status)
         return {
             "config_id": config_id,
             "overall_status": status.overall_status,
             "steps": results,
         }
+
+    async def _wait_for_step(
+        self, config_id: int, step_key: str, timeout: int = 300
+    ) -> str:
+        """Poll DB until a background step leaves 'running' state or timeout."""
+        import time
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            await asyncio.sleep(3)
+            # Use a fresh query to see committed state from background task
+            stmt = select(ConfigProvisioningStatus).where(
+                ConfigProvisioningStatus.config_id == config_id
+            )
+            result = await self.db.execute(stmt)
+            row = result.scalar_one_or_none()
+            if row:
+                s = getattr(row, f"{step_key}_status", "pending")
+                if s != "running":
+                    logger.info("Background step %s finished with status: %s", step_key, s)
+                    return s
+        logger.warning("Timed out waiting for background step %s", step_key)
+        return "running"
 
     async def _execute_step(self, config_id: int, step_key: str) -> dict:
         """Execute a specific provisioning step."""
@@ -174,11 +213,18 @@ class ProvisioningService:
         return {"status": "ok", "models_trained": result.models_trained}
 
     async def _step_cfa_optimization(self, config_id: int) -> dict:
-        """Step 3: CFA policy parameter optimization via Differential Evolution."""
+        """Step 3: CFA policy parameter optimization via Differential Evolution.
+
+        Constructs a simple inventory cost simulator for the config's products
+        and sites, then uses InventoryPolicyOptimizer (inherits PolicyOptimizer)
+        with the correct (simulator, parameters) signature.
+        """
         from app.db.session import sync_session_factory
         sync_db = sync_session_factory()
         try:
-            from app.services.powell.policy_optimizer import InventoryPolicyOptimizer
+            from app.services.powell.policy_optimizer import (
+                InventoryPolicyOptimizer, PolicyParameter,
+            )
             from app.models.powell import PowellPolicyParameters
             from app.models.supply_chain_config import SupplyChainConfig
 
@@ -186,10 +232,74 @@ class ProvisioningService:
             if not config:
                 return {"status": "skipped", "reason": "Config not found"}
 
+            # Build a lightweight inventory cost simulator for this config.
+            # It evaluates a base-stock policy parameterised by (service_level,
+            # days_of_coverage) across the config's product-site pairs.
+            from app.models.sc_entities import InvPolicy, Forecast, Product, InvLevel
+            from app.models.supply_chain_config import Site
+            import numpy as np
+
+            sites = (
+                sync_db.query(Site)
+                .filter(Site.config_id == config_id, Site.is_external == False)
+                .all()
+            )
+            products = (
+                sync_db.query(Product)
+                .filter(Product.config_id == config_id)
+                .all()
+            )
+            if not sites or not products:
+                return {"status": "skipped", "reason": "No sites or products for config"}
+
+            site_ids = [s.id for s in sites]
+            product_ids = [p.id for p in products]
+
+            def _simulator(params: dict, seed: int) -> float:
+                """Simple Monte Carlo cost evaluation for (service_level, doc)."""
+                rng = np.random.RandomState(seed)
+                sl = params.get("service_level", 0.95)
+                doc = params.get("days_of_coverage", 14.0)
+                # Simplified cost model: holding cost vs stockout cost
+                holding_unit = 0.5
+                stockout_unit = 10.0
+                total_cost = 0.0
+                for _ in range(len(site_ids)):
+                    demand = rng.poisson(50, size=52)
+                    safety_stock = doc * np.mean(demand) / 7.0
+                    for d in demand:
+                        inv = safety_stock - d
+                        if inv >= 0:
+                            total_cost += inv * holding_unit
+                        else:
+                            total_cost += abs(inv) * stockout_unit
+                return total_cost
+
+            parameters = [
+                PolicyParameter(
+                    name="service_level",
+                    initial_value=0.95,
+                    lower_bound=0.80,
+                    upper_bound=0.99,
+                    parameter_type="continuous",
+                    description="Target service level",
+                    category="inventory",
+                ),
+                PolicyParameter(
+                    name="days_of_coverage",
+                    initial_value=14.0,
+                    lower_bound=1.0,
+                    upper_bound=60.0,
+                    parameter_type="continuous",
+                    description="Days of coverage for safety stock",
+                    category="inventory",
+                ),
+            ]
+
             optimizer = InventoryPolicyOptimizer(
-                db=sync_db,
-                config_id=config_id,
-                tenant_id=config.tenant_id,
+                simulator=_simulator,
+                parameters=parameters,
+                n_scenarios=50,
             )
             result = optimizer.optimize(method="differential_evolution")
 
@@ -231,17 +341,60 @@ class ProvisioningService:
             sync_db.close()
 
     async def _step_lgbm_forecast(self, config_id: int) -> dict:
-        """Step 4: Train LightGBM quantile models and generate P10/P50/P90 baseline forecasts."""
+        """Step 4: Train LightGBM quantile models and generate P10/P50/P90 baseline forecasts.
+
+        Loads demand history from the forecast table, builds the required
+        DataFrame, and calls ``run_stage4_lgbm()`` (the real entry point).
+        """
         try:
             from app.services.demand_forecasting.lgbm_pipeline import LGBMForecastPipeline
-            pipeline = LGBMForecastPipeline(config_id=config_id)
-            result = await pipeline.run()
-            return {
-                "status": "ok",
-                "forecasts_generated": result.forecasts_generated,
-                "models_trained": result.models_trained,
-                "duration_seconds": result.duration_seconds,
-            }
+            import pandas as pd
+            from app.db.session import sync_session_factory
+            from sqlalchemy import text
+
+            sync_db = sync_session_factory()
+            try:
+                # Load demand history: product_id, site_id, forecast_date, p50
+                rows = sync_db.execute(
+                    text("""
+                        SELECT f.product_id, f.site_id, f.forecast_date, f.p50
+                        FROM forecast f
+                        JOIN product p ON p.id = f.product_id
+                        WHERE p.config_id = :cid AND f.p50 IS NOT NULL
+                        ORDER BY f.product_id, f.site_id, f.forecast_date
+                    """),
+                    {"cid": config_id},
+                ).fetchall()
+
+                if not rows or len(rows) < 10:
+                    return {"status": "ok", "note": "Insufficient forecast history for LightGBM training"}
+
+                history = pd.DataFrame(rows, columns=["product_id", "site_id", "demand_date", "actual"])
+                history["unique_id"] = (
+                    history["product_id"].astype(str) + "_" + history["site_id"].astype(str)
+                )
+
+                # Simple cluster: all series → cluster 0
+                cluster_results = {uid: 0 for uid in history["unique_id"].unique()}
+
+                pipeline = LGBMForecastPipeline(config_id=config_id)
+                result = pipeline.run_stage4_lgbm(
+                    run_id=0,
+                    config_id=config_id,
+                    history=history,
+                    cluster_results=cluster_results,
+                    censored_flags={},
+                    n_periods=13,
+                    time_bucket="W",
+                    retrain=True,
+                )
+                return {
+                    "status": "ok",
+                    "lgbm_series_count": result.get("lgbm_series_count", 0),
+                    "lgbm_fallback_count": result.get("lgbm_fallback_count", 0),
+                }
+            finally:
+                sync_db.close()
         except ImportError:
             logger.info(
                 "LGBMForecastPipeline not yet available — stubbing step for config %d", config_id
@@ -307,19 +460,30 @@ class ProvisioningService:
         return {"status": "ok", "trms_trained": result.models_trained}
 
     async def _step_supply_plan(self, config_id: int) -> dict:
-        """Step 6: Generate initial supply plan."""
+        """Step 9: Generate initial supply plan with default stochastic parameters."""
         try:
             from app.services.supply_plan_service import SupplyPlanService
+            from app.services.stochastic_sampling import StochasticParameters
+            from app.services.monte_carlo_planner import PlanObjectives
+            from app.models.supply_chain_config import SupplyChainConfig
             from app.db.session import sync_session_factory
             sync_db = sync_session_factory()
             try:
-                service = SupplyPlanService(sync_db)
+                config = sync_db.query(SupplyChainConfig).get(config_id)
+                if not config:
+                    return {"status": "skipped", "reason": "Config not found"}
+
+                stochastic_params = StochasticParameters()
+                objectives = PlanObjectives()
+
+                service = SupplyPlanService(sync_db, config)
                 result = service.generate_supply_plan(
-                    config_id=config_id,
-                    planning_horizon=52,
+                    stochastic_params=stochastic_params,
+                    objectives=objectives,
+                    num_scenarios=100,
                 )
                 sync_db.commit()
-                return {"status": "ok", "plans_generated": getattr(result, "count", 1)}
+                return {"status": "ok", "plans_generated": len(result.get("orders", []))}
             finally:
                 sync_db.close()
         except Exception as e:

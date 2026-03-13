@@ -534,7 +534,8 @@ class TenantService:
             # Planning hierarchy & snapshots
             "planning_hierarchy_config",
             "snapshot_deltas", "snapshot_lineage", "planning_snapshots",
-            # SAP integration
+            # SAP integration (ingestion jobs use raw SQL table, not ORM model)
+            "sap_ingestion_jobs",
             "sap_role_mappings", "sap_user_import_logs", "sap_connections",
             # SSO
             "sso_login_attempts", "user_sso_mappings", "sso_providers",

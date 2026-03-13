@@ -6,7 +6,7 @@ Each connection is tenant-scoped and supports multiple connection methods
 (OData, RFC, CSV, IDoc) for SAP S/4HANA, APO, ECC, and BW systems.
 """
 
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, JSON
 from sqlalchemy.sql import func
 
 from .base import Base
@@ -74,6 +74,9 @@ class SAPConnection(Base):
     is_validated = Column(Boolean, nullable=False, default=False)
     last_validated_at = Column(DateTime, nullable=True)
     validation_message = Column(Text, nullable=True)
+
+    # CSV file → SAP table mapping (populated during connection test)
+    file_table_mapping = Column(JSON, nullable=True)
 
     # Metadata
     created_at = Column(DateTime, nullable=False, server_default=func.now())

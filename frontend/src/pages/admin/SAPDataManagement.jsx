@@ -40,6 +40,7 @@ import {
   Download,
   Search,
   ChevronRight,
+  ChevronDown,
   Zap,
   Activity,
   BarChart3,
@@ -269,8 +270,10 @@ const OverviewTab = ({ dashboardData, deploymentStatus, loading }) => {
 };
 
 // Connections Tab Component
-const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, onUpdateConnection, onDeleteConnection, loading }) => {
+const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, onUpdateConnection, onDeleteConnection, onConfirmFileMapping, loading }) => {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [expandedMappings, setExpandedMappings] = useState({});
+  const [editingMappings, setEditingMappings] = useState({});
   const defaultFormData = {
     name: '',
     description: '',
@@ -491,6 +494,138 @@ const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, onU
                     Delete
                   </Button>
                 </div>
+
+                {/* File-to-Table Mapping (shown after test for CSV connections) */}
+                {conn.file_table_mapping && conn.file_table_mapping.length > 0 && (
+                  <div className="border-t pt-3">
+                    <button
+                      className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground w-full"
+                      onClick={() => setExpandedMappings(prev => ({ ...prev, [conn.id]: !prev[conn.id] }))}
+                    >
+                      {expandedMappings[conn.id]
+                        ? <ChevronDown className="h-4 w-4" />
+                        : <ChevronRight className="h-4 w-4" />}
+                      <FileText className="h-4 w-4" />
+                      {conn.file_table_mapping.length} files identified
+                      {conn.file_table_mapping.some(f => !f.confirmed) && (
+                        <Badge variant="warning" className="ml-2">
+                          {conn.file_table_mapping.filter(f => !f.confirmed).length} need review
+                        </Badge>
+                      )}
+                      {conn.file_table_mapping.every(f => f.confirmed) && (
+                        <Badge variant="success" className="ml-2">All confirmed</Badge>
+                      )}
+                    </button>
+
+                    {expandedMappings[conn.id] && (
+                      <div className="mt-3 space-y-1">
+                        <div className="grid grid-cols-[1fr_120px_80px_60px_40px] gap-2 text-xs font-medium text-muted-foreground px-2 pb-1 border-b">
+                          <span>File</span>
+                          <span>SAP Table</span>
+                          <span>Confidence</span>
+                          <span>Rows</span>
+                          <span></span>
+                        </div>
+                        {conn.file_table_mapping.map((file, idx) => {
+                          const isEditing = editingMappings[`${conn.id}_${idx}`];
+                          const confidence = file.confidence || 0;
+                          return (
+                            <div
+                              key={idx}
+                              className={cn(
+                                "grid grid-cols-[1fr_120px_80px_60px_40px] gap-2 items-center text-sm px-2 py-1 rounded",
+                                !file.confirmed && "bg-yellow-50 border border-yellow-200",
+                                file.confirmed && "bg-green-50/50"
+                              )}
+                            >
+                              <span className="truncate text-xs font-mono">{file.filename}</span>
+                              {isEditing ? (
+                                <Input
+                                  className="h-6 text-xs"
+                                  defaultValue={file.table || ''}
+                                  onBlur={(e) => {
+                                    const newTable = e.target.value.toUpperCase().trim() || null;
+                                    onConfirmFileMapping(conn.id, [{
+                                      filename: file.filename,
+                                      table: newTable,
+                                      confirmed: !!newTable,
+                                    }]);
+                                    setEditingMappings(prev => ({ ...prev, [`${conn.id}_${idx}`]: false }));
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') e.target.blur();
+                                  }}
+                                  autoFocus
+                                />
+                              ) : (
+                                <span className={cn(
+                                  "text-xs font-mono",
+                                  !file.table && "text-red-500 italic"
+                                )}>
+                                  {file.table || 'Unknown'}
+                                </span>
+                              )}
+                              <Badge
+                                variant={confidence >= 0.7 ? 'success' : confidence >= 0.3 ? 'warning' : 'destructive'}
+                                className="text-[10px] px-1.5 py-0"
+                              >
+                                {(confidence * 100).toFixed(0)}%
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">{file.row_count?.toLocaleString()}</span>
+                              <div className="flex gap-0.5">
+                                {!file.confirmed ? (
+                                  <>
+                                    {file.table && (
+                                      <button
+                                        className="text-green-600 hover:text-green-800"
+                                        title="Confirm this mapping"
+                                        onClick={() => onConfirmFileMapping(conn.id, [{
+                                          filename: file.filename,
+                                          table: file.table,
+                                          confirmed: true,
+                                        }])}
+                                      >
+                                        <CheckCircle className="h-4 w-4" />
+                                      </button>
+                                    )}
+                                    <button
+                                      className="text-blue-600 hover:text-blue-800"
+                                      title="Edit table assignment"
+                                      onClick={() => setEditingMappings(prev => ({ ...prev, [`${conn.id}_${idx}`]: true }))}
+                                    >
+                                      <Settings className="h-3.5 w-3.5" />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <CheckCircle className="h-4 w-4 text-green-500" />
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {conn.file_table_mapping.some(f => !f.confirmed) && (
+                          <div className="flex justify-end pt-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                const confirmable = conn.file_table_mapping
+                                  .filter(f => !f.confirmed && f.table && f.confidence >= 0.3)
+                                  .map(f => ({ filename: f.filename, table: f.table, confirmed: true }));
+                                if (confirmable.length > 0) {
+                                  onConfirmFileMapping(conn.id, confirmable);
+                                }
+                              }}
+                            >
+                              <CheckCircle className="h-4 w-4 mr-1" />
+                              Confirm All ({conn.file_table_mapping.filter(f => !f.confirmed && f.table && f.confidence >= 0.3).length})
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
@@ -1277,7 +1412,26 @@ const PHASE_COLORS = {
   transaction: 'bg-amber-100 text-amber-800',
 };
 
-const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob, onDeleteJob, onScheduleJob, onRefresh, loading }) => {
+/** Geocoding progress bar with current address label on the right. */
+const GeocodingProgressBar = ({ done, total, currentLabel }) => {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  return (
+    <div className="pl-8 pr-3 py-1.5 border-t bg-muted/30 space-y-1">
+      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+        <div
+          className="h-full bg-emerald-500 transition-all duration-500"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>{done}/{total} locations</span>
+        {currentLabel && <span className="truncate ml-2 italic">{currentLabel}</span>}
+      </div>
+    </div>
+  );
+};
+
+const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob, onDeleteJob, onRerunJob, onScheduleJob, onRefresh, loading }) => {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedConnectionId, setSelectedConnectionId] = useState('');
   const [jobType, setJobType] = useState('full_extract');
@@ -1286,6 +1440,54 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
   const [allTables, setAllTables] = useState([]);
   const [selectedTables, setSelectedTables] = useState([]);
   const [loadingTables, setLoadingTables] = useState(false);
+  const [identifiedFiles, setIdentifiedFiles] = useState(null); // null = not scanned, [] = empty
+  const [scanningFiles, setScanningFiles] = useState(false);
+  const [expandedJobs, setExpandedJobs] = useState({}); // { jobId: bool }
+
+  // Scan files to identify SAP tables via the identify-files endpoint
+  const handleScanFiles = async () => {
+    if (!selectedConnectionId) return;
+    setScanningFiles(true);
+    setIdentifiedFiles(null);
+    try {
+      const resp = await api.post(`/sap-data/connections/${selectedConnectionId}/identify-files`);
+      setIdentifiedFiles(resp.data || []);
+    } catch (err) {
+      console.error('Failed to identify files:', err);
+      setIdentifiedFiles([]);
+    }
+    setScanningFiles(false);
+  };
+
+  // Toggle per-file list expansion on a job card
+  const toggleJobExpanded = (jobId) => {
+    setExpandedJobs(prev => ({ ...prev, [jobId]: !prev[jobId] }));
+  };
+
+  // Determine if a job's file list should be expanded by default
+  const isJobExpanded = (job) => {
+    if (expandedJobs[job.id] !== undefined) return expandedJobs[job.id];
+    // Auto-collapse file list once all files are read (building phase)
+    const tableStatuses = job.table_status ? Object.values(job.table_status) : [];
+    const completedFiles = tableStatuses.filter(s => s.status === 'completed').length;
+    const totalFiles = job.tables?.length || 0;
+    const allFilesRead = totalFiles > 0 && completedFiles >= totalFiles;
+    if (job.status === 'running' && allFilesRead) return false;
+    return job.status === 'running';
+  };
+
+  // The 9 build steps from SAPConfigBuilder
+  const BUILD_STEPS = [
+    "Creating supply chain config",
+    "Geocoding company addresses",
+    "Creating sites from plants & storage locations",
+    "Creating products from material master",
+    "Creating trading partners & sourcing rules",
+    "Building bill of materials",
+    "Generating forecasts & inventory policies",
+    "Importing orders & transactional data",
+    "Inferring transportation lanes from sourcing & shipping data",
+  ];
 
   // Filter tables by phase
   const filterTablesByPhase = (tables, phase) => {
@@ -1304,6 +1506,7 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
     setSelectedTables([]);
     setAvailableTables([]);
     setAllTables([]);
+    setIdentifiedFiles(null);
     if (!connId) return;
 
     const conn = connections.find(c => c.id === parseInt(connId));
@@ -1356,6 +1559,7 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
     setSelectedTables([]);
     setAvailableTables([]);
     setAllTables([]);
+    setIdentifiedFiles(null);
   };
 
   return (
@@ -1459,21 +1663,167 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
                     )}
                   </div>
                 </div>
-                {job.status === 'running' && (
-                  <div className="mt-3">
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-blue-500 transition-all"
-                        style={{ width: `${job.progress_percent}%` }}
-                      />
+                {/* Progress section */}
+                {(() => {
+                  const tableStatuses = job.table_status ? Object.values(job.table_status) : [];
+                  const completedFiles = tableStatuses.filter(s => s.status === 'completed').length;
+                  const totalFiles = job.tables?.length || 0;
+                  const allFilesRead = totalFiles > 0 && completedFiles >= totalFiles;
+                  const buildStep = job.build_summary?.build_step;
+                  const buildTotal = job.build_summary?.build_total || 9;
+                  const buildDesc = job.build_summary?.build_description;
+                  const isBuilding = job.status === 'running' && allFilesRead;
+                  const isReading = job.status === 'running' && !allFilesRead;
+
+                  return (
+                    <div className="mt-3 space-y-2">
+                      {/* File reading progress */}
+                      {isReading && (
+                        <>
+                          <div className="h-2 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-blue-500 transition-all"
+                              style={{ width: `${job.progress_percent}%` }}
+                            />
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            Reading files: {completedFiles}/{totalFiles} completed
+                            {job.current_table && ` — ${job.current_table}`}
+                          </p>
+                          {/* Expandable file list while reading */}
+                          <div>
+                            <button
+                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                              onClick={() => toggleJobExpanded(job.id)}
+                            >
+                              {isJobExpanded(job)
+                                ? <ChevronDown className="h-3.5 w-3.5" />
+                                : <ChevronRight className="h-3.5 w-3.5" />}
+                              Show files
+                            </button>
+                            {isJobExpanded(job) && (
+                              <div className="mt-1 border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                                {(job.tables || []).map((tableName) => {
+                                  const fileStatus = job.table_status?.[tableName];
+                                  const status = fileStatus?.status || 'pending';
+                                  const rows = fileStatus?.rows ?? 0;
+                                  return (
+                                    <div key={tableName} className="flex items-center gap-2 px-3 py-1 text-xs border-b last:border-b-0">
+                                      {status === 'completed' ? <CheckCircle className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
+                                        : status === 'in_progress' ? <Spinner size="sm" className="flex-shrink-0" />
+                                        : status === 'failed' ? <AlertTriangle className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
+                                        : <Clock className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />}
+                                      <span className="flex-1 truncate font-mono">{tableName}</span>
+                                      {rows > 0 && <span className="text-muted-foreground">{rows.toLocaleString()}</span>}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+
+                      {/* All files read — collapsed summary + build progress */}
+                      {isBuilding && (
+                        <>
+                          <div className="flex items-center gap-2 text-xs text-green-600">
+                            <CheckCircle className="h-4 w-4" />
+                            <span>{totalFiles} files read successfully ({job.total_rows_processed?.toLocaleString()} rows)</span>
+                            <button
+                              className="text-muted-foreground hover:text-foreground ml-1"
+                              onClick={() => toggleJobExpanded(job.id)}
+                            >
+                              {isJobExpanded(job) ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                            </button>
+                          </div>
+                          {isJobExpanded(job) && (
+                            <div className="border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                              {(job.tables || []).map((tableName) => {
+                                const rows = job.table_status?.[tableName]?.rows ?? 0;
+                                return (
+                                  <div key={tableName} className="flex items-center gap-2 px-3 py-1 text-xs border-b last:border-b-0">
+                                    <CheckCircle className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
+                                    <span className="flex-1 truncate font-mono">{tableName}</span>
+                                    {rows > 0 && <span className="text-muted-foreground">{rows.toLocaleString()}</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {/* Build steps checklist */}
+                          <div className="border rounded-lg overflow-hidden">
+                            {BUILD_STEPS.map((stepName, idx) => {
+                              const stepNum = idx + 1;
+                              const isCurrent = buildStep === stepNum;
+                              const isDone = buildStep > stepNum;
+                              const isPending = !buildStep || buildStep < stepNum;
+                              return (
+                                <React.Fragment key={stepNum}>
+                                  <div className="flex items-center gap-2 px-3 py-1.5 text-xs border-b last:border-b-0">
+                                    {isDone ? <CheckCircle className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
+                                      : isCurrent ? <Spinner size="sm" className="flex-shrink-0" />
+                                      : <Clock className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />}
+                                    <span className={isCurrent ? 'font-medium' : isPending ? 'text-muted-foreground' : ''}>
+                                      {stepName}
+                                      {isCurrent && stepNum === 2 && job.build_summary?.geocoding_total > 0 && (
+                                        <span className="text-muted-foreground font-normal ml-1">
+                                          ({job.build_summary.geocoding_done || 0}/{job.build_summary.geocoding_total})
+                                        </span>
+                                      )}
+                                    </span>
+                                  </div>
+                                  {/* Geocoding progress bar for step 2 */}
+                                  {isCurrent && stepNum === 2 && job.build_summary?.geocoding_total > 0 && (
+                                    <GeocodingProgressBar
+                                      done={job.build_summary.geocoding_done || 0}
+                                      total={job.build_summary.geocoding_total}
+                                      currentLabel={job.build_summary.geocoding_addresses?.[job.build_summary.geocoding_active] || ''}
+                                    />
+                                  )}
+                                </React.Fragment>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
+
+                      {/* Completed/failed job — collapsed file summary */}
+                      {job.status !== 'running' && totalFiles > 0 && (
+                        <div>
+                          <button
+                            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
+                            onClick={() => toggleJobExpanded(job.id)}
+                          >
+                            {isJobExpanded(job)
+                              ? <ChevronDown className="h-3.5 w-3.5" />
+                              : <ChevronRight className="h-3.5 w-3.5" />}
+                            <CheckCircle className="h-3.5 w-3.5 text-green-500" />
+                            {completedFiles}/{totalFiles} files read
+                          </button>
+                          {isJobExpanded(job) && (
+                            <div className="mt-1 border rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                              {(job.tables || []).map((tableName) => {
+                                const fileStatus = job.table_status?.[tableName];
+                                const status = fileStatus?.status || 'completed';
+                                const rows = fileStatus?.rows ?? 0;
+                                return (
+                                  <div key={tableName} className="flex items-center gap-2 px-3 py-1 text-xs border-b last:border-b-0">
+                                    {status === 'failed'
+                                      ? <AlertTriangle className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
+                                      : <CheckCircle className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />}
+                                    <span className="flex-1 truncate font-mono">{tableName}</span>
+                                    {rows > 0 && <span className="text-muted-foreground">{rows.toLocaleString()}</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    {job.current_table && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Processing: {job.current_table}
-                      </p>
-                    )}
-                  </div>
-                )}
+                  );
+                })()}
                 <div className="flex items-center gap-2 border-t pt-3 mt-3">
                   {job.status === 'pending' && (
                     <Button variant="outline" size="sm" onClick={() => onStartJob(job.id)}>
@@ -1510,19 +1860,33 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
                   )}
                   <div className="flex-1" />
                   {job.status !== 'running' && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-red-600 hover:bg-red-50 border-red-200"
-                      onClick={() => {
-                        if (window.confirm(`Delete Job #${job.id}?`)) {
-                          onDeleteJob(job.id);
-                        }
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4 mr-1" />
-                      Delete
-                    </Button>
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          if (window.confirm(`Rerun Job #${job.id}? All stats will be reset.`)) {
+                            onRerunJob(job.id);
+                          }
+                        }}
+                      >
+                        <RefreshCw className="h-4 w-4 mr-1" />
+                        Rerun
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-red-600 hover:bg-red-50 border-red-200"
+                        onClick={() => {
+                          if (window.confirm(`Delete Job #${job.id}?`)) {
+                            onDeleteJob(job.id);
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        Delete
+                      </Button>
+                    </>
                   )}
                 </div>
               </CardContent>
@@ -1618,6 +1982,79 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
                     </label>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Scan Files / File Identification */}
+            {selectedConnectionId && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium">File Identification</label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleScanFiles}
+                    disabled={scanningFiles}
+                  >
+                    {scanningFiles ? (
+                      <>
+                        <Spinner size="sm" className="mr-1" />
+                        Scanning...
+                      </>
+                    ) : (
+                      <>
+                        <Search className="h-3 w-3 mr-1" />
+                        Scan Files
+                      </>
+                    )}
+                  </Button>
+                </div>
+                {identifiedFiles && identifiedFiles.length > 0 && (
+                  <div className="border rounded-lg max-h-48 overflow-y-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted sticky top-0">
+                        <tr>
+                          <th className="text-left px-3 py-1.5 font-medium">Filename</th>
+                          <th className="text-left px-3 py-1.5 font-medium">SAP Table</th>
+                          <th className="text-center px-3 py-1.5 font-medium">Confidence</th>
+                          <th className="text-right px-3 py-1.5 font-medium">Rows</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {identifiedFiles.map((file, idx) => (
+                          <tr key={idx} className="border-t hover:bg-muted/50">
+                            <td className="px-3 py-1.5 truncate max-w-[160px]" title={file.filename}>
+                              {file.filename}
+                            </td>
+                            <td className="px-3 py-1.5">
+                              {(file.confidence ?? 0) < 0.3 ? (
+                                <span className="text-muted-foreground italic">Unknown</span>
+                              ) : (
+                                file.sap_table || file.table_name || 'Unknown'
+                              )}
+                            </td>
+                            <td className="px-3 py-1.5 text-center">
+                              <Badge variant={
+                                (file.confidence ?? 0) > 0.7 ? 'success' :
+                                (file.confidence ?? 0) >= 0.3 ? 'warning' : 'destructive'
+                              }>
+                                {((file.confidence ?? 0) * 100).toFixed(0)}%
+                              </Badge>
+                            </td>
+                            <td className="px-3 py-1.5 text-right text-muted-foreground">
+                              {file.row_count?.toLocaleString() ?? '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {identifiedFiles && identifiedFiles.length === 0 && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    No files could be identified. Check your connection configuration.
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -2492,6 +2929,16 @@ const SAPDataManagement = () => {
     }
   };
 
+  const handleConfirmFileMapping = async (connectionId, updates) => {
+    try {
+      await api.post(`/sap-data/connections/${connectionId}/confirm-file-mapping`, updates);
+      loadData();
+    } catch (error) {
+      console.error('Failed to update file mapping:', error);
+      alert('Failed to update file mapping: ' + (error.response?.data?.detail || error.message));
+    }
+  };
+
   const handleCreateJob = async (jobData) => {
     try {
       await api.post('/sap-data/jobs', jobData);
@@ -2519,6 +2966,16 @@ const SAPDataManagement = () => {
     } catch (error) {
       console.error('Failed to delete job:', error);
       alert('Failed to delete job: ' + (error.response?.data?.detail || error.message));
+    }
+  };
+
+  const handleRerunJob = async (jobId) => {
+    try {
+      await api.post(`/sap-data/jobs/${jobId}/rerun`);
+      loadData();
+    } catch (error) {
+      console.error('Failed to rerun job:', error);
+      alert('Failed to rerun job: ' + (error.response?.data?.detail || error.message));
     }
   };
 
@@ -2595,6 +3052,7 @@ const SAPDataManagement = () => {
               onUpdateConnection={handleUpdateConnection}
               onDeleteConnection={handleDeleteConnection}
               onTestConnection={handleTestConnection}
+              onConfirmFileMapping={handleConfirmFileMapping}
               loading={loading}
             />
           )}
@@ -2614,6 +3072,7 @@ const SAPDataManagement = () => {
               onCreateJob={handleCreateJob}
               onStartJob={handleStartJob}
               onDeleteJob={handleDeleteJob}
+              onRerunJob={handleRerunJob}
               onCancelJob={handleCancelJob}
               onScheduleJob={handleScheduleJob}
               onRefresh={loadData}

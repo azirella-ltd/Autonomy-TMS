@@ -175,6 +175,9 @@ class IngestionJob:
     config_id: Optional[int] = None
     build_summary: Optional[Dict[str, Any]] = None
 
+    # Per-table status tracking (JSON: {table: {status, rows}})
+    table_status: Dict[str, Any] = field(default_factory=dict)
+
     # Error tracking
     error_message: Optional[str] = None
     errors: List[Dict[str, Any]] = field(default_factory=list)
@@ -203,6 +206,7 @@ class IngestionJob:
             "total_rows_skipped": self.total_rows_skipped,
             "config_id": self.config_id,
             "build_summary": self.build_summary,
+            "table_status": self.table_status,
             "errors": self.errors,
             "warnings": self.warnings,
             "progress_percent": self.progress_percent,
@@ -441,6 +445,15 @@ class SAPIngestionMonitoringService:
             elif isinstance(build_summary_raw, str):
                 build_summary = json.loads(build_summary_raw)
 
+        # Parse table_status JSON
+        table_status_raw = getattr(row, "table_status", None)
+        table_status = {}
+        if table_status_raw:
+            if isinstance(table_status_raw, dict):
+                table_status = table_status_raw
+            elif isinstance(table_status_raw, str):
+                table_status = json.loads(table_status_raw)
+
         job = IngestionJob(
             id=row.id,
             tenant_id=row.tenant_id,
@@ -456,6 +469,7 @@ class SAPIngestionMonitoringService:
             completed_at=row.completed_at,
             config_id=getattr(row, "config_id", None),
             build_summary=build_summary,
+            table_status=table_status,
             error_message=getattr(row, "error_message", None),
         )
         job._progress_override = getattr(row, "progress_percent", None) or 0.0
@@ -616,13 +630,20 @@ class SAPIngestionMonitoringService:
 
         now = datetime.utcnow()
         current_table = job.tables[0] if job.tables else None
+
+        # Initialize per-table status (all pending)
+        initial_table_status = {t: {"status": "pending", "rows": 0} for t in job.tables}
+        table_status_json = json.dumps(initial_table_status)
+
         await self.db.execute(
             text("""
                 UPDATE sap_ingestion_jobs
-                SET status = :status, started_at = :started_at, current_table = :current_table, updated_at = NOW()
+                SET status = :status, started_at = :started_at, current_table = :current_table,
+                    table_status = :table_status, updated_at = NOW()
                 WHERE id = :id AND tenant_id = :tenant_id
             """),
             {"status": JobStatus.RUNNING.value, "started_at": now, "current_table": current_table,
+             "table_status": table_status_json,
              "id": job_id, "tenant_id": self.tenant_id}
         )
         await self.db.commit()
@@ -630,7 +651,59 @@ class SAPIngestionMonitoringService:
         job.status = JobStatus.RUNNING
         job.started_at = now
         job.current_table = current_table
+        job.table_status = initial_table_status
         logger.info(f"Started ingestion job {job_id}")
+        return job
+
+    async def rerun_job(self, job_id: int) -> IngestionJob:
+        """Reset a completed/failed/cancelled job and restart it.
+
+        Resets all progress stats (rows, progress, current_table, timestamps,
+        error_message, build results) before marking as running.
+        """
+        job = await self.get_job(job_id)
+        if not job:
+            raise ValueError("Job not found")
+        if job.status == JobStatus.RUNNING:
+            raise ValueError("Job is already running")
+
+        now = datetime.utcnow()
+        current_table = job.tables[0] if job.tables else None
+        initial_table_status = {t: {"status": "pending", "rows": 0} for t in job.tables}
+        table_status_json = json.dumps(initial_table_status)
+
+        await self.db.execute(
+            text("""
+                UPDATE sap_ingestion_jobs
+                SET status = :status,
+                    started_at = :started_at,
+                    completed_at = NULL,
+                    current_table = :current_table,
+                    progress_percent = 0,
+                    total_rows_processed = 0,
+                    total_rows_failed = 0,
+                    error_message = NULL,
+                    config_id = NULL,
+                    build_summary = NULL,
+                    table_status = :table_status,
+                    updated_at = NOW()
+                WHERE id = :id AND tenant_id = :tenant_id
+            """),
+            {"status": JobStatus.RUNNING.value, "started_at": now,
+             "current_table": current_table,
+             "table_status": table_status_json,
+             "id": job_id, "tenant_id": self.tenant_id}
+        )
+        await self.db.commit()
+
+        job.status = JobStatus.RUNNING
+        job.started_at = now
+        job.current_table = current_table
+        job.table_status = initial_table_status
+        job.progress_percent = 0
+        job.total_rows_processed = 0
+        job.total_rows_failed = 0
+        logger.info(f"Rerun ingestion job {job_id} (stats reset)")
         return job
 
     async def set_job_build_result(
@@ -674,21 +747,38 @@ class SAPIngestionMonitoringService:
         table_idx = job.tables.index(table) if table in job.tables else 0
         progress = ((table_idx + 1) / len(job.tables) * 100) if job.tables else 0
 
+        # Update per-table status
+        table_status = dict(job.table_status) if job.table_status else {}
+        if rows_failed > 0 and rows_processed == 0:
+            table_status[table] = {"status": "failed", "rows": 0}
+        else:
+            table_status[table] = {"status": "completed", "rows": rows_processed}
+        # Mark the next table as in_progress (if any)
+        if table_idx + 1 < len(job.tables):
+            next_table = job.tables[table_idx + 1]
+            if next_table not in table_status or table_status[next_table].get("status") == "pending":
+                table_status[next_table] = {"status": "in_progress", "rows": 0}
+
+        table_status_json = json.dumps(table_status)
+
         await self.db.execute(
             text("""
                 UPDATE sap_ingestion_jobs
                 SET total_rows_processed = :processed, total_rows_failed = :failed,
-                    current_table = :current_table, progress_percent = :progress, updated_at = NOW()
+                    current_table = :current_table, progress_percent = :progress,
+                    table_status = :table_status, updated_at = NOW()
                 WHERE id = :id AND tenant_id = :tenant_id
             """),
             {"processed": new_processed, "failed": new_failed, "current_table": table,
-             "progress": progress, "id": job_id, "tenant_id": self.tenant_id}
+             "progress": progress, "table_status": table_status_json,
+             "id": job_id, "tenant_id": self.tenant_id}
         )
         await self.db.commit()
 
         job.total_rows_processed = new_processed
         job.total_rows_failed = new_failed
         job.current_table = table
+        job.table_status = table_status
         return job
 
     async def complete_job(

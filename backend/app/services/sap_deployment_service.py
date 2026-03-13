@@ -128,6 +128,7 @@ class SAPConnectionConfig:
     validation_message: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    file_table_mapping: Optional[list] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -161,6 +162,7 @@ class SAPConnectionConfig:
             "validation_message": self.validation_message,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "file_table_mapping": self.file_table_mapping,
         }
 
     @classmethod
@@ -196,6 +198,7 @@ class SAPConnectionConfig:
             validation_message=row.validation_message,
             created_at=row.created_at,
             updated_at=row.updated_at,
+            file_table_mapping=getattr(row, "file_table_mapping", None),
         )
 
 
@@ -416,6 +419,18 @@ STANDARD_SAP_TABLES = {
             "aws_sc_entity": "production_order_line",
             "key_fields": ["AUFNR", "POSNR"],
         },
+        "AFVC": {
+            "description": "Production Order Operations (routing steps)",
+            "priority": 2,
+            "aws_sc_entity": "production_process",
+            "key_fields": ["AUFPL", "APLZL"],
+        },
+        "AFRU": {
+            "description": "Production Order Confirmations (actual times/quantities)",
+            "priority": 2,
+            "aws_sc_entity": "production_order_line",
+            "key_fields": ["RUESSION", "AUFNR"],
+        },
         "STPO": {
             "description": "Bill of Materials Item",
             "priority": 1,
@@ -433,6 +448,88 @@ STANDARD_SAP_TABLES = {
             "priority": 3,
             "aws_sc_entity": "allocation",
             "key_fields": ["RSNUM", "RSPOS"],
+        },
+        # Goods movements (in-transit visibility)
+        "MKPF": {
+            "description": "Material Document Header (goods movement posting)",
+            "priority": 2,
+            "aws_sc_entity": "shipment",
+            "key_fields": ["MBLNR", "MJAHR"],
+        },
+        "MSEG": {
+            "description": "Material Document Item (individual goods movements)",
+            "priority": 2,
+            "aws_sc_entity": "shipment_line",
+            "key_fields": ["MBLNR", "MJAHR", "ZEESSION"],
+        },
+        # SO schedule lines (ATP promised dates)
+        "VBEP": {
+            "description": "Sales Order Schedule Lines (promised delivery dates)",
+            "priority": 2,
+            "aws_sc_entity": "outbound_order_line",
+            "key_fields": ["VBELN", "POSNR", "ETENR"],
+        },
+        # PO history (goods receipts, invoice receipts — vendor performance)
+        "EKBE": {
+            "description": "Purchase Order History (GR/IR for vendor performance)",
+            "priority": 2,
+            "aws_sc_entity": "inbound_order_line",
+            "key_fields": ["EBELN", "EBELP", "ZEESSION"],
+        },
+        # Pricing conditions
+        "KONV": {
+            "description": "Pricing Conditions (contract prices, discounts, surcharges)",
+            "priority": 3,
+            "aws_sc_entity": "vendor_product",
+            "key_fields": ["KNUMV", "KPOSN", "STUNR", "ZAESSION"],
+        },
+        # Work center cost assignments
+        "CRCO": {
+            "description": "Work Center Cost Assignments (cost rates)",
+            "priority": 3,
+            "aws_sc_entity": "production_process",
+            "key_fields": ["OBJID", "VEESSION"],
+        },
+        # Quality inspection results detail
+        "QASE": {
+            "description": "Quality Inspection Results (characteristic-level)",
+            "priority": 3,
+            "aws_sc_entity": "quality_order",
+            "key_fields": ["PRUESSION", "VESSION"],
+        },
+        # Sales data per product/sales org
+        "MVKE": {
+            "description": "Material Sales Data (pricing group, item category)",
+            "priority": 3,
+            "aws_sc_entity": "product",
+            "key_fields": ["MATNR", "VKORG", "VTWEG"],
+        },
+        # Customer sales data
+        "KNVV": {
+            "description": "Customer Sales Data (customer group, currency)",
+            "priority": 3,
+            "aws_sc_entity": "trading_partner",
+            "key_fields": ["KUNNR", "VKORG", "VTWEG", "SPART"],
+        },
+        # Planned orders from MRP
+        "PLAF": {
+            "description": "MRP Planned Orders (planned POs, MOs, TOs)",
+            "priority": 2,
+            "aws_sc_entity": "supply_plan",
+            "key_fields": ["PLNUM"],
+        },
+        # Change document audit trail
+        "CDHDR": {
+            "description": "Change Document Headers (master data change audit)",
+            "priority": 3,
+            "aws_sc_entity": None,
+            "key_fields": ["OBJECTCLAS", "OBJECTID", "CHANGENR"],
+        },
+        "CDPOS": {
+            "description": "Change Document Items (field-level changes)",
+            "priority": 3,
+            "aws_sc_entity": None,
+            "key_fields": ["OBJECTCLAS", "OBJECTID", "CHANGENR", "TABNAME", "FNAME"],
         },
         # Transfer Orders
         "LTAK": {

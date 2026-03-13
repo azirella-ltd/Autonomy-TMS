@@ -40,6 +40,7 @@ from app.models.sc_entities import (
     TradingPartner, Geography,
     SourcingRules, ProductBom, ProductionProcess,
     OutboundOrderLine, InboundOrder, InboundOrderLine,
+    Shipment,
 )
 from app.models.production_order import ProductionOrder, ProductionOrderComponent
 from app.models.quality_order import QualityOrder
@@ -156,11 +157,11 @@ STEP_NAMES = {
     2: "Geography",
     3: "Sites",
     4: "Products",
-    5: "Transportation Lanes",
-    6: "Partners & Sourcing",
-    7: "BOM & Manufacturing",
-    8: "Planning Data",
-    9: "Transactional Data",
+    5: "Partners & Sourcing",
+    6: "BOM & Manufacturing",
+    7: "Planning Data",
+    8: "Transactional Data",
+    9: "Transportation Lanes",
 }
 
 STEP_ENTITY_TYPES = {
@@ -168,11 +169,11 @@ STEP_ENTITY_TYPES = {
     2: "geography",
     3: "site",
     4: "product",
-    5: "transportation_lane",
-    6: "trading_partner",
-    7: "product_bom",
-    8: "forecast",
-    9: "orders",
+    5: "trading_partner",
+    6: "product_bom",
+    7: "forecast",
+    8: "orders",
+    9: "transportation_lane",
 }
 
 # Known standard SAP table names (for Z-table detection)
@@ -386,6 +387,8 @@ class SAPConfigBuilder:
         company_filter: Optional[str] = None,
         master_type_overrides: Optional[Dict[str, str]] = None,
         options: Optional[Dict[str, Any]] = None,
+        progress_callback: Optional[Any] = None,
+        geocoding_callback: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         Build a SupplyChainConfig from SAP data.
@@ -407,29 +410,39 @@ class SAPConfigBuilder:
         opts = options or {}
         overrides = master_type_overrides or {}
 
+        async def _report(step: int, total: int, desc: str):
+            if progress_callback:
+                await progress_callback(step, total, desc)
+
         try:
+            total_steps = 9
+
             # Step 1: Create config (also deactivates previous active configs)
+            await _report(1, total_steps, "Creating supply chain config...")
             self._config = await self._create_config(config_name)
 
             # Step 2: Company & Geography
-            await self._create_geography()
+            await _report(2, total_steps, "Geocoding company addresses...")
+            await self._create_geography(geocoding_callback=geocoding_callback)
 
             # Step 3: Sites
+            await _report(3, total_steps, "Creating sites from plants & storage locations...")
             site_count = await self._create_sites(overrides, opts)
 
             # Step 4: Products
+            await _report(4, total_steps, "Creating products from material master...")
             product_count = await self._create_products()
 
-            # Step 5: Transportation Lanes
-            lane_count = await self._create_lanes()
-
-            # Step 6: Trading Partners & Sourcing
+            # Step 5: Trading Partners & Sourcing
+            await _report(5, total_steps, "Creating trading partners & sourcing rules...")
             vendor_count, customer_count, sourcing_count = await self._create_partners_and_sourcing()
 
-            # Step 7: BOM & Manufacturing
+            # Step 6: BOM & Manufacturing
+            await _report(6, total_steps, "Building bill of materials...")
             bom_count = await self._create_bom_and_manufacturing()
 
-            # Step 8: Planning Data
+            # Step 7: Planning Data
+            await _report(7, total_steps, "Generating forecasts & inventory policies...")
             forecast_count = 0
             inv_count = 0
             if opts.get("include_forecasts", True):
@@ -442,8 +455,15 @@ class SAPConfigBuilder:
                     safety_days=opts.get("default_safety_days", 14),
                 )
 
-            # Step 9: Transactional Data (orders, production orders, quality orders)
+            # Step 8: Transactional Data (orders, production orders, quality orders)
+            await _report(8, total_steps, "Importing orders & transactional data...")
             order_counts = await self._create_transactional_data(opts)
+
+            # Step 9: Transportation Lanes (after transactions so we can
+            # infer lanes from EKKO/EKPO/VBAK/VBAP/LIKP/LIPS if available,
+            # falling back to EORD source list + full connectivity default)
+            await _report(9, total_steps, "Inferring transportation lanes from sourcing & shipping data...")
+            lane_count = await self._create_lanes()
 
             await self.db.commit()
 
@@ -582,15 +602,15 @@ class SAPConfigBuilder:
         elif step == 4:
             count = await self._step_products(result)
         elif step == 5:
-            count = await self._step_lanes(result)
-        elif step == 6:
             count = await self._step_partners(result)
-        elif step == 7:
+        elif step == 6:
             count = await self._step_bom(result)
-        elif step == 8:
+        elif step == 7:
             count = await self._step_planning(result, opts)
-        elif step == 9:
+        elif step == 8:
             count = await self._step_transactional(result, opts)
+        elif step == 9:
+            count = await self._step_lanes(result)
         else:
             result.warnings.append(f"Unknown step {step}")
             count = 0
@@ -653,15 +673,15 @@ class SAPConfigBuilder:
             elif step_num == 4:
                 summary["products"] = await self._step_products(result)
             elif step_num == 5:
-                summary["lanes"] = await self._step_lanes(result)
-            elif step_num == 6:
                 summary["partners"] = await self._step_partners(result)
-            elif step_num == 7:
+            elif step_num == 6:
                 summary["bom"] = await self._step_bom(result)
-            elif step_num == 8:
+            elif step_num == 7:
                 summary["planning"] = await self._step_planning(result, opts)
-            elif step_num == 9:
+            elif step_num == 8:
                 summary["transactional"] = await self._step_transactional(result, opts)
+            elif step_num == 9:
+                summary["lanes"] = await self._step_lanes(result)
             completed.add(step_num)
 
         # Finalize
@@ -1431,7 +1451,7 @@ class SAPConfigBuilder:
     # Step 2: Company & Geography
     # ------------------------------------------------------------------
 
-    async def _create_geography(self):
+    async def _create_geography(self, geocoding_callback=None):
         """Create Geography entities from ADRC addresses (upsert, deduplicated).
 
         Geocodes addresses to lat/lon using Nominatim when coordinates are not
@@ -1445,48 +1465,100 @@ class SAPConfigBuilder:
         from app.services.geocoding_service import geocode_batch
 
         geo_df = self.mapper.map_geography(adrc)
+
+        def _clean(val) -> str:
+            """Convert value to string, treating NaN/None as empty."""
+            if val is None:
+                return ""
+            s = str(val).strip()
+            if s.lower() in ("nan", "none", "null", "na", "n/a"):
+                return ""
+            return s
+
         # Deduplicate by id — last occurrence wins
         seen: Dict[str, dict] = {}
         for _, row in geo_df.iterrows():
-            geo_id = str(row.get("address_id", ""))
+            geo_id = _clean(row.get("address_id"))
             key = f"{self._config.id}_{geo_id}"
             seen[key] = {
                 "id": key,
-                "description": str(row.get("name", "")),
-                "address_1": str(row.get("street", "")),
-                "city": str(row.get("city", "")),
-                "state_prov": str(row.get("region", "")),
-                "country": str(row.get("country", "")),
-                "postal_code": str(row.get("postal_code", "")),
+                "description": _clean(row.get("name")),
+                "address_1": _clean(row.get("street")),
+                "city": _clean(row.get("city")),
+                "state_prov": _clean(row.get("region")),
+                "country": _clean(row.get("country")),
+                "postal_code": _clean(row.get("postal_code")),
             }
 
         rows = list(seen.values())
 
-        # Geocode addresses to populate lat/lon
+        # Geocode unique (city, state, country) combinations only,
+        # then apply results back to all matching rows.
         if rows:
-            address_inputs = [
-                {
-                    "street": r.get("address_1", ""),
-                    "city": r.get("city", ""),
-                    "state": r.get("state_prov", ""),
-                    "country": r.get("country", ""),
-                    "postal_code": r.get("postal_code", ""),
-                }
-                for r in rows
-            ]
+            def _loc_key(r):
+                return (
+                    r.get("city", "").strip().lower(),
+                    r.get("state_prov", "").strip().lower(),
+                    r.get("country", "").strip().lower(),
+                )
+
+            # Build unique location set preserving original casing for display
+            unique_locs: Dict[tuple, dict] = {}
+            for r in rows:
+                key = _loc_key(r)
+                if key not in unique_locs:
+                    unique_locs[key] = {
+                        "city": r.get("city", ""),
+                        "state": r.get("state_prov", ""),
+                        "country": r.get("country", ""),
+                    }
+
+            unique_inputs = list(unique_locs.values())
+            logger.info(
+                f"Geocoding {len(unique_inputs)} unique locations "
+                f"(from {len(rows)} total addresses)"
+            )
+
+            def _addr_label(r):
+                parts = [r.get("city", ""), r.get("state", ""), r.get("country", "")]
+                return ", ".join(p.strip() for p in parts if p and p.strip()) or "Unknown"
+
+            if geocoding_callback:
+                import json as _json
+                addr_labels = [_addr_label(a) for a in unique_inputs]
+                await geocoding_callback(-1, len(unique_inputs), _json.dumps(addr_labels), "init")
+
             try:
-                coords = await geocode_batch(address_inputs)
-                geocoded = 0
-                for row, coord in zip(rows, coords):
+                coords = await geocode_batch(unique_inputs, progress_callback=geocoding_callback)
+
+                # Build lookup from unique key → coords
+                coord_lookup: Dict[tuple, Tuple[float, float]] = {}
+                for loc_dict, coord in zip(unique_inputs, coords):
                     if coord:
-                        row["latitude"] = coord[0]
-                        row["longitude"] = coord[1]
+                        k = (
+                            loc_dict["city"].strip().lower(),
+                            loc_dict["state"].strip().lower(),
+                            loc_dict["country"].strip().lower(),
+                        )
+                        coord_lookup[k] = coord
+
+                # Apply to all rows
+                geocoded = 0
+                for row in rows:
+                    c = coord_lookup.get(_loc_key(row))
+                    if c:
+                        row["latitude"] = c[0]
+                        row["longitude"] = c[1]
                         geocoded += 1
-                logger.info(f"Geocoded {geocoded}/{len(rows)} geography records")
+                logger.info(f"Geocoded {geocoded}/{len(rows)} geography records ({len(unique_inputs)} unique lookups)")
             except Exception as e:
                 logger.warning(f"Geocoding batch failed, continuing without coordinates: {e}")
 
         if rows:
+            # Ensure all rows have latitude/longitude keys (None if not geocoded)
+            for r in rows:
+                r.setdefault("latitude", None)
+                r.setdefault("longitude", None)
             stmt = pg_insert(Geography).values(rows)
             stmt = stmt.on_conflict_do_update(
                 index_elements=["id"],
@@ -2246,6 +2318,53 @@ class SAPConfigBuilder:
                             created.add((src_site.id, dst_site.id))
                             count += 1
 
+        # Fallback: if SAP sourcing/shipping data was sparse, ensure every
+        # SUPPLY_{region} connects to at least one plant and every plant
+        # connects to at least one DEMAND_{region}.  Without this, the Sankey
+        # diagram shows disconnected nodes.
+        plant_sites = {k: v for k, v in self._sites.items() if hasattr(v, 'master_type') and v.master_type == 'MANUFACTURER'}
+        if not plant_sites:
+            # Infer plants from naming (T001W plants have short numeric keys like "1710")
+            plant_sites = {k: v for k, v in self._sites.items() if not k.startswith("SUPPLY_") and not k.startswith("DEMAND_")}
+        supply_sites = {k: v for k, v in self._sites.items() if k.startswith("SUPPLY_")}
+        demand_sites = {k: v for k, v in self._sites.items() if k.startswith("DEMAND_")}
+
+        if plant_sites and (supply_sites or demand_sites):
+            before = count
+            for plant_key, plant_site in plant_sites.items():
+                for supply_key, supply_site in supply_sites.items():
+                    if (supply_site.id, plant_site.id) not in created:
+                        region = supply_key.replace("SUPPLY_", "")
+                        lt = avg_region_lt.get(region, 7)
+                        lane = TransportationLane(
+                            config_id=self._config.id,
+                            from_site_id=supply_site.id,
+                            to_site_id=plant_site.id,
+                            capacity=10000,
+                            lead_time_days={"min": max(1, lt - 2), "max": lt + 2},
+                            supply_lead_time={"type": "deterministic", "value": lt},
+                            demand_lead_time={"type": "deterministic", "value": 1},
+                        )
+                        self.db.add(lane)
+                        created.add((supply_site.id, plant_site.id))
+                        count += 1
+                for demand_key, demand_site in demand_sites.items():
+                    if (plant_site.id, demand_site.id) not in created:
+                        lane = TransportationLane(
+                            config_id=self._config.id,
+                            from_site_id=plant_site.id,
+                            to_site_id=demand_site.id,
+                            capacity=10000,
+                            lead_time_days={"min": 1, "max": 5},
+                            supply_lead_time={"type": "deterministic", "value": 2},
+                            demand_lead_time={"type": "deterministic", "value": 1},
+                        )
+                        self.db.add(lane)
+                        created.add((plant_site.id, demand_site.id))
+                        count += 1
+            if count > before:
+                logger.info(f"Fallback: created {count - before} default lanes for unconnected sites")
+
         await self.db.flush()
         logger.info(f"Created {count} transportation lanes")
         return count
@@ -2667,6 +2786,17 @@ class SAPConfigBuilder:
         if opts.get("include_quality_orders", True):
             counts["quality_orders"] = await self._create_quality_orders()
 
+        # Goods movements → Shipment records + InvLevel in-transit updates
+        if opts.get("include_goods_movements", True):
+            gm_counts = await self._create_goods_movements()
+            counts.update(gm_counts)
+
+        # Production order confirmations → actual quantities
+        if opts.get("include_production_confirmations", True):
+            conf_count = await self._create_production_confirmations()
+            if conf_count > 0:
+                counts["production_confirmations"] = conf_count
+
         # Also try PIR forecasts if step 8 didn't find APO data
         if opts.get("include_pir_forecasts", True):
             pir_count = await self._create_pir_forecasts()
@@ -2999,6 +3129,240 @@ class SAPConfigBuilder:
         await self.db.flush()
         logger.info(f"Created {count} quality orders")
         return count
+
+    async def _create_goods_movements(self) -> Dict[str, int]:
+        """Create Shipment records from MSEG/MKPF and update InvLevel with in-transit quantities.
+
+        SAP movement types mapped:
+        - 101: Goods receipt for PO → shipment status 'delivered'
+        - 121: Reversal of 101 → skip (handled by net calculation)
+        - 201: Goods issue for cost center → consumption (not a shipment)
+        - 261: Goods issue for production order → consumption (not a shipment)
+        - 301: Transfer posting plant-to-plant → in_transit shipment
+        - 303: Plant-to-plant transfer in same step → delivered transfer
+        - 311: Transfer posting SLoc-to-SLoc (same plant) → internal, skip
+        - 601: Goods issue for delivery (outbound) → in_transit shipment
+        - 641: Returns → skip
+        - 651: Returns delivery → skip
+        - 653: Returns delivery reversal → skip
+        - 101+316: Stock transfer receipt → clears in-transit
+        """
+        mseg = self._data.get("MSEG", pd.DataFrame())
+        mkpf = self._data.get("MKPF", pd.DataFrame())
+        if mseg.empty:
+            return {}
+
+        # Build MKPF header lookup: MBLNR → row (for posting dates)
+        mkpf_map: Dict[str, pd.Series] = {}
+        if not mkpf.empty and "MBLNR" in mkpf.columns:
+            for _, row in mkpf.iterrows():
+                mblnr = str(row.get("MBLNR", "")).strip()
+                if mblnr:
+                    mkpf_map[mblnr] = row
+
+        # Movement types that represent shipments (inter-site material flow)
+        SHIPMENT_MVTS = {
+            "101": "delivered",       # GR for PO — vendor→plant, completed
+            "301": "in_transit",      # Transfer posting plant-to-plant — in transit
+            "303": "delivered",       # Plant-to-plant same step — completed
+            "601": "in_transit",      # GI for delivery — plant→customer, in transit
+        }
+
+        # Clean up prior SAP-imported shipments for this config
+        await self.db.execute(sql_text(
+            "DELETE FROM shipment WHERE source = 'SAP_IMPORT' AND config_id = :cid"
+        ), {"cid": self._config.id})
+        await self.db.flush()
+
+        shipment_count = 0
+        # Track in-transit quantities per (product, site) for InvLevel updates
+        in_transit_by_product_site: Dict[Tuple[str, int], float] = {}
+
+        for _, row in mseg.iterrows():
+            bwart = str(row.get("BWART", "")).strip()
+            if bwart not in SHIPMENT_MVTS:
+                continue
+
+            matnr = str(row.get("MATNR", "")).strip()
+            werks = str(row.get("WERKS", "")).strip()
+            product_id = self._get_product_id(matnr)
+            from_site_id = self._get_site_id(werks)
+            if not product_id or not from_site_id:
+                continue
+
+            qty = float(pd.to_numeric(row.get("MENGE", 0), errors="coerce") or 0)
+            if qty <= 0:
+                continue
+
+            mblnr = str(row.get("MBLNR", "")).strip()
+            mjahr = str(row.get("MJAHR", "")).strip()
+            zeile = str(row.get("ZEILE", row.get("ZEESSION", "1"))).strip()
+            shkzg = str(row.get("SHKZG", "")).strip()  # S=debit(issue), H=credit(receipt)
+
+            # Determine from/to sites based on movement type
+            status = SHIPMENT_MVTS[bwart]
+            to_site_id = from_site_id  # default
+
+            if bwart in ("301", "303"):
+                # Plant-to-plant transfer: UMWRK = receiving plant
+                umwrk = str(row.get("UMWRK", "")).strip()
+                if umwrk:
+                    to_site_id = self._get_site_id(umwrk) or from_site_id
+                if to_site_id == from_site_id:
+                    continue  # Skip same-plant transfers
+            elif bwart == "601":
+                # Outbound delivery: to_site = customer (demand site)
+                kunnr = str(row.get("KUNNR", "")).strip()
+                if kunnr:
+                    to_site_id = self._get_site_id(kunnr)
+                if not to_site_id:
+                    # Try to find any demand site
+                    to_site_id = self._get_first_demand_site_id() or from_site_id
+            elif bwart == "101":
+                # GR for PO: from_site = vendor, to_site = plant (werks)
+                lifnr = str(row.get("LIFNR", "")).strip()
+                vendor_site_id = self._get_site_id(lifnr) if lifnr else None
+                if vendor_site_id:
+                    to_site_id = from_site_id
+                    from_site_id = vendor_site_id
+                else:
+                    # vendor not mapped as site — use first supply site
+                    supply_id = self._get_first_supply_site_id()
+                    if supply_id:
+                        to_site_id = from_site_id
+                        from_site_id = supply_id
+
+            # Get posting date from MKPF
+            header = mkpf_map.get(mblnr, pd.Series())
+            budat_str = str(row.get("BUDAT_MKPF", "")).strip()
+            if not budat_str and not header.empty:
+                budat_str = str(header.get("BUDAT", "")).strip()
+            ship_date = self._parse_sap_date(budat_str)
+
+            # PO reference for GR
+            ebeln = str(row.get("EBELN", "")).strip()
+            order_ref = f"SAP-PO-{ebeln}" if ebeln else f"SAP-MSEG-{mblnr}"
+
+            shipment_id = f"SAP-GMA-{mblnr}-{zeile}"
+
+            shipment = Shipment(
+                id=shipment_id,
+                description=f"SAP Mvt {bwart}: {matnr}",
+                order_id=order_ref,
+                order_line_number=int(pd.to_numeric(zeile, errors="coerce") or 1),
+                product_id=product_id,
+                quantity=qty,
+                uom=str(row.get("MEINS", "EA")).strip(),
+                from_site_id=from_site_id,
+                to_site_id=to_site_id,
+                status=status,
+                ship_date=datetime.combine(ship_date, datetime.min.time()) if ship_date else None,
+                config_id=self._config.id,
+                tenant_id=self.tenant_id,
+                source="SAP_IMPORT",
+                source_event_id=f"MSEG-{mblnr}-{mjahr}-{zeile}",
+                source_update_dttm=datetime.utcnow(),
+            )
+            self.db.add(shipment)
+            shipment_count += 1
+
+            # Track in-transit quantities
+            if status == "in_transit":
+                key = (product_id, to_site_id)
+                in_transit_by_product_site[key] = in_transit_by_product_site.get(key, 0) + qty
+
+        await self.db.flush()
+        logger.info(f"Created {shipment_count} shipment records from MSEG goods movements")
+
+        # Update InvLevel with in-transit quantities
+        inv_updates = 0
+        today = datetime.utcnow().date()
+        for (product_id, site_id), transit_qty in in_transit_by_product_site.items():
+            # Try to update existing InvLevel record
+            result = await self.db.execute(sql_text(
+                "UPDATE inv_level SET in_transit_qty = COALESCE(in_transit_qty, 0) + :qty "
+                "WHERE product_id = :pid AND site_id = :sid AND config_id = :cid "
+                "AND inventory_date = :dt"
+            ), {"qty": transit_qty, "pid": product_id, "sid": site_id,
+                "cid": self._config.id, "dt": today})
+            if result.rowcount == 0:
+                # Create new InvLevel record with in-transit
+                inv = InvLevel(
+                    product_id=product_id,
+                    site_id=site_id,
+                    config_id=self._config.id,
+                    inventory_date=today,
+                    on_hand_qty=0,
+                    in_transit_qty=transit_qty,
+                    source="SAP_IMPORT",
+                    source_event_id="MSEG_TRANSIT",
+                    source_update_dttm=datetime.utcnow(),
+                )
+                self.db.add(inv)
+            inv_updates += 1
+
+        await self.db.flush()
+        logger.info(f"Updated {inv_updates} InvLevel records with in-transit quantities")
+
+        return {"shipments": shipment_count, "inv_transit_updates": inv_updates}
+
+    async def _create_production_confirmations(self) -> int:
+        """Update ProductionOrder actual quantities from AFRU confirmations.
+
+        AFRU contains time/quantity confirmations for MO operations:
+        - LMNGA: Yield quantity (good output)
+        - XMNGA: Scrap quantity
+        - RMNGA: Rework quantity
+        - ISM01-ISM06: Activity quantities (machine time, labor time, etc.)
+        """
+        afru = self._data.get("AFRU", pd.DataFrame())
+        if afru.empty:
+            return 0
+
+        count = 0
+        # Aggregate yield by AUFNR
+        for aufnr, grp in afru.groupby(afru["AUFNR"].astype(str).str.strip()):
+            aufnr_clean = aufnr.lstrip("0") or "0"
+            order_number = f"SAP-MO-{aufnr_clean}"
+
+            yield_qty = float(pd.to_numeric(grp.get("LMNGA", pd.Series()), errors="coerce").fillna(0).sum())
+            scrap_qty = float(pd.to_numeric(grp.get("XMNGA", pd.Series()), errors="coerce").fillna(0).sum())
+
+            if yield_qty <= 0 and scrap_qty <= 0:
+                continue
+
+            result = await self.db.execute(sql_text(
+                "UPDATE production_orders SET actual_quantity = :yield, "
+                "extra_data = COALESCE(extra_data, '{}'::jsonb) || :scrap_json "
+                "WHERE order_number = :on AND config_id = :cid"
+            ), {
+                "yield": int(yield_qty),
+                "scrap_json": json.dumps({"sap_scrap_qty": scrap_qty}),
+                "on": order_number,
+                "cid": self._config.id,
+            })
+            if result.rowcount > 0:
+                count += 1
+
+        await self.db.flush()
+        logger.info(f"Updated {count} production orders with AFRU confirmations")
+        return count
+
+    def _get_first_demand_site_id(self) -> Optional[int]:
+        """Get ID of first MARKET_DEMAND site in config."""
+        for key, site in self._sites.items():
+            mt = getattr(site, "master_type", "")
+            if mt == "MARKET_DEMAND":
+                return site.id
+        return None
+
+    def _get_first_supply_site_id(self) -> Optional[int]:
+        """Get ID of first MARKET_SUPPLY site in config."""
+        for key, site in self._sites.items():
+            mt = getattr(site, "master_type", "")
+            if mt == "MARKET_SUPPLY":
+                return site.id
+        return None
 
     async def _create_pir_forecasts(self) -> int:
         """Create Forecast records from SAP Planned Independent Requirements (PBIM/PBED).

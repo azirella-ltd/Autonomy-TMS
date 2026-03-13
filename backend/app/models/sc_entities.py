@@ -758,6 +758,10 @@ class Shipment(Base):
     recommended_actions = Column(JSON)  # [{"action": "expedite", "impact": "...", "cost": "..."}]
     mitigation_status = Column(String(20))  # none, recommended, in_progress, completed
 
+    # Config / tenant context
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
+    tenant_id = Column(Integer, ForeignKey("tenants.id"))
+
     # Standard metadata
     source = Column(String(100))
     source_event_id = Column(String(100))
@@ -769,11 +773,13 @@ class Shipment(Base):
     from_site = relationship("Site", foreign_keys=[from_site_id])
     to_site = relationship("Site", foreign_keys=[to_site_id])
     transportation_lane = relationship("TransportationLane", foreign_keys=[transportation_lane_id])
+    config = relationship("SupplyChainConfig")
 
     __table_args__ = (
         Index('idx_shipment_status', 'status', 'expected_delivery_date'),
         Index('idx_shipment_risk', 'risk_level', 'status'),
         Index('idx_shipment_tracking', 'tracking_number', 'carrier_id'),
+        Index('idx_shipment_config', 'config_id'),
     )
 
 

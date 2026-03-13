@@ -123,6 +123,7 @@ class ConnectionResponse(BaseModel):
     is_validated: bool
     last_validated_at: Optional[datetime] = None
     validation_message: Optional[str] = None
+    file_table_mapping: Optional[List[dict]] = None
 
 
 class ConnectionTestResponse(BaseModel):
@@ -242,6 +243,7 @@ class JobResponse(BaseModel):
     total_rows_failed: int
     config_id: Optional[int] = None
     build_summary: Optional[Dict[str, Any]] = None
+    table_status: Optional[Dict[str, Any]] = None
     error_message: Optional[str] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
@@ -329,6 +331,7 @@ def _config_to_response(c) -> ConnectionResponse:
         is_validated=c.is_validated,
         last_validated_at=c.last_validated_at,
         validation_message=c.validation_message,
+        file_table_mapping=getattr(c, "file_table_mapping", None),
     )
 
 
@@ -395,9 +398,25 @@ async def test_connection(
     current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Test an SAP connection."""
+    """Test an SAP connection.
+
+    For CSV connections, also scans the directory, identifies SAP tables from
+    file headers, and stores the mapping on the connection for review.
+    """
     service = create_deployment_service(db, current_user.tenant_id)
     success, message = await service.test_connection(connection_id)
+
+    # For CSV connections, also identify files and store the mapping
+    if success:
+        conn_row = await service._get_connection_row(connection_id)
+        if conn_row and conn_row.connection_method == "csv" and conn_row.csv_directory:
+            file_mapping = _scan_and_identify_csv_files(conn_row.csv_directory)
+            conn_row.file_table_mapping = file_mapping
+            await db.commit()
+            identified = sum(1 for m in file_mapping if m.get("table"))
+            total = len(file_mapping)
+            message += f" | Identified {identified}/{total} CSV files as SAP tables."
+
     return ConnectionTestResponse(success=success, message=message)
 
 
@@ -464,6 +483,209 @@ async def delete_connection(
     await db.delete(row)
     await db.commit()
     return {"status": "deleted", "id": connection_id}
+
+
+# -------------------------------------------------------------------------
+# CSV File Identification (content-based)
+# -------------------------------------------------------------------------
+
+class FileIdentification(BaseModel):
+    filename: str
+    identified_table: Optional[str] = None
+    confidence: float = 0.0
+    row_count: int = 0
+    columns: List[str] = []
+    confirmed: bool = False
+
+
+class FileMappingUpdate(BaseModel):
+    filename: str
+    table: Optional[str] = None
+    confirmed: bool = True
+
+
+def _identify_sap_table(csv_columns: set) -> tuple:
+    """Match CSV columns to known SAP table using Jaccard-like similarity.
+
+    Returns (table_name, confidence) where confidence is the fraction
+    of known table columns found in the CSV header.
+    """
+    from app.services.sap_field_mapping_service import SAP_TABLE_FIELD_MAPPINGS
+
+    best_table = None
+    best_score = 0.0
+    csv_upper = {c.upper() for c in csv_columns}
+
+    for table_name, field_map in SAP_TABLE_FIELD_MAPPINGS.items():
+        known_cols = {c.upper() for c in field_map.keys()}
+        if not known_cols:
+            continue
+        intersection = csv_upper & known_cols
+        # Score = fraction of known columns found in the CSV
+        score = len(intersection) / len(known_cols) if known_cols else 0.0
+        if score > best_score:
+            best_score = score
+            best_table = table_name
+
+    return best_table, best_score
+
+
+def _scan_and_identify_csv_files(csv_dir: str) -> List[dict]:
+    """Scan a CSV directory, read headers, and identify SAP tables.
+
+    Returns list of dicts with keys: filename, table, confidence, row_count, columns, confirmed.
+    Files with confidence >= 0.7 are auto-confirmed.
+    """
+    import csv as csv_mod
+    from app.services.sap_ingestion_monitoring_service import SAPIngestionMonitoringService
+
+    csv_path = Path(csv_dir)
+    if not csv_path.exists():
+        return []
+
+    results: List[dict] = []
+
+    for csv_file in sorted(csv_path.glob("*.csv")):
+        try:
+            with open(csv_file, "r", newline="", encoding="utf-8-sig") as f:
+                reader = csv_mod.reader(f)
+                header = next(reader, None)
+                if not header:
+                    results.append({
+                        "filename": csv_file.name,
+                        "table": None,
+                        "confidence": 0.0,
+                        "row_count": 0,
+                        "columns": [],
+                        "confirmed": False,
+                    })
+                    continue
+
+                row_count = sum(1 for _ in reader)
+
+            columns = [c.strip() for c in header]
+            table_name, confidence = _identify_sap_table(set(columns))
+            confidence = round(confidence, 4)
+
+            results.append({
+                "filename": csv_file.name,
+                "table": table_name,
+                "confidence": confidence,
+                "row_count": row_count,
+                "columns": columns,
+                "confirmed": confidence >= 0.7,
+            })
+        except Exception as e:
+            logger.warning(f"Failed to read CSV header from {csv_file}: {e}")
+            results.append({
+                "filename": csv_file.name,
+                "table": None,
+                "confidence": 0.0,
+                "row_count": 0,
+                "columns": [],
+                "confirmed": False,
+            })
+
+    # Sort by table dependency order
+    priority_map = SAPIngestionMonitoringService._TABLE_PRIORITY
+    results.sort(key=lambda r: priority_map.get(r.get("table") or "", 999))
+
+    return results
+
+
+@router.post(
+    "/connections/{connection_id}/identify-files",
+    response_model=List[FileIdentification],
+    tags=["sap-connections"],
+)
+async def identify_csv_files(
+    connection_id: int,
+    current_user: User = Depends(require_tenant_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Identify SAP tables from CSV file headers using column-name matching.
+
+    Reads only the header row (and counts lines) for each .csv file in the
+    connection's configured CSV directory, then matches columns against
+    SAP_TABLE_FIELD_MAPPINGS to determine which SAP table each file contains.
+    Results are sorted by table dependency order (_TABLE_PRIORITY).
+
+    Note: file identification also runs automatically during connection testing.
+    This endpoint can be used to re-scan without re-testing the connection.
+    """
+    service = create_deployment_service(db, current_user.tenant_id)
+    row = await service._get_connection_row(connection_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    csv_directory = row.csv_directory
+    if not csv_directory:
+        raise HTTPException(status_code=400, detail="Connection has no CSV directory configured")
+
+    csv_dir = Path(csv_directory)
+    if not csv_dir.exists():
+        raise HTTPException(status_code=400, detail=f"CSV directory not found: {csv_directory}")
+
+    mapping = _scan_and_identify_csv_files(str(csv_dir))
+
+    # Persist the mapping on the connection
+    row.file_table_mapping = mapping
+    await db.commit()
+
+    return [
+        FileIdentification(
+            filename=m["filename"],
+            identified_table=m["table"],
+            confidence=m["confidence"],
+            row_count=m["row_count"],
+            columns=m["columns"],
+            confirmed=m["confirmed"],
+        )
+        for m in mapping
+    ]
+
+
+@router.post(
+    "/connections/{connection_id}/confirm-file-mapping",
+    tags=["sap-connections"],
+)
+async def confirm_file_mapping(
+    connection_id: int,
+    updates: List[FileMappingUpdate],
+    current_user: User = Depends(require_tenant_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update file-to-table mappings on a connection.
+
+    Allows the user to confirm auto-identified mappings, override them with
+    a different table name, or set table to null to skip a file during ingestion.
+    """
+    service = create_deployment_service(db, current_user.tenant_id)
+    row = await service._get_connection_row(connection_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    current_mapping = row.file_table_mapping or []
+
+    # Index current mapping by filename for fast lookup
+    mapping_by_file = {m["filename"]: m for m in current_mapping}
+
+    for update in updates:
+        if update.filename not in mapping_by_file:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File not found in mapping: {update.filename}. "
+                       f"Run connection test or identify-files first.",
+            )
+        entry = mapping_by_file[update.filename]
+        entry["table"] = update.table
+        entry["confirmed"] = update.confirmed
+
+    # Write back the full list (preserving order)
+    row.file_table_mapping = list(mapping_by_file.values())
+    await db.commit()
+
+    return {"status": "updated", "files_updated": len(updates)}
 
 
 # -------------------------------------------------------------------------
@@ -690,6 +912,55 @@ async def get_table_fields_with_mapping(
                     })
             except Exception as e:
                 logger.warning(f"Failed to read CSV headers from {csv_file}: {e}")
+    elif connection.connection_method == ConnectionMethod.HANA_DB:
+        # Query actual column metadata from HANA information schema
+        from app.services.sap_deployment_service import _decrypt_password
+        password = _decrypt_password(row.sap_password_encrypted) if row.sap_password_encrypted else ""
+        hana_port = connection.hana_port or 30215
+        hana_schema = (connection.hana_schema or "SAPHANADB").upper()
+
+        import asyncio
+        def _get_hana_columns():
+            from hdbcli import dbapi
+            conn = dbapi.connect(
+                address=connection.hostname,
+                port=hana_port,
+                user=connection.user,
+                password=password,
+            )
+            cursor = conn.cursor()
+            cursor.execute(
+                'SELECT COLUMN_NAME, DATA_TYPE_NAME, LENGTH, COMMENTS '
+                'FROM TABLE_COLUMNS '
+                'WHERE SCHEMA_NAME = ? AND TABLE_NAME = ? '
+                'ORDER BY POSITION',
+                (hana_schema, table_name.upper()),
+            )
+            cols = cursor.fetchall()
+            cursor.close()
+            conn.close()
+            return cols
+
+        try:
+            hana_cols = await asyncio.to_thread(_get_hana_columns)
+            for col_name, data_type, length, comments in hana_cols:
+                desc = comments if comments else col_name
+                fields_input.append({
+                    "field_name": col_name.strip().upper(),
+                    "field_type": data_type or "CHAR",
+                    "field_description": desc,
+                })
+        except Exception as e:
+            logger.warning(f"Failed to query HANA columns for {table_name}: {e}")
+            # Fall back to key_fields
+            from app.services.sap_deployment_service import STANDARD_SAP_TABLES as _STD
+            system_tables = _STD.get(
+                connection.system_type.value if hasattr(connection.system_type, "value") else connection.system_type,
+                {},
+            )
+            table_info = system_tables.get(table_name, {})
+            for kf in table_info.get("key_fields", []):
+                fields_input.append({"field_name": kf, "field_type": "CHAR", "field_description": kf})
     else:
         # Use known SAP table field definitions
         from app.services.sap_deployment_service import STANDARD_SAP_TABLES as _STD
@@ -948,6 +1219,7 @@ def _job_to_response(job) -> JobResponse:
         total_rows_failed=job.total_rows_failed,
         config_id=job.config_id,
         build_summary=job.build_summary,
+        table_status=job.table_status,
         error_message=job.error_message,
         started_at=job.started_at,
         completed_at=job.completed_at,
@@ -965,7 +1237,12 @@ async def create_job(
     current_user: User = Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Create a new ingestion job."""
+    """Create a new ingestion job.
+
+    If ``tables`` is ``["from_mapping"]``, the job's table list is populated
+    from the connection's ``file_table_mapping`` (confirmed entries with a
+    non-null table, sorted by ``_TABLE_PRIORITY``).
+    """
     service = create_ingestion_monitoring_service(db, current_user.tenant_id)
 
     try:
@@ -978,10 +1255,34 @@ async def create_job(
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Invalid phase: {request.phase}. Must be: master_data, cdc, transaction")
 
+    tables = request.tables
+
+    # Resolve tables from connection's file_table_mapping
+    if tables == ["from_mapping"]:
+        deploy_service = create_deployment_service(db, current_user.tenant_id)
+        conn_row = await deploy_service._get_connection_row(request.connection_id)
+        if not conn_row:
+            raise HTTPException(status_code=404, detail="Connection not found")
+        mapping = conn_row.file_table_mapping or []
+        tables = [
+            entry["table"]
+            for entry in mapping
+            if entry.get("confirmed") and entry.get("table")
+        ]
+        if not tables:
+            raise HTTPException(
+                status_code=400,
+                detail="No confirmed file mappings found. Test the connection first, "
+                       "then confirm the file-to-table mapping.",
+            )
+        # Sort by dependency priority
+        priority_map = SAPIngestionMonitoringService._TABLE_PRIORITY
+        tables.sort(key=lambda t: priority_map.get(t, 999))
+
     job = await service.create_job(
         connection_id=request.connection_id,
         job_type=job_type,
-        tables=request.tables,
+        tables=tables,
         phase=phase,
     )
 
@@ -1009,9 +1310,53 @@ async def start_job(
     return _job_to_response(job)
 
 
-def _find_csv_file(csv_dir: "Path", table_name: str) -> "Optional[Path]":
-    """Find a CSV file for a table name (handles descriptive suffixes like MARC_material_plant.csv)."""
+@router.post("/jobs/{job_id}/rerun", response_model=JobResponse, tags=["sap-ingestion"])
+async def rerun_job(
+    job_id: int,
+    current_user: User = Depends(require_tenant_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rerun a completed/failed/cancelled ingestion job.
+
+    Resets all progress stats (rows, progress, timestamps, errors, build results)
+    and relaunches the ingestion pipeline from scratch.
+    """
+    service = create_ingestion_monitoring_service(db, current_user.tenant_id)
+    job = await service.rerun_job(job_id)
+
+    # Launch actual background ingestion
+    import asyncio
+    asyncio.create_task(_run_ingestion(job_id, current_user.tenant_id))
+
+    return _job_to_response(job)
+
+
+def _find_csv_file(
+    csv_dir: "Path",
+    table_name: str,
+    file_table_mapping: Optional[List[dict]] = None,
+) -> "Optional[Path]":
+    """Find a CSV file for a table name.
+
+    If file_table_mapping is provided (from connection test), uses it to look up
+    the confirmed filename for the given table. Falls back to filename-based
+    matching (exact, prefix, substring) if no mapping entry is found.
+    """
     from pathlib import Path
+
+    # Check file_table_mapping first (populated during connection test)
+    if file_table_mapping:
+        for entry in file_table_mapping:
+            if (
+                entry.get("table")
+                and entry["table"].upper() == table_name.upper()
+                and entry.get("confirmed")
+            ):
+                mapped_file = csv_dir / entry["filename"]
+                if mapped_file.exists():
+                    return mapped_file
+
+    # Fallback: filename-based matching
     tn_upper = table_name.upper()
     # Exact match first
     for f in csv_dir.glob("*.csv"):
@@ -1029,7 +1374,12 @@ def _find_csv_file(csv_dir: "Path", table_name: str) -> "Optional[Path]":
 
 
 async def _read_csv_tables(
-    csv_dir: "Path", tables: list, job_id: int, tenant_id: int, service
+    csv_dir: "Path",
+    tables: list,
+    job_id: int,
+    tenant_id: int,
+    service,
+    file_table_mapping: Optional[List[dict]] = None,
 ) -> "Tuple[Dict[str, Any], int, int]":
     """Read CSV files for all tables, updating progress. Returns (sap_data, total_rows, total_failed)."""
     import pandas as pd
@@ -1051,7 +1401,7 @@ async def _read_csv_tables(
             logger.info(f"Job {job_id} was cancelled, stopping")
             return sap_data, total_rows, total_failed
 
-        csv_file = _find_csv_file(csv_dir, table_name)
+        csv_file = _find_csv_file(csv_dir, table_name, file_table_mapping)
         rows_processed = 0
         rows_failed = 0
 
@@ -1168,7 +1518,8 @@ async def _run_ingestion(job_id: int, tenant_id: int):
                         error_message=f"CSV directory not found: {connection.csv_directory}")
                     return
                 sap_data, total_rows, total_failed = await _read_csv_tables(
-                    csv_dir, job.tables, job_id, tenant_id, service
+                    csv_dir, job.tables, job_id, tenant_id, service,
+                    file_table_mapping=conn_row.file_table_mapping,
                 )
 
             elif connection.connection_method in (
@@ -1223,6 +1574,59 @@ async def _run_phase1_master_data(db, service, job_id: int, tenant_id: int, sap_
     builder = SAPConfigBuilder(db, tenant_id)
     config_name = builder.suggest_config_name(sap_data)
 
+    from sqlalchemy import text as sql_text
+
+    async def _build_progress(step: int, total: int, description: str):
+        """Report build step progress to the job record."""
+        import json as _json
+        summary_patch = _json.dumps({"build_step": step, "build_total": total, "build_description": description})
+        await db.execute(sql_text("""
+            UPDATE sap_ingestion_jobs
+            SET current_table = :desc,
+                build_summary = (COALESCE(build_summary::jsonb, '{}'::jsonb) || (:summary_patch)::jsonb)::json,
+                updated_at = NOW()
+            WHERE id = :jid AND tenant_id = :tid
+        """), {"desc": description, "summary_patch": summary_patch, "jid": job_id, "tid": tenant_id})
+        await db.commit()
+
+    _geocoding_done_count = 0
+
+    async def _geocoding_progress(index: int, total: int, label: str, status: str):
+        """Report per-address geocoding progress to the job record.
+
+        status="init": label is JSON list of all address labels (sent once before geocoding starts)
+        status="in_progress": address at `index` is being geocoded now
+        status="completed"/"failed": address at `index` finished
+        """
+        nonlocal _geocoding_done_count
+        import json as _json
+        if status == "init":
+            # Store full address list; frontend uses geocoding_done to derive per-item status
+            geo_patch = _json.dumps({
+                "geocoding_total": total,
+                "geocoding_addresses": _json.loads(label),
+                "geocoding_done": 0,
+                "geocoding_active": -1,
+            })
+        elif status == "in_progress":
+            geo_patch = _json.dumps({
+                "geocoding_active": index,
+            })
+        else:
+            # completed or failed
+            _geocoding_done_count += 1
+            geo_patch = _json.dumps({
+                "geocoding_done": _geocoding_done_count,
+                "geocoding_active": index if status == "in_progress" else -1,
+            })
+        await db.execute(sql_text("""
+            UPDATE sap_ingestion_jobs
+            SET build_summary = (COALESCE(build_summary::jsonb, '{}'::jsonb) || (:geo_patch)::jsonb)::json,
+                updated_at = NOW()
+            WHERE id = :jid AND tenant_id = :tid
+        """), {"geo_patch": geo_patch, "jid": job_id, "tid": tenant_id})
+        await db.commit()
+
     try:
         result = await builder.build(
             sap_data=sap_data,
@@ -1233,6 +1637,8 @@ async def _run_phase1_master_data(db, service, job_id: int, tenant_id: int, sap_
                 "default_inv_policy": "doc_dem",
                 "default_safety_days": 14,
             },
+            progress_callback=_build_progress,
+            geocoding_callback=_geocoding_progress,
         )
 
         # Store the build result on the job
@@ -2102,17 +2508,23 @@ async def analyze_z_table_deep(
 STANDARD_SAP_TABLES = [
     # Master data
     "T001", "T001W", "T001L", "MARA", "MAKT", "MARC", "MBEW", "MARD", "MARM",
-    "STKO", "STPO", "LFA1", "KNA1", "EORD", "EINA", "EINE",
-    "CRHD", "PLKO", "PLPO", "ADRC",
+    "MVKE", "STKO", "STPO", "LFA1", "KNA1", "KNVV", "EORD", "EINA", "EINE",
+    "CRHD", "CRCO", "PLKO", "PLPO", "ADRC",
     # Transactional data (orders)
-    "VBAK", "VBAP", "VBEP", "EKKO", "EKPO", "EKET",
-    "LIKP", "LIPS", "AFKO", "AFPO", "RESB",
+    "VBAK", "VBAP", "VBEP", "EKKO", "EKPO", "EKET", "EKBE",
+    "LIKP", "LIPS", "AFKO", "AFPO", "AFVC", "AFRU", "RESB",
+    # Goods movements (in-transit visibility)
+    "MKPF", "MSEG",
+    # Pricing conditions
+    "KONV",
     # Status & quality
-    "JEST", "TJ02T", "QMEL", "QALS",
-    # Forecasts (PIR)
-    "PBIM", "PBED",
+    "JEST", "TJ02T", "QMEL", "QALS", "QASE",
+    # Forecasts (PIR) & planned orders
+    "PBIM", "PBED", "PLAF",
     # Equipment / maintenance
     "EQUI", "AUFK",
+    # Change audit trail
+    "CDHDR", "CDPOS",
     # APO tables (if available)
     "/SAPAPO/LOC", "/SAPAPO/SNPFC", "/SAPAPO/MATLOC",
     "/SAPAPO/TRLANE", "/SAPAPO/PDS", "/SAPAPO/SNPBV",
@@ -2186,16 +2598,99 @@ async def _load_sap_data(
                 password=password,
             )
             result = {}
+            s = f'"{hana_schema}"'
+
+            # Step 1: Discover company codes and plants for smart filtering
+            try:
+                t001_df = pd.read_sql(f'SELECT * FROM {s}."T001"', conn)
+                t001_df.columns = [c.upper().strip() for c in t001_df.columns]
+                if not t001_df.empty:
+                    result["T001"] = t001_df
+            except Exception:
+                pass
+
+            plants = []
+            company_codes = []
+            try:
+                t001w_df = pd.read_sql(f'SELECT * FROM {s}."T001W"', conn)
+                t001w_df.columns = [c.upper().strip() for c in t001w_df.columns]
+                if not t001w_df.empty:
+                    result["T001W"] = t001w_df
+                    plants = t001w_df["WERKS"].dropna().unique().tolist()
+                    if "BUKRS" in t001w_df.columns:
+                        company_codes = t001w_df["BUKRS"].dropna().unique().tolist()
+            except Exception:
+                pass
+
+            # Build plant filter SQL fragment
+            if plants:
+                plant_list = ",".join(f"'{p}'" for p in plants)
+            else:
+                plant_list = "''"
+            if company_codes:
+                bukrs_list = ",".join(f"'{b}'" for b in company_codes)
+            else:
+                bukrs_list = "''"
+
+            # Smart filter map: table → WHERE clause using discovered plants/company codes
+            _HANA_FILTERS = {
+                "MARC": f'"WERKS" IN ({plant_list})',
+                "MARD": f'"WERKS" IN ({plant_list})',
+                "MBEW": f'"BWKEY" IN ({plant_list})',
+                "MARA": f'"MATNR" IN (SELECT DISTINCT "MATNR" FROM {s}."MARC" WHERE "WERKS" IN ({plant_list}))',
+                "MAKT": f'"MATNR" IN (SELECT DISTINCT "MATNR" FROM {s}."MARC" WHERE "WERKS" IN ({plant_list})) AND "SPRAS" = \'E\'',
+                "MARM": f'"MATNR" IN (SELECT DISTINCT "MATNR" FROM {s}."MARC" WHERE "WERKS" IN ({plant_list}))',
+                "MVKE": f'"MATNR" IN (SELECT DISTINCT "MATNR" FROM {s}."MARC" WHERE "WERKS" IN ({plant_list}))',
+                "T001L": f'"WERKS" IN ({plant_list})',
+                "EORD": f'"WERKS" IN ({plant_list})',
+                "EBAN": f'"WERKS" IN ({plant_list})',
+                "CRHD": f'"WERKS" IN ({plant_list})',
+                "PLKO": f'"WERKS" IN ({plant_list})',
+                "PLPO": f'"WERKS" IN ({plant_list})',
+                "PBIM": f'"WERKS" IN ({plant_list})',
+                "PLAF": f'"PLWRK" IN ({plant_list})',
+                "EKKO": f'"BUKRS" IN ({bukrs_list})',
+                "EKPO": f'"WERKS" IN ({plant_list})',
+                "EKET": f'"EBELN" IN (SELECT DISTINCT "EBELN" FROM {s}."EKPO" WHERE "WERKS" IN ({plant_list}))',
+                "VBAP": f'"WERKS" IN ({plant_list})',
+                "VBAK": f'"VBELN" IN (SELECT DISTINCT "VBELN" FROM {s}."VBAP" WHERE "WERKS" IN ({plant_list}))',
+                "LIKP": f'"VBELN" IN (SELECT DISTINCT "VBELN" FROM {s}."LIPS" WHERE "WERKS" IN ({plant_list}))',
+                "LIPS": f'"WERKS" IN ({plant_list})',
+                "AFPO": f'"PWERK" IN ({plant_list})',
+                "AFKO": f'"AUFNR" IN (SELECT DISTINCT "AUFNR" FROM {s}."AFPO" WHERE "PWERK" IN ({plant_list}))',
+                "AFVC": f'"AUFPL" IN (SELECT DISTINCT "AUFPL" FROM {s}."AFKO" WHERE "AUFNR" IN (SELECT DISTINCT "AUFNR" FROM {s}."AFPO" WHERE "PWERK" IN ({plant_list})))',
+                "AFRU": f'"AUFNR" IN (SELECT DISTINCT "AUFNR" FROM {s}."AFPO" WHERE "PWERK" IN ({plant_list}))',
+                "RESB": f'"WERKS" IN ({plant_list})',
+                "MKPF": f'"BUDAT" >= ADD_DAYS(CURRENT_DATE, -365)',
+                "MSEG": f'"WERKS" IN ({plant_list}) AND "MBLNR" IN (SELECT "MBLNR" FROM {s}."MKPF" WHERE "BUDAT" >= ADD_DAYS(CURRENT_DATE, -365))',
+                "EKBE": f'"EBELN" IN (SELECT DISTINCT "EBELN" FROM {s}."EKPO" WHERE "WERKS" IN ({plant_list}))',
+                "VBEP": f'"VBELN" IN (SELECT DISTINCT "VBELN" FROM {s}."VBAP" WHERE "WERKS" IN ({plant_list}))',
+                "KONV": f'"KNUMV" IN (SELECT DISTINCT "KNUMV" FROM {s}."EKKO" WHERE "BUKRS" IN ({bukrs_list}))',
+                "PLAF": f'"PLWRK" IN ({plant_list})',
+                "CDHDR": f'"UDATE" >= ADD_DAYS(CURRENT_DATE, -365)',
+                "CDPOS": f'"OBJECTID" IN (SELECT "OBJECTID" FROM {s}."CDHDR" WHERE "UDATE" >= ADD_DAYS(CURRENT_DATE, -365))',
+                "MAKT": '"SPRAS" = \'E\'',
+                "TJ02T": '"SPRAS" = \'E\'',
+                "PBED": f'"BESSION" IN (SELECT DISTINCT "BESSION" FROM {s}."PBIM" WHERE "WERKS" IN ({plant_list}))',
+            }
+
+            # Step 2: Extract remaining tables with smart filters
             for table in STANDARD_SAP_TABLES:
-                # APO tables use / prefix which needs quoting
-                qualified = f'"{hana_schema}"."{table}"'
+                if table in ("T001", "T001W"):
+                    continue  # Already extracted
+                qualified = f'{s}."{table}"'
+                where = _HANA_FILTERS.get(table, "")
+                sql = f"SELECT * FROM {qualified}"
+                if where:
+                    sql += f" WHERE {where}"
                 try:
-                    df = pd.read_sql(f"SELECT * FROM {qualified}", conn)
+                    df = pd.read_sql(sql, conn)
                     df.columns = [c.upper().strip() for c in df.columns]
                     if not df.empty:
                         result[table] = df
-                except Exception:
-                    pass  # Table may not exist in this system
+                        logger.info(f"HANA: {table} → {len(df)} rows")
+                except Exception as exc:
+                    logger.debug(f"HANA: {table} skipped — {exc}")
             conn.close()
             return result
 

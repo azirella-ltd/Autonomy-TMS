@@ -215,12 +215,14 @@ class OpenAIResponsesAgent:
         }
 
         while True:
+            tools_list = self._tools.as_openai_tools()
             request_kwargs = {
                 "model": self._model,
                 "instructions": self._instructions,
                 "input": conversation,
-                "tools": self._tools.as_openai_tools() or None,
             }
+            if tools_list:
+                request_kwargs["tools"] = tools_list
             try:
                 response = self._client.responses.create(
                     **request_kwargs,

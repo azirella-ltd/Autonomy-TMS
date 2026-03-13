@@ -327,7 +327,7 @@ const SupplyChainConfigList = ({
             <span className="font-semibold">{config.name}</span>
           </TableCell>
           <TableCell>
-            <span className="text-sm text-muted-foreground" title={config.description || 'No description provided'}>
+            <span className="text-sm text-muted-foreground line-clamp-2" title={config.description || 'No description provided'}>
               {config.description || 'No description provided'}
             </span>
           </TableCell>
@@ -352,8 +352,8 @@ const SupplyChainConfigList = ({
               </Badge>
             )}
           </TableCell>
-          <TableCell className="text-right">
-            <div className="flex items-center justify-end gap-1">
+          <TableCell className="text-right px-1">
+            <div className="flex items-center justify-end gap-0">
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -531,14 +531,14 @@ const SupplyChainConfigList = ({
           )}
         </div>
 
-        <Table>
+        <Table className="table-fixed w-full">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[20%]">Name</TableHead>
-              <TableHead className="w-[40%]">Description</TableHead>
-              <TableHead className="w-[12%]">Time Bucket</TableHead>
-              <TableHead className="w-[13%]">Status</TableHead>
-              <TableHead className="w-[15%] text-right">Actions</TableHead>
+              <TableHead style={{ width: 200 }}>Name</TableHead>
+              <TableHead style={{ width: 200 }}>Description</TableHead>
+              <TableHead style={{ width: 70 }}>Bucket</TableHead>
+              <TableHead style={{ width: 110 }}>Status</TableHead>
+              <TableHead className="text-right" style={{ width: 130 }}>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
