@@ -204,7 +204,7 @@ class Product(Base):
     source_update_dttm = Column(DateTime)
 
     # Simulation extensions
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
     priority = Column(Integer)
     unit_cost_range = Column(JSON)
 
@@ -260,7 +260,7 @@ class SourcingRules(Base):
     source_update_dttm = Column(DateTime)
 
     # Simulation extensions
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
 
     # Relationships
     company = relationship("Company", back_populates="sourcing_rules")
@@ -326,7 +326,7 @@ class InvPolicy(Base):
     source_update_dttm = Column(DateTime)
 
     # Simulation extensions
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
     inventory_target_range = Column(JSON)
     initial_inventory_range = Column(JSON)
     holding_cost_range = Column(JSON)
@@ -374,7 +374,7 @@ class InvLevel(Base):
     source_update_dttm = Column(DateTime)
 
     # Simulation extensions
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))
     round_number = Column(Integer)
     backorder_qty = Column(Double)       # Unfulfilled demand carried as backorder
@@ -450,7 +450,7 @@ class ProductBom(Base):
     source_update_dttm = Column(DateTime)
 
     # Simulation extensions
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
 
     # MPS Key Material Extension
     # Flag indicating if this component is a key/critical material that should be
@@ -498,7 +498,7 @@ class ProductionProcess(Base):
     source_update_dttm = Column(DateTime)
 
     # Simulation extensions
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
     manufacturing_leadtime = Column(Integer, default=0)
     manufacturing_capacity_hours = Column(Double)
 
@@ -553,7 +553,7 @@ class SupplyPlan(Base):
     source_update_dttm = Column(DateTime)
 
     # Simulation extensions
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))
     round_number = Column(Integer)
 
@@ -618,7 +618,7 @@ class Forecast(Base):
     source_update_dttm = Column(DateTime)
 
     # Simulation extensions
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))
     demand_pattern = Column(JSON)  # Classic simulation demand patterns
 
@@ -644,7 +644,7 @@ class Reservation(Base):
     reserved_quantity = Column(Double, nullable=False)
     reservation_type = Column(String(50))  # component, customer_order, transfer
     reference_id = Column(String(100))
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))
     created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
 
@@ -674,7 +674,7 @@ class OutboundOrderLine(Base):
     ordered_quantity = Column(Double, nullable=False)
     requested_delivery_date = Column(Date, nullable=False)
     order_date = Column(Date)
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))
 
     # Simulation execution extensions
@@ -820,7 +820,7 @@ class InboundOrder(Base):
     contract_id = Column(String(100))
 
     # Config
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
 
     # Metadata
     source = Column(String(100))
@@ -1604,7 +1604,7 @@ class Backorder(Base):
     supply_commit_id = Column(Integer)  # FK to planning cascade supply commit
 
     # Config/scenario context
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
     scenario_id = Column(Integer, ForeignKey("scenarios.id"))
 
     # Source tracking
@@ -1701,7 +1701,7 @@ class FinalAssemblySchedule(Base):
     priority = Column(Integer, server_default=text("3"))
 
     # Config/scenario context
-    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"))
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
 
     # Source tracking
     source = Column(String(100))

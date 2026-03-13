@@ -73,7 +73,7 @@ class SupplyDemandPegging(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
 
     # Ownership
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False)
 
     # Product & site where pegging occurs
@@ -177,7 +177,7 @@ class AATPConsumptionRecord(Base):
 
     # Context
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True)
 
     consumed_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 

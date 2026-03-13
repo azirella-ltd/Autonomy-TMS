@@ -106,7 +106,7 @@ class PowellTrainingConfig(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # Ownership
-    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     config_id: Mapped[int] = mapped_column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False)
 
     name: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -509,7 +509,7 @@ class TRMBaseModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     master_type: Mapped[str] = mapped_column(String(50), nullable=False)
     trm_type: Mapped[str] = mapped_column(
         SAEnum(TRMType, name="trm_type_enum", create_constraint=False),

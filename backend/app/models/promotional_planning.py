@@ -62,7 +62,7 @@ class Promotion(Base):
     __tablename__ = "promotions"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=True)
 
     # --- Core fields ---
@@ -131,7 +131,7 @@ class PromotionHistory(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     promotion_id = Column(Integer, ForeignKey("promotions.id"), nullable=False)
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     action = Column(String(50), nullable=False)  # created, updated, approved, activated, completed, cancelled
     changed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     changes = Column(JSON, nullable=True)  # diff of what changed

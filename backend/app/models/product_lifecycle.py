@@ -68,7 +68,7 @@ class ProductLifecycle(Base):
     __tablename__ = "product_lifecycle"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=True)
 
     # --- AWS SC product reference ---
@@ -121,7 +121,7 @@ class NPIProject(Base):
     __tablename__ = "npi_projects"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=True)
     lifecycle_id = Column(Integer, ForeignKey("product_lifecycle.id"), nullable=True)
 
@@ -187,7 +187,7 @@ class EOLPlan(Base):
     __tablename__ = "eol_plans"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=True)
     lifecycle_id = Column(Integer, ForeignKey("product_lifecycle.id"), nullable=True)
 
@@ -254,7 +254,7 @@ class MarkdownPlan(Base):
     __tablename__ = "markdown_plans"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=True)
     eol_plan_id = Column(Integer, ForeignKey("eol_plans.id"), nullable=True)
 
@@ -313,7 +313,7 @@ class LifecycleHistory(Base):
     __tablename__ = "lifecycle_history"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     entity_type = Column(String(30), nullable=False)  # lifecycle, npi, eol, markdown
     entity_id = Column(Integer, nullable=False)
     action = Column(String(50), nullable=False)

@@ -35,7 +35,7 @@ class PowellEscalationLog(Base):
     __tablename__ = "powell_escalation_log"
 
     id = Column(Integer, primary_key=True, index=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     site_key = Column(String(100), nullable=False)
 
     # Escalation verdict

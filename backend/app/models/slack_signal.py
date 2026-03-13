@@ -64,7 +64,7 @@ class SlackConnection(Base):
     __tablename__ = "slack_connections"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(255), nullable=False)  # "Supply Chain Alerts", "Procurement Channel"
 
     connection_type = Column(String(20), nullable=False)  # "webhook" or "bot"
@@ -125,7 +125,7 @@ class SlackSignal(Base):
     __tablename__ = "slack_signals"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"), nullable=True)
     connection_id = Column(Integer, ForeignKey("slack_connections.id"), nullable=False)
 

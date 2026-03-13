@@ -48,7 +48,7 @@ class DecisionGovernancePolicy(Base):
     __tablename__ = "decision_governance_policies"
 
     id = Column(Integer, primary_key=True, index=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
 
     # Scope — which decisions this policy applies to (NULL = all)
     action_type = Column(String(100), nullable=True,
@@ -171,7 +171,7 @@ class GuardrailDirective(Base):
     __tablename__ = "guardrail_directives"
 
     id = Column(Integer, primary_key=True, index=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
 
     # ── Provenance — who, when, how ──
     source_user_id = Column(Integer, ForeignKey("users.id"), nullable=False,

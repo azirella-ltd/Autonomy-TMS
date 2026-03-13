@@ -25,7 +25,7 @@ class EmailConnection(Base):
     __tablename__ = "email_connections"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(255), nullable=False)  # "Customer Inbox", "Procurement"
     connection_type = Column(String(20), nullable=False)  # "gmail", "imap"
 
@@ -126,7 +126,7 @@ class EmailSignal(Base):
     __tablename__ = "email_signals"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"), nullable=False)
     connection_id = Column(Integer, ForeignKey("email_connections.id"), nullable=True)
 

@@ -53,7 +53,7 @@ class ATPDecisionLog(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # Context
-    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     config_id: Mapped[int] = mapped_column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False)
     site_id: Mapped[int] = mapped_column(Integer, index=True)
     product_id: Mapped[int] = mapped_column(Integer, index=True)
@@ -164,7 +164,7 @@ class RebalancingDecisionLog(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # Context
-    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     config_id: Mapped[int] = mapped_column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False)
     product_id: Mapped[int] = mapped_column(Integer, index=True)
     decision_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
@@ -250,7 +250,7 @@ class PODecisionLog(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # Context
-    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     config_id: Mapped[int] = mapped_column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False)
     site_id: Mapped[int] = mapped_column(Integer, index=True)
     product_id: Mapped[int] = mapped_column(Integer, index=True)
@@ -345,7 +345,7 @@ class OrderTrackingDecisionLog(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # Context
-    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     config_id: Mapped[int] = mapped_column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False)
     order_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     order_type: Mapped[str] = mapped_column(String(50))  # PO, TO, SO
@@ -431,7 +431,7 @@ class SafetyStockDecisionLog(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # Ownership
-    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     config_id: Mapped[int] = mapped_column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False)
 
     # Product-Location
@@ -525,7 +525,7 @@ class TRMReplayBuffer(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # Ownership
-    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[int] = mapped_column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     config_id: Mapped[int] = mapped_column(Integer, ForeignKey("supply_chain_configs.id"), nullable=False)
 
     # Site (for per-site training filtering)
