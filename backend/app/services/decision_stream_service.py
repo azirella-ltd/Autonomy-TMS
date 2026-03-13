@@ -212,6 +212,16 @@ def _evict_stale():
         _STREAM_CONVERSATION_CACHE.popitem(last=False)
 
 
+def _safe_float(v) -> Optional[float]:
+    """Convert a value to float, returning None for non-numeric strings."""
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def _humanize_ids(text: str, product_names: Dict[str, str]) -> str:
     """Replace raw product IDs (e.g. CFG22_RD005) with human names in text.
 
@@ -810,8 +820,8 @@ class DecisionStreamService:
                         "product_name": product_names.get(str(pid)) if pid else None,
                         "site_id": site_id,
                         "site_name": site_names.get(str(site_id)) if site_id else None,
-                        "urgency": getattr(row, "urgency", None) or getattr(row, "urgency_at_time", None),
-                        "likelihood": getattr(row, "confidence", None),
+                        "urgency": _safe_float(getattr(row, "urgency_at_time", None) or getattr(row, "urgency", None)),
+                        "likelihood": _safe_float(getattr(row, "confidence", None)),
                         "economic_impact": None,
                         "reason": _get_reason(row, type_key),
                         "decision_reasoning": _humanize_ids(raw_reasoning, product_names) if raw_reasoning else None,
