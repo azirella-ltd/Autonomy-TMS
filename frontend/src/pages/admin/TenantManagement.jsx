@@ -34,6 +34,8 @@ const TenantManagement = () => {
   const [saving, setSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteCustomerTarget, setDeleteCustomerTarget] = useState(null);
+  const [deletingCustomer, setDeletingCustomer] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [autoCreation, setAutoCreation] = useState({ open: false, step: 0, completed: false, error: null });
   const autoCreationRequestedRef = useRef(false);
@@ -305,6 +307,22 @@ const TenantManagement = () => {
     }
   }, [deleteTarget, fetchData, selectedCustomerId]);
 
+  const handleConfirmDeleteCustomer = useCallback(async () => {
+    if (!deleteCustomerTarget) return;
+    setDeletingCustomer(true);
+    try {
+      await api.delete(`/customers/${deleteCustomerTarget.id}`);
+      toast.success('Customer deleted');
+      setDeleteCustomerTarget(null);
+      await fetchData(null);
+    } catch (error) {
+      const msg = error?.response?.data?.detail || 'Failed to delete customer.';
+      toast.error(msg);
+    } finally {
+      setDeletingCustomer(false);
+    }
+  }, [deleteCustomerTarget, fetchData]);
+
   // ── Render ─────────────────────────────────────────────────────────
   if (isLoading) {
     return (
@@ -400,9 +418,14 @@ const TenantManagement = () => {
                           </button>
                         </>
                       ) : (
-                        <button type="button" onClick={startEditingCustomer} className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50">
-                          <FaEdit /> Edit
-                        </button>
+                        <>
+                          <button type="button" onClick={startEditingCustomer} className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-600 hover:bg-gray-50">
+                            <FaEdit /> Edit
+                          </button>
+                          <button type="button" onClick={() => setDeleteCustomerTarget(selectedCustomer)} className="flex items-center gap-1 px-3 py-1.5 text-sm border border-red-300 rounded-md text-red-600 hover:bg-red-50">
+                            <FaTrash /> Delete
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -694,6 +717,33 @@ const TenantManagement = () => {
               <button type="button" onClick={handleConfirmDelete} disabled={deleting}
                 className={`px-4 py-2 rounded-md text-sm font-medium text-white bg-red-600 hover:bg-red-700 ${deleting ? 'opacity-75 cursor-not-allowed' : ''}`}>
                 {deleting ? 'Deleting\u2026' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete customer confirmation ─────────────────────────────── */}
+      {deleteCustomerTarget && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
+            <div className="px-6 py-5 border-b border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-800">Delete Customer</h2>
+            </div>
+            <div className="px-6 py-6">
+              <p className="text-sm text-gray-700">
+                Are you sure you want to delete <span className="font-semibold">{deleteCustomerTarget.name}</span>?
+                This removes the customer record. All linked tenants must be deleted first.
+              </p>
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200">
+              <button type="button" onClick={() => setDeleteCustomerTarget(null)} disabled={deletingCustomer}
+                className={`px-4 py-2 rounded-md text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 ${deletingCustomer ? 'opacity-75 cursor-not-allowed' : ''}`}>
+                Cancel
+              </button>
+              <button type="button" onClick={handleConfirmDeleteCustomer} disabled={deletingCustomer}
+                className={`px-4 py-2 rounded-md text-sm font-medium text-white bg-red-600 hover:bg-red-700 ${deletingCustomer ? 'opacity-75 cursor-not-allowed' : ''}`}>
+                {deletingCustomer ? 'Deleting\u2026' : 'Delete Customer'}
               </button>
             </div>
           </div>

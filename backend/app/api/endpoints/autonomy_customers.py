@@ -117,6 +117,36 @@ async def get_customer(
     return CustomerResponse(**dict(row))
 
 
+@router.delete("/{customer_id}", tags=["customers"])
+async def delete_customer(
+    customer_id: int,
+    current_user: User = Depends(require_system_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a customer record.
+
+    Blocked if the customer still has linked tenants (production or learning).
+    Delete or reassign all tenants first.
+    """
+    result = await db.execute(
+        text("SELECT id, name, production_tenant_id, learning_tenant_id FROM autonomy_customers WHERE id = :cid"),
+        {"cid": customer_id},
+    )
+    row = result.mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    if row["production_tenant_id"] or row["learning_tenant_id"]:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete customer with linked tenants. Delete all tenants first.",
+        )
+
+    await db.execute(text("DELETE FROM autonomy_customers WHERE id = :cid"), {"cid": customer_id})
+    await db.commit()
+    return {"success": True, "deleted_id": customer_id}
+
+
 @router.put("/{customer_id}", response_model=CustomerResponse, tags=["customers"])
 async def update_customer(
     customer_id: int,
