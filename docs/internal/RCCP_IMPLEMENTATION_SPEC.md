@@ -547,7 +547,330 @@ def _apply_decision_rules(self, loads, resources, demand_cv):
 
 ---
 
-## 5. API Endpoints
+## 5. Changeover-Adjusted Available Capacity (Glenday Sieve Integration)
+
+### 5.1 The Problem with Naive RCCP
+
+Standard RCCP compares **required hours** (from MPS × BoR) against **available hours** (from resource definition). But available hours assumes the resource is producing for 100% of its scheduled time. In reality, changeovers consume significant capacity — and the amount consumed depends on the **product mix** being scheduled.
+
+A line running 3 green runners all week loses maybe 2 hours to changeovers. The same line running 40 blue runners loses 30+ hours. Naive RCCP says both are "85% utilized" — the Glenday-informed version says one is feasible and the other is not.
+
+### 5.2 How It Works
+
+The `RCCPService` uses the existing Glenday Sieve (`engines/setup_matrix.py`) and SetupMatrix to **deduct expected changeover time** from available capacity before comparing against required load. This makes RCCP's feasibility judgment reflect the sequencing reality without doing detailed scheduling.
+
+```
+Naive RCCP:
+  effective_capacity = shifts × hours × efficiency
+  utilization = required_hours / effective_capacity
+
+Glenday-adjusted RCCP:
+  changeover_loss = estimated_changeover_hours(product_mix, setup_matrix, sieve)
+  adjusted_capacity = effective_capacity - changeover_loss
+  utilization = required_hours / adjusted_capacity
+```
+
+### 5.3 Changeover Estimation Algorithm
+
+The key insight: at the RCCP (aggregate/weekly) level, we don't know the exact sequence — that's an execution-level decision. But we CAN estimate expected changeover loss from the product mix using the Glenday Sieve classification and the SetupMatrix.
+
+```python
+def _estimate_changeover_loss(
+    self,
+    resource_id: int,
+    weekly_product_quantities: Dict[str, float],
+    setup_matrix: SetupMatrix,
+    sieve: GlendaySieve,
+) -> float:
+    """
+    Estimate changeover hours lost for a resource in one week,
+    given the product mix to be produced.
+
+    Uses Glenday categories to estimate number of changeovers:
+      - Green runners: scheduled in long campaigns → few changeovers
+      - Yellow/Red: nearest-neighbor sequencing → moderate changeovers
+      - Blue runners: batched into campaign windows → one changeover per batch
+
+    Algorithm:
+    1. Count distinct products by runner category
+    2. Estimate changeover count per category:
+       - Green: 1 changeover per green runner per week (long campaigns)
+       - Yellow: 1 changeover per yellow runner (nearest-neighbor helps)
+       - Red/Blue: 1 changeover each, using average setup time
+    3. For each estimated changeover, use setup_matrix average for
+       that category pair. If no matrix data, use category-based defaults.
+    4. Sum total estimated changeover hours.
+
+    This is deliberately conservative (overestimates changeovers) because
+    the actual nearest-neighbor sequencing at execution time will be more
+    efficient. A conservative RCCP catches real problems; an optimistic
+    RCCP misses them.
+    """
+    if not weekly_product_quantities:
+        return 0.0
+
+    products = list(weekly_product_quantities.keys())
+    if len(products) <= 1:
+        return 0.0  # Single product → no changeovers
+
+    # Classify products
+    green = [p for p in products if sieve.get_category(p) == RunnerCategory.GREEN]
+    yellow = [p for p in products if sieve.get_category(p) == RunnerCategory.YELLOW]
+    red = [p for p in products if sieve.get_category(p) == RunnerCategory.RED]
+    blue = [p for p in products if sieve.get_category(p) == RunnerCategory.BLUE]
+
+    total_changeover_hours = 0.0
+    resource_key = str(resource_id)
+
+    # Green runners: 1 changeover each (they run in long dedicated campaigns)
+    # Changeover FROM previous green TO next green
+    for i, prod in enumerate(green):
+        prev = green[i - 1] if i > 0 else (yellow + red + blue)[-1] if (yellow + red + blue) else None
+        if prev:
+            total_changeover_hours += setup_matrix.get_changeover_time(
+                prev, prod, resource_key
+            )
+
+    # Yellow runners: 1 changeover each (nearest-neighbor reduces some)
+    for i, prod in enumerate(yellow):
+        prev = yellow[i - 1] if i > 0 else (green[-1] if green else None)
+        if prev:
+            total_changeover_hours += setup_matrix.get_changeover_time(
+                prev, prod, resource_key
+            )
+
+    # Red + Blue: 1 changeover each, often worst-case (dissimilar products)
+    others = red + blue
+    for i, prod in enumerate(others):
+        prev = others[i - 1] if i > 0 else (yellow[-1] if yellow else green[-1] if green else None)
+        if prev:
+            total_changeover_hours += setup_matrix.get_changeover_time(
+                prev, prod, resource_key
+            )
+
+    # Transition between category groups (green→yellow, yellow→red+blue)
+    if green and yellow:
+        total_changeover_hours += setup_matrix.get_changeover_time(
+            green[-1], yellow[0], resource_key
+        )
+    if yellow and others:
+        total_changeover_hours += setup_matrix.get_changeover_time(
+            yellow[-1], others[0], resource_key
+        )
+    elif green and others:
+        total_changeover_hours += setup_matrix.get_changeover_time(
+            green[-1], others[0], resource_key
+        )
+
+    return total_changeover_hours
+```
+
+### 5.4 Integration into RCCP Load Calculation
+
+The changeover adjustment is applied **after** the BoR-based load calculation and **before** the decision rules:
+
+```python
+def validate_mps(self, ...):
+    # Step 1: Calculate raw resource loads from BoR
+    loads = self._calculate_loads_bill_of_capacity(mps_items, bor_entries, n_weeks)
+
+    # Step 2: Load Glenday Sieve and SetupMatrix for this site
+    sieve = GlendaySieve(site_id=site_key, db=self.db)
+    sieve.classify()
+    setup_matrix = SetupMatrix(site_id=site_key, db=self.db)
+    setup_matrix.load()
+
+    # Step 3: Compute changeover-adjusted available capacity per resource per week
+    adjusted_capacities = {}
+    changeover_details = []
+
+    for resource_id, weekly_loads in loads.items():
+        resource = resources[resource_id]
+        adjusted_capacities[resource_id] = []
+
+        for week_idx in range(n_weeks):
+            # Determine product mix for this resource in this week
+            product_mix = self._get_weekly_product_mix(
+                mps_items, bor_entries, resource_id, week_idx
+            )
+
+            # Estimate changeover loss
+            changeover_hours = self._estimate_changeover_loss(
+                resource_id, product_mix, setup_matrix, sieve
+            )
+
+            adjusted = resource.effective_capacity - changeover_hours
+            adjusted_capacities[resource_id].append(max(0, adjusted))
+
+            if changeover_hours > 0:
+                changeover_details.append({
+                    "resource_id": resource_id,
+                    "week": week_idx + 1,
+                    "changeover_hours": round(changeover_hours, 1),
+                    "distinct_products": len(product_mix),
+                    "green_runners": len([p for p in product_mix
+                                         if sieve.get_category(p) == RunnerCategory.GREEN]),
+                    "adjusted_capacity": round(adjusted, 1),
+                    "original_capacity": round(resource.effective_capacity, 1),
+                })
+
+    # Step 4: Apply decision rules using ADJUSTED capacities
+    # (instead of raw resource.effective_capacity)
+    status, resource_loads, ... = self._apply_decision_rules(
+        loads, adjusted_capacities, demand_cv
+    )
+```
+
+### 5.5 `_get_weekly_product_mix` Helper
+
+```python
+def _get_weekly_product_mix(
+    self,
+    mps_items: List[MPSPlanItem],
+    bor_entries: List[BillOfResources],
+    resource_id: int,
+    week_idx: int,
+) -> Dict[str, float]:
+    """
+    For a given resource and week, return {product_id: quantity} for all
+    products that consume this resource in this week.
+
+    Uses BoR to determine which products use which resources.
+    Uses MPS quantities for the volume.
+    """
+    # Index: which products use this resource?
+    products_on_resource = {
+        bor.product_id for bor in bor_entries
+        if bor.resource_id == resource_id
+    }
+
+    mix = {}
+    for item in mps_items:
+        if item.product_id in products_on_resource:
+            qty = (item.weekly_quantities or [])[week_idx] if week_idx < len(item.weekly_quantities or []) else 0
+            if qty > 0:
+                mix[str(item.product_id)] = qty
+
+    return mix
+```
+
+### 5.6 New Decision Rule: Rule 7 — Changeover-Heavy Mix Alert
+
+Add to the RCCP SKILL.md and service:
+
+```
+Rule 7: Changeover-Heavy Mix
+Condition: changeover_hours > 0.20 * effective_capacity for any resource/week
+Action: Flag WARNING — changeover losses exceed 20% of capacity
+Severity: WARNING
+Recommendation: Consider Glenday-style campaign scheduling — dedicate
+  capacity windows to green runners, batch blue runners into campaign slots.
+  Reducing product variety on this resource by 30% could recover N hours.
+Reasoning: High changeover-to-run ratio indicates the product mix is
+  fragmented. Glenday Sieve campaign scheduling (green runners first,
+  nearest-neighbor fill) typically recovers 15-25% of lost capacity.
+```
+
+### 5.7 RCCPRun Model Extension
+
+Add changeover-related fields to `RCCPRun`:
+
+```python
+# In RCCPRun model — new fields:
+changeover_adjusted = Column(Boolean, default=False,
+    comment="True if changeover-adjusted capacity was used")
+total_changeover_hours = Column(Float, nullable=True,
+    comment="Total estimated changeover hours across all resources and weeks")
+changeover_details = Column(JSON, default=list,
+    comment="Per-resource per-week changeover breakdown")
+glenday_summary = Column(JSON, nullable=True,
+    comment="Glenday Sieve classification summary for this site")
+```
+
+### 5.8 RCCPValidateRequest Extension
+
+```python
+class RCCPValidateRequest(BaseModel):
+    mps_plan_id: int
+    site_id: int
+    method: Optional[RCCPMethod] = None
+    planning_horizon_weeks: int = 12
+    changeover_adjusted: bool = True  # Default ON — use Glenday-adjusted capacity
+```
+
+### 5.9 Frontend: Changeover Visibility
+
+Add to the RCCP validation page:
+
+```
+┌─── Changeover Analysis ────────────────────────────────┐
+│                                                         │
+│  Glenday Classification (43 products at this site):     │
+│  ● Green: 3 (48% volume)  ● Yellow: 6 (44% volume)    │
+│  ● Red: 12 (7% volume)    ● Blue: 22 (<1% volume)     │
+│                                                         │
+│  ┌── Changeover Loss by Resource ──────────────────┐   │
+│  │ Resource    │ Wk1  │ Wk2  │ Wk3  │ Wk4  │ Avg  │   │
+│  │ Assembly    │ 4.2h │ 3.8h │ 6.1h │ 5.5h │ 4.9h │   │
+│  │ Machining   │ 2.1h │ 2.1h │ 3.0h │ 2.8h │ 2.5h │   │
+│  │ Packaging   │ 1.0h │ 1.2h │ 1.5h │ 1.3h │ 1.3h │   │
+│  └──────────────────────────────────────────────────┘   │
+│                                                         │
+│  ⚠ Week 3 Assembly: 6.1h changeover = 15% of capacity  │
+│    (11 distinct products, 0 green runners)              │
+│    Recommendation: Consolidate blue runners into Wk4    │
+│    campaign window to reduce Wk3 changeovers by ~40%    │
+│                                                         │
+│  Toggle: [✓] Changeover-adjusted  [ ] Naive capacity    │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 5.10 Why This Matters (Practical Impact)
+
+Consider a machining center with 80 available hours/week:
+
+| Scenario | Products | Changeover Loss | Adjusted Capacity | MPS Load | Naive Util | Real Util |
+|----------|----------|-----------------|-------------------|----------|------------|-----------|
+| Green campaign | 3 green | 2h | 78h | 68h | 85% | **87%** |
+| Mixed week | 3 green + 8 yellow | 8h | 72h | 68h | 85% | **94%** |
+| Fragmented | 3 green + 8 yellow + 15 red | 18h | 62h | 68h | 85% | **110% !!** |
+
+Naive RCCP says all three are feasible at 85%. Glenday-adjusted RCCP correctly identifies the fragmented week as **infeasible** — the factory cannot execute this MPS without overtime or product consolidation. This is exactly the kind of hidden overload that causes shop floor chaos when MRP generates orders against an "approved" MPS.
+
+### 5.11 Relationship Between RCCP and MO Execution
+
+```
+RCCP (Tactical — weekly)
+  Uses: GlendaySieve.classify() + SetupMatrix
+  Purpose: ESTIMATE changeover loss from product mix
+  Fidelity: Approximate (doesn't know exact sequence)
+  Output: Adjusted available capacity, changeover-heavy alerts
+
+        ↓ MPS approved as feasible
+
+MRP (Operational — daily)
+  Explodes MPS into planned orders
+
+        ↓ Planned orders released as MOs
+
+MO Execution Engine (Execution — per-order)
+  Uses: GlendaySieve + SetupMatrix + nearest-neighbor sequencing
+  Purpose: OPTIMIZE actual changeover sequence
+  Fidelity: Exact (knows sequence, real changeover times)
+  Output: Sequenced MOs with minimized total changeover
+
+        ↓ Actual changeover times observed
+
+Feedback to RCCP:
+  Actual changeover times → refine estimation model
+  Actual vs estimated → adjust conservatism factor
+```
+
+The same Glenday Sieve classification and SetupMatrix data is used at both levels — RCCP estimates conservatively, MO Execution optimizes precisely. Actual outcomes feed back to improve RCCP's estimates over time.
+
+---
+
+## 6. API Endpoints
 
 **File**: `backend/app/api/endpoints/rccp.py`
 
@@ -647,7 +970,7 @@ async def run_rccp_check(
 
 ---
 
-## 6. BoR Data Population
+## 7. BoR Data Population
 
 ### 6.1 From ProductionProcess (Auto-Generate)
 
@@ -710,7 +1033,7 @@ When generating synthetic companies via the wizard, include BoR entries:
 
 ---
 
-## 7. Frontend
+## 8. Frontend
 
 ### 7.1 RCCP Validation Page
 
@@ -781,7 +1104,7 @@ Add to existing MPS page (`MasterProductionScheduling.jsx`):
 
 ---
 
-## 8. Powell Framework Integration
+## 9. Powell Framework Integration
 
 ### 8.1 Planning Flow Position
 
@@ -833,7 +1156,7 @@ The `rccp_bor_setup` step auto-generates BoR entries from ProductionProcess reco
 
 ---
 
-## 9. Existing Code Cleanup
+## 10. Existing Code Cleanup
 
 ### 9.1 Replace Placeholder Logic
 
@@ -858,7 +1181,7 @@ The existing `CapacityConstrainedMPS` class in `capacity_constrained_mps.py` has
 
 ---
 
-## 10. Permissions & Capabilities
+## 11. Permissions & Capabilities
 
 Add to `backend/app/core/capabilities.py`:
 
@@ -874,7 +1197,7 @@ MANAGE_BOR = "manage_bor"
 
 ---
 
-## 11. Execution Order
+## 12. Execution Order
 
 ### Phase 1: Data Foundation
 1. Create migration: `bill_of_resources` and `rccp_runs` tables
@@ -908,7 +1231,7 @@ MANAGE_BOR = "manage_bor"
 
 ---
 
-## 12. Testing
+## 13. Testing
 
 ### 12.1 Unit Tests
 
@@ -956,9 +1279,27 @@ def test_feasible_mps_returns_feasible_status():
 
 def test_setup_time_amortization():
     """effective_hours = run_hours + setup_hours / batch_size"""
+
+def test_rule_7_changeover_heavy_mix():
+    """Changeover > 20% of capacity → WARNING"""
+
+def test_changeover_adjusted_capacity_reduces_available():
+    """Glenday-adjusted capacity < naive capacity when product mix is fragmented"""
+
+def test_green_runner_campaign_minimal_changeover():
+    """3 green runners → ~2h changeover vs 15 blue runners → ~15h changeover"""
+
+def test_single_product_no_changeover_loss():
+    """One product on resource → 0 changeover hours"""
+
+def test_changeover_uses_setup_matrix_data():
+    """Changeover estimation uses actual SetupMatrix entries, not defaults"""
+
+def test_changeover_toggle_off_uses_naive_capacity():
+    """changeover_adjusted=False → uses raw effective_capacity"""
 ```
 
-### 12.2 Integration Tests
+### 13.2 Integration Tests
 
 ```python
 def test_mps_rccp_mps_adjustment_flow():
@@ -979,10 +1320,13 @@ def test_auto_generate_bor_from_production_process():
 
 ---
 
-## 13. References
+## 14. References
 
 - **APICS CPIM Part 2, Module 2 (MPR)**: MPS development, RCCP, demand management
 - **Capacity_Planning_Guide.md**: `docs/knowledge/Capacity_Planning_Guide.md` — Section 4 (RCCP)
 - **RCCP Claude Skill**: `backend/app/services/skills/rccp/SKILL.md` — 6 decision rules
 - **MRP_Logic_Lot_Sizing_Guide.md**: `docs/knowledge/MRP_Logic_Lot_Sizing_Guide.md` — Section 2.6 (RCCP)
 - **Powell Framework**: RCCP is a CFA (Cost Function Approximation) — parameterized feasibility check
+- **Glenday Sieve**: Ian Glenday, "Breaking Through to Flow" (2005) — runner classification for campaign scheduling
+- **Setup Matrix**: `backend/app/services/powell/engines/setup_matrix.py` — sequence-dependent changeover times
+- **MO Execution Engine**: `backend/app/services/powell/engines/mo_execution_engine.py` — Glenday + nearest-neighbor sequencing

@@ -92,6 +92,19 @@ Most accurate — captures setup peaks and multi-week resource consumption patte
 - **Reasoning**: High demand variability means actual resource consumption will regularly
   exceed point estimates; leave capacity headroom
 
+### Rule 7: Changeover-Heavy Mix
+**Condition**: `changeover_hours > 0.20 * effective_capacity` for any resource in any week
+- **Action**: Flag **changeover-heavy mix** WARNING
+- **Severity**: WARNING
+- **Recommendation**: Consider Glenday-style campaign scheduling — dedicate capacity
+  windows to green runners (top ~6% SKUs by volume), batch blue runners into campaign
+  slots. Reducing product variety on this resource by 30% could recover significant hours.
+- **Reasoning**: High changeover-to-run ratio indicates the product mix on this resource
+  is fragmented. Glenday Sieve campaign scheduling (green runners first, nearest-neighbor
+  fill for remaining) typically recovers 15-25% of lost changeover capacity. This rule
+  uses the existing `SetupMatrix` and `GlendaySieve` from `engines/setup_matrix.py` to
+  estimate changeover loss from the MPS product mix without requiring detailed sequencing.
+
 ## Output Format
 Respond with JSON only:
 ```json
@@ -119,6 +132,17 @@ Respond with JSON only:
     ],
     "overtime_required": false,
     "chronic_overload_resources": ["<resource ids>"],
+    "changeover_adjusted": true,
+    "changeover_details": [
+      {
+        "resource_id": "<work centre or line id>",
+        "week": "<ISO week>",
+        "changeover_hours": <float>,
+        "distinct_products": <int>,
+        "green_runners": <int>,
+        "adjusted_capacity": <float>
+      }
+    ],
     "rules_applied": ["<rule names>"]
   },
   "confidence": <0.0–1.0>,
