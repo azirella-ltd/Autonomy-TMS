@@ -35,6 +35,7 @@ from .industry_defaults_service import (
     apply_industry_defaults_to_config,
     apply_agent_stochastic_defaults,
 )
+from .geocoding_service import calculate_geo_lead_times_for_config
 from .bootstrap import DEFAULT_ADMIN_PASSWORD
 # Product imported from sc_entities (line 26)
 
@@ -275,6 +276,22 @@ class TenantService:
                             cfg.id, e,
                         )
 
+            # Apply geo-based transport lead times to lanes with geocoded sites
+            for cfg in [prod_sc_config, learn_sc_config]:
+                try:
+                    geo_result = calculate_geo_lead_times_for_config(self.db, cfg.id)
+                    if geo_result["updated_lanes"] > 0:
+                        logger.info(
+                            "Applied geo lead times to config %d: %d lanes, %d stochastic params",
+                            cfg.id, geo_result["updated_lanes"],
+                            geo_result.get("stochastic_params_created", 0),
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "Failed to apply geo lead times to config %d: %s",
+                        cfg.id, e,
+                    )
+
             self.db.commit()
             self.db.refresh(prod_tenant)
             return prod_tenant
@@ -342,6 +359,21 @@ class TenantService:
                         except Exception as e:
                             logger.warning(
                                 "Failed to re-apply agent defaults to config %d: %s",
+                                cfg.id, e,
+                            )
+                        # Re-calculate geo-based transport lead times
+                        try:
+                            geo_result = calculate_geo_lead_times_for_config(
+                                self.db, cfg.id,
+                            )
+                            if geo_result["updated_lanes"] > 0:
+                                logger.info(
+                                    "Re-applied geo lead times to config %d: %d lanes",
+                                    cfg.id, geo_result["updated_lanes"],
+                                )
+                        except Exception as e:
+                            logger.warning(
+                                "Failed to re-apply geo lead times to config %d: %s",
                                 cfg.id, e,
                             )
 

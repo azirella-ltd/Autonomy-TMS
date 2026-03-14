@@ -1444,6 +1444,8 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
   const [identifiedFiles, setIdentifiedFiles] = useState(null); // null = not scanned, [] = empty
   const [scanningFiles, setScanningFiles] = useState(false);
   const [expandedJobs, setExpandedJobs] = useState({}); // { jobId: bool }
+  const [saveCsv, setSaveCsv] = useState(false);
+  const [updateTenantData, setUpdateTenantData] = useState(true);
 
   // Scan files to identify SAP tables via the identify-files endpoint
   const handleScanFiles = async () => {
@@ -1554,6 +1556,8 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
       job_type: jobType,
       phase: jobPhase,
       tables: selectedTables,
+      save_csv: saveCsv,
+      update_tenant_data: updateTenantData,
     });
     setShowCreateDialog(false);
     setSelectedConnectionId('');
@@ -1561,6 +1565,8 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
     setAvailableTables([]);
     setAllTables([]);
     setIdentifiedFiles(null);
+    setSaveCsv(false);
+    setUpdateTenantData(true);
   };
 
   return (
@@ -1630,6 +1636,8 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
                         <span className={cn("text-xs px-2 py-0.5 rounded-full font-medium", PHASE_COLORS[job.phase] || 'bg-gray-100 text-gray-800')}>
                           {PHASE_LABELS[job.phase] || job.phase}
                         </span>
+                        {job.save_csv && <Badge variant="outline" className="text-xs">CSV</Badge>}
+                        {job.update_tenant_data === false && <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">Dry Run</Badge>}
                       </div>
                       <p className="text-sm text-muted-foreground">
                         Tables: {job.tables?.join(', ')}
@@ -1944,6 +1952,36 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
               </NativeSelect>
             </div>
 
+            {/* Ingestion Toggles */}
+            <div className="border rounded-lg p-3 space-y-3 bg-muted/30">
+              <p className="text-sm font-medium">Options</p>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={saveCsv}
+                  onChange={(e) => setSaveCsv(e.target.checked)}
+                />
+                <div>
+                  <span className="text-sm font-medium">Save CSV files</span>
+                  <p className="text-xs text-muted-foreground">Save extracted data as CSV files for audit or backup</p>
+                </div>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={updateTenantData}
+                  onChange={(e) => setUpdateTenantData(e.target.checked)}
+                />
+                <div>
+                  <span className="text-sm font-medium">Update tenant data</span>
+                  <p className="text-xs text-muted-foreground">Create/update sites, products, lanes in the database. Uncheck for dry run.</p>
+                </div>
+              </label>
+              {!updateTenantData && (
+                <p className="text-xs text-amber-600 font-medium">Dry run mode — data will be extracted and validated but not written to the database.</p>
+              )}
+            </div>
+
             {selectedConnectionId && (
               <div>
                 <div className="flex items-center justify-between mb-1">
@@ -2065,7 +2103,8 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
               onClick={handleSubmitJob}
               disabled={!selectedConnectionId || selectedTables.length === 0}
             >
-              {jobPhase === 'master_data' ? 'Create & Build SC Config' :
+              {!updateTenantData ? 'Extract Only (Dry Run)' :
+               jobPhase === 'master_data' ? 'Create & Build SC Config' :
                jobPhase === 'cdc' ? 'Run Change Detection' :
                'Import Transactions'}
             </Button>

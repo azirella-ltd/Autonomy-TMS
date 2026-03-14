@@ -229,6 +229,8 @@ class CreateJobRequest(BaseModel):
     job_type: str = Field(..., description="Job type: full_extract, delta_extract, incremental")
     phase: str = Field("master_data", description="Ingestion phase: master_data, cdc, transaction")
     tables: List[str]
+    save_csv: bool = Field(False, description="Save extracted data as CSV files (useful for audit/backup when extracting via OData/HANA/RFC)")
+    update_tenant_data: bool = Field(True, description="Create/update sites, products, lanes, etc. in the DB. When false, runs extraction + validation only (dry run)")
 
 
 class JobResponse(BaseModel):
@@ -248,6 +250,8 @@ class JobResponse(BaseModel):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     duration_seconds: Optional[float] = None
+    save_csv: bool = False
+    update_tenant_data: bool = True
 
 
 class JobProgressUpdate(BaseModel):
@@ -1224,6 +1228,8 @@ def _job_to_response(job) -> JobResponse:
         started_at=job.started_at,
         completed_at=job.completed_at,
         duration_seconds=job.duration_seconds,
+        save_csv=job.save_csv,
+        update_tenant_data=job.update_tenant_data,
     )
 
 
@@ -1284,6 +1290,8 @@ async def create_job(
         job_type=job_type,
         tables=tables,
         phase=phase,
+        save_csv=request.save_csv,
+        update_tenant_data=request.update_tenant_data,
     )
 
     return _job_to_response(job)
@@ -1477,6 +1485,41 @@ async def _extract_via_extractor(
     return sap_data, total_rows, total_failed
 
 
+async def _save_extracted_csvs(
+    sap_data: dict,
+    conn_row,
+    connection,
+    job_id: int,
+    tenant_id: int,
+    service,
+):
+    """Save extracted DataFrames as CSV files for audit/backup.
+
+    Files are saved into the connection's csv_directory (or a default
+    tenant-scoped directory under SAP_IMPORTS_BASE).  Each table becomes
+    ``<TABLE_NAME>.csv``.
+    """
+    import pandas as pd
+
+    csv_dir = Path(
+        connection.csv_directory
+        if connection.csv_directory
+        else str(SAP_IMPORTS_BASE / f"tenant_{tenant_id}")
+    )
+    csv_dir.mkdir(parents=True, exist_ok=True)
+
+    saved_count = 0
+    for table_name, df in sap_data.items():
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            continue
+        out_path = csv_dir / f"{table_name}.csv"
+        df.to_csv(out_path, index=False)
+        saved_count += 1
+        logger.info(f"Job {job_id}: Saved {len(df)} rows → {out_path}")
+
+    logger.info(f"Job {job_id}: CSV save complete — {saved_count} files → {csv_dir}")
+
+
 async def _run_ingestion(job_id: int, tenant_id: int):
     """
     Background task: 3-phase SAP ingestion pipeline.
@@ -1540,8 +1583,26 @@ async def _run_ingestion(job_id: int, tenant_id: int):
                     error_message=f"No data extracted for the requested tables (method={connection.connection_method.value})")
                 return
 
-            # Phase-specific processing
-            if job.phase == IngestionPhase.MASTER_DATA:
+            # Save extracted data as CSV files if requested
+            if job.save_csv:
+                await _save_extracted_csvs(
+                    sap_data, conn_row, connection, job_id, tenant_id, service,
+                )
+
+            # Phase-specific processing (skip if dry run)
+            if not job.update_tenant_data:
+                summary = {
+                    "dry_run": True,
+                    "tables_extracted": len(sap_data),
+                    "tables": {name: len(df) for name, df in sap_data.items()},
+                    "csv_saved": job.save_csv,
+                }
+                await service.set_job_build_result(
+                    job_id=job_id, config_id=None, build_summary=summary,
+                )
+                await service.complete_job(job_id, JobStatus.COMPLETED)
+                logger.info(f"Job {job_id} dry run complete: {len(sap_data)} tables extracted, update_tenant_data=false")
+            elif job.phase == IngestionPhase.MASTER_DATA:
                 await _run_phase1_master_data(db, service, job_id, tenant_id, sap_data)
             elif job.phase == IngestionPhase.CDC:
                 await _run_phase2_cdc(db, service, job_id, tenant_id, sap_data)
@@ -1641,15 +1702,61 @@ async def _run_phase1_master_data(db, service, job_id: int, tenant_id: int, sap_
             geocoding_callback=_geocoding_progress,
         )
 
+        # Apply industry defaults and geo-based lead times to the new config
+        config_id = result["config_id"]
+        try:
+            from app.db.session import sync_session_factory
+            from app.services.industry_defaults_service import (
+                apply_industry_defaults_to_config,
+                apply_agent_stochastic_defaults,
+            )
+            from app.services.geocoding_service import calculate_geo_lead_times_for_config
+            from app.models.tenant import Tenant
+
+            sync_db = sync_session_factory()
+            try:
+                tenant = sync_db.query(Tenant).filter(Tenant.id == tenant_id).first()
+                industry_key = (
+                    tenant.industry.value
+                    if tenant and tenant.industry
+                    else "consumer_goods"
+                )
+
+                # Entity-level defaults (fills NULL *_dist columns)
+                entity_counts = apply_industry_defaults_to_config(
+                    sync_db, config_id, industry_key,
+                )
+                # Agent stochastic params (config-wide)
+                agent_count = apply_agent_stochastic_defaults(
+                    sync_db, config_id, tenant_id, industry_key,
+                )
+                # Geo-based transport lead times (site-specific)
+                geo_result = calculate_geo_lead_times_for_config(
+                    sync_db, config_id,
+                )
+                sync_db.commit()
+                logger.info(
+                    f"Post-build defaults for config {config_id}: "
+                    f"entities={entity_counts}, agents={agent_count}, "
+                    f"geo_lanes={geo_result['updated_lanes']}"
+                )
+            except Exception as e:
+                sync_db.rollback()
+                logger.warning(f"Post-build defaults failed for config {config_id}: {e}")
+            finally:
+                sync_db.close()
+        except Exception as e:
+            logger.warning(f"Could not apply post-build defaults: {e}")
+
         # Store the build result on the job
         await service.set_job_build_result(
             job_id=job_id,
-            config_id=result["config_id"],
+            config_id=config_id,
             build_summary=result["summary"],
         )
         await service.complete_job(job_id, JobStatus.COMPLETED)
         logger.info(
-            f"Phase 1 complete: config_id={result['config_id']}, "
+            f"Phase 1 complete: config_id={config_id}, "
             f"name='{config_name}', summary={result['summary']}"
         )
 

@@ -183,6 +183,10 @@ class IngestionJob:
     errors: List[Dict[str, Any]] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
 
+    # Ingestion toggles
+    save_csv: bool = False
+    update_tenant_data: bool = True
+
     # DB-stored progress (overrides computed property when set)
     _progress_override: Optional[float] = field(default=None, repr=False)
 
@@ -211,6 +215,8 @@ class IngestionJob:
             "warnings": self.warnings,
             "progress_percent": self.progress_percent,
             "duration_seconds": self.duration_seconds,
+            "save_csv": self.save_csv,
+            "update_tenant_data": self.update_tenant_data,
         }
 
     @property
@@ -471,6 +477,8 @@ class SAPIngestionMonitoringService:
             build_summary=build_summary,
             table_status=table_status,
             error_message=getattr(row, "error_message", None),
+            save_csv=bool(getattr(row, "save_csv", False)),
+            update_tenant_data=bool(getattr(row, "update_tenant_data", True) if getattr(row, "update_tenant_data", None) is not None else True),
         )
         job._progress_override = getattr(row, "progress_percent", None) or 0.0
         return job
@@ -538,6 +546,8 @@ class SAPIngestionMonitoringService:
         job_type: JobType,
         tables: List[str],
         phase: IngestionPhase = IngestionPhase.MASTER_DATA,
+        save_csv: bool = False,
+        update_tenant_data: bool = True,
     ) -> IngestionJob:
         """Create a new ingestion job (persisted to DB).
 
@@ -549,13 +559,20 @@ class SAPIngestionMonitoringService:
         - MASTER_DATA: Build a new SC config from the imported data
         - CDC: Compare against existing config, create child if changed
         - TRANSACTION: Import transactions against active SC config
+
+        Toggles:
+        - save_csv: Save extracted data as CSV files for audit/backup
+        - update_tenant_data: Create/update DB entities. When false, dry run only.
         """
         sorted_tables = self._sort_tables_by_dependency(tables)
 
         result = await self.db.execute(
             text("""
-                INSERT INTO sap_ingestion_jobs (tenant_id, connection_id, job_type, status, tables, phase)
-                VALUES (:tenant_id, :connection_id, :job_type, :status, :tables, :phase)
+                INSERT INTO sap_ingestion_jobs
+                    (tenant_id, connection_id, job_type, status, tables, phase,
+                     save_csv, update_tenant_data)
+                VALUES (:tenant_id, :connection_id, :job_type, :status, :tables, :phase,
+                        :save_csv, :update_tenant_data)
                 RETURNING id
             """),
             {
@@ -565,12 +582,20 @@ class SAPIngestionMonitoringService:
                 "status": JobStatus.PENDING.value,
                 "tables": json.dumps(sorted_tables),
                 "phase": phase.value,
+                "save_csv": save_csv,
+                "update_tenant_data": update_tenant_data,
             }
         )
         job_id = result.scalar_one()
         await self.db.commit()
 
-        logger.info(f"Created ingestion job {job_id} for {len(sorted_tables)} tables (dependency-sorted)")
+        mode_label = []
+        if save_csv:
+            mode_label.append("save_csv")
+        if not update_tenant_data:
+            mode_label.append("dry_run")
+        mode_str = f" ({', '.join(mode_label)})" if mode_label else ""
+        logger.info(f"Created ingestion job {job_id} for {len(sorted_tables)} tables (dependency-sorted){mode_str}")
 
         return IngestionJob(
             id=job_id,
@@ -579,6 +604,8 @@ class SAPIngestionMonitoringService:
             job_type=job_type,
             tables=sorted_tables,
             status=JobStatus.PENDING,
+            save_csv=save_csv,
+            update_tenant_data=update_tenant_data,
         )
 
     async def cancel_job(self, job_id: int) -> bool:

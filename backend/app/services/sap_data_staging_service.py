@@ -2402,10 +2402,35 @@ class SAPDataStagingService:
         except Exception as e:
             errors.append(f"agent_stochastic_params: {e}")
 
+        # --- Recalculate geo-based transport lead times ---
+        # SAP may have updated lane distributions, but site-specific
+        # stochastic params still need geo-calculated values for TRM agents.
+        geo_lanes = 0
+        geo_params = 0
+        try:
+            from app.db.session import sync_session_factory
+            from app.services.geocoding_service import calculate_geo_lead_times_for_config
+            sync_db = sync_session_factory()
+            try:
+                geo_result = calculate_geo_lead_times_for_config(
+                    sync_db, self.config_id,
+                )
+                geo_lanes = geo_result.get("updated_lanes", 0)
+                geo_params = geo_result.get("stochastic_params_created", 0)
+                sync_db.commit()
+            except Exception as e:
+                sync_db.rollback()
+                errors.append(f"geo_lead_times: {e}")
+            finally:
+                sync_db.close()
+        except Exception as e:
+            errors.append(f"geo_lead_times_init: {e}")
+
         logger.info(
             f"Operational stats upsert: {updated} updated, {skipped} skipped, "
             f"{len(errors)} errors, {agent_sap_count} agent params from SAP, "
-            f"{agent_default_count} agent params from industry defaults"
+            f"{agent_default_count} agent params from industry defaults, "
+            f"{geo_lanes} geo lanes, {geo_params} geo stochastic params"
         )
         return {
             "inserted": 0,
@@ -2414,6 +2439,8 @@ class SAPDataStagingService:
             "errors": errors,
             "agent_sap_params": agent_sap_count,
             "agent_default_params": agent_default_count,
+            "geo_lanes": geo_lanes,
+            "geo_stochastic_params": geo_params,
         }
 
     async def _populate_agent_params_from_sap(
