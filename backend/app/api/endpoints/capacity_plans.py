@@ -91,18 +91,48 @@ def _calculate_requirements_from_mps(
 
     mps_plans = mps_query.all()
 
+    # Load Bill of Resources for real hours-per-unit lookups
+    from app.models.rccp import BillOfResources
+    bor_entries = db.query(BillOfResources).filter(
+        BillOfResources.config_id == plan.supply_chain_config_id,
+        BillOfResources.is_active == True,
+    ).all()
+    # Build (product_id, resource_id) -> effective_hours map
+    bor_map = {}
+    bor_cpof = {}  # product_id -> overall_hours for CPOF fallback
+    for bor in bor_entries:
+        if bor.resource_id is not None and bor.hours_per_unit is not None:
+            bor_map[(bor.product_id, bor.resource_id)] = bor.effective_hours_per_unit
+        if bor.overall_hours_per_unit is not None:
+            bor_cpof[bor.product_id] = bor.overall_hours_per_unit
+
+    # Load MPS items for quantity data
+    mps_items = []
+    if mps_plan_id:
+        mps_items = db.query(MPSPlanItem).filter(MPSPlanItem.plan_id == mps_plan_id).all()
+
     # For each resource in the capacity plan
     for resource in plan.resources:
-        # Create weekly requirements based on planning horizon
         period_start = plan.start_date
         period_number = 1
 
         while period_start < plan.end_date:
             period_end = period_start + timedelta(days=plan.bucket_size_days)
 
-            # Calculate required capacity (simplified - would use actual routing data)
-            # For demo: assume some baseline requirement
-            required = resource.available_capacity * 0.7  # 70% utilization as baseline
+            # Calculate required capacity from MPS items + BoR
+            required = 0.0
+            for item in mps_items:
+                item_date = getattr(item, 'period_start', None)
+                if item_date and not (period_start <= item_date < period_end):
+                    continue
+                qty = getattr(item, 'planned_quantity', 0) or getattr(item, 'quantity', 0) or 0
+                # Look up BoR: per-resource first, then CPOF fallback
+                hours = bor_map.get((item.product_id, resource.id), 0.0)
+                if hours == 0.0:
+                    hours = bor_cpof.get(item.product_id, 0.0)
+                    if hours > 0 and len(plan.resources) > 1:
+                        hours /= len(plan.resources)
+                required += qty * hours
 
             req = CapacityRequirement(
                 plan_id=plan.id,
@@ -160,8 +190,33 @@ def _calculate_requirements_from_production_orders(
                 and o.planned_completion_date > period_start
             ]
 
-            # Calculate required capacity (simplified)
-            required = sum(o.planned_quantity * 0.1 for o in period_orders)  # 0.1 hours per unit
+            # Calculate required capacity from BoR
+            from app.models.rccp import BillOfResources
+            required = 0.0
+            for o in period_orders:
+                bor = db.query(BillOfResources).filter(
+                    BillOfResources.config_id == plan.supply_chain_config_id,
+                    BillOfResources.product_id == o.product_id,
+                    BillOfResources.site_id == o.site_id,
+                    BillOfResources.resource_id == resource.id,
+                    BillOfResources.is_active == True,
+                ).first()
+                if bor:
+                    required += o.planned_quantity * bor.effective_hours_per_unit
+                else:
+                    # CPOF fallback
+                    bor_cpof = db.query(BillOfResources).filter(
+                        BillOfResources.config_id == plan.supply_chain_config_id,
+                        BillOfResources.product_id == o.product_id,
+                        BillOfResources.site_id == o.site_id,
+                        BillOfResources.resource_id == None,
+                        BillOfResources.is_active == True,
+                    ).first()
+                    if bor_cpof and bor_cpof.overall_hours_per_unit:
+                        hours = bor_cpof.overall_hours_per_unit
+                        if len(plan.resources) > 1:
+                            hours /= len(plan.resources)
+                        required += o.planned_quantity * hours
 
             req = CapacityRequirement(
                 plan_id=plan.id,
@@ -172,7 +227,7 @@ def _calculate_requirements_from_production_orders(
                 required_capacity=required,
                 available_capacity=resource.effective_capacity,
                 source_type="PRODUCTION_ORDER",
-                requirement_breakdown={o.order_number: o.planned_quantity * 0.1 for o in period_orders}
+                requirement_breakdown={o.order_number: o.planned_quantity for o in period_orders}
             )
             req.calculate_utilization()
             requirements.append(req)

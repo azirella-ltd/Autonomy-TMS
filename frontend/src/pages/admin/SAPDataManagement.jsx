@@ -60,6 +60,7 @@ const tabItems = [
   { value: 'jobs', label: 'Ingestion Jobs', icon: <Activity className="h-4 w-4" /> },
   { value: 'insights', label: 'Insights & Actions', icon: <Lightbulb className="h-4 w-4" /> },
   { value: 'user-import', label: 'User Import', icon: <Users className="h-4 w-4" /> },
+  { value: 'staging', label: 'Staging & Sync', icon: <RefreshCw className="h-4 w-4" /> },
 ];
 
 const systemTypes = [
@@ -2824,6 +2825,261 @@ const UserImportTab = () => {
   );
 };
 
+// Staging & Sync Tab
+const StagingTab = ({ connections }) => {
+  const [selectedConnectionId, setSelectedConnectionId] = useState('');
+  const [selectedConfigId, setSelectedConfigId] = useState('');
+  const [configs, setConfigs] = useState([]);
+  const [running, setRunning] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
+  const [result, setResult] = useState(null);
+  const [reconcileResult, setReconcileResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [history, setHistory] = useState([]);
+
+  // Load supply chain configs
+  useEffect(() => {
+    api.get('/supply-chain-configs').then(res => {
+      const list = Array.isArray(res.data) ? res.data : res.data?.configs || [];
+      setConfigs(list);
+      if (list.length > 0 && !selectedConfigId) setSelectedConfigId(String(list[0].id));
+    }).catch(() => {});
+  }, []);
+
+  // Auto-select first connection
+  useEffect(() => {
+    if (connections.length > 0 && !selectedConnectionId) {
+      setSelectedConnectionId(String(connections[0].id));
+    }
+  }, [connections]);
+
+  const handleRunStaging = async () => {
+    if (!selectedConnectionId || !selectedConfigId) return;
+    setRunning(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await api.post('/sap-data/staging/run', {
+        connection_id: parseInt(selectedConnectionId),
+        config_id: parseInt(selectedConfigId),
+      });
+      setResult(res.data);
+      setHistory(prev => [{ ...res.data, timestamp: new Date().toISOString() }, ...prev].slice(0, 10));
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Staging pipeline failed');
+    }
+    setRunning(false);
+  };
+
+  const handleReconcile = async () => {
+    if (!selectedConnectionId || !selectedConfigId) return;
+    setReconciling(true);
+    setError(null);
+    setReconcileResult(null);
+    try {
+      const res = await api.post('/sap-data/staging/reconcile', {
+        connection_id: parseInt(selectedConnectionId),
+        config_id: parseInt(selectedConfigId),
+      });
+      setReconcileResult(res.data);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Reconciliation failed');
+    }
+    setReconciling(false);
+  };
+
+  const entityResults = result?.entities || {};
+  const reconData = reconcileResult?.reconciliation || reconcileResult || {};
+
+  return (
+    <div className="space-y-6">
+      {/* Controls */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <RefreshCw className="h-5 w-5" />
+            SAP → AWS SC Staging Pipeline
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground mb-4">
+            Extract data from SAP, map to AWS Supply Chain entities, and upsert into the operational database.
+            Automated sync runs every 6 hours with daily reconciliation at 01:00.
+          </p>
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="min-w-[200px]">
+              <label className="text-sm font-medium mb-1 block">SAP Connection</label>
+              <NativeSelect value={selectedConnectionId} onChange={e => setSelectedConnectionId(e.target.value)}>
+                <option value="">Select connection...</option>
+                {connections.map(c => (
+                  <option key={c.id} value={String(c.id)}>{c.name} ({c.system_type})</option>
+                ))}
+              </NativeSelect>
+            </div>
+            <div className="min-w-[200px]">
+              <label className="text-sm font-medium mb-1 block">Target Config</label>
+              <NativeSelect value={selectedConfigId} onChange={e => setSelectedConfigId(e.target.value)}>
+                <option value="">Select config...</option>
+                {configs.map(c => (
+                  <option key={c.id} value={String(c.id)}>{c.name}</option>
+                ))}
+              </NativeSelect>
+            </div>
+            <Button onClick={handleRunStaging} disabled={running || !selectedConnectionId || !selectedConfigId}>
+              {running ? <><Spinner className="h-4 w-4 mr-2" /> Running...</> : <><Play className="h-4 w-4 mr-2" /> Run Staging</>}
+            </Button>
+            <Button variant="outline" onClick={handleReconcile} disabled={reconciling || !selectedConnectionId || !selectedConfigId}>
+              {reconciling ? <><Spinner className="h-4 w-4 mr-2" /> Checking...</> : <><ArrowUpDown className="h-4 w-4 mr-2" /> Reconcile</>}
+            </Button>
+          </div>
+          {error && (
+            <Alert variant="destructive" className="mt-4">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Staging Results */}
+      {Object.keys(entityResults).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-green-500" />
+              Staging Results
+              {result?.duration_seconds && (
+                <Badge variant="outline" className="ml-2">{result.duration_seconds.toFixed(1)}s</Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2 px-3 font-medium">Entity</th>
+                    <th className="text-right py-2 px-3 font-medium">Inserted</th>
+                    <th className="text-right py-2 px-3 font-medium">Updated</th>
+                    <th className="text-right py-2 px-3 font-medium">Skipped</th>
+                    <th className="text-right py-2 px-3 font-medium">Errors</th>
+                    <th className="text-center py-2 px-3 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(entityResults).map(([entity, r]) => (
+                    <tr key={entity} className="border-b hover:bg-muted/50">
+                      <td className="py-2 px-3 font-mono text-xs">{entity}</td>
+                      <td className="text-right py-2 px-3 text-green-600">{r.inserted || 0}</td>
+                      <td className="text-right py-2 px-3 text-blue-600">{r.updated || 0}</td>
+                      <td className="text-right py-2 px-3 text-muted-foreground">{r.skipped || 0}</td>
+                      <td className="text-right py-2 px-3 text-red-600">{(r.validation_errors || []).length}</td>
+                      <td className="text-center py-2 px-3">
+                        {(r.validation_errors || []).length > 0 ? (
+                          <Badge variant="destructive">Error</Badge>
+                        ) : (r.inserted || 0) + (r.updated || 0) > 0 ? (
+                          <Badge variant="default">Synced</Badge>
+                        ) : (
+                          <Badge variant="secondary">No Change</Badge>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Reconciliation Results */}
+      {Object.keys(reconData).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ArrowUpDown className="h-5 w-5" />
+              Reconciliation — SAP vs Postgres
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2 px-3 font-medium">Entity</th>
+                    <th className="text-right py-2 px-3 font-medium">SAP Count</th>
+                    <th className="text-right py-2 px-3 font-medium">DB Count</th>
+                    <th className="text-right py-2 px-3 font-medium">Diff</th>
+                    <th className="text-center py-2 px-3 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(reconData).map(([entity, r]) => {
+                    const diff = (r.sap_count || 0) - (r.db_count || 0);
+                    const match = diff === 0;
+                    return (
+                      <tr key={entity} className="border-b hover:bg-muted/50">
+                        <td className="py-2 px-3 font-mono text-xs">{entity}</td>
+                        <td className="text-right py-2 px-3">{r.sap_count ?? '—'}</td>
+                        <td className="text-right py-2 px-3">{r.db_count ?? '—'}</td>
+                        <td className={cn("text-right py-2 px-3 font-medium", match ? "text-green-600" : "text-amber-600")}>
+                          {diff === 0 ? '0' : (diff > 0 ? `+${diff}` : diff)}
+                        </td>
+                        <td className="text-center py-2 px-3">
+                          {match ? (
+                            <Badge variant="default"><CheckCircle className="h-3 w-3 mr-1" /> Match</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-amber-600 border-amber-300">
+                              <AlertTriangle className="h-3 w-3 mr-1" /> Mismatch
+                            </Badge>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Run History */}
+      {history.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              Recent Runs
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {history.map((run, i) => {
+                const entities = run.entities || {};
+                const totalInserted = Object.values(entities).reduce((s, r) => s + (r.inserted || 0), 0);
+                const totalUpdated = Object.values(entities).reduce((s, r) => s + (r.updated || 0), 0);
+                const totalErrors = Object.values(entities).reduce((s, r) => s + (r.validation_errors || []).length, 0);
+                return (
+                  <div key={i} className="flex items-center justify-between p-2 rounded border text-sm">
+                    <span className="text-muted-foreground">{new Date(run.timestamp).toLocaleString()}</span>
+                    <div className="flex gap-3">
+                      <span className="text-green-600">+{totalInserted} inserted</span>
+                      <span className="text-blue-600">{totalUpdated} updated</span>
+                      {totalErrors > 0 && <span className="text-red-600">{totalErrors} errors</span>}
+                      {run.duration_seconds && <span className="text-muted-foreground">{run.duration_seconds.toFixed(1)}s</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+};
+
 // Main Component
 const SAPDataManagement = () => {
   const { user, isTenantAdmin } = useAuth();
@@ -3092,6 +3348,10 @@ const SAPDataManagement = () => {
 
           {activeTab === 'user-import' && (
             <UserImportTab />
+          )}
+
+          {activeTab === 'staging' && (
+            <StagingTab connections={connections} />
           )}
         </Tabs>
       </div>

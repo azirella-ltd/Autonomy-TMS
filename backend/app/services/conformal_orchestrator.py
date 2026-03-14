@@ -713,7 +713,8 @@ class ConformalOrchestrator:
         """
         indicator = (grid_points >= observed).astype(float)
         integrand = (cdf_values - indicator) ** 2
-        return float(np.trapezoid(integrand, grid_points))
+        _trapz = getattr(np, 'trapezoid', None) or np.trapz
+        return float(_trapz(integrand, grid_points))
 
     async def compute_crps_for_entity(
         self,

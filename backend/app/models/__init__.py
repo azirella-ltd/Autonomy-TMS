@@ -333,6 +333,9 @@ from .user_directive import UserDirective, ConfigProvisioningStatus
 # 29. Email Signals — GDPR-safe email ingestion for SC intelligence
 from .email_signal import EmailSignal, EmailConnection
 
+# 30. RCCP — Rough-Cut Capacity Planning (Bill of Resources + Validation Runs)
+from .rccp import BillOfResources, RCCPRun, RCCPMethod, ProductionPhase, RCCPRunStatus
+
 # Verify all models are properly registered
 registered_tables = set(Base.metadata.tables.keys())
 # Updated terminology: scenarios, scenario_users, scenario_user_actions
@@ -608,6 +611,12 @@ __all__ = [
     # Email Signals — GDPR-safe email ingestion
     'EmailSignal',
     'EmailConnection',
+    # RCCP — Rough-Cut Capacity Planning
+    'BillOfResources',
+    'RCCPRun',
+    'RCCPMethod',
+    'ProductionPhase',
+    'RCCPRunStatus',
 ]
 
 # Note: SQLAlchemy will configure mappers lazily when first used.

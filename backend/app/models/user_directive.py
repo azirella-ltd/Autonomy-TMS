@@ -165,6 +165,11 @@ class ConfigProvisioningStatus(Base):
     supply_plan_at = Column(DateTime, nullable=True)
     supply_plan_error = Column(Text, nullable=True)
 
+    # Step 9b: RCCP validation (rough-cut capacity check against supply plan)
+    rccp_validation_status = Column(String(20), default="pending")
+    rccp_validation_at = Column(DateTime, nullable=True)
+    rccp_validation_error = Column(Text, nullable=True)
+
     # Step 10: Decision stream seeding
     decision_seed_status = Column(String(20), default="pending")
     decision_seed_at = Column(DateTime, nullable=True)
@@ -193,8 +198,8 @@ class ConfigProvisioningStatus(Base):
     STEPS = [
         "warm_start", "sop_graphsage", "cfa_optimization",
         "lgbm_forecast", "demand_tgnn", "supply_tgnn", "inventory_tgnn",
-        "trm_training", "supply_plan", "decision_seed", "site_tgnn",
-        "conformal", "briefing",
+        "trm_training", "supply_plan", "rccp_validation", "decision_seed",
+        "site_tgnn", "conformal", "briefing",
     ]
 
     STEP_LABELS = {
@@ -203,7 +208,8 @@ class ConfigProvisioningStatus(Base):
         "cfa_optimization": "Policy Parameter Optimization",
         "lgbm_forecast": "Demand Forecasting",
         "demand_tgnn": "Demand Planning Agent",
-        "supply_tgnn": "Supply & RCCP Agent",
+        "supply_tgnn": "Supply Planning Agent",
+        "rccp_validation": "Rough-Cut Capacity Validation",
         "inventory_tgnn": "Inventory Optimization Agent",
         "trm_training": "Execution Role Agent Training",
         "supply_plan": "Supply Plan Generation",
@@ -223,6 +229,7 @@ class ConfigProvisioningStatus(Base):
         "inventory_tgnn": ["supply_tgnn"],
         "trm_training": ["demand_tgnn", "supply_tgnn", "inventory_tgnn"],
         "supply_plan": ["cfa_optimization", "trm_training"],
+        "rccp_validation": ["supply_plan"],
         "decision_seed": ["trm_training"],
         "site_tgnn": ["decision_seed"],
         "conformal": ["warm_start"],

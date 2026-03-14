@@ -490,6 +490,89 @@ class ProvisioningService:
             logger.warning("Supply plan generation failed (non-critical): %s", e)
             return {"status": "ok", "note": f"Supply plan attempted: {str(e)[:100]}"}
 
+    async def _step_rccp_validation(self, config_id: int) -> dict:
+        """Step 9b: Run RCCP validation against the latest MPS plan for each site.
+
+        Validates rough-cut capacity feasibility. If infeasible, flags a warning
+        but does NOT block subsequent steps (capacity issues are common and
+        addressed iteratively).
+        """
+        from app.db.session import sync_session_factory
+        sync_db = sync_session_factory()
+        try:
+            from app.services.rccp_service import RCCPService
+            from app.models.supply_chain_config import Site
+            from app.models.aws_sc_planning import MPSPlan
+
+            # Find latest approved or draft MPS plan for this config
+            mps_plan = (
+                sync_db.query(MPSPlan)
+                .filter(MPSPlan.config_id == config_id)
+                .order_by(MPSPlan.created_at.desc())
+                .first()
+            )
+            if not mps_plan:
+                return {"status": "ok", "note": "No MPS plan found — skipping RCCP validation"}
+
+            # Get internal sites
+            sites = (
+                sync_db.query(Site)
+                .filter(Site.config_id == config_id, Site.is_external == False)
+                .all()
+            )
+            if not sites:
+                return {"status": "ok", "note": "No internal sites — skipping RCCP"}
+
+            rccp_service = RCCPService(sync_db, config_id)
+            results = []
+            feasible_count = 0
+            overloaded_count = 0
+
+            for site in sites:
+                try:
+                    run = rccp_service.validate_mps(
+                        mps_plan_id=mps_plan.id,
+                        site_id=site.id,
+                        planning_horizon_weeks=12,
+                    )
+                    results.append({
+                        "site_id": site.id,
+                        "site_name": site.site_name,
+                        "status": run.status.value if hasattr(run.status, 'value') else str(run.status),
+                        "is_feasible": run.is_feasible,
+                        "max_utilization_pct": run.max_utilization_pct,
+                        "overloaded_resources": run.overloaded_resource_count,
+                    })
+                    if run.is_feasible:
+                        feasible_count += 1
+                    else:
+                        overloaded_count += 1
+                except Exception as e:
+                    logger.warning("RCCP validation failed for site %s: %s", site.id, e)
+                    results.append({
+                        "site_id": site.id,
+                        "site_name": site.site_name,
+                        "status": "error",
+                        "error": str(e)[:200],
+                    })
+
+            sync_db.commit()
+            return {
+                "status": "ok",
+                "sites_validated": len(results),
+                "feasible": feasible_count,
+                "overloaded": overloaded_count,
+                "details": results,
+                "note": f"RCCP: {feasible_count} feasible, {overloaded_count} overloaded"
+                if overloaded_count > 0
+                else f"RCCP: all {feasible_count} sites feasible",
+            }
+        except Exception as e:
+            logger.warning("RCCP validation step failed (non-blocking): %s", e)
+            return {"status": "ok", "note": f"RCCP validation attempted: {str(e)[:100]}"}
+        finally:
+            sync_db.close()
+
     async def _step_decision_seed(self, config_id: int) -> dict:
         """
         Step 10: Seed the Decision Stream by running one TRM decision cycle per
@@ -715,17 +798,83 @@ class ProvisioningService:
         }
 
     async def _step_site_tgnn_bg(self, config_id: int, db: AsyncSession) -> dict:
-        """Step 8 background: Train Site tGNN (Layer 1.5) for all non-market sites."""
+        """Step 8 background: Train Site tGNN (Layer 1.5) for all non-market sites.
+
+        Uses MultiTRMCoordinationOracle for Phase 1 BC when no live MultiHeadTrace
+        data exists (cold-start). The oracle runs all 11 deterministic engines
+        simultaneously, resolves resource conflicts via priority rules, and generates
+        labeled urgency-adjustment training samples without requiring live decisions.
+        """
+        import asyncio
         from app.services.powell.generic_training_orchestrator import GenericTrainingOrchestrator
-        orchestrator = GenericTrainingOrchestrator(config_id=config_id)
-        result = await orchestrator.train_site_tgnns(epochs=5)
+        from app.services.powell.site_tgnn_trainer import SiteTGNNTrainer
+        from app.services.powell.site_capabilities import get_active_trms
+
+        sites_trained = 0
+        oracle_sites = []
+        errors = 0
+        start_time = asyncio.get_event_loop().time()
+
+        try:
+            # Try the standard trainer first (uses live MultiHeadTrace if available)
+            orchestrator = GenericTrainingOrchestrator(config_id=config_id)
+            result = await orchestrator.train_site_tgnns(epochs=5)
+            sites_trained = result.sites_trained
+            errors = result.errors
+        except Exception as e:
+            logger.warning("Standard Site tGNN trainer failed (%s), falling back to oracle BC", e)
+
+        # If no sites were trained (no live trace data), fall back to oracle BC
+        if sites_trained == 0:
+            try:
+                # Determine sites from config (simplified: use a representative set)
+                # In full integration, query Site table for non-market sites in config
+                oracle_site_keys = _get_non_market_site_keys(db, config_id)
+                for site_key, master_type, sc_site_type in oracle_site_keys:
+                    try:
+                        active_trms = get_active_trms(master_type, sc_site_type)
+                        trainer = SiteTGNNTrainer(site_key=site_key, config_id=config_id)
+                        result = trainer.train_phase1_bc_from_oracle(
+                            num_scenarios=200,      # Fast cold-start
+                            phases=(1, 2, 3),
+                            active_trms=active_trms,
+                        )
+                        if result.get("status") == "completed":
+                            sites_trained += 1
+                            oracle_sites.append(site_key)
+                    except Exception as site_err:
+                        logger.warning("Oracle BC failed for site %s: %s", site_key, site_err)
+                        errors += 1
+            except Exception as e:
+                logger.warning("Oracle BC fallback failed: %s", e)
+                errors += 1
+
+        duration = asyncio.get_event_loop().time() - start_time
         return {
-            "status": "ok" if result.errors == 0 else "partial",
-            "sites_trained": result.sites_trained,
-            "models_trained": result.models_trained,
-            "errors": result.errors,
-            "duration_seconds": result.duration_seconds,
+            "status": "ok" if errors == 0 else "partial",
+            "sites_trained": sites_trained,
+            "oracle_sites": oracle_sites,
+            "errors": errors,
+            "duration_seconds": duration,
         }
+
+
+def _get_non_market_site_keys(db, config_id: int):
+    """Return (site_key, master_type, sc_site_type) tuples for non-market sites in config."""
+    try:
+        from sqlalchemy import select
+        from app.models.supply_chain_config import Node
+        stmt = select(Node).where(
+            Node.config_id == config_id,
+            Node.master_type.notin_(["MARKET_SUPPLY", "MARKET_DEMAND"]),
+        )
+        nodes = db.execute(stmt).scalars().all() if hasattr(db, "execute") else []
+        return [
+            (n.node_id or f"site_{n.id}", n.master_type or "INVENTORY", getattr(n, "sc_site_type", None))
+            for n in nodes
+        ]
+    except Exception:
+        return []
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

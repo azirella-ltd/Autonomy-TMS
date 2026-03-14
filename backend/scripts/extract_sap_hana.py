@@ -70,13 +70,15 @@ SAP_TABLES: Dict[str, Tuple[List[str], str]] = {
     ),
     "ADRC": (
         ["ADDRNUMBER", "NAME1", "CITY1", "CITY2", "REGION", "COUNTRY",
-         "POST_CODE1", "STREET", "STR_SUPPL1", "STR_SUPPL2", "BUILDING"],
+         "POST_CODE1", "STREET", "STR_SUPPL1", "STR_SUPPL2", "BUILDING",
+         "TEL_NUMBER", "FAX_NUMBER", "TIME_ZONE"],
         # ADRC has no direct BUKRS filter — we'll join via T001W.ADRNR
         "",
     ),
     "MARA": (
         ["MATNR", "MTART", "MBRSH", "MATKL", "MEINS", "BRGEW", "NTGEW",
-         "GEWEI", "VOLUM", "VOLEH", "PRDHA", "SPART"],
+         "GEWEI", "VOLUM", "VOLEH", "PRDHA", "SPART", "LVORM", "ERSDA",
+         "LAEDA", "EAN11"],
         "",  # Filtered via MARC
     ),
     "MAKT": (
@@ -87,7 +89,9 @@ SAP_TABLES: Dict[str, Tuple[List[str], str]] = {
         ["MATNR", "WERKS", "EKGRP", "DISMM", "DISPO", "DISLS", "BESKZ",
          "SOBSL", "LGPRO", "LGFSB", "PLIFZ", "WEBAZ", "EISBE", "BSTMI",
          "BSTMA", "BSTFE", "BSTRF", "MABST", "LOSGR", "SBDKZ", "LAGPR",
-         "ALTSL", "KZAUS", "AUSSS", "AUSDT", "NFMAT", "SERNP", "STDPD"],
+         "ALTSL", "KZAUS", "AUSSS", "AUSDT", "NFMAT", "SERNP", "STDPD",
+         "STLNR", "MINBE", "SHZET", "DZEIT", "FHORI", "FXHOR", "STRGR",
+         "PRCTR", "VRMOD", "VINT1", "VINT2"],
         "WERKS IN ({werks})",
     ),
     "MARD": (
@@ -112,12 +116,12 @@ SAP_TABLES: Dict[str, Tuple[List[str], str]] = {
     ),
     "LFA1": (
         ["LIFNR", "LAND1", "NAME1", "NAME2", "ORT01", "PSTLZ", "REGIO",
-         "STRAS", "ADRNR", "KTOKK", "SPRAS"],
+         "STRAS", "ADRNR", "KTOKK", "SPRAS", "TELF1", "ERDAT", "SPERM"],
         "",  # All vendors
     ),
     "KNA1": (
         ["KUNNR", "LAND1", "NAME1", "NAME2", "ORT01", "PSTLZ", "REGIO",
-         "STRAS", "ADRNR", "KTOKD", "SPRAS"],
+         "STRAS", "ADRNR", "KTOKD", "SPRAS", "TELF1", "ERDAT", "AUFSD"],
         "",  # All customers
     ),
     "KNVV": (
@@ -126,13 +130,13 @@ SAP_TABLES: Dict[str, Tuple[List[str], str]] = {
         "",
     ),
     "EINA": (
-        ["INFNR", "MATNR", "LIFNR", "LOEKZ"],
+        ["INFNR", "MATNR", "LIFNR", "LOEKZ", "ERDAT", "TXZ01", "MEINS"],
         "",
     ),
     "EINE": (
         ["INFNR", "EKORG", "ESOKZ", "WERKS", "NETPR", "PEINH", "BPRME",
-         "APLFZ", "PLIFZ", "NORBM", "UEBTK", "UEBTO", "UNTTO", "MWSKZ",
-         "LIFNR"],
+         "APLFZ", "PLIFZ", "NORBM", "MINBM", "UEBTK", "UEBTO", "UNTTO",
+         "MWSKZ", "LIFNR", "WAERS"],
         "",
     ),
     "EORD": (
@@ -156,13 +160,13 @@ SAP_TABLES: Dict[str, Tuple[List[str], str]] = {
     ),
     # BOM
     "STKO": (
-        ["STLNR", "STLAL", "STEFM", "STLST", "DATEFR", "DATETO", "BMENG",
-         "BMEIN", "STLTY"],
+        ["STLNR", "STLAL", "STEFM", "STLST", "DATUV", "BMENG",
+         "BMEIN", "STLTY", "STKTX", "LOEKZ"],
         "",
     ),
     "STPO": (
-        ["STLNR", "STLKN", "IDNRK", "MENGE", "MEINS", "AUSCH", "POTX1",
-         "POSTP"],
+        ["STLNR", "STLKN", "STPOZ", "IDNRK", "MENGE", "MEINS", "AUSCH",
+         "POTX1", "POSTP", "POSNR", "SORTF"],
         "",
     ),
     # Routing
@@ -225,7 +229,8 @@ SAP_TABLES: Dict[str, Tuple[List[str], str]] = {
     ),
     "LIKP": (
         ["VBELN", "KUNNR", "WADAT", "WADAT_IST", "LFART", "VSTEL",
-         "ROUTE", "BTGEW", "GEWEI", "ERDAT", "ERNAM"],
+         "ROUTE", "BTGEW", "GEWEI", "ERDAT", "ERNAM", "BOLNR", "LIFNR",
+         "LFDAT", "LDDAT", "NTGEW", "VOLUM", "VOLEH", "VKORG"],
         "",
     ),
     "LIPS": (
@@ -316,6 +321,102 @@ SAP_TABLES: Dict[str, Tuple[List[str], str]] = {
          "CHNGIND", "VALUE_NEW", "VALUE_OLD"],
         "OBJECTID IN (SELECT \"OBJECTID\" FROM {schema}.\"CDHDR\" WHERE \"UDATE\" >= ADD_DAYS(CURRENT_DATE, -365))",
     ),
+
+    # ── Additional tables for full AWS SC coverage ───────────────────
+
+    # Product hierarchy (decode MARA.PRDHA → ProductHierarchy entity)
+    "T179": (
+        ["PRODH", "STUFE", "VESSION"],
+        "",
+    ),
+    "T179T": (
+        ["PRODH", "SPRAS", "VTEXT"],
+        "SPRAS = 'E'",
+    ),
+
+    # Customer sales area data (customer distribution channel assignments)
+    "KNVV": (
+        ["KUNNR", "VKORG", "VTWEG", "SPART", "BZIRK", "KDGRP", "VWERK",
+         "WAERS", "KALKS", "LPRIO"],
+        "",
+    ),
+
+    # Batch/lot master data (for ShipmentLot traceability)
+    "MCH1": (
+        ["MATNR", "CHARG", "ERDAT", "ERSDA", "VEESSION"],
+        "",
+    ),
+    "MCHA": (
+        ["MATNR", "CHARG", "WERKS", "HSDAT", "VFDAT", "MAXLZ_MCHA",
+         "LIESSION"],
+        "",
+    ),
+
+    # SO header / item status (for OutboundOrderLine + Backorder status)
+    "VBUK": (
+        ["VBELN", "LFSTK", "WBSTK", "FKSTK", "GBSTK", "ABSTK", "KOSTK"],
+        "",
+    ),
+    "VBUP": (
+        ["VBELN", "POSNR", "LFSTA", "WBSTA", "FKSTA", "GBSTA", "ABSTA",
+         "KOSTA"],
+        "",
+    ),
+
+    # Internal orders (production, maintenance, investment orders)
+    "AUFK": (
+        ["AUFNR", "AUART", "AUTYP", "WERKS", "ERDAT", "BUKRS", "KTEXT",
+         "OBJNR", "WAERS", "LOESSION"],
+        "",
+    ),
+
+    # Object system status (status of orders, deliveries, etc.)
+    "JEST": (
+        ["OBJNR", "STAT", "INACT"],
+        "",
+    ),
+
+    # Quality inspection lots (QC status for inbound/production)
+    "QALS": (
+        ["PRUEFLOS", "MATNR", "WERK", "ART", "HERKUNFT", "STAT",
+         "ENSTEHDAT", "PASTRTERM", "PAENDTERM", "LOSMENGE", "MENGENEINH",
+         "AUFNR", "CHARG", "INSMK"],
+        "",
+    ),
+    # Quality notifications (defects, complaints)
+    "QMEL": (
+        ["QMNUM", "QMART", "MATNR", "ERDAT", "PRIOK", "STRMN", "LTRMN",
+         "QMTXT", "AUFNR", "OBJNR"],
+        "",
+    ),
+
+    # Transfer orders (warehouse movements for FulfillmentOrder)
+    "LTAK": (
+        ["TANUM", "LGNUM", "TBNUM", "BWART", "BWLVS", "BDATU", "BZEIT",
+         "LZNUM", "BETYP", "BENUM", "TRART", "STDAT", "ENDAT"],
+        "",
+    ),
+    "LTAP": (
+        ["LGNUM", "TANUM", "TAPOS", "MATNR", "WERKS", "LGORT", "VLTYP",
+         "VLPLA", "NLTYP", "NLPLA", "VSOLM", "NSOLM", "VISTM", "NISTM",
+         "MEINS"],
+        "",
+    ),
+
+    # PO history (goods receipts for vendor performance + InboundOrder actuals)
+    "EKBE": (
+        ["EBELN", "EBELP", "ZEESSION", "VGABE", "BEWTP", "BWART", "BUDAT",
+         "MENGE", "DMBTR", "WAERS", "SHKZG", "MATNR", "WERKS", "LIFNR",
+         "XBLNR", "LFBNR", "CPUDT"],
+        "",
+    ),
+
+    # Capacity planning (work center capacity for ProductionCapacity)
+    "KAKO": (
+        ["OBJID", "DATUB", "DATBI", "KAPESSION", "AESSION",
+         "ANESSION", "BEGZT", "ENDZT"],
+        "",
+    ),
 }
 
 # Tables to extract by default (the full set)
@@ -323,9 +424,10 @@ DEFAULT_TABLES = list(SAP_TABLES.keys())
 
 # Transaction tables only (for incremental extraction)
 TRANSACTION_TABLES = [
-    "EKKO", "EKPO", "EKET", "EKBE", "VBAK", "VBAP", "VBEP", "LIKP", "LIPS",
+    "EKKO", "EKPO", "EKET", "EKBE", "VBAK", "VBAP", "VBEP", "VBUK", "VBUP",
+    "LIKP", "LIPS", "LTAK", "LTAP",
     "AFKO", "AFPO", "AFVC", "AFRU", "RESB", "MKPF", "MSEG",
-    "KONV", "QASE",
+    "KONV", "QASE", "QALS", "QMEL", "AUFK", "JEST",
 ]
 
 
@@ -582,6 +684,20 @@ TABLE_LABELS = {
     "QASE": "inspection_results",
     "CDHDR": "change_document_headers",
     "CDPOS": "change_document_items",
+    "T179": "product_hierarchy",
+    "T179T": "product_hierarchy_text",
+    "KNVV": "customer_sales_area",
+    "MCH1": "batch_master",
+    "MCHA": "batch_plant",
+    "VBUK": "sales_header_status",
+    "VBUP": "sales_item_status",
+    "AUFK": "orders",
+    "JEST": "system_status",
+    "QALS": "inspection_lots",
+    "QMEL": "quality_notifications",
+    "LTAK": "transfer_order_headers",
+    "LTAP": "transfer_order_items",
+    "KAKO": "capacity_headers",
 }
 
 

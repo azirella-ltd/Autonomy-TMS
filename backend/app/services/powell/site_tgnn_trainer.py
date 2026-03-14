@@ -371,6 +371,71 @@ class SiteTGNNTrainer:
             "checkpoint": checkpoint_path,
         }
 
+    def train_phase1_bc_from_oracle(
+        self,
+        num_scenarios: int = 500,
+        phases: Tuple[int, ...] = (1, 2, 3),
+        active_trms: Optional[Any] = None,
+        seed: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Phase 1 BC using the MultiTRMCoordinationOracle (no live data required).
+
+        This is the oracle-backed warm-start path, analogous to training a chess
+        LLM on Stockfish evaluations. The CoordinationOracle runs all deterministic
+        engines simultaneously, resolves resource conflicts via priority rules, and
+        produces urgency adjustment labels that the Site tGNN learns to reproduce.
+
+        Call this method at provisioning time (before any live decisions exist)
+        to give the Site tGNN a strong behavioral-cloning starting point that is
+        already coordination-aware.
+
+        Args:
+            num_scenarios: Number of synthetic scenarios to generate (default 500).
+            phases: Curriculum phases (1=low var, 2=moderate, 3=high var/disruption).
+            active_trms: frozenset of active TRM names (from site_capabilities).
+                         If None, uses all 11 TRMs.
+            seed: Random seed for reproducibility.
+
+        Returns:
+            Training result dict (same format as train_phase1_bc).
+        """
+        from app.services.powell.site_tgnn_oracle import (
+            MultiTRMCoordinationOracle,
+            CoordinationSample,
+        )
+
+        logger.info(
+            "Site tGNN oracle BC: generating %d scenarios for site=%s",
+            num_scenarios, self.site_key,
+        )
+        oracle = MultiTRMCoordinationOracle(
+            site_key=self.site_key,
+            active_trms=active_trms,
+            seed=seed,
+        )
+        oracle_samples: List[CoordinationSample] = oracle.generate_samples(
+            num_scenarios=num_scenarios,
+            phases=phases,
+        )
+
+        # Convert CoordinationSample → SiteTGNNTrainingSample
+        bc_samples = [
+            SiteTGNNTrainingSample(
+                node_features=s.node_features,
+                target_adjustments=s.target_adjustments,
+            )
+            for s in oracle_samples
+        ]
+
+        logger.info(
+            "Site tGNN oracle BC: %d samples ready, starting BC training",
+            len(bc_samples),
+        )
+        result = self.train_phase1_bc(bc_samples)
+        result["oracle_scenarios"] = num_scenarios
+        result["oracle_phases"] = list(phases)
+        return result
+
     # ──────────────────────────────────────────────────────────────────────
     # Phase 2: PPO Reinforcement Learning
     # ──────────────────────────────────────────────────────────────────────

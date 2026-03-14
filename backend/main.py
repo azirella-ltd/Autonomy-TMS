@@ -530,6 +530,10 @@ async def startup_event():
             from app.services.executive_briefing_jobs import register_executive_briefing_jobs
             register_executive_briefing_jobs(scheduler_service)
 
+            # Register SAP data staging jobs (incremental sync every 6h, daily reconciliation)
+            from app.services.sap_staging_jobs import register_sap_staging_jobs
+            register_sap_staging_jobs(scheduler_service)
+
             # Batch calibrate CDT wrappers from historical decision data
             try:
                 from app.services.powell.cdt_calibration_service import CDTCalibrationService
@@ -6168,6 +6172,8 @@ from app.api.endpoints.rl import router as rl_router
 from app.api.endpoints.model import router as model_router
 api.include_router(production_orders_router, prefix="/production-orders", tags=["production-orders"])
 api.include_router(capacity_plans_router, prefix="/capacity-plans", tags=["capacity-plans"])
+from app.api.endpoints.rccp import router as rccp_router
+api.include_router(rccp_router, prefix="/rccp", tags=["rccp"])
 api.include_router(suppliers_router, prefix="/suppliers", tags=["suppliers"])
 api.include_router(inventory_projection_router, prefix="/inventory-projection", tags=["inventory-projection"])
 api.include_router(lot_sizing_router, prefix="/lot-sizing", tags=["lot-sizing"])

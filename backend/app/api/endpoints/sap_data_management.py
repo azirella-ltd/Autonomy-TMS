@@ -1784,17 +1784,19 @@ async def _run_phase2_cdc(db, service, job_id: int, tenant_id: int, sap_data: di
 
 async def _run_phase3_transaction(db, service, job_id: int, tenant_id: int, sap_data: dict):
     """
-    Phase 3: Import transaction data against the active SC config.
+    Phase 3: Incremental staging of SAP data against the active SC config.
 
-    Requires an active SC config (from Phase 1 or Phase 2).
-    Creates orders, production orders, inventory movements, etc.
+    Uses SAPDataStagingService for upsert-based staging. All extracted tables
+    are mapped and upserted — master data updates existing records, transaction
+    data (orders, shipments) is staged for planning consumption.
     """
     from sqlalchemy import text as sql_text
+    from app.services.sap_data_staging_service import SAPDataStagingService
 
     # Find active config
     result = await db.execute(
         sql_text("""
-            SELECT id FROM supply_chain_configs
+            SELECT id, company_id FROM supply_chain_configs
             WHERE tenant_id = :tid AND is_active = true
             ORDER BY id DESC LIMIT 1
         """),
@@ -1808,51 +1810,46 @@ async def _run_phase3_transaction(db, service, job_id: int, tenant_id: int, sap_
         return
 
     active_config_id = active_row["id"]
-
-    # Use SAPConfigBuilder to import transactional data only
-    builder = SAPConfigBuilder(db, tenant_id)
-    builder._data = sap_data
+    company_id = active_row.get("company_id")
 
     try:
-        # Load existing config context
-        from sqlalchemy import select
-        from app.models.supply_chain_config import SupplyChainConfig, Site
-        from app.models.sc_entities import Product
-
-        config_result = await db.execute(
-            select(SupplyChainConfig).where(SupplyChainConfig.id == active_config_id)
+        staging_service = SAPDataStagingService(
+            db=db,
+            tenant_id=tenant_id,
+            config_id=active_config_id,
+            company_id=company_id,
         )
-        builder._config = config_result.scalar_one_or_none()
-        if not builder._config:
-            await service.complete_job(job_id, JobStatus.FAILED,
-                error_message=f"Active config {active_config_id} not found in database")
-            return
+        pipeline_result = await staging_service.stage_all(sap_data)
 
-        # Load existing sites and products for FK resolution
-        site_result = await db.execute(select(Site).where(Site.config_id == active_config_id))
-        for s in site_result.scalars().all():
-            builder._sites[s.name] = s
-
-        product_result = await db.execute(select(Product).where(Product.config_id == active_config_id))
-        for p in product_result.scalars().all():
-            builder._products[p.id] = p
-
-        # Execute step 9 (transactional data)
-        order_counts = await builder._create_transactional_data({})
-        await db.commit()
+        # Run reconciliation
+        recon = await staging_service.reconcile(sap_data)
 
         await service.set_job_build_result(
             job_id=job_id,
             config_id=active_config_id,
-            build_summary={"transaction_import": True, **order_counts},
+            build_summary={
+                "staging": True,
+                "total_records": pipeline_result.total_records,
+                "entities": {
+                    k: {"inserted": v.records_inserted, "updated": v.records_updated}
+                    for k, v in pipeline_result.entity_results.items()
+                },
+                "reconciliation": recon,
+                "errors": pipeline_result.errors,
+            },
         )
-        await service.complete_job(job_id, JobStatus.COMPLETED)
-        logger.info(f"Phase 3 complete: transactions imported against config {active_config_id}")
+
+        final_status = JobStatus.COMPLETED if pipeline_result.success else JobStatus.PARTIAL
+        await service.complete_job(job_id, final_status)
+        logger.info(
+            f"Phase 3 staging complete: {pipeline_result.total_records} records "
+            f"staged against config {active_config_id}"
+        )
 
     except Exception as e:
-        logger.error(f"Phase 3 transaction import failed: {e}", exc_info=True)
+        logger.error(f"Phase 3 staging failed: {e}", exc_info=True)
         await service.complete_job(job_id, JobStatus.FAILED,
-            error_message=f"Transaction import failed: {e}")
+            error_message=f"Staging failed: {e}")
 
 
 @router.post("/jobs/{job_id}/cancel", tags=["sap-ingestion"])
@@ -3100,3 +3097,178 @@ async def geography_status(
         "with_coordinates": row.with_coords,
         "missing_coordinates": row.total - row.with_coords,
     }
+
+
+# -------------------------------------------------------------------------
+# SAP Data Staging — Full Pipeline
+# -------------------------------------------------------------------------
+
+class StagingRequest(BaseModel):
+    connection_id: int = Field(..., description="SAP connection to extract from")
+    config_id: int = Field(..., description="Target SC config to stage into")
+    entity_filter: Optional[List[str]] = Field(None, description="Entity types to stage (null=all)")
+    tables: Optional[List[str]] = Field(None, description="SAP tables to extract (null=auto from entity_filter)")
+
+
+class StagingResponse(BaseModel):
+    config_id: int
+    tenant_id: int
+    total_records: int
+    success: bool
+    errors: List[str]
+    entities: Dict[str, Any]
+    reconciliation: Optional[Dict[str, Any]] = None
+
+
+@router.post("/staging/run", response_model=StagingResponse, tags=["sap-staging"])
+async def run_staging_pipeline(
+    request: StagingRequest,
+    current_user: User = Depends(require_tenant_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Run the full SAP data staging pipeline.
+
+    Extracts data from the specified SAP connection, maps to AWS SC entities,
+    and upserts into the Postgres staging tables. All downstream planning
+    services (Powell, TRM, etc.) consume from these staged tables unchanged.
+    """
+    from app.services.sap_data_staging_service import (
+        SAPDataStagingService, StagingEntityType,
+    )
+
+    # Get connection and extract data
+    deploy_service = create_deployment_service(db, current_user.tenant_id)
+    conn_row = await deploy_service._get_connection_row(request.connection_id)
+    if not conn_row:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    from app.services.sap_deployment_service import SAPConnectionConfig, ConnectionMethod
+
+    connection = SAPConnectionConfig.from_db(conn_row)
+
+    # Determine which tables to extract
+    tables = request.tables
+    if not tables:
+        # Auto-determine from entity filter or use all known tables
+        tables = list(MASTER_DATA_TABLES) + list(TRANSACTION_TABLES)
+
+    # Extract data
+    if connection.connection_method == ConnectionMethod.CSV:
+        from pathlib import Path
+        csv_dir = Path(connection.csv_directory) if connection.csv_directory else None
+        if not csv_dir or not csv_dir.exists():
+            raise HTTPException(status_code=400, detail="CSV directory not found")
+
+        mon_service = create_ingestion_monitoring_service(db, current_user.tenant_id)
+        sap_data, total_rows, total_failed = await _read_csv_tables(
+            csv_dir, tables, 0, current_user.tenant_id, mon_service,
+            file_table_mapping=conn_row.file_table_mapping,
+        )
+    else:
+        sap_data, total_rows, total_failed = await _extract_via_extractor(
+            conn_row, connection, tables, 0, current_user.tenant_id,
+            create_ingestion_monitoring_service(db, current_user.tenant_id),
+        )
+
+    if not sap_data:
+        raise HTTPException(status_code=400, detail="No data extracted")
+
+    # Resolve company_id from config or T001
+    company_id = None
+    from sqlalchemy import select as sa_select
+    from app.models.supply_chain_config import SupplyChainConfig
+    config_result = await db.execute(
+        sa_select(SupplyChainConfig).where(SupplyChainConfig.id == request.config_id)
+    )
+    config = config_result.scalar_one_or_none()
+    if config:
+        company_id = config.company_id
+
+    # Parse entity filter
+    entity_filter = None
+    if request.entity_filter:
+        entity_filter = [StagingEntityType(e) for e in request.entity_filter]
+
+    # Run staging
+    staging_service = SAPDataStagingService(
+        db=db,
+        tenant_id=current_user.tenant_id,
+        config_id=request.config_id,
+        company_id=company_id,
+    )
+    result = await staging_service.stage_all(sap_data, entity_filter=entity_filter)
+
+    # Run reconciliation
+    recon = await staging_service.reconcile(sap_data)
+
+    return StagingResponse(
+        config_id=result.config_id,
+        tenant_id=result.tenant_id,
+        total_records=result.total_records,
+        success=result.success,
+        errors=result.errors,
+        entities={
+            k: {
+                "mapped": v.records_mapped,
+                "inserted": v.records_inserted,
+                "updated": v.records_updated,
+                "skipped": v.records_skipped,
+                "validation_errors": v.validation_errors,
+            }
+            for k, v in result.entity_results.items()
+        },
+        reconciliation=recon,
+    )
+
+
+@router.post("/staging/reconcile", tags=["sap-staging"])
+async def reconcile_staging(
+    request: StagingRequest,
+    current_user: User = Depends(require_tenant_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Run reconciliation only — compare SAP source counts with staged Postgres counts.
+
+    Does NOT modify any data. Returns per-entity comparison.
+    """
+    from app.services.sap_data_staging_service import SAPDataStagingService
+
+    deploy_service = create_deployment_service(db, current_user.tenant_id)
+    conn_row = await deploy_service._get_connection_row(request.connection_id)
+    if not conn_row:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    from app.services.sap_deployment_service import SAPConnectionConfig, ConnectionMethod
+
+    connection = SAPConnectionConfig.from_db(conn_row)
+
+    tables = request.tables or list(MASTER_DATA_TABLES) + list(TRANSACTION_TABLES)
+
+    if connection.connection_method == ConnectionMethod.CSV:
+        from pathlib import Path
+        csv_dir = Path(connection.csv_directory) if connection.csv_directory else None
+        if not csv_dir or not csv_dir.exists():
+            raise HTTPException(status_code=400, detail="CSV directory not found")
+        mon_service = create_ingestion_monitoring_service(db, current_user.tenant_id)
+        sap_data, _, _ = await _read_csv_tables(
+            csv_dir, tables, 0, current_user.tenant_id, mon_service,
+            file_table_mapping=conn_row.file_table_mapping,
+        )
+    else:
+        sap_data, _, _ = await _extract_via_extractor(
+            conn_row, connection, tables, 0, current_user.tenant_id,
+            create_ingestion_monitoring_service(db, current_user.tenant_id),
+        )
+
+    if not sap_data:
+        raise HTTPException(status_code=400, detail="No data extracted")
+
+    staging_service = SAPDataStagingService(
+        db=db,
+        tenant_id=current_user.tenant_id,
+        config_id=request.config_id,
+    )
+    recon = await staging_service.reconcile(sap_data)
+    return {"config_id": request.config_id, "reconciliation": recon}

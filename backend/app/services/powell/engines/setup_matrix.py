@@ -175,7 +175,8 @@ class SetupMatrix:
 
     def _load_resource_defaults(self) -> None:
         """Load default setup times from production_process."""
-        from app.models.sc_entities import ProductionProcess, Site
+        from app.models.sc_entities import ProductionProcess
+        from app.models.supply_chain_config import Site
 
         site = self.db.query(Site).filter(Site.name == self.site_id).first()
         if not site:

@@ -66,9 +66,9 @@ const STEP_META = {
     estimate: '10–30s',
   },
   supply_tgnn: {
-    label: 'Supply & RCCP Agent',
-    desc: 'Initialize supply planning agents for MPS/MRP and capacity feasibility',
-    detail: 'Multi-site supply planning with rough-cut capacity checks',
+    label: 'Supply Planning Agent',
+    desc: 'Initialize supply planning agents for MPS/MRP material requirements',
+    detail: 'Multi-site supply planning with BOM explosion and sourcing rules',
     estimate: '10–30s',
   },
   inventory_tgnn: {
@@ -88,6 +88,12 @@ const STEP_META = {
     desc: 'Generate initial supply plan from trained agents and planning parameters',
     detail: 'Creates purchase orders, transfer orders, and manufacturing orders with Monte Carlo evaluation',
     estimate: '15–60s',
+  },
+  rccp_validation: {
+    label: 'Rough-Cut Capacity Validation',
+    desc: 'Validate supply plan feasibility against available resource capacity',
+    detail: 'RCCP checks each site for overloaded resources, recommends MPS levelling or overtime if needed',
+    estimate: '10–30s',
   },
   decision_seed: {
     label: 'Decision Stream Seeding',
@@ -153,9 +159,9 @@ const TIERS = [
   {
     key: 'plans',
     label: 'Initial Plans',
-    description: 'First supply plan from the trained agents and optimized parameters',
+    description: 'First supply plan from the trained agents and optimized parameters, then RCCP capacity validation',
     Icon: FileText,
-    steps: ['supply_plan'],
+    steps: ['supply_plan', 'rccp_validation'],
     color: 'cyan',
   },
   {
