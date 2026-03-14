@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../services/api';
 import {
@@ -1684,9 +1685,9 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
                         </p>
                       )}
                       {job.status === 'failed' && job.error_message && (
-                        <p className="text-sm text-red-600 mt-1">
+                        <pre className="text-sm text-red-600 mt-1 max-h-60 overflow-auto whitespace-pre-wrap break-words bg-red-50 border border-red-200 rounded p-2 font-mono">
                           <span className="font-medium">Error:</span> {job.error_message}
-                        </p>
+                        </pre>
                       )}
                     </div>
                   </div>
@@ -3248,11 +3249,15 @@ const SAPDataManagement = () => {
   const handleTestConnection = async (connectionId) => {
     try {
       const response = await api.post(`/sap-data/connections/${connectionId}/test`);
-      alert(response.data.message);
+      if (response.data.success) {
+        toast.success(response.data.message);
+      } else {
+        toast.error(response.data.message);
+      }
       loadData();
     } catch (error) {
       console.error('Failed to test connection:', error);
-      alert('Connection test failed');
+      toast.error('Connection test failed');
     }
   };
 

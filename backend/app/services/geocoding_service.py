@@ -28,6 +28,71 @@ USER_AGENT = "AutonomyPlatform/1.0 (supply-chain-planning)"
 # In-memory cache: address key → (lat, lon) or None
 _geocode_cache: Dict[str, Optional[Tuple[float, float]]] = {}
 
+# Flag: whether we've loaded the DB cache into memory this process
+_db_cache_loaded = False
+
+
+async def _load_db_cache() -> int:
+    """Load all geocode_cache rows into the in-memory cache (once per process)."""
+    global _db_cache_loaded
+    if _db_cache_loaded:
+        return 0
+
+    try:
+        from app.db.session import async_session_factory
+        from sqlalchemy import text
+
+        async with async_session_factory() as db:
+            rows = (await db.execute(text(
+                "SELECT city, state, country, postal_code, latitude, longitude "
+                "FROM geocode_cache"
+            ))).fetchall()
+
+        loaded = 0
+        for r in rows:
+            key = _cache_key(city=r[0], state=r[1], country=r[2], postal_code=r[3])
+            if r[4] is not None and r[5] is not None:
+                _geocode_cache[key] = (r[4], r[5])
+            else:
+                _geocode_cache[key] = None
+            loaded += 1
+
+        _db_cache_loaded = True
+        logger.info(f"Loaded {loaded} entries from geocode_cache table")
+        return loaded
+    except Exception as e:
+        # Table may not exist yet (pre-migration) — not fatal
+        logger.debug(f"Could not load geocode_cache table: {e}")
+        _db_cache_loaded = True
+        return 0
+
+
+async def _persist_to_db_cache(
+    city: str, state: str, country: str, postal_code: str,
+    lat: Optional[float], lon: Optional[float],
+) -> None:
+    """Persist a geocode result to the DB cache (upsert)."""
+    try:
+        from app.db.session import async_session_factory
+        from sqlalchemy import text
+
+        async with async_session_factory() as db:
+            await db.execute(text("""
+                INSERT INTO geocode_cache (city, state, country, postal_code, latitude, longitude)
+                VALUES (:city, :state, :country, :postal_code, :lat, :lon)
+                ON CONFLICT (city, state, country, postal_code)
+                DO UPDATE SET latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude
+            """), {
+                "city": city.strip().lower(),
+                "state": state.strip().lower(),
+                "country": country.strip().lower(),
+                "postal_code": postal_code.strip().lower(),
+                "lat": lat, "lon": lon,
+            })
+            await db.commit()
+    except Exception as e:
+        logger.debug(f"Could not persist geocode result: {e}")
+
 # ISO 3166-1 alpha-2 codes (SAP commonly uses these)
 _ISO_COUNTRY_CODES = {
     "AD", "AE", "AF", "AG", "AI", "AL", "AM", "AO", "AQ", "AR", "AS", "AT",
@@ -180,6 +245,9 @@ async def geocode_batch(
         status is "completed", "failed", "in_progress", or "cached".
     Returns a list of (lat, lon) tuples or None for each record.
     """
+    # Load persistent DB cache into memory on first call
+    await _load_db_cache()
+
     results: List[Optional[Tuple[float, float]]] = []
     api_calls = 0
     cache_hits = 0
@@ -223,6 +291,17 @@ async def geocode_batch(
             street=rec.get("street", ""),
         )
         results.append(coords)
+
+        # Persist to DB cache for future runs
+        await _persist_to_db_cache(
+            city=rec.get("city", ""),
+            state=rec.get("state", ""),
+            country=rec.get("country", ""),
+            postal_code=rec.get("postal_code", ""),
+            lat=coords[0] if coords else None,
+            lon=coords[1] if coords else None,
+        )
+
         if coords:
             logger.info(f"Geocoded [{i+1}/{len(records)}] {rec.get('city', '')} → {coords}")
         else:

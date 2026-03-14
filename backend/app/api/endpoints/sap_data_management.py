@@ -508,8 +508,11 @@ class FileMappingUpdate(BaseModel):
     confirmed: bool = True
 
 
-def _identify_sap_table(csv_columns: set) -> tuple:
+def _identify_sap_table(csv_columns: set, filename: str = "") -> tuple:
     """Match CSV columns to known SAP table using Jaccard-like similarity.
+
+    Also checks HANA_TABLE_FIELDS (from extractors) and falls back to
+    filename-based matching if column matching is inconclusive.
 
     Returns (table_name, confidence) where confidence is the fraction
     of known table columns found in the CSV header.
@@ -520,16 +523,45 @@ def _identify_sap_table(csv_columns: set) -> tuple:
     best_score = 0.0
     csv_upper = {c.upper() for c in csv_columns}
 
+    # Source 1: SAP_TABLE_FIELD_MAPPINGS (field mapping service)
     for table_name, field_map in SAP_TABLE_FIELD_MAPPINGS.items():
         known_cols = {c.upper() for c in field_map.keys()}
         if not known_cols:
             continue
         intersection = csv_upper & known_cols
-        # Score = fraction of known columns found in the CSV
         score = len(intersection) / len(known_cols) if known_cols else 0.0
         if score > best_score:
             best_score = score
             best_table = table_name
+
+    # Source 2: HANA_TABLE_FIELDS (extractor field definitions)
+    try:
+        from app.integrations.sap.extractors import HANA_TABLE_FIELDS
+        for table_name, fields in HANA_TABLE_FIELDS.items():
+            known_cols = {c.upper() for c in fields}
+            if not known_cols:
+                continue
+            intersection = csv_upper & known_cols
+            score = len(intersection) / len(known_cols) if known_cols else 0.0
+            if score > best_score:
+                best_score = score
+                best_table = table_name
+    except ImportError:
+        pass
+
+    # Fallback: filename-based matching against known SAP tables
+    if best_score < 0.7 and filename:
+        stem = filename.rsplit(".", 1)[0].upper() if "." in filename else filename.upper()
+        try:
+            from app.services.sap_deployment_service import STANDARD_SAP_TABLES
+            all_tables = set()
+            for tables in STANDARD_SAP_TABLES.values():
+                all_tables.update(t.upper() for t in tables)
+            if stem in all_tables:
+                best_table = stem
+                best_score = max(best_score, 0.8)  # filename match = 0.8 confidence
+        except ImportError:
+            pass
 
     return best_table, best_score
 
@@ -568,7 +600,7 @@ def _scan_and_identify_csv_files(csv_dir: str) -> List[dict]:
                 row_count = sum(1 for _ in reader)
 
             columns = [c.strip() for c in header]
-            table_name, confidence = _identify_sap_table(set(columns))
+            table_name, confidence = _identify_sap_table(set(columns), filename=csv_file.name)
             confidence = round(confidence, 4)
 
             results.append({
@@ -1492,6 +1524,7 @@ async def _save_extracted_csvs(
     job_id: int,
     tenant_id: int,
     service,
+    db=None,
 ):
     """Save extracted DataFrames as CSV files for audit/backup.
 
@@ -1500,12 +1533,24 @@ async def _save_extracted_csvs(
     ``<TABLE_NAME>.csv``.
     """
     import pandas as pd
+    import re
 
-    csv_dir = Path(
-        connection.csv_directory
-        if connection.csv_directory
-        else str(SAP_IMPORTS_BASE / f"tenant_{tenant_id}")
-    )
+    if connection.csv_directory:
+        csv_dir = Path(connection.csv_directory)
+    else:
+        # Use tenant name (slugified) for the directory
+        folder_name = f"tenant_{tenant_id}"
+        if db is not None:
+            try:
+                from sqlalchemy import text as sql_text
+                row = (await db.execute(sql_text(
+                    "SELECT name FROM tenants WHERE id = :tid"
+                ), {"tid": tenant_id})).first()
+                if row and row[0]:
+                    folder_name = re.sub(r'[^\w\s-]', '', row[0]).strip().replace(' ', '_')
+            except Exception:
+                pass
+        csv_dir = SAP_IMPORTS_BASE / folder_name
     csv_dir.mkdir(parents=True, exist_ok=True)
 
     saved_count = 0
@@ -1587,6 +1632,7 @@ async def _run_ingestion(job_id: int, tenant_id: int):
             if job.save_csv:
                 await _save_extracted_csvs(
                     sap_data, conn_row, connection, job_id, tenant_id, service,
+                    db=db,
                 )
 
             # Phase-specific processing (skip if dry run)
