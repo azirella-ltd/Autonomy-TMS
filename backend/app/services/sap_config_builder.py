@@ -421,9 +421,17 @@ class SAPConfigBuilder:
             await _report(1, total_steps, "Creating supply chain config...")
             self._config = await self._create_config(config_name)
 
-            # Step 2: Company & Geography
-            await _report(2, total_steps, "Geocoding company addresses...")
-            await self._create_geography(geocoding_callback=geocoding_callback)
+            # Step 2: Geography (insert rows, start geocoding in background)
+            await _report(2, total_steps, "Creating geography records & starting geocoding...")
+            geocode_coro = await self._create_geography(geocoding_callback=geocoding_callback)
+
+            # Launch geocoding as a concurrent task — it runs in parallel with
+            # steps 3-8 which don't need coordinates. We await it before step 9
+            # (transportation lanes) which uses coordinates for lead time calc.
+            import asyncio
+            geocode_task = None
+            if geocode_coro is not None:
+                geocode_task = asyncio.create_task(geocode_coro())
 
             # Step 3: Sites
             await _report(3, total_steps, "Creating sites from plants & storage locations...")
@@ -458,6 +466,12 @@ class SAPConfigBuilder:
             # Step 8: Transactional Data (orders, production orders, quality orders)
             await _report(8, total_steps, "Importing orders & transactional data...")
             order_counts = await self._create_transactional_data(opts)
+
+            # Await geocoding completion before step 9 (lanes need coordinates
+            # for distance-based lead time calculation)
+            if geocode_task is not None:
+                await _report(9, total_steps, "Waiting for geocoding to complete...")
+                await geocode_task
 
             # Step 9: Transportation Lanes (after transactions so we can
             # infer lanes from EKKO/EKPO/VBAK/VBAP/LIKP/LIPS if available,
@@ -1454,15 +1468,19 @@ class SAPConfigBuilder:
     async def _create_geography(self, geocoding_callback=None):
         """Create Geography entities from ADRC addresses (upsert, deduplicated).
 
-        Geocodes addresses to lat/lon using Nominatim when coordinates are not
-        already available from SAP.
+        Two-phase approach:
+        1. Insert geography rows immediately WITHOUT coordinates (fast)
+        2. Return a coroutine for geocoding that can run in parallel with other steps
+
+        Returns:
+            An awaitable that performs geocoding and updates geography rows with
+            coordinates, or None if no geocoding is needed.
         """
         adrc = self._data.get("ADRC", pd.DataFrame())
         if adrc.empty:
-            return
+            return None
 
         from sqlalchemy.dialects.postgresql import insert as pg_insert
-        from app.services.geocoding_service import geocode_batch
 
         geo_df = self.mapper.map_geography(adrc)
 
@@ -1492,9 +1510,47 @@ class SAPConfigBuilder:
 
         rows = list(seen.values())
 
-        # Geocode unique (city, state, country) combinations only,
-        # then apply results back to all matching rows.
+        # Phase 1: Insert geography rows immediately (no coordinates yet)
         if rows:
+            for r in rows:
+                r.setdefault("latitude", None)
+                r.setdefault("longitude", None)
+            # Batch insert to stay under PostgreSQL's 32767 parameter limit
+            # (9 columns per row → max ~3600 rows per batch)
+            BATCH_SIZE = 500
+            for i in range(0, len(rows), BATCH_SIZE):
+                batch = rows[i : i + BATCH_SIZE]
+                stmt = pg_insert(Geography).values(batch)
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["id"],
+                    set_={
+                        "description": stmt.excluded.description,
+                        "address_1": stmt.excluded.address_1,
+                        "city": stmt.excluded.city,
+                        "state_prov": stmt.excluded.state_prov,
+                        "country": stmt.excluded.country,
+                        "postal_code": stmt.excluded.postal_code,
+                        "latitude": stmt.excluded.latitude,
+                        "longitude": stmt.excluded.longitude,
+                    },
+                )
+                await self.db.execute(stmt)
+            await self.db.flush()
+            logger.info(f"Inserted {len(rows)} geography records (coordinates pending)")
+
+        # Phase 2: Return a coroutine for geocoding (runs in parallel with other steps)
+        if not rows:
+            return None
+
+        async def _geocode_and_update():
+            """Geocode addresses and UPDATE geography rows with coordinates.
+
+            Uses its own DB session since this runs concurrently with other
+            build steps that use the main session.
+            """
+            from app.services.geocoding_service import geocode_batch
+            from app.db.session import async_session_factory
+
             def _loc_key(r):
                 return (
                     r.get("city", "").strip().lower(),
@@ -1502,7 +1558,7 @@ class SAPConfigBuilder:
                     r.get("country", "").strip().lower(),
                 )
 
-            # Build unique location set preserving original casing for display
+            # Build unique location set
             unique_locs: Dict[tuple, dict] = {}
             for r in rows:
                 key = _loc_key(r)
@@ -1542,41 +1598,30 @@ class SAPConfigBuilder:
                         )
                         coord_lookup[k] = coord
 
-                # Apply to all rows
-                geocoded = 0
+                # Update geography rows with coordinates using a separate session
+                updates = []
                 for row in rows:
                     c = coord_lookup.get(_loc_key(row))
                     if c:
-                        row["latitude"] = c[0]
-                        row["longitude"] = c[1]
-                        geocoded += 1
-                logger.info(f"Geocoded {geocoded}/{len(rows)} geography records ({len(unique_inputs)} unique lookups)")
+                        updates.append({"geo_id": row["id"], "lat": c[0], "lon": c[1]})
+
+                if updates:
+                    from sqlalchemy import text as sql_text
+                    async with async_session_factory() as geo_db:
+                        for u in updates:
+                            await geo_db.execute(
+                                sql_text(
+                                    "UPDATE geography SET latitude = :lat, longitude = :lon WHERE id = :gid"
+                                ),
+                                {"lat": u["lat"], "lon": u["lon"], "gid": u["geo_id"]},
+                            )
+                        await geo_db.commit()
+
+                logger.info(f"Geocoded {len(updates)}/{len(rows)} geography records ({len(unique_inputs)} unique lookups)")
             except Exception as e:
                 logger.warning(f"Geocoding batch failed, continuing without coordinates: {e}")
 
-        if rows:
-            # Ensure all rows have latitude/longitude keys (None if not geocoded)
-            for r in rows:
-                r.setdefault("latitude", None)
-                r.setdefault("longitude", None)
-            stmt = pg_insert(Geography).values(rows)
-            stmt = stmt.on_conflict_do_update(
-                index_elements=["id"],
-                set_={
-                    "description": stmt.excluded.description,
-                    "address_1": stmt.excluded.address_1,
-                    "city": stmt.excluded.city,
-                    "state_prov": stmt.excluded.state_prov,
-                    "country": stmt.excluded.country,
-                    "postal_code": stmt.excluded.postal_code,
-                    "latitude": stmt.excluded.latitude,
-                    "longitude": stmt.excluded.longitude,
-                },
-            )
-            await self.db.execute(stmt)
-            await self.db.flush()
-
-        logger.info(f"Upserted {len(rows)} geography records")
+        return _geocode_and_update
 
     # Representative coordinates for regions/countries (ISO alpha-2 → lat, lon)
     _REGION_COORDS: Dict[str, Tuple[float, float]] = {
@@ -2395,12 +2440,15 @@ class SAPConfigBuilder:
                         "source": "SAP_LFA1",
                     }
             if seen_vendors:
-                stmt = pg_insert(TradingPartner).values(list(seen_vendors.values()))
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=["id"],
-                    set_={"description": stmt.excluded.description, "source": stmt.excluded.source},
-                )
-                await self.db.execute(stmt)
+                vendor_rows = list(seen_vendors.values())
+                for i in range(0, len(vendor_rows), 500):
+                    batch = vendor_rows[i : i + 500]
+                    stmt = pg_insert(TradingPartner).values(batch)
+                    stmt = stmt.on_conflict_do_update(
+                        index_elements=["id"],
+                        set_={"description": stmt.excluded.description, "source": stmt.excluded.source},
+                    )
+                    await self.db.execute(stmt)
                 for vid in seen_vendors:
                     self._trading_partners[vid] = vid  # store key for reference
                 vendor_count = len(seen_vendors)
@@ -2419,12 +2467,15 @@ class SAPConfigBuilder:
                         "source": "SAP_KNA1",
                     }
             if seen_customers:
-                stmt = pg_insert(TradingPartner).values(list(seen_customers.values()))
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=["id"],
-                    set_={"description": stmt.excluded.description, "source": stmt.excluded.source},
-                )
-                await self.db.execute(stmt)
+                customer_rows = list(seen_customers.values())
+                for i in range(0, len(customer_rows), 500):
+                    batch = customer_rows[i : i + 500]
+                    stmt = pg_insert(TradingPartner).values(batch)
+                    stmt = stmt.on_conflict_do_update(
+                        index_elements=["id"],
+                        set_={"description": stmt.excluded.description, "source": stmt.excluded.source},
+                    )
+                    await self.db.execute(stmt)
                 for cid in seen_customers:
                     self._trading_partners[cid] = cid
                 customer_count = len(seen_customers)

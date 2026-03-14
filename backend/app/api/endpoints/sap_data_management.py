@@ -1655,6 +1655,9 @@ async def _run_phase1_master_data(db, service, job_id: int, tenant_id: int, sap_
     async def _geocoding_progress(index: int, total: int, label: str, status: str):
         """Report per-address geocoding progress to the job record.
 
+        Uses its own DB session since geocoding runs concurrently with
+        other build steps that use the main session.
+
         status="init": label is JSON list of all address labels (sent once before geocoding starts)
         status="in_progress": address at `index` is being geocoded now
         status="completed"/"failed": address at `index` finished
@@ -1662,7 +1665,6 @@ async def _run_phase1_master_data(db, service, job_id: int, tenant_id: int, sap_
         nonlocal _geocoding_done_count
         import json as _json
         if status == "init":
-            # Store full address list; frontend uses geocoding_done to derive per-item status
             geo_patch = _json.dumps({
                 "geocoding_total": total,
                 "geocoding_addresses": _json.loads(label),
@@ -1674,19 +1676,22 @@ async def _run_phase1_master_data(db, service, job_id: int, tenant_id: int, sap_
                 "geocoding_active": index,
             })
         else:
-            # completed or failed
             _geocoding_done_count += 1
             geo_patch = _json.dumps({
                 "geocoding_done": _geocoding_done_count,
                 "geocoding_active": index if status == "in_progress" else -1,
             })
-        await db.execute(sql_text("""
-            UPDATE sap_ingestion_jobs
-            SET build_summary = (COALESCE(build_summary::jsonb, '{}'::jsonb) || (:geo_patch)::jsonb)::json,
-                updated_at = NOW()
-            WHERE id = :jid AND tenant_id = :tid
-        """), {"geo_patch": geo_patch, "jid": job_id, "tid": tenant_id})
-        await db.commit()
+        # Use a separate session — geocoding runs concurrently with
+        # the main build pipeline which holds the primary session.
+        from app.db.session import async_session_factory
+        async with async_session_factory() as geo_db:
+            await geo_db.execute(sql_text("""
+                UPDATE sap_ingestion_jobs
+                SET build_summary = (COALESCE(build_summary::jsonb, '{}'::jsonb) || (:geo_patch)::jsonb)::json,
+                    updated_at = NOW()
+                WHERE id = :jid AND tenant_id = :tid
+            """), {"geo_patch": geo_patch, "jid": job_id, "tid": tenant_id})
+            await geo_db.commit()
 
     try:
         result = await builder.build(
