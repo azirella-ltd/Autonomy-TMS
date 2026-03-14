@@ -2391,11 +2391,158 @@ class SAPDataStagingService:
                     errors.append(f"transportation_lane: {e}")
 
         await self.db.flush()
+
+        # --- Populate per-agent stochastic params from SAP data ---
+        agent_sap_count = 0
+        agent_default_count = 0
+        try:
+            agent_sap_count, agent_default_count = await self._populate_agent_params_from_sap(
+                dist_results,
+            )
+        except Exception as e:
+            errors.append(f"agent_stochastic_params: {e}")
+
         logger.info(
             f"Operational stats upsert: {updated} updated, {skipped} skipped, "
-            f"{len(errors)} errors"
+            f"{len(errors)} errors, {agent_sap_count} agent params from SAP, "
+            f"{agent_default_count} agent params from industry defaults"
         )
-        return {"inserted": 0, "updated": updated, "skipped": skipped, "errors": errors}
+        return {
+            "inserted": 0,
+            "updated": updated,
+            "skipped": skipped,
+            "errors": errors,
+            "agent_sap_params": agent_sap_count,
+            "agent_default_params": agent_default_count,
+        }
+
+    async def _populate_agent_params_from_sap(
+        self,
+        dist_results: Dict[str, pd.DataFrame],
+    ) -> Tuple[int, int]:
+        """Populate agent_stochastic_params from SAP-derived distributions.
+
+        For each TRM agent type's parameters, checks whether SAP provided
+        sufficient data. If yes, stores the SAP-derived distribution with
+        source='sap_import' and is_default=False. If no, falls back to
+        industry defaults with source='industry_default' and is_default=True.
+
+        Returns (sap_count, default_count).
+        """
+        from app.models.agent_stochastic_param import (
+            AgentStochasticParam, TRM_PARAM_MAP, get_stochastic_config,
+        )
+        from app.services.industry_defaults_service import get_agent_distributions
+        from app.models.tenant import Tenant
+        from app.models.supply_chain_config import SupplyChainConfig
+
+        if not self.config_id:
+            return 0, 0
+
+        # Look up tenant industry for fallback
+        config = await self.db.execute(
+            select(SupplyChainConfig).where(SupplyChainConfig.id == self.config_id)
+        )
+        sc_config = config.scalar_one_or_none()
+        if not sc_config:
+            return 0, 0
+
+        # Load per-config pipeline settings (min_observations, etc.)
+        pipeline_cfg = get_stochastic_config(sc_config.stochastic_config)
+        min_obs = pipeline_cfg.get("min_observations", 10)
+
+        tenant = await self.db.execute(
+            select(Tenant).where(Tenant.id == sc_config.tenant_id)
+        )
+        tenant_obj = tenant.scalar_one_or_none()
+        industry = tenant_obj.industry.value if tenant_obj and tenant_obj.industry else None
+
+        # Get industry defaults for fallback
+        industry_dists = {}
+        if industry:
+            industry_dists = get_agent_distributions(industry)
+
+        # Map SAP dist_results keys → param_names used in TRM_PARAM_MAP
+        _SAP_KEY_TO_PARAM = {
+            "vendor_lead_time": "supplier_lead_time",
+            "supplier_on_time": "supplier_on_time",
+            "production_process_cycle": "manufacturing_cycle_time",
+            "production_process_yield": "manufacturing_yield",
+            "production_process_setup": "setup_time",
+            "machine_mtbf": "mtbf",
+            "machine_mttr": "mttr",
+            "transportation_lane": "transport_lead_time",
+            "quality_rejection": "quality_rejection_rate",
+            "demand_variability": "demand_variability",
+        }
+
+        # Which param_names have SAP data (non-empty DataFrames with enough observations)?
+        sap_available = set()
+        sap_dists_by_param: Dict[str, dict] = {}
+        for sap_key, param_name in _SAP_KEY_TO_PARAM.items():
+            sap_df = dist_results.get(sap_key, pd.DataFrame())
+            if not sap_df.empty and len(sap_df) >= min_obs:
+                sap_available.add(param_name)
+                # Use the first row's distribution as the config-wide aggregate
+                first_row = sap_df.iloc[0].to_dict()
+                dist_col = [c for c in first_row.keys() if c.endswith("_dist")]
+                if dist_col:
+                    dist_val = first_row[dist_col[0]]
+                    if dist_val and isinstance(dist_val, dict):
+                        sap_dists_by_param[param_name] = dist_val
+
+        sap_count = 0
+        default_count = 0
+        tenant_id = sc_config.tenant_id
+
+        for trm_type, param_names in TRM_PARAM_MAP.items():
+            for param_name in param_names:
+                # Determine source: SAP or industry default
+                if param_name in sap_dists_by_param:
+                    dist = sap_dists_by_param[param_name]
+                    source = "sap_import"
+                    is_default = False
+                elif param_name in industry_dists:
+                    dist = industry_dists[param_name]
+                    source = "industry_default"
+                    is_default = True
+                else:
+                    continue
+
+                # Upsert
+                result = await self.db.execute(
+                    select(AgentStochasticParam).where(
+                        AgentStochasticParam.config_id == self.config_id,
+                        AgentStochasticParam.trm_type == trm_type,
+                        AgentStochasticParam.param_name == param_name,
+                        AgentStochasticParam.site_id.is_(None),
+                    )
+                )
+                existing = result.scalar_one_or_none()
+
+                if existing:
+                    existing.distribution = dist
+                    existing.source = source
+                    existing.is_default = is_default
+                else:
+                    self.db.add(AgentStochasticParam(
+                        config_id=self.config_id,
+                        tenant_id=tenant_id,
+                        site_id=None,
+                        trm_type=trm_type,
+                        param_name=param_name,
+                        distribution=dist,
+                        is_default=is_default,
+                        source=source,
+                    ))
+
+                if source == "sap_import":
+                    sap_count += 1
+                else:
+                    default_count += 1
+
+        await self.db.flush()
+        return sap_count, default_count
 
     def _resolve_site_id(self, sap_plant_code: str) -> Optional[int]:
         """Resolve a SAP plant code to a Site.id integer.

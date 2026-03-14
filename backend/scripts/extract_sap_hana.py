@@ -474,6 +474,94 @@ DEFAULT_TABLES = list(SAP_TABLES.keys())
 # NOT control variables (MOQ, ROP, SS, etc.).
 # ---------------------------------------------------------------------------
 
+# Default minimum observations per group for distribution fitting.
+# Override via stochastic_config.min_observations on SupplyChainConfig.
+# Groups below this threshold are excluded; downstream agent stochastic
+# parameters will fall back to industry defaults instead.
+MIN_OBSERVATIONS_DISTRIBUTION = 10  # default; see STOCHASTIC_CONFIG_DEFAULTS
+
+# SAP tables used by each metric — for data sufficiency pre-check.
+# Maps metric_key → list of (table, date_column) used to estimate row counts.
+_METRIC_SOURCE_TABLES: Dict[str, List[Tuple[str, str]]] = {
+    "supplier_lead_time": [("EKKO", "BEDAT"), ("EKBE", "BUDAT")],
+    "supplier_on_time": [("EKKO", "BEDAT"), ("EKBE", "BUDAT"), ("EKET", "EINDT")],
+    "manufacturing_cycle_time": [("AFKO", "GSTRP"), ("AFRU", "BUDAT")],
+    "manufacturing_yield": [("AFKO", "GSTRP"), ("AFRU", "LMNGA")],
+    "manufacturing_setup_time": [("AFVC", "VORNR"), ("AFRU", "BUDAT")],
+    "machine_mtbf": [("QMEL", "MATNR")],
+    "machine_mttr": [("QMEL", "MATNR")],
+    "quality_rejection_rate": [("QALS", "LOESSION")],
+    "transportation_lead_time": [("LIKP", "WADAT_IST"), ("LIPS", "WERKS")],
+    "demand_variability": [("VBAP", "ERDAT")],
+    "order_fulfillment_time": [("VBAK", "ERDAT"), ("LIKP", "WADAT_IST")],
+    "supplier_on_time_detail": [("EKKO", "BEDAT"), ("EKBE", "BUDAT")],
+}
+
+
+def check_data_sufficiency(
+    conn,
+    plants: List[str],
+    metrics: Optional[List[str]] = None,
+    min_rows: int = 50,
+) -> Dict[str, Dict[str, int]]:
+    """Pre-check whether SAP has enough transactional data for each metric.
+
+    Runs lightweight COUNT queries (one per source table per metric) to
+    determine data availability before executing expensive aggregation queries.
+
+    Returns dict of metric_key → {"available": True/False, "row_count": N}.
+    """
+    results: Dict[str, Dict] = {}
+    werks_list = ",".join(f"'{w}'" for w in plants)
+    check_metrics = metrics or list(OPERATIONAL_STATS_QUERIES.keys())
+
+    for metric_key in check_metrics:
+        sources = _METRIC_SOURCE_TABLES.get(metric_key, [])
+        if not sources:
+            results[metric_key] = {"available": True, "row_count": -1}
+            continue
+
+        # Check the primary source table (first in list)
+        table, date_col = sources[0]
+        try:
+            cursor = conn.cursor()
+            # Try plant-filtered count first
+            if table in ("EKKO", "VBAK", "VBAP"):
+                # These tables use BUKRS, not WERKS directly
+                sql = f'SELECT COUNT(*) FROM "{table}"'
+            elif table in ("AFKO", "AFRU", "AFVC"):
+                sql = f'SELECT COUNT(*) FROM "{table}" WHERE "WERKS" IN ({werks_list})'
+            elif table in ("QMEL", "QALS"):
+                sql = f'SELECT COUNT(*) FROM "{table}" WHERE "MAWERK" IN ({werks_list})'
+            elif table in ("LIKP",):
+                sql = f'SELECT COUNT(*) FROM "{table}"'
+            elif table in ("LIPS",):
+                sql = f'SELECT COUNT(*) FROM "{table}" WHERE "WERKS" IN ({werks_list})'
+            else:
+                sql = f'SELECT COUNT(*) FROM "{table}"'
+
+            cursor.execute(sql)
+            row_count = cursor.fetchone()[0]
+            cursor.close()
+
+            available = row_count >= min_rows
+            results[metric_key] = {"available": available, "row_count": row_count}
+
+            if not available:
+                logger.info(
+                    f"  {metric_key}: insufficient data ({row_count} rows in {table}, "
+                    f"need >= {min_rows}) — will use industry defaults"
+                )
+            else:
+                logger.info(f"  {metric_key}: {row_count} rows in {table} — sufficient")
+
+        except Exception as e:
+            logger.warning(f"  {metric_key}: pre-check failed ({e}) — skipping metric")
+            results[metric_key] = {"available": False, "row_count": 0}
+
+    return results
+
+
 OPERATIONAL_STATS_QUERIES: Dict[str, str] = {
     # --- SUPPLIER LEAD TIME (days) ---
     # PO creation date (EKKO.BEDAT) to goods receipt posting date (EKBE.BUDAT)
@@ -907,24 +995,53 @@ def extract_operational_stats(
     company_code: str,
     plants: List[str],
     metrics: Optional[List[str]] = None,
+    *,
+    skip_sufficiency_check: bool = False,
+    min_rows: int = 50,
 ) -> Dict[str, List[Dict]]:
     """
     Execute aggregation queries in HANA to extract operational statistics.
+
+    Before running expensive aggregation queries, performs a data sufficiency
+    pre-check. Metrics with fewer than ``min_rows`` rows in their source
+    tables are skipped — downstream code will fall back to industry defaults
+    for those metrics.
 
     Returns dict of metric_key → list of result dicts (one per group).
     Each result dict has normalised keys:
         metric, vendor_id, material, plant, cnt,
         min, max, mean, stddev, median, p05, p25, p75, p95.
+
+    An additional ``__sufficiency__`` key contains the pre-check results
+    so that downstream code knows which metrics were skipped.
     """
     results: Dict[str, List[Dict]] = {}
     werks_list = ",".join(f"'{w}'" for w in plants)
 
     queries = metrics or list(OPERATIONAL_STATS_QUERIES.keys())
 
+    # --- Data sufficiency pre-check ---
+    sufficiency: Dict[str, Dict] = {}
+    if not skip_sufficiency_check:
+        logger.info("Running data sufficiency pre-check...")
+        sufficiency = check_data_sufficiency(conn, plants, queries, min_rows=min_rows)
+    results["__sufficiency__"] = [sufficiency]  # type: ignore[assignment]
+
     for metric_key in queries:
         if metric_key not in OPERATIONAL_STATS_QUERIES:
             logger.warning(f"Unknown metric: {metric_key}")
             continue
+
+        # Skip metrics with insufficient data
+        if not skip_sufficiency_check:
+            metric_check = sufficiency.get(metric_key, {})
+            if not metric_check.get("available", True):
+                logger.info(
+                    f"  Skipping {metric_key}: insufficient transactional data "
+                    f"({metric_check.get('row_count', 0)} rows)"
+                )
+                results[metric_key] = []
+                continue
 
         sql = OPERATIONAL_STATS_QUERIES[metric_key].replace("{werks}", werks_list)
         logger.info(f"  Querying {metric_key}...")
@@ -958,6 +1075,19 @@ def extract_operational_stats(
             logger.warning(f"    {metric_key} query failed: {e}")
             results[metric_key] = []
 
+    # Summary
+    extracted = sum(
+        1 for k, v in results.items()
+        if k != "__sufficiency__" and len(v) > 0
+    )
+    skipped = sum(
+        1 for k, v in results.items()
+        if k != "__sufficiency__" and len(v) == 0
+    )
+    logger.info(
+        f"Operational stats extraction complete: {extracted} metrics extracted, "
+        f"{skipped} metrics skipped (insufficient data → will use industry defaults)"
+    )
     return results
 
 # Transaction tables only (for incremental extraction)

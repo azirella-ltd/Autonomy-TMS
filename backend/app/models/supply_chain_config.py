@@ -161,6 +161,16 @@ class SupplyChainConfig(Base):
         comment="Gartner SCOR metric config overrides. Keys: sop_weights, tgnn_weights, trm_weights.",
     )
 
+    # Stochastic pipeline configuration (per-config tuning)
+    # Surfaced in admin UI; controls SAP extraction thresholds and distribution fitting.
+    # Keys: min_observations (int), min_rows_sufficiency (int),
+    #        fit_threshold_cv (float), default_distribution_type (str)
+    stochastic_config = Column(
+        JSON,
+        nullable=True,
+        comment="Stochastic pipeline tuning: min_observations, min_rows_sufficiency, etc.",
+    )
+
     # Training metadata
     needs_training = Column(Boolean, nullable=False, default=True)
     training_status = Column(String(50), nullable=False, default="pending")

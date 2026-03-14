@@ -183,6 +183,50 @@ PARAM_LABELS = {
     "quality_rejection_rate": "Quality Rejection Rate",
 }
 
+# ============================================================================
+# Stochastic Pipeline Configuration Defaults
+#
+# These control SAP extraction thresholds and distribution fitting.
+# Stored as JSON in supply_chain_configs.stochastic_config.
+# System admin can override per-config via the Stochastic Parameters UI.
+# ============================================================================
+
+STOCHASTIC_CONFIG_DEFAULTS = {
+    # Minimum observations per group for distribution fitting (in _fit_positive_skewed)
+    "min_observations": 10,
+    # Minimum total rows in source table for a metric to be extracted at all
+    "min_rows_sufficiency": 50,
+    # CV threshold above which lognormal is preferred over normal
+    "cv_lognormal_threshold": 0.5,
+    # Minimum SQL HAVING COUNT threshold (per-group in aggregation queries)
+    "min_group_count": 3,
+}
+
+STOCHASTIC_CONFIG_LABELS = {
+    "min_observations": "Min Observations (per group for fitting)",
+    "min_rows_sufficiency": "Min Rows (data sufficiency pre-check)",
+    "cv_lognormal_threshold": "CV Threshold (lognormal vs normal)",
+    "min_group_count": "Min Group Count (SQL HAVING)",
+}
+
+
+def get_stochastic_config(config_json: dict = None) -> dict:
+    """Merge per-config overrides with defaults.
+
+    Args:
+        config_json: The stochastic_config JSON from SupplyChainConfig, or None.
+
+    Returns:
+        Complete config dict with all keys populated.
+    """
+    result = dict(STOCHASTIC_CONFIG_DEFAULTS)
+    if config_json and isinstance(config_json, dict):
+        for k, v in config_json.items():
+            if k in result and v is not None:
+                result[k] = v
+    return result
+
+
 TRM_LABELS = {
     "atp_executor": "ATP Executor",
     "inventory_rebalancing": "Inventory Rebalancing",

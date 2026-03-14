@@ -19,7 +19,11 @@ from ...models.agent_stochastic_param import (
     TRM_PARAM_MAP,
     PARAM_LABELS,
     TRM_LABELS,
+    STOCHASTIC_CONFIG_DEFAULTS,
+    STOCHASTIC_CONFIG_LABELS,
+    get_stochastic_config,
 )
+from ...models.supply_chain_config import SupplyChainConfig
 
 router = APIRouter(
     prefix="/agent-stochastic-params",
@@ -62,6 +66,17 @@ class TRMParamMapResponse(BaseModel):
     trm_type: str
     trm_label: str
     params: List[dict]
+
+
+class StochasticConfigResponse(BaseModel):
+    config_id: int
+    settings: dict
+    labels: dict
+    defaults: dict
+
+
+class StochasticConfigUpdate(BaseModel):
+    settings: dict = Field(..., description="Partial or full stochastic config overrides")
 
 
 # ============================================================================
@@ -264,4 +279,79 @@ def reset_to_default(
         source=param.source,
         created_at=param.created_at.isoformat() if param.created_at else None,
         updated_at=param.updated_at.isoformat() if param.updated_at else None,
+    )
+
+
+# ============================================================================
+# Pipeline Configuration Endpoints
+# ============================================================================
+
+@router.get("/pipeline-config/{config_id}", response_model=StochasticConfigResponse)
+def get_pipeline_config(
+    config_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the stochastic pipeline configuration for a supply chain config.
+
+    Returns merged defaults + per-config overrides, along with labels and
+    system defaults for UI rendering.
+    """
+    config = db.query(SupplyChainConfig).filter(
+        SupplyChainConfig.id == config_id,
+    ).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="Supply chain config not found")
+
+    merged = get_stochastic_config(config.stochastic_config)
+
+    return StochasticConfigResponse(
+        config_id=config_id,
+        settings=merged,
+        labels=STOCHASTIC_CONFIG_LABELS,
+        defaults=STOCHASTIC_CONFIG_DEFAULTS,
+    )
+
+
+@router.put("/pipeline-config/{config_id}", response_model=StochasticConfigResponse)
+def update_pipeline_config(
+    config_id: int,
+    payload: StochasticConfigUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update the stochastic pipeline configuration for a supply chain config.
+
+    Only valid keys (those present in STOCHASTIC_CONFIG_DEFAULTS) are accepted.
+    Pass partial updates -- only provided keys are overwritten.
+    """
+    config = db.query(SupplyChainConfig).filter(
+        SupplyChainConfig.id == config_id,
+    ).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="Supply chain config not found")
+
+    # Validate keys
+    invalid_keys = [k for k in payload.settings if k not in STOCHASTIC_CONFIG_DEFAULTS]
+    if invalid_keys:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid config keys: {', '.join(invalid_keys)}. "
+                   f"Valid keys: {', '.join(STOCHASTIC_CONFIG_DEFAULTS.keys())}",
+        )
+
+    # Merge with existing overrides
+    existing = config.stochastic_config or {}
+    existing.update(payload.settings)
+    config.stochastic_config = existing
+    db.commit()
+    db.refresh(config)
+
+    merged = get_stochastic_config(config.stochastic_config)
+
+    return StochasticConfigResponse(
+        config_id=config_id,
+        settings=merged,
+        labels=STOCHASTIC_CONFIG_LABELS,
+        defaults=STOCHASTIC_CONFIG_DEFAULTS,
     )

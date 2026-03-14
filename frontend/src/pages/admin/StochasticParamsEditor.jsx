@@ -234,6 +234,122 @@ function TRMSection({ trmType, trmLabel, params, onEdit, onReset }) {
   );
 }
 
+function PipelineSettings({ configId }) {
+  const [settings, setSettings] = useState(null);
+  const [labels, setLabels] = useState({});
+  const [defaults, setDefaults] = useState({});
+  const [editing, setEditing] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!configId) return;
+    setLoading(true);
+    api
+      .get(`/agent-stochastic-params/pipeline-config/${configId}`)
+      .then((res) => {
+        setSettings(res.data.settings);
+        setLabels(res.data.labels);
+        setDefaults(res.data.defaults);
+        setEditing({ ...res.data.settings });
+      })
+      .catch(() => toast.error('Failed to load pipeline settings'))
+      .finally(() => setLoading(false));
+  }, [configId]);
+
+  const handleSave = async () => {
+    try {
+      const res = await api.put(
+        `/agent-stochastic-params/pipeline-config/${configId}`,
+        { settings: editing }
+      );
+      setSettings(res.data.settings);
+      setEditing({ ...res.data.settings });
+      toast.success('Pipeline settings saved');
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to save settings');
+    }
+  };
+
+  const handleReset = () => {
+    setEditing({ ...defaults });
+  };
+
+  const hasChanges =
+    settings && JSON.stringify(editing) !== JSON.stringify(settings);
+
+  if (loading || !settings) return null;
+
+  return (
+    <div className="mb-6 border border-gray-200 rounded-lg overflow-hidden">
+      <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Settings size={16} className="text-gray-600" />
+            <span className="font-semibold text-sm text-gray-800">
+              Pipeline Settings
+            </span>
+            <span className="text-xs text-gray-500">
+              (SAP extraction thresholds and distribution fitting)
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleReset}
+              className="px-3 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300 flex items-center gap-1"
+            >
+              <RotateCcw size={12} /> Reset to Defaults
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={!hasChanges}
+              className={`px-3 py-1 text-xs rounded flex items-center gap-1 ${
+                hasChanges
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              }`}
+            >
+              <Save size={12} /> Save
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="p-4 grid grid-cols-2 gap-4">
+        {Object.entries(labels).map(([key, label]) => {
+          const isDefault = editing[key] === defaults[key];
+          return (
+            <div key={key} className="space-y-1">
+              <label className="block text-xs font-medium text-gray-700">
+                {label}
+                {isDefault && (
+                  <span className="ml-1 text-gray-400 font-normal">
+                    (default)
+                  </span>
+                )}
+              </label>
+              <input
+                type="number"
+                step={key === 'cv_lognormal_threshold' ? '0.1' : '1'}
+                className="w-full border border-gray-300 rounded px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                value={editing[key] ?? ''}
+                onChange={(e) => {
+                  const val =
+                    key === 'cv_lognormal_threshold'
+                      ? parseFloat(e.target.value)
+                      : parseInt(e.target.value, 10);
+                  setEditing((prev) => ({ ...prev, [key]: isNaN(val) ? '' : val }));
+                }}
+              />
+              <div className="text-xs text-gray-400">
+                System default: {defaults[key]}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 const StochasticParamsEditor = () => {
   const [loading, setLoading] = useState(true);
   const [params, setParams] = useState([]);
@@ -350,6 +466,9 @@ const StochasticParamsEditor = () => {
           ))}
         </select>
       </div>
+
+      {/* Pipeline settings */}
+      {selectedConfigId && <PipelineSettings configId={selectedConfigId} />}
 
       {/* Stats bar */}
       {!loading && params.length > 0 && (
