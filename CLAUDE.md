@@ -166,6 +166,7 @@ Narrow TRMs (VFA - Value Function Approximation)
      - RL/VFA fine-tuning (TD learning with actual outcomes)
      - Narrow scope makes RL tractable (small state, fast feedback, clear reward)
      - CGAR curriculum ([arxiv:2511.08653](https://arxiv.org/abs/2511.08653)): Progressive recursion depth during training reduces FLOPs ~40%
+     - Data volume scaling (Stöckl, RANLP 2021, [ACL Anthology](https://aclanthology.org/2021.ranlp-1.148/)): "Learning by watching" — data volume >> model size for structured decisions. 50K samples/sub-phase × 3 × 3 signal phases = 450K total BC samples. 3-tier evaluation (memorization/generalization/rule-learning) replaces loss-only tracking.
    - Files: `backend/app/services/powell/atp_executor.py`, `inventory_rebalancing_trm.py`, `po_creation_trm.py`, `order_tracking_trm.py`, `mo_execution_trm.py`, `to_execution_trm.py`, `quality_disposition_trm.py`, `maintenance_scheduling_trm.py`, `subcontracting_trm.py`, `forecast_adjustment_trm.py`, `inventory_buffer_trm.py`, `trm_trainer.py`
    - **CDC → Relearning Loop**: Autonomous feedback pipeline for continuous TRM improvement
      - `cdc_monitor.py`: Event-driven metric deviation detection (6 thresholds, rate limiting)

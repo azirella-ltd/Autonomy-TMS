@@ -4,10 +4,27 @@ import { api } from '../../services/api';
 import { toast } from 'react-toastify';
 import { useAuth } from '../../contexts/AuthContext';
 
+const INDUSTRY_OPTIONS = [
+  { value: 'food_beverage', label: 'Food & Beverage Manufacturing' },
+  { value: 'pharmaceutical', label: 'Pharmaceutical & Life Sciences' },
+  { value: 'automotive', label: 'Automotive & Transport Equipment' },
+  { value: 'electronics', label: 'Electronics & High-Tech' },
+  { value: 'chemical', label: 'Chemical & Process Industries' },
+  { value: 'industrial_equipment', label: 'Industrial Machinery & Equipment' },
+  { value: 'consumer_goods', label: 'Consumer Packaged Goods (CPG)' },
+  { value: 'metals_mining', label: 'Metals, Mining & Materials' },
+  { value: 'aerospace_defense', label: 'Aerospace & Defense' },
+  { value: 'building_materials', label: 'Building Materials & Construction' },
+  { value: 'textile_apparel', label: 'Textile & Apparel' },
+  { value: 'wholesale_distribution', label: 'Wholesale Distribution' },
+  { value: 'third_party_logistics', label: '3PL & Logistics Services' },
+];
+
 const DEFAULT_FORM = {
   name: 'Autonomy',
   description: '',
   logo: '/autonomy_logo.svg',
+  industry: '',
   admin: {
     username: 'tenantadmin',
     email: 'tenantadmin@autonomy.ai',
@@ -262,6 +279,10 @@ const TenantManagement = () => {
     const trimmedName = form.name.trim();
     if (!trimmedName) {
       toast.error('Customer name is required.');
+      return;
+    }
+    if (!editingTenantId && !form.industry) {
+      toast.error('Industry is required when creating a new customer.');
       return;
     }
     setSaving(true);
@@ -617,6 +638,23 @@ const TenantManagement = () => {
                 <textarea id="tenant-description" name="description" value={form.description} onChange={handleChange} rows={3}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Add a short description for this customer" />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="tenant-industry">
+                  Industry <span className="text-red-500">*</span>
+                </label>
+                <select id="tenant-industry" name="industry" value={form.industry || ''} onChange={handleChange}
+                  required={!editingTenantId}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                  <option value="">Select an industry...</option>
+                  {INDUSTRY_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-gray-500">
+                  Determines default stochastic parameters (lead times, yields, reliability) for planning. Can be refined later with SAP operational data.
+                </p>
               </div>
 
               <div>

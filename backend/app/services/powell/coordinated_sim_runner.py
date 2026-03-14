@@ -35,6 +35,22 @@ from .decision_cycle import (
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Data Volume Guidance (Stöckl 2021, Kaplan scaling law)
+# ---------------------------------------------------------------------------
+# For 7M-param TRMs, coordinated simulation episodes are the primary data
+# source for Phases 2-3 (context learning + RL). Each episode generates
+# num_periods × num_active_trms state-action-reward tuples.
+#
+# Minimum recommendation:
+#   5,000 episodes × 52 periods × ~7 TRMs = ~1.8M training tuples
+#   This places us in the "medium" data regime from Stöckl 2021 where
+#   models learn generalizable rules rather than memorizing patterns.
+#
+# Below 1,000 episodes, models plateau quickly and fail to generalize
+# to novel multi-agent coordination patterns.
+RECOMMENDED_MIN_EPISODES = 5_000
+
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -349,7 +365,19 @@ class CoordinatedSimRunner:
         num_periods: int,
         executor_factory: Callable[[int], Dict[str, Callable]],
     ) -> List[EpisodeResult]:
-        """Run multiple episodes and return all results."""
+        """Run multiple episodes and return all results.
+
+        Data volume guidance (Stöckl 2021):
+        - Minimum 5,000 episodes recommended for 7M-param TRMs.
+        - Below 1,000, models memorize rather than generalize.
+        - See RECOMMENDED_MIN_EPISODES constant.
+        """
+        if num_episodes < RECOMMENDED_MIN_EPISODES:
+            logger.warning(
+                f"num_episodes={num_episodes} is below the recommended minimum "
+                f"of {RECOMMENDED_MIN_EPISODES} for 7M-param TRMs. Models may "
+                f"memorize rather than learn generalizable coordination patterns."
+            )
         results = []
         for ep in range(num_episodes):
             # Reset signal bus between episodes

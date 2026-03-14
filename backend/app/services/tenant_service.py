@@ -26,10 +26,15 @@ from ..models.supply_chain_config import (
 )
 from ..models.sc_entities import Product, ProductBom
 from ..models.autonomy_customer import AutonomyCustomer
+from ..models.tenant import TenantIndustry
 from ..schemas.tenant import TenantCreate, TenantUpdate
 from ..core.security import get_password_hash
 from app.core.time_buckets import TimeBucket
 from .supply_chain_config_service import SupplyChainConfigService
+from .industry_defaults_service import (
+    apply_industry_defaults_to_config,
+    apply_agent_stochastic_defaults,
+)
 from .bootstrap import DEFAULT_ADMIN_PASSWORD
 # Product imported from sc_entities (line 26)
 
@@ -145,6 +150,10 @@ class TenantService:
             self.db.flush()
 
             prod_slug = self._generate_unique_slug(tenant_in.name)
+            industry_val = (
+                TenantIndustry(tenant_in.industry.value)
+                if tenant_in.industry else None
+            )
             prod_tenant = Tenant(
                 name=tenant_in.name,
                 slug=prod_slug,
@@ -153,6 +162,7 @@ class TenantService:
                 logo=tenant_in.logo,
                 admin_id=prod_admin.id,
                 mode=TenantMode.PRODUCTION,
+                industry=industry_val,
             )
             self.db.add(prod_tenant)
             self.db.flush()
@@ -198,6 +208,7 @@ class TenantService:
                 logo=tenant_in.logo,
                 admin_id=learn_admin.id,
                 mode=TenantMode.LEARNING,
+                industry=industry_val,
             )
             self.db.add(learn_tenant)
             self.db.flush()
@@ -221,6 +232,7 @@ class TenantService:
             customer = AutonomyCustomer(
                 name=tenant_in.name,
                 description=tenant_in.description,
+                industry=industry_val.value if industry_val else None,
                 production_tenant_id=prod_tenant.id,
                 production_admin_id=prod_admin.id,
                 learning_tenant_id=learn_tenant.id,
@@ -229,6 +241,39 @@ class TenantService:
             )
             self.db.add(customer)
             self.db.flush()
+
+            # Apply industry-default stochastic parameters to supply chain configs
+            if industry_val:
+                industry_key = industry_val.value
+                for cfg, tnt in [
+                    (prod_sc_config, prod_tenant),
+                    (learn_sc_config, learn_tenant),
+                ]:
+                    try:
+                        # Entity-level defaults (ProductionProcess, VendorLeadTime, TransportationLane)
+                        counts = apply_industry_defaults_to_config(
+                            self.db, cfg.id, industry_key,
+                        )
+                        total = sum(counts.values())
+                        if total > 0:
+                            logger.info(
+                                "Applied %s entity defaults to config %d: %s",
+                                industry_key, cfg.id, counts,
+                            )
+                        # Per-agent stochastic params
+                        agent_count = apply_agent_stochastic_defaults(
+                            self.db, cfg.id, tnt.id, industry_key,
+                        )
+                        if agent_count > 0:
+                            logger.info(
+                                "Applied %d agent stochastic defaults to config %d",
+                                agent_count, cfg.id,
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            "Failed to apply industry defaults to config %d: %s",
+                            cfg.id, e,
+                        )
 
             self.db.commit()
             self.db.refresh(prod_tenant)
@@ -261,6 +306,44 @@ class TenantService:
                 customer.name = update_data["name"]
                 if "description" in update_data:
                     customer.description = update_data["description"]
+
+        # Sync industry changes to autonomy_customers registry and re-apply defaults
+        if "industry" in update_data:
+            customer = (
+                self.db.query(AutonomyCustomer)
+                .filter(
+                    (AutonomyCustomer.production_tenant_id == tenant_id)
+                    | (AutonomyCustomer.learning_tenant_id == tenant_id)
+                )
+                .first()
+            )
+            if customer:
+                ind_val = update_data["industry"]
+                industry_key = ind_val.value if hasattr(ind_val, "value") else ind_val
+                customer.industry = industry_key
+
+                # Re-apply industry defaults — only updates is_default=True rows
+                if industry_key:
+                    configs = self.db.query(SupplyChainConfig).filter(
+                        SupplyChainConfig.tenant_id == tenant_id,
+                    ).all()
+                    for cfg in configs:
+                        try:
+                            agent_count = apply_agent_stochastic_defaults(
+                                self.db, cfg.id, tenant_id, industry_key,
+                                only_defaults=True,
+                            )
+                            if agent_count > 0:
+                                logger.info(
+                                    "Re-applied %d agent stochastic defaults "
+                                    "to config %d (industry=%s)",
+                                    agent_count, cfg.id, industry_key,
+                                )
+                        except Exception as e:
+                            logger.warning(
+                                "Failed to re-apply agent defaults to config %d: %s",
+                                cfg.id, e,
+                            )
 
         self.db.commit()
         self.db.refresh(tenant)
@@ -491,6 +574,8 @@ class TenantService:
             "authority_definitions",
             # Decision embeddings / RAG memory
             "decision_embeddings",
+            # Agent stochastic parameters
+            "agent_stochastic_params",
             # Knowledge base
             "kb_chunks", "kb_documents",
             # Forecast pipeline

@@ -110,6 +110,51 @@ Variables that **govern/control** supply chain behavior - set by planners and po
 
 ---
 
+## Data Population from SAP S/4HANA
+
+### Automated Distribution Parameter Extraction
+
+Distribution parameters for operational variables are **automatically extracted** from SAP transaction history via HANA SQL aggregation queries. This eliminates manual parameter estimation and ensures distributions reflect actual system performance.
+
+### SAP Source → Distribution → Target Mapping
+
+| Operational Variable | SAP Source | HANA Aggregation | Distribution Type | Target Column |
+|---|---|---|---|---|
+| Supplier lead time | EKKO.BEDAT → EKBE.BUDAT | DAYS_BETWEEN, PERCENTILE_CONT | Lognormal | `vendor_lead_times.lead_time_dist` |
+| Manufacturing cycle time | AFKO.GSTRP → AFRU.IEDD | DAYS_BETWEEN, STDDEV | Lognormal | `production_process.operation_time_dist` |
+| Manufacturing yield | AFRU.LMNGA/(LMNGA+XMNGA) | AVG, STDDEV | Beta(α,β) | `production_process.yield_dist` |
+| Setup time | AFRU.RUESSION | PERCENTILE_CONT, STDDEV | Lognormal | `production_process.setup_time_dist` |
+| Machine MTBF | QMEL M2 with LAG() | Inter-breakdown days | Lognormal | `production_process.mtbf_dist` |
+| Machine MTTR | QMEL STRMN→LTRMN | SECONDS_BETWEEN/3600 | Lognormal | `production_process.mttr_dist` |
+| Transportation lead time | LIKP.WADAT_IST→LDDAT | DAYS_BETWEEN, PERCENTILE_CONT | Lognormal | `transportation_lane.supply_lead_time_dist` |
+| Quality rejection rate | QALS LPRZMG/LOSMENGE | AVG, STDDEV | Beta(α,β) | Quality metadata |
+| Demand variability | VBAP weekly KWMENG | ISOWEEK grouping, STDDEV | Lognormal/Normal | Demand metadata |
+
+### Statistical Summary Format
+
+All HANA queries return a consistent statistical summary per group:
+- **Percentiles**: P05, P25, median, P75, P95 (via `PERCENTILE_CONT`)
+- **Moments**: mean (`AVG`), stddev (`STDDEV`)
+- **Extremes**: min, max
+- **Sample size**: count (minimum 3-5 per group, enforced via `HAVING`)
+
+### Distribution Fitting from Summary Statistics
+
+Since only aggregated statistics are transferred (not raw data), distribution fitting uses method-of-moments:
+
+```
+Lognormal: μ_log = ln(μ²/√(σ²+μ²)), σ_log = √(ln(1+σ²/μ²))
+Beta:      α = μ·k, β = (1-μ)·k  where k = (μ(1-μ)/σ²) - 1
+Normal:    μ, σ directly from mean, stddev
+Triangular: min=P05, mode=median, max=P95 (fallback for <5 samples)
+```
+
+### Convention
+
+A `NULL` value in any `*_dist` JSON column means the deterministic base field should be used (e.g., `lead_time_days` for `VendorLeadTime`). The stochastic sampler checks for the `*_dist` column first and falls back to the base field.
+
+---
+
 ## JSON Schema Design
 
 ### Standard Distribution Format
@@ -219,6 +264,29 @@ All distributions follow this JSON structure:
   "probabilities": [0.85, 0.12, 0.03]
 }
 ```
+
+### Per-Agent Stochastic Parameter Schema
+
+In addition to entity-level `*_dist` JSON columns, the `agent_stochastic_params` table stores per-TRM-type distribution parameters:
+
+```sql
+CREATE TABLE agent_stochastic_params (
+    id SERIAL PRIMARY KEY,
+    config_id INTEGER NOT NULL REFERENCES supply_chain_configs(id) ON DELETE CASCADE,
+    tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    site_id INTEGER REFERENCES site(id) ON DELETE CASCADE,  -- NULL = config-wide
+    trm_type VARCHAR(50) NOT NULL,     -- e.g., 'po_creation', 'mo_execution'
+    param_name VARCHAR(80) NOT NULL,   -- e.g., 'supplier_lead_time', 'mtbf'
+    distribution JSON NOT NULL,        -- Standard distribution JSON format
+    is_default BOOLEAN NOT NULL DEFAULT TRUE,
+    source VARCHAR(20) NOT NULL DEFAULT 'industry_default',  -- industry_default|sap_import|manual_edit
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE(config_id, site_id, trm_type, param_name)
+);
+```
+
+The `is_default` flag enables selective industry-change propagation: when a tenant's industry is updated, only rows with `is_default=TRUE` are refreshed. SAP-imported and manually edited values are preserved.
 
 ---
 

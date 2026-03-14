@@ -899,6 +899,13 @@ export const NAVIGATION_CONFIG = [
         description: 'SAP connections, field mapping, and data ingestion',
       },
       {
+        label: 'Stochastic Parameters',
+        path: '/admin/stochastic-params',
+        icon: TuneIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'Per-agent distribution parameters for stochastic simulation',
+      },
+      {
         label: 'Email Signals',
         path: '/admin/email-signals',
         icon: MailIcon,

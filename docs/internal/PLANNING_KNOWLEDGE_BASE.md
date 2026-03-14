@@ -337,6 +337,21 @@ where:
 - Policy constraints (min_order_qty, max_order_qty)
 - Planning parameters (frozen_horizon, planning_time_fence)
 
+**Data Source — SAP Operational Statistics**:
+
+Distribution parameters for operational variables are **automatically extracted** from SAP S/4HANA via 13 HANA SQL aggregation queries (no raw data transfer). Each query computes min, P05, P25, median, P75, P95, max, mean, stddev, count grouped by business dimensions. The mapper fits distributions from summary statistics:
+
+| Variable Category | Metrics | Distribution | Target Column |
+|---|---|---|---|
+| **Supplier** | Lead time, on-time rate, qty accuracy | Lognormal, Beta | `vendor_lead_times.lead_time_dist` |
+| **Manufacturing** | Cycle time, yield, setup time, run time | Lognormal, Beta | `production_process.*_dist` |
+| **Reliability** | MTBF (days), MTTR (hours) | Lognormal | `production_process.mtbf_dist/mttr_dist` |
+| **Logistics** | Transportation lead time | Lognormal | `transportation_lane.supply_lead_time_dist` |
+| **Quality** | Rejection rate (qty-based) | Beta | Quality metadata |
+| **Demand** | Weekly variability (CV, distribution) | Lognormal/Normal | Demand metadata |
+
+Convention: `NULL` in `*_dist` = use deterministic base field. See [SAP_INTEGRATION_GUIDE.md](../progress/SAP_INTEGRATION_GUIDE.md#operational-statistics-extraction) for full pipeline details.
+
 ### 2. Policy Types (AWS SC Standard)
 
 **Document**: [AWS_SC_POLICY_TYPES_IMPLEMENTATION.md](AWS_SC_POLICY_TYPES_IMPLEMENTATION.md)

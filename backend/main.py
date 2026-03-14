@@ -6243,6 +6243,10 @@ api.include_router(forecast_exceptions_router)  # prefix="/forecast-exceptions" 
 from app.api.endpoints.conformal_prediction import router as conformal_prediction_router
 api.include_router(conformal_prediction_router)  # prefix="/conformal-prediction" defined in router
 
+# Agent Stochastic Parameters API
+from app.api.endpoints.agent_stochastic_params import router as agent_stochastic_params_router
+api.include_router(agent_stochastic_params_router)  # prefix="/agent-stochastic-params" defined in router
+
 # Rebalancing API
 from app.api.endpoints.rebalancing import router as rebalancing_router
 api.include_router(rebalancing_router)  # prefix="/rebalancing" defined in router

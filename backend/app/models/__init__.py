@@ -336,6 +336,9 @@ from .email_signal import EmailSignal, EmailConnection
 # 30. RCCP — Rough-Cut Capacity Planning (Bill of Resources + Validation Runs)
 from .rccp import BillOfResources, RCCPRun, RCCPMethod, ProductionPhase, RCCPRunStatus
 
+# 31. Agent Stochastic Parameters — Per-agent distribution values with default tracking
+from .agent_stochastic_param import AgentStochasticParam
+
 # Verify all models are properly registered
 registered_tables = set(Base.metadata.tables.keys())
 # Updated terminology: scenarios, scenario_users, scenario_user_actions
@@ -617,6 +620,8 @@ __all__ = [
     'RCCPMethod',
     'ProductionPhase',
     'RCCPRunStatus',
+    # Agent Stochastic Parameters
+    'AgentStochasticParam',
 ]
 
 # Note: SQLAlchemy will configure mappers lazily when first used.

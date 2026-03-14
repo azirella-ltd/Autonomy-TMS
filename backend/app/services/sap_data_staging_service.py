@@ -33,12 +33,14 @@ from app.models.sc_entities import (
     Forecast, OutboundOrderLine, InboundOrder, InboundOrderLine,
     InboundOrderLineSchedule, Shipment, SupplyPlan, ProcessHeader,
     ProcessOperation, ProcessProduct, CustomerCost, FulfillmentOrder,
-    Backorder,
+    Backorder, Reservation, ShipmentLot, OutboundShipment,
+    SupplyPlanningParameters, FinalAssemblySchedule,
 )
 from app.models.supplier import VendorProduct, VendorLeadTime, SupplierPerformance
 from app.models.production_order import ProductionOrder, ProductionOrderComponent
-from app.models.sc_planning import ProductionCapacity
+from app.models.sc_planning import ProductionCapacity, SourcingSchedule
 from app.integrations.sap.data_mapper import SupplyChainMapper
+from app.services.sap_user_provisioning_service import SAPUserProvisioningService
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +73,14 @@ class StagingEntityType(str, Enum):
     FULFILLMENT_ORDER = "fulfillment_order"
     BACKORDER = "backorder"
     PRODUCTION_ORDER = "production_order"
+    SUPPLY_PLANNING_PARAMETERS = "supply_planning_parameters"
+    RESERVATION = "reservation"
+    SHIPMENT_LOT = "shipment_lot"
+    OUTBOUND_SHIPMENT = "outbound_shipment"
+    FINAL_ASSEMBLY_SCHEDULE = "final_assembly_schedule"
+    SOURCING_SCHEDULE = "sourcing_schedule"
+    USER_IMPORT = "user_import"
+    OPERATIONAL_STATS = "operational_stats"
 
 
 @dataclass
@@ -144,7 +154,9 @@ STAGING_ORDER: List[Tuple[StagingEntityType, List[str]]] = [
     (StagingEntityType.PRODUCT_HIERARCHY, ["T179"]),
     # Tier 2: Relationships — depends on site + product
     (StagingEntityType.SOURCING_RULES, ["EORD"]),
+    (StagingEntityType.SOURCING_SCHEDULE, ["EORD"]),
     (StagingEntityType.INV_POLICY, ["MARC"]),
+    (StagingEntityType.SUPPLY_PLANNING_PARAMETERS, ["MARC"]),
     (StagingEntityType.PRODUCTION_PROCESS, ["PLKO", "PLPO"]),
     (StagingEntityType.PROCESS_HEADER, ["PLKO", "PLPO"]),
     (StagingEntityType.PRODUCT_BOM, ["STPO", "STKO", "MARC"]),
@@ -154,18 +166,27 @@ STAGING_ORDER: List[Tuple[StagingEntityType, List[str]]] = [
     # Tier 3: Planning data — depends on product + site
     (StagingEntityType.INV_LEVEL, ["MARD"]),
     (StagingEntityType.FORECAST, ["PBIM", "PBED"]),
+    (StagingEntityType.RESERVATION, ["RESB"]),
     # Tier 4: Transactional — depends on all above
     (StagingEntityType.PURCHASE_ORDER, ["EKKO", "EKPO"]),
     (StagingEntityType.INBOUND_ORDER, ["EKKO", "EKPO"]),
     (StagingEntityType.SALES_ORDER, ["VBAK", "VBAP"]),
     (StagingEntityType.OUTBOUND_ORDER_LINE, ["VBAK", "VBAP"]),
     (StagingEntityType.SHIPMENT, ["LIKP", "LIPS"]),
+    (StagingEntityType.OUTBOUND_SHIPMENT, ["LIKP", "LIPS"]),
     (StagingEntityType.FULFILLMENT_ORDER, ["LIKP", "LIPS"]),
     (StagingEntityType.PRODUCTION_ORDER, ["AFKO", "AFPO"]),
+    (StagingEntityType.FINAL_ASSEMBLY_SCHEDULE, ["AFKO", "AFPO"]),
     # Tier 5: Derived — depends on transactional
     (StagingEntityType.BACKORDER, ["VBAK", "VBAP"]),
+    (StagingEntityType.SHIPMENT_LOT, ["MCH1"]),
     (StagingEntityType.CUSTOMER_COST, ["KONV"]),
     (StagingEntityType.SUPPLIER_PERFORMANCE, ["EKBE"]),
+    # Tier 6: Users — SC-relevant user provisioning from SAP
+    (StagingEntityType.USER_IMPORT, ["USR02"]),
+    # Tier 7: Operational statistics — distribution params from HANA aggregation
+    # No SAP table dependencies (uses pre-computed stats JSON)
+    (StagingEntityType.OPERATIONAL_STATS, []),
 ]
 
 
@@ -333,6 +354,14 @@ class SAPDataStagingService:
             StagingEntityType.BACKORDER: self._map_backorders,
             StagingEntityType.CUSTOMER_COST: self._map_customer_costs,
             StagingEntityType.SUPPLIER_PERFORMANCE: self._map_supplier_performance,
+            StagingEntityType.SUPPLY_PLANNING_PARAMETERS: self._map_supply_planning_parameters,
+            StagingEntityType.RESERVATION: self._map_reservations,
+            StagingEntityType.SHIPMENT_LOT: self._map_shipment_lots,
+            StagingEntityType.OUTBOUND_SHIPMENT: self._map_outbound_shipments,
+            StagingEntityType.FINAL_ASSEMBLY_SCHEDULE: self._map_final_assembly_schedule,
+            StagingEntityType.SOURCING_SCHEDULE: self._map_sourcing_schedule,
+            StagingEntityType.USER_IMPORT: self._map_user_import,
+            StagingEntityType.OPERATIONAL_STATS: self._map_operational_stats,
         }.get(entity_type)
 
     def _df(self, sap_data: Dict[str, pd.DataFrame], table: str) -> pd.DataFrame:
@@ -340,14 +369,22 @@ class SAPDataStagingService:
         return sap_data.get(table, pd.DataFrame())
 
     def _map_company(self, sap_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
-        return self.mapper.map_company(self._df(sap_data, "T001"))
+        adrc = self._df(sap_data, "ADRC")
+        t001w = self._df(sap_data, "T001W")
+        return self.mapper.map_company(
+            self._df(sap_data, "T001"),
+            adrc_df=adrc if not adrc.empty else None,
+            t001w_df=t001w if not t001w.empty else None,
+        )
 
     def _map_geography(self, sap_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
         return self.mapper.map_geography(self._df(sap_data, "ADRC"))
 
     def _map_trading_partners(self, sap_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+        adrc = self._df(sap_data, "ADRC")
         return self.mapper.map_trading_partners(
             self._df(sap_data, "LFA1"), self._df(sap_data, "KNA1"),
+            adrc_df=adrc if not adrc.empty else None,
         )
 
     def _map_sites(self, sap_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -373,7 +410,13 @@ class SAPDataStagingService:
         return self.mapper.map_marc_to_inv_policy(self._df(sap_data, "MARC"))
 
     def _map_inv_level(self, sap_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
-        return self.mapper.map_s4hana_inventory_to_inventory_levels(self._df(sap_data, "MARD"))
+        marc = self._df(sap_data, "MARC")
+        ekpo = self._df(sap_data, "EKPO")
+        return self.mapper.map_s4hana_inventory_to_inventory_levels(
+            self._df(sap_data, "MARD"),
+            marc_df=marc if not marc.empty else None,
+            ekpo_df=ekpo if not ekpo.empty else None,
+        )
 
     def _map_product_bom(self, sap_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
         return self.mapper.map_bom_items(
@@ -474,17 +517,19 @@ class SAPDataStagingService:
         return self.mapper.map_production_capacity(crhd, kako_df=kako if not kako.empty else None)
 
     def _map_inbound_orders(self, sap_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
-        """Maps EKKO/EKPO/EKET/EKBE to InboundOrder+InboundOrderLine+Schedule (composite)."""
+        """Maps EKKO/EKPO/EKET/EKBE/LFA1 to InboundOrder+InboundOrderLine+Schedule (composite)."""
         ekko = self._df(sap_data, "EKKO")
         ekpo = self._df(sap_data, "EKPO")
         if ekpo.empty:
             return pd.DataFrame()
         eket = self._df(sap_data, "EKET")
         ekbe = self._df(sap_data, "EKBE")
+        lfa1 = self._df(sap_data, "LFA1")
         result = self.mapper.map_inbound_orders(
             ekko, ekpo,
             eket_df=eket if not eket.empty else None,
             ekbe_df=ekbe if not ekbe.empty else None,
+            lfa1_df=lfa1 if not lfa1.empty else None,
         )
         self._inbound_orders_result = result
         return result.get("orders", pd.DataFrame())
@@ -496,10 +541,12 @@ class SAPDataStagingService:
             return pd.DataFrame()
         vbep = self._df(sap_data, "VBEP")
         vbuk = self._df(sap_data, "VBUK")
+        lips = self._df(sap_data, "LIPS")
         return self.mapper.map_outbound_order_lines(
             vbak, vbap,
             vbep_df=vbep if not vbep.empty else None,
             vbuk_df=vbuk if not vbuk.empty else None,
+            lips_df=lips if not lips.empty else None,
         )
 
     def _map_fulfillment_orders(self, sap_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -522,10 +569,12 @@ class SAPDataStagingService:
             return pd.DataFrame()
         vbup = self._df(sap_data, "VBUP")
         vbep = self._df(sap_data, "VBEP")
+        lips = self._df(sap_data, "LIPS")
         return self.mapper.map_backorders(
             vbak, vbap,
             vbup_df=vbup if not vbup.empty else None,
             vbep_df=vbep if not vbep.empty else None,
+            lips_df=lips if not lips.empty else None,
         )
 
     def _map_customer_costs(self, sap_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -551,6 +600,75 @@ class SAPDataStagingService:
             eket_df=eket if not eket.empty else None,
             ekpo_df=ekpo if not ekpo.empty else None,
         )
+
+    def _map_supply_planning_parameters(self, sap_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+        marc = self._df(sap_data, "MARC")
+        if marc.empty:
+            return pd.DataFrame()
+        return self.mapper.map_supply_planning_parameters(marc)
+
+    def _map_reservations(self, sap_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+        resb = self._df(sap_data, "RESB")
+        if resb.empty:
+            return pd.DataFrame()
+        return self.mapper.map_reservations(resb)
+
+    def _map_shipment_lots(self, sap_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+        mch1 = self._df(sap_data, "MCH1")
+        if mch1.empty:
+            return pd.DataFrame()
+        mcha = self._df(sap_data, "MCHA")
+        lips = self._df(sap_data, "LIPS")
+        return self.mapper.map_shipment_lots(
+            mch1,
+            mcha_df=mcha if not mcha.empty else None,
+            lips_df=lips if not lips.empty else None,
+        )
+
+    def _map_outbound_shipments(self, sap_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+        likp = self._df(sap_data, "LIKP")
+        lips = self._df(sap_data, "LIPS")
+        if lips.empty:
+            return pd.DataFrame()
+        return self.mapper.map_outbound_shipments(likp, lips)
+
+    def _map_final_assembly_schedule(self, sap_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+        afko = self._df(sap_data, "AFKO")
+        afpo = self._df(sap_data, "AFPO")
+        if afpo.empty:
+            return pd.DataFrame()
+        return self.mapper.map_final_assembly_schedule(afko, afpo)
+
+    def _map_sourcing_schedule(self, sap_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+        eord = self._df(sap_data, "EORD")
+        if eord.empty:
+            return pd.DataFrame()
+        return self.mapper.map_sourcing_schedule(eord)
+
+    def _map_user_import(self, sap_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+        """
+        User import is handled differently — raw SAP DataFrames are passed
+        directly to SAPUserProvisioningService which does its own filtering,
+        role mapping, and user creation.
+
+        Returns a single-row DataFrame as a signal that the handler was called.
+        The actual work happens in _upsert_user_import.
+        """
+        usr02 = self._df(sap_data, "USR02")
+        if usr02.empty:
+            return pd.DataFrame()
+        # Store raw data for _upsert_user_import to use
+        self._user_import_raw = {
+            "usr02": usr02.to_dict("records"),
+            "usr21": self._df(sap_data, "USR21").to_dict("records"),
+            "adrp": self._df(sap_data, "ADRP").to_dict("records"),
+            "agr_users": self._df(sap_data, "AGR_USERS").to_dict("records"),
+            "agr_define": self._df(sap_data, "AGR_DEFINE").to_dict("records"),
+            "agr_1251": self._df(sap_data, "AGR_1251").to_dict("records"),
+            "agr_tcodes": self._df(sap_data, "AGR_TCODES").to_dict("records"),
+        }
+        # Return a signal row
+        return pd.DataFrame([{"user_count": len(usr02)}])
 
     # ------------------------------------------------------------------
     # Upsert logic — per entity type
@@ -587,6 +705,14 @@ class SAPDataStagingService:
             StagingEntityType.BACKORDER: self._upsert_backorders,
             StagingEntityType.CUSTOMER_COST: self._upsert_customer_costs,
             StagingEntityType.SUPPLIER_PERFORMANCE: self._upsert_supplier_performance,
+            StagingEntityType.SUPPLY_PLANNING_PARAMETERS: self._upsert_supply_planning_parameters,
+            StagingEntityType.RESERVATION: self._upsert_reservations,
+            StagingEntityType.SHIPMENT_LOT: self._upsert_shipment_lots,
+            StagingEntityType.OUTBOUND_SHIPMENT: self._upsert_outbound_shipments,
+            StagingEntityType.FINAL_ASSEMBLY_SCHEDULE: self._upsert_final_assembly_schedule,
+            StagingEntityType.SOURCING_SCHEDULE: self._upsert_sourcing_schedule,
+            StagingEntityType.USER_IMPORT: self._upsert_user_import,
+            StagingEntityType.OPERATIONAL_STATS: self._upsert_operational_stats,
         }
 
         handler = upsert_map.get(entity_type)
@@ -1649,6 +1775,368 @@ class SAPDataStagingService:
         await self.db.flush()
         return {"inserted": inserted, "updated": updated, "skipped": 0, "errors": []}
 
+    async def _upsert_supply_planning_parameters(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Upsert SupplyPlanningParameters. Business key: product_id."""
+        inserted = 0
+        updated = 0
+        for _, row in df.iterrows():
+            pid = str(row.get("product_id", "")).strip()
+            if not pid:
+                continue
+            result = await self.db.execute(
+                select(SupplyPlanningParameters).where(
+                    SupplyPlanningParameters.product_id == pid,
+                    SupplyPlanningParameters.company_id == self.company_id,
+                )
+            )
+            existing = result.scalar_one_or_none()
+            if existing:
+                existing.planner_name = row.get("planner_name", existing.planner_name)
+                existing.source = "SAP_MARC"
+                existing.source_update_dttm = datetime.utcnow()
+                updated += 1
+            else:
+                self.db.add(SupplyPlanningParameters(
+                    company_id=self.company_id,
+                    product_id=pid,
+                    planner_name=row.get("planner_name", ""),
+                    planner_email=row.get("planner_email", ""),
+                    is_active=row.get("is_active", "true"),
+                    source="SAP_MARC",
+                    source_update_dttm=datetime.utcnow(),
+                ))
+                inserted += 1
+        await self.db.flush()
+        return {"inserted": inserted, "updated": updated, "skipped": 0, "errors": []}
+
+    async def _upsert_reservations(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Upsert Reservation records. Business key: (product_id, site_id, reservation_date, reference_id)."""
+        inserted = 0
+        updated = 0
+        errors = []
+        for _, row in df.iterrows():
+            pid = str(row.get("product_id", "")).strip()
+            site_key = str(row.get("site_id", "")).strip()
+            if not pid or not site_key:
+                continue
+            site_id = self._site_key_to_id.get(site_key)
+            if site_id is None:
+                errors.append(f"Reservation: unknown site {site_key}")
+                continue
+            res_date = row.get("reservation_date")
+            if pd.isna(res_date):
+                continue
+            if not isinstance(res_date, date):
+                res_date = pd.Timestamp(res_date).date()
+            ref_id = str(row.get("reference_id", "")).strip()
+
+            result = await self.db.execute(
+                select(Reservation).where(
+                    Reservation.product_id == pid,
+                    Reservation.site_id == site_id,
+                    Reservation.reservation_date == res_date,
+                    Reservation.reference_id == ref_id,
+                )
+            )
+            existing = result.scalar_one_or_none()
+            qty = float(row.get("reserved_quantity", 0))
+
+            if existing:
+                existing.reserved_quantity = qty
+                updated += 1
+            else:
+                self.db.add(Reservation(
+                    product_id=pid,
+                    site_id=site_id,
+                    reservation_date=res_date,
+                    reserved_quantity=qty,
+                    reservation_type=row.get("reservation_type", "PRODUCTION"),
+                    reference_id=ref_id,
+                    config_id=self.config_id,
+                ))
+                inserted += 1
+        await self.db.flush()
+        return {"inserted": inserted, "updated": updated, "skipped": 0, "errors": errors}
+
+    async def _upsert_shipment_lots(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Upsert ShipmentLot records. Business key: (shipment_id, product_id, lot_number)."""
+        inserted = 0
+        updated = 0
+        errors = []
+        for _, row in df.iterrows():
+            ship_id = str(row.get("shipment_id", "")).strip()
+            pid = str(row.get("product_id", "")).strip()
+            lot = str(row.get("lot_number", "")).strip()
+            if not pid or not lot:
+                continue
+            # Resolve origin_site_id
+            origin_key = str(row.get("origin_site_id", "")).strip()
+            origin_id = self._site_key_to_id.get(origin_key) if origin_key else None
+
+            if ship_id:
+                result = await self.db.execute(
+                    select(ShipmentLot).where(
+                        ShipmentLot.shipment_id == ship_id,
+                        ShipmentLot.product_id == pid,
+                        ShipmentLot.lot_number == lot,
+                    )
+                )
+                existing = result.scalar_one_or_none()
+            else:
+                existing = None
+
+            mfg_date = row.get("manufacture_date")
+            if pd.notna(mfg_date) and not isinstance(mfg_date, date):
+                mfg_date = pd.Timestamp(mfg_date).date()
+            elif pd.isna(mfg_date):
+                mfg_date = None
+
+            exp_date = row.get("expiration_date")
+            if pd.notna(exp_date) and not isinstance(exp_date, date):
+                exp_date = pd.Timestamp(exp_date).date()
+            elif pd.isna(exp_date):
+                exp_date = None
+
+            if existing:
+                existing.quantity = float(row.get("quantity", 0))
+                existing.quality_status = row.get("quality_status", existing.quality_status)
+                updated += 1
+            elif ship_id:
+                self.db.add(ShipmentLot(
+                    shipment_id=ship_id,
+                    product_id=pid,
+                    lot_number=lot,
+                    batch_id=row.get("batch_id", lot),
+                    quantity=float(row.get("quantity", 0)),
+                    uom=row.get("uom", "EA"),
+                    manufacture_date=mfg_date,
+                    expiration_date=exp_date,
+                    shelf_life_days=int(row.get("shelf_life_days", 0)),
+                    quality_status=row.get("quality_status", "RELEASED"),
+                    origin_site_id=origin_id,
+                    country_of_origin=row.get("country_of_origin", ""),
+                    source=row.get("source", "SAP_MCH1"),
+                ))
+                inserted += 1
+            else:
+                # Batch without shipment link — skip (no FK target)
+                pass
+        await self.db.flush()
+        return {"inserted": inserted, "updated": updated, "skipped": 0, "errors": errors}
+
+    async def _upsert_outbound_shipments(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Upsert OutboundShipment records. Business key: id (shipment_id + line)."""
+        inserted = 0
+        updated = 0
+        errors = []
+        for _, row in df.iterrows():
+            ship_id = str(row.get("shipment_id", "")).strip()
+            pid = str(row.get("product_id", "")).strip()
+            order_id = str(row.get("order_id", "")).strip()
+            if not ship_id or not pid:
+                continue
+            site_key = str(row.get("site_id", "")).strip()
+            site_id = self._site_key_to_id.get(site_key)
+            if site_id is None:
+                errors.append(f"OutboundShipment: unknown site {site_key}")
+                continue
+
+            line_num = int(row.get("order_line_number", 0))
+            os_id = f"OS_{ship_id}_{pid}_{line_num}"
+
+            existing = await self.db.get(OutboundShipment, os_id)
+
+            ship_date = row.get("ship_date")
+            if pd.notna(ship_date):
+                if not isinstance(ship_date, datetime):
+                    ship_date = pd.Timestamp(ship_date)
+            else:
+                ship_date = datetime.utcnow()
+
+            exp_date = row.get("expected_delivery_date")
+            if pd.notna(exp_date) and not isinstance(exp_date, datetime):
+                exp_date = pd.Timestamp(exp_date)
+            elif pd.isna(exp_date):
+                exp_date = None
+
+            act_date = row.get("actual_delivery_date")
+            if pd.notna(act_date) and not isinstance(act_date, datetime):
+                act_date = pd.Timestamp(act_date)
+            elif pd.isna(act_date):
+                act_date = None
+
+            cust_key = str(row.get("customer_site_id", "")).strip()
+            cust_id = self._site_key_to_id.get(cust_key) if cust_key else None
+
+            if existing:
+                existing.status = row.get("status", existing.status)
+                existing.shipped_quantity = float(row.get("shipped_quantity", 0))
+                existing.actual_delivery_date = act_date
+                updated += 1
+            else:
+                self.db.add(OutboundShipment(
+                    id=os_id,
+                    company_id=self.company_id,
+                    order_id=order_id,
+                    order_line_number=line_num,
+                    shipment_id=ship_id,
+                    product_id=pid,
+                    site_id=site_id,
+                    customer_site_id=cust_id,
+                    shipped_quantity=float(row.get("shipped_quantity", 0)),
+                    uom=row.get("uom", "EA"),
+                    ship_date=ship_date,
+                    expected_delivery_date=exp_date,
+                    actual_delivery_date=act_date,
+                    status=row.get("status", "SHIPPED"),
+                    carrier_id=row.get("carrier_id", ""),
+                    tracking_number=row.get("tracking_number", ""),
+                    source=row.get("source", "SAP_LIKP_LIPS"),
+                ))
+                inserted += 1
+        await self.db.flush()
+        return {"inserted": inserted, "updated": updated, "skipped": 0, "errors": errors}
+
+    async def _upsert_final_assembly_schedule(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Upsert FinalAssemblySchedule records. Business key: fas_id."""
+        inserted = 0
+        updated = 0
+        errors = []
+        for _, row in df.iterrows():
+            fas_id = str(row.get("fas_id", "")).strip()
+            if not fas_id:
+                continue
+            pid = str(row.get("product_id", "")).strip()
+            site_key = str(row.get("site_id", "")).strip()
+            site_id = self._site_key_to_id.get(site_key)
+            if site_id is None:
+                errors.append(f"FinalAssemblySchedule: unknown site {site_key}")
+                continue
+
+            result = await self.db.execute(
+                select(FinalAssemblySchedule).where(
+                    FinalAssemblySchedule.fas_id == fas_id
+                )
+            )
+            existing = result.scalar_one_or_none()
+
+            start_date = row.get("assembly_start_date")
+            if pd.notna(start_date) and not isinstance(start_date, date):
+                start_date = pd.Timestamp(start_date).date()
+            elif pd.isna(start_date):
+                start_date = date.today()
+
+            end_date = row.get("assembly_end_date")
+            if pd.notna(end_date) and not isinstance(end_date, date):
+                end_date = pd.Timestamp(end_date).date()
+            elif pd.isna(end_date):
+                end_date = start_date
+
+            if existing:
+                existing.status = row.get("status", existing.status)
+                existing.assembly_quantity = float(row.get("assembly_quantity", 0))
+                existing.assembly_start_date = start_date
+                existing.assembly_end_date = end_date
+                existing.source = "SAP_AFKO_AFPO"
+                updated += 1
+            else:
+                self.db.add(FinalAssemblySchedule(
+                    company_id=self.company_id,
+                    fas_id=fas_id,
+                    order_id=str(row.get("order_id", "")).strip() or fas_id,
+                    order_line_id=str(row.get("order_line_id", "")).strip() or None,
+                    product_id=pid,
+                    base_product_id=pid,
+                    site_id=site_id,
+                    assembly_quantity=float(row.get("assembly_quantity", 0)),
+                    assembly_start_date=start_date,
+                    assembly_end_date=end_date,
+                    assembly_lead_time_days=int(row.get("assembly_lead_time_days", 0)),
+                    status=row.get("status", "PLANNED"),
+                    production_process_id=str(row.get("production_process_id", "")).strip() or None,
+                    work_center_id=row.get("work_center_id", ""),
+                    priority=int(row.get("priority", 3)),
+                    config_id=self.config_id,
+                    source="SAP_AFKO_AFPO",
+                ))
+                inserted += 1
+        await self.db.flush()
+        return {"inserted": inserted, "updated": updated, "skipped": 0, "errors": errors}
+
+    async def _upsert_sourcing_schedule(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Upsert SourcingSchedule records. Business key: id."""
+        inserted = 0
+        updated = 0
+        errors = []
+        for _, row in df.iterrows():
+            ss_id = str(row.get("id", "")).strip()
+            if not ss_id:
+                continue
+            site_key = str(row.get("to_site_id", "")).strip()
+            site_id = self._site_key_to_id.get(site_key)
+            if site_id is None:
+                errors.append(f"SourcingSchedule: unknown site {site_key}")
+                continue
+
+            existing = await self.db.get(SourcingSchedule, ss_id)
+            if existing:
+                existing.description = row.get("description", existing.description)
+                existing.is_active = str(row.get("is_active", "true")).lower()
+                updated += 1
+            else:
+                eff_start = row.get("eff_start_date")
+                if pd.notna(eff_start) and not isinstance(eff_start, datetime):
+                    eff_start = pd.Timestamp(eff_start)
+                elif pd.isna(eff_start):
+                    eff_start = None
+
+                eff_end = row.get("eff_end_date")
+                if pd.notna(eff_end) and not isinstance(eff_end, datetime):
+                    eff_end = pd.Timestamp(eff_end)
+                elif pd.isna(eff_end):
+                    eff_end = None
+
+                self.db.add(SourcingSchedule(
+                    id=ss_id,
+                    description=row.get("description", ""),
+                    to_site_id=site_id,
+                    tpartner_id=str(row.get("tpartner_id", "")).strip() or None,
+                    schedule_type=row.get("schedule_type", "custom"),
+                    is_active=str(row.get("is_active", "true")).lower(),
+                    eff_start_date=eff_start,
+                    eff_end_date=eff_end,
+                    tenant_id=self.tenant_id,
+                    config_id=self.config_id,
+                ))
+                inserted += 1
+        await self.db.flush()
+        return {"inserted": inserted, "updated": updated, "skipped": 0, "errors": errors}
+
+    async def _upsert_user_import(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Delegate to SAPUserProvisioningService for SC-relevant user import.
+
+        The raw SAP data was stored by _map_user_import; here we execute
+        the import which creates/updates User records with proper powell_role
+        and site_scope based on SAP authorization objects.
+        """
+        raw_data = getattr(self, "_user_import_raw", None)
+        if not raw_data:
+            return {"inserted": 0, "updated": 0, "skipped": 0, "errors": []}
+
+        try:
+            service = SAPUserProvisioningService(self.db, self.tenant_id)
+            log = await service.execute_import(raw_data)
+            return {
+                "inserted": log.users_created,
+                "updated": log.users_updated,
+                "skipped": log.users_skipped,
+                "errors": log.errors or [],
+            }
+        except Exception as e:
+            logger.error(f"User import failed: {e}")
+            return {"inserted": 0, "updated": 0, "skipped": 0, "errors": [str(e)]}
+
     # ------------------------------------------------------------------
     # Reconciliation
     # ------------------------------------------------------------------
@@ -1748,3 +2236,173 @@ class SAPDataStagingService:
             }
 
         return results
+
+    # ------------------------------------------------------------------
+    # Operational Statistics (distribution parameters from HANA aggregation)
+    # ------------------------------------------------------------------
+
+    def _map_operational_stats(
+        self, sap_data: Dict[str, pd.DataFrame],
+    ) -> pd.DataFrame:
+        """Map pre-computed operational stats to distribution parameter records.
+
+        Expects sap_data to contain a special key ``__operational_stats__``
+        with the dict returned by ``extract_operational_stats()``.
+        Returns a sentinel DataFrame; actual distribution dicts are stored
+        on the instance for use by ``_upsert_operational_stats``.
+        """
+        stats = sap_data.get("__operational_stats__")
+        if not stats or not isinstance(stats, dict):
+            logger.info("No operational stats found in sap_data — skipping")
+            return pd.DataFrame()
+
+        dist_results = self.mapper.map_operational_stats_to_distributions(stats)
+        self._operational_dist_results = dist_results
+
+        # Return a sentinel DataFrame with one row per entity group
+        total = sum(len(df) for df in dist_results.values())
+        sentinel = pd.DataFrame(
+            [{"entity_group": k, "records": len(df)} for k, df in dist_results.items()]
+        )
+        logger.info(
+            f"Mapped operational stats: {len(dist_results)} entity groups, "
+            f"{total} total distribution records"
+        )
+        return sentinel
+
+    async def _upsert_operational_stats(
+        self, df: pd.DataFrame,
+    ) -> Dict[str, Any]:
+        """Persist distribution parameters from operational stats to *_dist columns.
+
+        Updates existing records in vendor_lead_times, production_process,
+        and transportation_lane with distribution JSON.
+        """
+        dist_results = getattr(self, "_operational_dist_results", {})
+        if not dist_results:
+            return {"inserted": 0, "updated": 0, "skipped": 0, "errors": []}
+
+        updated = 0
+        skipped = 0
+        errors: List[str] = []
+
+        # --- Vendor lead time distributions ---
+        vlt_df = dist_results.get("vendor_lead_time", pd.DataFrame())
+        if not vlt_df.empty:
+            for _, row in vlt_df.iterrows():
+                try:
+                    result = await self.db.execute(
+                        select(VendorLeadTime).where(
+                            VendorLeadTime.tpartner_id == row["tpartner_id"],
+                            VendorLeadTime.product_id == row.get("product_id"),
+                            VendorLeadTime.site_id == self._resolve_site_id(
+                                row.get("site_id", "")
+                            ),
+                        )
+                    )
+                    existing = result.scalar_one_or_none()
+                    if existing:
+                        existing.lead_time_dist = row.get("lead_time_dist")
+                        if row.get("lead_time_variability_days") is not None:
+                            existing.lead_time_variability_days = row["lead_time_variability_days"]
+                        updated += 1
+                    else:
+                        skipped += 1
+                except Exception as e:
+                    errors.append(f"vendor_lead_time: {e}")
+
+        # --- Production process distributions (cycle, yield, setup) ---
+        for group_key, dist_col, base_col in [
+            ("production_process_cycle", "operation_time_dist", "operation_time"),
+            ("production_process_yield", "yield_dist", "yield_percentage"),
+            ("production_process_setup", "setup_time_dist", "setup_time"),
+        ]:
+            group_df = dist_results.get(group_key, pd.DataFrame())
+            if group_df.empty:
+                continue
+            for _, row in group_df.iterrows():
+                try:
+                    site_int = self._resolve_site_id(row.get("site_id", ""))
+                    result = await self.db.execute(
+                        select(ProductionProcess).where(
+                            ProductionProcess.site_id == site_int,
+                            ProductionProcess.config_id == self.config_id,
+                        )
+                    )
+                    procs = result.scalars().all()
+                    if procs:
+                        for proc in procs:
+                            setattr(proc, dist_col, row.get(dist_col))
+                            if row.get(base_col) is not None:
+                                setattr(proc, base_col, row[base_col])
+                            updated += 1
+                    else:
+                        skipped += 1
+                except Exception as e:
+                    errors.append(f"{group_key}: {e}")
+
+        # --- MTBF/MTTR distributions → production_process ---
+        for group_key, dist_col in [
+            ("machine_mtbf", "mtbf_dist"),
+            ("machine_mttr", "mttr_dist"),
+        ]:
+            group_df = dist_results.get(group_key, pd.DataFrame())
+            if group_df.empty:
+                continue
+            for _, row in group_df.iterrows():
+                try:
+                    site_int = self._resolve_site_id(row.get("site_id", ""))
+                    result = await self.db.execute(
+                        select(ProductionProcess).where(
+                            ProductionProcess.site_id == site_int,
+                            ProductionProcess.config_id == self.config_id,
+                        )
+                    )
+                    procs = result.scalars().all()
+                    for proc in procs:
+                        setattr(proc, dist_col, row.get(dist_col))
+                        updated += 1
+                    if not procs:
+                        skipped += 1
+                except Exception as e:
+                    errors.append(f"{group_key}: {e}")
+
+        # --- Transportation lane distributions ---
+        tl_df = dist_results.get("transportation_lane", pd.DataFrame())
+        if not tl_df.empty:
+            for _, row in tl_df.iterrows():
+                try:
+                    from_id = self._resolve_site_id(row.get("from_site_id", ""))
+                    to_id = self._resolve_site_id(row.get("to_site_id", ""))
+                    result = await self.db.execute(
+                        select(TransportationLane).where(
+                            TransportationLane.from_site_id == from_id,
+                            TransportationLane.to_site_id == to_id,
+                            TransportationLane.config_id == self.config_id,
+                        )
+                    )
+                    lane = result.scalar_one_or_none()
+                    if lane:
+                        lane.supply_lead_time_dist = row.get("supply_lead_time_dist")
+                        updated += 1
+                    else:
+                        skipped += 1
+                except Exception as e:
+                    errors.append(f"transportation_lane: {e}")
+
+        await self.db.flush()
+        logger.info(
+            f"Operational stats upsert: {updated} updated, {skipped} skipped, "
+            f"{len(errors)} errors"
+        )
+        return {"inserted": 0, "updated": updated, "skipped": skipped, "errors": errors}
+
+    def _resolve_site_id(self, sap_plant_code: str) -> Optional[int]:
+        """Resolve a SAP plant code to a Site.id integer.
+
+        Uses the _site_key_to_id cache built during staging. Falls back to None.
+        """
+        if not sap_plant_code:
+            return None
+        site_map = getattr(self, "_site_key_to_id", {})
+        return site_map.get(sap_plant_code.strip())

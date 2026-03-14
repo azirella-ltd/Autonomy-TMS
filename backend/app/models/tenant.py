@@ -10,6 +10,23 @@ from .base import Base
 from .explainability import ExplainabilityLevel
 
 
+class TenantIndustry(str, Enum):
+    """Customer industry vertical — drives default stochastic parameters."""
+    FOOD_BEVERAGE = "food_beverage"                # Food & Beverage Manufacturing
+    PHARMACEUTICAL = "pharmaceutical"              # Pharmaceutical & Life Sciences
+    AUTOMOTIVE = "automotive"                      # Automotive & Transport Equipment
+    ELECTRONICS = "electronics"                    # Electronics & High-Tech
+    CHEMICAL = "chemical"                          # Chemical & Process Industries
+    INDUSTRIAL_EQUIPMENT = "industrial_equipment"  # Industrial Machinery & Equipment
+    CONSUMER_GOODS = "consumer_goods"              # Consumer Packaged Goods (CPG)
+    METALS_MINING = "metals_mining"                # Metals, Mining & Materials
+    AEROSPACE_DEFENSE = "aerospace_defense"        # Aerospace & Defense
+    BUILDING_MATERIALS = "building_materials"      # Building Materials & Construction
+    TEXTILE_APPAREL = "textile_apparel"            # Textile & Apparel
+    WHOLESALE_DISTRIBUTION = "wholesale_distribution"  # Wholesale Distribution
+    THIRD_PARTY_LOGISTICS = "third_party_logistics"    # 3PL & Logistics Services
+
+
 class TenantMode(str, Enum):
     """Tenant operating mode - determines navigation and behavior."""
     LEARNING = "learning"      # Simplified nav, game-like clock, turn-based (user education)
@@ -82,6 +99,13 @@ class Tenant(Base):
     round_duration_seconds: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True, default=None,
         comment="Round duration in seconds for timed clock mode"
+    )
+
+    # Customer Industry (drives default stochastic parameters)
+    industry: Mapped[Optional[TenantIndustry]] = mapped_column(
+        SAEnum(TenantIndustry, values_callable=lambda x: [e.value for e in x], name="tenant_industry_enum"),
+        nullable=True,
+        default=None,
     )
 
     # Production Mode Settings

@@ -117,6 +117,67 @@ Autonomy supports 20 probability distributions to model different types of uncer
 - **Normal**: Unbiased forecasts
 - **Lognormal**: If systematic bias (tends to under/over-forecast)
 
+### Data Population: SAP Operational Statistics → Distribution Parameters
+
+Distribution parameters are **automatically extracted** from SAP S/4HANA transaction history via HANA SQL aggregation queries, eliminating manual parameter estimation.
+
+**13 Operational Metrics Extracted**:
+
+| Metric | SAP Source Tables | Distribution Family | Target Entity |
+|--------|-------------------|--------------------|----|
+| Supplier lead time | EKKO, EKBE | Lognormal (right-skewed) | `vendor_lead_times.lead_time_dist` |
+| Supplier on-time rate | EKBE, EKET | Beta (0-1 bounded) | `supplier_on_time` |
+| Supplier qty accuracy | EKBE, EKPO | Beta | Supplier performance |
+| Manufacturing cycle time | AFKO, AFPO, AFRU | Lognormal | `production_process.operation_time_dist` |
+| Manufacturing yield | AFRU, AFPO | Beta | `production_process.yield_dist` |
+| Manufacturing setup time | AFRU, AFPO | Lognormal | `production_process.setup_time_dist` |
+| Manufacturing run time | AFRU, AFPO | Lognormal | Production process |
+| Machine MTBF | QMEL (M2 notifications) | Lognormal | `production_process.mtbf_dist` |
+| Machine MTTR | QMEL (M2 notifications) | Lognormal | `production_process.mttr_dist` |
+| Quality rejection rate | QALS | Beta | Quality metadata |
+| Transportation lead time | LIKP, LIPS | Lognormal | `transportation_lane.supply_lead_time_dist` |
+| Demand variability | VBAP (weekly aggregation) | Lognormal/Normal | Demand metadata |
+| Order fulfillment time | VBAK, LIPS, LIKP | Lognormal | Fulfillment metadata |
+
+**Distribution Fitting Heuristics** (from summary statistics only — no raw data transfer):
+- **Lognormal**: Selected when median < mean (right skew) or CV > 0.5. Parameters derived via method-of-moments: `μ_log = ln(μ²/√(σ²+μ²))`, `σ_log = √(ln(1+σ²/μ²))`
+- **Beta**: Selected for rate/ratio metrics bounded 0-1. Parameters via method-of-moments: `α = μ·((μ(1-μ)/σ²)-1)`, `β = (1-μ)·((μ(1-μ)/σ²)-1)`
+- **Normal**: Fallback when data is roughly symmetric
+- **Triangular**: Fallback when only min/mode/max available (< 5 observations)
+
+**Truncation**: P05/P95 percentiles stored as `min`/`max` bounds to exclude outliers.
+
+**Pipeline**: `extract_sap_hana.py --operational-stats` → HANA SQL aggregation → `operational_stats.json` → `SupplyChainMapper.map_operational_stats_to_distributions()` → `SAPDataStagingService._upsert_operational_stats()` → `*_dist` JSON columns
+
+**Convention**: `NULL` in any `*_dist` column = use the deterministic base field value (e.g., `lead_time_days`).
+
+### Per-Agent Stochastic Parameters
+
+Each of the 11 TRM agent types uses a specific subset of stochastic variables. The `agent_stochastic_params` table stores per-agent distribution values with source tracking:
+
+| TRM Agent | Stochastic Parameters |
+|---|---|
+| ATP Executor | demand_variability |
+| Inventory Rebalancing | demand_variability, supplier_lead_time, transport_lead_time |
+| PO Creation | supplier_lead_time, supplier_on_time |
+| Order Tracking | supplier_lead_time, transport_lead_time |
+| MO Execution | manufacturing_cycle_time, manufacturing_yield, setup_time, mtbf, mttr |
+| TO Execution | transport_lead_time |
+| Quality Disposition | quality_rejection_rate, manufacturing_yield |
+| Maintenance Scheduling | mtbf, mttr |
+| Subcontracting | manufacturing_cycle_time, supplier_lead_time |
+| Forecast Adjustment | demand_variability |
+| Inventory Buffer | demand_variability, supplier_lead_time |
+
+**Source tracking**: Each parameter row carries `is_default` (boolean) and `source` (industry_default / sap_import / manual_edit):
+- **industry_default**: Auto-populated based on tenant industry vertical (13 industries). Updated when industry changes — but ONLY if `is_default=True`.
+- **sap_import**: Derived from SAP operational statistics extraction. Protected from industry changes.
+- **manual_edit**: Set by user through the Stochastic Parameters editor UI. Protected from industry changes.
+
+**Hierarchy**: Config-wide defaults (`site_id=NULL`) apply to all sites. Site-specific overrides (`site_id=<id>`) take precedence.
+
+**Implementation**: Model in `agent_stochastic_param.py`, service in `industry_defaults_service.py` (`apply_agent_stochastic_defaults()`), API at `/api/v1/agent-stochastic-params/`, UI at `/admin/stochastic-params`.
+
 ---
 
 ## Operational vs. Control Variables

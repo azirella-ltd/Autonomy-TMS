@@ -183,7 +183,7 @@ SAP_TABLES: Dict[str, Tuple[List[str], str]] = {
     ),
     # Demand
     "PBIM": (
-        ["BESSION", "MATNR", "WERKS", "BEDAE", "VERSB"],
+        ["BESSION", "MATNR", "WERKS", "BEDAE", "VERSB", "KDAUF"],
         "WERKS IN ({werks})",
     ),
     "PBED": (
@@ -203,7 +203,8 @@ SAP_TABLES: Dict[str, Tuple[List[str], str]] = {
     # ── Transaction Data (Phase 3) — needed for lane inference ─────────
     "EKKO": (
         ["EBELN", "BUKRS", "BSTYP", "BSART", "LIFNR", "EKORG", "EKGRP",
-         "WAERS", "BEDAT", "KDATB", "KDATE", "PROCSTAT", "RLWRT"],
+         "WAERS", "BEDAT", "KDATB", "KDATE", "PROCSTAT", "RLWRT",
+         "IHREZ", "KONNR"],
         "BUKRS = '{bukrs}'",
     ),
     "EKPO": (
@@ -230,12 +231,12 @@ SAP_TABLES: Dict[str, Tuple[List[str], str]] = {
     "LIKP": (
         ["VBELN", "KUNNR", "WADAT", "WADAT_IST", "LFART", "VSTEL",
          "ROUTE", "BTGEW", "GEWEI", "ERDAT", "ERNAM", "BOLNR", "LIFNR",
-         "LFDAT", "LDDAT", "NTGEW", "VOLUM", "VOLEH", "VKORG"],
+         "LFDAT", "LDDAT", "NTGEW", "VOLUM", "VOLEH", "VKORG", "VSART"],
         "",
     ),
     "LIPS": (
         ["VBELN", "POSNR", "MATNR", "WERKS", "LGORT", "LFIMG", "MEINS",
-         "VGBEL", "VGPOS", "PSTYV"],
+         "VGBEL", "VGPOS", "PSTYV", "CHARG"],
         "WERKS IN ({werks})",
     ),
     # Production orders
@@ -417,10 +418,547 @@ SAP_TABLES: Dict[str, Tuple[List[str], str]] = {
          "ANESSION", "BEGZT", "ENDZT"],
         "",
     ),
+
+    # ── User & Role Data (Phase 6) — SC-relevant user provisioning ────
+    # User master (logon data)
+    "USR02": (
+        ["BNAME", "USTYP", "CLASS", "GLTGV", "GLTGB", "UFLAG", "ERDAT",
+         "TRDAT", "LTIME", "BCODE", "CODVN"],
+        "USTYP IN ('A','B','C','L')",  # Dialog, System, Comm, Reference
+    ),
+    # User address key assignment (links BNAME to PERSNUMBER for ADRP)
+    "USR21": (
+        ["BNAME", "PERSNUMBER", "ADDRNUMBER", "NAMEMIT", "KOSTL"],
+        "",
+    ),
+    # Person data (first name, last name, email via SMTP_ADDR)
+    "ADRP": (
+        ["PERSNUMBER", "NAME_FIRST", "NAME_LAST", "NAME_TEXT",
+         "SMTP_ADDR", "DEPARTMENT", "FUNCTION"],
+        "",
+    ),
+    # Role-to-user assignments
+    "AGR_USERS": (
+        ["AGR_NAME", "UNAME", "FROM_DAT", "TO_DAT", "EXCLUDE"],
+        "",
+    ),
+    # Role definitions
+    "AGR_DEFINE": (
+        ["AGR_NAME", "PARENT_AGR", "CREATE_USR", "CREATE_DAT",
+         "CHANGE_USR", "CHANGE_DAT"],
+        "",
+    ),
+    # Authorization values in roles (used for SC relevance filtering)
+    "AGR_1251": (
+        ["AGR_NAME", "OBJECT", "AUTH", "FIELD", "LOW", "HIGH",
+         "DELETED", "MODIFIED"],
+        "",
+    ),
+    # Transaction codes in roles (used for SC relevance filtering)
+    "AGR_TCODES": (
+        ["AGR_NAME", "TCODE"],
+        "",
+    ),
 }
 
 # Tables to extract by default (the full set)
 DEFAULT_TABLES = list(SAP_TABLES.keys())
+
+# ---------------------------------------------------------------------------
+# Operational Statistics Queries — aggregate in HANA, return distribution params
+# ---------------------------------------------------------------------------
+# Each query returns: metric_key, group_key_1, group_key_2, ...,
+#   cnt, min_val, max_val, avg_val, stddev_val, median_val, p05, p25, p75, p95
+#
+# These compute operational *performance* parameters (stochastic variables)
+# NOT control variables (MOQ, ROP, SS, etc.).
+# ---------------------------------------------------------------------------
+
+OPERATIONAL_STATS_QUERIES: Dict[str, str] = {
+    # --- SUPPLIER LEAD TIME (days) ---
+    # PO creation date (EKKO.BEDAT) to goods receipt posting date (EKBE.BUDAT)
+    # Grouped by vendor × material × plant
+    "supplier_lead_time": """
+        SELECT
+            'supplier_lead_time' AS metric,
+            e."LIFNR" AS vendor_id,
+            b."MATNR" AS product_id,
+            b."WERKS" AS site_id,
+            COUNT(*) AS cnt,
+            MIN(DAYS_BETWEEN(e."BEDAT", b."BUDAT")) AS min_val,
+            MAX(DAYS_BETWEEN(e."BEDAT", b."BUDAT")) AS max_val,
+            AVG(DAYS_BETWEEN(e."BEDAT", b."BUDAT")) AS avg_val,
+            STDDEV(DAYS_BETWEEN(e."BEDAT", b."BUDAT")) AS stddev_val,
+            MEDIAN(DAYS_BETWEEN(e."BEDAT", b."BUDAT")) AS median_val,
+            PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY DAYS_BETWEEN(e."BEDAT", b."BUDAT")) AS p05,
+            PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY DAYS_BETWEEN(e."BEDAT", b."BUDAT")) AS p25,
+            PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY DAYS_BETWEEN(e."BEDAT", b."BUDAT")) AS p75,
+            PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY DAYS_BETWEEN(e."BEDAT", b."BUDAT")) AS p95
+        FROM "EKBE" b
+        JOIN "EKKO" e ON b."EBELN" = e."EBELN"
+        WHERE b."VGABE" = '1'          -- Goods receipt
+          AND b."BEWTP" = 'E'          -- PO history
+          AND b."BWART" = '101'        -- GR into warehouse
+          AND e."BEDAT" IS NOT NULL
+          AND b."BUDAT" IS NOT NULL
+          AND DAYS_BETWEEN(e."BEDAT", b."BUDAT") >= 0
+          AND b."WERKS" IN ({werks})
+        GROUP BY e."LIFNR", b."MATNR", b."WERKS"
+        HAVING COUNT(*) >= 3
+    """,
+
+    # --- SUPPLIER ON-TIME RATE ---
+    # Compare actual GR date (EKBE.BUDAT) vs promised date (EKET.EINDT)
+    # Grouped by vendor
+    "supplier_on_time": """
+        SELECT
+            'supplier_on_time' AS metric,
+            e."LIFNR" AS vendor_id,
+            '' AS product_id,
+            '' AS site_id,
+            COUNT(*) AS cnt,
+            CAST(SUM(CASE WHEN b."BUDAT" <= k."EINDT" THEN 1 ELSE 0 END) AS DOUBLE) / COUNT(*) AS min_val,
+            CAST(SUM(CASE WHEN b."BUDAT" <= k."EINDT" THEN 1 ELSE 0 END) AS DOUBLE) / COUNT(*) AS max_val,
+            CAST(SUM(CASE WHEN b."BUDAT" <= k."EINDT" THEN 1 ELSE 0 END) AS DOUBLE) / COUNT(*) AS avg_val,
+            0 AS stddev_val,
+            CAST(SUM(CASE WHEN b."BUDAT" <= k."EINDT" THEN 1 ELSE 0 END) AS DOUBLE) / COUNT(*) AS median_val,
+            0 AS p05, 0 AS p25, 0 AS p75, 0 AS p95
+        FROM "EKBE" b
+        JOIN "EKKO" e ON b."EBELN" = e."EBELN"
+        JOIN "EKET" k ON b."EBELN" = k."EBELN" AND b."EBELP" = k."EBELP"
+        WHERE b."VGABE" = '1'
+          AND b."BWART" = '101'
+          AND b."WERKS" IN ({werks})
+        GROUP BY e."LIFNR"
+        HAVING COUNT(*) >= 5
+    """,
+
+    # --- SUPPLIER QUANTITY ACCURACY ---
+    # Received qty (EKBE.MENGE) vs ordered qty (EKPO.MENGE)
+    # Ratio = received/ordered; deviations indicate under/over delivery
+    "supplier_qty_accuracy": """
+        SELECT
+            'supplier_qty_accuracy' AS metric,
+            e."LIFNR" AS vendor_id,
+            p."MATNR" AS product_id,
+            p."WERKS" AS site_id,
+            COUNT(*) AS cnt,
+            MIN(b."MENGE" / NULLIF(p."MENGE", 0)) AS min_val,
+            MAX(b."MENGE" / NULLIF(p."MENGE", 0)) AS max_val,
+            AVG(b."MENGE" / NULLIF(p."MENGE", 0)) AS avg_val,
+            STDDEV(b."MENGE" / NULLIF(p."MENGE", 0)) AS stddev_val,
+            MEDIAN(b."MENGE" / NULLIF(p."MENGE", 0)) AS median_val,
+            PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY b."MENGE" / NULLIF(p."MENGE", 0)) AS p05,
+            PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY b."MENGE" / NULLIF(p."MENGE", 0)) AS p25,
+            PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY b."MENGE" / NULLIF(p."MENGE", 0)) AS p75,
+            PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY b."MENGE" / NULLIF(p."MENGE", 0)) AS p95
+        FROM "EKBE" b
+        JOIN "EKKO" e ON b."EBELN" = e."EBELN"
+        JOIN "EKPO" p ON b."EBELN" = p."EBELN" AND b."EBELP" = p."EBELP"
+        WHERE b."VGABE" = '1'
+          AND b."BWART" = '101'
+          AND p."MENGE" > 0
+          AND p."WERKS" IN ({werks})
+        GROUP BY e."LIFNR", p."MATNR", p."WERKS"
+        HAVING COUNT(*) >= 3
+    """,
+
+    # --- MANUFACTURING CYCLE TIME (days) ---
+    # Actual production order duration: release to final confirmation
+    # AFKO.GSTRP (basic start) to AFRU confirmation end date
+    "manufacturing_cycle_time": """
+        SELECT
+            'manufacturing_cycle_time' AS metric,
+            o."MATNR" AS product_id,
+            o."WERKS" AS site_id,
+            '' AS vendor_id,
+            COUNT(*) AS cnt,
+            MIN(DAYS_BETWEEN(k."GSTRP", MAX_CONF."IEDD")) AS min_val,
+            MAX(DAYS_BETWEEN(k."GSTRP", MAX_CONF."IEDD")) AS max_val,
+            AVG(DAYS_BETWEEN(k."GSTRP", MAX_CONF."IEDD")) AS avg_val,
+            STDDEV(DAYS_BETWEEN(k."GSTRP", MAX_CONF."IEDD")) AS stddev_val,
+            MEDIAN(DAYS_BETWEEN(k."GSTRP", MAX_CONF."IEDD")) AS median_val,
+            PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY DAYS_BETWEEN(k."GSTRP", MAX_CONF."IEDD")) AS p05,
+            PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY DAYS_BETWEEN(k."GSTRP", MAX_CONF."IEDD")) AS p25,
+            PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY DAYS_BETWEEN(k."GSTRP", MAX_CONF."IEDD")) AS p75,
+            PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY DAYS_BETWEEN(k."GSTRP", MAX_CONF."IEDD")) AS p95
+        FROM "AFPO" o
+        JOIN "AFKO" k ON o."AUFNR" = k."AUFNR"
+        JOIN (
+            SELECT "AUFNR", MAX("IEDD") AS "IEDD"
+            FROM "AFRU"
+            WHERE "STOKZ" != 'X'
+            GROUP BY "AUFNR"
+        ) MAX_CONF ON o."AUFNR" = MAX_CONF."AUFNR"
+        WHERE k."GSTRP" IS NOT NULL
+          AND MAX_CONF."IEDD" IS NOT NULL
+          AND DAYS_BETWEEN(k."GSTRP", MAX_CONF."IEDD") >= 0
+          AND o."WERKS" IN ({werks})
+        GROUP BY o."MATNR", o."WERKS"
+        HAVING COUNT(*) >= 3
+    """,
+
+    # --- MANUFACTURING YIELD (ratio) ---
+    # Yield qty / (Yield qty + Scrap qty) from production confirmations
+    "manufacturing_yield": """
+        SELECT
+            'manufacturing_yield' AS metric,
+            o."MATNR" AS product_id,
+            o."WERKS" AS site_id,
+            '' AS vendor_id,
+            COUNT(*) AS cnt,
+            MIN(r."LMNGA" / NULLIF(r."LMNGA" + r."XMNGA", 0)) AS min_val,
+            MAX(r."LMNGA" / NULLIF(r."LMNGA" + r."XMNGA", 0)) AS max_val,
+            AVG(r."LMNGA" / NULLIF(r."LMNGA" + r."XMNGA", 0)) AS avg_val,
+            STDDEV(r."LMNGA" / NULLIF(r."LMNGA" + r."XMNGA", 0)) AS stddev_val,
+            MEDIAN(r."LMNGA" / NULLIF(r."LMNGA" + r."XMNGA", 0)) AS median_val,
+            PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY r."LMNGA" / NULLIF(r."LMNGA" + r."XMNGA", 0)) AS p05,
+            PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY r."LMNGA" / NULLIF(r."LMNGA" + r."XMNGA", 0)) AS p25,
+            PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY r."LMNGA" / NULLIF(r."LMNGA" + r."XMNGA", 0)) AS p75,
+            PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY r."LMNGA" / NULLIF(r."LMNGA" + r."XMNGA", 0)) AS p95
+        FROM "AFRU" r
+        JOIN "AFPO" o ON r."AUFNR" = o."AUFNR"
+        WHERE r."STOKZ" != 'X'
+          AND (r."LMNGA" + r."XMNGA") > 0
+          AND o."WERKS" IN ({werks})
+        GROUP BY o."MATNR", o."WERKS"
+        HAVING COUNT(*) >= 5
+    """,
+
+    # --- MANUFACTURING SETUP TIME (minutes) ---
+    # Actual setup time from production confirmations (AFRU.RUESSION = setup time)
+    "manufacturing_setup_time": """
+        SELECT
+            'manufacturing_setup_time' AS metric,
+            o."MATNR" AS product_id,
+            o."WERKS" AS site_id,
+            '' AS vendor_id,
+            COUNT(*) AS cnt,
+            MIN(r."RUESSION") AS min_val,
+            MAX(r."RUESSION") AS max_val,
+            AVG(r."RUESSION") AS avg_val,
+            STDDEV(r."RUESSION") AS stddev_val,
+            MEDIAN(r."RUESSION") AS median_val,
+            PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY r."RUESSION") AS p05,
+            PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY r."RUESSION") AS p25,
+            PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY r."RUESSION") AS p75,
+            PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY r."RUESSION") AS p95
+        FROM "AFRU" r
+        JOIN "AFPO" o ON r."AUFNR" = o."AUFNR"
+        WHERE r."STOKZ" != 'X'
+          AND r."RUESSION" > 0
+          AND o."WERKS" IN ({werks})
+        GROUP BY o."MATNR", o."WERKS"
+        HAVING COUNT(*) >= 3
+    """,
+
+    # --- MANUFACTURING RUN TIME (minutes per unit) ---
+    # Machine time per confirmed quantity (AFRU.MAESSION / AFRU.LMNGA)
+    "manufacturing_run_time": """
+        SELECT
+            'manufacturing_run_time' AS metric,
+            o."MATNR" AS product_id,
+            o."WERKS" AS site_id,
+            '' AS vendor_id,
+            COUNT(*) AS cnt,
+            MIN(r."MAESSION" / NULLIF(r."LMNGA", 0)) AS min_val,
+            MAX(r."MAESSION" / NULLIF(r."LMNGA", 0)) AS max_val,
+            AVG(r."MAESSION" / NULLIF(r."LMNGA", 0)) AS avg_val,
+            STDDEV(r."MAESSION" / NULLIF(r."LMNGA", 0)) AS stddev_val,
+            MEDIAN(r."MAESSION" / NULLIF(r."LMNGA", 0)) AS median_val,
+            PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY r."MAESSION" / NULLIF(r."LMNGA", 0)) AS p05,
+            PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY r."MAESSION" / NULLIF(r."LMNGA", 0)) AS p25,
+            PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY r."MAESSION" / NULLIF(r."LMNGA", 0)) AS p75,
+            PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY r."MAESSION" / NULLIF(r."LMNGA", 0)) AS p95
+        FROM "AFRU" r
+        JOIN "AFPO" o ON r."AUFNR" = o."AUFNR"
+        WHERE r."STOKZ" != 'X'
+          AND r."LMNGA" > 0
+          AND r."MAESSION" > 0
+          AND o."WERKS" IN ({werks})
+        GROUP BY o."MATNR", o."WERKS"
+        HAVING COUNT(*) >= 3
+    """,
+
+    # --- MACHINE BREAKDOWN MTBF (days between breakdowns) ---
+    # From quality notifications type M2 (breakdown) in QMEL
+    # MATNR in PM context = equipment/technical object material
+    # QMGRP = object part code, used as equipment grouping key
+    "machine_mtbf": """
+        SELECT
+            'machine_mtbf' AS metric,
+            q."MATNR" AS product_id,
+            q."MAWERK" AS site_id,
+            '' AS vendor_id,
+            COUNT(*) AS cnt,
+            MIN(q."GAP_DAYS") AS min_val,
+            MAX(q."GAP_DAYS") AS max_val,
+            AVG(q."GAP_DAYS") AS avg_val,
+            STDDEV(q."GAP_DAYS") AS stddev_val,
+            MEDIAN(q."GAP_DAYS") AS median_val,
+            PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY q."GAP_DAYS") AS p05,
+            PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY q."GAP_DAYS") AS p25,
+            PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY q."GAP_DAYS") AS p75,
+            PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY q."GAP_DAYS") AS p95
+        FROM (
+            SELECT "MATNR", "MAWERK",
+                   DAYS_BETWEEN(
+                       LAG("ERDAT") OVER (PARTITION BY "MATNR", "MAWERK" ORDER BY "ERDAT"),
+                       "ERDAT"
+                   ) AS "GAP_DAYS"
+            FROM "QMEL"
+            WHERE "QMART" = 'M2'
+              AND "MAWERK" IN ({werks})
+        ) q
+        WHERE q."GAP_DAYS" IS NOT NULL AND q."GAP_DAYS" > 0
+        GROUP BY q."MATNR", q."MAWERK"
+        HAVING COUNT(*) >= 3
+    """,
+
+    # --- MACHINE MTTR (hours to repair) ---
+    # Duration between malfunction start (STRMN) and end (LTRMN) in QMEL
+    "machine_mttr": """
+        SELECT
+            'machine_mttr' AS metric,
+            "MATNR" AS product_id,
+            "MAWERK" AS site_id,
+            '' AS vendor_id,
+            COUNT(*) AS cnt,
+            MIN(SECONDS_BETWEEN("STRMN", "LTRMN") / 3600.0) AS min_val,
+            MAX(SECONDS_BETWEEN("STRMN", "LTRMN") / 3600.0) AS max_val,
+            AVG(SECONDS_BETWEEN("STRMN", "LTRMN") / 3600.0) AS avg_val,
+            STDDEV(SECONDS_BETWEEN("STRMN", "LTRMN") / 3600.0) AS stddev_val,
+            MEDIAN(SECONDS_BETWEEN("STRMN", "LTRMN") / 3600.0) AS median_val,
+            PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY SECONDS_BETWEEN("STRMN", "LTRMN") / 3600.0) AS p05,
+            PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY SECONDS_BETWEEN("STRMN", "LTRMN") / 3600.0) AS p25,
+            PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY SECONDS_BETWEEN("STRMN", "LTRMN") / 3600.0) AS p75,
+            PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY SECONDS_BETWEEN("STRMN", "LTRMN") / 3600.0) AS p95
+        FROM "QMEL"
+        WHERE "QMART" = 'M2'
+          AND "STRMN" IS NOT NULL
+          AND "LTRMN" IS NOT NULL
+          AND "STRMN" < "LTRMN"
+          AND "MAWERK" IN ({werks})
+        GROUP BY "MATNR", "MAWERK"
+        HAVING COUNT(*) >= 3
+    """,
+
+    # --- QUALITY INSPECTION REJECTION RATE ---
+    # From inspection lots (QALS): rejected qty (LPRZMG) / lot size (LOSMENGE)
+    # VDESSION = usage decision code (A=accept, R=reject, etc.)
+    # Fall back to LPRZMG > 0 as rejection indicator if UD not yet posted
+    "quality_rejection_rate": """
+        SELECT
+            'quality_rejection_rate' AS metric,
+            "MATNR" AS product_id,
+            "WERK" AS site_id,
+            '' AS vendor_id,
+            COUNT(*) AS cnt,
+            MIN("LPRZMG" / NULLIF("LOSMENGE", 0)) AS min_val,
+            MAX("LPRZMG" / NULLIF("LOSMENGE", 0)) AS max_val,
+            AVG("LPRZMG" / NULLIF("LOSMENGE", 0)) AS avg_val,
+            STDDEV("LPRZMG" / NULLIF("LOSMENGE", 0)) AS stddev_val,
+            MEDIAN("LPRZMG" / NULLIF("LOSMENGE", 0)) AS median_val,
+            PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY "LPRZMG" / NULLIF("LOSMENGE", 0)) AS p05,
+            PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "LPRZMG" / NULLIF("LOSMENGE", 0)) AS p25,
+            PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "LPRZMG" / NULLIF("LOSMENGE", 0)) AS p75,
+            PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY "LPRZMG" / NULLIF("LOSMENGE", 0)) AS p95
+        FROM "QALS"
+        WHERE "LOSMENGE" > 0
+          AND "WERK" IN ({werks})
+        GROUP BY "MATNR", "WERK"
+        HAVING COUNT(*) >= 5
+    """,
+
+    # --- TRANSPORTATION LEAD TIME (days) ---
+    # Goods issue date (LIKP.WADAT_IST) to proof-of-delivery (LIKP.LDDAT)
+    # Grouped by shipping plant (from LIPS.WERKS) → ship-to customer (LIKP.KUNNR)
+    "transportation_lead_time": """
+        SELECT
+            'transportation_lead_time' AS metric,
+            '' AS product_id,
+            i."WERKS" AS site_id,
+            l."KUNNR" AS vendor_id,
+            COUNT(*) AS cnt,
+            MIN(DAYS_BETWEEN(l."WADAT_IST", l."LDDAT")) AS min_val,
+            MAX(DAYS_BETWEEN(l."WADAT_IST", l."LDDAT")) AS max_val,
+            AVG(DAYS_BETWEEN(l."WADAT_IST", l."LDDAT")) AS avg_val,
+            STDDEV(DAYS_BETWEEN(l."WADAT_IST", l."LDDAT")) AS stddev_val,
+            MEDIAN(DAYS_BETWEEN(l."WADAT_IST", l."LDDAT")) AS median_val,
+            PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY DAYS_BETWEEN(l."WADAT_IST", l."LDDAT")) AS p05,
+            PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY DAYS_BETWEEN(l."WADAT_IST", l."LDDAT")) AS p25,
+            PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY DAYS_BETWEEN(l."WADAT_IST", l."LDDAT")) AS p75,
+            PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY DAYS_BETWEEN(l."WADAT_IST", l."LDDAT")) AS p95
+        FROM "LIKP" l
+        JOIN "LIPS" i ON l."VBELN" = i."VBELN"
+        WHERE l."WADAT_IST" IS NOT NULL
+          AND l."LDDAT" IS NOT NULL
+          AND l."WADAT_IST" < l."LDDAT"
+          AND i."WERKS" IN ({werks})
+        GROUP BY i."WERKS", l."KUNNR"
+        HAVING COUNT(*) >= 3
+    """,
+
+    # --- DEMAND VARIABILITY (coefficient of variation per product-plant per week) ---
+    # Weekly sales order quantity standard deviation
+    "demand_variability": """
+        SELECT
+            'demand_variability' AS metric,
+            v."MATNR" AS product_id,
+            v."WERKS" AS site_id,
+            '' AS vendor_id,
+            COUNT(*) AS cnt,
+            MIN(v."WEEKLY_QTY") AS min_val,
+            MAX(v."WEEKLY_QTY") AS max_val,
+            AVG(v."WEEKLY_QTY") AS avg_val,
+            STDDEV(v."WEEKLY_QTY") AS stddev_val,
+            MEDIAN(v."WEEKLY_QTY") AS median_val,
+            PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY v."WEEKLY_QTY") AS p05,
+            PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY v."WEEKLY_QTY") AS p25,
+            PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY v."WEEKLY_QTY") AS p75,
+            PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY v."WEEKLY_QTY") AS p95
+        FROM (
+            SELECT "MATNR", "WERKS",
+                   ISOWEEK("ERDAT") AS wk,
+                   SUM("KWMENG") AS "WEEKLY_QTY"
+            FROM "VBAP"
+            WHERE ("ABGRU" IS NULL OR "ABGRU" = '')
+              AND "WERKS" IN ({werks})
+            GROUP BY "MATNR", "WERKS", ISOWEEK("ERDAT")
+        ) v
+        GROUP BY v."MATNR", v."WERKS"
+        HAVING COUNT(*) >= 4
+    """,
+
+    # --- ORDER FULFILLMENT LEAD TIME (days: order creation to delivery) ---
+    # Sales order creation (VBAK.ERDAT) to actual goods issue (LIKP.WADAT_IST)
+    "order_fulfillment_time": """
+        SELECT
+            'order_fulfillment_time' AS metric,
+            i."MATNR" AS product_id,
+            i."WERKS" AS site_id,
+            h."KUNNR" AS vendor_id,
+            COUNT(*) AS cnt,
+            MIN(DAYS_BETWEEN(h."ERDAT", l."WADAT_IST")) AS min_val,
+            MAX(DAYS_BETWEEN(h."ERDAT", l."WADAT_IST")) AS max_val,
+            AVG(DAYS_BETWEEN(h."ERDAT", l."WADAT_IST")) AS avg_val,
+            STDDEV(DAYS_BETWEEN(h."ERDAT", l."WADAT_IST")) AS stddev_val,
+            MEDIAN(DAYS_BETWEEN(h."ERDAT", l."WADAT_IST")) AS median_val,
+            PERCENTILE_CONT(0.05) WITHIN GROUP (ORDER BY DAYS_BETWEEN(h."ERDAT", l."WADAT_IST")) AS p05,
+            PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY DAYS_BETWEEN(h."ERDAT", l."WADAT_IST")) AS p25,
+            PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY DAYS_BETWEEN(h."ERDAT", l."WADAT_IST")) AS p75,
+            PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY DAYS_BETWEEN(h."ERDAT", l."WADAT_IST")) AS p95
+        FROM "VBAK" h
+        JOIN "VBAP" i ON h."VBELN" = i."VBELN"
+        JOIN "LIPS" d ON d."VGBEL" = h."VBELN" AND d."VGPOS" = i."POSNR"
+        JOIN "LIKP" l ON d."VBELN" = l."VBELN"
+        WHERE l."WADAT_IST" IS NOT NULL
+          AND h."ERDAT" IS NOT NULL
+          AND DAYS_BETWEEN(h."ERDAT", l."WADAT_IST") >= 0
+          AND i."WERKS" IN ({werks})
+        GROUP BY i."MATNR", i."WERKS", h."KUNNR"
+        HAVING COUNT(*) >= 3
+    """,
+}
+
+
+# Column remapping: normalise SQL aliases to semantic keys expected by the mapper.
+# SQL returns: avg_val, stddev_val, median_val, min_val, max_val, product_id, site_id
+# Mapper expects: mean, stddev, median, min, max, material, plant
+_STAT_COL_REMAP = {
+    "avg_val": "mean",
+    "stddev_val": "stddev",
+    "median_val": "median",
+    "min_val": "min",
+    "max_val": "max",
+    "product_id": "material",
+    "site_id": "plant",
+}
+
+# Per-metric column overrides (where the SQL aliases have different semantics)
+_METRIC_COL_OVERRIDES: Dict[str, Dict[str, str]] = {
+    "supplier_on_time": {"avg_val": "on_time_rate"},
+    "machine_mtbf": {"product_id": "equipment"},
+    "machine_mttr": {"product_id": "equipment"},
+    "transportation_lead_time": {
+        "site_id": "ship_from",     # WERKS = shipping plant (from)
+        "vendor_id": "ship_to",     # KUNNR = ship-to customer
+    },
+}
+
+
+def _normalise_stat_row(metric_key: str, raw: Dict) -> Dict:
+    """Remap SQL column aliases to semantic keys for the mapper."""
+    overrides = _METRIC_COL_OVERRIDES.get(metric_key, {})
+    out: Dict = {}
+    for k, v in raw.items():
+        # Per-metric override takes precedence
+        if k in overrides:
+            out[overrides[k]] = v
+        elif k in _STAT_COL_REMAP:
+            out[_STAT_COL_REMAP[k]] = v
+        else:
+            out[k] = v
+    return out
+
+
+def extract_operational_stats(
+    conn,
+    company_code: str,
+    plants: List[str],
+    metrics: Optional[List[str]] = None,
+) -> Dict[str, List[Dict]]:
+    """
+    Execute aggregation queries in HANA to extract operational statistics.
+
+    Returns dict of metric_key → list of result dicts (one per group).
+    Each result dict has normalised keys:
+        metric, vendor_id, material, plant, cnt,
+        min, max, mean, stddev, median, p05, p25, p75, p95.
+    """
+    results: Dict[str, List[Dict]] = {}
+    werks_list = ",".join(f"'{w}'" for w in plants)
+
+    queries = metrics or list(OPERATIONAL_STATS_QUERIES.keys())
+
+    for metric_key in queries:
+        if metric_key not in OPERATIONAL_STATS_QUERIES:
+            logger.warning(f"Unknown metric: {metric_key}")
+            continue
+
+        sql = OPERATIONAL_STATS_QUERIES[metric_key].replace("{werks}", werks_list)
+        logger.info(f"  Querying {metric_key}...")
+
+        try:
+            cursor = conn.cursor()
+            cursor.execute(sql)
+            col_names = [desc[0] for desc in cursor.description]
+            rows = cursor.fetchall()
+            cursor.close()
+
+            metric_results = []
+            for row in rows:
+                row_dict = {}
+                for i, col in enumerate(col_names):
+                    val = row[i]
+                    # Convert Decimal/numeric to float
+                    if val is not None and not isinstance(val, (str, int, float)):
+                        try:
+                            val = float(val)
+                        except (TypeError, ValueError):
+                            val = str(val)
+                    row_dict[col.lower()] = val
+                # Normalise column names for the mapper
+                metric_results.append(_normalise_stat_row(metric_key, row_dict))
+
+            results[metric_key] = metric_results
+            logger.info(f"    {metric_key}: {len(metric_results)} groups")
+
+        except Exception as e:
+            logger.warning(f"    {metric_key} query failed: {e}")
+            results[metric_key] = []
+
+    return results
 
 # Transaction tables only (for incremental extraction)
 TRANSACTION_TABLES = [
@@ -698,6 +1236,13 @@ TABLE_LABELS = {
     "LTAK": "transfer_order_headers",
     "LTAP": "transfer_order_items",
     "KAKO": "capacity_headers",
+    "USR02": "user_master",
+    "USR21": "user_address_keys",
+    "ADRP": "person_data",
+    "AGR_USERS": "role_user_assignments",
+    "AGR_DEFINE": "role_definitions",
+    "AGR_1251": "role_auth_values",
+    "AGR_TCODES": "role_tcodes",
 }
 
 
@@ -730,6 +1275,20 @@ def parse_args():
     )
     parser.add_argument("--env-file", type=Path, help="Load connection from .env file")
     parser.add_argument("--dry-run", action="store_true", help="Show SQL without executing")
+    parser.add_argument(
+        "--operational-stats",
+        action="store_true",
+        help="Extract operational performance statistics (min/median/max/p05/p95) "
+             "via aggregation queries instead of raw transaction rows. "
+             "Outputs operational_stats.json with distribution parameters.",
+    )
+    parser.add_argument(
+        "--stats-metrics",
+        type=str,
+        default=None,
+        help="Comma-separated list of metrics to extract (default: all). "
+             "Options: " + ",".join(OPERATIONAL_STATS_QUERIES.keys()),
+    )
     return parser.parse_args()
 
 
@@ -855,6 +1414,45 @@ def main():
         except Exception:
             pass
         address_numbers = list(set(address_numbers))
+
+        # --- Operational Stats Mode ---
+        if args.operational_stats:
+            metrics = None
+            if args.stats_metrics:
+                metrics = [m.strip() for m in args.stats_metrics.split(",")]
+            logger.info("Extracting operational statistics via aggregation queries...")
+            stats = extract_operational_stats(conn, company_code, plants, metrics)
+
+            # Save as JSON
+            import json
+            stats_file = output_dir / "operational_stats.json"
+            with open(stats_file, "w") as f:
+                json.dump(stats, f, indent=2, default=str)
+            logger.info(f"Saved operational stats to {stats_file}")
+
+            # Also save as CSV per metric for easy review
+            for metric_key, metric_rows in stats.items():
+                if metric_rows:
+                    cols = list(metric_rows[0].keys())
+                    csv_rows = [[r.get(c, "") for c in cols] for r in metric_rows]
+                    save_csv(output_dir, f"stats_{metric_key}", cols, csv_rows, metric_key)
+
+            # Summary
+            print(f"\n{'=' * 60}")
+            print(f"Operational Stats Extraction — {output_dir.absolute()}")
+            print(f"{'=' * 60}")
+            print(f"{'Metric':<35} {'Groups':>8} {'Observations':>12}")
+            print(f"{'-' * 35} {'-' * 8} {'-' * 12}")
+            total_groups = 0
+            for metric_key, metric_rows in stats.items():
+                n_groups = len(metric_rows)
+                n_obs = sum(r.get("cnt", 0) for r in metric_rows)
+                print(f"{metric_key:<35} {n_groups:>8} {n_obs:>12}")
+                total_groups += n_groups
+            print(f"{'-' * 35} {'-' * 8}")
+            print(f"{'TOTAL':<35} {total_groups:>8}")
+            print(f"\nUpload operational_stats.json via SAP Data Management > Operational Stats")
+            return 0
 
         # Extract each table
         results = {}

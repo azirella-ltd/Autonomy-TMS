@@ -961,14 +961,72 @@ class StochasticCurriculumWrapper:
         except Exception:
             return None
 
-    def generate(self, phase: int, num_samples: int) -> CurriculumData:
+    def generate(self, phase: int, num_samples: int, multiplier: int = 1) -> CurriculumData:
         """Generate curriculum data using Monte Carlo samples from fitted distributions.
 
         For state dimensions that correspond to demand, inventory, or lead time,
         replaces the hand-crafted uniform ranges with samples from fitted
         distributions. Falls back to the base curriculum for any dimension where
         no fitted distribution is available.
+
+        Args:
+            phase: Curriculum sub-phase (1, 2, or 3).
+            num_samples: Number of base samples per draw.
+            multiplier: Number of independent Monte Carlo draws to generate.
+                When multiplier > 1, generates M independent batches of
+                num_samples each (with different random seeds for both the
+                base curriculum AND the stochastic overlay), producing
+                M × num_samples total samples. This is critical for data
+                volume scaling (Stöckl 2021): overlaying noise on the same
+                base samples does NOT produce truly independent training data.
+                Each draw uses a different random seed to ensure distinct
+                state-action trajectories.
+
+        Returns:
+            CurriculumData with (multiplier × num_samples) rows.
         """
+        if multiplier <= 1:
+            return self._generate_single(phase, num_samples)
+
+        # Generate M independent batches and concatenate
+        all_states = []
+        all_act_disc = []
+        all_act_cont = []
+        all_rewards = []
+        all_next_states = []
+        all_is_expert = []
+        all_dones = []
+
+        for draw_idx in range(multiplier):
+            # Set a unique seed per draw so base curriculum + stochastic overlay
+            # produce genuinely different samples (not the same data M times)
+            draw_seed = (draw_idx + 1) * 7919  # Prime multiplier for spread
+            np.random.seed(draw_seed)
+
+            data = self._generate_single(phase, num_samples)
+            all_states.append(data.state_vectors)
+            all_act_disc.append(data.action_discrete)
+            all_act_cont.append(data.action_continuous)
+            all_rewards.append(data.rewards)
+            all_next_states.append(data.next_state_vectors)
+            all_is_expert.append(data.is_expert)
+            all_dones.append(data.dones)
+
+        # Reset numpy RNG to avoid side effects
+        np.random.seed(None)
+
+        return CurriculumData(
+            state_vectors=np.concatenate(all_states, axis=0),
+            action_discrete=np.concatenate(all_act_disc, axis=0),
+            action_continuous=np.concatenate(all_act_cont, axis=0),
+            rewards=np.concatenate(all_rewards, axis=0),
+            next_state_vectors=np.concatenate(all_next_states, axis=0),
+            is_expert=np.concatenate(all_is_expert, axis=0),
+            dones=np.concatenate(all_dones, axis=0),
+        )
+
+    def _generate_single(self, phase: int, num_samples: int) -> CurriculumData:
+        """Generate a single batch of curriculum data with stochastic overlay."""
         # First generate from the base curriculum (hand-crafted)
         base_data = self.base.generate(phase, num_samples)
 
@@ -1074,7 +1132,8 @@ def generate_stochastic_curriculum(
     trm_type: str,
     config_id: int,
     phase: int = 1,
-    num_samples: int = 1000,
+    num_samples: int = 50_000,
+    multiplier: int = 1,
     db=None,
     seed: Optional[int] = None,
 ) -> CurriculumData:
@@ -1084,6 +1143,16 @@ def generate_stochastic_curriculum(
     and generates samples from fitted distributions.
 
     Falls back to hand-crafted curriculum if DB data is insufficient.
+
+    Args:
+        trm_type: Canonical TRM type name (e.g. "atp_executor").
+        config_id: Supply chain config ID for distribution fitting.
+        phase: Curriculum sub-phase (1, 2, or 3).
+        num_samples: Samples per draw (default 50K per Stöckl 2021 guidance).
+        multiplier: Independent MC draws — total samples = multiplier × num_samples.
+            Use multiplier=3 for 150K total, matching the "medium" data regime.
+        db: Optional sync DB session for distribution fitting.
+        seed: Optional random seed for the base curriculum.
     """
     from .trm_curriculum import CURRICULUM_REGISTRY
 
@@ -1099,4 +1168,4 @@ def generate_stochastic_curriculum(
         config_id=config_id,
         db=db,
     )
-    return wrapper.generate(phase, num_samples)
+    return wrapper.generate(phase, num_samples, multiplier=multiplier)

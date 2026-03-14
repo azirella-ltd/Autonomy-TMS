@@ -38,6 +38,27 @@ This stage is called **warm-start** because it produces a starting point that is
 useful, rather than an agent that has to learn everything from scratch in production (which
 would cause errors during the learning period).
 
+### Learning by Watching
+
+The warm-start works on the same principle as a chess player who studies thousands of
+grandmaster games before playing their first tournament match. Research has shown that the
+*volume* of scenarios an AI studies matters more than the complexity of its architecture
+(Stöckl, RANLP 2021 — studying how AI learns chess by watching expert games). A small,
+efficient model that has observed hundreds of thousands of expert decisions will outperform
+a much larger model that has only seen a few thousand.
+
+This is why each Autonomy agent studies at least **450,000 synthetic supply chain scenarios**
+during warm-start — covering normal operations, demand spikes, supply disruptions, capacity
+constraints, and other edge cases. The scenarios are generated from your actual data
+distributions (demand patterns, lead time variability, seasonal trends) using Monte Carlo
+simulation, so they are representative of what the agent will encounter in production.
+
+The volume matters because supply chain decisions have rules that must be *learned*, not just
+*memorized*. An agent that has only seen 5,000 scenarios might appear trained (its error
+metric looks low), but it will fail on unfamiliar situations — like a chess program that
+recognizes common openings but makes illegal moves in novel positions. Our agents are trained
+past this threshold to the point where they internalize the underlying decision rules.
+
 **What this stage does NOT do**: It does not make the agent *better* than your planners.
 It makes the agent *as good as* the historical patterns in your data. The next stage is
 what takes performance beyond human-baseline.

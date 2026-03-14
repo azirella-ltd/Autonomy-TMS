@@ -16,7 +16,8 @@ https://docs.[removed]
 """
 
 import logging
-from typing import Dict, List, Optional
+import math
+from typing import Dict, List, Optional, Any
 from datetime import datetime
 import pandas as pd
 import numpy as np
@@ -274,12 +275,17 @@ class SupplyChainMapper:
             stprs = pd.to_numeric(_safe_col(mbew, "STPRS", 0), errors="coerce")
             peinh = pd.to_numeric(_safe_col(mbew, "PEINH", 1), errors="coerce").replace(0, 1)
             mbew["_unit_cost"] = mbew["_unit_cost"].where(mbew["_unit_cost"] > 0, stprs) / peinh
+            # Standard price as selling price proxy (STPRS)
+            mbew["_unit_price"] = stprs / peinh
             # Take first valuation per material (dedup across valuation areas)
             mbew_dedup = mbew.drop_duplicates(subset=["MATNR"], keep="first")
             cost_map = mbew_dedup.set_index("MATNR")["_unit_cost"]
+            price_map = mbew_dedup.set_index("MATNR")["_unit_price"]
             products["unit_cost"] = products["product_id"].map(cost_map)
+            products["unit_price"] = products["product_id"].map(price_map)
         else:
             products["unit_cost"] = np.nan
+            products["unit_price"] = np.nan
 
         products["source"] = "SAP_MARA"
 
@@ -316,34 +322,68 @@ class SupplyChainMapper:
 
     def map_s4hana_inventory_to_inventory_levels(
         self,
-        inventory_df: pd.DataFrame
+        inventory_df: pd.DataFrame,
+        marc_df: pd.DataFrame = None,
+        ekpo_df: pd.DataFrame = None,
     ) -> pd.DataFrame:
         """
         Map S/4HANA inventory (MARD) to AWS InventoryLevel.
 
-        Args:
-            inventory_df: DataFrame from S4HANAConnector.extract_inventory()
-
-        Returns:
-            DataFrame in AWS InventoryLevel schema
+        Enriches with:
+        - MARC.EISBE → safety_stock_qty
+        - EKPO open qty → on_order_qty (calculated: PO ordered - received)
+        - MARD.SPEME → blocked/restricted stock (added to reserved)
         """
         logger.info("Mapping S/4HANA inventory to AWS InventoryLevel")
 
         inv_levels = pd.DataFrame()
 
-        inv_levels["site_id"] = inventory_df["WERKS"]
-        inv_levels["product_id"] = inventory_df["MATNR"]
+        inv_levels["site_id"] = inventory_df["WERKS"].astype(str).str.strip()
+        inv_levels["product_id"] = inventory_df["MATNR"].astype(str).str.strip()
         inv_levels["inventory_date"] = datetime.now()
         inv_levels["available_quantity"] = pd.to_numeric(
-            inventory_df.get("LABST", 0), errors="coerce"
+            _safe_col(inventory_df, "LABST", 0), errors="coerce"
         )
         inv_levels["in_transit_quantity"] = pd.to_numeric(
-            inventory_df.get("UMLME", 0), errors="coerce"
+            _safe_col(inventory_df, "UMLME", 0), errors="coerce"
         )
-        inv_levels["reserved_quantity"] = pd.to_numeric(
-            inventory_df.get("INSME", 0), errors="coerce"
-        )
-        inv_levels["safety_stock_quantity"] = 0.0  # Would come from MARC.EISBE
+        # Reserved = inspection stock + blocked stock
+        insme = pd.to_numeric(_safe_col(inventory_df, "INSME", 0), errors="coerce").fillna(0)
+        speme = pd.to_numeric(_safe_col(inventory_df, "SPEME", 0), errors="coerce").fillna(0)
+        inv_levels["reserved_quantity"] = insme + speme
+
+        # Safety stock from MARC.EISBE
+        if marc_df is not None and not marc_df.empty and "EISBE" in marc_df.columns:
+            ss_map = marc_df[["MATNR", "WERKS", "EISBE"]].copy()
+            ss_map["MATNR"] = ss_map["MATNR"].astype(str).str.strip()
+            ss_map["WERKS"] = ss_map["WERKS"].astype(str).str.strip()
+            ss_map["_ss"] = pd.to_numeric(ss_map["EISBE"], errors="coerce").fillna(0)
+            ss_map["_key"] = ss_map["MATNR"] + "|" + ss_map["WERKS"]
+            ss_dict = ss_map.drop_duplicates(subset=["_key"]).set_index("_key")["_ss"].to_dict()
+            inv_levels["safety_stock_quantity"] = (
+                inv_levels["product_id"] + "|" + inv_levels["site_id"]
+            ).map(ss_dict).fillna(0)
+        else:
+            inv_levels["safety_stock_quantity"] = 0.0
+
+        # On-order quantity from open POs (EKPO.MENGE where not fully delivered)
+        if ekpo_df is not None and not ekpo_df.empty:
+            po_open = ekpo_df.copy()
+            po_open["MATNR"] = po_open["MATNR"].astype(str).str.strip()
+            po_open["WERKS"] = _safe_col(po_open, "WERKS", "").astype(str).str.strip()
+            po_open["_open"] = pd.to_numeric(_safe_col(po_open, "MENGE", 0), errors="coerce").fillna(0)
+            # Exclude deleted items
+            if "LOEKZ" in po_open.columns:
+                po_open = po_open[po_open["LOEKZ"].isna() | (po_open["LOEKZ"] == "")]
+            on_order = po_open.groupby(["MATNR", "WERKS"])["_open"].sum().reset_index()
+            on_order["_key"] = on_order["MATNR"] + "|" + on_order["WERKS"]
+            oo_dict = on_order.set_index("_key")["_open"].to_dict()
+            inv_levels["on_order_qty"] = (
+                inv_levels["product_id"] + "|" + inv_levels["site_id"]
+            ).map(oo_dict).fillna(0)
+        else:
+            inv_levels["on_order_qty"] = 0.0
+
         inv_levels["unit_of_measure"] = "EA"
 
         logger.info(f"Mapped {len(inv_levels)} inventory records to InventoryLevel")
@@ -646,6 +686,17 @@ class SupplyChainMapper:
         shipments["weight"] = pd.to_numeric(_safe_col(deliveries, "NTGEW", 0), errors="coerce")
         shipments["volume"] = pd.to_numeric(_safe_col(deliveries, "VOLUM", 0), errors="coerce")
         shipments["volume_unit"] = _safe_col(deliveries, "VOLEH", "").astype(str).str.strip()
+
+        # Order reference from LIPS.VGBEL/VGPOS (sales order that triggered this delivery)
+        shipments["order_id"] = _safe_col(deliveries, "VGBEL", "").astype(str).str.strip()
+        shipments["order_line_number"] = pd.to_numeric(
+            _safe_col(deliveries, "VGPOS", 0), errors="coerce"
+        ).fillna(0).astype(int)
+
+        # from_site_id = plant (LIPS.WERKS), already mapped as source_site_id
+        # to_site_id = customer site (LIKP.KUNNR → trading partner lookup)
+        shipments["from_site_id"] = shipments["source_site_id"]
+        shipments["to_site_id"] = shipments["destination_site_id"]
 
         # Status: if actual delivery date exists → DELIVERED, else SHIPPED
         has_actual = shipments["actual_delivery_date"].notna()
@@ -1204,24 +1255,56 @@ class SupplyChainMapper:
         logger.info(f"Mapped {len(result)} sourcing rules")
         return result
 
-    def map_company(self, t001_df: pd.DataFrame) -> pd.DataFrame:
-        """Map company codes (T001) to company entities."""
+    def map_company(
+        self, t001_df: pd.DataFrame, adrc_df: pd.DataFrame = None,
+        t001w_df: pd.DataFrame = None,
+    ) -> pd.DataFrame:
+        """Map company codes (T001) to company entities.
+
+        Enriches with ADRC address data via T001W.ADRNR join when available.
+        T001.FABKL provides the factory calendar ID.
+        """
         logger.info("Mapping T001 to company")
 
         if t001_df.empty:
             return pd.DataFrame()
 
+        src = t001_df.copy()
+
+        # Join ADRC via T001W.ADRNR for the first plant of each company
+        if adrc_df is not None and not adrc_df.empty and t001w_df is not None and not t001w_df.empty:
+            plant_addr = t001w_df[["BUKRS", "ADRNR"]].dropna(subset=["ADRNR"]).drop_duplicates(subset=["BUKRS"], keep="first")
+            plant_addr["ADRNR"] = plant_addr["ADRNR"].astype(str).str.strip()
+            adrc_cols = ["ADDRNUMBER"]
+            for c in ["STREET", "CITY1", "REGION", "POST_CODE1", "COUNTRY", "TEL_NUMBER", "TIME_ZONE"]:
+                if c in adrc_df.columns:
+                    adrc_cols.append(c)
+            adrc_dedup = adrc_df[adrc_cols].drop_duplicates(subset=["ADDRNUMBER"])
+            plant_addr = plant_addr.merge(adrc_dedup, left_on="ADRNR", right_on="ADDRNUMBER", how="left")
+            src = src.merge(plant_addr.drop(columns=["ADRNR", "ADDRNUMBER"], errors="ignore"), on="BUKRS", how="left")
+
         result = pd.DataFrame()
-        result["company_id"] = t001_df["BUKRS"].astype(str).str.strip()
-        result["company_name"] = _safe_col(t001_df, "BUTXT", "").astype(str).str.strip()
-        result["country"] = _safe_col(t001_df, "LAND1", "").astype(str).str.strip()
-        result["currency"] = _safe_col(t001_df, "WAERS", "").astype(str).str.strip()
+        result["company_id"] = src["BUKRS"].astype(str).str.strip()
+        result["company_name"] = _safe_col(src, "BUTXT", "").astype(str).str.strip()
+        result["country"] = _safe_col(src, "LAND1", "").astype(str).str.strip()
+        result["currency"] = _safe_col(src, "WAERS", "").astype(str).str.strip()
+        result["address_1"] = _safe_col(src, "STREET", "").astype(str).str.strip()
+        result["city"] = _safe_col(src, "CITY1", "").astype(str).str.strip()
+        result["state_prov"] = _safe_col(src, "REGION", "").astype(str).str.strip()
+        result["postal_code"] = _safe_col(src, "POST_CODE1", "").astype(str).str.strip()
+        result["phone_number"] = _safe_col(src, "TEL_NUMBER", "").astype(str).str.strip()
+        result["time_zone"] = _safe_col(src, "TIME_ZONE", "").astype(str).str.strip()
+        result["calendar_id"] = _safe_col(src, "FABKL", "").astype(str).str.strip() if "FABKL" in src.columns else ""
 
         logger.info(f"Mapped {len(result)} companies")
         return result
 
     def map_geography(self, adrc_df: pd.DataFrame) -> pd.DataFrame:
-        """Map addresses (ADRC) to geography entities."""
+        """Map addresses (ADRC) to geography entities.
+
+        Enriches with latitude/longitude, time_zone, and phone_number from ADRC
+        when those columns are populated (rare in IDES, common in production).
+        """
         logger.info("Mapping ADRC to geography")
 
         if adrc_df.empty:
@@ -1235,6 +1318,11 @@ class SupplyChainMapper:
         result["region"] = _safe_col(adrc_df, "REGION", "").astype(str).str.strip()
         result["country"] = _safe_col(adrc_df, "COUNTRY", "").astype(str).str.strip()
         result["postal_code"] = _safe_col(adrc_df, "POST_CODE1", "").astype(str).str.strip()
+        result["phone_number"] = _safe_col(adrc_df, "TEL_NUMBER", "").astype(str).str.strip()
+        result["time_zone"] = _safe_col(adrc_df, "TIME_ZONE", "").astype(str).str.strip()
+        # Lat/lon from ADRC — rarely populated in IDES but available in production SAP systems
+        result["latitude"] = pd.to_numeric(_safe_col(adrc_df, "LATITUDE", np.nan), errors="coerce")
+        result["longitude"] = pd.to_numeric(_safe_col(adrc_df, "LONGITUDE", np.nan), errors="coerce")
 
         logger.info(f"Mapped {len(result)} geography records")
         return result
@@ -1406,9 +1494,37 @@ class SupplyChainMapper:
 
     def map_trading_partners(
         self, lfa1_df: pd.DataFrame, kna1_df: pd.DataFrame,
+        adrc_df: pd.DataFrame = None,
     ) -> pd.DataFrame:
-        """Map SAP vendor master (LFA1) and customer master (KNA1) to TradingPartner."""
+        """Map SAP vendor master (LFA1) and customer master (KNA1) to TradingPartner.
+
+        Enriches with:
+        - ADRC lat/lon and time_zone via ADRNR join
+        - ERDAT → eff_start_date (creation date)
+        - STCD3 → duns_number (tax number 3 sometimes stores DUNS)
+        """
         logger.info("Mapping LFA1/KNA1 to TradingPartner")
+
+        def _enrich_with_adrc(df: pd.DataFrame, result: pd.DataFrame) -> pd.DataFrame:
+            """Enrich result with lat/lon/timezone from ADRC via ADRNR."""
+            if adrc_df is None or adrc_df.empty or "ADRNR" not in df.columns:
+                result["latitude"] = np.nan
+                result["longitude"] = np.nan
+                result["time_zone"] = ""
+                return result
+            adrnr = _safe_col(df, "ADRNR", "").astype(str).str.strip()
+            adrc_cols = ["ADDRNUMBER"]
+            for c in ["TIME_ZONE", "LATITUDE", "LONGITUDE"]:
+                if c in adrc_df.columns:
+                    adrc_cols.append(c)
+            adrc_lookup = adrc_df[adrc_cols].drop_duplicates(subset=["ADDRNUMBER"])
+            adrc_lookup["ADDRNUMBER"] = adrc_lookup["ADDRNUMBER"].astype(str).str.strip()
+            addr_map = adrc_lookup.set_index("ADDRNUMBER")
+            result["time_zone"] = adrnr.map(addr_map["TIME_ZONE"]).fillna("") if "TIME_ZONE" in addr_map.columns else ""
+            result["latitude"] = adrnr.map(addr_map["LATITUDE"]).astype(float) if "LATITUDE" in addr_map.columns else np.nan
+            result["longitude"] = adrnr.map(addr_map["LONGITUDE"]).astype(float) if "LONGITUDE" in addr_map.columns else np.nan
+            return result
+
         frames = []
         if not lfa1_df.empty:
             v = pd.DataFrame()
@@ -1422,6 +1538,9 @@ class SupplyChainMapper:
             v["country"] = _safe_col(lfa1_df, "LAND1", "").astype(str).str.strip()
             v["phone_number"] = _safe_col(lfa1_df, "TELF1", "").astype(str).str.strip()
             v["is_active"] = (_safe_col(lfa1_df, "SPERM", "").astype(str).str.strip() != "X").map({True: "true", False: "false"})
+            v["eff_start_date"] = pd.to_datetime(_safe_col(lfa1_df, "ERDAT", None), errors="coerce")
+            v["duns_number"] = _safe_col(lfa1_df, "STCD3", "").astype(str).str.strip() if "STCD3" in lfa1_df.columns else ""
+            v = _enrich_with_adrc(lfa1_df, v)
             v["source"] = "SAP_LFA1"
             frames.append(v)
         if not kna1_df.empty:
@@ -1436,6 +1555,9 @@ class SupplyChainMapper:
             c["country"] = _safe_col(kna1_df, "LAND1", "").astype(str).str.strip()
             c["phone_number"] = _safe_col(kna1_df, "TELF1", "").astype(str).str.strip()
             c["is_active"] = (_safe_col(kna1_df, "AUFSD", "").astype(str).str.strip() != "X").map({True: "true", False: "false"})
+            c["eff_start_date"] = pd.to_datetime(_safe_col(kna1_df, "ERDAT", None), errors="coerce")
+            c["duns_number"] = _safe_col(kna1_df, "STCD3", "").astype(str).str.strip() if "STCD3" in kna1_df.columns else ""
+            c = _enrich_with_adrc(kna1_df, c)
             c["source"] = "SAP_KNA1"
             frames.append(c)
         if not frames:
@@ -1475,6 +1597,8 @@ class SupplyChainMapper:
         result["priority"] = pd.to_numeric(_safe_col(items, "POSNR", 1), errors="coerce").fillna(1).astype(int)
         item_cat = _safe_col(items, "POSTP", "L").astype(str).str.strip()
         result["is_active"] = item_cat.isin(["L", "N", ""]).map({True: "true", False: "false"})
+        # is_key_material: stock items (POSTP='L') are key materials
+        result["is_key_material"] = item_cat.isin(["L"]).map({True: "true", False: "false"})
         result["source"] = "SAP_STPO"
         result = result[result["product_id"].str.len() > 0]
         logger.info(f"Mapped {len(result)} BOM item records")
@@ -1483,12 +1607,15 @@ class SupplyChainMapper:
     def map_s4hana_pir_to_forecasts(
         self, pbim_df: pd.DataFrame, pbed_df: pd.DataFrame,
     ) -> pd.DataFrame:
-        """Map S/4HANA Planned Independent Requirements (PBIM/PBED) to Forecast."""
+        """Map S/4HANA Planned Independent Requirements (PBIM/PBED) to Forecast.
+
+        Enriches with customer_id from PBIM.KDAUF (customer-specific PIRs).
+        """
         logger.info("Mapping S/4HANA PIR (PBIM/PBED) to Forecast")
         if pbed_df.empty:
             return pd.DataFrame()
         if not pbim_df.empty:
-            hcols = [c for c in ["BESSION", "MATNR", "WERKS"] if c in pbim_df.columns]
+            hcols = [c for c in ["BESSION", "MATNR", "WERKS", "KDAUF"] if c in pbim_df.columns]
             if "BESSION" in pbim_df.columns and "BESSION" in pbed_df.columns:
                 merged = pbed_df.merge(pbim_df[hcols].drop_duplicates(), on="BESSION", how="left")
             else:
@@ -1504,6 +1631,8 @@ class SupplyChainMapper:
         result["forecast_level"] = "product"
         result["forecast_method"] = "sap_pir"
         result["forecast_version"] = _safe_col(merged, "VERSB", "00").astype(str).str.strip()
+        # Customer-specific PIRs have KDAUF (sales order reference) → derive customer
+        result["customer_id"] = _safe_col(merged, "KDAUF", "").astype(str).str.strip()
         result["source"] = "SAP_PIR"
         result = result[(result["forecast_quantity"] > 0) & (result["product_id"].str.len() > 0)]
         logger.info(f"Mapped {len(result)} PIR records to Forecast")
@@ -1617,7 +1746,9 @@ class SupplyChainMapper:
         ops = pd.DataFrame()
         ops["header_id"] = merged["PLNNR"].astype(str).str.strip() + "-" + _safe_col(merged, "PLNAL", "1").astype(str).str.strip()
         ops["operation_number"] = pd.to_numeric(_safe_col(merged, "VORNR", _safe_col(merged, "PLNKN", 0)), errors="coerce").fillna(0).astype(int)
-        ops["operation_name"] = "Op " + ops["operation_number"].astype(str)
+        ops["operation_name"] = _safe_col(merged, "LTXA1", "").astype(str).str.strip()
+        # Fall back to "Op N" if no description text available
+        ops.loc[ops["operation_name"] == "", "operation_name"] = "Op " + ops.loc[ops["operation_name"] == "", "operation_number"].astype(str)
         ops["work_center_id"] = _safe_col(merged, "ARBPL", _safe_col(merged, "ARBID", "")).astype(str).str.strip()
         ops["setup_time"] = pd.to_numeric(_safe_col(merged, "VGW01", 0), errors="coerce").fillna(0)
         ops["run_time_per_unit"] = pd.to_numeric(_safe_col(merged, "VGW02", 0), errors="coerce").fillna(0)
@@ -1712,18 +1843,42 @@ class SupplyChainMapper:
             result["customer_id"] = ""
             result["order_id"] = ""
 
-        # Product from KONV item context or VBAP
-        if vbap_df is not None and not vbap_df.empty and "VBELN" in result.columns:
-            # Could join via VBELN+KPOSN to get MATNR
-            pass
+        # Product + site from VBAP join
+        if vbap_df is not None and not vbap_df.empty and "VBELN" in konv_with_order.columns:
+            vbap_cols = ["VBELN", "POSNR", "MATNR", "WERKS"]
+            vbap_lookup = vbap_df[[c for c in vbap_cols if c in vbap_df.columns]].drop_duplicates()
+            vbap_lookup["VBELN"] = vbap_lookup["VBELN"].astype(str).str.strip()
+            vbap_lookup["POSNR"] = vbap_lookup["POSNR"].astype(str).str.strip()
+            kposn = _safe_col(konv_with_order, "KPOSN", "").astype(str).str.strip()
+            konv_with_order = konv_with_order.copy()
+            konv_with_order["_POSNR"] = kposn
+            konv_with_order["_VBELN"] = _safe_col(konv_with_order, "VBELN", "").astype(str).str.strip()
+            konv_with_order = konv_with_order.merge(
+                vbap_lookup, left_on=["_VBELN", "_POSNR"], right_on=["VBELN", "POSNR"],
+                how="left", suffixes=("", "_vbap"),
+            )
+            result["product_id"] = _safe_col(konv_with_order, "MATNR_vbap", _safe_col(konv_with_order, "MATNR", "")).astype(str).str.strip()
+            result["site_id"] = _safe_col(konv_with_order, "WERKS", "").astype(str).str.strip()
+        else:
+            result["product_id"] = _safe_col(konv_with_order, "MATNR", "").astype(str).str.strip() if "MATNR" in konv_with_order.columns else ""
+            result["site_id"] = ""
 
-        result["product_id"] = _safe_col(konv_with_order, "MATNR", "").astype(str).str.strip() if "MATNR" in konv_with_order.columns else ""
         result["cost_type"] = _safe_col(konv_with_order, "KSCHL", "").astype(str).str.strip().map(cost_type_map).fillna("other")
         result["amount"] = pd.to_numeric(_safe_col(konv_with_order, "KBETR", 0), errors="coerce").fillna(0)
-        # KBETR is stored in 1/10 units for percentages, /1000 for amounts
         result["currency"] = _safe_col(konv_with_order, "WAERS", "USD").astype(str).str.strip()
         result["uom"] = _safe_col(konv_with_order, "KPEIN", "EA").astype(str)
         result["effective_date"] = pd.to_datetime(_safe_col(konv_with_order, "KDATU", None), errors="coerce")
+
+        # Scale quantities for volume pricing
+        result["min_quantity"] = pd.to_numeric(_safe_col(konv_with_order, "KSTBM", 0), errors="coerce").fillna(0)
+        result["max_quantity"] = 0.0  # KONV doesn't have explicit max — would need condition scale table
+
+        # Contract reference from SO header
+        if "VGBEL" in konv_with_order.columns:
+            result["contract_id"] = _safe_col(konv_with_order, "VGBEL", "").astype(str).str.strip()
+        else:
+            result["contract_id"] = ""
+
         result["source"] = "SAP_KONV"
 
         logger.info(f"Mapped {len(result)} customer cost records")
@@ -1817,6 +1972,18 @@ class SupplyChainMapper:
                 late = 0
                 avg_days_late = None
 
+            # Total spend from EKBE.DMBTR (document amount in local currency)
+            spend = pd.to_numeric(_safe_col(grp, "DMBTR", 0), errors="coerce").sum()
+
+            # Quality rejections: BWART 122 = return to vendor
+            if "BWART" in grp.columns:
+                returns = grp[grp["BWART"].astype(str).str.strip() == "122"]
+                rejected_qty = pd.to_numeric(_safe_col(returns, "MENGE", 0), errors="coerce").sum()
+            else:
+                rejected_qty = 0
+
+            accepted_qty = max(0, total_qty - rejected_qty)
+
             records.append({
                 "tpartner_id": vendor,
                 "period_start": period.start_time,
@@ -1827,10 +1994,10 @@ class SupplyChainMapper:
                 "orders_delivered_late": late,
                 "average_days_late": avg_days_late,
                 "units_received": int(total_qty),
-                "units_accepted": int(total_qty),  # Refined if return data available
-                "units_rejected": 0,
+                "units_accepted": int(accepted_qty),
+                "units_rejected": int(rejected_qty),
                 "on_time_delivery_rate": (on_time / has_sched.sum() * 100) if has_sched.sum() > 0 else None,
-                "total_spend": 0.0,  # Would need EKPO NETWR
+                "total_spend": float(spend),
                 "currency": "USD",
             })
 
@@ -1967,6 +2134,30 @@ class SupplyChainMapper:
                         result["pick_date"] = result["_pick_date"]
                         result = result.drop(columns=["_pick_date", "_vbeln"], errors="ignore")
 
+        result["delivered_quantity"] = result["quantity"].where(has_delivery, 0.0)
+        result["short_quantity"] = (result["quantity"] - result["shipped_quantity"]).clip(lower=0)
+        result["ship_method"] = _safe_col(merged, "VSART", "").astype(str).str.strip() if "VSART" in merged.columns else ""
+
+        # Wave ID from LTAK
+        if ltak_df is not None and not ltak_df.empty and "BENUM" in ltak_df.columns:
+            wave_map = ltak_df[["BENUM", "LGNUM", "TANUM"]].drop_duplicates(subset=["BENUM"], keep="first")
+            wave_map["BENUM"] = wave_map["BENUM"].astype(str).str.strip()
+            wave_map["_wave"] = wave_map["LGNUM"].astype(str).str.strip() + "-" + wave_map["TANUM"].astype(str).str.strip()
+            wave_dict = wave_map.set_index("BENUM")["_wave"].to_dict()
+            result["wave_id"] = result["fulfillment_order_id"].str.split("-").str[0].map(wave_dict).fillna("")
+        else:
+            result["wave_id"] = ""
+
+        # Pick location from LTAP (source storage bin)
+        if ltap_df is not None and not ltap_df.empty and "VLPLA" in ltap_df.columns:
+            pick_loc = ltap_df[["MATNR", "VLPLA"]].copy()
+            pick_loc["MATNR"] = pick_loc["MATNR"].astype(str).str.strip()
+            pick_loc = pick_loc.drop_duplicates(subset=["MATNR"], keep="first")
+            pick_dict = pick_loc.set_index("MATNR")["VLPLA"].to_dict()
+            result["pick_location"] = result["product_id"].map(pick_dict).fillna("")
+        else:
+            result["pick_location"] = ""
+
         result["source"] = "SAP_LIKP_LIPS"
         result["priority"] = 3
 
@@ -1979,6 +2170,7 @@ class SupplyChainMapper:
         vbap_df: pd.DataFrame,
         vbup_df: pd.DataFrame = None,
         vbep_df: pd.DataFrame = None,
+        lips_df: pd.DataFrame = None,
     ) -> pd.DataFrame:
         """
         Map incomplete sales orders to Backorder.
@@ -2044,7 +2236,19 @@ class SupplyChainMapper:
         result["customer_id"] = _safe_col(bo_items, "KUNNR", "").astype(str).str.strip()
         result["backorder_quantity"] = bo_qty.values
         result["allocated_quantity"] = confirmed[has_backorder].values
-        result["fulfilled_quantity"] = 0.0
+        # Fulfilled quantity from LIPS (deliveries against this SO)
+        if lips_df is not None and not lips_df.empty and "VGBEL" in lips_df.columns:
+            lips_agg = lips_df.copy()
+            lips_agg["VGBEL"] = lips_agg["VGBEL"].astype(str).str.strip()
+            lips_agg["VGPOS"] = lips_agg["VGPOS"].astype(str).str.strip()
+            lips_agg["_qty"] = pd.to_numeric(_safe_col(lips_agg, "LFIMG", 0), errors="coerce").fillna(0)
+            ful_agg = lips_agg.groupby(["VGBEL", "VGPOS"])["_qty"].sum().reset_index()
+            ful_agg["_key"] = ful_agg["VGBEL"] + "|" + ful_agg["VGPOS"]
+            ful_dict = ful_agg.set_index("_key")["_qty"].to_dict()
+            bo_key = bo_items["VBELN"].astype(str).str.strip() + "|" + bo_items["POSNR"].astype(str).str.strip()
+            result["fulfilled_quantity"] = bo_key.map(ful_dict).fillna(0).values
+        else:
+            result["fulfilled_quantity"] = 0.0
         result["status"] = "CREATED"
         result["requested_delivery_date"] = pd.to_datetime(
             _safe_col(bo_items, "earliest_date", None), errors="coerce"
@@ -2066,6 +2270,7 @@ class SupplyChainMapper:
         ekpo_df: pd.DataFrame,
         eket_df: pd.DataFrame = None,
         ekbe_df: pd.DataFrame = None,
+        lfa1_df: pd.DataFrame = None,
     ) -> dict:
         """
         Map SAP purchase orders (EKKO/EKPO/EKET/EKBE) to InboundOrder + InboundOrderLine + InboundOrderLineSchedule.
@@ -2085,7 +2290,19 @@ class SupplyChainMapper:
             orders["supplier_id"] = _safe_col(ekko_df, "LIFNR", "").astype(str).str.strip()
             orders["order_date"] = pd.to_datetime(_safe_col(ekko_df, "BEDAT", None), errors="coerce")
             orders["currency"] = _safe_col(ekko_df, "WAERS", "USD").astype(str).str.strip()
+            orders["reference_number"] = _safe_col(ekko_df, "IHREZ", "").astype(str).str.strip() if "IHREZ" in ekko_df.columns else ""
+            orders["contract_id"] = _safe_col(ekko_df, "KONNR", "").astype(str).str.strip() if "KONNR" in ekko_df.columns else ""
             orders["status"] = "OPEN"
+
+            # Supplier name from LFA1 join
+            if lfa1_df is not None and not lfa1_df.empty:
+                name_map = lfa1_df[["LIFNR", "NAME1"]].copy()
+                name_map["LIFNR"] = name_map["LIFNR"].astype(str).str.strip()
+                name_dict = name_map.drop_duplicates(subset=["LIFNR"]).set_index("LIFNR")["NAME1"].to_dict()
+                orders["supplier_name"] = orders["supplier_id"].map(name_dict).fillna("")
+            else:
+                orders["supplier_name"] = ""
+
             orders["source"] = "SAP_EKKO"
         else:
             # Derive headers from EKPO
@@ -2094,6 +2311,9 @@ class SupplyChainMapper:
             orders["order_type"] = "NB"
             orders["order_date"] = pd.NaT
             orders["status"] = "OPEN"
+            orders["supplier_name"] = ""
+            orders["reference_number"] = ""
+            orders["contract_id"] = ""
             orders["source"] = "SAP_EKPO"
 
         # --- InboundOrderLine ---
@@ -2139,13 +2359,58 @@ class SupplyChainMapper:
 
         lines["open_quantity"] = (lines["ordered_quantity"] - lines["received_quantity"]).clip(lower=0)
 
-        # Update header totals
+        # Update header totals + delivery dates + total_value
         if not orders.empty:
+            agg_dict = {
+                "ordered_quantity": "sum",
+                "received_quantity": "sum",
+                "unit_price": lambda x: (x * lines.loc[x.index, "ordered_quantity"]).sum(),  # total value
+            }
             order_totals = lines.groupby("order_id").agg(
                 total_ordered_qty=("ordered_quantity", "sum"),
                 total_received_qty=("received_quantity", "sum"),
             ).reset_index()
+            # Total value = sum(unit_price * ordered_quantity) per order
+            lines["_line_value"] = lines["unit_price"] * lines["ordered_quantity"]
+            order_value = lines.groupby("order_id")["_line_value"].sum().reset_index()
+            order_value = order_value.rename(columns={"_line_value": "total_value"})
+            lines = lines.drop(columns=["_line_value"])
             orders = orders.merge(order_totals, left_on="id", right_on="order_id", how="left")
+            orders = orders.drop(columns=["order_id"], errors="ignore")
+            orders = orders.merge(order_value, left_on="id", right_on="order_id", how="left")
+            orders = orders.drop(columns=["order_id"], errors="ignore")
+
+            # Delivery dates from EKET (earliest/latest schedule)
+            if eket_df is not None and not eket_df.empty:
+                sched_dates = eket_df.copy()
+                sched_dates["EINDT"] = pd.to_datetime(sched_dates["EINDT"], errors="coerce")
+                date_agg = sched_dates.groupby("EBELN")["EINDT"].agg(["min", "max"]).reset_index()
+                date_agg = date_agg.rename(columns={"min": "requested_delivery_date", "max": "promised_delivery_date"})
+                date_agg["EBELN"] = date_agg["EBELN"].astype(str).str.strip()
+                orders = orders.merge(date_agg, left_on="id", right_on="EBELN", how="left")
+                orders = orders.drop(columns=["EBELN"], errors="ignore")
+            else:
+                orders["requested_delivery_date"] = pd.NaT
+                orders["promised_delivery_date"] = pd.NaT
+
+            # Actual delivery date from EKBE (latest GR date)
+            if ekbe_df is not None and not ekbe_df.empty:
+                ekbe_gr = ekbe_df.copy()
+                if "VGABE" in ekbe_gr.columns:
+                    ekbe_gr = ekbe_gr[ekbe_gr["VGABE"].astype(str).str.strip() == "1"]
+                ekbe_gr["BUDAT"] = pd.to_datetime(_safe_col(ekbe_gr, "BUDAT", None), errors="coerce")
+                actual_dates = ekbe_gr.groupby("EBELN")["BUDAT"].max().reset_index()
+                actual_dates = actual_dates.rename(columns={"BUDAT": "actual_delivery_date"})
+                actual_dates["EBELN"] = actual_dates["EBELN"].astype(str).str.strip()
+                orders = orders.merge(actual_dates, left_on="id", right_on="EBELN", how="left")
+                orders = orders.drop(columns=["EBELN"], errors="ignore")
+            else:
+                orders["actual_delivery_date"] = pd.NaT
+
+            # Ship-to site from first EKPO line per order
+            site_per_order = lines.drop_duplicates(subset=["order_id"], keep="first")[["order_id", "site_id"]]
+            site_per_order = site_per_order.rename(columns={"site_id": "ship_to_site_id"})
+            orders = orders.merge(site_per_order, left_on="id", right_on="order_id", how="left")
             orders = orders.drop(columns=["order_id"], errors="ignore")
 
         # --- InboundOrderLineSchedule from EKET ---
@@ -2171,6 +2436,7 @@ class SupplyChainMapper:
         vbap_df: pd.DataFrame,
         vbep_df: pd.DataFrame = None,
         vbuk_df: pd.DataFrame = None,
+        lips_df: pd.DataFrame = None,
     ) -> pd.DataFrame:
         """
         Map SAP sales orders (VBAK/VBAP) to OutboundOrderLine.
@@ -2228,8 +2494,28 @@ class SupplyChainMapper:
         else:
             result["promised_quantity"] = result["ordered_quantity"]
 
-        result["shipped_quantity"] = 0.0
-        result["backlog_quantity"] = (result["ordered_quantity"] - result["promised_quantity"].fillna(0)).clip(lower=0)
+        # Promised delivery date = confirmed delivery from VBEP
+        if "EDATU" in items.columns:
+            result["promised_delivery_date"] = pd.to_datetime(items["EDATU"], errors="coerce")
+        else:
+            result["promised_delivery_date"] = pd.NaT
+
+        # Shipped quantity from LIPS (sum of LFIMG per SO/item via VGBEL/VGPOS)
+        if lips_df is not None and not lips_df.empty and "VGBEL" in lips_df.columns:
+            shipped = lips_df.copy()
+            shipped["VGBEL"] = shipped["VGBEL"].astype(str).str.strip()
+            shipped["VGPOS"] = shipped["VGPOS"].astype(str).str.strip()
+            shipped["_qty"] = pd.to_numeric(_safe_col(shipped, "LFIMG", 0), errors="coerce").fillna(0)
+            ship_agg = shipped.groupby(["VGBEL", "VGPOS"])["_qty"].sum().reset_index()
+            ship_agg = ship_agg.rename(columns={"_qty": "_shipped"})
+            items_key = result["order_id"].astype(str) + "|" + result["line_number"].astype(str)
+            ship_agg["_key"] = ship_agg["VGBEL"] + "|" + ship_agg["VGPOS"]
+            ship_dict = ship_agg.set_index("_key")["_shipped"].to_dict()
+            result["shipped_quantity"] = items_key.map(ship_dict).fillna(0)
+        else:
+            result["shipped_quantity"] = 0.0
+
+        result["backlog_quantity"] = (result["ordered_quantity"] - result["shipped_quantity"].fillna(0) - result["promised_quantity"].fillna(0)).clip(lower=0)
 
         # Status from VBUK.GBSTK
         if "GBSTK" in items.columns:
@@ -2248,3 +2534,636 @@ class SupplyChainMapper:
 
         logger.info(f"Mapped {len(result)} outbound order line records")
         return result
+
+    # ==========================================================================
+    # Phase 4 Staging Mappings — Remaining Entity Coverage
+    # ==========================================================================
+
+    def map_supply_planning_parameters(
+        self, marc_df: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """
+        Map MARC MRP controller data to SupplyPlanningParameters.
+
+        MARC.DISPO = MRP controller code (maps to planner_name).
+        """
+        logger.info("Mapping MARC to SupplyPlanningParameters")
+
+        if marc_df.empty:
+            return pd.DataFrame()
+
+        # One entry per product (dedup across plants — take first)
+        marc = marc_df.copy()
+        marc["MATNR"] = marc["MATNR"].astype(str).str.strip()
+        marc = marc.drop_duplicates(subset=["MATNR"], keep="first")
+
+        result = pd.DataFrame()
+        result["product_id"] = marc["MATNR"]
+        result["planner_name"] = _safe_col(marc, "DISPO", "").astype(str).str.strip()
+        result["planner_email"] = ""  # No email in SAP MARC
+        result["is_active"] = "true"
+        result["source"] = "SAP_MARC"
+
+        # Filter to records that actually have an MRP controller
+        result = result[result["planner_name"].str.len() > 0]
+
+        logger.info(f"Mapped {len(result)} supply planning parameter records")
+        return result
+
+    def map_reservations(self, resb_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Map material reservations (RESB) to Reservation entity.
+
+        Unlike map_reservations_to_allocations (ATP format), this produces the
+        proper AWS SC Reservation entity with reservation_date, reserved_quantity,
+        reservation_type, and reference_id.
+        """
+        logger.info("Mapping RESB to Reservation entity")
+
+        if resb_df.empty:
+            return pd.DataFrame()
+
+        result = pd.DataFrame()
+        result["product_id"] = resb_df["MATNR"].astype(str).str.strip()
+        result["site_id"] = resb_df["WERKS"].astype(str).str.strip()
+        result["reservation_date"] = pd.to_datetime(
+            _safe_col(resb_df, "BDTER", None), format="%Y%m%d", errors="coerce"
+        )
+        # Open reservation = required - withdrawn
+        bdmng = pd.to_numeric(_safe_col(resb_df, "BDMNG", 0), errors="coerce").fillna(0)
+        enmng = pd.to_numeric(_safe_col(resb_df, "ENMNG", 0), errors="coerce").fillna(0)
+        result["reserved_quantity"] = (bdmng - enmng).clip(lower=0)
+        result["reservation_type"] = "PRODUCTION"  # RESB reservations are for production orders
+        result["reference_id"] = _safe_col(resb_df, "AUFNR", "").astype(str).str.strip()
+
+        # Filter to open reservations only
+        result = result[result["reserved_quantity"] > 0]
+
+        logger.info(f"Mapped {len(result)} reservation records")
+        return result
+
+    def map_shipment_lots(
+        self,
+        mch1_df: pd.DataFrame,
+        mcha_df: pd.DataFrame = None,
+        lips_df: pd.DataFrame = None,
+    ) -> pd.DataFrame:
+        """
+        Map batch master (MCH1/MCHA) + delivery items (LIPS) to ShipmentLot.
+
+        MCH1: Batch master (MATNR, CHARG, creation date)
+        MCHA: Batch plant assignment (shelf life dates, country of origin)
+        LIPS.CHARG: Batch assignment to delivery → links lot to shipment
+        """
+        logger.info("Mapping MCH1/MCHA/LIPS to ShipmentLot")
+
+        if mch1_df.empty:
+            return pd.DataFrame()
+
+        batch = mch1_df.copy()
+        batch["MATNR"] = batch["MATNR"].astype(str).str.strip()
+        batch["CHARG"] = batch["CHARG"].astype(str).str.strip()
+
+        # Enrich with plant-level shelf life from MCHA
+        if mcha_df is not None and not mcha_df.empty:
+            mcha = mcha_df.copy()
+            mcha["MATNR"] = mcha["MATNR"].astype(str).str.strip()
+            mcha["CHARG"] = mcha["CHARG"].astype(str).str.strip()
+            merge_cols = ["MATNR", "CHARG"]
+            extra = []
+            for c in ["WERKS", "HSDAT", "VFDAT", "MAXLZ_MCHA", "LIESSION"]:
+                if c in mcha.columns:
+                    extra.append(c)
+            batch = batch.merge(
+                mcha[merge_cols + extra].drop_duplicates(subset=merge_cols, keep="first"),
+                on=merge_cols,
+                how="left",
+            )
+
+        # Link to shipments via LIPS.CHARG
+        if lips_df is not None and not lips_df.empty and "CHARG" in lips_df.columns:
+            lips_batch = lips_df[lips_df["CHARG"].astype(str).str.strip() != ""].copy()
+            lips_batch["MATNR"] = lips_batch["MATNR"].astype(str).str.strip()
+            lips_batch["CHARG"] = lips_batch["CHARG"].astype(str).str.strip()
+            lips_batch["VBELN"] = lips_batch["VBELN"].astype(str).str.strip()
+            lips_batch["_qty"] = pd.to_numeric(_safe_col(lips_batch, "LFIMG", 0), errors="coerce").fillna(0)
+            # One lot record per shipment-batch combination
+            lot_links = lips_batch[["VBELN", "MATNR", "CHARG", "WERKS", "_qty"]].drop_duplicates()
+            lot_links = lot_links.merge(batch, on=["MATNR", "CHARG"], how="left", suffixes=("", "_batch"))
+            result = pd.DataFrame()
+            result["shipment_id"] = lot_links["VBELN"]
+            result["product_id"] = lot_links["MATNR"]
+            result["lot_number"] = lot_links["CHARG"]
+            result["batch_id"] = lot_links["CHARG"]
+            result["quantity"] = lot_links["_qty"]
+            result["uom"] = "EA"
+            result["manufacture_date"] = pd.to_datetime(
+                _safe_col(lot_links, "HSDAT", None), errors="coerce"
+            )
+            result["expiration_date"] = pd.to_datetime(
+                _safe_col(lot_links, "VFDAT", None), errors="coerce"
+            )
+            shelf_life = pd.to_numeric(_safe_col(lot_links, "MAXLZ_MCHA", 0), errors="coerce")
+            result["shelf_life_days"] = shelf_life.fillna(0).astype(int)
+            result["quality_status"] = "RELEASED"
+            result["origin_site_id"] = _safe_col(lot_links, "WERKS", "").astype(str).str.strip()
+            result["country_of_origin"] = ""
+            result["source"] = "SAP_MCH1_LIPS"
+        else:
+            # Batch master without shipment link — create reference records
+            result = pd.DataFrame()
+            result["shipment_id"] = ""
+            result["product_id"] = batch["MATNR"]
+            result["lot_number"] = batch["CHARG"]
+            result["batch_id"] = batch["CHARG"]
+            result["quantity"] = 0.0
+            result["uom"] = "EA"
+            result["manufacture_date"] = pd.to_datetime(
+                _safe_col(batch, "HSDAT", _safe_col(batch, "ERDAT", None)), errors="coerce"
+            )
+            result["expiration_date"] = pd.to_datetime(
+                _safe_col(batch, "VFDAT", None), errors="coerce"
+            )
+            result["shelf_life_days"] = pd.to_numeric(
+                _safe_col(batch, "MAXLZ_MCHA", 0), errors="coerce"
+            ).fillna(0).astype(int)
+            result["quality_status"] = "RELEASED"
+            result["origin_site_id"] = _safe_col(batch, "WERKS", "").astype(str).str.strip()
+            result["country_of_origin"] = ""
+            result["source"] = "SAP_MCH1"
+
+        logger.info(f"Mapped {len(result)} shipment lot records")
+        return result
+
+    def map_outbound_shipments(
+        self,
+        likp_df: pd.DataFrame,
+        lips_df: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """
+        Map SAP deliveries (LIKP/LIPS) to OutboundShipment.
+
+        OutboundShipment links a sales order line to a shipment with status tracking.
+        LIPS.VGBEL/VGPOS references the originating sales order.
+        """
+        logger.info("Mapping LIKP/LIPS to OutboundShipment")
+
+        if lips_df.empty:
+            return pd.DataFrame()
+
+        # Merge delivery header for dates/status
+        header_cols = ["VBELN"]
+        for col in ["KUNNR", "WADAT_IST", "LFDAT", "LDDAT", "BOLNR", "LIFNR"]:
+            if col in likp_df.columns:
+                header_cols.append(col)
+        merged = lips_df.merge(likp_df[header_cols], on="VBELN", how="left")
+
+        result = pd.DataFrame()
+        result["order_id"] = _safe_col(merged, "VGBEL", "").astype(str).str.strip()
+        result["order_line_number"] = pd.to_numeric(
+            _safe_col(merged, "VGPOS", 0), errors="coerce"
+        ).fillna(0).astype(int)
+        result["shipment_id"] = merged["VBELN"].astype(str).str.strip()
+        result["product_id"] = merged["MATNR"].astype(str).str.strip()
+        result["site_id"] = merged["WERKS"].astype(str).str.strip()
+        result["customer_site_id"] = _safe_col(merged, "KUNNR", "").astype(str).str.strip()
+        result["shipped_quantity"] = pd.to_numeric(
+            _safe_col(merged, "LFIMG", 0), errors="coerce"
+        ).fillna(0)
+        result["uom"] = _safe_col(merged, "MEINS", "EA").astype(str).str.strip()
+        result["ship_date"] = pd.to_datetime(
+            _safe_col(merged, "WADAT_IST", None), errors="coerce"
+        )
+        result["expected_delivery_date"] = pd.to_datetime(
+            _safe_col(merged, "LFDAT", None), errors="coerce"
+        )
+        result["actual_delivery_date"] = pd.to_datetime(
+            _safe_col(merged, "LDDAT", None), errors="coerce"
+        )
+        # Status
+        has_actual = result["actual_delivery_date"].notna()
+        has_ship = result["ship_date"].notna()
+        result["status"] = "CREATED"
+        result.loc[has_ship, "status"] = "SHIPPED"
+        result.loc[has_actual, "status"] = "DELIVERED"
+        result["carrier_id"] = _safe_col(merged, "LIFNR", "").astype(str).str.strip()
+        result["tracking_number"] = _safe_col(merged, "BOLNR", "").astype(str).str.strip()
+        result["source"] = "SAP_LIKP_LIPS"
+
+        # Filter to lines that reference a sales order
+        result = result[result["order_id"].str.len() > 0]
+
+        logger.info(f"Mapped {len(result)} outbound shipment records")
+        return result
+
+    def map_final_assembly_schedule(
+        self,
+        afko_df: pd.DataFrame,
+        afpo_df: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """
+        Map SAP production orders (AFKO/AFPO) to FinalAssemblySchedule.
+
+        FAS applies to configure-to-order (CTO) and assemble-to-order (ATO) items.
+        AFKO: Production order headers (dates, routing reference)
+        AFPO: Production order items (material, plant, quantities)
+        """
+        logger.info("Mapping AFKO/AFPO to FinalAssemblySchedule")
+
+        if afpo_df.empty:
+            return pd.DataFrame()
+
+        # Merge headers
+        if not afko_df.empty:
+            header_cols = ["AUFNR"]
+            for c in ["GSTRP", "GLTRP", "PLNNR", "PLNAL", "GAMNG", "GMEIN"]:
+                if c in afko_df.columns:
+                    header_cols.append(c)
+            merged = afpo_df.merge(afko_df[header_cols], on="AUFNR", how="left")
+        else:
+            merged = afpo_df.copy()
+
+        result = pd.DataFrame()
+        result["fas_id"] = "FAS-" + merged["AUFNR"].astype(str).str.strip()
+        # Order reference from production order → sales order link (AFPO.KDAUF if available)
+        result["order_id"] = _safe_col(merged, "KDAUF", "").astype(str).str.strip() if "KDAUF" in merged.columns else ""
+        result["order_line_id"] = _safe_col(merged, "KDPOS", "").astype(str).str.strip() if "KDPOS" in merged.columns else ""
+        result["product_id"] = merged["MATNR"].astype(str).str.strip()
+        result["base_product_id"] = merged["MATNR"].astype(str).str.strip()
+        result["site_id"] = _safe_col(merged, "PWERK", _safe_col(merged, "WERKS", "")).astype(str).str.strip()
+        result["assembly_quantity"] = pd.to_numeric(
+            _safe_col(merged, "PSMNG", _safe_col(merged, "GAMNG", 0)), errors="coerce"
+        ).fillna(0)
+        result["assembly_start_date"] = pd.to_datetime(
+            _safe_col(merged, "GSTRP", None), errors="coerce"
+        )
+        result["assembly_end_date"] = pd.to_datetime(
+            _safe_col(merged, "GLTRP", None), errors="coerce"
+        )
+        # Calculate assembly lead time
+        start = result["assembly_start_date"]
+        end = result["assembly_end_date"]
+        result["assembly_lead_time_days"] = (end - start).dt.days.fillna(0).astype(int)
+
+        # Status from AFPO.DESSION or simplified
+        stat = _safe_col(merged, "DESSION", "").astype(str).str.strip()
+        status_map = {"": "PLANNED", "REL": "RELEASED", "TECO": "COMPLETED", "CNF": "CONFIRMED"}
+        result["status"] = stat.map(lambda x: status_map.get(x[:4], "PLANNED") if x else "PLANNED")
+
+        result["work_center_id"] = ""
+        result["production_process_id"] = _safe_col(merged, "PLNNR", "").astype(str).str.strip()
+        result["priority"] = 3
+        result["source"] = "SAP_AFKO_AFPO"
+
+        logger.info(f"Mapped {len(result)} final assembly schedule records")
+        return result
+
+    def map_sourcing_schedule(self, eord_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Map source list (EORD) to SourcingSchedule.
+
+        EORD defines approved vendor-plant assignments with validity periods
+        which map to sourcing schedule time windows.
+        """
+        logger.info("Mapping EORD to SourcingSchedule")
+
+        if eord_df.empty:
+            return pd.DataFrame()
+
+        result = pd.DataFrame()
+        result["id"] = (
+            eord_df["MATNR"].astype(str).str.strip() + "-" +
+            eord_df["WERKS"].astype(str).str.strip() + "-" +
+            _safe_col(eord_df, "ZEESSION", "01").astype(str).str.strip()
+        )
+        result["description"] = (
+            "Source " + eord_df["LIFNR"].astype(str).str.strip() +
+            " → " + eord_df["WERKS"].astype(str).str.strip()
+        )
+        result["to_site_id"] = eord_df["WERKS"].astype(str).str.strip()
+        result["tpartner_id"] = eord_df["LIFNR"].astype(str).str.strip()
+        result["from_site_id"] = ""  # Vendor site not in EORD
+        result["schedule_type"] = "custom"
+
+        # NOTKZ: 1=normal, 2=blocked
+        notkz = _safe_col(eord_df, "NOTKZ", "1").astype(str).str.strip()
+        result["is_active"] = notkz != "2"
+
+        result["eff_start_date"] = pd.to_datetime(
+            _safe_col(eord_df, "VDATU", None), format="%Y%m%d", errors="coerce"
+        )
+        result["eff_end_date"] = pd.to_datetime(
+            _safe_col(eord_df, "BDATU", None), format="%Y%m%d", errors="coerce"
+        )
+
+        result = result[result["is_active"]]
+        result["source"] = "SAP_EORD"
+
+        logger.info(f"Mapped {len(result)} sourcing schedule records")
+        return result
+
+    # ------------------------------------------------------------------
+    # Operational Statistics → Distribution Parameters
+    # ------------------------------------------------------------------
+
+    def map_operational_stats_to_distributions(
+        self,
+        stats: Dict[str, List[Dict]],
+    ) -> Dict[str, pd.DataFrame]:
+        """Convert aggregated SAP operational statistics to distribution parameters.
+
+        Takes the output of ``extract_operational_stats()`` (metric_key → list of
+        stat dicts with min/p05/p25/median/p75/p95/max/mean/stddev/cnt) and fits
+        the best distribution family per metric group.
+
+        Returns a dict keyed by target entity (e.g. ``vendor_lead_time``,
+        ``production_process``, ``transportation_lane``) with DataFrames ready
+        for upsert.  Each row contains the business key columns plus a
+        ``*_dist`` JSON column value.
+
+        Distribution selection heuristic (no raw data, only summary stats):
+        - Positive, right-skewed → lognormal (lead times, cycle times)
+        - Bounded 0-1 → beta (yields, on-time rates)
+        - Positive with known lower bound → weibull / gamma
+        - Roughly symmetric → normal
+        """
+        result: Dict[str, pd.DataFrame] = {}
+
+        # --- Supplier lead time → vendor_lead_time.lead_time_dist ----------
+        if "supplier_lead_time" in stats and stats["supplier_lead_time"]:
+            rows = []
+            for r in stats["supplier_lead_time"]:
+                dist = self._fit_positive_skewed(r)
+                rows.append({
+                    "tpartner_id": str(r.get("vendor_id", "")).strip(),
+                    "product_id": str(r.get("material", "")).strip(),
+                    "site_id": str(r.get("plant", "")).strip(),
+                    "lead_time_days": r.get("mean"),
+                    "lead_time_variability_days": r.get("stddev"),
+                    "lead_time_dist": dist,
+                    "source": "SAP_OPERATIONAL_STATS",
+                })
+            result["vendor_lead_time"] = pd.DataFrame(rows)
+
+        # --- Supplier on-time → vendor_lead_time (on_time_rate_dist) -------
+        if "supplier_on_time" in stats and stats["supplier_on_time"]:
+            rows = []
+            for r in stats["supplier_on_time"]:
+                rate = r.get("on_time_rate")
+                cnt = r.get("cnt", 0)
+                dist = self._fit_rate(rate, cnt)
+                rows.append({
+                    "tpartner_id": str(r.get("vendor_id", "")).strip(),
+                    "on_time_rate": rate,
+                    "on_time_rate_dist": dist,
+                    "source": "SAP_OPERATIONAL_STATS",
+                })
+            result["supplier_on_time"] = pd.DataFrame(rows)
+
+        # --- Manufacturing cycle time → production_process.operation_time_dist
+        if "manufacturing_cycle_time" in stats and stats["manufacturing_cycle_time"]:
+            rows = []
+            for r in stats["manufacturing_cycle_time"]:
+                dist = self._fit_positive_skewed(r)
+                rows.append({
+                    "site_id": str(r.get("plant", "")).strip(),
+                    "product_id": str(r.get("material", "")).strip(),
+                    "operation_time": r.get("mean"),
+                    "operation_time_dist": dist,
+                    "source": "SAP_OPERATIONAL_STATS",
+                })
+            result["production_process_cycle"] = pd.DataFrame(rows)
+
+        # --- Manufacturing yield → production_process.yield_dist -----------
+        if "manufacturing_yield" in stats and stats["manufacturing_yield"]:
+            rows = []
+            for r in stats["manufacturing_yield"]:
+                dist = self._fit_rate(r.get("mean"), r.get("cnt", 0),
+                                       stddev=r.get("stddev"))
+                rows.append({
+                    "site_id": str(r.get("plant", "")).strip(),
+                    "product_id": str(r.get("material", "")).strip(),
+                    "yield_percentage": r.get("mean"),
+                    "yield_dist": dist,
+                    "source": "SAP_OPERATIONAL_STATS",
+                })
+            result["production_process_yield"] = pd.DataFrame(rows)
+
+        # --- Manufacturing setup time → production_process.setup_time_dist -
+        if "manufacturing_setup_time" in stats and stats["manufacturing_setup_time"]:
+            rows = []
+            for r in stats["manufacturing_setup_time"]:
+                dist = self._fit_positive_skewed(r)
+                rows.append({
+                    "site_id": str(r.get("plant", "")).strip(),
+                    "product_id": str(r.get("material", "")).strip(),
+                    "setup_time": r.get("mean"),
+                    "setup_time_dist": dist,
+                    "source": "SAP_OPERATIONAL_STATS",
+                })
+            result["production_process_setup"] = pd.DataFrame(rows)
+
+        # --- Machine MTBF → production_process.mtbf_dist ------------------
+        if "machine_mtbf" in stats and stats["machine_mtbf"]:
+            rows = []
+            for r in stats["machine_mtbf"]:
+                dist = self._fit_positive_skewed(r)
+                rows.append({
+                    "site_id": str(r.get("plant", "")).strip(),
+                    "equipment_id": str(r.get("equipment", "")).strip(),
+                    "mtbf_days": r.get("mean"),
+                    "mtbf_dist": dist,
+                    "source": "SAP_OPERATIONAL_STATS",
+                })
+            result["machine_mtbf"] = pd.DataFrame(rows)
+
+        # --- Machine MTTR → production_process.mttr_dist ------------------
+        if "machine_mttr" in stats and stats["machine_mttr"]:
+            rows = []
+            for r in stats["machine_mttr"]:
+                dist = self._fit_positive_skewed(r)
+                rows.append({
+                    "site_id": str(r.get("plant", "")).strip(),
+                    "equipment_id": str(r.get("equipment", "")).strip(),
+                    "mttr_hours": r.get("mean"),
+                    "mttr_dist": dist,
+                    "source": "SAP_OPERATIONAL_STATS",
+                })
+            result["machine_mttr"] = pd.DataFrame(rows)
+
+        # --- Transportation lead time → transportation_lane.*_dist --------
+        if "transportation_lead_time" in stats and stats["transportation_lead_time"]:
+            rows = []
+            for r in stats["transportation_lead_time"]:
+                dist = self._fit_positive_skewed(r)
+                rows.append({
+                    "from_site_id": str(r.get("ship_from", "")).strip(),
+                    "to_site_id": str(r.get("ship_to", "")).strip(),
+                    "supply_lead_time_dist": dist,
+                    "source": "SAP_OPERATIONAL_STATS",
+                })
+            result["transportation_lane"] = pd.DataFrame(rows)
+
+        # --- Quality rejection rate → production_process quality ----------
+        if "quality_rejection_rate" in stats and stats["quality_rejection_rate"]:
+            rows = []
+            for r in stats["quality_rejection_rate"]:
+                dist = self._fit_rate(r.get("mean"), r.get("cnt", 0),
+                                       stddev=r.get("stddev"))
+                rows.append({
+                    "site_id": str(r.get("plant", "")).strip(),
+                    "product_id": str(r.get("material", "")).strip(),
+                    "rejection_rate": r.get("mean"),
+                    "rejection_rate_dist": dist,
+                    "source": "SAP_OPERATIONAL_STATS",
+                })
+            result["quality_rejection"] = pd.DataFrame(rows)
+
+        # --- Demand variability → stored per product-site for forecasting -
+        if "demand_variability" in stats and stats["demand_variability"]:
+            rows = []
+            for r in stats["demand_variability"]:
+                dist = self._fit_positive_skewed(r)
+                rows.append({
+                    "product_id": str(r.get("material", "")).strip(),
+                    "site_id": str(r.get("plant", "")).strip(),
+                    "weekly_demand_mean": r.get("mean"),
+                    "weekly_demand_stddev": r.get("stddev"),
+                    "demand_dist": dist,
+                    "source": "SAP_OPERATIONAL_STATS",
+                })
+            result["demand_variability"] = pd.DataFrame(rows)
+
+        # --- Order fulfillment time ---
+        if "order_fulfillment_time" in stats and stats["order_fulfillment_time"]:
+            rows = []
+            for r in stats["order_fulfillment_time"]:
+                dist = self._fit_positive_skewed(r)
+                rows.append({
+                    "product_id": str(r.get("material", "")).strip(),
+                    "site_id": str(r.get("plant", "")).strip(),
+                    "fulfillment_days_mean": r.get("mean"),
+                    "fulfillment_dist": dist,
+                    "source": "SAP_OPERATIONAL_STATS",
+                })
+            result["order_fulfillment"] = pd.DataFrame(rows)
+
+        total = sum(len(df) for df in result.values())
+        logger.info(
+            f"Mapped operational stats → {len(result)} entity groups, "
+            f"{total} total distribution records"
+        )
+        return result
+
+    # --- Private distribution fitting helpers -----------------------------
+
+    @staticmethod
+    def _fit_positive_skewed(r: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Fit a distribution to positive, potentially right-skewed data.
+
+        Uses only summary statistics (mean, stddev, p05, p95, median).
+        Selects lognormal if skew detected (median < mean), else normal.
+        Falls back to triangular if insufficient stats.
+        """
+        mean = r.get("mean")
+        stddev = r.get("stddev")
+        p05 = r.get("p05")
+        p95 = r.get("p95")
+        median = r.get("median")
+        cnt = r.get("cnt", 0)
+
+        if mean is None or cnt < 5:
+            return None
+
+        # Not enough variability info → triangular from percentiles
+        if stddev is None or stddev == 0:
+            lo = p05 if p05 is not None else r.get("min", mean * 0.8)
+            hi = p95 if p95 is not None else r.get("max", mean * 1.2)
+            mode = median if median is not None else mean
+            return {
+                "type": "triangular",
+                "min": round(float(lo), 4),
+                "mode": round(float(mode), 4),
+                "max": round(float(hi), 4),
+            }
+
+        cv = stddev / mean if mean > 0 else 0
+
+        # Detect right skew: median < mean indicates lognormal
+        is_skewed = (
+            (median is not None and mean > 0 and median < mean * 0.95)
+            or cv > 0.5
+        )
+
+        if is_skewed and mean > 0 and stddev > 0:
+            # Lognormal: derive mu_log, sigma_log from mean & stddev
+            variance = stddev ** 2
+            mu_log = math.log(mean ** 2 / math.sqrt(variance + mean ** 2))
+            sigma_log = math.sqrt(math.log(1 + variance / mean ** 2))
+            dist: Dict[str, Any] = {
+                "type": "lognormal",
+                "mean_log": round(mu_log, 6),
+                "stddev_log": round(sigma_log, 6),
+                "mean": round(float(mean), 4),
+                "stddev": round(float(stddev), 4),
+            }
+        else:
+            dist = {
+                "type": "normal",
+                "mean": round(float(mean), 4),
+                "stddev": round(float(stddev), 4),
+            }
+
+        # Add percentile bounds for truncation
+        if p05 is not None:
+            dist["min"] = round(float(p05), 4)
+        if p95 is not None:
+            dist["max"] = round(float(p95), 4)
+
+        return dist
+
+    @staticmethod
+    def _fit_rate(
+        rate: Optional[float],
+        cnt: int = 0,
+        stddev: Optional[float] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Fit a Beta distribution to a rate (0-1 bounded) metric.
+
+        Uses method-of-moments: given mean μ and variance σ², compute
+        α = μ × ((μ(1-μ)/σ²) - 1), β = (1-μ) × ((μ(1-μ)/σ²) - 1).
+        """
+        if rate is None or cnt < 5:
+            return None
+
+        mu = float(rate)
+        # Clamp to valid Beta range
+        mu = max(0.001, min(0.999, mu))
+
+        if stddev is not None and stddev > 0:
+            var = float(stddev) ** 2
+            # Ensure valid: variance must be < mu*(1-mu)
+            max_var = mu * (1 - mu) - 0.0001
+            var = min(var, max_var) if max_var > 0 else 0.001
+            if var > 0:
+                common = (mu * (1 - mu) / var) - 1
+                if common > 0:
+                    alpha = mu * common
+                    beta_param = (1 - mu) * common
+                    return {
+                        "type": "beta",
+                        "alpha": round(alpha, 4),
+                        "beta": round(beta_param, 4),
+                        "mean": round(mu, 4),
+                    }
+
+        # Fallback: use count to estimate concentration
+        # Higher count → narrower distribution
+        alpha = mu * min(cnt, 100)
+        beta_param = (1 - mu) * min(cnt, 100)
+        return {
+            "type": "beta",
+            "alpha": round(max(alpha, 1.0), 4),
+            "beta": round(max(beta_param, 1.0), 4),
+            "mean": round(mu, 4),
+        }

@@ -627,11 +627,34 @@ Training is organized **per site x per TRM type** with a 3-phase progressive cur
 | 2 | **Context Learning (Supervised)** | Human expert override decision logs | ≥500 expert decisions for the site |
 | 3 | **Outcome Optimization (RL/VFA)** | Replay buffer with measured outcomes | ≥1000 outcome records for the site |
 
-**Phase 1** uses the `CURRICULUM_REGISTRY` with 3 sub-phases (simple → moderate → full complexity) and behavioral cloning to match engine baselines. Every site-TRM pair runs Phase 1.
+**Phase 1** uses the `CURRICULUM_REGISTRY` with 3 sub-phases (simple → moderate → full complexity) and behavioral cloning to match engine baselines. Every site-TRM pair runs Phase 1. Default: 50K samples/sub-phase × 3 sub-phases = 150K samples per signal phase, 450K total across the stigmergic curriculum.
 
 **Phase 2** trains on human expert overrides filtered by `site_id`. A DC with 200K frozen capacity develops different ATP patterns than a small regional warehouse — per-site training captures these differences.
 
 **Phase 3** uses TD learning + Conservative Q-Learning (CQL) from the replay buffer filtered by `site_id` to discover policies that outperform both engines and human experts.
+
+#### Data Volume: Learning by Watching (Stöckl 2021)
+
+Data volume targets are grounded in Stöckl's "Watching a Language Model Learning Chess" (RANLP 2021), which demonstrated that **data volume matters more than model size** for structured decision tasks. A GPT2-small (124M params) with sufficient training games outperformed GPT2-large (774M params) with insufficient data on chess move legality — learning the *rules* rather than memorizing patterns.
+
+TRM training follows the same "learning by watching" paradigm: the TRM observes deterministic engines making expert decisions across thousands of synthetic scenarios (curriculum data), then learns to reproduce and refine those decisions. The Kaplan (2020) scaling law governs the relationship:
+
+| Data Regime | Samples per TRM | Expected Behavior |
+|-------------|-----------------|-------------------|
+| Insufficient | <10K | Memorization only — fails on novel states |
+| Medium | 50K–150K | Rule learning begins — handles typical cases |
+| Robust | 500K+ | Generalizes to edge cases and novel combinations |
+
+Phase 1 now generates **450K samples** per TRM (robust regime). The `StochasticCurriculumWrapper` supports a `multiplier` parameter for independent Monte Carlo draws, enabling scaling to millions of samples. Coordinated simulation (`CoordinatedSimRunner`) recommends a minimum of **5,000 episodes** for Phases 2-3 data.
+
+**Critical insight from Stöckl**: Standard training loss is misleading for structured decision tasks. Models that appeared converged (low loss) still made illegal moves. Phase 1 therefore auto-runs a 3-tier evaluation after training:
+- **Tier 1 (Memorization)**: Accuracy on training data
+- **Tier 2 (Generalization)**: Accuracy on held-out states
+- **Tier 3 (Rule Learning)**: Accuracy on adversarial/edge-case states (zero inventory, demand spikes, capacity extremes)
+
+The `correct_decision_rate` metric (not loss) is the true measure of training success.
+
+**References**: Stöckl (2021) [ACL Anthology](https://aclanthology.org/2021.ranlp-1.148/); Kaplan et al. (2020) [arxiv:2001.08361](https://arxiv.org/abs/2001.08361). See `TRM_RESEARCH_SYNTHESIS.md` §8 for full analysis.
 
 #### TRM Applicability by Site Master Type
 

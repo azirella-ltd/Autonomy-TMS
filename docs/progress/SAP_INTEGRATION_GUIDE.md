@@ -613,6 +613,88 @@ mapper.export_to_aws_format(
 
 ---
 
+## Operational Statistics Extraction
+
+### Overview
+
+In addition to master and transactional data, the pipeline can extract **operational performance statistics** directly from SAP S/4HANA's HANA database. These statistics compute distribution parameters (mean, stddev, percentiles) for stochastic variables using HANA's in-memory columnar engine — avoiding the need to download millions of raw transaction rows.
+
+### Stochastic Variables Extracted
+
+13 aggregation queries compute summary statistics grouped by the appropriate business dimensions:
+
+| Metric | SAP Tables | Grouping | Output |
+|--------|-----------|----------|--------|
+| Supplier lead time (days) | EKKO, EKBE | Vendor × Material × Plant | min, P05, P25, median, P75, P95, max, mean, stddev |
+| Supplier on-time rate | EKBE, EKET | Vendor | Rate (0-1) |
+| Supplier qty accuracy | EKBE, EKPO | Vendor × Material × Plant | Ratio received/ordered |
+| Manufacturing cycle time | AFKO, AFPO, AFRU | Material × Plant | Days (release → final confirmation) |
+| Manufacturing yield | AFRU, AFPO | Material × Plant | Ratio yield/(yield+scrap) |
+| Manufacturing setup time | AFRU, AFPO | Material × Plant | Minutes |
+| Manufacturing run time | AFRU, AFPO | Material × Plant | Minutes per unit |
+| Machine MTBF | QMEL (type M2) | Equipment × Plant | Days between breakdowns (LAG window) |
+| Machine MTTR | QMEL (type M2) | Equipment × Plant | Hours to repair |
+| Quality rejection rate | QALS | Material × Plant | Rejected qty / lot size |
+| Transportation lead time | LIKP, LIPS | Ship-from plant × Ship-to | Days (GI → POD) |
+| Demand variability | VBAP | Material × Plant (weekly) | Weekly order quantity distribution |
+| Order fulfillment time | VBAK, VBAP, LIPS, LIKP | Material × Plant × Customer | Days (order creation → delivery) |
+
+### Usage
+
+```bash
+# Extract operational statistics only
+python scripts/extract_sap_hana.py \
+    --host 10.0.0.1 --port 30015 \
+    --user SAPHANADB --password Secret123 \
+    --company-code 1710 \
+    --operational-stats
+
+# Extract specific metrics
+python scripts/extract_sap_hana.py \
+    --operational-stats \
+    --stats-metrics supplier_lead_time,manufacturing_yield,machine_mtbf
+```
+
+Output: `operational_stats.json` and per-metric CSV files in the output directory.
+
+### Distribution Fitting
+
+The mapper (`SupplyChainMapper.map_operational_stats_to_distributions()`) fits distributions from summary statistics:
+
+- **Lognormal**: For right-skewed positive data (lead times, cycle times) — detected when median < mean or CV > 0.5
+- **Beta**: For rate/ratio data bounded 0-1 (yields, on-time rates, rejection rates)
+- **Normal**: For roughly symmetric data
+- **Triangular**: Fallback when insufficient statistics (< 5 observations)
+
+Distribution JSON is stored in `*_dist` columns (e.g., `vendor_lead_times.lead_time_dist`, `production_process.yield_dist`). A `NULL` value means "use the deterministic base field."
+
+### Target Entity Columns
+
+| Entity Table | `*_dist` Column | Source Metric |
+|---|---|---|
+| `vendor_lead_times` | `lead_time_dist` | supplier_lead_time |
+| `production_process` | `operation_time_dist` | manufacturing_cycle_time |
+| `production_process` | `setup_time_dist` | manufacturing_setup_time |
+| `production_process` | `yield_dist` | manufacturing_yield |
+| `production_process` | `mtbf_dist` | machine_mtbf |
+| `production_process` | `mttr_dist` | machine_mttr |
+| `transportation_lane` | `supply_lead_time_dist` | transportation_lead_time |
+
+### Per-Agent Parameter Specialization
+
+Beyond entity-level `*_dist` columns, the platform maintains per-agent stochastic parameters in the `agent_stochastic_params` table. When SAP operational statistics are imported:
+
+1. Entity-level distributions update `*_dist` columns (as above)
+2. Per-agent parameters can be derived from the same data, scoped to the specific TRM agent type that uses each variable
+3. SAP-imported parameters are marked `source='sap_import'` and `is_default=False`, protecting them from being overwritten when the tenant's industry changes
+
+This separation allows different agents to use different distribution assumptions for the same underlying variable — e.g., PO Creation may use a more conservative supplier lead time distribution than Order Tracking.
+
+**API**: `GET /api/v1/agent-stochastic-params/?config_id=<id>` lists all per-agent parameters.
+**UI**: Administration > Stochastic Parameters.
+
+---
+
 ## Plan Writing
 
 ### Writing Results Back to SAP

@@ -497,6 +497,15 @@ class ProductionProcess(Base):
     source_event_id = Column(String(100))
     source_update_dttm = Column(DateTime)
 
+    # Extension: Stochastic distribution parameters (from SAP operational stats)
+    # JSON format: {"type": "lognormal", "mean_log": ..., "stddev_log": ..., "min": ..., "max": ...}
+    # NULL = use deterministic base field value
+    operation_time_dist = Column(JSON, nullable=True)
+    setup_time_dist = Column(JSON, nullable=True)
+    yield_dist = Column(JSON, nullable=True)
+    mtbf_dist = Column(JSON, nullable=True)   # Mean time between failures (days)
+    mttr_dist = Column(JSON, nullable=True)   # Mean time to repair (hours)
+
     # Simulation extensions
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
     manufacturing_leadtime = Column(Integer, default=0)
