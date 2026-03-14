@@ -1097,6 +1097,7 @@ warm_start → sop_graphsage → cfa_optimization → lgbm_forecast → demand_t
 - `backend/app/api/endpoints/provisioning.py` — Provisioning stepper API
 - `frontend/src/components/TopNavbar.jsx` — Talk to me input + clarification panel
 - `frontend/src/components/supply-chain-config/ProvisioningStepper.jsx` — Stepper modal
+- Documentation: [docs/internal/TALK_TO_ME.md](docs/internal/TALK_TO_ME.md) (directives), [docs/internal/PROVISIONING_STEPPER.md](docs/internal/PROVISIONING_STEPPER.md) (14-step pipeline)
 
 **API Endpoints**:
 ```bash

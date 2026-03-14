@@ -139,62 +139,9 @@ GET  /api/v1/directives/{id}       — Get single directive by ID
 
 ## Provisioning Stepper
 
-The provisioning stepper replaces the simple warm-start button with a full 14-step Powell Cascade pipeline. It is stored in `config_provisioning_status` (one row per SC config).
+The 14-step Powell Cascade warm-start pipeline bootstraps all AI layers before they can receive directives. A directive routed to an unprovisioned layer has nowhere to go — provisioning ensures readiness.
 
-### Steps and Dependencies
-
-The pipeline is organized into four tiers:
-
-**Tier 1 — Foundation**
-```
-1. warm_start         → (none)           — Historical Demand Simulation
-```
-
-**Tier 2 — Strategic Layer**
-```
-2. sop_graphsage      → warm_start       — Strategic Network Planning Agent
-3. cfa_optimization   → sop_graphsage    — Policy Parameter Optimization
-4. lgbm_forecast      → cfa_optimization — Demand Forecasting
-```
-
-**Tier 3 — Operational Layer**
-```
-5. demand_tgnn        → lgbm_forecast, sop_graphsage   — Demand Planning Agent
-6. supply_tgnn        → lgbm_forecast, sop_graphsage   — Supply Planning Agent
-7. inventory_tgnn     → supply_tgnn                     — Inventory Optimization Agent
-8. trm_training       → demand_tgnn, supply_tgnn, inventory_tgnn — Execution Role Agent Training
-9. supply_plan        → cfa_optimization, trm_training  — Supply Plan Generation
-10. rccp_validation   → supply_plan                     — Rough-Cut Capacity Validation
-```
-
-**Tier 4 — Activation**
-```
-11. decision_seed     → trm_training     — Decision Stream Seeding
-12. site_tgnn         → decision_seed    — Operational Site Agent Training
-13. conformal         → warm_start       — Uncertainty Calibration (CP + CDT)
-14. briefing          → supply_plan, decision_seed — Executive Briefing
-```
-
-The **conformal** step (13) hydrates the ConformalOrchestrator from `PowellBeliefState` with tenant-scoped data and runs batch CDT calibration across all 11 TRM types. After completion, a CDT Readiness Panel shows per-TRM calibration status (calibrated / partial / uncalibrated) with pair counts.
-
-### API
-
-```
-GET  /api/v1/provisioning/status/{config_id}           — Stepper state
-POST /api/v1/provisioning/run/{config_id}/{step_key}   — Run single step
-POST /api/v1/provisioning/run-all/{config_id}          — Run all in order
-POST /api/v1/provisioning/reset/{config_id}/{step_key} — Reset failed step
-```
-
-### Frontend
-
-The `ProvisioningStepper.jsx` modal shows a 14-step checklist organized by tier with:
-- Progress bar (completed / total)
-- Per-step status (pending / running / completed / error)
-- Dependency warnings (greyed out until prerequisites met)
-- Run / Reset / Retry per step
-- "Run All" button for one-click provisioning
-- CDT Readiness Panel (after conformal step completes)
+See **[PROVISIONING_STEPPER.md](PROVISIONING_STEPPER.md)** for full step definitions, dependency graph, and conformal calibration details.
 
 ## Design Principles
 
