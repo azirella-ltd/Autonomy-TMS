@@ -770,6 +770,245 @@ escalation protocol.
 
 ---
 
+## Worked Example: Planned Manufacturing Shutdown
+
+> **Scenario**: During an S&OP meeting a planner says "manufacturing site XYZ will be down
+> for one week in three months for major new equipment installation."
+>
+> This end-to-end walkthrough shows exactly how that statement moves from natural language
+> to changed TRM decisions at every site in the network.
+
+### Stage 1 — Capture (Talk to Me → DirectiveService → Layer 4)
+
+The planner enters the statement into the Talk to Me input in the top navigation bar.
+The two-phase directive flow runs:
+
+1. `POST /directives/analyze` — the LLM parser extracts:
+   - `metric`: capacity
+   - `direction`: decrease
+   - `magnitude`: 100% (total shutdown)
+   - `duration`: 1 week
+   - `timing_offset`: ~13 weeks from today
+   - `geography`: site XYZ
+   - `reason`: planned equipment installation
+
+2. No clarification gaps (all required fields present) — user submits immediately.
+   `DirectiveService` routes to **Powell Layer 4 (S&OP GraphSAGE)**: the 3-month horizon
+   and single-site origin with network-wide downstream impact match the S&OP tier.
+
+3. The directive is persisted in `user_directives`. A **constraint event record** is written
+   to `powell_policy_parameters` (or its staging buffer) before the next CFA re-optimisation:
+   ```python
+   site_xyz_constraint = {
+       "planned_shutdown_week": current_week + 13,
+       "planned_shutdown_duration_weeks": 1,
+       "capacity_fraction_during_shutdown": 0.0,
+   }
+   ```
+
+### Stage 2 — S&OP GraphSAGE Evaluation (Constraint Injection → DE Re-optimisation → θ* Update)
+
+#### What changes in the graph features
+
+Site XYZ's node feature vector is augmented with the planned capacity constraint before
+the next DE MC objective evaluation:
+
+```python
+# Before directive
+site_xyz_features = [
+    avg_weekly_demand=1500,            # dim 0
+    demand_variability_cv=0.22,        # dim 1
+    avg_lead_time_weeks=2.5,           # dim 2
+    ...
+    capacity_units_per_week=1000,      # dim 10
+    criticality_score=0.72,            # dim 13
+]
+
+# After constraint injection
+site_xyz_features = [
+    avg_weekly_demand=1500,
+    demand_variability_cv=0.22,
+    avg_lead_time_weeks=2.5,
+    ...
+    capacity_units_per_week=1000,      # base unchanged
+    planned_shutdown_fraction=1.0,     # 100% shutdown at t+13
+    planned_shutdown_duration=1.0,     # weeks
+    criticality_score=0.72,
+]
+```
+
+#### What the DE MC objective sees
+
+The DE re-optimizer evaluates N Monte Carlo scenarios with the constraint active.
+For each scenario:
+
+```
+Sample demand trace: Normal(μ=avg_weekly_demand, σ=cv × μ) for all sites
+Sample lead times:   LogLogistic(μ=avg_lead_time, σ=lt_cv × μ) for all lanes
+Override for XYZ:    capacity[t+13] = 0   (full week zero production)
+
+Production gap created = weekly_demand_downstream × 1 week
+The gap must be:
+  (a) Pre-built before t+13 (raise order_up_to_days so MOs run early), OR
+  (b) Absorbed by safety stock buffers at downstream DCs, OR
+  (c) Partially deferred (accept reduced service level for one week)
+
+DE minimises: E[total_cost + stockout_cost] across N scenarios
+```
+
+#### How θ* changes per affected site
+
+| Parameter | Site | Direction | Why |
+|---|---|---|---|
+| `safety_stock_multiplier` | XYZ | ↑ (e.g. 1.2× → 1.8×) | Need output buffer before shutdown |
+| `safety_stock_multiplier` | Downstream DCs | ↑ | Need finished goods buffer during shutdown |
+| `order_up_to_days` | XYZ | ↑ | Trigger pre-build MOs in weeks t-3 to t-1 |
+| `reorder_point_days` | XYZ (weeks before shutdown) | ↑ | Order raw materials early enough |
+| `service_level_target` | Downstream DCs | May soften slightly | Gap may not be fully bufferable |
+| `sourcing_split` | Downstream DCs | Shifts toward secondary suppliers | Compensate for XYZ gap during shutdown week |
+
+Updated θ* is written to `powell_policy_parameters` (keyed by `config_id + site_id + product_id`).
+
+### Stage 3 — Downward Percolation (θ* → Network tGNN → Site tGNN → TRMs)
+
+#### θ* → Network tGNN (daily)
+
+At the next daily Network tGNN run the updated `powell_policy_parameters` are read as
+graph node features. The trained GNN forward pass (no LP call — pure inference <5ms)
+produces updated `tGNNSiteDirective` for every affected site:
+
+```python
+# At site XYZ, weeks t+10 through t+12 (pre-build window):
+tGNNSiteDirective(site="XYZ") = {
+    "demand_forecast_correction": +12%,    # signal to pre-build now
+    "exception_probability":       0.68,   # high — known production gap imminent
+    "allocation_priority":         1,      # elevated for upstream lanes
+    "expected_inbound":            ...,    # increased raw material expected
+}
+
+# At downstream DC_South, week t+13 (during shutdown):
+tGNNSiteDirective(site="DC_South") = {
+    "demand_satisfaction":         0.71,   # reduced fill rate expected
+    "exception_probability":       0.62,
+    "allocation_priority":         1,      # elevated — protect from other demand draws
+}
+```
+
+These directives are injected into the SiteAgent context for all affected sites.
+
+#### Network tGNN → Site tGNN (hourly, Layer 1.5)
+
+At the next hourly Site tGNN run for XYZ, the 11-node cross-TRM coordination graph
+reflects the elevated `exception_probability`:
+
+```python
+# Site tGNN outputs for XYZ in pre-build window:
+urgency_adjustments = {
+    "MO_Execution":       +0.25,   # manufacture now — pre-build window active
+    "Inventory_Buffer":   +0.20,   # buffer targets just changed — review needed
+    "PO_Creation":        +0.18,   # upstream materials must arrive before t+13
+    "TO_Execution":       +0.12,   # stage finished goods toward downstream DCs
+    "ATP_Executor":       -0.05,   # slightly deprioritise spot commitments
+}
+```
+
+The GATv2 attention over the 22 causal edges shows strong activation on:
+- `MO_Execution → Inventory_Buffer` (pre-build is changing buffer levels)
+- `PO_Creation → Inventory_Buffer` (raw material timing affects buffer)
+
+#### Site tGNN → TRMs (Layer 1 — per decision cycle)
+
+**At site XYZ (weeks t-3 to t-1 before shutdown)**:
+
+- **`MOExecutionTRM`**: Receives `urgency = 0.87` (base 0.62 + delta +0.25). Releases
+  pre-build MOs ahead of normal schedule. `decision_reasoning` text: *"Pre-build for
+  planned week-t+13 shutdown: producing 1,000 additional units now to buffer downstream
+  DCs. θ*.order_up_to_days raised to 28 (was 14)."*
+
+- **`POCreationTRM`**: `order_up_to_days` now larger from θ* update. Urgency tier = CRITICAL
+  (0.9). Orders enough raw material to support pre-build. PO placed 6 weeks before shutdown
+  to clear lead time.
+
+- **`InventoryBufferTRM`**: `safety_stock_multiplier` raised from 1.2× to 1.8×. Calculates
+  new buffer target. Emits `BUFFER_INCREASED` HiveSignal. `decision_reasoning`: *"S&OP θ*
+  update (2026-03-14): safety_stock_multiplier raised 1.2→1.8 for planned capacity event
+  at t+13."*
+
+**At downstream DCs (week t+13 — during shutdown)**:
+
+- **`ATPExecutorTRM`**: Receives reduced `demand_satisfaction = 0.71` from Network tGNN
+  directive. Tightens available-to-promise. Low-priority orders deferred. `urgency = 0.74`.
+
+- **`InventoryRebalancingTRM`**: Evaluates lateral cross-DC transfers if one DC holds more
+  pre-built stock than needed.
+
+- **`OrderTrackingTRM`**: Flags known-late orders with reason *"planned manufacturing
+  shutdown at XYZ"* rather than raising a new exception — exception_probability was
+  already signalled, so no false alarm is generated.
+
+### Stage 4 — Outcome Inference (Digital Twin Monte Carlo)
+
+The stochastic simulation engine runs N=1000+ scenarios against the updated θ* to give
+the S&OP meeting a probabilistic answer to "what will happen?":
+
+```
+For each scenario i:
+  Sample 13-week demand trace (Normal per site)
+  Sample lead times (LogLogistic per lane)
+  Enforce capacity[t+13] = 0 at XYZ
+  Execute pre-build logic with new θ*
+  Record: service_level, stockout_cost, inventory_cost, backlog per DC
+
+Aggregate outputs (Probabilistic Balanced Scorecard):
+  P10/P50/P90 service level distribution for affected DCs during shutdown week
+  Expected total cost increase vs. baseline (no shutdown, no pre-build)
+  P(stockout = 0 during shutdown week) given optimised pre-build
+```
+
+Example output shown in the S&OP dashboard:
+
+| Metric | Without Pre-Build θ* | With Optimised θ* |
+|---|---|---|
+| P(OTIF > 95%) during shutdown week | 22% | 71% |
+| E[incremental stockout cost] | $84K | $19K |
+| E[incremental pre-build carrying cost] | $0 | $31K |
+| E[net benefit of pre-build] | — | **+$34K** |
+
+**Conformal prediction intervals** on all numbers carry distribution-free 90% coverage
+guarantees (powered by `ConformalOrchestrator`):
+> "With 90% probability, incremental stockout cost is between $12K and $28K."
+
+### Stage 5 — Ask Why at Any Level
+
+| Question | Answer source | Latency |
+|---|---|---|
+| "Why did XYZ's MO get released early?" | Pre-computed reasoning text in `powell_mo_decisions` | 0ms |
+| "Which downstream sites drove XYZ's higher safety stock multiplier?" | GATv2 attention weights from GraphSAGE forward pass | ~1ms |
+| "What feature input mattered most to the multiplier increase?" | Gradient saliency (`planned_shutdown_fraction`=0.44, `order_up_to_days`=0.29, `criticality_score`=0.18) | ~2ms |
+| "What is the probability range for stockout cost?" | Conformal prediction interval on MC simulation output | 0ms (stored) |
+
+### Key Design Points
+
+1. **No re-solve at runtime**: The S&OP GraphSAGE forward pass takes <1ms even with the
+   constraint injection. The expensive DE re-optimisation runs once (or on the weekly CFA
+   schedule) and writes θ* to the DB. All downstream layers read from `powell_policy_parameters`.
+
+2. **Proportional response**: Each downstream layer only adjusts within its own authority.
+   TRMs never call across sites — cross-site information arrives only through tGNNSiteDirective
+   and θ* parameters. This is the multi-site coordination stack operating as designed.
+
+3. **Pre-build decision is economic, not rule-based**: The DE found pre-building is worth
+   +$34K EV. If the MC objective had found pre-building cost more than it saved (e.g., very
+   low demand uncertainty, very short shutdown), θ* would NOT have raised `order_up_to_days`.
+   The system adapts the response to the economics of each specific scenario.
+
+4. **Graceful degradation**: If the GraphSAGE model has not been retrained recently and
+   the constraint injection changes the graph distribution substantially, `de_converged` may
+   be False. The system falls back to the heuristic pre-build rule (raise SS multiplier by
+   `shutdown_weeks / avg_lead_time_weeks`). No silent failure.
+
+---
+
 ## Configuration
 
 ### Site tGNN
