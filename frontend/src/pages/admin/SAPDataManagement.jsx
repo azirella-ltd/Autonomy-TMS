@@ -1526,7 +1526,7 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
       } else {
         try {
           const resp = await api.get(`/sap-data/connections/${connId}/tables`);
-          allFiles = resp.data.map(t => t.sap_table_name || t.name);
+          allFiles = resp.data.map(t => t.table_name || t.sap_table_name || t.name);
         } catch { allFiles = []; }
       }
       setAllTables(allFiles);

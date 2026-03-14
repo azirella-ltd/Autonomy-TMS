@@ -1259,7 +1259,11 @@ class SAPDeploymentService:
         tables = []
 
         # Get standard tables for this system type
-        standard_tables = STANDARD_SAP_TABLES.get(config.system_type.value, {})
+        # ECC uses the same tables as S/4HANA (predecessor system)
+        sys_key = config.system_type.value
+        if sys_key in ("ecc", "bw") and sys_key not in STANDARD_SAP_TABLES:
+            sys_key = "s4hana"
+        standard_tables = STANDARD_SAP_TABLES.get(sys_key, {})
 
         for table_name, table_info in standard_tables.items():
             table_config = SAPTableConfig(
