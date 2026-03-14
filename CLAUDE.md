@@ -479,6 +479,7 @@ make proxy-logs
 - `user_directives.py`: "Talk to Me" directive capture (analyze/submit/list)
 - `provisioning.py`: Powell Cascade 13-step provisioning stepper
 - `email_signals.py`: GDPR-safe email signal ingestion and management
+- `agent_stochastic_params.py`: Per-agent stochastic parameters CRUD, pipeline config settings
 
 **Database Models** (`models/`):
 - `aws_sc_planning.py`: AWS SC planning entities (forecast, supply_plan, sourcing_rules, inv_policy, etc.)
@@ -486,6 +487,7 @@ make proxy-logs
 - `scenario.py`: Scenario, Period, ScenarioUserAction (simulation module)
 - `participant.py`: ScenarioUser, ScenarioUserRole, ScenarioUserPeriod (simulation module)
 - `agent_config.py`: AgentConfig, AgentScenarioConfig
+- `agent_stochastic_param.py`: AgentStochasticParam, TRM_PARAM_MAP, STOCHASTIC_CONFIG_DEFAULTS, pipeline config helpers
 - `tenant.py`: Tenant model (Autonomy organization/tenant)
 - `user.py`: User, Role, Permission
 - `rbac.py`: Role-Based Access Control
@@ -525,6 +527,7 @@ make proxy-logs
 - `KnowledgeBase.jsx`: RAG document management, vector search, embedding config
 - `SkillsDashboard.jsx`: Claude Skills monitoring (stats, RAG memory, escalation metrics)
 - `SAPDataManagement.jsx`: SAP integration (connections, field mapping, ingestion, insights)
+- `StochasticParamsEditor.jsx`: Per-agent stochastic parameters (TRM distributions, pipeline settings, source tracking)
 - `EmailSignalsDashboard.jsx`: GDPR-safe email signal ingestion (connections, signals, analytics, test)
 - `SyntheticDataWizard.jsx`: AI-guided company/data generation wizard
 - `ModelSetup.jsx`: Model architecture configuration

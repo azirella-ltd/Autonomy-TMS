@@ -871,6 +871,8 @@ The `TRM_PARAM_MAP` in `agent_stochastic_param.py` defines which parameters each
 
 Admin UI at `/admin/stochastic-params` provides grouped editing by TRM type with inline JSON editing, source badges, and reset-to-default.
 
+**Pipeline Settings** (per-config tuning): Each supply chain config carries a `stochastic_config` JSON column with 4 configurable thresholds — `min_observations` (per-group for fitting, default 10), `min_rows_sufficiency` (data sufficiency pre-check, default 50), `cv_lognormal_threshold` (lognormal vs normal cutoff, default 0.5), and `min_group_count` (SQL HAVING threshold, default 3). The Pipeline Settings panel in the admin UI allows system admins to override these per config. The SAP staging service reads these settings when populating agent stochastic params, using `min_observations` to determine whether SAP data is sufficient or should fall back to industry defaults. API: `GET/PUT /agent-stochastic-params/pipeline-config/{config_id}`.
+
 ---
 
 ## Summary: The Architecture in One Paragraph

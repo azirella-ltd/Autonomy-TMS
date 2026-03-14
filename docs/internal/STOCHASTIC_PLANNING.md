@@ -178,6 +178,25 @@ Each of the 11 TRM agent types uses a specific subset of stochastic variables. T
 
 **Implementation**: Model in `agent_stochastic_param.py`, service in `industry_defaults_service.py` (`apply_agent_stochastic_defaults()`), API at `/api/v1/agent-stochastic-params/`, UI at `/admin/stochastic-params`.
 
+### Stochastic Pipeline Settings
+
+Each supply chain config carries a `stochastic_config` JSON column with per-config tuning parameters that control SAP extraction thresholds and distribution fitting behavior. These are surfaced in the admin UI under the "Pipeline Settings" panel on the Stochastic Parameters page.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `min_observations` | 10 | Minimum observations per group required for distribution fitting. Groups below this are excluded. |
+| `min_rows_sufficiency` | 50 | Minimum total rows in source table for a metric to be extracted at all (data sufficiency pre-check). |
+| `cv_lognormal_threshold` | 0.5 | Coefficient of variation above which lognormal is preferred over normal distribution. |
+| `min_group_count` | 3 | Minimum SQL HAVING COUNT threshold per group in aggregation queries. |
+
+**Merge behavior**: Per-config overrides are merged with system defaults via `get_stochastic_config()`. Missing keys fall back to `STOCHASTIC_CONFIG_DEFAULTS`. Resetting a setting removes the override, restoring the system default.
+
+**API**:
+- `GET /api/v1/agent-stochastic-params/pipeline-config/{config_id}` — returns merged settings, labels, and defaults
+- `PUT /api/v1/agent-stochastic-params/pipeline-config/{config_id}` — partial update (only valid keys accepted)
+
+**SAP wiring**: The staging service reads `min_observations` from the config's `stochastic_config` when populating `agent_stochastic_params` from SAP data. The extraction script's `check_data_sufficiency()` uses `min_rows_sufficiency` for the pre-check. Metrics with insufficient data fall back to industry defaults.
+
 ---
 
 ## Operational vs. Control Variables

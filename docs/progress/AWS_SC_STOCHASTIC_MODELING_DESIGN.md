@@ -288,6 +288,23 @@ CREATE TABLE agent_stochastic_params (
 
 The `is_default` flag enables selective industry-change propagation: when a tenant's industry is updated, only rows with `is_default=TRUE` are refreshed. SAP-imported and manually edited values are preserved.
 
+#### Stochastic Pipeline Configuration
+
+The `supply_chain_configs` table includes a `stochastic_config` JSONB column for per-config pipeline tuning:
+
+```sql
+ALTER TABLE supply_chain_configs ADD COLUMN stochastic_config JSONB;
+-- Example: {"min_observations": 15, "min_rows_sufficiency": 100}
+```
+
+System defaults (in `STOCHASTIC_CONFIG_DEFAULTS`):
+- `min_observations`: 10 — minimum observations per group for distribution fitting
+- `min_rows_sufficiency`: 50 — minimum source table rows for data sufficiency pre-check
+- `cv_lognormal_threshold`: 0.5 — CV cutoff for lognormal vs normal
+- `min_group_count`: 3 — SQL HAVING COUNT threshold
+
+Per-config overrides are merged with defaults via `get_stochastic_config()`. The SAP staging service reads these settings when populating agent stochastic params. Admin UI at `/admin/stochastic-params` provides a Pipeline Settings panel for editing these values.
+
 ---
 
 ## Database Schema Changes

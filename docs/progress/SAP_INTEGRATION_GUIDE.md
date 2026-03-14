@@ -693,6 +693,25 @@ This separation allows different agents to use different distribution assumption
 **API**: `GET /api/v1/agent-stochastic-params/?config_id=<id>` lists all per-agent parameters.
 **UI**: Administration > Stochastic Parameters.
 
+### Pipeline Settings (Configurable Extraction Thresholds)
+
+SAP extraction thresholds are configurable per supply chain config via the `stochastic_config` JSON column on `supply_chain_configs`. This allows admins to tune how aggressively the system fits distributions from SAP transactional data.
+
+| Setting | Default | Controls |
+|---------|---------|----------|
+| `min_observations` | 10 | Minimum observations per group for distribution fitting |
+| `min_rows_sufficiency` | 50 | Minimum rows for data sufficiency pre-check (before expensive queries) |
+| `cv_lognormal_threshold` | 0.5 | CV cutoff for lognormal vs normal selection |
+| `min_group_count` | 3 | SQL HAVING COUNT per group in aggregation |
+
+**Data sufficiency pre-check**: Before running expensive aggregation queries, `check_data_sufficiency()` runs lightweight COUNT queries against each metric's source tables. Metrics with fewer than `min_rows_sufficiency` rows are skipped entirely — downstream agent stochastic params fall back to industry defaults and are marked `source='industry_default'`.
+
+**Admin UI**: Pipeline Settings panel at Administration > Stochastic Parameters. Shows current values, system defaults, and supports reset-to-defaults.
+
+**API**:
+- `GET /api/v1/agent-stochastic-params/pipeline-config/{config_id}`
+- `PUT /api/v1/agent-stochastic-params/pipeline-config/{config_id}`
+
 ---
 
 ## Plan Writing
