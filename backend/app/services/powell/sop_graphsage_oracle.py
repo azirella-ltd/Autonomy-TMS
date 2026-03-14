@@ -77,6 +77,8 @@ except ImportError:  # pragma: no cover
     SCIPY_AVAILABLE = False
     differential_evolution = None  # type: ignore[assignment]
 
+from app.services.powell.training_distributions import D
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -379,19 +381,22 @@ class SoPGraphSAGEOracle:
                 order_up_to = params.order_up_to_days / 7.0 * site.avg_weekly_demand
 
                 # Simulate weekly inventory positions
+                # Demand: Normal (approximately symmetric around forecast — CLT)
+                # Lead time: LogLogistic (right-skewed; delays more likely/extreme
+                #   than early deliveries — Lokad recommendation)
+                # Both use shared D samplers for cross-tier consistency.
                 inventory = site.on_hand_qty
                 for week in range(network.planning_horizon_weeks):
-                    # Realise demand
-                    demand = float(max(0.0, rng.normal(
-                        site.avg_weekly_demand,
-                        site.avg_weekly_demand * site.demand_variability_cv,
-                    )))
-
-                    # Realise supply (lead time jitter)
-                    lead_time = float(max(0.5, rng.normal(
-                        site.avg_lead_time_weeks,
-                        site.avg_lead_time_weeks * site.lead_time_variability_cv,
-                    )))
+                    demand = D.realised_demand(
+                        rng,
+                        mean=site.avg_weekly_demand,
+                        cv=site.demand_variability_cv,
+                    )
+                    lead_time = D.realised_lead_time_weeks(
+                        rng,
+                        mean=site.avg_lead_time_weeks,
+                        cv=site.lead_time_variability_cv,
+                    )
 
                     # Replenishment decision at reorder point
                     reorder_point = params.reorder_point_days / 7.0 * site.avg_weekly_demand
@@ -523,9 +528,6 @@ class SoPGraphSAGEOracle:
         rng = self.rng
         variance = {1: 0.15, 2: 0.40, 3: 0.75}[phase]
 
-        def jitter(v: float, pct: float = variance) -> float:
-            return float(max(0.0, v * (1.0 + rng.uniform(-pct, pct))))
-
         # Assign site types
         n_supply = max(1, num_sites // 5)
         n_demand = max(1, num_sites // 4)
@@ -548,16 +550,26 @@ class SoPGraphSAGEOracle:
             sites.append(SoPNetworkSite(
                 site_id=f"NET_{i:02d}",
                 master_type=mtype,
-                avg_weekly_demand=jitter(200.0) if is_demand else 0.0,
-                demand_variability_cv=float(rng.uniform(0.05, variance * 1.5)),
-                avg_lead_time_weeks=jitter(2.0) if mtype != "MARKET_DEMAND" else 0.0,
-                lead_time_variability_cv=float(rng.uniform(0.05, variance)),
-                on_hand_qty=jitter(800.0),
-                unit_cost=float(rng.uniform(5.0, 200.0)),
-                annual_holding_rate=float(rng.uniform(0.15, 0.35)),
-                stockout_cost_per_unit=float(rng.uniform(10.0, 100.0)),
-                ordering_cost=float(rng.uniform(50.0, 500.0)),
-                criticality_score=float(rng.uniform(0.2, 1.0)),
+                # Demand: Triangular jitter around 200/week (right-heavy: spikes > troughs)
+                avg_weekly_demand=D.avg_weekly_demand(rng, nominal=200.0, variance_pct=variance) if is_demand else 0.0,
+                # Demand CV: Triangular absolute, mode=0.25
+                demand_variability_cv=D.demand_variability_cv(rng, variance),
+                # Lead time: Triangular absolute, mode=2.0 weeks (right-skewed toward disruption)
+                avg_lead_time_weeks=D.avg_lead_time_weeks(rng, variance) if mtype != "MARKET_DEMAND" else 0.0,
+                # Lead time CV: Triangular absolute, mode=0.15
+                lead_time_variability_cv=D.lead_time_variability_cv(rng, variance),
+                # Inventory: Triangular jitter around 800 units (right-heavy: build-ups > drawdowns)
+                on_hand_qty=D.on_hand_inventory(rng, nominal=800.0, variance_pct=variance),
+                # Unit cost: Uniform [5, 200] — cross-industry range, no universal mode
+                unit_cost=D.unit_cost(rng),
+                # Holding rate: Triangular(0.15, 0.22, 0.35) — CSCMP benchmark
+                annual_holding_rate=D.annual_holding_rate(rng),
+                # Stockout cost: Triangular absolute, mode=$15/unit
+                stockout_cost_per_unit=D.stockout_cost_per_unit(rng, variance),
+                # Ordering cost: Uniform [50, 500] — EDI-automated to manual import
+                ordering_cost=D.ordering_cost(rng),
+                # Criticality: Uniform [0.2, 1.0] — synthetic property for training diversity
+                criticality_score=D.criticality_score(rng),
             ))
 
         supply_ids = [s.site_id for s in sites if s.master_type in ("MARKET_SUPPLY", "MANUFACTURER")]
@@ -570,10 +582,14 @@ class SoPGraphSAGEOracle:
             return SoPNetworkLane(
                 from_site=from_id,
                 to_site=to_id,
-                lead_time_weeks=jitter(2.0),
-                transport_cost_per_unit=float(rng.uniform(0.5, 20.0)),
-                reliability=float(rng.uniform(0.7 + 0.2 * (1 - variance), 0.99)),
-                capacity_units_per_week=jitter(1000.0),
+                # Lane lead time: Triangular absolute, mode=2.0 weeks
+                lead_time_weeks=D.avg_lead_time_weeks(rng, variance),
+                # Transport cost: Uniform [0.5, 20] — wider S&OP range includes import lanes
+                transport_cost_per_unit=D.sop_lane_transport_cost(rng),
+                # Reliability: Triangular(0.70+0.20(1-pct), 0.93, 0.99) — ATA benchmark
+                reliability=D.lane_reliability(rng, variance),
+                # Capacity: Triangular absolute, mode=400 units/week (scaled for S&OP networks)
+                capacity_units_per_week=D.lane_capacity_units(rng, variance) * 2.5,
             )
 
         # Supply → Inventory

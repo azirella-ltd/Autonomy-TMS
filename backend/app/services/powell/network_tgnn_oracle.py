@@ -528,11 +528,14 @@ class NetworkFlowOracle:
         while len(master_types) < num_sites:
             master_types.append("INVENTORY")
 
+        # Import shared distribution library — ensures cross-tier consistency
+        from app.services.powell.training_distributions import D
+
         def demand_profile() -> List[float]:
-            base = float(rng.uniform(50, 500))
-            noise = variance_pct
+            # Triangular base demand (mode at mid-range), Triangular per-period jitter
+            base = D.avg_weekly_demand(rng, nominal=150.0, variance_pct=variance_pct)
             return [
-                max(0.0, base * (1.0 + rng.uniform(-noise, noise)))
+                D.realised_demand(rng, mean=base, cv=D.demand_variability_cv(rng, variance_pct))
                 for _ in range(num_periods)
             ]
 
@@ -541,15 +544,16 @@ class NetworkFlowOracle:
             site_id = f"SITE_{i:02d}"
             is_source = mtype in ("MARKET_SUPPLY", "MANUFACTURER")
             fcst = demand_profile() if mtype == "MARKET_DEMAND" else [0.0] * num_periods
+            base_on_hand = 400.0
             sites.append(SiteSpec(
                 site_id=site_id,
                 master_type=mtype,
-                supply_capacity=float(rng.uniform(200, 2000)) if is_source else 0.0,
+                supply_capacity=D.site_supply_capacity_units(rng, variance_pct) if is_source else 0.0,
                 demand_forecast=fcst,
-                on_hand=float(rng.uniform(100, 800)),
-                safety_stock=float(rng.uniform(30, 200)),
-                holding_cost_per_unit=float(rng.uniform(0.1, 2.0)),
-                stockout_cost_per_unit=float(rng.uniform(5.0, 50.0)),
+                on_hand=D.on_hand_inventory(rng, nominal=base_on_hand, variance_pct=variance_pct),
+                safety_stock=D.on_hand_inventory(rng, nominal=base_on_hand * 0.25, variance_pct=variance_pct),
+                holding_cost_per_unit=D.annual_holding_rate(rng) * D.unit_cost(rng) / 52.0,
+                stockout_cost_per_unit=D.stockout_cost_per_unit(rng, variance_pct),
             ))
 
         # Generate lanes: sources → inventory → demand
@@ -559,12 +563,14 @@ class NetworkFlowOracle:
         demand_sites = [s.site_id for s in sites if s.master_type == "MARKET_DEMAND"]
 
         def make_lane(from_site: str, to_site: str) -> LaneSpec:
+            # Discrete Uniform for period-granularity lead time (exploring configurations)
+            # Triangular for capacity and cost (Triangular has a mode)
             return LaneSpec(
                 from_site=from_site,
                 to_site=to_site,
-                capacity=float(rng.uniform(100, 1000)) * (1.0 - variance_pct * 0.5),
+                capacity=D.lane_capacity_units(rng, variance_pct),
                 lead_time_periods=int(rng.integers(1, min(4, num_periods))),
-                cost_per_unit=float(rng.uniform(0.5, 10.0)),
+                cost_per_unit=D.lane_transport_cost(rng),
             )
 
         # Supply → Inventory (or Supply → Demand if no inventory)

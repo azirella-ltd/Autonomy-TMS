@@ -610,40 +610,20 @@ class MultiTRMCoordinationOracle:
         """
         Sample a random (but physically plausible) site state.
 
-        variance_pct controls how far state values deviate from their nominal values:
+        All stochastic variables use shared distributions from
+        training_distributions.D to ensure cross-tier consistency.
+
+        variance_pct controls scenario difficulty:
           0.15 = low variability (Phase 1)
           0.40 = moderate variability (Phase 2)
           0.75 = high variability / disruption scenarios (Phase 3)
         """
+        from app.services.powell.training_distributions import D
         rng = self.rng
 
-        def jitter(nominal: float, pct: float = variance_pct) -> float:
-            return float(max(0.0, nominal * (1.0 + rng.uniform(-pct, pct))))
-
-        on_hand     = jitter(1000.0)
-        target_dos  = jitter(14.0)
-        inv_dos     = jitter(target_dos)
-        sl_target   = rng.uniform(0.92, 0.99)
-        sl_actual   = jitter(sl_target, variance_pct * 0.5)
-
-        return SharedSiteState(
+        state = D.sample_site_state_dict(
+            rng=rng,
             site_key=self.site_key,
-            on_hand_inventory=on_hand,
-            committed_inventory=jitter(on_hand * 0.35),
-            wip=jitter(on_hand * 0.20),
-            production_capacity=jitter(500.0),
-            production_capacity_used=jitter(500.0 * 0.65),
-            transit_capacity=jitter(300.0),
-            budget=jitter(50_000.0),
-            supplier_capacity=jitter(800.0),
-            demand_forecast=jitter(70.0),
-            demand_variability_cv=float(rng.uniform(0.05, variance_pct * 1.5)),
-            service_level_actual=float(np.clip(sl_actual, 0.5, 1.0)),
-            service_level_target=float(sl_target),
-            inventory_dos=float(inv_dos),
-            target_dos=float(target_dos),
-            has_quality_hold=bool(rng.random() < variance_pct * 0.3),
-            has_maintenance_due=bool(rng.random() < variance_pct * 0.25),
-            has_atp_shortfall=bool(rng.random() < variance_pct * 0.35),
-            num_open_exceptions=int(rng.integers(0, max(1, int(variance_pct * 10)))),
+            variance_pct=variance_pct,
         )
+        return SharedSiteState(**state)
