@@ -33,7 +33,7 @@ import {
   Sliders,
 } from 'lucide-react';
 import { api } from '../../services/api';
-import { toast } from 'react-hot-toast';
+import { toast } from 'sonner';
 
 const SOURCE_BADGES = {
   industry_default: { label: 'Industry Default', color: 'bg-blue-100 text-blue-700' },
