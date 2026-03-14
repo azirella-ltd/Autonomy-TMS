@@ -516,7 +516,6 @@ class SAPIngestionMonitoringService:
         "/SAPAPO/PDS": 25, "/SAPAPO/SNPBV": 31,
     }
 
-    @staticmethod
     # Multi-part SAP table names that must NOT be split on underscore.
     # Longest match first to avoid "AGR" matching before "AGR_USERS".
     _MULTI_PART_TABLES = [
