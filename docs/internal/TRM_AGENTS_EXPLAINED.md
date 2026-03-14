@@ -1,6 +1,10 @@
 # TRM Agents Explained
 
 > **INTERNAL DOCUMENT** — Contains implementation details, file paths, and architecture specifications.
+>
+> **Related documents**:
+> - [TRM_DECISION_ALGORITHMS.md](TRM_DECISION_ALGORITHMS.md) — **Detailed heuristic algorithms, urgency formulas, and likelihood calculation for all 11 TRMs**
+> - [GNN_DECISION_ARCHITECTURE.md](GNN_DECISION_ARCHITECTURE.md) — **Site tGNN, Network tGNN, and S&OP GraphSAGE decision algorithms**
 
 ## Overview
 
@@ -956,3 +960,13 @@ Training runs every 12h at :50 via the relearning jobs scheduler.
 | `integration_service.py` | Powell framework integration orchestration |
 
 All files are under `backend/app/services/powell/` unless noted otherwise.
+
+---
+
+## See Also
+
+- [TRM_DECISION_ALGORITHMS.md](TRM_DECISION_ALGORITHMS.md) — Step-by-step heuristic decision algorithms, urgency formulas (with exact calculations), and likelihood derivation for all 11 TRMs
+- [GNN_DECISION_ARCHITECTURE.md](GNN_DECISION_ARCHITECTURE.md) — Site tGNN node features, edge list, inference algorithm, Network tGNN LP formulation, S&OP GraphSAGE DE objective and inference algorithm
+- [AGENT_TRAINING_LIFECYCLE.md](AGENT_TRAINING_LIFECYCLE.md) — Training pipeline, oracle-based data generation, stochastic variable audit by agent tier
+- [TRM_HIVE_ARCHITECTURE.md](TRM_HIVE_ARCHITECTURE.md) — Hive signal bus, urgency vector, 6-phase decision cycle, multi-site coordination stack
+- [ESCALATION_ARCHITECTURE.md](ESCALATION_ARCHITECTURE.md) — When TRM urgency/CDT risk triggers vertical escalation to Network tGNN or S&OP
