@@ -294,7 +294,7 @@ const StatusSummary = ({ steps }) => {
 
 // ─── Individual step row ─────────────────────────────────────────────────────
 
-const StepRow = ({ step, stepKey, runningStep, runningAll, onRun, onReset, tierColor }) => {
+const StepRow = ({ step, stepKey, runningStep, runningAll, onRun, onReset, tierColor, configId }) => {
   const [expanded, setExpanded] = useState(false);
   const meta = STEP_META[stepKey] || {};
   const isRunning = runningStep === stepKey || (runningAll && step.status === 'running');
@@ -421,6 +421,9 @@ const StepRow = ({ step, stepKey, runningStep, runningAll, onRun, onReset, tierC
               {step.completed_at && <span>Completed: {new Date(step.completed_at).toLocaleString()}</span>}
               {!step.completed_at && meta.estimate && <span>Estimated: {meta.estimate}</span>}
             </div>
+            {stepKey === 'conformal' && step.status === 'completed' && configId && (
+              <CDTReadinessPanel configId={configId} />
+            )}
           </div>
         </div>
       )}
@@ -430,7 +433,7 @@ const StepRow = ({ step, stepKey, runningStep, runningAll, onRun, onReset, tierC
 
 // ─── Tier section ────────────────────────────────────────────────────────────
 
-const TierSection = ({ tier, stepMap, runningStep, runningAll, onRun, onReset }) => {
+const TierSection = ({ tier, stepMap, runningStep, runningAll, onRun, onReset, configId }) => {
   const colors = TIER_COLORS[tier.color];
   const TierIcon = tier.Icon;
   const tierSteps = tier.steps.map(k => stepMap[k]).filter(Boolean);
@@ -479,10 +482,69 @@ const TierSection = ({ tier, stepMap, runningStep, runningAll, onRun, onReset })
           return (
             <StepRow key={stepKey} step={step} stepKey={stepKey}
               runningStep={runningStep} runningAll={runningAll}
-              onRun={onRun} onReset={onReset} tierColor={tier.color} />
+              onRun={onRun} onReset={onReset} tierColor={tier.color}
+              configId={configId} />
           );
         })}
       </div>
+    </div>
+  );
+};
+
+// ─── CDT readiness indicator (conformal decision theory) ─────────────────────
+
+const CDTReadinessPanel = ({ configId }) => {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!configId) return;
+    setLoading(true);
+    api.get('/conformal-prediction/cdt/readiness')
+      .then(r => setData(r.data))
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, [configId]);
+
+  if (loading) return <div className="text-[10px] text-muted-foreground">Loading CDT status...</div>;
+  if (!data) return null;
+
+  const { summary, message } = data;
+  const allCalibrated = summary.calibrated === summary.total;
+  const hasPartial = summary.partial > 0;
+
+  return (
+    <div className={cn(
+      'rounded-md border p-2.5 space-y-2 text-[11px]',
+      allCalibrated
+        ? 'bg-emerald-500/5 border-emerald-500/20'
+        : 'bg-amber-500/5 border-amber-500/20',
+    )}>
+      <div className="flex items-center gap-2">
+        {allCalibrated ? (
+          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 flex-shrink-0" />
+        ) : (
+          <Info className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" />
+        )}
+        <span className={allCalibrated ? 'text-emerald-700 dark:text-emerald-400 font-medium' : 'text-amber-700 dark:text-amber-400 font-medium'}>
+          CDT Coverage: {summary.calibrated}/{summary.total} TRM agents
+        </span>
+      </div>
+      <p className="text-muted-foreground leading-relaxed pl-5">{message}</p>
+      {!allCalibrated && (
+        <div className="flex flex-wrap gap-1.5 pl-5">
+          {data.trm_types?.filter(t => t.status !== 'calibrated').map(t => (
+            <span key={t.trm_type} className={cn(
+              'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px]',
+              t.status === 'partial'
+                ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
+                : 'bg-muted text-muted-foreground',
+            )}>
+              {t.label}: {t.calibration_pairs}/{t.min_required}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -735,7 +797,8 @@ const ProvisioningStepper = ({ configId, configName, isOpen, onClose }) => {
                   {idx > 0 && <TierConnector fromDone={prevDone} toDone={thisDone} />}
                   <TierSection tier={tier} stepMap={stepMap}
                     runningStep={runningStep} runningAll={runningAll}
-                    onRun={handleRunStep} onReset={handleResetStep} />
+                    onRun={handleRunStep} onReset={handleResetStep}
+                    configId={configId} />
                 </div>
               );
             })}

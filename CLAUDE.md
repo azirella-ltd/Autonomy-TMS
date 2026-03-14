@@ -477,7 +477,7 @@ make proxy-logs
 - `auth.py`: Authentication (login, register, MFA)
 - `websocket.py`: Real-time scenario updates
 - `user_directives.py`: "Talk to Me" directive capture (analyze/submit/list)
-- `provisioning.py`: Powell Cascade 13-step provisioning stepper
+- `provisioning.py`: Powell Cascade 14-step provisioning stepper
 - `email_signals.py`: GDPR-safe email signal ingestion and management
 - `agent_stochastic_params.py`: Per-agent stochastic parameters CRUD, pipeline config settings
 
@@ -775,7 +775,7 @@ See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
 
 **Directive & Signal Tables**:
 - `user_directives`: Natural language directive capture, LLM parsing, Powell routing, effectiveness tracking
-- `config_provisioning_status`: 13-step provisioning pipeline with dependency tracking
+- `config_provisioning_status`: 14-step provisioning pipeline with dependency tracking
 - `email_connections`: IMAP/Gmail inbox configurations per tenant
 - `email_signals`: GDPR-safe supply chain signals extracted from emails (no PII stored)
 
@@ -1086,14 +1086,14 @@ A persistent "Talk to me" input in the TopNavbar accepts natural language direct
 - Analysts → Layer 1: Individual TRM (specific execution decision)
 
 **Provisioning Stepper** (replaces warm-start button):
-13-step Powell Cascade warm-start pipeline with dependency tracking:
-warm_start → sop_graphsage → cfa_optimization → lgbm_forecast → demand_tgnn → supply_tgnn → inventory_tgnn → trm_training → supply_plan → decision_seed → site_tgnn → conformal → briefing
+14-step Powell Cascade warm-start pipeline with dependency tracking:
+warm_start → sop_graphsage → cfa_optimization → lgbm_forecast → demand_tgnn → supply_tgnn → inventory_tgnn → trm_training → supply_plan → rccp_validation → decision_seed → site_tgnn → conformal → briefing
 
 **Implementation Files**:
 - `backend/app/services/directive_service.py` — LLM parsing, gap detection, routing
 - `backend/app/api/endpoints/user_directives.py` — Analyze/submit/list API
 - `backend/app/models/user_directive.py` — UserDirective + ConfigProvisioningStatus models
-- `backend/app/services/provisioning_service.py` — 13-step pipeline orchestrator
+- `backend/app/services/provisioning_service.py` — 14-step pipeline orchestrator
 - `backend/app/api/endpoints/provisioning.py` — Provisioning stepper API
 - `frontend/src/components/TopNavbar.jsx` — Talk to me input + clarification panel
 - `frontend/src/components/supply-chain-config/ProvisioningStepper.jsx` — Stepper modal
@@ -1492,7 +1492,7 @@ The platform has been refactored from Beer Game-centric to AWS SC-first. See [AR
 - ✅ Executive Strategy Briefing (LLM-synthesized briefings with follow-up Q&A). See [docs/EXECUTIVE_BRIEFING.md](docs/EXECUTIVE_BRIEFING.md)
 - ✅ Beer Game repositioned as Digital Twin / Learning Tenant module (not primary focus)
 - ✅ "Talk to Me" directive capture with smart clarification flow (two-phase: analyze→clarify→submit)
-- ✅ Provisioning Stepper (13-step Powell Cascade warm-start pipeline with dependency tracking)
+- ✅ Provisioning Stepper (14-step Powell Cascade warm-start pipeline with dependency tracking)
 - ✅ Email Signal Intelligence (GDPR-safe email ingestion, PII scrubbing, LLM classification, TRM routing)
 
 ---

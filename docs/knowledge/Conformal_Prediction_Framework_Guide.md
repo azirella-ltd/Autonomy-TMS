@@ -167,6 +167,90 @@ Uses conformal intervals to generate scenarios:
 - `GET /api/v1/conformal/status` — Coverage, staleness, drift metrics
 - `POST /api/v1/conformal/recalibrate` — Force emergency recalibration
 
+## Two-Level Conformal Prediction Architecture
+
+Conformal prediction operates at **two complementary levels** across the platform:
+
+### Level 1 — Forecast-Level Conformal Prediction (Intervals)
+
+**Scope**: Demand, lead time, yield, price, service level forecasts
+**Component**: `ConformalOrchestrator` + `SupplyChainConformalSuite`
+**Output**: Prediction intervals with formal coverage guarantee (e.g., "demand will be 80-120 units with 90% coverage")
+**Used by**: Inventory target calculation (`conformal` and `sl_conformal_fitted` policies), supply plan generation, ATP promising, scenario generation
+
+This level provides distribution-free bounds on **input variables** that feed into planning decisions. It replaces assumed-Normal z-score intervals with empirically calibrated intervals.
+
+### Level 2 — Decision-Level CDT (Risk Bounds)
+
+**Scope**: All 11 TRM execution-level decisions
+**Component**: `ConformalDecisionWrapper` + `CDTCalibrationService`
+**Output**: Risk bound per decision: `risk_bound = P(loss > threshold)` with distribution-free guarantee
+**Used by**: TRM decision responses, escalation routing (Skills vs autonomous), Decision Stream urgency ranking
+
+CDT requires a **measurable binary outcome** (decision good or bad) with a **computable loss function**. It applies specifically to execution-level decisions where:
+- Each decision has a discrete, observable outcome
+- Loss can be computed after a feedback horizon (ATP: 4h, PO: 7d, buffer: 14d)
+- Calibration pairs accumulate from `powell_*_decisions` outcome columns
+
+### Why CDT Does NOT Apply to Upper Planning Layers
+
+| Layer | Decision Type | Why Forecast-Level CP (not CDT) |
+|-------|--------------|--------------------------------|
+| S&OP GraphSAGE (weekly) | Policy parameters θ | Optimization outputs, not discrete decisions. CFA uses Differential Evolution over Monte Carlo scenarios — uncertainty handled by scenario ensemble. |
+| Execution tGNN (daily) | Priority allocations | Continuous-valued vectors, not binary accept/reject. tGNN outputs confidence scores instead. |
+| Site tGNN (hourly) | Urgency modulation | Intermediate signals, not final decisions. Downstream TRM carries CDT bound. |
+| MPS/MRP/Supply Plan | Planning decisions | Use forecast-level CP intervals on inputs. Planning commit workflow has own status model (PROPOSED→REVIEWED→ACCEPTED). |
+
+### CDT Cold Start Behavior
+
+When a TRM type lacks sufficient calibration data (< 30 decision-outcome pairs):
+- `risk_bound` defaults to **0.50** (maximum uncertainty)
+- `escalation_recommended` is set to **True**
+- This forces escalation to Claude Skills or human review
+- Conservative behavior ensures safety during ramp-up
+
+The CDT Readiness Banner (`CDTReadinessBanner.jsx`) shows calibration status on the Decision Stream page. The Provisioning Stepper shows per-TRM calibration status after the conformal step completes.
+
+### CDT Calibration Thresholds
+
+Three thresholds govern different calibration stages:
+
+| Component | Threshold | Purpose |
+|-----------|-----------|---------|
+| `ConformalOrchestrator` | 10 observations | Minimum for hydrating forecast-level suites from `powell_belief_state` |
+| `CDTCalibrationService` | 30 pairs | Full CDT calibration for a TRM type |
+| `ConformalDecisionWrapper` | 5 losses | Conservative bounds computation (pre-calibration fallback) |
+
+## Multi-Tenant Isolation
+
+**Critical requirement**: Conformal prediction calibration data MUST be tenant-scoped.
+
+### Forecast-Level (ConformalOrchestrator)
+
+- `hydrate_from_db(db, tenant_id)` filters `PowellBeliefState` by `tenant_id`
+- `on_forecasts_loaded()` queries `Forecast` with `tenant_id` filter
+- `_match_forecast()` filters by `tenant_id`
+- `get_conformal_suite(tenant_id)` returns tenant-specific suite instances (NOT global singletons)
+
+### Decision-Level (CDT)
+
+- `get_cdt_registry(tenant_id)` returns per-tenant `ConformalDecisionRegistry` — isolated calibration data
+- `CDTCalibrationService(db, tenant_id)` extracts pairs only from configs belonging to that tenant
+- `_run_cdt_calibration()` in relearning_jobs runs per-tenant (iterates all tenants)
+- `SiteAgent.connect_trm()` replaces global CDT wrapper with tenant-scoped wrapper
+
+### Implementation Files
+
+| File | Tenant Scoping |
+|------|---------------|
+| `conformal_prediction/conformal_decision.py` | Per-tenant CDT registries via `get_cdt_registry(tenant_id)` |
+| `conformal_prediction/suite.py` | Per-tenant suite via `get_conformal_suite(tenant_id)` |
+| `conformal_orchestrator.py` | `tenant_id` parameter on `hydrate_from_db()`, forecast queries |
+| `powell/cdt_calibration_service.py` | `tenant_id` in constructor, `_get_tenant_config_ids()` for filtering |
+| `powell/relearning_jobs.py` | `_run_cdt_calibration()` iterates all tenants |
+| `powell/site_agent.py` | `connect_trm()` wires tenant-scoped CDT wrapper |
+| `provisioning_service.py` | `_step_conformal()` resolves tenant_id, passes to hydration and CDT batch |
+
 ## Relationship to Other Concepts
 
 - **Safety Stock Calculation**: Conformal intervals replace z-score × σ with distribution-free bounds
@@ -175,3 +259,4 @@ Uses conformal intervals to generate scenarios:
 - **Powell Belief State**: Conformal quantile IS the belief state uncertainty measure
 - **TRM Input Features**: Interval widths feed into TRM decision context
 - **Stochastic Programming**: Conformal bounds define scenario generation ranges
+- **Admin Overrides**: `agent_stochastic_params` distributions (SAP-imported or manual) can override fitted distributions in `sl_fitted` safety stock policy

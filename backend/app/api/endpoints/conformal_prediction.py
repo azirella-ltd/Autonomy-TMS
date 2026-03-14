@@ -748,6 +748,102 @@ def get_suite_status(db: Session = Depends(get_db)):
     }
 
 
+@router.get("/cdt/readiness")
+def get_cdt_readiness(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Get CDT (Conformal Decision Theory) calibration readiness per TRM type.
+
+    Returns per-agent calibration status so the UI can indicate which TRMs
+    have conformal coverage guarantees and which are still accumulating data.
+    Tenant-scoped: only shows calibration for the current user's tenant.
+
+    Status values:
+    - calibrated: 30+ decision-outcome pairs, full coverage guarantee active
+    - partial: 1-29 pairs, accumulating (auto-calibrates at threshold)
+    - uncalibrated: 0 pairs, decisions use conservative risk_bound=0.50
+    """
+    from ...services.conformal_prediction.conformal_decision import get_cdt_registry
+
+    tenant_id = getattr(current_user, 'tenant_id', None)
+    registry = get_cdt_registry(tenant_id=tenant_id)
+    diagnostics = registry.get_all_diagnostics()
+
+    # All 11 TRM types
+    all_trm_types = [
+        "atp", "inventory_rebalancing", "po_creation", "order_tracking",
+        "mo_execution", "to_execution", "quality_disposition",
+        "maintenance_scheduling", "subcontracting", "forecast_adjustment",
+        "inventory_buffer",
+    ]
+
+    trm_labels = {
+        "atp": "ATP Executor",
+        "inventory_rebalancing": "Inventory Rebalancing",
+        "po_creation": "PO Creation",
+        "order_tracking": "Order Tracking",
+        "mo_execution": "MO Execution",
+        "to_execution": "TO Execution",
+        "quality_disposition": "Quality Disposition",
+        "maintenance_scheduling": "Maintenance Scheduling",
+        "subcontracting": "Subcontracting",
+        "forecast_adjustment": "Forecast Adjustment",
+        "inventory_buffer": "Inventory Buffer",
+    }
+
+    min_required = 30  # ConformalDecisionWrapper.MIN_CALIBRATION_SIZE
+
+    results = []
+    calibrated_count = 0
+    partial_count = 0
+
+    for trm_type in all_trm_types:
+        diag = diagnostics.get(trm_type)
+        if diag and diag.get("calibration_size", 0) >= min_required:
+            status = "calibrated"
+            calibrated_count += 1
+            pairs = diag["calibration_size"]
+            timestamp = diag.get("calibration_timestamp")
+        elif diag and diag.get("calibration_size", 0) > 0:
+            status = "partial"
+            partial_count += 1
+            pairs = diag["calibration_size"]
+            timestamp = None
+        else:
+            status = "uncalibrated"
+            pairs = 0
+            timestamp = None
+
+        results.append({
+            "trm_type": trm_type,
+            "label": trm_labels.get(trm_type, trm_type),
+            "status": status,
+            "calibration_pairs": pairs,
+            "min_required": min_required,
+            "calibrated_at": timestamp,
+            "loss_stats": diag.get("loss_stats") if diag else None,
+        })
+
+    return {
+        "trm_types": results,
+        "summary": {
+            "total": len(all_trm_types),
+            "calibrated": calibrated_count,
+            "partial": partial_count,
+            "uncalibrated": len(all_trm_types) - calibrated_count - partial_count,
+        },
+        "ready": calibrated_count == len(all_trm_types),
+        "message": (
+            "All TRM agents have conformal coverage guarantees"
+            if calibrated_count == len(all_trm_types)
+            else f"{calibrated_count}/{len(all_trm_types)} TRM agents calibrated. "
+                 f"Decisions without calibration use conservative risk bounds (risk_bound=0.50) "
+                 f"which may trigger more escalations to human review."
+        ),
+    }
+
+
 @router.post("/suite/scenarios/generate")
 def generate_conformal_scenarios(
     request: GenerateScenariosRequest,

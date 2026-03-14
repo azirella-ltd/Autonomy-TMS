@@ -268,24 +268,43 @@ def _run_skill_outcome_collection() -> None:
 
 
 def _run_cdt_calibration() -> None:
-    """Incrementally calibrate CDT wrappers from newly collected outcomes."""
+    """Incrementally calibrate CDT wrappers from newly collected outcomes.
+
+    Runs per-tenant to ensure calibration data isolation — each tenant's
+    decisions only calibrate that tenant's CDT wrappers.
+    """
     from app.db.session import SessionLocal
 
-    logger.info("Starting scheduled CDT calibration")
+    logger.info("Starting scheduled CDT calibration (per-tenant)")
 
     db = SessionLocal()
     try:
         from app.services.powell.cdt_calibration_service import CDTCalibrationService
+        from app.models.tenant import Tenant
 
-        service = CDTCalibrationService(db)
-        stats = service.calibrate_incremental()
-        total_added = sum(s.get("added", 0) for s in stats.values())
-        calibrated = sum(
-            1 for s in stats.values() if s.get("is_calibrated", False)
-        )
+        tenants = db.query(Tenant.id).all()
+        total_added_all = 0
+
+        for (tenant_id,) in tenants:
+            try:
+                service = CDTCalibrationService(db, tenant_id=tenant_id)
+                stats = service.calibrate_incremental()
+                total_added = sum(s.get("added", 0) for s in stats.values())
+                calibrated = sum(
+                    1 for s in stats.values() if s.get("is_calibrated", False)
+                )
+                total_added_all += total_added
+                if total_added > 0:
+                    logger.info(
+                        f"CDT calibration tenant {tenant_id}: {total_added} new pairs, "
+                        f"{calibrated}/11 agents calibrated"
+                    )
+            except Exception as e:
+                logger.warning(f"CDT calibration failed for tenant {tenant_id}: {e}")
+
         logger.info(
-            f"CDT calibration: {total_added} new pairs, "
-            f"{calibrated}/11 agents calibrated"
+            f"CDT calibration complete: {total_added_all} total new pairs "
+            f"across {len(tenants)} tenants"
         )
     except Exception as e:
         logger.error(f"CDT calibration job failed: {e}")

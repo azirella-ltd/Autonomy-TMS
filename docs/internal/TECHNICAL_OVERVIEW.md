@@ -274,6 +274,16 @@ Decisions with both low urgency and low likelihood are abandoned automatically u
 
 Abandoned decisions are not deleted. They are recorded with their abandon reason and available on audit and training pages — useful for evaluating agent calibration and identifying patterns where the agent consistently generates low-value decisions.
 
+### Two-Level Conformal Prediction Architecture
+
+The confidence engine relies on two complementary levels of conformal prediction:
+
+1. **Forecast-level CP** (intervals): Distribution-free prediction intervals on demand, lead time, yield, price, and service level. These feed into planning decisions — safety stock calculation, supply plan generation, and ATP promising. Managed by `ConformalOrchestrator` + `SupplyChainConformalSuite`.
+
+2. **Decision-level CDT** (risk bounds): Every TRM decision carries `risk_bound = P(loss > threshold)` calibrated from historical decision-outcome pairs. CDT applies specifically to execution-level decisions with discrete, observable outcomes. Upper planning layers (S&OP, tGNN, MPS/MRP) use forecast-level CP on their inputs rather than CDT on their outputs, because they produce continuous/multi-dimensional outputs without binary loss semantics.
+
+Both levels are **tenant-scoped** — calibration data from one tenant never leaks to another. Per-tenant CDT registries and conformal suites are created lazily and isolated. Uncalibrated agents (< 30 decision-outcome pairs) default to maximum uncertainty (`risk_bound=0.50`), forcing escalation until sufficient data accumulates. The CDT Readiness Banner on the Decision Stream and the Provisioning Stepper's conformal step show calibration status per TRM type.
+
 ---
 
 ## Part 4: The Learning Loop — How the System Gets Smarter

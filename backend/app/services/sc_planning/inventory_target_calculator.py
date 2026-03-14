@@ -3,7 +3,7 @@ Inventory Target Calculator - Step 2 of SC Planning Process
 
 Calculates target inventory levels based on inventory policies.
 
-Supports 7 safety stock policy types:
+Supports 8 safety stock policy types:
 1. abs_level - Absolute level (fixed quantity)
 2. doc_dem - Days of coverage (demand-based)
 3. doc_fcst - Days of coverage (forecast-based)
@@ -11,7 +11,8 @@ Supports 7 safety stock policy types:
 5. sl_fitted - Distribution-aware service level (fits Weibull/Lognormal/Gamma
    to demand and lead time data, uses Monte Carlo when distributions are non-Normal)
 6. conformal - Conformal prediction-based (distribution-free guarantees)
-7. econ_optimal - Marginal economic return (Lokad prioritized ordering):
+7. sl_conformal_fitted - Hybrid fitted Monte Carlo + conformal floor
+8. econ_optimal - Marginal economic return (Lokad prioritized ordering):
    stock one more unit only when expected stockout cost > holding cost
 
 King Formula (sl policy):
@@ -345,7 +346,18 @@ class InventoryTargetCalculator:
             # assuming Normal (Kravanja 2026: "Stop Using Average and Standard
             # Deviation for Your Features"). Uses Monte Carlo convolution when
             # data is non-Normal; falls back to King Formula otherwise.
+            #
+            # Admin-curated overrides from agent_stochastic_params take priority
+            # over re-fitting from raw data (source: sap_import or manual_edit).
             service_level = float(policy.service_level or 0.95)
+
+            # Check for admin-curated distribution overrides
+            demand_override_dist = await self._get_stochastic_override(
+                "demand_variability", site_id
+            )
+            lt_override_dist = await self._get_stochastic_override(
+                "supplier_lead_time", site_id
+            )
 
             # Get historical data arrays
             demand_data = await self._get_demand_history_array(
@@ -356,34 +368,26 @@ class InventoryTargetCalculator:
             )
             lead_time = await self.get_replenishment_lead_time(product_id, site_id)
 
-            # Fit distributions
+            # Use overrides if available, otherwise fit from data
             from ..stochastic.distribution_fitter import DistributionFitter
             fitter = DistributionFitter()
 
+            demand_dist = demand_override_dist
+            lt_dist = lt_override_dist
+
             demand_report = None
             lt_report = None
-            if len(demand_data) >= fitter.MIN_SAMPLES_FOR_FIT:
+            if demand_dist is None and len(demand_data) >= fitter.MIN_SAMPLES_FOR_FIT:
                 demand_report = fitter.fit(demand_data, variable_type="demand")
-            if len(lead_time_data) >= fitter.MIN_SAMPLES_FOR_FIT:
+            if lt_dist is None and len(lead_time_data) >= fitter.MIN_SAMPLES_FOR_FIT:
                 lt_report = fitter.fit(lead_time_data, variable_type="lead_time")
 
-            # Check if both are Normal-like (KS p-value > 0.05 for Normal)
-            demand_is_normal = self._is_normal_like(demand_report)
-            lt_is_normal = self._is_normal_like(lt_report)
-
-            if demand_is_normal and lt_is_normal:
-                # Both Normal-like: use standard King Formula
-                z_score = self.get_z_score(service_level)
-                avg_d = float(np.mean(demand_data)) if len(demand_data) > 0 else 0.0
-                std_d = float(np.std(demand_data, ddof=1)) if len(demand_data) > 1 else 0.0
-                std_lt = float(np.std(lead_time_data, ddof=1)) if len(lead_time_data) > 1 else lead_time * 0.25
-                demand_var = lead_time * (std_d ** 2)
-                lt_var = (avg_d ** 2) * (std_lt ** 2)
-                safety_stock = z_score * math.sqrt(demand_var + lt_var)
-            else:
-                # Non-Normal: Monte Carlo convolution of fitted distributions
-                demand_dist = demand_report.best.distribution if demand_report else None
-                lt_dist = lt_report.best.distribution if lt_report else None
+            # If we have override distributions, always use Monte Carlo
+            if demand_dist is not None or lt_dist is not None:
+                if demand_dist is None and demand_report:
+                    demand_dist = demand_report.best.distribution
+                if lt_dist is None and lt_report:
+                    lt_dist = lt_report.best.distribution
                 safety_stock = self._monte_carlo_safety_stock(
                     demand_dist=demand_dist,
                     lt_dist=lt_dist,
@@ -391,6 +395,31 @@ class InventoryTargetCalculator:
                     avg_lead_time=lead_time,
                     service_level=service_level,
                 )
+            else:
+                # No overrides — check if both are Normal-like (KS p-value > 0.05)
+                demand_is_normal = self._is_normal_like(demand_report)
+                lt_is_normal = self._is_normal_like(lt_report)
+
+                if demand_is_normal and lt_is_normal:
+                    # Both Normal-like: use standard King Formula
+                    z_score = self.get_z_score(service_level)
+                    avg_d = float(np.mean(demand_data)) if len(demand_data) > 0 else 0.0
+                    std_d = float(np.std(demand_data, ddof=1)) if len(demand_data) > 1 else 0.0
+                    std_lt = float(np.std(lead_time_data, ddof=1)) if len(lead_time_data) > 1 else lead_time * 0.25
+                    demand_var = lead_time * (std_d ** 2)
+                    lt_var = (avg_d ** 2) * (std_lt ** 2)
+                    safety_stock = z_score * math.sqrt(demand_var + lt_var)
+                else:
+                    # Non-Normal: Monte Carlo convolution of fitted distributions
+                    demand_dist = demand_report.best.distribution if demand_report else None
+                    lt_dist = lt_report.best.distribution if lt_report else None
+                    safety_stock = self._monte_carlo_safety_stock(
+                        demand_dist=demand_dist,
+                        lt_dist=lt_dist,
+                        avg_daily_demand=float(np.mean(demand_data)) if len(demand_data) > 0 else 0.0,
+                        avg_lead_time=lead_time,
+                        service_level=service_level,
+                    )
 
             return safety_stock
 
@@ -846,6 +875,54 @@ class InventoryTargetCalculator:
                 )
             )
             return result.scalar_one_or_none()
+
+    async def _get_stochastic_override(
+        self, param_name: str, site_id: str
+    ):
+        """Look up admin-curated distribution from agent_stochastic_params.
+
+        Returns a Distribution object if an override exists (source != industry_default
+        or is_default == False), otherwise None. This allows SAP-imported or
+        manually-edited distributions to take priority over re-fitting from raw data.
+        """
+        from app.models.agent_stochastic_param import AgentStochasticParam
+        async with SessionLocal() as db:
+            # Look for site-specific override first, then config-wide (site_id=NULL)
+            result = await db.execute(
+                select(AgentStochasticParam).filter(
+                    AgentStochasticParam.config_id == self.config_id,
+                    AgentStochasticParam.tenant_id == self.tenant_id,
+                    AgentStochasticParam.param_name == param_name,
+                    AgentStochasticParam.is_default == False,  # noqa: E712
+                ).order_by(
+                    # Prefer site-specific over config-wide
+                    AgentStochasticParam.site_id.desc().nullslast()
+                ).limit(2)
+            )
+            rows = result.scalars().all()
+
+            # Prefer site-specific match
+            match = None
+            site_id_int = int(site_id) if site_id and str(site_id).isdigit() else None
+            for row in rows:
+                if row.site_id is not None and row.site_id == site_id_int:
+                    match = row
+                    break
+            if match is None and rows:
+                match = rows[0]  # config-wide fallback
+
+            if match is None or not match.distribution:
+                return None
+
+            try:
+                from app.services.stochastic.distributions import Distribution
+                return Distribution.from_dict(match.distribution)
+            except Exception:
+                logger.warning(
+                    f"Failed to parse stochastic override for {param_name} "
+                    f"config={self.config_id} site={site_id}"
+                )
+                return None
 
     async def _get_demand_history_array(
         self, product_id: str, site_id: str, start_date: date, lookback_days: int

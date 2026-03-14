@@ -191,10 +191,46 @@ class ProvisioningService:
         return {"status": "ok", "note": f"Step {step_key} placeholder — not yet implemented"}
 
     async def _step_warm_start(self, config_id: int) -> dict:
-        """Step 1: Generate historical demand data."""
+        """Step 1: Generate historical demand data.
+
+        Also ensures geo-based transport lead times and industry stochastic
+        defaults are in place before any model training begins.
+        """
         from app.db.session import sync_session_factory
         db = sync_session_factory()
         try:
+            # Ensure stochastic defaults and geo lead times are populated
+            # before generating warm-start data (idempotent — skips if present)
+            from app.services.geocoding_service import calculate_geo_lead_times_for_config
+            from app.services.industry_defaults_service import (
+                apply_industry_defaults_to_config,
+                apply_agent_stochastic_defaults,
+            )
+            from app.models.supply_chain_config import SupplyChainConfig
+            from app.models.tenant import Tenant
+
+            config = db.query(SupplyChainConfig).filter(
+                SupplyChainConfig.id == config_id,
+            ).first()
+            if config:
+                tenant = db.query(Tenant).filter(Tenant.id == config.tenant_id).first()
+                industry_key = (
+                    tenant.industry.value
+                    if tenant and tenant.industry
+                    else None
+                )
+                if industry_key:
+                    apply_industry_defaults_to_config(db, config_id, industry_key)
+                    apply_agent_stochastic_defaults(
+                        db, config_id, config.tenant_id, industry_key,
+                    )
+                geo_result = calculate_geo_lead_times_for_config(db, config_id)
+                if geo_result["updated_lanes"] > 0:
+                    logger.info(
+                        "Warm start: applied geo lead times to %d lanes for config %d",
+                        geo_result["updated_lanes"], config_id,
+                    )
+
             from app.services.warm_start_generator import WarmStartGenerator
             result = WarmStartGenerator(db).generate_for_config(config_id, weeks=52)
             db.commit()
@@ -678,12 +714,62 @@ class ProvisioningService:
         return {"status": "ok", "sites_trained": result.sites_trained}
 
     async def _step_conformal(self, config_id: int) -> dict:
-        """Step 9: Conformal calibration."""
+        """Step 9: Conformal calibration (tenant-scoped)."""
         try:
             from app.services.conformal_orchestrator import ConformalOrchestrator
+            from sqlalchemy import text
+
+            # Resolve tenant_id from config_id
+            row = await self.db.execute(
+                text("SELECT tenant_id FROM supply_chain_configs WHERE id = :c"),
+                {"c": config_id},
+            )
+            tenant_row = row.first()
+            tenant_id = tenant_row[0] if tenant_row else None
+
             orchestrator = ConformalOrchestrator.get_instance()
-            count = await orchestrator.hydrate_from_db(self.db)
-            return {"status": "ok", "predictors_hydrated": count}
+            count = await orchestrator.hydrate_from_db(self.db, tenant_id=tenant_id)
+
+            # CDT batch calibration (tenant-scoped)
+            try:
+                from app.db.session import sync_session_factory
+                from app.services.powell.cdt_calibration_service import CDTCalibrationService
+                sync_db = sync_session_factory()
+                try:
+                    cdt_svc = CDTCalibrationService(sync_db, tenant_id=tenant_id)
+                    cdt_svc.calibrate_all()
+                finally:
+                    sync_db.close()
+            except Exception as cdt_err:
+                logger.debug("CDT batch calibration: %s", cdt_err)
+
+            # Include CDT readiness summary
+            cdt_summary = {"calibrated": 0, "partial": 0, "uncalibrated": 0}
+            try:
+                from app.services.conformal_prediction.conformal_decision import get_cdt_registry
+                registry = get_cdt_registry(tenant_id=tenant_id)
+                diagnostics = registry.get_all_diagnostics()
+                for _agent_type, diag in diagnostics.items():
+                    size = diag.get("calibration_size", 0)
+                    if size >= 30:
+                        cdt_summary["calibrated"] += 1
+                    elif size > 0:
+                        cdt_summary["partial"] += 1
+                    else:
+                        cdt_summary["uncalibrated"] += 1
+                # Count unregistered agents as uncalibrated
+                all_trm = 11
+                registered = len(diagnostics)
+                if registered < all_trm:
+                    cdt_summary["uncalibrated"] += (all_trm - registered)
+            except Exception:
+                pass
+
+            return {
+                "status": "ok",
+                "predictors_hydrated": count,
+                "cdt_readiness": cdt_summary,
+            }
         except Exception as e:
             logger.warning("Conformal calibration failed (non-critical): %s", e)
             return {"status": "ok", "note": "Conformal calibration attempted"}

@@ -165,15 +165,22 @@ class CDTCalibrationService:
     """
     Calibrates CDT wrappers for all 11 TRM agents from historical decision data.
 
+    TENANT-SCOPED: Each tenant gets its own CDT registry so calibration data
+    from one tenant does not leak into another tenant's risk bounds.
+
     Usage:
-        svc = CDTCalibrationService(db)
-        stats = svc.calibrate_all()  # Batch calibration from DB
+        svc = CDTCalibrationService(db, tenant_id=3)
+        stats = svc.calibrate_all()  # Batch calibration from tenant's decisions
         stats = svc.calibrate_incremental(since=last_run)  # Incremental
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, tenant_id: Optional[int] = None):
         self.db = db
-        self.registry = get_cdt_registry()
+        self.tenant_id = tenant_id
+        self.registry = get_cdt_registry(tenant_id=tenant_id)
+
+        # Cache config_ids for this tenant (for filtering decision tables)
+        self._tenant_config_ids: Optional[List[int]] = None
 
     def calibrate_all(self, limit_per_type: int = 1000) -> Dict[str, Any]:
         """
@@ -288,6 +295,22 @@ class CDTCalibrationService:
         """Get calibration diagnostics for all CDT wrappers."""
         return self.registry.get_all_diagnostics()
 
+    def _get_tenant_config_ids(self) -> Optional[List[int]]:
+        """Lazily resolve config IDs belonging to this tenant."""
+        if self.tenant_id is None:
+            return None
+        if self._tenant_config_ids is not None:
+            return self._tenant_config_ids
+        try:
+            from app.models.supply_chain_config import SupplyChainConfig
+            rows = self.db.query(SupplyChainConfig.id).filter(
+                SupplyChainConfig.tenant_id == self.tenant_id,
+            ).all()
+            self._tenant_config_ids = [r[0] for r in rows]
+        except Exception:
+            self._tenant_config_ids = []
+        return self._tenant_config_ids
+
     def _extract_pairs(
         self,
         agent_type: str,
@@ -297,6 +320,9 @@ class CDTCalibrationService:
     ) -> List[DecisionOutcomePair]:
         """
         Extract DecisionOutcomePair list from a powell_*_decisions table.
+
+        Tenant-scoped: if tenant_id was provided, only reads decisions
+        belonging to configs owned by that tenant.
 
         Args:
             agent_type: TRM agent type name
@@ -313,6 +339,15 @@ class CDTCalibrationService:
         query = self.db.query(model_class).filter(
             outcome_col.isnot(None),
         )
+
+        # Tenant isolation: filter by config_id if tenant is set
+        config_ids = self._get_tenant_config_ids()
+        if config_ids is not None:
+            config_id_col = getattr(model_class, "config_id", None)
+            if config_id_col is not None and config_ids:
+                query = query.filter(config_id_col.in_(config_ids))
+            elif config_ids is not None and not config_ids:
+                return []  # No configs for this tenant
 
         if since:
             query = query.filter(model_class.created_at > since)

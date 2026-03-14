@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { Badge, Button, Card, CardContent, Input } from '../components/common';
 import AlertBanner from '../components/decision-stream/AlertBanner';
+import CDTReadinessBanner from '../components/decision-stream/CDTReadinessBanner';
 import DigestMessage from '../components/decision-stream/DigestMessage';
 import DecisionCard from '../components/decision-stream/DecisionCard';
 import ChatDataBlock from '../components/decision-stream/ChatDataBlock';
@@ -259,6 +260,9 @@ const DecisionStream = () => {
         <div className="flex-1 p-6 overflow-y-auto bg-muted/20">
           {/* Alert banner */}
           <AlertBanner alerts={alerts} />
+
+          {/* CDT readiness — hidden when all TRMs calibrated */}
+          <CDTReadinessBanner />
 
           {/* Digest */}
           {digestLoading ? (

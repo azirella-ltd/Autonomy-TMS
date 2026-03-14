@@ -460,19 +460,44 @@ class ConformalDecisionRegistry:
         return list(self._wrappers.keys())
 
 
-# Singleton registry
-_cdt_registry: Optional[ConformalDecisionRegistry] = None
+# Per-tenant CDT registries — tenant isolation for multi-tenant deployments
+_cdt_registries: Dict[int, ConformalDecisionRegistry] = {}
+
+# Backward-compatible global registry for system-wide ops (monitoring, readiness)
+_cdt_global_registry: Optional[ConformalDecisionRegistry] = None
 
 
-def get_cdt_registry() -> ConformalDecisionRegistry:
-    """Get the global CDT registry instance."""
-    global _cdt_registry
-    if _cdt_registry is None:
-        _cdt_registry = ConformalDecisionRegistry()
-    return _cdt_registry
+def get_cdt_registry(tenant_id: Optional[int] = None) -> ConformalDecisionRegistry:
+    """Get the CDT registry for a specific tenant.
+
+    Args:
+        tenant_id: Tenant to scope calibration. If None, returns a global
+                   aggregate registry (used by monitoring/readiness endpoints).
+                   All calibration and inference should pass tenant_id.
+    """
+    global _cdt_global_registry
+
+    if tenant_id is not None:
+        if tenant_id not in _cdt_registries:
+            _cdt_registries[tenant_id] = ConformalDecisionRegistry()
+        return _cdt_registries[tenant_id]
+
+    # Global registry for monitoring — NOT for decision-making
+    if _cdt_global_registry is None:
+        _cdt_global_registry = ConformalDecisionRegistry()
+    return _cdt_global_registry
 
 
-def reset_cdt_registry():
-    """Reset the global CDT registry."""
-    global _cdt_registry
-    _cdt_registry = None
+def reset_cdt_registry(tenant_id: Optional[int] = None):
+    """Reset CDT registry for a tenant, or all registries if tenant_id is None."""
+    global _cdt_global_registry
+    if tenant_id is not None:
+        _cdt_registries.pop(tenant_id, None)
+    else:
+        _cdt_registries.clear()
+        _cdt_global_registry = None
+
+
+def get_all_tenant_registries() -> Dict[int, ConformalDecisionRegistry]:
+    """Return all per-tenant registries (for monitoring dashboards)."""
+    return dict(_cdt_registries)

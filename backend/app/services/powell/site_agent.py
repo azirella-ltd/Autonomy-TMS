@@ -271,6 +271,11 @@ class SiteAgent:
             except Exception as e:
                 logger.warning(f"Site tGNN init failed (continuing without): {e}")
 
+        # Per-agent stochastic parameters (loaded from agent_stochastic_params table)
+        # Dict of trm_type → param_name → distribution JSON dict
+        self.stochastic_params: Dict[str, Dict[str, dict]] = {}
+        self._load_stochastic_params()
+
         # Setup matrix and Glenday Sieve (for manufacturer sites)
         self._setup_matrix = None
         self._glenday_sieve = None
@@ -333,6 +338,21 @@ class SiteAgent:
         if self.signal_bus is not None and hasattr(trm_instance, "signal_bus"):
             trm_instance.signal_bus = self.signal_bus
             logger.debug(f"Wired signal_bus to TRM {trm_name}")
+
+        # Wire tenant-scoped CDT wrapper (replaces global singleton set in __init__)
+        tenant_id = getattr(self.config, "tenant_id", None)
+        if tenant_id is not None and hasattr(trm_instance, "_cdt_wrapper"):
+            try:
+                from app.services.conformal_prediction.conformal_decision import get_cdt_registry
+                # Map TRM name to CDT agent type key
+                cdt_type = trm_name.replace("_trm", "").replace("_executor", "")
+                if cdt_type == "atp":
+                    cdt_type = "atp"
+                trm_instance._cdt_wrapper = get_cdt_registry(
+                    tenant_id=tenant_id,
+                ).get_or_create(cdt_type)
+            except Exception:
+                pass  # CDT is optional
 
     def connect_trms(self, **trms: Any) -> None:
         """Bulk-register TRM instances and wire the signal bus.
@@ -467,6 +487,76 @@ class SiteAgent:
             # Initialize fresh model
             self.model = SiteAgentModel(self.config.model_config)
             self.model.eval()
+
+    def _load_stochastic_params(self):
+        """Load per-agent stochastic parameters from the agent_stochastic_params table.
+
+        Populates self.stochastic_params as:
+            { trm_type: { param_name: distribution_dict, ... }, ... }
+
+        Site-specific overrides take precedence over config-wide defaults.
+        Falls back silently to empty dict if DB is unavailable.
+        """
+        if not self.db:
+            return
+
+        config_id = getattr(self.config, "config_id", None)
+        if not config_id:
+            return
+
+        try:
+            from app.models.agent_stochastic_param import AgentStochasticParam
+
+            rows = self.db.query(AgentStochasticParam).filter(
+                AgentStochasticParam.config_id == config_id,
+            ).order_by(
+                AgentStochasticParam.trm_type,
+                AgentStochasticParam.site_id.asc(),  # NULL (config-wide) first
+            ).all()
+
+            for row in rows:
+                if row.trm_type not in self.active_trms:
+                    continue
+                if row.trm_type not in self.stochastic_params:
+                    self.stochastic_params[row.trm_type] = {}
+                # Site-specific overrides config-wide (later rows overwrite earlier)
+                self.stochastic_params[row.trm_type][row.param_name] = row.distribution
+
+            loaded = sum(len(v) for v in self.stochastic_params.values())
+            if loaded > 0:
+                logger.info(
+                    f"Loaded {loaded} stochastic params for "
+                    f"{len(self.stochastic_params)} TRM types"
+                )
+        except Exception as e:
+            logger.debug(f"Could not load stochastic params: {e}")
+
+    def get_stochastic_dist(
+        self, trm_type: str, param_name: str
+    ) -> Optional[dict]:
+        """Get the distribution dict for a specific TRM's stochastic parameter.
+
+        Returns the distribution JSON (e.g. {"type": "lognormal", "mean": 7, ...})
+        or None if not available. Use with Distribution.from_dict() to sample.
+        """
+        return self.stochastic_params.get(trm_type, {}).get(param_name)
+
+    def sample_stochastic(
+        self, trm_type: str, param_name: str, fallback: float = 0.0
+    ) -> float:
+        """Sample a single value from a TRM's stochastic parameter distribution.
+
+        Returns fallback if the parameter is not configured.
+        """
+        dist_dict = self.get_stochastic_dist(trm_type, param_name)
+        if not dist_dict:
+            return fallback
+        try:
+            from app.services.stochastic.distributions import Distribution
+            dist = Distribution.from_dict(dist_dict)
+            return float(dist.sample(size=1)[0])
+        except Exception:
+            return fallback
 
     def _init_skill_orchestrator(self):
         """Initialize Claude Skills orchestrator for LLM-based decisions."""

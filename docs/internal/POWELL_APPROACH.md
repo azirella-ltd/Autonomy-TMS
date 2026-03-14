@@ -3837,6 +3837,12 @@ Per-TRM cost mapping (estimated → actual → loss):
 
 Key files: `cdt_calibration_service.py`, `conformal_decision.py`, `outcome_collector.py`, `relearning_jobs.py`
 
+**Multi-Tenant Isolation**: CDT registries and forecast-level conformal suites are **per-tenant** — calibration data from one tenant never leaks to another. `get_cdt_registry(tenant_id)` returns isolated registries; `CDTCalibrationService(db, tenant_id)` filters extraction by tenant's config IDs; `_run_cdt_calibration()` in `relearning_jobs.py` iterates all tenants independently. `SiteAgent.connect_trm()` replaces global CDT wrappers with tenant-scoped ones. See `Conformal_Prediction_Framework_Guide.md` for full tenant scoping details.
+
+**CDT Cold Start**: Uncalibrated TRMs (< 30 pairs) default to `risk_bound=0.50` (maximum uncertainty) with `escalation_recommended=True`, forcing escalation to Claude Skills or human review. The CDT Readiness Banner on the Decision Stream and CDT Readiness Panel in the Provisioning Stepper show per-TRM calibration status. API: `GET /conformal-prediction/cdt/readiness`.
+
+**Two-Level CP Architecture**: (1) Forecast-level CP provides intervals on demand/lead time/yield/price/service level for planning decisions. (2) Decision-level CDT provides risk bounds on all 11 TRM execution decisions. CDT requires measurable binary outcomes with computable loss — upper planning layers (S&OP, tGNN, MPS/MRP) produce continuous/multi-dimensional outputs where forecast-level CP on inputs is more appropriate. See `Conformal_Prediction_Framework_Guide.md` §Two-Level Architecture.
+
 **Architecture Summary**:
 ```
 Batch Layer (DES/SimPy)           Real-Time Layer (Conformal)

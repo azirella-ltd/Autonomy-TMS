@@ -95,6 +95,58 @@ from __future__ import annotations
 import math
 import numpy as np
 from numpy.random import Generator
+from typing import Optional, Dict
+
+
+# ---------------------------------------------------------------------------
+# Stochastic parameter overrides from agent_stochastic_params table
+# ---------------------------------------------------------------------------
+
+# Maps agent_stochastic_param.param_name → D method names that it overrides.
+# When an override is present, the D method samples from the admin-curated
+# distribution instead of the hardcoded triangular/lognormal.
+PARAM_TO_D_METHODS: dict[str, list[str]] = {
+    "demand_variability": ["demand_variability_cv", "demand_forecast", "avg_weekly_demand"],
+    "supplier_lead_time": ["avg_lead_time_weeks", "realised_lead_time_weeks"],
+    "supplier_on_time": ["lane_reliability"],
+    "manufacturing_cycle_time": ["production_capacity"],
+    "manufacturing_yield": [],  # Used directly by TRM, not by D methods
+    "setup_time": [],
+    "mtbf": [],
+    "mttr": [],
+    "transport_lead_time": ["realised_lead_time_weeks"],
+    "quality_rejection_rate": ["quality_hold_flag"],
+}
+
+
+def sample_from_override(
+    rng: Generator,
+    dist_dict: dict,
+    fallback: float = 0.0,
+) -> float:
+    """Sample a single value from an admin-curated distribution JSON.
+
+    Uses the platform's Distribution class (which supports 21 distribution
+    types) to sample from the stochastic parameter stored in
+    agent_stochastic_params.distribution.
+
+    Args:
+        rng: NumPy random Generator (used for seeding only — Distribution
+             has its own internal sampling).
+        dist_dict: Distribution JSON, e.g. {"type": "lognormal", "mean_log": 1.5, ...}
+        fallback: Value to return if sampling fails.
+
+    Returns:
+        A single float sample from the distribution.
+    """
+    if not dist_dict or not isinstance(dist_dict, dict):
+        return fallback
+    try:
+        from app.services.stochastic.distributions import Distribution
+        dist = Distribution.from_dict(dist_dict)
+        return float(dist.sample(size=1)[0])
+    except Exception:
+        return fallback
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +219,41 @@ class D:
     All methods are static and accept a numpy Generator (rng) as the first
     argument. This keeps the caller in control of the random state.
     """
+
+    # ── Override-aware sampling ────────────────────────────────────────────
+
+    @staticmethod
+    def sample_override(
+        rng: Generator,
+        param_name: str,
+        stochastic_params: Optional[Dict[str, Dict[str, dict]]] = None,
+        trm_type: Optional[str] = None,
+        fallback: Optional[float] = None,
+    ) -> Optional[float]:
+        """Sample from an admin-curated distribution if available.
+
+        Checks stochastic_params[trm_type][param_name] for a distribution
+        override. If found, samples from it. If not, returns None so the
+        caller can fall back to the hardcoded distribution.
+
+        Args:
+            rng: NumPy random Generator.
+            param_name: Parameter name (e.g. "supplier_lead_time").
+            stochastic_params: Dict from SiteAgent.stochastic_params
+                               {trm_type: {param_name: dist_dict}}.
+            trm_type: TRM type to look up in stochastic_params.
+            fallback: Value to return if override exists but sampling fails.
+
+        Returns:
+            Sampled value if override found, None otherwise.
+        """
+        if not stochastic_params or not trm_type:
+            return None
+        trm_params = stochastic_params.get(trm_type, {})
+        dist_dict = trm_params.get(param_name)
+        if not dist_dict:
+            return None
+        return sample_from_override(rng, dist_dict, fallback=fallback or 0.0)
 
     # ── Operational state variables (Triangular jitter around nominal) ──────
 
@@ -592,11 +679,31 @@ class D:
         nominal_budget: float = 50_000.0,
         nominal_supplier_capacity: float = 800.0,
         nominal_demand: float = 70.0,
+        stochastic_overrides: Optional[Dict[str, dict]] = None,
     ) -> dict:
         """
         Sample a complete site state dict using all shared distributions.
+
         Drop-in replacement for the inline sampling in site_tgnn_oracle._sample_site_state().
+
+        Args:
+            stochastic_overrides: Optional dict of {param_name: dist_dict} from
+                agent_stochastic_params. When provided, matching parameters are
+                sampled from admin-curated/SAP-imported distributions instead
+                of hardcoded defaults.
         """
+        # Use override for demand variability if available
+        demand_cv = None
+        if stochastic_overrides and "demand_variability" in stochastic_overrides:
+            demand_cv = sample_from_override(rng, stochastic_overrides["demand_variability"])
+        if demand_cv is None:
+            demand_cv = D.demand_variability_cv(rng, variance_pct)
+
+        # Use override for quality rejection rate if available
+        quality_rate = None
+        if stochastic_overrides and "quality_rejection_rate" in stochastic_overrides:
+            quality_rate = sample_from_override(rng, stochastic_overrides["quality_rejection_rate"])
+
         on_hand  = D.on_hand_inventory(rng, nominal_on_hand, variance_pct)
         capacity = D.production_capacity(rng, nominal_capacity, variance_pct)
         sl_target = D.service_level_target(rng)
@@ -613,12 +720,12 @@ class D:
             budget=D.procurement_budget(rng, nominal_budget, variance_pct),
             supplier_capacity=D.supplier_capacity(rng, nominal_supplier_capacity, variance_pct),
             demand_forecast=D.demand_forecast(rng, nominal_demand, variance_pct),
-            demand_variability_cv=D.demand_variability_cv(rng, variance_pct),
+            demand_variability_cv=demand_cv,
             service_level_actual=D.service_level_actual(rng, sl_target, variance_pct),
             service_level_target=sl_target,
             inventory_dos=D.inventory_dos(rng, target_dos, variance_pct),
             target_dos=target_dos,
-            has_quality_hold=D.quality_hold_flag(rng, variance_pct),
+            has_quality_hold=(quality_rate is not None and rng.random() < quality_rate) if quality_rate is not None else D.quality_hold_flag(rng, variance_pct),
             has_maintenance_due=D.maintenance_due_flag(rng, variance_pct),
             has_atp_shortfall=D.atp_shortfall_flag(rng, variance_pct),
             num_open_exceptions=D.open_exceptions_count(rng, variance_pct),
