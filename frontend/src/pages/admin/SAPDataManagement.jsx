@@ -1377,24 +1377,56 @@ const TablesTab = ({ connections, selectedConnectionId, onSelectConnection }) =>
 // Ingestion Jobs Tab Component
 // Table classifications for phase-based filtering
 const MASTER_DATA_PREFIXES = new Set([
-  'T001', 'TJ02T', 'T001W', 'T001L', 'ADRC',
-  'MARA', 'MAKT', 'MARC', 'MARM', 'MVKE',
-  'LFA1', 'KNA1', 'CRHD', 'EQUI',
-  'MBEW', 'MARD', 'EORD', 'EINA', 'EINE', 'EBAN',
+  // Org structure
+  'T001', 'TJ02T', 'T001W', 'T001L', 'T024E', 'ADRC',
+  // Material master
+  'MARA', 'MAKT', 'MARC', 'MARM', 'MARD', 'MVKE', 'MBEW',
+  // Partners
+  'LFA1', 'KNA1', 'KNVV',
+  // Equipment & work centers
+  'CRHD', 'EQUI', 'KAKO',
+  // Purchasing info & sourcing
+  'EORD', 'EINA', 'EINE', 'EBAN',
+  // BOM & routing
   'STKO', 'STPO', 'PLKO', 'PLPO',
-  'PBIM', 'PBED', 'PLAF',
+  // Forecast & MRP
+  'PBIM', 'PBED', 'PLAF', 'MPOP', 'MDKP', 'MDTB',
+  // Subcontracting
+  'MKAL',
+  // User / authorization
+  'USR02', 'USR21', 'ADRP', 'AGR_USERS', 'AGR_DEFINE', 'AGR_1251', 'AGR_TCODES',
 ]);
 const TRANSACTION_PREFIXES = new Set([
-  'EKKO', 'EKPO', 'EKET', 'VBAK', 'VBAP', 'VBUK', 'VBUP',
-  'LIKP', 'LIPS', 'AFKO', 'AFPO', 'AFVC', 'RESB',
-  'MKPF', 'MSEG', 'LTAK', 'LTAP',
-  'JEST', 'QMEL', 'QALS', 'QASE',
+  // Purchase orders
+  'EKKO', 'EKPO', 'EKET', 'EKBE',
+  // Sales orders
+  'VBAK', 'VBAP', 'VBEP', 'VBUK', 'VBUP',
+  // Deliveries & shipments
+  'LIKP', 'LIPS',
+  // Production orders
+  'AFKO', 'AFPO', 'AFVC', 'AFRU', 'RESB',
+  // Goods movements
+  'MKPF', 'MSEG',
+  // Transfer orders
+  'LTAK', 'LTAP',
+  // Quality
+  'QMEL', 'QMIH', 'QALS', 'QASE',
+  // Maintenance
+  'AUFK_PM', 'IHPA', 'MHIS',
+  // Status & pricing
+  'JEST', 'KONV', 'CRCO',
+  // Change documents
+  'CDHDR', 'CDPOS',
 ]);
 
 const getTablePrefix = (name) => {
   const upper = name.toUpperCase();
-  // Handle multi-part prefixes like T001W_plant_data
-  for (const prefix of ['T001W', 'T001L', 'TJ02T', 'T001']) {
+  // Handle multi-part prefixes (longest match first)
+  const MULTI_PART = [
+    'AGR_USERS', 'AGR_DEFINE', 'AGR_1251', 'AGR_TCODES',
+    'AUFK_PM', 'T001W', 'T001L', 'TJ02T', 'T024E', 'T001',
+  ];
+  for (const prefix of MULTI_PART) {
     if (upper.startsWith(prefix + '_') || upper === prefix) return prefix;
   }
   const parts = upper.split('_');
