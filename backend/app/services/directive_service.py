@@ -813,14 +813,17 @@ class DirectiveService:
 
         intent = parsed.get("intent", "directive")
 
-        # --- Question flow: query data and answer via LLM ---
+        # --- Question flow: query data, answer via LLM, suggest page ---
         if intent == "question":
-            answer = await self._answer_question(
+            question_result = await self._answer_question(
                 raw_text, user, config_id, layer, tenant_context, parsed,
             )
             return {
                 "intent": "question",
-                "answer": answer,
+                "answer": question_result.get("answer", ""),
+                "target_page": question_result.get("target_page"),
+                "target_page_label": question_result.get("target_page_label"),
+                "filters": question_result.get("filters"),
                 "confidence": parsed.get("confidence", 0.5),
                 "target_layer": layer,
                 "layer_description": _LAYER_DESCRIPTIONS.get(layer, ""),
@@ -858,12 +861,15 @@ class DirectiveService:
         layer: str,
         tenant_context: Dict[str, Any],
         parsed: Dict[str, Any],
-    ) -> str:
-        """Answer a supply chain question by querying relevant data and using the LLM.
+    ) -> Dict[str, Any]:
+        """Answer a supply chain question and suggest the best page to navigate to.
 
         Gathers context from the database based on the question's scope
-        (inventory levels, forecasts, decision history, etc.) and passes
-        it to the LLM along with the original question.
+        (inventory levels, forecasts, decision history, etc.), uses the LLM
+        to answer AND suggest a page + filters, then falls back to embedding
+        matching if the LLM doesn't suggest a page.
+
+        Returns dict with keys: answer, target_page, target_page_label, filters
         """
         from sqlalchemy import text
 
@@ -1024,19 +1030,45 @@ class DirectiveService:
 
         data_context = "\n\n".join(data_context_parts) if data_context_parts else "No detailed data available for this scope."
 
-        # Build answer prompt
+        # Build route context for the LLM
+        from app.services.query_router import build_route_context_for_llm
+        user_caps = None
+        if hasattr(user, 'get_capabilities'):
+            try:
+                user_caps = user.get_capabilities()
+            except Exception:
+                pass
+        route_context = build_route_context_for_llm(user_caps)
+
+        # Build answer prompt with page routing
         answer_system = (
             "You are a supply chain analyst for the Autonomy platform. "
             "Answer the user's question based on the data provided below. "
             "Be specific — cite site names, product names, and numbers from the data. "
             "If the data is insufficient to fully answer, say what you can determine "
             "and what additional data would be needed.\n\n"
+            "ALSO: suggest the best page to navigate the user to based on their question. "
+            "Extract any filter values from the query (region, site, product, date range, status, etc.).\n\n"
+            "Return JSON with this structure:\n"
+            '{\n'
+            '  "answer": "Your text answer to the question...",\n'
+            '  "target_page": "/path/to/page" or null if no specific page fits,\n'
+            '  "target_page_label": "Page Label" or null,\n'
+            '  "filters": {"region": "SW", "product": "Frozen Proteins", ...} or null\n'
+            '}\n\n'
+            "Return ONLY valid JSON.\n\n"
             f"User role: {user.powell_role.value if user.powell_role else 'TENANT_ADMIN'}\n"
             f"Powell layer: {layer}\n"
             f"Available sites: {json.dumps(tenant_context.get('site_names', []))}\n"
             f"Available product families: {json.dumps(tenant_context.get('product_families', []))}\n\n"
+            f"--- AVAILABLE PAGES ---\n{route_context}\n--- END PAGES ---\n\n"
             f"--- DATA CONTEXT ---\n{data_context}\n--- END DATA ---"
         )
+
+        target_page = None
+        target_page_label = None
+        filters = None
+        answer_text = ""
 
         try:
             from app.services.skills.claude_client import ClaudeClient
@@ -1048,13 +1080,45 @@ class DirectiveService:
                 temperature=0.3,
                 max_tokens=1500,
             )
-            return result.get("content", "I was unable to generate an answer. Please try rephrasing your question.")
+            content = result.get("content", "")
+
+            # Try to parse as JSON (LLM may return structured response)
+            try:
+                parsed_answer = client.parse_json_response(content)
+                answer_text = parsed_answer.get("answer", content)
+                target_page = parsed_answer.get("target_page")
+                target_page_label = parsed_answer.get("target_page_label")
+                filters = parsed_answer.get("filters")
+            except Exception:
+                # LLM returned plain text — use as-is, fall back to embedding
+                answer_text = content
+
         except Exception as e:
             logger.warning("Question answering LLM call failed: %s", e)
-            return (
+            answer_text = (
                 "I'm unable to answer right now due to a service issue. "
                 "Please try again in a moment."
             )
+
+        # Fallback: if LLM didn't suggest a page, use embedding matching
+        if not target_page:
+            try:
+                from app.services.query_router import match_route_by_embedding
+                matches = match_route_by_embedding(
+                    raw_text, user_capabilities=user_caps, top_k=1,
+                )
+                if matches and matches[0]["score"] > 0.15:
+                    target_page = matches[0]["path"]
+                    target_page_label = matches[0]["label"]
+            except Exception:
+                pass  # Embedding fallback is optional
+
+        return {
+            "answer": answer_text,
+            "target_page": target_page,
+            "target_page_label": target_page_label,
+            "filters": filters,
+        }
 
     async def _get_tenant_context(self, config_id: int) -> Dict[str, Any]:
         """Load product families and site names for scope resolution."""

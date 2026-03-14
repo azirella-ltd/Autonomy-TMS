@@ -11,6 +11,7 @@
  * columns, summary cards, and override fields.
  */
 import React from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -282,6 +283,8 @@ const buildSummaryCards = (decisions) => {
 // ---------------------------------------------------------------------------
 
 const RebalancingWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
+  const location = useLocation();
+  const initialStatusFilter = location.state?.filters?.status;
   const { hasCapability, loading: capLoading } = useCapabilities();
   const canManage = hasCapability('manage_rebalancing_worklist');
 
@@ -331,6 +334,7 @@ const RebalancingWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
         fetchDecisions={getTRMDecisions}
         submitAction={submitTRMAction}
         canManage={canManage}
+        initialStatusFilter={initialStatusFilter}
       />
     </Box>
   );

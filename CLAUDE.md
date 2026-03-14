@@ -1061,9 +1061,9 @@ GET  /api/v1/sap-data/actions             # Get remediation actions
 
 **Access**: Navigation > Administration > SAP Data Management (Group Admin required)
 
-### Talk to Me — Natural Language Directive Capture
+### Talk to Me — Natural Language Directive Capture & Query Routing
 
-A persistent "Talk to me" input in the TopNavbar accepts natural language directives from any user. The system uses a two-phase flow to ensure completeness before routing.
+A persistent "Talk to me" input in the TopNavbar accepts natural language input from any user. The system handles two modes: **directives** (actionable instructions routed to Powell layers) and **questions** (informational queries that navigate to the relevant page with pre-applied filters). Directives use a two-phase flow to ensure completeness before routing.
 
 **Two-Phase Flow**:
 1. `POST /directives/analyze` — LLM parse + gap detection (no persist). Returns structured fields + `missing_fields` list.
@@ -1097,7 +1097,14 @@ warm_start → sop_graphsage → cfa_optimization → lgbm_forecast → demand_t
 - `backend/app/api/endpoints/provisioning.py` — Provisioning stepper API
 - `frontend/src/components/TopNavbar.jsx` — Talk to me input + clarification panel
 - `frontend/src/components/supply-chain-config/ProvisioningStepper.jsx` — Stepper modal
-- Documentation: [docs/internal/TALK_TO_ME.md](docs/internal/TALK_TO_ME.md) (directives), [docs/internal/PROVISIONING_STEPPER.md](docs/internal/PROVISIONING_STEPPER.md) (14-step pipeline)
+- `backend/app/services/query_router.py` — Route registry (~60 routes), TF-IDF embedding fallback for query routing
+- Documentation: [docs/internal/TALK_TO_ME.md](docs/internal/TALK_TO_ME.md) (directives + query routing), [docs/internal/PROVISIONING_STEPPER.md](docs/internal/PROVISIONING_STEPPER.md) (14-step pipeline)
+
+**Query Routing** (question mode):
+- LLM classifies questions and returns `target_page` + `filters` from a route registry of ~60 pages
+- TF-IDF cosine similarity fallback when LLM doesn't suggest a page
+- Routes filtered by user capabilities (users only see pages they can access)
+- TopNavbar shows "Go to [page]" button; target pages hydrate filters from `location.state.filters`
 
 **API Endpoints**:
 ```bash
@@ -1492,7 +1499,7 @@ The platform has been refactored from Beer Game-centric to AWS SC-first. See [AR
 - ✅ PicoClaw/OpenClaw removed (replaced by Claude Skills ecosystem)
 - ✅ Executive Strategy Briefing (LLM-synthesized briefings with follow-up Q&A). See [docs/EXECUTIVE_BRIEFING.md](docs/EXECUTIVE_BRIEFING.md)
 - ✅ Beer Game repositioned as Digital Twin / Learning Tenant module (not primary focus)
-- ✅ "Talk to Me" directive capture with smart clarification flow (two-phase: analyze→clarify→submit)
+- ✅ "Talk to Me" directive capture with smart clarification flow (two-phase: analyze→clarify→submit) + query routing (LLM + TF-IDF fallback → page navigation with filters)
 - ✅ Provisioning Stepper (14-step Powell Cascade warm-start pipeline with dependency tracking)
 - ✅ Email Signal Intelligence (GDPR-safe email ingestion, PII scrubbing, LLM classification, TRM routing)
 

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Card,
   CardContent,
@@ -41,6 +42,8 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsToolti
 import { api } from '../../services/api';
 
 const DemandPlanView = () => {
+  const location = useLocation();
+  const filtersApplied = useRef(false);
   const [forecasts, setForecasts] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -48,6 +51,19 @@ const DemandPlanView = () => {
   const [siteFilter, setSiteFilter] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+
+  // Hydrate filters from Talk To Me query routing
+  useEffect(() => {
+    const filters = location.state?.filters;
+    if (filters && !filtersApplied.current) {
+      filtersApplied.current = true;
+      if (filters.product) setProductFilter(filters.product);
+      if (filters.site) setSiteFilter(filters.site);
+      if (filters.start_date) setStartDate(filters.start_date);
+      if (filters.end_date) setEndDate(filters.end_date);
+      window.history.replaceState({}, '');
+    }
+  }, [location.state]);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [compareDialogOpen, setCompareDialogOpen] = useState(false);

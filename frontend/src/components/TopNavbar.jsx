@@ -282,6 +282,7 @@ const TopNavbar = ({ sidebarOpen = true }) => {
         setOriginalText(prompt);
         setAnalysisResult(analysis);
         setTalkInput('');
+        // If a target page was identified, offer navigation
         // Auto-dismiss after reading time (or user can dismiss manually)
         return;
       }
@@ -506,6 +507,20 @@ const TopNavbar = ({ sidebarOpen = true }) => {
               <div className="text-sm text-foreground whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
                 {analysisResult.answer || 'No answer available.'}
               </div>
+              {analysisResult.target_page && (
+                <button
+                  onClick={() => {
+                    const targetPage = analysisResult.target_page;
+                    const filters = analysisResult.filters || {};
+                    dismissClarification();
+                    navigate(targetPage, { state: { filters, fromTalkToMe: true } });
+                  }}
+                  className="mt-3 flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                  Go to {analysisResult.target_page_label || 'relevant page'}
+                </button>
+              )}
             </div>
           )}
 

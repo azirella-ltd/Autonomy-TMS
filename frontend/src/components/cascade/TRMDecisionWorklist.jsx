@@ -227,13 +227,14 @@ const TRMDecisionWorklist = ({
   fetchDecisions,
   submitAction,
   canManage = false,
+  initialStatusFilter,
 }) => {
   const [decisions, setDecisions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedDecision, setSelectedDecision] = useState(null);
   const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(null); // decision id being actioned
-  const [statusFilter, setStatusFilter] = useState('INFORMED');
+  const [statusFilter, setStatusFilter] = useState(initialStatusFilter || 'INFORMED');
 
   const loadDecisions = useCallback(async () => {
     try {

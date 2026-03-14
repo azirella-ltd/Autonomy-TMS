@@ -12,6 +12,7 @@
  * Adaptive Decision Hierarchy: Execution layer, VFA policy class.
  */
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Box, Typography, Chip, Tooltip as MuiTooltip } from '@mui/material';
 
 import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
@@ -251,11 +252,16 @@ const computeSummaryCards = (decisions) => {
 // ---------------------------------------------------------------------------
 
 const ATPWorklistPage = () => {
+  const location = useLocation();
   const { hasCapability, loading: capLoading } = useCapabilities();
   const { user } = useAuth();
 
   // Resolve configId from user's organization (TRM decisions endpoint uses tenant_id)
   const [configId, setConfigId] = useState(user?.tenant_id || null);
+
+  // Hydrate status filter from Talk To Me query routing
+  const locationFilters = location.state?.filters;
+  const initialStatusFilter = locationFilters?.status;
 
   useEffect(() => {
     if (user?.tenant_id) setConfigId(user.tenant_id);
@@ -297,6 +303,7 @@ const ATPWorklistPage = () => {
         fetchDecisions={getTRMDecisions}
         submitAction={submitTRMAction}
         canManage={canManage}
+        initialStatusFilter={initialStatusFilter}
       />
     </Box>
   );

@@ -84,13 +84,25 @@ const DecisionStream = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, chatLoading]);
 
-  // Handle initial prompt from TopNavbar "Talk to me"
+  // Handle initial prompt or filters from TopNavbar "Talk to me"
   useEffect(() => {
     const initialPrompt = location.state?.initialPrompt;
+    const filters = location.state?.filters;
     if (initialPrompt && !initialPromptHandled.current) {
       initialPromptHandled.current = true;
       window.history.replaceState({}, '');
       handleSendMessage(initialPrompt);
+    } else if (filters?.fromTalkToMe && !initialPromptHandled.current) {
+      initialPromptHandled.current = true;
+      window.history.replaceState({}, '');
+      // If routed here with filters, inject as a context message
+      const filterSummary = Object.entries(filters)
+        .filter(([k]) => k !== 'fromTalkToMe')
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(', ');
+      if (filterSummary) {
+        handleSendMessage(`Show me decisions filtered by ${filterSummary}`);
+      }
     }
   }, [location.state]);
 
