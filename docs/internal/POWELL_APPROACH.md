@@ -5232,14 +5232,37 @@ The `_classify_demand_robust()` function uses MAD/median ratio instead of coeffi
 
 **Decision metadata**: Distribution parameters are stored in the JSON metadata column of `powell_*_decisions` tables, making them available for offline analysis, retraining, and audit. This enables post-hoc analysis of whether distribution shifts correlate with decision quality changes — a direct input to the CDC → Relearning feedback loop.
 
-##### 5.17.5 Implementation Files
+##### 5.17.5 Per-Agent Stochastic Parameters and Pipeline Configuration
+
+Each TRM agent type maintains its own stochastic variable values in the `agent_stochastic_params` table, with source tracking (`industry_default` / `sap_import` / `manual_edit`) and an `is_default` flag for selective industry-change propagation. The `TRM_PARAM_MAP` in `agent_stochastic_param.py` defines which of the 10 stochastic variables each of the 11 TRM types uses (23 total parameter slots).
+
+**Pipeline settings**: Each supply chain config carries a `stochastic_config` JSON column with 4 configurable thresholds that control SAP extraction and distribution fitting: `min_observations` (default 10), `min_rows_sufficiency` (default 50), `cv_lognormal_threshold` (default 0.5), `min_group_count` (default 3). Admin-configurable via the Pipeline Settings panel in the Stochastic Parameters UI.
+
+**Three-tier data flow — deliberately separated by design**:
+
+| Tier | Purpose | Data Source | Never Uses |
+|------|---------|-------------|------------|
+| 1. Stochastic Parameters | Source of truth for distributions | SAP transactional data, industry defaults, manual edit | — |
+| 2. Monte Carlo / Digital Twin | Scenario generation, safety stock, TRM training | Distributions from Tier 1 | Real observation data |
+| 3. Conformal Prediction | Distribution-free validation of decisions | Real observations vs predictions | Simulated data |
+
+**Why Tier 3 must never use Tier 2 data**: Conformal prediction's distribution-free guarantee (P(actual ∈ interval) ≥ 1-α) requires calibration from real prediction errors. Calibrating from Monte Carlo output would make the guarantee dependent on simulation model accuracy, defeating the purpose. The connection is indirect: better Tier 1 params → more realistic Tier 2 simulations → better TRM training → more accurate decisions → smaller real prediction errors → tighter Tier 3 conformal intervals.
+
+**Powell framework mapping**: Stochastic parameters are part of the **belief state Bₜ** in Powell's state decomposition (Sₜ = Rₜ ∪ Iₜ ∪ Bₜ). They encode the system's belief about the statistical processes generating demand, lead times, yields, etc. The `is_default` flag tracks whether this belief comes from a prior (industry default) or from evidence (SAP data / manual calibration).
+
+##### 5.17.6 Implementation Files
 
 | File | Purpose |
 |------|---------|
 | `backend/app/services/stochastic/distribution_fitter.py` | MLE fitting, KS test, AIC/BIC ranking across 20 distribution types |
 | `backend/app/services/stochastic/feature_extractor.py` | Distribution-aware feature extraction for TRM state vectors |
 | `backend/app/services/aws_sc_planning/inventory_target_calculator.py` | `sl_fitted` policy with Monte Carlo DDLT |
+| `backend/app/models/agent_stochastic_param.py` | Per-agent stochastic param model, TRM_PARAM_MAP, pipeline config defaults |
+| `backend/app/services/industry_defaults_service.py` | Industry default distributions, `apply_agent_stochastic_defaults()` |
+| `backend/app/services/sap_data_staging_service.py` | SAP import → `agent_stochastic_params` population with sufficiency check |
+| `backend/app/api/endpoints/agent_stochastic_params.py` | CRUD API + pipeline config GET/PUT |
 | `backend/app/api/endpoints/stochastic.py` | `POST /api/v1/stochastic/fit` endpoint |
+| `frontend/src/pages/admin/StochasticParamsEditor.jsx` | Admin UI: per-agent distributions + pipeline settings |
 
 ---
 

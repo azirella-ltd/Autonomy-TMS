@@ -712,6 +712,16 @@ SAP extraction thresholds are configurable per supply chain config via the `stoc
 - `GET /api/v1/agent-stochastic-params/pipeline-config/{config_id}`
 - `PUT /api/v1/agent-stochastic-params/pipeline-config/{config_id}`
 
+### Impact on Conformal Prediction
+
+SAP-derived stochastic parameters improve conformal prediction **indirectly**, not directly. The relationship:
+
+1. **SAP extraction** populates realistic distributions (lead times, yields, demand variability) from actual transactional history
+2. These distributions feed **Monte Carlo simulation** (safety stock via `sl_fitted`/`econ_optimal` policies) and **TRM training** (digital twin scenario generation)
+3. More realistic simulation → better TRM decisions → smaller prediction errors → **tighter conformal intervals**
+
+Conformal prediction itself always calibrates from **real observations** (actual demand vs forecast, actual lead time vs predicted) — never from simulated data. This preserves the distribution-free coverage guarantee. The `sl_conformal_fitted` hybrid policy combines both: Monte Carlo precision from SAP-fitted distributions + conformal guarantee from real prediction errors.
+
 ---
 
 ## Plan Writing

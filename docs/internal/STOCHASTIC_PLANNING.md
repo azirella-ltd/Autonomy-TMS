@@ -197,6 +197,47 @@ Each supply chain config carries a `stochastic_config` JSON column with per-conf
 
 **SAP wiring**: The staging service reads `min_observations` from the config's `stochastic_config` when populating `agent_stochastic_params` from SAP data. The extraction script's `check_data_sufficiency()` uses `min_rows_sufficiency` for the pre-check. Metrics with insufficient data fall back to industry defaults.
 
+### Relationship: Stochastic Parameters, Monte Carlo, and Conformal Prediction
+
+Three tiers with **deliberately separate** data sources:
+
+```
+Tier 1: Stochastic Parameters (source of truth)
+  ├── agent_stochastic_params table (per-TRM distributions)
+  ├── Entity *_dist columns (per-entity distributions)
+  └── Sources: SAP import → industry defaults → manual edit
+        ↓ feeds into
+Tier 2: Monte Carlo Simulation (scenario generation)
+  ├── Safety stock calculation (sl_fitted, econ_optimal policies)
+  ├── Digital twin training data (SimPy simulation)
+  └── What-if scenario analysis
+        ↓ produces decisions that are validated by
+Tier 3: Conformal Prediction (distribution-free validation)
+  ├── Calibrated from REAL observations vs predictions (never simulated data)
+  ├── Provides coverage guarantees: P(actual ∈ interval) ≥ 1-α
+  └── CDT risk_bound on every TRM decision
+```
+
+**Why conformal prediction must NOT use Monte Carlo data**: Conformal prediction's entire value is its distribution-free guarantee — it makes no assumptions about the underlying data distribution. Calibrating from simulated data would make the guarantee circular (coverage is only as good as the simulation model). Conformal prediction must always calibrate from real observations.
+
+**How better stochastic parameters improve conformal intervals indirectly**: More accurate distributions (from SAP data) → more realistic Monte Carlo simulations → better TRM training data → more accurate TRM decisions → smaller prediction errors → tighter conformal intervals. The improvement flows through the decision quality, not through the calibration data.
+
+**The `sl_conformal_fitted` hybrid** correctly bridges both worlds:
+- `sl_fitted` provides precision via Monte Carlo with fitted distributions
+- `conformal` provides distribution-free coverage guarantee from real prediction errors
+- Safety stock = `max(fitted_ss, conformal_ss)` — gets the best of both
+
+**Current integration status** (future work):
+
+| Consumer | Reads from | Status |
+|----------|-----------|--------|
+| `inventory_target_calculator` (sl_fitted) | Re-fits from raw data via `DistributionFitter` | Should optionally use `agent_stochastic_params` when admin-curated |
+| `StochasticSampler` (supply planning) | Entity-level `*_dist` columns | Aligned (both populated from SAP/defaults) |
+| TRM agent training (digital twin) | Not yet wired | Should sample from `agent_stochastic_params` during curriculum generation |
+| TRM agent inference | Not yet wired | Should load distributions as state features |
+| Conformal prediction | Real observations only | Correct by design — no changes needed |
+| CDT calibration | Decision-outcome pairs from `powell_*_decisions` | Correct by design — no changes needed |
+
 ---
 
 ## Operational vs. Control Variables
