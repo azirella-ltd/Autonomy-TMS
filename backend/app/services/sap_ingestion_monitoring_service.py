@@ -517,22 +517,30 @@ class SAPIngestionMonitoringService:
     }
 
     @staticmethod
+    # Multi-part SAP table names that must NOT be split on underscore.
+    # Longest match first to avoid "AGR" matching before "AGR_USERS".
+    _MULTI_PART_TABLES = [
+        "AGR_USERS", "AGR_DEFINE", "AGR_1251", "AGR_TCODES",
+        "AUFK_PM",
+        "T001W", "T001L", "T024E", "TJ02T", "T001",
+    ]
+
+    @staticmethod
     def _extract_table_name(name: str) -> str:
-        """Extract SAP table name from CSV filename (e.g. 'MARC_material_plant' → 'MARC')."""
-        # Known multi-part table names
-        if name.upper().startswith("T001W"):
-            return "T001W"
-        if name.upper().startswith("T001L"):
-            return "T001L"
-        if name.upper().startswith("T001"):
-            return "T001"
-        if name.upper().startswith("TJ02T"):
-            return "TJ02T"
+        """Extract SAP table name from CSV filename (e.g. 'MARC_material_plant' → 'MARC').
+
+        Multi-part SAP table names (AGR_USERS, AUFK_PM, T001W, etc.) are
+        preserved intact rather than being split on the first underscore.
+        """
+        upper = name.upper()
+        for prefix in SAPIngestionMonitoringService._MULTI_PART_TABLES:
+            if upper == prefix or upper.startswith(prefix + "_"):
+                return prefix
         # General: split on first underscore where prefix is all uppercase/digits
         parts = name.split("_", 1)
         if len(parts) > 1 and parts[0].replace("/", "").isalnum():
             return parts[0].upper()
-        return name.upper()
+        return upper
 
     def _sort_tables_by_dependency(self, tables: List[str]) -> List[str]:
         """Sort tables by FK dependency order (parents first)."""

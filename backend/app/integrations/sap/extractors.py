@@ -495,6 +495,146 @@ RFC_TABLE_FIELDS: Dict[str, List[str]] = {
         "WERKS", "STEUS", "BMSCH", "VGW01", "VGW02", "VGW03",
     ],
     "MARD": ["MATNR", "WERKS", "LGORT", "LABST"],
+    # --- Tables added for full STANDARD_SAP_TABLES coverage ---
+    "ADRC": [
+        "ADDRNUMBER", "NAME1", "NAME2", "STREET", "STR_SUPPL1",
+        "CITY1", "POST_CODE1", "REGION", "COUNTRY", "TIME_ZONE",
+    ],
+    "T024E": ["EKORG", "EKOTX", "BUKRS"],
+    "MVKE": ["MATNR", "VKORG", "VTWEG", "DWERK", "KONDM", "MVGR1"],
+    "KNVV": [
+        "KUNNR", "VKORG", "VTWEG", "SPART", "WAERS",
+        "KALKS", "LPRIO",
+    ],
+    "EQUI": [
+        "EQUNR", "MATNR", "HERST", "HERLD", "TYPBZ",
+        "SWERK", "BRGEW", "GEWEI",
+    ],
+    "CRHD": [
+        "OBJID", "ARBPL", "WERKS", "VERWE", "KAPID",
+    ],
+    "KAKO": [
+        "OBJID", "KESSION", "AESSION",
+    ],
+    "EBAN": [
+        "BANFN", "BNFPO", "MATNR", "WERKS", "LGORT",
+        "MENGE", "MEINS", "BADAT", "FRGDT",
+    ],
+    "PBIM": [
+        "MATNR", "WERKS", "BEDAE", "VERSB", "PBDNR",
+    ],
+    "MPOP": [
+        "MATNR", "WERKS", "PESSION", "PRESSION",
+    ],
+    "PLAF": [
+        "PLNUM", "MATNR", "WERKS", "PLWRK", "GSMNG", "MEINS",
+        "PSTTR", "PEDTR", "PLART",
+    ],
+    "MDKP": [
+        "MATNR", "WERKS", "DTART", "PLSCN",
+    ],
+    "MDTB": [
+        "MATNR", "WERKS", "DELKZ", "DESSION",
+    ],
+    "MKAL": [
+        "MATNR", "WERKS", "VEESSION", "STLAL", "PLNTY", "PLNNR",
+    ],
+    "AFPO": [
+        "AUFNR", "POSNR", "MATNR", "WERKS", "PSMNG", "WEMNG", "MEINS",
+    ],
+    "AFVC": [
+        "AUFPL", "APLZL", "VORNR", "ARBID", "ARBPL", "WERKS",
+        "STEUS", "BMSCH", "VGW01", "VGW02", "VGW03",
+    ],
+    "AFRU": [
+        "RUESSION", "AUFNR", "VORNR", "BUESSION",
+        "LMNGA", "XMNGA", "RMNGA", "ISM01", "ISM02", "ISM03",
+    ],
+    "EKET": [
+        "EBELN", "EBELP", "ETENR", "EINDT", "MENGE", "WEMNG",
+    ],
+    "RESB": [
+        "RSNUM", "RSPOS", "MATNR", "WERKS", "AUFNR", "BDMNG", "MEINS",
+    ],
+    "MKPF": [
+        "MBLNR", "MJAHR", "BUDAT", "BWART", "VGART",
+    ],
+    "MSEG": [
+        "MBLNR", "MJAHR", "ZEESSION", "BWART", "MATNR", "WERKS",
+        "LGORT", "MENGE", "MEINS", "SHKZG",
+    ],
+    "VBEP": [
+        "VBELN", "POSNR", "ETENR", "EDATU", "WMENG", "BMENG",
+    ],
+    "EKBE": [
+        "EBELN", "EBELP", "ZEESSION", "VGABE", "BEWTP",
+        "MENGE", "DMBTR", "BUDAT",
+    ],
+    "KONV": [
+        "KNUMV", "KPOSN", "STUNR", "ZAESSION", "KSCHL", "KBETR", "WAERS",
+    ],
+    "CRCO": [
+        "OBJID", "VEESSION", "KOSTL", "LSTAR",
+    ],
+    "QMEL": [
+        "QMNUM", "QMART", "MATNR", "WERK", "ERDAT", "MESSION",
+    ],
+    "QMIH": [
+        "QMNUM", "FEESSION", "OTGRP", "FESSION", "UESSION",
+    ],
+    "QALS": [
+        "PRUEFLOS", "MATNR", "WERK", "VCODE", "STAT",
+    ],
+    "QASE": [
+        "PRUESSION", "VESSION", "MERKMAL", "ERGEBNIS",
+    ],
+    "AUFK_PM": [
+        "AUFNR", "AUART", "BUKRS", "WERKS", "OBJNR", "GSTRP", "GLTRP",
+    ],
+    "IHPA": [
+        "OBJNR", "PESSION", "PARVW",
+    ],
+    "MHIS": [
+        "OBJNR", "POINT", "MDESSION",
+    ],
+    "LTAK": [
+        "LGNUM", "TESSION", "BESSION", "BWLVS",
+    ],
+    "LTAP": [
+        "LGNUM", "TESSION", "TAESSION", "MATNR", "WERKS", "VSOLM", "MEINS",
+    ],
+    "JEST": [
+        "OBJNR", "STAT", "INACT",
+    ],
+    "CDHDR": [
+        "OBJECTCLAS", "OBJECTID", "CHANGENR", "USERNAME", "UDATE",
+    ],
+    "CDPOS": [
+        "OBJECTCLAS", "OBJECTID", "CHANGENR", "TABNAME", "FNAME",
+        "VALUE_NEW", "VALUE_OLD",
+    ],
+    # User/authorization tables
+    "USR02": [
+        "BNAME", "USTYP", "GLTGV", "GLTGB", "TRDAT",
+    ],
+    "USR21": [
+        "BNAME", "PERSNUMBER", "ADDRNUMBER",
+    ],
+    "ADRP": [
+        "PERSNUMBER", "NAME_FIRST", "NAME_LAST", "SMTP_ADDR",
+    ],
+    "AGR_USERS": [
+        "UNAME", "AGR_NAME", "FROM_DAT", "TO_DAT",
+    ],
+    "AGR_DEFINE": [
+        "AGR_NAME", "PARENT_AGR", "TEXT",
+    ],
+    "AGR_1251": [
+        "AGR_NAME", "OBJECT", "AUTH", "FIELD", "LOW", "HIGH",
+    ],
+    "AGR_TCODES": [
+        "AGR_NAME", "TCODE",
+    ],
 }
 
 
