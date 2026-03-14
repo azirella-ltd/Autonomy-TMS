@@ -55,6 +55,7 @@ import {
 import { cn } from '../../lib/utils/cn';
 
 const tabItems = [
+  { value: 'guided', label: 'Guided Setup', icon: <Zap className="h-4 w-4" /> },
   { value: 'overview', label: 'Overview', icon: <BarChart3 className="h-4 w-4" /> },
   { value: 'connections', label: 'Connections', icon: <Server className="h-4 w-4" /> },
   { value: 'tables', label: 'Tables & Mapping', icon: <Table2 className="h-4 w-4" /> },
@@ -270,6 +271,375 @@ const OverviewTab = ({ dashboardData, deploymentStatus, loading }) => {
     </div>
   );
 };
+
+// -------------------------------------------------------------------------
+// Guided Setup Wizard — walks user through the SAP ingestion lifecycle
+// -------------------------------------------------------------------------
+
+const WIZARD_STEPS = [
+  {
+    key: 'connect',
+    label: 'Connect',
+    description: 'Configure an SAP connection',
+    detail: 'Set up a connection to your SAP system — CSV directory, HANA DB, RFC, or OData.',
+    icon: Server,
+    phase: null,
+  },
+  {
+    key: 'master_data',
+    label: 'Master Data',
+    description: 'Import master data & build SC Config',
+    detail: 'Extract sites (T001W), products (MARA/MARC), BOMs (STPO), vendors (LFA1), customers (KNA1), and more. Generates a new Supply Chain Config with sites, products, lanes, and inventory policies.',
+    icon: Database,
+    phase: 'master_data',
+  },
+  {
+    key: 'users',
+    label: 'User Import',
+    description: 'Provision SC-relevant users',
+    detail: 'Extract user masters (USR02), roles (AGR_USERS), and authorizations (AGR_1251). Filters to supply chain planners only, maps SAP roles to Powell roles (SC_VP, MPS_MANAGER, PO_ANALYST, etc.).',
+    icon: Users,
+    phase: null,
+  },
+  {
+    key: 'transaction',
+    label: 'Transaction Data',
+    description: 'Import orders, shipments & operational history',
+    detail: 'Extract purchase orders (EKKO/EKPO), sales orders (VBAK/VBAP), deliveries (LIKP/LIPS), production orders (AFKO/AFPO), and goods movements (MKPF/MSEG) against the active SC Config.',
+    icon: Activity,
+    phase: 'transaction',
+  },
+  {
+    key: 'provision',
+    label: 'Warm Start',
+    description: 'Provision AI models & generate plans',
+    detail: 'Run the 13-step Powell Cascade: train forecasting models, compute safety stocks, generate supply plans, calibrate TRM agents, and produce the executive briefing.',
+    icon: Zap,
+    phase: null,
+  },
+];
+
+const IngestionWizard = ({ connections, jobs, onCreateJob, onStartJob, onRefresh, onNavigateTab }) => {
+  // Derive current step status from actual data
+  const hasConnection = connections.length > 0;
+  const firstConnection = connections[0];
+
+  // Find most recent job per phase
+  const masterJob = jobs.find(j => j.phase === 'master_data' && (j.status === 'completed' || j.status === 'partial'));
+  const transactionJob = jobs.find(j => j.phase === 'transaction' && (j.status === 'completed' || j.status === 'partial'));
+  const runningJob = jobs.find(j => j.status === 'running');
+  const masterJobPending = jobs.find(j => j.phase === 'master_data' && j.status === 'pending');
+  const transactionJobPending = jobs.find(j => j.phase === 'transaction' && j.status === 'pending');
+
+  // Step completion status
+  const stepStatus = {
+    connect: hasConnection ? 'complete' : 'ready',
+    master_data: masterJob ? 'complete' : (runningJob?.phase === 'master_data' ? 'running' : (hasConnection ? 'ready' : 'locked')),
+    users: masterJob ? 'ready' : 'locked',
+    transaction: masterJob ? (transactionJob ? 'complete' : (runningJob?.phase === 'transaction' ? 'running' : 'ready')) : 'locked',
+    provision: transactionJob ? 'ready' : 'locked',
+  };
+
+  // Find current active step (first non-complete, non-locked)
+  const activeStepKey = WIZARD_STEPS.find(s => stepStatus[s.key] === 'running')?.key
+    || WIZARD_STEPS.find(s => stepStatus[s.key] === 'ready')?.key
+    || 'connect';
+
+  const [expandedStep, setExpandedStep] = useState(activeStepKey);
+
+  const handleRunPhase = async (phase) => {
+    if (!firstConnection) return;
+    // Create job with all tables for this phase (from_mapping uses confirmed file mappings)
+    await onCreateJob({
+      connection_id: firstConnection.id,
+      job_type: 'full_extract',
+      phase,
+      tables: ['from_mapping'],
+      save_csv: false,
+      update_tenant_data: true,
+    });
+  };
+
+  const handleStartPending = async (phase) => {
+    const pending = jobs.find(j => j.phase === phase && j.status === 'pending');
+    if (pending) await onStartJob(pending.id);
+  };
+
+  const getStepIcon = (status) => {
+    switch (status) {
+      case 'complete': return <CheckCircle className="h-6 w-6 text-green-500" />;
+      case 'running': return <Spinner size="sm" />;
+      case 'ready': return <Play className="h-6 w-6 text-blue-500" />;
+      default: return <Clock className="h-6 w-6 text-gray-300" />;
+    }
+  };
+
+  const getStepBorderColor = (status) => {
+    switch (status) {
+      case 'complete': return 'border-green-500 bg-green-50';
+      case 'running': return 'border-blue-500 bg-blue-50';
+      case 'ready': return 'border-blue-300';
+      default: return 'border-gray-200 bg-gray-50 opacity-60';
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Zap className="h-5 w-5" />
+            SAP Ingestion Pipeline
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Follow these steps in order to deploy your SAP data into the platform.
+            Each step depends on the previous one completing successfully.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {WIZARD_STEPS.map((step, idx) => {
+              const status = stepStatus[step.key];
+              const isExpanded = expandedStep === step.key;
+              const StepIcon = step.icon;
+              const jobForPhase = step.phase ? jobs.find(j => j.phase === step.phase) : null;
+              const latestJob = step.phase ? jobs.find(j => j.phase === step.phase && j.status !== 'pending') : null;
+
+              return (
+                <div key={step.key}>
+                  {/* Step row */}
+                  <div
+                    className={cn(
+                      "flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-all",
+                      getStepBorderColor(status),
+                      isExpanded && "ring-1 ring-blue-200",
+                    )}
+                    onClick={() => setExpandedStep(isExpanded ? null : step.key)}
+                  >
+                    {/* Step number */}
+                    <div className={cn(
+                      "flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold shrink-0",
+                      status === 'complete' ? "bg-green-500 text-white" :
+                      status === 'running' ? "bg-blue-500 text-white" :
+                      status === 'ready' ? "bg-blue-100 text-blue-700" :
+                      "bg-gray-100 text-gray-400"
+                    )}>
+                      {status === 'complete' ? <CheckCircle className="h-4 w-4" /> : idx + 1}
+                    </div>
+
+                    {/* Step info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <StepIcon className="h-4 w-4 shrink-0" />
+                        <span className="font-medium">{step.label}</span>
+                        {status === 'complete' && <Badge variant="default" className="text-xs">Done</Badge>}
+                        {status === 'running' && <Badge className="text-xs bg-blue-500">Running</Badge>}
+                        {status === 'locked' && <Badge variant="outline" className="text-xs text-gray-400">Waiting</Badge>}
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-0.5">{step.description}</p>
+                    </div>
+
+                    {/* Status icon */}
+                    <div className="shrink-0">
+                      {getStepIcon(status)}
+                    </div>
+
+                    {/* Expand arrow */}
+                    <div className="shrink-0">
+                      {isExpanded
+                        ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        : <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      }
+                    </div>
+                  </div>
+
+                  {/* Expanded detail panel */}
+                  {isExpanded && (
+                    <div className="ml-12 mt-2 p-4 rounded-lg border bg-muted/30 space-y-3">
+                      <p className="text-sm">{step.detail}</p>
+
+                      {/* Step-specific content */}
+                      {step.key === 'connect' && (
+                        <div className="space-y-2">
+                          {hasConnection ? (
+                            <div className="flex items-center gap-2 text-sm">
+                              <CheckCircle className="h-4 w-4 text-green-500" />
+                              <span><strong>{firstConnection.name}</strong> ({firstConnection.connection_method})</span>
+                              {connections.length > 1 && <span className="text-muted-foreground">+ {connections.length - 1} more</span>}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-amber-600">No connections configured yet.</p>
+                          )}
+                          <Button
+                            variant={hasConnection ? "outline" : "default"}
+                            size="sm"
+                            onClick={(e) => { e.stopPropagation(); onNavigateTab('connections'); }}
+                          >
+                            <Server className="h-3 w-3 mr-1" />
+                            {hasConnection ? 'Manage Connections' : 'Add Connection'}
+                          </Button>
+                        </div>
+                      )}
+
+                      {step.key === 'master_data' && (
+                        <div className="space-y-2">
+                          {masterJob && (
+                            <div className="flex items-center gap-2 text-sm">
+                              <CheckCircle className="h-4 w-4 text-green-500" />
+                              <span>
+                                SC Config #{masterJob.config_id} generated
+                                {masterJob.build_summary?.sites && ` — ${masterJob.build_summary.sites} sites, ${masterJob.build_summary.products} products, ${masterJob.build_summary.lanes} lanes`}
+                              </span>
+                            </div>
+                          )}
+                          {status === 'running' && (
+                            <div className="flex items-center gap-2 text-sm text-blue-600">
+                              <Spinner size="sm" />
+                              <span>Master data import in progress...</span>
+                            </div>
+                          )}
+                          {status === 'ready' && !masterJobPending && (
+                            <div className="flex gap-2">
+                              <Button size="sm" onClick={(e) => { e.stopPropagation(); handleRunPhase('master_data'); }}>
+                                <Play className="h-3 w-3 mr-1" />
+                                Run Master Data Import
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onNavigateTab('jobs'); }}>
+                                Advanced Options
+                              </Button>
+                            </div>
+                          )}
+                          {masterJobPending && (
+                            <div className="flex gap-2">
+                              <Button size="sm" onClick={(e) => { e.stopPropagation(); handleStartPending('master_data'); }}>
+                                <Play className="h-3 w-3 mr-1" />
+                                Start Pending Job #{masterJobPending.id}
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {step.key === 'users' && (
+                        <div className="space-y-2">
+                          {status === 'locked' ? (
+                            <p className="text-sm text-muted-foreground">Complete master data import first to enable user provisioning.</p>
+                          ) : (
+                            <Button size="sm" onClick={(e) => { e.stopPropagation(); onNavigateTab('user-import'); }}>
+                              <Users className="h-3 w-3 mr-1" />
+                              Open User Import
+                            </Button>
+                          )}
+                        </div>
+                      )}
+
+                      {step.key === 'transaction' && (
+                        <div className="space-y-2">
+                          {transactionJob && (
+                            <div className="flex items-center gap-2 text-sm">
+                              <CheckCircle className="h-4 w-4 text-green-500" />
+                              <span>
+                                Transaction data imported
+                                {transactionJob.build_summary?.total_records && ` — ${transactionJob.build_summary.total_records.toLocaleString()} records`}
+                              </span>
+                            </div>
+                          )}
+                          {status === 'running' && (
+                            <div className="flex items-center gap-2 text-sm text-blue-600">
+                              <Spinner size="sm" />
+                              <span>Transaction import in progress...</span>
+                            </div>
+                          )}
+                          {status === 'ready' && !transactionJob && !transactionJobPending && (
+                            <div className="flex gap-2">
+                              <Button size="sm" onClick={(e) => { e.stopPropagation(); handleRunPhase('transaction'); }}>
+                                <Play className="h-3 w-3 mr-1" />
+                                Run Transaction Import
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onNavigateTab('jobs'); }}>
+                                Advanced Options
+                              </Button>
+                            </div>
+                          )}
+                          {transactionJobPending && (
+                            <div className="flex gap-2">
+                              <Button size="sm" onClick={(e) => { e.stopPropagation(); handleStartPending('transaction'); }}>
+                                <Play className="h-3 w-3 mr-1" />
+                                Start Pending Job #{transactionJobPending.id}
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {step.key === 'provision' && (
+                        <div className="space-y-2">
+                          {status === 'locked' ? (
+                            <p className="text-sm text-muted-foreground">Complete transaction data import first to enable warm start.</p>
+                          ) : (
+                            <>
+                              <p className="text-sm text-muted-foreground">
+                                Navigate to your Supply Chain Config and run the Provisioning Stepper to warm-start all AI models.
+                              </p>
+                              <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); window.location.href = '/supply-chain'; }}>
+                                <Zap className="h-3 w-3 mr-1" />
+                                Go to Supply Chain Configs
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Show latest job info for phase-based steps */}
+                      {latestJob && (
+                        <div className="text-xs text-muted-foreground border-t pt-2 mt-2">
+                          Last run: Job #{latestJob.id} — {latestJob.status}
+                          {latestJob.total_rows_processed > 0 && ` — ${latestJob.total_rows_processed.toLocaleString()} rows`}
+                          {latestJob.completed_at && ` — ${new Date(latestJob.completed_at).toLocaleString()}`}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Connector line between steps */}
+                  {idx < WIZARD_STEPS.length - 1 && (
+                    <div className="flex justify-start ml-[1.75rem]">
+                      <div className={cn(
+                        "w-0.5 h-3",
+                        stepStatus[WIZARD_STEPS[idx + 1].key] === 'locked' ? "bg-gray-200" : "bg-blue-300"
+                      )} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Quick reference */}
+      <Card>
+        <CardContent className="py-4">
+          <div className="flex items-start gap-3">
+            <Lightbulb className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+            <div className="text-sm space-y-1">
+              <p><strong>How the phases work:</strong> Each phase uses the same SAP connection but processes different table categories.</p>
+              <ul className="list-disc ml-4 space-y-0.5 text-muted-foreground">
+                <li><strong>Master Data</strong> creates your supply chain topology (sites, products, lanes, BOMs) — run once at initial setup.</li>
+                <li><strong>User Import</strong> provisions planning users with appropriate roles — run after master data.</li>
+                <li><strong>Transaction Data</strong> loads operational history (orders, shipments, production) — run periodically (daily/weekly).</li>
+                <li><strong>CDC</strong> (available in the Jobs tab) detects master data changes and creates a child config — run periodically.</li>
+                <li><strong>Warm Start</strong> trains AI models on your data — run after loading sufficient history.</li>
+              </ul>
+              <p className="text-muted-foreground">For advanced options (dry run, CSV saving, individual table selection), use the <button className="text-blue-600 hover:underline" onClick={() => onNavigateTab('jobs')}>Ingestion Jobs</button> tab.</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
 
 // Connections Tab Component
 const ConnectionsTab = ({ connections, onCreateConnection, onTestConnection, onUpdateConnection, onDeleteConnection, onConfirmFileMapping, loading }) => {
@@ -3155,7 +3525,7 @@ const StagingTab = ({ connections }) => {
 // Main Component
 const SAPDataManagement = () => {
   const { user, isTenantAdmin } = useAuth();
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('guided');
   const [loading, setLoading] = useState(true);
 
   // State
@@ -3369,6 +3739,17 @@ const SAPDataManagement = () => {
           </TabsList>
 
           {/* Tab Content */}
+          {activeTab === 'guided' && (
+            <IngestionWizard
+              connections={connections}
+              jobs={jobs}
+              onCreateJob={handleCreateJob}
+              onStartJob={handleStartJob}
+              onRefresh={loadData}
+              onNavigateTab={setActiveTab}
+            />
+          )}
+
           {activeTab === 'overview' && (
             <OverviewTab
               dashboardData={dashboardData}
