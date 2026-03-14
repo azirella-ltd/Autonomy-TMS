@@ -38,6 +38,47 @@ layers provide **feedback upward** (outcomes/signals). No layer calls across sit
 
 ---
 
+## Critical Design Principle: Oracle = Training Only, Not Inference
+
+The LP solver (Network tGNN) and Differential Evolution optimizer (S&OP GraphSAGE) are
+**offline oracle tools** that generate labeled training data. They are never called at
+inference time. The trained GNN replaces them entirely at runtime:
+
+```
+Training (offline — runs once or periodically):
+  LP / DE oracle solves the optimization problem for N synthetic scenarios
+  → produces labeled (graph_state, optimal_solution) pairs
+  → GNN trains on those pairs via supervised behavioral cloning
+
+Inference (online — runs every decision cycle):
+  GNN forward pass only
+  No LP, no DE, no scipy
+  <5ms for Site tGNN, <5ms for Network tGNN, <1ms for GraphSAGE
+```
+
+This is the **oracle amortization** pattern (same as AlphaCode: expensive search generates
+labels, neural network learns to predict those labels instantly). The oracle is the teacher;
+the GNN is the deployed agent.
+
+**Why this matters for quality**: The LP computes optimal flows for point-estimate inputs.
+The trained GNN generalises across distribution shifts because it was fine-tuned with PPO
+against stochastic simulation outcomes — it learns to be robust to demand variance in a way
+a single LP solve cannot express.
+
+| Capability | LP / DE (oracle) | Trained GNN (inference) |
+|---|---|---|
+| Optimal for given inputs | ✅ exact | ~95% of oracle quality |
+| Runtime speed | 30–120s | <5ms |
+| Generalises to new network states | ❌ re-solve each time | ✅ forward pass |
+| Captures uncertainty implicitly | ❌ point estimates only | ✅ trained on stochastic scenarios |
+| Explainable via attention weights | ❌ | ✅ |
+| Learns site/vendor-specific patterns | ❌ | ✅ via feature embeddings |
+
+The ~5% quality gap vs oracle-optimal is the amortization cost. In practice the gap
+closes or reverses after PPO fine-tuning on simulated stochastic outcomes.
+
+---
+
 ## Layer 1.5 — Site tGNN (Hourly Cross-TRM Coordination)
 
 **File**: `backend/app/services/powell/site_tgnn_inference_service.py`
@@ -541,6 +582,116 @@ S&OP GraphSAGE (weekly, {timestamp}):
     Primary sourcing split: {split:.0%} primary / {(1-split):.0%} secondary.
 """
 ```
+
+---
+
+## GNN Explanations — Three Mechanisms
+
+Every GNN decision can be explained at three levels of depth. All three are available via
+the Ask Why endpoint (`AgentContextExplainer`).
+
+### Mechanism 1: Pre-Computed Reasoning Text (instant, no LLM call)
+
+The three `*_reasoning()` functions in `decision_reasoning.py` generate human-readable
+text from the GNN output dataclasses at decision time. This text is stored in the DB
+(in the `proposed_reasoning` column on `gnn_directive_reviews`) so Ask Why returns it
+instantly without a model call.
+
+Each reasoning string names the active constraints, the key drivers, and the confidence
+level in plain language. See the "Decision Reasoning (for Ask Why)" sections above for
+the exact templates per layer.
+
+### Mechanism 2: GATv2 Attention Weights (structural — which neighbors drove this decision)
+
+GATv2 computes a per-edge attention weight at inference time. These are directly
+interpretable without any post-hoc computation:
+
+**Network tGNN** — which upstream sites drove the allocation decision for a demand site:
+
+```python
+attention_weights = {
+    "Supplier_A → DC_West":      0.72,   # Primary: capacity + cost features dominant
+    "Supplier_B → DC_West":      0.18,   # Secondary
+    "DC_East  → DC_West":        0.10,   # Lateral rebalancing signal minimal
+}
+# "72% of DC_West's inbound allocation was driven by Supplier_A's
+#  capacity, cost, and lead time features."
+```
+
+**Site tGNN** — which cross-TRM causal edges were active this cycle:
+
+```python
+attention_weights = {
+    "ATP_Executor → PO_Creation":       0.68,   # Strong: shortage propagating upstream
+    "MO_Execution → Quality":           0.22,   # Moderate: production batch completing
+    "Forecast_Adj → Inventory_Buffer":  0.05,   # Quiet: no new demand signals
+    ...
+}
+# "The urgency boost applied to PO_Creation was driven 68% by the
+#  ATP_Executor→PO_Creation causal edge (ATP shortage active)."
+```
+
+**S&OP GraphSAGE** — which neighboring sites' properties shaped a site's θ* prediction:
+
+```python
+attention_weights = {
+    "Supplier_A → DC_West":  0.61,   # Supplier risk affects DC's SS multiplier
+    "DC_West → Retailer_1":  0.28,   # Downstream fill rate pressure
+    "DC_West → Retailer_2":  0.11,
+}
+# "DC_West's safety stock multiplier of 1.6× was shaped 61% by
+#  Supplier_A's high lead time variability propagating through the graph."
+```
+
+Attention weights are read directly from the GATv2 output during the forward pass —
+no additional computation required.
+
+### Mechanism 3: Gradient Saliency (feature-level — which input dimensions drove the output)
+
+For any specific GNN output value, `torch.autograd.grad()` gives the sensitivity of that
+output to each input feature. This is the most granular explanation and is computed
+on-demand when a user clicks Ask Why (adds ~2ms to the response):
+
+```python
+# S&OP GraphSAGE — why is DC_West's safety_stock_multiplier = 1.6?
+feature_importance = {
+    "demand_variability_cv":     0.41,   # Highest driver (CV=0.47 at this site)
+    "avg_lead_time_weeks":       0.28,   # Long lead time from Supplier_A
+    "stockout_cost_per_unit":    0.19,   # High penalty for this product class
+    "on_hand_qty":               0.07,   # Current inventory low
+    "criticality_score":         0.05,   # Moderate network centrality
+}
+# "Your safety stock multiplier is 1.6× primarily because this site has
+#  high demand variability (CV=0.47) combined with long lead times (4.2w).
+#  The stockout cost for this product class ($42/unit) reinforces the
+#  conservative policy."
+```
+
+```python
+# Network tGNN — why is DC_West's demand_satisfaction = 0.94?
+feature_importance = {
+    "forecast_next_period":       0.38,
+    "supply_risk_score":          0.31,   # Supplier_A disruption risk elevated
+    "capacity_units":             0.18,
+    "avg_lead_time_weeks":        0.09,
+    "demand_variability_cv":      0.04,
+}
+# "94% confidence in meeting demand. Supply risk (0.31 weight) is the
+#  primary uncertainty: Supplier_A's risk score is 0.68 this period."
+```
+
+### Summary: Which Mechanism Answers Which Question
+
+| Question | Mechanism | Latency |
+|---|---|---|
+| "What did the agent decide and why?" | Pre-computed reasoning text | 0ms (DB read) |
+| "Which sites / TRMs influenced this decision?" | GATv2 attention weights | ~1ms (forward pass read) |
+| "Which input features drove the output value?" | Gradient saliency | ~2ms (autograd call) |
+| "How confident is the agent?" | `demand_satisfaction` / `likelihood` / `de_converged` | 0ms (stored in DB) |
+
+All three mechanisms are surfaced by `AgentContextExplainer` when the Ask Why endpoint
+is called. The pre-computed reasoning text is shown first; attention weights and gradient
+saliency are shown in the "Evidence" expandable section.
 
 ---
 
