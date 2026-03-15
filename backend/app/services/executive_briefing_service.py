@@ -367,7 +367,8 @@ class ExecutiveBriefingService:
             status="pending",
         )
         self.db.add(briefing)
-        self.db.flush()
+        self.db.commit()  # Commit so rollbacks in run_generation don't lose the record
+        self.db.refresh(briefing)
         return await self.run_generation(briefing)
 
     async def run_generation(self, briefing: ExecutiveBriefing) -> dict:

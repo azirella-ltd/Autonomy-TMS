@@ -314,7 +314,7 @@ class AgentPerformanceService:
                 return None
 
             # Look up real PerformanceMetric data per category
-            from app.models.performance_metrics import PerformanceMetric
+            from app.models.decision_tracking import PerformanceMetric
             cat_metrics = (
                 self.db.query(PerformanceMetric)
                 .filter(
