@@ -481,7 +481,7 @@ class ExecutiveBriefingService:
                 user_message=user_message,
                 model_tier="sonnet",
                 temperature=0.3,
-                max_tokens=4096,
+                max_tokens=8192,
             )
             elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
