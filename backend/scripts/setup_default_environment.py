@@ -37,7 +37,7 @@ from sqlalchemy.orm import sessionmaker
 from app.db.session import async_session_factory, engine, Base
 from app.models.user import User, UserBase
 from app.models.tenant import Tenant
-from app.models.supply_chain_config import SupplyChainConfig, Node, Lane, MarketDemand, NodeType
+from app.models.supply_chain_config import SupplyChainConfig, Site, Lane, MarketDemand, NodeType
 from app.models.compatibility import Item
 from app.models.sc_entities import InvPolicy as ProductSiteConfig
 from app.models.scenario import Scenario, ScenarioStatus
@@ -134,7 +134,7 @@ async def create_default_environment():
                 
                 node_objs = []
                 for node_data in nodes:
-                    node = Node(
+                    node = Site(
                         name=node_data["name"],
                         node_type=node_data["node_type"],
                         position_x=node_data["position_x"],

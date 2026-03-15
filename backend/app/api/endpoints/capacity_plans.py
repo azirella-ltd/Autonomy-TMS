@@ -20,7 +20,7 @@ from app.models.capacity_plan import (
     CapacityPlanStatus,
     ResourceType,
 )
-from app.models.supply_chain_config import SupplyChainConfig, Node
+from app.models.supply_chain_config import SupplyChainConfig, Site
 from app.models.production_order import ProductionOrder
 from app.models.mps import MPSPlan, MPSPlanItem
 from app.schemas.capacity_plan import (
@@ -500,7 +500,7 @@ async def create_capacity_resource(
     plan = _get_capacity_plan_or_404(db, plan_id, current_user)
 
     # Verify site exists
-    site = db.query(Node).filter(Node.id == resource_data.site_id).first()
+    site = db.query(Site).filter(Site.id == resource_data.site_id).first()
     if not site:
         raise HTTPException(status_code=404, detail="Site not found")
 

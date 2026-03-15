@@ -19,7 +19,7 @@ from sqlalchemy.orm import selectinload
 from app.models.sc_entities import OutboundOrderLine
 from app.models.purchase_order import PurchaseOrder, PurchaseOrderLineItem
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
-from app.models.supply_chain_config import Node
+from app.models.supply_chain_config import Site
 
 logger = logging.getLogger(__name__)
 
@@ -620,9 +620,9 @@ class OrderManagementService:
     # Helper Methods
     # ========================================================================
 
-    async def get_site_by_id(self, site_id: int) -> Optional[Node]:
+    async def get_site_by_id(self, site_id: int) -> Optional[Site]:
         """Get site by ID."""
-        return await self.db.get(Node, site_id)
+        return await self.db.get(Site, site_id)
 
     async def commit(self):
         """Commit the current transaction."""

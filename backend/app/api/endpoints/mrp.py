@@ -25,7 +25,7 @@ from app.models.sc_entities import (
     SourcingRules,
     InvPolicy,
 )
-from app.models.supply_chain_config import SupplyChainConfig, Node
+from app.models.supply_chain_config import SupplyChainConfig, Site
 from app.models.sc_entities import Product
 from app.models.mrp import (
     MRPRun as MRPRunModel,
@@ -517,7 +517,7 @@ def detect_mrp_exceptions(
         if not sourcing_rules:
             # Get component details
             component = db.get(Product, component_id)
-            site = db.get(Node, site_id)
+            site = db.get(Site, site_id)
 
             period_start = mps_plan.start_date + timedelta(weeks=period)
 
@@ -1059,7 +1059,7 @@ async def get_mrp_run(
     exceptions_list = []
     for exc in exceptions:
         component = db.get(Product, exc.component_id)
-        site = db.get(Node, exc.site_id)
+        site = db.get(Site, exc.site_id)
         exceptions_list.append({
             "exception_type": exc.exception_type,
             "severity": exc.severity,
@@ -1102,8 +1102,8 @@ async def get_mrp_run(
     orders_list = []
     for sp in generated_orders_query:
         product = db.get(Product, sp.product_id)
-        site = db.get(Node, sp.site_id)
-        from_site = db.get(Node, sp.from_site_id) if sp.from_site_id else None
+        site = db.get(Site, sp.site_id)
+        from_site = db.get(Site, sp.from_site_id) if sp.from_site_id else None
         orders_list.append({
             "id": sp.id,
             "plan_type": sp.plan_type,
@@ -1161,7 +1161,7 @@ async def get_mrp_exceptions(
     exceptions_list = []
     for exc in exceptions:
         component = db.get(Product, exc.component_id)
-        site = db.get(Node, exc.site_id)
+        site = db.get(Site, exc.site_id)
         exceptions_list.append(MRPException(
             exception_type=exc.exception_type,
             severity=exc.severity,

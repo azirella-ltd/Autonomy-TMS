@@ -17,7 +17,7 @@ Run:
 
 from app.db.base_class import SessionLocal
 from app.models.sc_entities import Product, ProductBom
-from app.models.supply_chain_config import SupplyChainConfig, Node
+from app.models.supply_chain_config import SupplyChainConfig, Site
 from sqlalchemy import text
 import logging
 
@@ -87,8 +87,8 @@ def fix_complex_sc_bom():
         # Step 2: Extract BOMs from Node.attributes → ProductBom
         logger.info("\nStep 2: Extracting BOMs from Node attributes...")
 
-        nodes_with_bom = db.query(Node).filter(
-            Node.config_id == config.id
+        nodes_with_bom = db.query(Site).filter(
+            Site.config_id == config.id
         ).all()
 
         bom_count = 0

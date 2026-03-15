@@ -22,7 +22,7 @@ from typing import Dict, List, Optional, Tuple
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.supply_chain_config import Node, TransportationLane
+from app.models.supply_chain_config import Site, TransportationLane
 from app.models.sc_entities import Product
 from app.models.sc_entities import (
     InvPolicy,
@@ -73,8 +73,8 @@ class ExecutionCache:
         self._production_processes: Dict[Tuple[int, int], ProductionProcess] = {}
         self._production_capacities: Dict[Tuple[int, Optional[int]], ProductionCapacity] = {}
         self._aggregation_policies: Dict[Tuple[int, int, Optional[int]], OrderAggregationPolicy] = {}
-        self._nodes: Dict[int, Node] = {}
-        self._nodes_by_name: Dict[str, Node] = {}
+        self._nodes: Dict[int, Site] = {}
+        self._nodes_by_name: Dict[str, Site] = {}
         self._items: Dict[str, Product] = {}
         self._lanes: Dict[Tuple[int, int], TransportationLane] = {}
 
@@ -414,7 +414,7 @@ class ExecutionCache:
         """
         return self.get_aggregation_policy(from_site_id, to_site_id, product_id) is not None
 
-    def get_node(self, node_id: int) -> Optional[Node]:
+    def get_node(self, node_id: int) -> Optional[Site]:
         """
         Get cached node by ID
 
@@ -433,7 +433,7 @@ class ExecutionCache:
 
         return node
 
-    def get_node_by_name(self, node_name: str) -> Optional[Node]:
+    def get_node_by_name(self, node_name: str) -> Optional[Site]:
         """
         Get cached node by name
 
@@ -516,7 +516,7 @@ class ExecutionCache:
         self,
         product_id: int,
         site_id: int
-    ) -> Optional[Node]:
+    ) -> Optional[Site]:
         """
         Get upstream supplier site
 

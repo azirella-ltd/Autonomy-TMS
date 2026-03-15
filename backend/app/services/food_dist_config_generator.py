@@ -41,7 +41,7 @@ from sqlalchemy import select
 # This ensures SQLAlchemy can resolve all forward references
 import app.models  # noqa: F401 - ensures all models are loaded
 
-from app.models.supply_chain_config import SupplyChainConfig, Node, TransportationLane, Market
+from app.models.supply_chain_config import SupplyChainConfig, Site, TransportationLane, Market
 from app.models.sc_entities import Product, Forecast, InvLevel, InvPolicy, TradingPartner, Geography
 from app.models.planning_hierarchy import (
     SiteHierarchyNode, ProductHierarchyNode,
@@ -566,7 +566,7 @@ class FoodDistConfigGenerator:
         self.tenant: Optional[Tenant] = None
         self.sc_config: Optional[SupplyChainConfig] = None
         self.products: Dict[str, Product] = {}
-        self.nodes: Dict[str, Node] = {}
+        self.nodes: Dict[str, Site] = {}
 
     async def generate(
         self,
@@ -772,9 +772,9 @@ class FoodDistConfigGenerator:
         logger.info(f"Created SC config: {config.name}")
         return config
 
-    async def _create_dc_node(self) -> Node:
+    async def _create_dc_node(self) -> Site:
         """Create the distribution center node."""
-        dc = Node(
+        dc = Site(
             config_id=self.sc_config.id,
             name=DC_CONFIG.code,
             type="Central Distribution Center",  # Human-readable type
@@ -797,11 +797,11 @@ class FoodDistConfigGenerator:
         logger.info(f"Created DC node: {dc.name}")
         return dc
 
-    async def _create_rdc_nodes(self) -> List[Node]:
+    async def _create_rdc_nodes(self) -> List[Site]:
         """Create Regional Distribution Center nodes (internal sites)."""
         rdc_nodes = []
         for rdc_def in RDCS:
-            node = Node(
+            node = Site(
                 config_id=self.sc_config.id,
                 name=rdc_def.code,
                 type=f"Regional Distribution Center - {rdc_def.city}, {rdc_def.state}",
@@ -826,12 +826,12 @@ class FoodDistConfigGenerator:
         logger.info(f"Created {len(rdc_nodes)} RDC nodes")
         return rdc_nodes
 
-    async def _create_supplier_nodes(self) -> List[Node]:
+    async def _create_supplier_nodes(self) -> List[Site]:
         """Create supplier nodes (external trading partners, not internal sites)."""
         supplier_nodes = []
 
         for supplier_def in SUPPLIERS:
-            node = Node(
+            node = Site(
                 config_id=self.sc_config.id,
                 name=supplier_def.code,
                 type=f"Supplier - {supplier_def.name}",
@@ -855,12 +855,12 @@ class FoodDistConfigGenerator:
         logger.info(f"Created {len(supplier_nodes)} supplier nodes")
         return supplier_nodes
 
-    async def _create_customer_nodes(self) -> List[Node]:
+    async def _create_customer_nodes(self) -> List[Site]:
         """Create customer demand nodes (external trading partners, not internal sites)."""
         customer_nodes = []
 
         for customer_def in CUSTOMERS:
-            node = Node(
+            node = Site(
                 config_id=self.sc_config.id,
                 name=customer_def.code,
                 type=f"Customer - {customer_def.city}, {customer_def.state}",
@@ -890,10 +890,10 @@ class FoodDistConfigGenerator:
 
     async def _create_geographies(
         self,
-        dc_node: Node,
-        supplier_nodes: List[Node],
-        customer_nodes: List[Node],
-        rdc_nodes: Optional[List[Node]] = None,
+        dc_node: Site,
+        supplier_nodes: List[Site],
+        customer_nodes: List[Site],
+        rdc_nodes: Optional[List[Site]] = None,
     ) -> List[Geography]:
         """Create hierarchical Geography records (Country→Region→State→City) and link to sites.
 
@@ -1085,10 +1085,10 @@ class FoodDistConfigGenerator:
 
     async def _create_lanes(
         self,
-        dc_node: Node,
-        rdc_nodes: List[Node],
-        supplier_nodes: List[Node],
-        customer_nodes: List[Node],
+        dc_node: Site,
+        rdc_nodes: List[Site],
+        supplier_nodes: List[Site],
+        customer_nodes: List[Site],
     ) -> List[TransportationLane]:
         """Create transportation lanes: Supplier → CDC → RDC → Customer."""
         lanes = []
@@ -1147,7 +1147,7 @@ class FoodDistConfigGenerator:
         logger.info(f"Created {len(lanes)} lanes")
         return lanes
 
-    async def _create_trading_partners(self, supplier_nodes: List[Node]) -> Dict[str, TradingPartner]:
+    async def _create_trading_partners(self, supplier_nodes: List[Site]) -> Dict[str, TradingPartner]:
         """Create TradingPartner records for suppliers."""
         trading_partners = {}
         # Add config prefix to make partner IDs unique per config
@@ -1173,7 +1173,7 @@ class FoodDistConfigGenerator:
         logger.info(f"Created {len(trading_partners)} supplier trading partners")
         return trading_partners
 
-    async def _create_customer_trading_partners(self, customer_nodes: List[Node]) -> Dict[str, TradingPartner]:
+    async def _create_customer_trading_partners(self, customer_nodes: List[Site]) -> Dict[str, TradingPartner]:
         """Create TradingPartner records for customers."""
         trading_partners = {}
         prefix = f"CFG{self.sc_config.id}_"
@@ -1200,7 +1200,7 @@ class FoodDistConfigGenerator:
 
     async def _create_vendor_products(
         self,
-        supplier_nodes: List[Node],
+        supplier_nodes: List[Site],
         products: List[Product],
         trading_partners: Dict[str, TradingPartner],
     ) -> List[VendorProduct]:
@@ -1254,9 +1254,9 @@ class FoodDistConfigGenerator:
 
     async def _create_site_hierarchy(
         self,
-        dc_node: Node,
-        supplier_nodes: List[Node],
-        customer_nodes: List[Node],
+        dc_node: Site,
+        supplier_nodes: List[Site],
+        customer_nodes: List[Site],
     ):
         """Create site hierarchy."""
         # Company level
@@ -1434,7 +1434,7 @@ class FoodDistConfigGenerator:
         await self.db.flush()
         logger.info("Created product hierarchy")
 
-    async def _create_forecasts(self, dc_node: Node, products: List[Product]) -> List[Forecast]:
+    async def _create_forecasts(self, dc_node: Site, products: List[Product]) -> List[Forecast]:
         """Create demand forecasts for each product."""
         forecasts = []
         start_date = date.today()
@@ -1482,7 +1482,7 @@ class FoodDistConfigGenerator:
         logger.info(f"Created {len(forecasts)} forecasts")
         return forecasts
 
-    async def _create_inventory_policies(self, dc_node: Node, products: List[Product]) -> List[InvPolicy]:
+    async def _create_inventory_policies(self, dc_node: Site, products: List[Product]) -> List[InvPolicy]:
         """Create inventory policies for each product."""
         policies = []
 
@@ -1523,7 +1523,7 @@ class FoodDistConfigGenerator:
         logger.info(f"Created {len(policies)} inventory policies")
         return policies
 
-    async def _create_initial_inventory(self, dc_node: Node, products: List[Product]) -> List[InvLevel]:
+    async def _create_initial_inventory(self, dc_node: Site, products: List[Product]) -> List[InvLevel]:
         """Create initial inventory levels."""
         inv_levels = []
 

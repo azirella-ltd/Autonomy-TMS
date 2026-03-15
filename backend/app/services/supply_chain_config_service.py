@@ -18,7 +18,7 @@ from app.core.demand_patterns import (
 )
 from app.models.supply_chain_config import (
     SupplyChainConfig,
-    Node,
+    Site,
     TransportationLane,  # AWS SC DM standard
     Market,
     MarketDemand,
@@ -330,7 +330,7 @@ class SupplyChainConfigService:
         
         # Get all related data
         products = self.db.query(Product).filter(Product.config_id == config_id).all()
-        nodes = self.db.query(Node).filter(Node.config_id == config_id).all()
+        nodes = self.db.query(Site).filter(Site.config_id == config_id).all()
         lanes = self.db.query(TransportationLane).filter(TransportationLane.config_id == config_id).all()
         markets = self.db.query(Market).filter(Market.config_id == config_id).all()
         # Note: ProductSiteConfig functionality migrated to InvPolicy (SC)
@@ -707,7 +707,7 @@ class SupplyChainConfigService:
                 return []
             return [token for token in re.split(r"[^0-9a-z]+", str(value).lower()) if token]
 
-        demand_node_entries: List[Tuple[Node, str, Set[str]]] = []
+        demand_node_entries: List[Tuple[Site, str, Set[str]]] = []
         for node in nodes:
             node_type_canonical = MixedScenarioService._normalise_node_type(getattr(node, "type", None))
             if node_type_canonical == "market_demand":
@@ -1169,7 +1169,7 @@ class SupplyChainConfigService:
         errors: List[str] = []
 
         # Get all nodes and products
-        from app.models.supply_chain_config import Node as SCNode
+        from app.models.supply_chain_config import Site as SCNode
         from app.models.sc_entities import Product
 
         nodes = self.db.query(SCNode).filter(SCNode.config_id == config_id).all()

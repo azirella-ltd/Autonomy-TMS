@@ -955,10 +955,10 @@ def _get_non_market_site_keys(db, config_id: int):
     """Return (site_key, master_type, sc_site_type) tuples for non-market sites in config."""
     try:
         from sqlalchemy import select
-        from app.models.supply_chain_config import Node
-        stmt = select(Node).where(
-            Node.config_id == config_id,
-            Node.master_type.notin_(["MARKET_SUPPLY", "MARKET_DEMAND"]),
+        from app.models.supply_chain_config import Site
+        stmt = select(Site).where(
+            Site.config_id == config_id,
+            Site.master_type.notin_(["MARKET_SUPPLY", "MARKET_DEMAND"]),
         )
         nodes = db.execute(stmt).scalars().all() if hasattr(db, "execute") else []
         return [

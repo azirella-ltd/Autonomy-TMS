@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import get_db, get_current_user
 from app.models.user import User
 from app.models.sc_entities import SupplyPlan
-from app.models.supply_chain_config import Node
+from app.models.supply_chain_config import Site
 from app.models.sc_entities import Product
 from app.models.purchase_order import (
     PurchaseOrder as PurchaseOrderModel,
@@ -245,8 +245,8 @@ async def create_purchase_order(
     check_po_permission(current_user, "manage")
 
     # Get supplier and destination site details
-    supplier_site = db.get(Node, request.supplier_site_id)
-    destination_site = db.get(Node, request.destination_site_id)
+    supplier_site = db.get(Site, request.supplier_site_id)
+    destination_site = db.get(Site, request.destination_site_id)
 
     if not supplier_site:
         raise HTTPException(
@@ -361,11 +361,11 @@ async def generate_pos_from_mrp(
 
         for (vendor_id, dest_site_id), reqs in grouped.items():
             # Get site details
-            dest_site = db.get(Node, dest_site_id)
+            dest_site = db.get(Site, dest_site_id)
 
             # Assume supplier site from first request
             supplier_site_id = reqs[0].source_site_id
-            supplier_site = db.get(Node, supplier_site_id) if supplier_site_id else None
+            supplier_site = db.get(Site, supplier_site_id) if supplier_site_id else None
 
             # Create line items
             line_items = []
@@ -462,8 +462,8 @@ async def generate_pos_from_mrp(
         # Create one PO per request (no grouping)
         for req in po_requests:
             product = db.get(Product, req.product_id)
-            dest_site = db.get(Node, req.destination_site_id)
-            supplier_site = db.get(Node, req.source_site_id) if req.source_site_id else None
+            dest_site = db.get(Site, req.destination_site_id)
+            supplier_site = db.get(Site, req.source_site_id) if req.source_site_id else None
 
             line_item = PurchaseOrderLineItem(
                 line_number=1,
@@ -575,8 +575,8 @@ async def list_purchase_orders(
     results = []
     for po in pos:
         # Get site names
-        supplier_site = db.get(Node, po.supplier_site_id) if po.supplier_site_id else None
-        dest_site = db.get(Node, po.destination_site_id) if po.destination_site_id else None
+        supplier_site = db.get(Site, po.supplier_site_id) if po.supplier_site_id else None
+        dest_site = db.get(Site, po.destination_site_id) if po.destination_site_id else None
 
         # Count line items
         line_items_count = db.execute(
@@ -631,8 +631,8 @@ async def get_purchase_order(
     ).scalars().all()
 
     # Get site names
-    supplier_site = db.get(Node, po.supplier_site_id) if po.supplier_site_id else None
-    dest_site = db.get(Node, po.destination_site_id) if po.destination_site_id else None
+    supplier_site = db.get(Site, po.supplier_site_id) if po.supplier_site_id else None
+    dest_site = db.get(Site, po.destination_site_id) if po.destination_site_id else None
 
     # Get user names
     created_by = db.get(User, po.created_by_id) if po.created_by_id else None
@@ -711,8 +711,8 @@ async def approve_purchase_order(
     db.refresh(po)
 
     # Get site names and line items count
-    supplier_site = db.get(Node, po.supplier_site_id) if po.supplier_site_id else None
-    dest_site = db.get(Node, po.destination_site_id) if po.destination_site_id else None
+    supplier_site = db.get(Site, po.supplier_site_id) if po.supplier_site_id else None
+    dest_site = db.get(Site, po.destination_site_id) if po.destination_site_id else None
 
     line_items_count = db.execute(
         select(func.count(PurchaseOrderLineItemModel.id)).where(
@@ -800,8 +800,8 @@ async def send_purchase_order(
     db.refresh(po)
 
     # Get site names and line items count
-    supplier_site = db.get(Node, po.supplier_site_id) if po.supplier_site_id else None
-    dest_site = db.get(Node, po.destination_site_id) if po.destination_site_id else None
+    supplier_site = db.get(Site, po.supplier_site_id) if po.supplier_site_id else None
+    dest_site = db.get(Site, po.destination_site_id) if po.destination_site_id else None
 
     line_items_count = db.execute(
         select(func.count(PurchaseOrderLineItemModel.id)).where(
@@ -869,8 +869,8 @@ async def acknowledge_purchase_order(
     db.refresh(po)
 
     # Get site names and line items count
-    supplier_site = db.get(Node, po.supplier_site_id) if po.supplier_site_id else None
-    dest_site = db.get(Node, po.destination_site_id) if po.destination_site_id else None
+    supplier_site = db.get(Site, po.supplier_site_id) if po.supplier_site_id else None
+    dest_site = db.get(Site, po.destination_site_id) if po.destination_site_id else None
 
     line_items_count = db.execute(
         select(func.count(PurchaseOrderLineItemModel.id)).where(
@@ -931,8 +931,8 @@ async def confirm_purchase_order(
     db.refresh(po)
 
     # Get site names and line items count
-    supplier_site = db.get(Node, po.supplier_site_id) if po.supplier_site_id else None
-    dest_site = db.get(Node, po.destination_site_id) if po.destination_site_id else None
+    supplier_site = db.get(Site, po.supplier_site_id) if po.supplier_site_id else None
+    dest_site = db.get(Site, po.destination_site_id) if po.destination_site_id else None
 
     line_items_count = db.execute(
         select(func.count(PurchaseOrderLineItemModel.id)).where(

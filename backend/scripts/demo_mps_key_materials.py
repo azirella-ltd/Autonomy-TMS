@@ -25,7 +25,7 @@ from sqlalchemy.orm import sessionmaker
 import os
 from app.models.mps import MPSPlan, MPSPlanItem, MPSStatus, MPSKeyMaterialRequirement
 from app.models.sc_entities import ProductBom, Product
-from app.models.supply_chain_config import Item, Node
+from app.models.supply_chain_config import Item, Site
 from datetime import datetime, timedelta
 
 
@@ -89,7 +89,7 @@ def create_mps_plan(db: Session):
     print("="*80)
 
     # Get first node and item
-    node = db.query(Node).first()
+    node = db.query(Site).first()
     item = db.query(Item).first()
 
     if not node or not item:
@@ -199,7 +199,7 @@ def display_results(db: Session, plan: MPSPlan):
         # Get product and site names
         parent_product = db.query(Product).filter(Product.id == str(key_mat.parent_product_id)).first()
         key_material_product = db.query(Product).filter(Product.id == str(key_mat.key_material_product_id)).first()
-        key_material_site = db.query(Node).filter(Node.id == key_mat.key_material_site_id).first()
+        key_material_site = db.query(Site).filter(Site.id == key_mat.key_material_site_id).first()
 
         print(f"{i}. Key Material: {key_material_product.description if key_material_product else f'Product {key_mat.key_material_product_id}'}")
         print(f"   Parent: {parent_product.description if parent_product else f'Product {key_mat.parent_product_id}'}")

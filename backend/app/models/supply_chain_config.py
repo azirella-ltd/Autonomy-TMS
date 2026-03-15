@@ -676,7 +676,6 @@ class BusinessImpactSnapshot(Base):
 
 
 # =============================================================================
-# Backward compatibility aliases (DEPRECATED - use Site/TransportationLane)
+# Backward compatibility alias (DEPRECATED - use TransportationLane)
 # =============================================================================
-Node = Site  # DEPRECATED: Use Site
 Lane = TransportationLane  # DEPRECATED: Use TransportationLane

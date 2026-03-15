@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 
-from app.models.supply_chain_config import Node
+from app.models.supply_chain_config import Site
 from app.models.sc_entities import (
     OutboundOrderLine, InboundOrder,
     Shipment, ShipmentLot, Forecast, InvLevel,
@@ -143,7 +143,7 @@ class FoodDistHistoryGenerator:
     async def _load_network(self):
         """Load node IDs and product IDs from DB for this config."""
         result = await self.db.execute(
-            select(Node).where(Node.config_id == self.config_id)
+            select(Site).where(Site.config_id == self.config_id)
         )
         nodes = result.scalars().all()
         for node in nodes:

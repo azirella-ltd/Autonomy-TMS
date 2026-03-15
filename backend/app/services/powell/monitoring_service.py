@@ -449,12 +449,12 @@ class PowellMonitoringService:
 
     async def _get_config_sites(self, config_id: int) -> List[int]:
         """Get all site IDs for a configuration."""
-        from app.models.supply_chain_config import Node
+        from app.models.supply_chain_config import Site
 
         result = await self.db.execute(
-            select(Node.id).where(
-                Node.config_id == config_id,
-                Node.master_type.in_(["INVENTORY", "MANUFACTURER"]),
+            select(Site.id).where(
+                Site.config_id == config_id,
+                Site.master_type.in_(["INVENTORY", "MANUFACTURER"]),
             )
         )
         return [row[0] for row in result.fetchall()]

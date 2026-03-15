@@ -36,7 +36,7 @@ from app.models.sc_entities import OutboundOrderLine, InventoryLevel
 from app.models.purchase_order import PurchaseOrder, PurchaseOrderLineItem
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
 from app.models.round_metric import RoundMetric
-from app.models.supply_chain_config import Node
+from app.models.supply_chain_config import Site
 
 
 class LegacyToExecutionMigrator:
@@ -325,7 +325,7 @@ class LegacyToExecutionMigrator:
 
         # Expected: sites * rounds
         result = await self.db.execute(
-            select(Node).where(Node.config_id == scenario.supply_chain_config_id)
+            select(Site).where(Site.config_id == scenario.supply_chain_config_id)
         )
         sites_count = len(list(result.scalars().all()))
         expected_metrics = sites_count * scenario.current_round

@@ -23,7 +23,7 @@ from app.models.auth_models import PasswordHistory, PasswordResetToken
 from app.models.session import TokenBlacklist, UserSession
 from app.models.scenario import Scenario, ScenarioStatus, Round, ScenarioUserAction
 from app.models.tenant import Tenant, TenantMode
-from app.models.supply_chain_config import SupplyChainConfig, Node, Lane, Market, MarketDemand
+from app.models.supply_chain_config import SupplyChainConfig, Site, Lane, Market, MarketDemand
 from app.models.sc_entities import Product
 from app.models.mps import MPSPlan, MPSPlanItem, MPSCapacityCheck
 from app.models.sc_entities import (

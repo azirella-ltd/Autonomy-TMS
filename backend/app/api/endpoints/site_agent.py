@@ -354,10 +354,10 @@ async def plan_replenishment(
 
     # Load supply plan recommendations from database
     from app.models.sc_entities import SupplyPlan
-    from app.models.supply_chain_config import Node
+    from app.models.supply_chain_config import Site
     plans = db.query(SupplyPlan).join(
-        Node, SupplyPlan.site_id == Node.id
-    ).filter(Node.name == request.site_key).order_by(
+        Site, SupplyPlan.site_id == Site.id
+    ).filter(Site.name == request.site_key).order_by(
         SupplyPlan.planned_order_date
     ).limit(50).all()
     recs = []

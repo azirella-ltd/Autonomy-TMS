@@ -38,7 +38,7 @@ from ..models.planning_hierarchy import (
 from ..models.sc_entities import (
     Site, Product, ProductHierarchy, Geography, SourcingRules, InvLevel
 )
-from ..models.supply_chain_config import SupplyChainConfig, Node, TransportationLane
+from ..models.supply_chain_config import SupplyChainConfig, TransportationLane
 
 logger = logging.getLogger(__name__)
 
@@ -362,7 +362,7 @@ class HierarchicalDAGBuilder:
                 # Load sites from SupplyChainConfig
                 if self.config_id:
                     config_nodes = self.db.execute(
-                        select(Node).where(Node.config_id == self.config_id)
+                        select(Site).where(Site.config_id == self.config_id)
                     ).scalars().all()
                     for cnode in config_nodes:
                         node = HierarchicalNode(

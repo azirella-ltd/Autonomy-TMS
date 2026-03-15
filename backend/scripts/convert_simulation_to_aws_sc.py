@@ -24,7 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.db.session import SessionLocal, async_session_factory
-from app.models.supply_chain_config import SupplyChainConfig, Node, Lane, Item
+from app.models.supply_chain_config import SupplyChainConfig, Site, Lane, Item
 from app.models.tenant import Tenant
 from app.models.aws_sc_planning import (
     InvPolicy,

@@ -35,7 +35,7 @@ from app.models.sc_entities import (
     Site, Product, ProductHierarchy, Geography,
     Forecast, InvLevel, InvPolicy
 )
-from app.models.supply_chain_config import SupplyChainConfig, Node, TransportationLane, Item
+from app.models.supply_chain_config import SupplyChainConfig, Site, TransportationLane, Item
 
 logger = logging.getLogger(__name__)
 
@@ -502,10 +502,10 @@ class HierarchyAggregationService:
 
             dag.edges.append(edge)
 
-    async def _get_node_by_id(self, node_id: int) -> Optional[Node]:
+    async def _get_node_by_id(self, node_id: int) -> Optional[Site]:
         """Get a supply chain node by ID."""
         result = await self.db.execute(
-            select(Node).where(Node.id == node_id)
+            select(Site).where(Site.id == node_id)
         )
         return result.scalar_one_or_none()
 
@@ -556,7 +556,7 @@ class HierarchyAggregationService:
         # If no data, load from supply chain config nodes
         if not detailed and self.config_id:
             nodes_result = await self.db.execute(
-                select(Node).where(Node.config_id == self.config_id)
+                select(Site).where(Site.config_id == self.config_id)
             )
             nodes = nodes_result.scalars().all()
 

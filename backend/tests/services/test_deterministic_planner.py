@@ -26,7 +26,7 @@ from app.services.deterministic_planner import (
     PlanningOrder,
 )
 from app.services.supply_plan_service import SupplyPlanService
-from app.models.supply_chain_config import Node
+from app.models.supply_chain_config import Site
 
 
 # ---------------------------------------------------------------------------
@@ -525,7 +525,7 @@ class TestGeneratePlan:
         def query_side_effect(model):
             mock = MagicMock()
             model_name = getattr(model, '__name__', '') or getattr(model, '__tablename__', '')
-            if 'Node' in str(model_name) or 'node' in str(model_name) or model is Node:
+            if 'Site' in str(model_name) or 'site' in str(model_name) or model is Site:
                 mock.filter.return_value.all.return_value = [node]
             else:
                 mock.filter.return_value.all.return_value = [item]

@@ -64,8 +64,6 @@ from .supply_chain_config import (
     # AWS SC DM compliant names
     Site,
     TransportationLane,
-    # Backward compatibility aliases (DEPRECATED)
-    Node,  # DEPRECATED: Use Site
     Lane,  # DEPRECATED: Use TransportationLane
     Market,
     MarketDemand,
@@ -369,8 +367,6 @@ __all__ = [
     # AWS SC DM compliant names
     'Site',
     'TransportationLane',
-    # Backward compatibility aliases (DEPRECATED)
-    'Node',  # DEPRECATED: Use Site
     'Lane',  # DEPRECATED: Use TransportationLane
     'Market',
     'MarketDemand',

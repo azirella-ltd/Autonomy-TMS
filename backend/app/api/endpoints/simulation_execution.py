@@ -34,7 +34,7 @@ from app.models.sc_entities import OutboundOrderLine, InvLevel
 from app.models.purchase_order import PurchaseOrder, PurchaseOrderLineItem
 from app.models.transfer_order import TransferOrder, TransferOrderLineItem
 from app.models.round_metric import RoundMetric
-from app.models.supply_chain_config import Node
+from app.models.supply_chain_config import Site
 from app.services.simulation_execution_engine import SimulationExecutionEngine
 from app.services.order_management_service import OrderManagementService
 from app.services.fulfillment_service import FulfillmentService
@@ -336,7 +336,7 @@ async def list_orders(
 
     responses = []
     for order in orders:
-        site = await db.get(Node, order.site_id) if order.site_id else None
+        site = await db.get(Site, order.site_id) if order.site_id else None
         responses.append(OrderResponse(
             **order.__dict__,
             site_name=site.name if site else None
@@ -359,7 +359,7 @@ async def get_order(
         raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
 
     # Load site
-    site = await db.get(Node, order.site_id) if order.site_id else None
+    site = await db.get(Site, order.site_id) if order.site_id else None
 
     return OrderResponse(
         **order.__dict__,
@@ -405,7 +405,7 @@ async def get_backlog_report(
     backlog_by_site = {}
     for order in orders:
         if order.site_id not in backlog_by_site:
-            site = await db.get(Node, order.site_id)
+            site = await db.get(Site, order.site_id)
             backlog_by_site[order.site_id] = {
                 'site_id': order.site_id,
                 'site_name': site.name if site else "Unknown",
@@ -430,7 +430,7 @@ async def get_backlog_report(
     # Build response
     reports = []
     for site_data in backlog_by_site.values():
-        site = await db.get(Node, site_data['site_id'])
+        site = await db.get(Site, site_data['site_id'])
         reports.append(BacklogReportResponse(
             site_id=site_data['site_id'],
             site_name=site_data['site_name'],
@@ -501,8 +501,8 @@ async def list_purchase_orders(
 
     responses = []
     for po in pos:
-        supplier_site = await db.get(Node, po.supplier_site_id) if po.supplier_site_id else None
-        dest_site = await db.get(Node, po.destination_site_id) if po.destination_site_id else None
+        supplier_site = await db.get(Site, po.supplier_site_id) if po.supplier_site_id else None
+        dest_site = await db.get(Site, po.destination_site_id) if po.destination_site_id else None
 
         # Get line items
         line_items_result = await db.execute(
@@ -579,8 +579,8 @@ async def list_shipments(
 
     responses = []
     for to in tos:
-        source_site = await db.get(Node, to.source_site_id) if to.source_site_id else None
-        dest_site = await db.get(Node, to.destination_site_id) if to.destination_site_id else None
+        source_site = await db.get(Site, to.source_site_id) if to.source_site_id else None
+        dest_site = await db.get(Site, to.destination_site_id) if to.destination_site_id else None
 
         # Get line items
         line_items_result = await db.execute(
@@ -634,8 +634,8 @@ async def get_arriving_shipments(
 
     responses = []
     for to in arriving:
-        source_site = await db.get(Node, to.source_site_id) if to.source_site_id else None
-        dest_site = await db.get(Node, to.destination_site_id) if to.destination_site_id else None
+        source_site = await db.get(Site, to.source_site_id) if to.source_site_id else None
+        dest_site = await db.get(Site, to.destination_site_id) if to.destination_site_id else None
 
         # Get line items
         line_items_result = await db.execute(
@@ -701,7 +701,7 @@ async def list_metrics(
 
     responses = []
     for metric in metrics:
-        site = await db.get(Node, metric.site_id) if metric.site_id else None
+        site = await db.get(Site, metric.site_id) if metric.site_id else None
         responses.append(RoundMetricResponse(
             **metric.__dict__,
             site_name=site.name if site else None
@@ -761,7 +761,7 @@ async def get_metrics_summary(
     sites_data = {}
     for metric in metrics:
         if metric.site_id not in sites_data:
-            site = await db.get(Node, metric.site_id)
+            site = await db.get(Site, metric.site_id)
             sites_data[metric.site_id] = {
                 'site_id': metric.site_id,
                 'site_name': site.name if site else "Unknown",
@@ -877,7 +877,7 @@ async def list_inventory_levels(
 
     responses = []
     for inv in inventory_levels:
-        site = await db.get(Node, inv.site_id) if inv.site_id else None
+        site = await db.get(Site, inv.site_id) if inv.site_id else None
         responses.append(InventoryLevelResponse(
             **inv.__dict__,
             site_name=site.name if site else None

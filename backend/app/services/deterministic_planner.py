@@ -17,7 +17,7 @@ from enum import Enum
 import numpy as np
 from sqlalchemy.orm import Session
 
-from app.models.supply_chain_config import SupplyChainConfig, Node, TransportationLane
+from app.models.supply_chain_config import SupplyChainConfig, Site, TransportationLane
 from app.models.sc_entities import Product
 from app.models.compatibility import Item, ProductSiteConfig  # Temporary compat
 
@@ -112,7 +112,7 @@ class DeterministicPlanner:
         inventory_targets = []
 
         # Get all nodes from config
-        nodes = self.session.query(Node).filter(Node.config_id == self.config.id).all()
+        nodes = self.session.query(Site).filter(Site.config_id == self.config.id).all()
         items = self.session.query(Item).filter(Item.config_id == self.config.id).all()
 
         # Calculate inventory targets for each node/item
@@ -220,7 +220,7 @@ class DeterministicPlanner:
 
         return max(1, eoq)
 
-    def _get_lead_time(self, node: Node, item: Item) -> int:
+    def _get_lead_time(self, node: Site, item: Item) -> int:
         """Get procurement/manufacturing lead time from upstream lane."""
         if self.session:
             lane = self.session.query(TransportationLane).filter(
@@ -239,7 +239,7 @@ class DeterministicPlanner:
                 return float(product.unit_cost)
         return 100.0  # Default $100 per unit
 
-    def _get_current_inventory(self, node: Node, item: Item) -> float:
+    def _get_current_inventory(self, node: Site, item: Item) -> float:
         """Get current on-hand inventory from InvLevel."""
         if self.session:
             from app.models.sc_entities import InvLevel
@@ -251,14 +251,14 @@ class DeterministicPlanner:
                 return float(inv.on_hand_qty)
         return 0.0
 
-    def _get_pipeline_inventory(self, node: Node, item: Item) -> float:
+    def _get_pipeline_inventory(self, node: Site, item: Item) -> float:
         """Get inventory in transit (on order but not arrived)."""
         # Simplified: assume no initial pipeline
         return 0.0
 
     def _generate_replenishment_orders(
         self,
-        node: Node,
+        node: Site,
         item: Item,
         forecast: DemandForecast,
         reorder_point: float,
@@ -309,7 +309,7 @@ class DeterministicPlanner:
 
         return orders
 
-    def _determine_order_type(self, node: Node) -> OrderType:
+    def _determine_order_type(self, node: Site) -> OrderType:
         """Determine order type based on node type."""
         node_type_str = str(node.type).lower()
 
@@ -321,7 +321,7 @@ class DeterministicPlanner:
             # Distributors, wholesalers, retailers order from upstream
             return OrderType.PURCHASE_ORDER
 
-    def _get_source_node(self, node: Node, item: Item) -> Optional[int]:
+    def _get_source_node(self, node: Site, item: Item) -> Optional[int]:
         """Get source node (upstream supplier) for this node/item via TransportationLane."""
         try:
             lane = self.session.query(TransportationLane).filter(

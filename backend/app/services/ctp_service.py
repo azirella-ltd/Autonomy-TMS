@@ -26,7 +26,7 @@ from app.models.scenario_user import ScenarioUser
 from app.models.scenario import Scenario
 from app.models.supply_chain import ScenarioRound, ScenarioUserInventory
 from app.models.sc_entities import ProductBom as ProductBOM, Product, SourcingRules, InvLevel
-from app.models.supply_chain_config import Node
+from app.models.supply_chain_config import Site
 
 # Aliases for backwards compatibility
 ScenarioUser = ScenarioUser
@@ -38,7 +38,7 @@ from .atp_service import ATPService, get_atp_service
 logger = logging.getLogger(__name__)
 
 
-def _get_scenario_user_node(db: Session, scenario_user: ScenarioUser, game: Game) -> Optional[Node]:
+def _get_scenario_user_node(db: Session, scenario_user: ScenarioUser, game: Game) -> Optional[Site]:
     """
     Look up the Node for a scenario_user based on their site_key.
 
@@ -47,9 +47,9 @@ def _get_scenario_user_node(db: Session, scenario_user: ScenarioUser, game: Game
     if not scenario_user.site_key or not game.supply_chain_config_id:
         return None
 
-    node = db.query(Node).filter(
-        Node.config_id == game.supply_chain_config_id,
-        Node.dag_type == scenario_user.site_key
+    node = db.query(Site).filter(
+        Site.config_id == game.supply_chain_config_id,
+        Site.dag_type == scenario_user.site_key
     ).first()
 
     return node
@@ -645,7 +645,7 @@ class CTPService:
 
     # --- Helper Methods ---
 
-    def _get_production_capacity(self, node: Node) -> int:
+    def _get_production_capacity(self, node: Site) -> int:
         """Get production capacity per round from node configuration or ProductionProcess."""
         # 1. Try node attribute
         if hasattr(node, "production_capacity_per_round") and node.production_capacity_per_round:
@@ -680,7 +680,7 @@ class CTPService:
             node_type.lower() if node_type else "manufacturer", 1000
         )
 
-    def _get_yield_rate(self, node: Node) -> float:
+    def _get_yield_rate(self, node: Site) -> float:
         """Get yield rate (accounts for scrap)"""
         # TODO: Query node.yield_rate field when available
         if hasattr(node, "yield_rate") and node.yield_rate:
@@ -719,7 +719,7 @@ class CTPService:
         except Exception:
             return 0
 
-    def _get_production_lead_time(self, node: Node) -> int:
+    def _get_production_lead_time(self, node: Site) -> int:
         """Get production lead time from production_process table."""
         from app.models.sc_entities import ProductionProcess
         proc = self.db.query(ProductionProcess).filter(
@@ -729,7 +729,7 @@ class CTPService:
             return max(1, proc.lead_time_days)
         return 1  # Default 1 round
 
-    def _get_shipping_lead_time(self, node: Node) -> int:
+    def _get_shipping_lead_time(self, node: Site) -> int:
         """Get shipping lead time from downstream lane."""
         from app.models.supply_chain_config import TransportationLane
         lane = self.db.query(TransportationLane).filter(

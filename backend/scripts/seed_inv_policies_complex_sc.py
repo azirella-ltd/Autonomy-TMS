@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.db.session import SessionLocal
-from app.models.supply_chain_config import SupplyChainConfig, Node, Item
+from app.models.supply_chain_config import SupplyChainConfig, Site, Item
 from app.models.aws_sc_planning import InvPolicy
 from sqlalchemy import select, delete
 from datetime import datetime
@@ -44,7 +44,7 @@ async def seed_inv_policies():
 
         # Get all nodes and items
         nodes_result = await db.execute(
-            select(Node).filter(Node.config_id == config_id)
+            select(Site).filter(Site.config_id == config_id)
         )
         nodes = list(nodes_result.scalars().all())
 

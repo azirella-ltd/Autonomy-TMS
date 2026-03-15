@@ -62,7 +62,7 @@ def add_scenario_users(session: Session, scenario: Scenario, agent_type: str = "
         print("  [error] Scenario has no supply_chain_config_id")
         return
 
-    from app.models.supply_chain_config import SupplyChainConfig, Node as SCNode
+    from app.models.supply_chain_config import SupplyChainConfig, Site as SCNode
 
     config = session.query(SupplyChainConfig).filter(
         SupplyChainConfig.id == scenario.supply_chain_config_id

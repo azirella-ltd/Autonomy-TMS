@@ -473,10 +473,10 @@ class AnalyticsService:
         Returns:
             Site name or 'Unknown'
         """
-        from app.models.supply_chain_config import Node
+        from app.models.supply_chain_config import Site
 
         result = await self.db.execute(
-            select(Node).filter(Node.id == site_id)
+            select(Site).filter(Site.id == site_id)
         )
         node = result.scalar_one_or_none()
         return node.name if node else f'Site_{site_id}'

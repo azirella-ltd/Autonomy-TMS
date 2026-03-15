@@ -26,7 +26,7 @@ from app.models.inventory_projection import (
 from app.models.sc_entities import InvLevel, SupplyPlan
 from app.models.production_order import ProductionOrder
 from app.models.capacity_plan import CapacityPlan, CapacityResource
-from app.models.supply_chain_config import Node
+from app.models.supply_chain_config import Site
 from app.models.sc_entities import Product
 from app.schemas.inventory_projection import (
     InvProjectionCreate, InvProjectionUpdate, InvProjectionResponse, InvProjectionList,

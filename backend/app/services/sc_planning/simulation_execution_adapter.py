@@ -41,7 +41,7 @@ from app.models.scenario_user import ScenarioUser
 # Aliases for backwards compatibility
 Game = Scenario
 ScenarioUser = ScenarioUser
-from app.models.supply_chain_config import SupplyChainConfig, Node, TransportationLane
+from app.models.supply_chain_config import SupplyChainConfig, Site, TransportationLane
 from app.models.sc_entities import Product
 from app.models.sc_entities import (
     InvLevel,
@@ -592,7 +592,7 @@ class SimulationExecutionAdapter:
 
     def _determine_order_type_and_lead_time(
         self,
-        upstream_node: Node,
+        upstream_node: Site,
         lane: TransportationLane
     ) -> Tuple[str, int]:
         """
