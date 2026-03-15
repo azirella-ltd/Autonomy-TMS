@@ -38,51 +38,97 @@ layers provide **feedback upward** (outcomes/signals). No layer calls across sit
 
 ---
 
-## Conceptual Frame: Baseline Plan + Agent Adjustment
+## Conceptual Frame: Baseline Plan + Contextual Adjustment
 
-The GNN layers follow the same two-step pattern used in demand planning:
+The GNN layers parallel the two-step pattern used in demand planning:
 
 ```
 Demand Planning:
   Step 1 — ML model (ARIMA / ETS)
              → Baseline statistical forecast from historical data
-  Step 2 — ForecastAdjustmentTRM (AI Agent)
-             → Adjusts forecast using context: email signals, market intel,
-               product launches, promotional calendars, supplier news
+  Step 2 — ForecastAdjustmentTRM (deployed AI agent)
+             → Reads ML forecast output, writes adjusted value back before plan
+               is finalised. Incorporates: email signals, market intel, NPI,
+               promotions, supplier news.
   Step 3 — Human consensus
              → Final planner sign-off if material change
 
-S&OP Planning (exact parallel):
-  Step 1 — S&OP GraphSAGE (ML baseline)
+S&OP Planning (analogous, but mechanism differs — see below):
+  Step 1 — S&OP GraphSAGE
              → Baseline policy parameters θ* optimised across 1000+ MC scenarios:
                safety_stock_multiplier, service_level_target, reorder_point_days,
                order_up_to_days, sourcing_split — one set per site per product
-  Step 2 — S&OP Adjustment Agents (AI Agents)
-             → Adjust θ* using strategic context that the statistical model
-               cannot capture:
-               • AAP Consensus Board — functional agents negotiate trade-offs
-                 (e.g. Finance wants lower inventory; Customer Service wants
-                 higher fill rate; Production flags a capacity constraint)
-               • Directive routing — human strategic intent injected via
-                 Talk to Me (plant shutdown, supplier news, NPI, promotions)
-               • RCCP validation — capacity feasibility check; if plan is
-                 infeasible, RCCP agent proposes θ* adjustments or flags to S&OP
-               • Claude Skills at Layer 4 — handles novel scenarios outside the
-                 GNN training distribution
+  Step 2 — Contextual adjustment (see "How adjustment works" below)
   Step 3 — Human S&OP meeting
              → Review probabilistic BSC, approve or override the adjusted plan
 ```
 
-**Why the separation matters**: The GraphSAGE is excellent at optimising over the
-supply chain structure and historical distributions. It cannot know about next quarter's
-product launch, the announced supplier plant closure, or the union strike risk. The
-S&OP Adjustment Agents layer exists specifically to inject that knowledge, in exactly
-the same way a demand planner adjusts a statistical forecast for a promotional event.
+### How S&OP Adjustment Actually Works (and Why It Differs From Demand Planning)
 
-The GraphSAGE baseline is not overridden arbitrarily — every adjustment is tracked
-as a directive in `user_directives`, scored for effectiveness via `OverrideEffectivenessPosterior`,
-and fed back into future GraphSAGE training so the model gradually learns to anticipate
-those patterns without explicit adjustment.
+The demand planning analogy is **conceptually correct but mechanically different** at
+the S&OP layer. In demand planning, `ForecastAdjustmentTRM` is a deployed agent that
+reads a forecast and writes an adjusted value *downstream* of the ML model. At the
+S&OP layer, **no equivalent post-hoc patch agent exists today**. The adjustment
+mechanism instead operates *upstream* of the DE optimiser:
+
+```
+Demand Planning:
+  ML forecast → [ForecastAdjustmentTRM patches output] → adjusted forecast used
+
+S&OP Planning (current architecture):
+  New information → [injected into DE objective as constraint] → DE re-runs → new θ*
+```
+
+This means contextual adjustments cause the **full optimiser to re-run** with the new
+information rather than patching the output of the last run. The three mechanisms that
+deliver contextual information upstream are:
+
+| Mechanism | What it does | When it fires |
+|---|---|---|
+| **Talk to Me directive routing** | Injects human-supplied constraints (shutdown, NPI, supplier news) into site node features before next DE run | On submission |
+| **RCCP infeasibility signal** | If validated capacity < planned output, triggers `escalate_to_strategic()` which re-runs DE with corrected capacity | When RCCP detects infeasibility |
+| **EscalationArbiter** | Triggers on-demand DE re-run when persistent Network tGNN forecast error > 15% | Every 2h check |
+
+**Why upstream injection rather than downstream patching?** Upstream injection produces
+a globally coherent θ* — the DE re-optimises the full objective accounting for all
+cross-site dependencies simultaneously. A downstream patch agent would adjust θ*
+locally and could inadvertently violate network-wide feasibility (e.g., raising one
+site's service level target without lowering another's, creating a plan that cannot be
+satisfied in aggregate).
+
+### The Genuine Gap — and Why It May Be Worth Filling
+
+The upstream mechanism is globally correct but **not real-time**. Between weekly DE
+runs, new information arrives that cannot wait:
+- Email signal at 14:00 Monday: supplier confirms 30% capacity reduction for 6 weeks
+- Directive at 16:00 Monday: executive moves a product launch forward by 3 weeks
+
+A human S&OP Director does not wait for Sunday's DE run — they apply judgment to last
+week's θ* immediately. The architecture does not currently have an autonomous agent
+that replicates this. The closest thing is the human planner using Talk to Me, which
+injects the constraint and re-runs DE on demand (sub-minute with a warmed-up model).
+
+A **true S&OP Adjustment Agent** would be an LLM-based (Claude Skills at Layer 4)
+agent that:
+1. Reads the current θ* from `powell_policy_parameters`
+2. Reads the new signal (email, directive, RCCP flag)
+3. Applies a **lightweight bounded adjustment** to θ* for the affected sites only
+4. Flags the adjustment and its rationale for human review at the next S&OP meeting
+5. Marks the adjusted θ* as `pending_de_reconciliation=True` so the next DE run can
+   confirm or revise it globally
+
+This would close the real-time gap at the cost of temporary local inconsistency —
+the same trade-off a human S&OP Director makes routinely. It is a **planned capability
+gap**, not a design flaw.
+
+**Current state**: adjustment is globally consistent but not real-time.
+**Gap**: no autonomous agent applies bounded θ* corrections between DE runs.
+**Mitigation**: human planner via Talk to Me triggers on-demand DE re-run (sub-minute).
+
+The GraphSAGE baseline is not adjusted arbitrarily — every directive is tracked in
+`user_directives`, scored via `OverrideEffectivenessPosterior`, and fed back into
+future DE training runs so the model gradually learns to anticipate patterns that
+currently require manual injection.
 
 ---
 
