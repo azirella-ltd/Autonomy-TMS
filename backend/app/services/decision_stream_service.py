@@ -934,12 +934,22 @@ class DecisionStreamService:
                 abandoned_count,
             )
 
-        # Sort: urgency DESC (raw score), then likelihood ASC (raw score).
-        # High urgency + low likelihood = human judgment needed most.
+        # Sort: urgency tier DESC, then likelihood ASC within each tier.
+        # Bucketing prevents fine-grained urgency noise from pushing a high-confidence
+        # decision above a lower-confidence one in the same urgency band.
+        # Within "Critical" (all scores 0.85-1.0), the least-certain decisions
+        # surface first — that's where human judgment creates the most value.
+        def _urgency_bucket(score: float) -> int:
+            if score >= 0.85: return 4  # Critical
+            if score >= 0.65: return 3  # High
+            if score >= 0.40: return 2  # Medium
+            if score >= 0.20: return 1  # Low
+            return 0                    # Routine
+
         def sort_key(d):
             urgency = _to_float(d.get("urgency_score"), 0.0)
             likelihood = _to_float(d.get("likelihood_score"), _DEFAULT_CONFIDENCE)
-            return (-urgency, likelihood)
+            return (-_urgency_bucket(urgency), likelihood)
 
         kept.sort(key=sort_key)
         return kept[:_DIGEST_MAX_DECISIONS]
