@@ -47,7 +47,7 @@ from app.models.supply_chain_config import (
     Lane,
     Market,
     MarketDemand,
-    Node,
+    Site as Node,
     NodeType,
     SupplyChainConfig,
 )

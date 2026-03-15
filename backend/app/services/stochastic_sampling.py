@@ -18,7 +18,7 @@ from app.models.supply_chain_config import (
     SupplyChainConfig,
     TransportationLane,
     MarketDemand,
-    Node,
+    Site as Node,
 )
 
 

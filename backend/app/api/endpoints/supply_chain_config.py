@@ -26,7 +26,7 @@ from app.models.supply_chain_config import (
     Lane,
     Market,
     MarketDemand,
-    Node,
+    Site as Node,
     NodeType,
     SupplyChainConfig,
     SupplyChainTrainingArtifact,
@@ -134,10 +134,10 @@ def get_config_or_404(db: Session, config_id: int):
             # Note: items and item_configs migrated to Product/ProductBom (SC compliant)
             # joinedload(SupplyChainConfig.items),  # DEPRECATED - use Product table
             # joinedload(SupplyChainConfig.nodes).joinedload(Node.item_configs),  # DEPRECATED - use InvPolicy
-            joinedload(SupplyChainConfig.nodes).joinedload(Node.upstream_lanes),
-            joinedload(SupplyChainConfig.nodes).joinedload(Node.downstream_lanes),
-            joinedload(SupplyChainConfig.lanes).joinedload(Lane.upstream_node),
-            joinedload(SupplyChainConfig.lanes).joinedload(Lane.downstream_node),
+            joinedload(SupplyChainConfig.sites).joinedload(Node.upstream_lanes),
+            joinedload(SupplyChainConfig.sites).joinedload(Node.downstream_lanes),
+            joinedload(SupplyChainConfig.transportation_lanes).joinedload(Lane.upstream_site),
+            joinedload(SupplyChainConfig.transportation_lanes).joinedload(Lane.downstream_site),
             joinedload(SupplyChainConfig.markets),
             joinedload(SupplyChainConfig.market_demands).joinedload(MarketDemand.market),
             # joinedload(SupplyChainConfig.market_demands).joinedload(MarketDemand.item),  # DEPRECATED - use .product
