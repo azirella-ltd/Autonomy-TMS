@@ -403,6 +403,123 @@ def _get_reason(decision, decision_type: str) -> Optional[str]:
     return getattr(decision, "reason", None)
 
 
+# ---------------------------------------------------------------------------
+# Editable values: decision-type-specific fields users can modify on override
+# ---------------------------------------------------------------------------
+# Maps decision_type → list of {key, label, type, db_col}
+# key = frontend field name, db_col = SQLAlchemy column to read/write
+EDITABLE_FIELDS_MAP: Dict[str, List[Dict[str, str]]] = {
+    "atp": [
+        {"key": "allocated_qty", "label": "Allocated Qty", "type": "number", "db_col": "promised_qty"},
+    ],
+    "rebalancing": [
+        {"key": "qty", "label": "Transfer Qty", "type": "number", "db_col": "recommended_qty"},
+    ],
+    "po_creation": [
+        {"key": "qty", "label": "Order Qty", "type": "number", "db_col": "recommended_qty"},
+        {"key": "supplier_id", "label": "Supplier", "type": "text", "db_col": "supplier_id"},
+        {"key": "due_date", "label": "Due Date", "type": "date", "db_col": "expected_receipt_date"},
+    ],
+    "order_tracking": [
+        {"key": "recommended_action", "label": "Action", "type": "select", "db_col": "recommended_action",
+         "options": "find_alternate,expedite,cancel,split,reroute,accept_delay"},
+    ],
+    "mo_execution": [
+        {"key": "qty", "label": "Planned Qty", "type": "number", "db_col": "planned_qty"},
+        {"key": "priority", "label": "Priority", "type": "number", "db_col": "priority_override"},
+    ],
+    "to_execution": [
+        {"key": "qty", "label": "Planned Qty", "type": "number", "db_col": "planned_qty"},
+    ],
+    "quality": [
+        {"key": "disposition", "label": "Disposition", "type": "select", "db_col": "disposition",
+         "options": "accept,reject,rework,scrap,use_as_is,return_to_vendor"},
+    ],
+    "maintenance": [
+        {"key": "scheduled_date", "label": "Schedule Date", "type": "date", "db_col": "scheduled_date"},
+        {"key": "action", "label": "Action", "type": "select", "db_col": "decision_type",
+         "options": "schedule,defer,expedite,combine,outsource"},
+    ],
+    "subcontracting": [
+        {"key": "routing", "label": "Routing", "type": "select", "db_col": "decision_type",
+         "options": "route_external,keep_internal,split,change_vendor"},
+        {"key": "qty", "label": "Planned Qty", "type": "number", "db_col": "planned_qty"},
+    ],
+    "forecast_adjustment": [
+        {"key": "direction", "label": "Direction", "type": "select", "db_col": "adjustment_direction",
+         "options": "up,down,no_change"},
+        {"key": "magnitude_pct", "label": "Adjustment %", "type": "number", "db_col": "adjustment_pct"},
+    ],
+    "inventory_buffer": [
+        {"key": "buffer_qty", "label": "Buffer Qty", "type": "number", "db_col": "adjusted_ss"},
+        {"key": "multiplier", "label": "Multiplier", "type": "number", "db_col": "multiplier"},
+    ],
+}
+
+
+def _get_editable_values(row, decision_type: str) -> Optional[Dict[str, Any]]:
+    """Extract current decision values that the user can modify during override."""
+    fields = EDITABLE_FIELDS_MAP.get(decision_type)
+    if not fields:
+        return None
+    result = {}
+    for f in fields:
+        val = getattr(row, f["db_col"], None)
+        # Serialize date/datetime to ISO string
+        if val is not None and hasattr(val, "isoformat"):
+            val = val.isoformat()
+        result[f["key"]] = val
+    return result
+
+
+def _snapshot_original_values(decision, decision_type: str) -> Dict[str, Any]:
+    """Snapshot the TRM's original recommendation before user overwrite."""
+    fields = EDITABLE_FIELDS_MAP.get(decision_type, [])
+    snapshot = {}
+    for f in fields:
+        val = getattr(decision, f["db_col"], None)
+        if val is not None and hasattr(val, "isoformat"):
+            val = val.isoformat()
+        snapshot[f["key"]] = val
+    return snapshot
+
+
+def _apply_override_values(decision, decision_type: str, values: Dict[str, Any]):
+    """Apply user-modified values to the decision record columns."""
+    from datetime import date as _date
+    fields = EDITABLE_FIELDS_MAP.get(decision_type, [])
+    field_map = {f["key"]: f for f in fields}
+    for user_key, user_val in values.items():
+        spec = field_map.get(user_key)
+        if not spec:
+            continue
+        db_col = spec["db_col"]
+        if not hasattr(decision, db_col):
+            continue
+        # Type coercion
+        if spec["type"] == "number" and user_val is not None:
+            try:
+                user_val = float(user_val)
+            except (TypeError, ValueError):
+                continue
+        elif spec["type"] == "date" and isinstance(user_val, str):
+            try:
+                user_val = _date.fromisoformat(user_val)
+            except ValueError:
+                continue
+        setattr(decision, db_col, user_val)
+
+
+def _mark_executed(decision, executed: bool):
+    """Set the execution/commitment flag based on action."""
+    if hasattr(decision, "was_committed"):
+        decision.was_committed = executed
+    if hasattr(decision, "was_executed"):
+        decision.was_executed = executed
+    if hasattr(decision, "was_applied"):
+        decision.was_applied = executed
+
+
 class DecisionStreamService:
     """LLM-First Decision Stream with Decision-Back Planning."""
 
@@ -581,10 +698,20 @@ class DecisionStreamService:
         override_reason_text: Optional[str] = None,
         override_values: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Accept, inspect, override, or reject a pending decision (AIIO model).
+        """Accept, inspect, modify, or cancel a pending decision (AIIO model).
 
-        Updates the status column in the appropriate powell_*_decisions table.
+        - accept: Mark as ACTIONED (execute as-is)
+        - inspect: Mark as INSPECTED (reviewed, no action needed)
+        - modify: User changed values — snapshot originals, apply overrides, execute modified version
+        - cancel: User rejects entirely — mark as not executed, no action taken
+        - override/reject: Backward compat aliases for modify/cancel
         """
+        # Normalize backward-compat actions
+        if action == "override":
+            action = "modify"
+        if action == "reject":
+            action = "cancel"
+
         # Find the model class for this decision type
         model_class = None
         for cls, type_key in DECISION_TABLES:
@@ -595,17 +722,14 @@ class DecisionStreamService:
         if not model_class:
             return {"success": False, "message": f"Unknown decision type: {decision_type}", "decision_id": decision_id, "new_status": "error"}
 
-        # Determine new status (AIIO model)
         status_map = {
             "accept": "ACTIONED",
             "inspect": "INSPECTED",
-            "override": "OVERRIDDEN",
-            "reject": "OVERRIDDEN",  # Backward compat: reject maps to OVERRIDDEN
+            "modify": "OVERRIDDEN",
+            "cancel": "OVERRIDDEN",
         }
         new_status = status_map.get(action, "ACTIONED")
 
-        # Check if model has a status-like column
-        # Most decision tables don't have explicit status, but we'll check common patterns
         try:
             result = await self.db.execute(
                 select(model_class).where(model_class.id == decision_id)
@@ -615,16 +739,39 @@ class DecisionStreamService:
             if not decision:
                 return {"success": False, "message": f"Decision {decision_id} not found", "decision_id": decision_id, "new_status": "error"}
 
-            # Update fields based on action (AIIO model)
-            if hasattr(decision, "was_committed"):
-                decision.was_committed = action in ("accept", "inspect")
-            if hasattr(decision, "decision_method"):
-                if action == "override":
+            # Common override metadata (modify or cancel)
+            if action in ("modify", "cancel"):
+                decision.override_action = action
+                decision.override_reason_code = override_reason_code
+                decision.override_reason_text = override_reason_text
+                decision.override_user_id = self.user.id if self.user else None
+                decision.override_at = datetime.utcnow()
+
+                if hasattr(decision, "decision_method"):
                     decision.decision_method = "human_override"
-                elif action == "inspect":
+
+            if action == "modify" and override_values:
+                # Snapshot original TRM recommendation before overwriting
+                decision.original_values = _snapshot_original_values(decision, decision_type)
+                decision.override_values = override_values
+                _apply_override_values(decision, decision_type, override_values)
+                _mark_executed(decision, True)
+
+            elif action == "cancel":
+                decision.override_values = None
+                _mark_executed(decision, False)
+
+            elif action == "accept":
+                _mark_executed(decision, True)
+
+            elif action == "inspect":
+                if hasattr(decision, "decision_method"):
                     decision.decision_method = "human_inspected"
 
             await self.db.commit()
+
+            # Invalidate digest cache so the stream refreshes
+            invalidate_digest_cache(tenant_id=self.tenant_id)
 
             return {
                 "success": True,
@@ -865,6 +1012,7 @@ class DecisionStreamService:
                         "suggested_action": _humanize_ids(_get_suggested_action(row, type_key), product_names),
                         "deep_link": DEEP_LINK_MAP.get(type_key, "/insights/actions"),
                         "created_at": row.created_at.isoformat() if row.created_at else None,
+                        "editable_values": _get_editable_values(row, type_key),
                         "context": {
                             "config_id": row.config_id,
                             "decision_method": getattr(row, "decision_method", None),

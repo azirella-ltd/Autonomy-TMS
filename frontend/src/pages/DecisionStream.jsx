@@ -155,14 +155,15 @@ const DecisionStream = () => {
     }
   };
 
-  const handleOverride = async (decision, reasonCode, reasonText) => {
+  const handleOverride = async (decision, reasonCode, reasonText, action = 'modify', overrideValues = null) => {
     try {
       await decisionStreamApi.actOnDecision({
         decision_id: decision.id,
         decision_type: decision.decision_type,
-        action: 'override',
+        action,  // 'modify' or 'cancel'
         override_reason_code: reasonCode,
         override_reason_text: reasonText,
+        override_values: action === 'modify' ? overrideValues : null,
       });
       loadDigest();
     } catch (err) {

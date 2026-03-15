@@ -18,8 +18,10 @@ from pydantic import BaseModel, Field
 class DecisionAction(str, Enum):
     ACCEPT = "accept"
     INSPECT = "inspect"
-    OVERRIDE = "override"
-    REJECT = "reject"  # Backward compat: maps to OVERRIDDEN in AIIO model
+    MODIFY = "modify"      # Override with changed values
+    CANCEL = "cancel"      # Reject the action entirely (no execution)
+    OVERRIDE = "override"  # Backward compat: treated as MODIFY
+    REJECT = "reject"      # Backward compat: treated as CANCEL
 
 
 class AlertSeverity(str, Enum):
@@ -56,6 +58,10 @@ class PendingDecisionItem(BaseModel):
     )
     deep_link: str = Field(..., description="Frontend route for Console deep-link")
     created_at: Optional[datetime] = None
+    editable_values: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Current decision values that can be modified during override (decision-type-specific)",
+    )
     context: Optional[Dict[str, Any]] = Field(
         default=None, description="Additional context fields from the decision"
     )

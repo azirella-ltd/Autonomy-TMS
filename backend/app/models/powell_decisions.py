@@ -38,6 +38,15 @@ class HiveSignalMixin:
     # Eliminates need for LLM to infer reasoning at query time
     decision_reasoning = Column(Text, nullable=True)
 
+    # Override tracking — populated by act_on_decision() when user modifies or cancels
+    override_action = Column(String(20), nullable=True)       # 'modify' or 'cancel'
+    override_values = Column(JSON, nullable=True)              # Dict of user-modified values (for modify)
+    original_values = Column(JSON, nullable=True)              # Snapshot of TRM recommendation before modify
+    override_reason_code = Column(String(50), nullable=True)   # MARKET_INTELLIGENCE, CAPACITY_CONSTRAINT, etc.
+    override_reason_text = Column(Text, nullable=True)         # Free-text explanation
+    override_user_id = Column(Integer, nullable=True)          # User who overrode
+    override_at = Column(DateTime, nullable=True)              # When the override happened
+
     def _signal_dict(self) -> dict:
         """Return signal fields for to_dict()."""
         return {
@@ -48,6 +57,10 @@ class HiveSignalMixin:
             "cycle_phase": self.cycle_phase,
             "cycle_id": self.cycle_id,
             "decision_reasoning": self.decision_reasoning,
+            "override_action": self.override_action,
+            "override_values": self.override_values,
+            "override_reason_code": self.override_reason_code,
+            "override_reason_text": self.override_reason_text,
         }
 
 
