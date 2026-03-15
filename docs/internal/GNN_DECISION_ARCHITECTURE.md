@@ -38,6 +38,54 @@ layers provide **feedback upward** (outcomes/signals). No layer calls across sit
 
 ---
 
+## Conceptual Frame: Baseline Plan + Agent Adjustment
+
+The GNN layers follow the same two-step pattern used in demand planning:
+
+```
+Demand Planning:
+  Step 1 — ML model (ARIMA / ETS)
+             → Baseline statistical forecast from historical data
+  Step 2 — ForecastAdjustmentTRM (AI Agent)
+             → Adjusts forecast using context: email signals, market intel,
+               product launches, promotional calendars, supplier news
+  Step 3 — Human consensus
+             → Final planner sign-off if material change
+
+S&OP Planning (exact parallel):
+  Step 1 — S&OP GraphSAGE (ML baseline)
+             → Baseline policy parameters θ* optimised across 1000+ MC scenarios:
+               safety_stock_multiplier, service_level_target, reorder_point_days,
+               order_up_to_days, sourcing_split — one set per site per product
+  Step 2 — S&OP Adjustment Agents (AI Agents)
+             → Adjust θ* using strategic context that the statistical model
+               cannot capture:
+               • AAP Consensus Board — functional agents negotiate trade-offs
+                 (e.g. Finance wants lower inventory; Customer Service wants
+                 higher fill rate; Production flags a capacity constraint)
+               • Directive routing — human strategic intent injected via
+                 Talk to Me (plant shutdown, supplier news, NPI, promotions)
+               • RCCP validation — capacity feasibility check; if plan is
+                 infeasible, RCCP agent proposes θ* adjustments or flags to S&OP
+               • Claude Skills at Layer 4 — handles novel scenarios outside the
+                 GNN training distribution
+  Step 3 — Human S&OP meeting
+             → Review probabilistic BSC, approve or override the adjusted plan
+```
+
+**Why the separation matters**: The GraphSAGE is excellent at optimising over the
+supply chain structure and historical distributions. It cannot know about next quarter's
+product launch, the announced supplier plant closure, or the union strike risk. The
+S&OP Adjustment Agents layer exists specifically to inject that knowledge, in exactly
+the same way a demand planner adjusts a statistical forecast for a promotional event.
+
+The GraphSAGE baseline is not overridden arbitrarily — every adjustment is tracked
+as a directive in `user_directives`, scored for effectiveness via `OverrideEffectivenessPosterior`,
+and fed back into future GraphSAGE training so the model gradually learns to anticipate
+those patterns without explicit adjustment.
+
+---
+
 ## Critical Design Principle: Oracle = Training Only, Not Inference
 
 The LP solver (Network tGNN) and Differential Evolution optimizer (S&OP GraphSAGE) are
@@ -767,6 +815,274 @@ If Network tGNN shows sustained demand forecast error > 15%:
 
 See [ESCALATION_ARCHITECTURE.md](ESCALATION_ARCHITECTURE.md) for the full vertical
 escalation protocol.
+
+---
+
+## Worked Example: Bottom-Up Capacity Escalation (95% OEE → Extra Shift → RCCP → S&OP)
+
+> **Scenario**: Site XYZ has been running at 95% OEE for several days. Despite
+> maximum utilisation, the production backlog is still growing. The site needs an extra
+> shift. How does this observation travel from the Site tGNN all the way up to the
+> RCCP layer and then the S&OP GraphSAGE?
+>
+> This example traces the **bottom-up feedback path** — the mirror image of the
+> planned shutdown worked example above which followed the top-down path.
+
+### What "95% OEE and still behind" means structurally
+
+OEE (Overall Equipment Effectiveness) of 95% sounds good, but the sustainable maximum
+for most manufacturing equipment is ~85%. Running above that degrades reliability over
+time (increased breakdown risk) and leaves no maintenance window. If the site is at 95%
+OEE and **still accumulating backlog**, two things are simultaneously true:
+
+1. **Execution is not the problem** — the TRMs are already optimising within available
+   capacity. Urgency boosts will not help. This is a capacity constraint, not an
+   efficiency problem.
+2. **Capacity is the binding constraint** — the production plan is infeasible at current
+   capacity. The plan must either be revised (reduce commitments) or capacity must be
+   expanded (extra shift, outsourcing).
+
+This distinction is critical: if the system treats it as an execution problem it will
+keep boosting TRM urgency forever without solving it. The correct response is to
+**escalate to the capacity planning and S&OP layers**.
+
+---
+
+### Stage 1 — Detection at the Site Level (MOExecutionTRM + MaintenanceSchedulingTRM)
+
+**`MOExecutionTRM`** tracks OEE as part of operational state:
+```python
+site_operational_state = {
+    "oee_current":          0.95,    # measured this cycle
+    "oee_sustainable_max":  0.85,    # configured threshold (above = unsustainable)
+    "mo_backlog_units":     4200,    # open MOs not yet released
+    "capacity_units_week":  1000,    # nameplate
+    "effective_capacity":   950,     # at 95% OEE
+    "planned_output_week":  1150,    # what the plan requires
+    "shortfall":            200,     # planned - effective = infeasible gap
+}
+# Decision: release MOs in priority order, but cannot close the shortfall
+# Urgency: 0.88 (HIGH — backlog persisting over 3+ cycles)
+# decision_reasoning: "Capacity constrained: shortfall 200 units/week. OEE at
+#   95% (above sustainable 85%) — further urgency boost will not close gap."
+```
+
+**`MaintenanceSchedulingTRM`** independently flags the OEE overshoot:
+```python
+# Reliability risk at 95% OEE:
+# Equipment MTBF degrades — probability of unplanned breakdown rises
+# Decision: recommend scheduled maintenance window soon to prevent unplanned failure
+# But: maintenance window competes with the production backlog
+# Urgency: 0.61 (cross-TRM conflict with MO_Execution)
+```
+
+**Site tGNN** (hourly, Layer 1.5) sees the cross-TRM conflict:
+```python
+cross_trm_attention = {
+    "MO_Execution → Maintenance_Scheduling": 0.71,  # high conflict — compete for capacity
+    "MO_Execution → Inventory_Buffer":       0.18,  # buffer depletion from backlog
+    "ATP_Executor → MO_Execution":           0.11,  # commitments outstanding
+}
+urgency_adjustments = {
+    "MO_Execution":           +0.22,   # still boosts, but...
+    "Maintenance_Scheduling": +0.18,   # ...also boosts maintenance flag
+    "Inventory_Buffer":       +0.15,   # buffer target needs review
+}
+coordination_score = 0.31   # LOW — TRMs in conflict, not cooperating
+```
+
+The low `coordination_score` and sustained cross-TRM bottleneck emit a
+`CROSS_TRM_BOTTLENECK` InterHiveSignal on the inter-hive bus.
+
+---
+
+### Stage 2 — Escalation Arbiter Triggers (Site → Operational Layer)
+
+After **3+ consecutive cycles** where MO CDC triggers persist despite urgency boosts,
+`EscalationArbiter.escalate_to_operational()` fires:
+
+```python
+escalation_payload = {
+    "site_id":          "XYZ",
+    "trigger":          "PERSISTENT_MO_CDC",
+    "cycles_persisted": 4,
+    "root_cause":       "CAPACITY_CONSTRAINT",   # not execution — plan infeasible
+    "oee_overshoot":    0.10,                    # 0.95 - 0.85
+    "weekly_shortfall": 200,                     # units
+    "maintenance_risk": "ELEVATED",              # breakdown risk from OEE overshoot
+}
+```
+
+The arbiter writes a `PowellEscalationLog` record and triggers an **on-demand
+Network tGNN re-run** for the affected sites (rather than waiting for the daily cycle).
+
+---
+
+### Stage 3 — RCCP Validation (Capacity Feasibility Check)
+
+The Network tGNN re-run incorporates the capacity constraint from the escalation
+payload. This triggers the **RCCP (Rough Cut Capacity Planning) validation** step —
+the agent that checks whether the production plan is feasible given available capacity.
+
+**What RCCP checks**:
+```
+For each site and each planning period:
+  required_output[t] = MPS planned production quantity
+  available_capacity[t] = nameplate × (1 - OEE_headroom_reserve)
+
+  At XYZ: required = 1150 units/week, available = 850 units/week (at sustainable OEE)
+  Infeasibility gap = 300 units/week
+```
+
+**RCCP generates three options** (ranked by net economic value):
+
+| Option | Description | Cost | Fill Rate Impact | Net EV |
+|---|---|---|---|---|
+| A — Extra shift | +8h/week labour at XYZ | $12K/week | Closes gap fully | +$47K/week |
+| B — Outsource gap | Subcontract 300 units/week | $18K/week | Closes gap fully | +$41K/week |
+| C — Reduce commitments | Lower ATP by 300 units/week | $0 | −18% fill rate | −$28K/week (lost revenue) |
+
+**RCCP → AAP authorization request** for Option A (extra shift):
+```python
+AuthorizationRequest(
+    originator="RCCP_Agent",
+    action="extra_shift_XYZ",
+    requires_authorization_from=["HR_Agent", "Finance_Agent"],
+    scorecard={
+        "cost":          "$12K/week",
+        "benefit":       "$59K/week (stockout avoidance + service level)",
+        "net_benefit":   "$47K/week",
+        "risk":          "Equipment reliability if sustained >4 weeks",
+    },
+    what_if_branch="scenario_branch_XYZ_extra_shift_2026W12",
+)
+```
+
+If HR and Finance agents authorize within their authority thresholds, the extra
+shift is approved and a directive is written back to `MOExecutionTRM` at XYZ.
+If it exceeds their thresholds (e.g. >4 weeks of extra shifts = structural capacity
+decision), it escalates to the human S&OP meeting.
+
+---
+
+### Stage 4 — Network tGNN Updates Directives for Affected Sites
+
+Whether or not the extra shift is authorized, the Network tGNN immediately updates
+its `tGNNSiteDirective` for all sites downstream of XYZ to reflect the capacity reality:
+
+```python
+# Sites served by XYZ (during the infeasibility gap):
+tGNNSiteDirective(site="DC_South") = {
+    "demand_satisfaction":  0.74,   # reduced — XYZ cannot meet full plan
+    "exception_probability": 0.71,  # high — active capacity constraint
+    "allocation_priority":   1,     # protect remaining supply
+}
+tGNNSiteDirective(site="DC_East") = {
+    "demand_satisfaction":  0.68,
+    "exception_probability": 0.66,
+}
+# Also: directives for alternative source sites (if sourcing_split allows):
+tGNNSiteDirective(site="XYZ_ALT") = {
+    "demand_forecast_correction": +18%,  # pull more from alternative site
+    "allocation_priority":         1,
+}
+```
+
+These directives immediately change TRM behaviour at downstream DCs: ATP tightens,
+rebalancing evaluates lateral transfers, order tracking flags known-late orders.
+
+---
+
+### Stage 5 — S&OP GraphSAGE Re-optimises θ* (If Sustained)
+
+If the RCCP infeasibility persists beyond a single week (structural, not transient),
+`EscalationArbiter.escalate_to_strategic()` fires, triggering a CFA re-optimisation:
+
+**What changes in the GraphSAGE DE objective**:
+```python
+site_xyz_features["capacity_units_per_week"] = 850   # sustainable, not nameplate 1000
+# OR if extra shift authorised:
+site_xyz_features["capacity_units_per_week"] = 1150  # nameplate + shift
+```
+
+**How θ* adjusts** across the network:
+
+| Parameter | Site | Direction | Why |
+|---|---|---|---|
+| `service_level_target` | XYZ downstream DCs | ↓ | Honest about reduced fill rate |
+| `safety_stock_multiplier` | XYZ downstream DCs | ↑ | More buffer needed (lower throughput) |
+| `sourcing_split` | Downstream DCs | Shifts → alt sources | Compensate for XYZ shortfall |
+| `order_up_to_days` | XYZ | ↓ (if extra shift) | Higher throughput → replenish faster |
+| `service_level_target` | XYZ (if extra shift) | Restores | Gap closed |
+
+The updated θ* propagates top-down through the same path described in the top-down
+flow: Network tGNN reads new parameters → updates directives → Site tGNN adjusts
+urgencies → TRMs execute under new policy.
+
+---
+
+### The Complete Loop
+
+```
+Site XYZ TRMs
+    MOExecutionTRM: oee=0.95, backlog=4200, shortfall=200/week
+    MaintenanceSchedulingTRM: breakdown_risk=ELEVATED
+    ↓ (urgency boosts ineffective after 3 cycles)
+
+Site tGNN (Layer 1.5, hourly)
+    coordination_score=0.31 (TRMs in conflict)
+    CROSS_TRM_BOTTLENECK InterHiveSignal emitted
+    ↓
+
+EscalationArbiter (every 2h)
+    escalate_to_operational() → on-demand Network tGNN re-run
+    ↓
+
+RCCP Validation (triggered by Network tGNN re-run)
+    Infeasibility confirmed: 300 units/week gap
+    Options A/B/C ranked by EV
+    AAP AuthorizationRequest → HR + Finance agents
+    ↓
+
+Network tGNN (re-run)
+    tGNNSiteDirective updated for all XYZ downstream sites
+    demand_satisfaction reduced, exception_probability raised
+    ↓
+
+S&OP GraphSAGE (if sustained → escalate_to_strategic)
+    DE re-optimises θ* with corrected capacity ceiling
+    θ* propagates back down to all sites
+    ↓
+
+Human S&OP Meeting (if extra shift > authority threshold)
+    Probabilistic BSC shows three options with EV
+    Human approves extra shift → directive written
+    Override recorded → feeds OverrideEffectivenessPosterior
+    → future GraphSAGE training learns to anticipate this scenario
+```
+
+### Key Design Points
+
+1. **Urgency escalation has a ceiling**: The Site tGNN can boost urgency, but it cannot
+   manufacture capacity. The escalation arbiter's job is to detect when the problem has
+   moved from "execution efficiency" to "capacity feasibility" and stop wasting urgency
+   boosts on an insoluble execution problem.
+
+2. **RCCP is the capacity feasibility agent**: It sits between the Network tGNN
+   (what the plan requires) and the S&OP GraphSAGE (what the policy says). Its job is
+   to catch infeasibilities before they become backlog crises, and generate economically-
+   ranked options for the AAP or human to authorize.
+
+3. **The S&OP plan is adjusted, not replaced**: The extra shift is not a full S&OP
+   re-run. It is a **targeted adjustment** to θ* at XYZ and its downstream sites —
+   exactly analogous to a demand planner adjusting a specific SKU's forecast for a
+   promotional event without re-running the full statistical model.
+
+4. **Feedback closes the loop**: The human authorization of the extra shift (if needed)
+   is an override of the RCCP agent's recommendation. It is scored via
+   `OverrideEffectivenessPosterior(user_id, trm_type="rccp")` and fed back into
+   future training so the system learns the organization's capacity authorization
+   thresholds without having to be told explicitly.
 
 ---
 
