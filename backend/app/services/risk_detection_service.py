@@ -452,6 +452,152 @@ class RiskDetectionService:
             "sample_size": len(lt_values)
         }
 
+    def _build_resolution_condition(self, alert_type: str, result: Dict) -> Dict:
+        """
+        Capture the condition that must change for an alert to be auto-resolved.
+
+        The condition encodes what metric, threshold, and operator the agent
+        monitors. When the condition is no longer met, the alert moves to
+        ACTIONED (auto-resolved without human intervention).
+        """
+        if alert_type == "STOCKOUT":
+            return {
+                "metric": "stockout_probability",
+                "operator": "lt",
+                "threshold": self.STOCKOUT_MEDIUM,
+                "current_value": result.get("probability"),
+                "description": (
+                    f"Stock-out probability must drop below {self.STOCKOUT_MEDIUM}% "
+                    f"(currently {result.get('probability', '?')}%)"
+                ),
+            }
+        elif alert_type == "OVERSTOCK":
+            return {
+                "metric": "days_of_supply",
+                "operator": "lt",
+                "threshold": self.OVERSTOCK_MEDIUM_DAYS,
+                "current_value": result.get("days_of_supply"),
+                "description": (
+                    f"Days of supply must drop below {self.OVERSTOCK_MEDIUM_DAYS} days "
+                    f"(currently {result.get('days_of_supply', '?')} days)"
+                ),
+            }
+        elif alert_type == "VENDOR_LEADTIME":
+            return {
+                "metric": "coefficient_of_variation",
+                "operator": "lt",
+                "threshold": 20.0,
+                "current_value": result.get("coefficient_of_variation"),
+                "description": (
+                    f"Vendor lead time CV must drop below 20% "
+                    f"(currently {result.get('coefficient_of_variation', '?')}%)"
+                ),
+            }
+        return {}
+
+    def _evaluate_resolution_condition(self, condition: Dict, result: Dict) -> bool:
+        """
+        Evaluate whether the stored resolution condition is now met.
+
+        Returns True if the condition is satisfied (alert should be resolved).
+        """
+        if not condition or "metric" not in condition:
+            return False
+
+        metric = condition["metric"]
+        operator = condition["operator"]
+        threshold = condition["threshold"]
+
+        # Map metric names to result keys
+        value = result.get(metric)
+        if value is None:
+            # Try alternate key mappings
+            alt_keys = {
+                "stockout_probability": "probability",
+                "days_of_supply": "days_of_supply",
+                "coefficient_of_variation": "coefficient_of_variation",
+            }
+            value = result.get(alt_keys.get(metric, metric))
+
+        if value is None:
+            return False
+
+        if operator == "lt":
+            return value < threshold
+        elif operator == "gt":
+            return value > threshold
+        elif operator == "lte":
+            return value <= threshold
+        elif operator == "gte":
+            return value >= threshold
+        return False
+
+    async def resolve_informed_alerts(self) -> Dict[str, int]:
+        """
+        Re-evaluate all INFORMED risk alerts against their stored resolution
+        conditions.
+
+        Each alert carries a `resolution_condition` that describes what must
+        change for auto-resolution. When the condition is met, the alert moves
+        to ACTIONED — the agent auto-resolved it without human intervention.
+
+        Returns counts of resolved vs still-active alerts.
+        """
+        from app.models.risk import RiskAlert
+
+        informed_alerts = (
+            self.db.query(RiskAlert)
+            .filter(RiskAlert.status == "INFORMED")
+            .all()
+        )
+
+        resolved_count = 0
+        still_informed = 0
+
+        for alert in informed_alerts:
+            # Re-evaluate current conditions
+            result = {}
+            if alert.type == "STOCKOUT":
+                result = await self.detect_stockout_risk(
+                    alert.product_id, alert.site_id
+                )
+            elif alert.type == "OVERSTOCK":
+                result = await self.detect_overstock_risk(
+                    alert.product_id, alert.site_id
+                )
+            elif alert.type == "VENDOR_LEADTIME" and alert.vendor_id:
+                result = await self.predict_vendor_leadtime(
+                    alert.vendor_id, alert.product_id, alert.site_id
+                )
+
+            # Use stored condition if available, else fall back to type-based check
+            condition = alert.resolution_condition
+            if condition:
+                is_resolved = self._evaluate_resolution_condition(condition, result)
+            else:
+                # Legacy alerts without stored condition — build and store one
+                condition = self._build_resolution_condition(alert.type, result)
+                alert.resolution_condition = condition
+                is_resolved = self._evaluate_resolution_condition(condition, result)
+
+            if is_resolved:
+                alert.status = "ACTIONED"
+                alert.resolved_at = datetime.utcnow()
+                alert.resolution_notes = (
+                    f"Auto-resolved: {condition.get('description', 'condition no longer met')}"
+                )
+                resolved_count += 1
+            else:
+                still_informed += 1
+
+        if resolved_count > 0 or informed_alerts:
+            self.db.commit()
+
+        return {
+            "resolved": resolved_count,
+            "still_informed": still_informed,
+        }
+
     async def generate_risk_alerts(
         self,
         config_id: Optional[int] = None,
@@ -496,7 +642,8 @@ class RiskDetectionService:
                         "message": f"Stock-out risk: {stockout_risk['days_until_stockout']} days until depletion",
                         "recommended_action": stockout_risk["recommended_action"],
                         "created_at": datetime.utcnow(),
-                        "factors": stockout_risk["factors"]
+                        "factors": stockout_risk["factors"],
+                        "resolution_condition": self._build_resolution_condition("STOCKOUT", stockout_risk),
                     })
 
             # Check overstock risk
@@ -516,7 +663,8 @@ class RiskDetectionService:
                         "message": f"Excess inventory: {overstock_risk['days_of_supply']:.0f} days of supply",
                         "recommended_action": overstock_risk["recommended_action"],
                         "created_at": datetime.utcnow(),
-                        "factors": overstock_risk["factors"]
+                        "factors": overstock_risk["factors"],
+                        "resolution_condition": self._build_resolution_condition("OVERSTOCK", overstock_risk),
                     })
 
         # Sort by severity

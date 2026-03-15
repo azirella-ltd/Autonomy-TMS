@@ -191,6 +191,18 @@ def register_relearning_jobs(scheduler_service: 'SyncSchedulerService') -> None:
     )
     logger.info("Registered Site tGNN training check job (every 12h at :50)")
 
+    # Every 4 hours: Risk alert condition monitoring
+    # Re-evaluates INFORMED risk alerts — auto-resolves (ACTIONED) if condition cleared
+    scheduler.add_job(
+        func=_run_risk_condition_monitor,
+        trigger=CronTrigger(hour="2,6,10,14,18,22", minute=15),
+        id="risk_condition_monitor",
+        name="Risk: Condition Monitor (every 4h)",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    logger.info("Registered risk condition monitor job (every 4h at :15)")
+
 
 # ---------------------------------------------------------------------------
 # Job execution functions
@@ -680,6 +692,39 @@ def _run_site_tgnn_training_check() -> None:
         logger.info("Site tGNN training check complete (no sites requiring training)")
     except Exception as e:
         logger.error(f"Site tGNN training check failed: {e}", exc_info=True)
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
+def _run_risk_condition_monitor() -> None:
+    """Re-evaluate INFORMED risk alerts and auto-resolve (ACTIONED) if condition cleared."""
+    from app.db.session import SessionLocal
+    import asyncio
+
+    logger.info("Starting risk condition monitor")
+
+    db = SessionLocal()
+    try:
+        from app.services.risk_detection_service import RiskDetectionService
+
+        service = RiskDetectionService(db)
+
+        # Run the async method in a sync context
+        loop = asyncio.new_event_loop()
+        try:
+            result = loop.run_until_complete(service.resolve_informed_alerts())
+        finally:
+            loop.close()
+
+        logger.info(
+            "Risk condition monitor completed: %d auto-resolved, %d still informed",
+            result["resolved"], result["still_informed"],
+        )
+    except Exception as e:
+        logger.error(f"Risk condition monitor failed: {e}", exc_info=True)
     finally:
         try:
             db.close()

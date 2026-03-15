@@ -45,12 +45,16 @@ class RiskAlert(Base):
     # Risk factors (JSON)
     factors = Column(JSON, nullable=True)  # Detailed factors contributing to risk
 
-    # Status tracking
+    # AIIO status tracking
     status = Column(String(20), default="INFORMED", index=True)  # AIIO: INFORMED, ACTIONED, INSPECTED, OVERRIDDEN
     acknowledged_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     acknowledged_at = Column(DateTime, nullable=True)
     resolved_at = Column(DateTime, nullable=True)
     resolution_notes = Column(Text, nullable=True)
+
+    # Condition-based resolution: what must change for auto-resolution
+    # JSON: {"metric": "stockout_probability", "operator": "lt", "threshold": 40, "description": "..."}
+    resolution_condition = Column(JSON, nullable=True)
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)

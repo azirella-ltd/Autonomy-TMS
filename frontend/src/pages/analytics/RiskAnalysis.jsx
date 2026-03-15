@@ -106,10 +106,22 @@ const RiskAnalysis = () => {
       const params = {};
       if (severityFilter !== 'ALL') params.severity = severityFilter;
       if (typeFilter !== 'ALL') params.alert_type = typeFilter;
-      if (statusFilter !== 'ALL') params.status = statusFilter;
 
-      const response = await api.get('/risk-analysis/alerts', { params });
-      setAlerts(response.data);
+      if (statusFilter === 'COMPLETED') {
+        // Fetch INSPECTED + OVERRIDDEN separately and merge
+        const [inspected, overridden] = await Promise.all([
+          api.get('/risk-analysis/alerts', { params: { ...params, status: 'INSPECTED' } }),
+          api.get('/risk-analysis/alerts', { params: { ...params, status: 'OVERRIDDEN' } }),
+        ]);
+        setAlerts([...(inspected.data || []), ...(overridden.data || [])]);
+      } else if (statusFilter !== 'ALL') {
+        params.status = statusFilter;
+        const response = await api.get('/risk-analysis/alerts', { params });
+        setAlerts(response.data);
+      } else {
+        const response = await api.get('/risk-analysis/alerts', { params });
+        setAlerts(response.data);
+      }
     } catch (err) {
       console.error('Failed to fetch risk alerts:', err);
       setError('Failed to load risk alerts. Please try again.');
@@ -135,7 +147,11 @@ const RiskAnalysis = () => {
     setSuccess(null);
     try {
       const response = await api.post('/risk-analysis/generate-alerts');
-      setSuccess(`Generated ${response.data.new_alerts} new alerts and updated ${response.data.updated_alerts} existing alerts.`);
+      const r = response.data;
+      const parts = [`${r.new_alerts} new alerts`];
+      if (r.updated_alerts) parts.push(`${r.updated_alerts} updated`);
+      if (r.auto_resolved) parts.push(`${r.auto_resolved} auto-resolved`);
+      setSuccess(parts.join(', ') + '.');
       await fetchAlerts();
     } catch (err) {
       console.error('Failed to generate alerts:', err);
@@ -356,6 +372,22 @@ const RiskAnalysis = () => {
             </div>
           )}
 
+          {selectedAlert.resolution_condition && (
+            <div>
+              <p className="text-sm text-muted-foreground mb-1">Auto-Resolution Condition</p>
+              <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 p-3 rounded-md">
+                <p className="text-sm">{selectedAlert.resolution_condition.description}</p>
+              </div>
+            </div>
+          )}
+
+          {selectedAlert.resolution_notes && (
+            <div>
+              <p className="text-sm text-muted-foreground mb-1">Resolution Notes</p>
+              <p className="text-sm">{selectedAlert.resolution_notes}</p>
+            </div>
+          )}
+
           <div>
             <p className="text-sm text-muted-foreground">Created</p>
             <p className="text-sm">{format(new Date(selectedAlert.created_at), 'PPpp')}</p>
@@ -363,22 +395,22 @@ const RiskAnalysis = () => {
         </div>
 
         <div className="flex justify-end gap-2 mt-6">
-          {selectedAlert.status === 'ACTIVE' && (
+          {selectedAlert.status === 'INFORMED' && (
             <>
               <Button
                 variant="outline"
                 onClick={() => acknowledgeAlert(selectedAlert.alert_id)}
               >
-                Acknowledge
+                Inspect (No Action Needed)
               </Button>
               <Button
                 variant="default"
                 onClick={() => {
-                  const notes = window.prompt('Enter resolution notes:');
+                  const notes = window.prompt('Enter override reason:');
                   if (notes) resolveAlert(selectedAlert.alert_id, notes);
                 }}
               >
-                Resolve
+                Override (Take Action)
               </Button>
             </>
           )}
@@ -570,11 +602,10 @@ const RiskAnalysis = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="ALL">All Statuses</SelectItem>
-                      <SelectItem value="INFORMED">Informed</SelectItem>
-                      <SelectItem value="ACTIONED">Actioned</SelectItem>
-                      <SelectItem value="INSPECTED">Inspected</SelectItem>
-                      <SelectItem value="OVERRIDDEN">Overridden</SelectItem>
+                      <SelectItem value="INFORMED">Needs Attention</SelectItem>
+                      <SelectItem value="COMPLETED">Completed</SelectItem>
+                      <SelectItem value="ACTIONED">Auto-Resolved</SelectItem>
+                      <SelectItem value="ALL">All</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -640,7 +671,17 @@ const RiskAnalysis = () => {
                             </TooltipProvider>
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline">{alert.status}</Badge>
+                            <Badge variant="outline" className={
+                              alert.status === 'INFORMED' ? 'border-blue-500 text-blue-700 bg-blue-50' :
+                              alert.status === 'ACTIONED' ? 'border-green-500 text-green-700 bg-green-50' :
+                              alert.status === 'INSPECTED' ? 'border-gray-500 text-gray-700 bg-gray-50' :
+                              alert.status === 'OVERRIDDEN' ? 'border-amber-500 text-amber-700 bg-amber-50' : ''
+                            }>
+                              {alert.status === 'INFORMED' ? 'Needs Attention' :
+                               alert.status === 'ACTIONED' ? 'Auto-Resolved' :
+                               alert.status === 'INSPECTED' ? 'Inspected' :
+                               alert.status === 'OVERRIDDEN' ? 'Overridden' : alert.status}
+                            </Badge>
                           </TableCell>
                           <TableCell>
                             {format(new Date(alert.created_at), 'PP')}

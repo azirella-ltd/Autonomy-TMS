@@ -38,6 +38,9 @@ class RiskAlertResponse(BaseModel):
     recommended_action: str
     factors: Optional[Dict] = None
     status: str
+    resolution_condition: Optional[Dict] = None
+    resolution_notes: Optional[str] = None
+    resolved_at: Optional[datetime] = None
     created_at: datetime
     acknowledged_by: Optional[int] = None
     acknowledged_at: Optional[datetime] = None
@@ -358,13 +361,16 @@ async def generate_alerts(
     """
     risk_service = RiskDetectionService(db)
 
-    # Generate alerts
+    # Step 1: Re-evaluate existing INFORMED alerts — auto-resolve if condition cleared
+    resolution = await risk_service.resolve_informed_alerts()
+
+    # Step 2: Generate new alerts from current conditions
     alerts = await risk_service.generate_risk_alerts(
         config_id=config_id,
         severity_filter=severity_filter
     )
 
-    # Persist alerts to database
+    # Step 3: Persist new/updated alerts (status=INFORMED for human review)
     persisted_count = 0
     updated_count = 0
 
@@ -374,14 +380,16 @@ async def generate_alerts(
         ).first()
 
         if existing_alert:
-            # Update existing alert
-            for key, value in alert_data.items():
-                if key != "alert_id":
-                    setattr(existing_alert, key, value)
-            existing_alert.updated_at = datetime.utcnow()
-            updated_count += 1
+            # Only update if still INFORMED (don't overwrite human actions)
+            if existing_alert.status == "INFORMED":
+                for key, value in alert_data.items():
+                    if key != "alert_id":
+                        setattr(existing_alert, key, value)
+                existing_alert.updated_at = datetime.utcnow()
+                updated_count += 1
         else:
-            # Create new alert
+            # New alert — starts as INFORMED (needs human attention)
+            alert_data["status"] = "INFORMED"
             new_alert = RiskAlert(**alert_data)
             db.add(new_alert)
             persisted_count += 1
@@ -392,7 +400,9 @@ async def generate_alerts(
         "message": "Alert generation completed",
         "total_alerts": len(alerts),
         "new_alerts": persisted_count,
-        "updated_alerts": updated_count
+        "updated_alerts": updated_count,
+        "auto_resolved": resolution["resolved"],
+        "still_informed": resolution["still_informed"],
     }
 
 
