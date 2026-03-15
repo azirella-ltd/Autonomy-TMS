@@ -102,6 +102,12 @@ def _parse_llm_json(text: str) -> dict:
                 return json.loads(candidate)
             except (json.JSONDecodeError, ValueError) as e:
                 logger.warning("JSON parse failed on extracted block (%d chars): %s", len(candidate), e)
+                # Try fixing common LLM JSON errors: trailing commas, single quotes
+                try:
+                    fixed = _re.sub(r',\s*([}\]])', r'\1', candidate)  # Remove trailing commas
+                    return json.loads(fixed)
+                except (json.JSONDecodeError, ValueError):
+                    pass
 
     # Log first/last 200 chars for debugging
     logger.error(

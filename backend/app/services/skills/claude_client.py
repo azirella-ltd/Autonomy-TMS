@@ -278,6 +278,7 @@ class ClaudeClient:
                 "model": model,
                 "temperature": temperature,
                 "max_tokens": capped_max_tokens,
+                "chat_template_kwargs": {"enable_thinking": False},
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message},
@@ -287,6 +288,9 @@ class ClaudeClient:
         response.raise_for_status()
         data = response.json()
         content = data["choices"][0]["message"]["content"] if data.get("choices") else ""
+        # Strip any residual Qwen3 <think>...</think> blocks that sneak through
+        import re as _re
+        content = _re.sub(r'<think>.*?</think>', '', content, flags=_re.DOTALL).strip()
         usage = data.get("usage", {})
         tokens = usage.get("total_tokens", 0)
         return {"content": content, "model": model, "tokens_used": tokens}
