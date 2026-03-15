@@ -10,125 +10,155 @@
 
 ## Layer Architecture Overview
 
+### Current State (Implemented)
+
 ```
 Layer 4: S&OP GraphSAGE (Strategic)
   Scope:   Entire supply network
-  Timing:  Weekly (Sunday 04:00) + on-demand via provisioning
-  Output:  Policy parameters θ per site (safety stock multipliers, service
-           level targets, reorder point days, order-up-to days, sourcing split)
-  Method:  Amortised Differential Evolution (DE oracle → supervised GraphSAGE)
+  Timing:  Weekly (Sunday 04:00) + on-demand
+  Output:  θ* policy parameters per site (safety_stock_multiplier,
+           service_level_target, reorder_point_days, order_up_to_days,
+           sourcing_split)
+  Adjustment: None autonomous — upstream constraint injection + human directive
 
-Layer 2: Network tGNN (Tactical)
-  Scope:   Multi-site daily planning
+Layer 2: Supply Planning GNN [formerly "Network tGNN"]
+  Scope:   Multi-site daily supply/allocation planning
   Timing:  Daily
   Output:  tGNNSiteDirective per site (allocation priority, demand forecast
-           correction, exception probability, recommended flow adjustments)
-  Method:  Supervised BC on LP oracle labels → PPO fine-tuning
+           correction, exception probability, flow adjustments)
+  Adjustment: None — escalation triggers DE re-run upstream
 
-Layer 1.5: Site tGNN (Operational)
+Layer 1.5: Site tGNN (Operational)                             ✅ IMPLEMENTED
   Scope:   Single site — cross-TRM coordination
   Timing:  Hourly (at :25)
-  Output:  Urgency adjustments [11, 3] per TRM per site
-  Method:  BC from MultiHeadTrace → PPO with site-level BSC reward
+  Output:  Urgency adjustments [11, 3] per TRM
+  Adjustment: IS the adjustment layer — adjusts execution TRMs
+
+Layer 1: 11 Execution TRMs                                     ✅ IMPLEMENTED
+  Scope:   Per-decision execution
+  Timing:  Per cycle (<10ms)
+  Claude Skills: 11 skills (exception handling, ~5% of decisions)
 ```
 
-All three layers feed **downward** (parameters/directives to lower layers) and the lower
-layers provide **feedback upward** (outcomes/signals). No layer calls across sites directly
-— all cross-site information flows through the Network tGNN directive or AAP.
+### End State (Target Architecture)
+
+```
+Layer 4: S&OP GraphSAGE (Strategic)                            ✅ IMPLEMENTED
+  + S&OP Adjustment Skill (Claude Sonnet)                      ⬜ PLANNED
+    Trigger: new signal between weekly DE runs
+    Action:  bounded θ* patch with pending_de_reconciliation flag
+
+Layer 2: Tactical Planning — four domain GNNs (daily, sequential)
+
+  Step 1 — Demand Planning GNN                                  ⬜ PLANNED
+    Input:  historical demand, active forecasts, product lifecycle,
+            promotional calendar, email signals
+    Output: consensus demand plan (time-phased P10/P50/P90 per product-site)
+    Oracle: statistical ensemble (ETS + ARIMA + SARIMA) + ForecastAdjustmentTRM
+            decisions as BC labels
+    + Demand Adjustment TRM (in-cycle)                          ⬜ PLANNED
+    + Demand Planning Skill (cross-cycle)                       ⬜ PLANNED
+
+  Step 2 — Inventory Planning GNN                               ⬜ PLANNED
+    Input:  demand plan (step 1), lead time distributions,
+            supplier reliability, current inventory, θ*.safety_stock_multiplier
+    Output: SS targets, reorder points, order-up-to levels per product-site
+    Oracle: inventory_target_calculator.py (8 policy types) as BC labels
+    + Inventory Adjustment TRM (in-cycle)                       ⬜ PLANNED
+    + Inventory Planning Skill (cross-cycle)                    ⬜ PLANNED
+
+  Step 3 — Supply Planning GNN [rename of current Network tGNN] ✅ IMPLEMENTED (rename)
+    Input:  demand plan, inventory targets, sourcing rules, supplier data
+    Output: supply plan — PO/TO/MO requirements per product-site-week
+    Oracle: LP network flow optimiser (existing)
+    + Supply Adjustment TRM (in-cycle)                          ⬜ PLANNED
+    + Supply Planning Skill (cross-cycle)   [SKILL.md exists]   ⬜ WIRE IN
+
+  Step 4 — RCCP GNN                                             ⬜ PLANNED
+    Input:  supply plan MPS quantities, Bill of Resources, resource capacities,
+            changeover matrix, current utilisation
+    Output: feasibility verdict + MPS adjustments per resource per week
+    Oracle: RCCP SKILL.md rules (CPOF / BoC / Resource Profile methods)
+    + RCCP Adjustment TRM (in-cycle)                            ⬜ PLANNED
+    + RCCP Skill (cross-cycle)              [SKILL.md exists]   ⬜ WIRE IN
+
+Layer 1.5: Site tGNN (Operational)                             ✅ IMPLEMENTED
+  Unchanged — adjusts execution TRMs at the intra-site level
+
+Layer 1: 11 Execution TRMs + 11 Claude Skills                  ✅ IMPLEMENTED
+  Unchanged
+```
+
+**Sequential dependency**: the four domain GNNs run in order. Demand plan output
+is an input to Inventory GNN. Inventory targets are an input to Supply GNN. Supply
+plan (MPS) is the input to RCCP. This mirrors the standard S&OP review sequence
+and means each model is responsible for a coherent, auditable planning domain.
+
+**Implementation guide**: See [PLANNING_AGENT_IMPLEMENTATION.md](PLANNING_AGENT_IMPLEMENTATION.md)
+for full specification of every new component, provisioning sequence, and training pipeline.
 
 ---
 
 ## Conceptual Frame: Baseline Plan + Contextual Adjustment
 
-The GNN layers parallel the two-step pattern used in demand planning:
+Each planning layer follows the same two-step pattern established by demand planning:
 
 ```
-Demand Planning:
-  Step 1 — ML model (ARIMA / ETS)
-             → Baseline statistical forecast from historical data
-  Step 2 — ForecastAdjustmentTRM (deployed AI agent)
-             → Reads ML forecast output, writes adjusted value back before plan
-               is finalised. Incorporates: email signals, market intel, NPI,
-               promotions, supplier news.
-  Step 3 — Human consensus
-             → Final planner sign-off if material change
+Demand Planning (reference pattern):
+  Step 1 — ML model → baseline forecast from historical patterns
+  Step 2 — ForecastAdjustmentTRM (TRM) → bounded in-cycle correction
+           from recent deviations, email signals, real-time context
+  Step 2b — Demand Planning Skill (Claude Skill) → cross-cycle contextual
+           reasoning for novel situations (NPI, geopolitical, promotions
+           not yet in training data)
+  Step 3 — Human consensus sign-off
 
-S&OP Planning (analogous, but mechanism differs — see below):
-  Step 1 — S&OP GraphSAGE
-             → Baseline policy parameters θ* optimised across 1000+ MC scenarios:
-               safety_stock_multiplier, service_level_target, reorder_point_days,
-               order_up_to_days, sourcing_split — one set per site per product
-  Step 2 — Contextual adjustment (see "How adjustment works" below)
-  Step 3 — Human S&OP meeting
-             → Review probabilistic BSC, approve or override the adjusted plan
+Every planning domain applies this same pattern:
+
+  GNN           → baseline plan from structure + historical distributions
+  Domain TRM    → in-cycle correction (fast, trained, bounded, 1-3 day feedback)
+  Domain Skill  → cross-cycle reasoning (contextual, novel, qualitative judgment)
+  Human review  → approval for material changes
 ```
 
-### How S&OP Adjustment Actually Works (and Why It Differs From Demand Planning)
+### Why two adjustment layers (TRM and Skill) rather than one?
 
-The demand planning analogy is **conceptually correct but mechanically different** at
-the S&OP layer. In demand planning, `ForecastAdjustmentTRM` is a deployed agent that
-reads a forecast and writes an adjusted value *downstream* of the ML model. At the
-S&OP layer, **no equivalent post-hoc patch agent exists today**. The adjustment
-mechanism instead operates *upstream* of the DE optimiser:
+The TRM and Skill serve fundamentally different purposes and are not alternatives:
 
-```
-Demand Planning:
-  ML forecast → [ForecastAdjustmentTRM patches output] → adjusted forecast used
-
-S&OP Planning (current architecture):
-  New information → [injected into DE objective as constraint] → DE re-runs → new θ*
-```
-
-This means contextual adjustments cause the **full optimiser to re-run** with the new
-information rather than patching the output of the last run. The three mechanisms that
-deliver contextual information upstream are:
-
-| Mechanism | What it does | When it fires |
+| | Domain TRM (in-cycle) | Claude Skill (cross-cycle) |
 |---|---|---|
-| **Talk to Me directive routing** | Injects human-supplied constraints (shutdown, NPI, supplier news) into site node features before next DE run | On submission |
-| **RCCP infeasibility signal** | If validated capacity < planned output, triggers `escalate_to_strategic()` which re-runs DE with corrected capacity | When RCCP detects infeasibility |
-| **EscalationArbiter** | Triggers on-demand DE re-run when persistent Network tGNN forecast error > 15% | Every 2h check |
+| **When** | Within the current planning run | Between planning runs |
+| **Trigger** | Escalation signal, deviation threshold | New signal arrival, human directive, novel event |
+| **Reasoning type** | Pattern-matching on learned deviations | Qualitative reasoning about novel context |
+| **Feedback horizon** | 1–3 days | 1–4 weeks |
+| **Learns from outcomes** | Yes — RL fine-tuning on actual vs. plan | Only via SKILL.md updates and RAG memory |
+| **Example** | "Demand for SKU-X is consistently 12% above model — apply 1.12× correction" | "Competitor just discontinued product Y — our demand may spike 30–40% in 6 weeks" |
 
-**Why upstream injection rather than downstream patching?** Upstream injection produces
-a globally coherent θ* — the DE re-optimises the full objective accounting for all
-cross-site dependencies simultaneously. A downstream patch agent would adjust θ*
-locally and could inadvertently violate network-wide feasibility (e.g., raising one
-site's service level target without lowering another's, creating a plan that cannot be
-satisfied in aggregate).
+The TRM handles *recurring, learnable patterns* that the GNN missed. The Skill handles
+*novel situations* the TRM has no training data for. Over time, Skill decisions are recorded
+in RAG decision memory and eventually become TRM training data — the 95%/5% boundary
+gradually shifts as TRMs learn what Skills currently handle.
 
-### The Genuine Gap — and Why It May Be Worth Filling
+### S&OP layer: why the mechanism differs
 
-The upstream mechanism is globally correct but **not real-time**. Between weekly DE
-runs, new information arrives that cannot wait:
-- Email signal at 14:00 Monday: supplier confirms 30% capacity reduction for 6 weeks
-- Directive at 16:00 Monday: executive moves a product launch forward by 3 weeks
+At Layer 4, the current adjustment mechanism is **upstream injection** rather than downstream patching:
 
-A human S&OP Director does not wait for Sunday's DE run — they apply judgment to last
-week's θ* immediately. The architecture does not currently have an autonomous agent
-that replicates this. The closest thing is the human planner using Talk to Me, which
-injects the constraint and re-runs DE on demand (sub-minute with a warmed-up model).
+```
+Domain GNNs (Layer 2):
+  GNN output → [Domain TRM patches plan] → [Skill adjusts if novel] → finalized plan
 
-A **true S&OP Adjustment Agent** would be an LLM-based (Claude Skills at Layer 4)
-agent that:
-1. Reads the current θ* from `powell_policy_parameters`
-2. Reads the new signal (email, directive, RCCP flag)
-3. Applies a **lightweight bounded adjustment** to θ* for the affected sites only
-4. Flags the adjustment and its rationale for human review at the next S&OP meeting
-5. Marks the adjusted θ* as `pending_de_reconciliation=True` so the next DE run can
-   confirm or revise it globally
+S&OP GraphSAGE (Layer 4, current state):
+  New constraint → [injected into DE objective] → DE re-runs → new globally-coherent θ*
+```
 
-This would close the real-time gap at the cost of temporary local inconsistency —
-the same trade-off a human S&OP Director makes routinely. It is a **planned capability
-gap**, not a design flaw.
+Upstream injection produces globally coherent θ* (DE re-optimises all cross-site
+dependencies simultaneously). A downstream patch could create locally-improved but
+globally-infeasible policy parameters.
 
-**Current state**: adjustment is globally consistent but not real-time.
-**Gap**: no autonomous agent applies bounded θ* corrections between DE runs.
-**Mitigation**: human planner via Talk to Me triggers on-demand DE re-run (sub-minute).
-
-The GraphSAGE baseline is not adjusted arbitrarily — every directive is tracked in
-`user_directives`, scored via `OverrideEffectivenessPosterior`, and fed back into
-future DE training runs so the model gradually learns to anticipate patterns that
-currently require manual injection.
+The S&OP Adjustment Skill (planned) will apply **bounded local corrections** to θ*
+between DE runs for time-sensitive signals, marking adjustments as
+`pending_de_reconciliation=True` so the next Sunday DE run confirms or revises globally.
+Full details in [PLANNING_AGENT_IMPLEMENTATION.md](PLANNING_AGENT_IMPLEMENTATION.md).
 
 ---
 

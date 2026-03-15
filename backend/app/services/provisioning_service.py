@@ -339,9 +339,9 @@ class ProvisioningService:
             )
             result = optimizer.optimize(method="differential_evolution")
 
-            if result and result.converged:
+            if result and result.status == "success":
                 from datetime import datetime as dt
-                for param_name, param_value in result.optimal_params.items():
+                for param_name, param_value in result.optimal_parameters.items():
                     existing = (
                         sync_db.query(PowellPolicyParameters)
                         .filter(
@@ -364,9 +364,9 @@ class ProvisioningService:
                 sync_db.commit()
                 return {
                     "status": "ok",
-                    "cost": result.optimal_cost,
-                    "iterations": result.iterations,
-                    "params_optimized": len(result.optimal_params),
+                    "cost": result.optimal_objective,
+                    "iterations": result.num_iterations,
+                    "params_optimized": len(result.optimal_parameters),
                 }
             else:
                 return {"status": "ok", "note": "CFA optimization did not converge"}
@@ -393,10 +393,10 @@ class ProvisioningService:
                 # Load demand history: product_id, site_id, forecast_date, p50
                 rows = sync_db.execute(
                     text("""
-                        SELECT f.product_id, f.site_id, f.forecast_date, f.p50
+                        SELECT f.product_id, f.site_id, f.forecast_date, f.forecast_p50
                         FROM forecast f
                         JOIN product p ON p.id = f.product_id
-                        WHERE p.config_id = :cid AND f.p50 IS NOT NULL
+                        WHERE p.config_id = :cid AND f.forecast_p50 IS NOT NULL
                         ORDER BY f.product_id, f.site_id, f.forecast_date
                     """),
                     {"cid": config_id},
@@ -440,11 +440,12 @@ class ProvisioningService:
             logger.warning("LightGBM forecast step failed (non-critical): %s", e)
             return {"status": "ok", "note": f"LightGBM forecast attempted: {str(e)[:100]}"}
 
-    async def _step_demand_tgnn(self, config_id: int) -> dict:
+    async def _step_demand_tgnn(self, config_id: int, db: AsyncSession = None) -> dict:
         """Step 5: Cold-start Demand Planning tGNN (foreground fallback, normally runs via _bg)."""
         try:
             from app.services.powell.demand_planning_tgnn_service import DemandPlanningTGNNService
-            svc = DemandPlanningTGNNService(config_id=config_id)
+            session = db or self.db
+            svc = DemandPlanningTGNNService(db=session, config_id=config_id)
             result = await svc.infer(sop_embeddings=None)
             return {"status": "ok", "sites_processed": getattr(result, "sites_processed", 0)}
         except ImportError:
@@ -456,11 +457,12 @@ class ProvisioningService:
             logger.warning("Demand tGNN step failed (non-critical): %s", e)
             return {"status": "ok", "note": f"Demand tGNN attempted: {str(e)[:100]}"}
 
-    async def _step_supply_tgnn(self, config_id: int) -> dict:
+    async def _step_supply_tgnn(self, config_id: int, db: AsyncSession = None) -> dict:
         """Step 6: Cold-start Supply Planning tGNN (foreground fallback, normally runs via _bg)."""
         try:
             from app.services.powell.supply_planning_tgnn_service import SupplyPlanningTGNNService
-            svc = SupplyPlanningTGNNService(config_id=config_id)
+            session = db or self.db
+            svc = SupplyPlanningTGNNService(db=session, config_id=config_id)
             result = await svc.infer(sop_embeddings=None)
             return {"status": "ok", "sites_processed": getattr(result, "sites_processed", 0)}
         except ImportError:
@@ -472,11 +474,12 @@ class ProvisioningService:
             logger.warning("Supply tGNN step failed (non-critical): %s", e)
             return {"status": "ok", "note": f"Supply tGNN attempted: {str(e)[:100]}"}
 
-    async def _step_inventory_tgnn(self, config_id: int) -> dict:
+    async def _step_inventory_tgnn(self, config_id: int, db: AsyncSession = None) -> dict:
         """Step 7: Cold-start Inventory Optimization tGNN (foreground fallback, normally runs via _bg)."""
         try:
             from app.services.powell.inventory_optimization_tgnn_service import InventoryOptimizationTGNNService
-            svc = InventoryOptimizationTGNNService(config_id=config_id)
+            session = db or self.db
+            svc = InventoryOptimizationTGNNService(db=session, config_id=config_id)
             result = await svc.infer(sop_embeddings=None)
             return {"status": "ok", "sites_processed": getattr(result, "sites_processed", 0)}
         except ImportError:
@@ -860,15 +863,15 @@ class ProvisioningService:
 
     async def _step_demand_tgnn_bg(self, config_id: int, db: AsyncSession) -> dict:
         """Step 5 background: Cold-start Demand Planning tGNN (delegates to foreground handler)."""
-        return await self._step_demand_tgnn(config_id)
+        return await self._step_demand_tgnn(config_id, db=db)
 
     async def _step_supply_tgnn_bg(self, config_id: int, db: AsyncSession) -> dict:
         """Step 6 background: Cold-start Supply Planning tGNN (delegates to foreground handler)."""
-        return await self._step_supply_tgnn(config_id)
+        return await self._step_supply_tgnn(config_id, db=db)
 
     async def _step_inventory_tgnn_bg(self, config_id: int, db: AsyncSession) -> dict:
         """Step 7 background: Cold-start Inventory Optimization tGNN (delegates to foreground handler)."""
-        return await self._step_inventory_tgnn(config_id)
+        return await self._step_inventory_tgnn(config_id, db=db)
 
     async def _step_trm_training_bg(self, config_id: int, db: AsyncSession) -> dict:
         """Step 5 background: TRM Phase 1 BC for ALL active TRMs at all non-market sites."""

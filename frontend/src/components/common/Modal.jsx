@@ -46,7 +46,7 @@ export const Modal = ({
       {...props}
     >
       <DialogContent
-        className={cn(sizes[size], className)}
+        className={cn(sizes[size], 'max-h-[85vh] flex flex-col', className)}
         onEscapeKeyDown={(e) => {
           if (!closeOnEsc) e.preventDefault();
         }}
@@ -58,13 +58,15 @@ export const Modal = ({
         }}
       >
         {title && (
-          <DialogHeader>
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>{title}</DialogTitle>
           </DialogHeader>
         )}
-        {children}
+        <div className="flex-1 overflow-y-auto min-h-0">
+          {children}
+        </div>
         {footer && (
-          <DialogFooter>{footer}</DialogFooter>
+          <DialogFooter className="flex-shrink-0">{footer}</DialogFooter>
         )}
       </DialogContent>
     </Dialog>

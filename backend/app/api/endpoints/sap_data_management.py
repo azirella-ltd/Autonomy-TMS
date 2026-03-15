@@ -1654,6 +1654,8 @@ async def _run_ingestion(job_id: int, tenant_id: int):
                 await _run_phase2_cdc(db, service, job_id, tenant_id, sap_data)
             elif job.phase == IngestionPhase.TRANSACTION:
                 await _run_phase3_transaction(db, service, job_id, tenant_id, sap_data)
+            elif job.phase == IngestionPhase.USER_IMPORT:
+                await _run_phase4_user_import(db, service, job_id, tenant_id, sap_data)
             else:
                 # Legacy: just mark completed
                 final_status = JobStatus.COMPLETED if total_failed == 0 else JobStatus.PARTIAL
@@ -2008,6 +2010,66 @@ async def _run_phase3_transaction(db, service, job_id: int, tenant_id: int, sap_
         logger.error(f"Phase 3 staging failed: {e}", exc_info=True)
         await service.complete_job(job_id, JobStatus.FAILED,
             error_message=f"Staging failed: {e}")
+
+
+async def _run_phase4_user_import(db, service, job_id: int, tenant_id: int, sap_data: dict):
+    """
+    Phase 4: Import SAP users and roles → provision platform users.
+
+    Uses SAPUserProvisioningService to:
+    1. Parse user/role tables (USR02, USR21, ADRP, AGR_USERS, AGR_DEFINE, AGR_1251, AGR_TCODES)
+    2. Filter to SC-relevant users (by authorization objects and transaction codes)
+    3. Map SAP roles to platform roles (configured mappings → heuristic → default)
+    4. Create/update Autonomy users
+    """
+    try:
+        # Convert DataFrames to list-of-dicts (same format as CSV upload)
+        import pandas as pd
+        raw_data = {}
+        for table_name in ["usr02", "usr21", "adrp", "agr_users", "agr_define", "agr_1251", "agr_tcodes"]:
+            upper_key = table_name.upper()
+            df = sap_data.get(upper_key) or sap_data.get(table_name)
+            if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
+                df.columns = [c.upper() for c in df.columns]
+                raw_data[table_name] = df.to_dict(orient="records")
+            else:
+                raw_data[table_name] = []
+
+        user_service = SAPUserProvisioningService(db, tenant_id)
+
+        # Preview first to get counts
+        preview = await user_service.preview_import(raw_data)
+
+        # Execute the import
+        log = await user_service.execute_import(
+            raw_data, filter_config=None, initiated_by_user_id=None
+        )
+
+        await service.set_job_build_result(
+            job_id=job_id,
+            config_id=None,
+            build_summary={
+                "user_import": True,
+                "total_users_discovered": preview.get("total_users", 0),
+                "sc_eligible_users": preview.get("sc_eligible_users", 0),
+                "users_created": log.users_created,
+                "users_updated": log.users_updated,
+                "users_skipped": log.users_skipped,
+                "users_failed": log.users_failed,
+            },
+        )
+
+        final_status = JobStatus.COMPLETED if log.users_failed == 0 else JobStatus.PARTIAL
+        await service.complete_job(job_id, final_status)
+        logger.info(
+            f"Phase 4 user import complete: {log.users_created} created, "
+            f"{log.users_updated} updated, {log.users_skipped} skipped"
+        )
+
+    except Exception as e:
+        logger.error(f"Phase 4 user import failed: {e}", exc_info=True)
+        await service.complete_job(job_id, JobStatus.FAILED,
+            error_message=f"User import failed: {e}")
 
 
 @router.post("/jobs/{job_id}/cancel", tags=["sap-ingestion"])
@@ -3047,6 +3109,118 @@ async def delete_role_mapping(
     await db.delete(mapping)
     await db.commit()
     return {"status": "deleted", "id": mapping_id}
+
+
+# --- Extract User Tables via Connection ---
+
+USER_TABLES = ["USR02", "USR21", "ADRP", "AGR_USERS", "AGR_DEFINE", "AGR_1251", "AGR_TCODES"]
+
+
+@router.post("/connections/{connection_id}/extract-user-tables", tags=["sap-user-import"])
+async def extract_user_tables(
+    connection_id: int,
+    current_user: User = Depends(require_tenant_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Extract the 7 SAP user/role tables via an active connection.
+
+    Returns JSON-serialized table data in the same format as CSV upload
+    (dict of table_name → list of row dicts), ready for preview/execute.
+    Supports HANA_DB, RFC, and OData connection methods.
+    """
+    from app.services.sap_deployment_service import SAPConnectionConfig, ConnectionMethod, _decrypt_password
+    from app.integrations.sap.extractors import create_extractor
+
+    deploy_service = create_deployment_service(db, current_user.tenant_id)
+    conn_row = await deploy_service._get_connection_row(connection_id)
+    if not conn_row:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    connection = SAPConnectionConfig.from_db(conn_row)
+
+    import pandas as pd
+
+    if connection.connection_method == ConnectionMethod.CSV:
+        # CSV path: auto-detect user table files via fuzzy matching
+        if not connection.csv_directory:
+            raise HTTPException(status_code=400, detail="No CSV directory configured on this connection")
+
+        csv_dir = Path(connection.csv_directory)
+        if not csv_dir.exists():
+            raise HTTPException(status_code=400, detail=f"CSV directory not found: {connection.csv_directory}")
+
+        # Use file_table_mapping if available, otherwise scan
+        mapping = conn_row.file_table_mapping or _scan_and_identify_csv_files(str(csv_dir))
+
+        user_table_set = {t.upper() for t in USER_TABLES}
+        sap_data = {}
+        total_rows = 0
+        total_failed = 0
+
+        for entry in mapping:
+            table = (entry.get("table") or "").upper()
+            if table not in user_table_set:
+                continue
+            filename = entry.get("filename")
+            if not filename:
+                continue
+            filepath = csv_dir / filename
+            if not filepath.exists():
+                total_failed += 1
+                continue
+            try:
+                df = pd.read_csv(filepath, encoding="utf-8-sig", dtype=str)
+                df.columns = [c.strip().upper() for c in df.columns]
+                sap_data[table] = df
+                total_rows += len(df)
+            except Exception as e:
+                logger.warning(f"Failed to read CSV {filepath}: {e}")
+                total_failed += 1
+
+    else:
+        # Direct SQL extraction (HANA_DB, RFC, OData)
+        password = _decrypt_password(conn_row.sap_password_encrypted) if conn_row.sap_password_encrypted else ""
+
+        try:
+            extractor = create_extractor(connection, password)
+        except ImportError as e:
+            raise HTTPException(status_code=500, detail=f"Extractor library not available: {e}")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        try:
+            sap_data, total_rows, total_failed = await extractor.extract_tables(
+                tables=USER_TABLES,
+            )
+        except Exception as e:
+            logger.error(f"User table extraction failed for connection {connection_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Extraction failed: {e}")
+
+    # Normalize and convert DataFrames to list-of-dicts for JSON response
+    result = {}
+    for table_name in USER_TABLES:
+        lower_key = table_name.lower()
+        # Find the table in extracted data (may be upper or lower case key)
+        df = sap_data.get(table_name) or sap_data.get(lower_key)
+        if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
+            # Uppercase column names for consistency
+            df.columns = [c.upper() for c in df.columns]
+            result[lower_key] = df.to_dict(orient="records")
+        else:
+            result[lower_key] = []
+
+    tables_with_data = {k: len(v) for k, v in result.items() if v}
+    logger.info(
+        f"User table extraction for connection {connection_id}: "
+        f"{total_rows} rows from {len(tables_with_data)} tables"
+    )
+
+    return {
+        "tables": result,
+        "total_rows": total_rows,
+        "total_failed": total_failed,
+        "tables_with_data": tables_with_data,
+    }
 
 
 # --- Import Preview & Execute ---

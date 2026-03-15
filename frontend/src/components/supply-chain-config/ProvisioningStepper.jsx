@@ -652,6 +652,20 @@ const ProvisioningStepper = ({ configId, configName, isOpen, onClose }) => {
     }
   };
 
+  const handleResetAll = async () => {
+    try {
+      await api.post(`/provisioning/reset-all/${configId}`);
+      await fetchStatus();
+    } catch (err) {
+      console.error('Reset all failed:', err);
+    }
+  };
+
+  const handleReProvision = async () => {
+    await handleResetAll();
+    await handleRunAll();
+  };
+
   const steps = provisioningStatus?.steps || [];
   const overallStatus = provisioningStatus?.overall_status || 'not_started';
   const completedCount = steps.filter(s => s.status === 'completed').length;
@@ -690,20 +704,27 @@ const ProvisioningStepper = ({ configId, configName, isOpen, onClose }) => {
             <Button variant="outline" onClick={onClose}>
               Close
             </Button>
-            <Button
-              onClick={handleRunAll}
-              disabled={isActive || overallStatus === 'completed'}
-              leftIcon={
-                runningAll
-                  ? <Loader2 className="h-4 w-4 animate-spin" />
-                  : overallStatus === 'completed'
-                    ? <CheckCircle2 className="h-4 w-4" />
+            {overallStatus === 'completed' ? (
+              <Button
+                onClick={handleReProvision}
+                disabled={isActive}
+                leftIcon={isActive ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+              >
+                {isActive ? 'Provisioning...' : 'Re-provision'}
+              </Button>
+            ) : (
+              <Button
+                onClick={handleRunAll}
+                disabled={isActive}
+                leftIcon={
+                  runningAll
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
                     : <Play className="h-4 w-4" />
-              }
-              className={overallStatus === 'completed' ? 'bg-emerald-600 hover:bg-emerald-700' : ''}
-            >
-              {runningAll ? 'Provisioning...' : overallStatus === 'completed' ? 'Complete' : 'Run All Steps'}
-            </Button>
+                }
+              >
+                {runningAll ? 'Provisioning...' : 'Run All Steps'}
+              </Button>
+            )}
           </div>
         </div>
       }

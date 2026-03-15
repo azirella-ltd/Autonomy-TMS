@@ -62,14 +62,33 @@ async def run_all_provisioning(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(deps.require_tenant_admin),
 ):
-    """Run all provisioning steps in dependency order.
+    """Run all provisioning steps in dependency order (fire-and-forget).
 
     Steps that are already completed are skipped. Steps with unmet
     dependencies are skipped with an error note. This is idempotent
     and safe to call multiple times.
+
+    Returns immediately — the frontend polls /status/{config_id} for progress.
     """
+    import asyncio
+    from app.db.session import async_session_factory as AsyncSessionLocal
+
+    # Mark as in_progress immediately so the UI reflects it
     service = ProvisioningService(db)
-    return await service.run_all(config_id)
+    status = await service.get_or_create_status(config_id)
+    status.overall_status = "in_progress"
+    await db.commit()
+
+    async def _run_all_background(cid: int):
+        async with AsyncSessionLocal() as bg_db:
+            bg_service = ProvisioningService(bg_db)
+            try:
+                await bg_service.run_all(cid)
+            except Exception:
+                logger.exception("Background run-all failed for config %d", cid)
+
+    asyncio.create_task(_run_all_background(config_id))
+    return {"status": "started", "config_id": config_id}
 
 
 @router.post("/reset/{config_id}/{step_key}")
@@ -94,3 +113,24 @@ async def reset_provisioning_step(
     await db.commit()
 
     return {"status": "reset", "step": step_key, "config_id": config_id}
+
+
+@router.post("/reset-all/{config_id}")
+async def reset_all_provisioning(
+    config_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(deps.require_tenant_admin),
+):
+    """Reset all provisioning steps back to pending."""
+    from app.models.user_directive import ConfigProvisioningStatus
+
+    service = ProvisioningService(db)
+    status = await service.get_or_create_status(config_id)
+    for step_key in ConfigProvisioningStatus.STEPS:
+        setattr(status, f"{step_key}_status", "pending")
+        setattr(status, f"{step_key}_at", None)
+        setattr(status, f"{step_key}_error", None)
+    status.overall_status = "pending"
+    await db.commit()
+
+    return {"status": "reset_all", "config_id": config_id}

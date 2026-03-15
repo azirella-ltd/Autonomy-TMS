@@ -129,6 +129,24 @@ class CustomerDefinition:
     longitude: float = 0.0
     city: str = ""
     state: str = ""
+    region: str = "NW"        # NW or SW — determines which RDC serves this customer
+
+
+@dataclass
+class RDCDefinition:
+    """Definition of a Regional Distribution Center."""
+    code: str
+    name: str
+    location: str
+    region: str               # NW or SW
+    latitude: float
+    longitude: float
+    city: str
+    state: str
+    capacity: int = 100000    # Cases
+    frozen_capacity: int = 30000
+    refrigerated_capacity: int = 40000
+    dry_capacity: int = 30000
 
 
 # ============================================================================
@@ -388,70 +406,107 @@ SUPPLIERS = [
 # Customer Definitions (10 customers - mix of foodservice segments)
 # ============================================================================
 
+RDCS = [
+    RDCDefinition(
+        code="RDC_NW", name="Regional DC - Seattle",
+        location="Seattle, WA", region="NW",
+        latitude=47.6062, longitude=-122.3321,
+        city="Seattle", state="WA",
+        capacity=120000, frozen_capacity=35000,
+        refrigerated_capacity=45000, dry_capacity=40000,
+    ),
+    RDCDefinition(
+        code="RDC_SW", name="Regional DC - Riverside",
+        location="Riverside, CA", region="SW",
+        latitude=33.9533, longitude=-117.3962,
+        city="Riverside", state="CA",
+        capacity=150000, frozen_capacity=45000,
+        refrigerated_capacity=55000, dry_capacity=50000,
+    ),
+]
+
 CUSTOMERS = [
-    # NW Region - Oregon
+    # NW Region - Oregon (served by RDC_NW)
     CustomerDefinition(
-        code="RESTSUPPLY", name="Restaurant Supply Co", segment="Full Service Restaurant",
+        code="CUST_PDX", name="Restaurant Supply Co", segment="Full Service Restaurant",
         size="large", delivery_frequency="weekly", order_lead_time_days=3,
         credit_limit=50000.00, avg_order_value=8500.00, demand_multiplier=1.5,
-        latitude=45.5152, longitude=-122.6784, city="Portland", state="OR",
+        latitude=45.5152, longitude=-122.6784, city="Portland", state="OR", region="NW",
     ),
     CustomerDefinition(
-        code="CAMPUSDINE", name="Campus Dining Services", segment="Higher Education",
+        code="CUST_EUG", name="Campus Dining Services", segment="Higher Education",
         size="medium", delivery_frequency="weekly", order_lead_time_days=4,
         credit_limit=35000.00, avg_order_value=6500.00, demand_multiplier=1.2,
-        latitude=44.0521, longitude=-123.0868, city="Eugene", state="OR",
+        latitude=44.0521, longitude=-123.0868, city="Eugene", state="OR", region="NW",
     ),
-    # NW Region - Washington
     CustomerDefinition(
-        code="DWNTWNDELI", name="Downtown Deli Group", segment="QSR Deli",
+        code="CUST_SAL", name="Salem Wholesale Foods", segment="Wholesale",
+        size="medium", delivery_frequency="weekly", order_lead_time_days=3,
+        credit_limit=30000.00, avg_order_value=5000.00, demand_multiplier=1.0,
+        latitude=44.9429, longitude=-123.0351, city="Salem", state="OR", region="NW",
+    ),
+    # NW Region - Washington (served by RDC_NW)
+    CustomerDefinition(
+        code="CUST_SEA", name="Downtown Deli Group", segment="QSR Deli",
         size="small", delivery_frequency="weekly", order_lead_time_days=2,
         credit_limit=15000.00, avg_order_value=2200.00, demand_multiplier=0.6,
-        latitude=47.6062, longitude=-122.3321, city="Seattle", state="WA",
+        latitude=47.6062, longitude=-122.3321, city="Seattle", state="WA", region="NW",
     ),
     CustomerDefinition(
-        code="PREMCATER", name="Premier Catering Services", segment="Catering",
+        code="CUST_TAC", name="Premier Catering Services", segment="Catering",
         size="medium", delivery_frequency="weekly", order_lead_time_days=3,
         credit_limit=30000.00, avg_order_value=5000.00, demand_multiplier=1.1,
-        latitude=47.2529, longitude=-122.4443, city="Tacoma", state="WA",
+        latitude=47.2529, longitude=-122.4443, city="Tacoma", state="WA", region="NW",
     ),
-    # SW Region - California
     CustomerDefinition(
-        code="METROGRO", name="Metro Grocery Chain", segment="Retail Grocery",
+        code="CUST_SPO", name="Inland Pacific Foods", segment="Institutional",
+        size="medium", delivery_frequency="weekly", order_lead_time_days=4,
+        credit_limit=25000.00, avg_order_value=4200.00, demand_multiplier=0.8,
+        latitude=47.6588, longitude=-117.4260, city="Spokane", state="WA", region="NW",
+    ),
+    # SW Region - California (served by RDC_SW)
+    CustomerDefinition(
+        code="CUST_LAX", name="Metro Grocery Chain", segment="Retail Grocery",
         size="large", delivery_frequency="weekly", order_lead_time_days=4,
         credit_limit=75000.00, avg_order_value=12000.00, demand_multiplier=2.0,
-        latitude=34.0522, longitude=-118.2437, city="Los Angeles", state="CA",
+        latitude=34.0522, longitude=-118.2437, city="Los Angeles", state="CA", region="SW",
     ),
     CustomerDefinition(
-        code="COASTHLTH", name="Coastal Healthcare System", segment="Healthcare",
+        code="CUST_SFO", name="Coastal Healthcare System", segment="Healthcare",
         size="medium", delivery_frequency="bi-weekly", order_lead_time_days=5,
         credit_limit=40000.00, avg_order_value=5500.00, demand_multiplier=0.9,
-        latitude=37.7749, longitude=-122.4194, city="San Francisco", state="CA",
+        latitude=37.7749, longitude=-122.4194, city="San Francisco", state="CA", region="SW",
     ),
     CustomerDefinition(
-        code="FAMREST", name="Family Restaurant Inc", segment="Casual Dining",
-        size="medium", delivery_frequency="weekly", order_lead_time_days=3,
-        credit_limit=25000.00, avg_order_value=4500.00, demand_multiplier=1.0,
-        latitude=38.5816, longitude=-121.4944, city="Sacramento", state="CA",
-    ),
-    CustomerDefinition(
-        code="SCHLDFOOD", name="School District Foods", segment="K-12 Education",
+        code="CUST_SDG", name="School District Foods", segment="K-12 Education",
         size="large", delivery_frequency="weekly", order_lead_time_days=5,
         credit_limit=45000.00, avg_order_value=7500.00, demand_multiplier=1.4,
-        latitude=32.7157, longitude=-117.1611, city="San Diego", state="CA",
+        latitude=32.7157, longitude=-117.1611, city="San Diego", state="CA", region="SW",
     ),
-    # SW Region - Arizona
     CustomerDefinition(
-        code="QUICKSERV", name="Quick Serve Foods LLC", segment="Quick Service",
+        code="CUST_SAC", name="Family Restaurant Inc", segment="Casual Dining",
+        size="medium", delivery_frequency="weekly", order_lead_time_days=3,
+        credit_limit=25000.00, avg_order_value=4500.00, demand_multiplier=1.0,
+        latitude=38.5816, longitude=-121.4944, city="Sacramento", state="CA", region="SW",
+    ),
+    # SW Region - Arizona (served by RDC_SW)
+    CustomerDefinition(
+        code="CUST_PHX", name="Quick Serve Foods LLC", segment="Quick Service",
         size="large", delivery_frequency="weekly", order_lead_time_days=2,
         credit_limit=60000.00, avg_order_value=9500.00, demand_multiplier=1.8,
-        latitude=33.4484, longitude=-112.0740, city="Phoenix", state="AZ",
+        latitude=33.4484, longitude=-112.0740, city="Phoenix", state="AZ", region="SW",
     ),
     CustomerDefinition(
-        code="GREENVAL", name="Green Valley Markets", segment="Natural/Specialty Retail",
+        code="CUST_TUS", name="Green Valley Markets", segment="Natural/Specialty Retail",
         size="small", delivery_frequency="bi-weekly", order_lead_time_days=4,
         credit_limit=20000.00, avg_order_value=3500.00, demand_multiplier=0.7,
-        latitude=32.2226, longitude=-110.9747, city="Tucson", state="AZ",
+        latitude=32.2226, longitude=-110.9747, city="Tucson", state="AZ", region="SW",
+    ),
+    CustomerDefinition(
+        code="CUST_MES", name="Mesa Convention Services", segment="Convention/Events",
+        size="medium", delivery_frequency="weekly", order_lead_time_days=3,
+        credit_limit=35000.00, avg_order_value=6000.00, demand_multiplier=1.1,
+        latitude=33.4152, longitude=-111.8315, city="Mesa", state="AZ", region="SW",
     ),
 ]
 
@@ -585,36 +640,46 @@ class FoodDistConfigGenerator:
         # 4. Create DC node
         dc_node = await self._create_dc_node()
 
-        # 5. Create supplier nodes
+        # 4b. Create RDC nodes
+        rdc_nodes = await self._create_rdc_nodes()
+
+        # 5. Create supplier nodes (external trading partners)
         supplier_nodes = await self._create_supplier_nodes()
 
-        # 6. Create customer nodes
+        # 6. Create customer nodes (external trading partners)
         customer_nodes = await self._create_customer_nodes()
 
         # 6b. Create geography records and link to sites
-        geographies = await self._create_geographies(dc_node, supplier_nodes, customer_nodes)
+        geographies = await self._create_geographies(dc_node, supplier_nodes, customer_nodes, rdc_nodes)
 
         # 7. Create products
         products = await self._create_products()
 
-        # 8. Create lanes (supplier -> DC, DC -> customer)
-        lanes = await self._create_lanes(dc_node, supplier_nodes, customer_nodes)
+        # 8. Create lanes (supplier -> CDC -> RDC -> customer)
+        lanes = await self._create_lanes(dc_node, rdc_nodes, supplier_nodes, customer_nodes)
 
         # 9. Create trading partners and vendor-product relationships
         trading_partners = await self._create_trading_partners(supplier_nodes)
         vendor_products = await self._create_vendor_products(supplier_nodes, products, trading_partners)
 
-        # 10-13. Skip hierarchies, forecasts, policies, inv_levels
-        # These tables either don't exist or have schema mismatches
-        # TODO: Add back when database migrations are applied
-        forecasts = []
-        policies = []
-        inv_levels = []
-
-        # 14. Create agent configurations - skip for now, may have issues
-        # await self._create_agent_configs()
+        # 9b. Create customer trading partners
+        customer_trading_partners = await self._create_customer_trading_partners(customer_nodes)
 
         await self.db.commit()
+
+        # 10. Generate 2-year transactional history
+        history_counts = {}
+        try:
+            from app.services.food_dist_history_generator import FoodDistHistoryGenerator
+            history_gen = FoodDistHistoryGenerator(
+                db=self.db,
+                config_id=self.sc_config.id,
+                tenant_id=self.tenant.id,
+            )
+            history_counts = await history_gen.generate_history(days=730)
+            logger.info(f"Generated {history_counts.get('total', 0):,} history records")
+        except Exception:
+            logger.exception("History generation failed — config created without history")
 
         return {
             "tenant_id": self.tenant.id,
@@ -627,8 +692,8 @@ class FoodDistConfigGenerator:
             "products_created": len(products),
             "lanes_created": len(lanes),
             "vendor_products_created": len(vendor_products),
-            "forecasts_created": len(forecasts),
-            "policies_created": len(policies),
+            "rdcs_created": len(rdc_nodes),
+            "history": history_counts,
             "summary": {
                 "product_groups": len(ALL_PRODUCT_GROUPS),
                 "products_per_group": 5,
@@ -638,7 +703,10 @@ class FoodDistConfigGenerator:
                     "refrigerated": 10,  # 5 dairy + 5 beverages
                     "dry": 5,  # 5 pantry
                 },
-                "network_structure": "Hub and Spoke (1 DC)",
+                "internal_sites": 3,  # 1 CDC + 2 RDCs
+                "external_suppliers": len(supplier_nodes),
+                "external_customers": len(customer_nodes),
+                "network_structure": "Hub and Spoke (1 CDC → 2 RDCs → 13 Customers)",
                 "delivery_model": "Weekly multi-temperature",
             }
         }
@@ -729,24 +797,55 @@ class FoodDistConfigGenerator:
         logger.info(f"Created DC node: {dc.name}")
         return dc
 
+    async def _create_rdc_nodes(self) -> List[Node]:
+        """Create Regional Distribution Center nodes (internal sites)."""
+        rdc_nodes = []
+        for rdc_def in RDCS:
+            node = Node(
+                config_id=self.sc_config.id,
+                name=rdc_def.code,
+                type=f"Regional Distribution Center - {rdc_def.city}, {rdc_def.state}",
+                dag_type="RDC",
+                master_type="INVENTORY",
+                is_external=False,
+                attributes={
+                    "initial_inventory": 20000,
+                    "capacity": rdc_def.capacity,
+                    "frozen_capacity": rdc_def.frozen_capacity,
+                    "refrigerated_capacity": rdc_def.refrigerated_capacity,
+                    "dry_capacity": rdc_def.dry_capacity,
+                    "location": rdc_def.location,
+                    "region": rdc_def.region,
+                },
+            )
+            self.db.add(node)
+            rdc_nodes.append(node)
+            self.nodes[rdc_def.code] = node
+
+        await self.db.flush()
+        logger.info(f"Created {len(rdc_nodes)} RDC nodes")
+        return rdc_nodes
+
     async def _create_supplier_nodes(self) -> List[Node]:
-        """Create supplier nodes."""
+        """Create supplier nodes (external trading partners, not internal sites)."""
         supplier_nodes = []
 
         for supplier_def in SUPPLIERS:
             node = Node(
                 config_id=self.sc_config.id,
                 name=supplier_def.code,
-                type=f"Supplier - {supplier_def.name}",  # Human-readable type
-                dag_type="market_supply",  # DAG identity
-                master_type="MARKET_SUPPLY",  # Master processing type
+                type=f"Supplier - {supplier_def.name}",
+                dag_type="market_supply",
+                master_type="MARKET_SUPPLY",
+                is_external=True,
+                tpartner_type="vendor",
                 attributes={
                     "description": supplier_def.description,
                     "location": supplier_def.location,
                     "lead_time_days": supplier_def.lead_time_days,
                     "reliability": supplier_def.reliability,
                     "min_order_value": supplier_def.min_order_value,
-                }
+                },
             )
             self.db.add(node)
             supplier_nodes.append(node)
@@ -757,17 +856,20 @@ class FoodDistConfigGenerator:
         return supplier_nodes
 
     async def _create_customer_nodes(self) -> List[Node]:
-        """Create customer demand nodes."""
+        """Create customer demand nodes (external trading partners, not internal sites)."""
         customer_nodes = []
 
         for customer_def in CUSTOMERS:
             node = Node(
                 config_id=self.sc_config.id,
                 name=customer_def.code,
-                type=f"Customer - {customer_def.name}",  # Human-readable type
-                dag_type="market_demand",  # DAG identity (customers are demand sinks)
-                master_type="MARKET_DEMAND",  # Master processing type
+                type=f"Customer - {customer_def.city}, {customer_def.state}",
+                dag_type="market_demand",
+                master_type="MARKET_DEMAND",
+                is_external=True,
+                tpartner_type="customer",
                 attributes={
+                    "customer_name": customer_def.name,
                     "segment": customer_def.segment,
                     "size": customer_def.size,
                     "delivery_frequency": customer_def.delivery_frequency,
@@ -775,7 +877,8 @@ class FoodDistConfigGenerator:
                     "credit_limit": customer_def.credit_limit,
                     "avg_order_value": customer_def.avg_order_value,
                     "demand_multiplier": customer_def.demand_multiplier,
-                }
+                    "region": customer_def.region,
+                },
             )
             self.db.add(node)
             customer_nodes.append(node)
@@ -790,6 +893,7 @@ class FoodDistConfigGenerator:
         dc_node: Node,
         supplier_nodes: List[Node],
         customer_nodes: List[Node],
+        rdc_nodes: Optional[List[Node]] = None,
     ) -> List[Geography]:
         """Create hierarchical Geography records (Country→Region→State→City) and link to sites.
 
@@ -892,6 +996,24 @@ class FoodDistConfigGenerator:
         await self.db.flush()
         dc_node.geo_id = dc_geo.id
 
+        # RDC geographies
+        if rdc_nodes:
+            for rdc_def, rdc_node in zip(RDCS, rdc_nodes):
+                geo = Geography(
+                    id=f"{prefix}GEO_{rdc_def.code}",
+                    description=f"{rdc_def.name} - {rdc_def.location}",
+                    city=rdc_def.city,
+                    state_prov=rdc_def.state,
+                    country="USA",
+                    latitude=rdc_def.latitude,
+                    longitude=rdc_def.longitude,
+                    parent_geo_id=state_geos[rdc_def.state].id,
+                )
+                self.db.add(geo)
+                geographies.append(geo)
+                rdc_node.geo_id = geo.id
+            await self.db.flush()
+
         # Supplier geographies
         for supplier_def, supplier_node in zip(SUPPLIERS, supplier_nodes):
             city = supplier_def.location.split(", ")[0]
@@ -964,21 +1086,23 @@ class FoodDistConfigGenerator:
     async def _create_lanes(
         self,
         dc_node: Node,
+        rdc_nodes: List[Node],
         supplier_nodes: List[Node],
         customer_nodes: List[Node],
     ) -> List[TransportationLane]:
-        """Create transportation lanes between suppliers, DC, and customers."""
+        """Create transportation lanes: Supplier → CDC → RDC → Customer."""
         lanes = []
+        rdc_by_region = {rdc_def.region: rdc_node for rdc_def, rdc_node in zip(RDCS, rdc_nodes)}
 
-        # Supplier -> DC lanes
+        # Supplier → CDC lanes
         for supplier_def, supplier_node in zip(SUPPLIERS, supplier_nodes):
             lt = supplier_def.lead_time_days
             lt_var = int(lt * supplier_def.lead_time_variability)
             lane = TransportationLane(
                 config_id=self.sc_config.id,
-                from_site_id=supplier_node.id,  # Upstream (supplier)
-                to_site_id=dc_node.id,  # Downstream (DC)
-                capacity=10000,  # Units per day
+                from_site_id=supplier_node.id,
+                to_site_id=dc_node.id,
+                capacity=10000,
                 lead_time_days={"min": max(1, lt - lt_var), "max": lt + lt_var},
                 supply_lead_time={"type": "deterministic", "value": lt},
                 demand_lead_time={"type": "deterministic", "value": 1},
@@ -986,14 +1110,32 @@ class FoodDistConfigGenerator:
             self.db.add(lane)
             lanes.append(lane)
 
-        # DC -> Customer lanes
+        # CDC → RDC lanes
+        for rdc_def, rdc_node in zip(RDCS, rdc_nodes):
+            lane = TransportationLane(
+                config_id=self.sc_config.id,
+                from_site_id=dc_node.id,
+                to_site_id=rdc_node.id,
+                capacity=20000,
+                lead_time_days={"min": 1, "max": 3},
+                supply_lead_time={"type": "deterministic", "value": 2},
+                demand_lead_time={"type": "deterministic", "value": 1},
+            )
+            self.db.add(lane)
+            lanes.append(lane)
+
+        # RDC → Customer lanes (routed by region)
         for customer_def, customer_node in zip(CUSTOMERS, customer_nodes):
+            rdc_node = rdc_by_region.get(customer_def.region)
+            if not rdc_node:
+                logger.warning("No RDC for region %s, skipping customer %s", customer_def.region, customer_def.code)
+                continue
             lt = customer_def.order_lead_time_days
             lane = TransportationLane(
                 config_id=self.sc_config.id,
-                from_site_id=dc_node.id,  # Upstream (DC)
-                to_site_id=customer_node.id,  # Downstream (customer)
-                capacity=5000,  # Units per day
+                from_site_id=rdc_node.id,
+                to_site_id=customer_node.id,
+                capacity=5000,
                 lead_time_days={"min": max(1, lt - 1), "max": lt + 1},
                 supply_lead_time={"type": "deterministic", "value": lt},
                 demand_lead_time={"type": "deterministic", "value": 1},
@@ -1023,11 +1165,37 @@ class FoodDistConfigGenerator:
                 country="USA",
             )
             self.db.add(tp)
-            # Store with original code for lookup
             trading_partners[supplier_def.code] = tp
+            # Link the site node to its trading partner
+            supplier_node.trading_partner_id = tp_id
 
         await self.db.flush()
-        logger.info(f"Created {len(trading_partners)} trading partners")
+        logger.info(f"Created {len(trading_partners)} supplier trading partners")
+        return trading_partners
+
+    async def _create_customer_trading_partners(self, customer_nodes: List[Node]) -> Dict[str, TradingPartner]:
+        """Create TradingPartner records for customers."""
+        trading_partners = {}
+        prefix = f"CFG{self.sc_config.id}_"
+
+        for customer_def, customer_node in zip(CUSTOMERS, customer_nodes):
+            tp_id = f"{prefix}{customer_def.code}"
+            tp = TradingPartner(
+                id=tp_id,
+                description=customer_def.name,
+                tpartner_type="customer",
+                is_active="true",
+                city=customer_def.city,
+                state_prov=customer_def.state,
+                country="USA",
+            )
+            self.db.add(tp)
+            trading_partners[customer_def.code] = tp
+            # Link the site node to its trading partner
+            customer_node.trading_partner_id = tp_id
+
+        await self.db.flush()
+        logger.info(f"Created {len(trading_partners)} customer trading partners")
         return trading_partners
 
     async def _create_vendor_products(

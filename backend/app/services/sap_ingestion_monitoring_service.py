@@ -42,7 +42,7 @@ class JobStatus(str, Enum):
 
 class IngestionPhase(str, Enum):
     """
-    3-phase SAP ingestion pipeline.
+    SAP ingestion pipeline phases.
 
     Phase 1 (MASTER_DATA): Initial master data import → generates base SC config
         Tables: T001, T001W, T001L, ADRC, MARA, MAKT, MARC, MARM, MVKE,
@@ -53,10 +53,13 @@ class IngestionPhase(str, Enum):
     Phase 3 (TRANSACTION): Transaction data import against the active SC config
         Tables: EKKO, EKPO, EKET, VBAK, VBAP, LIKP, LIPS, AFKO, AFPO,
                 RESB, MKPF, MSEG, LTAK, LTAP, JEST, QMEL, QALS, QASE, AFVC
+    Phase 4 (USER_IMPORT): User & role data → provisions platform users
+        Tables: USR02, USR21, ADRP, AGR_USERS, AGR_DEFINE, AGR_1251, AGR_TCODES
     """
     MASTER_DATA = "master_data"
     CDC = "cdc"
     TRANSACTION = "transaction"
+    USER_IMPORT = "user_import"
 
 
 # Tables classified by phase
@@ -95,6 +98,11 @@ TRANSACTION_TABLES = {
     "LTAK", "LTAP",
     # Quality
     "JEST", "QMEL", "QALS", "QASE",
+}
+
+USER_IMPORT_TABLES = {
+    "USR02", "USR21", "ADRP",
+    "AGR_USERS", "AGR_DEFINE", "AGR_1251", "AGR_TCODES",
 }
 
 

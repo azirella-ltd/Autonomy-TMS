@@ -1764,7 +1764,8 @@ const MASTER_DATA_PREFIXES = new Set([
   'PBIM', 'PBED', 'PLAF', 'MPOP', 'MDKP', 'MDTB',
   // Subcontracting
   'MKAL',
-  // User / authorization
+]);
+const USER_IMPORT_PREFIXES = new Set([
   'USR02', 'USR21', 'ADRP', 'AGR_USERS', 'AGR_DEFINE', 'AGR_1251', 'AGR_TCODES',
 ]);
 const TRANSACTION_PREFIXES = new Set([
@@ -1901,6 +1902,8 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
       return tables.filter(t => MASTER_DATA_PREFIXES.has(getTablePrefix(t)));
     } else if (phase === 'transaction') {
       return tables.filter(t => TRANSACTION_PREFIXES.has(getTablePrefix(t)));
+    } else if (phase === 'user_import') {
+      return tables.filter(t => USER_IMPORT_PREFIXES.has(getTablePrefix(t)));
     }
     // CDC uses master data tables
     return tables.filter(t => MASTER_DATA_PREFIXES.has(getTablePrefix(t)));
@@ -2336,11 +2339,13 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
               <label className="block text-sm font-medium mb-1">Ingestion Phase *</label>
               <NativeSelect value={jobPhase} onChange={(e) => handlePhaseChange(e.target.value)}>
                 <option value="master_data">Phase 1: Master Data → Generate SC Config</option>
-                <option value="cdc">Phase 2: CDC — Detect Master Data Changes</option>
+                <option value="user_import">Phase 2: User Import → Provision Users</option>
                 <option value="transaction">Phase 3: Transaction Data Import</option>
+                <option value="cdc">CDC — Detect Master Data Changes</option>
               </NativeSelect>
               <p className="text-xs text-muted-foreground mt-1">
                 {jobPhase === 'master_data' && 'Imports master data (sites, products, BOMs, etc.) and generates a new Supply Chain Config.'}
+                {jobPhase === 'user_import' && 'Extracts SAP user and role tables, filters to SC-relevant users, and provisions platform accounts.'}
                 {jobPhase === 'cdc' && 'Compares master data against the active SC Config. Creates a child config if topology changed.'}
                 {jobPhase === 'transaction' && 'Imports transaction data (orders, production, inventory movements) against the active SC Config.'}
               </p>
@@ -2508,6 +2513,7 @@ const JobsTab = ({ jobs, connections = [], onCreateJob, onStartJob, onCancelJob,
             >
               {!updateTenantData ? 'Extract Only (Dry Run)' :
                jobPhase === 'master_data' ? 'Create & Build SC Config' :
+               jobPhase === 'user_import' ? 'Import & Provision Users' :
                jobPhase === 'cdc' ? 'Run Change Detection' :
                'Import Transactions'}
             </Button>
@@ -2790,7 +2796,7 @@ const InsightsTab = ({ insights, actions, onAcknowledge, onUpdateAction, loading
 };
 
 // User Import Tab Component
-const UserImportTab = () => {
+const UserImportTab = ({ connections = [] }) => {
   const [roleMappings, setRoleMappings] = useState([]);
   const [importLogs, setImportLogs] = useState([]);
   const [scFilterConfig, setScFilterConfig] = useState(null);
@@ -2799,6 +2805,15 @@ const UserImportTab = () => {
   const [uploading, setUploading] = useState(false);
   const [showAddMapping, setShowAddMapping] = useState(false);
   const [csvFiles, setCsvFiles] = useState({});
+
+  // Connection-based extraction state
+  const hasConnection = connections.length > 0;
+  const [dataSource, setDataSource] = useState(hasConnection ? 'connection' : 'csv');
+  const [selectedConnectionId, setSelectedConnectionId] = useState(
+    connections[0]?.id?.toString() || ''
+  );
+  const [extractedData, setExtractedData] = useState(null);
+  const [extracting, setExtracting] = useState(false);
 
   // New mapping form
   const [newMapping, setNewMapping] = useState({
@@ -2883,10 +2898,37 @@ const UserImportTab = () => {
     return raw;
   };
 
+  const handleExtractFromConnection = async () => {
+    if (!selectedConnectionId) return;
+    setExtracting(true);
+    setExtractedData(null);
+    setPreviewData(null);
+    try {
+      const res = await api.post(`/sap-data/connections/${selectedConnectionId}/extract-user-tables`);
+      setExtractedData(res.data);
+      // Auto-preview after successful extraction
+      if (res.data?.tables) {
+        const previewRes = await api.post('/sap-data/user-import/preview', res.data.tables);
+        setPreviewData(previewRes.data);
+      }
+    } catch (err) {
+      console.error('Extraction failed:', err);
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const getRawDataForSource = async () => {
+    if (dataSource === 'connection' && extractedData?.tables) {
+      return extractedData.tables;
+    }
+    return await buildRawData();
+  };
+
   const handlePreview = async () => {
     setUploading(true);
     try {
-      const rawData = await buildRawData();
+      const rawData = await getRawDataForSource();
       const res = await api.post('/sap-data/user-import/preview', rawData);
       setPreviewData(res.data);
     } catch (err) {
@@ -2900,10 +2942,11 @@ const UserImportTab = () => {
     if (!window.confirm(`This will create/update ${previewData?.sc_eligible_users || 0} users. Continue?`)) return;
     setUploading(true);
     try {
-      const rawData = await buildRawData();
+      const rawData = await getRawDataForSource();
       await api.post('/sap-data/user-import/execute', rawData);
       setPreviewData(null);
       setCsvFiles({});
+      setExtractedData(null);
       loadData();
     } catch (err) {
       console.error('Import failed:', err);
@@ -2911,6 +2954,10 @@ const UserImportTab = () => {
       setUploading(false);
     }
   };
+
+  const canPreview = dataSource === 'connection'
+    ? !!extractedData
+    : !!(csvFiles.usr02 && csvFiles.agr_users);
 
   const csvTableDefs = [
     { key: 'usr02', label: 'USR02 (User Logon)', required: true },
@@ -3049,40 +3096,130 @@ const UserImportTab = () => {
         </CardContent>
       </Card>
 
-      {/* CSV Upload & Preview */}
+      {/* Data Source & Preview */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
-            Data Upload & Preview
+            Data Source & Preview
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground mb-4">
-            Upload SAP user/role CSV extracts. USR02 and AGR_USERS are required; others improve accuracy.
-          </p>
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            {csvTableDefs.map(t => (
-              <div key={t.key} className="flex items-center gap-2">
-                <label className="text-sm w-64 flex items-center gap-1">
-                  {t.label}
-                  {t.required && <span className="text-destructive">*</span>}
-                </label>
-                <input
-                  type="file"
-                  accept=".csv"
-                  className="text-sm"
-                  onChange={e => handleFileChange(t.key, e.target.files[0])}
-                />
-                {csvFiles[t.key] && <CheckCircle className="h-4 w-4 text-green-600" />}
-              </div>
-            ))}
-          </div>
+          {/* Data source toggle */}
+          {hasConnection && (
+            <div className="flex gap-2 mb-4">
+              <Button
+                variant={dataSource === 'connection' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => { setDataSource('connection'); setPreviewData(null); }}
+              >
+                <Database className="h-4 w-4 mr-1" />
+                Extract from Connection
+              </Button>
+              <Button
+                variant={dataSource === 'csv' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => { setDataSource('csv'); setPreviewData(null); setExtractedData(null); }}
+              >
+                <Upload className="h-4 w-4 mr-1" />
+                Manual CSV Upload
+              </Button>
+            </div>
+          )}
 
-          <div className="flex gap-2">
+          {/* Connection-based extraction */}
+          {dataSource === 'connection' && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Extract user and role tables (USR02, USR21, ADRP, AGR_USERS, AGR_DEFINE, AGR_1251, AGR_TCODES)
+                directly from your SAP connection.
+              </p>
+              <div className="flex items-end gap-3">
+                {connections.length > 1 ? (
+                  <div className="flex-1">
+                    <label className="text-sm font-medium mb-1 block">Connection</label>
+                    <NativeSelect
+                      value={selectedConnectionId}
+                      onChange={e => { setSelectedConnectionId(e.target.value); setExtractedData(null); setPreviewData(null); }}
+                    >
+                      {connections.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} ({c.connection_method.toUpperCase()}{c.hostname ? ` — ${c.hostname}` : ''}{c.csv_directory ? ` — ${c.csv_directory}` : ''})
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </div>
+                ) : connections.length === 1 ? (
+                  <div className="flex-1">
+                    <p className="text-sm">
+                      Using <span className="font-medium">{connections[0].name}</span>
+                      {' '}({connections[0].connection_method.toUpperCase()}
+                      {connections[0].hostname ? ` — ${connections[0].hostname}` : ''}
+                      {connections[0].csv_directory ? ` — ${connections[0].csv_directory}` : ''})
+                    </p>
+                  </div>
+                ) : null}
+                <Button
+                  onClick={handleExtractFromConnection}
+                  disabled={!selectedConnectionId || extracting}
+                >
+                  {extracting ? <Spinner size="sm" className="mr-2" /> : <Database className="h-4 w-4 mr-1" />}
+                  {extracting ? 'Extracting & Previewing...' : 'Extract & Preview Users'}
+                </Button>
+              </div>
+
+              {/* Extraction results summary */}
+              {extractedData && (
+                <div className="rounded border p-3 bg-muted/30">
+                  <p className="text-sm font-medium mb-2 flex items-center gap-1">
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    Extraction complete — {extractedData.total_rows} rows from {Object.keys(extractedData.tables_with_data || {}).length} tables
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {csvTableDefs.map(t => {
+                      const count = extractedData.tables_with_data?.[t.key] || 0;
+                      return (
+                        <Badge key={t.key} variant={count > 0 ? 'default' : 'outline'}>
+                          {t.key.toUpperCase()}: {count} rows
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* CSV upload (original mode) */}
+          {dataSource === 'csv' && (
+            <div>
+              <p className="text-sm text-muted-foreground mb-4">
+                Upload SAP user/role CSV extracts. USR02 and AGR_USERS are required; others improve accuracy.
+              </p>
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                {csvTableDefs.map(t => (
+                  <div key={t.key} className="flex items-center gap-2">
+                    <label className="text-sm w-64 flex items-center gap-1">
+                      {t.label}
+                      {t.required && <span className="text-destructive">*</span>}
+                    </label>
+                    <input
+                      type="file"
+                      accept=".csv"
+                      className="text-sm"
+                      onChange={e => handleFileChange(t.key, e.target.files[0])}
+                    />
+                    {csvFiles[t.key] && <CheckCircle className="h-4 w-4 text-green-600" />}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2 mt-4">
             <Button
               onClick={handlePreview}
-              disabled={uploading || !csvFiles.usr02 || !csvFiles.agr_users}
+              disabled={uploading || !canPreview}
             >
               {uploading ? <Spinner size="sm" className="mr-2" /> : <Eye className="h-4 w-4 mr-1" />}
               Preview Import
@@ -3281,7 +3418,7 @@ const StagingTab = ({ connections }) => {
 
   // Load supply chain configs
   useEffect(() => {
-    api.get('/supply-chain-configs').then(res => {
+    api.get('/supply-chain-config').then(res => {
       const list = Array.isArray(res.data) ? res.data : res.data?.configs || [];
       setConfigs(list);
       if (list.length > 0 && !selectedConfigId) setSelectedConfigId(String(list[0].id));
@@ -3729,7 +3866,7 @@ const SAPDataManagement = () => {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="mb-6">
+          <TabsList className="mb-6 flex-wrap h-auto">
             {tabItems.map((tab) => (
               <Tab key={tab.value} value={tab.value}>
                 {tab.icon}
@@ -3804,7 +3941,7 @@ const SAPDataManagement = () => {
           )}
 
           {activeTab === 'user-import' && (
-            <UserImportTab />
+            <UserImportTab connections={connections} />
           )}
 
           {activeTab === 'staging' && (
