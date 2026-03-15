@@ -18,7 +18,7 @@ from ..models import (
 from ..models.user import UserTypeEnum
 from ..models.tenant import TenantMode
 from ..models.supply_chain_config import (
-    Node,
+    Site as Node,
     TransportationLane,
     Market,
     MarketDemand,
