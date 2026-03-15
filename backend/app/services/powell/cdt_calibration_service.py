@@ -384,3 +384,86 @@ class CDTCalibrationService:
                 continue
 
         return pairs
+
+    def calibrate_from_simulation(
+        self,
+        simulation_pairs: Dict[str, List[Tuple[float, float]]],
+    ) -> Dict[str, Any]:
+        """Bootstrap CDT calibration directly from simulation reward/confidence pairs.
+
+        Called during provisioning when no real production outcomes exist yet.
+        The digital twin provides (reward, confidence) for each TRM decision
+        without requiring real feedback-horizon delays.
+
+        Args:
+            simulation_pairs: {agent_type: [(reward, confidence), ...]}
+                reward:     Normalized outcome quality [0-1]; 1.0 = perfect outcome.
+                confidence: Agent's confidence in the decision [0-1].
+                            These map to (actual_loss = 1 - reward,
+                                          estimated_cost = 1 - confidence).
+
+        Returns:
+            Stats dict with per-type calibration results.
+        """
+        stats = {}
+
+        for agent_type, pairs_raw in simulation_pairs.items():
+            if not pairs_raw:
+                stats[agent_type] = {"status": "no_data", "pairs": 0, "source": "simulation"}
+                continue
+
+            pairs = []
+            for reward, confidence in pairs_raw:
+                reward = max(0.0, min(1.0, float(reward)))
+                confidence = max(0.0, min(1.0, float(confidence)))
+                # Loss is the complement of reward — how far from perfect outcome
+                actual_loss = 1.0 - reward
+                # Estimated cost is the complement of confidence — agent's uncertainty
+                estimated_cost = max(1e-6, 1.0 - confidence)
+                actual_cost = estimated_cost + actual_loss * estimated_cost
+
+                pairs.append(
+                    DecisionOutcomePair(
+                        decision_features=np.array([confidence, reward], dtype=np.float32),
+                        decision_cost_estimate=estimated_cost,
+                        actual_cost=actual_cost,
+                        agent_type=agent_type,
+                        metadata={"source": "simulation_bootstrap"},
+                    )
+                )
+
+            wrapper = self.registry.get_or_create(agent_type)
+
+            if len(pairs) >= ConformalDecisionWrapper.MIN_CALIBRATION_SIZE:
+                wrapper.calibrate(pairs)
+                stats[agent_type] = {
+                    "status": "calibrated",
+                    "pairs": len(pairs),
+                    "source": "simulation",
+                    "diagnostics": wrapper.get_diagnostics(),
+                }
+            else:
+                for pair in pairs:
+                    wrapper.add_calibration_pair(pair)
+                stats[agent_type] = {
+                    "status": "partial",
+                    "pairs": len(pairs),
+                    "min_required": ConformalDecisionWrapper.MIN_CALIBRATION_SIZE,
+                    "source": "simulation",
+                }
+
+            logger.info(
+                "CDT simulation calibration %s: %s (%d pairs from digital twin)",
+                agent_type,
+                stats[agent_type]["status"],
+                stats[agent_type]["pairs"],
+            )
+
+        calibrated = sum(1 for s in stats.values() if s.get("status") == "calibrated")
+        logger.info(
+            "CDT simulation bootstrap complete: %d/%d agents calibrated from digital twin",
+            calibrated,
+            len(stats),
+        )
+        return stats
+

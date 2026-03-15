@@ -736,18 +736,63 @@ class ProvisioningService:
             orchestrator = ConformalOrchestrator.get_instance()
             count = await orchestrator.hydrate_from_db(self.db, tenant_id=tenant_id)
 
-            # CDT batch calibration (tenant-scoped)
+            # CDT calibration — real outcomes first, then simulation bootstrap
+            # for any TRM types that still lack calibration data.
+            #
+            # Why two passes:
+            #   Pass 1: calibrate_all() reads real decision-outcome pairs from
+            #           powell_*_decisions (exist after decision_seed + outcome
+            #           collection runs). These are the gold standard.
+            #   Pass 2: For TRM types still uncalibrated (no real outcomes yet),
+            #           run the digital twin simulation to derive calibration
+            #           pairs from supply chain dynamics. This clears the
+            #           "0/11 agents ready" banner immediately after warm-start
+            #           without waiting for production feedback horizons (4h-14d).
+            #
+            # The simulation bootstrap is Phase-1-safe: it does NOT require TRM
+            # models to make decisions. Instead it uses base-stock ordering
+            # (representative of post-BC TRM behaviour) and derives (confidence,
+            # loss) pairs from the supply chain state at each simulated period.
+            # Real production outcomes from Phase 2 RL refine the calibration
+            # incrementally (hourly at :35).
             try:
                 from app.db.session import sync_session_factory
                 from app.services.powell.cdt_calibration_service import CDTCalibrationService
+                from app.services.powell.simulation_calibration_service import (
+                    run_simulation_calibration_bootstrap,
+                )
                 sync_db = sync_session_factory()
                 try:
                     cdt_svc = CDTCalibrationService(sync_db, tenant_id=tenant_id)
-                    cdt_svc.calibrate_all()
+
+                    # Pass 1: real outcomes
+                    real_stats = cdt_svc.calibrate_all()
+                    n_real = sum(
+                        1 for s in real_stats.values()
+                        if s.get("status") == "calibrated"
+                    )
+
+                    # Pass 2: simulation bootstrap for uncalibrated TRM types
+                    if n_real < 11 and config_id and tenant_id:
+                        logger.info(
+                            "CDT: %d/11 TRMs calibrated from real outcomes — "
+                            "bootstrapping remainder from digital twin simulation",
+                            n_real,
+                        )
+                        sim_stats = run_simulation_calibration_bootstrap(
+                            db=sync_db,
+                            config_id=config_id,
+                            tenant_id=tenant_id,
+                            n_episodes=50,
+                        )
+                        logger.info(
+                            "CDT simulation bootstrap: %d/11 agents calibrated",
+                            sim_stats.get("agents_calibrated", 0),
+                        )
                 finally:
                     sync_db.close()
             except Exception as cdt_err:
-                logger.debug("CDT batch calibration: %s", cdt_err)
+                logger.debug("CDT calibration: %s", cdt_err)
 
             # Include CDT readiness summary
             cdt_summary = {"calibrated": 0, "partial": 0, "uncalibrated": 0}
