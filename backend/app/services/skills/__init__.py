@@ -27,8 +27,10 @@ from .planning_skill_orchestrator import PlanningSkillOrchestrator, PlanningSkil
 # Import all skill subpackages to trigger registration
 from . import (  # noqa: F401
     atp_executor,
+    demand_planning,
     forecast_adjustment,
     inventory_buffer,
+    inventory_planning,
     inventory_rebalancing,
     maintenance_scheduling,
     mo_execution,
@@ -36,6 +38,7 @@ from . import (  # noqa: F401
     po_creation,
     quality_disposition,
     rccp,
+    sop_adjustment,
     subcontracting,
     supply_planning,
     to_execution,

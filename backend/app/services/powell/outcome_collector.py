@@ -63,6 +63,11 @@ TRM_OUTCOME_DELAY = {
     "subcontracting": timedelta(days=14),
     "forecast_adjustment": timedelta(days=30),
     "inventory_buffer": timedelta(days=14),
+    # Planning TRM feedback horizons
+    "demand_adjustment":    timedelta(weeks=4),
+    "inventory_adjustment": timedelta(weeks=2),
+    "supply_adjustment":    timedelta(days=7),
+    "rccp_adjustment":      timedelta(weeks=2),
 }
 
 # Minimum delay before we even attempt outcome collection

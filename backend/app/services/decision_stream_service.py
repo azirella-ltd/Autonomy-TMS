@@ -163,6 +163,11 @@ DECISION_TYPE_TABLE_MAP = {
     "subcontracting": "powell_subcontracting_decisions",
     "forecast_adjustment": "powell_forecast_adjustment_decisions",
     "inventory_buffer": "powell_buffer_decisions",
+    # Planning TRM decision types
+    "demand_adjustment":    "powell_demand_adjustment_decisions",
+    "inventory_adjustment": "powell_inventory_adjustment_decisions",
+    "supply_adjustment":    "powell_supply_adjustment_decisions",
+    "rccp_adjustment":      "powell_rccp_adjustment_decisions",
 }
 
 # Role relevance filter: which decision types each powell_role cares about
