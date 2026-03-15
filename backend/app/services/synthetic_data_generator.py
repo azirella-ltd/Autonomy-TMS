@@ -186,17 +186,17 @@ RETAILER_CONFIG = ArchetypeConfig(
         NodeTemplate("RDC", "Regional DC", "INVENTORY", 6, (10000, 30000), (100000, 300000), (0.4, 0.6), (2.5, 4.5)),
         NodeTemplate("STORE", "Retail Store", "INVENTORY", 50, (500, 2000), (5000, 15000), (0.5, 0.8), (3.0, 5.0)),
         NodeTemplate("ONLINE", "Online Fulfillment", "INVENTORY", 3, (5000, 15000), (50000, 100000), (0.35, 0.55), (2.5, 4.0)),
-        NodeTemplate("SUPP", "Supplier", "MARKET_SUPPLY", 10, (0, 0), (1000000, 5000000), (0, 0), (0, 0)),
-        NodeTemplate("CUST", "Customer", "MARKET_DEMAND", 1, (0, 0), (0, 0), (0, 0), (0, 0)),
+        NodeTemplate("SUPP", "Supplier", "VENDOR", 10, (0, 0), (1000000, 5000000), (0, 0), (0, 0)),
+        NodeTemplate("CUST", "Customer", "CUSTOMER", 1, (0, 0), (0, 0), (0, 0), (0, 0)),
     ],
 
     lane_templates=[
-        LaneTemplate("MARKET_SUPPLY", "Central DC", (7, 21), (0.02, 0.05), (0.85, 0.98)),
+        LaneTemplate("VENDOR", "Central DC", (7, 21), (0.02, 0.05), (0.85, 0.98)),
         LaneTemplate("Central DC", "Regional DC", (2, 5), (0.01, 0.03), (0.92, 0.99)),
         LaneTemplate("Regional DC", "Retail Store", (1, 3), (0.005, 0.02), (0.95, 0.99)),
         LaneTemplate("Regional DC", "Online Fulfillment", (1, 2), (0.008, 0.025), (0.94, 0.99)),
-        LaneTemplate("Retail Store", "MARKET_DEMAND", (0, 0), (0, 0), (1.0, 1.0)),
-        LaneTemplate("Online Fulfillment", "MARKET_DEMAND", (1, 3), (0.01, 0.03), (0.90, 0.98)),
+        LaneTemplate("Retail Store", "CUSTOMER", (0, 0), (0, 0), (1.0, 1.0)),
+        LaneTemplate("Online Fulfillment", "CUSTOMER", (1, 3), (0.01, 0.03), (0.90, 0.98)),
     ],
 
     product_categories=5,
@@ -232,17 +232,17 @@ DISTRIBUTOR_CONFIG = ArchetypeConfig(
         NodeTemplate("RDC", "Regional DC", "INVENTORY", 8, (25000, 75000), (250000, 750000), (0.3, 0.5), (2.0, 3.5)),
         NodeTemplate("LDC", "Local DC", "INVENTORY", 20, (5000, 20000), (50000, 150000), (0.35, 0.55), (2.5, 4.0)),
         NodeTemplate("KITTING", "Kitting Center", "MANUFACTURER", 4, (2000, 8000), (20000, 60000), (0.4, 0.6), (2.0, 3.5)),
-        NodeTemplate("MFG", "Manufacturer", "MARKET_SUPPLY", 15, (0, 0), (2000000, 10000000), (0, 0), (0, 0)),
-        NodeTemplate("RETAIL", "Retailer Customer", "MARKET_DEMAND", 100, (0, 0), (0, 0), (0, 0), (0, 0)),
+        NodeTemplate("MFG", "Manufacturer", "VENDOR", 15, (0, 0), (2000000, 10000000), (0, 0), (0, 0)),
+        NodeTemplate("RETAIL", "Retailer Customer", "CUSTOMER", 100, (0, 0), (0, 0), (0, 0), (0, 0)),
     ],
 
     lane_templates=[
-        LaneTemplate("MARKET_SUPPLY", "National DC", (14, 35), (0.015, 0.04), (0.88, 0.97)),
+        LaneTemplate("VENDOR", "National DC", (14, 35), (0.015, 0.04), (0.88, 0.97)),
         LaneTemplate("National DC", "Regional DC", (3, 7), (0.008, 0.02), (0.93, 0.99)),
         LaneTemplate("National DC", "Kitting Center", (1, 3), (0.005, 0.015), (0.95, 0.99)),
         LaneTemplate("Kitting Center", "Regional DC", (1, 2), (0.01, 0.025), (0.94, 0.99)),
         LaneTemplate("Regional DC", "Local DC", (1, 3), (0.006, 0.018), (0.94, 0.99)),
-        LaneTemplate("Local DC", "MARKET_DEMAND", (1, 5), (0.01, 0.03), (0.90, 0.98)),
+        LaneTemplate("Local DC", "CUSTOMER", (1, 5), (0.01, 0.03), (0.90, 0.98)),
     ],
 
     product_categories=8,
@@ -279,21 +279,21 @@ MANUFACTURER_CONFIG = ArchetypeConfig(
         NodeTemplate("COMP", "Component Mfg", "MANUFACTURER", 8, (10000, 40000), (100000, 400000), (0.3, 0.45), (2.0, 4.0)),
         NodeTemplate("FG_DC", "Finished Goods DC", "INVENTORY", 4, (30000, 100000), (300000, 1000000), (0.28, 0.42), (2.0, 4.0)),
         NodeTemplate("RDC", "Regional DC", "INVENTORY", 10, (10000, 40000), (100000, 400000), (0.32, 0.48), (2.5, 4.5)),
-        NodeTemplate("RAW", "Raw Material Supplier", "MARKET_SUPPLY", 25, (0, 0), (5000000, 20000000), (0, 0), (0, 0)),
-        NodeTemplate("TIER1", "Tier 1 Supplier", "MARKET_SUPPLY", 15, (0, 0), (2000000, 10000000), (0, 0), (0, 0)),
-        NodeTemplate("DIST", "Distributor Customer", "MARKET_DEMAND", 50, (0, 0), (0, 0), (0, 0), (0, 0)),
-        NodeTemplate("DIRECT", "Direct Customer", "MARKET_DEMAND", 20, (0, 0), (0, 0), (0, 0), (0, 0)),
+        NodeTemplate("RAW", "Raw Material Supplier", "VENDOR", 25, (0, 0), (5000000, 20000000), (0, 0), (0, 0)),
+        NodeTemplate("TIER1", "Tier 1 Supplier", "VENDOR", 15, (0, 0), (2000000, 10000000), (0, 0), (0, 0)),
+        NodeTemplate("DIST", "Distributor Customer", "CUSTOMER", 50, (0, 0), (0, 0), (0, 0), (0, 0)),
+        NodeTemplate("DIRECT", "Direct Customer", "CUSTOMER", 20, (0, 0), (0, 0), (0, 0), (0, 0)),
     ],
 
     lane_templates=[
-        LaneTemplate("MARKET_SUPPLY", "Component Mfg", (21, 60), (0.01, 0.03), (0.85, 0.95)),
-        LaneTemplate("MARKET_SUPPLY", "Sub-Assembly", (14, 45), (0.012, 0.035), (0.87, 0.96)),
+        LaneTemplate("VENDOR", "Component Mfg", (21, 60), (0.01, 0.03), (0.85, 0.95)),
+        LaneTemplate("VENDOR", "Sub-Assembly", (14, 45), (0.012, 0.035), (0.87, 0.96)),
         LaneTemplate("Component Mfg", "Sub-Assembly", (3, 10), (0.005, 0.015), (0.92, 0.98)),
         LaneTemplate("Sub-Assembly", "Manufacturing Plant", (2, 7), (0.004, 0.012), (0.93, 0.99)),
         LaneTemplate("Manufacturing Plant", "Finished Goods DC", (1, 3), (0.003, 0.01), (0.95, 0.99)),
         LaneTemplate("Finished Goods DC", "Regional DC", (2, 5), (0.006, 0.018), (0.94, 0.99)),
-        LaneTemplate("Regional DC", "MARKET_DEMAND", (2, 7), (0.008, 0.025), (0.92, 0.98)),
-        LaneTemplate("Finished Goods DC", "MARKET_DEMAND", (3, 10), (0.01, 0.03), (0.90, 0.97)),
+        LaneTemplate("Regional DC", "CUSTOMER", (2, 7), (0.008, 0.025), (0.92, 0.98)),
+        LaneTemplate("Finished Goods DC", "CUSTOMER", (3, 10), (0.01, 0.03), (0.90, 0.97)),
     ],
 
     product_categories=4,
@@ -517,9 +517,9 @@ class SyntheticDataGenerator:
 
         for template in self.config.node_templates:
             count = self.request.num_sites if template.master_type == "INVENTORY" and self.request.num_sites else template.count
-            if template.master_type == "MARKET_SUPPLY" and self.request.num_suppliers:
+            if template.master_type == "VENDOR" and self.request.num_suppliers:
                 count = self.request.num_suppliers
-            if template.master_type == "MARKET_DEMAND" and self.request.num_customers:
+            if template.master_type == "CUSTOMER" and self.request.num_customers:
                 count = self.request.num_customers
 
             for i in range(count):
@@ -776,7 +776,7 @@ class SyntheticDataGenerator:
     async def _create_forecasts(self, tenant_id: int, sites: List[Site], items: List[Item]) -> List[Forecast]:
         """Create demand forecasts."""
         forecasts = []
-        demand_sites = [s for s in sites if s.master_type == "MARKET_DEMAND"]
+        demand_sites = [s for s in sites if s.master_type == "CUSTOMER"]
         inventory_sites = [s for s in sites if s.master_type == "INVENTORY"]
 
         template = self.config.product_template

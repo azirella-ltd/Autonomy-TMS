@@ -79,11 +79,11 @@ _COUNTRY_TO_CONTINENT: Dict[str, str] = _load_country_to_continent()
 # Master type constants — use AWS SC canonical names for boundary nodes
 MASTER_MANUFACTURER = "MANUFACTURER"
 MASTER_INVENTORY = "INVENTORY"
-MASTER_MARKET_SUPPLY = "MARKET_SUPPLY"
-MASTER_MARKET_DEMAND = "MARKET_DEMAND"
+MASTER_VENDOR = "VENDOR"
+MASTER_CUSTOMER = "CUSTOMER"
 # Legacy aliases pointing to canonical names
-MASTER_VENDOR = "MARKET_SUPPLY"
-MASTER_CUSTOMER = "MARKET_DEMAND"
+MASTER_VENDOR = "VENDOR"
+MASTER_CUSTOMER = "CUSTOMER"
 
 
 @dataclass
@@ -1862,8 +1862,8 @@ class SAPConfigBuilder:
         site_type_defs = [
             {"type": "PLANT", "label": "Plant", "order": 0, "master_type": "MANUFACTURER"},
             {"type": "DC", "label": "Distribution Center", "order": 1, "master_type": "INVENTORY"},
-            {"type": "SUPPLIER", "label": "Vendor", "order": 2, "master_type": "MARKET_SUPPLY", "tpartner_type": "vendor", "is_external": True},
-            {"type": "CUSTOMER", "label": "Customer", "order": 3, "master_type": "MARKET_DEMAND", "tpartner_type": "customer", "is_external": True},
+            {"type": "SUPPLIER", "label": "Vendor", "order": 2, "master_type": "VENDOR", "tpartner_type": "vendor", "is_external": True},
+            {"type": "CUSTOMER", "label": "Customer", "order": 3, "master_type": "CUSTOMER", "tpartner_type": "customer", "is_external": True},
         ]
         self._config.site_type_definitions = site_type_defs
         await self.db.flush()
@@ -1871,8 +1871,8 @@ class SAPConfigBuilder:
         master_to_dag = {
             MASTER_MANUFACTURER: "PLANT",
             MASTER_INVENTORY: "DC",
-            MASTER_MARKET_SUPPLY: "SUPPLIER",
-            MASTER_MARKET_DEMAND: "CUSTOMER",
+            MASTER_VENDOR: "SUPPLIER",
+            MASTER_CUSTOMER: "CUSTOMER",
             # Legacy values that may exist in old DB rows
             "VENDOR": "SUPPLIER",
             "CUSTOMER": "CUSTOMER",
@@ -1907,7 +1907,7 @@ class SAPConfigBuilder:
             self._sites[sp.key] = site
             count += 1
 
-        # Create regional MARKET_SUPPLY and MARKET_DEMAND boundary nodes from vendor/customer geography
+        # Create regional VENDOR and CUSTOMER boundary nodes from vendor/customer geography
         build_opts = opts or {}
         supply_regions, demand_regions = self._compute_market_regions(
             max_supply_regions=build_opts.get("max_supply_regions", 8),
@@ -1927,7 +1927,7 @@ class SAPConfigBuilder:
                 name=site_key,
                 type=region_info["label"],
                 dag_type="SUPPLIER",
-                master_type=MASTER_MARKET_SUPPLY,
+                master_type=MASTER_VENDOR,
                 is_external=True,
                 tpartner_type="vendor",
                 geo_id=region_geos.get(region_key),
@@ -1949,7 +1949,7 @@ class SAPConfigBuilder:
                 name=site_key,
                 type=region_info["label"],
                 dag_type="CUSTOMER",
-                master_type=MASTER_MARKET_DEMAND,
+                master_type=MASTER_CUSTOMER,
                 is_external=True,
                 tpartner_type="customer",
                 geo_id=region_geos.get(region_key),
@@ -3435,18 +3435,18 @@ class SAPConfigBuilder:
         return count
 
     def _get_first_demand_site_id(self) -> Optional[int]:
-        """Get ID of first MARKET_DEMAND site in config."""
+        """Get ID of first CUSTOMER site in config."""
         for key, site in self._sites.items():
             mt = getattr(site, "master_type", "")
-            if mt == "MARKET_DEMAND":
+            if mt == "CUSTOMER":
                 return site.id
         return None
 
     def _get_first_supply_site_id(self) -> Optional[int]:
-        """Get ID of first MARKET_SUPPLY site in config."""
+        """Get ID of first VENDOR site in config."""
         for key, site in self._sites.items():
             mt = getattr(site, "master_type", "")
-            if mt == "MARKET_SUPPLY":
+            if mt == "VENDOR":
                 return site.id
         return None
 

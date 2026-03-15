@@ -657,7 +657,7 @@ class HierarchicalMetricsService:
                 .filter(
                     Forecast.config_id == config.id,
                     Forecast.is_active == "true",
-                    (Site.tpartner_type == "customer") | (Site.master_type == "MARKET_DEMAND"),
+                    (Site.tpartner_type == "customer") | (Site.master_type == "CUSTOMER"),
                     Forecast.forecast_date >= today,
                     Forecast.forecast_date < year_end,
                     Product.unit_price.isnot(None),
@@ -692,7 +692,12 @@ class HierarchicalMetricsService:
             if not config:
                 return {}
 
-            # Total on-hand inventory value
+            # Total on-hand inventory value — use only the LATEST snapshot date
+            latest_inv_date_row = (
+                self.db.query(func.max(InvLevel.inventory_date))
+                .filter(InvLevel.config_id == config.id)
+                .scalar()
+            )
             oh_row = (
                 self.db.query(
                     func.sum(InvLevel.on_hand_qty * Product.unit_cost).label("inv_value"),
@@ -702,9 +707,10 @@ class HierarchicalMetricsService:
                 .filter(
                     InvLevel.config_id == config.id,
                     Product.unit_cost.isnot(None),
+                    InvLevel.inventory_date == latest_inv_date_row,
                 )
                 .first()
-            )
+            ) if latest_inv_date_row else None
 
             today = date.today()
             year_end = date(today.year + 1, today.month, today.day)
@@ -719,7 +725,7 @@ class HierarchicalMetricsService:
                 .filter(
                     Forecast.config_id == config.id,
                     Forecast.is_active == "true",
-                    (Site.tpartner_type == "customer") | (Site.master_type == "MARKET_DEMAND"),
+                    (Site.tpartner_type == "customer") | (Site.master_type == "CUSTOMER"),
                     Forecast.forecast_date >= today,
                     Forecast.forecast_date < year_end,
                     Product.unit_cost.isnot(None),

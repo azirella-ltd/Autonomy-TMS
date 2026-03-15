@@ -1275,10 +1275,10 @@ def calibrate_demo_data(
         db.close()
         raise HTTPException(status_code=404, detail=f"No supply chain config found for your tenant")
 
-    # Pick up to 4 demand sites (MARKET_DEMAND)
+    # Pick up to 4 demand sites (CUSTOMER)
     demand_sites = (
         db.query(Site)
-        .filter(Site.config_id == config.id, Site.master_type == "MARKET_DEMAND")
+        .filter(Site.config_id == config.id, Site.master_type == "CUSTOMER")
         .limit(4)
         .all()
     )
@@ -1292,10 +1292,10 @@ def calibrate_demo_data(
         .limit(2)
         .all()
     )
-    # Pick up to 2 supplier (MARKET_SUPPLY) sites
+    # Pick up to 2 supplier (VENDOR) sites
     supplier_sites = (
         db.query(Site)
-        .filter(Site.config_id == config.id, Site.master_type == "MARKET_SUPPLY")
+        .filter(Site.config_id == config.id, Site.master_type == "VENDOR")
         .limit(2)
         .all()
     )
@@ -1362,7 +1362,7 @@ def calibrate_demo_data(
         .filter(
             Forecast.config_id == config.id,
             Forecast.is_active == "true",
-            Site.master_type == "MARKET_DEMAND",
+            Site.master_type == "CUSTOMER",
             Forecast.forecast_date >= today,
             Forecast.forecast_date < horizon_end,
         )

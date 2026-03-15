@@ -53,8 +53,8 @@ class ScenarioUserRole(str, Enum):
     DISTRIBUTOR = "distributor"
     MANUFACTURER = "manufacturer"
     SUPPLIER = "supplier"
-    MARKET_DEMAND = "market_demand"
-    MARKET_SUPPLY = "market_supply"
+    CUSTOMER = "customer"
+    VENDOR = "vendor"
 
 
 class ScenarioUserType(str, Enum):

@@ -125,6 +125,7 @@ Respond with JSON only. No markdown wrapping. No explanation outside the JSON.
 9. If strategic context from the Knowledge Base is available, reference it when scoring strategic_alignment
 10. The situation_overview should lead with the single most important development
 11. For the risk_report, prioritize CRITICAL over WARNING, and flag any unresolved conditions
+12. **Directional language must match the actual movement**: if a metric increased (current > previous), use words like "surged", "ballooned", "rose", "grew", "jumped". If a metric decreased (current < previous), use "fell", "dropped", "collapsed", "declined". Never say a metric "collapsed" when its value increased — this is a factual error.
 
 ## CRITICAL OUTPUT INSTRUCTION
 Respond with ONLY the JSON object. No preamble, no explanation, no markdown code fences, no text before or after the JSON. The first character of your response must be `{` and the last must be `}`.

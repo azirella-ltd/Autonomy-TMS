@@ -223,7 +223,7 @@ IMPORTANT:
         """Get site master_type-specific objectives and description.
 
         agent_name should be an AWS SC master_type (INVENTORY, MANUFACTURER,
-        MARKET_SUPPLY, MARKET_DEMAND) or the site's display name.
+        VENDOR, CUSTOMER) or the site's display name.
         """
         objectives_map = {
             "inventory": {

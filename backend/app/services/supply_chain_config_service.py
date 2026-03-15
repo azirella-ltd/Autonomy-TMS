@@ -810,7 +810,7 @@ class SupplyChainConfigService:
             explicit_market = [
                 name
                 for name, ntype in node_types.items()
-                if ntype == NodeType.MARKET_DEMAND.value.lower() or ntype == "market_demand"
+                if ntype == NodeType.CUSTOMER.value.lower() or ntype == "market_demand"
             ]
             market_nodes = sorted(explicit_market)
 
@@ -820,7 +820,7 @@ class SupplyChainConfigService:
         market_supply_nodes = [
             name
             for name, ntype in node_types.items()
-            if ntype == NodeType.MARKET_SUPPLY.value.lower() or ntype == "market_supply"
+            if ntype == NodeType.VENDOR.value.lower() or ntype == "market_supply"
         ]
         if not market_supply_nodes:
             raise ValueError("Supply chain DAG must include at least one Market Supply node persisted in the database")
@@ -842,7 +842,7 @@ class SupplyChainConfigService:
                 sources.append(node)
                 continue
             node_type = node_types.get(node)
-            if node_type in {NodeType.MARKET_SUPPLY.value.lower(), "market_supply", NodeType.MARKET_DEMAND.value.lower(), "market_demand"}:
+            if node_type in {NodeType.VENDOR.value.lower(), "market_supply", NodeType.CUSTOMER.value.lower(), "market_demand"}:
                 sources.append(node)
         sinks = sorted([node for node in all_node_keys if node not in upstreams])
         def _normalize_node_type(node_key: str) -> Optional[str]:
@@ -862,9 +862,9 @@ class SupplyChainConfigService:
             return None
 
         allowed_source_types = {
-            MixedScenarioService._normalise_node_type(NodeType.MARKET_SUPPLY.value),
+            MixedScenarioService._normalise_node_type(NodeType.VENDOR.value),
             "market_supply",
-            MixedScenarioService._normalise_node_type(NodeType.MARKET_DEMAND.value),
+            MixedScenarioService._normalise_node_type(NodeType.CUSTOMER.value),
             "market_demand",
             MixedScenarioService._normalise_node_type(NodeType.SUPPLIER.value),
             "supplier",
@@ -884,9 +884,9 @@ class SupplyChainConfigService:
                 "Supply chain DAG sources must be Supplier / Component Supplier / Market Supply / Market Demand nodes; invalid sources: "
                 + ", ".join(invalid_sources)
             )
-        if not any(_normalize_node_type(node) in {NodeType.MARKET_SUPPLY.value.lower(), "market_supply"} for node in sources):
+        if not any(_normalize_node_type(node) in {NodeType.VENDOR.value.lower(), "market_supply"} for node in sources):
             raise ValueError("Supply chain DAG must include at least one Market Supply source node.")
-        if not any(_normalize_node_type(node) in {NodeType.MARKET_DEMAND.value.lower(), "market_demand"} for node in sinks):
+        if not any(_normalize_node_type(node) in {NodeType.CUSTOMER.value.lower(), "market_demand"} for node in sinks):
             raise ValueError("Supply chain DAG must include at least one Market Demand sink node.")
 
         md = market_demands[0]

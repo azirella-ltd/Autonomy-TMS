@@ -182,7 +182,7 @@ class SimulationExecutionEngine:
         # Get Market Demand sites
         market_demand_sites = await self._get_sites_by_master_type(
             config_id=config_id,
-            master_type="MARKET_DEMAND",
+            master_type="CUSTOMER",
         )
 
         # Get downstream sites (Retailers) connected to Market Demand
@@ -262,7 +262,7 @@ class SimulationExecutionEngine:
         fulfillment_by_site = {}
 
         for site in sites:
-            if site.master_type == "MARKET_DEMAND" or site.master_type == "MARKET_SUPPLY":
+            if site.master_type == "CUSTOMER" or site.master_type == "VENDOR":
                 continue
 
             # Fulfill customer orders (for Retailer)
@@ -313,7 +313,7 @@ class SimulationExecutionEngine:
         agent_decisions = agent_decisions or {}
 
         for site in sites:
-            if site.master_type == "MARKET_DEMAND" or site.master_type == "MARKET_SUPPLY":
+            if site.master_type == "CUSTOMER" or site.master_type == "VENDOR":
                 continue
 
             # Get upstream supplier
@@ -430,7 +430,7 @@ class SimulationExecutionEngine:
         metrics_by_site = {}
 
         for site in sites:
-            if site.master_type == "MARKET_DEMAND" or site.master_type == "MARKET_SUPPLY":
+            if site.master_type == "CUSTOMER" or site.master_type == "VENDOR":
                 continue
 
             # Get current state

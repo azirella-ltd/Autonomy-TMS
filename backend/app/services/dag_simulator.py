@@ -1446,8 +1446,8 @@ def _is_supply(site: Node) -> bool:
     node_type = getattr(site, 'node_type', '') or ''
     tpartner_type = getattr(site, 'tpartner_type', '') or ''
     return (
-        master.upper() in ('VENDOR', 'MARKET_SUPPLY')
-        or node_type.upper() in ('VENDOR', 'MARKET_SUPPLY')
+        master.upper() in ('VENDOR', 'VENDOR')
+        or node_type.upper() in ('VENDOR', 'VENDOR')
         or tpartner_type.lower() == 'vendor'
         or 'SUPPLY' in master.upper()
     )
@@ -1459,8 +1459,8 @@ def _is_demand(site: Node) -> bool:
     node_type = getattr(site, 'node_type', '') or ''
     tpartner_type = getattr(site, 'tpartner_type', '') or ''
     return (
-        master.upper() in ('CUSTOMER', 'MARKET_DEMAND')
-        or node_type.upper() in ('CUSTOMER', 'MARKET_DEMAND')
+        master.upper() in ('CUSTOMER', 'CUSTOMER')
+        or node_type.upper() in ('CUSTOMER', 'CUSTOMER')
         or tpartner_type.lower() == 'customer'
         or 'DEMAND' in master.upper()
     )

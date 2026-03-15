@@ -446,8 +446,8 @@ class SyntheticDataWizard:
         config = ARCHETYPE_CONFIGS[archetype]
         return {
             "num_sites": sum(t.count for t in config.node_templates if t.master_type in ("INVENTORY", "MANUFACTURER")),
-            "num_suppliers": sum(t.count for t in config.node_templates if t.master_type == "MARKET_SUPPLY"),
-            "num_customers": sum(t.count for t in config.node_templates if t.master_type == "MARKET_DEMAND"),
+            "num_suppliers": sum(t.count for t in config.node_templates if t.master_type == "VENDOR"),
+            "num_customers": sum(t.count for t in config.node_templates if t.master_type == "CUSTOMER"),
             "num_products": config.product_categories * config.product_families_per_category * config.products_per_family,
             "product_categories": config.product_categories,
             "demand_pattern": config.demand_pattern,

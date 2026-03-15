@@ -67,7 +67,7 @@ const KPIMonitoring = () => {
       const response = await api.get('/hierarchical-metrics/dashboard', {
         params: hierarchy,
       });
-      setMetricsData(response.data);
+      setMetricsData(response.data?.data || response.data);
     } catch (err) {
       console.warn('Hierarchical metrics endpoint not available:', err);
       setError('Failed to load metrics data. Using fallback.');
@@ -125,6 +125,9 @@ const KPIMonitoring = () => {
               tier="tier1"
               scorCode={m.scor_code}
               lowerIsBetter={m.lower_is_better}
+              ciLower={m.ci_lower}
+              ciUpper={m.ci_upper}
+              n={m.n}
             />
           ))}
         </div>
@@ -177,6 +180,9 @@ const KPIMonitoring = () => {
               formula={m.formula}
               components={m.components}
               lowerIsBetter={m.lower_is_better}
+              ciLower={m.ci_lower}
+              ciUpper={m.ci_upper}
+              n={m.n}
             />
           ))}
         </div>
@@ -243,6 +249,9 @@ const KPIMonitoring = () => {
                   agent={m.agent}
                   scorCode={m.scor_code}
                   lowerIsBetter={m.lower_is_better}
+                  ciLower={m.ci_lower}
+                  ciUpper={m.ci_upper}
+                  n={m.n}
                   compact
                 />
               ))}

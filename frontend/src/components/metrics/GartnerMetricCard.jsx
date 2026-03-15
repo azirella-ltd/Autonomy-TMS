@@ -109,7 +109,7 @@ const GartnerMetricCard = ({
           <div className="mt-2">
             <div className="flex justify-between text-xs text-muted-foreground mb-1">
               <span>Target: {target}{unit}</span>
-              {benchmark && <span className="text-[10px]">{benchmark}</span>}
+              {benchmark && <span className="text-[10px] text-muted-foreground" title="Industry benchmark range">Ref: {benchmark}</span>}
             </div>
             <Progress
               value={Math.min(

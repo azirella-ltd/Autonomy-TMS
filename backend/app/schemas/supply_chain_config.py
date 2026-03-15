@@ -36,17 +36,17 @@ class NodeType(str, Enum):
     INVENTORY = "inventory"
     MANUFACTURER = "manufacturer"
     SUPPLIER = "supplier"
-    MARKET_DEMAND = "market_demand"
-    MARKET_SUPPLY = "market_supply"
+    CUSTOMER = "customer"
+    VENDOR = "vendor"
 
 
 class MasterNodeType(str, Enum):
     """Collapsed master processing categories used by the engine."""
 
-    MARKET_DEMAND = "market_demand"
-    MARKET_SUPPLY = "market_supply"
-    INVENTORY = "inventory"
-    MANUFACTURER = "manufacturer"
+    CUSTOMER = "CUSTOMER"
+    VENDOR = "VENDOR"
+    INVENTORY = "INVENTORY"
+    MANUFACTURER = "MANUFACTURER"
 
 
 def canonicalize_node_type(value: Any) -> str:
@@ -63,7 +63,7 @@ class NodeTypeDefinition(BaseModel):
     is_required: bool = Field(False, description="Whether this node type is required for the configuration")
     master_type: MasterNodeType = Field(
         MasterNodeType.INVENTORY,
-        description="Engine master node type (Inventory/Manufacturer/Market Supply/Market Demand)",
+        description="Engine master node type (INVENTORY/MANUFACTURER/VENDOR/CUSTOMER)",
     )
 
     @validator("type")
@@ -102,18 +102,18 @@ class NodeTypeDefinition(BaseModel):
         if role == "manufacturer":
             return MasterNodeType.MANUFACTURER
         if role == "market_supply":
-            return MasterNodeType.MARKET_SUPPLY
-        return MasterNodeType.MARKET_DEMAND
+            return MasterNodeType.VENDOR
+        return MasterNodeType.CUSTOMER
 
 
 def default_site_type_definitions() -> List[NodeTypeDefinition]:
     return [
         NodeTypeDefinition(
-            type=NodeType.MARKET_SUPPLY.value,
+            type=NodeType.VENDOR.value,
             label="Market Supply",
             order=0,
             is_required=True,
-            master_type=MasterNodeType.MARKET_SUPPLY,
+            master_type=MasterNodeType.VENDOR,
         ),
         NodeTypeDefinition(
             type="manufacturer",
@@ -144,11 +144,11 @@ def default_site_type_definitions() -> List[NodeTypeDefinition]:
             master_type=MasterNodeType.INVENTORY,
         ),
         NodeTypeDefinition(
-            type=NodeType.MARKET_DEMAND.value,
+            type=NodeType.CUSTOMER.value,
             label="Market Demand",
             order=5,
             is_required=True,
-            master_type=MasterNodeType.MARKET_DEMAND,
+            master_type=MasterNodeType.CUSTOMER,
         ),
     ]
 

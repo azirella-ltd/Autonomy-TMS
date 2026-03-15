@@ -71,7 +71,7 @@ logger = logging.getLogger(__name__)
 class SiteSpec:
     """Attributes of a supply chain site in the LP."""
     site_id: str
-    master_type: str          # "MARKET_SUPPLY", "INVENTORY", "MANUFACTURER", "MARKET_DEMAND"
+    master_type: str          # "VENDOR", "INVENTORY", "MANUFACTURER", "CUSTOMER"
     supply_capacity: float    # Max units this site can supply per period
     demand_forecast: List[float]     # Demand per period (0 for supply-only sites)
     on_hand: float
@@ -295,7 +295,7 @@ class NetworkFlowOracle:
         b_ub: List[float] = []
 
         for s_idx, site in enumerate(scenario.sites):
-            if site.master_type in ("MARKET_SUPPLY", "MANUFACTURER"):
+            if site.master_type in ("VENDOR", "MANUFACTURER"):
                 row = [0.0] * N
                 for l_idx, lane in enumerate(scenario.lanes):
                     if lane.from_site == site.site_id:
@@ -367,7 +367,7 @@ class NetworkFlowOracle:
             source_lanes.setdefault(lane.from_site, []).append(l_idx)
 
         for site in scenario.sites:
-            if site.master_type not in ("MARKET_SUPPLY", "MANUFACTURER"):
+            if site.master_type not in ("VENDOR", "MANUFACTURER"):
                 continue
             outgoing = source_lanes.get(site.site_id, [])
             if not outgoing:
@@ -467,8 +467,8 @@ class NetworkFlowOracle:
                 min(variability, 3.0) / 3.0,
                 site.holding_cost_per_unit / max_hold,
                 site.stockout_cost_per_unit / max_stock,
-                float(site.master_type in ("MARKET_SUPPLY",)),
-                float(site.master_type == "MARKET_DEMAND"),
+                float(site.master_type in ("VENDOR",)),
+                float(site.master_type == "CUSTOMER"),
                 float(site.master_type == "MANUFACTURER"),
                 out_count[site.site_id] / max_conn,
                 in_count[site.site_id] / max_conn,
@@ -518,10 +518,10 @@ class NetworkFlowOracle:
         n_inv    = num_sites - n_supply - n_demand - n_mfg
 
         master_types: List[str] = (
-            ["MARKET_SUPPLY"] * n_supply
+            ["VENDOR"] * n_supply
             + ["MANUFACTURER"] * n_mfg
             + ["INVENTORY"] * max(n_inv, 1)
-            + ["MARKET_DEMAND"] * n_demand
+            + ["CUSTOMER"] * n_demand
         )
         master_types = master_types[:num_sites]
         # Pad if needed
@@ -542,8 +542,8 @@ class NetworkFlowOracle:
         sites: List[SiteSpec] = []
         for i, mtype in enumerate(master_types):
             site_id = f"SITE_{i:02d}"
-            is_source = mtype in ("MARKET_SUPPLY", "MANUFACTURER")
-            fcst = demand_profile() if mtype == "MARKET_DEMAND" else [0.0] * num_periods
+            is_source = mtype in ("VENDOR", "MANUFACTURER")
+            fcst = demand_profile() if mtype == "CUSTOMER" else [0.0] * num_periods
             base_on_hand = 400.0
             sites.append(SiteSpec(
                 site_id=site_id,
@@ -558,9 +558,9 @@ class NetworkFlowOracle:
 
         # Generate lanes: sources → inventory → demand
         lanes: List[LaneSpec] = []
-        supply_sites = [s.site_id for s in sites if s.master_type in ("MARKET_SUPPLY", "MANUFACTURER")]
+        supply_sites = [s.site_id for s in sites if s.master_type in ("VENDOR", "MANUFACTURER")]
         inv_sites    = [s.site_id for s in sites if s.master_type == "INVENTORY"]
-        demand_sites = [s.site_id for s in sites if s.master_type == "MARKET_DEMAND"]
+        demand_sites = [s.site_id for s in sites if s.master_type == "CUSTOMER"]
 
         def make_lane(from_site: str, to_site: str) -> LaneSpec:
             # Discrete Uniform for period-granularity lead time (exploring configurations)

@@ -114,8 +114,16 @@ const buildAggregatedSankeyData = (sites, lanes, geoLevel = 'state', timeMultipl
 
   // ── 1. Build site ID → metadata map ──────────────────────────────
   const siteMap = {};
+  // Normalize AWS SC master_type to display tokens used in COLUMN_ORDER/TYPE_COLORS
+  const normalizeMasterType = (raw) => {
+    const t = (raw || '').toUpperCase();
+    if (t === 'MARKET_SUPPLY') return 'VENDOR';
+    if (t === 'MARKET_DEMAND') return 'CUSTOMER';
+    return t;
+  };
+
   sites.forEach(s => {
-    const masterType = (s.master_type || s.type || '').toUpperCase();
+    const masterType = normalizeMasterType(s.master_type || s.type);
     const geoLabel = getGeoLabel(s, geoLevel);
     siteMap[s.id] = { masterType, geoLabel, name: s.name };
   });

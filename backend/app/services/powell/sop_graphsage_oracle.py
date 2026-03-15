@@ -138,7 +138,7 @@ POLICY_BOUNDS: List[Tuple[float, float]] = [
 class SoPNetworkSite:
     """A site in the S&OP planning network."""
     site_id: str
-    master_type: str               # "MARKET_SUPPLY", "INVENTORY", "MANUFACTURER", "MARKET_DEMAND"
+    master_type: str               # "VENDOR", "INVENTORY", "MANUFACTURER", "CUSTOMER"
     avg_weekly_demand: float
     demand_variability_cv: float   # coefficient of variation
     avg_lead_time_weeks: float
@@ -493,8 +493,8 @@ class SoPGraphSAGEOracle:
                 site.stockout_cost_per_unit / max_stockout,
                 site.ordering_cost / max_order_c,
                 site.criticality_score,
-                float(site.master_type == "MARKET_SUPPLY"),
-                float(site.master_type == "MARKET_DEMAND"),
+                float(site.master_type == "VENDOR"),
+                float(site.master_type == "CUSTOMER"),
                 float(site.master_type == "MANUFACTURER"),
                 float(site.master_type == "INVENTORY"),
             ]
@@ -535,10 +535,10 @@ class SoPGraphSAGEOracle:
         n_inv    = max(0, num_sites - n_supply - n_demand - n_mfg)
 
         types = (
-            ["MARKET_SUPPLY"] * n_supply
+            ["VENDOR"] * n_supply
             + ["MANUFACTURER"] * n_mfg
             + ["INVENTORY"] * n_inv
-            + ["MARKET_DEMAND"] * n_demand
+            + ["CUSTOMER"] * n_demand
         )
         while len(types) < num_sites:
             types.append("INVENTORY")
@@ -546,7 +546,7 @@ class SoPGraphSAGEOracle:
 
         sites: List[SoPNetworkSite] = []
         for i, mtype in enumerate(types):
-            is_demand = mtype == "MARKET_DEMAND"
+            is_demand = mtype == "CUSTOMER"
             sites.append(SoPNetworkSite(
                 site_id=f"NET_{i:02d}",
                 master_type=mtype,
@@ -555,7 +555,7 @@ class SoPGraphSAGEOracle:
                 # Demand CV: Triangular absolute, mode=0.25
                 demand_variability_cv=D.demand_variability_cv(rng, variance),
                 # Lead time: Triangular absolute, mode=2.0 weeks (right-skewed toward disruption)
-                avg_lead_time_weeks=D.avg_lead_time_weeks(rng, variance) if mtype != "MARKET_DEMAND" else 0.0,
+                avg_lead_time_weeks=D.avg_lead_time_weeks(rng, variance) if mtype != "CUSTOMER" else 0.0,
                 # Lead time CV: Triangular absolute, mode=0.15
                 lead_time_variability_cv=D.lead_time_variability_cv(rng, variance),
                 # Inventory: Triangular jitter around 800 units (right-heavy: build-ups > drawdowns)
@@ -572,9 +572,9 @@ class SoPGraphSAGEOracle:
                 criticality_score=D.criticality_score(rng),
             ))
 
-        supply_ids = [s.site_id for s in sites if s.master_type in ("MARKET_SUPPLY", "MANUFACTURER")]
+        supply_ids = [s.site_id for s in sites if s.master_type in ("VENDOR", "MANUFACTURER")]
         inv_ids    = [s.site_id for s in sites if s.master_type == "INVENTORY"]
-        demand_ids = [s.site_id for s in sites if s.master_type == "MARKET_DEMAND"]
+        demand_ids = [s.site_id for s in sites if s.master_type == "CUSTOMER"]
 
         lanes: List[SoPNetworkLane] = []
 

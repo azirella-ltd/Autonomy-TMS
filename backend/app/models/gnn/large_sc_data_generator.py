@@ -31,7 +31,7 @@ class NodeConfig:
     id: int
     name: str
     node_type: str  # retailer, wholesaler, distributor, factory, supplier, etc.
-    master_type: str  # MARKET_SUPPLY, MARKET_DEMAND, INVENTORY, MANUFACTURER
+    master_type: str  # VENDOR, CUSTOMER, INVENTORY, MANUFACTURER
     initial_inventory: float = 100.0
     base_stock: float = 200.0
     holding_cost: float = 0.5
@@ -70,8 +70,8 @@ class LargeSupplyChainConfig:
 
 # Master type mapping
 MASTER_TYPE_MAP = {
-    'MARKET_SUPPLY': 0,
-    'MARKET_DEMAND': 1,
+    'VENDOR': 0,
+    'CUSTOMER': 1,
     'INVENTORY': 2,
     'MANUFACTURER': 3,
 }
@@ -198,11 +198,11 @@ def generate_synthetic_config(
 
     # Tier configurations
     tier_configs = [
-        ('customer', 'MARKET_DEMAND'),
+        ('customer', 'CUSTOMER'),
         ('dc', 'INVENTORY'),
         ('distributor', 'INVENTORY'),
         ('factory', 'MANUFACTURER'),
-        ('supplier', 'MARKET_SUPPLY'),
+        ('supplier', 'VENDOR'),
     ]
 
     node_id = 0
@@ -348,7 +348,7 @@ class LargeSupplyChainSimulator:
                     inventory[t, idx] += qty
 
                 # 2. Receive orders
-                if node.master_type == 'MARKET_DEMAND':
+                if node.master_type == 'CUSTOMER':
                     # Customer nodes receive end demand
                     incoming_orders[t, idx] = demand[t]
                 else:
@@ -390,7 +390,7 @@ class LargeSupplyChainSimulator:
                     for sup_id, lane in self.upstream[node_id]:
                         order_arrival = t + self.config.info_delay
                         order_queues[sup_id].append((order_arrival, per_supplier))
-                elif order_qty > 0 and node.master_type == 'MARKET_SUPPLY':
+                elif order_qty > 0 and node.master_type == 'VENDOR':
                     # Supplier orders from infinite source
                     arrival_time = t + 2  # Default lead time
                     pipeline_queues[node_id].append((arrival_time, order_qty))

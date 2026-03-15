@@ -57,9 +57,9 @@ ALL_TRM_NAMES: FrozenSet[str] = frozenset([
 #                No production capabilities, so no MO, Quality, Maintenance,
 #                Subcontracting.  PO may or may not apply (see sc_site_type
 #                overrides below).
-# MARKET_SUPPLY — infinite supplier source.  Only PO creation (inbound) and
+# VENDOR — infinite supplier source.  Only PO creation (inbound) and
 #                 order tracking are meaningful.
-# MARKET_DEMAND — terminal demand sink.  Only order tracking (outbound
+# CUSTOMER — terminal demand sink.  Only order tracking (outbound
 #                 visibility) applies; the site itself makes no decisions.
 #
 # Rationale for each TRM inclusion/exclusion:

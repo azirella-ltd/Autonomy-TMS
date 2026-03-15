@@ -836,7 +836,7 @@ class FoodDistConfigGenerator:
                 name=supplier_def.code,
                 type=f"Supplier - {supplier_def.name}",
                 dag_type="market_supply",
-                master_type="MARKET_SUPPLY",
+                master_type="VENDOR",
                 is_external=True,
                 tpartner_type="vendor",
                 attributes={
@@ -865,7 +865,7 @@ class FoodDistConfigGenerator:
                 name=customer_def.code,
                 type=f"Customer - {customer_def.city}, {customer_def.state}",
                 dag_type="market_demand",
-                master_type="MARKET_DEMAND",
+                master_type="CUSTOMER",
                 is_external=True,
                 tpartner_type="customer",
                 attributes={

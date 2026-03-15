@@ -286,7 +286,7 @@ class SyntheticTRMDataGenerator:
                 base_inv = random.uniform(50, 200)
                 if site.master_type == "MANUFACTURER":
                     base_inv *= 1.5
-                elif site.master_type in ("CUSTOMER", "MARKET_DEMAND"):
+                elif site.master_type in ("CUSTOMER", "CUSTOMER"):
                     base_inv *= 0.3
 
                 initial_inventory[product_id] = base_inv
@@ -364,7 +364,7 @@ class SyntheticTRMDataGenerator:
     async def _generate_daily_forecasts(self):
         """Generate daily forecast records."""
         for site in self.sites:
-            if site.master_type in ("VENDOR", "MARKET_SUPPLY"):
+            if site.master_type in ("VENDOR", "VENDOR"):
                 continue  # Vendors don't have demand forecasts
 
             for product_id in self.products:
@@ -433,7 +433,7 @@ class SyntheticTRMDataGenerator:
         for i in range(num_po):
             # Find supplier and destination sites
             inventory_sites = [s for s in self.sites if s.master_type in ["INVENTORY", "MANUFACTURER"]]
-            supplier_sites = [s for s in self.sites if s.master_type in ("VENDOR", "MARKET_SUPPLY")]
+            supplier_sites = [s for s in self.sites if s.master_type in ("VENDOR", "VENDOR")]
 
             if not inventory_sites or not supplier_sites:
                 continue
@@ -493,7 +493,7 @@ class SyntheticTRMDataGenerator:
 
     async def _generate_atp_decision(self):
         """Generate an ATP decision using AATP engine for expert labels."""
-        site = random.choice([s for s in self.sites if s.master_type not in ("VENDOR", "MARKET_SUPPLY")])
+        site = random.choice([s for s in self.sites if s.master_type not in ("VENDOR", "VENDOR")])
         state = self.site_states[site.id]
         product_id = random.choice(self.products)
 

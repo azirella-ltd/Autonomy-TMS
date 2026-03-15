@@ -336,7 +336,7 @@ class MultiStageCTPService:
 
         master_type = (site.master_type or "").upper()
 
-        if master_type in ("VENDOR", "MARKET_SUPPLY"):
+        if master_type in ("VENDOR", "VENDOR"):
             return self._check_vendor_stage(product_id, site, quantity, cumulative_lt)
         elif master_type == "MANUFACTURER":
             return self._check_manufacturer_stage(
@@ -661,7 +661,7 @@ class MultiStageCTPService:
     def _infer_order_type(self, stage: StageResult) -> str:
         """Infer order type from stage type."""
         st = stage.site_type.upper()
-        if st in ("VENDOR", "MARKET_SUPPLY"):
+        if st in ("VENDOR", "VENDOR"):
             return "purchase_order"
         elif st == "MANUFACTURER":
             return "manufacturing_order"

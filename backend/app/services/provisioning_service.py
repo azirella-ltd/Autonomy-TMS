@@ -636,7 +636,7 @@ class ProvisioningService:
                     SELECT id, name, master_type, type
                     FROM site
                     WHERE config_id = :config_id
-                      AND COALESCE(master_type, 'INVENTORY') NOT IN ('MARKET_SUPPLY', 'MARKET_DEMAND')
+                      AND COALESCE(master_type, 'INVENTORY') NOT IN ('VENDOR', 'CUSTOMER')
                       AND is_external = false
                     ORDER BY id
                 """),
@@ -958,7 +958,7 @@ def _get_non_market_site_keys(db, config_id: int):
         from app.models.supply_chain_config import Site
         stmt = select(Site).where(
             Site.config_id == config_id,
-            Site.master_type.notin_(["MARKET_SUPPLY", "MARKET_DEMAND"]),
+            Site.master_type.notin_(["VENDOR", "CUSTOMER"]),
         )
         nodes = db.execute(stmt).scalars().all() if hasattr(db, "execute") else []
         return [

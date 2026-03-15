@@ -112,8 +112,8 @@ class SiteType(str, Enum):
     INVENTORY = "INVENTORY"              # Storage/fulfillment
     MANUFACTURER = "MANUFACTURER"        # Transform node with BOM
     # Legacy aliases kept for backward compatibility with existing DB rows
-    MARKET_DEMAND = "MARKET_DEMAND"
-    MARKET_SUPPLY = "MARKET_SUPPLY"
+    MARKET_DEMAND = "CUSTOMER"
+    MARKET_SUPPLY = "VENDOR"
 
 
 # Simulation role to SC site type mapping
@@ -495,9 +495,9 @@ def get_sc_node_features(
     ]
     # Normalise legacy names before lookup
     site_type_val = params.site_type
-    if site_type_val == SiteType.MARKET_DEMAND.value:
+    if site_type_val == SiteType.CUSTOMER.value:
         site_type_val = SiteType.CUSTOMER.value
-    elif site_type_val == SiteType.MARKET_SUPPLY.value:
+    elif site_type_val == SiteType.VENDOR.value:
         site_type_val = SiteType.VENDOR.value
     if site_type_val in site_types:
         idx = site_types.index(site_type_val)
