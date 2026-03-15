@@ -15,6 +15,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useActiveConfig } from '../contexts/ActiveConfigContext';
 import {
   TrendingUp,
   TrendingDown,
@@ -637,6 +638,7 @@ const PerformanceSummary = ({ summary }) => {
 const ExecutiveDashboard = () => {
   const navigate = useNavigate();
   const toast = useToast();
+  const { activeConfigId } = useActiveConfig();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [data, setData] = useState(null);
@@ -843,7 +845,7 @@ const ExecutiveDashboard = () => {
       </div>
 
       {/* Row 2: Supply Chain Sankey (full width) */}
-      <PlanningCascadeSankey height={300} />
+      <PlanningCascadeSankey configId={activeConfigId} height={300} />
 
       {/* Row 3: Gartner Tier 1 ASSESS — Strategic Metrics */}
       <div>

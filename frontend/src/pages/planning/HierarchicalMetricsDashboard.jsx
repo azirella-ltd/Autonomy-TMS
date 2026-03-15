@@ -147,6 +147,9 @@ const HierarchicalMetricsDashboard = () => {
               formula={m.formula}
               components={m.components}
               lowerIsBetter={m.lower_is_better}
+              ciLower={m.ci_lower}
+              ciUpper={m.ci_upper}
+              n={m.n}
             />
           ))}
         </div>
