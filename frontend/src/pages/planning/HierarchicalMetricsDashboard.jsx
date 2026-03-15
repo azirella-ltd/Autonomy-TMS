@@ -365,6 +365,9 @@ const mapMetricProps = (m, tier) => ({
   agent: m.agent,
   scorCode: m.scor_code,
   lowerIsBetter: m.lower_is_better,
+  ciLower: m.ci_lower,
+  ciUpper: m.ci_upper,
+  n: m.n,
 });
 
 const EmptyState = ({ tier }) => (

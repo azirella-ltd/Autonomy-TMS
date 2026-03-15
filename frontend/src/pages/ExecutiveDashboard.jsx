@@ -876,6 +876,9 @@ const ExecutiveDashboard = () => {
                 tier="tier1"
                 scorCode={m.scor_code}
                 lowerIsBetter={m.lower_is_better}
+                ciLower={m.ci_lower}
+                ciUpper={m.ci_upper}
+                n={m.n}
                 compact
               />
             ))}
@@ -910,6 +913,9 @@ const ExecutiveDashboard = () => {
                 formula={m.formula}
                 components={m.components}
                 lowerIsBetter={m.lower_is_better}
+                ciLower={m.ci_lower}
+                ciUpper={m.ci_upper}
+                n={m.n}
               />
             ))}
           </div>
@@ -988,6 +994,9 @@ const ExecutiveDashboard = () => {
                       tier="tier3"
                       agent={m.agent}
                       lowerIsBetter={m.lower_is_better}
+                      ciLower={m.ci_lower}
+                      ciUpper={m.ci_upper}
+                      n={m.n}
                       compact
                     />
                   ))}

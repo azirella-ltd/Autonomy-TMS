@@ -906,6 +906,13 @@ export const NAVIGATION_CONFIG = [
         description: 'Per-agent distribution parameters for stochastic simulation',
       },
       {
+        label: 'Metric Configuration',
+        path: '/admin/metric-config',
+        icon: TuneIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'Choose which SCOR metrics to display and set custom targets',
+      },
+      {
         label: 'Email Signals',
         path: '/admin/email-signals',
         icon: MailIcon,

@@ -33,6 +33,9 @@ const CompositeMetricCard = ({
   formula,
   components,
   lowerIsBetter = false,
+  ciLower,
+  ciUpper,
+  n,
 }) => {
   const trendGood = lowerIsBetter ? trend < 0 : trend > 0;
 
@@ -67,6 +70,14 @@ const CompositeMetricCard = ({
             </span>
           )}
         </div>
+
+        {/* Confidence interval */}
+        {ciLower != null && ciUpper != null && (
+          <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground" title={`95% CI (n=${n || '?'})`}>
+            <span className="font-mono">[{ciLower.toLocaleString(undefined, {maximumFractionDigits: 1})} – {ciUpper.toLocaleString(undefined, {maximumFractionDigits: 1})}]</span>
+            {n && <span className="opacity-60">n={n}</span>}
+          </div>
+        )}
 
         {/* Target + benchmark */}
         <div className="flex justify-between text-xs text-muted-foreground mt-1">

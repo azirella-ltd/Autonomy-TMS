@@ -41,6 +41,9 @@ const GartnerMetricCard = ({
   scorCode,
   lowerIsBetter = false,
   compact = false,
+  ciLower,
+  ciUpper,
+  n,
 }) => {
   const tierBadge = tier ? TIER_BADGES[tier] : null;
   const trendPositive = lowerIsBetter ? trend < 0 : trend > 0;
@@ -92,6 +95,14 @@ const GartnerMetricCard = ({
             </span>
           )}
         </div>
+
+        {/* Confidence interval */}
+        {ciLower != null && ciUpper != null && (
+          <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground" title={`95% CI (n=${n || '?'})`}>
+            <span className="font-mono">[{ciLower.toLocaleString(undefined, {maximumFractionDigits: 1})} – {ciUpper.toLocaleString(undefined, {maximumFractionDigits: 1})}]</span>
+            {n && <span className="opacity-60">n={n}</span>}
+          </div>
+        )}
 
         {/* Target + progress */}
         {target !== undefined && target !== null && (

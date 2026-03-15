@@ -7,14 +7,21 @@ across Geography (Company>Region>Country>Site), Product
 
 Endpoints:
 - GET /dashboard: Full 4-tier Gartner metrics with hierarchy context
+- GET /config: Get metric display configuration for tenant's config
+- PUT /config: Update metric display configuration
+- GET /catalogue: List all available metrics with metadata
 """
 
-from typing import Optional
+from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
 from app.models.user import User
+from app.models.metrics_hierarchy import (
+    GARTNER_METRICS, DEFAULT_DASHBOARD_METRICS, get_metric_config,
+)
 from app.services.hierarchical_metrics_service import HierarchicalMetricsService
 
 
@@ -62,4 +69,161 @@ async def get_hierarchical_dashboard(
     return {
         "success": True,
         "data": data,
+    }
+
+
+@router.get("/catalogue")
+async def get_metric_catalogue(
+    current_user: User = Depends(get_current_user),
+):
+    """List all available metrics with metadata, grouped by tier."""
+    tiers = {
+        "tier1_assess": {},
+        "tier2_diagnose": {},
+        "tier3_correct": {},
+    }
+    for tier_key, metric_defaults in DEFAULT_DASHBOARD_METRICS.items():
+        for metric_key, cfg in metric_defaults.items():
+            tiers[tier_key][metric_key] = {
+                "key": metric_key,
+                "default_enabled": cfg.enabled,
+                "default_target": cfg.target,
+            }
+    # Enrich with GARTNER_METRICS metadata where scor_code matches
+    from app.services.hierarchical_metrics_service import _METRIC_KEY_TO_GARTNER
+    for tier_key, metrics in tiers.items():
+        for metric_key, info in metrics.items():
+            gartner_code = _METRIC_KEY_TO_GARTNER.get(metric_key)
+            if gartner_code and gartner_code in GARTNER_METRICS:
+                defn = GARTNER_METRICS[gartner_code]
+                info["label"] = defn.name
+                info["description"] = defn.description
+                info["unit"] = defn.unit
+                info["higher_is_better"] = defn.higher_is_better
+                info["scor_code"] = gartner_code
+                info["scor_process"] = defn.scor_process
+            else:
+                # Provide human-readable label from key
+                info["label"] = metric_key.replace("_", " ").title()
+                info["description"] = ""
+                info["unit"] = ""
+                info["higher_is_better"] = True
+                info["scor_code"] = None
+                info["scor_process"] = ""
+    return {"success": True, "data": tiers}
+
+
+@router.get("/config")
+async def get_metrics_config(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get the current metric display configuration for the tenant's config."""
+    from app.models.supply_chain_config import SupplyChainConfig
+
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="User has no tenant assigned")
+
+    config = (
+        db.query(SupplyChainConfig)
+        .filter(SupplyChainConfig.tenant_id == tenant_id)
+        .first()
+    )
+    if not config:
+        raise HTTPException(status_code=404, detail="No supply chain config found for tenant")
+
+    mc = get_metric_config(config.metric_config)
+
+    # Build response: merge defaults with overrides
+    result = {}
+    for tier_key, metric_defaults in DEFAULT_DASHBOARD_METRICS.items():
+        result[tier_key] = {}
+        for metric_key, default_cfg in metric_defaults.items():
+            dc = mc.get_dashboard_config(tier_key, metric_key)
+            result[tier_key][metric_key] = {
+                "enabled": dc.enabled,
+                "target": dc.target,
+            }
+
+    return {
+        "success": True,
+        "data": {
+            "config_id": config.id,
+            "config_name": config.name,
+            "dashboard": result,
+        },
+    }
+
+
+class MetricConfigUpdate(BaseModel):
+    dashboard: Dict[str, Dict[str, Dict[str, Any]]]
+
+
+@router.put("/config")
+async def update_metrics_config(
+    payload: MetricConfigUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update metric display configuration for the tenant's config.
+
+    Payload format:
+    {
+      "dashboard": {
+        "tier1_assess": {
+          "perfect_order_fulfillment": {"enabled": true, "target": 92.0},
+          ...
+        },
+        ...
+      }
+    }
+    """
+    from app.models.supply_chain_config import SupplyChainConfig
+
+    tenant_id = current_user.tenant_id
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="User has no tenant assigned")
+
+    # Check permission — tenant admin or system admin
+    user_roles = [r.name for r in current_user.roles] if current_user.roles else []
+    if "SYSTEM_ADMIN" not in user_roles and "GROUP_ADMIN" not in user_roles:
+        raise HTTPException(status_code=403, detail="Tenant admin or system admin required")
+
+    config = (
+        db.query(SupplyChainConfig)
+        .filter(SupplyChainConfig.tenant_id == tenant_id)
+        .first()
+    )
+    if not config:
+        raise HTTPException(status_code=404, detail="No supply chain config found for tenant")
+
+    # Validate metric keys against known defaults
+    for tier_key, metrics in payload.dashboard.items():
+        if tier_key not in DEFAULT_DASHBOARD_METRICS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown tier: {tier_key}. Valid: {list(DEFAULT_DASHBOARD_METRICS.keys())}",
+            )
+        for metric_key in metrics:
+            if metric_key not in DEFAULT_DASHBOARD_METRICS[tier_key]:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unknown metric '{metric_key}' in {tier_key}",
+                )
+
+    # Merge into existing metric_config
+    existing = config.metric_config or {}
+    existing["dashboard"] = payload.dashboard
+    config.metric_config = existing
+
+    # Force SQLAlchemy to detect the JSON change
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(config, "metric_config")
+
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "Metric configuration updated",
     }

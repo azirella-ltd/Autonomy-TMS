@@ -48,6 +48,7 @@ import SAPDataManagement from "./pages/admin/SAPDataManagement.jsx";
 import EmailSignalsDashboard from "./pages/admin/EmailSignalsDashboard.jsx";
 import ContextEngine from "./pages/admin/ContextEngine.jsx";
 import StochasticParamsEditor from "./pages/admin/StochasticParamsEditor.jsx";
+import MetricConfigPage from "./pages/admin/MetricConfigPage.jsx";
 
 import HiveDashboard from "./pages/admin/HiveDashboard.jsx";
 import SkillsDashboard from "./pages/admin/SkillsDashboard.jsx";
@@ -475,6 +476,10 @@ const AppContent = () => {
             <Route
               path="/admin/stochastic-params"
               element={<StochasticParamsEditor />}
+            />
+            <Route
+              path="/admin/metric-config"
+              element={<MetricConfigPage />}
             />
             <Route
               path="/admin/email-signals"

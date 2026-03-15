@@ -416,6 +416,50 @@ POWELL_LAYER_METRICS: Dict[str, Dict[str, float]] = {
 # ---------------------------------------------------------------------------
 
 @dataclass
+class DashboardMetricConfig:
+    """Per-metric dashboard display configuration."""
+    enabled: bool = True
+    target: Optional[float] = None  # Override default target
+
+
+# Default dashboard metrics and targets by tier
+DEFAULT_DASHBOARD_METRICS: Dict[str, Dict[str, DashboardMetricConfig]] = {
+    "tier1_assess": {
+        "perfect_order_fulfillment": DashboardMetricConfig(True, 90.0),
+        "gross_margin": DashboardMetricConfig(True, 22.0),
+        "revenue": DashboardMetricConfig(True, None),
+        "supply_chain_cycle_time": DashboardMetricConfig(True, 14.0),
+        "cash_to_cash": DashboardMetricConfig(True, 30.0),
+        "agent_automation_pct": DashboardMetricConfig(True, 80.0),
+    },
+    "tier2_diagnose": {
+        "fill_rate": DashboardMetricConfig(True, 95.0),
+        "on_time_delivery": DashboardMetricConfig(True, 95.0),
+        "inventory_turns": DashboardMetricConfig(True, 8.0),
+        "days_of_supply": DashboardMetricConfig(True, 30.0),
+        "forecast_accuracy": DashboardMetricConfig(True, 80.0),
+        "stockout_lost_demand": DashboardMetricConfig(True, 0),
+        "override_rate": DashboardMetricConfig(True, 20.0),
+    },
+    "tier3_correct": {
+        "safety_stock_fill_rate": DashboardMetricConfig(True, 95.0),
+        "buffer_level_adequacy": DashboardMetricConfig(True, 1.0),
+        "inventory_record_accuracy": DashboardMetricConfig(True, 99.0),
+        "inventory_turns": DashboardMetricConfig(True, 8.0),
+        "dos": DashboardMetricConfig(True, 30.0),
+        "po_lead_time": DashboardMetricConfig(True, 14.0),
+        "lead_time_bias": DashboardMetricConfig(True, 0.0),
+        "mfg_schedule_adherence": DashboardMetricConfig(True, 95.0),
+        "first_pass_yield": DashboardMetricConfig(True, 95.0),
+        "expedite_rate": DashboardMetricConfig(True, 5.0),
+        "automation_pct": DashboardMetricConfig(True, 80.0),
+        "agent_score": DashboardMetricConfig(True, 10.0),
+        "override_rate": DashboardMetricConfig(True, 20.0),
+    },
+}
+
+
+@dataclass
 class MetricConfig:
     """
     Resolved metric configuration for a supply chain config.
@@ -431,10 +475,12 @@ class MetricConfig:
                         Values: dict of metric_code → float weight.
                         Missing TRM types fall back to equal weights over
                         TRM_METRIC_MAPPING[trm_type].
+        dashboard     — Per-tier metric visibility and target overrides.
     """
     sop_weights:  Dict[str, float] = field(default_factory=dict)
     tgnn_weights: Dict[str, float] = field(default_factory=dict)
     trm_weights:  Dict[str, Dict[str, float]] = field(default_factory=dict)
+    dashboard:    Dict[str, Dict[str, dict]] = field(default_factory=dict)
 
     def get_trm_weights(self, trm_type: str) -> Dict[str, float]:
         """Return per-metric weights for a given TRM type.
@@ -449,12 +495,37 @@ class MetricConfig:
         equal = round(1.0 / len(metrics), 6)
         return {m: equal for m in metrics}
 
+    def get_dashboard_config(self, tier: str, metric_key: str) -> DashboardMetricConfig:
+        """Return dashboard config for a metric, falling back to defaults."""
+        override = self.dashboard.get(tier, {}).get(metric_key)
+        default = DEFAULT_DASHBOARD_METRICS.get(tier, {}).get(metric_key, DashboardMetricConfig())
+        if override:
+            return DashboardMetricConfig(
+                enabled=override.get("enabled", default.enabled),
+                target=override.get("target", default.target),
+            )
+        return default
+
+    def is_metric_enabled(self, tier: str, metric_key: str) -> bool:
+        """Check if a metric is enabled for dashboard display."""
+        return self.get_dashboard_config(tier, metric_key).enabled
+
+    def enabled_keys(self, tier: str) -> set:
+        """Return set of enabled metric keys for a tier."""
+        defaults = DEFAULT_DASHBOARD_METRICS.get(tier, {})
+        return {k for k in defaults if self.get_dashboard_config(tier, k).enabled}
+
+    def get_metric_target(self, tier: str, metric_key: str) -> Optional[float]:
+        """Get the target for a metric, using override if set."""
+        return self.get_dashboard_config(tier, metric_key).target
+
     def to_dict(self) -> dict:
         """Serialize to plain dict for JSON storage."""
         return {
             "sop_weights": self.sop_weights,
             "tgnn_weights": self.tgnn_weights,
             "trm_weights": self.trm_weights,
+            "dashboard": self.dashboard,
         }
 
 
@@ -472,6 +543,7 @@ def get_metric_config(raw_json: Optional[dict]) -> MetricConfig:
         sop_weights=dict(POWELL_LAYER_METRICS["sop"]),
         tgnn_weights=dict(POWELL_LAYER_METRICS["tgnn"]),
         trm_weights={},
+        dashboard={},
     )
     if not raw_json:
         return defaults
@@ -485,7 +557,9 @@ def get_metric_config(raw_json: Optional[dict]) -> MetricConfig:
     trm = dict(defaults.trm_weights)
     trm.update(raw_json.get("trm_weights") or {})
 
-    return MetricConfig(sop_weights=sop, tgnn_weights=tgnn, trm_weights=trm)
+    dashboard = raw_json.get("dashboard") or {}
+
+    return MetricConfig(sop_weights=sop, tgnn_weights=tgnn, trm_weights=trm, dashboard=dashboard)
 
 
 __all__ = [
@@ -495,5 +569,7 @@ __all__ = [
     "TRM_METRIC_MAPPING",
     "POWELL_LAYER_METRICS",
     "MetricConfig",
+    "DashboardMetricConfig",
+    "DEFAULT_DASHBOARD_METRICS",
     "get_metric_config",
 ]
