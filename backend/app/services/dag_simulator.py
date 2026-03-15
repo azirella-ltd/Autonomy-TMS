@@ -231,16 +231,16 @@ async def load_topology(config_id: int, db: AsyncSession) -> LoadedTopology:
         select(SupplyChainConfig)
         .where(SupplyChainConfig.id == config_id)
         .options(
-            selectinload(SupplyChainConfig.nodes),
-            selectinload(SupplyChainConfig.lanes),
+            selectinload(SupplyChainConfig.sites),
+            selectinload(SupplyChainConfig.transportation_lanes),
         )
     )
     config = result.scalar_one_or_none()
     if not config:
         raise ValueError(f"SupplyChainConfig {config_id} not found")
 
-    sites = list(config.nodes)
-    lanes = list(config.lanes)
+    sites = list(config.sites)
+    lanes = list(config.transportation_lanes)
 
     # Load products for this config
     prod_result = await db.execute(

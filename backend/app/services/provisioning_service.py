@@ -442,11 +442,12 @@ class ProvisioningService:
 
     async def _step_demand_tgnn(self, config_id: int, db: AsyncSession = None) -> dict:
         """Step 5: Cold-start Demand Planning tGNN (foreground fallback, normally runs via _bg)."""
+        from app.db.session import async_session_factory
         try:
             from app.services.powell.demand_planning_tgnn_service import DemandPlanningTGNNService
-            session = db or self.db
-            svc = DemandPlanningTGNNService(db=session, config_id=config_id)
-            result = await svc.infer(sop_embeddings=None)
+            async with async_session_factory() as fresh_db:
+                svc = DemandPlanningTGNNService(db=fresh_db, config_id=config_id)
+                result = await svc.infer(sop_embeddings=None)
             return {"status": "ok", "sites_processed": getattr(result, "sites_processed", 0)}
         except ImportError:
             logger.info(
@@ -459,11 +460,12 @@ class ProvisioningService:
 
     async def _step_supply_tgnn(self, config_id: int, db: AsyncSession = None) -> dict:
         """Step 6: Cold-start Supply Planning tGNN (foreground fallback, normally runs via _bg)."""
+        from app.db.session import async_session_factory
         try:
             from app.services.powell.supply_planning_tgnn_service import SupplyPlanningTGNNService
-            session = db or self.db
-            svc = SupplyPlanningTGNNService(db=session, config_id=config_id)
-            result = await svc.infer(sop_embeddings=None)
+            async with async_session_factory() as fresh_db:
+                svc = SupplyPlanningTGNNService(db=fresh_db, config_id=config_id)
+                result = await svc.infer(sop_embeddings=None)
             return {"status": "ok", "sites_processed": getattr(result, "sites_processed", 0)}
         except ImportError:
             logger.info(
@@ -476,11 +478,12 @@ class ProvisioningService:
 
     async def _step_inventory_tgnn(self, config_id: int, db: AsyncSession = None) -> dict:
         """Step 7: Cold-start Inventory Optimization tGNN (foreground fallback, normally runs via _bg)."""
+        from app.db.session import async_session_factory
         try:
             from app.services.powell.inventory_optimization_tgnn_service import InventoryOptimizationTGNNService
-            session = db or self.db
-            svc = InventoryOptimizationTGNNService(db=session, config_id=config_id)
-            result = await svc.infer(sop_embeddings=None)
+            async with async_session_factory() as fresh_db:
+                svc = InventoryOptimizationTGNNService(db=fresh_db, config_id=config_id)
+                result = await svc.infer(sop_embeddings=None)
             return {"status": "ok", "sites_processed": getattr(result, "sites_processed", 0)}
         except ImportError:
             logger.info(
