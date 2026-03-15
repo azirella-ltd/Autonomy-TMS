@@ -52,7 +52,7 @@ ScenarioUser = ScenarioUser
 PlayerModelType = ScenarioUserModelType
 from app.models.supply_chain_config import (
     SupplyChainConfig,
-    Node,
+    Site,
     Lane,
     Market,
     MarketDemand,
@@ -62,9 +62,10 @@ from app.models.compatibility import Item
 from app.models.sc_entities import Product, ProductHierarchy, InvPolicy
 
 # Preserve references to SQLAlchemy models before defining local Pydantic helpers
-# AWS SC DM terminology: Product, Site (DB: Node), TransportationLane (DB: Lane)
+# AWS SC DM terminology: Product, Site, TransportationLane (Lane alias)
 SupplyProductModel = Product  # AWS SC Product model
-SupplySiteModel = Node  # AWS SC Site model (DB table: site)
+SupplySiteModel = Site  # AWS SC Site model (DB table: site)
+Node = Site  # DEPRECATED alias for backward compatibility
 SupplyLaneModel = Lane  # AWS SC TransportationLane model
 SupplyMarketModel = Market
 SupplyMarketDemandModel = MarketDemand

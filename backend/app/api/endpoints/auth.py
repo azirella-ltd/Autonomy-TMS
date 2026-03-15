@@ -39,7 +39,7 @@ from app.services.auth_service import AuthService, get_auth_service
 from app.schemas.mfa import MFAVerifyRequest
 from app.models.supply_chain_config import (
     SupplyChainConfig,
-    Node,
+    Site,
     Lane,
     Market,
     MarketDemand,
@@ -165,9 +165,9 @@ def _ensure_default_setup_sync(db: Session, user: User) -> None:
             ("Factory", NodeType.MANUFACTURER, "factory", "inventory"),
             ("Market Supply", NodeType.MARKET_SUPPLY, "market_supply", "market_supply"),
         ]
-        nodes: Dict[NodeType, Node] = {}
+        nodes: Dict[NodeType, Site] = {}
         for name, node_type, dag_type, master_type in node_specs:
-            node = Node(
+            node = Site(
                 config_id=config.id,
                 name=name,
                 type=dag_type,
