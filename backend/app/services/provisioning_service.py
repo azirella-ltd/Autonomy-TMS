@@ -377,7 +377,12 @@ class ProvisioningService:
             sync_db.close()
 
     async def _step_lgbm_forecast(self, config_id: int) -> dict:
-        """Step 4: Train LightGBM quantile models and generate P10/P50/P90 baseline forecasts.
+        """Step 4: Train LightGBM quantile models and generate P10/P50/P90 forward forecasts.
+
+        Generates 104 weeks (2 years) of forward-looking weekly demand forecasts.
+        All downstream steps — S&OP GraphSAGE inference, supply plan generation
+        (52-week horizon), tactical GNNs, and RCCP validation — depend on this
+        forward forecast horizon being present in the forecast table.
 
         Loads demand history from the forecast table, builds the required
         DataFrame, and calls ``run_stage4_lgbm()`` (the real entry point).
@@ -420,7 +425,7 @@ class ProvisioningService:
                     history=history,
                     cluster_results=cluster_results,
                     censored_flags={},
-                    n_periods=13,
+                    n_periods=104,   # 2 years weekly: covers 52-wk S&OP + 52-wk MPS/supply plan
                     time_bucket="W",
                     retrain=True,
                 )

@@ -46,6 +46,7 @@ import SyntheticDataWizard from "./pages/admin/SyntheticDataWizard.jsx";
 import PlanningHierarchyConfig from "./pages/admin/PlanningHierarchyConfig.jsx";
 import SAPDataManagement from "./pages/admin/SAPDataManagement.jsx";
 import EmailSignalsDashboard from "./pages/admin/EmailSignalsDashboard.jsx";
+import BscConfigPage from "./pages/admin/BscConfigPage.jsx";
 import ContextEngine from "./pages/admin/ContextEngine.jsx";
 import StochasticParamsEditor from "./pages/admin/StochasticParamsEditor.jsx";
 import MetricConfigPage from "./pages/admin/MetricConfigPage.jsx";
@@ -484,6 +485,10 @@ const AppContent = () => {
             <Route
               path="/admin/email-signals"
               element={<EmailSignalsDashboard />}
+            />
+            <Route
+              path="/admin/bsc-config"
+              element={<BscConfigPage />}
             />
             <Route
               path="/admin/context-engine"

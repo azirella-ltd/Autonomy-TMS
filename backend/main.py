@@ -6280,6 +6280,10 @@ api.include_router(provisioning_router, tags=["provisioning"])
 from app.api.endpoints.email_signals import router as email_signals_router
 api.include_router(email_signals_router, tags=["email-signals"])
 
+# BSC Configuration — tenant-admin BSC weights for CDT calibration loss function
+from app.api.endpoints.bsc_config import router as bsc_config_router
+api.include_router(bsc_config_router, tags=["bsc-config"])
+
 # Slack Signal Intelligence — SC signals from Slack channels
 from app.api.endpoints.slack_signals import router as slack_signals_router
 api.include_router(slack_signals_router, tags=["slack-signals"])

@@ -37,26 +37,26 @@ import { cn } from '../../lib/utils/cn';
 const STEP_META = {
   warm_start: {
     label: 'Historical Demand Simulation',
-    desc: 'Generate 52 weeks of historical demand data to initialize planning agents',
-    detail: 'Creates belief states, demand distributions, and baseline metrics from simulated history',
+    desc: 'Simulate 52 weeks of past demand to seed agent training and belief states',
+    detail: 'Creates outbound order history, belief states, demand distributions, and baseline metrics — looks backward only (no future forecast)',
     estimate: '10–30s',
   },
   sop_graphsage: {
     label: 'Strategic Network Planning Agent',
-    desc: 'Train the S&OP GraphSAGE model for network-wide policy parameters',
-    detail: 'Graph neural network learns supply chain topology: criticality, concentration risk, bottlenecks',
+    desc: 'Train the S&OP GraphSAGE model on historical network topology and demand patterns',
+    detail: 'Graph neural network learns supply chain topology from history: criticality, concentration risk, bottlenecks. Forward inference uses the 2-year forecast generated in the Demand Forecasting step.',
     estimate: '15–45s',
   },
   cfa_optimization: {
     label: 'Policy Parameter Optimization',
     desc: 'Optimize cost function policy parameters using differential evolution',
-    detail: 'Searches for optimal (service_level, days_of_coverage) via Monte Carlo cost simulation',
+    detail: 'Searches for optimal (service_level, days_of_coverage) via Monte Carlo cost simulation on historical demand distributions',
     estimate: '20–60s',
   },
   lgbm_forecast: {
     label: 'Demand Forecasting',
-    desc: 'Generate P10/P50/P90 baseline demand forecasts',
-    detail: 'LightGBM quantile models with event tagging and censored demand handling',
+    desc: 'Generate 2-year (104-week) forward P10/P50/P90 forecasts — required by all downstream planning steps',
+    detail: 'LightGBM quantile models trained on history, projecting 104 weeks forward. S&OP inference, supply plan (52-week horizon), tactical GNNs, and RCCP all depend on this forward horizon.',
     estimate: '15–45s',
   },
   demand_tgnn: {
@@ -85,8 +85,8 @@ const STEP_META = {
   },
   supply_plan: {
     label: 'Supply Plan Generation',
-    desc: 'Generate initial supply plan from trained agents and planning parameters',
-    detail: 'Creates purchase orders, transfer orders, and manufacturing orders with Monte Carlo evaluation',
+    desc: 'Generate 52-week supply plan using 2-year demand forecast and trained agent parameters',
+    detail: 'Creates purchase orders, transfer orders, and manufacturing orders across the full 52-week planning horizon with Monte Carlo evaluation',
     estimate: '15–60s',
   },
   rccp_validation: {
@@ -109,8 +109,8 @@ const STEP_META = {
   },
   conformal: {
     label: 'Uncertainty Calibration',
-    desc: 'Calibrate conformal prediction bounds from historical data',
-    detail: 'Distribution-free coverage guarantees for demand, lead time, and service level forecasts',
+    desc: 'Bootstrap CDT risk bounds from digital twin simulation of the actual supply chain DAG',
+    detail: 'Runs 50 × 365-day episodes on the tenant\'s real SC topology to generate 18,250 (confidence, loss) pairs per TRM type — seeds all 11 CDT wrappers before production feedback horizons elapse',
     estimate: '5–15s',
   },
   briefing: {
@@ -127,7 +127,7 @@ const TIERS = [
   {
     key: 'foundation',
     label: 'Data Foundation',
-    description: 'Historical data and statistical forecasts that initialize all planning agents',
+    description: '52 weeks of historical demand (past) + 2-year forward forecast — together they span the full planning horizon all agents depend on',
     Icon: Database,
     steps: ['warm_start', 'lgbm_forecast'],
     color: 'blue',

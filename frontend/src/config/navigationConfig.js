@@ -926,6 +926,13 @@ export const NAVIGATION_CONFIG = [
         requiredCapability: 'manage_tenant_users',
         description: 'Upload documents for AI agent context (RAG)',
       },
+      {
+        label: 'BSC Configuration',
+        path: '/admin/bsc-config',
+        icon: TuneIcon,
+        requiredCapability: 'manage_tenant_users',
+        description: 'Set balanced scorecard weights for AI calibration',
+      },
     ],
   },
 
