@@ -625,6 +625,155 @@ class HierarchicalMetricsService:
             logger.exception("Failed to compute inventory metrics for tenant=%s", tenant_id)
             return {}
 
+    def _compute_l3_operational(self, tenant_id: int) -> Dict[str, Any]:
+        """Compute SCOR Level 3 operational metrics from powell_*_decisions tables."""
+        metrics: Dict[str, Any] = {}
+        if self.db is None:
+            return metrics
+        try:
+            from app.models.supply_chain_config import SupplyChainConfig, Site
+            from app.models.sc_entities import InvLevel, InvPolicy
+
+            config = (
+                self.db.query(SupplyChainConfig)
+                .filter(SupplyChainConfig.tenant_id == tenant_id)
+                .first()
+            )
+            if not config:
+                return metrics
+
+            # ── SSFR: Safety Stock Fill Rate ──
+            # % of product-sites where on_hand >= safety stock target
+            inv_rows = (
+                self.db.query(InvLevel.product_id, InvLevel.site_id, InvLevel.on_hand_qty)
+                .filter(InvLevel.config_id == config.id)
+                .all()
+            )
+            pol_rows = (
+                self.db.query(InvPolicy.product_id, InvPolicy.site_id, InvPolicy.ss_quantity)
+                .filter(
+                    InvPolicy.config_id == config.id,
+                    InvPolicy.is_active == "true",
+                    InvPolicy.ss_quantity.isnot(None),
+                    InvPolicy.ss_quantity > 0,
+                )
+                .all()
+            )
+            if pol_rows:
+                inv_map = {(r.product_id, r.site_id): float(r.on_hand_qty or 0) for r in inv_rows}
+                above = sum(1 for r in pol_rows if inv_map.get((r.product_id, r.site_id), 0) >= float(r.ss_quantity))
+                metrics["safety_stock_fill_rate"] = round(above / len(pol_rows) * 100, 1)
+
+            # ── BLA: Buffer Level Adequacy ──
+            # Average ratio of on_hand / ss_quantity across product-sites with policy
+            if pol_rows:
+                ratios = []
+                for r in pol_rows:
+                    oh = inv_map.get((r.product_id, r.site_id), 0)
+                    ss = float(r.ss_quantity)
+                    if ss > 0:
+                        ratios.append(min(oh / ss, 3.0))  # cap at 3x to avoid outlier skew
+                if ratios:
+                    metrics["buffer_level_adequacy"] = round(sum(ratios) / len(ratios), 2)
+
+            # ── IRA: Inventory Record Accuracy ──
+            # Proxy: % of product-sites where on_hand > 0 (non-zero records)
+            if inv_rows:
+                non_zero = sum(1 for r in inv_rows if (r.on_hand_qty or 0) > 0)
+                metrics["inventory_record_accuracy"] = round(non_zero / len(inv_rows) * 100, 1)
+
+            # ── POLTA: PO Lead Time Actual ──
+            try:
+                from app.models.powell_decisions import PowellPODecision
+                po_rows = (
+                    self.db.query(PowellPODecision.lead_time_days)
+                    .filter(
+                        PowellPODecision.config_id == config.id,
+                        PowellPODecision.lead_time_days.isnot(None),
+                    )
+                    .order_by(PowellPODecision.created_at.desc())
+                    .limit(200)
+                    .all()
+                )
+                if po_rows:
+                    lt_values = [float(r.lead_time_days) for r in po_rows]
+                    metrics["po_lead_time"] = round(sum(lt_values) / len(lt_values), 1)
+            except Exception:
+                pass
+
+            # ── LTBIAS: Lead Time Bias ──
+            try:
+                from app.models.supplier import VendorLeadTime
+                vlt_rows = (
+                    self.db.query(VendorLeadTime)
+                    .filter(VendorLeadTime.config_id == config.id)
+                    .all()
+                )
+                if vlt_rows:
+                    biases = []
+                    for vlt in vlt_rows:
+                        planned = getattr(vlt, 'planned_lead_time_days', None) or getattr(vlt, 'p50_days', None)
+                        actual = getattr(vlt, 'lead_time_days', None) or getattr(vlt, 'actual_lead_time_days', None)
+                        if planned and actual:
+                            biases.append(float(actual) - float(planned))
+                    if biases:
+                        metrics["lead_time_bias"] = round(sum(biases) / len(biases), 1)
+            except Exception:
+                pass
+
+            # ── MSA: Manufacturing Schedule Adherence ──
+            try:
+                from app.models.powell_decisions import PowellMODecision
+                mo_rows = (
+                    self.db.query(PowellMODecision.action, PowellMODecision.on_time)
+                    .filter(PowellMODecision.config_id == config.id)
+                    .order_by(PowellMODecision.created_at.desc())
+                    .limit(200)
+                    .all()
+                )
+                if mo_rows:
+                    on_time = sum(1 for r in mo_rows if getattr(r, 'on_time', None))
+                    metrics["mfg_schedule_adherence"] = round(on_time / len(mo_rows) * 100, 1)
+            except Exception:
+                pass
+
+            # ── FPYR: First Pass Yield Rate ──
+            try:
+                from app.models.powell_decisions import PowellQualityDecision
+                q_rows = (
+                    self.db.query(PowellQualityDecision.disposition)
+                    .filter(PowellQualityDecision.config_id == config.id)
+                    .order_by(PowellQualityDecision.created_at.desc())
+                    .limit(200)
+                    .all()
+                )
+                if q_rows:
+                    accepted = sum(1 for r in q_rows if r.disposition in ('accept', 'ACCEPT', 'use_as_is'))
+                    metrics["first_pass_yield"] = round(accepted / len(q_rows) * 100, 1)
+            except Exception:
+                pass
+
+            # ── EXPRT: Expedite Rate ──
+            try:
+                from app.models.powell_decisions import PowellTODecision
+                to_rows = (
+                    self.db.query(PowellTODecision.action)
+                    .filter(PowellTODecision.config_id == config.id)
+                    .order_by(PowellTODecision.created_at.desc())
+                    .limit(200)
+                    .all()
+                )
+                if to_rows:
+                    expedited = sum(1 for r in to_rows if r.action in ('expedite', 'EXPEDITE'))
+                    metrics["expedite_rate"] = round(expedited / len(to_rows) * 100, 1)
+            except Exception:
+                pass
+
+        except Exception:
+            logger.exception("Failed to compute L3 metrics for tenant=%s", tenant_id)
+
+        return metrics
+
     def _tier1_assess(self, tenant_id, site_key, product_key, time_key) -> Dict:
         annual_rev, gm_pct = self._forecast_rev_margin(tenant_id)
         latest, previous = self._get_perf_metrics(tenant_id, time_key)
@@ -724,14 +873,45 @@ class HierarchicalMetricsService:
     def _tier3_correct(self, tenant_id, site_key, product_key, time_key) -> Dict:
         inv = self._inventory_metrics(tenant_id)
         latest, _ = self._get_perf_metrics(tenant_id, time_key)
+        l3 = self._compute_l3_operational(tenant_id)
 
         return {
             "label": "CORRECT — Operational Root Cause",
             "description": "What specific action fixes it?",
             "categories": {
-                "inventory": {
-                    "label": "Inventory",
+                "plan": {
+                    "label": "Plan",
                     "metrics": {
+                        "safety_stock_fill_rate": {
+                            "label": "Safety Stock Fill Rate",
+                            "value": l3.get("safety_stock_fill_rate"),
+                            "unit": "%",
+                            "target": 95.0,
+                            "trend": None,
+                            "agent": "InventoryBufferTRM",
+                            "scor_code": "SSFR",
+                            "status": _status(l3.get("safety_stock_fill_rate"), 95.0),
+                        },
+                        "buffer_level_adequacy": {
+                            "label": "Buffer Level Adequacy",
+                            "value": l3.get("buffer_level_adequacy"),
+                            "unit": "ratio",
+                            "target": 1.0,
+                            "trend": None,
+                            "agent": "InventoryBufferTRM",
+                            "scor_code": "BLA",
+                            "status": _status(l3.get("buffer_level_adequacy"), 0.9),
+                        },
+                        "inventory_record_accuracy": {
+                            "label": "Inventory Record Accuracy",
+                            "value": l3.get("inventory_record_accuracy"),
+                            "unit": "%",
+                            "target": 99.0,
+                            "trend": None,
+                            "agent": "InventoryBufferTRM",
+                            "scor_code": "IRA",
+                            "status": _status(l3.get("inventory_record_accuracy"), 99.0),
+                        },
                         "inventory_turns": {
                             "label": "Inventory Turns",
                             "value": inv.get("inventory_turns"),
@@ -752,6 +932,74 @@ class HierarchicalMetricsService:
                             "status": _status(
                                 inv.get("days_of_supply"), 30, lower_is_better=True
                             ) if inv.get("days_of_supply") else "info",
+                        },
+                    },
+                },
+                "source": {
+                    "label": "Source",
+                    "metrics": {
+                        "po_lead_time": {
+                            "label": "PO Lead Time Actual",
+                            "value": l3.get("po_lead_time"),
+                            "unit": "days",
+                            "target": 14.0,
+                            "trend": None,
+                            "agent": "POCreationTRM",
+                            "scor_code": "POLTA",
+                            "lower_is_better": True,
+                            "status": _status(l3.get("po_lead_time"), 14.0, lower_is_better=True) if l3.get("po_lead_time") else "info",
+                        },
+                        "lead_time_bias": {
+                            "label": "Lead Time Bias",
+                            "value": l3.get("lead_time_bias"),
+                            "unit": "days",
+                            "target": 0.0,
+                            "trend": None,
+                            "agent": "POCreationTRM",
+                            "scor_code": "LTBIAS",
+                            "lower_is_better": True,
+                            "status": _status(abs(l3.get("lead_time_bias", 0) or 0), 2.0, lower_is_better=True) if l3.get("lead_time_bias") is not None else "info",
+                        },
+                    },
+                },
+                "make": {
+                    "label": "Make",
+                    "metrics": {
+                        "mfg_schedule_adherence": {
+                            "label": "Mfg Schedule Adherence",
+                            "value": l3.get("mfg_schedule_adherence"),
+                            "unit": "%",
+                            "target": 95.0,
+                            "trend": None,
+                            "agent": "MOExecutionTRM",
+                            "scor_code": "MSA",
+                            "status": _status(l3.get("mfg_schedule_adherence"), 95.0),
+                        },
+                        "first_pass_yield": {
+                            "label": "First Pass Yield Rate",
+                            "value": l3.get("first_pass_yield"),
+                            "unit": "%",
+                            "target": 98.0,
+                            "trend": None,
+                            "agent": "QualityDispositionTRM",
+                            "scor_code": "FPYR",
+                            "status": _status(l3.get("first_pass_yield"), 98.0),
+                        },
+                    },
+                },
+                "deliver": {
+                    "label": "Deliver & Enable",
+                    "metrics": {
+                        "expedite_rate": {
+                            "label": "Expedite Rate",
+                            "value": l3.get("expedite_rate"),
+                            "unit": "%",
+                            "target": 5.0,
+                            "trend": None,
+                            "agent": "TOExecutionTRM",
+                            "scor_code": "EXPRT",
+                            "lower_is_better": True,
+                            "status": _status(l3.get("expedite_rate"), 5.0, lower_is_better=True) if l3.get("expedite_rate") is not None else "info",
                         },
                     },
                 },
