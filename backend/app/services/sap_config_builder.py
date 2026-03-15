@@ -76,14 +76,14 @@ def _load_country_to_continent() -> Dict[str, str]:
 _COUNTRY_TO_CONTINENT: Dict[str, str] = _load_country_to_continent()
 
 
-# Master type constants
+# Master type constants — use AWS SC canonical names for boundary nodes
 MASTER_MANUFACTURER = "MANUFACTURER"
-MASTER_VENDOR = "VENDOR"
-MASTER_CUSTOMER = "CUSTOMER"
 MASTER_INVENTORY = "INVENTORY"
-# Legacy aliases kept for backward compatibility with existing DB rows
 MASTER_MARKET_SUPPLY = "MARKET_SUPPLY"
 MASTER_MARKET_DEMAND = "MARKET_DEMAND"
+# Legacy aliases pointing to canonical names
+MASTER_VENDOR = "MARKET_SUPPLY"
+MASTER_CUSTOMER = "MARKET_DEMAND"
 
 
 @dataclass
@@ -1447,18 +1447,53 @@ class SAPConfigBuilder:
         plant_filter: Optional[List[str]],
         company_filter: Optional[str],
     ):
-        """Apply plant and company filters to all DataFrames."""
+        """Apply plant and company filters to all DataFrames.
+
+        T001W does not have a BUKRS column — the company→plant mapping in SAP
+        goes through T001K (valuation area).  Since T001K is often absent in
+        CSV exports, we derive the plant whitelist from T001.LAND1: plants in
+        T001W whose LAND1 matches the target company's LAND1 belong to that
+        country template.  This correctly handles IDES FAA exports where all
+        country-template plants appear in the same T001W CSV.
+        """
         if not plant_filter and not company_filter:
             return
+
+        # Build plant whitelist from company filter via T001 country matching
+        effective_plant_filter: Optional[set] = set(plant_filter) if plant_filter else None
+
+        if company_filter:
+            t001 = self._data.get("T001", pd.DataFrame())
+            t001w = self._data.get("T001W", pd.DataFrame())
+            if not t001.empty and not t001w.empty:
+                # Find the company's country code
+                bukrs_col = next((c for c in ["BUKRS", "bukrs"] if c in t001.columns), None)
+                land1_col_t001 = next((c for c in ["LAND1", "land1"] if c in t001.columns), None)
+                if bukrs_col and land1_col_t001:
+                    company_rows = t001[t001[bukrs_col].astype(str).str.strip() == company_filter]
+                    if not company_rows.empty:
+                        company_land1 = str(company_rows.iloc[0][land1_col_t001]).strip()
+                        land1_col_w = next((c for c in ["LAND1", "land1"] if c in t001w.columns), None)
+                        werks_col_w = next((c for c in ["WERKS", "werks"] if c in t001w.columns), None)
+                        if land1_col_w and werks_col_w and company_land1:
+                            matching_plants = set(
+                                t001w[t001w[land1_col_w].astype(str).str.strip() == company_land1][werks_col_w]
+                                .astype(str).str.strip().tolist()
+                            )
+                            if matching_plants:
+                                if effective_plant_filter is not None:
+                                    effective_plant_filter &= matching_plants
+                                else:
+                                    effective_plant_filter = matching_plants
 
         for table_name, df in list(self._data.items()):
             if df.empty:
                 continue
             filtered = df
-            if plant_filter and "WERKS" in df.columns:
-                filtered = filtered[filtered["WERKS"].isin(plant_filter)]
+            if effective_plant_filter and "WERKS" in df.columns:
+                filtered = filtered[filtered["WERKS"].astype(str).str.strip().isin(effective_plant_filter)]
             if company_filter and "BUKRS" in df.columns:
-                filtered = filtered[filtered["BUKRS"] == company_filter]
+                filtered = filtered[filtered["BUKRS"].astype(str).str.strip() == company_filter]
             self._data[table_name] = filtered
 
     # ------------------------------------------------------------------
@@ -1827,8 +1862,8 @@ class SAPConfigBuilder:
         site_type_defs = [
             {"type": "PLANT", "label": "Plant", "order": 0, "master_type": "MANUFACTURER"},
             {"type": "DC", "label": "Distribution Center", "order": 1, "master_type": "INVENTORY"},
-            {"type": "SUPPLIER", "label": "Vendor", "order": 2, "master_type": "VENDOR"},
-            {"type": "CUSTOMER", "label": "Customer", "order": 3, "master_type": "CUSTOMER", "tpartner_type": "customer", "is_external": True},
+            {"type": "SUPPLIER", "label": "Vendor", "order": 2, "master_type": "MARKET_SUPPLY", "tpartner_type": "vendor", "is_external": True},
+            {"type": "CUSTOMER", "label": "Customer", "order": 3, "master_type": "MARKET_DEMAND", "tpartner_type": "customer", "is_external": True},
         ]
         self._config.site_type_definitions = site_type_defs
         await self.db.flush()
@@ -1836,11 +1871,11 @@ class SAPConfigBuilder:
         master_to_dag = {
             MASTER_MANUFACTURER: "PLANT",
             MASTER_INVENTORY: "DC",
-            MASTER_VENDOR: "SUPPLIER",
-            MASTER_CUSTOMER: "CUSTOMER",
-            # Legacy aliases
             MASTER_MARKET_SUPPLY: "SUPPLIER",
             MASTER_MARKET_DEMAND: "CUSTOMER",
+            # Legacy values that may exist in old DB rows
+            "VENDOR": "SUPPLIER",
+            "CUSTOMER": "CUSTOMER",
         }
 
         count = 0
@@ -1872,7 +1907,7 @@ class SAPConfigBuilder:
             self._sites[sp.key] = site
             count += 1
 
-        # Create regional VENDOR and CUSTOMER sites from vendor/customer geography
+        # Create regional MARKET_SUPPLY and MARKET_DEMAND boundary nodes from vendor/customer geography
         build_opts = opts or {}
         supply_regions, demand_regions = self._compute_market_regions(
             max_supply_regions=build_opts.get("max_supply_regions", 8),
@@ -1892,7 +1927,7 @@ class SAPConfigBuilder:
                 name=site_key,
                 type=region_info["label"],
                 dag_type="SUPPLIER",
-                master_type=MASTER_VENDOR,
+                master_type=MASTER_MARKET_SUPPLY,
                 is_external=True,
                 tpartner_type="vendor",
                 geo_id=region_geos.get(region_key),
@@ -1914,7 +1949,7 @@ class SAPConfigBuilder:
                 name=site_key,
                 type=region_info["label"],
                 dag_type="CUSTOMER",
-                master_type=MASTER_CUSTOMER,
+                master_type=MASTER_MARKET_DEMAND,
                 is_external=True,
                 tpartner_type="customer",
                 geo_id=region_geos.get(region_key),

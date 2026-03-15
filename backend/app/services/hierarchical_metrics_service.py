@@ -19,7 +19,7 @@ from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func, asc
+from sqlalchemy import func, asc, case
 
 from app.models.metrics_hierarchy import GARTNER_METRICS, GartnerLevel
 
