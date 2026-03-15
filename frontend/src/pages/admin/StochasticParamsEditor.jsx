@@ -361,7 +361,7 @@ const StochasticParamsEditor = () => {
   useEffect(() => {
     const loadConfigs = async () => {
       try {
-        const res = await api.get('/supply-chain-configs');
+        const res = await api.get('/supply-chain-config/');
         const cfgs = res.data || [];
         setConfigs(cfgs);
         if (cfgs.length > 0) {

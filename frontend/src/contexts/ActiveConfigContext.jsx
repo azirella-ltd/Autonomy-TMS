@@ -12,7 +12,7 @@
  *   // Use effectiveConfigId for all planning API calls.
  */
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import simulationApi from '../services/api';
+import { api } from '../services/api';
 import { useAuth } from './AuthContext';
 
 const ActiveConfigContext = createContext({
@@ -49,14 +49,14 @@ export function ActiveConfigProvider({ children }) {
     setLoading(true);
     setError(null);
     try {
-      const response = await simulationApi.get('/supply-chain-config/active');
+      const response = await api.get('/supply-chain-config/active');
       setActiveConfig(response.data);
 
       // Fetch WORKING branches for this tenant
       if (response.data?.id) {
         try {
-          const childrenRes = await simulationApi.get(
-            `/supply-chain-configs/${response.data.id}/children`
+          const childrenRes = await api.get(
+            `/supply-chain-config/${response.data.id}/children`
           );
           const workingBranches = (childrenRes.data || []).filter(
             (c) => c.scenario_type === 'WORKING' && !c.committed_at
@@ -89,8 +89,8 @@ export function ActiveConfigProvider({ children }) {
   const createBranch = useCallback(
     async (name, description = '') => {
       if (!activeConfigId) throw new Error('No active baseline config');
-      const response = await simulationApi.post(
-        `/supply-chain-configs/${activeConfigId}/branch`,
+      const response = await api.post(
+        `/supply-chain-config/${activeConfigId}/branch`,
         {
           name,
           description,

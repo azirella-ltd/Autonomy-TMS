@@ -2028,7 +2028,9 @@ async def _run_phase4_user_import(db, service, job_id: int, tenant_id: int, sap_
         raw_data = {}
         for table_name in ["usr02", "usr21", "adrp", "agr_users", "agr_define", "agr_1251", "agr_tcodes"]:
             upper_key = table_name.upper()
-            df = sap_data.get(upper_key) or sap_data.get(table_name)
+            df = sap_data.get(upper_key)
+            if df is None:
+                df = sap_data.get(table_name)
             if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
                 df.columns = [c.upper() for c in df.columns]
                 raw_data[table_name] = df.to_dict(orient="records")
