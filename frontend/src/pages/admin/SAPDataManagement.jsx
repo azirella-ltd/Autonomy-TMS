@@ -3418,11 +3418,11 @@ const StagingTab = ({ connections }) => {
 
   // Load supply chain configs
   useEffect(() => {
-    api.get('/supply-chain-config').then(res => {
+    api.get('/supply-chain-config/').then(res => {
       const list = Array.isArray(res.data) ? res.data : res.data?.configs || [];
       setConfigs(list);
       if (list.length > 0 && !selectedConfigId) setSelectedConfigId(String(list[0].id));
-    }).catch(() => {});
+    }).catch(err => { console.error('Failed to load SC configs for staging tab:', err); });
   }, []);
 
   // Auto-select first connection
