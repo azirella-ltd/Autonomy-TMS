@@ -132,7 +132,7 @@ class AlertResolveRequest(BaseModel):
 async def get_risk_alerts(
     severity: Optional[str] = Query(None, pattern="^(LOW|MEDIUM|HIGH|CRITICAL)$"),
     alert_type: Optional[str] = Query(None, pattern="^(STOCKOUT|OVERSTOCK|VENDOR_LEADTIME)$"),
-    status: Optional[str] = Query(None, pattern="^(ACTIVE|ACKNOWLEDGED|RESOLVED|DISMISSED)$"),
+    status: Optional[str] = Query(None, pattern="^(INFORMED|ACTIONED|INSPECTED|OVERRIDDEN)$"),
     config_id: Optional[int] = None,
     product_id: Optional[str] = None,
     site_id: Optional[str] = None,
@@ -146,7 +146,7 @@ async def get_risk_alerts(
     Filters:
     - severity: LOW, MEDIUM, HIGH, CRITICAL
     - alert_type: STOCKOUT, OVERSTOCK, VENDOR_LEADTIME
-    - status: ACTIVE, ACKNOWLEDGED, RESOLVED, DISMISSED
+    - status: INFORMED, ACTIONED, INSPECTED, OVERRIDDEN (AIIO model)
     - config_id: Filter by supply chain config
     - product_id: Filter by product
     - site_id: Filter by site
@@ -211,10 +211,10 @@ async def acknowledge_alert(
     if not alert:
         raise HTTPException(status_code=404, detail="Risk alert not found")
 
-    if alert.status != "ACTIVE":
-        raise HTTPException(status_code=400, detail="Only active alerts can be acknowledged")
+    if alert.status != "INFORMED":
+        raise HTTPException(status_code=400, detail="Only informed alerts can be inspected")
 
-    alert.status = "ACKNOWLEDGED"
+    alert.status = "INSPECTED"
     alert.acknowledged_by = current_user.id
     alert.acknowledged_at = datetime.utcnow()
 
@@ -240,10 +240,10 @@ async def resolve_alert(
     if not alert:
         raise HTTPException(status_code=404, detail="Risk alert not found")
 
-    if alert.status == "RESOLVED":
-        raise HTTPException(status_code=400, detail="Alert is already resolved")
+    if alert.status == "ACTIONED":
+        raise HTTPException(status_code=400, detail="Alert is already actioned")
 
-    alert.status = "RESOLVED"
+    alert.status = "ACTIONED"
     alert.resolved_at = datetime.utcnow()
     alert.resolution_notes = request.resolution_notes
 
@@ -269,7 +269,7 @@ async def dismiss_alert(
     if not alert:
         raise HTTPException(status_code=404, detail="Risk alert not found")
 
-    alert.status = "DISMISSED"
+    alert.status = "OVERRIDDEN"
     alert.acknowledged_by = current_user.id
     alert.acknowledged_at = datetime.utcnow()
 

@@ -46,7 +46,7 @@ class RiskAlert(Base):
     factors = Column(JSON, nullable=True)  # Detailed factors contributing to risk
 
     # Status tracking
-    status = Column(String(20), default="ACTIVE", index=True)  # ACTIVE, ACKNOWLEDGED, RESOLVED, DISMISSED
+    status = Column(String(20), default="INFORMED", index=True)  # AIIO: INFORMED, ACTIONED, INSPECTED, OVERRIDDEN
     acknowledged_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     acknowledged_at = Column(DateTime, nullable=True)
     resolved_at = Column(DateTime, nullable=True)

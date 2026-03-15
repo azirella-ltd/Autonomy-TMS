@@ -60,7 +60,7 @@ const RiskAnalysis = () => {
   // Filters
   const [severityFilter, setSeverityFilter] = useState('ALL');
   const [typeFilter, setTypeFilter] = useState('ALL');
-  const [statusFilter, setStatusFilter] = useState('ACTIVE');
+  const [statusFilter, setStatusFilter] = useState('INFORMED');
 
   // Dialog states
   const [selectedAlert, setSelectedAlert] = useState(null);
@@ -571,10 +571,10 @@ const RiskAnalysis = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="ALL">All Statuses</SelectItem>
-                      <SelectItem value="ACTIVE">Active</SelectItem>
-                      <SelectItem value="ACKNOWLEDGED">Acknowledged</SelectItem>
-                      <SelectItem value="RESOLVED">Resolved</SelectItem>
-                      <SelectItem value="DISMISSED">Dismissed</SelectItem>
+                      <SelectItem value="INFORMED">Informed</SelectItem>
+                      <SelectItem value="ACTIONED">Actioned</SelectItem>
+                      <SelectItem value="INSPECTED">Inspected</SelectItem>
+                      <SelectItem value="OVERRIDDEN">Overridden</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

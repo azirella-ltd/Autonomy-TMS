@@ -66,7 +66,7 @@ const HierarchicalMetricsDashboard = () => {
     product_level: searchParams.get('product_level') || 'category',
     product_key: searchParams.get('product_key') || 'ALL',
     time_bucket: searchParams.get('time_bucket') || 'year',
-    time_key: searchParams.get('time_key') || '2025',
+    time_key: searchParams.get('time_key') || null,
   });
 
   const fetchMetrics = useCallback(async () => {
@@ -74,7 +74,7 @@ const HierarchicalMetricsDashboard = () => {
     setError(null);
     try {
       const response = await api.get('/hierarchical-metrics/dashboard', { params: hierarchy });
-      setMetricsData(response.data);
+      setMetricsData(response.data?.data || response.data);
     } catch (err) {
       console.error('Failed to fetch hierarchical metrics:', err);
       setError('Failed to load metrics data.');
