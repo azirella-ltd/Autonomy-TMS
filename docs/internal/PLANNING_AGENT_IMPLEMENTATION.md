@@ -24,20 +24,23 @@ and the training pipeline required to bring it to production quality.
 
 | Component | Status | Notes |
 |---|---|---|
-| Supply Planning GNN (Network tGNN rename) | ✅ Implemented | Rename only — no code change |
-| Supply Planning SKILL.md | ✅ Exists | Not registered — wire in Phase 1 |
-| RCCP SKILL.md | ✅ Exists | Not registered — wire in Phase 1 |
-| Planning Skill Orchestrator | ⬜ Phase 2 | New service, parallel to execution orchestrator |
-| Demand Planning GNN | ⬜ Phase 3 | New model |
-| Demand Adjustment TRM | ⬜ Phase 3 | New TRM type |
-| Demand Planning SKILL.md | ⬜ Phase 3 | New skill |
-| Inventory Planning GNN | ⬜ Phase 4 | New model |
-| Inventory Adjustment TRM | ⬜ Phase 4 | New TRM type |
-| Inventory Planning SKILL.md | ⬜ Phase 4 | New skill |
-| Supply Adjustment TRM | ⬜ Phase 5 | New TRM type (pairs with existing Supply GNN) |
-| RCCP GNN | ⬜ Phase 5 | New model |
-| RCCP Adjustment TRM | ⬜ Phase 5 | New TRM type |
-| S&OP Adjustment Skill | ⬜ Phase 6 | New skill at Layer 4 |
+| Supply Planning GNN (Network tGNN rename) | ✅ Implemented | `supply_planning_tgnn_service.py` |
+| Supply Planning SKILL.md | ✅ Implemented | Registered in `skills/__init__.py` |
+| RCCP SKILL.md | ✅ Implemented | Registered in `skills/__init__.py` |
+| Planning Skill Orchestrator | ✅ Implemented | `skills/planning_skill_orchestrator.py` |
+| Demand Planning GNN | ✅ Implemented | `demand_planning_tgnn_service.py`, `models/gnn/demand_planning_tgnn.py` |
+| Demand Adjustment TRM | ✅ Implemented | `powell/demand_adjustment_trm.py` — wired into GNNOrchestrationService Step 3.7 |
+| Demand Planning SKILL.md | ✅ Implemented | `skills/demand_planning/SKILL.md` |
+| Inventory Planning GNN | ✅ Implemented | `inventory_optimization_tgnn_service.py`, `models/gnn/inventory_optimization_tgnn.py` |
+| Inventory Adjustment TRM | ✅ Implemented | `powell/inventory_adjustment_trm.py` — wired into GNNOrchestrationService Step 3.7 |
+| Inventory Planning SKILL.md | ✅ Implemented | `skills/inventory_planning/SKILL.md` |
+| Supply Adjustment TRM | ✅ Implemented | `powell/supply_adjustment_trm.py` — wired into GNNOrchestrationService Step 3.7 |
+| RCCP GNN | ✅ Implemented | `models/gnn/rccp_gnn.py`, `powell/rccp_adjustment_trm.py` |
+| RCCP Adjustment TRM | ✅ Implemented | `powell/rccp_adjustment_trm.py` |
+| S&OP Adjustment Skill | ✅ Implemented | `skills/sop_adjustment/SKILL.md` |
+| DB tables (4 planning TRM) | ✅ Implemented | `20260325_planning_trm_tables` migration |
+| Outcome collection (4 planning TRM) | ✅ Implemented | `TRM_OUTCOME_DELAY` extended in `outcome_collector.py` |
+| Decision Stream routing | ✅ Implemented | `DECISION_TYPE_TABLE_MAP` extended in `decision_stream_service.py` |
 
 ---
 
