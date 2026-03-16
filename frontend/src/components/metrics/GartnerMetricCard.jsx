@@ -28,6 +28,8 @@ const STATUS_STYLES = {
   danger: 'border-l-red-500',
 };
 
+import Sparkline from './Sparkline';
+
 const GartnerMetricCard = ({
   label,
   value,
@@ -44,6 +46,7 @@ const GartnerMetricCard = ({
   ciLower,
   ciUpper,
   n,
+  sparkline,
 }) => {
   const tierBadge = tier ? TIER_BADGES[tier] : null;
   const trendPositive = lowerIsBetter ? trend < 0 : trend > 0;
@@ -75,12 +78,15 @@ const GartnerMetricCard = ({
         {/* Metric name */}
         <p className="text-xs font-medium text-muted-foreground">{label}</p>
 
-        {/* Value + trend */}
-        <div className="mt-1 flex items-baseline gap-2">
+        {/* Value + unit + sparkline + trend */}
+        <div className="mt-1 flex items-center gap-2">
           <span className={cn('font-bold', compact ? 'text-xl' : 'text-2xl')}>
             {typeof value === 'number' ? value.toLocaleString(undefined, { maximumFractionDigits: 1 }) : value}
           </span>
           {unit && <span className="text-sm text-muted-foreground">{unit}</span>}
+          {sparkline && sparkline.length >= 2 && (
+            <Sparkline data={sparkline} status={status} />
+          )}
           {trend !== undefined && trend !== null && (
             <span className={cn(
               'flex items-center text-xs font-medium',

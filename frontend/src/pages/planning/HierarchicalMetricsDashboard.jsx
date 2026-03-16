@@ -150,6 +150,7 @@ const HierarchicalMetricsDashboard = () => {
               ciLower={m.ci_lower}
               ciUpper={m.ci_upper}
               n={m.n}
+              sparkline={m.sparkline}
             />
           ))}
         </div>
@@ -169,18 +170,24 @@ const HierarchicalMetricsDashboard = () => {
 
     return (
       <div className="space-y-6">
-        {Object.entries(categories).map(([catKey, catMetrics]) => (
-          <div key={catKey}>
-            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-              {CATEGORY_LABELS[catKey] || catKey}
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {Object.entries(catMetrics).map(([metKey, m]) => (
-                <GartnerMetricCard key={metKey} {...mapMetricProps(m, 'tier3')} compact />
-              ))}
+        {Object.entries(categories).map(([catKey, catData]) => {
+          const catMetrics = catData?.metrics || catData;
+          const catLabel = catData?.label || CATEGORY_LABELS[catKey] || catKey;
+          return (
+            <div key={catKey}>
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                {catLabel}
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {Object.entries(catMetrics)
+                  .filter(([, m]) => typeof m === 'object' && m !== null && 'value' in m)
+                  .map(([metKey, m]) => (
+                    <GartnerMetricCard key={metKey} {...mapMetricProps(m, 'tier3')} compact />
+                  ))}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     );
   };
@@ -371,6 +378,7 @@ const mapMetricProps = (m, tier) => ({
   ciLower: m.ci_lower,
   ciUpper: m.ci_upper,
   n: m.n,
+  sparkline: m.sparkline,
 });
 
 const EmptyState = ({ tier }) => (

@@ -138,12 +138,12 @@ class ProvisioningService:
             # Before running, wait for any "running" dependencies to finish.
             deps = ConfigProvisioningStatus.STEP_DEPENDS.get(step_key, [])
             for dep in deps:
-                # Expire cached ORM state so we see bg-task commits
-                self.db.expire(status)
+                # Refresh ORM state so we see bg-task commits (expire() causes MissingGreenlet with async sessions)
+                await self.db.refresh(status)
                 dep_status = getattr(status, f"{dep}_status", "pending")
                 if dep_status == "running":
                     dep_status = await self._wait_for_step(config_id, dep, timeout=300)
-                    self.db.expire(status)
+                    await self.db.refresh(status)
 
             result = await self.run_step(config_id, step_key)
             results[step_key] = result

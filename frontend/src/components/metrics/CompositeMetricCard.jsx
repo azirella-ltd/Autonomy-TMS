@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils/cn';
 import { Card, CardContent, Progress } from '../common';
+import Sparkline from './Sparkline';
 
 const STATUS_BORDER = {
   success: 'border-l-green-500',
@@ -36,6 +37,7 @@ const CompositeMetricCard = ({
   ciLower,
   ciUpper,
   n,
+  sparkline,
 }) => {
   const trendGood = lowerIsBetter ? trend < 0 : trend > 0;
 
@@ -60,6 +62,9 @@ const CompositeMetricCard = ({
             {typeof value === 'number' ? value.toLocaleString(undefined, { maximumFractionDigits: 1 }) : value}
           </span>
           <span className="text-sm text-muted-foreground">{unit}</span>
+          {sparkline && sparkline.length >= 2 && (
+            <Sparkline data={sparkline} status={status} />
+          )}
           {trend !== undefined && (
             <span className={cn(
               'flex items-center text-xs font-medium',
