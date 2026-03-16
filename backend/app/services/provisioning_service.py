@@ -138,11 +138,12 @@ class ProvisioningService:
             # Before running, wait for any "running" dependencies to finish.
             deps = ConfigProvisioningStatus.STEP_DEPENDS.get(step_key, [])
             for dep in deps:
+                # Expire cached ORM state so we see bg-task commits
+                self.db.expire(status)
                 dep_status = getattr(status, f"{dep}_status", "pending")
                 if dep_status == "running":
                     dep_status = await self._wait_for_step(config_id, dep, timeout=300)
-                    # Refresh the in-memory status object after poll
-                    await self.db.refresh(status)
+                    self.db.expire(status)
 
             result = await self.run_step(config_id, step_key)
             results[step_key] = result
@@ -180,19 +181,27 @@ class ProvisioningService:
     async def _wait_for_step(
         self, config_id: int, step_key: str, timeout: int = 300
     ) -> str:
-        """Poll DB until a background step leaves 'running' state or timeout."""
+        """Poll DB until a background step leaves 'running' state or timeout.
+
+        Uses a raw SQL query to bypass SQLAlchemy ORM identity-map caching,
+        which would otherwise return the stale in-memory object instead of
+        re-reading from the DB (the background task commits via a separate
+        session).
+        """
         import time
+        from sqlalchemy import text as sa_text
         deadline = time.monotonic() + timeout
+        col = f"{step_key}_status"
         while time.monotonic() < deadline:
             await asyncio.sleep(3)
-            # Use a fresh query to see committed state from background task
-            stmt = select(ConfigProvisioningStatus).where(
-                ConfigProvisioningStatus.config_id == config_id
+            # Raw SQL bypasses ORM identity map — sees committed state from bg task
+            result = await self.db.execute(
+                sa_text(f"SELECT {col} FROM config_provisioning_status WHERE config_id = :cid"),
+                {"cid": config_id},
             )
-            result = await self.db.execute(stmt)
-            row = result.scalar_one_or_none()
+            row = result.first()
             if row:
-                s = getattr(row, f"{step_key}_status", "pending")
+                s = row[0]
                 if s != "running":
                     logger.info("Background step %s finished with status: %s", step_key, s)
                     return s

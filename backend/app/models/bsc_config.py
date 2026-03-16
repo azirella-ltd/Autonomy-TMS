@@ -62,10 +62,20 @@ class TenantBscConfig(Base):
     strategic_weight = Column(Float, nullable=False, default=0.0)
 
     # ── Agent Autonomy ─────────────────────────────────────────────────────
-    # Combined urgency+likelihood threshold below which agents auto-action
-    # without human review. Lower = more human oversight, higher = more autonomy.
-    # Range: 0.0 (surface everything) to 1.0 (agents fully autonomous).
+    # Legacy combined threshold (kept for backward compatibility)
     autonomy_threshold = Column(Float, nullable=False, default=0.5)
+
+    # Split thresholds (preferred — clearer semantics):
+    # urgency_threshold: Minimum urgency to surface for human review.
+    #   Decisions ABOVE this are always surfaced regardless of confidence.
+    #   Default 0.65 maps to "High" urgency tier.
+    urgency_threshold = Column(Float, nullable=False, default=0.65)
+
+    # likelihood_threshold: Minimum agent confidence to auto-action.
+    #   For decisions BELOW urgency_threshold, if agent confidence >= this,
+    #   the agent auto-actions. If confidence < this, surface for validation.
+    #   Default 0.70 = agent must be 70%+ confident to act alone on routine items.
+    likelihood_threshold = Column(Float, nullable=False, default=0.70)
 
     # ── Audit ────────────────────────────────────────────────────────────────
     notes = Column(Text, nullable=True)

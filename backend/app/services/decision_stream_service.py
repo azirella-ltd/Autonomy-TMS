@@ -1164,8 +1164,9 @@ class DecisionStreamService:
             except (TypeError, ValueError):
                 return default
 
-        # Load per-tenant autonomy threshold (falls back to global default)
-        threshold = _ABANDON_COMBINED_THRESHOLD
+        # Load per-tenant autonomy thresholds (falls back to defaults)
+        urgency_thresh = 0.65   # Default: surface High+ urgency
+        likelihood_thresh = 0.70  # Default: agent needs 70%+ confidence to auto-action
         try:
             from app.db.session import sync_session_factory
             from app.models.bsc_config import TenantBscConfig
@@ -1174,26 +1175,37 @@ class DecisionStreamService:
                 bsc = sync_db.query(TenantBscConfig).filter(
                     TenantBscConfig.tenant_id == self.tenant_id
                 ).first()
-                if bsc and bsc.autonomy_threshold is not None:
-                    threshold = bsc.autonomy_threshold
+                if bsc:
+                    urgency_thresh = bsc.urgency_threshold
+                    likelihood_thresh = bsc.likelihood_threshold
             finally:
                 sync_db.close()
         except Exception:
-            pass  # Use global default
+            pass  # Use defaults
 
-        # Tag each decision as needs_attention vs auto_actioned
-        # (filtering is done on the frontend via Show All toggle)
+        # Tag each decision using 2×2 urgency × likelihood model:
+        #
+        #   Urgent (≥ threshold)  + Any confidence    → needs_attention (always surface)
+        #   Routine (< threshold) + Confident (≥ thr) → auto_actioned (agent handles)
+        #   Routine (< threshold) + Uncertain (< thr) → needs_attention (surface for validation)
+        #
+        # Filtering is done on the frontend via the Show All toggle.
         auto_count = 0
         for d in decisions:
             urgency = _to_float(d.get("urgency_score"), 0.0)
             likelihood = _to_float(d.get("likelihood_score"), _DEFAULT_CONFIDENCE)
-            combined = urgency + likelihood
 
-            if combined < threshold:
+            if urgency >= urgency_thresh:
+                # Urgent — always surface for human review
+                d["needs_attention"] = True
+                d["auto_actioned"] = False
+            elif likelihood >= likelihood_thresh:
+                # Routine + confident — agent auto-actions
                 d["needs_attention"] = False
                 d["auto_actioned"] = True
                 auto_count += 1
             else:
+                # Routine + uncertain — surface for human validation
                 d["needs_attention"] = True
                 d["auto_actioned"] = False
 

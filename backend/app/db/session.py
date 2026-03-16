@@ -49,7 +49,7 @@ else:
 
 engine = create_async_engine(
     async_database_uri,
-    echo=True,
+    echo=False,
     future=True,
     connect_args=async_connect_args,
     **engine_kwargs,

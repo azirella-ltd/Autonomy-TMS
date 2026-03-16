@@ -5725,18 +5725,57 @@ The Decision Stream is the primary human interface for the Powell framework. It 
 
 - **Likelihood** (0.0–1.0): Agent confidence that its recommended action resolves the issue. Powell mapping: likelihood approximates the *value function accuracy* at the current state — how well the VFA/CFA policy maps this state to a good action. Derived from TRM output confidence, conformal prediction interval width, and CDT risk bound P(loss > τ).
 
-**Four operating quadrants**:
+**Four operating quadrants** (2×2 urgency × likelihood routing matrix):
 
-| | Low Likelihood | High Likelihood |
+| | Agent Uncertain (likelihood < threshold) | Agent Confident (likelihood ≥ threshold) |
 |---|---|---|
-| **High Urgency** | **Human needed** — top of Decision Stream. The cost of delay is high and the policy's value function estimate is unreliable. This maps to Powell's "exploration vs. exploitation" trade-off: the agent should exploit its best estimate, but the estimate is poor, so human judgment provides the exploration signal. | **Autonomous** — agent acts within guardrails. Cost of delay is high but the policy is well-calibrated for this state. |
-| **Low Urgency** | **Abandoned** — not worth anyone's time. Cost of delay is low AND the policy is unreliable. The expected value of both autonomous and human decisions is near zero. Excluded from Decision Stream. | **Autonomous** — agent acts within guardrails. Low urgency, high confidence — routine execution. |
+| **Urgent** (urgency ≥ threshold) | **Surface for judgment** — top of Decision Stream. Cost of delay is high and the VFA estimate is unreliable. Human judgment provides the exploration signal (Powell: "exploration vs. exploitation" trade-off). | **Surface for awareness** — agent is confident but stakes are high. Human reviews but likely accepts. |
+| **Routine** (urgency < threshold) | **Surface for validation** — agent is unsure about a low-stakes decision. Human validates before auto-actioning. | **Auto-actioned** — agent handles autonomously within guardrails. Low urgency, high confidence — routine execution. Shown in Decision Stream under "Show All" toggle. |
 
-**Abandonment guardrail**: `urgency + likelihood` must exceed a configurable threshold (default: 0.5). This implements a sliding scale: the lower the urgency, the higher the likelihood must be to justify attention. High-urgency decisions are never abandoned regardless of likelihood — when the cost of delay is high, even a weakly-calibrated VFA estimate warrants human review.
+**Two configurable thresholds** (per-tenant, set by tenant admin in BSC Configuration):
 
-**Powell connection**: This mechanism implements what Powell (SDAM 2nd Ed, Ch. 7) calls the "value of information" — the expected improvement from obtaining better information before deciding. When urgency is high, the value of information is bounded by the cost of delay (you must act soon regardless). When urgency is low, the value of information must exceed the cost of attention (human cognitive bandwidth). The combined threshold operationalizes this trade-off.
+| Threshold | Default | Question it answers | DB column |
+|-----------|---------|---------------------|-----------|
+| **Urgency Threshold** | 0.65 (High) | "How urgent must a decision be before I want to see it?" | `tenant_bsc_config.urgency_threshold` |
+| **Likelihood Threshold** | 0.70 | "How confident must the agent be to act without my review?" | `tenant_bsc_config.likelihood_threshold` |
 
-**Implementation**: `backend/app/services/decision_stream_service.py` — `_prioritize_decisions()` method. Configurable via `DECISION_STREAM_ABANDON_THRESHOLD` environment variable.
+**Routing logic** (implemented in `_prioritize_decisions()`):
+```
+if urgency >= urgency_threshold:
+    → needs_attention = True   # Always surface — urgent
+elif likelihood >= likelihood_threshold:
+    → auto_actioned = True     # Agent acts alone — routine + confident
+else:
+    → needs_attention = True   # Surface for validation — routine + uncertain
+```
+
+**How urgency is calculated** (per-decision, at seeding/execution time):
+- **Base signal**: `UrgencyVector` value from the HiveSignalBus (0.0–1.0)
+- **Exception severity**: `exception_severity` mapping (critical=0.9, high=0.7, medium=0.5, low=0.3)
+- **Inventory position gap**: `gap / reorder_point` for PO decisions
+- **Backlog ratio**: `backlog / (demand × lead_time)` for order tracking
+- **DOS imbalance**: Cross-site days-of-supply variance for rebalancing
+- **Capacity utilization**: `utilization - threshold` for MO/maintenance/subcontracting
+- **Forecast error**: `|actual - forecast| / forecast` for forecast adjustment
+- Mapped to tiers: Critical (≥0.85), High (≥0.65), Medium (≥0.40), Low (≥0.20), Routine (<0.20)
+
+**How likelihood is calculated** (per-decision, at seeding/execution time):
+- **TRM output confidence**: Model's self-assessed confidence (0.0–1.0)
+- **CDT risk bound**: `1.0 - risk_bound` (conformal prediction P(loss > τ))
+- **Conformal interval width**: `1.0 - interval_width` (wide intervals reduce confidence)
+- **Network fill rate**: Weighted average fill rate across the DAG
+- **Demand predictability**: `1.0 - demand_cv × 1.5` (high variability reduces confidence)
+- Mapped to tiers: Certain (≥0.85), Likely (≥0.65), Possible (≥0.40), Unlikely (≥0.20)
+
+**Tenant admin control**: The BSC Configuration page (Administration → BSC Configuration) exposes both sliders:
+- **Urgency slider**: "How urgent must a decision be before you want to see it?" (marks: Low/Medium/High/Critical)
+- **Confidence slider**: "How confident must the agent be to act without your review?" (marks: Unlikely/Possible/Likely/Certain)
+
+**Maturity progression**: New tenants start with conservative defaults (urgency=0.65, likelihood=0.70). As they build trust in the agents and observe auto-actioned decisions performing well, they can progressively lower the urgency threshold (see fewer decisions) and/or lower the likelihood threshold (trust less-confident agents). This maps to Gartner's three-level DI maturity: Support → Augmentation → Automation.
+
+**Powell connection**: This mechanism implements what Powell (SDAM 2nd Ed, Ch. 7) calls the "value of information" — the expected improvement from obtaining better information before deciding. The urgency threshold governs the *cost of delay* boundary, while the likelihood threshold governs the *value of information* boundary. Together they operationalize the exploration-vs-exploitation trade-off for human-agent collaboration.
+
+**Implementation**: `backend/app/services/decision_stream_service.py` — `_prioritize_decisions()` method. Per-tenant thresholds stored in `tenant_bsc_config` table, editable via `PUT /bsc-config` API. Legacy combined threshold (`DECISION_STREAM_ABANDON_THRESHOLD` env var) is retained for backward compatibility but the split thresholds take precedence when configured.
 
 ---
 

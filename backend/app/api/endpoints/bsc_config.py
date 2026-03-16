@@ -39,6 +39,8 @@ class BscWeightsResponse(BaseModel):
     operational_weight: float
     strategic_weight: float
     autonomy_threshold: float = 0.5
+    urgency_threshold: float = 0.65
+    likelihood_threshold: float = 0.70
     notes: Optional[str]
     updated_at: datetime
     updated_by_name: Optional[str]
@@ -90,13 +92,22 @@ class BscWeightsUpdate(BaseModel):
         description="Reserved — Phase 2 strategic pillar. Must be 0.0.",
     )
     autonomy_threshold: float = Field(
-        default=0.5,
-        ge=0.0,
-        le=1.0,
+        default=0.5, ge=0.0, le=1.0,
+        description="Legacy combined threshold (deprecated, kept for backward compat).",
+    )
+    urgency_threshold: float = Field(
+        default=0.65, ge=0.0, le=1.0,
         description=(
-            "Agent autonomy level. Combined urgency+likelihood threshold below which "
-            "agents auto-action without human review. 0.0 = surface everything, "
-            "1.0 = fully autonomous. Default 0.5."
+            "Minimum urgency score to surface a decision for human review. "
+            "Decisions at or above this are ALWAYS surfaced. Default 0.65 (High urgency)."
+        ),
+    )
+    likelihood_threshold: float = Field(
+        default=0.70, ge=0.0, le=1.0,
+        description=(
+            "Minimum agent confidence to auto-action routine decisions. "
+            "For decisions below urgency_threshold, if likelihood >= this the agent acts alone. "
+            "Default 0.70 (70% confident)."
         ),
     )
     notes: Optional[str] = Field(
@@ -149,6 +160,8 @@ def get_bsc_config(
             operational_weight=0.0,
             strategic_weight=0.0,
             autonomy_threshold=0.5,
+            urgency_threshold=0.65,
+            likelihood_threshold=0.70,
             notes=None,
             updated_at=datetime.utcnow(),
             updated_by_name=None,
@@ -168,6 +181,8 @@ def get_bsc_config(
         operational_weight=cfg.operational_weight,
         strategic_weight=cfg.strategic_weight,
         autonomy_threshold=cfg.autonomy_threshold,
+        urgency_threshold=cfg.urgency_threshold,
+        likelihood_threshold=cfg.likelihood_threshold,
         notes=cfg.notes,
         updated_at=cfg.updated_at,
         updated_by_name=updated_by_name,
@@ -202,6 +217,8 @@ def update_bsc_config(
     cfg.operational_weight = payload.operational_weight
     cfg.strategic_weight = payload.strategic_weight
     cfg.autonomy_threshold = payload.autonomy_threshold
+    cfg.urgency_threshold = payload.urgency_threshold
+    cfg.likelihood_threshold = payload.likelihood_threshold
     cfg.notes = payload.notes
     cfg.updated_by_id = current_user.id
     cfg.updated_at = datetime.utcnow()
@@ -219,6 +236,8 @@ def update_bsc_config(
         operational_weight=cfg.operational_weight,
         strategic_weight=cfg.strategic_weight,
         autonomy_threshold=cfg.autonomy_threshold,
+        urgency_threshold=cfg.urgency_threshold,
+        likelihood_threshold=cfg.likelihood_threshold,
         notes=cfg.notes,
         updated_at=cfg.updated_at,
         updated_by_name=updated_by_name,

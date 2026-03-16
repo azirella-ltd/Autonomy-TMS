@@ -465,7 +465,7 @@ make proxy-logs
 - `conformal_orchestrator.py`: Automatic conformal prediction feedback loop for demand, lead time, price, yield, and service level (forecast load hooks, multi-entity actuals observation, drift monitoring, scheduled recalibration, suite ↔ DB persistence)
 - `agent_context_explainer.py`: Context-aware explainability orchestrator — authority boundaries, guardrails, policy parameters, conformal intervals, feature attribution, counterfactuals for all 11 TRM agents and both GNN models
 - `explanation_templates.py`: 39 Jinja2-style templates (13 agent types × 3 verbosity levels) for inline decision explanations
-- `decision_stream_service.py`: LLM-first Decision Stream inbox — collects decisions from all 11 powell_*_decisions tables, prioritizes by urgency+likelihood (high urgency + low likelihood = top of stream for human judgment; low urgency + low likelihood = abandoned), synthesizes digest, supports conversational chat with decision-context injection
+- `decision_stream_service.py`: LLM-first Decision Stream inbox — collects decisions from all 11 powell_*_decisions tables, routes via 2×2 urgency×likelihood matrix (per-tenant thresholds in `tenant_bsc_config`: `urgency_threshold` default 0.65, `likelihood_threshold` default 0.70). Urgent → always surface; Routine + Confident → auto-actioned; Routine + Uncertain → surface for validation. Digest persisted to `decision_stream_digests` table for instant page loads. See [POWELL_APPROACH.md](docs/internal/POWELL_APPROACH.md) §5.21 for full routing logic and calculation details.
 
 **API Endpoints** (`api/endpoints/`):
 - `mps.py`: Master Production Scheduling endpoints
