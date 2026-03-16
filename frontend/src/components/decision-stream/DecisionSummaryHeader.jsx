@@ -54,11 +54,12 @@ const DecisionSummaryHeader = ({
       const isAuto = (d.urgency_score || 0) < 0.3 && (d.likelihood_score || 0) > 0.7;
       if (isAuto) counts[key].automated++;
     });
-    // Sort by urgency tier order, then likelihood
+    // Sort by urgency (highest first), then likelihood ascending (lowest first)
     const urgencyOrder = { Critical: 0, High: 1, Medium: 2, Low: 3, Routine: 4 };
+    const likelihoodOrder = { Unlikely: 0, Possible: 1, Likely: 2, Certain: 3 };
     return Object.values(counts).sort((a, b) =>
       (urgencyOrder[a.urgency] ?? 9) - (urgencyOrder[b.urgency] ?? 9)
-      || a.likelihood.localeCompare(b.likelihood)
+      || (likelihoodOrder[a.likelihood] ?? 9) - (likelihoodOrder[b.likelihood] ?? 9)
     );
   }, [decisions]);
 
