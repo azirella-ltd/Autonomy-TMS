@@ -1370,6 +1370,9 @@ def _enrich_sites_with_region(sites, region_map: Dict[str, str]) -> List[dict]:
             "segment_id": site.segment_id,
             "company_id": site.company_id,
         }
+        # Geographic coordinates: prefer Geography record, fall back to site columns,
+        # then to city/country in attributes for display.
+        attrs = site.attributes or {}
         if site.geography:
             site_dict["geography"] = {
                 "id": site.geography.id,
@@ -1377,8 +1380,18 @@ def _enrich_sites_with_region(sites, region_map: Dict[str, str]) -> List[dict]:
                 "state_prov": site.geography.state_prov,
                 "region": region_map.get(site.geo_id),
                 "country": site.geography.country,
-                "latitude": site.geography.latitude,
-                "longitude": site.geography.longitude,
+                "latitude": site.geography.latitude or site.latitude,
+                "longitude": site.geography.longitude or site.longitude,
+            }
+        elif site.latitude is not None and site.longitude is not None:
+            site_dict["geography"] = {
+                "id": None,
+                "city": attrs.get("city"),
+                "state_prov": attrs.get("state"),
+                "region": None,
+                "country": attrs.get("country"),
+                "latitude": site.latitude,
+                "longitude": site.longitude,
             }
         else:
             site_dict["geography"] = None

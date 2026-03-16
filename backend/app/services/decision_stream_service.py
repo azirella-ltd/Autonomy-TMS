@@ -686,14 +686,23 @@ class DecisionStreamService:
                 config_id, powell_role
             )
 
-        # --- Tier 3: LLM synthesis (writes to DB for future loads) ---
-        if not digest_text:
-            digest_text = await self._synthesize_digest(decisions, alerts, powell_role)
-            digest_text = _humanize_ids(digest_text, product_names)
-            # Persist to DB so future page loads are instant
-            if digest_text and config_id:
-                await self._persist_digest(
-                    config_id, powell_role, digest_text, decisions, alerts,
+        # --- Tier 3: LLM synthesis (fire-and-forget background task) ---
+        if not digest_text and decisions:
+            if force_refresh:
+                # Explicit refresh: user is willing to wait
+                digest_text = await self._synthesize_digest(decisions, alerts, powell_role)
+                digest_text = _humanize_ids(digest_text, product_names)
+                if digest_text and config_id:
+                    await self._persist_digest(
+                        config_id, powell_role, digest_text, decisions, alerts,
+                    )
+            else:
+                # First load: return decisions immediately, synthesize in background
+                digest_text = self._build_quick_digest(decisions)
+                asyncio.create_task(
+                    self._background_synthesize(
+                        config_id, powell_role, decisions, alerts, product_names, cache_key,
+                    )
                 )
 
         result = {
@@ -712,6 +721,52 @@ class DecisionStreamService:
             _DIGEST_CACHE.pop(oldest_key, None)
 
         return result
+
+    def _build_quick_digest(self, decisions: List[Dict[str, Any]]) -> str:
+        """Build a fast summary without LLM — counts by type + top actions."""
+        from collections import Counter
+        type_counts = Counter(d["decision_type"] for d in decisions)
+        parts = []
+        for dtype, count in type_counts.most_common(5):
+            label = dtype.replace("_", " ").title()
+            parts.append(f"**{label}**: {count}")
+        summary = f"{len(decisions)} decisions made by Autonomy agents:\n\n" + "\n".join(
+            f"- {p}" for p in parts
+        )
+        top_actions = [d.get("suggested_action", "") for d in decisions[:3] if d.get("suggested_action")]
+        if top_actions:
+            summary += "\n\n**Top actions**: " + "; ".join(top_actions[:3])
+        return summary
+
+    async def _background_synthesize(
+        self,
+        config_id: Optional[int],
+        powell_role: Optional[str],
+        decisions: List[Dict[str, Any]],
+        alerts: List[Dict[str, Any]],
+        product_names: Dict[str, str],
+        cache_key: str,
+    ):
+        """Run LLM digest synthesis in the background and update caches."""
+        try:
+            digest_text = await self._synthesize_digest(decisions, alerts, powell_role)
+            digest_text = _humanize_ids(digest_text, product_names)
+            if digest_text and config_id:
+                try:
+                    from app.db.session import async_session_factory
+                    async with async_session_factory() as db:
+                        svc = DecisionStreamService(db=db, tenant_id=self.tenant_id, tenant_name=self.tenant_name)
+                        await svc._persist_digest(config_id, powell_role, digest_text, decisions, alerts)
+                except Exception as e:
+                    logger.warning("Background digest persist failed: %s", e)
+            if digest_text:
+                cached = _DIGEST_CACHE.get(cache_key)
+                if cached:
+                    cached["digest_text"] = digest_text
+                    cached["_ts"] = time.time()
+                    _DIGEST_CACHE[cache_key] = cached
+        except Exception as e:
+            logger.warning("Background digest synthesis failed: %s", e)
 
     async def _load_persisted_digest(
         self, config_id: int, powell_role: Optional[str]

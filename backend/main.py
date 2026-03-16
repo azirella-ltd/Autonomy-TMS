@@ -1789,6 +1789,7 @@ def _serialize_site(site: SupplySiteModel, region_map: Optional[Dict[str, str]] 
     geography = getattr(site, "geography", None)
     geo_id = getattr(site, "geo_id", None)
     geo_data = None
+    attrs = getattr(site, "attributes", None) or {}
     if geography:
         geo_data = {
             "id": geography.id,
@@ -1796,8 +1797,18 @@ def _serialize_site(site: SupplySiteModel, region_map: Optional[Dict[str, str]] 
             "state_prov": geography.state_prov,
             "region": region_map.get(geo_id) if region_map and geo_id else None,
             "country": geography.country,
-            "latitude": geography.latitude,
-            "longitude": geography.longitude,
+            "latitude": geography.latitude or getattr(site, "latitude", None),
+            "longitude": geography.longitude or getattr(site, "longitude", None),
+        }
+    elif getattr(site, "latitude", None) is not None and getattr(site, "longitude", None) is not None:
+        geo_data = {
+            "id": None,
+            "city": attrs.get("city") if isinstance(attrs, dict) else None,
+            "state_prov": attrs.get("state") if isinstance(attrs, dict) else None,
+            "region": None,
+            "country": attrs.get("country") if isinstance(attrs, dict) else None,
+            "latitude": site.latitude,
+            "longitude": site.longitude,
         }
 
     return {

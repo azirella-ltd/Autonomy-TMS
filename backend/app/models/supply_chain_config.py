@@ -283,6 +283,10 @@ class Site(Base):
     lost_sale_cost = Column(Float, nullable=True)
     attributes = Column(JSON, default=dict)  # Flexible metadata per node type
 
+    # Geographic coordinates (WGS84)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+
     # SC Hierarchical fields
     geo_id = Column(String(100), ForeignKey("geography.id"), nullable=True)  # Geographic region
     segment_id = Column(String(100), nullable=True)  # Market segment

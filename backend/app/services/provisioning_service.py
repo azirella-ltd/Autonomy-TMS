@@ -895,6 +895,18 @@ class ProvisioningService:
                     )
                     if all_done:
                         status.overall_status = "completed"
+
+                    # After TRM training completes, clear the "Needs Training" flag
+                    if step_key == "trm_training":
+                        from app.models.supply_chain_config import SupplyChainConfig
+                        cfg = (await db.execute(
+                            select(SupplyChainConfig).where(SupplyChainConfig.id == config_id)
+                        )).scalar_one_or_none()
+                        if cfg:
+                            cfg.needs_training = False
+                            cfg.training_status = "trained"
+                            cfg.trained_at = datetime.utcnow()
+
                     await db.commit()
                     logger.info("Provisioning background step %s completed for config %d", step_key, config_id)
 
