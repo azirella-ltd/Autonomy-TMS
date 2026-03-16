@@ -8,6 +8,7 @@ import SystemAdminRoute from "./components/SystemAdminRoute";
 import { isSystemAdmin } from "./utils/authUtils";
 import Dashboard from "./pages/Dashboard";
 import DashboardRouter from "./pages/DashboardRouter";
+import ProvisioningPage from "./pages/ProvisioningPage";
 import ScenariosList from "./pages/ScenariosList";
 import CreateScenario from "./pages/CreateScenario";
 import CreateScenarioFromConfig from "./components/scenario/CreateScenarioFromConfig";
@@ -207,6 +208,7 @@ const AppContent = () => {
         <Route element={<RequireAuth />}>
           <Route element={<LayoutWrapper />}>
             <Route path="/dashboard" element={<DashboardRouter />} />
+            <Route path="/provisioning" element={<ProvisioningPage />} />
 
             {/* AIIO Framework - Insights & Actions Landing Page */}
             <Route path="/insights" element={<InsightsLanding />} />

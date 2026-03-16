@@ -645,100 +645,59 @@ class ProvisioningService:
 
     async def _step_decision_seed(self, config_id: int) -> dict:
         """
-        Step 10: Seed the Decision Stream by running one TRM decision cycle per
-        active site.  Populates powell_*_decisions tables from actual inventory,
-        orders, and forecasts — no synthetic data.
+        Step 10: Seed the Decision Stream from digital twin simulation.
+
+        Runs the tenant's actual supply chain DAG as a Monte Carlo simulation
+        for 5 episodes × 90 days using deterministic heuristics. At each tick,
+        examines the supply chain state and generates realistic decision records
+        when interesting conditions arise (stockouts, reorder triggers, quality
+        events, capacity pressure, forecast drift, etc.).
+
+        Produces ~6 decisions per TRM type (~66 total) with real product names,
+        site names, dollar amounts, and detailed reasoning — ready for demo.
         """
         from app.db.session import sync_session_factory
-        from app.services.powell.site_agent import SiteAgent, SiteAgentConfig
+        from app.services.powell.simulation_decision_seeder import (
+            seed_decisions_from_simulation,
+        )
 
-        sites_processed = 0
-        decisions_generated = 0
-        errors = []
+        # Resolve tenant_id from config
+        row = await self.db.execute(
+            text("SELECT tenant_id FROM supply_chain_configs WHERE id = :c"),
+            {"c": config_id},
+        )
+        tenant_row = row.first()
+        tenant_id = tenant_row[0] if tenant_row else None
 
         sync_db = sync_session_factory()
         try:
-            # Query internal sites directly by config_id (site.config_id FK)
-            site_rows = sync_db.execute(
-                text("""
-                    SELECT id, name, master_type, type
-                    FROM site
-                    WHERE config_id = :config_id
-                      AND COALESCE(master_type, 'INVENTORY') NOT IN ('VENDOR', 'CUSTOMER')
-                      AND is_external = false
-                    ORDER BY id
-                """),
-                {"config_id": config_id},
-            ).fetchall()
-
-            for site_id, site_name, master_type, sc_site_type in site_rows:
-                sk = site_name or str(site_id)
-                # Use a fresh session per site so that setup_matrix failures
-                # (e.g. missing resource_capacity_constraint table) don't
-                # corrupt the shared session and block subsequent TRM calls.
-                site_db = sync_session_factory()
-                try:
-                    cfg = SiteAgentConfig(
-                        site_key=sk,
-                        master_type=(master_type or "inventory").lower(),
-                        sc_site_type=sc_site_type,
-                        tenant_id=None,
-                    )
-                    # Pass db_session=None so SiteAgent.__init__ doesn't query
-                    # missing tables (e.g. resource_capacity_constraint) which
-                    # would corrupt the session before TRM calls.
-                    agent = SiteAgent(config=cfg, db_session=None)
-
-                    # Build executors from the linter-generated helpers
-                    trm_instances = _build_trm_instances(
-                        agent.active_trms, site_db, config_id, sk, site_id,
-                    )
-                    for name, trm in trm_instances.items():
-                        try:
-                            agent.connect_trm(name, trm)
-                        except Exception:
-                            pass
-
-                    executors = _build_trm_executors(
-                        trm_instances, site_db, config_id, site_id, sk,
-                    )
-
-                    result = agent.execute_decision_cycle(trm_executors=executors)
-                    site_db.commit()
-
-                    # CycleResult: count TRMs that actually ran
-                    n = sum(len(p.trms_executed) for p in result.phases) if hasattr(result, "phases") else 0
-                    decisions_generated += n
-                    sites_processed += 1
-                except Exception as site_err:
-                    logger.warning(
-                        "Decision seed failed for site %s: %s", sk, site_err
-                    )
-                    errors.append(f"site {sk}: {str(site_err)[:80]}")
-                    try:
-                        site_db.rollback()
-                    except Exception:
-                        pass
-                finally:
-                    site_db.close()
-
-            sync_db.commit()
+            counts = seed_decisions_from_simulation(
+                db=sync_db,
+                config_id=config_id,
+                tenant_id=tenant_id or 0,
+                max_per_type=6,
+            )
+            total = sum(counts.values())
+            logger.info(
+                "Decision seed from simulation: %d decisions across %d TRM types "
+                "(config=%d, tenant=%d)",
+                total, len([v for v in counts.values() if v > 0]),
+                config_id, tenant_id or 0,
+            )
+            return {
+                "status": "ok",
+                "decisions_generated": total,
+                "per_type": counts,
+            }
         except Exception as e:
-            logger.warning("Decision seed site loop failed (non-critical): %s", e)
-            errors.append(f"site_loop: {str(e)[:100]}")
-            try:
-                sync_db.rollback()
-            except Exception:
-                pass
+            logger.warning("Decision seed failed: %s", e, exc_info=True)
+            return {
+                "status": "partial",
+                "decisions_generated": 0,
+                "error": str(e)[:200],
+            }
         finally:
             sync_db.close()
-
-        return {
-            "status": "ok" if not errors else "partial",
-            "sites_processed": sites_processed,
-            "decisions_generated": decisions_generated,
-            "errors": errors[:5],
-        }
 
     async def _step_site_tgnn(self, config_id: int) -> dict:
         """Step 8: Train Site tGNN (foreground fallback, normally runs via _bg)."""

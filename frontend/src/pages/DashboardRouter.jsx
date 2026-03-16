@@ -42,6 +42,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Spinner } from '../components/common';
 import { useAuth } from '../contexts/AuthContext';
+import { useActiveConfig } from '../contexts/ActiveConfigContext';
 import { getUserScenarios } from '../services/dashboardService';
 import { api } from '../services/api';
 
@@ -98,12 +99,23 @@ const getPowellLandingPage = (powellRole) => {
 
 const DashboardRouter = () => {
   const { user } = useAuth();
+  const { provisioningRequired, loading: configLoading, activeConfigId } = useActiveConfig();
   const navigate = useNavigate();
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
     const handleRedirect = async () => {
       if (!user) return;
+
+      // Wait for active config to finish loading (provisioning check happens there)
+      if (configLoading) return;
+
+      // If tenant's config is not provisioned, redirect to provisioning page
+      // (skip for SYSTEM_ADMIN who manages all tenants)
+      if (provisioningRequired && activeConfigId && user.user_type !== 'SYSTEM_ADMIN') {
+        navigate('/provisioning', { replace: true });
+        return;
+      }
 
       // Check UI mode preference — Decision Stream is the default
       const uiMode = localStorage.getItem('ui:mode') || 'stream';
@@ -182,7 +194,7 @@ const DashboardRouter = () => {
     };
 
     handleRedirect();
-  }, [user, navigate]);
+  }, [user, navigate, configLoading, provisioningRequired, activeConfigId]);
 
   // Always show loading while redirecting
   return (

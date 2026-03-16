@@ -647,25 +647,28 @@ class DecisionStreamService:
         self,
         powell_role: Optional[str] = None,
         config_id: Optional[int] = None,
+        force_refresh: bool = False,
     ) -> Dict[str, Any]:
-        """Collect pending decisions, alerts, and synthesize an LLM digest.
+        """Collect pending decisions, alerts, and return digest.
 
         Returns dict matching DecisionDigestResponse schema.
-        Uses a TTL-based in-memory cache keyed by (tenant, config, role) to
-        avoid repeated LLM calls and DB queries.  Cache is invalidated when
-        new decisions are recorded (via invalidate_digest_cache) or after
-        DECISION_STREAM_DIGEST_CACHE_TTL seconds (default 5 min).
+
+        Three-tier lookup:
+        1. In-memory cache (fastest, volatile)
+        2. DB-persisted digest (survives restarts, computed at decision time)
+        3. LLM synthesis (fallback, writes result to DB for future loads)
         """
-        # --- Check digest cache ---
+        # --- Tier 1: Check in-memory cache ---
         cache_key = f"digest:{self.tenant_id}:{config_id}:{powell_role}"
-        cached = _DIGEST_CACHE.get(cache_key)
-        if cached:
-            age = time.time() - cached["_ts"]
-            if age < _DIGEST_CACHE_TTL:
-                logger.debug("Digest cache hit (%s, age=%.0fs)", cache_key, age)
-                return {k: v for k, v in cached.items() if not k.startswith("_")}
-            else:
-                _DIGEST_CACHE.pop(cache_key, None)
+        if not force_refresh:
+            cached = _DIGEST_CACHE.get(cache_key)
+            if cached:
+                age = time.time() - cached["_ts"]
+                if age < _DIGEST_CACHE_TTL:
+                    logger.debug("Digest cache hit (%s, age=%.0fs)", cache_key, age)
+                    return {k: v for k, v in cached.items() if not k.startswith("_")}
+                else:
+                    _DIGEST_CACHE.pop(cache_key, None)
 
         # 1. Collect pending decisions from all 11 tables
         decisions, product_names = await self._collect_pending_decisions(config_id, powell_role)
@@ -676,9 +679,22 @@ class DecisionStreamService:
         # 3. Collect alerts (CDC triggers + condition monitor)
         alerts = await self._collect_alerts(config_id)
 
-        # 4. Synthesize digest text via LLM (then humanize any residual IDs)
-        digest_text = await self._synthesize_digest(decisions, alerts, powell_role)
-        digest_text = _humanize_ids(digest_text, product_names)
+        # --- Tier 2: Check DB-persisted digest ---
+        digest_text = None
+        if not force_refresh and config_id:
+            digest_text = await self._load_persisted_digest(
+                config_id, powell_role
+            )
+
+        # --- Tier 3: LLM synthesis (writes to DB for future loads) ---
+        if not digest_text:
+            digest_text = await self._synthesize_digest(decisions, alerts, powell_role)
+            digest_text = _humanize_ids(digest_text, product_names)
+            # Persist to DB so future page loads are instant
+            if digest_text and config_id:
+                await self._persist_digest(
+                    config_id, powell_role, digest_text, decisions, alerts,
+                )
 
         result = {
             "digest_text": digest_text,
@@ -688,15 +704,91 @@ class DecisionStreamService:
             "config_id": config_id,
         }
 
-        # --- Store in digest cache (skip caching empty digests) ---
+        # --- Store in memory cache ---
         if digest_text:
             _DIGEST_CACHE[cache_key] = {**result, "_ts": time.time()}
-        # Evict stale entries (keep max 50)
         if len(_DIGEST_CACHE) > 50:
             oldest_key = min(_DIGEST_CACHE, key=lambda k: _DIGEST_CACHE[k]["_ts"])
             _DIGEST_CACHE.pop(oldest_key, None)
 
         return result
+
+    async def _load_persisted_digest(
+        self, config_id: int, powell_role: Optional[str]
+    ) -> Optional[str]:
+        """Load digest from decision_stream_digests table."""
+        try:
+            from sqlalchemy import text as sa_text
+            role_clause = "AND powell_role = :role" if powell_role else "AND powell_role IS NULL"
+            params = {"cid": config_id, "tid": self.tenant_id}
+            if powell_role:
+                params["role"] = powell_role
+            row = await self.db.execute(
+                sa_text(
+                    f"SELECT digest_text FROM decision_stream_digests "
+                    f"WHERE config_id = :cid AND tenant_id = :tid {role_clause} "
+                    f"ORDER BY created_at DESC LIMIT 1"
+                ),
+                params,
+            )
+            result = row.first()
+            if result:
+                logger.debug("Digest loaded from DB (config=%d)", config_id)
+                return result[0]
+        except Exception as e:
+            logger.debug("Digest DB load failed: %s", e)
+        return None
+
+    async def _persist_digest(
+        self,
+        config_id: int,
+        powell_role: Optional[str],
+        digest_text: str,
+        decisions: list,
+        alerts: list,
+    ):
+        """Persist digest to decision_stream_digests table (upsert)."""
+        try:
+            from sqlalchemy import text as sa_text
+            import json as _json
+            # Serialize decisions (strip non-serializable fields)
+            dec_json = _json.dumps(
+                [{"id": d.get("id"), "decision_type": d.get("decision_type"),
+                  "summary": d.get("summary"), "urgency": d.get("urgency")}
+                 for d in decisions[:30]]
+            )
+            alerts_json = _json.dumps(alerts[:10] if alerts else [])
+
+            await self.db.execute(
+                sa_text("""
+                    INSERT INTO decision_stream_digests
+                        (config_id, tenant_id, powell_role, digest_text, decisions, alerts, total_pending, created_at)
+                    VALUES (:cid, :tid, :role, :digest, :decs::jsonb, :alerts::jsonb, :total, CURRENT_TIMESTAMP)
+                    ON CONFLICT (config_id, tenant_id, powell_role)
+                    DO UPDATE SET digest_text = EXCLUDED.digest_text,
+                                  decisions = EXCLUDED.decisions,
+                                  alerts = EXCLUDED.alerts,
+                                  total_pending = EXCLUDED.total_pending,
+                                  created_at = CURRENT_TIMESTAMP
+                """),
+                {
+                    "cid": config_id,
+                    "tid": self.tenant_id,
+                    "role": powell_role,
+                    "digest": digest_text,
+                    "decs": dec_json,
+                    "alerts": alerts_json,
+                    "total": len(decisions),
+                },
+            )
+            await self.db.commit()
+            logger.info("Digest persisted to DB (config=%d, role=%s)", config_id, powell_role)
+        except Exception as e:
+            logger.warning("Digest persist failed: %s", e)
+            try:
+                await self.db.rollback()
+            except Exception:
+                pass
 
     async def act_on_decision(
         self,

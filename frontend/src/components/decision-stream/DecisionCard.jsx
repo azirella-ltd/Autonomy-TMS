@@ -225,6 +225,7 @@ const DecisionCard = ({
   const [modifiedValues, setModifiedValues] = useState({});
   const [acting, setActing] = useState(false);
   const [showReasoning, setShowReasoning] = useState(false);
+  const [inspected, setInspected] = useState(false);
   const [reasoning, setReasoning] = useState(null);
   const [reasoningLoading, setReasoningLoading] = useState(false);
 
@@ -337,8 +338,10 @@ const DecisionCard = ({
                 if (decision.decision_reasoning) {
                   setReasoning(decision.decision_reasoning);
                   setShowReasoning(true);
+                  setInspected(true);
                 } else if (reasoning) {
                   setShowReasoning(true);
+                  setInspected(true);
                 } else {
                   setReasoningLoading(true);
                   setShowReasoning(true);
@@ -346,8 +349,10 @@ const DecisionCard = ({
                     const { decisionStreamApi } = await import('../../services/decisionStreamApi');
                     const result = await decisionStreamApi.askWhy(decision.id, decision.decision_type);
                     setReasoning(result.reasoning || 'No reasoning available.');
+                    setInspected(true);
                   } catch {
                     setReasoning('Unable to retrieve reasoning for this decision.');
+                    setInspected(true);
                   } finally {
                     setReasoningLoading(false);
                   }
@@ -366,9 +371,15 @@ const DecisionCard = ({
             <Button
               size="sm"
               variant="outline"
-              className="h-7 text-xs border-orange-500 text-orange-600 hover:bg-orange-50"
-              onClick={() => setOverrideMode('choose')}
-              disabled={acting}
+              className={cn(
+                "h-7 text-xs",
+                inspected
+                  ? "border-orange-500 text-orange-600 hover:bg-orange-50"
+                  : "border-muted text-muted-foreground cursor-not-allowed opacity-50"
+              )}
+              onClick={() => inspected && setOverrideMode('choose')}
+              disabled={acting || !inspected}
+              title={!inspected ? "Inspect agent reasoning first" : "Override this decision"}
             >
               <Edit3 className="h-3 w-3 mr-1" />
               Override

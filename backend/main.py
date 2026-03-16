@@ -549,15 +549,44 @@ async def startup_event():
                     logger.info(f"CDT startup calibration (global): {calibrated}/11 agents calibrated")
 
                     # Per-tenant calibration so readiness endpoint works
+                    # Also runs simulation bootstrap for any tenant with uncalibrated agents
                     tenant_rows = cdt_db.execute(
-                        sa_text("SELECT DISTINCT tenant_id FROM supply_chain_configs WHERE tenant_id IS NOT NULL")
+                        sa_text(
+                            "SELECT DISTINCT sc.tenant_id, sc.id "
+                            "FROM supply_chain_configs sc "
+                            "WHERE sc.tenant_id IS NOT NULL "
+                            "ORDER BY sc.tenant_id"
+                        )
                     ).fetchall()
-                    for (tid,) in tenant_rows:
+                    seen_tenants = set()
+                    for tid, config_id in tenant_rows:
+                        if tid in seen_tenants:
+                            continue
+                        seen_tenants.add(tid)
                         try:
                             tenant_svc = CDTCalibrationService(cdt_db, tenant_id=tid)
                             tenant_stats = tenant_svc.calibrate_all()
                             t_cal = sum(1 for s in tenant_stats.values() if s.get("status") == "calibrated")
                             logger.info(f"CDT startup calibration (tenant {tid}): {t_cal}/11 agents calibrated")
+
+                            # If not all calibrated, run simulation bootstrap
+                            if t_cal < 11 and config_id:
+                                try:
+                                    from app.services.powell.simulation_calibration_service import (
+                                        run_simulation_calibration_bootstrap,
+                                    )
+                                    sim_stats = run_simulation_calibration_bootstrap(
+                                        db=cdt_db,
+                                        config_id=config_id,
+                                        tenant_id=tid,
+                                        n_episodes=50,
+                                    )
+                                    logger.info(
+                                        f"CDT startup simulation bootstrap (tenant {tid}): "
+                                        f"{sim_stats.get('agents_calibrated', 0)}/11 agents calibrated"
+                                    )
+                                except Exception as sim_err:
+                                    logger.warning(f"CDT simulation bootstrap (tenant {tid}): {sim_err}")
                         except Exception as te:
                             logger.debug(f"CDT tenant {tid} calibration: {te}")
                 finally:

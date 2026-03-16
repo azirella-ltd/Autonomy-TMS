@@ -25,6 +25,7 @@ const ActiveConfigContext = createContext({
   branches: [],
   loading: true,
   error: null,
+  provisioningRequired: false,
   setWorkingBranch: () => {},
   clearWorkingBranch: () => {},
   createBranch: async () => {},
@@ -38,6 +39,7 @@ export function ActiveConfigProvider({ children }) {
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [provisioningRequired, setProvisioningRequired] = useState(false);
 
   const activeConfigId = activeConfig?.id ?? null;
   const configMode = activeConfig?.mode ?? 'production';
@@ -51,6 +53,21 @@ export function ActiveConfigProvider({ children }) {
     try {
       const response = await api.get('/supply-chain-config/active');
       setActiveConfig(response.data);
+
+      // Check provisioning status — if no step is completed, user needs to provision
+      if (response.data?.id) {
+        try {
+          const provRes = await api.get(`/provisioning/status/${response.data.id}`);
+          const steps = provRes.data?.steps || [];
+          const anyCompleted = Array.isArray(steps)
+            ? steps.some((s) => s?.status === 'completed')
+            : Object.values(steps).some((s) => s?.status === 'completed');
+          setProvisioningRequired(!anyCompleted);
+        } catch {
+          // If no provisioning status exists, it definitely needs provisioning
+          setProvisioningRequired(true);
+        }
+      }
 
       // Fetch WORKING branches for this tenant
       if (response.data?.id) {
@@ -117,6 +134,7 @@ export function ActiveConfigProvider({ children }) {
         branches,
         loading,
         error,
+        provisioningRequired,
         setWorkingBranch,
         clearWorkingBranch,
         createBranch,

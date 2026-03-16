@@ -752,7 +752,6 @@ def get_suite_status(db: Session = Depends(get_db)):
 def get_cdt_readiness(
     config_id: Optional[int] = None,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ):
     """
     Get CDT (Conformal Decision Theory) calibration readiness per TRM type.
@@ -769,17 +768,22 @@ def get_cdt_readiness(
     - uncalibrated: 0 pairs, decisions use conservative risk_bound=0.50
     """
     from ...services.conformal_prediction.conformal_decision import get_cdt_registry
-    from sqlalchemy import text as sa_text
 
     # Resolve tenant_id: prefer config's tenant, fall back to user's tenant
     tenant_id = getattr(current_user, 'tenant_id', None)
     if config_id:
-        row = db.execute(
-            sa_text("SELECT tenant_id FROM supply_chain_configs WHERE id = :c"),
-            {"c": config_id},
-        ).first()
-        if row and row[0]:
-            tenant_id = row[0]
+        from ...db.session import sync_session_factory
+        try:
+            sync_db = sync_session_factory()
+            from sqlalchemy import text as sa_text
+            row = sync_db.execute(
+                sa_text("SELECT tenant_id FROM supply_chain_configs WHERE id = :c"),
+                {"c": config_id},
+            ).first()
+            if row and row[0]:
+                tenant_id = row[0]
+        finally:
+            sync_db.close()
 
     registry = get_cdt_registry(tenant_id=tenant_id)
     diagnostics = registry.get_all_diagnostics()
