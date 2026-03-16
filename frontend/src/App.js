@@ -116,6 +116,7 @@ import OrderManagement from "./pages/planning/OrderManagement.jsx";
 import RecommendedActionsDashboard from "./pages/RecommendedActionsDashboard.jsx";
 import SalesOperationsPlanning from "./pages/planning/SalesOperationsPlanning.jsx";
 import InventoryOptimization from "./pages/planning/InventoryOptimization.jsx";
+import PlanningBoard from "./pages/planning/PlanningBoard.jsx";
 import PromotionalPlanning from "./pages/planning/PromotionalPlanning.jsx";
 import ProductLifecycle from "./pages/planning/ProductLifecycle.jsx";
 import MarkdownClearance from "./pages/planning/MarkdownClearance.jsx";
@@ -967,6 +968,15 @@ const AppContent = () => {
               element={
                 <CapabilityProtectedRoute requiredCapability="view_supply_plan">
                   <SupplyPlanGeneration />
+                </CapabilityProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/planning/board"
+              element={
+                <CapabilityProtectedRoute requiredCapability="view_supply_planning">
+                  <PlanningBoard />
                 </CapabilityProtectedRoute>
               }
             />

@@ -31,6 +31,7 @@ const ROUTE_LABELS = {
   'demand-collaboration': 'Demand Collaboration',
   supply: 'Supply Planning',
   'supply-plan': 'Supply Planning',
+  board: 'Planning Board',
   mps: 'Master Production Scheduling',
   mrp: 'Material Requirements Planning',
   capacity: 'Capacity Planning',

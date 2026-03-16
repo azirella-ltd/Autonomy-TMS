@@ -330,6 +330,13 @@ export const NAVIGATION_CONFIG = [
         requiredCapability: 'view_supply_plan',
       },
       {
+        label: 'Planning Board',
+        path: '/planning/board',
+        icon: LayersIcon,
+        requiredCapability: 'view_supply_planning',
+        description: 'Unified demand-supply netting with fan chart and MRP grid',
+      },
+      {
         label: 'Production Processes',
         path: '/planning/production-processes',
         icon: FactoryIcon,

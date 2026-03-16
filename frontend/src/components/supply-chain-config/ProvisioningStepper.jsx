@@ -667,8 +667,11 @@ const ProvisioningStepper = ({ configId, configName, isOpen, onClose }) => {
   };
 
   const steps = provisioningStatus?.steps || [];
-  const overallStatus = provisioningStatus?.overall_status || 'not_started';
   const completedCount = steps.filter(s => s.status === 'completed').length;
+  // Use overall_status from backend, but also detect completion from step count
+  // (handles race condition where background step completed but overall_status wasn't updated)
+  const rawOverallStatus = provisioningStatus?.overall_status || 'not_started';
+  const overallStatus = (completedCount === steps.length && steps.length > 0) ? 'completed' : rawOverallStatus;
   const runningCount = steps.filter(s => s.status === 'running').length;
   const failedCount = steps.filter(s => s.status === 'failed').length;
   const stepMap = Object.fromEntries(steps.map(s => [s.key, s]));

@@ -6384,6 +6384,10 @@ api.include_router(advanced_analytics_router, prefix="/advanced-analytics", tags
 api.include_router(mps_router, tags=["mps"])
 api.include_router(monte_carlo_router, tags=["monte-carlo"])
 api.include_router(supply_plan_crud_router, prefix="/supply-plan-crud", tags=["supply-plan-crud"])
+
+# Planning Board (Netting Timeline & Filter Options)
+from app.api.endpoints.planning_board import router as planning_board_router
+api.include_router(planning_board_router, prefix="/planning-board", tags=["planning-board"])
 api.include_router(atp_ctp_router, prefix="/atp-ctp", tags=["atp-ctp"])
 api.include_router(vendor_lead_time_router, prefix="/vendor-lead-time", tags=["vendor-lead-time"])
 api.include_router(production_process_router, prefix="/production-process", tags=["production-process"])
