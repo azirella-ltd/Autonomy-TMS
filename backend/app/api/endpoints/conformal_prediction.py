@@ -750,14 +750,18 @@ def get_suite_status(db: Session = Depends(get_db)):
 
 @router.get("/cdt/readiness")
 def get_cdt_readiness(
+    config_id: Optional[int] = None,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Get CDT (Conformal Decision Theory) calibration readiness per TRM type.
 
     Returns per-agent calibration status so the UI can indicate which TRMs
     have conformal coverage guarantees and which are still accumulating data.
-    Tenant-scoped: only shows calibration for the current user's tenant.
+
+    If config_id is provided, uses the config's tenant_id for scoping
+    (important when the logged-in user is a system admin in a different tenant).
 
     Status values:
     - calibrated: 30+ decision-outcome pairs, full coverage guarantee active
@@ -765,10 +769,29 @@ def get_cdt_readiness(
     - uncalibrated: 0 pairs, decisions use conservative risk_bound=0.50
     """
     from ...services.conformal_prediction.conformal_decision import get_cdt_registry
+    from sqlalchemy import text as sa_text
 
+    # Resolve tenant_id: prefer config's tenant, fall back to user's tenant
     tenant_id = getattr(current_user, 'tenant_id', None)
+    if config_id:
+        row = db.execute(
+            sa_text("SELECT tenant_id FROM supply_chain_configs WHERE id = :c"),
+            {"c": config_id},
+        ).first()
+        if row and row[0]:
+            tenant_id = row[0]
+
     registry = get_cdt_registry(tenant_id=tenant_id)
     diagnostics = registry.get_all_diagnostics()
+
+    # Fall back to global registry if tenant registry has no calibrated agents
+    if not diagnostics or all(
+        d.get("calibration_size", 0) == 0 for d in diagnostics.values()
+    ):
+        global_registry = get_cdt_registry(tenant_id=None)
+        global_diag = global_registry.get_all_diagnostics()
+        if global_diag:
+            diagnostics = global_diag
 
     # All 11 TRM types
     all_trm_types = [

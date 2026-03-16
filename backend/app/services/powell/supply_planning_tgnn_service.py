@@ -214,7 +214,7 @@ class SupplyPlanningTGNNService:
         features = np.zeros((window_size, num_sites, num_features), dtype=np.float32)
 
         try:
-            from app.models.aws_sc_planning import InboundOrderLine, SupplyPlan
+            from app.models.sc_entities import InboundOrderLine, SupplyPlan
 
             for site_idx, site_key in enumerate(site_keys):
                 # Recent inbound orders

@@ -251,7 +251,7 @@ class SupplyBaselineService:
         """Check if the supply chain config has manufacturer sites with BOM data."""
         try:
             from app.models.supply_chain_config import Site
-            from app.models.aws_sc_planning import ProductBOM
+            from app.models.sc_entities import ProductBom as ProductBOM
 
             manufacturer_count = self.db.query(Site).filter(
                 Site.config_id == config_id,
@@ -704,7 +704,7 @@ class SupplyBaselineService:
         """
         try:
             from app.services.sc_planning.net_requirements_calculator import NetRequirementsCalculator
-            from app.models.aws_sc_planning import ProductBOM
+            from app.models.sc_entities import ProductBom as ProductBOM
             from app.models.supply_chain_config import Site
 
             # Query BOM data for this config

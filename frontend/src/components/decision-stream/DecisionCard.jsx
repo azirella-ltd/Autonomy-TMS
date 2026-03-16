@@ -218,7 +218,7 @@ const DecisionCard = ({
   compact = false,
 }) => {
   const navigate = useNavigate();
-  // overrideMode: null | 'modify' | 'cancel'
+  // overrideMode: null | 'choose' | 'modify' | 'cancel'
   const [overrideMode, setOverrideMode] = useState(null);
   const [reasonCode, setReasonCode] = useState('');
   const [reasonText, setReasonText] = useState('');
@@ -322,7 +322,7 @@ const DecisionCard = ({
           </p>
         )}
 
-        {/* Action buttons — Inspect, Modify, Cancel */}
+        {/* Action buttons — Inspect, Override */}
         {showButtons && (
           <div className="flex items-center gap-2">
             <Button
@@ -366,22 +366,12 @@ const DecisionCard = ({
             <Button
               size="sm"
               variant="outline"
-              className="h-7 text-xs border-amber-500 text-amber-600 hover:bg-amber-50"
-              onClick={openModify}
+              className="h-7 text-xs border-orange-500 text-orange-600 hover:bg-orange-50"
+              onClick={() => setOverrideMode('choose')}
               disabled={acting}
             >
               <Edit3 className="h-3 w-3 mr-1" />
-              Modify
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs border-red-500 text-red-600 hover:bg-red-50"
-              onClick={openCancel}
-              disabled={acting}
-            >
-              <XCircle className="h-3 w-3 mr-1" />
-              Cancel
+              Override
             </Button>
             <div className="flex-1" />
             <Button
@@ -412,6 +402,39 @@ const DecisionCard = ({
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Override chooser — Modify or Cancel */}
+        {overrideMode === 'choose' && (
+          <div className="space-y-2 p-3 bg-orange-50 border border-orange-200 rounded-md mt-2 animate-in slide-in-from-top-1 duration-200">
+            <div className="text-xs font-semibold text-orange-800 uppercase tracking-wide">
+              How would you like to override?
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs border-amber-500 text-amber-700 hover:bg-amber-100"
+                onClick={openModify}
+              >
+                <Edit3 className="h-3 w-3 mr-1" />
+                Modify Values
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs border-red-500 text-red-700 hover:bg-red-100"
+                onClick={openCancel}
+              >
+                <XCircle className="h-3 w-3 mr-1" />
+                Cancel Action
+              </Button>
+              <div className="flex-1" />
+              <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={closeOverride}>
+                Back
+              </Button>
+            </div>
           </div>
         )}
 

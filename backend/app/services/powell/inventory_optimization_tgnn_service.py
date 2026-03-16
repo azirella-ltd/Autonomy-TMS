@@ -215,7 +215,7 @@ class InventoryOptimizationTGNNService:
         features = np.zeros((window_size, num_sites, num_features), dtype=np.float32)
 
         try:
-            from app.models.aws_sc_planning import InvLevel, InvPolicy
+            from app.models.sc_entities import InvLevel, InvPolicy
 
             for site_idx, site_key in enumerate(site_keys):
                 # Recent inventory level snapshots

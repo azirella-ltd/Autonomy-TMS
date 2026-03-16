@@ -288,7 +288,12 @@ def _build_decision_summary(decision, decision_type: str) -> str:
     Column names must match the actual DB schema in powell_*_decisions tables.
     """
     product = getattr(decision, "product_id", None) or ""
-    location = getattr(decision, "location_id", None) or getattr(decision, "from_site", None) or ""
+    location = (
+        getattr(decision, "location_id", None)
+        or getattr(decision, "site_id", None)
+        or getattr(decision, "from_site", None)
+        or ""
+    )
 
     if decision_type == "atp":
         qty = _fmt_qty(getattr(decision, "requested_qty", None))
@@ -311,7 +316,11 @@ def _build_decision_summary(decision, decision_type: str) -> str:
         return f"MO {dt}: {product} at {location}"
     elif decision_type == "to_execution":
         dt = getattr(decision, "decision_type", "release")
-        return f"TO {dt}: {product} at {location}"
+        src = getattr(decision, "source_site_id", None) or location
+        dest = getattr(decision, "dest_site_id", None) or ""
+        if src and dest:
+            return f"TO {dt}: {product} from {src} to {dest}"
+        return f"TO {dt}: {product} at {src or dest or location}"
     elif decision_type == "quality":
         disposition = getattr(decision, "disposition", "?")
         return f"Quality {disposition}: {product} at {location}"
@@ -1774,7 +1783,10 @@ class DecisionStreamService:
                 prompt=prompt,
                 context={"tenant_id": self.tenant_id},
             )
-            return result.get("content", "I couldn't generate a response. Please try again.")
+            text = result.get("content", "I couldn't generate a response. Please try again.")
+            # Strip chain-of-thought <think>...</think> tags that Qwen/Ollama models emit
+            text = re.sub(r'<think>.*?</think>\s*', '', text, flags=re.DOTALL)
+            return text.strip()
         except Exception as e:
             logger.error(f"LLM call failed: {e}")
             return (

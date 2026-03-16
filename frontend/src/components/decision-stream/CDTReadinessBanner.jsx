@@ -12,16 +12,17 @@ import { Info, CheckCircle2, ShieldAlert, ChevronDown, ChevronUp } from 'lucide-
 import { api } from '../../services/api';
 import { cn } from '../../lib/utils/cn';
 
-const CDTReadinessBanner = () => {
+const CDTReadinessBanner = ({ configId }) => {
   const [data, setData] = useState(null);
   const [expanded, setExpanded] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    api.get('/conformal-prediction/cdt/readiness')
+    const params = configId ? { config_id: configId } : {};
+    api.get('/conformal-prediction/cdt/readiness', { params })
       .then(r => setData(r.data))
       .catch(() => setData(null));
-  }, []);
+  }, [configId]);
 
   // Don't render if fully calibrated, dismissed, or no data
   if (!data || data.ready || dismissed) return null;

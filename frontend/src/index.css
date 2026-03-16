@@ -323,6 +323,11 @@ button.db-btn:hover {
    Autonomy UI Kit - Custom Animations & Components
    ============================================================================ */
 
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
 @keyframes pulse-subtle {
   0%, 100% {
     opacity: 0.3;

@@ -12,7 +12,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "20260315_override"
-down_revision = "20260315_history_tables"
+down_revision = "20260315_history"
 branch_labels = None
 depends_on = None
 

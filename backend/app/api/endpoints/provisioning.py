@@ -25,8 +25,21 @@ async def get_provisioning_status(
     current_user: User = Depends(deps.get_current_active_user),
 ):
     """Get provisioning status for a config (stepper state)."""
+    from app.models.user_directive import ConfigProvisioningStatus
+
     service = ProvisioningService(db)
     status = await service.get_or_create_status(config_id)
+
+    # Reconcile overall_status if individual steps are all done but overall
+    # is stale (race condition between background steps and run_all loop)
+    all_done = all(
+        getattr(status, f"{s}_status") == "completed"
+        for s in ConfigProvisioningStatus.STEPS
+    )
+    if all_done and status.overall_status != "completed":
+        status.overall_status = "completed"
+        await db.commit()
+
     return status.to_dict()
 
 

@@ -483,8 +483,7 @@ class DataDriftMonitor:
         A positive residual means we over-forecast; negative means under.
         Distribution drift here indicates the model's error pattern is changing.
         """
-        from app.models.aws_sc_planning import Forecast
-        from app.models.sc_entities import OutboundOrderLine
+        from app.models.sc_entities import Forecast, OutboundOrderLine
 
         # Weekly forecasts
         forecast_rows = (
@@ -545,7 +544,7 @@ class DataDriftMonitor:
         Widening intervals over time indicate the model has become less
         certain — a key calibration drift signal.
         """
-        from app.models.aws_sc_planning import Forecast
+        from app.models.sc_entities import Forecast
 
         rows = (
             self.db.query(

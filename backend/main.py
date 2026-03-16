@@ -536,14 +536,30 @@ async def startup_event():
             register_sap_staging_jobs(scheduler_service)
 
             # Batch calibrate CDT wrappers from historical decision data
+            # Calibrate both global (for monitoring) and per-tenant registries
             try:
                 from app.services.powell.cdt_calibration_service import CDTCalibrationService
+                from sqlalchemy import text as sa_text
                 cdt_db = sync_session_factory()
                 try:
+                    # Global calibration (all tenants combined)
                     cdt_svc = CDTCalibrationService(cdt_db)
                     cdt_stats = cdt_svc.calibrate_all()
                     calibrated = sum(1 for s in cdt_stats.values() if s.get("status") == "calibrated")
-                    logger.info(f"CDT startup calibration: {calibrated}/11 agents calibrated")
+                    logger.info(f"CDT startup calibration (global): {calibrated}/11 agents calibrated")
+
+                    # Per-tenant calibration so readiness endpoint works
+                    tenant_rows = cdt_db.execute(
+                        sa_text("SELECT DISTINCT tenant_id FROM supply_chain_configs WHERE tenant_id IS NOT NULL")
+                    ).fetchall()
+                    for (tid,) in tenant_rows:
+                        try:
+                            tenant_svc = CDTCalibrationService(cdt_db, tenant_id=tid)
+                            tenant_stats = tenant_svc.calibrate_all()
+                            t_cal = sum(1 for s in tenant_stats.values() if s.get("status") == "calibrated")
+                            logger.info(f"CDT startup calibration (tenant {tid}): {t_cal}/11 agents calibrated")
+                        except Exception as te:
+                            logger.debug(f"CDT tenant {tid} calibration: {te}")
                 finally:
                     cdt_db.close()
             except Exception as e:

@@ -153,8 +153,24 @@ class ProvisioningService:
             if result.get("status") == "failed":
                 logger.warning("Step %s failed, continuing with independent steps", step_key)
 
-        # Final refresh
+        # Final refresh and overall_status reconciliation — background steps
+        # may have completed after the foreground loop checked all_done, leaving
+        # overall_status stuck at "in_progress".
         await self.db.refresh(status)
+        all_done = all(
+            getattr(status, f"{s}_status") == "completed"
+            for s in ConfigProvisioningStatus.STEPS
+        )
+        if all_done and status.overall_status != "completed":
+            status.overall_status = "completed"
+            await self.db.commit()
+        elif not all_done and any(
+            getattr(status, f"{s}_status") == "failed"
+            for s in ConfigProvisioningStatus.STEPS
+        ):
+            status.overall_status = "partial"
+            await self.db.commit()
+
         return {
             "config_id": config_id,
             "overall_status": status.overall_status,
@@ -340,27 +356,34 @@ class ProvisioningService:
             result = optimizer.optimize(method="differential_evolution")
 
             if result and result.status == "success":
-                from datetime import datetime as dt
-                for param_name, param_value in result.optimal_parameters.items():
-                    existing = (
-                        sync_db.query(PowellPolicyParameters)
-                        .filter(
-                            PowellPolicyParameters.config_id == config_id,
-                            PowellPolicyParameters.parameter_name == param_name,
-                        )
-                        .first()
+                from app.models.powell import PolicyType
+                # Upsert a single row keyed by (config_id, policy_type=INVENTORY)
+                existing = (
+                    sync_db.query(PowellPolicyParameters)
+                    .filter(
+                        PowellPolicyParameters.config_id == config_id,
+                        PowellPolicyParameters.policy_type == PolicyType.INVENTORY,
                     )
-                    if existing:
-                        existing.parameter_value = param_value
-                        existing.updated_at = dt.utcnow()
-                    else:
-                        sync_db.add(PowellPolicyParameters(
-                            config_id=config_id,
-                            tenant_id=config.tenant_id,
-                            parameter_name=param_name,
-                            parameter_value=param_value,
-                            optimization_method="differential_evolution",
-                        ))
+                    .first()
+                )
+                if existing:
+                    existing.parameters = result.optimal_parameters
+                    existing.optimization_method = "differential_evolution"
+                    existing.optimization_value = result.optimal_objective
+                    existing.num_iterations = result.num_iterations
+                    existing.num_scenarios = 50
+                    existing.is_active = True
+                else:
+                    sync_db.add(PowellPolicyParameters(
+                        config_id=config_id,
+                        policy_type=PolicyType.INVENTORY,
+                        parameters=result.optimal_parameters,
+                        optimization_method="differential_evolution",
+                        optimization_value=result.optimal_objective,
+                        num_iterations=result.num_iterations,
+                        num_scenarios=50,
+                        is_active=True,
+                    ))
                 sync_db.commit()
                 return {
                     "status": "ok",
@@ -549,7 +572,7 @@ class ProvisioningService:
         try:
             from app.services.rccp_service import RCCPService
             from app.models.supply_chain_config import Site
-            from app.models.aws_sc_planning import MPSPlan
+            from app.models.mps import MPSPlan
 
             # Find latest approved or draft MPS plan for this config
             mps_plan = (
@@ -797,7 +820,7 @@ class ProvisioningService:
                 finally:
                     sync_db.close()
             except Exception as cdt_err:
-                logger.debug("CDT calibration: %s", cdt_err)
+                logger.warning("CDT calibration failed: %s", cdt_err, exc_info=True)
 
             # Include CDT readiness summary
             cdt_summary = {"calibrated": 0, "partial": 0, "uncalibrated": 0}

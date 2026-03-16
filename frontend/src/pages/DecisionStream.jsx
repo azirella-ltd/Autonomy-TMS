@@ -275,7 +275,7 @@ const DecisionStream = () => {
           <AlertBanner alerts={alerts} />
 
           {/* CDT readiness — hidden when all TRMs calibrated */}
-          <CDTReadinessBanner />
+          <CDTReadinessBanner configId={selectedConfigId} />
 
           {/* Digest */}
           {digestLoading ? (

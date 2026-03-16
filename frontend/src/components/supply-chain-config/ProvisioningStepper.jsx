@@ -209,6 +209,21 @@ function formatTime(isoStr) {
   return new Date(isoStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
+// ─── Live elapsed counter for running steps ─────────────────────────────────
+
+const RunningElapsed = ({ startedAt }) => {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  if (!startedAt) return <span>running...</span>;
+  const sec = Math.round((Date.now() - new Date(startedAt).getTime()) / 1000);
+  if (sec < 60) return <span>{sec}s elapsed</span>;
+  const min = Math.floor(sec / 60);
+  return <span>{min}m {sec % 60}s elapsed</span>;
+};
+
 // ─── Circular progress ring ─────────────────────────────────────────────────
 
 const ProgressRing = ({ completed, total, running }) => {
@@ -294,7 +309,7 @@ const StatusSummary = ({ steps }) => {
 
 // ─── Individual step row ─────────────────────────────────────────────────────
 
-const StepRow = ({ step, stepKey, runningStep, runningAll, onRun, onReset, tierColor, configId }) => {
+const StepRow = ({ step, stepKey, runningStep, runningAll, onRun, onReset, tierColor, configId, startedAt }) => {
   const [expanded, setExpanded] = useState(false);
   const meta = STEP_META[stepKey] || {};
   const isRunning = runningStep === stepKey || (runningAll && step.status === 'running');
@@ -321,16 +336,25 @@ const StepRow = ({ step, stepKey, runningStep, runningAll, onRun, onReset, tierC
 
   return (
     <div className={cn(
-      'transition-colors',
-      isRunning ? 'bg-violet-500/5' :
+      'transition-colors relative',
+      isRunning ? 'bg-violet-500/10 border-l-[3px] border-l-violet-500' :
       step.status === 'completed' ? 'bg-emerald-500/3' :
       step.status === 'failed' ? 'bg-red-500/5' : '',
     )}>
+      {/* Indeterminate progress bar for running step */}
+      {isRunning && (
+        <div className="absolute top-0 left-0 right-0 h-0.5 bg-violet-200/30 overflow-hidden">
+          <div className="h-full w-1/3 bg-violet-500 rounded-full animate-[shimmer_1.5s_ease-in-out_infinite]" />
+        </div>
+      )}
       {/* Main row */}
-      <div className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-accent/20"
+      <div className={cn(
+        'flex items-center gap-3 py-2.5 cursor-pointer hover:bg-accent/20',
+        isRunning ? 'px-2.5' : 'px-3',
+      )}
         onClick={() => setExpanded(!expanded)}>
         {/* Status icon */}
-        <div className="flex-shrink-0 w-5">{statusIcon}</div>
+        <div className={cn('flex-shrink-0 w-5', isRunning && 'scale-110')}>{statusIcon}</div>
 
         {/* Content */}
         <div className="flex-1 min-w-0">
@@ -363,8 +387,12 @@ const StepRow = ({ step, stepKey, runningStep, runningAll, onRun, onReset, tierC
             </span>
           )}
           {isRunning && (
-            <span className="text-[10px] text-violet-500 tabular-nums whitespace-nowrap animate-pulse">
-              running...
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-violet-600 dark:text-violet-400 tabular-nums whitespace-nowrap">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-500" />
+              </span>
+              <RunningElapsed startedAt={startedAt} />
             </span>
           )}
           {!isRunning && step.status === 'pending' && step.dependencies_met && (
@@ -433,7 +461,7 @@ const StepRow = ({ step, stepKey, runningStep, runningAll, onRun, onReset, tierC
 
 // ─── Tier section ────────────────────────────────────────────────────────────
 
-const TierSection = ({ tier, stepMap, runningStep, runningAll, onRun, onReset, configId }) => {
+const TierSection = ({ tier, stepMap, runningStep, runningAll, onRun, onReset, configId, stepStartTimes }) => {
   const colors = TIER_COLORS[tier.color];
   const TierIcon = tier.Icon;
   const tierSteps = tier.steps.map(k => stepMap[k]).filter(Boolean);
@@ -444,7 +472,7 @@ const TierSection = ({ tier, stepMap, runningStep, runningAll, onRun, onReset, c
   const allDone = completedCount === totalCount;
 
   return (
-    <div className={cn('rounded-lg border overflow-hidden transition-all', colors.border)}>
+    <div className={cn('rounded-lg border overflow-hidden transition-all', colors.border, hasRunning && 'ring-1 ring-violet-400/40')}>
       {/* Tier header with progress bar */}
       <div className={cn('relative', colors.bg)}>
         {/* Inline progress bar at bottom of header */}
@@ -483,7 +511,7 @@ const TierSection = ({ tier, stepMap, runningStep, runningAll, onRun, onReset, c
             <StepRow key={stepKey} step={step} stepKey={stepKey}
               runningStep={runningStep} runningAll={runningAll}
               onRun={onRun} onReset={onReset} tierColor={tier.color}
-              configId={configId} />
+              configId={configId} startedAt={stepStartTimes?.[stepKey]} />
           );
         })}
       </div>
@@ -666,7 +694,16 @@ const ProvisioningStepper = ({ configId, configName, isOpen, onClose }) => {
     await handleRunAll();
   };
 
+  // Track when steps first enter "running" state for elapsed display
+  const stepStartTimesRef = useRef({});
   const steps = provisioningStatus?.steps || [];
+  steps.forEach(s => {
+    if (s.status === 'running' && !stepStartTimesRef.current[s.key]) {
+      stepStartTimesRef.current[s.key] = new Date().toISOString();
+    } else if (s.status !== 'running') {
+      delete stepStartTimesRef.current[s.key];
+    }
+  });
   const completedCount = steps.filter(s => s.status === 'completed').length;
   // Use overall_status from backend, but also detect completion from step count
   // (handles race condition where background step completed but overall_status wasn't updated)
@@ -822,7 +859,7 @@ const ProvisioningStepper = ({ configId, configName, isOpen, onClose }) => {
                   <TierSection tier={tier} stepMap={stepMap}
                     runningStep={runningStep} runningAll={runningAll}
                     onRun={handleRunStep} onReset={handleResetStep}
-                    configId={configId} />
+                    configId={configId} stepStartTimes={stepStartTimesRef.current} />
                 </div>
               );
             })}
