@@ -247,7 +247,7 @@ def _likelihood_label(score: Optional[float]) -> Optional[str]:
     if score is None:
         return None
     if score >= 0.85:
-        return "Almost Certain"
+        return "Certain"
     if score >= 0.65:
         return "Likely"
     if score >= 0.40:

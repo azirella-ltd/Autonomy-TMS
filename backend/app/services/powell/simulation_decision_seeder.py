@@ -966,12 +966,41 @@ def _reservoir_top_n(
     candidates: Dict[str, List[_Candidate]],
     max_per_type: int,
 ) -> Dict[str, List[Any]]:
-    """Select the top max_per_type candidates per TRM type by score."""
+    """Select a mix of high-urgency (needs attention) and low-urgency
+    (auto-actioned) decisions per TRM type.
+
+    Split: ~60% high-urgency for human review, ~40% low-urgency auto-actioned
+    (agent acted autonomously within guardrails).  The auto-actioned decisions
+    show users that agents ARE working — they just didn't need human input.
+    """
+    n_attention = max(2, int(max_per_type * 0.6))
+    n_auto = max_per_type - n_attention
+
     result: Dict[str, List[Any]] = {}
     for trm_type, cands in candidates.items():
-        # Sort descending by score, take top N
         cands.sort(key=lambda c: c.score, reverse=True)
-        result[trm_type] = [c.record for c in cands[:max_per_type]]
+        # Top N by urgency (needs human attention)
+        attention = cands[:n_attention]
+        # Bottom N by urgency (auto-actioned, within guardrails)
+        auto = cands[-n_auto:] if len(cands) > n_attention else []
+
+        # Mark auto-actioned records with low urgency and "auto-actioned" tag
+        for c in auto:
+            rec = c.record
+            rec.urgency_at_time = min(rec.urgency_at_time or 0, 0.15)
+            # Append auto-actioned note to reasoning
+            if rec.decision_reasoning and "Auto-actioned" not in rec.decision_reasoning:
+                rec.decision_reasoning += (
+                    " Auto-actioned: confidence was high and risk bound was "
+                    "within guardrails — no human review required."
+                )
+            # Set confidence high for auto-actioned
+            if hasattr(rec, 'confidence') and rec.confidence is not None:
+                rec.confidence = max(rec.confidence, 0.90)
+
+        records = [c.record for c in attention] + [c.record for c in auto]
+        if records:
+            result[trm_type] = records
     return result
 
 

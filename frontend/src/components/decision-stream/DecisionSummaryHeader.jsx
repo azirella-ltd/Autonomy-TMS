@@ -18,7 +18,7 @@ const URGENCY_TIERS = [
 ];
 
 // Likelihood tiers
-const LIKELIHOOD_TIERS = ['Almost Certain', 'Likely', 'Possible', 'Unlikely'];
+const LIKELIHOOD_TIERS = ['Certain', 'Likely', 'Possible', 'Unlikely'];
 
 // Decision type labels
 const TYPE_LABELS = {
@@ -190,7 +190,7 @@ const DecisionSummaryHeader = ({
             </tbody>
           </table>
           <div className="px-2 py-1 bg-muted/20 border-t text-[10px] text-muted-foreground">
-            AC = Almost Certain, L = Likely, P = Possible, U = Unlikely
+            AC = Certain, L = Likely, P = Possible, U = Unlikely
           </div>
         </div>
 

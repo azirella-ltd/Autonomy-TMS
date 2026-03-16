@@ -684,6 +684,25 @@ class ProvisioningService:
                 total, len([v for v in counts.values() if v > 0]),
                 config_id, tenant_id or 0,
             )
+
+            # Pre-generate and persist the Decision Stream digest so the
+            # first page load is instant (no LLM call needed).
+            # Uses a fresh async session to avoid greenlet_spawn errors.
+            if total > 0:
+                try:
+                    from app.services.decision_stream_service import DecisionStreamService
+                    from app.db.session import async_session_factory
+                    async with async_session_factory() as async_db:
+                        digest_svc = DecisionStreamService(
+                            db=async_db, tenant_id=tenant_id or 0,
+                        )
+                        await digest_svc.get_decision_digest(
+                            config_id=config_id, force_refresh=True,
+                        )
+                    logger.info("Decision Stream digest pre-generated for config %d", config_id)
+                except Exception as digest_err:
+                    logger.warning("Digest pre-generation failed (non-blocking): %s", digest_err)
+
             return {
                 "status": "ok",
                 "decisions_generated": total,

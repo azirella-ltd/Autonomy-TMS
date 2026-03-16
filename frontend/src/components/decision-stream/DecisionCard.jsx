@@ -140,7 +140,7 @@ const URGENCY_COLORS = {
 };
 
 const LIKELIHOOD_COLORS = {
-  'Almost Certain': 'bg-green-100 text-green-700',
+  'Certain': 'bg-green-100 text-green-700',
   Likely: 'bg-blue-100 text-blue-700',
   Possible: 'bg-amber-100 text-amber-700',
   Unlikely: 'bg-orange-100 text-orange-700',
