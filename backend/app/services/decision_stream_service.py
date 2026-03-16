@@ -718,23 +718,27 @@ class DecisionStreamService:
     ) -> Optional[str]:
         """Load digest from decision_stream_digests table."""
         try:
+            from app.db.session import sync_session_factory
             from sqlalchemy import text as sa_text
             role_clause = "AND powell_role = :role" if powell_role else "AND powell_role IS NULL"
             params = {"cid": config_id, "tid": self.tenant_id}
             if powell_role:
                 params["role"] = powell_role
-            row = await self.db.execute(
-                sa_text(
-                    f"SELECT digest_text FROM decision_stream_digests "
-                    f"WHERE config_id = :cid AND tenant_id = :tid {role_clause} "
-                    f"ORDER BY created_at DESC LIMIT 1"
-                ),
-                params,
-            )
-            result = row.first()
-            if result:
-                logger.debug("Digest loaded from DB (config=%d)", config_id)
-                return result[0]
+            sync_db = sync_session_factory()
+            try:
+                result = sync_db.execute(
+                    sa_text(
+                        f"SELECT digest_text FROM decision_stream_digests "
+                        f"WHERE config_id = :cid AND tenant_id = :tid {role_clause} "
+                        f"ORDER BY created_at DESC LIMIT 1"
+                    ),
+                    params,
+                ).first()
+                if result:
+                    logger.debug("Digest loaded from DB (config=%d)", config_id)
+                    return result[0]
+            finally:
+                sync_db.close()
         except Exception as e:
             logger.debug("Digest DB load failed: %s", e)
         return None
@@ -747,11 +751,15 @@ class DecisionStreamService:
         decisions: list,
         alerts: list,
     ):
-        """Persist digest to decision_stream_digests table (upsert)."""
+        """Persist digest to decision_stream_digests table (upsert).
+
+        Uses a separate sync session to avoid asyncpg parameter syntax issues
+        with raw SQL.
+        """
         try:
-            from sqlalchemy import text as sa_text
+            from app.db.session import sync_session_factory
             import json as _json
-            # Serialize decisions (strip non-serializable fields)
+
             dec_json = _json.dumps(
                 [{"id": d.get("id"), "decision_type": d.get("decision_type"),
                   "summary": d.get("summary"), "urgency": d.get("urgency")}
@@ -759,36 +767,37 @@ class DecisionStreamService:
             )
             alerts_json = _json.dumps(alerts[:10] if alerts else [])
 
-            await self.db.execute(
-                sa_text("""
-                    INSERT INTO decision_stream_digests
-                        (config_id, tenant_id, powell_role, digest_text, decisions, alerts, total_pending, created_at)
-                    VALUES (:cid, :tid, :role, :digest, :decs::jsonb, :alerts::jsonb, :total, CURRENT_TIMESTAMP)
-                    ON CONFLICT (config_id, tenant_id, powell_role)
-                    DO UPDATE SET digest_text = EXCLUDED.digest_text,
-                                  decisions = EXCLUDED.decisions,
-                                  alerts = EXCLUDED.alerts,
-                                  total_pending = EXCLUDED.total_pending,
-                                  created_at = CURRENT_TIMESTAMP
-                """),
-                {
-                    "cid": config_id,
-                    "tid": self.tenant_id,
-                    "role": powell_role,
-                    "digest": digest_text,
-                    "decs": dec_json,
-                    "alerts": alerts_json,
-                    "total": len(decisions),
-                },
-            )
-            await self.db.commit()
-            logger.info("Digest persisted to DB (config=%d, role=%s)", config_id, powell_role)
+            sync_db = sync_session_factory()
+            try:
+                from sqlalchemy import text as sa_text
+                sync_db.execute(
+                    sa_text("""
+                        INSERT INTO decision_stream_digests
+                            (config_id, tenant_id, powell_role, digest_text, decisions, alerts, total_pending, created_at)
+                        VALUES (:cid, :tid, :role, :digest, CAST(:decs AS jsonb), CAST(:alerts AS jsonb), :total, CURRENT_TIMESTAMP)
+                        ON CONFLICT (config_id, tenant_id, powell_role)
+                        DO UPDATE SET digest_text = EXCLUDED.digest_text,
+                                      decisions = EXCLUDED.decisions,
+                                      alerts = EXCLUDED.alerts,
+                                      total_pending = EXCLUDED.total_pending,
+                                      created_at = CURRENT_TIMESTAMP
+                    """),
+                    {
+                        "cid": config_id,
+                        "tid": self.tenant_id,
+                        "role": powell_role,
+                        "digest": digest_text,
+                        "decs": dec_json,
+                        "alerts": alerts_json,
+                        "total": len(decisions),
+                    },
+                )
+                sync_db.commit()
+                logger.info("Digest persisted to DB (config=%d, role=%s)", config_id, powell_role)
+            finally:
+                sync_db.close()
         except Exception as e:
             logger.warning("Digest persist failed: %s", e)
-            try:
-                await self.db.rollback()
-            except Exception:
-                pass
 
     async def act_on_decision(
         self,
