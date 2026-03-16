@@ -39,7 +39,7 @@ import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import api from '../../services/api';
 
 // ── Default weights (Phase 1) ─────────────────────────────────────────────
-const DEFAULTS = { holding_cost_weight: 0.5, backlog_cost_weight: 0.5 };
+const DEFAULTS = { holding_cost_weight: 0.5, backlog_cost_weight: 0.5, autonomy_threshold: 0.5 };
 const WEIGHT_PRECISION = 2;
 
 // ── Helper: format weight as percentage label ─────────────────────────────
@@ -107,6 +107,7 @@ export default function BscConfigPage() {
       setWeights({
         holding_cost_weight: data.holding_cost_weight,
         backlog_cost_weight: data.backlog_cost_weight,
+        autonomy_threshold: data.autonomy_threshold ?? 0.5,
       });
       setNotes(data.notes || '');
       setSavedBy(data.updated_by_name);
@@ -156,6 +157,7 @@ export default function BscConfigPage() {
         customer_weight: 0.0,
         operational_weight: 0.0,
         strategic_weight: 0.0,
+        autonomy_threshold: parseFloat(weights.autonomy_threshold.toFixed(WEIGHT_PRECISION)),
         notes: notes || null,
       });
       setSavedBy(data.updated_by_name);
@@ -288,6 +290,61 @@ export default function BscConfigPage() {
               </Typography>
             </Stack>
           </Box>
+        </CardContent>
+      </Card>
+
+      {/* ── Agent Autonomy ────────────────────────────────────────────── */}
+      <Card variant="outlined" sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="subtitle1" fontWeight={700} mb={1}>
+            Agent Autonomy Level
+          </Typography>
+          <Typography variant="body2" color="text.secondary" mb={2}>
+            Controls which decisions agents handle autonomously vs. surface for human review.
+            Lower values mean more human oversight; higher values give agents more autonomy.
+          </Typography>
+
+          <Stack direction="row" alignItems="center" spacing={2} mb={1}>
+            <Typography variant="caption" color="text.secondary" sx={{ minWidth: 90 }}>
+              More oversight
+            </Typography>
+            <Slider
+              value={Math.round(weights.autonomy_threshold * 100)}
+              min={0}
+              max={100}
+              step={5}
+              onChange={(_e, v) => {
+                setWeights(prev => ({ ...prev, autonomy_threshold: v / 100 }));
+                setDirty(true);
+              }}
+              sx={{ color: '#7c3aed' }}
+              valueLabelDisplay="auto"
+              valueLabelFormat={(v) => `${v}%`}
+              marks={[
+                { value: 0, label: '0%' },
+                { value: 25, label: '25%' },
+                { value: 50, label: '50%' },
+                { value: 75, label: '75%' },
+                { value: 100, label: '100%' },
+              ]}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ minWidth: 90, textAlign: 'right' }}>
+              More autonomy
+            </Typography>
+          </Stack>
+
+          <Stack direction="row" justifyContent="center" mt={1}>
+            <Chip
+              label={
+                weights.autonomy_threshold <= 0.2 ? `${pct(weights.autonomy_threshold)} — Conservative (surface most decisions)`
+                : weights.autonomy_threshold <= 0.5 ? `${pct(weights.autonomy_threshold)} — Balanced (default)`
+                : weights.autonomy_threshold <= 0.75 ? `${pct(weights.autonomy_threshold)} — Progressive (trust agents more)`
+                : `${pct(weights.autonomy_threshold)} — Autonomous (minimal human review)`
+              }
+              size="small"
+              sx={{ fontWeight: 600, bgcolor: '#7c3aed', color: '#fff' }}
+            />
+          </Stack>
         </CardContent>
       </Card>
 

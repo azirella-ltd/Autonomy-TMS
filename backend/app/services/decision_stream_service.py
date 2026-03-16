@@ -1164,6 +1164,23 @@ class DecisionStreamService:
             except (TypeError, ValueError):
                 return default
 
+        # Load per-tenant autonomy threshold (falls back to global default)
+        threshold = _ABANDON_COMBINED_THRESHOLD
+        try:
+            from app.db.session import sync_session_factory
+            from app.models.bsc_config import TenantBscConfig
+            sync_db = sync_session_factory()
+            try:
+                bsc = sync_db.query(TenantBscConfig).filter(
+                    TenantBscConfig.tenant_id == self.tenant_id
+                ).first()
+                if bsc and bsc.autonomy_threshold is not None:
+                    threshold = bsc.autonomy_threshold
+            finally:
+                sync_db.close()
+        except Exception:
+            pass  # Use global default
+
         # Tag each decision as needs_attention vs auto_actioned
         # (filtering is done on the frontend via Show All toggle)
         auto_count = 0
@@ -1172,7 +1189,7 @@ class DecisionStreamService:
             likelihood = _to_float(d.get("likelihood_score"), _DEFAULT_CONFIDENCE)
             combined = urgency + likelihood
 
-            if combined < _ABANDON_COMBINED_THRESHOLD:
+            if combined < threshold:
                 d["needs_attention"] = False
                 d["auto_actioned"] = True
                 auto_count += 1

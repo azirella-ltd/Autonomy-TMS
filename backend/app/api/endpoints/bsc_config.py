@@ -38,6 +38,7 @@ class BscWeightsResponse(BaseModel):
     customer_weight: float
     operational_weight: float
     strategic_weight: float
+    autonomy_threshold: float = 0.5
     notes: Optional[str]
     updated_at: datetime
     updated_by_name: Optional[str]
@@ -88,6 +89,16 @@ class BscWeightsUpdate(BaseModel):
         le=0.0,
         description="Reserved — Phase 2 strategic pillar. Must be 0.0.",
     )
+    autonomy_threshold: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Agent autonomy level. Combined urgency+likelihood threshold below which "
+            "agents auto-action without human review. 0.0 = surface everything, "
+            "1.0 = fully autonomous. Default 0.5."
+        ),
+    )
     notes: Optional[str] = Field(
         default=None,
         max_length=500,
@@ -137,6 +148,7 @@ def get_bsc_config(
             customer_weight=0.0,
             operational_weight=0.0,
             strategic_weight=0.0,
+            autonomy_threshold=0.5,
             notes=None,
             updated_at=datetime.utcnow(),
             updated_by_name=None,
@@ -155,6 +167,7 @@ def get_bsc_config(
         customer_weight=cfg.customer_weight,
         operational_weight=cfg.operational_weight,
         strategic_weight=cfg.strategic_weight,
+        autonomy_threshold=cfg.autonomy_threshold,
         notes=cfg.notes,
         updated_at=cfg.updated_at,
         updated_by_name=updated_by_name,
@@ -188,6 +201,7 @@ def update_bsc_config(
     cfg.customer_weight = payload.customer_weight
     cfg.operational_weight = payload.operational_weight
     cfg.strategic_weight = payload.strategic_weight
+    cfg.autonomy_threshold = payload.autonomy_threshold
     cfg.notes = payload.notes
     cfg.updated_by_id = current_user.id
     cfg.updated_at = datetime.utcnow()
@@ -204,6 +218,7 @@ def update_bsc_config(
         customer_weight=cfg.customer_weight,
         operational_weight=cfg.operational_weight,
         strategic_weight=cfg.strategic_weight,
+        autonomy_threshold=cfg.autonomy_threshold,
         notes=cfg.notes,
         updated_at=cfg.updated_at,
         updated_by_name=updated_by_name,

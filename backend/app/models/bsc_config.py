@@ -61,6 +61,12 @@ class TenantBscConfig(Base):
     operational_weight = Column(Float, nullable=False, default=0.0)
     strategic_weight = Column(Float, nullable=False, default=0.0)
 
+    # ── Agent Autonomy ─────────────────────────────────────────────────────
+    # Combined urgency+likelihood threshold below which agents auto-action
+    # without human review. Lower = more human oversight, higher = more autonomy.
+    # Range: 0.0 (surface everything) to 1.0 (agents fully autonomous).
+    autonomy_threshold = Column(Float, nullable=False, default=0.5)
+
     # ── Audit ────────────────────────────────────────────────────────────────
     notes = Column(Text, nullable=True)
     updated_at = Column(
