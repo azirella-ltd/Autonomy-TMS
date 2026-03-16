@@ -716,18 +716,13 @@ All figures represent total cost to company (TCC), which includes gross salary, 
 
 **Engineering Team**
 
+> **Note**: The founder built the entire platform (200K+ lines, 96+ pages, 11 TRM agents, full planning suite) using AI-assisted development (Claude Code). This dramatically reduces the need for a large engineering team. The CTO provides production hardening and investor credibility; a small team of 2-3 senior engineers handles deployment, customer onboarding, and incremental feature work. The platform is built — the focus is commercial execution, not engineering headcount.
+
 | Role | Month Hired | TCC (EUR K/yr) | Equity (%) | Responsibilities |
 |------|-------------|----------------|------------|-----------------|
-| **Senior ML Engineer** | 2 | 130 | 0.50% | TRM/GNN production training, conformal prediction calibration, RL pipeline |
-| **Senior Backend Engineer (Platform)** | 3 | 120 | 0.40% | SAP integration, deployment automation, API hardening |
-| **Senior Frontend Engineer** | 4 | 115 | 0.40% | UX polish, enterprise dashboards, self-service onboarding |
-| **DevOps / Platform Engineer** | 6 | 110 | 0.30% | Kubernetes, CI/CD, monitoring, customer environment provisioning |
-| **Data Engineer** | 9 | 110 | 0.25% | Customer data onboarding, ETL pipelines, SAP connectors |
-| **Mid-Level Backend Engineer** | 12 | 85 | 0.15% | Feature development, testing, documentation |
-| **Mid-Level Frontend Engineer** | 12 | 80 | 0.15% | Component library, customer-facing UX improvements |
-| **Junior ML Engineer** | 15 | 70 | 0.10% | Data pipeline, model evaluation, automated testing |
-| **Senior Backend Engineer #2** | 18 | 120 | 0.20% | Scale engineering, multi-tenant architecture |
-| **Senior ML Engineer #2** | 20 | 130 | 0.20% | Production ML ops, model monitoring, advanced agent training |
+| **Senior Platform Engineer** | 3 | 120 | 0.50% | Full-stack: deployment automation, SAP connector hardening, customer environment provisioning, CI/CD |
+| **Senior ML / Data Engineer** | 15 | 130 | 0.30% | TRM/GNN production training, model monitoring, customer data onboarding |
+| **Mid-Level Full-Stack Engineer** | 18 | 85 | 0.15% | Feature development, UX improvements, testing |
 
 **Commercial Team**
 
@@ -749,38 +744,37 @@ All figures represent total cost to company (TCC), which includes gross salary, 
 | **Office Manager / Executive Assistant** | 6 | 50 | 0.05% | Admin, travel coordination, office management, HR basics |
 | **Part-Time Financial Controller** | 3 | 40 (0.5 FTE) | -- | Bookkeeping, VAT, payroll until CFO hired |
 
-**Equity Summary**: Total employee option pool = 15% of fully diluted shares (standard for European seed). C-suite hires consume ~8-14%, engineering ~3%, commercial ~1.5%, leaving ~1-3% for future hires before Series A refreshes the pool.
+**Equity Summary**: Total employee option pool = 15% of fully diluted shares (standard for European seed). C-suite hires consume ~8-14%, engineering ~1%, commercial ~1.5%, leaving ~2-4% for future hires before Series A refreshes the pool.
 
 #### 9.2.2 Personnel Cost Rollup by Quarter
 
 | Quarter | Headcount (cumulative) | Quarterly Personnel Cost (EUR K) | Annualized Run Rate (EUR K) |
 |---------|----------------------|--------------------------------|---------------------------|
-| Q2 2026 (M1-3) | 3 (Founder + CTO + Sr ML Eng) | 114 | 455 |
-| Q3 2026 (M4-6) | 7 (+CRO, Sr Backend, Sr Frontend, Office Mgr) | 242 | 968 |
-| Q4 2026 (M7-9) | 11 (+AE1, CS Lead, Marketing, Data Eng, CEO) | 392 | 1,568 |
-| Q1 2027 (M10-12) | 14 (+SC Analyst, AE2, 2x Mid Eng) | 455 | 1,820 |
-| Q2 2027 (M13-15) | 17 (+CS #2, CFO, Jr ML Eng) | 510 | 2,040 |
-| Q3 2027 (M16-18) | 19 (+Marketing Specialist, Sr Backend #2) | 555 | 2,220 |
-| Q4 2027 (M19-21) | 21 (+Sr ML #2, AE3) | 610 | 2,440 |
-| Q1 2028 (M22-24) | 22 (+1 additional hire) | 630 | 2,520 |
+| Q2 2026 (M1-3) | 3 (Founder + CTO + Sr Platform Eng) | 111 | 445 |
+| Q3 2026 (M4-6) | 7 (+CRO, AE1, CS Lead, Office Mgr) | 200 | 800 |
+| Q4 2026 (M7-9) | 9 (+Marketing Manager, CEO) | 295 | 1,180 |
+| Q1 2027 (M10-12) | 11 (+SC Analyst, AE2) | 332 | 1,328 |
+| Q2 2027 (M13-15) | 14 (+CS #2, CFO, Sr ML/Data Eng) | 410 | 1,640 |
+| Q3 2027 (M16-18) | 16 (+Marketing Specialist, Mid-Level Eng, AE3) | 468 | 1,872 |
+| Q4 2027 (M19-24) | 16 (consolidation, no new hires) | 468 | 1,872 |
 
-**Year 1 total personnel**: EUR 1,203K (average 9 FTEs)
-**Year 2 total personnel**: EUR 2,305K (average 20 FTEs)
+**Year 1 total personnel**: EUR 938K (average 7 FTEs)
+**Year 2 total personnel**: EUR 1,678K (average 14 FTEs)
 
 #### 9.2.3 Equipment & Workspace
 
 | Item | Unit Cost (EUR) | Quantity (Y1) | Quantity (Y2) | Y1 Total (EUR K) | Y2 Total (EUR K) |
 |------|----------------|--------------|--------------|-----------------|-----------------|
-| **MacBook Pro 16" M4 Pro** (36GB RAM, 1TB) | 3,200 | 13 | 9 | 42 | 29 |
-| **External Monitor** (27" 4K) | 500 | 13 | 9 | 7 | 5 |
-| **Peripherals** (keyboard, mouse, headset, webcam) | 350 | 13 | 9 | 5 | 3 |
-| **Home Office Allowance** (desk, chair, one-time) | 500 | 13 | 9 | 7 | 5 |
-| **GPU Workstation** (RTX 4090, for ML training) | 5,500 | 2 | 1 | 11 | 6 |
-| **Co-working / Hot Desk Allowances** (EUR 200/mo per remote employee) | 2,400/yr | 8 avg | 16 avg | 19 | 38 |
+| **MacBook Pro 16" M4 Pro** (36GB RAM, 1TB) | 3,200 | 8 | 5 | 26 | 16 |
+| **External Monitor** (27" 4K) | 500 | 8 | 5 | 4 | 3 |
+| **Peripherals** (keyboard, mouse, headset, webcam) | 350 | 8 | 5 | 3 | 2 |
+| **Home Office Allowance** (desk, chair, one-time) | 500 | 8 | 5 | 4 | 3 |
+| **GPU Workstation** (RTX 4090, for ML training) | 5,500 | 1 | 1 | 6 | 6 |
+| **Co-working / Hot Desk Allowances** (EUR 200/mo per remote employee) | 2,400/yr | 5 avg | 10 avg | 12 | 24 |
 | **Small Office** (Nicosia HQ, 4-6 desks) | 1,500/mo | 12 mo | 12 mo | 18 | 18 |
-| **Office Equipment & Furniture** (HQ setup) | -- | -- | -- | 8 | 3 |
-| **Software Licenses** (JetBrains, Figma, Slack, Notion, 1Password, Zoom) | ~150/mo/person | 9 avg | 20 avg | 16 | 36 |
-| **Total Equipment & Workspace** | | | | **133** | **143** |
+| **Office Equipment & Furniture** (HQ setup) | -- | -- | -- | 5 | 2 |
+| **Software Licenses** (JetBrains, Figma, Slack, Notion, 1Password, Zoom) | ~150/mo/person | 6 avg | 13 avg | 11 | 23 |
+| **Total Equipment & Workspace** | | | | **89** | **97** |
 
 > **Remote-first philosophy**: No requirement for employees to relocate. Co-working allowances provided for those who want a dedicated workspace. Nicosia office serves as founder's base and occasional team gathering point.
 
@@ -852,15 +846,15 @@ All figures represent total cost to company (TCC), which includes gross salary, 
 
 | Category | Year 1 (EUR K) | Year 2 (EUR K) | Total 24-Month (EUR K) |
 |----------|---------------|---------------|----------------------|
-| **Personnel** (salaries + benefits + taxes) | 1,203 | 2,305 | 3,508 |
-| **Equipment & Workspace** | 133 | 143 | 276 |
+| **Personnel** (salaries + benefits + taxes) | 938 | 1,678 | 2,616 |
+| **Equipment & Workspace** | 89 | 97 | 186 |
 | **AI & Cloud Services** | 103 | 205 | 308 |
 | **Travel & Conferences** | 89 | 127 | 216 |
 | **Marketing & Brand** | 83 | 120 | 203 |
 | **Professional Services & G&A** | 180 | 184 | 364 |
-| **Total Operating Costs** | **1,791** | **3,084** | **4,875** |
+| **Total Operating Costs** | **1,482** | **2,411** | **3,893** |
 
-> **Runway analysis**: EUR 5M raise covers 24+ months of operations with EUR 125K remaining as buffer. The company reaches cash-flow positive at Month 18-22 (base case) as ARR ramp outpaces cost growth. If the conservative revenue case materializes, the company has 26 months of runway, requiring either cost discipline in Month 20+ or a bridge round.
+> **Runway analysis**: EUR 5M raise covers 30+ months of operations with EUR 1.1M remaining as reserve. The lean engineering model (founder-built platform + AI-assisted development) means personnel costs are ~35% lower than a typical seed-stage SaaS. The company reaches cash-flow positive at Month 16-20 (base case) as ARR ramp outpaces cost growth. The reserve provides strategic optionality: accelerate hiring if product-market fit is strong, extend runway if sales cycles are longer than projected, or bridge comfortably to Series A.
 
 ### 9.4 Path to Profitability (Base Case)
 
@@ -868,13 +862,13 @@ All figures represent total cost to company (TCC), which includes gross salary, 
 |--------|--------|--------|--------|
 | ARR (end of year) | 960K | 3,150K | 7,560K |
 | Recognized Revenue | 720K | 2,055K | 5,355K |
-| Total Operating Costs | 1,791K | 3,084K | 4,200K |
-| **Net Burn** | **(1,071K)** | **(1,029K)** | **1,155K** |
-| Cash Position (from EUR 5M raise) | 3,929K | 2,900K | 4,055K |
+| Total Operating Costs | 1,482K | 2,411K | 3,400K |
+| **Net Burn** | **(762K)** | **(356K)** | **1,955K** |
+| Cash Position (from EUR 5M raise) | 4,238K | 3,882K | 5,837K |
 
-**Break-even**: Month 18-22 (base case). Monthly revenue exceeds monthly burn when ARR reaches ~EUR 3.1M (approximately 21 customers at EUR 150K ACV average).
+**Break-even**: Month 16-20 (base case). Monthly revenue exceeds monthly burn when ARR reaches ~EUR 2.4M (approximately 16 customers at EUR 150K ACV average). The lean cost structure means break-even arrives 2-4 months earlier than typical seed-stage SaaS.
 
-**Series A trigger**: At Month 18-20, with EUR 2-3M ARR and 15+ customers, the company raises Series A (EUR 15-25M) to accelerate hiring and geographic expansion. The EUR 5M seed provides comfortable runway to reach this milestone without forced fundraising.
+**Series A trigger**: At Month 18-20, with EUR 2-3M ARR and 15+ customers, the company raises Series A (EUR 15-25M) to accelerate hiring and geographic expansion. The EUR 5M seed provides 30+ months of runway — the company is never in a forced-fundraising position.
 
 ### 9.5 Key Assumptions
 
@@ -882,7 +876,7 @@ All figures represent total cost to company (TCC), which includes gross salary, 
 - Net revenue retention: 120% Year 2, 130% Year 3 (upsell from Foundation to Professional to Enterprise)
 - Logo churn: 15% Year 1 (early customers), 10% Year 2+
 - Gross margin improves as LLM costs decrease (RAG decision memory flywheel reduces Claude API costs ~75% over 12 months)
-- Personnel is the largest cost (~65-70% of total) -- this is a technology company in an early market
+- Personnel is the largest cost (~52% of total allocation) — significantly below the typical 70% for seed-stage SaaS due to the founder-built platform
 - All salaries include 5% annual increase from Year 2
 - Employer cost multiplier: 1.3x gross salary average across EU jurisdictions
 - C-suite OTE (variable compensation) paid only on target achievement; modeled at 75% payout in Year 1
@@ -895,67 +889,65 @@ All figures represent total cost to company (TCC), which includes gross salary, 
 
 | Category | Allocation | EUR K | 24-Month Spend | Purpose |
 |----------|-----------|-------|---------------|---------|
-| **Personnel** | 70% | 3,508 | 3,508 | 22 FTEs by Month 24 (see detailed hiring plan below) |
+| **Personnel** | 52% | 2,616 | 2,616 | 16 FTEs by Month 18 (lean team, see hiring plan below) |
 | **AI & Cloud Infrastructure** | 6% | 308 | 308 | Production hosting, GPU training, Claude API, monitoring |
-| **Equipment & Workspace** | 6% | 276 | 276 | Laptops, GPU workstations, remote office allowances, Nicosia HQ |
+| **Equipment & Workspace** | 4% | 186 | 186 | Laptops, GPU workstation, remote office allowances, Nicosia HQ |
 | **Travel & Conferences** | 4% | 216 | 216 | Customer visits, industry events, team offsites, fundraising |
 | **Marketing & Brand** | 4% | 203 | 203 | Content, digital advertising, analyst relations, PR |
 | **Professional Services & G&A** | 7% | 364 | 364 | Legal, accounting, recruitment, insurance, compliance |
-| **Reserve** | 3% | 125 | -- | Contingency for extended sales cycles or unexpected costs |
+| **Strategic Reserve** | 22% | 1,107 | -- | Accelerate hiring if PMF is strong, extend runway if needed, bridge to Series A |
+
+> **Why 22% reserve?** The founder-built platform eliminates the typical seed-stage engineering burn. Rather than hiring engineers speculatively, the reserve provides strategic flexibility: if enterprise sales cycles prove longer than 6-9 months, the company extends runway without distress. If product-market fit is strong, the reserve funds accelerated commercial hiring or an earlier Series A.
 
 ### 24-Month Hiring Plan (Month-by-Month)
 
-#### Phase 1: Foundation (Months 1-6) -- Build the Core
+> **Lean engineering thesis**: The founder built the entire Autonomy platform — 200K+ lines of production code, 96+ frontend pages, 11 TRM agents, 3 GNN models, full AWS SC planning suite — using AI-assisted development (Claude Code). This is not a prototype; it is a production-grade platform. The hiring plan reflects this reality: the CTO provides production hardening, investor credibility, and ML operations leadership, while a small engineering team (3 hires over 18 months) handles deployment, customer onboarding, and incremental features. The remaining headcount is overwhelmingly commercial — the product is built, the challenge is taking it to market.
+
+#### Phase 1: Foundation (Months 1-6) — Leadership + First Revenue Team
 
 | Month | Hire | Function | TCC (EUR K/yr) | Rationale |
 |-------|------|----------|----------------|-----------|
-| **1** | CTO / Technical Co-Founder | Engineering | 169 | #1 priority. Architecture ownership, ML production pipeline, investor credibility. Shares technical decision-making with founder. |
-| **2** | Senior ML Engineer | Engineering | 130 | TRM/GNN production training, conformal prediction calibration, RL pipeline. Converts research code to production. |
-| **3** | Senior Backend Engineer (Platform) | Engineering | 120 | SAP integration hardening, multi-tenant deployment, API security. Makes the platform enterprise-ready. |
+| **1** | CTO / Technical Co-Founder | Engineering | 169 | #1 priority. Production ML operations, investor credibility, architecture governance. Below-market cash, equity-heavy. |
+| **3** | Senior Platform Engineer | Engineering | 120 | Full-stack generalist: deployment automation, SAP connectors, CI/CD, customer environment provisioning. One person, wide scope. |
 | **3** | Part-Time Financial Controller | G&A | 40 (0.5 FTE) | Bookkeeping, VAT compliance, payroll setup. Bridge to CFO hire. |
 | **4** | CRO (Chief Revenue Officer) | Leadership | 195 + comm. | Enterprise SaaS sales leader with DACH manufacturing relationships. Owns pipeline, pricing, and GTM execution. |
-| **4** | Senior Frontend Engineer | Engineering | 115 | Enterprise UX polish, accessibility, self-service onboarding flows. |
 | **5** | Account Executive (DACH) | Sales | 90 + 60 OTE | First dedicated quota-carrying seller. German-speaking, supply chain domain expertise. Reports to CRO. |
 | **5** | Customer Success Lead | Customer | 95 | Pilot management, onboarding playbooks, adoption tracking. Must have enterprise CS experience. |
-| **6** | DevOps / Platform Engineer | Engineering | 110 | Kubernetes, CI/CD pipelines, monitoring, customer environment provisioning. |
 | **6** | Office Manager / Executive Assistant | G&A | 50 | Admin support, travel coordination, basic HR. Nicosia-based. |
 
-**End of Phase 1**: 11 people (Founder + 10 hires). Monthly burn: ~EUR 105K personnel + ~EUR 30K non-personnel = **EUR 135K/month**.
+**End of Phase 1**: 8 people (Founder + 7 hires). Engineering: just Founder + CTO + 1 senior engineer. Monthly burn: ~EUR 76K personnel + ~EUR 25K non-personnel = **EUR 101K/month**.
 
-#### Phase 2: Commercial Launch (Months 7-12) -- Prove the GTM
+#### Phase 2: Commercial Launch (Months 7-12) — Prove the GTM
 
 | Month | Hire | Function | TCC (EUR K/yr) | Rationale |
 |-------|------|----------|----------------|-----------|
-| **7** | Marketing Manager / Content Lead | Marketing | 90 | Content strategy, conference presence, analyst relations, ABM campaigns. |
-| **9** | CEO | Leadership | 208 | Enterprise SaaS operator. Founder transitions to CPO/CTO. Brings board-level gravitas and fundraising experience. |
-| **9** | Data Engineer | Engineering | 110 | Customer data onboarding acceleration, ETL pipelines, SAP connector hardening. |
-| **10** | SC Domain Analyst / Solutions Consultant | Pre-Sales | 100 | Pre-sales technical demos, pilot workshops, industry credibility. Former supply chain planner or consultant. |
+| **7** | Marketing Manager / Content Lead | Marketing | 90 | Content strategy, conference presence, analyst relations, ABM campaigns. "AI labor" thought leadership. |
+| **9** | CEO | Leadership | 208 | Enterprise SaaS operator. Founder transitions to CPO. Brings board-level gravitas and fundraising experience. |
+| **10** | SC Domain Analyst / Solutions Consultant | Pre-Sales | 100 | Pre-sales demos, pilot workshops, industry credibility. Former supply chain planner or Kinaxis/SAP consultant. |
 | **12** | Account Executive #2 (Benelux/Nordics) | Sales | 85 + 55 OTE | Geographic expansion. Dutch or Scandinavian market entry. |
-| **12** | Mid-Level Backend Engineer | Engineering | 85 | Feature velocity, testing, documentation. |
-| **12** | Mid-Level Frontend Engineer | Engineering | 80 | Component library, customer-specific UX customization. |
 
-**End of Phase 2**: 18 people. Monthly burn: ~EUR 175K personnel + ~EUR 45K non-personnel = **EUR 220K/month**.
+**End of Phase 2**: 12 people. Engineering still Founder + CTO + 1. Monthly burn: ~EUR 120K personnel + ~EUR 35K non-personnel = **EUR 155K/month**.
 
-#### Phase 3: Scale & Series A Prep (Months 13-24) -- Accelerate Growth
+#### Phase 3: Scale & Series A Prep (Months 13-18) — Selective Scaling
 
 | Month | Hire | Function | TCC (EUR K/yr) | Rationale |
 |-------|------|----------|----------------|-----------|
 | **14** | Customer Success Manager #2 | Customer | 80 | Scale CS as customer base exceeds 10 logos. |
 | **15** | CFO | Leadership | 182 | Series A preparation, financial controls, investor reporting, board governance. Replaces part-time controller. |
-| **15** | Junior ML Engineer | Engineering | 70 | Data pipeline, model evaluation, automated test harness for TRM agents. |
-| **16** | Marketing Specialist (Events/Digital) | Marketing | 70 | Conference logistics, digital campaigns, lead nurturing, marketing ops. |
-| **18** | Senior Backend Engineer #2 | Engineering | 120 | Multi-tenant scale, performance optimization, enterprise security hardening. |
-| **18** | Account Executive #3 (UK/France) | Sales | 85 + 55 OTE | Further geographic expansion as GTM playbook is proven. |
-| **20** | Senior ML Engineer #2 | Engineering | 130 | Production ML ops, model monitoring, advanced agent research. |
-| **24** | Additional hire (TBD) | TBD | ~100 | Based on business needs -- likely product manager or additional engineer. |
+| **15** | Senior ML / Data Engineer | Engineering | 130 | First dedicated ML hire. TRM/GNN production training, model monitoring, customer data onboarding. |
+| **16** | Marketing Specialist (Events/Digital) | Marketing | 70 | Conference logistics, digital campaigns, lead nurturing. |
+| **18** | Account Executive #3 (UK/France) | Sales | 85 + 55 OTE | Geographic expansion as GTM playbook is proven. |
+| **18** | Mid-Level Full-Stack Engineer | Engineering | 85 | Feature development, UX improvements, testing. Third and final engineering hire in the seed phase. |
 
-**End of Phase 3**: 22 people. Monthly burn: ~EUR 210K personnel + ~EUR 55K non-personnel = **EUR 265K/month**.
+**End of Phase 3**: 16 people (Founder + 15 hires). Engineering: Founder + CTO + 3 engineers = 5 total. Monthly burn: ~EUR 156K personnel + ~EUR 45K non-personnel = **EUR 201K/month**.
+
+> **Months 19-24: Consolidation.** No new hires planned. The team focuses on execution: converting pipeline, expanding accounts, and building the Series A case. Additional engineering hires (if needed) come from the EUR 1.1M strategic reserve or Series A proceeds.
 
 ### 18-Month Milestones
 
 | Milestone | Target Date | Success Criteria |
 |-----------|------------|-----------------|
-| **CTO + first 2 engineers hired** | Month 3 (Q2 2026) | Core engineering team in place |
+| **CTO + platform engineer hired** | Month 3 (Q2 2026) | Engineering team operational (Founder + 2) |
 | **3 pilot customers signed** | Month 5 (Q3 2026) | Signed pilot agreements with DACH manufacturers |
 | **CRO + first AE producing pipeline** | Month 7 (Q3 2026) | EUR 500K+ qualified pipeline |
 | **First production deployment** | Month 8 (Q4 2026) | One customer live on Foundation + Professional |
@@ -976,7 +968,7 @@ All figures represent total cost to company (TCC), which includes gross salary, 
 | **Seed Investors** | 20-25% (post-money) |
 | **Unallocated ESOP reserve** | 1-3% (for hires before Series A refresh) |
 
-**ESOP allocation priority**: CTO (3-5%), CRO (1.5-2.5%), CEO (2-4%), CFO (1-2%), senior engineers (0.3-0.5% each), mid-level hires (0.1-0.2% each). 4-year vesting with 1-year cliff, standard for European startups.
+**ESOP allocation priority**: CTO (3-5%), CRO (1.5-2.5%), CEO (2-4%), CFO (1-2%), senior engineers (0.3-0.5% each), mid-level/commercial hires (0.1-0.25% each). 4-year vesting with 1-year cliff, standard for European startups.
 
 ---
 
@@ -984,15 +976,17 @@ All figures represent total cost to company (TCC), which includes gross salary, 
 
 ### 11.1 Current State
 
-The platform has been built by the founding team with extensive use of AI-assisted development (Claude Code). The codebase represents ~200K+ lines of production code across:
+The entire platform has been designed and built by the founder using AI-assisted development (Claude Code) — a single person producing what would traditionally require a 10-15 person engineering team over 18+ months. The codebase represents ~200K+ lines of production code across:
 
 - 96+ frontend pages (React/MUI)
 - 73 Powell Framework service files
 - 35 AWS SC entity implementations
 - 11 TRM agent architectures + 3 GNN models
 - Full planning suite (MPS, MRP, S&OP, demand, supply, inventory)
+- Conformal prediction, causal inference, and digital twin pipelines
+- SAP integration, email signal intelligence, RBAC, multi-tenancy
 
-This is a significant technical asset built with minimal capital. The AI-assisted development model (founder + Claude Code) demonstrates the "AI labor" thesis at the company level -- the same approach customers will use for their planning operations.
+This is not a prototype — it is a production-grade platform built with zero engineering payroll. The founder + Claude Code development model is itself a demonstration of the "AI labor" thesis: one domain expert with AI assistance outperforms a conventional engineering team. This dramatically reduces the capital needed to reach market and shifts the EUR 5M raise from a build-the-product round to a go-to-market round.
 
 ### 11.2 Organizational Design
 
@@ -1000,11 +994,8 @@ This is a significant technical asset built with minimal capital. The AI-assiste
 ```
 Founder (CEO/CPO)
 ├── CTO
-│   ├── Sr ML Engineer
-│   ├── Sr Backend Engineer
-│   ├── Sr Frontend Engineer
-│   └── DevOps Engineer
-├── CRO
+│   └── Sr Platform Engineer
+├── CRO (from Month 4)
 │   ├── Account Executive (DACH)
 │   └── Customer Success Lead
 ├── Part-Time Controller
@@ -1016,9 +1007,9 @@ Founder (CEO/CPO)
 CEO (hired Month 9)
 ├── Founder (CPO / Product & Technology)
 │   ├── CTO (Engineering)
-│   │   ├── ML Team (Sr ML Eng, Jr ML Eng)
-│   │   ├── Platform Team (2x Sr Backend, DevOps, Data Eng)
-│   │   └── Frontend (Sr Frontend, Mid Frontend)
+│   │   ├── Sr Platform Engineer
+│   │   ├── Sr ML/Data Engineer (from Month 15)
+│   │   └── Mid-Level Full-Stack Engineer (from Month 18)
 │   └── Product (SC Domain Analyst)
 ├── CRO (Revenue)
 │   ├── Sales (3 Account Executives)
@@ -1029,6 +1020,8 @@ CEO (hired Month 9)
 │   └── Office Manager
 └── Advisory Board (4 advisors)
 ```
+
+> **Engineering headcount**: 5 people total (Founder + CTO + 3 engineers) build and operate a platform that would typically require 15+. The AI-assisted development model keeps the team lean — the founder continues to ship features with Claude Code while the CTO and engineers focus on production operations, customer deployments, and ML training pipelines. Additional engineering is funded from the strategic reserve or Series A as demand dictates.
 
 ### 11.3 Key Hire Profiles
 
@@ -1041,7 +1034,7 @@ CEO (hired Month 9)
 | **Leadership** | Built and managed engineering teams of 5-15. Comfortable with ambiguity. |
 | **Domain** | Supply chain experience is a plus but not required -- the founder provides domain depth. |
 | **Equity** | 3-5% with 4-year vesting, 1-year cliff. Below-market salary (~EUR 130K) compensated with meaningful ownership. |
-| **Why this role first** | Reduces single-founder risk. Provides investor credibility. Enables the founder to focus on product vision and customer relationships while the CTO owns engineering execution. |
+| **Why this role first** | Reduces single-founder risk. Provides investor credibility. Owns production ML operations and customer deployments while the founder continues to ship features and drive product vision. The CTO does not need to rebuild — the platform is built. They need to harden, deploy, and scale it. |
 
 #### CRO / Chief Revenue Officer (Month 4)
 
