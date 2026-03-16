@@ -19,6 +19,21 @@ def main():
     # Remove the markdown image references to the logo (we'll use CSS headers)
     md_text = md_text.replace("![Azirella](../Azirella_Logo.jpg)", "")
 
+    # Embed chart images as base64 in the markdown before conversion
+    import re
+    chart_pattern = re.compile(r'!\[([^\]]*)\]\((pdf/charts/[^)]+)\)')
+    def replace_chart_ref(match):
+        alt_text = match.group(1)
+        rel_path = match.group(2)
+        chart_path = MD_PATH.parent / rel_path
+        if chart_path.exists():
+            chart_bytes = chart_path.read_bytes()
+            chart_b64 = base64.b64encode(chart_bytes).decode("utf-8")
+            ext = chart_path.suffix.lstrip(".")
+            return f'![{alt_text}](data:image/{ext};base64,{chart_b64})'
+        return match.group(0)
+    md_text = chart_pattern.sub(replace_chart_ref, md_text)
+
     # Convert markdown to HTML
     html_body = markdown.markdown(
         md_text,
@@ -243,6 +258,15 @@ def main():
     h1 + hr + h2,
     body > h2:first-of-type {{
         page-break-before: avoid;
+    }}
+
+    /* Images (charts) */
+    img {{
+        max-width: 100%;
+        height: auto;
+        display: block;
+        margin: 5mm auto;
+        page-break-inside: avoid;
     }}
 
     /* Paragraph spacing */

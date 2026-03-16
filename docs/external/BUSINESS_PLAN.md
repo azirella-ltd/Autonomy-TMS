@@ -28,7 +28,7 @@
 11. [Team & Organization](#11-team--organization)
 12. [Risks & Mitigations](#12-risks--mitigations)
 13. [Investment Terms](#13-investment-terms)
-14. [Appendices](#14-appendices)
+14. [Appendices](#14-appendices) (A: Capability Matrix, B: Sources, C: Glossary, D: Trial Balance, E: Cash Flow, F: Charts)
 
 ---
 
@@ -696,36 +696,196 @@ If judgment cannot scale in demand planning, it cannot scale anywhere. Demand pl
 | Gross Margin | 76% | 79% | 82% |
 | Recognized Revenue | 1,260K | 3,475K | 8,635K |
 
-### 9.2 Cost Structure
+### 9.2 Detailed Cost Structure
 
-| Cost Category | Year 1 (EUR K) | Year 2 (EUR K) | Year 3 (EUR K) |
-|--------------|----------------|----------------|----------------|
-| **Engineering** (5->8->12 FTEs) | 600 | 960 | 1,440 |
-| **Sales & Marketing** (2->4->6 FTEs) | 300 | 560 | 840 |
-| **Customer Success** (1->2->3 FTEs) | 100 | 200 | 300 |
-| **G&A** (finance, legal, admin) | 150 | 220 | 320 |
-| **Infrastructure** (cloud, LLM APIs) | 80 | 160 | 300 |
-| **Travel & Conferences** | 60 | 100 | 150 |
-| **Total OpEx** | **1,290** | **2,200** | **3,350** |
+#### 9.2.1 Personnel Costs (All-In: Gross Salary + Benefits + Employer Taxes)
 
-### 9.3 Path to Profitability (Base Case)
+All figures represent total cost to company (TCC), which includes gross salary, employer social security contributions (~20-30% depending on jurisdiction), mandatory insurance, and benefits. For remote-first European hiring, TCC is approximately 1.25-1.35x gross salary. C-suite salaries are below market and equity-heavy, reflecting a seed-stage company.
+
+**C-Suite & Leadership**
+
+| Role | Month Hired | Gross Salary (EUR K/yr) | TCC (EUR K/yr) | Equity (%) | Notes |
+|------|-------------|------------------------|----------------|------------|-------|
+| **Founder (CEO initially)** | 0 | 120 | 156 | Founder shares | Transitions to Founder/CPO when CEO hired |
+| **CTO / Technical Co-Founder** | 1 | 130 | 169 | 3.0-5.0% | Below-market cash; architecture ownership, ML pipeline, investor credibility |
+| **CRO (Chief Revenue Officer)** | 4 | 140 + 60 OTE | 195 + commission | 1.5-2.5% | Enterprise SaaS, DACH relationships; OTE = on-target earnings variable |
+| **CEO** | 9 | 160 | 208 | 2.0-4.0% | Enterprise SaaS background; founder transitions to CPO/CTO role |
+| **CFO** | 15 | 140 | 182 | 1.0-2.0% | Series A preparation, financial controls, board reporting |
+
+> **Founder salary note**: The founder salary of EUR 120K is deliberately modest for a Cyprus-based founder. It increases to EUR 140K in Year 2 and EUR 160K in Year 3 as the company reaches profitability, subject to board approval.
+
+**Engineering Team**
+
+| Role | Month Hired | TCC (EUR K/yr) | Equity (%) | Responsibilities |
+|------|-------------|----------------|------------|-----------------|
+| **Senior ML Engineer** | 2 | 130 | 0.50% | TRM/GNN production training, conformal prediction calibration, RL pipeline |
+| **Senior Backend Engineer (Platform)** | 3 | 120 | 0.40% | SAP integration, deployment automation, API hardening |
+| **Senior Frontend Engineer** | 4 | 115 | 0.40% | UX polish, enterprise dashboards, self-service onboarding |
+| **DevOps / Platform Engineer** | 6 | 110 | 0.30% | Kubernetes, CI/CD, monitoring, customer environment provisioning |
+| **Data Engineer** | 9 | 110 | 0.25% | Customer data onboarding, ETL pipelines, SAP connectors |
+| **Mid-Level Backend Engineer** | 12 | 85 | 0.15% | Feature development, testing, documentation |
+| **Mid-Level Frontend Engineer** | 12 | 80 | 0.15% | Component library, customer-facing UX improvements |
+| **Junior ML Engineer** | 15 | 70 | 0.10% | Data pipeline, model evaluation, automated testing |
+| **Senior Backend Engineer #2** | 18 | 120 | 0.20% | Scale engineering, multi-tenant architecture |
+| **Senior ML Engineer #2** | 20 | 130 | 0.20% | Production ML ops, model monitoring, advanced agent training |
+
+**Commercial Team**
+
+| Role | Month Hired | TCC (EUR K/yr) | Equity (%) | Responsibilities |
+|------|-------------|----------------|------------|-----------------|
+| **Account Executive (DACH)** | 5 | 90 + 60 OTE | 0.25% | German-speaking, SC domain, enterprise sales (6-9 month cycles) |
+| **Customer Success Lead** | 5 | 95 | 0.30% | Pilot management, onboarding playbooks, champion development |
+| **Marketing Manager / Content Lead** | 7 | 90 | 0.20% | Content strategy, SEO, conferences, analyst relations, ABM |
+| **Account Executive #2 (Benelux/Nordics)** | 12 | 85 + 55 OTE | 0.15% | Geographic expansion, Dutch/Scandinavian market |
+| **SC Domain Analyst / Solutions Consultant** | 10 | 100 | 0.20% | Pre-sales technical demos, pilot support, customer workshops |
+| **Customer Success Manager #2** | 14 | 80 | 0.10% | Scale CS capacity as customer base grows |
+| **Account Executive #3 (UK/France)** | 18 | 85 + 55 OTE | 0.10% | Further geographic expansion |
+| **Marketing Specialist (Events/Digital)** | 16 | 70 | 0.10% | Conference logistics, digital campaigns, lead nurturing |
+
+**Operations & G&A**
+
+| Role | Month Hired | TCC (EUR K/yr) | Equity (%) | Responsibilities |
+|------|-------------|----------------|------------|-----------------|
+| **Office Manager / Executive Assistant** | 6 | 50 | 0.05% | Admin, travel coordination, office management, HR basics |
+| **Part-Time Financial Controller** | 3 | 40 (0.5 FTE) | -- | Bookkeeping, VAT, payroll until CFO hired |
+
+**Equity Summary**: Total employee option pool = 15% of fully diluted shares (standard for European seed). C-suite hires consume ~8-14%, engineering ~3%, commercial ~1.5%, leaving ~1-3% for future hires before Series A refreshes the pool.
+
+#### 9.2.2 Personnel Cost Rollup by Quarter
+
+| Quarter | Headcount (cumulative) | Quarterly Personnel Cost (EUR K) | Annualized Run Rate (EUR K) |
+|---------|----------------------|--------------------------------|---------------------------|
+| Q2 2026 (M1-3) | 3 (Founder + CTO + Sr ML Eng) | 114 | 455 |
+| Q3 2026 (M4-6) | 7 (+CRO, Sr Backend, Sr Frontend, Office Mgr) | 242 | 968 |
+| Q4 2026 (M7-9) | 11 (+AE1, CS Lead, Marketing, Data Eng, CEO) | 392 | 1,568 |
+| Q1 2027 (M10-12) | 14 (+SC Analyst, AE2, 2x Mid Eng) | 455 | 1,820 |
+| Q2 2027 (M13-15) | 17 (+CS #2, CFO, Jr ML Eng) | 510 | 2,040 |
+| Q3 2027 (M16-18) | 19 (+Marketing Specialist, Sr Backend #2) | 555 | 2,220 |
+| Q4 2027 (M19-21) | 21 (+Sr ML #2, AE3) | 610 | 2,440 |
+| Q1 2028 (M22-24) | 22 (+1 additional hire) | 630 | 2,520 |
+
+**Year 1 total personnel**: EUR 1,203K (average 9 FTEs)
+**Year 2 total personnel**: EUR 2,305K (average 20 FTEs)
+
+#### 9.2.3 Equipment & Workspace
+
+| Item | Unit Cost (EUR) | Quantity (Y1) | Quantity (Y2) | Y1 Total (EUR K) | Y2 Total (EUR K) |
+|------|----------------|--------------|--------------|-----------------|-----------------|
+| **MacBook Pro 16" M4 Pro** (36GB RAM, 1TB) | 3,200 | 13 | 9 | 42 | 29 |
+| **External Monitor** (27" 4K) | 500 | 13 | 9 | 7 | 5 |
+| **Peripherals** (keyboard, mouse, headset, webcam) | 350 | 13 | 9 | 5 | 3 |
+| **Home Office Allowance** (desk, chair, one-time) | 500 | 13 | 9 | 7 | 5 |
+| **GPU Workstation** (RTX 4090, for ML training) | 5,500 | 2 | 1 | 11 | 6 |
+| **Co-working / Hot Desk Allowances** (EUR 200/mo per remote employee) | 2,400/yr | 8 avg | 16 avg | 19 | 38 |
+| **Small Office** (Nicosia HQ, 4-6 desks) | 1,500/mo | 12 mo | 12 mo | 18 | 18 |
+| **Office Equipment & Furniture** (HQ setup) | -- | -- | -- | 8 | 3 |
+| **Software Licenses** (JetBrains, Figma, Slack, Notion, 1Password, Zoom) | ~150/mo/person | 9 avg | 20 avg | 16 | 36 |
+| **Total Equipment & Workspace** | | | | **133** | **143** |
+
+> **Remote-first philosophy**: No requirement for employees to relocate. Co-working allowances provided for those who want a dedicated workspace. Nicosia office serves as founder's base and occasional team gathering point.
+
+#### 9.2.4 AI & Cloud Services
+
+| Service | Monthly Cost (Y1 avg) | Monthly Cost (Y2 avg) | Y1 Total (EUR K) | Y2 Total (EUR K) | Notes |
+|---------|---------------------|---------------------|-----------------|-----------------|-------|
+| **AWS / Cloud Hosting** (production) | 2,500 | 6,000 | 30 | 72 | Multi-tenant PostgreSQL, compute, S3, CDN; scales with customers |
+| **AWS / Cloud Hosting** (dev/staging) | 800 | 1,200 | 10 | 14 | Separate environments per engineer |
+| **Claude API** (Anthropic) | 1,500 | 3,500 | 18 | 42 | Decision Stream, Skills exceptions, executive briefings; ~$0.003/decision avg with RAG caching |
+| **Self-Hosted LLM** (vLLM + Qwen 3) | 500 | 800 | 6 | 10 | Air-gapped customers; GPU instance for inference |
+| **GPU Training** (cloud) | 2,000 | 3,000 | 24 | 36 | TRM/GNN training runs, hyperparameter sweeps (spot instances) |
+| **Monitoring & Observability** (Datadog/Grafana Cloud) | 400 | 900 | 5 | 11 | APM, logs, metrics, alerting |
+| **Security & Compliance** (Snyk, SOC 2 prep) | 300 | 600 | 4 | 7 | Vulnerability scanning, compliance tooling |
+| **Domain, DNS, CDN, Email** (Cloudflare, Google Workspace) | 200 | 300 | 2 | 4 | Corporate email, domain management |
+| **pgvector / Vector DB** (managed) | 200 | 400 | 2 | 5 | RAG decision memory, knowledge base embeddings |
+| **CI/CD** (GitHub Actions) | 150 | 300 | 2 | 4 | Build minutes, artifact storage |
+| **Total AI & Cloud Services** | | | **103** | **205** |
+
+> **Cost trajectory**: Claude API costs decrease over time as RAG decision memory builds up. Initial cost ~EUR 0.005/decision drops to ~EUR 0.001/decision as cache hit rate improves (95%+ similarity matches skip LLM entirely). At 40 customers making ~1,000 decisions/day each, monthly Claude costs stabilize around EUR 2,500-4,000 vs EUR 15,000+ without RAG caching.
+
+#### 9.2.5 Travel & Conferences
+
+| Activity | Frequency | Cost per Event (EUR) | Y1 Total (EUR K) | Y2 Total (EUR K) | Notes |
+|----------|-----------|---------------------|-----------------|-----------------|-------|
+| **Gartner Supply Chain Symposium** (Barcelona/Orlando) | 1/year | 12,000 | 12 | 12 | 2 attendees, registration (EUR 4K each), flights, hotels |
+| **CSCMP European Conference** | 1/year | 6,000 | 6 | 6 | 1-2 attendees |
+| **LogiMAT** (Stuttgart) | 1/year | 5,000 | 5 | 5 | DACH logistics trade fair, booth optional |
+| **Supply Chain Conference (DACH-specific)** | 2/year | 4,000 | 8 | 8 | BME Kongress, SC Austria, etc. |
+| **Hannover Messe** / **SPS** | 1/year | 8,000 | -- | 8 | Manufacturing trade fair (Year 2) |
+| **Conference Booth / Exhibition Stand** (small) | 1-2/year | 8,000 | 8 | 16 | Pull-up banner, branded materials, demo station |
+| **Customer Visits / Pilot Support** (DACH travel) | Monthly | 1,500 | 18 | 24 | Flights + hotels for on-site pilot kickoffs and reviews |
+| **Team Offsites** (full company) | 2/year | 15,000 | 15 | 30 | 3-day offsite for remote team alignment (travel, accommodation, venue) |
+| **Leadership Meetings** (C-suite in person) | Quarterly | 3,000 | 9 | 12 | Founder + CTO + CRO alignment meetings |
+| **Investor Meetings / Fundraising Travel** | As needed | 1,500 | 8 | 6 | Series A roadshow (Year 2) |
+| **Total Travel & Conferences** | | | **89** | **127** |
+
+#### 9.2.6 Marketing & Brand Building
+
+| Activity | Y1 Total (EUR K) | Y2 Total (EUR K) | Notes |
+|----------|-----------------|-----------------|-------|
+| **Website & Brand** (design, messaging, SEO) | 25 | 10 | Professional rebrand/polish in Y1; maintenance in Y2 |
+| **Content Marketing** (blog, whitepapers, video) | 15 | 25 | "From batch planning to AI labor" thought leadership; case studies |
+| **LinkedIn / Digital Advertising** (ABM) | 12 | 30 | Account-based marketing targeting DACH SC leaders |
+| **PR / Comms** (press releases, media) | 8 | 12 | Launch announcements, funding round, customer wins |
+| **Analyst Relations** (Gartner, Forrester) | 5 | 20 | Briefings free; Cool Vendor submission; Gartner for Tech Providers (~EUR 15K/yr in Y2) |
+| **Sales Collateral** (pitch decks, ROI calculator, demo videos) | 10 | 8 | Professional investor deck, customer-facing materials |
+| **Webinars & Virtual Events** | 5 | 10 | Monthly webinar series; co-branded events with partners |
+| **Branded Merchandise** (conference giveaways) | 3 | 5 | T-shirts, stickers, notebooks for events |
+| **Total Marketing** | **83** | **120** |
+
+#### 9.2.7 Professional Services & G&A
+
+| Item | Y1 Total (EUR K) | Y2 Total (EUR K) | Notes |
+|------|-----------------|-----------------|-------|
+| **Legal** (corporate, IP, contracts) | 40 | 30 | Company formation cleanup, IP assignment, customer MSAs, employment contracts |
+| **Legal** (GDPR / EU AI Act compliance) | 15 | 10 | Data processing agreements, AI risk classification, SOC 2 prep |
+| **Accounting & Audit** | 15 | 20 | Statutory audit (Cyprus), management accounts, tax compliance |
+| **Payroll Provider** (multi-country) | 12 | 24 | Remote/Deel/Oyster for cross-border employment; ~EUR 100/employee/mo |
+| **Insurance** (D&O, professional liability, cyber) | 8 | 12 | Directors & officers, errors & omissions, cyber liability |
+| **IP / Patent Filing** (provisional) | 10 | 15 | Provisional patents on judgment layer, CDT routing, override learning |
+| **Advisory Board Compensation** | 10 | 15 | 4 advisors at 0.25% equity each + EUR 2-3K/yr retainer |
+| **Recruitment Fees** (retained search for C-suite) | 50 | 30 | CTO, CRO, CEO searches (~20-25% of first-year salary); engineering via direct/referral |
+| **Banking, FX, Payment Processing** | 5 | 8 | Multi-currency accounts, SEPA, wire transfers |
+| **Miscellaneous / Contingency** | 15 | 20 | Unexpected costs, regulatory changes, buffer |
+| **Total Professional Services & G&A** | **180** | **184** |
+
+### 9.3 Consolidated Cost Summary
+
+| Category | Year 1 (EUR K) | Year 2 (EUR K) | Total 24-Month (EUR K) |
+|----------|---------------|---------------|----------------------|
+| **Personnel** (salaries + benefits + taxes) | 1,203 | 2,305 | 3,508 |
+| **Equipment & Workspace** | 133 | 143 | 276 |
+| **AI & Cloud Services** | 103 | 205 | 308 |
+| **Travel & Conferences** | 89 | 127 | 216 |
+| **Marketing & Brand** | 83 | 120 | 203 |
+| **Professional Services & G&A** | 180 | 184 | 364 |
+| **Total Operating Costs** | **1,791** | **3,084** | **4,875** |
+
+> **Runway analysis**: EUR 5M raise covers 24+ months of operations with EUR 125K remaining as buffer. The company reaches cash-flow positive at Month 18-22 (base case) as ARR ramp outpaces cost growth. If the conservative revenue case materializes, the company has 26 months of runway, requiring either cost discipline in Month 20+ or a bridge round.
+
+### 9.4 Path to Profitability (Base Case)
 
 | Metric | Year 1 | Year 2 | Year 3 |
 |--------|--------|--------|--------|
-| Revenue | 720K | 2,055K | 5,355K |
-| Total Costs | 1,290K | 2,200K | 3,350K |
-| **Net Burn** | **(570K)** | **(145K)** | **2,005K** |
-| Cash Position (from EUR 5M raise) | 4,430K | 4,285K | 6,290K |
+| ARR (end of year) | 960K | 3,150K | 7,560K |
+| Recognized Revenue | 720K | 2,055K | 5,355K |
+| Total Operating Costs | 1,791K | 3,084K | 4,200K |
+| **Net Burn** | **(1,071K)** | **(1,029K)** | **1,155K** |
+| Cash Position (from EUR 5M raise) | 3,929K | 2,900K | 4,055K |
 
-**Break-even**: Month 18-22 (base case). The EUR 5M raise provides 36+ months of runway even in the conservative case.
+**Break-even**: Month 18-22 (base case). Monthly revenue exceeds monthly burn when ARR reaches ~EUR 3.1M (approximately 21 customers at EUR 150K ACV average).
 
-### 9.4 Key Assumptions
+**Series A trigger**: At Month 18-20, with EUR 2-3M ARR and 15+ customers, the company raises Series A (EUR 15-25M) to accelerate hiring and geographic expansion. The EUR 5M seed provides comfortable runway to reach this milestone without forced fundraising.
 
-- Average ramp time to full ACV: 3 months (pilot -> paid conversion)
-- Net revenue retention: 120% Year 2, 130% Year 3 (upsell from Foundation -> Professional -> Enterprise)
+### 9.5 Key Assumptions
+
+- Average ramp time to full ACV: 3 months (pilot to paid conversion)
+- Net revenue retention: 120% Year 2, 130% Year 3 (upsell from Foundation to Professional to Enterprise)
 - Logo churn: 15% Year 1 (early customers), 10% Year 2+
 - Gross margin improves as LLM costs decrease (RAG decision memory flywheel reduces Claude API costs ~75% over 12 months)
-- Engineering team is the largest cost -- this is a technology company in an early market
+- Personnel is the largest cost (~65-70% of total) -- this is a technology company in an early market
+- All salaries include 5% annual increase from Year 2
+- Employer cost multiplier: 1.3x gross salary average across EU jurisdictions
+- C-suite OTE (variable compensation) paid only on target achievement; modeled at 75% payout in Year 1
 
 ---
 
@@ -733,43 +893,90 @@ If judgment cannot scale in demand planning, it cannot scale anywhere. Demand pl
 
 ### EUR 5M Seed Round Allocation
 
-| Category | Allocation | EUR | Purpose |
-|----------|-----------|-----|---------|
-| **Engineering** | 45% | 2,250K | 5 senior engineers (backend ML, frontend, platform) for 18 months |
-| **Sales & Marketing** | 25% | 1,250K | 2 AEs (DACH), marketing, conferences, pilot support, content |
-| **Customer Success** | 10% | 500K | 1 CS lead, implementation playbooks, onboarding automation |
-| **Infrastructure** | 8% | 400K | Cloud hosting, LLM API costs, dev/staging environments |
-| **G&A** | 7% | 350K | Finance, legal (IP protection, GDPR compliance), admin |
-| **Reserve** | 5% | 250K | Contingency for extended sales cycles or additional hires |
+| Category | Allocation | EUR K | 24-Month Spend | Purpose |
+|----------|-----------|-------|---------------|---------|
+| **Personnel** | 70% | 3,508 | 3,508 | 22 FTEs by Month 24 (see detailed hiring plan below) |
+| **AI & Cloud Infrastructure** | 6% | 308 | 308 | Production hosting, GPU training, Claude API, monitoring |
+| **Equipment & Workspace** | 6% | 276 | 276 | Laptops, GPU workstations, remote office allowances, Nicosia HQ |
+| **Travel & Conferences** | 4% | 216 | 216 | Customer visits, industry events, team offsites, fundraising |
+| **Marketing & Brand** | 4% | 203 | 203 | Content, digital advertising, analyst relations, PR |
+| **Professional Services & G&A** | 7% | 364 | 364 | Legal, accounting, recruitment, insurance, compliance |
+| **Reserve** | 3% | 125 | -- | Contingency for extended sales cycles or unexpected costs |
+
+### 24-Month Hiring Plan (Month-by-Month)
+
+#### Phase 1: Foundation (Months 1-6) -- Build the Core
+
+| Month | Hire | Function | TCC (EUR K/yr) | Rationale |
+|-------|------|----------|----------------|-----------|
+| **1** | CTO / Technical Co-Founder | Engineering | 169 | #1 priority. Architecture ownership, ML production pipeline, investor credibility. Shares technical decision-making with founder. |
+| **2** | Senior ML Engineer | Engineering | 130 | TRM/GNN production training, conformal prediction calibration, RL pipeline. Converts research code to production. |
+| **3** | Senior Backend Engineer (Platform) | Engineering | 120 | SAP integration hardening, multi-tenant deployment, API security. Makes the platform enterprise-ready. |
+| **3** | Part-Time Financial Controller | G&A | 40 (0.5 FTE) | Bookkeeping, VAT compliance, payroll setup. Bridge to CFO hire. |
+| **4** | CRO (Chief Revenue Officer) | Leadership | 195 + comm. | Enterprise SaaS sales leader with DACH manufacturing relationships. Owns pipeline, pricing, and GTM execution. |
+| **4** | Senior Frontend Engineer | Engineering | 115 | Enterprise UX polish, accessibility, self-service onboarding flows. |
+| **5** | Account Executive (DACH) | Sales | 90 + 60 OTE | First dedicated quota-carrying seller. German-speaking, supply chain domain expertise. Reports to CRO. |
+| **5** | Customer Success Lead | Customer | 95 | Pilot management, onboarding playbooks, adoption tracking. Must have enterprise CS experience. |
+| **6** | DevOps / Platform Engineer | Engineering | 110 | Kubernetes, CI/CD pipelines, monitoring, customer environment provisioning. |
+| **6** | Office Manager / Executive Assistant | G&A | 50 | Admin support, travel coordination, basic HR. Nicosia-based. |
+
+**End of Phase 1**: 11 people (Founder + 10 hires). Monthly burn: ~EUR 105K personnel + ~EUR 30K non-personnel = **EUR 135K/month**.
+
+#### Phase 2: Commercial Launch (Months 7-12) -- Prove the GTM
+
+| Month | Hire | Function | TCC (EUR K/yr) | Rationale |
+|-------|------|----------|----------------|-----------|
+| **7** | Marketing Manager / Content Lead | Marketing | 90 | Content strategy, conference presence, analyst relations, ABM campaigns. |
+| **9** | CEO | Leadership | 208 | Enterprise SaaS operator. Founder transitions to CPO/CTO. Brings board-level gravitas and fundraising experience. |
+| **9** | Data Engineer | Engineering | 110 | Customer data onboarding acceleration, ETL pipelines, SAP connector hardening. |
+| **10** | SC Domain Analyst / Solutions Consultant | Pre-Sales | 100 | Pre-sales technical demos, pilot workshops, industry credibility. Former supply chain planner or consultant. |
+| **12** | Account Executive #2 (Benelux/Nordics) | Sales | 85 + 55 OTE | Geographic expansion. Dutch or Scandinavian market entry. |
+| **12** | Mid-Level Backend Engineer | Engineering | 85 | Feature velocity, testing, documentation. |
+| **12** | Mid-Level Frontend Engineer | Engineering | 80 | Component library, customer-specific UX customization. |
+
+**End of Phase 2**: 18 people. Monthly burn: ~EUR 175K personnel + ~EUR 45K non-personnel = **EUR 220K/month**.
+
+#### Phase 3: Scale & Series A Prep (Months 13-24) -- Accelerate Growth
+
+| Month | Hire | Function | TCC (EUR K/yr) | Rationale |
+|-------|------|----------|----------------|-----------|
+| **14** | Customer Success Manager #2 | Customer | 80 | Scale CS as customer base exceeds 10 logos. |
+| **15** | CFO | Leadership | 182 | Series A preparation, financial controls, investor reporting, board governance. Replaces part-time controller. |
+| **15** | Junior ML Engineer | Engineering | 70 | Data pipeline, model evaluation, automated test harness for TRM agents. |
+| **16** | Marketing Specialist (Events/Digital) | Marketing | 70 | Conference logistics, digital campaigns, lead nurturing, marketing ops. |
+| **18** | Senior Backend Engineer #2 | Engineering | 120 | Multi-tenant scale, performance optimization, enterprise security hardening. |
+| **18** | Account Executive #3 (UK/France) | Sales | 85 + 55 OTE | Further geographic expansion as GTM playbook is proven. |
+| **20** | Senior ML Engineer #2 | Engineering | 130 | Production ML ops, model monitoring, advanced agent research. |
+| **24** | Additional hire (TBD) | TBD | ~100 | Based on business needs -- likely product manager or additional engineer. |
+
+**End of Phase 3**: 22 people. Monthly burn: ~EUR 210K personnel + ~EUR 55K non-personnel = **EUR 265K/month**.
 
 ### 18-Month Milestones
 
 | Milestone | Target Date | Success Criteria |
 |-----------|------------|-----------------|
-| **3 pilot customers signed** | Q2 2026 | Signed pilot agreements with DACH manufacturers |
-| **First production deployment** | Q3 2026 | One customer live on Foundation + Professional |
-| **First case study published** | Q4 2026 | Quantified ROI from pilot customer |
-| **5 paying customers** | Q4 2026 | EUR 500K+ ARR |
-| **EUR 1M ARR** | Q1 2027 | 8+ paying customers |
-| **Series A readiness** | Q3 2027 | EUR 2M+ ARR, 15+ customers, clear path to EUR 10M ARR |
+| **CTO + first 2 engineers hired** | Month 3 (Q2 2026) | Core engineering team in place |
+| **3 pilot customers signed** | Month 5 (Q3 2026) | Signed pilot agreements with DACH manufacturers |
+| **CRO + first AE producing pipeline** | Month 7 (Q3 2026) | EUR 500K+ qualified pipeline |
+| **First production deployment** | Month 8 (Q4 2026) | One customer live on Foundation + Professional |
+| **First case study published** | Month 10 (Q4 2026) | Quantified ROI from pilot customer |
+| **5 paying customers** | Month 10 (Q4 2026) | EUR 500K+ ARR |
+| **CEO onboarded, founder transitions to CPO** | Month 11 (Q1 2027) | Operating leadership in place |
+| **EUR 1M ARR** | Month 14 (Q1 2027) | 8+ paying customers |
+| **CFO hired, Series A preparation begins** | Month 16 (Q2 2027) | Financial model, data room, investor outreach |
+| **Series A readiness** | Month 20 (Q3 2027) | EUR 2M+ ARR, 15+ customers, clear path to EUR 10M ARR |
 
-### Team Build Plan
+### Equity Allocation
 
-| Role | Timing | Priority |
-|------|--------|----------|
-| **CTO / Lead Engineer** | Immediate | Architecture ownership, ML pipeline |
-| **Senior Backend Engineer (ML)** | Month 1 | TRM training, GNN production pipeline |
-| **Senior Backend Engineer (Platform)** | Month 2 | SAP integration, deployment automation |
-| **Senior Frontend Engineer** | Month 3 | UX polish, mobile, self-service onboarding |
-| **Account Executive (DACH)** | Month 3 | German-speaking, SC domain, enterprise sales |
-| **Customer Success Lead** | Month 4 | Onboarding, pilot management, adoption |
-| **Account Executive #2 (Benelux/Nordics)** | Month 9 | Geographic expansion |
-| **DevOps / Platform Engineer** | Month 6 | CI/CD, monitoring, cloud deployment |
-| **Data Engineer** | Month 9 | Customer data onboarding, ETL, SAP connectors |
-| **Marketing / Content** | Month 6 | Content strategy, conferences, analyst relations |
-| **Junior Engineers (2)** | Month 12 | Scale engineering capacity |
+| Category | Allocation (% of fully diluted) |
+|----------|-------------------------------|
+| **Founders** | 75-80% (pre-dilution) |
+| **Employee Option Pool (ESOP)** | 15% |
+| **Advisory Board** (4 advisors) | 1% (0.25% each) |
+| **Seed Investors** | 20-25% (post-money) |
+| **Unallocated ESOP reserve** | 1-3% (for hires before Series A refresh) |
 
-**Total team at Month 18: ~12 FTEs** (founder + 11 hires)
+**ESOP allocation priority**: CTO (3-5%), CRO (1.5-2.5%), CEO (2-4%), CFO (1-2%), senior engineers (0.3-0.5% each), mid-level hires (0.1-0.2% each). 4-year vesting with 1-year cliff, standard for European startups.
 
 ---
 
@@ -785,23 +992,110 @@ The platform has been built by the founding team with extensive use of AI-assist
 - 11 TRM agent architectures + 3 GNN models
 - Full planning suite (MPS, MRP, S&OP, demand, supply, inventory)
 
-### 11.2 Key Hires Needed
+This is a significant technical asset built with minimal capital. The AI-assisted development model (founder + Claude Code) demonstrates the "AI labor" thesis at the company level -- the same approach customers will use for their planning operations.
 
-| Priority | Role | Why |
-|----------|------|-----|
-| **1** | CTO / Technical Co-Founder | Architecture ownership, ML production pipeline, investor credibility |
-| **2** | VP Sales / Commercial Lead | DACH manufacturing relationships, enterprise sales experience |
-| **3** | Senior ML Engineer | TRM/GNN production training, conformal prediction calibration |
-| **4** | Customer Success Lead | Pilot management, onboarding, champion development |
+### 11.2 Organizational Design
 
-### 11.3 Advisory Board (Target)
+**Phase 1 (Months 1-6): Founder-Led**
+```
+Founder (CEO/CPO)
+├── CTO
+│   ├── Sr ML Engineer
+│   ├── Sr Backend Engineer
+│   ├── Sr Frontend Engineer
+│   └── DevOps Engineer
+├── CRO
+│   ├── Account Executive (DACH)
+│   └── Customer Success Lead
+├── Part-Time Controller
+└── Office Manager
+```
 
-| Domain | Profile | Purpose |
-|--------|---------|---------|
-| Supply Chain | Former VP Supply Chain at $500M+ manufacturer | Product validation, reference customer introductions |
-| AI/ML | Professor or researcher in decision systems | Technical credibility, research partnerships |
-| Enterprise SaaS | Founder/CxO with mid-market B2B SaaS exit | GTM strategy, fundraising, board governance |
-| Manufacturing / DACH | German industry executive | Market access, Mittelstand relationships |
+**Phase 2 (Months 7-18): CEO-Led**
+```
+CEO (hired Month 9)
+├── Founder (CPO / Product & Technology)
+│   ├── CTO (Engineering)
+│   │   ├── ML Team (Sr ML Eng, Jr ML Eng)
+│   │   ├── Platform Team (2x Sr Backend, DevOps, Data Eng)
+│   │   └── Frontend (Sr Frontend, Mid Frontend)
+│   └── Product (SC Domain Analyst)
+├── CRO (Revenue)
+│   ├── Sales (3 Account Executives)
+│   ├── Customer Success (CS Lead + CS Manager)
+│   └── Marketing (Marketing Manager + Specialist)
+├── CFO (Finance & Operations, from Month 15)
+│   ├── Financial Controller
+│   └── Office Manager
+└── Advisory Board (4 advisors)
+```
+
+### 11.3 Key Hire Profiles
+
+#### CTO / Technical Co-Founder (Month 1 -- CRITICAL PATH)
+
+| Attribute | Requirement |
+|-----------|-------------|
+| **Technical** | Production ML/AI systems (not just research). PyTorch, distributed systems, multi-tenant SaaS. |
+| **Experience** | 10+ years engineering, 3+ years as CTO/VP Eng at a B2B SaaS company (seed to Series B). |
+| **Leadership** | Built and managed engineering teams of 5-15. Comfortable with ambiguity. |
+| **Domain** | Supply chain experience is a plus but not required -- the founder provides domain depth. |
+| **Equity** | 3-5% with 4-year vesting, 1-year cliff. Below-market salary (~EUR 130K) compensated with meaningful ownership. |
+| **Why this role first** | Reduces single-founder risk. Provides investor credibility. Enables the founder to focus on product vision and customer relationships while the CTO owns engineering execution. |
+
+#### CRO / Chief Revenue Officer (Month 4)
+
+| Attribute | Requirement |
+|-----------|-------------|
+| **Commercial** | Enterprise SaaS sales leadership. Built and managed sales teams. Owns pipeline, pricing, forecasting. |
+| **Domain** | DACH manufacturing relationships. Supply chain or ERP software background (SAP, Kinaxis, o9 ecosystem). |
+| **Network** | Personal relationships with VP Supply Chain / COO at mid-market DACH manufacturers. |
+| **Track record** | Taken a B2B SaaS product from EUR 0 to EUR 3M+ ARR. Comfortable with missionary sales (category creation). |
+| **Equity** | 1.5-2.5% with 4-year vesting. Meaningful OTE (EUR 60K variable) tied to pipeline and revenue targets. |
+| **Why before CEO** | Revenue is the existential risk. A CRO starts building pipeline immediately while the founder operates as interim CEO. The CEO hire (Month 9) is timed for when the company needs board-level leadership and Series A preparation. |
+
+#### CEO (Month 9)
+
+| Attribute | Requirement |
+|-----------|-------------|
+| **Leadership** | Enterprise SaaS operator with experience scaling companies from seed/Series A to Series B+. |
+| **Fundraising** | Led or participated in EUR 10M+ fundraising rounds. Board management experience. |
+| **Strategic** | Can articulate the "AI labor" category shift to enterprise buyers and investors. |
+| **Operational** | P&L ownership. Comfortable with 20-person organizations growing to 50+. |
+| **Equity** | 2-4% with 4-year vesting. The founder retains board control through the seed round. |
+| **Why Month 9** | By Month 9, the company has 3+ pilots running, initial revenue, and a CRO building pipeline. The CEO adds operating leverage and Series A credibility. Hiring a CEO too early (before product-market signals) wastes equity and creates misalignment. |
+
+#### CFO (Month 15)
+
+| Attribute | Requirement |
+|-----------|-------------|
+| **Financial** | SaaS metrics, unit economics, cohort analysis. Has built investor-grade financial models. |
+| **Fundraising** | Data room preparation, investor relations, due diligence management. |
+| **Compliance** | European multi-jurisdiction (Cyprus holding, EU subsidiaries). VAT, transfer pricing, R&D tax credits. |
+| **Equity** | 1-2% with 4-year vesting. |
+| **Why Month 15** | Timed for Series A preparation (target Month 18-20). The part-time controller handles Day 1 financial operations. |
+
+### 11.4 Advisory Board (Target)
+
+| Domain | Profile | Purpose | Compensation |
+|--------|---------|---------|-------------|
+| Supply Chain | Former VP Supply Chain at EUR 500M+ manufacturer | Product validation, reference customer introductions | 0.25% equity + EUR 3K/yr |
+| AI/ML | Professor or researcher in decision systems | Technical credibility, research partnerships, conference introductions | 0.25% equity + EUR 2K/yr |
+| Enterprise SaaS | Founder/CxO with mid-market B2B SaaS exit | GTM strategy, fundraising introductions, board governance | 0.25% equity + EUR 3K/yr |
+| Manufacturing / DACH | German industry executive (Mittelstand) | Market access, Mittelstand relationships, cultural navigation | 0.25% equity + EUR 2K/yr |
+
+### 11.5 Hiring Strategy
+
+**Sourcing channels** (in priority order):
+1. **Personal networks & referrals** (EUR 5K referral bonus) -- highest quality, lowest cost
+2. **LinkedIn Recruiter** (~EUR 10K/yr license) -- direct sourcing for engineering and commercial roles
+3. **Retained search** (20-25% of Y1 salary) -- C-suite hires only (CTO, CRO, CEO, CFO)
+4. **Conference networking** -- domain experts encountered at Gartner SCC, LogiMAT, etc.
+5. **Open-source community** -- engineers who contribute to PyTorch, GNN libraries, supply chain tools
+
+**Employment structure**: Deel/Remote for cross-border employment (EUR 100/employee/month). Cyprus entity for founder and local hires. Consider German GmbH subsidiary once DACH headcount exceeds 3-4 (likely Month 12-15).
+
+**Compensation philosophy**: Below-market base + above-market equity for early hires (Months 1-6). Market-rate base for later hires (Months 12+) as the company de-risks with revenue. Variable compensation (OTE) for all commercial roles, tied to measurable outcomes.
 
 ---
 
@@ -975,6 +1269,177 @@ The SCP market has demonstrated strong exit multiples:
 | **SOM** | Serviceable Obtainable Market |
 | **TRM** | Tiny Recursive Model -- 7M-parameter execution decision agent |
 | **VFA** | Value Function Approximation (Powell policy class) |
+
+### Appendix D: 3-Year Trial Balance (Base Case)
+
+The trial balance below presents a simplified income statement view aligned with IFRS presentation for a SaaS company. All figures in EUR thousands. Year 1 begins Q2 2026 (post-funding).
+
+#### Income Statement (Profit & Loss)
+
+| Line Item | Year 1 (EUR K) | Year 2 (EUR K) | Year 3 (EUR K) | Notes |
+|-----------|---------------|---------------|---------------|-------|
+| **Revenue** | | | | |
+| Subscription Revenue (SaaS ARR) | 720 | 2,055 | 5,355 | Base case recognized revenue |
+| Implementation / Professional Services | 40 | 80 | 120 | Pilot setup fees, custom integration |
+| **Total Revenue** | **760** | **2,135** | **5,475** | |
+| | | | | |
+| **Cost of Revenue (COGS)** | | | | |
+| Cloud Infrastructure (production) | 40 | 86 | 180 | AWS hosting, CDN, managed DBs |
+| Claude API / LLM Costs | 18 | 42 | 60 | Decision Stream, Skills, briefings |
+| Self-Hosted LLM (GPU inference) | 6 | 10 | 15 | vLLM + Qwen for air-gapped customers |
+| Customer Support (allocated) | 48 | 80 | 120 | CS team time allocated to active customers |
+| Monitoring / Security | 9 | 18 | 30 | Datadog, Snyk, SOC 2 |
+| **Total COGS** | **121** | **236** | **405** | |
+| **Gross Profit** | **639** | **1,899** | **5,070** | |
+| **Gross Margin** | **84%** | **89%** | **93%** | Improves as RAG caching reduces LLM costs |
+| | | | | |
+| **Operating Expenses** | | | | |
+| *Research & Development* | | | | |
+| Engineering Salaries + Benefits | 764 | 1,350 | 1,900 | Fully loaded TCC for engineering team |
+| GPU Training (cloud) | 24 | 36 | 50 | TRM/GNN training runs, hyperparameter sweeps |
+| Dev/Staging Infrastructure | 10 | 14 | 20 | Non-production environments |
+| Software Licenses (engineering) | 10 | 22 | 30 | JetBrains, GitHub, CI/CD |
+| Equipment (engineering) | 72 | 48 | 30 | Laptops, GPU workstations, peripherals |
+| **Total R&D** | **880** | **1,470** | **2,030** | |
+| | | | | |
+| *Sales & Marketing* | | | | |
+| Sales Salaries + Benefits + Commissions | 285 | 530 | 780 | CRO, AEs (base + variable), CS team |
+| Marketing Salaries + Benefits | 0 | 160 | 220 | Marketing hires from Month 7 |
+| Marketing Programs (content, ABM, PR) | 83 | 120 | 200 | Digital advertising, events, analyst relations |
+| Travel (customer visits, conferences) | 89 | 127 | 180 | Pilots, conferences, team offsites |
+| Equipment (commercial team) | 18 | 21 | 15 | Laptops, peripherals |
+| **Total Sales & Marketing** | **475** | **958** | **1,395** | |
+| | | | | |
+| *General & Administrative* | | | | |
+| Leadership Salaries (CEO, CFO) | 156 | 390 | 540 | Founder, CEO (from M9), CFO (from M15) |
+| Office & Workspace | 37 | 56 | 65 | Nicosia HQ, co-working allowances |
+| Legal & Compliance | 55 | 40 | 45 | Corporate, IP, GDPR, EU AI Act |
+| Accounting & Audit | 15 | 20 | 25 | Statutory audit, management accounts |
+| Insurance (D&O, cyber, professional) | 8 | 12 | 15 | Directors & officers, cyber liability |
+| Payroll Provider (multi-country) | 12 | 24 | 30 | Deel/Remote employer of record |
+| Recruitment Fees | 50 | 30 | 20 | Retained search (C-suite), referral bonuses |
+| IP / Patent Filing | 10 | 15 | 20 | Provisional patents on core innovations |
+| Advisory Board | 10 | 15 | 15 | 4 advisors, retainer + equity |
+| Office Manager / EA | 25 | 50 | 55 | Admin, HR basics |
+| Banking, FX, Miscellaneous | 20 | 28 | 30 | Multi-currency, contingency |
+| **Total G&A** | **398** | **680** | **860** | |
+| | | | | |
+| **Total Operating Expenses** | **1,753** | **3,108** | **4,285** | |
+| **Operating Income (EBIT)** | **(1,114)** | **(1,209)** | **785** | |
+| | | | | |
+| Interest Income (cash on deposit) | 40 | 30 | 25 | ~1.5% on average cash balance |
+| **Net Income (Loss) Before Tax** | **(1,074)** | **(1,179)** | **810** | |
+| Corporate Tax (12.5% Cyprus) | 0 | 0 | (101) | Loss carryforward absorbs Y1-Y2 losses |
+| **Net Income (Loss)** | **(1,074)** | **(1,179)** | **709** | |
+
+#### Balance Sheet Summary (End of Year)
+
+| Item | Year 0 (Funding) | Year 1 | Year 2 | Year 3 |
+|------|-----------------|--------|--------|--------|
+| **Assets** | | | | |
+| Cash & Cash Equivalents | 5,000 | 3,966 | 2,817 | 3,551 |
+| Accounts Receivable | 0 | 120 | 340 | 890 |
+| Prepaid Expenses | 0 | 30 | 40 | 50 |
+| Equipment (net of depreciation) | 0 | 100 | 165 | 190 |
+| **Total Assets** | **5,000** | **4,216** | **3,362** | **4,681** |
+| | | | | |
+| **Liabilities** | | | | |
+| Accounts Payable | 0 | 60 | 80 | 100 |
+| Deferred Revenue | 0 | 180 | 400 | 700 |
+| Accrued Expenses | 0 | 50 | 75 | 95 |
+| **Total Liabilities** | **0** | **290** | **555** | **895** |
+| | | | | |
+| **Shareholders' Equity** | | | | |
+| Share Capital + Share Premium | 5,000 | 5,000 | 5,000 | 5,000 |
+| Retained Earnings (Accumulated Deficit) | 0 | (1,074) | (2,253) | (1,544) |
+| Series A Proceeds (Year 2/3) | 0 | 0 | 0 | 0 |
+| **Total Equity** | **5,000** | **3,926** | **2,747** | **3,456** |
+| **Total Liabilities + Equity** | **5,000** | **4,216** | **3,302** | **4,351** |
+
+> Note: Series A proceeds (EUR 15-25M target at Month 18-20) are excluded from this projection to show standalone viability from the seed round. With Series A, Year 3 cash position would be EUR 18-28M.
+
+### Appendix E: 3-Year Cash Flow Statement (Base Case)
+
+| Item | Year 1 (EUR K) | Year 2 (EUR K) | Year 3 (EUR K) |
+|------|---------------|---------------|---------------|
+| **Cash Flows from Operating Activities** | | | |
+| Net Income (Loss) | (1,074) | (1,179) | 709 |
+| Adjustments: | | | |
+| + Depreciation & Amortization | 33 | 55 | 75 |
+| + Stock-Based Compensation (ESOP) | 50 | 80 | 120 |
+| Changes in Working Capital: | | | |
+| (Increase) in Accounts Receivable | (120) | (220) | (550) |
+| (Increase) in Prepaid Expenses | (30) | (10) | (10) |
+| Increase in Accounts Payable | 60 | 20 | 20 |
+| Increase in Deferred Revenue | 180 | 220 | 300 |
+| Increase in Accrued Expenses | 50 | 25 | 20 |
+| **Net Cash from Operations** | **(851)** | **(1,009)** | **684** |
+| | | | |
+| **Cash Flows from Investing Activities** | | | |
+| Equipment Purchases (CapEx) | (133) | (120) | (100) |
+| IP / Patent Costs (capitalized) | (10) | (15) | (20) |
+| **Net Cash from Investing** | **(143)** | **(135)** | **(120)** |
+| | | | |
+| **Cash Flows from Financing Activities** | | | |
+| Seed Round Proceeds | 5,000 | 0 | 0 |
+| Series A Proceeds | 0 | 0 | 0 |
+| **Net Cash from Financing** | **5,000** | **0** | **0** |
+| | | | |
+| **Net Change in Cash** | **4,006** | **(1,144)** | **564** |
+| Cash at Beginning of Period | 0 | 3,966 | 2,822 |
+| Interest Income | (40) | 0 | 0 |
+| **Cash at End of Period** | **3,966** | **2,822** | **3,386** |
+
+> **Runway analysis**: Without Series A, the company has EUR 2.8M cash at end of Year 2 and is cash-flow positive in Year 3. Minimum cash position occurs at approximately Month 22-24 (EUR ~2.5M), well above the EUR 1M safety threshold. The EUR 5M seed provides 30+ months of runway in the base case.
+
+#### Quarterly Cash Flow Waterfall (Base Case)
+
+| Quarter | Revenue | Costs | Net Cash Flow | Cumulative Cash |
+|---------|---------|-------|--------------|----------------|
+| Q2 2026 (M1-3) | 0 | (270) | (270) | 4,730 |
+| Q3 2026 (M4-6) | 30 | (430) | (400) | 4,330 |
+| Q4 2026 (M7-9) | 120 | (530) | (410) | 3,920 |
+| Q1 2027 (M10-12) | 290 | (565) | (275) | 3,645 |
+| Q2 2027 (M13-15) | 440 | (620) | (180) | 3,465 |
+| Q3 2027 (M16-18) | 580 | (680) | (100) | 3,365 |
+| Q4 2027 (M19-21) | 730 | (740) | (10) | 3,355 |
+| Q1 2028 (M22-24) | 880 | (780) | 100 | 3,455 |
+| Q2 2028 (M25-27) | 1,050 | (830) | 220 | 3,675 |
+| Q3 2028 (M28-30) | 1,250 | (890) | 360 | 4,035 |
+| Q4 2028 (M31-33) | 1,450 | (950) | 500 | 4,535 |
+| Q1 2029 (M34-36) | 1,650 | (1,000) | 650 | 5,185 |
+
+### Appendix F: Financial Charts
+
+#### Revenue Scenarios vs Operating Costs
+
+![Revenue Scenarios](pdf/charts/revenue_scenarios.png)
+
+*Three revenue projections (conservative, base, optimistic) against quarterly operating costs. Base case achieves break-even at approximately Month 18-20 when quarterly revenue exceeds quarterly costs.*
+
+#### Monthly Cash Flow Analysis
+
+![Monthly Cash Flow](pdf/charts/monthly_cashflow.png)
+
+*Top: Monthly revenue (green) vs operating costs (red), showing the crossover point. Bottom: Cumulative cash position from EUR 5M starting balance, remaining above the EUR 1M safety reserve throughout.*
+
+#### Cost Structure Analysis
+
+![Cost Breakdown](pdf/charts/cost_breakdown.png)
+
+*Left: 24-month fund allocation showing personnel dominance (70%). Right: Annual cost stacking showing controlled growth from EUR 1.8M (Y1) to EUR 4.2M (Y3) as team scales from 1 to 22 FTEs.*
+
+#### Headcount Growth by Function
+
+![Headcount Growth](pdf/charts/headcount_growth.png)
+
+*Stacked area chart showing team build across engineering, commercial, leadership, and operations functions. Key C-suite hires annotated: CTO (Month 1), CRO (Month 4), CEO (Month 9), CFO (Month 15).*
+
+#### Unit Economics & Key SaaS Metrics
+
+![Unit Economics](pdf/charts/unit_economics.png)
+
+*Four-quadrant view: LTV:CAC ratio improving from 3.0x to 12.0x; gross margin progression toward 82%; ARR per employee reaching EUR 230K; monthly net cash flow turning positive.*
 
 ---
 
