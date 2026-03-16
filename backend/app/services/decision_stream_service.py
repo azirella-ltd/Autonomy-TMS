@@ -13,6 +13,7 @@ Follows BriefingDataCollector safe-rollback pattern from executive_briefing_serv
 and AssistantService conversation pattern from assistant_service.py.
 """
 
+import asyncio
 import logging
 import os
 import re
