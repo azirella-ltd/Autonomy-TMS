@@ -26,6 +26,7 @@ import {
 import { Badge, Button, Card, CardContent, Input } from '../components/common';
 import AlertBanner from '../components/decision-stream/AlertBanner';
 import CDTReadinessBanner from '../components/decision-stream/CDTReadinessBanner';
+import DecisionSummaryHeader from '../components/decision-stream/DecisionSummaryHeader';
 import DigestMessage from '../components/decision-stream/DigestMessage';
 import DecisionCard from '../components/decision-stream/DecisionCard';
 import ChatDataBlock from '../components/decision-stream/ChatDataBlock';
@@ -51,6 +52,9 @@ const DecisionStream = () => {
   // Config state
   const [configs, setConfigs] = useState([]);
   const [selectedConfigId, setSelectedConfigId] = useState(null);
+
+  // Show All toggle: false = only decisions needing human attention (Critical/High urgency)
+  const [showAll, setShowAll] = useState(false);
 
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -232,6 +236,14 @@ const DecisionStream = () => {
             <h1 className="text-2xl font-bold">Decision Stream</h1>
             <p className="text-sm text-muted-foreground">
               {digest?.total_pending ?? '...'} decisions made by Autonomy agents
+              {digest && !showAll && (() => {
+                const attention = (digest.decisions || []).filter(d =>
+                  d.urgency === 'Critical' || d.urgency === 'High'
+                ).length;
+                return attention < (digest.total_pending || 0)
+                  ? ` \u00b7 ${attention} surfaced to you`
+                  : '';
+              })()}
             </p>
           </div>
         </div>
@@ -286,13 +298,33 @@ const DecisionStream = () => {
               </span>
             </div>
           ) : digest ? (
-            <DigestMessage
-              digestText={digest.digest_text}
-              decisions={digest.decisions || []}
-              onAccept={handleAccept}
-              onOverride={handleOverride}
-              onAskWhy={handleAskWhy}
-            />
+            <>
+              {/* Decision summary header with urgency × likelihood matrix */}
+              <DecisionSummaryHeader
+                decisions={showAll
+                  ? (digest.decisions || [])
+                  : (digest.decisions || []).filter(d =>
+                      d.urgency === 'Critical' || d.urgency === 'High'
+                    )
+                }
+                totalAgentDecisions={digest.total_pending || 0}
+                showAll={showAll}
+                onToggleShowAll={() => setShowAll(!showAll)}
+              />
+
+              <DigestMessage
+                digestText={digest.digest_text}
+                decisions={showAll
+                  ? (digest.decisions || [])
+                  : (digest.decisions || []).filter(d =>
+                      d.urgency === 'Critical' || d.urgency === 'High'
+                    )
+                }
+                onAccept={handleAccept}
+                onOverride={handleOverride}
+                onAskWhy={handleAskWhy}
+              />
+            </>
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
               <Inbox className="h-12 w-12 mb-3 opacity-40" />
