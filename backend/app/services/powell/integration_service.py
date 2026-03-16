@@ -1273,7 +1273,9 @@ class PowellIntegrationService:
 
             impact = recommendation.expected_impact if hasattr(recommendation, 'expected_impact') else {}
 
-            from app.services.powell.decision_reasoning import rebalancing_reasoning
+            from app.services.powell.decision_reasoning import rebalancing_reasoning, get_product_costs
+            from app.db.session import sync_session_factory
+            _sync_db = sync_session_factory()
             record = PowellRebalanceDecision(
                 config_id=config_id,
                 product_id=recommendation.product_id,
@@ -1295,6 +1297,11 @@ class PowellIntegrationService:
                     recommended_qty=recommendation.recommended_qty,
                     confidence=recommendation.confidence,
                     reason=recommendation.reason.value,
+                    source_dos_before=impact.get("source_dos_before") if isinstance(impact, dict) else None,
+                    dest_dos_before=impact.get("dest_dos_before") if isinstance(impact, dict) else None,
+                    dest_dos_after=impact.get("dest_dos_after") if isinstance(impact, dict) else None,
+                    expected_cost=impact.get("expected_cost") if isinstance(impact, dict) else None,
+                    **dict(zip(("unit_cost", "unit_price"), get_product_costs(_sync_db, recommendation.product_id))),
                 ),
             )
             self.db.add(record)

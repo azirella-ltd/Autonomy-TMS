@@ -14,7 +14,42 @@ Coverage:
 - capture_hive_context() helper for populating HiveSignalMixin fields
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
+# ---------------------------------------------------------------------------
+# Product cost helper — single query to look up unit_cost and unit_price
+# ---------------------------------------------------------------------------
+
+_product_cost_cache: Dict[str, Tuple[Optional[float], Optional[float]]] = {}
+
+
+def get_product_costs(db, product_id: str) -> Tuple[Optional[float], Optional[float]]:
+    """Look up (unit_cost, unit_price) for a product. Cached in-process.
+
+    Works with both sync and async DB sessions (sync path only — for async
+    callers, use get_product_costs_async or pre-populate the cache).
+
+    Returns (None, None) if product not found or DB unavailable.
+    """
+    if product_id in _product_cost_cache:
+        return _product_cost_cache[product_id]
+    try:
+        from sqlalchemy import text
+        row = db.execute(
+            text("SELECT unit_cost, unit_price FROM product WHERE id = :pid"),
+            {"pid": product_id},
+        )
+        # Handle both sync result (has .fetchone()) and proxy objects
+        if hasattr(row, 'fetchone'):
+            row = row.fetchone()
+        if row:
+            result = (row[0], row[1])
+        else:
+            result = (None, None)
+    except Exception:
+        result = (None, None)
+    _product_cost_cache[product_id] = result
+    return result
 
 
 def atp_reasoning(

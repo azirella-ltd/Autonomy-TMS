@@ -586,7 +586,7 @@ class SafetyStockTRM:
             return
         try:
             from app.models.powell_decisions import PowellSSDecision
-            from app.services.powell.decision_reasoning import inventory_buffer_reasoning, capture_hive_context
+            from app.services.powell.decision_reasoning import inventory_buffer_reasoning, capture_hive_context, get_product_costs
             hive_ctx = capture_hive_context(
                 self.signal_bus, "inventory_buffer",
                 cycle_id=getattr(self, "_cycle_id", None),
@@ -614,6 +614,8 @@ class SafetyStockTRM:
                     multiplier=result.multiplier,
                     confidence=result.confidence,
                     reason=result.reason.value,
+                    current_dos=state.current_dos,
+                    **dict(zip(("unit_cost", "unit_price"), get_product_costs(self.db, result.product_id))),
                 ),
                 **hive_ctx,
             )

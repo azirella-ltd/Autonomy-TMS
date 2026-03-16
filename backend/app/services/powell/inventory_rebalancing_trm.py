@@ -569,7 +569,7 @@ class InventoryRebalancingTRM:
             return
         try:
             from app.models.powell_decisions import PowellRebalanceDecision
-            from app.services.powell.decision_reasoning import rebalancing_reasoning, capture_hive_context
+            from app.services.powell.decision_reasoning import rebalancing_reasoning, capture_hive_context, get_product_costs
             hive_ctx = capture_hive_context(
                 self.signal_bus, "rebalancing",
                 cycle_id=getattr(self, "_cycle_id", None),
@@ -597,6 +597,11 @@ class InventoryRebalancingTRM:
                         recommended_qty=rec.quantity,
                         confidence=rec.confidence,
                         reason=rec.reason.value,
+                        source_dos_before=rec.source_dos_before,
+                        dest_dos_before=rec.dest_dos_before,
+                        dest_dos_after=rec.dest_dos_after,
+                        expected_cost=rec.expected_cost,
+                        **dict(zip(("unit_cost", "unit_price"), get_product_costs(self.db, rec.product_id))),
                     ),
                     **hive_ctx,
                 )
