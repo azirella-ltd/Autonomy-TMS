@@ -17,9 +17,6 @@ const URGENCY_TIERS = [
   { key: 'Low', color: 'bg-blue-400', textColor: 'text-blue-700', bgLight: 'bg-blue-50' },
 ];
 
-// Likelihood tiers
-const LIKELIHOOD_TIERS = ['Certain', 'Likely', 'Possible', 'Unlikely'];
-
 // Decision type labels
 const TYPE_LABELS = {
   atp_executor: 'ATP',
@@ -44,19 +41,25 @@ const DecisionSummaryHeader = ({
   onToggleShowAll,
   userScope,
 }) => {
-  // Build urgency × likelihood matrix
-  const matrix = useMemo(() => {
-    const m = {};
-    URGENCY_TIERS.forEach(u => {
-      m[u.key] = {};
-      LIKELIHOOD_TIERS.forEach(l => { m[u.key][l] = 0; });
-    });
+  // Build urgency × likelihood combo list (only combos that exist)
+  const combos = useMemo(() => {
+    const counts = {};
     decisions.forEach(d => {
       const u = d.urgency || 'Medium';
       const l = d.likelihood || 'Possible';
-      if (m[u] && m[u][l] !== undefined) m[u][l]++;
+      const key = `${u}|${l}`;
+      if (!counts[key]) counts[key] = { urgency: u, likelihood: l, count: 0, automated: 0 };
+      counts[key].count++;
+      // Auto-actioned = low urgency + high confidence (agent acted autonomously)
+      const isAuto = (d.urgency_score || 0) < 0.3 && (d.likelihood_score || 0) > 0.7;
+      if (isAuto) counts[key].automated++;
     });
-    return m;
+    // Sort by urgency tier order, then likelihood
+    const urgencyOrder = { Critical: 0, High: 1, Medium: 2, Low: 3, Routine: 4 };
+    return Object.values(counts).sort((a, b) =>
+      (urgencyOrder[a.urgency] ?? 9) - (urgencyOrder[b.urgency] ?? 9)
+      || a.likelihood.localeCompare(b.likelihood)
+    );
   }, [decisions]);
 
   // Count by type
@@ -135,63 +138,44 @@ const DecisionSummaryHeader = ({
         </div>
       </div>
 
-      {/* Urgency × Likelihood matrix + Type breakdown */}
+      {/* Urgency × Likelihood list + Type breakdown */}
       <div className="flex gap-4 flex-wrap">
-        {/* Matrix table */}
+        {/* Compact combo list — only shows combos that exist */}
         <div className="border rounded-lg overflow-hidden flex-1 min-w-[320px]">
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-muted/30">
-                <th className="px-2 py-1.5 text-left font-medium text-muted-foreground w-20">
-                  Urgency
-                </th>
-                {LIKELIHOOD_TIERS.map(l => (
-                  <th key={l} className="px-2 py-1.5 text-center font-medium text-muted-foreground">
-                    {l.split(' ').map(w => w[0]).join('')}
-                  </th>
-                ))}
-                <th className="px-2 py-1.5 text-center font-semibold text-muted-foreground">
-                  Total
-                </th>
+                <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Urgency</th>
+                <th className="px-3 py-1.5 text-left font-medium text-muted-foreground">Likelihood</th>
+                <th className="px-3 py-1.5 text-center font-medium text-muted-foreground">Count</th>
+                <th className="px-3 py-1.5 text-center font-medium text-muted-foreground">Automated</th>
               </tr>
             </thead>
             <tbody>
-              {URGENCY_TIERS.map(tier => {
-                const rowTotal = LIKELIHOOD_TIERS.reduce(
-                  (sum, l) => sum + (matrix[tier.key]?.[l] || 0), 0
-                );
-                if (rowTotal === 0 && !['Critical', 'High'].includes(tier.key)) return null;
+              {combos.map(({ urgency, likelihood, count, automated }, i) => {
+                const tier = URGENCY_TIERS.find(t => t.key === urgency) || URGENCY_TIERS[2];
                 return (
-                  <tr key={tier.key} className={cn('border-t', rowTotal > 0 && tier.bgLight)}>
-                    <td className="px-2 py-1.5">
+                  <tr key={i} className={cn('border-t', tier.bgLight)}>
+                    <td className="px-3 py-1.5">
                       <div className="flex items-center gap-1.5">
                         <div className={cn('h-2 w-2 rounded-full', tier.color)} />
-                        <span className={cn('font-medium', tier.textColor)}>{tier.key}</span>
+                        <span className={cn('font-medium', tier.textColor)}>{urgency}</span>
                       </div>
                     </td>
-                    {LIKELIHOOD_TIERS.map(l => {
-                      const count = matrix[tier.key]?.[l] || 0;
-                      return (
-                        <td key={l} className="px-2 py-1.5 text-center tabular-nums">
-                          {count > 0 ? (
-                            <span className={cn('font-semibold', tier.textColor)}>{count}</span>
-                          ) : (
-                            <span className="text-muted-foreground/30">—</span>
-                          )}
-                        </td>
-                      );
-                    })}
-                    <td className="px-2 py-1.5 text-center tabular-nums font-semibold">
-                      {rowTotal > 0 ? rowTotal : '—'}
+                    <td className="px-3 py-1.5 text-muted-foreground">{likelihood}</td>
+                    <td className="px-3 py-1.5 text-center tabular-nums font-semibold">{count}</td>
+                    <td className="px-3 py-1.5 text-center tabular-nums">
+                      {automated > 0 ? (
+                        <span className="text-green-600 font-medium">{automated}</span>
+                      ) : (
+                        <span className="text-muted-foreground/30">—</span>
+                      )}
                     </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
-          <div className="px-2 py-1 bg-muted/20 border-t text-[10px] text-muted-foreground">
-            AC = Certain, L = Likely, P = Possible, U = Unlikely
-          </div>
         </div>
 
         {/* Type breakdown */}
