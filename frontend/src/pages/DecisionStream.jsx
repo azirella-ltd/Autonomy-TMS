@@ -236,13 +236,14 @@ const DecisionStream = () => {
             <h1 className="text-2xl font-bold">Decision Stream</h1>
             <p className="text-sm text-muted-foreground">
               {digest?.total_pending ?? '...'} decisions made by Autonomy agents
-              {digest && !showAll && (() => {
-                const attention = (digest.decisions || []).filter(d =>
-                  d.urgency === 'Critical' || d.urgency === 'High'
-                ).length;
-                return attention < (digest.total_pending || 0)
-                  ? ` \u00b7 ${attention} surfaced to you`
-                  : '';
+              {digest && (() => {
+                const all = digest.decisions || [];
+                const attention = all.filter(d => d.needs_attention !== false).length;
+                const auto = all.filter(d => d.auto_actioned).length;
+                const parts = [];
+                if (attention > 0) parts.push(`${attention} surfaced to you`);
+                if (auto > 0) parts.push(`${auto} auto-actioned`);
+                return parts.length ? ` \u00b7 ${parts.join(', ')}` : '';
               })()}
             </p>
           </div>
@@ -299,14 +300,9 @@ const DecisionStream = () => {
             </div>
           ) : digest ? (
             <>
-              {/* Decision summary header with urgency × likelihood matrix */}
+              {/* Decision summary header — always shows ALL decisions for full picture */}
               <DecisionSummaryHeader
-                decisions={showAll
-                  ? (digest.decisions || [])
-                  : (digest.decisions || []).filter(d =>
-                      d.urgency === 'Critical' || d.urgency === 'High'
-                    )
-                }
+                decisions={digest.decisions || []}
                 totalAgentDecisions={digest.total_pending || 0}
                 showAll={showAll}
                 onToggleShowAll={() => setShowAll(!showAll)}
@@ -316,9 +312,7 @@ const DecisionStream = () => {
                 digestText={digest.digest_text}
                 decisions={showAll
                   ? (digest.decisions || [])
-                  : (digest.decisions || []).filter(d =>
-                      d.urgency === 'Critical' || d.urgency === 'High'
-                    )
+                  : (digest.decisions || []).filter(d => d.needs_attention !== false)
                 }
                 onAccept={handleAccept}
                 onOverride={handleOverride}

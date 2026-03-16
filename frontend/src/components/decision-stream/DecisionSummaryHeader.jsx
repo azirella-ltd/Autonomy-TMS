@@ -50,9 +50,7 @@ const DecisionSummaryHeader = ({
       const key = `${u}|${l}`;
       if (!counts[key]) counts[key] = { urgency: u, likelihood: l, count: 0, automated: 0 };
       counts[key].count++;
-      // Auto-actioned = low urgency + high confidence (agent acted autonomously)
-      const isAuto = (d.urgency_score || 0) < 0.3 && (d.likelihood_score || 0) > 0.7;
-      if (isAuto) counts[key].automated++;
+      if (d.auto_actioned) counts[key].automated++;
     });
     // Sort by urgency (highest first), then likelihood ascending (lowest first)
     const urgencyOrder = { Critical: 0, High: 1, Medium: 2, Low: 3, Routine: 4 };
@@ -75,9 +73,8 @@ const DecisionSummaryHeader = ({
   }, [decisions]);
 
   const surfacedCount = decisions.length;
-  const needsAttention = decisions.filter(d =>
-    d.urgency === 'Critical' || d.urgency === 'High'
-  ).length;
+  const needsAttention = decisions.filter(d => d.needs_attention !== false).length;
+  const autoActioned = decisions.filter(d => d.auto_actioned).length;
 
   return (
     <div className="mb-4 space-y-3">
@@ -192,12 +189,20 @@ const DecisionSummaryHeader = ({
               </div>
             ))}
           </div>
-          {needsAttention > 0 && (
-            <div className="mt-2 pt-2 border-t text-xs">
-              <span className="text-red-600 font-semibold">{needsAttention}</span>
-              <span className="text-muted-foreground ml-1">need human judgment</span>
-            </div>
-          )}
+          <div className="mt-2 pt-2 border-t text-xs space-y-0.5">
+            {needsAttention > 0 && (
+              <div>
+                <span className="text-red-600 font-semibold">{needsAttention}</span>
+                <span className="text-muted-foreground ml-1">need human judgment</span>
+              </div>
+            )}
+            {autoActioned > 0 && (
+              <div>
+                <span className="text-green-600 font-semibold">{autoActioned}</span>
+                <span className="text-muted-foreground ml-1">auto-actioned</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -1164,33 +1164,29 @@ class DecisionStreamService:
             except (TypeError, ValueError):
                 return default
 
-        kept: List[Dict[str, Any]] = []
-        abandoned_count = 0
-
+        # Tag each decision as needs_attention vs auto_actioned
+        # (filtering is done on the frontend via Show All toggle)
+        auto_count = 0
         for d in decisions:
             urgency = _to_float(d.get("urgency_score"), 0.0)
             likelihood = _to_float(d.get("likelihood_score"), _DEFAULT_CONFIDENCE)
             combined = urgency + likelihood
 
-            # Abandon: both urgency and likelihood are low — not worth
-            # anyone's time.  Excluded from the stream entirely.
             if combined < _ABANDON_COMBINED_THRESHOLD:
-                d["abandoned"] = True
-                d["abandon_reason"] = (
-                    f"Combined score {combined:.2f} (urgency {urgency:.0%} + "
-                    f"likelihood {likelihood:.0%}) below "
-                    f"{_ABANDON_COMBINED_THRESHOLD:.2f} threshold"
-                )
-                abandoned_count += 1
-                continue
+                d["needs_attention"] = False
+                d["auto_actioned"] = True
+                auto_count += 1
+            else:
+                d["needs_attention"] = True
+                d["auto_actioned"] = False
 
-            kept.append(d)
-
-        if abandoned_count:
+        if auto_count:
             logger.debug(
-                "Decision stream: abandoned %d low-urgency/low-likelihood decisions",
-                abandoned_count,
+                "Decision stream: %d auto-actioned (below threshold), %d need attention",
+                auto_count, len(decisions) - auto_count,
             )
+
+        kept = decisions  # Return ALL decisions — frontend filters
 
         # Sort: urgency tier DESC, then likelihood ASC within each tier.
         # Bucketing prevents fine-grained urgency noise from pushing a high-confidence
