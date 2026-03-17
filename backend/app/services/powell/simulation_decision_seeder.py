@@ -266,11 +266,28 @@ def _gen_atp_executor(
         reason = "cannot_fulfill"
         reason_text = f"Cannot fulfill: zero inventory available. {demand:.0f} units backordered."
 
+    # Financial context
+    unit_cost = cfg.holding_cost_daily * 365 / max(0.25, 1.0)  # rough unit value
+    revenue_at_stake = demand * unit_cost
+    backlog_cost_daily = node.backlog * cfg.backlog_cost_daily
+
     reasoning = (
         f"ATP check for {product_desc} at {cfg.site_name}: "
         f"{reason_text} "
         f"Available inventory: {node.inventory:.0f} units. "
-        f"Backlog: {node.backlog:.0f} units. Priority {priority}."
+        f"Backlog: {node.backlog:.0f} units. Priority {priority}. "
+        f"**Financial context**: Order value: ${revenue_at_stake:,.2f}. "
+        + (f"Current backlog carrying cost: ${backlog_cost_daily:,.2f}/day "
+           f"({node.backlog:.0f} units × ${cfg.backlog_cost_daily:.4f}/unit/day). "
+           if node.backlog > 0 else "")
+        + (f"Shortfall of {demand - promised:.0f} units will add "
+           f"${(demand - promised) * cfg.backlog_cost_daily:,.2f}/day to backlog costs "
+           f"until next replenishment (est. {cfg.lead_time_days:.0f} days). "
+           f"Total exposure: ${(demand - promised) * cfg.backlog_cost_daily * cfg.lead_time_days:,.2f}."
+           if not can_fulfill and (demand - promised) > 0 else
+           f"Full fulfillment secures ${revenue_at_stake:,.2f} in revenue. "
+           f"Days of supply remaining: {node.inventory / max(node.avg_daily_demand, 0.01):.1f} days."
+           )
     )
 
     record = PowellATPDecision(
@@ -924,13 +941,25 @@ def _gen_forecast_adjustment(
     signal_source = random.choice(signal_sources)
     signal_type = random.choice(signal_types[direction])
 
+    # Financial impact: forecast error drives safety stock cost and stockout risk
+    daily_cost_impact = abs(actual - current_forecast) * cfg.holding_cost_daily
+    weekly_exposure = daily_cost_impact * 7
+    stockout_risk_cost = abs(actual - current_forecast) * cfg.backlog_cost_daily * cfg.lead_time_days
+
     reasoning = (
         f"Forecast adjustment for {product_desc} at {cfg.site_name}: "
         f"actual demand {actual:.0f} vs forecast {current_forecast:.0f} "
         f"(error: {forecast_error:.0%}). "
         f"Adjusting forecast {direction} by {adjustment_pct:.0f}% to {adjusted_value:.0f} units/day. "
         f"Signal source: {signal_source.replace('_', ' ')}. "
-        f"Demand CV: {node.demand_cv:.2f}."
+        f"Demand CV: {node.demand_cv:.2f}. "
+        f"**Financial impact**: Forecast error of {abs(actual - current_forecast):.0f} units/day "
+        f"exposes ${weekly_exposure:,.2f}/week in excess holding cost if over-forecasted, "
+        f"or ${stockout_risk_cost:,.2f} in potential stockout cost over the {cfg.lead_time_days:.0f}-day "
+        f"lead time if under-forecasted. Adjusting the forecast reduces this exposure by "
+        f"~{(1 - random.uniform(0.3, 0.7)) * 100:.0f}%. "
+        f"Net benefit of adjustment: ${max(weekly_exposure, stockout_risk_cost) * random.uniform(0.4, 0.7):,.2f} "
+        f"in avoided cost over the next planning horizon."
     )
 
     record = PowellForecastAdjustmentDecision(

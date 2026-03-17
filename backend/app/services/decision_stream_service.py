@@ -1241,27 +1241,29 @@ class DecisionStreamService:
 
         # Tag each decision using 2×2 urgency × likelihood model:
         #
-        #   Urgent (≥ threshold)  + Any confidence    → needs_attention (always surface)
-        #   Routine (< threshold) + Confident (≥ thr) → auto_actioned (agent handles)
-        #   Routine (< threshold) + Uncertain (< thr) → needs_attention (surface for validation)
+        #   Urgent + Uncertain  → needs_attention (human judgment creates value)
+        #   Urgent + Confident  → auto_actioned (agent confident, even though urgent)
+        #   Routine + Uncertain → needs_attention (surface for human validation)
+        #   Routine + Confident → auto_actioned (agent handles autonomously)
         #
-        # Filtering is done on the frontend via the Show All toggle.
+        # Key insight: likelihood (agent confidence) is the primary gate for
+        # auto-actioning. Urgency determines PRIORITY within needs_attention,
+        # not whether to surface. A High-urgency decision where the agent is
+        # 85% confident does NOT need human review — the agent can handle it.
+        #
+        # Filtering is done on the frontend via the Needs Attention / Show All buttons.
         auto_count = 0
         for d in decisions:
             urgency = _to_float(d.get("urgency_score"), 0.0)
             likelihood = _to_float(d.get("likelihood_score"), _DEFAULT_CONFIDENCE)
 
-            if urgency >= urgency_thresh:
-                # Urgent — always surface for human review
-                d["needs_attention"] = True
-                d["auto_actioned"] = False
-            elif likelihood >= likelihood_thresh:
-                # Routine + confident — agent auto-actions
+            if likelihood >= likelihood_thresh:
+                # Agent is confident — auto-action regardless of urgency
                 d["needs_attention"] = False
                 d["auto_actioned"] = True
                 auto_count += 1
             else:
-                # Routine + uncertain — surface for human validation
+                # Agent is uncertain — surface for human review
                 d["needs_attention"] = True
                 d["auto_actioned"] = False
 

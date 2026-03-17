@@ -251,13 +251,14 @@ const DecisionStream = () => {
         <div className="flex items-center gap-3">
           {configs.length > 0 && (
             <select
-              className="border rounded-md px-3 py-2 text-sm bg-background"
+              className="border rounded-md px-3 py-2 text-sm bg-background max-w-[240px] truncate"
               value={selectedConfigId || ''}
               onChange={(e) =>
                 setSelectedConfigId(
                   e.target.value ? parseInt(e.target.value, 10) : null
                 )
               }
+              title={configs.find(c => c.id === selectedConfigId)?.name || 'All Configs'}
             >
               <option value="">All Configs</option>
               {configs.map((cfg) => (

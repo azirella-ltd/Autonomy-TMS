@@ -117,22 +117,33 @@ const DecisionSummaryHeader = ({
             </div>
           )}
 
-          {/* Show All toggle */}
-          <button
-            onClick={onToggleShowAll}
-            className={cn(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
-              showAll
-                ? 'bg-violet-100 text-violet-700 hover:bg-violet-200'
-                : 'bg-muted/50 text-muted-foreground hover:bg-muted'
-            )}
-          >
-            {showAll ? (
-              <><Eye className="h-3 w-3" /> Show All</>
-            ) : (
-              <><EyeOff className="h-3 w-3" /> Needs Attention</>
-            )}
-          </button>
+          {/* View mode buttons */}
+          <div className="flex rounded-lg border overflow-hidden">
+            <button
+              onClick={() => showAll && onToggleShowAll()}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors',
+                !showAll
+                  ? 'bg-red-50 text-red-700 border-r'
+                  : 'bg-background text-muted-foreground hover:bg-muted/50 border-r'
+              )}
+            >
+              <EyeOff className="h-3 w-3" />
+              Needs Attention
+            </button>
+            <button
+              onClick={() => !showAll && onToggleShowAll()}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors',
+                showAll
+                  ? 'bg-violet-50 text-violet-700'
+                  : 'bg-background text-muted-foreground hover:bg-muted/50'
+              )}
+            >
+              <Eye className="h-3 w-3" />
+              Show All
+            </button>
+          </div>
         </div>
       </div>
 
