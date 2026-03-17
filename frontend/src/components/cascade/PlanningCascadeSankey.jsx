@@ -35,6 +35,7 @@ import { Network } from 'lucide-react';
 import SankeyDiagram from '../charts/SankeyDiagram';
 import SankeyMetricLegend from '../charts/SankeyMetricLegend';
 import GeospatialSupplyChain from '../visualization/GeospatialSupplyChain';
+import HierarchyAggregationBar, { DEFAULT_HIERARCHY_VALUE } from '../metrics/HierarchyAggregationBar';
 import {
   getSupplyChainConfigs,
   getSites,
@@ -214,10 +215,12 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className
   const [viewMode, setViewMode] = useState('sankey');
   const [resolvedConfigId, setResolvedConfigId] = useState(configIdProp || null);
 
-  // Hierarchy navigation state
-  const [geoLevel, setGeoLevel] = useState('state');
-  const [productCategory, setProductCategory] = useState('all');
-  const [timeBucket, setTimeBucket] = useState('monthly');
+  // Hierarchy navigation state (unified via HierarchyAggregationBar)
+  const [hierarchy, setHierarchy] = useState(DEFAULT_HIERARCHY_VALUE);
+  // Backward-compat aliases used by existing Sankey builder logic
+  const geoLevel = hierarchy?.geo?.level === 'all' ? 'state' : hierarchy?.geo?.level || 'state';
+  const productCategory = hierarchy?.product?.categoryKey || 'all';
+  const timeBucket = 'monthly';
 
   // Auto-resolve configId: if none passed, pick the first available config
   useEffect(() => {
@@ -472,40 +475,6 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className
           </div>
           {!error && (
             <div className="flex items-center gap-2 shrink-0">
-              <Select value={geoLevel} onValueChange={setGeoLevel}>
-                <SelectTrigger className="h-8 w-[110px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {GEO_LEVELS.map(g => (
-                    <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select value={productCategory} onValueChange={setProductCategory}>
-                <SelectTrigger className="h-8 w-[130px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Products</SelectItem>
-                  {productCategories.map(cat => (
-                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select value={timeBucket} onValueChange={setTimeBucket}>
-                <SelectTrigger className="h-8 w-[100px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TIME_BUCKETS.map(t => (
-                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
               <ToggleGroup
                 type="single"
                 size="sm"
@@ -520,6 +489,12 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className
         </div>
       </CardHeader>
       <CardContent className="px-2 pb-2">
+        <HierarchyAggregationBar
+          sites={rawSites}
+          products={rawProducts}
+          value={hierarchy}
+          onChange={setHierarchy}
+        />
         {renderContent()}
       </CardContent>
     </Card>

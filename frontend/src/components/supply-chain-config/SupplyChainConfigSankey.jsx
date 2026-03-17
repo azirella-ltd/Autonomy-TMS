@@ -43,6 +43,7 @@ import {
 import SankeyDiagram from '../charts/SankeyDiagram';
 import SankeyMetricLegend from '../charts/SankeyMetricLegend';
 import GeospatialSupplyChain from '../visualization/GeospatialSupplyChain';
+import HierarchyAggregationBar, { DEFAULT_HIERARCHY_VALUE } from '../metrics/HierarchyAggregationBar';
 
 // External TradingPartner node types (AWS SC DM)
 const VENDOR_TYPE = 'VENDOR';     // external supplier (tpartner_type='vendor')
@@ -233,6 +234,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
   const [activeTab, setActiveTab] = useState('diagram');
   const [sankeyScaleMode, setSankeyScaleMode] = useState('flow');
   const [viewMode, setViewMode] = useState('sankey'); // 'sankey' or 'map'
+  const [hierarchy, setHierarchy] = useState(null); // lazy init from HierarchyAggregationBar
   const forwardStroke = SANKEY_COLORS.text.secondary;
   const returnStroke = SANKEY_COLORS.grey[500];
 
@@ -2488,6 +2490,13 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
 
               <TabsContent value="diagram" className="mt-4">
                 <div className="flex flex-col gap-2">
+                  {/* Hierarchy aggregation bar */}
+                  <HierarchyAggregationBar
+                    sites={sites}
+                    products={products}
+                    value={hierarchy || DEFAULT_HIERARCHY_VALUE}
+                    onChange={setHierarchy}
+                  />
                   <div className="flex justify-between items-center">
                     {/* View mode toggle: Sankey vs Map */}
                     <ToggleGroup

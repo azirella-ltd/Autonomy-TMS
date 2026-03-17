@@ -3,11 +3,26 @@ import { Card, CardContent, CardHeader, CardTitle, Badge, Progress } from '../..
 import { Package, TrendingUp, TrendingDown, AlertTriangle, BarChart3 } from 'lucide-react';
 import api from '../../services/api';
 import Sparkline from '../../components/metrics/Sparkline';
+import HierarchyAggregationBar, { DEFAULT_HIERARCHY_VALUE } from '../../components/metrics/HierarchyAggregationBar';
+
+const matchesGeo = (site, hierarchy) => {
+  const geo = hierarchy?.geo;
+  if (!geo || geo.level === 'all') return true;
+  const g = site.geography || {};
+  if (geo.regionKey && (g.region || 'Other') !== geo.regionKey) return false;
+  if (geo.stateKey && g.state_prov !== geo.stateKey) return false;
+  if (geo.cityKey && g.city !== geo.cityKey) return false;
+  if (geo.siteKey && site.name !== geo.siteKey) return false;
+  return true;
+};
 
 const InventoryOptimizationAnalytics = () => {
   const [policies, setPolicies] = useState([]);
+  const [allSites, setAllSites] = useState([]);
+  const [allProducts, setAllProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState({ total: 0, overstocked: 0, understocked: 0, optimal: 0, avgDOS: 0 });
+  const [hierarchy, setHierarchy] = useState(DEFAULT_HIERARCHY_VALUE);
 
   useEffect(() => {
     const load = async () => {
@@ -16,8 +31,14 @@ const InventoryOptimizationAnalytics = () => {
         const cfg = Array.isArray(configs) ? configs.find(c => c.is_active) || configs[0] : null;
         if (!cfg) { setLoading(false); return; }
 
-        const { data: sites } = await api.get(`/supply-chain-config/${cfg.id}/sites`);
-        const internal = (Array.isArray(sites) ? sites : []).filter(
+        const [sitesResp, prodsResp] = await Promise.all([
+          api.get(`/supply-chain-config/${cfg.id}/sites`),
+          api.get(`/supply-chain-config/${cfg.id}/products`).catch(() => ({ data: [] })),
+        ]);
+        const sitesList = Array.isArray(sitesResp.data) ? sitesResp.data : [];
+        setAllSites(sitesList);
+        setAllProducts(Array.isArray(prodsResp.data) ? prodsResp.data : []);
+        const internal = sitesList.filter(
           s => s.master_type !== 'MARKET_SUPPLY' && s.master_type !== 'MARKET_DEMAND'
         );
 
@@ -45,6 +66,7 @@ const InventoryOptimizationAnalytics = () => {
             status,
             fillRate: Math.min(100, 80 + Math.random() * 20),
             sparkline: Array.from({ length: 12 }, () => dos + (Math.random() - 0.5) * 10),
+            geography: s.geography,
           };
         });
 
@@ -86,6 +108,13 @@ const InventoryOptimizationAnalytics = () => {
       <p className="text-sm text-muted-foreground mb-6">
         Safety stock adequacy, days of supply, and inventory optimization opportunities
       </p>
+
+      <HierarchyAggregationBar
+        sites={allSites}
+        products={allProducts}
+        value={hierarchy}
+        onChange={setHierarchy}
+      />
 
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
@@ -139,7 +168,7 @@ const InventoryOptimizationAnalytics = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {policies.sort((a, b) => a.dos - b.dos).map((p) => {
+                  {policies.filter(p => matchesGeo(p, hierarchy)).sort((a, b) => a.dos - b.dos).map((p) => {
                     const sb = STATUS_BADGE[p.status] || STATUS_BADGE.optimal;
                     return (
                       <tr key={p.id} className="border-b last:border-0 hover:bg-muted/50">

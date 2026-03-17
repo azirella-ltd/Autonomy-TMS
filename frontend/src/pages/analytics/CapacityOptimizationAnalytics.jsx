@@ -1,13 +1,28 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Alert, AlertDescription, Badge, Card, CardContent, CardHeader, CardTitle, Progress } from '../../components/common';
 import { Factory, TrendingUp, TrendingDown, AlertTriangle, CheckCircle, BarChart3 } from 'lucide-react';
 import api from '../../services/api';
 import Sparkline from '../../components/metrics/Sparkline';
+import HierarchyAggregationBar, { DEFAULT_HIERARCHY_VALUE } from '../../components/metrics/HierarchyAggregationBar';
+
+const matchesHierarchy = (site, hierarchy) => {
+  const geo = hierarchy?.geo;
+  if (!geo || geo.level === 'all') return true;
+  const g = site.geography || site._geo || {};
+  if (geo.regionKey && (g.region || 'Other') !== geo.regionKey) return false;
+  if (geo.stateKey && g.state_prov !== geo.stateKey) return false;
+  if (geo.cityKey && g.city !== geo.cityKey) return false;
+  if (geo.siteKey && site.name !== geo.siteKey) return false;
+  return true;
+};
 
 const CapacityOptimizationAnalytics = () => {
   const [resources, setResources] = useState([]);
+  const [allSites, setAllSites] = useState([]);
+  const [allProducts, setAllProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState({ total: 0, bottlenecks: 0, underutilized: 0, avgUtil: 0 });
+  const [hierarchy, setHierarchy] = useState(DEFAULT_HIERARCHY_VALUE);
 
   useEffect(() => {
     const load = async () => {
@@ -41,8 +56,14 @@ const CapacityOptimizationAnalytics = () => {
           const { data: configs } = await api.get('/supply-chain-config/');
           const cfg = Array.isArray(configs) ? configs[0] : null;
           if (cfg) {
-            const { data: sites } = await api.get(`/supply-chain-config/${cfg.id}/sites`);
-            const internal = (Array.isArray(sites) ? sites : []).filter(
+            const [sitesResp, prodsResp] = await Promise.all([
+              api.get(`/supply-chain-config/${cfg.id}/sites`),
+              api.get(`/supply-chain-config/${cfg.id}/products`).catch(() => ({ data: [] })),
+            ]);
+            const sitesList = Array.isArray(sitesResp.data) ? sitesResp.data : [];
+            setAllSites(sitesList);
+            setAllProducts(Array.isArray(prodsResp.data) ? prodsResp.data : []);
+            const internal = sitesList.filter(
               s => s.master_type !== 'MARKET_SUPPLY' && s.master_type !== 'MARKET_DEMAND'
             );
             for (const s of internal) {
@@ -56,6 +77,8 @@ const CapacityOptimizationAnalytics = () => {
                 used: Math.round(util * 10),
                 utilization: util,
                 sparkline: Array.from({ length: 12 }, () => util + (Math.random() - 0.5) * 15),
+                geography: s.geography,
+                _geo: s.geography,
               });
             }
           }
@@ -92,9 +115,16 @@ const CapacityOptimizationAnalytics = () => {
         <Factory className="h-6 w-6 text-primary" />
         <h1 className="text-2xl font-bold">Capacity Analytics</h1>
       </div>
-      <p className="text-sm text-muted-foreground mb-6">
+      <p className="text-sm text-muted-foreground mb-4">
         Resource utilization, bottleneck detection, and capacity optimization across the network
       </p>
+
+      <HierarchyAggregationBar
+        sites={allSites}
+        products={allProducts}
+        value={hierarchy}
+        onChange={setHierarchy}
+      />
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -138,7 +168,7 @@ const CapacityOptimizationAnalytics = () => {
             <div className="text-center py-12 text-muted-foreground">No capacity data available. Run a supply plan to generate capacity requirements.</div>
           ) : (
             <div className="space-y-3">
-              {resources.sort((a, b) => b.utilization - a.utilization).map((r) => (
+              {resources.filter(r => matchesHierarchy(r, hierarchy)).sort((a, b) => b.utilization - a.utilization).map((r) => (
                 <div key={r.id} className="flex items-center gap-4 py-2 border-b last:border-0">
                   <div className="w-40">
                     <p className="text-sm font-medium truncate">{r.name}</p>
