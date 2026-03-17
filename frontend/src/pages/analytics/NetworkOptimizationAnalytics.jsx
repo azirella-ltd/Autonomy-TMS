@@ -21,6 +21,7 @@ import {
 import { cn } from '../../lib/utils/cn';
 import api from '../../services/api';
 import Sparkline from '../../components/metrics/Sparkline';
+import HierarchyAggregationBar, { DEFAULT_HIERARCHY_VALUE } from '../../components/metrics/HierarchyAggregationBar';
 
 // ---------------------------------------------------------------------------
 // Graph analytics computed client-side from site/lane data
@@ -201,12 +202,24 @@ const ECHELON_COLORS = [
   'bg-gray-50 border-gray-300',
 ];
 
-const ValueStreamMap = ({ sites, lanes, graph, filters }) => {
+const ValueStreamMap = ({ sites, lanes, graph, hierarchy }) => {
+  const geo = hierarchy?.geo || DEFAULT_HIERARCHY_VALUE.geo;
+
+  // Filter sites based on hierarchy selection
+  const matchesGeo = (s) => {
+    if (geo.level === 'all') return true;
+    const g = s.geography || {};
+    if (geo.regionKey && (g.region || 'Other') !== geo.regionKey) return false;
+    if (geo.stateKey && g.state_prov !== geo.stateKey) return false;
+    if (geo.cityKey && g.city !== geo.cityKey) return false;
+    if (geo.siteKey && s.name !== geo.siteKey) return false;
+    return true;
+  };
+
   // Group sites by echelon
   const echelons = useMemo(() => {
     const groups = {};
-    // Add external nodes as their own echelons
-    const demandSites = sites.filter(s => s.master_type === 'MARKET_DEMAND');
+    const demandSites = sites.filter(s => s.master_type === 'MARKET_DEMAND' && matchesGeo(s));
     const supplySites = sites.filter(s => s.master_type === 'MARKET_SUPPLY');
 
     if (demandSites.length > 0) {
@@ -218,7 +231,6 @@ const ValueStreamMap = ({ sites, lanes, graph, filters }) => {
       };
     }
 
-    // Internal sites grouped by echelon
     const maxEch = Math.max(...Object.values(graph.echelon).filter(v => typeof v === 'number'), 0);
     for (let e = 0; e <= maxEch; e++) {
       const eSites = sites.filter(s =>
@@ -226,12 +238,7 @@ const ValueStreamMap = ({ sites, lanes, graph, filters }) => {
         s.master_type !== 'MARKET_DEMAND' &&
         s.master_type !== 'MARKET_SUPPLY'
       );
-      // Apply filters
-      const filtered = eSites.filter(s => {
-        if (filters.region && s.geography?.region && s.geography.region !== filters.region) return false;
-        if (filters.type && s.master_type !== filters.type) return false;
-        return true;
-      });
+      const filtered = eSites.filter(matchesGeo);
       if (filtered.length > 0) {
         groups[`e${e}`] = {
           label: ECHELON_LABELS[e] || `Echelon ${e}`,
@@ -252,7 +259,7 @@ const ValueStreamMap = ({ sites, lanes, graph, filters }) => {
     }
 
     return Object.values(groups).sort((a, b) => a.echelon - b.echelon);
-  }, [sites, graph, filters]);
+  }, [sites, graph, geo]);
 
   // Compute inter-echelon lead times
   const interEchelonLT = useMemo(() => {
@@ -422,8 +429,9 @@ const ValueStreamMap = ({ sites, lanes, graph, filters }) => {
 const NetworkOptimizationAnalytics = () => {
   const [sites, setSites] = useState([]);
   const [lanes, setLanes] = useState([]);
+  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [vsmFilters, setVsmFilters] = useState({ region: '', type: '', product: '' });
+  const [hierarchy, setHierarchy] = useState(DEFAULT_HIERARCHY_VALUE);
 
   useEffect(() => {
     const load = async () => {
@@ -432,13 +440,15 @@ const NetworkOptimizationAnalytics = () => {
         const cfg = Array.isArray(configs) ? configs.find(c => c.is_active) || configs[0] : null;
         if (!cfg) { setLoading(false); return; }
 
-        const [sitesRes, lanesRes] = await Promise.all([
+        const [sitesRes, lanesRes, productsRes] = await Promise.all([
           api.get(`/supply-chain-config/${cfg.id}/sites`),
           api.get(`/supply-chain-config/${cfg.id}/lanes`),
+          api.get(`/supply-chain-config/${cfg.id}/products`).catch(() => ({ data: [] })),
         ]);
 
         setSites(Array.isArray(sitesRes.data) ? sitesRes.data : []);
         setLanes(Array.isArray(lanesRes.data) ? lanesRes.data : []);
+        setProducts(Array.isArray(productsRes.data) ? productsRes.data : []);
       } catch (err) {
         console.error('Network analytics error:', err);
       } finally {
@@ -689,53 +699,25 @@ const NetworkOptimizationAnalytics = () => {
       {/* ── Value Stream Map ── */}
       <Card className="mt-6">
         <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Layers className="h-4 w-4" /> Value Stream Map
-              <span className="text-[10px] text-muted-foreground font-normal ml-2">
-                End-to-end flow from vendors to customers by echelon
-              </span>
-            </CardTitle>
-            {/* Filters */}
-            <div className="flex items-center gap-2">
-              <Filter className="h-3.5 w-3.5 text-muted-foreground" />
-              <select
-                className="text-xs border rounded px-2 py-1 bg-background"
-                value={vsmFilters.region}
-                onChange={(e) => setVsmFilters(f => ({ ...f, region: e.target.value }))}
-              >
-                <option value="">All Regions</option>
-                {[...new Set(sites.map(s => s.geography?.region).filter(Boolean))].sort().map(r => (
-                  <option key={r} value={r}>{r}</option>
-                ))}
-              </select>
-              <select
-                className="text-xs border rounded px-2 py-1 bg-background"
-                value={vsmFilters.type}
-                onChange={(e) => setVsmFilters(f => ({ ...f, type: e.target.value }))}
-              >
-                <option value="">All Site Types</option>
-                {[...new Set(sites.filter(s => s.master_type !== 'MARKET_SUPPLY' && s.master_type !== 'MARKET_DEMAND').map(s => s.master_type).filter(Boolean))].sort().map(t => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </select>
-              {(vsmFilters.region || vsmFilters.type) && (
-                <button
-                  className="text-[10px] text-primary hover:underline"
-                  onClick={() => setVsmFilters({ region: '', type: '', product: '' })}
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-          </div>
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Layers className="h-4 w-4" /> Value Stream Map
+            <span className="text-[10px] text-muted-foreground font-normal ml-2">
+              End-to-end flow from vendors to customers — drill by geography, product, and time
+            </span>
+          </CardTitle>
         </CardHeader>
         <CardContent>
+          <HierarchyAggregationBar
+            sites={sites}
+            products={products}
+            value={hierarchy}
+            onChange={setHierarchy}
+          />
           <ValueStreamMap
             sites={sites}
             lanes={lanes}
             graph={graph}
-            filters={vsmFilters}
+            hierarchy={hierarchy}
           />
         </CardContent>
       </Card>
