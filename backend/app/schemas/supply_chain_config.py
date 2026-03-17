@@ -727,6 +727,18 @@ class SupplyChainConfig(SupplyChainConfigBase):
         None,
         description="Hash of the configuration when it was last trained",
     )
+    scenario_type: str = Field(
+        "BASELINE",
+        description="Config type: BASELINE, WORKING, SIMULATION, or ARCHIVED",
+    )
+    version: int = Field(
+        1,
+        description="Config version number (incremented on reprovisioning)",
+    )
+    parent_config_id: Optional[int] = Field(
+        None,
+        description="ID of the parent config (set on archived versions)",
+    )
     # AWS SC DM terminology
     products: List['ProductResponse'] = []
     sites: List[Site] = []

@@ -104,6 +104,41 @@ async def run_all_provisioning(
     return {"status": "started", "config_id": config_id}
 
 
+@router.post("/reprovision/{config_id}")
+async def reprovision_config(
+    config_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(deps.require_tenant_admin),
+):
+    """Archive the current config version and re-run all provisioning steps.
+
+    Creates a read-only archived snapshot of the current config (visible in the
+    SC config list with its original creation date), then resets all provisioning
+    step statuses and runs the full pipeline again.
+
+    Returns immediately — the frontend polls /status/{config_id} for progress.
+    """
+    import asyncio
+    from app.db.session import async_session_factory as AsyncSessionLocal
+
+    # Mark as in_progress immediately so the UI reflects it
+    service = ProvisioningService(db)
+    status = await service.get_or_create_status(config_id)
+    status.overall_status = "in_progress"
+    await db.commit()
+
+    async def _reprovision_background(cid: int):
+        async with AsyncSessionLocal() as bg_db:
+            bg_service = ProvisioningService(bg_db)
+            try:
+                await bg_service.reprovision(cid)
+            except Exception:
+                logger.exception("Background reprovision failed for config %d", cid)
+
+    asyncio.create_task(_reprovision_background(config_id))
+    return {"status": "started", "config_id": config_id, "note": "Previous version archived"}
+
+
 @router.post("/reset/{config_id}/{step_key}")
 async def reset_provisioning_step(
     config_id: int,

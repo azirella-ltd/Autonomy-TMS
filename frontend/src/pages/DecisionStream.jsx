@@ -65,7 +65,9 @@ const DecisionStream = () => {
     const loadConfigs = async () => {
       try {
         const data = await simulationApi.getSupplyChainConfigs();
-        const items = data.items || data || [];
+        const all = data.items || data || [];
+        // Filter out archived configs — they have no active decisions
+        const items = all.filter((c) => c.scenario_type !== 'ARCHIVED');
         setConfigs(items);
         if (items.length > 0 && !selectedConfigId) {
           const active = items.find((c) => c.is_active);

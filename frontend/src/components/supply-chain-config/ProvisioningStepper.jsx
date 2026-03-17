@@ -690,8 +690,16 @@ const ProvisioningStepper = ({ configId, configName, isOpen, onClose }) => {
   };
 
   const handleReProvision = async () => {
-    await handleResetAll();
-    await handleRunAll();
+    setRunningAll(true);
+    setStartedAt(Date.now());
+    try {
+      await api.post(`/provisioning/reprovision/${configId}`);
+      await fetchStatus();
+    } catch (err) {
+      console.error('Re-provision failed:', err);
+    } finally {
+      setRunningAll(false);
+    }
   };
 
   // Track when steps first enter "running" state for elapsed display

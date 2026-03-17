@@ -118,6 +118,65 @@ class ProvisioningService:
             await self.db.commit()
             return {"status": "failed", "step": step_key, "error": str(e)[:500]}
 
+    async def reprovision(self, config_id: int) -> dict:
+        """Archive the current config version and re-run all provisioning steps.
+
+        Creates an archived snapshot of the current config (preserving its
+        creation date and version) before resetting all provisioning step
+        statuses and running the full pipeline again.  The archived config
+        appears in the SC config list as a read-only historical record.
+        """
+        from app.models.supply_chain_config import SupplyChainConfig
+
+        # 1. Load the current config
+        row = await self.db.execute(
+            select(SupplyChainConfig).where(SupplyChainConfig.id == config_id)
+        )
+        config = row.scalar_one_or_none()
+        if not config:
+            return {"error": f"Config {config_id} not found"}
+
+        current_version = config.version or 1
+
+        # 2. Create an archived snapshot (lightweight — just metadata, no deep copy of sites/lanes)
+        archived = SupplyChainConfig(
+            name=f"{config.name} (v{current_version})",
+            description=f"Archived version {current_version} — reprovisioned on {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
+            is_active=False,
+            tenant_id=config.tenant_id,
+            created_at=config.created_at,  # preserve original creation date
+            updated_at=datetime.utcnow(),
+            created_by=config.created_by,
+            time_bucket=config.time_bucket,
+            parent_config_id=config_id,
+            scenario_type="ARCHIVED",
+            version=current_version,
+            mode=config.mode,
+            validation_status="unchecked",
+        )
+        self.db.add(archived)
+        await self.db.flush()
+        logger.info(
+            "Archived config %d as v%d (new row id=%d) before reprovisioning",
+            config_id, current_version, archived.id,
+        )
+
+        # 3. Bump version on the active config
+        config.version = current_version + 1
+        config.updated_at = datetime.utcnow()
+
+        # 4. Reset all provisioning step statuses to "pending"
+        status = await self.get_or_create_status(config_id)
+        for step_key in ConfigProvisioningStatus.STEPS:
+            setattr(status, f"{step_key}_status", "pending")
+            setattr(status, f"{step_key}_at", None)
+            setattr(status, f"{step_key}_error", None)
+        status.overall_status = "not_started"
+        await self.db.commit()
+
+        # 5. Run the full pipeline
+        return await self.run_all(config_id)
+
     async def run_all(self, config_id: int) -> dict:
         """Run all provisioning steps in dependency order.
 

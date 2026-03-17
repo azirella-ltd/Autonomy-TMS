@@ -22,6 +22,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.services.powell.simulation_calibration_service import (
@@ -187,6 +188,11 @@ def _gen_po_creation(
     # Confidence from fill rate stability
     confidence = min(0.95, max(0.40, node.period_fill_rate * 0.85 + 0.10))
 
+    # Financial risk analysis
+    stockout_exposure = node.avg_daily_demand * cfg.lead_time_days * cfg.backlog_cost_daily
+    holding_cost_order = recommended_qty * cfg.holding_cost_daily * cfg.lead_time_days
+    days_until_stockout = max(0, node.inventory / max(node.avg_daily_demand, 0.01))
+
     reasoning = (
         f"Inventory position for {product_desc} at {cfg.site_name} has dropped to "
         f"{ip:.0f} units, below the reorder point of {cfg.reorder_point:.0f}. "
@@ -194,7 +200,12 @@ def _gen_po_creation(
         f"at an estimated cost of ${expected_cost:,.2f} (${unit_cost:.2f}/unit). "
         f"Current days of supply: {dos:.1f}. "
         f"Daily demand average: {node.avg_daily_demand:.1f} units. "
-        f"Trigger: {trigger.replace('_', ' ')}."
+        f"Trigger: {trigger.replace('_', ' ')}. "
+        f"**Risk analysis**: At current consumption, stockout in ~{days_until_stockout:.1f} days "
+        f"(lead time: {cfg.lead_time_days:.0f} days). "
+        f"Stockout exposure during lead time: ${stockout_exposure:,.2f}. "
+        f"Holding cost of this order: ${holding_cost_order:,.2f}. "
+        f"Net benefit: ${max(0, stockout_exposure - holding_cost_order):,.2f} in avoided stockout cost."
     )
 
     urgency_label = "high" if urgency_score > 0.6 else ("medium" if urgency_score > 0.3 else "low")
@@ -507,6 +518,11 @@ def _gen_rebalancing(
             source_dos_after = from_dos - transfer_qty / max(from_node.avg_daily_demand, 0.01)
             dest_dos_after = to_dos + transfer_qty / max(to_node.avg_daily_demand, 0.01)
 
+            # Financial impact
+            transport_cost = transfer_qty * 0.50
+            holding_saved = (from_dos - source_dos_after) * from_node.avg_daily_demand * from_cfg.holding_cost_daily * 7
+            stockout_avoided = (dest_dos_after - to_dos) * to_node.avg_daily_demand * to_cfg.backlog_cost_daily * 7
+
             reasoning = (
                 f"Inventory rebalancing for {product_desc}: "
                 f"{from_cfg.site_name} has {from_dos:.1f} DOS (overstocked) while "
@@ -514,7 +530,11 @@ def _gen_rebalancing(
                 f"Network average: {avg_dos:.1f} DOS. "
                 f"Recommending transfer of {transfer_qty:.0f} units. "
                 f"Expected DOS after transfer: {from_cfg.site_name} {source_dos_after:.1f}, "
-                f"{to_cfg.site_name} {dest_dos_after:.1f}."
+                f"{to_cfg.site_name} {dest_dos_after:.1f}. "
+                f"**Financial impact**: Transport cost: ${transport_cost:,.2f}. "
+                f"Holding cost saved at source (7-day): ${holding_saved:,.2f}. "
+                f"Stockout cost avoided at destination (7-day): ${stockout_avoided:,.2f}. "
+                f"Net 7-day benefit: ${max(0, holding_saved + stockout_avoided - transport_cost):,.2f}."
             )
 
             record = PowellRebalanceDecision(
@@ -581,13 +601,24 @@ def _gen_mo_execution(
     run_time = planned_qty / max(node._capacity_total, 1.0) * 8.0  # hours
     setup_time = random.uniform(0.5, 2.0)
 
+    # Financial analysis
+    production_cost = planned_qty * unit_cost
+    backlog_cost_daily = node.backlog * cfg.backlog_cost_daily
+    expedite_premium = production_cost * 0.15 if decision_type == "expedite" else 0
+    delay_cost = backlog_cost_daily * (run_time + setup_time) / 8  # cost of not producing
+
     reasoning = (
         f"Manufacturing order {decision_type} at {cfg.site_name} for {product_desc}: "
-        f"planned quantity {planned_qty:.0f} units (${planned_qty * unit_cost:,.2f}). "
+        f"planned quantity {planned_qty:.0f} units (${production_cost:,.2f}). "
         f"Current utilization: {utilization:.0%}. "
         f"Setup time: {setup_time:.1f}h, run time: {run_time:.1f}h. "
         f"Backlog: {node.backlog:.0f} units. "
-        f"{'Capacity near limit — expediting to prevent further backlog buildup.' if decision_type == 'expedite' else 'Standard release within capacity window.'}"
+        f"{'Capacity near limit — expediting to prevent further backlog buildup. ' if decision_type == 'expedite' else 'Standard release within capacity window. '}"
+        f"**Cost analysis**: Production cost: ${production_cost:,.2f}. "
+        + (f"Expedite premium: ${expedite_premium:,.2f}. " if expedite_premium > 0 else "")
+        + f"Current backlog carrying cost: ${backlog_cost_daily:,.2f}/day. "
+        f"Delay cost of not producing: ${delay_cost:,.2f}. "
+        f"Net benefit of {decision_type}: ${max(0, delay_cost - expedite_premium):,.2f}."
     )
 
     record = PowellMODecision(
@@ -1293,6 +1324,33 @@ def seed_decisions_from_simulation(
         "Decision seeder: starting %d episodes x %d days for config %d",
         _N_EPISODES, _N_DAYS, config_id,
     )
+
+    # Clean up any existing seeded decisions for this config to avoid
+    # duplicates on re-provisioning.
+    _DECISION_TABLES = [
+        PowellPODecision, PowellATPDecision, PowellOrderException,
+        PowellBufferDecision, PowellMODecision, PowellTODecision,
+        PowellQualityDecision, PowellMaintenanceDecision,
+        PowellSubcontractingDecision, PowellForecastAdjustmentDecision,
+        PowellRebalanceDecision,
+    ]
+    total_deleted = 0
+    for tbl in _DECISION_TABLES:
+        n = db.query(tbl).filter(tbl.config_id == config_id).delete(
+            synchronize_session="fetch",
+        )
+        total_deleted += n
+    if total_deleted:
+        # Also clear cached Decision Stream digest so it gets regenerated
+        db.execute(
+            text("DELETE FROM decision_stream_digests WHERE config_id = :c"),
+            {"c": config_id},
+        )
+        db.flush()
+        logger.info(
+            "Decision seeder: cleaned %d old decisions for config %d before reseeding",
+            total_deleted, config_id,
+        )
 
     # Load config DAG
     loader = _ConfigLoader(db, config_id)
