@@ -502,6 +502,13 @@ async def startup_event():
         # This prevents relationship resolution errors and runs configure_mappers()
         import app.models  # noqa: F401 - ensures all models are loaded and configured
 
+        # Initialize Knowledge Base database engine (separate pgvector DB)
+        try:
+            from app.db.kb_session import init_kb_engine
+            init_kb_engine()
+        except Exception as kb_err:
+            logger.warning("KB engine initialization failed (non-fatal): %s", kb_err)
+
         # Now import services that depend on models
         from app.services.sync_scheduler_service import SyncSchedulerService
         from app.services.retention_jobs import register_retention_jobs
