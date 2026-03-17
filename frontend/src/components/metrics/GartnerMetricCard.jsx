@@ -6,6 +6,7 @@
  */
 
 import React from 'react';
+import Sparkline from './Sparkline';
 import {
   TrendingUp,
   TrendingDown,
@@ -27,8 +28,6 @@ const STATUS_STYLES = {
   warning: 'border-l-amber-500',
   danger: 'border-l-red-500',
 };
-
-import Sparkline from './Sparkline';
 
 const GartnerMetricCard = ({
   label,
