@@ -15,8 +15,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, Badge, Progress } from '../../components/common';
 import {
   Network, MapPin, ArrowRight, Truck, AlertTriangle, Shield,
-  Zap, BarChart3, Target, Layers, GitBranch,
+  Zap, BarChart3, Target, Layers, GitBranch, Filter, Package, Clock,
+  ChevronRight, Box,
 } from 'lucide-react';
+import { cn } from '../../lib/utils/cn';
 import api from '../../services/api';
 import Sparkline from '../../components/metrics/Sparkline';
 
@@ -178,10 +180,250 @@ const RiskBadge = ({ value, label }) => {
   );
 };
 
+// ---------------------------------------------------------------------------
+// Value Stream Map — aggregates sites by echelon, shows flow & metrics
+// ---------------------------------------------------------------------------
+
+const ECHELON_LABELS = {
+  MARKET_DEMAND: 'Customer',
+  0: 'Retail / DC',
+  1: 'Distribution',
+  2: 'Manufacturing',
+  3: 'Component Supply',
+  MARKET_SUPPLY: 'Vendor',
+};
+
+const ECHELON_COLORS = [
+  'bg-amber-50 border-amber-300',
+  'bg-blue-50 border-blue-300',
+  'bg-purple-50 border-purple-300',
+  'bg-green-50 border-green-300',
+  'bg-gray-50 border-gray-300',
+];
+
+const ValueStreamMap = ({ sites, lanes, graph, filters }) => {
+  // Group sites by echelon
+  const echelons = useMemo(() => {
+    const groups = {};
+    // Add external nodes as their own echelons
+    const demandSites = sites.filter(s => s.master_type === 'MARKET_DEMAND');
+    const supplySites = sites.filter(s => s.master_type === 'MARKET_SUPPLY');
+
+    if (demandSites.length > 0) {
+      groups['demand'] = {
+        label: 'Customers',
+        echelon: -1,
+        sites: demandSites,
+        type: 'MARKET_DEMAND',
+      };
+    }
+
+    // Internal sites grouped by echelon
+    const maxEch = Math.max(...Object.values(graph.echelon).filter(v => typeof v === 'number'), 0);
+    for (let e = 0; e <= maxEch; e++) {
+      const eSites = sites.filter(s =>
+        graph.echelon[s.id] === e &&
+        s.master_type !== 'MARKET_DEMAND' &&
+        s.master_type !== 'MARKET_SUPPLY'
+      );
+      // Apply filters
+      const filtered = eSites.filter(s => {
+        if (filters.region && s.geography?.region && s.geography.region !== filters.region) return false;
+        if (filters.type && s.master_type !== filters.type) return false;
+        return true;
+      });
+      if (filtered.length > 0) {
+        groups[`e${e}`] = {
+          label: ECHELON_LABELS[e] || `Echelon ${e}`,
+          echelon: e,
+          sites: filtered,
+          type: filtered[0]?.master_type || 'INVENTORY',
+        };
+      }
+    }
+
+    if (supplySites.length > 0) {
+      groups['supply'] = {
+        label: 'Vendors',
+        echelon: maxEch + 1,
+        sites: supplySites,
+        type: 'MARKET_SUPPLY',
+      };
+    }
+
+    return Object.values(groups).sort((a, b) => a.echelon - b.echelon);
+  }, [sites, graph, filters]);
+
+  // Compute inter-echelon lead times
+  const interEchelonLT = useMemo(() => {
+    const result = [];
+    for (let i = 0; i < echelons.length - 1; i++) {
+      const fromIds = new Set(echelons[i + 1].sites.map(s => s.id));
+      const toIds = new Set(echelons[i].sites.map(s => s.id));
+      const connectingLanes = lanes.filter(l => fromIds.has(l.from_site_id) && toIds.has(l.to_site_id));
+      const lts = connectingLanes.map(l =>
+        l.lead_time_min ?? l.supply_lead_time?.value ?? l.supply_lead_time?.mean ?? l.lead_time ?? 0
+      );
+      result.push({
+        avgLT: lts.length > 0 ? lts.reduce((a, b) => a + b, 0) / lts.length : 0,
+        maxLT: lts.length > 0 ? Math.max(...lts) : 0,
+        laneCount: connectingLanes.length,
+      });
+    }
+    return result;
+  }, [echelons, lanes]);
+
+  // Total value stream lead time
+  const totalLT = interEchelonLT.reduce((s, e) => s + e.avgLT, 0);
+  const totalProcessing = echelons.reduce((s, e) => {
+    // Processing time estimate: manufacturers 2-5d, DCs 0.5-1d, others 0.25d
+    const avgPT = e.type === 'MANUFACTURER' ? 3 : e.type === 'INVENTORY' ? 0.5 : 0.25;
+    return s + avgPT;
+  }, 0);
+
+  if (echelons.length === 0) {
+    return (
+      <div className="text-center py-8 text-muted-foreground text-sm">
+        No sites match the current filters.
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Timeline summary */}
+      <div className="flex items-center gap-3 mb-4 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <Clock className="h-3.5 w-3.5" />
+          Total Lead Time: <strong className="text-foreground">{totalLT.toFixed(1)}d</strong>
+        </span>
+        <span>|</span>
+        <span>
+          Processing: <strong className="text-foreground">{totalProcessing.toFixed(1)}d</strong>
+        </span>
+        <span>|</span>
+        <span>
+          Wait/Transit: <strong className="text-foreground">{(totalLT - totalProcessing).toFixed(1)}d</strong>
+        </span>
+        <span>|</span>
+        <span>
+          Value-Add Ratio: <strong className={totalLT > 0 ? (totalProcessing / totalLT > 0.3 ? 'text-green-600' : 'text-amber-600') : ''}>
+            {totalLT > 0 ? `${((totalProcessing / totalLT) * 100).toFixed(0)}%` : '-'}
+          </strong>
+        </span>
+      </div>
+
+      {/* VSM flow diagram */}
+      <div className="flex items-stretch gap-0 overflow-x-auto pb-2">
+        {echelons.map((ech, idx) => (
+          <React.Fragment key={ech.label}>
+            {/* Process box */}
+            <div className={cn(
+              'flex-shrink-0 border-2 rounded-lg p-3 min-w-[140px] max-w-[180px]',
+              ECHELON_COLORS[idx % ECHELON_COLORS.length],
+            )}>
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">
+                {ech.label}
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-baseline">
+                  <span className="text-[10px] text-muted-foreground">Sites</span>
+                  <span className="text-sm font-bold">{ech.sites.length}</span>
+                </div>
+                {ech.type !== 'MARKET_DEMAND' && ech.type !== 'MARKET_SUPPLY' && (
+                  <>
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-[10px] text-muted-foreground">Avg Centrality</span>
+                      <span className="text-xs font-mono">
+                        {(ech.sites.reduce((s, si) => s + (graph.betweenness[si.id] || 0), 0) / Math.max(ech.sites.length, 1) * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-[10px] text-muted-foreground">Cum. LT</span>
+                      <span className="text-xs font-mono">
+                        {(ech.sites.reduce((s, si) => s + (graph.cumulativeLT[si.id] || 0), 0) / Math.max(ech.sites.length, 1)).toFixed(0)}d
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-[10px] text-muted-foreground">Single Src</span>
+                      <span className={cn('text-xs font-mono',
+                        ech.sites.some(si => graph.singleSource[si.id]) ? 'text-red-600 font-semibold' : 'text-green-600'
+                      )}>
+                        {ech.sites.filter(si => graph.singleSource[si.id]).length}/{ech.sites.length}
+                      </span>
+                    </div>
+                  </>
+                )}
+                {/* Site names (truncated list) */}
+                <div className="mt-1 pt-1 border-t border-dashed">
+                  {ech.sites.slice(0, 3).map(s => (
+                    <div key={s.id} className="text-[9px] text-muted-foreground truncate">{s.name}</div>
+                  ))}
+                  {ech.sites.length > 3 && (
+                    <div className="text-[9px] text-muted-foreground">+{ech.sites.length - 3} more</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Lead time arrow between echelons */}
+            {idx < echelons.length - 1 && interEchelonLT[idx] && (
+              <div className="flex flex-col items-center justify-center px-1 min-w-[60px]">
+                <div className="text-[9px] text-muted-foreground mb-0.5">
+                  {interEchelonLT[idx].laneCount} lane{interEchelonLT[idx].laneCount !== 1 ? 's' : ''}
+                </div>
+                <div className="flex items-center w-full">
+                  <div className="flex-1 h-px bg-gray-400" />
+                  <ChevronRight className="h-3 w-3 text-gray-400 -mx-0.5" />
+                </div>
+                <div className="text-[10px] font-semibold mt-0.5">
+                  {interEchelonLT[idx].avgLT.toFixed(1)}d
+                </div>
+                {interEchelonLT[idx].maxLT > interEchelonLT[idx].avgLT * 1.5 && (
+                  <div className="text-[9px] text-red-500">
+                    max {interEchelonLT[idx].maxLT.toFixed(0)}d
+                  </div>
+                )}
+              </div>
+            )}
+          </React.Fragment>
+        ))}
+      </div>
+
+      {/* Lead time timeline bar */}
+      <div className="mt-4 pt-3 border-t">
+        <div className="text-[10px] text-muted-foreground mb-1.5 font-medium">Lead Time Breakdown</div>
+        <div className="flex h-5 rounded-md overflow-hidden">
+          {interEchelonLT.map((lt, idx) => {
+            const pct = totalLT > 0 ? (lt.avgLT / totalLT) * 100 : 0;
+            if (pct < 1) return null;
+            const colors = ['bg-amber-400', 'bg-blue-400', 'bg-purple-400', 'bg-green-400', 'bg-gray-400'];
+            return (
+              <div
+                key={idx}
+                className={cn('flex items-center justify-center text-[9px] text-white font-semibold', colors[idx % colors.length])}
+                style={{ width: `${pct}%` }}
+                title={`${echelons[idx + 1]?.label || ''} → ${echelons[idx]?.label || ''}: ${lt.avgLT.toFixed(1)}d`}
+              >
+                {pct > 8 ? `${lt.avgLT.toFixed(0)}d` : ''}
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex justify-between mt-1 text-[9px] text-muted-foreground">
+          <span>Supply</span>
+          <span>Demand</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const NetworkOptimizationAnalytics = () => {
   const [sites, setSites] = useState([]);
   const [lanes, setLanes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [vsmFilters, setVsmFilters] = useState({ region: '', type: '', product: '' });
 
   useEffect(() => {
     const load = async () => {
@@ -442,6 +684,59 @@ const NetworkOptimizationAnalytics = () => {
               </tbody>
             </table>
           </div>
+        </CardContent>
+      </Card>
+      {/* ── Value Stream Map ── */}
+      <Card className="mt-6">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Layers className="h-4 w-4" /> Value Stream Map
+              <span className="text-[10px] text-muted-foreground font-normal ml-2">
+                End-to-end flow from vendors to customers by echelon
+              </span>
+            </CardTitle>
+            {/* Filters */}
+            <div className="flex items-center gap-2">
+              <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+              <select
+                className="text-xs border rounded px-2 py-1 bg-background"
+                value={vsmFilters.region}
+                onChange={(e) => setVsmFilters(f => ({ ...f, region: e.target.value }))}
+              >
+                <option value="">All Regions</option>
+                {[...new Set(sites.map(s => s.geography?.region).filter(Boolean))].sort().map(r => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+              <select
+                className="text-xs border rounded px-2 py-1 bg-background"
+                value={vsmFilters.type}
+                onChange={(e) => setVsmFilters(f => ({ ...f, type: e.target.value }))}
+              >
+                <option value="">All Site Types</option>
+                {[...new Set(sites.filter(s => s.master_type !== 'MARKET_SUPPLY' && s.master_type !== 'MARKET_DEMAND').map(s => s.master_type).filter(Boolean))].sort().map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+              {(vsmFilters.region || vsmFilters.type) && (
+                <button
+                  className="text-[10px] text-primary hover:underline"
+                  onClick={() => setVsmFilters({ region: '', type: '', product: '' })}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <ValueStreamMap
+            sites={sites}
+            lanes={lanes}
+            graph={graph}
+            filters={vsmFilters}
+          />
         </CardContent>
       </Card>
     </div>
