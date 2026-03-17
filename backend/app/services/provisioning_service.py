@@ -739,6 +739,11 @@ class ProvisioningService:
 
         sync_db = sync_session_factory()
         try:
+            # Ensure the tenant has a BSC config with routing thresholds.
+            # Without this row, the Decision Stream falls back to hardcoded
+            # defaults — which contradicts the "no hardcoded values" policy.
+            self._ensure_tenant_bsc_config(sync_db, tenant_id or 0)
+
             counts = seed_decisions_from_simulation(
                 db=sync_db,
                 config_id=config_id,
@@ -785,6 +790,32 @@ class ProvisioningService:
             }
         finally:
             sync_db.close()
+
+    @staticmethod
+    def _ensure_tenant_bsc_config(sync_db, tenant_id: int):
+        """Create a TenantBscConfig row with default thresholds if none exists.
+
+        This ensures the Decision Stream routing (urgency/likelihood thresholds)
+        is always driven by DB-stored per-tenant config, not hardcoded fallbacks.
+        """
+        from sqlalchemy import text as sa_text
+        row = sync_db.execute(
+            sa_text("SELECT id FROM tenant_bsc_config WHERE tenant_id = :tid"),
+            {"tid": tenant_id},
+        ).first()
+        if not row:
+            sync_db.execute(
+                sa_text("""
+                    INSERT INTO tenant_bsc_config
+                        (tenant_id, urgency_threshold, likelihood_threshold,
+                         autonomy_threshold, holding_cost_weight, backlog_cost_weight,
+                         customer_weight, operational_weight, strategic_weight)
+                    VALUES (:tid, 0.65, 0.70, 0.5, 0.6, 0.4, 0, 0, 0)
+                """),
+                {"tid": tenant_id},
+            )
+            sync_db.commit()
+            logger.info("Created default BSC config for tenant %d", tenant_id)
 
     async def _step_site_tgnn(self, config_id: int) -> dict:
         """Step 8: Train Site tGNN (foreground fallback, normally runs via _bg)."""

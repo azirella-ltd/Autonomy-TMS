@@ -1220,9 +1220,11 @@ class DecisionStreamService:
             except (TypeError, ValueError):
                 return default
 
-        # Load per-tenant autonomy thresholds (falls back to defaults)
-        urgency_thresh = 0.65   # Default: surface High+ urgency
-        likelihood_thresh = 0.70  # Default: agent needs 70%+ confidence to auto-action
+        # Load per-tenant autonomy thresholds from tenant_bsc_config.
+        # Provisioning creates a row with defaults (0.65/0.70); if missing,
+        # fall back defensively but log a warning — all tenants should have one.
+        urgency_thresh = 0.65
+        likelihood_thresh = 0.70
         try:
             from app.db.session import sync_session_factory
             from app.models.bsc_config import TenantBscConfig
@@ -1234,10 +1236,16 @@ class DecisionStreamService:
                 if bsc:
                     urgency_thresh = bsc.urgency_threshold
                     likelihood_thresh = bsc.likelihood_threshold
+                else:
+                    logger.warning(
+                        "No tenant_bsc_config for tenant %d — using default thresholds "
+                        "(urgency=%.2f, likelihood=%.2f). Run provisioning to create one.",
+                        self.tenant_id, urgency_thresh, likelihood_thresh,
+                    )
             finally:
                 sync_db.close()
         except Exception:
-            pass  # Use defaults
+            logger.warning("Failed to load tenant_bsc_config for tenant %d", self.tenant_id)
 
         # Tag each decision using 2×2 urgency × likelihood model:
         #

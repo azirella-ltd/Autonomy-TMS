@@ -65,6 +65,14 @@ class PendingDecisionItem(BaseModel):
     context: Optional[Dict[str, Any]] = Field(
         default=None, description="Additional context fields from the decision"
     )
+    needs_attention: Optional[bool] = Field(
+        default=None,
+        description="True if this decision requires human review (agent uncertain)",
+    )
+    auto_actioned: Optional[bool] = Field(
+        default=None,
+        description="True if the agent auto-actioned this decision (high confidence)",
+    )
 
     class Config:
         from_attributes = True
