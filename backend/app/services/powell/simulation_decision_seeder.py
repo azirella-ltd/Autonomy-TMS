@@ -1109,25 +1109,33 @@ def _generate_fallback_decisions(
             cost = round(qty * ucost, 2)
             vendor = upstream_names.get(cfg.site_id, default_vendor)
             dos = round(rng.uniform(3, 12), 1)
+            ip = round(cfg.reorder_point * rng.uniform(0.4, 0.9), 1)
+            trigger = rng.choice(["replenishment", "safety_stock_breach", "demand_surge"])
+            stockout_exp = round(cfg.demand_mean_daily * cfg.lead_time_days * cfg.backlog_cost_daily, 2) if cfg.demand_mean_daily > 0 else round(qty * ucost * 0.1, 2)
+            holding_cost_order = round(qty * cfg.holding_cost_daily * cfg.lead_time_days, 2)
+            days_until_so = round(max(0, ip / max(cfg.demand_mean_daily, 0.01)), 1)
             rec = PowellPODecision(
                 config_id=config_id, product_id=pid, location_id=cfg.site_name,
                 supplier_id=vendor, recommended_qty=qty,
-                trigger_reason=rng.choice(["replenishment", "safety_stock_breach", "demand_surge"]),
+                trigger_reason=trigger,
                 urgency=rng.choice(["high", "medium"]),
                 confidence=round(rng.uniform(0.60, 0.92), 3),
-                inventory_position=round(cfg.reorder_point * rng.uniform(0.4, 0.9), 1),
+                inventory_position=ip,
                 days_of_supply=dos,
                 forecast_30_day=round(cfg.demand_mean_daily * 30, 1),
                 expected_cost=cost,
                 decision_reasoning=(
                     f"Inventory position for {pdesc} at {cfg.site_name} has dropped to "
-                    f"{round(cfg.reorder_point * rng.uniform(0.4, 0.9)):.0f} units, below the reorder point of "
-                    f"{cfg.reorder_point:.0f} units. The PO creation agent is recommending a purchase order of "
+                    f"{ip:.0f} units, below the reorder point of "
+                    f"{cfg.reorder_point:.0f} units. Recommending a purchase order of "
                     f"{qty:.0f} units from {vendor} at an estimated cost of ${cost:,.2f} (${ucost:.2f}/unit). "
-                    f"Current days of supply: {dos:.1f} days. Average daily demand: {cfg.demand_mean_daily:.1f} units. "
-                    f"This replenishment maintains the target service level while minimizing holding costs. "
-                    f"The order quantity was calculated using the (s, S) policy with reorder point s={cfg.reorder_point:.0f} "
-                    f"and order-up-to level S={cfg.order_up_to:.0f}."
+                    f"Current days of supply: {dos:.1f}. Average daily demand: {cfg.demand_mean_daily:.1f} units. "
+                    f"Trigger: {trigger.replace('_', ' ')}. "
+                    f"**Risk analysis**: At current consumption, stockout in ~{days_until_so:.1f} days "
+                    f"(lead time: {cfg.lead_time_days:.0f} days). "
+                    f"Stockout exposure during lead time: ${stockout_exp:,.2f}. "
+                    f"Holding cost of this order: ${holding_cost_order:,.2f}. "
+                    f"Net benefit: ${max(0, stockout_exp - holding_cost_order):,.2f} in avoided stockout cost."
                 ),
                 urgency_at_time=round(rng.uniform(0.4, 0.85), 3),
                 was_executed=True,
