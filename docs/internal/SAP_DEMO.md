@@ -652,5 +652,5 @@ The simulator writes to the same DB tables and triggers the same events as a rea
 - [SAP S/4HANA FAA Demo Guides & System Access — LinkedIn](https://www.linkedin.com/pulse/sap-s4hana-fully-activated-appliance-demo-guides-system-mh)
 - [SAP DDMRP Functionality](https://blogs.sap.com/2019/02/17/s4hana-demand-driven-mrp-ddmrp-functionality/)
 - [Demo Script: Transportation Mgmt Basic Outbound (FPS03)](https://www.sap.com/documents/2025/05/6e7a09ef-037f-0010-bca6-c68f7e60039b.html)
-- [SAP Integration Guide](docs/progress/SAP_INTEGRATION_GUIDE.md) (internal)
-- [AWS SC Implementation Status](docs/progress/AWS_SC_IMPLEMENTATION_STATUS.md) (internal)
+- [SAP Integration Guide](docs/external/SAP_INTEGRATION_GUIDE.md)
+- [AWS SC Implementation Status](docs/internal/AWS_SC_IMPLEMENTATION_STATUS.md)

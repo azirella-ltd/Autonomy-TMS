@@ -533,7 +533,7 @@ The traditional point-and-click planning UI (96+ pages covering demand planning,
 | **Sourcing Schedules** | ✅ 100% | Periodic ordering (weekly, monthly, custom) |
 | **Advanced Manufacturing** | ✅ 100% | Frozen horizon, setup/changeover, batch sizing, BOM alternates |
 
-*See [AWS_SC_100_PERCENT_COMPLETE.md](docs/progress/AWS_SC_100_PERCENT_COMPLETE.md) for full certification details.*
+*AWS SC compliance: 35/35 entities implemented. See [AWS_SC_IMPLEMENTATION_STATUS.md](docs/internal/AWS_SC_IMPLEMENTATION_STATUS.md) for detailed status.*
 
 #### AWS SC Product Feature Parity (UI/UX - 100% Complete)
 

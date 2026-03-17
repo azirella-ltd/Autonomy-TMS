@@ -112,7 +112,7 @@ When implementing any entity:
 - **Order Management**: Inbound/outbound orders, shipment tracking, fulfillment
 - **Network Design**: DAG-based supply chain topology (35 AWS SC entities)
 
-**AWS SC Compliance**: ✅ 100% (35/35 entities implemented). See [AWS_SC_IMPLEMENTATION_STATUS.md](docs/progress/AWS_SC_IMPLEMENTATION_STATUS.md) for detailed status.
+**AWS SC Compliance**: ✅ 100% (35/35 entities implemented). See [AWS_SC_IMPLEMENTATION_STATUS.md](docs/internal/AWS_SC_IMPLEMENTATION_STATUS.md) for detailed status.
 
 **AWS SC References**:
 - **Features**: Target feature parity (excluding Data Lakes) with AWS Supply Chain capabilities: https://aws.amazon.com/aws-supply-chain/features/
@@ -1175,7 +1175,7 @@ POST /api/v1/email-signals/ingest-manual         # Manual email paste
 
 **Access**: Navigation > Administration > Email Signals (Tenant Admin required)
 
-**SAP System Access**: Free S/4HANA FAA (Fully-Activated Appliance) with IDES sample data available via [cal.sap.com](https://cal.sap.com). Requires SAP ID ([register here](https://account.sap.com/core/create/register)) and a cloud provider account (AWS/Azure/GCP, ~$1-3/hr compute). See [SAP_INTEGRATION_GUIDE.md](docs/progress/SAP_INTEGRATION_GUIDE.md#getting-access-to-sap-s4hana-free) for full setup instructions.
+**SAP System Access**: Free S/4HANA FAA (Fully-Activated Appliance) with IDES sample data available via [cal.sap.com](https://cal.sap.com). Requires SAP ID ([register here](https://account.sap.com/core/create/register)) and a cloud provider account (AWS/Azure/GCP, ~$1-3/hr compute). See [SAP_INTEGRATION_GUIDE.md](docs/external/SAP_INTEGRATION_GUIDE.md#getting-access-to-sap-s4hana-free) for full setup instructions.
 
 ---
 

@@ -310,8 +310,9 @@ Monitors customer/supplier inboxes (IMAP/Gmail), strips personal identifiers bef
 - **[AGENT_SYSTEM.md](AGENT_SYSTEM.md)** - Agent strategies and implementation
 - **[TRANSFER_ORDER_INTEGRATION_GUIDE.md](TRANSFER_ORDER_INTEGRATION_GUIDE.md)** - Transfer order AWS SC compliance
 
-### Progress & Historical
-- **[docs/progress/](docs/progress/)** - Refactoring progress, status reports, deployment checklists
+### References
+- **[docs/external/SAP_INTEGRATION_GUIDE.md](docs/external/SAP_INTEGRATION_GUIDE.md)** - SAP S/4HANA integration setup guide
+- **[docs/internal/AWS_SC_IMPLEMENTATION_STATUS.md](docs/internal/AWS_SC_IMPLEMENTATION_STATUS.md)** - AWS SC compliance status (35/35 entities)
 
 ---
 
