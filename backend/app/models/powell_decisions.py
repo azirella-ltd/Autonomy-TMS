@@ -603,11 +603,13 @@ class PowellSubcontractingDecision(HiveSignalMixin, Base):
     # Subcontracting details
     product_id = Column(String(100), nullable=False)
     site_id = Column(String(100), nullable=False)
-    subcontractor_id = Column(String(100), nullable=False)
-    planned_qty = Column(Float, nullable=False)
+    subcontractor_id = Column(String(100), nullable=True)
+    required_qty = Column(Float, nullable=True)
+    planned_qty = Column(Float, nullable=True)
 
     # Decision
-    decision_type = Column(String(50), nullable=False)  # route_external/keep_internal/split/change_vendor
+    decision_type = Column(String(50), nullable=True)  # route_external/keep_internal/split/change_vendor
+    routing_decision = Column(String(50), nullable=True)  # synonym for decision_type (legacy)
     reason = Column(String(50), nullable=True)  # capacity_constraint/cost_optimization/lead_time/quality/specialization
 
     # Context

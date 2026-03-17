@@ -1005,6 +1005,246 @@ def _reservoir_top_n(
 
 
 # ---------------------------------------------------------------------------
+# Fallback decision generator for TRM types not triggered by simulation
+# ---------------------------------------------------------------------------
+
+def _generate_fallback_decisions(
+    trm_type: str,
+    site_configs: list,
+    cfg_by_id: dict,
+    config_id: int,
+    product_descs: dict,
+    product_costs: dict,
+    vendor_names: dict,
+    upstream_names: dict,
+    default_vendor: str,
+    max_count: int,
+) -> list:
+    """Generate realistic synthetic decisions for TRM types that didn't
+    trigger during the simulation. Uses actual site/product data from the
+    config to produce plausible records with detailed reasoning."""
+    import random as _rng
+    from datetime import datetime, timedelta
+
+    # Pick appropriate sites
+    mfg_sites = [c for c in site_configs if c.master_type == "MANUFACTURER"]
+    inv_sites = [c for c in site_configs if c.master_type in ("INVENTORY", "MANUFACTURER")]
+    demand_sites = [c for c in site_configs if c.is_demand_source]
+
+    if not inv_sites:
+        return []
+
+    records = []
+    n = min(max_count, 6)
+
+    for i in range(n):
+        rng = _rng.Random(hash(f"{trm_type}_{config_id}_{i}"))
+
+        if trm_type == "po_creation":
+            cfg = rng.choice(inv_sites)
+            pid = cfg.product_id
+            pdesc = product_descs.get(pid, pid)
+            ucost = product_costs.get(pid, 5.0)
+            qty = round(rng.uniform(20, 200), 0)
+            cost = round(qty * ucost, 2)
+            vendor = upstream_names.get(cfg.site_id, default_vendor)
+            dos = round(rng.uniform(3, 12), 1)
+            rec = PowellPODecision(
+                config_id=config_id, product_id=pid, location_id=cfg.site_name,
+                supplier_id=vendor, recommended_qty=qty,
+                trigger_reason=rng.choice(["replenishment", "safety_stock_breach", "demand_surge"]),
+                urgency=rng.choice(["high", "medium"]),
+                confidence=round(rng.uniform(0.60, 0.92), 3),
+                inventory_position=round(cfg.reorder_point * rng.uniform(0.4, 0.9), 1),
+                days_of_supply=dos,
+                forecast_30_day=round(cfg.demand_mean_daily * 30, 1),
+                expected_cost=cost,
+                decision_reasoning=(
+                    f"Inventory position for {pdesc} at {cfg.site_name} has dropped to "
+                    f"{round(cfg.reorder_point * rng.uniform(0.4, 0.9)):.0f} units, below the reorder point of "
+                    f"{cfg.reorder_point:.0f} units. The PO creation agent is recommending a purchase order of "
+                    f"{qty:.0f} units from {vendor} at an estimated cost of ${cost:,.2f} (${ucost:.2f}/unit). "
+                    f"Current days of supply: {dos:.1f} days. Average daily demand: {cfg.demand_mean_daily:.1f} units. "
+                    f"This replenishment maintains the target service level while minimizing holding costs. "
+                    f"The order quantity was calculated using the (s, S) policy with reorder point s={cfg.reorder_point:.0f} "
+                    f"and order-up-to level S={cfg.order_up_to:.0f}."
+                ),
+                urgency_at_time=round(rng.uniform(0.4, 0.85), 3),
+                was_executed=True,
+                actual_qty=round(qty * rng.uniform(0.95, 1.05), 1),
+                actual_cost=round(cost * rng.uniform(0.97, 1.03), 2),
+            )
+            records.append(rec)
+
+        elif trm_type == "mo_execution":
+            if not mfg_sites:
+                cfg = rng.choice(inv_sites)
+            else:
+                cfg = rng.choice(mfg_sites)
+            pid = cfg.product_id
+            pdesc = product_descs.get(pid, pid)
+            ucost = product_costs.get(pid, 5.0)
+            qty = round(rng.uniform(30, 150), 0)
+            action = rng.choice(["release", "expedite", "defer", "split"])
+            prod_value = round(qty * ucost, 2)
+            rec = PowellMODecision(
+                config_id=config_id, production_order_id=f"MO-{config_id:04d}-{i+1:03d}",
+                product_id=pid, site_id=cfg.site_name,
+                planned_qty=qty, decision_type=action, priority_override=rng.randint(1, 3),
+                confidence=round(rng.uniform(0.65, 0.90), 3),
+                decision_reasoning=(
+                    f"MO {f'MO-{config_id:04d}-{i+1:03d}'} at {cfg.site_name}: decision is to {action}. "
+                    f"The MO execution agent evaluated current production capacity, material availability, "
+                    f"and downstream demand priority to determine the optimal action for this order. "
+                    f"Specific trigger: {'capacity_pressure' if action == 'defer' else 'demand_priority' if action == 'expedite' else 'standard_release'}. "
+                    f"Production value: ${prod_value:,.2f} ({qty:.0f} units × ${ucost:.2f}). "
+                    + (f"Expediting adds ~${prod_value * 0.5:,.2f} in overtime/setup costs (50% premium), "
+                       f"but avoids downstream stockout worth ${prod_value * 1.3:,.2f} in lost margin. "
+                       if action == "expedite" else "")
+                    + f"Decision confidence: {rng.uniform(65, 90):.0f}%. "
+                    f"This action aligns with the current production schedule and capacity constraints at {cfg.site_name}."
+                ),
+                urgency_at_time=round(rng.uniform(0.5, 0.9), 3),
+            )
+            records.append(rec)
+
+        elif trm_type == "to_execution":
+            if len(inv_sites) < 2:
+                continue
+            src, dst = rng.sample(inv_sites, 2)
+            pid = src.product_id
+            pdesc = product_descs.get(pid, pid)
+            qty = round(rng.uniform(20, 100), 0)
+            action = rng.choice(["release", "expedite", "consolidate"])
+            rec = PowellTODecision(
+                config_id=config_id, transfer_order_id=f"TO-{config_id:04d}-{i+1:03d}",
+                product_id=pid, source_site_id=src.site_name, dest_site_id=dst.site_name,
+                planned_qty=qty, decision_type=action,
+                confidence=round(rng.uniform(0.65, 0.88), 3),
+                decision_reasoning=(
+                    f"Transfer order TO-{config_id:04d}-{i+1:03d}: {action} transfer of {qty:.0f} units of "
+                    f"{pdesc} from {src.site_name} to {dst.site_name}. "
+                    f"The TO execution agent assessed transit capacity, destination demand urgency, and "
+                    f"consolidation opportunities. {dst.site_name} has {rng.uniform(3, 8):.1f} days of supply "
+                    f"remaining — {'below safety stock threshold, triggering expedited transfer' if action == 'expedite' else 'within acceptable range for standard transfer'}. "
+                    f"Estimated transit time: {rng.randint(1, 5)} days. "
+                    f"Decision confidence: {rng.uniform(65, 88):.0f}%."
+                ),
+                urgency_at_time=round(rng.uniform(0.4, 0.8), 3),
+            )
+            records.append(rec)
+
+        elif trm_type == "order_tracking":
+            cfg = rng.choice(inv_sites)
+            pid = cfg.product_id
+            pdesc = product_descs.get(pid, pid)
+            exc_type = rng.choice(["late_shipment", "quantity_discrepancy", "damaged_goods", "wrong_item"])
+            action = rng.choice(["find_alternate", "expedite", "accept_delay", "split"])
+            rec = PowellOrderException(
+                config_id=config_id, order_id=f"PO-{config_id:04d}-{i+1:03d}",
+                exception_type=exc_type,
+                recommended_action=action, severity=rng.choice(["high", "medium", "critical"]),
+                confidence=round(rng.uniform(0.55, 0.85), 3),
+                description=f"{exc_type.replace('_', ' ').title()} on order for {pdesc}",
+                decision_reasoning=(
+                    f"Order exception detected on PO-{config_id:04d}-{i+1:03d} for {pdesc}: "
+                    f"{exc_type.replace('_', ' ')}. The order tracking agent recommends: {action.replace('_', ' ')}. "
+                    f"Impact assessment: {'critical — downstream production at risk' if exc_type == 'late_shipment' else 'moderate — safety stock can absorb short-term impact'}. "
+                    f"Estimated resolution time: {rng.randint(1, 7)} days. "
+                    f"Alternative suppliers available: {rng.randint(1, 3)}. "
+                    f"Decision confidence: {rng.uniform(55, 85):.0f}%."
+                ),
+                urgency_at_time=round(rng.uniform(0.5, 0.95), 3),
+            )
+            records.append(rec)
+
+        elif trm_type == "maintenance_scheduling":
+            cfg = rng.choice(mfg_sites if mfg_sites else inv_sites)
+            action = rng.choice(["schedule", "defer", "expedite", "outsource"])
+            asset = f"ASSET-{cfg.site_name}-{rng.randint(1, 5):02d}"
+            rec = PowellMaintenanceDecision(
+                config_id=config_id, maintenance_order_id=f"WO-{config_id:04d}-{i+1:03d}",
+                site_id=cfg.site_name, asset_id=asset,
+                decision_type=action, maintenance_type=rng.choice(["preventive", "corrective", "predictive"]),
+                confidence=round(rng.uniform(0.60, 0.88), 3),
+                decision_reasoning=(
+                    f"Maintenance scheduling for {asset} at {cfg.site_name}: decision is to {action}. "
+                    f"The maintenance agent evaluated equipment condition metrics, production schedule impact, "
+                    f"and spare parts availability. Current equipment utilization: {rng.uniform(70, 95):.0f}%. "
+                    + (f"Deferring maintenance by {rng.randint(3, 14)} days to avoid production disruption during peak demand period. "
+                       if action == "defer" else
+                       f"Scheduling {rng.choice(['preventive', 'predictive'])} maintenance to prevent unplanned downtime. "
+                       if action == "schedule" else "")
+                    + f"Estimated downtime: {rng.uniform(2, 8):.1f} hours. "
+                    f"Decision confidence: {rng.uniform(60, 88):.0f}%."
+                ),
+                urgency_at_time=round(rng.uniform(0.3, 0.7), 3),
+            )
+            records.append(rec)
+
+        elif trm_type == "subcontracting":
+            cfg = rng.choice(mfg_sites if mfg_sites else inv_sites)
+            pid = cfg.product_id
+            pdesc = product_descs.get(pid, pid)
+            ucost = product_costs.get(pid, 5.0)
+            qty = round(rng.uniform(50, 200), 0)
+            routing = rng.choice(["route_external", "keep_internal", "split"])
+            ext_cost = round(ucost * rng.uniform(1.1, 1.4) * qty, 2)
+            int_cost = round(ucost * qty, 2)
+            # PowellSubcontractingDecision has unmapped NOT NULL columns —
+            # build reasoning and return as a dict; caller inserts via raw SQL.
+            _sc_reasoning = (
+                f"Make-vs-buy analysis for {pdesc} at {cfg.site_name}: decision is to {routing.replace('_', ' ')}. "
+                f"Internal production cost: ${int_cost:,.2f} ({qty:.0f} units × ${ucost:.2f}). "
+                f"External subcontracting cost: ${ext_cost:,.2f} ({rng.uniform(10, 40):.0f}% premium). "
+                + (f"Routing externally due to internal capacity constraint ({rng.uniform(85, 98):.0f}% utilization). "
+                   if routing == "route_external" else
+                   f"Keeping internal — sufficient capacity available and cost advantage of ${ext_cost - int_cost:,.2f}. "
+                   if routing == "keep_internal" else
+                   f"Splitting order: {rng.randint(40, 60)}% internal, remainder subcontracted to balance load. ")
+                + f"Decision confidence: {rng.uniform(60, 85):.0f}%."
+            )
+            rec = PowellSubcontractingDecision(
+                config_id=config_id,
+                product_id=pid, site_id=cfg.site_name,
+                required_qty=qty, planned_qty=qty,
+                decision_type=routing, routing_decision=routing,
+                confidence=round(rng.uniform(0.60, 0.85), 3),
+                decision_reasoning=_sc_reasoning,
+                urgency_at_time=round(rng.uniform(0.3, 0.7), 3),
+            )
+            records.append(rec)
+
+        elif trm_type == "rebalancing":
+            if len(inv_sites) < 2:
+                continue
+            src, dst = rng.sample(inv_sites, 2)
+            pid = src.product_id
+            pdesc = product_descs.get(pid, pid)
+            qty = round(rng.uniform(30, 150), 0)
+            rec = PowellRebalanceDecision(
+                config_id=config_id, product_id=pid,
+                from_site=src.site_name, to_site=dst.site_name,
+                recommended_qty=qty,
+                confidence=round(rng.uniform(0.55, 0.85), 3),
+                reason=f"Rebalance {pdesc} from surplus at {src.site_name} to deficit at {dst.site_name}",
+                decision_reasoning=(
+                    f"Inventory rebalancing: transfer {qty:.0f} units of {pdesc} from {src.site_name} to {dst.site_name}. "
+                    f"{src.site_name} has {rng.uniform(25, 45):.0f} days of supply (surplus), while "
+                    f"{dst.site_name} has only {rng.uniform(3, 10):.1f} days (deficit). "
+                    f"Transfer cost estimate: ${round(qty * rng.uniform(0.5, 2.0), 2):,.2f}. "
+                    f"Expected service level improvement at {dst.site_name}: +{rng.uniform(3, 12):.1f}%. "
+                    f"Network-wide inventory balance improves from {rng.uniform(0.6, 0.75):.2f} to {rng.uniform(0.8, 0.92):.2f} (Gini coefficient). "
+                    f"Decision confidence: {rng.uniform(55, 85):.0f}%."
+                ),
+                urgency_at_time=round(rng.uniform(0.4, 0.8), 3),
+            )
+            records.append(rec)
+
+    return records
+
+
+# ---------------------------------------------------------------------------
 # Main seeder
 # ---------------------------------------------------------------------------
 
@@ -1173,6 +1413,27 @@ def seed_decisions_from_simulation(
 
     # Reservoir sample top-N per type
     selected = _reservoir_top_n(candidates, max_per_type)
+
+    # Fallback pass: for any TRM type that produced zero condition-triggered
+    # decisions, generate synthetic decisions using the first available site
+    # of the appropriate type.  This ensures the Decision Stream always has
+    # all 11 TRM types represented after provisioning.
+    _ALL_TRM_TYPES = [
+        "po_creation", "atp_executor", "order_tracking", "inventory_buffer",
+        "mo_execution", "to_execution", "quality_disposition",
+        "maintenance_scheduling", "subcontracting", "forecast_adjustment",
+        "rebalancing",
+    ]
+    for trm_type in _ALL_TRM_TYPES:
+        if trm_type in selected and selected[trm_type]:
+            continue
+        fallback_records = _generate_fallback_decisions(
+            trm_type, site_configs, cfg_by_id, config_id,
+            product_descs, product_costs, vendor_names,
+            upstream_names, default_vendor, max_per_type,
+        )
+        if fallback_records:
+            selected[trm_type] = fallback_records
 
     # Spread created_at timestamps across last 7 days
     all_records = []
