@@ -41,6 +41,7 @@ class BscWeightsResponse(BaseModel):
     autonomy_threshold: float = 0.5
     urgency_threshold: float = 0.65
     likelihood_threshold: float = 0.70
+    benefit_threshold: float = 0.0
     notes: Optional[str]
     updated_at: datetime
     updated_by_name: Optional[str]
@@ -110,6 +111,14 @@ class BscWeightsUpdate(BaseModel):
             "Default 0.70 (70% confident)."
         ),
     )
+    benefit_threshold: float = Field(
+        default=0.0, ge=0.0,
+        description=(
+            "Minimum expected benefit ($) for a decision to be auto-actioned. "
+            "Set to 0 to disable (benefit does not gate auto-action). "
+            "Grounded in Kahneman's Prospect Theory: losses loom ~2x larger than gains."
+        ),
+    )
     notes: Optional[str] = Field(
         default=None,
         max_length=500,
@@ -162,6 +171,7 @@ def get_bsc_config(
             autonomy_threshold=0.5,
             urgency_threshold=0.65,
             likelihood_threshold=0.70,
+            benefit_threshold=0.0,
             notes=None,
             updated_at=datetime.utcnow(),
             updated_by_name=None,
@@ -183,6 +193,7 @@ def get_bsc_config(
         autonomy_threshold=cfg.autonomy_threshold,
         urgency_threshold=cfg.urgency_threshold,
         likelihood_threshold=cfg.likelihood_threshold,
+        benefit_threshold=getattr(cfg, "benefit_threshold", 0.0) or 0.0,
         notes=cfg.notes,
         updated_at=cfg.updated_at,
         updated_by_name=updated_by_name,
@@ -219,6 +230,7 @@ def update_bsc_config(
     cfg.autonomy_threshold = payload.autonomy_threshold
     cfg.urgency_threshold = payload.urgency_threshold
     cfg.likelihood_threshold = payload.likelihood_threshold
+    cfg.benefit_threshold = payload.benefit_threshold
     cfg.notes = payload.notes
     cfg.updated_by_id = current_user.id
     cfg.updated_at = datetime.utcnow()
@@ -238,6 +250,7 @@ def update_bsc_config(
         autonomy_threshold=cfg.autonomy_threshold,
         urgency_threshold=cfg.urgency_threshold,
         likelihood_threshold=cfg.likelihood_threshold,
+        benefit_threshold=getattr(cfg, "benefit_threshold", 0.0) or 0.0,
         notes=cfg.notes,
         updated_at=cfg.updated_at,
         updated_by_name=updated_by_name,

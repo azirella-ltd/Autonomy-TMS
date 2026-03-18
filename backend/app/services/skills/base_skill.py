@@ -73,6 +73,8 @@ class SkillDefinition:
             skills_dir = Path(__file__).parent
             self.skill_md_path = skills_dir / self.name / "SKILL.md"
 
+    _parsed_cache: Any = None  # Lazy cache for parsed rules
+
     def load_prompt(self) -> str:
         """Load the SKILL.md content as the system prompt."""
         if not self.skill_md_path.exists():
@@ -82,6 +84,14 @@ class SkillDefinition:
                 recoverable=False,
             )
         return self.skill_md_path.read_text(encoding="utf-8")
+
+    @property
+    def parsed_rules(self):
+        """Lazily parse and cache the SkillRuleSet from SKILL.md."""
+        if self._parsed_cache is None:
+            from app.services.skills.skill_parser import parse_skill_md
+            self._parsed_cache = parse_skill_md(self.skill_md_path, self.trm_type)
+        return self._parsed_cache
 
 
 # Registry of all available skills

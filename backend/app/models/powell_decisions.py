@@ -26,6 +26,28 @@ class HiveSignalMixin:
     """Mixin adding hive signal context columns to decision tables.
 
     All columns are nullable so existing records are unaffected.
+
+    Economic Impact Columns (Mar 2026)
+    -----------------------------------
+    Three-dimensional decision routing grounded in Kahneman & Tversky's
+    Prospect Theory (1979): humans weight losses ~2x heavier than equivalent
+    gains, so loss-prevention decisions (high urgency) must be prioritized
+    above gain-capture opportunities (high benefit) even at equal dollar value.
+
+    - cost_of_inaction: $/period cost of doing nothing (loss exposure)
+    - time_pressure: 0-1 scalar, how fast the window closes
+    - expected_benefit: $ net gain from the recommended action (gain capture)
+
+    Urgency = cost_of_inaction × time_pressure (normalized 0-1 for routing)
+    Likelihood = TRM confidence (existing ``confidence`` column)
+    Benefit = expected_benefit (absolute $, display + routing)
+
+    Routing formula:
+      routing_score = urgency × (1 - likelihood) + benefit_norm × likelihood
+      surface_to_human = routing_score > per_trm_threshold
+
+    Queue sort: urgency DESC (Kahneman loss aversion), then benefit DESC,
+    then likelihood ASC (where human judgment adds most value).
     """
     signal_context = Column(JSON, nullable=True)        # Snapshot of signals read before decision
     urgency_at_time = Column(Float, nullable=True)       # Urgency vector value for this TRM at decision time
@@ -37,6 +59,22 @@ class HiveSignalMixin:
     # Decision reasoning — full English explanation captured at decision time
     # Eliminates need for LLM to infer reasoning at query time
     decision_reasoning = Column(Text, nullable=True)
+
+    # ── Economic impact columns (Kahneman-informed 3D routing) ──────────
+    # cost_of_inaction: Dollar cost per period of NOT acting on this decision.
+    #   Combines magnitude of potential loss with the rate of deterioration.
+    #   E.g., stockout_cost × expected_shortage_qty, or downtime_cost × P(breakdown).
+    cost_of_inaction = Column(Float, nullable=True, comment="$/period cost of doing nothing")
+
+    # time_pressure: 0-1 scalar indicating how fast the decision window closes.
+    #   1.0 = must act now (overdue, customer waiting); 0.0 = weeks of runway.
+    #   E.g., max(0, 1 - days_remaining / decision_horizon).
+    time_pressure = Column(Float, nullable=True, comment="0-1 how fast the window closes")
+
+    # expected_benefit: Net dollar value of taking the recommended action.
+    #   = value_created_by_action - cost_of_action.
+    #   E.g., (stockout_cost_avoided - procurement_cost) for a PO decision.
+    expected_benefit = Column(Float, nullable=True, comment="$ net gain from recommended action")
 
     # Override tracking — populated by act_on_decision() when user modifies or cancels
     override_action = Column(String(20), nullable=True)       # 'modify' or 'cancel'
@@ -57,6 +95,9 @@ class HiveSignalMixin:
             "cycle_phase": self.cycle_phase,
             "cycle_id": self.cycle_id,
             "decision_reasoning": self.decision_reasoning,
+            "cost_of_inaction": self.cost_of_inaction,
+            "time_pressure": self.time_pressure,
+            "expected_benefit": self.expected_benefit,
             "override_action": self.override_action,
             "override_values": self.override_values,
             "override_reason_code": self.override_reason_code,

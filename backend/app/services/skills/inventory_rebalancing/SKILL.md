@@ -65,3 +65,49 @@ Respond with JSON only:
   "requires_human_review": false
 }
 ```
+
+## Engine Heuristics Reference
+
+### Configuration Defaults
+- excess_threshold: 1.5 (DOS > target × 1.5 = excess)
+- deficit_threshold: 0.75 (DOS < target × 0.75 = deficit)
+- stockout_risk_threshold: 0.5
+- excess_dos_multiplier: 2.0
+- max_recommendations: 10
+
+### Transfer Quantity Calculation
+```
+source_excess = available_inventory - safety_stock
+dest_deficit = safety_stock - available_inventory
+quantity = min(source_excess, dest_deficit)
+quantity = max(lane.min_qty, min(quantity, lane.max_qty))
+```
+
+### Reason Classification
+- stockout_risk > 0.5 → reason = "stockout_risk"
+- source DOS > target × 2.0 → reason = "excess_inventory"
+- else → reason = "service_level"
+
+### Urgency Calculation
+```
+urgency = min(1.0, stockout_risk + max(0, 1 - current_dos / target_dos))
+```
+
+### DOS Recalculation Post-Transfer
+```
+daily_demand = forecast / 30 (or 1e-6 if forecast <= 0)
+source_dos_after = (available - transfer_qty) / source_daily
+dest_dos_after = (available + transfer_qty) / dest_daily
+```
+
+## Guardrails
+- MUST NOT transfer a source site below its safety stock level. After the transfer, source site inventory must satisfy: `current_inventory - transfer_qty >= safety_stock`.
+- Transfer quantity MUST NOT exceed the lane's `max_quantity` capacity constraint. Oversized transfers are physically infeasible.
+- Transfer cost MUST be less than the holding cost savings achieved. A transfer that costs more than it saves destroys value. Validate: `transfer_qty * cost_per_unit < holding_cost_savings`.
+- MUST NOT create circular transfers. If a transfer A->B is recommended, no simultaneous transfer B->A is permitted for the same product. Check all proposed transfers for cycles before finalizing.
+
+## Escalation Triggers
+- **No excess site found**: All sites are at or below their target days of supply. There is no source of excess inventory to redistribute; the problem requires new supply, not rebalancing.
+- **Deficit sites isolated**: All deficit sites have no inbound transportation lanes from any excess site. The network topology does not support rebalancing for these locations.
+- **Transfer cost exceeds savings for all pairs**: Every candidate source-deficit pair fails the cost-benefit check (transfer cost >= holding cost savings). Rebalancing is economically unviable across the entire network.
+- **Shared capacity conflict**: Rebalancing proposals for different product groups compete for the same lane capacity. Prioritization across product groups exceeds the scope of single-product rebalancing logic and requires cross-product coordination.

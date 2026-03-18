@@ -1160,6 +1160,21 @@ class DecisionStreamService:
 
                     pid = getattr(row, "product_id", None)
                     raw_reasoning = getattr(row, "decision_reasoning", None)
+                    # ── Economic impact columns (3D routing) ────────────
+                    raw_cost = _safe_float(getattr(row, "cost_of_inaction", None))
+                    raw_tp = _safe_float(getattr(row, "time_pressure", None))
+                    raw_benefit = _safe_float(getattr(row, "expected_benefit", None))
+
+                    # Compute urgency: if economic columns populated, use them;
+                    # otherwise fall back to legacy urgency_at_time / urgency enum.
+                    if raw_cost > 0 and raw_tp > 0:
+                        computed_urgency = min(1.0, raw_cost * raw_tp / 1000.0)  # normalize $/day × pressure to 0-1
+                    else:
+                        computed_urgency = _safe_float(
+                            getattr(row, "urgency_at_time", None)
+                            or getattr(row, "urgency", None)
+                        )
+
                     all_decisions.append({
                         "id": row.id,
                         "decision_type": type_key,
@@ -1168,11 +1183,15 @@ class DecisionStreamService:
                         "product_name": product_names.get(str(pid)) if pid else None,
                         "site_id": site_id,
                         "site_name": site_names.get(str(site_id)) if site_id else None,
-                        "urgency": _urgency_label(_safe_float(getattr(row, "urgency_at_time", None) or getattr(row, "urgency", None))),
-                        "urgency_score": _safe_float(getattr(row, "urgency_at_time", None) or getattr(row, "urgency", None)),
+                        "urgency": _urgency_label(computed_urgency),
+                        "urgency_score": computed_urgency,
                         "likelihood": _likelihood_label(_safe_float(getattr(row, "confidence", None))),
                         "likelihood_score": _safe_float(getattr(row, "confidence", None)),
-                        "economic_impact": None,
+                        # Economic impact (3D routing — Kahneman-informed)
+                        "cost_of_inaction": raw_cost if raw_cost > 0 else None,
+                        "time_pressure": raw_tp if raw_tp > 0 else None,
+                        "expected_benefit": raw_benefit if raw_benefit > 0 else None,
+                        "economic_impact": raw_benefit if raw_benefit > 0 else None,
                         "reason": _get_reason(row, type_key),
                         "decision_reasoning": _humanize_ids(raw_reasoning, product_names) if raw_reasoning else None,
                         "suggested_action": _humanize_ids(_get_suggested_action(row, type_key), product_names),
@@ -1220,14 +1239,17 @@ class DecisionStreamService:
             except (TypeError, ValueError):
                 return default
 
-        # Load per-tenant autonomy thresholds from tenant_bsc_config.
-        # Provisioning creates a row with defaults (0.65/0.70); if missing,
-        # fall back defensively but log a warning — all tenants should have one.
+        # ── Load per-tenant autonomy thresholds ───────────────────────────
+        # Global defaults from TenantBscConfig, overridable per TRM type
+        # via TenantDecisionThreshold rows.
         urgency_thresh = 0.65
         likelihood_thresh = 0.70
+        benefit_thresh = 0.0
+        per_trm_overrides: dict[str, dict[str, float]] = {}
+
         try:
             from app.db.session import sync_session_factory
-            from app.models.bsc_config import TenantBscConfig
+            from app.models.bsc_config import TenantBscConfig, TenantDecisionThreshold
             sync_db = sync_session_factory()
             try:
                 bsc = sync_db.query(TenantBscConfig).filter(
@@ -1236,58 +1258,93 @@ class DecisionStreamService:
                 if bsc:
                     urgency_thresh = bsc.urgency_threshold
                     likelihood_thresh = bsc.likelihood_threshold
+                    benefit_thresh = getattr(bsc, "benefit_threshold", 0.0) or 0.0
                 else:
                     logger.warning(
                         "No tenant_bsc_config for tenant %d — using default thresholds "
-                        "(urgency=%.2f, likelihood=%.2f). Run provisioning to create one.",
-                        self.tenant_id, urgency_thresh, likelihood_thresh,
+                        "(urgency=%.2f, likelihood=%.2f, benefit=%.2f). "
+                        "Run provisioning to create one.",
+                        self.tenant_id, urgency_thresh, likelihood_thresh, benefit_thresh,
                     )
+
+                # Load per-TRM-type threshold overrides
+                overrides = sync_db.query(TenantDecisionThreshold).filter(
+                    TenantDecisionThreshold.tenant_id == self.tenant_id
+                ).all()
+                for ov in overrides:
+                    per_trm_overrides[ov.trm_type] = {
+                        "urgency": ov.urgency_threshold,
+                        "likelihood": ov.likelihood_threshold,
+                        "benefit": ov.benefit_threshold,
+                    }
             finally:
                 sync_db.close()
         except Exception:
-            logger.warning("Failed to load tenant_bsc_config for tenant %d", self.tenant_id)
+            logger.warning("Failed to load tenant thresholds for tenant %d", self.tenant_id)
 
-        # Tag each decision using 2×2 urgency × likelihood model:
+        # ── 3-Dimensional Routing (Kahneman-informed, Mar 2026) ─────────
         #
-        #   Urgent + Uncertain  → needs_attention (human judgment creates value)
-        #   Urgent + Confident  → auto_actioned (agent confident, even though urgent)
-        #   Routine + Uncertain → needs_attention (surface for human validation)
-        #   Routine + Confident → auto_actioned (agent handles autonomously)
+        # Three dimensions per decision:
+        #   Urgency    = cost_of_inaction × time_pressure (loss exposure)
+        #   Likelihood = agent confidence (probability of positive outcome)
+        #   Benefit    = expected $ net gain from recommended action
         #
-        # Key insight: likelihood (agent confidence) is the primary gate for
-        # auto-actioning. Urgency determines PRIORITY within needs_attention,
-        # not whether to surface. A High-urgency decision where the agent is
-        # 85% confident does NOT need human review — the agent can handle it.
+        # Routing formula:
+        #   routing_score = urgency × (1 - likelihood) + benefit_norm × likelihood
         #
-        # Filtering is done on the frontend via the Needs Attention / Show All buttons.
+        # Grounded in Kahneman & Tversky's Prospect Theory (1979):
+        #   "Losses loom approximately twice as large as gains."
+        # Loss-prevention decisions (high urgency) are prioritized above
+        # gain-capture opportunities (high benefit) even at equal dollar
+        # values, matching how human planners naturally triage.
+        #
+        # Per-TRM-type thresholds allow quality disposition to require
+        # human review more often than routine rebalancing.
+
         auto_count = 0
         for d in decisions:
+            trm_type = d.get("decision_type", "")
+
+            # Resolve thresholds: per-TRM override > tenant default
+            ov = per_trm_overrides.get(trm_type, {})
+            lik_t = ov.get("likelihood") if ov.get("likelihood") is not None else likelihood_thresh
+            urg_t = ov.get("urgency") if ov.get("urgency") is not None else urgency_thresh
+            ben_t = ov.get("benefit") if ov.get("benefit") is not None else benefit_thresh
+
             urgency = _to_float(d.get("urgency_score"), 0.0)
             likelihood = _to_float(d.get("likelihood_score"), _DEFAULT_CONFIDENCE)
+            benefit = _to_float(d.get("expected_benefit"), 0.0)
 
-            if likelihood >= likelihood_thresh:
-                # Agent is confident — auto-action regardless of urgency
-                d["needs_attention"] = False
-                d["auto_actioned"] = True
+            # Surface decision if ANY of these conditions hold:
+            #  1. Agent is uncertain (likelihood below threshold)
+            #  2. High urgency — loss exposure justifies human attention
+            #     even when agent is confident (Kahneman: prevent losses first)
+            #  3. Benefit is below threshold — stakes too low for autonomous
+            #     execution to matter, but worth human awareness
+            needs_attention = False
+            if likelihood < lik_t:
+                needs_attention = True   # Agent uncertain
+            elif urgency >= urg_t and likelihood < (lik_t + 0.15):
+                needs_attention = True   # High urgency + only moderately confident
+
+            d["needs_attention"] = needs_attention
+            d["auto_actioned"] = not needs_attention
+            if not needs_attention:
                 auto_count += 1
-            else:
-                # Agent is uncertain — surface for human review
-                d["needs_attention"] = True
-                d["auto_actioned"] = False
 
         if auto_count:
             logger.debug(
-                "Decision stream: %d auto-actioned (below threshold), %d need attention",
+                "Decision stream: %d auto-actioned, %d need attention",
                 auto_count, len(decisions) - auto_count,
             )
 
         kept = decisions  # Return ALL decisions — frontend filters
 
-        # Sort: urgency tier DESC, then likelihood ASC within each tier.
-        # Bucketing prevents fine-grained urgency noise from pushing a high-confidence
-        # decision above a lower-confidence one in the same urgency band.
-        # Within "Critical" (all scores 0.85-1.0), the least-certain decisions
-        # surface first — that's where human judgment creates the most value.
+        # ── Sort: Kahneman-aligned ──────────────────────────────────────
+        # 1. Urgency DESC (loss prevention before gain capture)
+        # 2. Benefit DESC (highest value items next)
+        # 3. Likelihood ASC (least confident first — where human judgment
+        #    adds the most value)
         def _urgency_bucket(score: float) -> int:
             if score >= 0.85: return 4  # Critical
             if score >= 0.65: return 3  # High
@@ -1297,8 +1354,9 @@ class DecisionStreamService:
 
         def sort_key(d):
             urgency = _to_float(d.get("urgency_score"), 0.0)
+            benefit = _to_float(d.get("expected_benefit"), 0.0)
             likelihood = _to_float(d.get("likelihood_score"), _DEFAULT_CONFIDENCE)
-            return (-_urgency_bucket(urgency), likelihood)
+            return (-_urgency_bucket(urgency), -benefit, likelihood)
 
         kept.sort(key=sort_key)
         return kept[:_DIGEST_MAX_DECISIONS]

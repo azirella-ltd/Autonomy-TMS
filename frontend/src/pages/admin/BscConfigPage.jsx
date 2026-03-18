@@ -39,7 +39,7 @@ import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import api from '../../services/api';
 
 // ── Default weights (Phase 1) ─────────────────────────────────────────────
-const DEFAULTS = { holding_cost_weight: 0.5, backlog_cost_weight: 0.5, autonomy_threshold: 0.5, urgency_threshold: 0.65, likelihood_threshold: 0.70 };
+const DEFAULTS = { holding_cost_weight: 0.5, backlog_cost_weight: 0.5, autonomy_threshold: 0.5, urgency_threshold: 0.65, likelihood_threshold: 0.70, benefit_threshold: 0 };
 const WEIGHT_PRECISION = 2;
 
 // ── Helper: format weight as percentage label ─────────────────────────────
@@ -110,6 +110,7 @@ export default function BscConfigPage() {
         autonomy_threshold: data.autonomy_threshold ?? 0.5,
         urgency_threshold: data.urgency_threshold ?? 0.65,
         likelihood_threshold: data.likelihood_threshold ?? 0.70,
+        benefit_threshold: data.benefit_threshold ?? 0,
       });
       setNotes(data.notes || '');
       setSavedBy(data.updated_by_name);
@@ -162,6 +163,7 @@ export default function BscConfigPage() {
         autonomy_threshold: parseFloat(weights.autonomy_threshold.toFixed(WEIGHT_PRECISION)),
         urgency_threshold: parseFloat(weights.urgency_threshold.toFixed(WEIGHT_PRECISION)),
         likelihood_threshold: parseFloat(weights.likelihood_threshold.toFixed(WEIGHT_PRECISION)),
+        benefit_threshold: weights.benefit_threshold ?? 0,
         notes: notes || null,
       });
       setSavedBy(data.updated_by_name);
@@ -304,14 +306,20 @@ export default function BscConfigPage() {
             Agent Autonomy Thresholds
           </Typography>
           <Typography variant="body2" color="text.secondary" mb={2}>
-            Two independent thresholds control when agents act autonomously vs. surface
-            decisions for human review. Together they define a 2&times;2 decision routing matrix.
+            Three dimensions control when agents act autonomously vs. surface decisions
+            for human review: <strong>Urgency</strong> (cost of inaction &times; time pressure),{' '}
+            <strong>Likelihood</strong> (agent confidence), and <strong>Benefit</strong> (net
+            economic gain from the recommended action).
           </Typography>
 
           <Alert severity="info" sx={{ mb: 3, fontSize: 13 }}>
-            <strong>Urgent + Any confidence</strong> &rarr; Always surfaced for human review<br />
-            <strong>Routine + Agent confident</strong> &rarr; Auto-actioned (agent handles it)<br />
-            <strong>Routine + Agent uncertain</strong> &rarr; Surfaced for human validation
+            <strong>High urgency + uncertain</strong> &rarr; Always surfaced (loss prevention)<br />
+            <strong>Routine + confident</strong> &rarr; Auto-actioned (agent handles it)<br />
+            <strong>Routine + uncertain</strong> &rarr; Surfaced for human validation<br />
+            <br />
+            <em>Based on Kahneman &amp; Tversky&apos;s Prospect Theory (1979): losses loom ~2&times;
+            larger than equivalent gains. The queue prioritises loss-prevention (urgency)
+            above gain-capture (benefit) at equal dollar values.</em>
           </Alert>
 
           {/* Urgency threshold */}
@@ -398,6 +406,51 @@ export default function BscConfigPage() {
               />
               <Typography variant="caption" color="text.secondary" sx={{ minWidth: 80, textAlign: 'right' }}>
                 Trust more
+              </Typography>
+            </Stack>
+          </Box>
+
+          <Divider sx={{ mb: 3 }} />
+
+          {/* Benefit threshold */}
+          <Box>
+            <Stack direction="row" alignItems="center" spacing={1} mb={0.5}>
+              <Typography variant="body2" fontWeight={600}>Minimum Benefit to Auto-Action</Typography>
+              <Chip
+                label={weights.benefit_threshold > 0 ? `$${weights.benefit_threshold.toLocaleString()}` : 'Off'}
+                size="small"
+                sx={{ fontWeight: 700, bgcolor: '#16a34a', color: '#fff', minWidth: 52 }}
+              />
+              <Tooltip title="When set above $0, decisions with expected economic benefit below this amount are surfaced for awareness even when the agent is confident. Set to $0 to disable (benefit does not gate auto-action)." placement="right">
+                <InfoOutlinedIcon sx={{ fontSize: 14, color: 'text.disabled', cursor: 'help' }} />
+              </Tooltip>
+            </Stack>
+            <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+              Below what dollar value should decisions still be reviewed? ($0 = disabled)
+            </Typography>
+            <Stack direction="row" alignItems="center" spacing={2}>
+              <Typography variant="caption" color="text.secondary" sx={{ minWidth: 80 }}>
+                Disabled
+              </Typography>
+              <Slider
+                value={weights.benefit_threshold}
+                min={0} max={10000} step={100}
+                onChange={(_e, v) => {
+                  setWeights(prev => ({ ...prev, benefit_threshold: v }));
+                  setDirty(true);
+                }}
+                sx={{ color: '#16a34a' }}
+                valueLabelDisplay="auto"
+                valueLabelFormat={(v) => v === 0 ? 'Off' : `$${v.toLocaleString()}`}
+                marks={[
+                  { value: 0, label: 'Off' },
+                  { value: 1000, label: '$1K' },
+                  { value: 5000, label: '$5K' },
+                  { value: 10000, label: '$10K' },
+                ]}
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ minWidth: 80, textAlign: 'right' }}>
+                Review more
               </Typography>
             </Stack>
           </Box>
