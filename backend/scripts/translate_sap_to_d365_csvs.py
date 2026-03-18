@@ -1,0 +1,557 @@
+#!/usr/bin/env python3
+"""
+Translate SAP IDES CSV exports into D365 Contoso-format CSV files.
+
+Reads SAP tables (T001W, MARA, MAKT, MARC, MARD, LFA1, KNA1, EKKO, EKPO,
+VBAK, VBAP, STKO, STPO, AFKO, MBEW, PBED) and produces D365-named CSVs
+(Sites.csv, ReleasedProductsV2.csv, etc.) that can be ingested by
+rebuild_d365_contoso_config.py.
+
+This lets us demonstrate the full D365 integration pipeline without needing
+a live D365 environment.
+
+Usage:
+    python scripts/translate_sap_to_d365_csvs.py \
+        --sap-dir imports/SAP_Demo/S4HANA/2026-03-18 \
+        --output-dir imports/D365_Demo \
+        --plant 1710 \
+        --data-area usmf
+"""
+
+import argparse
+import csv
+import os
+import sys
+from collections import defaultdict
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Set
+
+
+def read_csv(csv_dir: Path, filename: str) -> List[Dict[str, str]]:
+    """Read a CSV file, return list of dicts."""
+    path = csv_dir / filename
+    if not path.exists():
+        print(f"  SKIP {filename} (not found)")
+        return []
+    with open(path, "r", encoding="utf-8-sig") as f:
+        rows = list(csv.DictReader(f))
+    print(f"  READ {filename}: {len(rows)} rows")
+    return rows
+
+
+def write_csv(output_dir: str, filename: str, rows: List[Dict], fieldnames: List[str]):
+    """Write rows to a CSV file."""
+    if not rows:
+        print(f"  SKIP {filename} (no rows)")
+        return
+    filepath = os.path.join(output_dir, filename)
+    with open(filepath, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"  WROTE {filename}: {len(rows)} rows")
+
+
+def safe_float(val, default=0.0):
+    try:
+        return float(val) if val else default
+    except (ValueError, TypeError):
+        return default
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Translate SAP CSVs to D365 format")
+    parser.add_argument("--sap-dir", required=True, help="Directory containing SAP CSV files")
+    parser.add_argument("--output-dir", required=True, help="Output directory for D365 CSVs")
+    parser.add_argument("--plant", default="1710", help="SAP plant to translate (default: 1710)")
+    parser.add_argument("--data-area", default="usmf", help="D365 data area ID (default: usmf)")
+    args = parser.parse_args()
+
+    sap_dir = Path(args.sap_dir)
+    output_dir = args.output_dir
+    plant = args.plant
+    data_area = args.data_area
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    print(f"\n{'='*70}")
+    print(f"  SAP → D365 CSV Translation")
+    print(f"  SAP dir:    {sap_dir}")
+    print(f"  Output:     {output_dir}")
+    print(f"  Plant:      {plant}")
+    print(f"  Data area:  {data_area}")
+    print(f"{'='*70}")
+
+    # ── Load SAP data ────────────────────────────────────────────────────
+    print("\nPhase 1: Loading SAP CSVs...")
+
+    t001w = read_csv(sap_dir, "T001W.csv")
+    mara = read_csv(sap_dir, "MARA.csv")
+    makt = read_csv(sap_dir, "MAKT.csv")
+    marc = read_csv(sap_dir, "MARC.csv")
+    mard = read_csv(sap_dir, "MARD.csv")
+    mbew = read_csv(sap_dir, "MBEW.csv")
+    lfa1 = read_csv(sap_dir, "LFA1.csv")
+    kna1 = read_csv(sap_dir, "KNA1.csv")
+    ekko = read_csv(sap_dir, "EKKO.csv")
+    ekpo = read_csv(sap_dir, "EKPO.csv")
+    vbak = read_csv(sap_dir, "VBAK.csv")
+    vbap = read_csv(sap_dir, "VBAP.csv")
+    stko = read_csv(sap_dir, "STKO.csv")
+    stpo = read_csv(sap_dir, "STPO.csv")
+    mast = read_csv(sap_dir, "MAST.csv")
+    afko = read_csv(sap_dir, "AFKO.csv")
+    pbed = read_csv(sap_dir, "PBED.csv")
+    pbim = read_csv(sap_dir, "PBIM.csv")
+
+    # ── Build lookup maps ────────────────────────────────────────────────
+    print("\nPhase 2: Building lookup maps...")
+
+    # Material descriptions
+    makt_map = {}
+    for r in makt:
+        mat = r.get("MATNR", "")
+        if mat and (r.get("SPRAS", "E") == "E" or mat not in makt_map):
+            makt_map[mat] = r.get("MAKTX", mat)
+
+    # Material master
+    mara_map = {r.get("MATNR", ""): r for r in mara if r.get("MATNR")}
+
+    # Valuation (costs)
+    mbew_map = {}
+    for r in mbew:
+        mat = r.get("MATNR", "")
+        if mat and r.get("BWKEY", "") == plant:
+            mbew_map[mat] = r
+
+    # Materials at plant
+    marc_plant = [r for r in marc if r.get("WERKS") == plant]
+    materials_at_plant = {r["MATNR"] for r in marc_plant}
+
+    # Exclude non-physical
+    EXCLUDE_MTART = {"SERV", "DIEN", "NLAG", "VERP", "LEIH", "PIPE", "VEHI"}
+    materials = set()
+    for mat in materials_at_plant:
+        mtart = mara_map.get(mat, {}).get("MTART", "")
+        if mtart not in EXCLUDE_MTART:
+            materials.add(mat)
+
+    marc_map = {r["MATNR"]: r for r in marc_plant if r["MATNR"] in materials}
+
+    # Stock
+    stock_map = defaultdict(float)
+    for r in mard:
+        if r.get("WERKS") == plant and r.get("MATNR") in materials:
+            stock_map[r["MATNR"]] += safe_float(r.get("LABST", "0"))
+
+    # BOM linkage: MAST maps material → STLNR (BOM number)
+    mat_to_stlnr = {}
+    for r in mast:
+        if r.get("WERKS", "") == plant or not r.get("WERKS"):
+            mat_to_stlnr[r.get("MATNR", "")] = r.get("STLNR", "")
+
+    # Reverse: STLNR → material
+    stlnr_to_mat = {v: k for k, v in mat_to_stlnr.items()}
+
+    # PO vendor lookup
+    ebeln_to_lifnr = {r["EBELN"]: r.get("LIFNR", "") for r in ekko}
+    ekpo_plant = [r for r in ekpo if r.get("WERKS") == plant]
+
+    # SO customer lookup
+    vbeln_to_kunnr = {r["VBELN"]: r.get("KUNNR", "") for r in vbak}
+    vbap_plant = [r for r in vbap if r.get("WERKS") == plant]
+
+    # Active vendors and customers
+    active_vendors: Set[str] = set()
+    for r in ekpo_plant:
+        v = ebeln_to_lifnr.get(r.get("EBELN", ""), "")
+        if v:
+            active_vendors.add(v)
+
+    active_customers: Set[str] = set()
+    for r in vbap_plant:
+        c = vbeln_to_kunnr.get(r.get("VBELN", ""), "")
+        if c:
+            active_customers.add(c)
+
+    # Forecast: PBIM maps product→forecast profile, PBED has actual data
+    pbim_map = {}
+    for r in pbim:
+        pbim_map[r.get("BDZEI", "")] = r.get("MATNR", "")
+
+    print(f"  Materials: {len(materials)}")
+    print(f"  Active vendors: {len(active_vendors)}")
+    print(f"  Active customers: {len(active_customers)}")
+    print(f"  BOMs (MAST): {len(mat_to_stlnr)}")
+
+    # ── Translate to D365 format ─────────────────────────────────────────
+    print("\nPhase 3: Translating to D365 CSVs...")
+
+    # ── Sites.csv ────────────────────────────────────────────────────────
+    sites = []
+    for w in t001w:
+        sites.append({
+            "SiteId": w.get("WERKS", ""),
+            "SiteName": w.get("NAME1", ""),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "Sites.csv", sites, ["SiteId", "SiteName", "dataAreaId"])
+
+    # ── Warehouses.csv ───────────────────────────────────────────────────
+    # SAP plants double as warehouses; create one warehouse per plant
+    warehouses = []
+    for w in t001w:
+        warehouses.append({
+            "WarehouseId": w.get("WERKS", ""),
+            "WarehouseName": w.get("NAME1", ""),
+            "SiteId": w.get("WERKS", ""),
+            "OperationalSiteId": w.get("WERKS", ""),
+            "IsInventoryManaged": "Yes",
+            "WarehouseType": "Standard",
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "Warehouses.csv", warehouses,
+              ["WarehouseId", "WarehouseName", "SiteId", "OperationalSiteId",
+               "IsInventoryManaged", "WarehouseType", "dataAreaId"])
+
+    # ── ReleasedProductsV2.csv ───────────────────────────────────────────
+    products = []
+    for mat in sorted(materials):
+        mara_r = mara_map.get(mat, {})
+        mbew_r = mbew_map.get(mat, {})
+        desc = makt_map.get(mat, mat)
+
+        # Cost: standard price → moving average → sales price
+        std_cost = safe_float(mbew_r.get("STPRS", "0"))
+        mvg_price = safe_float(mbew_r.get("VERPR", "0"))
+        unit_cost = std_cost if std_cost > 0 else mvg_price
+
+        # Product type mapping
+        mtart = mara_r.get("MTART", "")
+        beskz = marc_map.get(mat, {}).get("BESKZ", "")
+        if beskz == "E":
+            prod_type = "Item"  # manufactured
+        elif mtart in ("ROH", "ERSA"):
+            prod_type = "Item"  # raw material
+        else:
+            prod_type = "Item"
+
+        products.append({
+            "ItemNumber": mat,
+            "ProductName": desc[:100],
+            "ProductType": prod_type,
+            "ProductSubType": mtart,
+            "ProductGroupId": mara_r.get("MATKL", ""),
+            "InventoryUnitSymbol": mara_r.get("MEINS", "EA"),
+            "SalesPrice": safe_float(mbew_r.get("VERPR", "0")),
+            "ProductionStandardCost": unit_cost,
+            "NetWeight": safe_float(mara_r.get("NTGEW", "0")),
+            "GrossWeight": safe_float(mara_r.get("BRGEW", "0")),
+            "NetVolume": safe_float(mara_r.get("VOLUM", "0")),
+            "BarcodeId": mara_r.get("EAN11", ""),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "ReleasedProductsV2.csv", products,
+              ["ItemNumber", "ProductName", "ProductType", "ProductSubType",
+               "ProductGroupId", "InventoryUnitSymbol", "SalesPrice",
+               "ProductionStandardCost", "NetWeight", "GrossWeight",
+               "NetVolume", "BarcodeId", "dataAreaId"])
+
+    # ── Vendors.csv ──────────────────────────────────────────────────────
+    vendors = []
+    for v in lfa1:
+        v_id = v.get("LIFNR", "")
+        if v_id not in active_vendors:
+            continue
+        vendors.append({
+            "VendorAccountNumber": v_id,
+            "VendorName": v.get("NAME1", ""),
+            "VendorGroupId": "",
+            "AddressCountryRegionId": v.get("LAND1", ""),
+            "AddressCity": v.get("ORT01", ""),
+            "AddressZipCode": v.get("PSTLZ", ""),
+            "PrimaryContactPhone": v.get("TELF1", ""),
+            "PrimaryContactEmail": "",
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "Vendors.csv", vendors,
+              ["VendorAccountNumber", "VendorName", "VendorGroupId",
+               "AddressCountryRegionId", "AddressCity", "AddressZipCode",
+               "PrimaryContactPhone", "PrimaryContactEmail", "dataAreaId"])
+
+    # ── CustomersV3.csv ──────────────────────────────────────────────────
+    customers = []
+    for c in kna1:
+        c_id = c.get("KUNNR", "")
+        if c_id not in active_customers:
+            continue
+        customers.append({
+            "CustomerAccount": c_id,
+            "CustomerName": c.get("NAME1", ""),
+            "CustomerGroupId": c.get("KTOKD", ""),
+            "AddressCountryRegionId": c.get("LAND1", ""),
+            "AddressCity": c.get("ORT01", ""),
+            "AddressZipCode": c.get("PSTLZ", ""),
+            "PrimaryContactPhone": c.get("TELF1", ""),
+            "PrimaryContactEmail": "",
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "CustomersV3.csv", customers,
+              ["CustomerAccount", "CustomerName", "CustomerGroupId",
+               "AddressCountryRegionId", "AddressCity", "AddressZipCode",
+               "PrimaryContactPhone", "PrimaryContactEmail", "dataAreaId"])
+
+    # ── BillOfMaterialsHeaders.csv ───────────────────────────────────────
+    bom_headers = []
+    seen_boms = set()
+    for r in stko:
+        stlnr = r.get("STLNR", "")
+        if stlnr in seen_boms or r.get("LOEKZ") == "X":
+            continue
+        seen_boms.add(stlnr)
+
+        parent_mat = stlnr_to_mat.get(stlnr, "")
+        if not parent_mat or parent_mat not in materials:
+            continue
+
+        bom_headers.append({
+            "BOMId": stlnr,
+            "ProductNumber": parent_mat,
+            "SiteId": plant,
+            "BOMName": makt_map.get(parent_mat, parent_mat)[:50],
+            "IsActive": "Yes",
+            "BOMQuantity": safe_float(r.get("BMENG", "1")),
+            "BOMUnitSymbol": r.get("BMEIN", "EA"),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "BillOfMaterialsHeaders.csv", bom_headers,
+              ["BOMId", "ProductNumber", "SiteId", "BOMName", "IsActive",
+               "BOMQuantity", "BOMUnitSymbol", "dataAreaId"])
+
+    # ── BillOfMaterialsLines.csv ─────────────────────────────────────────
+    bom_lines = []
+    for r in stpo:
+        stlnr = r.get("STLNR", "")
+        if stlnr not in seen_boms:
+            continue
+        component = r.get("IDNRK", "")
+        if not component or component not in materials:
+            continue
+
+        bom_lines.append({
+            "BOMId": stlnr,
+            "LineNumber": r.get("POSNR", r.get("STLKN", "")),
+            "ItemNumber": component,
+            "BOMLineQuantity": safe_float(r.get("MENGE", "1")),
+            "BOMLineQuantityUnitSymbol": r.get("MEINS", "EA"),
+            "ScrapPercentage": safe_float(r.get("AUSCH", "0")),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "BillOfMaterialsLines.csv", bom_lines,
+              ["BOMId", "LineNumber", "ItemNumber", "BOMLineQuantity",
+               "BOMLineQuantityUnitSymbol", "ScrapPercentage", "dataAreaId"])
+
+    # ── PurchaseOrderHeadersV2.csv ───────────────────────────────────────
+    po_headers = []
+    seen_po = set()
+    for r in ekko:
+        ebeln = r.get("EBELN", "")
+        if ebeln in seen_po:
+            continue
+        # Only include POs with lines at our plant
+        if not any(ep.get("EBELN") == ebeln for ep in ekpo_plant):
+            continue
+        seen_po.add(ebeln)
+
+        po_headers.append({
+            "PurchaseOrderNumber": ebeln,
+            "VendorAccountNumber": r.get("LIFNR", ""),
+            "OrderDate": r.get("BEDAT", r.get("AEDAT", "")),
+            "DeliveryDate": "",
+            "PurchaseOrderStatus": "Confirmed",
+            "CurrencyCode": r.get("WAERS", "USD"),
+            "TotalOrderAmount": "",
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "PurchaseOrderHeadersV2.csv", po_headers,
+              ["PurchaseOrderNumber", "VendorAccountNumber", "OrderDate",
+               "DeliveryDate", "PurchaseOrderStatus", "CurrencyCode",
+               "TotalOrderAmount", "dataAreaId"])
+
+    # ── PurchaseOrderLinesV2.csv ─────────────────────────────────────────
+    po_lines_out = []
+    for r in ekpo_plant:
+        if r.get("MATNR", "") not in materials:
+            continue
+        po_lines_out.append({
+            "PurchaseOrderNumber": r.get("EBELN", ""),
+            "LineNumber": r.get("EBELP", ""),
+            "ItemNumber": r.get("MATNR", ""),
+            "PurchasedQuantity": safe_float(r.get("MENGE", "0")),
+            "ReceivedQuantity": 0,
+            "PurchasePrice": safe_float(r.get("NETPR", "0")),
+            "DeliveryDate": "",
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "PurchaseOrderLinesV2.csv", po_lines_out,
+              ["PurchaseOrderNumber", "LineNumber", "ItemNumber",
+               "PurchasedQuantity", "ReceivedQuantity", "PurchasePrice",
+               "DeliveryDate", "dataAreaId"])
+
+    # ── SalesOrderHeadersV2.csv ──────────────────────────────────────────
+    so_headers = []
+    seen_so = set()
+    for r in vbak:
+        vbeln = r.get("VBELN", "")
+        if vbeln in seen_so:
+            continue
+        if not any(vp.get("VBELN") == vbeln for vp in vbap_plant):
+            continue
+        seen_so.add(vbeln)
+
+        so_headers.append({
+            "SalesOrderNumber": vbeln,
+            "CustomerAccountNumber": r.get("KUNNR", ""),
+            "OrderDate": r.get("ERDAT", ""),
+            "RequestedShipDate": r.get("VDATU", ""),
+            "SalesOrderStatus": "Confirmed",
+            "CurrencyCode": r.get("WAERK", "USD"),
+            "TotalOrderAmount": r.get("NETWR", ""),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "SalesOrderHeadersV2.csv", so_headers,
+              ["SalesOrderNumber", "CustomerAccountNumber", "OrderDate",
+               "RequestedShipDate", "SalesOrderStatus", "CurrencyCode",
+               "TotalOrderAmount", "dataAreaId"])
+
+    # ── SalesOrderLinesV2.csv ────────────────────────────────────────────
+    so_lines_out = []
+    for r in vbap_plant:
+        if r.get("MATNR", "") not in materials:
+            continue
+        so_lines_out.append({
+            "SalesOrderNumber": r.get("VBELN", ""),
+            "LineNumber": r.get("POSNR", ""),
+            "ItemNumber": r.get("MATNR", ""),
+            "OrderedSalesQuantity": safe_float(r.get("KWMENG", "0")),
+            "DeliveredQuantity": 0,
+            "SalesPrice": safe_float(r.get("NETPR", "0")),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "SalesOrderLinesV2.csv", so_lines_out,
+              ["SalesOrderNumber", "LineNumber", "ItemNumber",
+               "OrderedSalesQuantity", "DeliveredQuantity", "SalesPrice",
+               "dataAreaId"])
+
+    # ── InventWarehouseOnHandEntity.csv ──────────────────────────────────
+    inv_rows = []
+    for mat in sorted(materials):
+        qty = stock_map.get(mat, 0.0)
+        inv_rows.append({
+            "ItemNumber": mat,
+            "WarehouseId": plant,
+            "SiteId": plant,
+            "PhysicalOnHandQuantity": qty,
+            "ReservedQuantity": 0,
+            "AvailableQuantity": qty,
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "InventWarehouseOnHandEntity.csv", inv_rows,
+              ["ItemNumber", "WarehouseId", "SiteId", "PhysicalOnHandQuantity",
+               "ReservedQuantity", "AvailableQuantity", "dataAreaId"])
+
+    # ── ItemCoverageSettings.csv ─────────────────────────────────────────
+    coverage_rows = []
+    for mat in sorted(materials):
+        marc_r = marc_map.get(mat, {})
+        eisbe = safe_float(marc_r.get("EISBE", "0"))
+        minbe = safe_float(marc_r.get("MINBE", "0"))
+        mabst = safe_float(marc_r.get("MABST", "0"))
+
+        coverage_rows.append({
+            "ItemNumber": mat,
+            "SiteId": plant,
+            "WarehouseId": plant,
+            "MinimumInventoryLevel": minbe,
+            "MaximumInventoryLevel": mabst,
+            "SafetyStockQuantity": eisbe,
+            "CoveragePlanGroupId": marc_r.get("DISMM", ""),
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "ItemCoverageSettings.csv", coverage_rows,
+              ["ItemNumber", "SiteId", "WarehouseId", "MinimumInventoryLevel",
+               "MaximumInventoryLevel", "SafetyStockQuantity",
+               "CoveragePlanGroupId", "dataAreaId"])
+
+    # ── ProductionOrderHeaders.csv ───────────────────────────────────────
+    prod_orders = []
+    for r in afko:
+        mat = r.get("PLNBEZ", "")
+        if mat not in materials:
+            continue
+        prod_orders.append({
+            "ProductionOrderNumber": r.get("AUFNR", ""),
+            "ItemNumber": mat,
+            "ProductionQuantity": safe_float(r.get("GAMNG", "0")),
+            "ProductionStatus": "Started",
+            "ScheduledStartDate": r.get("GSTRS", ""),
+            "ScheduledEndDate": r.get("GLTRS", ""),
+            "SiteId": plant,
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "ProductionOrderHeaders.csv", prod_orders,
+              ["ProductionOrderNumber", "ItemNumber", "ProductionQuantity",
+               "ProductionStatus", "ScheduledStartDate", "ScheduledEndDate",
+               "SiteId", "dataAreaId"])
+
+    # ── DemandForecastEntries.csv ────────────────────────────────────────
+    forecast_rows = []
+    for r in pbed:
+        bdzei = r.get("BDZEI", "")
+        mat = pbim_map.get(bdzei, "")
+        if not mat or mat not in materials:
+            continue
+        forecast_rows.append({
+            "ItemNumber": mat,
+            "SiteId": plant,
+            "WarehouseId": plant,
+            "ForecastQuantity": safe_float(r.get("PLNMG", "0")),
+            "ForecastDate": r.get("PDATU", ""),
+            "ForecastModel": "SAP_TRANSLATED",
+            "dataAreaId": data_area,
+        })
+    write_csv(output_dir, "DemandForecastEntries.csv", forecast_rows,
+              ["ItemNumber", "SiteId", "WarehouseId", "ForecastQuantity",
+               "ForecastDate", "ForecastModel", "dataAreaId"])
+
+    # ── Summary ──────────────────────────────────────────────────────────
+    print(f"\n{'='*70}")
+    print(f"  Translation complete!")
+    print(f"  Output: {output_dir}/")
+    print(f"")
+    print(f"  Files produced:")
+    print(f"    Sites.csv                       {len(sites)} sites")
+    print(f"    Warehouses.csv                  {len(warehouses)} warehouses")
+    print(f"    ReleasedProductsV2.csv          {len(products)} products")
+    print(f"    Vendors.csv                     {len(vendors)} vendors")
+    print(f"    CustomersV3.csv                 {len(customers)} customers")
+    print(f"    BillOfMaterialsHeaders.csv      {len(bom_headers)} BOMs")
+    print(f"    BillOfMaterialsLines.csv        {len(bom_lines)} BOM lines")
+    print(f"    PurchaseOrderHeadersV2.csv      {len(po_headers)} POs")
+    print(f"    PurchaseOrderLinesV2.csv        {len(po_lines_out)} PO lines")
+    print(f"    SalesOrderHeadersV2.csv         {len(so_headers)} SOs")
+    print(f"    SalesOrderLinesV2.csv           {len(so_lines_out)} SO lines")
+    print(f"    InventWarehouseOnHandEntity.csv {len(inv_rows)} inventory rows")
+    print(f"    ItemCoverageSettings.csv        {len(coverage_rows)} coverage rows")
+    print(f"    ProductionOrderHeaders.csv      {len(prod_orders)} production orders")
+    print(f"    DemandForecastEntries.csv       {len(forecast_rows)} forecast entries")
+    print(f"")
+    print(f"  Next step:")
+    print(f"    python scripts/rebuild_d365_contoso_config.py \\")
+    print(f"      --config-id <ID> --csv-dir {output_dir}")
+    print(f"{'='*70}")
+
+
+if __name__ == "__main__":
+    main()
