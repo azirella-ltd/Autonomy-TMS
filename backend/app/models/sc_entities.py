@@ -130,6 +130,7 @@ class TradingPartner(Base):
     longitude = Column(Double)
     os_id = Column(String(100))  # Open Supplier Hub organizational ID
     duns_number = Column(String(20))  # Dun & Bradstreet 9-digit ID
+    external_identifiers = Column(JSON, nullable=True, comment="Typed external IDs: {duns, lei, sap_vendor_number, ...}")
     source = Column(String(100))
     source_event_id = Column(String(100))
     source_update_dttm = Column(DateTime)
@@ -207,6 +208,9 @@ class Product(Base):
     config_id = Column(Integer, ForeignKey("supply_chain_configs.id", ondelete="CASCADE"))
     priority = Column(Integer)
     unit_cost_range = Column(JSON)
+
+    # External identifier registry — typed IDs from external systems
+    external_identifiers = Column(JSON, nullable=True, comment="Typed external IDs: {sap_material_number, gtin, upc, ean, ...}")
 
     # Product hierarchy fields (for breadcrumb display)
     # Format: Category > Family > Group > Product
