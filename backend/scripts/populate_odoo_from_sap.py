@@ -136,12 +136,12 @@ def main():
     parser.add_argument("--odoo-user", default="admin")
     parser.add_argument("--odoo-password", default="admin")
     parser.add_argument("--plant", default="1710")
-    parser.add_argument("--company-name", default="SAP IDES 1710")
+    parser.add_argument("--company-name", default="SAP Bike Demo")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--max-products", type=int, default=200,
-                        help="Max products to import (default: 200)")
-    parser.add_argument("--max-vendors", type=int, default=30)
-    parser.add_argument("--max-customers", type=int, default=40)
+    parser.add_argument("--max-products", type=int, default=0,
+                        help="Max products (0=all, default: all)")
+    parser.add_argument("--max-vendors", type=int, default=0)
+    parser.add_argument("--max-customers", type=int, default=0)
     args = parser.parse_args()
 
     sap_dir = Path(args.sap_dir)
@@ -177,6 +177,17 @@ def main():
     stpo = read_csv(sap_dir, "STPO.csv")
     mast = read_csv(sap_dir, "MAST.csv")
     afko = read_csv(sap_dir, "AFKO.csv")
+    # Transaction history
+    likp = read_csv(sap_dir, "LIKP.csv")
+    lips = read_csv(sap_dir, "LIPS.csv")
+    afvc = read_csv(sap_dir, "AFVC.csv")
+    resb = read_csv(sap_dir, "RESB.csv")
+    crhd = read_csv(sap_dir, "CRHD.csv")
+    plko = read_csv(sap_dir, "PLKO.csv")
+    plpo = read_csv(sap_dir, "PLPO.csv")
+    mch1 = read_csv(sap_dir, "MCH1.csv")
+    mcha = read_csv(sap_dir, "MCHA.csv")
+    equi = read_csv(sap_dir, "EQUI.csv")
 
     # ── Phase 2: Build lookup maps ───────────────────────────────────────
     print("\nPhase 2: Building maps...")
@@ -251,28 +262,27 @@ def main():
                 "currency": r.get("WAERS", "USD"),
             })
 
-    # Limit materials to top N by transactional activity
-    mat_activity = Counter()
-    for r in ekpo_plant:
-        mat_activity[r.get("MATNR", "")] += 1
-    for r in vbap_plant:
-        mat_activity[r.get("MATNR", "")] += 1
-    top_materials = [m for m, _ in mat_activity.most_common(args.max_products) if m in materials]
-    # Add BOM parents and components for completeness
-    bom_materials = set()
-    for mat in top_materials:
-        stlnr = mat_to_stlnr.get(mat)
-        if stlnr:
-            bom_materials.add(mat)
-            for sp in stpo:
-                if sp.get("STLNR") == stlnr:
-                    comp = sp.get("IDNRK", "")
-                    if comp in materials:
-                        bom_materials.add(comp)
-    top_materials_set = set(top_materials) | bom_materials
-    top_materials = sorted(top_materials_set)[:args.max_products]
+    # Use all materials (or limit if requested)
+    top_materials = sorted(materials)
+    if args.max_products > 0:
+        # If limiting, prioritize by transaction activity + BOM completeness
+        mat_activity = Counter()
+        for r in ekpo_plant:
+            mat_activity[r.get("MATNR", "")] += 1
+        for r in vbap_plant:
+            mat_activity[r.get("MATNR", "")] += 1
+        ranked = [m for m, _ in mat_activity.most_common() if m in materials]
+        bom_mats = set()
+        for mat in ranked[:args.max_products]:
+            stlnr = mat_to_stlnr.get(mat)
+            if stlnr:
+                bom_mats.add(mat)
+                for sp in stpo:
+                    if sp.get("STLNR") == stlnr and sp.get("IDNRK", "") in materials:
+                        bom_mats.add(sp["IDNRK"])
+        top_materials = sorted((set(ranked[:args.max_products]) | bom_mats))
 
-    print(f"  Materials: {len(top_materials)} (of {len(materials)} available)")
+    print(f"  Materials: {len(top_materials)} (of {len(materials)} total)")
     print(f"  Vendors: {len(active_vendors)}")
     print(f"  Customers: {len(active_customers)}")
 
@@ -353,7 +363,8 @@ def main():
     vendor_id_map: Dict[str, int] = {}
     lfa1_map = {r["LIFNR"]: r for r in lfa1}
     count = 0
-    for v_id in sorted(active_vendors)[:args.max_vendors]:
+    vendor_limit = sorted(active_vendors)[:args.max_vendors] if args.max_vendors > 0 else sorted(active_vendors)
+    for v_id in vendor_limit:
         v = lfa1_map.get(v_id, {})
         name = v.get("NAME1", v_id)
         existing = odoo.search("res.partner", [
@@ -379,7 +390,8 @@ def main():
     customer_id_map: Dict[str, int] = {}
     kna1_map = {r["KUNNR"]: r for r in kna1}
     count = 0
-    for c_id in sorted(active_customers)[:args.max_customers]:
+    cust_limit = sorted(active_customers)[:args.max_customers] if args.max_customers > 0 else sorted(active_customers)
+    for c_id in cust_limit:
         c = kna1_map.get(c_id, {})
         name = c.get("NAME1", c_id)
         existing = odoo.search("res.partner", [
@@ -507,6 +519,8 @@ def main():
             if not comp_id:
                 continue
             qty = safe_float(sp.get("MENGE", "1"))
+            if qty <= 0:
+                qty = 1.0  # Odoo requires qty > 0 for BOM lines
             lines.append((0, 0, {
                 "product_id": comp_id,
                 "product_qty": qty,
@@ -524,14 +538,21 @@ def main():
         ], limit=1)
 
         if not existing:
-            odoo.create("mrp.bom", {
-                "product_tmpl_id": parent_tmpl,
-                "product_qty": safe_float(r.get("BMENG", "1")),
-                "type": "normal",
-                "company_id": company_id,
-                "bom_line_ids": lines,
-            })
-            bom_count += 1
+            bom_qty = safe_float(r.get("BMENG", "1"))
+            if bom_qty <= 0:
+                bom_qty = 1.0
+            try:
+                odoo.create("mrp.bom", {
+                    "product_tmpl_id": parent_tmpl,
+                    "product_qty": bom_qty,
+                    "type": "normal",
+                    "company_id": company_id,
+                    "bom_line_ids": lines,
+                })
+                bom_count += 1
+            except Exception as e:
+                if bom_count == 0:
+                    print(f"    WARNING: BOM error: {str(e)[:100]}")
 
     print(f"    {bom_count} BOMs created")
 
@@ -572,17 +593,299 @@ def main():
 
     print(f"    {rop_count} reordering rules")
 
+    # ── Create work centers (CRHD) ──────────────────────────────────────
+    print("\n  Creating work centers...")
+    wc_count = 0
+    wc_errors = 0
+    wc_id_map: Dict[str, int] = {}
+    for r in crhd:
+        if r.get("WERKS", "") != plant and r.get("WERKS", ""):
+            continue
+        objid = r.get("OBJID", "")
+        name = r.get("ARBPL", objid)
+        if not name or objid in wc_id_map:
+            continue
+        existing = odoo.search("mrp.workcenter", [
+            ["name", "=", name], ["company_id", "in", [company_id, False]]
+        ], limit=1)
+        if existing:
+            wc_id_map[objid] = existing[0]
+        else:
+            try:
+                wc_id_map[objid] = odoo.create("mrp.workcenter", {
+                    "name": f"{name} ({args.company_name[:10]})",
+                    "company_id": company_id,
+                })
+                wc_count += 1
+            except Exception:
+                wc_errors += 1
+    print(f"    {wc_count} work centers ({wc_errors} skipped due to company conflicts)")
+
+    # ── Create purchase orders (EKKO+EKPO) ───────────────────────────────
+    print("\n  Creating purchase orders...")
+    po_count = 0
+    po_line_count = 0
+    # Group PO lines by PO number
+    po_lines_by_ebeln = defaultdict(list)
+    for r in ekpo_plant:
+        mat = r.get("MATNR", "")
+        if mat not in product_id_map:
+            continue
+        po_lines_by_ebeln[r.get("EBELN", "")].append(r)
+
+    for ebeln, lines in po_lines_by_ebeln.items():
+        ekko_r = next((e for e in ekko if e.get("EBELN") == ebeln), None)
+        if not ekko_r:
+            continue
+        vendor = ekko_r.get("LIFNR", "")
+        vendor_odoo = vendor_id_map.get(vendor)
+        if not vendor_odoo:
+            continue
+
+        # Check if PO exists
+        existing = odoo.search("purchase.order", [
+            ["partner_ref", "=", ebeln], ["company_id", "=", company_id]
+        ], limit=1)
+        if existing:
+            continue
+
+        order_lines = []
+        for line in lines:
+            prod_id = product_id_map.get(line.get("MATNR", ""))
+            if not prod_id:
+                continue
+            order_lines.append((0, 0, {
+                "product_id": prod_id,
+                "product_qty": safe_float(line.get("MENGE", "0")),
+                "price_unit": safe_float(line.get("NETPR", "0")),
+            }))
+            po_line_count += 1
+
+        if not order_lines:
+            continue
+
+        try:
+            odoo.create("purchase.order", {
+                "partner_id": vendor_odoo,
+                "partner_ref": ebeln,
+                "company_id": company_id,
+                "order_line": order_lines,
+            })
+            po_count += 1
+        except Exception as e:
+            if po_count == 0:
+                print(f"    WARNING: PO creation error: {str(e)[:100]}")
+
+        if po_count % 100 == 0 and po_count > 0:
+            print(f"    ... {po_count} POs created")
+
+    print(f"    {po_count} POs, {po_line_count} lines")
+
+    # ── Create sale orders (VBAK+VBAP) ───────────────────────────────────
+    print("\n  Creating sale orders...")
+    so_count = 0
+    so_line_count = 0
+    so_lines_by_vbeln = defaultdict(list)
+    for r in vbap_plant:
+        mat = r.get("MATNR", "")
+        if mat not in product_id_map:
+            continue
+        so_lines_by_vbeln[r.get("VBELN", "")].append(r)
+
+    for vbeln, lines in so_lines_by_vbeln.items():
+        vbak_r = next((v for v in vbak if v.get("VBELN") == vbeln), None)
+        if not vbak_r:
+            continue
+        cust = vbak_r.get("KUNNR", "")
+        cust_odoo = customer_id_map.get(cust)
+        if not cust_odoo:
+            continue
+
+        existing = odoo.search("sale.order", [
+            ["client_order_ref", "=", vbeln], ["company_id", "=", company_id]
+        ], limit=1)
+        if existing:
+            continue
+
+        order_lines = []
+        for line in lines:
+            prod_id = product_id_map.get(line.get("MATNR", ""))
+            if not prod_id:
+                continue
+            order_lines.append((0, 0, {
+                "product_id": prod_id,
+                "product_uom_qty": safe_float(line.get("KWMENG", "0")),
+                "price_unit": safe_float(line.get("NETPR", "0")),
+            }))
+            so_line_count += 1
+
+        if not order_lines:
+            continue
+
+        try:
+            odoo.create("sale.order", {
+                "partner_id": cust_odoo,
+                "client_order_ref": vbeln,
+                "company_id": company_id,
+                "warehouse_id": wh_id,
+                "order_line": order_lines,
+            })
+            so_count += 1
+        except Exception as e:
+            if so_count == 0:
+                print(f"    WARNING: SO creation error: {str(e)[:100]}")
+
+        if so_count % 100 == 0 and so_count > 0:
+            print(f"    ... {so_count} SOs created")
+
+    print(f"    {so_count} SOs, {so_line_count} lines")
+
+    # ── Create manufacturing orders (AFKO) ───────────────────────────────
+    print("\n  Creating manufacturing orders...")
+    mo_count = 0
+    for r in afko:
+        mat = r.get("PLNBEZ", "")
+        prod_id = product_id_map.get(mat)
+        if not prod_id:
+            continue
+        tmpl_id = tmpl_id_map.get(mat)
+        if not tmpl_id:
+            continue
+
+        # Find BOM for this product
+        bom_ids = odoo.search("mrp.bom", [
+            ["product_tmpl_id", "=", tmpl_id], ["company_id", "=", company_id]
+        ], limit=1)
+
+        aufnr = r.get("AUFNR", "")
+        existing = odoo.search("mrp.production", [
+            ["origin", "=", aufnr], ["company_id", "=", company_id]
+        ], limit=1)
+        if existing:
+            continue
+
+        try:
+            vals = {
+                "product_id": prod_id,
+                "product_qty": safe_float(r.get("GAMNG", "1")),
+                "origin": aufnr,
+                "company_id": company_id,
+            }
+            if bom_ids:
+                vals["bom_id"] = bom_ids[0]
+            odoo.create("mrp.production", vals)
+            mo_count += 1
+        except Exception as e:
+            if mo_count == 0:
+                print(f"    WARNING: MO creation error: {str(e)[:100]}")
+
+    print(f"    {mo_count} manufacturing orders")
+
+    # ── Create lot/serial numbers (MCH1+MCHA) ───────────────────────────
+    print("\n  Creating lot/serial numbers...")
+    lot_count = 0
+    for r in mcha:
+        mat = r.get("MATNR", "")
+        prod_id = product_id_map.get(mat)
+        if not prod_id or r.get("LVORM") == "X":
+            continue
+        charg = r.get("CHARG", "")
+        if not charg:
+            continue
+        existing = odoo.search("stock.lot", [
+            ["name", "=", charg], ["product_id", "=", prod_id], ["company_id", "=", company_id]
+        ], limit=1)
+        if not existing:
+            try:
+                odoo.create("stock.lot", {
+                    "name": charg,
+                    "product_id": prod_id,
+                    "company_id": company_id,
+                })
+                lot_count += 1
+            except Exception:
+                pass
+    print(f"    {lot_count} lots/batches")
+
+    # ── Create inventory (MARD → stock.quant via inventory adjustment) ───
+    print("\n  Creating inventory levels...")
+    inv_count = 0
+    if stock_location_id:
+        for mat in top_materials:
+            qty = stock_map.get(mat, 0.0)
+            if qty <= 0:
+                continue
+            prod_id = product_id_map.get(mat)
+            if not prod_id:
+                continue
+            # Check if quant already exists
+            existing = odoo.search("stock.quant", [
+                ["product_id", "=", prod_id],
+                ["location_id", "=", stock_location_id],
+                ["company_id", "=", company_id],
+            ], limit=1)
+            if existing:
+                continue
+            try:
+                odoo.create("stock.quant", {
+                    "product_id": prod_id,
+                    "location_id": stock_location_id,
+                    "inventory_quantity": qty,
+                    "company_id": company_id,
+                })
+                inv_count += 1
+            except Exception as e:
+                if inv_count == 0:
+                    print(f"    WARNING: Inventory error: {str(e)[:100]}")
+    print(f"    {inv_count} inventory records")
+
+    # ── Create maintenance equipment (EQUI) ──────────────────────────────
+    print("\n  Creating maintenance equipment...")
+    equip_count = 0
+    for r in equi[:500]:  # cap at 500 to avoid slowness
+        equnr = r.get("EQUNR", "")
+        if not equnr:
+            continue
+        existing = odoo.search("maintenance.equipment", [
+            ["name", "=", equnr], ["company_id", "=", company_id]
+        ], limit=1)
+        if not existing:
+            try:
+                odoo.create("maintenance.equipment", {
+                    "name": equnr,
+                    "equipment_assign_to": "other",
+                    "company_id": company_id,
+                })
+                equip_count += 1
+            except Exception as e:
+                if equip_count == 0:
+                    print(f"    WARNING: Equipment error: {str(e)[:100]}")
+                break  # If model doesn't exist, stop
+    print(f"    {equip_count} equipment records")
+
     # ── Summary ──────────────────────────────────────────────────────────
     print(f"\n{'='*70}")
     print(f"  Odoo population complete!")
-    print(f"  Company:    {args.company_name} (id={company_id})")
-    print(f"  Warehouse:  {plant_name} (id={wh_id})")
-    print(f"  Products:   {len(product_id_map)}")
-    print(f"  Vendors:    {len(vendor_id_map)}")
-    print(f"  Customers:  {len(customer_id_map)}")
-    print(f"  BOMs:       {bom_count}")
-    print(f"  Reorder:    {rop_count}")
-    print(f"  Pricelists: {count}")
+    print(f"  Company:      {args.company_name} (id={company_id})")
+    print(f"  Warehouse:    {plant_name} (id={wh_id})")
+    print(f"")
+    print(f"  Master Data:")
+    print(f"    Products:     {len(product_id_map)}")
+    print(f"    Categories:   {len(cat_id_map)}")
+    print(f"    Vendors:      {len(vendor_id_map)}")
+    print(f"    Customers:    {len(customer_id_map)}")
+    print(f"    Pricelists:   {count}")
+    print(f"    BOMs:         {bom_count}")
+    print(f"    Work centers: {wc_count}")
+    print(f"    Reorder rules:{rop_count}")
+    print(f"")
+    print(f"  Transaction Data:")
+    print(f"    Purchase orders: {po_count} ({po_line_count} lines)")
+    print(f"    Sale orders:     {so_count} ({so_line_count} lines)")
+    print(f"    Mfg orders:      {mo_count}")
+    print(f"    Lots/batches:    {lot_count}")
+    print(f"    Inventory:       {inv_count}")
+    print(f"    Equipment:       {equip_count}")
     print(f"")
     print(f"  Odoo URL: {args.odoo_url}")
     print(f"  Switch to company '{args.company_name}' in the top-right menu")
