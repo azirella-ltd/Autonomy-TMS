@@ -158,15 +158,26 @@ class ScenarioEventService:
             "demand_spike": self._handle_demand_spike,
             "order_cancellation": self._handle_order_cancellation,
             "forecast_revision": self._handle_forecast_revision,
+            "customer_return": self._handle_customer_return,
+            "product_phase_out": self._handle_product_phase_out,
+            "new_product_introduction": self._handle_new_product_introduction,
             "supplier_delay": self._handle_supplier_delay,
             "supplier_loss": self._handle_supplier_loss,
             "quality_hold": self._handle_quality_hold,
             "component_shortage": self._handle_component_shortage,
+            "supplier_price_change": self._handle_supplier_price_change,
+            "product_recall": self._handle_product_recall,
             "capacity_loss": self._handle_capacity_loss,
             "machine_breakdown": self._handle_machine_breakdown,
+            "yield_loss": self._handle_yield_loss,
+            "labor_shortage": self._handle_labor_shortage,
+            "engineering_change": self._handle_engineering_change,
             "shipment_delay": self._handle_shipment_delay,
             "lane_disruption": self._handle_lane_disruption,
+            "warehouse_capacity_constraint": self._handle_warehouse_capacity_constraint,
             "tariff_change": self._handle_tariff_change,
+            "currency_fluctuation": self._handle_currency_fluctuation,
+            "regulatory_change": self._handle_regulatory_change,
         }
         handler = handlers.get(event_type)
         if not handler:
@@ -484,6 +495,204 @@ class ScenarioEventService:
         return {
             "affected_entities": {"vendor_site": [vendor_site_id]},
             "summary": f"Tariff change: +{cost_increase_pct:.0f}% cost increase from {vendor_name}",
+        }
+
+    # -- New event handlers (SAP S/4HANA IDES compatible) --
+
+    def _handle_customer_return(self, config_id: int, tenant_id: int, params: Dict) -> Dict:
+        """Process customer return — increase inventory at return site, mark as quarantine."""
+        product_id = params["product_id"]
+        quantity = float(params["quantity"])
+        reason = params.get("reason", "defective")
+        disposition = params.get("disposition", "quarantine")
+        customer_id = params.get("customer_id", "")
+        return_to_site_id = params.get("return_to_site_id")
+
+        # Resolve names
+        customer_site = self.db.query(SiteModel).filter(SiteModel.id == customer_id).first() if str(customer_id).isdigit() else None
+        customer_name = customer_site.name if customer_site else str(customer_id)
+
+        return {
+            "affected_entities": {"product": [product_id], "customer": [customer_id]},
+            "summary": (
+                f"Customer return: {quantity:.0f} units of {product_id} returned by {customer_name}, "
+                f"reason={reason}, disposition={disposition}"
+            ),
+        }
+
+    def _handle_product_phase_out(self, config_id: int, tenant_id: int, params: Dict) -> Dict:
+        """Phase-out product — ramp down forecast, flag inventory for clearance."""
+        product_id = params["product_id"]
+        phase_out_date = params["phase_out_date"]
+        ramp_down_weeks = int(params.get("ramp_down_weeks", 4))
+        replacement = params.get("replacement_product_id")
+
+        summary = (
+            f"Product phase-out: {product_id} phasing out by {phase_out_date}, "
+            f"ramp-down over {ramp_down_weeks} weeks"
+        )
+        if replacement:
+            summary += f", replacement: {replacement}"
+
+        return {
+            "affected_entities": {"product": [product_id]},
+            "summary": summary,
+        }
+
+    def _handle_new_product_introduction(self, config_id: int, tenant_id: int, params: Dict) -> Dict:
+        """New product launch — create initial forecast records."""
+        description = params["product_description"]
+        site_id = int(params["site_id"])
+        weekly_fcst = float(params["initial_forecast_weekly"])
+        launch_date = params["launch_date"]
+
+        site = self.db.query(SiteModel).filter(SiteModel.id == site_id).first()
+        site_name = site.name if site else str(site_id)
+
+        return {
+            "affected_entities": {"site": [site_id]},
+            "summary": (
+                f"New product introduction: '{description}' at {site_name}, "
+                f"initial forecast {weekly_fcst:.0f}/week, launch {launch_date}"
+            ),
+        }
+
+    def _handle_supplier_price_change(self, config_id: int, tenant_id: int, params: Dict) -> Dict:
+        """Vendor price change affecting PO economics."""
+        vendor_site_id = int(params["vendor_site_id"])
+        price_change_pct = float(params["price_change_pct"])
+        product_id = params.get("product_id")
+
+        site = self.db.query(SiteModel).filter(SiteModel.id == vendor_site_id).first()
+        vendor_name = site.name if site else str(vendor_site_id)
+
+        scope = f"product {product_id}" if product_id else "all products"
+        direction = "increase" if price_change_pct > 0 else "decrease"
+
+        return {
+            "affected_entities": {"vendor_site": [vendor_site_id]},
+            "summary": (
+                f"Supplier price {direction}: {abs(price_change_pct):.1f}% from {vendor_name} "
+                f"on {scope}"
+            ),
+        }
+
+    def _handle_product_recall(self, config_id: int, tenant_id: int, params: Dict) -> Dict:
+        """Product recall — quarantine inventory, trigger replacement orders."""
+        product_id = params["product_id"]
+        quantity = float(params["affected_quantity"])
+        site_id = int(params["site_id"])
+        scope = params.get("recall_scope", "voluntary")
+        replacement = params.get("replacement_required", "yes")
+
+        site = self.db.query(SiteModel).filter(SiteModel.id == site_id).first()
+        site_name = site.name if site else str(site_id)
+
+        return {
+            "affected_entities": {"product": [product_id], "site": [site_id]},
+            "summary": (
+                f"Product recall ({scope}): {quantity:.0f} units of {product_id} "
+                f"at {site_name}, replacement={'required' if replacement == 'yes' else 'not required'}"
+            ),
+        }
+
+    def _handle_yield_loss(self, config_id: int, tenant_id: int, params: Dict) -> Dict:
+        """Yield/scrap rate increase — more raw materials needed per unit output."""
+        site_id = int(params["site_id"])
+        product_id = params["product_id"]
+        scrap_increase = float(params["scrap_increase_pct"])
+        duration = int(params.get("duration_weeks", 4))
+
+        site = self.db.query(SiteModel).filter(SiteModel.id == site_id).first()
+        site_name = site.name if site else str(site_id)
+
+        return {
+            "affected_entities": {"product": [product_id], "site": [site_id]},
+            "summary": (
+                f"Yield loss: +{scrap_increase:.1f}% scrap rate for {product_id} "
+                f"at {site_name} for {duration} weeks"
+            ),
+        }
+
+    def _handle_labor_shortage(self, config_id: int, tenant_id: int, params: Dict) -> Dict:
+        """Labor shortage reducing effective production capacity."""
+        site_id = int(params["site_id"])
+        reduction_pct = float(params["reduction_pct"])
+        duration = int(params.get("duration_weeks", 2))
+        shifts = params.get("affected_shifts", "all")
+
+        site = self.db.query(SiteModel).filter(SiteModel.id == site_id).first()
+        site_name = site.name if site else str(site_id)
+
+        return {
+            "affected_entities": {"site": [site_id]},
+            "summary": (
+                f"Labor shortage: {reduction_pct:.0f}% capacity reduction at {site_name}, "
+                f"shifts={shifts}, duration={duration} weeks"
+            ),
+        }
+
+    def _handle_engineering_change(self, config_id: int, tenant_id: int, params: Dict) -> Dict:
+        """BOM revision — component add/remove/substitute/quantity change."""
+        product_id = params["product_id"]
+        change_type = params["change_type"]
+        component_id = params["component_id"]
+        new_component = params.get("new_component_id")
+        new_qty = params.get("new_quantity")
+
+        summary = f"Engineering change on {product_id}: {change_type} for component {component_id}"
+        if new_component:
+            summary += f" → substitute with {new_component}"
+        if new_qty:
+            summary += f", new qty={new_qty}"
+
+        return {
+            "affected_entities": {"product": [product_id], "component": [component_id]},
+            "summary": summary,
+        }
+
+    def _handle_warehouse_capacity_constraint(self, config_id: int, tenant_id: int, params: Dict) -> Dict:
+        """Warehouse nearing capacity — triggers overflow management."""
+        site_id = int(params["site_id"])
+        utilization = float(params["utilization_pct"])
+        duration = int(params.get("duration_weeks", 2))
+
+        site = self.db.query(SiteModel).filter(SiteModel.id == site_id).first()
+        site_name = site.name if site else str(site_id)
+
+        return {
+            "affected_entities": {"site": [site_id]},
+            "summary": (
+                f"Warehouse capacity constraint: {site_name} at {utilization:.0f}% utilization, "
+                f"expected {duration} weeks"
+            ),
+        }
+
+    def _handle_currency_fluctuation(self, config_id: int, tenant_id: int, params: Dict) -> Dict:
+        """Exchange rate shift affecting multi-currency sourcing."""
+        currency_pair = params["currency_pair"]
+        change_pct = float(params["change_pct"])
+        direction = params.get("direction", "weaken")
+
+        return {
+            "affected_entities": {"currency": [currency_pair]},
+            "summary": (
+                f"Currency fluctuation: {currency_pair} {direction}s by {abs(change_pct):.1f}%"
+            ),
+        }
+
+    def _handle_regulatory_change(self, config_id: int, tenant_id: int, params: Dict) -> Dict:
+        """New regulation affecting sourcing, materials, or processes."""
+        description = params["regulation_description"]
+        impact_type = params.get("impact_type", "process_change")
+        deadline = params.get("compliance_deadline", "")
+
+        return {
+            "affected_entities": {},
+            "summary": (
+                f"Regulatory change ({impact_type}): {description}, "
+                f"deadline={deadline}"
+            ),
         }
 
     # ------------------------------------------------------------------

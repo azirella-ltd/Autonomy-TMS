@@ -42,6 +42,7 @@ from .synthetic_data import router as synthetic_data_router
 # SAP Data Management
 from .sap_data_management import router as sap_data_management_router
 from .sap_change_simulator import router as sap_change_simulator_router
+from .erp_integration import router as erp_integration_router
 
 # Autonomy Customer Registry
 from .autonomy_customers import router as autonomy_customers_router
@@ -112,6 +113,8 @@ __all__ = [
     # SAP Data Management
     'sap_data_management_router',
     'sap_change_simulator_router',
+    # Generalized ERP Integration (Odoo, D365, etc.)
+    'erp_integration_router',
     # Autonomy Customer Registry
     'autonomy_customers_router',
     # Powell Framework (SDAM)

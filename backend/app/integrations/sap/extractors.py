@@ -487,6 +487,9 @@ RFC_TABLE_FIELDS: Dict[str, List[str]] = {
         "STLNR", "STLAL", "STLKN", "IDNRK",
         "MENGE", "MEINS", "POSTP",
     ],
+    "MAST": [
+        "MATNR", "WERKS", "STLAN", "STLNR", "STLAL",
+    ],
     "PLKO": [
         "PLNTY", "PLNNR", "PLNAL", "WERKS", "VERWE", "STATU",
     ],

@@ -14,6 +14,18 @@ When implementing any entity:
 3. Add extensions only when necessary for Beer Game or platform-specific features
 4. Document any extensions clearly as "Extension: " in model docstrings
 
+## CRITICAL: Documentation Must Be Updated With Code Changes
+
+**MANDATORY REQUIREMENT**: When making code changes that affect architecture, APIs, data models, or user-facing features, the relevant `.md` documentation files MUST be updated in the same work session. Do not leave documentation updates for later.
+
+**Rules**:
+1. **New features/services** → Update the relevant section in CLAUDE.md and any affected docs in `docs/`
+2. **New models/tables** → Update the Database Schema section in CLAUDE.md
+3. **API changes** → Update endpoint documentation in the relevant docs
+4. **SAP integration changes** → Update `docs/internal/SAP_DEMO.md` and `docs/external/SAP_INTEGRATION_GUIDE.md`
+5. **Architecture changes** → Update CLAUDE.md Architecture section and `docs/internal/TECHNICAL_OVERVIEW.md`
+6. **New event types/capabilities** → Update catalogs and scenario docs
+
 ## CRITICAL: No Fallbacks, No Hardcoded Values
 
 **MANDATORY REQUIREMENT**: Code must NEVER use fallback values, hardcoded defaults, or `getattr(obj, "field", <default>)` patterns that silently mask missing data. All data must come from the database schema as defined.
@@ -467,6 +479,8 @@ make proxy-logs
 - `explanation_templates.py`: 39 Jinja2-style templates (13 agent types × 3 verbosity levels) for inline decision explanations
 - `decision_stream_service.py`: Decision Stream inbox — collects decisions from all 11 powell_*_decisions tables, routes via 3-dimensional framework: **Urgency** (cost_of_inaction × time_pressure), **Likelihood** (agent confidence), **Benefit** (expected $ net gain). Per-tenant thresholds in `tenant_bsc_config` (`urgency_threshold` default 0.65, `likelihood_threshold` default 0.70, `benefit_threshold` default $0). Per-TRM-type overrides in `tenant_decision_thresholds`. Queue sort is Kahneman-aligned: urgency DESC (loss prevention first — Prospect Theory: losses loom ~2× larger than gains), benefit DESC, likelihood ASC. Digest persisted to `decision_stream_digests` table. See [DECISION_ROUTING.md](docs/internal/DECISION_ROUTING.md) for full framework and [POWELL_APPROACH.md](docs/internal/POWELL_APPROACH.md) §5.21 for integration details.
 
+- `scenario_event_service.py`: Scenario event injection — 24 event types across 5 categories (Demand: 7, Supply: 6, Capacity: 5, Logistics: 3, Macro: 3). Creates scenario branches, modifies DB records, triggers CDC. SAP S/4HANA IDES compatible. Event catalog dynamically injected into Talk to Me LLM prompt via `_build_event_catalog_for_llm()`.
+
 **API Endpoints** (`api/endpoints/`):
 - `mps.py`: Master Production Scheduling endpoints
 - `supply_plan.py`: Supply plan generation and approval
@@ -772,6 +786,20 @@ See [POWELL_APPROACH.md](POWELL_APPROACH.md) for full framework documentation.
 - `roles`: RBAC roles
 - `permissions`: Granular permissions
 - `user_roles`: Role assignments
+
+**SAP Data Staging Tables** (intermediate layer between SAP and AWS SC entities):
+- `sap_extraction_runs`: One row per extraction batch — metadata, row counts by category, delta summary, MANIFEST
+- `sap_staging_rows`: Raw SAP data preserved in JSONB — audit trail, delta detection via `row_hash`, business key indexing
+- `sap_table_schemas`: Column set tracking per SAP table per tenant — schema drift detection
+- `sap_connections`: SAP system connection configurations (OData, RFC, CSV, IDoc)
+
+**SAP Data Architecture**:
+- **Directory convention**: `imports/{TENANT_NAME}/{ERP_VARIANT}/{YYYY-MM-DD}/ (e.g., imports/SAP_Demo/S4HANA/2026-03-18/)` with `latest` symlink
+- **Data categories**: Master (weekly), Transaction (daily), CDC (hourly), User Import (weekly)
+- **ERP Registry**: `backend/app/models/erp_registry.py` — Vendor (SAP, Oracle, Microsoft, Infor) × Variant (S/4HANA, ECC, Cloud SCM, D365, etc.)
+- **SAP Table Registry**: `SAP_TABLE_REGISTRY` in `backend/app/models/sap_staging.py` — 70+ SAP tables with category, key fields, descriptions
+- **Tenant ERP config**: `erp_vendor`, `erp_variant`, `import_base_dir`, `export_base_dir`, `erp_retention_snapshots` on Tenant model
+- **Flow**: SAP (RFC/CSV) → `sap_staging_rows` (JSONB audit) → `SAPConfigBuilder` → AWS SC entity tables
 
 **Directive & Signal Tables**:
 - `user_directives`: Natural language directive capture, LLM parsing, Powell routing, effectiveness tracking
@@ -1094,7 +1122,13 @@ The `decision_seed` step generates realistic decisions from the digital twin sim
 
 **Topology-Aware Decision Seeding**: The seeder uses `get_active_trms(master_type)` from `site_capabilities.py` to only generate decisions valid for the config's DAG topology. A distribution network (no manufacturers) gets 7 TRM types; a network with manufacturers gets all 11. Invalid TRM types (e.g., MO/quality/maintenance for distribution-only) are never seeded.
 
-**Config Versioning on Reprovisioning**: When `reprovision(config_id)` is called, the current config is archived as a read-only snapshot (e.g., "SAP IDES 1710 (v2)") with `scenario_type=ARCHIVED`, `is_active=False`, and the original `created_at` preserved. The active config's `version` is incremented. Archived configs appear in the SC config list for audit trail.
+**Config Versioning on Reprovisioning**: When `reprovision(config_id, scope)` is called, the current config is archived as a read-only snapshot (e.g., "SAP IDES 1710 (v2)") with `scenario_type=ARCHIVED`, `is_active=False`, and the original `created_at` preserved. The active config's `version` is incremented. Archived configs appear in the SC config list for audit trail.
+
+**Provisioning Scope** (`provisioning_scope` column on `config_provisioning_status`):
+- **FULL** (default): All 14 steps — required for structural changes (new sites, lanes, products, BOMs)
+- **PARAMETER_ONLY**: Only 4 steps — `cfa_optimization`, `decision_seed`, `conformal`, `briefing`. Reuses existing TRM weights, GNN models, and simulation data. Use for policy/parameter changes (safety stock policy, service level targets, CFA parameters).
+- API: `POST /provisioning/reprovision/{config_id}?scope=PARAMETER_ONLY`
+- Frontend: Two buttons in ProvisioningStepper footer — "Parameters Only" (fast) and "Full Re-provision"
 
 **Implementation Files**:
 - `backend/app/services/directive_service.py` — LLM parsing, gap detection, routing
@@ -1202,6 +1236,21 @@ POST /api/v1/email-signals/ingest-manual         # Manual email paste
 **Default Login**:
 - Email: systemadmin@autonomy.com
 - Password: Autonomy@2026
+
+**CRITICAL — User Role Hierarchy**:
+
+| Role | Email | Tenant | Purpose |
+|------|-------|--------|---------|
+| **System Admin** | systemadmin@autonomy.com | NONE (no tenant_id) | Platform-level: manage tenants and tenant admins ONLY |
+| **Tenant Admin** (Food Dist) | admin@distdemo.com | Tenant 3 | Provisioning, config, user management for Food Dist |
+| **Tenant Admin** (SAP Demo) | SAP_admin@autonomy.com | Tenant 20 | Provisioning, config, user management for SAP Demo |
+
+**Rules**:
+- systemadmin NEVER has a `tenant_id` or `default_config_id` — it is NOT associated with any tenant
+- Provisioning can ONLY be performed by the tenant admin — never by systemadmin
+- When running provisioning from code, always authenticate as the correct tenant admin
+- systemadmin has NO access to the Decision Stream — it returns empty (tenant_id=0 matches nothing)
+- systemadmin sees all configs across tenants in the config list (read-only observation), but cannot interact with tenant-scoped features like Decision Stream, provisioning, or agent decisions
 
 ---
 

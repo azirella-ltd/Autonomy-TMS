@@ -1,8 +1,8 @@
-# SAP Integration Guide for Beer Game
+# SAP Integration Guide
 ## S/4HANA and APO Supply Chain Data Integration
 
-**Version**: 1.0
-**Date**: 2026-01-16
+**Version**: 2.0
+**Date**: 2026-03-18
 **Status**: Implementation Ready
 
 ---
@@ -408,18 +408,173 @@ SAP_OUTPUT_DIR=/data/sap/beergame/output
 ANTHROPIC_API_KEY=sk-ant-your-anthropic-api-key
 ```
 
-### SAP Authorizations Required
+### SAP User Permissions by Connection Type
 
-**S/4HANA:**
-- `S_RFC` - RFC access
-- `S_TABU_DIS` - Table read access (MARA, MARC, EKKO, etc.)
-- `S_DATASET` - File access (if using CSV export from SAP)
-- `BAPI_PR_CREATE` - Purchase requisition creation
-- `BAPI_PO_CREATE1` - Purchase order/STO creation
+Autonomy supports 4 connection types to SAP. Each requires different user setup and authorization. **Minimum privilege principle**: grant only what is needed for data extraction.
 
-**APO:**
-- File system access to CSV export directory
-- SNP Planning Book access (for plan upload)
+#### Connection Type 1: RFC (Remote Function Call)
+
+**Recommended for**: Direct automated extraction from on-premise S/4HANA and ECC systems.
+
+**User Setup**:
+- Create a dedicated **Communication** user (type `C`) in client 100 via tCode `SU01`
+- Recommended name: `ZRFC_AUTONOMY`
+- Alternatively, unlock the pre-existing `BPINST` user (locked by default in FAA)
+- Set password to never expire for automated jobs
+
+**Required Authorization Objects**:
+
+| Authorization Object | Field | Value | Purpose |
+|---------------------|-------|-------|---------|
+| **S_RFC** | RFC_TYPE | `FUGR` | Allow function group calls |
+| | RFC_NAME | `SDTX`, `SDIFRUNTIME`, `RFC1`, `SYST` | RFC_READ_TABLE and dependencies |
+| | ACTVT | `16` (Execute) | |
+| **S_TABU_DIS** | ACTVT | `03` (Display) | Read access to SAP tables |
+| | DICBERCLS | `*` (or restrict to specific table groups: `SC`, `SS`, `MM`, `SD`, `PP`, `QM`, `PM`) | Table authorization groups |
+| **S_TABU_NAM** | ACTVT | `03` (Display) | Named table access (S/4HANA 1909+) |
+| | TABLE | `MARA`, `MARC`, `MARD`, `MAKT`, `MBEW`, `MARM`, `MVKE`, `STKO`, `STPO`, `MAST`, `EORD`, `EINA`, `EINE`, `KNA1`, `KNVV`, `LFA1`, `VBAK`, `VBAP`, `EKKO`, `EKPO`, `AFKO`, `AFPO`, `AFRU`, `LIKP`, `LIPS`, `MSEG`, `MKPF`, `EKBE`, `CRHD`, `PLKO`, `PLPO`, `QALS`, `QMEL`, `JEST`, `PBIM`, `PBED`, `T001*`, `MARD`, `RESB`, `AUFK` | Specific tables for SC extraction |
+
+**SAP Role Template**: Copy `SAP_BC_BATCH_DIALOG_RFC` and add `S_TABU_DIS`/`S_TABU_NAM`.
+
+> **SAP Note 460089**: `RFC_READ_TABLE` has a 512-byte row buffer limit. The Autonomy extractor handles this automatically by reducing selected fields when the buffer overflows.
+
+**Minimum SAP Tables Required** (70+ tables across 4 categories):
+- **Master Data** (31 tables): MARA, MARC, MARD, MAKT, MBEW, MARM, MVKE, MAST, STKO, STPO, KNA1, KNVV, LFA1, EORD, EINA, EINE, EBAN, CRHD, EQUI, PLKO, PLPO, PBIM, PBED, PLAF, T001, T001W, T001L, ADRC, T179, KAKO, T024E
+- **Transaction Data** (21 tables): VBAK, VBAP, VBEP, VBUK, VBUP, EKKO, EKPO, EKET, AFKO, AFPO, AFVC, AUFK, LIKP, LIPS, LTAK, LTAP, RESB, QMEL, QALS, QASE, KONV
+- **CDC Data** (11 tables): MSEG, MKPF, EKBE, AFRU, JEST, TJ02T, MCH1, MCHA, CDHDR, CDPOS, CRCO
+- **User Import** (7 tables): USR02, USR21, ADRP, AGR_USERS, AGR_DEFINE, AGR_1251, AGR_TCODES
+
+#### Connection Type 2: OData API
+
+**Recommended for**: SAP S/4HANA Cloud (Public Edition) where RFC is not available.
+
+**User Setup**:
+- Create a **Communication** user (type `C`) or use a **Service** user
+- Assign the SAP standard business catalog `SAP_BASIS_TCR_T` for OData connectivity
+- Alternatively, assign specific communication scenarios per OData service
+
+**Required OData Services** (must be activated in tCode `/n/IWFND/MAINT_SERVICE`):
+
+| OData Service | Purpose | Authorization |
+|--------------|---------|---------------|
+| `API_PRODUCT_SRV` | Material master data | Business catalog `SAP_MM_BC_PRODUCT_MDTRY_PC` |
+| `API_BUSINESS_PARTNER` | Customer/vendor master | `SAP_CRM_BC_BUPA_MAINT_PC` |
+| `API_PURCHASEORDER_PROCESS_SRV` | Purchase orders | `SAP_MM_BC_PO_MANAGE_PC` |
+| `API_SALES_ORDER_SRV` | Sales orders | `SAP_SD_BC_SO_MANAGE_PC` |
+| `API_PRODUCTION_ORDER_SRV` | Production orders | `SAP_PP_BC_MFG_ORDER_PC` |
+| `API_PLANT_SRV` | Plant master data | `SAP_MM_BC_PRODUCT_MDTRY_PC` |
+
+**Required Authorization Objects**:
+
+| Object | Purpose |
+|--------|---------|
+| `S_SERVICE` | ICF service access (value: `/sap/opu/odata/*`) |
+| `S_START` | Transaction start for OData gateway |
+
+**ICF Nodes** (must be active in tCode `SICF`):
+- `/sap/opu/odata/sap/` — OData service root
+- `/sap/bc/sec/oauth2/token` — OAuth2 tokens (if using OAuth)
+
+> **Note**: S/4HANA Cloud Public Edition uses Communication Arrangements (tCode `/n/SAPSLL/MON`) instead of ICF/OData activation. Consult SAP Cloud documentation for specific setup.
+
+#### Connection Type 3: HANA DB Direct SQL
+
+**Recommended for**: Bulk initial extraction and history loading. Fastest method (~10x faster than RFC).
+
+**User Setup**:
+- Create a dedicated HANA user via HANA Cockpit or SQL:
+  ```sql
+  CREATE USER AUTONOMY_EXTRACT PASSWORD "YourSecurePassword123!"
+    NO FORCE_FIRST_PASSWORD_CHANGE;
+  ```
+- Grant read-only access to the ABAP schema:
+  ```sql
+  GRANT SELECT ON SCHEMA SAPHANADB TO AUTONOMY_EXTRACT;
+  ```
+
+**Minimum HANA Privileges**:
+
+| Privilege | Object | Purpose |
+|-----------|--------|---------|
+| `SELECT` | Schema `SAPHANADB` | Read all SAP tables |
+| `CATALOG READ` | System | List available tables/columns |
+
+**Security Considerations**:
+- HANA direct access bypasses ABAP authorization checks — use only for read operations
+- Restrict to specific IP range via HANA `ALLOWED_SENDER` filter
+- Consider creating a dedicated HANA schema user (not `SYSTEM`)
+- Enable audit logging: `ALTER SYSTEM ALTER CONFIGURATION ('global.ini', 'SYSTEM') SET ('auditing configuration', 'global_auditing_state') = 'true'`
+
+**Connection Parameters**:
+- Default port: `302{instance}5` (e.g., `30215` for instance 02)
+- Default schema: `SAPHANADB`
+- SSL: Recommended for production (set `use_ssl=true`, provide HANA server certificate)
+
+#### Connection Type 4: CSV File Upload
+
+**Recommended for**: Customers who cannot allow direct system access (air-gapped, compliance-restricted).
+
+**User Requirements** (for the SAP user who exports the CSVs):
+
+| tCode | Purpose | Authorization |
+|-------|---------|---------------|
+| `SE16` / `SE16N` | Table display and download | `S_TABU_DIS` (ACTVT=03) |
+| `SQVI` | QuickViewer for multi-table joins | `S_QUERY` |
+| `/n/1BCDWB/DBACOCKPIT` | DB Browser (HANA only) | `S_ADMI_FCD` |
+| `KE30` | Profitability reports (for cost data) | `S_DATASET` |
+
+**Export Procedure**:
+1. Login to SAP GUI (client 100)
+2. Navigate to `SE16N`, enter table name (e.g., `MARA`)
+3. Set selection criteria (e.g., WERKS = `1710`)
+4. Execute, then use menu: List → Export → Spreadsheet → CSV
+5. Save to the Autonomy import directory
+
+**Batch Export** (recommended for large extractions):
+- Use tCode `SM37` to schedule ABAP report `RSEPEXPORT` for automated table export
+- Or use SAP GUI scripting with VBScript/Python to automate SE16N exports
+
+**CSV File Naming Convention**:
+- One file per SAP table: `{TABLE}.csv` (e.g., `MARA.csv`, `EKKO.csv`)
+- Upload to: `imports/{TENANT_NAME}/{ERP_VARIANT}/{YYYY-MM-DD}/`
+- The platform auto-detects SAP table names from filenames
+
+**Minimum CSV Columns Required** (per table — the platform maps these to AWS SC entities):
+- See [SAP Table Reference](#sap-table-reference) for required fields per table
+
+---
+
+> **Detailed Reference**: For complete authorization object specifications, role templates (PFCG), HANA privilege grants, and step-by-step user creation instructions, see [SAP User Permissions & Authorization Guide](../internal/SAP_USER_AUTHORIZATION_GUIDE.md).
+
+### SAP FAA Setup — Unlocking Users and Initial Configuration
+
+The SAP S/4HANA Fully-Activated Appliance (FAA) requires initial setup before Autonomy can connect:
+
+1. **Unlock RFC user** — `BPINST` is LOCKED by default in FAA 2025 template
+   - Login as `DDIC` (client 000, Master Password) via SAP GUI
+   - tCode `SU01` → Enter `BPINST` → Click "Unlock" button
+   - Or create a dedicated `ZRFC_AUTONOMY` user in client 100 (recommended)
+
+2. **Open MM inventory period** — Required for inventory extraction
+   - tCode `MMPV` in client 100
+   - Set period to current month
+
+3. **Activate OData services** (if using OData connection)
+   - tCode `/n/IWFND/MAINT_SERVICE`
+   - Add services: `API_PRODUCT_SRV`, `API_BUSINESS_PARTNER`, etc.
+
+4. **Create HANA extraction user** (if using HANA DB connection)
+   - HANA Cockpit → Security → Users → New User
+   - Grant `SELECT ON SCHEMA SAPHANADB`
+
+**Master Password**: Set during SAP CAL appliance creation. Used for:
+- `DDIC` (client 000) — ABAP dictionary user
+- `SAP*` (client 000) — Emergency user
+- `s4hadm` — OS-level ABAP administrator (Linux)
+- `SYSTEM` — HANA database system user
+- Windows `Administrator` (if Windows frontend VM is used)
+
+> **To reset**: SAP CAL → Instances → Select appliance → "Reset Password" (requires appliance restart)
 
 ---
 

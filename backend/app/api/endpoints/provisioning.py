@@ -5,8 +5,9 @@ supply chain config. Each step can be run individually or all at once.
 """
 
 import logging
+from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
@@ -107,36 +108,64 @@ async def run_all_provisioning(
 @router.post("/reprovision/{config_id}")
 async def reprovision_config(
     config_id: int,
+    scope: Optional[str] = Query(
+        None,
+        description=(
+            "Provisioning scope: 'PARAMETER_ONLY' for policy/parameter changes "
+            "(reuses existing TRM/GNN models, only re-runs cfa_optimization, "
+            "decision_seed, conformal, briefing). 'FULL' or omit for structural "
+            "changes (new sites, lanes, products, BOMs) — runs all 14 steps."
+        ),
+    ),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(deps.require_tenant_admin),
 ):
-    """Archive the current config version and re-run all provisioning steps.
+    """Archive the current config version and re-run provisioning steps.
 
     Creates a read-only archived snapshot of the current config (visible in the
-    SC config list with its original creation date), then resets all provisioning
-    step statuses and runs the full pipeline again.
+    SC config list with its original creation date), then resets provisioning
+    step statuses and runs the pipeline.
+
+    Use scope=PARAMETER_ONLY for policy/parameter changes (safety stock policy,
+    service level targets, CFA parameters). These reuse existing TRM weights,
+    GNN models, and simulation data.
+
+    Use scope=FULL (default) for structural changes (new sites, lanes, products,
+    BOMs) which require full retraining.
 
     Returns immediately — the frontend polls /status/{config_id} for progress.
     """
     import asyncio
     from app.db.session import async_session_factory as AsyncSessionLocal
 
+    effective_scope = scope if scope in ("PARAMETER_ONLY", "FULL") else "FULL"
+
     # Mark as in_progress immediately so the UI reflects it
     service = ProvisioningService(db)
     status = await service.get_or_create_status(config_id)
     status.overall_status = "in_progress"
+    status.provisioning_scope = effective_scope
     await db.commit()
 
-    async def _reprovision_background(cid: int):
+    async def _reprovision_background(cid: int, sc: str):
         async with AsyncSessionLocal() as bg_db:
             bg_service = ProvisioningService(bg_db)
             try:
-                await bg_service.reprovision(cid)
+                await bg_service.reprovision(cid, scope=sc)
             except Exception:
                 logger.exception("Background reprovision failed for config %d", cid)
 
-    asyncio.create_task(_reprovision_background(config_id))
-    return {"status": "started", "config_id": config_id, "note": "Previous version archived"}
+    asyncio.create_task(_reprovision_background(config_id, effective_scope))
+    return {
+        "status": "started",
+        "config_id": config_id,
+        "scope": effective_scope,
+        "note": (
+            "Parameter-only reprovisioning — reusing existing models"
+            if effective_scope == "PARAMETER_ONLY"
+            else "Full reprovisioning — previous version archived"
+        ),
+    }
 
 
 @router.post("/reset/{config_id}/{step_key}")

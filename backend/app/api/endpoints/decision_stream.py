@@ -28,12 +28,30 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/decision-stream", tags=["Decision Stream"])
 
 
-def _get_service(db: AsyncSession, user) -> DecisionStreamService:
+def _require_tenant_user(user):
+    """Raise 403 if the user has no tenant (e.g. SYSTEM_ADMIN).
+
+    The Decision Stream is a tenant-scoped feature. SYSTEM_ADMIN's scope is
+    restricted to tenant and tenant admin management — it has no access to
+    agent decisions, provisioning, or any other tenant-scoped feature.
+    """
+    tenant_id = getattr(user, "tenant_id", None)
+    if not tenant_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Decision Stream requires a tenant-scoped user. "
+                   "System administrators manage tenants and tenant admins only.",
+        )
+    return tenant_id
+
+
+async def _get_service(db: AsyncSession, user) -> DecisionStreamService:
     """Create a tenant-scoped, user-scoped DecisionStreamService."""
-    tenant_id = getattr(user, "tenant_id", None) or 0
+    tenant_id = _require_tenant_user(user)
     tenant_name = ""
     if hasattr(user, "tenant") and user.tenant:
         tenant_name = getattr(user.tenant, "name", "")
+
     return DecisionStreamService(db=db, tenant_id=tenant_id, tenant_name=tenant_name, user=user)
 
 
@@ -44,7 +62,7 @@ async def get_decision_digest(
     current_user=Depends(get_current_user),
 ):
     """Get the decision digest: pending decisions, alerts, and LLM synthesis."""
-    service = _get_service(db, current_user)
+    service = await _get_service(db, current_user)
     powell_role = getattr(current_user, "powell_role", None)
 
     result = await service.get_decision_digest(
@@ -64,9 +82,8 @@ async def refresh_digest(
 
     Use the refresh button in the UI to force a fresh LLM synthesis.
     """
-    tenant_id = getattr(current_user, "tenant_id", None) or 0
-    invalidate_digest_cache(tenant_id=tenant_id, config_id=config_id)
-    service = _get_service(db, current_user)
+    service = await _get_service(db, current_user)
+    invalidate_digest_cache(tenant_id=service.tenant_id, config_id=config_id)
     powell_role = getattr(current_user, "powell_role", None)
     result = await service.get_decision_digest(
         powell_role=powell_role,
@@ -83,7 +100,7 @@ async def act_on_decision(
     current_user=Depends(get_current_user),
 ):
     """Accept, override, or reject a pending decision."""
-    service = _get_service(db, current_user)
+    service = await _get_service(db, current_user)
 
     result = await service.act_on_decision(
         decision_id=request.decision_id,
@@ -135,7 +152,7 @@ async def chat(
     current_user=Depends(get_current_user),
 ):
     """Conversational interaction with decision-context injection."""
-    service = _get_service(db, current_user)
+    service = await _get_service(db, current_user, config_id=request.config_id)
     powell_role = getattr(current_user, "powell_role", None)
 
     result = await service.chat(

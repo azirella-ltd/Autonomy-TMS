@@ -1051,10 +1051,21 @@ class DecisionStreamService:
         all_decisions = []
         cutoff = datetime.utcnow() - timedelta(days=_DECISION_LOOKBACK_DAYS)
 
-        # Find config_ids for this tenant
+        # Find config_ids for this tenant (always tenant-scoped)
         config_filter = None
         if config_id:
-            config_filter = [config_id]
+            # Validate that the requested config belongs to this tenant
+            try:
+                result = await self.db.execute(
+                    select(SupplyChainConfig.id).where(
+                        SupplyChainConfig.id == config_id,
+                        SupplyChainConfig.tenant_id == self.tenant_id,
+                    )
+                )
+                row = result.first()
+                config_filter = [config_id] if row else []
+            except Exception:
+                config_filter = []
         else:
             try:
                 result = await self.db.execute(
@@ -1161,9 +1172,9 @@ class DecisionStreamService:
                     pid = getattr(row, "product_id", None)
                     raw_reasoning = getattr(row, "decision_reasoning", None)
                     # ── Economic impact columns (3D routing) ────────────
-                    raw_cost = _safe_float(getattr(row, "cost_of_inaction", None))
-                    raw_tp = _safe_float(getattr(row, "time_pressure", None))
-                    raw_benefit = _safe_float(getattr(row, "expected_benefit", None))
+                    raw_cost = _safe_float(getattr(row, "cost_of_inaction", None)) or 0.0
+                    raw_tp = _safe_float(getattr(row, "time_pressure", None)) or 0.0
+                    raw_benefit = _safe_float(getattr(row, "expected_benefit", None)) or 0.0
 
                     # Compute urgency: if economic columns populated, use them;
                     # otherwise fall back to legacy urgency_at_time / urgency enum.

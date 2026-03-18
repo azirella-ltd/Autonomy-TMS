@@ -938,8 +938,11 @@ class InboundOrder(Base):
 
 class InboundOrderLine(Base):
     """
-    Line items on inbound orders
+    Line items on inbound orders.
     SC Entity: inbound_order_line
+
+    NOTE: Model synced with DB schema 2026-03-18. DB is authoritative —
+    columns match actual PostgreSQL table definition.
     """
     __tablename__ = "inbound_order_line"
 
@@ -948,41 +951,53 @@ class InboundOrderLine(Base):
     line_number = Column(Integer, nullable=False)
 
     product_id = Column(String(100), ForeignKey("product.id"), nullable=False)
-    site_id = Column(Integer, ForeignKey("site.id"), nullable=False)
+    to_site_id = Column(Integer, ForeignKey("site.id"), nullable=False)
+    from_site_id = Column(Integer, ForeignKey("site.id"), nullable=True)
+    tpartner_id = Column(String(100), nullable=True)
+    order_type = Column(String(20), nullable=False, server_default=text("'PURCHASE'"))
 
-    ordered_quantity = Column(Double, nullable=False)
-    received_quantity = Column(Double, server_default=text("0.0"))
-    open_quantity = Column(Double)  # ordered - received
-    unit_price = Column(Double)
-    uom = Column(String(20))
+    # Quantities
+    quantity_submitted = Column(Double, nullable=False)
+    quantity_confirmed = Column(Double, nullable=True)
+    quantity_received = Column(Double, server_default=text("0.0"))
+    quantity_uom = Column(String(20), nullable=True)
 
     # Dates
-    requested_delivery_date = Column(Date)
-    promised_delivery_date = Column(Date)
-    actual_receipt_date = Column(Date)
+    submitted_date = Column(Date, nullable=True)
+    expected_delivery_date = Column(Date, nullable=True)
+    earliest_delivery_date = Column(Date, nullable=True)
+    latest_delivery_date = Column(Date, nullable=True)
+    confirmation_date = Column(Date, nullable=True)
+    order_receive_date = Column(Date, nullable=True)
 
     # Status
-    status = Column(String(30), server_default=text("'OPEN'"))
-    # OPEN, PARTIALLY_RECEIVED, RECEIVED, CANCELLED
+    status = Column(String(50), nullable=True)
+    vendor_status = Column(String(50), nullable=True)
 
-    # Lot tracking
-    lot_number = Column(String(100))
-    batch_id = Column(String(100))
+    # Cost
+    cost = Column(Double, nullable=True)
+    submitted_cost = Column(Double, nullable=True)
+    shipping_cost = Column(Double, nullable=True)
+    tax_cost = Column(Double, nullable=True)
+    lead_time_days = Column(Integer, nullable=True)
 
-    # Quality
-    inspection_status = Column(String(30))  # PENDING, PASSED, FAILED, WAIVED
+    # Tenant scope
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True)
+    config_id = Column(Integer, ForeignKey("supply_chain_configs.id"), nullable=True)
+    scenario_id = Column(Integer, nullable=True)
+    round_number = Column(Integer, nullable=True)
 
     # Metadata
-    source = Column(String(100))
     created_at = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, nullable=True)
 
     # Relationships
     order = relationship("InboundOrder", back_populates="lines")
     product = relationship("Product")
-    site = relationship("Site")
+    to_site = relationship("Site", foreign_keys=[to_site_id])
 
     __table_args__ = (
-        Index('idx_inbound_line_product', 'product_id', 'site_id', 'requested_delivery_date'),
+        Index('idx_inbound_line_product', 'product_id', 'to_site_id', 'expected_delivery_date'),
         Index('idx_inbound_line_order', 'order_id'),
         Index('idx_inbound_line_status', 'status'),
     )

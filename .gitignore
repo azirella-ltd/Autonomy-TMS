@@ -65,3 +65,6 @@ config/nginx/ssl/*.pem
 *.db
 GoogleService-Info.plist
 google-services.json
+
+# SAP credentials
+.secrets/

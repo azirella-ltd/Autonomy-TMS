@@ -316,6 +316,15 @@ from .sap_user_import import SAPUserImportLog, SAPRoleMapping
 # 26b. SAP Connection Persistence
 from .sap_connection import SAPConnection
 
+# 26c. SAP Data Staging (intermediate layer between SAP extraction and AWS SC entities)
+from .sap_staging import SAPExtractionRun, SAPStagingRow, SAPTableSchema
+
+# 26d. ERP Vendor/Variant Registry
+from .erp_registry import ERPVendor, ERPVariant, ERP_VENDOR_VARIANTS, ERP_VARIANT_PROFILES
+
+# 26e. Generalized ERP Connection (supports SAP, Odoo, D365, etc.)
+from .erp_connection import ERPConnection
+
 # 27. Autonomy Customer Registry
 from .autonomy_customer import AutonomyCustomer
 
@@ -593,6 +602,9 @@ __all__ = [
     'SAPRoleMapping',
     # SAP Connection Persistence
     'SAPConnection',
+    'ERPConnection',
+    'SAPExtractionRun', 'SAPStagingRow', 'SAPTableSchema',
+    'ERPVendor', 'ERPVariant', 'ERP_VENDOR_VARIANTS', 'ERP_VARIANT_PROFILES',
     # Override Effectiveness — Bayesian Posteriors
     'OverrideEffectivenessPosterior',
     'CausalMatchPair',

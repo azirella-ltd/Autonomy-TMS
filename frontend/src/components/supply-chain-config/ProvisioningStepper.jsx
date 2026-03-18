@@ -689,11 +689,11 @@ const ProvisioningStepper = ({ configId, configName, isOpen, onClose }) => {
     }
   };
 
-  const handleReProvision = async () => {
+  const handleReProvision = async (scope = 'FULL') => {
     setRunningAll(true);
     setStartedAt(Date.now());
     try {
-      await api.post(`/provisioning/reprovision/${configId}`);
+      await api.post(`/provisioning/reprovision/${configId}?scope=${scope}`);
       await fetchStatus();
     } catch (err) {
       console.error('Re-provision failed:', err);
@@ -753,13 +753,25 @@ const ProvisioningStepper = ({ configId, configName, isOpen, onClose }) => {
               Close
             </Button>
             {overallStatus === 'completed' ? (
-              <Button
-                onClick={handleReProvision}
-                disabled={isActive}
-                leftIcon={isActive ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
-              >
-                {isActive ? 'Provisioning...' : 'Re-provision'}
-              </Button>
+              <div className="flex gap-1">
+                <Button
+                  onClick={() => handleReProvision('PARAMETER_ONLY')}
+                  disabled={isActive}
+                  variant="outline"
+                  leftIcon={isActive ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                  title="Re-run only policy/parameter steps (CFA, decision seed, conformal, briefing) — reuses existing TRM/GNN models"
+                >
+                  {isActive ? 'Running...' : 'Parameters Only'}
+                </Button>
+                <Button
+                  onClick={() => handleReProvision('FULL')}
+                  disabled={isActive}
+                  leftIcon={isActive ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                  title="Full re-provision — re-train all models (required for structural changes: new sites, lanes, products)"
+                >
+                  {isActive ? 'Provisioning...' : 'Full Re-provision'}
+                </Button>
+              </div>
             ) : (
               <Button
                 onClick={handleRunAll}

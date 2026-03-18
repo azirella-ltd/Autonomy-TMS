@@ -2592,34 +2592,86 @@ class SAPConfigBuilder:
     # ------------------------------------------------------------------
 
     async def _create_bom_and_manufacturing(self) -> int:
-        """Create ProductBom and ProductionProcess entities."""
+        """Create ProductBom and ProductionProcess entities.
+
+        BOM resolution requires MAST (material→BOM assignment) to map
+        STLNR (BOM number) back to the parent material. Without MAST,
+        STPO only has the component material (IDNRK), not the parent.
+        """
         bom_count = 0
         prefix = f"CFG{self._config.id}_"
 
-        # BOM from STPO (items) + STKO (headers)
+        # BOM from STPO (items) + STKO (headers) + MAST (parent assignment)
         stpo = self._data.get("STPO", pd.DataFrame())
         stko = self._data.get("STKO", pd.DataFrame())
+        mast = self._data.get("MAST", pd.DataFrame())
 
         if not stpo.empty and "STLNR" in stpo.columns:
-            # Enrich with header base quantity
+            # Build STLNR → parent material lookup
+            # Priority: MAST table (explicit assignment) > STKO.MATNR (OData extraction)
+            bom_parent_map: dict = {}  # STLNR → MATNR (parent material)
+            if not mast.empty and "STLNR" in mast.columns and "MATNR" in mast.columns:
+                for _, row in mast.iterrows():
+                    bom_nr = str(row["STLNR"]).strip()
+                    parent = str(row["MATNR"]).strip()
+                    if parent:
+                        bom_parent_map[bom_nr] = parent
+                logger.info(f"MAST loaded: {len(bom_parent_map)} material→BOM assignments")
+            elif not stko.empty and "MATNR" in stko.columns:
+                # OData extraction puts Material → MATNR on STKO headers
+                for _, row in stko.iterrows():
+                    bom_nr = str(row["STLNR"]).strip()
+                    parent = str(row.get("MATNR", "")).strip()
+                    if parent:
+                        bom_parent_map[bom_nr] = parent
+                logger.info(f"STKO.MATNR fallback: {len(bom_parent_map)} parent assignments from BOM headers")
+            else:
+                logger.warning(
+                    "Neither MAST nor STKO.MATNR available — cannot resolve BOM parent materials. "
+                    "Add MAST to extraction to populate product_bom. "
+                    "Skipping BOM creation."
+                )
+                # Without MAST, we cannot create correct BOMs — skip entirely
+                # rather than creating self-referential entries
+
+            # Enrich with header base quantity from STKO
             base_qty_map = {}
             if not stko.empty and "STLNR" in stko.columns:
                 for _, row in stko.iterrows():
                     bom_nr = str(row["STLNR"]).strip()
                     base_qty_map[bom_nr] = float(pd.to_numeric(row.get("BMENG", 1), errors="coerce") or 1)
 
-            for _, row in stpo.iterrows():
-                parent_mat = str(row.get("IDNRK", "")).strip()  # Component material
-                bom_nr = str(row["STLNR"]).strip()
+            # Create BOM entries (only when MAST is available)
+            if bom_parent_map:
+                seen_bom_pairs: set = set()
+                for _, row in stpo.iterrows():
+                    bom_nr = str(row["STLNR"]).strip()
+                    component_mat = str(row.get("IDNRK", "")).strip()
+                    parent_mat = bom_parent_map.get(bom_nr)
 
-                if parent_mat and parent_mat in self._products:
+                    if not parent_mat or not component_mat:
+                        continue
+                    if parent_mat not in self._products or component_mat not in self._products:
+                        continue
+                    # Avoid self-referential BOMs
+                    if parent_mat == component_mat:
+                        continue
+                    # Deduplicate
+                    pair_key = (parent_mat, component_mat)
+                    if pair_key in seen_bom_pairs:
+                        continue
+                    seen_bom_pairs.add(pair_key)
+
                     base_qty = base_qty_map.get(bom_nr, 1.0)
                     comp_qty = float(pd.to_numeric(row.get("MENGE", 1), errors="coerce") or 1)
+                    scrap_pct = float(pd.to_numeric(row.get("AUSCH", 0), errors="coerce") or 0)
+
                     bom = ProductBom(
                         config_id=self._config.id,
                         product_id=f"{prefix}{parent_mat}",
-                        component_product_id=f"{prefix}{str(row.get('IDNRK', '')).strip()}",
+                        component_product_id=f"{prefix}{component_mat}",
                         component_quantity=comp_qty / base_qty if base_qty else comp_qty,
+                        scrap_percentage=scrap_pct,
                         source="SAP_STPO",
                     )
                     self.db.add(bom)
@@ -3020,27 +3072,21 @@ class SAPConfigBuilder:
 
                 line_status = self._elikz_to_inbound_status(str(pi.get("ELIKZ", "")))
                 qty = float(pd.to_numeric(pi.get("MENGE", 0), errors="coerce") or 0)
-                # Use raw SQL because the SQLAlchemy model is out of sync with the DB schema
-                await self.db.execute(
-                    sql_text("""
-                        INSERT INTO inbound_order_line
-                            (order_id, line_number, product_id, to_site_id, order_type,
-                             quantity_submitted, status, config_id, tenant_id)
-                        VALUES (:order_id, :line_number, :product_id, :to_site_id, :order_type,
-                                :quantity_submitted, :status, :config_id, :tenant_id)
-                    """),
-                    {
-                        "order_id": f"SAP-PO-{ebeln}",
-                        "line_number": int(pd.to_numeric(pi.get("EBELP", 1), errors="coerce") or 1),
-                        "product_id": product_id,
-                        "to_site_id": dest_site_id,
-                        "order_type": "PURCHASE",
-                        "quantity_submitted": qty,
-                        "status": line_status,
-                        "config_id": self._config.id,
-                        "tenant_id": self.tenant_id,
-                    },
+                net_price = float(pd.to_numeric(pi.get("NETPR", 0), errors="coerce") or 0)
+
+                ib_line = InboundOrderLine(
+                    order_id=f"SAP-PO-{ebeln}",
+                    line_number=int(pd.to_numeric(pi.get("EBELP", 1), errors="coerce") or 1),
+                    product_id=product_id,
+                    to_site_id=dest_site_id,
+                    order_type="PURCHASE",
+                    quantity_submitted=qty,
+                    status=line_status,
+                    cost=net_price if net_price else None,
+                    config_id=self._config.id,
+                    tenant_id=self.tenant_id,
                 )
+                self.db.add(ib_line)
 
             count += 1
 

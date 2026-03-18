@@ -118,6 +118,28 @@ class Tenant(Base):
         comment="Timestamp of last data import"
     )
 
+    # ERP Configuration (set at tenant creation by systemadmin)
+    erp_vendor: Mapped[Optional[str]] = mapped_column(
+        String(30), nullable=True, default=None,
+        comment="ERP vendor: SAP, Oracle, Microsoft, Infor, Other"
+    )
+    erp_variant: Mapped[Optional[str]] = mapped_column(
+        String(30), nullable=True, default=None,
+        comment="ERP variant: S4HANA, ECC, Oracle_Cloud_SCM, D365_SCM, etc."
+    )
+    import_base_dir: Mapped[Optional[str]] = mapped_column(
+        String(500), nullable=True, default=None,
+        comment="Base directory for data imports. Default: imports/{tenant_name}/{erp_variant}"
+    )
+    export_base_dir: Mapped[Optional[str]] = mapped_column(
+        String(500), nullable=True, default=None,
+        comment="Base directory for data exports. Default: exports/{tenant_name}/{erp_variant}"
+    )
+    erp_retention_snapshots: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=5,
+        comment="Number of extraction snapshots to retain per connection"
+    )
+
     @property
     def is_learning(self) -> bool:
         """Check if tenant is in learning mode (user education)."""
