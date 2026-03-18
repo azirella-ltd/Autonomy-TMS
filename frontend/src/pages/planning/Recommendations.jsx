@@ -45,6 +45,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 import InlineComments from '../../components/common/InlineComments';
 import { RebalancingWizard } from '../../components/recommendations';
 
@@ -69,6 +70,9 @@ const Recommendations = () => {
   const [activeView, setActiveView] = useState('recommendations');
 
   const { effectiveConfigId } = useActiveConfig();
+  const { formatProduct, formatSite, loadLookupsForConfig } = useDisplayPreferences();
+
+  useEffect(() => { if (effectiveConfigId) loadLookupsForConfig(effectiveConfigId); }, [effectiveConfigId, loadLookupsForConfig]);
 
   // Performance tracking data - loaded from API
   const [performanceData, setPerformanceData] = useState(null);
@@ -590,9 +594,9 @@ const Recommendations = () => {
                     <TableCell>
                       <Badge>{rec.recommendation_type}</Badge>
                     </TableCell>
-                    <TableCell>{rec.product_id}</TableCell>
-                    <TableCell>{rec.from_site_id || 'N/A'}</TableCell>
-                    <TableCell>{rec.to_site_id || 'N/A'}</TableCell>
+                    <TableCell>{formatProduct(rec.product_id, rec.product_name)}</TableCell>
+                    <TableCell>{formatSite(rec.from_site_id) || 'N/A'}</TableCell>
+                    <TableCell>{formatSite(rec.to_site_id) || 'N/A'}</TableCell>
                     <TableCell>{rec.quantity.toFixed(2)}</TableCell>
                     <TableCell>
                       <Badge variant={getStatusVariant(rec.status)}>{rec.status}</Badge>
@@ -689,7 +693,7 @@ const Recommendations = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-muted-foreground">Product ID</p>
-                <p className="font-medium">{selectedRecommendation.product_id}</p>
+                <p className="font-medium">{formatProduct(selectedRecommendation.product_id, selectedRecommendation.product_name)}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Quantity</p>
@@ -697,11 +701,11 @@ const Recommendations = () => {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">From Site</p>
-                <p className="font-medium">{selectedRecommendation.from_site_id || 'N/A'}</p>
+                <p className="font-medium">{formatSite(selectedRecommendation.from_site_id) || 'N/A'}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">To Site</p>
-                <p className="font-medium">{selectedRecommendation.to_site_id || 'N/A'}</p>
+                <p className="font-medium">{formatSite(selectedRecommendation.to_site_id) || 'N/A'}</p>
               </div>
             </div>
 

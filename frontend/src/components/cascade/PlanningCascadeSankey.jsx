@@ -42,6 +42,7 @@ import {
   getLanes,
   getProducts,
 } from '../../services/supplyChainConfigService';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 // Column order: upstream (vendor source) → downstream (customer sink)
 // AWS SC DM: VENDOR = external supplier (TradingPartner), CUSTOMER = external demand
@@ -206,6 +207,7 @@ const buildAggregatedSankeyData = (sites, lanes, geoLevel = 'state', timeMultipl
 };
 
 const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className }) => {
+  const { formatSite, loadLookupsForConfig } = useDisplayPreferences();
   const [sankeyData, setSankeyData] = useState(null);
   const [rawSites, setRawSites] = useState([]);
   const [rawLanes, setRawLanes] = useState([]);
@@ -248,6 +250,10 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className
     resolveConfig();
     return () => { cancelled = true; };
   }, [configIdProp]);
+
+  useEffect(() => {
+    if (resolvedConfigId) loadLookupsForConfig(resolvedConfigId);
+  }, [resolvedConfigId, loadLookupsForConfig]);
 
   // Load SC config data from DB
   useEffect(() => {
@@ -333,18 +339,18 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className
   }, [geoLevel, timeBucket, productCategory]);
 
   const nodeTooltipFn = useCallback((node) => (
-    <span>{node.name} ({node.siteCount ?? '?'} sites)</span>
-  ), []);
+    <span>{formatSite(node.id, node.name)} ({node.siteCount ?? '?'} sites)</span>
+  ), [formatSite]);
 
   const linkTooltipFn = useCallback((link) => {
     const timeLabel = TIME_BUCKETS.find(t => t.value === timeBucket)?.label || 'Monthly';
     return (
       <span>
-        {link.source?.name || '?'} → {link.target?.name || '?'}
+        {formatSite(link.source?.id, link.source?.name) || '?'} → {formatSite(link.target?.id, link.target?.name) || '?'}
         : {link.value?.toLocaleString()} units/{timeLabel.toLowerCase()} ({link.laneCount ?? '?'} lanes)
       </span>
     );
-  }, [timeBucket]);
+  }, [timeBucket, formatSite]);
 
   // Build map data from raw sites/lanes
   const mapData = useMemo(() => {
@@ -357,7 +363,7 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className
       const attrs = typeof site.attributes === 'object' && site.attributes ? site.attributes : {};
       return {
         id: site.id,
-        name: site.name,
+        name: formatSite(site.id, site.name),
         role: site.type || site.dag_type || site.master_type,
         master_type: site.master_type || site.dag_type,
         latitude: site.geography?.latitude,
@@ -389,7 +395,7 @@ const PlanningCascadeSankey = ({ configId: configIdProp, height = 380, className
     });
 
     return { sites: mapSites, edges: mapEdges, siteTypeColors: siteTypeColorMap };
-  }, [rawSites, rawLanes]);
+  }, [rawSites, rawLanes, formatSite]);
 
   const renderContent = () => {
     if (loading) {

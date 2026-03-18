@@ -45,8 +45,15 @@ import {
   Boxes,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const SourcingAllocation = () => {
+  const { effectiveConfigId } = useActiveConfig();
+  const { formatProduct, formatSite, formatSupplier, loadLookupsForConfig } = useDisplayPreferences();
+
+  useEffect(() => { if (effectiveConfigId) loadLookupsForConfig(effectiveConfigId); }, [effectiveConfigId, loadLookupsForConfig]);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [sourcingRules, setSourcingRules] = useState([]);
@@ -447,10 +454,10 @@ const SourcingAllocation = () => {
                           {rule.sourcing_rule_type}
                         </Badge>
                       </TableCell>
-                      <TableCell>{rule.product_id || 'N/A'}</TableCell>
-                      <TableCell>{rule.from_site_id || '-'}</TableCell>
-                      <TableCell>{rule.to_site_id || '-'}</TableCell>
-                      <TableCell>{rule.tpartner_id || '-'}</TableCell>
+                      <TableCell>{formatProduct(rule.product_id) || 'N/A'}</TableCell>
+                      <TableCell>{formatSite(rule.from_site_id) || '-'}</TableCell>
+                      <TableCell>{formatSite(rule.to_site_id) || '-'}</TableCell>
+                      <TableCell>{formatSupplier(rule.tpartner_id) || '-'}</TableCell>
                       <TableCell className="text-center">
                         <Badge variant="outline">{rule.sourcing_priority}</Badge>
                       </TableCell>

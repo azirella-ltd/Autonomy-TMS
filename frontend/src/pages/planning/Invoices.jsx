@@ -10,6 +10,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 import {
   Card,
   CardContent,
@@ -97,6 +98,7 @@ const formatDate = (dateStr) => {
 };
 
 const Invoices = () => {
+  const { formatSupplier, formatProduct } = useDisplayPreferences();
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -410,7 +412,7 @@ const Invoices = () => {
                   <TableCell className="font-medium">{invoice.invoice_number}</TableCell>
                   <TableCell>
                     <div>
-                      <p className="text-sm">{invoice.vendor_name || invoice.vendor_id}</p>
+                      <p className="text-sm">{formatSupplier(invoice.vendor_id, invoice.vendor_name)}</p>
                       <p className="text-xs text-muted-foreground">{invoice.vendor_invoice_number}</p>
                     </div>
                   </TableCell>
@@ -515,7 +517,7 @@ const Invoices = () => {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div>
                     <p className="text-sm text-muted-foreground">Vendor</p>
-                    <p className="font-medium">{selectedInvoice.vendor_name || selectedInvoice.vendor_id}</p>
+                    <p className="font-medium">{formatSupplier(selectedInvoice.vendor_id, selectedInvoice.vendor_name)}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Vendor Invoice #</p>
@@ -604,7 +606,7 @@ const Invoices = () => {
                       <TableRow key={item.id}>
                         <TableCell>{item.line_number}</TableCell>
                         <TableCell>
-                          <p className="text-sm">{item.product_id}</p>
+                          <p className="text-sm">{formatProduct(item.product_id)}</p>
                           {item.description && (
                             <p className="text-xs text-muted-foreground">{item.description}</p>
                           )}

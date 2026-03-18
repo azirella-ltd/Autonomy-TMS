@@ -44,6 +44,7 @@ import SankeyDiagram from '../charts/SankeyDiagram';
 import SankeyMetricLegend from '../charts/SankeyMetricLegend';
 import GeospatialSupplyChain from '../visualization/GeospatialSupplyChain';
 import HierarchyAggregationBar, { DEFAULT_HIERARCHY_VALUE } from '../metrics/HierarchyAggregationBar';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 // External TradingPartner node types (AWS SC DM)
 const VENDOR_TYPE = 'VENDOR';     // external supplier (tpartner_type='vendor')
@@ -220,6 +221,7 @@ const SANKEY_COLORS = {
 };
 
 const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
+  const { formatProduct, formatSite, formatSupplier, formatCustomer, formatLane, loadLookupsForConfig } = useDisplayPreferences();
   const [configOptions, setConfigOptions] = useState([]);
   const [selectedConfigId, setSelectedConfigId] = useState(null);
   const [configsLoading, setConfigsLoading] = useState(true);
@@ -484,6 +486,10 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
   useEffect(() => {
     fetchConfigs();
   }, [fetchConfigs]);
+
+  useEffect(() => {
+    if (selectedConfigId) loadLookupsForConfig(selectedConfigId);
+  }, [selectedConfigId, loadLookupsForConfig]);
 
   useEffect(() => {
     if (!selectedConfigId) {
@@ -1698,7 +1704,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
     const sankeyNodes = normalizedEffectiveNodes.map((node) => ({
       id: String(node.id),
       key: String(node.id),
-      name: node.name,
+      name: formatSite(node.id, node.name),
       type: node.type,
       typeLabel: node.typeLabel || getTypeLabel(node.type),
       inventoryLabel: node.inventoryLabel,
@@ -1842,6 +1848,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
     extractArray,
     extractLanes,
     extractSites,
+    formatSite,
     getTypeLabel,
     getTypeOrderIndex,
     lanes,
@@ -2093,7 +2100,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
 
               return (
                 <TableRow key={site.id}>
-                  <TableCell>{site.name}</TableCell>
+                  <TableCell>{formatSite(site.id, site.name)}</TableCell>
                   <TableCell className="text-right">
                     {Number.isFinite(dagOrder) ? dagOrder : '—'}
                   </TableCell>
@@ -2135,7 +2142,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
                 <TableCell>
                   <div className="flex flex-col">
                     <span className="text-sm">
-                      {row.sourceName}
+                      {formatSite(row.fromId, row.sourceName)}
                     </span>
                     <span className="text-xs text-muted-foreground">
                       DAG Order {Number.isFinite(row.sourceDagOrder) ? row.sourceDagOrder : '—'}
@@ -2145,7 +2152,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
                 <TableCell>
                   <div className="flex flex-col">
                     <span className="text-sm">
-                      {row.destinationName}
+                      {formatSite(row.toId, row.destinationName)}
                     </span>
                     <span className="text-xs text-muted-foreground">
                       DAG Order {Number.isFinite(row.destinationDagOrder) ? row.destinationDagOrder : '—'}
@@ -2204,8 +2211,8 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
                   : '—';
               return (
                 <TableRow key={cfg.id}>
-                  <TableCell>{product.name || cfg.product_id || cfg.item_id}</TableCell>
-                  <TableCell>{site.name || cfg.site_id || cfg.node_id}</TableCell>
+                  <TableCell>{formatProduct(cfg.product_id || cfg.item_id, product.name)}</TableCell>
+                  <TableCell>{formatSite(cfg.site_id || cfg.node_id, site.name)}</TableCell>
                   <TableCell>{fmtRange(cfg.inventory_target_range)}</TableCell>
                   <TableCell>{fmtRange(cfg.initial_inventory_range)}</TableCell>
                   <TableCell>{fmtRange(cfg.holding_cost_range)}</TableCell>
@@ -2245,7 +2252,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
       return (
         <div className="flex flex-col gap-1 p-1">
           <span className="text-sm font-semibold">
-            {`${node.name} • ${node.typeLabel || getTypeLabel(node.type)}`}
+            {`${formatSite(node.id, node.name)} • ${node.typeLabel || getTypeLabel(node.type)}`}
           </span>
           <span className="text-sm text-muted-foreground">
             {capacityLabel}
@@ -2267,7 +2274,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
         </div>
       );
     },
-    [getTypeLabel, quantityFormatter]
+    [getTypeLabel, quantityFormatter, formatSite]
   );
 
   const linkTooltipContent = useCallback(
@@ -2283,7 +2290,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
       const metricValue = Number.isFinite(Number(link.metricValue))
         ? Number(link.metricValue)
         : capacityValue;
-      const linkLabel = `${link.source?.name ?? 'Source'} → ${link.target?.name ?? 'Target'}`;
+      const linkLabel = `${formatSite(link.source?.id, link.source?.name) || 'Source'} → ${formatSite(link.target?.id, link.target?.name) || 'Target'}`;
       const sharePercent = Number.isFinite(Number(link.relativeCapacity))
         ? (Number(link.relativeCapacity) * 100).toFixed(1)
         : null;
@@ -2322,6 +2329,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
     [
       quantityFormatter,
       leadTimeStats,
+      formatSite,
     ]
   );
 
@@ -2331,7 +2339,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
         return null;
       }
       const magnitude = Number.isFinite(Number(link.value)) ? Number(link.value) : 0;
-      const returnLabel = `${link.source?.name ?? 'Market Demand'} → ${link.target?.name ?? 'Market Supply'}`;
+      const returnLabel = `${formatSite(link.source?.id, link.source?.name) || 'Market Demand'} → ${formatSite(link.target?.id, link.target?.name) || 'Market Supply'}`;
       return (
         <div className="flex flex-col gap-1 p-1">
           <span className="text-sm font-semibold">
@@ -2346,7 +2354,7 @@ const SupplyChainConfigSankey = ({ restrictToTenantId = null }) => {
         </div>
       );
     },
-    [quantityFormatter]
+    [quantityFormatter, formatSite]
   );
 
   const linkColorAccessor = useCallback(

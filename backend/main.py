@@ -6347,6 +6347,10 @@ api.include_router(email_signals_router, tags=["email-signals"])
 from app.api.endpoints.bsc_config import router as bsc_config_router
 api.include_router(bsc_config_router, tags=["bsc-config"])
 
+# Tenant Display Preferences — UI identifier display mode (name vs id)
+from app.api.endpoints.tenant_preferences import router as tenant_prefs_router
+api.include_router(tenant_prefs_router, tags=["tenant-preferences"])
+
 # Slack Signal Intelligence — SC signals from Slack channels
 from app.api.endpoints.slack_signals import router as slack_signals_router
 api.include_router(slack_signals_router, tags=["slack-signals"])

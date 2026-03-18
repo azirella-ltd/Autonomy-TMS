@@ -48,8 +48,10 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { api } from '../../services/api';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const RiskAnalysis = () => {
+  const { formatProduct, formatSite } = useDisplayPreferences();
   // State management
   const [alerts, setAlerts] = useState([]);
   const [watchlists, setWatchlists] = useState([]);
@@ -298,12 +300,12 @@ const RiskAnalysis = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-sm text-muted-foreground">Product ID</p>
-              <p className="font-medium">{selectedAlert.product_id}</p>
+              <p className="font-medium">{formatProduct(selectedAlert.product_id)}</p>
             </div>
 
             <div>
               <p className="text-sm text-muted-foreground">Site ID</p>
-              <p className="font-medium">{selectedAlert.site_id}</p>
+              <p className="font-medium">{formatSite(selectedAlert.site_id)}</p>
             </div>
 
             <div>
@@ -654,8 +656,8 @@ const RiskAnalysis = () => {
                           <TableCell>
                             <Badge variant="secondary">{getTypeLabel(alert.type)}</Badge>
                           </TableCell>
-                          <TableCell>{alert.product_id}</TableCell>
-                          <TableCell>{alert.site_id}</TableCell>
+                          <TableCell>{formatProduct(alert.product_id)}</TableCell>
+                          <TableCell>{formatSite(alert.site_id)}</TableCell>
                           <TableCell>
                             <TooltipProvider>
                               <Tooltip>

@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { Badge, Button, Card, CardContent } from '../common';
 import { cn } from '../../lib/utils/cn';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 // Override reason codes (aligned with TRMDecisionWorklist)
 const REASON_CODES = [
@@ -218,6 +219,7 @@ const DecisionCard = ({
   compact = false,
 }) => {
   const navigate = useNavigate();
+  const { formatProduct, formatSite } = useDisplayPreferences();
   // overrideMode: null | 'choose' | 'modify' | 'cancel'
   const [overrideMode, setOverrideMode] = useState(null);
   const [reasonCode, setReasonCode] = useState('');
@@ -300,12 +302,12 @@ const DecisionCard = ({
             </Badge>
             {decision.product_id && (
               <span className="text-xs text-muted-foreground truncate">
-                {decision.product_name || decision.product_id}
+                {formatProduct(decision.product_id, decision.product_name)}
               </span>
             )}
             {decision.site_id && (
               <span className="text-xs text-muted-foreground truncate">
-                @ {decision.site_name || decision.site_id}
+                @ {formatSite(decision.site_id, decision.site_name)}
               </span>
             )}
           </div>

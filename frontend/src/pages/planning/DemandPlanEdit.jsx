@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 import {
   Card,
   CardContent,
@@ -703,8 +704,8 @@ const VersionComparisonTab = ({ configId }) => {
                     const isUp = change > 0;
                     return (
                       <TableRow key={idx}>
-                        <TableCell className="font-medium">{delta.product_name || delta.product_id}</TableCell>
-                        <TableCell>{delta.site_name || delta.site_id}</TableCell>
+                        <TableCell className="font-medium">{formatProduct(delta.product_id, delta.product_name)}</TableCell>
+                        <TableCell>{formatSite(delta.site_id, delta.site_name)}</TableCell>
                         <TableCell className="font-mono text-sm">{delta.period}</TableCell>
                         <TableCell className="text-right font-mono">{delta.value_a?.toLocaleString()}</TableCell>
                         <TableCell className="text-right font-mono">{delta.value_b?.toLocaleString()}</TableCell>
@@ -867,6 +868,7 @@ function generateMockComparison(vA, vB) {
 // Main Component
 // ============================================================================
 const DemandPlanEdit = () => {
+  const { formatProduct, formatSite, loadLookupsForConfig } = useDisplayPreferences();
   const [activeTab, setActiveTab] = useState('edit');
   const [selectedConfig, setSelectedConfig] = useState('');
   const [timeGranularity, setTimeGranularity] = useState('week');
@@ -895,6 +897,11 @@ const DemandPlanEdit = () => {
     };
     loadConfigs();
   }, []);
+
+  // Load display name lookups when config changes
+  useEffect(() => {
+    if (selectedConfig) loadLookupsForConfig(parseInt(selectedConfig));
+  }, [selectedConfig, loadLookupsForConfig]);
 
   // Export forecasts as CSV
   const handleExport = async () => {

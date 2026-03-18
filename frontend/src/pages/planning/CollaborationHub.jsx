@@ -46,6 +46,8 @@ import {
   MessageCircle,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 import TeamMessaging from '../../components/collaboration/TeamMessaging';
 
 /**
@@ -58,6 +60,11 @@ import TeamMessaging from '../../components/collaboration/TeamMessaging';
  * - Human-to-Human (H2H) approval workflows
  */
 const CollaborationHub = () => {
+  const { effectiveConfigId } = useActiveConfig();
+  const { formatProduct, loadLookupsForConfig } = useDisplayPreferences();
+
+  useEffect(() => { if (effectiveConfigId) loadLookupsForConfig(effectiveConfigId); }, [effectiveConfigId, loadLookupsForConfig]);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -529,7 +536,7 @@ const CollaborationHub = () => {
               {agentSuggestions.map((suggestion) => (
                 <TableRow key={suggestion.id}>
                   <TableCell>{suggestion.agent_id}</TableCell>
-                  <TableCell>{suggestion.product_id}</TableCell>
+                  <TableCell>{formatProduct(suggestion.product_id, suggestion.product_name)}</TableCell>
                   <TableCell>{suggestion.suggested_quantity}</TableCell>
                   <TableCell>
                     <Badge variant={suggestion.confidence > 0.9 ? 'success' : 'warning'}>
@@ -680,7 +687,7 @@ const CollaborationHub = () => {
         {selectedSuggestion && (
           <div className="space-y-4">
             <Alert variant="info">
-              Agent: {selectedSuggestion.agent_id} | Product: {selectedSuggestion.product_id} |
+              Agent: {selectedSuggestion.agent_id} | Product: {formatProduct(selectedSuggestion.product_id, selectedSuggestion.product_name)} |
               Suggested: {selectedSuggestion.suggested_quantity}
             </Alert>
 

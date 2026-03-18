@@ -10,6 +10,7 @@ import "leaflet/dist/leaflet.css";
 import App from "./App";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ActiveConfigProvider } from "./contexts/ActiveConfigContext";
+import { DisplayPreferencesProvider } from "./contexts/DisplayPreferencesContext";
 import simulationApi, { api as http } from "./services/api";
 import { API_BASE_URL } from "./config/api.ts";
 import { SnackbarProvider } from "notistack";
@@ -66,6 +67,7 @@ init()
       <HelmetProvider>
         <BrowserRouter>
           <AuthProvider>
+            <DisplayPreferencesProvider>
             <ActiveConfigProvider>
             <SystemConfigProvider>
               <HelpProvider>
@@ -78,6 +80,7 @@ init()
               </HelpProvider>
             </SystemConfigProvider>
             </ActiveConfigProvider>
+            </DisplayPreferencesProvider>
           </AuthProvider>
         </BrowserRouter>
       </HelmetProvider>

@@ -46,8 +46,10 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useCapabilities } from '../../hooks/useCapabilities';
 import { api } from '../../services/api';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const MRPRun = () => {
+  const { formatSupplier } = useDisplayPreferences();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { hasCapability } = useCapabilities();
@@ -441,7 +443,7 @@ const MRPRun = () => {
                             </TableCell>
                             <TableCell>{order.component_name}</TableCell>
                             <TableCell>{order.destination_site_name}</TableCell>
-                            <TableCell>{order.source_site_name || order.vendor_id || '-'}</TableCell>
+                            <TableCell>{order.source_site_name || formatSupplier(order.vendor_id, order.vendor_name) || '-'}</TableCell>
                             <TableCell className="text-right">{order.quantity.toFixed(0)}</TableCell>
                             <TableCell>{formatDate(order.order_date)}</TableCell>
                             <TableCell>{formatDate(order.receipt_date)}</TableCell>

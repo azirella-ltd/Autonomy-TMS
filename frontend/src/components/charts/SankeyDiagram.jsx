@@ -9,6 +9,7 @@ import {
   sankeyLinkHorizontal,
 } from 'd3-sankey';
 import { cn } from '../../lib/utils/cn';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const ALIGN_FUNCTIONS = {
   justify: sankeyJustify,
@@ -123,6 +124,7 @@ const SankeyDiagram = ({
   columnOrder,
   nodeSort,
 }) => {
+  const { formatSite } = useDisplayPreferences();
   const containerRef = useRef(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const [tooltipContent, setTooltipContent] = useState(null);
@@ -514,7 +516,7 @@ const SankeyDiagram = ({
   const defaultLinkStroke = defaultLinkColor ?? DEFAULT_PRIMARY_LIGHT;
 
   const nodeTopLabelRenderer =
-    renderNodeTopLabel ?? ((node) => node.name ?? node.id ?? '');
+    renderNodeTopLabel ?? ((node) => formatSite(node.id, node.name));
 
   const nodeBottomLabelRenderer = renderNodeBottomLabel ?? (() => null);
 

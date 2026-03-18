@@ -62,12 +62,16 @@ import { useAuth } from '../contexts/AuthContext';
 import { useCapabilities } from '../hooks/useCapabilities';
 import { api } from '../services/api';
 import { useActiveConfig } from '../contexts/ActiveConfigContext';
+import { useDisplayPreferences } from '../contexts/DisplayPreferencesContext';
 
 const CapacityPlanning = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { hasCapability } = useCapabilities();
   const { effectiveConfigId, activeConfig } = useActiveConfig();
+  const { formatSite, loadLookupsForConfig } = useDisplayPreferences();
+
+  useEffect(() => { if (effectiveConfigId) loadLookupsForConfig(effectiveConfigId); }, [effectiveConfigId, loadLookupsForConfig]);
 
   // State
   const [tabValue, setTabValue] = useState('plans');

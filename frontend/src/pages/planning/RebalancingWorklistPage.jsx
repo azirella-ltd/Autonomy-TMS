@@ -10,8 +10,9 @@
  * Uses the shared TRMDecisionWorklist component with rebalancing-specific
  * columns, summary cards, and override fields.
  */
-import React from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 import {
   Box,
   Typography,
@@ -287,6 +288,28 @@ const RebalancingWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
   const initialStatusFilter = location.state?.filters?.status;
   const { hasCapability, loading: capLoading } = useCapabilities();
   const canManage = hasCapability('manage_rebalancing_worklist');
+  const { formatProduct, formatSite, loadLookupsForConfig } = useDisplayPreferences();
+
+  useEffect(() => { loadLookupsForConfig(configId); }, [configId, loadLookupsForConfig]);
+
+  const columns = useMemo(() => REBALANCING_COLUMNS.map((col) => {
+    if (col.key === 'product_id') {
+      return { ...col, render: (d) => (
+        <Typography variant="body2" fontWeight="medium">{formatProduct(d.product_id, d.product_name) || '\u2014'}</Typography>
+      )};
+    }
+    if (col.key === 'from_site') {
+      return { ...col, render: (d) => (
+        <Typography variant="body2">{formatSite(d.from_site, d.from_site_name) || '\u2014'}</Typography>
+      )};
+    }
+    if (col.key === 'to_site') {
+      return { ...col, render: (d) => (
+        <Typography variant="body2">{formatSite(d.to_site, d.to_site_name) || '\u2014'}</Typography>
+      )};
+    }
+    return col;
+  }), [formatProduct, formatSite]);
 
   if (capLoading) {
     return (
@@ -328,7 +351,7 @@ const RebalancingWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
         configId={configId}
         trmType={TRM_TYPE}
         title="Inventory Rebalancing Worklist"
-        columns={REBALANCING_COLUMNS}
+        columns={columns}
         overrideFields={OVERRIDE_FIELDS}
         summaryCards={buildSummaryCards}
         fetchDecisions={getTRMDecisions}

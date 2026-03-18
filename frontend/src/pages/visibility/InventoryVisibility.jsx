@@ -47,6 +47,7 @@ import {
 import { api } from '../../services/api';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
 import BranchPicker from '../../components/planning/BranchPicker';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 // ---------------------------------------------------------------------------
 // Risk helpers
@@ -93,6 +94,7 @@ const formatNumber = (v) => {
 
 const InventoryVisibility = () => {
   const { effectiveConfigId } = useActiveConfig();
+  const { formatProduct, formatSite } = useDisplayPreferences();
 
   // Data
   const [snapshot, setSnapshot] = useState([]);
@@ -392,7 +394,7 @@ const InventoryVisibility = () => {
                         <TableRow key={`${row.product_id}-${row.site_id}-${idx}`} className="hover:bg-muted/30">
                           <TableCell>
                             <div>
-                              <span className="font-medium">{row.product_id}</span>
+                              <span className="font-medium">{formatProduct(row.product_id, row.product_name)}</span>
                               {row.product_description && (
                                 <p className="text-xs text-muted-foreground">{row.product_description}</p>
                               )}
@@ -400,7 +402,7 @@ const InventoryVisibility = () => {
                           </TableCell>
                           <TableCell>
                             <div>
-                              <span>{row.site_name || `Site ${row.site_id}`}</span>
+                              <span>{formatSite(row.site_id, row.site_name)}</span>
                               {row.site_type && (
                                 <p className="text-xs text-muted-foreground">{row.site_type}</p>
                               )}
@@ -596,14 +598,14 @@ const InventoryVisibility = () => {
                         <div className="flex items-center gap-2 mb-1">
                           {getRiskIcon(row.risk_level)}
                           <Badge variant={getRiskVariant(row.risk_level)}>{row.risk_level}</Badge>
-                          <span className="font-medium">{row.product_id}</span>
+                          <span className="font-medium">{formatProduct(row.product_id, row.product_name)}</span>
                           {row.product_description && (
                             <span className="text-muted-foreground">— {row.product_description}</span>
                           )}
                         </div>
                         <div className="text-sm text-muted-foreground mb-2">
                           <MapPin className="h-3 w-3 inline mr-1" />
-                          {row.site_name || `Site ${row.site_id}`}
+                          {formatSite(row.site_id, row.site_name)}
                           {row.site_type && ` (${row.site_type})`}
                         </div>
                         {row.risk_reason && (
@@ -652,7 +654,7 @@ const InventoryVisibility = () => {
             {/* Header */}
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-bold">{selectedRow.product_id}</h3>
+                <h3 className="text-lg font-bold">{formatProduct(selectedRow.product_id, selectedRow.product_name)}</h3>
                 {selectedRow.product_description && (
                   <p className="text-sm text-muted-foreground">{selectedRow.product_description}</p>
                 )}
@@ -669,7 +671,7 @@ const InventoryVisibility = () => {
             {/* Location */}
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <MapPin className="h-4 w-4" />
-              {selectedRow.site_name || `Site ${selectedRow.site_id}`}
+              {formatSite(selectedRow.site_id, selectedRow.site_name)}
               {selectedRow.site_type && ` (${selectedRow.site_type})`}
             </div>
 

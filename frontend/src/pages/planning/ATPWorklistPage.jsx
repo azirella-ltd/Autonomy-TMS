@@ -11,9 +11,10 @@
  *
  * Adaptive Decision Hierarchy: Execution layer, VFA policy class.
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Box, Typography, Chip, Tooltip as MuiTooltip } from '@mui/material';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
@@ -256,6 +257,8 @@ const ATPWorklistPage = () => {
   const { hasCapability, loading: capLoading } = useCapabilities();
   const { user } = useAuth();
 
+  const { formatProduct, formatSite, loadLookupsForConfig } = useDisplayPreferences();
+
   // Resolve configId from user's organization (TRM decisions endpoint uses tenant_id)
   const [configId, setConfigId] = useState(user?.tenant_id || null);
 
@@ -266,6 +269,20 @@ const ATPWorklistPage = () => {
   useEffect(() => {
     if (user?.tenant_id) setConfigId(user.tenant_id);
   }, [user?.tenant_id]);
+
+  useEffect(() => { loadLookupsForConfig(configId); }, [configId, loadLookupsForConfig]);
+
+  // Memoize columns with display preference resolvers
+  const columns = useMemo(() => ATP_COLUMNS.map((col) => {
+    if (col.key === 'product_id') {
+      return { ...col, render: (d) => (
+        <Typography variant="body2" fontWeight="medium">
+          {formatProduct(d.product_id, d.product_name) || '\u2014'}
+        </Typography>
+      )};
+    }
+    return col;
+  }), [formatProduct]);
 
   const canManage = !capLoading && hasCapability('manage_atp_worklist');
 
@@ -297,7 +314,7 @@ const ATPWorklistPage = () => {
         configId={configId}
         trmType="atp"
         title="ATP Fulfillment Decisions"
-        columns={ATP_COLUMNS}
+        columns={columns}
         overrideFields={ATP_OVERRIDE_FIELDS}
         summaryCards={computeSummaryCards}
         fetchDecisions={getTRMDecisions}

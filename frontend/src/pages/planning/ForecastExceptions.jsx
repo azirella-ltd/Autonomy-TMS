@@ -52,6 +52,8 @@ import {
   ArrowUp,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 /**
  * ForecastExceptions Page
@@ -59,6 +61,11 @@ import { api } from '../../services/api';
  * Manages forecast exception alerts, variance tracking, and exception workflows.
  */
 const ForecastExceptions = () => {
+  const { effectiveConfigId } = useActiveConfig();
+  const { formatProduct, loadLookupsForConfig } = useDisplayPreferences();
+
+  useEffect(() => { if (effectiveConfigId) loadLookupsForConfig(effectiveConfigId); }, [effectiveConfigId, loadLookupsForConfig]);
+
   // State
   const [activeTab, setActiveTab] = useState('exceptions');
   const [exceptions, setExceptions] = useState([]);
@@ -431,7 +438,7 @@ const ForecastExceptions = () => {
                 </div>
               </TableCell>
               <TableCell>{exception.exception_number}</TableCell>
-              <TableCell>{exception.product_id}</TableCell>
+              <TableCell>{formatProduct(exception.product_id, exception.product_name)}</TableCell>
               <TableCell>{exception.exception_type}</TableCell>
               <TableCell>
                 <div className="flex items-center gap-1">
@@ -767,7 +774,7 @@ const ForecastExceptions = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-muted-foreground">Product</p>
-                <p className="font-medium">{selectedException.product_id}</p>
+                <p className="font-medium">{formatProduct(selectedException.product_id, selectedException.product_name)}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Period</p>

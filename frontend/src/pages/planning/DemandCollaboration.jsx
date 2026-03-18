@@ -59,6 +59,8 @@ import {
   ArrowUpDown,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 // Status configuration
 const STATUS_CONFIG = {
@@ -77,6 +79,11 @@ const COLLAB_TYPE_CONFIG = {
 };
 
 const DemandCollaboration = () => {
+  const { effectiveConfigId } = useActiveConfig();
+  const { formatProduct, formatSite, loadLookupsForConfig } = useDisplayPreferences();
+
+  useEffect(() => { if (effectiveConfigId) loadLookupsForConfig(effectiveConfigId); }, [effectiveConfigId, loadLookupsForConfig]);
+
   const [collaborations, setCollaborations] = useState([]);
   const [exceptions, setExceptions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -394,8 +401,8 @@ const DemandCollaboration = () => {
                             <TableCell>
                               <Badge variant={typeInfo.variant} className="text-xs">{typeInfo.label}</Badge>
                             </TableCell>
-                            <TableCell className="text-sm">{collab.product_name || collab.product_id || '-'}</TableCell>
-                            <TableCell className="text-sm">{collab.site_name || collab.site_id || '-'}</TableCell>
+                            <TableCell className="text-sm">{formatProduct(collab.product_id, collab.product_name) || '-'}</TableCell>
+                            <TableCell className="text-sm">{formatSite(collab.site_id, collab.site_name) || '-'}</TableCell>
                             <TableCell className="text-sm font-mono">{collab.planning_period || '-'}</TableCell>
                             <TableCell className="text-right font-mono">
                               {collab.forecast_quantity?.toLocaleString() ?? '-'}
@@ -518,8 +525,8 @@ const DemandCollaboration = () => {
                       return (
                         <TableRow key={idx}>
                           <TableCell className="font-medium">{exc.partner_name}</TableCell>
-                          <TableCell>{exc.product_name || exc.product_id}</TableCell>
-                          <TableCell>{exc.site_name || exc.site_id}</TableCell>
+                          <TableCell>{formatProduct(exc.product_id, exc.product_name)}</TableCell>
+                          <TableCell>{formatSite(exc.site_id, exc.site_name)}</TableCell>
                           <TableCell className="font-mono text-sm">{exc.planning_period}</TableCell>
                           <TableCell className="text-right font-mono">
                             {exc.internal_forecast?.toLocaleString()}
@@ -755,11 +762,11 @@ const DemandCollaboration = () => {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Product</p>
-                <p className="font-medium">{selectedCollab.product_name || selectedCollab.product_id || '-'}</p>
+                <p className="font-medium">{formatProduct(selectedCollab.product_id, selectedCollab.product_name) || '-'}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Site</p>
-                <p className="font-medium">{selectedCollab.site_name || selectedCollab.site_id || '-'}</p>
+                <p className="font-medium">{formatSite(selectedCollab.site_id, selectedCollab.site_name) || '-'}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Period</p>

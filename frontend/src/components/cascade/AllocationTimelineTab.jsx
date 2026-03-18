@@ -51,6 +51,7 @@ import {
 } from 'recharts';
 import { getAllocationTimeline, submitAllocationOverrides } from '../../services/planningCascadeApi';
 import { api } from '../../services/api';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -262,6 +263,10 @@ const PolicyContextPanel = ({ policy }) => {
 // ---------------------------------------------------------------------------
 
 const AllocationTimelineTab = ({ configId, tenantId }) => {
+  const { formatProduct, formatSite, loadLookupsForConfig } = useDisplayPreferences();
+
+  useEffect(() => { if (configId) loadLookupsForConfig(configId); }, [configId, loadLookupsForConfig]);
+
   // Product & location selection
   const [products, setProducts] = useState([]);
   const [locations, setLocations] = useState([]);
@@ -494,7 +499,7 @@ const AllocationTimelineTab = ({ configId, tenantId }) => {
         >
           {products.map((p) => (
             <MenuItem key={p.id || p.product_id} value={p.id || p.product_id}>
-              {p.product_name || p.name || p.id || p.product_id}
+              {formatProduct(p.id || p.product_id, p.product_name || p.name)}
             </MenuItem>
           ))}
         </TextField>
@@ -509,7 +514,7 @@ const AllocationTimelineTab = ({ configId, tenantId }) => {
         >
           {locations.map((s) => (
             <MenuItem key={s.id} value={String(s.id)}>
-              {s.name || s.site_name || String(s.id)}
+              {formatSite(s.id, s.name || s.site_name)}
             </MenuItem>
           ))}
         </TextField>

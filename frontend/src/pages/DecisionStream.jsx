@@ -33,6 +33,7 @@ import ChatDataBlock from '../components/decision-stream/ChatDataBlock';
 import { decisionStreamApi } from '../services/decisionStreamApi';
 import { simulationApi } from '../services/api';
 import { cn } from '../lib/utils/cn';
+import { useDisplayPreferences } from '../contexts/DisplayPreferencesContext';
 
 const DecisionStream = () => {
   const location = useLocation();
@@ -55,6 +56,8 @@ const DecisionStream = () => {
 
   // Show All toggle: false = only decisions needing human attention (Critical/High urgency)
   const [showAll, setShowAll] = useState(false);
+
+  const { loadLookupsForConfig } = useDisplayPreferences();
 
   const chatEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -80,10 +83,13 @@ const DecisionStream = () => {
     loadConfigs();
   }, []);
 
-  // Load digest when config changes
+  // Load digest and identifier lookups when config changes
   useEffect(() => {
-    if (selectedConfigId) loadDigest();
-  }, [selectedConfigId]);
+    if (selectedConfigId) {
+      loadDigest();
+      loadLookupsForConfig(selectedConfigId);
+    }
+  }, [selectedConfigId, loadLookupsForConfig]);
 
   // Scroll to bottom on new messages
   useEffect(() => {

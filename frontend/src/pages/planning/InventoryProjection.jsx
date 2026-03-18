@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 import {
   Card,
   CardContent,
@@ -40,6 +41,7 @@ import { Line, Bar } from 'react-chartjs-2';
 import { api } from '../../services/api';
 
 const InventoryProjection = () => {
+  const { formatProduct, formatSite } = useDisplayPreferences();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('projections');
@@ -332,8 +334,8 @@ const InventoryProjection = () => {
               {projections.map((proj) => (
                 <TableRow key={proj.id}>
                   <TableCell>{proj.projection_date}</TableCell>
-                  <TableCell>{proj.product_id}</TableCell>
-                  <TableCell>{proj.site_id}</TableCell>
+                  <TableCell>{formatProduct(proj.product_id)}</TableCell>
+                  <TableCell>{formatSite(proj.site_id)}</TableCell>
                   <TableCell className="text-right">{proj.on_hand_qty.toFixed(0)}</TableCell>
                   <TableCell className="text-right">{proj.available_qty.toFixed(0)}</TableCell>
                   <TableCell className="text-right">{proj.atp_qty.toFixed(0)}</TableCell>
@@ -512,7 +514,7 @@ const InventoryProjection = () => {
                   <TableCell>
                     {promise.order_id}-{promise.order_line_number}
                   </TableCell>
-                  <TableCell>{promise.product_id}</TableCell>
+                  <TableCell>{formatProduct(promise.product_id)}</TableCell>
                   <TableCell className="text-right">{promise.requested_quantity}</TableCell>
                   <TableCell className="text-right">{promise.promised_quantity}</TableCell>
                   <TableCell>{promise.requested_date}</TableCell>

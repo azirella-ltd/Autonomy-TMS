@@ -45,6 +45,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useActiveConfig } from '../../contexts/ActiveConfigContext';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 import BranchPicker from '../../components/planning/BranchPicker';
 
 /**
@@ -87,6 +88,9 @@ const InventoryOptimization = () => {
   }, [location.state]);
 
   const { effectiveConfigId } = useActiveConfig();
+  const { formatProduct, formatSite, loadLookupsForConfig } = useDisplayPreferences();
+
+  useEffect(() => { if (effectiveConfigId) loadLookupsForConfig(effectiveConfigId); }, [effectiveConfigId, loadLookupsForConfig]);
 
   // Data states
   const [policies, setPolicies] = useState([]);
@@ -283,8 +287,8 @@ const InventoryOptimization = () => {
               <TableBody>
                 {policies.map((policy) => (
                   <TableRow key={policy.id}>
-                    <TableCell>{policy.product_id || 'All'}</TableCell>
-                    <TableCell>{policy.site_id || 'All'}</TableCell>
+                    <TableCell>{policy.product_id ? formatProduct(policy.product_id) : 'All'}</TableCell>
+                    <TableCell>{policy.site_id ? formatSite(policy.site_id) : 'All'}</TableCell>
                     <TableCell>
                       <Badge variant={getPolicyTypeBadgeVariant(policy.ss_policy)}>
                         {getPolicyTypeLabel(policy.ss_policy)}
@@ -405,8 +409,8 @@ const InventoryOptimization = () => {
                 {optimizations.map((opt) => (
                   <TableRow key={opt.id}>
                     <TableCell>{opt.optimization_date}</TableCell>
-                    <TableCell>{opt.product_id || '-'}</TableCell>
-                    <TableCell>{opt.site_id || '-'}</TableCell>
+                    <TableCell>{opt.product_id ? formatProduct(opt.product_id) : '-'}</TableCell>
+                    <TableCell>{opt.site_id ? formatSite(opt.site_id) : '-'}</TableCell>
                     <TableCell>
                       <Badge variant="outline">{opt.optimization_method}</Badge>
                     </TableCell>

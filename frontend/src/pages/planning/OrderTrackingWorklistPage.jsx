@@ -13,9 +13,10 @@
  * Adaptive Decision Hierarchy: OrderTrackingTRM is a VFA (Value Function Approximation)
  * agent — narrow scope, per-order exception detection and recommended actions.
  */
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Box, Typography, Chip, Alert, Tooltip as MuiTooltip } from '@mui/material';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
@@ -287,6 +288,9 @@ const OrderTrackingWorklistPage = ({ configId = 1 }) => {
   const initialStatusFilter = location.state?.filters?.status;
   const { hasCapability, loading: capLoading } = useCapabilities();
   const canManage = hasCapability('manage_order_tracking_worklist');
+  const { formatProduct, formatSite, loadLookupsForConfig } = useDisplayPreferences();
+
+  useEffect(() => { loadLookupsForConfig(configId); }, [configId, loadLookupsForConfig]);
 
   // Memoize the summary cards function so it has a stable reference
   const summaryCardsFn = useMemo(() => buildSummaryCards, []);

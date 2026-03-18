@@ -15,7 +15,11 @@ importance of each cost type in the CDT loss function.
 from datetime import datetime
 
 from sqlalchemy import Column, DateTime, Float, Integer, String, Text, UniqueConstraint
+from sqlalchemy.orm import validates
 from sqlalchemy.sql import func
+
+# Valid values for display_identifiers tenant preference
+DISPLAY_IDENTIFIER_CHOICES = ("name", "id")
 
 from app.db.base_class import Base
 
@@ -92,6 +96,22 @@ class TenantBscConfig(Base):
     # without awareness.  Default $0 = benefit does not gate auto-action
     # (backward compatible with 2×2 matrix).
     benefit_threshold = Column(Float, nullable=False, default=0.0)
+
+    # ── Display Preferences ─────────────────────────────────────────────────
+    # Controls whether the UI shows human-readable names or raw IDs for
+    # products, sites, and other entities.  Default "name" is best for demos
+    # and new users; "id" suits experienced planners who think in SKU codes.
+    display_identifiers = Column(
+        String(10), nullable=False, default="name", server_default="name",
+    )
+
+    @validates("display_identifiers")
+    def _validate_display_identifiers(self, _key, value):
+        if value not in DISPLAY_IDENTIFIER_CHOICES:
+            raise ValueError(
+                f"display_identifiers must be one of {DISPLAY_IDENTIFIER_CHOICES}, got '{value}'"
+            )
+        return value
 
     # ── Audit ────────────────────────────────────────────────────────────────
     notes = Column(Text, nullable=True)

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 import {
   Card,
   CardContent,
@@ -47,6 +48,7 @@ import InlineComments from '../../components/common/InlineComments';
 
 const PurchaseOrders = () => {
   const navigate = useNavigate();
+  const { formatSupplier, formatProduct } = useDisplayPreferences();
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -298,7 +300,7 @@ const PurchaseOrders = () => {
                     <TableCell>
                       <span className="font-medium">{po.po_number}</span>
                     </TableCell>
-                    <TableCell>{po.vendor_id}</TableCell>
+                    <TableCell>{formatSupplier(po.vendor_id, po.vendor_name)}</TableCell>
                     <TableCell>{po.destination_site_name}</TableCell>
                     <TableCell>
                       <Badge variant={getStatusVariant(po.status)}>{po.status}</Badge>
@@ -508,8 +510,8 @@ const PurchaseOrders = () => {
                 <Badge variant={getStatusVariant(selectedPO.status)}>{selectedPO.status}</Badge>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Vendor ID</p>
-                <p className="font-medium">{selectedPO.vendor_id}</p>
+                <p className="text-sm text-muted-foreground">Vendor</p>
+                <p className="font-medium">{formatSupplier(selectedPO.vendor_id, selectedPO.vendor_name)}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Order Date</p>
@@ -554,7 +556,7 @@ const PurchaseOrders = () => {
                       <TableRow key={item.line_number}>
                         <TableCell>{item.line_number}</TableCell>
                         <TableCell>
-                          {item.product_name} (ID: {item.product_id})
+                          {formatProduct(item.product_id, item.product_name)}
                         </TableCell>
                         <TableCell className="text-right">{item.quantity}</TableCell>
                         <TableCell className="text-right">{formatCurrency(item.unit_price)}</TableCell>

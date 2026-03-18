@@ -706,12 +706,28 @@ class DecisionStreamService:
                     )
                 )
 
+        # ── Load tenant display preference ────────────────────────────────
+        display_identifiers = "name"
+        try:
+            from app.db.session import sync_session_factory
+            from app.models.bsc_config import TenantBscConfig as _Bsc
+            _sync = sync_session_factory()
+            try:
+                _bsc = _sync.query(_Bsc).filter(_Bsc.tenant_id == self.tenant_id).first()
+                if _bsc:
+                    display_identifiers = getattr(_bsc, "display_identifiers", "name") or "name"
+            finally:
+                _sync.close()
+        except Exception:
+            pass  # default to "name"
+
         result = {
             "digest_text": digest_text or "No decisions to report.",
             "decisions": decisions,
             "alerts": alerts,
             "total_pending": len(decisions),
             "config_id": config_id,
+            "display_identifiers": display_identifiers,
         }
 
         # --- Store in memory cache ---

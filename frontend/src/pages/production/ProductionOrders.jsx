@@ -34,8 +34,12 @@ import { RefreshCw, Eye, Filter, Download } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useCapabilities } from '../../hooks/useCapabilities';
 import { api } from '../../services/api';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const ProductionOrders = () => {
+  const { formatProduct, formatSite, loadLookupsForConfig } = useDisplayPreferences();
+
+  useEffect(() => { loadLookupsForConfig(); }, [loadLookupsForConfig]);
   const navigate = useNavigate();
   const { hasCapability } = useCapabilities();
 
@@ -327,8 +331,8 @@ const ProductionOrders = () => {
                   orders.map((order) => (
                     <TableRow key={order.id}>
                       <TableCell className="font-medium">{order.order_number}</TableCell>
-                      <TableCell>{order.product_name || `Product ${order.item_id}`}</TableCell>
-                      <TableCell>{order.site_name || `Site ${order.site_id}`}</TableCell>
+                      <TableCell>{formatProduct(order.item_id, order.product_name)}</TableCell>
+                      <TableCell>{formatSite(order.site_id, order.site_name)}</TableCell>
                       <TableCell className="text-right">{order.planned_quantity}</TableCell>
                       <TableCell className="text-right">
                         {order.actual_quantity !== null ? order.actual_quantity : '-'}
@@ -445,13 +449,13 @@ const ProductionOrders = () => {
                 <div>
                   <p className="text-sm text-muted-foreground">Product</p>
                   <p className="font-medium">
-                    {selectedOrder.product_name || `Product ${selectedOrder.item_id}`}
+                    {formatProduct(selectedOrder.item_id, selectedOrder.product_name)}
                   </p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Manufacturing Site</p>
                   <p className="font-medium">
-                    {selectedOrder.site_name || `Site ${selectedOrder.site_id}`}
+                    {formatSite(selectedOrder.site_id, selectedOrder.site_name)}
                   </p>
                 </div>
               </div>

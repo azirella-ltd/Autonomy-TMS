@@ -9,9 +9,10 @@
  * Override reasons and values are recorded to the TRM replay buffer
  * (is_expert=True) for reinforcement learning.
  */
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Box, Typography, Chip, Alert, Tooltip as MuiTooltip } from '@mui/material';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 import TRMDecisionWorklist from '../../components/cascade/TRMDecisionWorklist';
 import LayerModeIndicator from '../../components/cascade/LayerModeIndicator';
@@ -216,6 +217,24 @@ const TOWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
   const initialStatusFilter = location.state?.filters?.status;
   const { hasCapability, loading: capLoading } = useCapabilities();
   const canManage = hasCapability('manage_to_worklist');
+  const { formatProduct, formatSite, loadLookupsForConfig } = useDisplayPreferences();
+
+  useEffect(() => { loadLookupsForConfig(configId); }, [configId, loadLookupsForConfig]);
+
+  const columns = useMemo(() => TO_COLUMNS.map((col) => {
+    if (col.key === 'product_id') {
+      return { ...col, render: (d) => (
+        <Typography variant="body2" fontWeight="medium">{formatProduct(d.product_id, d.product_name) || '\u2014'}</Typography>
+      )};
+    }
+    if (col.key === 'source_site_id') {
+      return { ...col, render: (d) => formatSite(d.source_site_id, d.source_site_name) || '\u2014' };
+    }
+    if (col.key === 'dest_site_id') {
+      return { ...col, render: (d) => formatSite(d.dest_site_id, d.dest_site_name) || '\u2014' };
+    }
+    return col;
+  }), [formatProduct, formatSite]);
 
   // Memoize the summary card builder to keep a stable reference
   const summaryCardsFn = useMemo(() => buildSummaryCards, []);
@@ -258,7 +277,7 @@ const TOWorklistPage = ({ configId = DEFAULT_CONFIG_ID }) => {
         configId={configId}
         trmType={TRM_TYPE}
         title="TO Execution Worklist"
-        columns={TO_COLUMNS}
+        columns={columns}
         overrideFields={TO_OVERRIDE_FIELDS}
         summaryCards={summaryCardsFn}
         fetchDecisions={getTRMDecisions}

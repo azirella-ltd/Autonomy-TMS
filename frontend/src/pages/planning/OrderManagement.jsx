@@ -67,8 +67,10 @@ import {
 // Note: Filter icon available if needed: import { Filter } from 'lucide-react';
 import { cn } from '../../lib/utils/cn';
 import { api } from '../../services/api';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const OrderManagement = () => {
+  const { formatSupplier, formatProduct, formatSite } = useDisplayPreferences();
   const [activeTab, setActiveTab] = useState('split');
   const [orderType, setOrderType] = useState('PO');
   const [orders, setOrders] = useState([]);
@@ -524,8 +526,8 @@ const OrderManagement = () => {
                     </TableCell>
                     <TableCell>
                       {orderType === 'PO'
-                        ? order.vendor_id
-                        : `${order.source_site_id} → ${order.destination_site_id}`
+                        ? formatSupplier(order.vendor_id, order.vendor_name)
+                        : `${formatSite(order.source_site_id)} → ${formatSite(order.destination_site_id)}`
                       }
                     </TableCell>
                     <TableCell>
@@ -722,7 +724,7 @@ const OrderManagement = () => {
                   <CardContent className="pt-4">
                     <div className="flex justify-between items-center">
                       <h3 className="font-medium">
-                        {opp.type === 'by_vendor' ? `Vendor: ${opp.vendor_id}` : `Route: ${opp.route}`}
+                        {opp.type === 'by_vendor' ? `Vendor: ${formatSupplier(opp.vendor_id)}` : `Route: ${opp.route}`}
                       </h3>
                       <Badge variant="default">
                         {opp.order_count} Orders
@@ -934,7 +936,7 @@ const OrderManagement = () => {
                       <TableBody>
                         {splitPreview.preview_details.map((detail, idx) => (
                           <TableRow key={idx}>
-                            <TableCell>{detail.product_id}</TableCell>
+                            <TableCell>{formatProduct(detail.product_id, detail.product_name)}</TableCell>
                             <TableCell className="text-right">{detail.quantity}</TableCell>
                             <TableCell>
                               <Badge variant="secondary">{detail.assigned_vendor}</Badge>

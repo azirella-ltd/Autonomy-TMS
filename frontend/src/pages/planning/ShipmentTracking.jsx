@@ -48,8 +48,15 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { api } from '../../services/api';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const ShipmentTracking = () => {
+  const { effectiveConfigId } = useActiveConfig();
+  const { formatProduct, formatSite, loadLookupsForConfig } = useDisplayPreferences();
+
+  useEffect(() => { if (effectiveConfigId) loadLookupsForConfig(effectiveConfigId); }, [effectiveConfigId, loadLookupsForConfig]);
+
   // State management
   const [shipments, setShipments] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -348,12 +355,12 @@ const ShipmentTracking = () => {
                     shipments.map((shipment) => (
                       <TableRow key={shipment.shipment_id}>
                         <TableCell className="font-medium">{shipment.shipment_id}</TableCell>
-                        <TableCell>{shipment.product_id}</TableCell>
+                        <TableCell>{formatProduct(shipment.product_id, shipment.product_name)}</TableCell>
                         <TableCell>
                           {shipment.quantity.toFixed(2)} {shipment.uom || ''}
                         </TableCell>
                         <TableCell>
-                          {shipment.from_site_id} → {shipment.to_site_id}
+                          {formatSite(shipment.from_site_id)} → {formatSite(shipment.to_site_id)}
                         </TableCell>
                         <TableCell>{shipment.carrier_name || 'N/A'}</TableCell>
                         <TableCell>
@@ -483,7 +490,7 @@ const ShipmentTracking = () => {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Product</p>
-                <p className="font-medium">{selectedShipment.product_id}</p>
+                <p className="font-medium">{formatProduct(selectedShipment.product_id, selectedShipment.product_name)}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Quantity</p>

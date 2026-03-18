@@ -47,8 +47,12 @@ import {
 } from 'recharts';
 import { Info, Play, ArrowLeftRight, CheckCircle, AlertTriangle } from 'lucide-react';
 import { api } from '../../services/api';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const ConformalPrediction = () => {
+  const { formatProduct, formatSite, loadLookupsForConfig } = useDisplayPreferences();
+
+  useEffect(() => { loadLookupsForConfig(); }, [loadLookupsForConfig]);
   const [activeTab, setActiveTab] = useState('calibration');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -276,7 +280,7 @@ const ConformalPrediction = () => {
                   <TableBody>
                     {calibrationResult.calibrations.map((cal, i) => (
                       <TableRow key={i}>
-                        <TableCell className="text-sm">{cal.product_id} / Site {cal.site_id}</TableCell>
+                        <TableCell className="text-sm">{formatProduct(cal.product_id)} / {formatSite(cal.site_id)}</TableCell>
                         <TableCell className="font-semibold">
                           {(cal.empirical_coverage * 100).toFixed(1)}%
                         </TableCell>

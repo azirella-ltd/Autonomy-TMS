@@ -103,6 +103,10 @@ class DecisionDigestResponse(BaseModel):
     alerts: List[AlertItem] = Field(default_factory=list)
     total_pending: int = 0
     config_id: Optional[int] = None
+    display_identifiers: str = Field(
+        default="name",
+        description="Tenant preference: 'name' = show human-readable names, 'id' = show raw IDs",
+    )
 
 
 # ============================================================================

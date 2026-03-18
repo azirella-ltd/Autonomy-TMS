@@ -24,8 +24,10 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip';
 import { Plus, CheckCircle } from 'lucide-react';
 import { api } from '../../services/api';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const TurnaroundOrders = () => {
+  const { formatCustomer } = useDisplayPreferences();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -141,7 +143,7 @@ const TurnaroundOrders = () => {
                 <TableRow key={order.id}>
                   <TableCell>{order.turnaround_order_number}</TableCell>
                   <TableCell>{order.rma_number}</TableCell>
-                  <TableCell>{order.customer_name || order.customer_id || '-'}</TableCell>
+                  <TableCell>{formatCustomer(order.customer_id, order.customer_name) || '-'}</TableCell>
                   <TableCell><Badge>{order.turnaround_type}</Badge></TableCell>
                   <TableCell>{order.return_reason_code}</TableCell>
                   <TableCell><Badge variant={getStatusVariant(order.status)}>{order.status}</Badge></TableCell>

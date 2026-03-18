@@ -16,6 +16,7 @@ import {
   Cancel as RejectIcon,
   Send as SubmitIcon,
 } from '@mui/icons-material';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const OVERRIDE_REASONS = [
   { value: 'business_knowledge', label: 'Business knowledge not captured by model' },
@@ -36,6 +37,7 @@ const CommitReviewPanel = ({
   onSubmit,
   loading = false,
 }) => {
+  const { formatSupplier, formatSite } = useDisplayPreferences();
   const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [overrideReason, setOverrideReason] = useState('');
@@ -160,8 +162,8 @@ const CommitReviewPanel = ({
                 {commit.recommendations.slice(0, 10).map((rec, i) => (
                   <TableRow key={i}>
                     <TableCell>{rec.sku}</TableCell>
-                    <TableCell>{rec.supplier_id}</TableCell>
-                    <TableCell>{rec.destination_id}</TableCell>
+                    <TableCell>{formatSupplier(rec.supplier_id, rec.supplier_name)}</TableCell>
+                    <TableCell>{formatSite(rec.destination_id, rec.destination_name)}</TableCell>
                     <TableCell align="right">{rec.order_qty}</TableCell>
                     <TableCell>{rec.order_date}</TableCell>
                   </TableRow>

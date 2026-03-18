@@ -63,11 +63,15 @@ import { useAuth } from '../contexts/AuthContext';
 import { useCapabilities } from '../hooks/useCapabilities';
 import { api } from '../services/api';
 import { getSupplyChainConfigs } from '../services/supplyChainConfigService';
+import { useDisplayPreferences } from '../contexts/DisplayPreferencesContext';
 
 const ProductionOrders = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { hasCapability } = useCapabilities();
+  const { formatProduct, formatSite, loadLookupsForConfig } = useDisplayPreferences();
+
+  useEffect(() => { loadLookupsForConfig(); }, [loadLookupsForConfig]);
 
   // State
   const [tabValue, setTabValue] = useState('all');
@@ -491,8 +495,8 @@ const ProductionOrders = () => {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell>{order.item?.name || 'N/A'}</TableCell>
-                        <TableCell>{order.site?.name || 'N/A'}</TableCell>
+                        <TableCell>{formatProduct(order.product_id, order.item?.name)}</TableCell>
+                        <TableCell>{formatSite(order.site_id, order.site?.name)}</TableCell>
                         <TableCell>
                           <Badge variant={getStatusVariant(order.status)}>
                             {order.status}
@@ -840,11 +844,11 @@ const ProductionOrders = () => {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Item</p>
-                  <p className="font-medium">{selectedOrder.item?.name || 'N/A'}</p>
+                  <p className="font-medium">{formatProduct(selectedOrder.product_id, selectedOrder.item?.name)}</p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Site</p>
-                  <p className="font-medium">{selectedOrder.site?.name || 'N/A'}</p>
+                  <p className="font-medium">{formatSite(selectedOrder.site_id, selectedOrder.site?.name)}</p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Planned Quantity</p>

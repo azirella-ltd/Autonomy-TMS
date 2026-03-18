@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 import {
   Card,
   CardContent,
@@ -43,6 +44,7 @@ import { api } from '../../services/api';
 
 const DemandPlanView = () => {
   const location = useLocation();
+  const { formatProduct, formatSite } = useDisplayPreferences();
   const filtersApplied = useRef(false);
   const [forecasts, setForecasts] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -502,8 +504,8 @@ const DemandPlanView = () => {
                   className={`${editMode ? 'cursor-pointer hover:bg-muted/50' : ''} ${forecast.edited ? 'bg-amber-50 dark:bg-amber-950/20' : ''}`}
                   onClick={() => editMode && handleEditClick(forecast, index)}
                 >
-                  <TableCell>{forecast.product_id}</TableCell>
-                  <TableCell>{forecast.site_id}</TableCell>
+                  <TableCell>{formatProduct(forecast.product_id, forecast.product_name)}</TableCell>
+                  <TableCell>{formatSite(forecast.site_id, forecast.site_name)}</TableCell>
                   <TableCell>
                     {new Date(forecast.forecast_date).toLocaleDateString()}
                   </TableCell>
@@ -636,8 +638,8 @@ const DemandPlanView = () => {
               <TableBody>
                 {deltaData.slice(0, 50).map((delta, index) => (
                   <TableRow key={index}>
-                    <TableCell>{delta.product_id}</TableCell>
-                    <TableCell>{delta.site_id}</TableCell>
+                    <TableCell>{formatProduct(delta.product_id, delta.product_name)}</TableCell>
+                    <TableCell>{formatSite(delta.site_id, delta.site_name)}</TableCell>
                     <TableCell>
                       {new Date(delta.forecast_date).toLocaleDateString()}
                     </TableCell>
@@ -688,11 +690,11 @@ const DemandPlanView = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-muted-foreground">Product</p>
-                <p className="font-medium">{selectedForecastForEdit.product_id}</p>
+                <p className="font-medium">{formatProduct(selectedForecastForEdit.product_id, selectedForecastForEdit.product_name)}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Site</p>
-                <p className="font-medium">{selectedForecastForEdit.site_id}</p>
+                <p className="font-medium">{formatSite(selectedForecastForEdit.site_id, selectedForecastForEdit.site_name)}</p>
               </div>
               <div className="col-span-2">
                 <p className="text-sm text-muted-foreground">Forecast Date</p>

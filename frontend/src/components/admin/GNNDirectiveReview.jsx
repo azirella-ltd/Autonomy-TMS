@@ -11,6 +11,7 @@ import {
   ChevronDown, ChevronRight, BarChart3, Clock, ThumbsUp, AlertTriangle,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const REASON_CODES = [
   { value: 'MARKET_INTELLIGENCE', label: 'Market Intelligence' },
@@ -62,6 +63,10 @@ const SummaryCard = ({ icon: Icon, iconBg, label, value, badge }) => (
 );
 
 const GNNDirectiveReview = () => {
+  const { formatSite, loadLookupsForConfig } = useDisplayPreferences();
+
+  useEffect(() => { loadLookupsForConfig(); }, [loadLookupsForConfig]);
+
   const [directives, setDirectives] = useState([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [effectiveness, setEffectiveness] = useState(null);
@@ -220,7 +225,7 @@ const GNNDirectiveReview = () => {
                   {pendingDirectives.map((d) => (
                     <React.Fragment key={d.id}>
                       <TableRow>
-                        <TableCell className="font-medium">{d.site_key || d.site_id || '-'}</TableCell>
+                        <TableCell className="font-medium">{formatSite(d.site_id, d.site_key) || '-'}</TableCell>
                         <TableCell><ScopeBadge scope={d.scope} /></TableCell>
                         <TableCell className="text-sm text-muted-foreground">{d.model_version || d.model || '-'}</TableCell>
                         <TableCell>
@@ -366,7 +371,7 @@ const GNNDirectiveReview = () => {
           {selectedDirective && (
             <div className="space-y-4">
               <div className="flex gap-4 text-sm">
-                <span><strong>Site:</strong> {selectedDirective.site_key || selectedDirective.site_id}</span>
+                <span><strong>Site:</strong> {formatSite(selectedDirective.site_id, selectedDirective.site_key)}</span>
                 <span><strong>Scope:</strong> {selectedDirective.scope}</span>
               </div>
               <div>

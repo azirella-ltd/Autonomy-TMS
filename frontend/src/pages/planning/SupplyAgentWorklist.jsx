@@ -58,6 +58,7 @@ import {
   Shield as ShieldIcon,
 } from '@mui/icons-material';
 import { api } from '../../services/api';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const STATUS_COLORS = {
   pending_review: 'warning',
@@ -146,6 +147,7 @@ const QuantityWithInterval = ({ quantity, lowerBound, upperBound, showInterval =
 };
 
 const SupplyAgentWorklist = ({ configId, tenantId }) => {
+  const { formatSupplier } = useDisplayPreferences();
   const [loading, setLoading] = useState(true);
   const [worklistItems, setWorklistItems] = useState([]);
   const [selectedCommit, setSelectedCommit] = useState(null);
@@ -826,7 +828,7 @@ const SupplyAgentWorklist = ({ configId, tenantId }) => {
                           <TableCell>
                             <Typography variant="body2" fontWeight="medium">{order.sku}</Typography>
                           </TableCell>
-                          <TableCell>{order.supplier_id}</TableCell>
+                          <TableCell>{formatSupplier(order.supplier_id, order.supplier_name)}</TableCell>
                           <TableCell align="right">
                             <QuantityWithInterval
                               quantity={order.quantity}
@@ -1006,7 +1008,7 @@ const SupplyAgentWorklist = ({ configId, tenantId }) => {
                     <TableRow key={i} hover>
                       <TableCell>
                         <Typography variant="body2" fontWeight="medium">{order.sku}</Typography>
-                        <Typography variant="caption" color="textSecondary">{order.supplier_id}</Typography>
+                        <Typography variant="caption" color="textSecondary">{formatSupplier(order.supplier_id, order.supplier_name)}</Typography>
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2">{order.quantity?.toLocaleString()}</Typography>

@@ -37,8 +37,10 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const MaterialVisibility = () => {
+  const { formatProduct } = useDisplayPreferences();
   // State management
   const [shipments, setShipments] = useState([]);
   const [filteredShipments, setFilteredShipments] = useState([]);
@@ -393,7 +395,7 @@ const MaterialVisibility = () => {
                     onClick={() => handleShipmentClick(shipment.shipment_id)}
                   >
                     <TableCell className="font-medium">{shipment.shipment_id}</TableCell>
-                    <TableCell>{shipment.product_id}</TableCell>
+                    <TableCell>{formatProduct(shipment.product_id, shipment.product_name)}</TableCell>
                     <TableCell>
                       <Badge variant={getStatusVariant(shipment.status)} className="flex items-center gap-1 w-fit">
                         {getStatusIcon(shipment.status)}
@@ -458,7 +460,7 @@ const MaterialVisibility = () => {
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Product</p>
-                    <p className="font-medium">{selectedShipment.product_id}</p>
+                    <p className="font-medium">{formatProduct(selectedShipment.product_id, selectedShipment.product_name)}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Quantity</p>

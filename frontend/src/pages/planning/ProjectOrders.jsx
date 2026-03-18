@@ -23,8 +23,10 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip';
 import { Plus, CheckCircle, Eye } from 'lucide-react';
 import { api } from '../../services/api';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const ProjectOrders = () => {
+  const { formatCustomer, formatSite } = useDisplayPreferences();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -164,8 +166,8 @@ const ProjectOrders = () => {
                       <p className="text-xs text-muted-foreground">{order.project_id}</p>
                     </div>
                   </TableCell>
-                  <TableCell>{order.customer_name || order.customer_id || '-'}</TableCell>
-                  <TableCell>{order.site_id}</TableCell>
+                  <TableCell>{formatCustomer(order.customer_id, order.customer_name) || '-'}</TableCell>
+                  <TableCell>{formatSite(order.site_id, order.site_name)}</TableCell>
                   <TableCell><Badge variant={getStatusVariant(order.status)}>{order.status}</Badge></TableCell>
                   <TableCell>{order.priority}</TableCell>
                   <TableCell>{order.required_completion_date}</TableCell>
@@ -327,7 +329,7 @@ const ProjectOrders = () => {
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Customer</p>
-                <p>{selectedOrder.customer_name || selectedOrder.customer_id || '-'}</p>
+                <p>{formatCustomer(selectedOrder.customer_id, selectedOrder.customer_name) || '-'}</p>
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Status</p>

@@ -36,8 +36,10 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../services/api';
 import InlineComments from '../../components/common/InlineComments';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const TransferOrders = () => {
+  const { formatProduct } = useDisplayPreferences();
   const navigate = useNavigate();
   const [transferOrders, setTransferOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -348,7 +350,7 @@ const TransferOrders = () => {
                       <TableRow key={item.line_number}>
                         <TableCell>{item.line_number}</TableCell>
                         <TableCell>
-                          {item.product_name} (ID: {item.product_id})
+                          {formatProduct(item.product_id, item.product_name)}
                         </TableCell>
                         <TableCell className="text-right">{item.quantity}</TableCell>
                         <TableCell>{formatDate(item.requested_ship_date)}</TableCell>

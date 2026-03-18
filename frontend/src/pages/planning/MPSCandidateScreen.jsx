@@ -63,6 +63,7 @@ import {
   Legend,
 } from 'recharts';
 import { api } from '../../services/api';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 const CANDIDATE_METHODS = {
   REORDER_POINT: {
@@ -93,6 +94,7 @@ const CANDIDATE_METHODS = {
 };
 
 const MPSCandidateScreen = ({ configId, tenantId, policyEnvelopeId, mode = 'INPUT' }) => {
+  const { formatSupplier } = useDisplayPreferences();
   const [loading, setLoading] = useState(true);
   const [supBP, setSupBP] = useState(null);
   const [selectedCandidate, setSelectedCandidate] = useState(null);
@@ -296,7 +298,7 @@ const MPSCandidateScreen = ({ configId, tenantId, policyEnvelopeId, mode = 'INPU
                       {supBP.candidates?.[0]?.orders?.slice(0, 10).map((order, i) => (
                         <TableRow key={i}>
                           <TableCell>{order.sku}</TableCell>
-                          <TableCell>{order.supplier_id}</TableCell>
+                          <TableCell>{formatSupplier(order.supplier_id, order.supplier_name)}</TableCell>
                           <TableCell align="right">{order.quantity?.toLocaleString()}</TableCell>
                           <TableCell>{order.order_date}</TableCell>
                           <TableCell>{order.expected_delivery}</TableCell>
@@ -532,7 +534,7 @@ const MPSCandidateScreen = ({ configId, tenantId, policyEnvelopeId, mode = 'INPU
                       {selectedCandidate.orders?.slice(0, 20).map((order, i) => (
                         <TableRow key={i}>
                           <TableCell>{order.sku}</TableCell>
-                          <TableCell>{order.supplier_id}</TableCell>
+                          <TableCell>{formatSupplier(order.supplier_id, order.supplier_name)}</TableCell>
                           <TableCell align="right">{order.quantity?.toLocaleString()}</TableCell>
                           <TableCell align="right">
                             ${((order.quantity || 0) * (order.unit_cost || 10)).toLocaleString()}

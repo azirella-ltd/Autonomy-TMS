@@ -34,6 +34,8 @@ import {
   Layers,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { useActiveConfig } from '../../contexts/ActiveConfigContext';
+import { useDisplayPreferences } from '../../contexts/DisplayPreferencesContext';
 
 /**
  * Vendor Lead Times Management
@@ -46,6 +48,11 @@ import { api } from '../../services/api';
  * - Effective date ranges
  */
 const VendorLeadTimes = () => {
+  const { effectiveConfigId } = useActiveConfig();
+  const { formatProduct, formatSite, loadLookupsForConfig } = useDisplayPreferences();
+
+  useEffect(() => { if (effectiveConfigId) loadLookupsForConfig(effectiveConfigId); }, [effectiveConfigId, loadLookupsForConfig]);
+
   const [leadTimes, setLeadTimes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -350,8 +357,8 @@ const VendorLeadTimes = () => {
                       )}
                     </TableCell>
                     <TableCell>{levelBadge(lt)}</TableCell>
-                    <TableCell>{lt.product_id || '-'}</TableCell>
-                    <TableCell>{lt.site_id || '-'}</TableCell>
+                    <TableCell>{formatProduct(lt.product_id) || '-'}</TableCell>
+                    <TableCell>{formatSite(lt.site_id) || '-'}</TableCell>
                     <TableCell>
                       {lt.eff_start_date ? new Date(lt.eff_start_date).toLocaleDateString() : '-'}
                     </TableCell>

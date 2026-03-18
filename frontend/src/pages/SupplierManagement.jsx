@@ -36,8 +36,12 @@ import {
   Link2,
 } from 'lucide-react';
 import { api } from '../services/api';
+import { useDisplayPreferences } from '../contexts/DisplayPreferencesContext';
 
 const SupplierManagement = () => {
+  const { formatProduct, formatSite, formatSupplier, loadLookupsForConfig } = useDisplayPreferences();
+
+  useEffect(() => { loadLookupsForConfig(); }, [loadLookupsForConfig]);
   const [tabValue, setTabValue] = useState('suppliers');
   const [suppliers, setSuppliers] = useState([]);
   const [vendorProducts, setVendorProducts] = useState([]);
@@ -463,7 +467,7 @@ const SupplierManagement = () => {
                 vendorProducts.map((vp) => (
                   <TableRow key={vp.id}>
                     <TableCell>{vp.tpartner_id}</TableCell>
-                    <TableCell>{vp.product_id}</TableCell>
+                    <TableCell>{formatProduct(vp.product_id, vp.product_name)}</TableCell>
                     <TableCell>
                       <Badge variant="secondary">Priority {vp.priority}</Badge>
                     </TableCell>
@@ -533,8 +537,8 @@ const SupplierManagement = () => {
                 vendorLeadTimes.map((lt) => (
                   <TableRow key={lt.id}>
                     <TableCell>{lt.tpartner_id}</TableCell>
-                    <TableCell>{lt.product_id || '-'}</TableCell>
-                    <TableCell>{lt.site_id || '-'}</TableCell>
+                    <TableCell>{lt.product_id ? formatProduct(lt.product_id) : '-'}</TableCell>
+                    <TableCell>{lt.site_id ? formatSite(lt.site_id) : '-'}</TableCell>
                     <TableCell className="font-bold">{lt.lead_time_days}</TableCell>
                     <TableCell>
                       {lt.lead_time_variability_days ? `±${lt.lead_time_variability_days}` : '-'}
